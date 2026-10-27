@@ -574,14 +574,21 @@ Measured by canary fill (probe [`autorun_stack_highwater.lua`](../../scripts/pcs
 |---|---|---|---|
 | Boot: `CDNAME.TXT` load | `0x801FE420` | 7136 | `FUN_8001D8FC` under the boot initialiser `FUN_8001D424`: a `0x1120`-byte frame holding a 4 KB read buffer, on top of `FUN_8001D424`'s own `0x820` |
 | FMV (`MV1.STR` attract) | `0x801FF138` | 3784 | PROT 0970's frame decoder `FUN_801D0378`, which reserves `(12 * macroblocks + 14) & ~7` bytes on the stack (`subu sp,sp,v0` at `0x801D03F8`) |
+| Dance contest (the counter's warp into the `other7` hall, a chart to the tally) | `0x801FF9E0` | 1568 | `SsVabOpenHead`'s core `FUN_80068D94` (`0x438` frame), reached from the dance entry `FUN_801CEF54` (a `0x138`-byte frame of its own) through `FUN_8001E54C` -> `FUN_80026314` -> `FUN_80068D34` |
 | Pause-menu Save to card | `0x801FFA28` | 1496 | BIOS card calls (kernel RAM `0x00003E84`) under the menu overlay |
 | Battle results, then back to the field | `0x801FFA68` | 1432 | `SsVabOpenHead`'s core `FUN_80068D94`, a `0x438`-byte frame, reached from the results `FUN_8004E568` through `FUN_8001E54C` -> `FUN_80026314` -> `FUN_80068D34` |
 | Field scene load (memory-card Continue, door, world map) | `0x801FFA70` | 1424 | the same VAB open, from the field init `FUN_801D6704` through `FUN_8001E54C` |
+| Fishing (the signboard's warp into `other1`, casts) | `0x801FFA88` | 1400 | |
+| Muscle Dome (the sign-up warp, the hub, two legs) | `0x801FFA88` | 1400 | |
+| Baka Fighter (the cabinet warp, the title, two rounds) | `0x801FFAB8` | 1352 | |
+| Slot machine (the cabinet warp, spins) | `0x801FFAD0` | 1328 | |
 | Battle load (Mad Ogre + Demon Fly, `[108, 3]`), then a party wipe back to the CARD screen | `0x801FFA88` | 1400 | |
 | Battle, every cast and Super Art reached | `0x801FFD38..0x801FFDB8` | 584 - 712 | battle main |
 | Field dialogue, inn | `0x801FFD28..0x801FFE60` | 416 - 728 | |
 
-The battle row covers boss and Seru casts (Gaza 2, evolved Cort, Koru, the Nivora duels, Gimard, the flutes, the evolved Seru), the three Super Arts and a 12000-vsync random-pad soak; field soaks of 9000 and 12000 vsyncs stay at the scene-load figure. Every movie on the disc is `320 x 224` (280 macroblocks, a 3368-byte reservation), so the FMV figure holds for all of them. The minigames are not measured: every save state parked in one was made on a patched disc.
+The battle row covers boss and Seru casts (Gaza 2, evolved Cort, Koru, the Nivora duels, Gimard, the flutes, the evolved Seru), the three Super Arts and a 12000-vsync random-pad soak; field soaks of 9000 and 12000 vsyncs stay at the scene-load figure. Every movie on the disc is `320 x 224` (280 macroblocks, a 3368-byte reservation), so the FMV figure holds for all of them.
+
+The minigame rows start at the first vsync after the field VM's warp (game mode `0x18`) of a retail walk to the venue ([capture coverage](../tooling/capture-coverage.md#filling-the-worklist)) and run 3600 vsyncs of seeded pad noise; each figure is the mark before the noise left the venue. The slot machine and Baka Fighter reach theirs while the minigame loads (mode `0x18`), fishing once play starts, the dome in a leg's battle; the dance's VAB open is the deepest use after boot and the FMV decoder.
 
 The boot figure is the `0x801FE420` that every save state carries as its lowest non-zero word, and the run that reaches it is the only one that does: `FUN_8001D424` is called from `0x80016024`, ahead of `main()`'s loop (`0x80016170..0x8001620C`), so it runs once per power-on. After boot the deepest use is the FMV decoder's, `0x801FF138`.
 

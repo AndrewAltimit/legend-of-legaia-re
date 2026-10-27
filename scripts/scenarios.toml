@@ -3686,3 +3686,225 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "tower"
 topics = ["field", "tower", "scene coverage", "harvest"]
+
+# ----------------------------------------------------------------------
+# Retail minigame and far-scene states reached by planned walks
+# (autorun_walk_route.lua over plan_walk_route.py routes; see
+# docs/tooling/capture-coverage.md "Filling the worklist"). Every one
+# starts from a retail memory-card boot; pad only, no pokes.
+# ----------------------------------------------------------------------
+[[scenarios]]
+label = "minigame_baka_fighter_retail_fight"
+backup_fingerprint = "d562859a71729d9cff481ebb9abe74d8d7c522b27fef8ebf354814f25fcd9cf7"
+description = "Baka Fighter, stage 1 round 1 under way (FIGHT!), mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a second walk to the P1[52] cabinet and an ACT (face Z+, Cross: the record seats the player, debits one coin and warps), START at the title, Cross every 20 vsyncs; saved 900 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_baka_fighter_retail_round2"
+backup_fingerprint = "b02de86b008d3e4254198cd0d2613a5b7844d7cc69dd5264023e4e341658b7e1"
+description = "Baka Fighter, round 1 decided: the ROUND 2 banner over the duel, mode 0x19. Same run as minigame_baka_fighter_retail_fight, saved 1800 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_reels"
+backup_fingerprint = "c9720356875d7811d628b151d77c41797cec1079d9e39fe370c4acfed895f2fa"
+description = "Casino slot machine at rest before the first bet, reel state word 0x801D3C84 = 1, mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a walk to the P1[55] cabinet and an ACT (face X-, Cross); the card's coin bank (9999999) is the machine's balance; saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_spin_decided"
+backup_fingerprint = "0203feb61beddaa6c682c7e20a95577ae903122970a42247c88547724b22b884"
+description = "Casino slot machine, a spin decided: all three reels stopped and the machine in its payout state (reel state word 0x801D3C84 = 4, no line paid), mode 0x19. From minigame_slot_machine_retail_reels, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with Cross / Square / Circle taking turns every 20 vsyncs (bet, spin, the three stop buttons); saved by LEGAIA_WATCH=0x801d3c84:4:1, 103 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_welcome"
+backup_fingerprint = "4d8231b96abf72680f215d5cc981a623af908731174e7c6ce8927271a6e16848"
+description = "Muscle Dome hub, the 'Welcome to the Muscle Dome!' card, mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a walk to the P1[9] sign-up counter and an ACT paging the counter's talk with Cross (every picker left on its default: enter, pay the fee, the first entrant, the first course offered); saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "muscle dome", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_red_piura_vahn_strike"
+backup_fingerprint = "23efe84b67397216bbd1d7f8a4ab44689b37421864154d4bf690ade5ab77400f"
+description = "Muscle Dome leg 1, Vahn vs Red Piura (monster id 19): Vahn's arts string mid-swing, acting seat 0, category 3, action state 0x1E. Same run as minigame_muscle_dome_retail_welcome, Cross every 20 vsyncs through the leg; saved 1200 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "koin1"
+topics = ["minigame", "muscle dome", "battle", "Red Piura", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_tornado_flame"
+backup_fingerprint = "eb0f722b31699d1b96b1a1021fd5151c02234caae8a73dbaaa189b799b0ef9e9"
+description = "Muscle Dome leg 1 decided: the Tornado Flame art's 5 HIT / TOTAL readout over the downed Red Piura, action state 0x20. Same run as minigame_muscle_dome_retail_welcome, saved 1800 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "koin1"
+topics = ["minigame", "muscle dome", "battle", "Red Piura", "Tornado Flame", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_skeleton_hyper_arts"
+backup_fingerprint = "941add30595e1fe3d4ff2df7833b9584a45ba169ee3b4322d7abb5acab610141"
+description = "Muscle Dome leg 2, Vahn vs Skeleton (monster id 13): the HYPER ARTS!! banner mid-art, action state 0x1F. Same run as minigame_muscle_dome_retail_welcome, saved 3600 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "koin1"
+topics = ["minigame", "muscle dome", "battle", "Skeleton", "Hyper Arts", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_ready"
+backup_fingerprint = "f96d7602cf3987c89d3e431da668e429d18ff0e0369f2cc8a759da72bd00f69d"
+description = "Noa's dance contest, the READY... count-in, mode 0x19 (the hall is the other7 block). RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> kor3 -> koin3, then from the koin3 arrival state: TALK to the Gold Card guard P1[2] (the card holds a Gold Card), a walk past him to the sign-up host P1[16] and an ACT (face X+, Cross: enter, pay 500G); saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_dancing"
+backup_fingerprint = "ef7d217ef36ea9845a287dab358c49ff888edcbbc0121bf79bec784f655fc32c"
+description = "Noa's dance contest mid-chart (scores 40 / 0 / 52), mode 0x19. Same run as minigame_dance_retail_ready, Cross every 20 vsyncs; saved 900 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_judged"
+backup_fingerprint = "55f1de4bc4e07fb619dc21355e015effc8ebe90de1ba903260f7fb18af756b76"
+description = "Noa's dance contest decided: the closing tally (295 / 0 / 280) with the judge's portrait, mode 0x19. Same run as minigame_dance_retail_ready, saved 2400 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_ready"
+backup_fingerprint = "3689f097cc88c758a71773608e5216d0a8df084e768c91f9eb26e4fe724ca3e5"
+description = "Fishing at the venue the map02 signboard opens, rod ready, Normal Lure, mode 0x19 (venue block other1). RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), then autorun_walk_route.lua: retock -> map02 (its rec-19 door) -> across the Sebucus overworld, random encounters fought with the harvester's hand, to the map02 P1[7] signboard and an ACT (face Z+, Cross through the prompt); saved 600 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "route walk", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_lure_cast"
+backup_fingerprint = "cccf6dc4f504d0605366179a0a7e05b8be2b6265ead0b551f0913b01d435d9e8"
+description = "Fishing, a cast decided: the lure landed (LINE 5.4 m, DEPTH 4.5 m, ripple at the float), mode 0x19. From minigame_fishing_retail_ready, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1: Cross held 45 vsyncs from vsync 60 (power to 92%) and released; saved 700 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "route walk", "map02"]
+
+[[scenarios]]
+label = "kor4_field_route_walk"
+backup_fingerprint = "4b6ba816f8960c90e376dc962d2975c5a65dfac577516ba2040ef08d4a316d2d"
+description = "kor4 (Sol Tower stairs C, the Elevator 7F / Sol Dayschool banner) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk saved it 151 vsyncs into the field once the player had moved."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor4"
+topics = ["field", "kor4", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "kor3_field_route_walk"
+backup_fingerprint = "5653b2518f2bbb278bcae02674e2000871e28859de1f61836bebd6d90bd9e0b3"
+description = "kor3 (Sol Tower stairs B, the Sol Broadway banner) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3; from the kor3 arrival state a second walk saved it 151 vsyncs into the field once the player had moved."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor3"
+topics = ["field", "kor3", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "koin1_field_route_walk"
+backup_fingerprint = "68949490eda7773f2c97375dec1921732d020e7f9a84cb8a5d780cb554feb056"
+description = "koin1 (Sol Tower rooms A, the casino and arena sign-up floor) free field run, player at the Muscle Dome counter. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1; from the koin1 arrival state a second walk saved it 151 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin1"
+topics = ["field", "koin1", "scene coverage", "casino", "route walk"]
+
+[[scenarios]]
+label = "koin3_gold_card_guard_talk"
+backup_fingerprint = "84399dbed5210d8376da85f827b530e655f19f1e102727668bf9dd792314cb63"
+description = "koin3 (Sol Tower rooms C, the dance-hall corridor): the Gold Card guard P1[2]'s 'Hello and welcome! Do you have a Gold Card?' box open. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> kor3 -> koin3; from the koin3 arrival state a second walk with a TALK at the guard, saved 151 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin3"
+topics = ["field", "koin3", "scene coverage", "dialogue", "route walk"]
+
+[[scenarios]]
+label = "koin1b_field_route_walk"
+backup_fingerprint = "5431d5b3f0963cd85f3694888f9cb9c4745924f2fee80500181ce14c3df68373"
+description = "koin1b (Sol Tower rooms F) free field run, party HUD up after the walk stopped. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3; from the kor3 arrival state a second walk through kor3's rec-3 door, saved 1057 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin1b"
+topics = ["field", "koin1b", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "koin6_field_route_walk"
+backup_fingerprint = "b4145de2b9e884ac4fd655da5f32b6ced44c9191abb73db1af5389261c2b5c98"
+description = "koin6 (Sol Tower rooms E) free field run, party HUD up while the route waits. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk through kor4's rec-13 door, saved 747 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin6"
+topics = ["field", "koin6", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "koin4_field_route_walk"
+backup_fingerprint = "f9251be934637702936200c9b210d42e3959b13651017ec91205f8e192223e4f"
+description = "koin4 (Sol Tower rooms D, the weapon shop) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk kor4 -> koin6 -> kor4 -> koin4 (rec-9 door), saved 2063 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin4"
+topics = ["field", "koin4", "scene coverage", "shop", "route walk"]
+
+[[scenarios]]
+label = "kor_field_route_walk"
+backup_fingerprint = "25994a85aba792d55dcf7ef57da734137c8e838397ab28110eddb9a679561d0c"
+description = "kor (Sol Tower stairs A) free field run beside the elevator. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 11 (korb2_field_card_boot), then autorun_walk_route.lua korb2 -> kor (korb2's rec-0 door; random encounters fought with the harvester's hand), saved 8557 vsyncs in, once the scene had settled and the player had moved."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor"
+topics = ["field", "kor", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "conc2_field_route_walk"
+backup_fingerprint = "6d2fa3d108c92655587e75b8479097e8a39f8ecd56de35aeaafec9834bd9e48c"
+description = "conc2 (Conkram (Past, 2)) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 1 (conc_field_card_boot), then autorun_walk_route.lua conc -> conc2 (conc's rec-11 door), saved 1255 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc2"
+topics = ["field", "conc2", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "tunnelc_field_route_walk"
+backup_fingerprint = "4b83d09fb7e7883245049330c429747145d111f918ef6ae424fa3fdf0e36a6ff"
+description = "tunnelc (Fire Path (2)) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 4 (tunnelb_field_card_boot), then autorun_walk_route.lua tunnelb -> tunnelc (tunnelb's rec-36 door), saved 455 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "tunnelc"
+topics = ["field", "tunnelc", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "retockin_field_route_walk"
+backup_fingerprint = "c87978ed469535a64e6104c4bd88701391e371d2f3e07456b8103b642a7d19c3"
+description = "retockin (Ratayu (interior)) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), then autorun_walk_route.lua retock -> retockin (retock's rec-18 door), saved 1503 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retockin"
+topics = ["field", "retockin", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "deroa_field_route_walk"
+backup_fingerprint = "7cc51687098f4025bea90baf383e4f77df7da7c69ff68522f6d933b10e3ebe5a"
+description = "deroa (Jette's Fortress (entrance)) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 3 (chitei2_field_card_boot), then autorun_walk_route.lua chitei2 -> deroa (chitei2's rec-4 door), saved 664 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "deroa"
+topics = ["field", "deroa", "scene coverage", "route walk"]
+
