@@ -103,6 +103,16 @@ pub struct RetailObs {
     /// short of the target (`rimelm_wall_press_left`: yaw `220`, the snap's
     /// `233`). The headless `camera` channel keeps the snap's angles.
     pub seat_angles: Option<[i32; 3]>,
+    /// The player `(X, Z)` the image child stands on, when it is not the
+    /// RAM's: a capture taken while the pad walked the player shows a frame
+    /// two passes old, so the child stands one walk step behind the
+    /// previous-pass pair and lands the follow camera two ease steps back
+    /// (`seat_eye` / `seat_angles` carry the rewound pose,
+    /// [`super::walk_rewind`]).
+    pub image_seat: Option<[i16; 2]>,
+    /// A walking capture's last two passes, which
+    /// [`Self::seat_walk_rewind`] turns into the rewound seat.
+    pub walk: Option<super::walk_rewind::WalkHistory>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -269,7 +279,7 @@ impl RetailObs {
             crate::retail_compare_battle::ungrant_results_rewards(save, b, ram);
             crate::retail_compare_battle::ungrant_magic_level_up(save, b);
         }
-        Self {
+        let mut obs = Self {
             scene,
             loaded_define: game_anchors::u16_at(ram, LOADED_SCENE_DEFINE),
             pending_scene: None,
@@ -316,6 +326,8 @@ impl RetailObs {
                 i32::from(camera.yaw),
                 i32::from(camera.h),
             ]),
+            image_seat: None,
+            walk: None,
             frame,
             battle,
             menu,
@@ -392,7 +404,14 @@ impl RetailObs {
             },
             rand_seed: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
+        };
+        // A walking capture's frame is two passes old ([`super::walk_rewind`]);
+        // a focus off the player is a poked or script-carried seat, which
+        // the follow ease never ran for.
+        if matches!(class, StateClass::Field | StateClass::WorldMap) && obs.seat_focus.is_none() {
+            obs.walk = super::walk_rewind::walk_history(ram, &obs.camera);
         }
+        obs
     }
 }
 
@@ -713,6 +732,23 @@ impl RetailObs {
         true
     }
 
+    /// Land a walking capture's displayed-frame pose
+    /// ([`super::walk_rewind::WalkHistory::rewind`]) as the image child's
+    /// seat, eye and angles. `scratchpad` gives the walk-region box the
+    /// composer aims from.
+    pub fn seat_walk_rewind(&mut self, scratchpad: Option<&[u8]>) {
+        let Some(walk) = self.walk else {
+            return;
+        };
+        let attr_box = scratchpad
+            .and_then(|s| s.get(0x384..0x388))
+            .map(|b| [b[0], b[1], b[2], b[3]]);
+        let r = walk.rewind(attr_box);
+        self.image_seat = Some(r.seat);
+        self.seat_eye = Some(r.eye);
+        self.seat_angles = Some(r.angles);
+    }
+
     /// Read the visible-tile window off a state's 1 KiB scratchpad image
     /// (index `0` = `0x1F800000`). Field states only: the overworld draws
     /// through its own terrain pass and a battle leaves the bytes stale.
@@ -740,6 +776,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let mut obs = RetailObs::from_ram(ram, frame);
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_view_window(st.scratch_ram().ok());
+            obs.seat_walk_rewind(st.scratch_ram().ok());
             Ok(obs)
         }
         _ => {
@@ -750,6 +787,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let mut obs = RetailObs::from_ram(st.main_ram(), frame);
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_view_window(st.scratchpad());
+            obs.seat_walk_rewind(st.scratchpad());
             Ok(obs)
         }
     }

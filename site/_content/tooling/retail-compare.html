@@ -141,7 +141,7 @@
   <ol class="steps">
     <li><strong>Resume.</strong> The engine opens the state&rsquo;s scene through its own card-load path over the lifted save: story flags first (retail&rsquo;s order, so an entry script reads the saved story), then the scene entry, then party, flags, bag and gold.</li>
     <li><strong>Seat.</strong> The player stands on retail&rsquo;s <code>(X, Z)</code> with the floor-sampled height, as a warp landing. The walk-on dispatcher&rsquo;s last-tile pair is stamped with the seat tile, because a player <em>standing</em> on a trigger tile has already fired it.</li>
-    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover.</li>
+    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover. A state saved mid-walk shows a frame two passes older than its RAM, so the image child stands the player one walk step behind the previous pass and takes the follow camera back two steps of its ease.</li>
     <li><strong>Frame step.</strong> The step retail was running at is rebuilt from its frame-time ring and handed over; it decides which script waits can complete.</li>
     <li><strong>Settle.</strong> The session ticks a fixed window with no input - or, for a mid-script, battle or menu state, runs to that state&rsquo;s phase.</li>
   </ol>
@@ -165,7 +165,7 @@
   <h2>Battle states</h2>
   <p>A battle capture carries its whole encounter in RAM: party and monster counts, the command-flow byte and action-state cursor, the monster ids, the scripted-fight bit, the present party and every combatant&rsquo;s HP and MP. The seed replays the fight from a running field, as retail entered it, and then places it at the capture&rsquo;s phase. Each step exists because leaving it out moves a channel for a reason that is not a port defect:</p>
   <ol class="steps">
-    <li><strong>Enter the fight</strong> with the captured formation, party and stage variant.</li>
+    <li><strong>Enter the fight</strong> with the captured formation, party, stage variant and map id - a Muscle Dome leg stands in <code>koin1</code> while its map id names the arena data file, whose backdrop the fight is drawn on.</li>
     <li><strong>Pin the random stream</strong> at the entry, searched over, since the capture holds the stream at the capture rather than at the entry.</li>
     <li><strong>Stand the combatants</strong> on their captured ground positions and headings, taking back pushes the capture already holds.</li>
     <li><strong>Land the HUD glides</strong> and each body&rsquo;s animation keyframe the capture had already reached.</li>

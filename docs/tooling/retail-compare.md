@@ -288,6 +288,19 @@ it is a warp landing and re-centres the region box and the windowed
 static-object list on the seat), the zone camera's arrival snap is re-armed,
 and the session ticks a fixed settle window with no input.
 
+A state saved while the pad walked the player (`+0x14/+0x18` against the
+previous-pass pair `+0x1C/+0x20`, the follow ease's own stationary test)
+shows a frame two passes older than its RAM, drawn under a follow camera two
+ease steps short of the RAM's. The image child stands one walk step behind
+the previous-pass pair and lands the camera taken back two steps of
+`FUN_801DB510`'s ease (`walk_rewind`): against the staging target for the
+newest step, and against the target recomposed at the previous pass's player
+for the older one when recomposing the newest pass reproduces the staging
+pose. A mode-4 block aims from the walk-region box centre, so its yaw target
+turns as the player walks. The constant walk step and the floor under the
+player being its footing are inference; the headless `camera` channel keeps
+scoring the compose against the RAM.
+
 The snap composes from the state's own camera parameter block
 (`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
 takes it as `LEGAIA_SEAT_CAMERA_BLOCK`) rather than from a tile re-query.
@@ -932,6 +945,12 @@ retail's was, so the scene's track has started.
   capture's player actor is no longer the field walker whose tile names them,
   so both come from the region reader. The second matters: nilboa's Thunder
   Ravine region keeps the backdrop shell's object 1, the horizon mist ribbon.
+  The map id `0x80084540` the variant is added to is stamped too
+  (`World::seed_battle_map_define`, the third `LEGAIA_BATTLE_STAGE` field):
+  a fight start can point it away from the scene the state stands in, and a
+  Muscle Dome leg does - the captures stand in `koin1` with the word at
+  `0x4C6`, the arena data file, so the stage is the arena backdrop
+  (extraction 1225) and not a `koin1` stream.
 
 `World::force_encounter` then arms the row through the ordinary transition -
 the path `play-window --battle` takes, including the scripted carrier's

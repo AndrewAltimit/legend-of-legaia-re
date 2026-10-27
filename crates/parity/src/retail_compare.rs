@@ -67,6 +67,7 @@ pub mod resident_disc;
 mod retail_obs;
 mod save_flags;
 mod scripted_seats;
+mod walk_rewind;
 pub use scripted_seats::*;
 #[cfg(test)]
 mod tests;
