@@ -364,6 +364,13 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // the Nail Glove `dolk`'s Arms Shop sells (`rikuroa_post_caruban`:
     // equipment slot 3 `0x28`), and she joins in `cave01` with none.
     let joining = joining_members(w);
+    let weapon_of = |ch: u8| {
+        w.party
+            .roster
+            .members
+            .get(usize::from(ch))
+            .map_or(0, |r| r.equipment().slots[weapon_byte(ch)])
+    };
     let mut joiner: Option<(i32, u32, usize)> = None;
     for (row, it) in session.inventory.items.iter().enumerate() {
         let Some(entry) = info.entry(it.item_id) else {
@@ -371,9 +378,21 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         };
         if entry.is_ra_seru
             || entry.category != Disc::Weapon
-            || held(it.item_id) > 0
             || i64::from(it.price) + reserve > i64::from(gold)
         {
+            continue;
+        }
+        // The best-equipment pass hands a bag weapon to whichever present
+        // member it improves (the Survival Knife went to Vahn), so each such
+        // member takes a copy of its own before the joiner's is left over.
+        let takers = party
+            .iter()
+            .filter(|&&p| {
+                info.can_equip(it.item_id, p)
+                    && gear_worth(w, it.item_id) > gear_worth(w, weapon_of(p))
+            })
+            .count() as u8;
+        if held(it.item_id) > takers {
             continue;
         }
         for &ch in &joining {
@@ -382,17 +401,11 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             }
             // A member who has not joined holds no roster record yet: she
             // comes in unarmed (`cave01`'s Noa).
-            let worn = w
-                .party
-                .roster
-                .members
-                .get(usize::from(ch))
-                .map_or(0, |rec| {
-                    rec.equipment().slots[EquipSlot::Weapon.as_index() as usize]
-                });
+            let worn = weapon_of(ch);
             let gain = gear_worth(w, it.item_id) - gear_worth(w, worn);
             let in_bag = w.party.inventory.keys().any(|&id| {
                 id != worn
+                    && id != it.item_id
                     && info.can_equip(id, ch)
                     && info.entry(id).is_some_and(|e| e.category == Disc::Weapon)
                     && gear_worth(w, id) >= gear_worth(w, it.item_id)
@@ -526,7 +539,7 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
     ) else {
         return out;
     };
-    let party: Vec<u8> = if joined {
+    let mut party: Vec<u8> = if joined {
         (0..w.party.roster.members.len())
             .filter(|&i| w.party.roster.members[i].hp_mp_sp().hp_max > 0)
             .map(|i| i as u8)
@@ -534,6 +547,8 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
     } else {
         w.present_party_list()
     };
+    // A piece bought for a member about to join is hers, not outgrown.
+    party.extend(joining_members(w));
     for (&id, &n) in w.party.inventory.iter() {
         let Some(entry) = info.entry(id) else {
             continue;
@@ -551,13 +566,14 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
             if !info.can_equip(id, ch) {
                 return false;
             }
-            let Some(rec) = w.party.roster.members.get(usize::from(ch)) else {
-                return false;
-            };
             let worn = if slot == EquipSlot::Weapon {
                 worn_weapon(session, ch)
             } else {
-                rec.equipment().slots[slot.as_index() as usize]
+                w.party
+                    .roster
+                    .members
+                    .get(usize::from(ch))
+                    .map_or(0, |rec| rec.equipment().slots[slot.as_index() as usize])
             };
             if gear_worth(w, id) > gear_worth(w, worn) {
                 return true;

@@ -229,9 +229,12 @@ pub(super) fn pad_field_restore(session: &mut NativeSession, threshold: u32, mp:
         // road spends restoratives only above the reserve the shop buys
         // first ([`HEAL_RESERVE`] a member). `son`'s nineteen Healing
         // Berries were all drunk on `taiku`'s road and Zora was fought out
-        // of an empty bag.
+        // of an empty bag. So does any scene whose rests no longer work:
+        // what the bag holds there is all the next fight will have, and
+        // `cave01`'s Noa drank her stretch's 21 Healing Leaves between
+        // training legs and met `rikuroa`'s row 16 with none.
         if !mp
-            && continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get)
+            && (continuous::SAVING_FOR_BOSS.with(std::cell::Cell::get) || !rest_works_here(session))
             && !AT_BOSS_DOOR.with(std::cell::Cell::get)
             && heals_held(w) <= HEAL_RESERVE * w.present_party_list().len().clamp(1, 3) as u32
         {
@@ -874,7 +877,7 @@ pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
 /// The record byte (`+0x196 + i`) that holds a member's weapon: the retail
 /// equip bytes put Noa's weapon where Vahn and Gala keep their Ra-Seru
 /// (`RETAIL_WEAPON_EQUIP_BYTE`).
-fn weapon_byte(member: u8) -> usize {
+pub(super) fn weapon_byte(member: u8) -> usize {
     legaia_engine_menus::equip_session::record_byte_for_engine_slot(
         legaia_engine_menus::equipment::EquipSlot::Weapon.as_index(),
         member,

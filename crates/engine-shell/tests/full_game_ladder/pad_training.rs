@@ -33,28 +33,41 @@ const TRAIN_ROUNDS: usize = 24;
 /// Walk legs one outing takes.
 const OUTING_LEGS: usize = 160;
 
-/// The present members still more than a level short of the target.
+/// The present members short of the target plus its margin
+/// ([`LEVEL_MARGIN`], [`SOLO_LEVEL_MARGIN`]).
 ///
-/// A member who stands alone takes the target itself, not a level under it:
-/// every hit lands on the one body, and nothing shares the damage. `rikuroa`
-/// is the case - Noa alone against a 640-HP row 16 with a thin bag - where a
-/// level-8 Noa won it only on streams whose drops had left her heals.
+/// A member who stands alone takes a wider margin: every hit lands on the
+/// one body, and nothing shares the damage. `rikuroa` is the case - Noa
+/// alone against a 640-HP row 16 with a thin bag - where a level-8 Noa won
+/// it only on streams whose drops had left her heals.
 pub(super) fn under_levelled(session: &NativeSession) -> Vec<(u8, u8, u8)> {
     let w = &session.host.world;
     let party = w.present_party_list();
-    let slack = if party.len() == 1 { 0 } else { 1 };
+    let margin = if party.len() == 1 {
+        SOLO_LEVEL_MARGIN
+    } else {
+        LEVEL_MARGIN
+    };
     TARGET_LEVELS.with(|t| {
         let t = t.borrow();
         party
             .into_iter()
             .filter_map(|ch| {
-                let want = t.get(usize::from(ch)).copied()?.saturating_sub(slack);
+                let want = t.get(usize::from(ch)).copied()?.saturating_add(margin);
                 let have = w.party.roster.members.get(usize::from(ch))?.level();
                 (have < want).then_some((ch, have, want))
             })
             .collect()
     })
 }
+
+/// Levels over the anchors' target a party trains to: the anchors are one
+/// player's growth, and the hand's fights are dealt off other streams, so a
+/// party a level under them met the bosses the anchors' player only just
+/// beat (Zora, `taiku`, lost on two of fourteen streams).
+pub(super) const LEVEL_MARGIN: u8 = 0;
+/// The same for a member who stands alone: every hit lands on the one body.
+pub(super) const SOLO_LEVEL_MARGIN: u8 = 2;
 
 /// Levels below the target at which a scene with a bed trains before its
 /// beats even with no boss band in it (`segment`'s arrival pass).
