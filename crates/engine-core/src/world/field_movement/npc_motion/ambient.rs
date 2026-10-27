@@ -345,6 +345,15 @@ impl World {
                 exempt: self.field_channel_flags(slot) & 3 != 0,
             };
             let seat = self.npcs.positions.get(&slot).copied();
+            // The pair a field-VM `4C 81` (or this stream, last tick) left on
+            // the actor's one `+0x74` / `+0x78` record.
+            let tint_seat = self
+                .field_vm
+                .actor_tints
+                .get(&legaia_engine_field::object_tint::ActorTintKey::Npc(
+                    usize::from(slot),
+                ))
+                .map(|t| (t.colour, t.blend));
             let chan_flags = self.field_channel_flags(slot);
             let Some(chan) = self.npcs.ambient.get_mut(&slot) else {
                 continue;
@@ -408,6 +417,17 @@ impl World {
             // constant here. The ramp pool is its own actor and keeps
             // running either way.
             let suppressed = globals_in & legaia_engine_field::camera::CAMERA_HOLD_FLAG != 0;
+            // Op `0x0C` reads the live `+0x78` to pick its arm and ramps
+            // from the live `+0x74` / `+0x78` (`0x80039220`): on retail's one
+            // record that is whatever wrote last, the entry script's `4C 81`
+            // included. Adopt the published pair so the stream's first fade
+            // starts where the actor stands (`bubu2`'s NPC 7, tinted
+            // `0x9B5050` at `3000` by its entry script, used to dip to
+            // untinted and fade back in when its `0x3D4` pulse started).
+            if let Some((colour, blend)) = tint_seat {
+                vm.tint = colour;
+                vm.blend = blend;
+            }
             let tint_in = (vm.tint, vm.blend);
             let plan = legaia_engine_motion_vm::motion_vm::field_actor_plan(
                 legaia_engine_motion_vm::motion_vm::FieldActorInputs {
@@ -732,6 +752,22 @@ impl World {
                 .get(&record)
                 .and_then(|c| c.select_variant(|f| self.system_flag_test(f)));
             let Some(pick) = pick else { continue };
+            // The object's live `+0x74` / `+0x78`, where
+            // `Self::object_draw_tints` reads it: its object-bind channel's
+            // context, else the actor tint table (see the NPC loop above).
+            let tint_seat = self
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| c.object_bind && c.placement_index == record)
+                .map(|c| (c.ctx.field_74 & 0x00FF_FFFF, c.ctx.field_78))
+                .or_else(|| {
+                    let r = u16::try_from(record).ok()?;
+                    self.field_vm
+                        .actor_tints
+                        .get(&legaia_engine_field::object_tint::ActorTintKey::Object(r))
+                        .map(|t| (t.colour, t.blend))
+                });
             let Some(chan) = self.npcs.object_ambient.get_mut(&record) else {
                 continue;
             };
@@ -748,6 +784,10 @@ impl World {
             };
             if suppressed {
                 continue;
+            }
+            if let Some((colour, blend)) = tint_seat {
+                vm.tint = colour;
+                vm.blend = blend;
             }
             let tint_in = (vm.tint, vm.blend);
             vm.tick_with(code, speed, &probe);

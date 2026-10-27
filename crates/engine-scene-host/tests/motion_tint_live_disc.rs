@@ -6,7 +6,7 @@
 //! `0x8001BC7C`), which stages them as the GTE far colour and `IR0`. The
 //! census (`engine-scene`'s `ambient_motion_op_census_disc`) finds the op
 //! bound to placed objects in `koin3` / `other7` / `ropeway` / `taiku` and to
-//! NPCs in `taiku` / `bubu1` / `bubu2` / `garmel` / `edbubu`. This drives two of
+//! NPCs in `taiku` / `bubu1` / `bubu2` / `garmel` / `edbubu`. This drives three of
 //! those scenes from entry and samples what the hosts sample each frame:
 //! `World::object_draw_tints` for placed objects and
 //! `World::field_npc_draw_tint` for NPC slots.
@@ -79,4 +79,64 @@ fn taiku_npc_streams_tint_their_slots() {
     }
     eprintln!("[motion tint] taiku tinted NPC slots {tinted:?}");
     assert!(!tinted.is_empty(), "no taiku NPC drew an op-0x0C tint");
+}
+
+/// `bubu2`'s NPC 7 carries two scripted-motion variants: a default that only
+/// waits, and one gated on system flag `0x3D4` that pulses a blue tint
+/// (`0C 50 50 9B 54 0B 06 00`, `05 08`, `0C 50 50 9B 98 08 06 00`, `05 08`,
+/// loop): the mode word swings `0xB54 <-> 0x898` over six ticks each way. The
+/// entry script tints the NPC on its own (`0x9B5050` at `3000`), so with the
+/// flag down the pair stands still; with it up the motion VM's fade takes
+/// the pair over and ramps it between the two authored modes.
+#[test]
+fn bubu2_npc7_pulses_its_blue_tint_once_its_flag_is_up() {
+    let Some(mut host) = open() else { return };
+    host.enter_field_scene("bubu2", 0).expect("enter bubu2");
+    let mut idle = std::collections::BTreeSet::new();
+    for _ in 0..120 {
+        host.tick().expect("tick");
+        if let Some((_, b)) = host.world.field_npc_draw_tint(7) {
+            idle.insert(b);
+        }
+    }
+    eprintln!(
+        "[motion tint] bubu2 npc7 seat {:?}",
+        host.world.npcs.positions.get(&7)
+    );
+    host.world.system_flag_set(0x3D4);
+    let mut pulse = std::collections::BTreeSet::new();
+    let mut colours = std::collections::BTreeSet::new();
+    for _ in 0..240 {
+        host.tick().expect("tick");
+        if let Some((c, b)) = host.world.field_npc_draw_tint(7) {
+            colours.insert(c);
+            pulse.insert(b);
+        }
+    }
+    eprintln!(
+        "[motion tint] bubu2 npc7 idle modes {idle:?}, pulse modes {pulse:?}, colours {colours:?}"
+    );
+    assert!(
+        idle.len() <= 1,
+        "with 0x3D4 down the default variant only waits: {idle:?}"
+    );
+    assert_eq!(
+        colours,
+        [0x9B5050].into(),
+        "the pulse keeps the authored blue"
+    );
+    assert!(
+        pulse.contains(&0xB54) && pulse.contains(&0x898),
+        "both authored modes reached: {pulse:?}"
+    );
+    assert!(
+        pulse.len() > 4,
+        "the mode word ramps between them: {pulse:?}"
+    );
+    // The first fade ramps from the entry script's standing `3000`, not from
+    // an untinted `0`: the actor has one `+0x78`, and op `0x0C` ramps it.
+    assert!(
+        pulse.iter().all(|&b| b >= 0x898),
+        "the pulse never dips below its authored floor: {pulse:?}"
+    );
 }

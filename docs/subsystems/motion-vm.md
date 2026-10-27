@@ -1173,8 +1173,15 @@ leaves load before `DPCS` - so each prim's colour becomes
 to NPCs (`taiku`, `bubu1`, `bubu2`, `garmel`, `edbubu`) and to placed objects
 (`koin3`, `other7`, `ropeway` / `ropeway2`, `taiku`); almost all fade toward
 black. Retail has one actor record that both ops write, so the port publishes
-the motion VM's pair last-writer-wins on a tick that changes it. Disc-gated
-test: `crates/engine-scene-host/tests/motion_tint_live_disc.rs`.
+the motion VM's pair last-writer-wins on a tick that changes it, and seeds
+the stream's copy from the published pair before each tick: the arm reads
+the live `+0x78` to choose its row and ramps from the live pair, whoever
+wrote it. `bubu2`'s NPC 7 is the case that needs it: its entry script tints
+it `0x9B5050` at `3000`, and its system-flag-`0x3D4` variant pulses the mode
+`0xB54 <-> 0x898` over six ticks a leg. Read from its own zeroed copy, the
+first `0x0C` took the fade-in row and dropped the NPC to untinted before
+fading back; from the live pair it ramps `3000 -> 0xB54` and holds the
+band. Disc-gated test: `crates/engine-scene-host/tests/motion_tint_live_disc.rs`.
 
 ### Op `0x0E` - the model swap
 

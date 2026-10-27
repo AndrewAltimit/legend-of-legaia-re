@@ -137,6 +137,7 @@
     <li><strong>Walk ops collide with the player only</strong> - not the walkability grid, not other NPCs. A wanderer can stroll through a fence; it cannot stroll through Vahn.</li>
     <li><strong>The binding byte is a suppression mask, not an enable.</strong> With bit 0 set the stream defers while the player is engaged (talk, menu, beat), while the actor is busy, or while it is parked off-map; a zero byte keeps choreographing through a cutscene.</li>
     <li><strong>The ambient facing ops have no shortest-arc override</strong>, so an authored idle turn can deliberately take the long way round.</li>
+    <li><strong>The tint fade starts from whatever the actor wears.</strong> An actor has one tint record, which the field script and this op both write, and op <code>0x0C</code> ramps from it. In frozen Buma one of the frozen figures stands tinted blue from the scene&rsquo;s entry script, and once a story flag is up its stream pulses that blue between two strengths without ever dropping it.</li>
   </ul>
   <details class="disclosure">
     <summary>Stream binding, speed encoding, op 0x17 and the touch post</summary>
