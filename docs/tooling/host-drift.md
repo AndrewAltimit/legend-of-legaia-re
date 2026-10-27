@@ -1249,9 +1249,10 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `--arts-saved-list` (the launcher's Saved-chain Arts list row) or `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
-| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
+| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
-| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
+| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map`, `--play-record` | none: native capture tooling |
+| `--fullscreen`, `--windowed`, `--window-scale` | none: window chrome; the browser sizes the page's canvas |
 
 ### Remembered between runs
 

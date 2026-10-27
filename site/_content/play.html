@@ -1902,8 +1902,10 @@ div.play-vis-head { cursor: default; }
     enter('koin1');
     const rt = runtime;
     try {
-      if (req.level && typeof rt.cheat_set_party_level === 'function') {
-        rt.cheat_set_party_level(Math.max(1, Math.min(99, req.level)));
+      /* The party level goes through the one cheat list both hosts share
+       * (`cheat_apply`, the native `--cheat-level`). */
+      if (req.level && typeof rt.cheat_apply === 'function') {
+        rt.cheat_apply('level', Math.max(1, Math.min(99, req.level)), '');
       }
       /* `lead`: the roster record the legs seat (retail's is always Vahn). */
       if (req.lead != null && typeof rt.play_mg_set_muscle_fighter === 'function'
