@@ -57,7 +57,7 @@ fn the_play_page_opens_a_minigame_off_its_query() {
     let at = play
         .find("function startPendingMinigame()")
         .expect("the query launch");
-    let body = &play[at..at + 900];
+    let body = &play[at..at + 1400];
     assert!(body.contains("enter('koin1')"), "from the casino floor");
     assert!(
         body.contains("play_mg_choose_muscle_course"),
