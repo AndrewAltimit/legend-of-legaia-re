@@ -50,9 +50,11 @@
 --
 -- Checkpoints (<OUT_DIR>/<PREFIX>_...rawsstate):
 --   _scene_<label>_v<vsync>   once per scene, LEGAIA_SCENE_SETTLE (150)
---                             vsyncs after it loads, once the player has
---                             walked in it (the harvester's scene rule)
---   _end_v<vsync>             the last waypoint reached (no ACT line)
+--                             vsyncs after the field resumes in it, once
+--                             the player has walked in it (the harvester's
+--                             scene rule)
+--   _end_v<vsync>             the last waypoint reached (no ACT line); the
+--                             run first waits for the scene's own state
 --   _mode<mm>_t<t>            after an ACT line: LEGAIA_SHOTS vsyncs
 --                             ("120,300,600") after the game mode first
 --                             leaves the field and stays out of it; with
@@ -73,7 +75,8 @@
 --
 -- Env: LEGAIA_SSTATE, LEGAIA_ROUTE_FILE, LEGAIA_OUT_DIR, LEGAIA_PREFIX
 -- (default "route"), LEGAIA_FRAMES (default 6000), LEGAIA_TOL, LEGAIA_SHOTS,
--- LEGAIA_MASH, LEGAIA_MASH_BTN (default CROSS; a comma list takes turns), LEGAIA_SCENE_SETTLE.
+-- LEGAIA_MASH, LEGAIA_MASH_BTN (default CROSS; a comma list takes turns),
+-- LEGAIA_SCENE_SETTLE, LEGAIA_FIGHT, LEGAIA_ACT_FACE, LEGAIA_ACT_SHOT_EVERY.
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"

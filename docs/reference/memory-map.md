@@ -579,7 +579,7 @@ Measured by canary fill (probe [`autorun_stack_highwater.lua`](../../scripts/pcs
 | Battle results, then back to the field | `0x801FFA68` | 1432 | `SsVabOpenHead`'s core `FUN_80068D94`, a `0x438`-byte frame, reached from the results `FUN_8004E568` through `FUN_8001E54C` -> `FUN_80026314` -> `FUN_80068D34` |
 | Field scene load (memory-card Continue, door, world map) | `0x801FFA70` | 1424 | the same VAB open, from the field init `FUN_801D6704` through `FUN_8001E54C` |
 | Fishing (the signboard's warp into `other1`, casts) | `0x801FFA88` | 1400 | |
-| Muscle Dome (the sign-up warp, the hub, two legs) | `0x801FFA88` | 1400 | |
+| Muscle Dome (the sign-up warp, the hub, two legs) | `0x801FFA88` | 1400 | the VAB open again, under a leg's battle loader `FUN_800520F0` (`FUN_80046A20` from the actor pass) |
 | Baka Fighter (the cabinet warp, the title, two rounds) | `0x801FFAB8` | 1352 | |
 | Slot machine (the cabinet warp, spins) | `0x801FFAD0` | 1328 | |
 | Battle load (Mad Ogre + Demon Fly, `[108, 3]`), then a party wipe back to the CARD screen | `0x801FFA88` | 1400 | |

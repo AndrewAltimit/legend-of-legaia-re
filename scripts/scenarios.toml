@@ -3908,3 +3908,65 @@ expected_game_mode = 0x03
 expected_active_scene = "deroa"
 topics = ["field", "deroa", "scene coverage", "route walk"]
 
+[[scenarios]]
+label = "battle_map02_demon_fly_strike"
+backup_fingerprint = "0781969d2b7324f2bb0f275de7e4ce2945bf6c131f54972d3c55865aa6eeb38b"
+description = "map02 battle, formation [3, 108]: Demon Fly (seat 3, monster id 3) mid physical attack on Noa: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 2927 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Demon Fly", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_wolf_strike"
+backup_fingerprint = "f8e5c91d7339a4dcf33166a211f5082cf28a07800538b7d77423c530c7dcccf8"
+description = "map02 battle, formation [40, 108]: Wolf (seat 3, monster id 40) mid physical attack on Vahn: category 3, action state 0x1E. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 13582 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Wolf", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_mad_ogre_power_charge_mid_cast"
+backup_fingerprint = "c3dd0855118b986dc315572737a64ed0d6f7306fccaeaa3ddcf97443cd00be59"
+description = "map02 battle, formation [3, 108]: Mad Ogre (seat 4, monster id 108) casting Power Charge (spell 0x72, module PROT 0955) with its name banner up: category 2, queued 0x72, action state 0x70 (module running). Its record carries no magic attack id at +0x21..+0x23, so the census counts the cast as scripted. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 3374 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy magic", "Mad Ogre", "Power Charge", "cast module", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_mad_ogre_strike"
+backup_fingerprint = "1dcc215cc7f9ec74e81a6ab80b0af97828a5311eed3edfdb25755cd5bc5dd78f"
+description = "map02 battle, formation [3, 108]: Mad Ogre (seat 4, monster id 108) mid physical attack on Vahn: category 3, action state 0x1E. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 5291 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Mad Ogre", "map02", "harvest"]
+
+[[scenarios]]
+label = "balden_field_route_walk"
+backup_fingerprint = "c158d0326fe11a61949ca126dc0b3e02a4039c4347532c4c76227d37f2494931"
+description = "balden (Vidna) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02, then from that map02 field state a second walk across the overworld to Vidna's rec-3 door (random encounters fought with the harvester's hand), saved 16933 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "balden"
+topics = ["field", "balden", "Vidna", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "ropeway_field_route_walk"
+backup_fingerprint = "8b639a7e89c53b29f590048ee420fbe3163e44fb91c8722ff65e5c0e8fe82bb3"
+description = "ropeway (Octam) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02, then from that map02 field state a second walk across the overworld to Octam's rec-4 door (random encounters fought with the harvester's hand), saved 14906 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "ropeway"
+topics = ["field", "ropeway", "Octam", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "stone_field_route_walk"
+backup_fingerprint = "164e335467721f79cf519e551789b3cd4da0c816a3caf4c6fe75bfc4e5405b81"
+description = "stone (Shadow Gate) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02, then from that map02 field state a second walk across the overworld to the Shadow Gate's rec-5 door (random encounters fought with the harvester's hand), saved 17356 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "stone"
+topics = ["field", "stone", "Shadow Gate", "scene coverage", "route walk"]
