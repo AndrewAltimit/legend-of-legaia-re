@@ -119,21 +119,27 @@ impl LegaiaRuntime {
         })
     }
 
-    /// `[world_x, world_y, world_z, facing_units]` for the player actor.
-    /// `facing_units` is the engine heading (`render_26`, PSX 12-bit; `0` =
-    /// travelling `+Z`); the world coords are the raw retail frame (`+Y` down).
+    /// `[world_x, world_y, world_z, facing_units, pitch, roll]` for the
+    /// player actor. `facing_units` is the engine heading (`render_26`, PSX
+    /// 12-bit; `0` = travelling `+Z`); the world coords are the raw retail
+    /// frame (`+Y` down). `pitch` / `roll` are the player's `+0x24` / `+0x28`
+    /// tilt in 12-bit units (`World::player_draw_tilt`, the native window's
+    /// player matrix): non-zero, the page composes `Rx * Ry * Rz` as it does
+    /// for a tilted NPC.
     pub fn player_transform(&self) -> Vec<f32> {
-        let Some(a) = self.scene_host.host().and_then(|h| {
+        let Some((a, tilt)) = self.scene_host.host().and_then(|h| {
             let slot = h.world.player_actor_slot? as usize;
-            h.world.actors.get(slot)
+            Some((h.world.actors.get(slot)?, h.world.player_draw_tilt()))
         }) else {
-            return vec![0.0; 4];
+            return vec![0.0; 6];
         };
         vec![
             a.move_state.world_x as f32,
             a.move_state.world_y as f32,
             a.move_state.world_z as f32,
             a.move_state.render_26 as f32,
+            f32::from(tilt.0),
+            f32::from(tilt.1),
         ]
     }
 
@@ -175,5 +181,37 @@ impl LegaiaRuntime {
                 vec![far[0], far[1], far[2], ir0]
             })
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod player_tilt_tests {
+    use crate::runtime::LegaiaRuntime;
+
+    /// `player_transform`'s pitch / roll lanes are the player's `+0x24` /
+    /// `+0x28` (`World::player_draw_tilt`, which the native window's player
+    /// matrix composes too): zero on an untilted player, the live angles in
+    /// 12-bit units once a script tilts it.
+    #[test]
+    fn player_transform_carries_the_players_tilt() {
+        let Some(bytes) = std::env::var("LEGAIA_DISC_BIN")
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+        else {
+            eprintln!("LEGAIA_DISC_BIN unset - skipping");
+            return;
+        };
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("disc loads");
+        rt.enter_field("town01").expect("enter town01");
+        let pt = rt.player_transform();
+        assert_eq!(pt.len(), 6);
+        assert_eq!((pt[4], pt[5]), (0.0, 0.0));
+        let w = rt.world_mut();
+        let slot = usize::from(w.player_actor_slot.expect("a player"));
+        w.actors[slot].move_state.render_24 = -0x200;
+        w.actors[slot].move_state.render_28 = 0x100;
+        let pt = rt.player_transform();
+        assert_eq!((pt[4], pt[5]), (3584.0, 256.0));
     }
 }

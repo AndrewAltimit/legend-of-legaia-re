@@ -327,6 +327,18 @@
         /* The player's op `4C 81` draw tint (a cutscene's fade to black, a
          * red flash) as a constant per-draw cue - the native window's
          * `player_tint_cue`. Empty while untinted. */
+        /* The player's `+0x24` / `+0x28` tilt (`CC F8 43` / `44`), lanes 4
+         * and 5 of `player_transform`: a tilted player takes the whole
+         * `Rx * Ry * Rz` model, the tilted-NPC path (`field-actors.js`) and
+         * the native player matrix. A bundle predating the lanes has none. */
+        const ppitch = pt.length >= 6 ? pt[4] : 0, proll = pt.length >= 6 ? pt[5] : 0;
+        if (ppitch || proll) {
+          playerDraw.rotX = ppitch * A2R;
+          playerDraw.rotZ = proll * A2R;
+          playerDraw.model = placementModelEuler(
+            playerDraw.x, playerDraw.y, playerDraw.z,
+            playerDraw.rotX, (pt[3] + 2048) * A2R, playerDraw.rotZ, playerDraw.scale);
+        }
         const ptint = typeof rt.play_player_tint === 'function' ? rt.play_player_tint() : null;
         if (ptint && ptint.length === 4 && ptint[3] > 0) {
           playerDraw.cue = { far: [ptint[0], ptint[1], ptint[2]], nearZ: -1, farZ: 0, maxIr0: ptint[3] };

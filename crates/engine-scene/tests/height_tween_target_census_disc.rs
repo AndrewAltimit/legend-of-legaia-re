@@ -89,6 +89,9 @@ fn tweened_height_writes_reach_placements_or_skip() {
     // player's `0x20000000` (`B1 F8 1D`) - the bit the height arm keys on.
     let mut player_height = (0usize, 0usize);
     let mut player_sites: Vec<String> = Vec::new();
+    // Player tilt tweens (`CC F8 43` / `44`), which both play hosts draw
+    // through `World::player_draw_tilt`.
+    let mut player_tilt_sites: Vec<String> = Vec::new();
     for name in index.cdname_scene_names() {
         let Ok(scene) = Scene::load(&index, &name) else {
             continue;
@@ -145,6 +148,11 @@ fn tweened_height_writes_reach_placements_or_skip() {
                                 "{name} P{p}[{r}] +{pc:#x} -> {end} / {ticks} bit29-in-record={player_bit}"
                             ));
                         }
+                        if sub != 0x42 && actor == Actor::Player {
+                            player_tilt_sites.push(format!(
+                                "{name} P{p}[{r}] +{pc:#x} sub {sub:#x} -> {end} / {ticks}"
+                            ));
+                        }
                         if sub == 0x42
                             && actor == Actor::Placement
                             && name == "rayman"
@@ -164,6 +172,9 @@ fn tweened_height_writes_reach_placements_or_skip() {
     for s in &player_sites {
         eprintln!("[ok]   player: {s}");
     }
+    for s in &player_tilt_sites {
+        eprintln!("[ok]   player tilt: {s}");
+    }
     rayman_planks.sort();
     rayman_planks.dedup();
     assert_eq!(
@@ -176,4 +187,8 @@ fn tweened_height_writes_reach_placements_or_skip() {
         "objects tween their height too (chitei2's boulder)"
     );
     assert!(player_height.0 > 0, "the player's height is tweened too");
+    assert!(
+        !player_tilt_sites.is_empty(),
+        "the disc tweens the player's pitch too (CC F8 43)"
+    );
 }

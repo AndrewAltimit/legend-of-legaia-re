@@ -760,6 +760,11 @@ impl World {
         self.locomotion.player_8e = 0;
         if let Some(actor) = self.actors.get_mut(slot as usize) {
             actor.move_state.flags &= !PLAYER_Y_FROM_8E;
+            // ...and so do its `+0x24` / `+0x28` angles: the tweens that
+            // drive them were just dropped, and a tilt the last scene left
+            // would otherwise draw on this one (`World::player_draw_tilt`).
+            actor.move_state.render_24 = 0;
+            actor.move_state.render_28 = 0;
         }
         // Every side buffer is fresh on a scene entry (`+0x9A = -1`).
         self.npcs.looks.clear();

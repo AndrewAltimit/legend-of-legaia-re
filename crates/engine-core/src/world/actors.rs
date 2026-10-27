@@ -293,6 +293,26 @@ impl World {
         f32::from(self.player_scale_word()) / 4096.0
     }
 
+    /// The player's draw tilt, `(pitch, roll)` in 12-bit units: its `+0x24`
+    /// X and `+0x28` Z Euler angles, which field-VM `CC F8 43` / `CC F8 44`
+    /// write or tween. `(0, 0)` with no player actor.
+    ///
+    /// The animated renderer hands the actor's whole angle triple to the
+    /// matrix composer (`addiu a0,s0,0x24` / `jal 0x80026988` at
+    /// `0x8001B9D0`), so the player tilts the way a placement does
+    /// ([`Self::field_npc_tilt`]): both play hosts compose `Rx * Ry * Rz`
+    /// from these and the heading whenever either is non-zero.
+    ///
+    /// REF: FUN_8001B964, FUN_80026988
+    pub fn player_draw_tilt(&self) -> (u16, u16) {
+        self.player_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .map_or((0, 0), |a| {
+                let u = |v: i16| (i32::from(v).rem_euclid(4096)) as u16;
+                (u(a.move_state.render_24), u(a.move_state.render_28))
+            })
+    }
+
     /// `true` while the player's `+0x72` is `0` - retail's animated renderer
     /// skips the actor outright (`FUN_8001B964` at `0x8001B9A0`). Both play
     /// hosts drop the player's draw (textured and colour halves) on it.

@@ -1132,8 +1132,15 @@ records raise the bit and never drop it
 (`deroa`'s shaft platforms, `station`, `taiku`), so the port clears it, with
 `+0x8E` and the player's tweens, at scene entry (`World::install_field_player`);
 whether retail's player object carries the bit across a scene change is not
-pinned. The player's tweened `+0x24` / `+0x28` land in its move state, which
-no field host draws yet.
+pinned. The player's `+0x24` / `+0x28`, written or tweened, land in its move state
+and draw: `World::player_draw_tilt` hands them to both play hosts, which
+compose `Rx * Ry * Rz` with the heading whenever either is non-zero, as the
+animated renderer does with the actor's whole angle triple (`addiu
+a0,s0,0x24` / `jal 0x80026988` at `0x8001B9D0`). Four player pitch tweens
+ship (`rugi` `P2[72]`, to `900` and back; `uru2` `P2[11]`; `noaru`
+`P2[34]`); `rugi`'s is driven end to end by
+`engine-session/tests/player_tilt_live_disc.rs`. Scene entry clears the two
+angles with the tweens that drive them.
 
 #### `4C 45`: the 11-byte form
 

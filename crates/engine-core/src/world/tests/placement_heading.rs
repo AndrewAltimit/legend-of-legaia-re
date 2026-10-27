@@ -284,3 +284,46 @@ fn a_ramped_roll_write_turns_a_placed_object() {
     w.tick_object_actor_heights();
     assert_eq!(w.object_draw_turns().get(&9), Some(&[0, 0, 0x300]));
 }
+
+/// `CC F8 43 <value> <ticks>` / `CC F8 44 <value> <ticks>` on the player:
+/// the `+0x24` tween and the `+0x28` write land on the player's move state
+/// and come back out as its draw tilt (`World::player_draw_tilt`, which both
+/// play hosts compose into the player's matrix); a scene entry clears them.
+#[test]
+fn a_player_pitch_tween_and_roll_write_tilt_the_player_draw() {
+    let mut w = world_with_placement();
+    w.field_vm.executing_channel = None;
+    let slot = w.player_actor_slot.unwrap();
+    let mut caller = FieldCtx::default();
+    let mut host = FieldHostImpl { world: &mut w };
+    // `+0x24`: 0 -> 0x200 over 32 frames; `+0x28`: -0x100 at once.
+    field_step_routed(
+        &mut host,
+        &mut caller,
+        &[0xCC, 0xF8, 0x43, 0x00, 0x02, 0x20, 0x00],
+        0,
+    );
+    field_step_routed(
+        &mut host,
+        &mut caller,
+        &[0xCC, 0xF8, 0x44, 0x00, 0xFF, 0x00, 0x00],
+        0,
+    );
+    assert_eq!(
+        (caller.field_24, caller.field_28),
+        (0, 0),
+        "the caller stays untilted"
+    );
+    assert_eq!(w.player_draw_tilt(), (0, 0xF00));
+    w.move_vm.ramp_ratio = 1;
+    for _ in 0..16 {
+        w.tick_player_scale_ramp();
+    }
+    assert_eq!(w.player_draw_tilt(), (0x100, 0xF00));
+    for _ in 0..16 {
+        w.tick_player_scale_ramp();
+    }
+    assert_eq!(w.player_draw_tilt(), (0x200, 0xF00));
+    w.install_field_player(slot);
+    assert_eq!(w.player_draw_tilt(), (0, 0));
+}
