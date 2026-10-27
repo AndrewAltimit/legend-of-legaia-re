@@ -119,11 +119,13 @@ impl PlayWindowApp {
         let pad = pad_key_rows(&self.mapping);
         let l = help_panel_layout(&self.font, &entries, &pad);
         let mut out = Vec::new();
+        // Near-opaque: the panel sits over the party readout's bright
+        // digits, which at 0.85 still showed through between the rows.
         self.push_scrim(
             &mut out,
             (l.x0 - 4, l.y0 - 4),
             ((l.width + 8) as u32, l.height as u32),
-            0.85,
+            0.94,
         );
         let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));

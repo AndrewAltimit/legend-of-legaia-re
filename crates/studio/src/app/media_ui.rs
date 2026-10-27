@@ -107,9 +107,11 @@ impl App {
         files.sort_by_key(|f| media::natural_key(&f.path));
 
         let mut pick = None;
+        let side_max = super::side_panel_max(ctx, 200.0);
         egui::SidePanel::left("media_files")
             .resizable(true)
-            .default_width(260.0)
+            .default_width(260.0f32.min(side_max))
+            .max_width(side_max)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])

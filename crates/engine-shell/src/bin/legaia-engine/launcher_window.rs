@@ -230,6 +230,7 @@ const BUTTON: [f32; 4] = P.raised.to_f32();
 const PRIMARY: [f32; 4] = P.accent_fill.to_f32();
 const PRIMARY_FOCUS: [f32; 4] = P.accent_fill_focus.to_f32();
 const RULE: [f32; 4] = P.rule.to_f32();
+const KEY: [f32; 4] = legaia_app_theme::chrome::KEY.to_f32();
 
 /// Virtual stage the screen is laid out on; scaled up by an integer factor
 /// (2x in the 960x720 window, 4x on a 2x HiDPI display) and centred.
@@ -1050,7 +1051,10 @@ impl LauncherApp {
         for (b, k) in rows {
             c.text(panel.x + 10, y, &b, INK);
             let w = c.width(&k);
-            c.text(panel.x + panel.w - 10 - w, y, &k, GOLD);
+            // Key names take the key ink the play window's F12 panel and
+            // Studio's shortcut list use (`chrome::KEY`); gold is for
+            // headings and values here.
+            c.text(panel.x + panel.w - 10 - w, y, &k, KEY);
             y += ROW_PITCH;
         }
         for (i, l) in controls_note_lines(c, panel).into_iter().enumerate() {

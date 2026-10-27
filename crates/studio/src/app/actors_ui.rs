@@ -84,9 +84,7 @@ impl App {
             st.monsters = Some(actors::monster_rows(&lib).map_err(|e| format!("{e:#}")));
         }
 
-        // At most 45% of the window, so the model view keeps room at the
-        // minimum window size.
-        let side_max = (ctx.content_rect().width() * 0.45).max(260.0);
+        let side_max = super::side_panel_max(ctx, 260.0);
         egui::SidePanel::left("actors")
             .resizable(true)
             .default_width(330.0f32.min(side_max))
