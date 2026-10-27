@@ -193,7 +193,7 @@
     </tbody>
   </table>
   </div>
-  <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do; the world map, the battle stage and the other minigame venues draw both sides. The debug orbit camera is exempt from the near cuts.</p>
+  <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do, and so does a battle effect mesh (a procedural ring, disc or sprite quad) whose colour word lacks the double-sided bit; the world map, the battle stage and the other minigame venues draw both sides. The debug orbit camera is exempt from the near cuts.</p>
   <h3 id="on-screen-probes">Two &ldquo;is it on screen&rdquo; tests that are not the same test</h3>
   <p>Retail has two GTE-backed visibility probes, and they are not interchangeable. The field one projects a box around an actor and accepts any corner inside a real rectangle. The battle one tests only the box's <em>horizontal span</em> against the screen band - it reads no Y at all, so a body a full screen above the viewport still counts as visible. The battle probe also has no reference of any kind anywhere on the disc, so nothing consults its verdict; the port's lack of a cull there is parity.</p>
 </section>

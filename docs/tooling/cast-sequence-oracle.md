@@ -60,6 +60,14 @@ Flags worth knowing:
 | `LEGAIA_PRESS_UNTIL=<vsync>` (environment) | Retail: tap CROSS through the party's command input until this vsync (default `600`). A three-member party or a long opening needs more before the monster's turn comes round |
 | `LEGAIA_POKE32=addr=value,...` (environment) | Retail only: words the probe writes at the inject. A capture-class module that forks its choreography off RAM rather than the action id needs it: PROT 0946's arm 0 takes Big Wave's branch only while the caster's latch `0x801C8FE0 + (seat + 1) * 4` is set, so a seat-0 cast of `0x56` needs `0x801C8FE4=1` and otherwise records Call Wave |
 
+`LEGAIA_DIAG_CAST_PARTS=1` beside the engine recorder (`--engine-env`) adds
+`parts.csv`: every live part of the cast's scene graph each tick - record
+`model_sel`, halted, colour word `+0x74`, level `+0x78`, `+0x9E`, the packed
+colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA` and
+the position - the engine half of a part-by-part comparison. It is how Neo
+Star Slash's arm-6 excess was traced to one cylinder's back faces
+([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
+
 ## What each side records
 
 **Retail.** The probe loads a library PCSX-Redux battle state, taps CROSS past

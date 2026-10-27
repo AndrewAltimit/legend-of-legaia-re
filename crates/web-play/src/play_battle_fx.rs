@@ -452,7 +452,21 @@ impl LegaiaRuntime {
         let outer = mat4_scale(s);
         push_fx_models(&mut frame, world, &lists, &outer);
         for n in lists.kind4.iter().chain(&lists.shadows) {
-            bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &n.mesh);
+            let model = mat4_mul(&outer, &n.model);
+            // A single-sided node keeps retail's front faces only, as the
+            // native pass uploads it (`effect_draws::retail_front_faces`).
+            if n.single_sided {
+                let mut m = n.mesh.clone();
+                // `cam` is the page's VP with the 4x scale `outer` composed,
+                // so it times the node matrix is the draw's own MVP.
+                legaia_engine_world_views::effect_draws::retail_front_faces(
+                    &mut m,
+                    &mat4_mul(&cam, &n.model),
+                );
+                bake_mesh(&mut frame, &model, &m);
+            } else {
+                bake_mesh(&mut frame, &model, &n.mesh);
+            }
         }
         self.battle_fx = frame;
     }

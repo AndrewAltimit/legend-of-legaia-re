@@ -1012,6 +1012,13 @@ pub(super) fn combat_snapshot(
 /// retail pool holds them (world position `>> 8`) - the engine half of a
 /// side-by-side against the capture's `_DAT_8007BD30` pool.
 fn trace_effect_pool(world: &legaia_engine_core::world::World) {
+    eprintln!(
+        "[fx] stage backdrop cue {:?} ambient {:?} latch {} 278 {}",
+        world.battle_backdrop_cue(),
+        world.battle_ambient_base(),
+        world.battle_ctx.gauge_rearm_latch,
+        world.battle_ctx.summon_staging_a,
+    );
     for (i, a) in world.actors.iter().enumerate() {
         if !a.active {
             continue;

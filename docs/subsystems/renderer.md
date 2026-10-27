@@ -2257,6 +2257,7 @@ The port arms the rejection through one kernel both hosts read,
 | World map | both sides (its continent terrain's winding parity is the world-map pass's) |
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
+| Battle **draw-kind-4 nodes** (default-arm and sprite-arm meshes) and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake) |
 
 A move-VM part is the one field draw whose word can carry the bit. The
 field FX parts (`World::active_field_fx_part_draws`) hand it on as
@@ -2264,6 +2265,16 @@ field FX parts (`World::active_field_fx_part_draws`) hand it on as
 (`FxFrame::push_draws`) and the play page draws its baked effect mesh
 both-sided, so `opdeene`'s light cone (`0xC9000000`) is not dropped by the
 field pass's cull.
+
+A draw-kind-4 node is built by its emitter and then falls into the ordinary
+model draw (`0x8001B160`), so its packets reach the dispatcher with the node's
+own colour word too, and a word without `0x08000000` keeps the winding test.
+Neo Star Slash's arm-5 caster cylinder (PROT 0960 record `0x801F8D44`, word
+`0xC1000000`, a textured radius-`0x800` wall) is one: drawn both-sided its far
+wall added a second orange layer over the whole arm-6 frame, and the
+cast-sequence oracle's arm 6 read `0.641` against `0.783` with the back faces
+dropped. The ribbon emitter's nodes keep both sides; its route to the
+dispatcher is not traced.
 
 Battle bodies go through the same dispatcher with their render node's colour
 word, which never carries the double-sided bit. On an opaque body the depth

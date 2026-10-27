@@ -3137,6 +3137,12 @@ Arm 5 seats two records on the caster, three on each point of a ten-point
 ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
 `0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
 left out, as the chain leaves it.
+Arm 5's spawns all sit behind its countdown's expiry (`bgtz t0,0x801F74B0` at
+`0x801F708C`), so they are seated on arm 6's first pass. Its two caster
+records are radius-`0x800` cylinders textured off page `0x9` / `0x8A` (op `0x1F`
+ORs texture mode `2` into `+0x9E`): `0x801F8D44` with word `0xC1000000`, which
+keeps the dispatcher's winding test, and `0x801F8DA8` with `0xC9000000`,
+which draws both sides ([renderer](renderer.md#the-field-pass-culls-back-faces)).
 
 <a id="prot-0965-doomsday"></a>
 

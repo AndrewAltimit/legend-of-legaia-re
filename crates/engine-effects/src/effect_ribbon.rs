@@ -778,6 +778,12 @@ pub struct RibbonDraw {
     /// `legaia_render_kernels::gte::camera_relative_model_prefix`. `0` for draws
     /// that are not move-VM nodes.
     pub flags_52: u16,
+    /// The draw reaches the prim dispatcher `FUN_80043390` with a colour
+    /// word lacking the double-sided bit `0x08000000`, so its packets keep
+    /// the `NCLIP` winding rejection (`0x80043520..0x80043540`): only the
+    /// faces retail's winding calls front draw. `false` for a draw that
+    /// keeps both sides.
+    pub single_sided: bool,
 }
 
 /// A move-VM node's model rotation, radians X / Y / Z: its rotation banks

@@ -224,7 +224,7 @@ impl RetailBattle {
     /// may have moved) - for the phase's ground seat
     /// ([`legaia_engine_capture::ground_snap`]).
     pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        self.ground_snaps(false, false)
+        self.ground_snaps(false, false, false)
     }
 
     /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
@@ -250,10 +250,16 @@ impl RetailBattle {
     /// `battle_melee_hit_spark`'s Gimard is pushed `+11` a frame: his RAM
     /// body pair `(-2, 492)` stands at `(-2, 470)` on the displayed frame
     /// (`image` `.814` to `.847`).
+    ///
+    /// So is a monster still walking in the strike loop
+    /// ([`Self::walk_clock_capture`]): its root motion carries it `speed *
+    /// scale / 8` a vsync, and the frame on screen drew it the ring's pair
+    /// back along the walk (`battle_korb2_warhalf_strike`'s Warhalf).
     pub fn engine_image_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         self.ground_snaps(
             self.action_state == 0x14 && self.walk_yaw_base == 0x200,
             true,
+            self.walk_clock_capture(),
         )
     }
 
@@ -294,11 +300,13 @@ impl RetailBattle {
     }
 
     /// `displayed` stands every combatant on the displayed frame's pair,
-    /// `displayed_struck` only a struck monster stood on its body pair.
+    /// `displayed_struck` only a struck monster stood on its body pair,
+    /// `displayed_walker` the acting seat.
     fn ground_snaps(
         &self,
         displayed: bool,
         displayed_struck: bool,
+        displayed_walker: bool,
     ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         // Past the end signal the sequencer poses the winners and the results
         // framing reads poses the replay's clips do not share; the ground
@@ -320,7 +328,7 @@ impl RetailBattle {
                 };
                 let active = pool == usize::from(self.active_actor);
                 let struck = !active && pool >= 3 && matches!(clip, 2..=5 | 0x0B);
-                if (displayed || (displayed_struck && struck))
+                if (displayed || (displayed_struck && struck) || (displayed_walker && active))
                     && let Some(Some(then)) = self.displayed_ground.get(pool)
                 {
                     let d = [then[0].wrapping_sub(live[0]), then[1].wrapping_sub(live[1])];
@@ -426,9 +434,15 @@ impl RetailBattle {
                 // walk into the idle loop, which has run on its own clock
                 // since (`battle_gaza2_park_0x19_target_vahn`'s Gaza).
                 let parked_idle = clip == 0 && slot == self.active_actor && self.parked_approach();
+                // ... and a monster still on its walk in the strike loop
+                // ([`Self::walk_clock_capture`]): the walk loops on its own
+                // clock, re-committing at each cycle end, and the frame on
+                // screen shows the cycle two game frames back.
+                let walking = clip == 1 && slot == self.active_actor && self.walk_clock_capture();
                 !in_flight
                     || capture_band_idle
                     || parked_idle
+                    || walking
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)

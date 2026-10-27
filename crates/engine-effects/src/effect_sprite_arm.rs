@@ -91,6 +91,7 @@ pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDra
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
         rot: crate::effect_ribbon::node_rotation(s),
         flags_52: s.field_52,
+        single_sided: !legaia_render_kernels::sprite_arm::ColourWord::of(s).double_sided,
     })
 }
 
