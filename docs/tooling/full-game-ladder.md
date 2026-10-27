@@ -607,6 +607,10 @@ the bag is short of an errand's copies:
   its stat bonuses, than what each member who can wear it wears in its slot,
   and for a weapon no cheaper to swing ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md))
   - is sold, the whole stack, before anything is bought.
+- **It keeps the heal reserve.** Three heals a member are bought before the
+  errand's items, and a purchase that does not complete the errand leaves
+  the reserve's price in the purse. Six of eight loaves bought out of 38225
+  left a run with no heal for Gaza (`korb3` P2[2]).
 - **It fights for the rest.** While the purse plus what the outgrown pieces
   sell for is short of the errands' price, it trains as it trains for
   levels, from a bed or, with no bed in reach and heals in the bag, from the
