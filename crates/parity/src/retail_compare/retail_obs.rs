@@ -113,6 +113,8 @@ pub struct RetailObs {
     /// A walking capture's last two passes, which
     /// [`Self::seat_walk_rewind`] turns into the rewound seat.
     pub walk: Option<super::walk_rewind::WalkHistory>,
+    /// The minigame a minigame-class state runs ([`super::minigame_run`]).
+    pub minigame: Option<super::RetailMinigame>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -328,6 +330,7 @@ impl RetailObs {
             ]),
             image_seat: None,
             walk: None,
+            minigame: (class == StateClass::Minigame).then(|| super::RetailMinigame::from_ram(ram)),
             frame,
             battle,
             menu,
@@ -760,6 +763,18 @@ impl RetailObs {
     }
 }
 
+/// The displayed frame. A minigame state may be in the slot machine's
+/// 640-wide mode ([`Frame::from_vram_display_hires`]); every other class
+/// keeps the 320-wide reader, so no state outside the minigames gains a
+/// frame it was not scored on.
+fn display_frame(ram: &[u8], vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Frame> {
+    if game_anchors::game_mode(ram) == 0x19 {
+        Frame::from_vram_display_hires(vram, rect)
+    } else {
+        Frame::from_vram_display(vram, rect)
+    }
+}
+
 /// Read a library state of either emulator. `scus` is `SCUS_942.54`, which a
 /// PCSX-Redux state needs for its RAM anchor search.
 pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
@@ -770,7 +785,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let ram = st.main_ram()?;
             let gpu = PsxGpu::new(&st);
             let frame = match (gpu.vram_bytes(), gpu.regs().display_crop_rect()) {
-                (Some(v), Some(rect)) => Frame::from_vram_display(v, rect),
+                (Some(v), Some(rect)) => display_frame(ram, v, rect),
                 _ => None,
             };
             let mut obs = RetailObs::from_ram(ram, frame);
@@ -783,7 +798,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let (st, gpu) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
             let frame = gpu
                 .as_ref()
-                .and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
+                .and_then(|g| display_frame(st.main_ram(), &g.vram, g.display_crop_rect()));
             let mut obs = RetailObs::from_ram(st.main_ram(), frame);
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_view_window(st.scratchpad());

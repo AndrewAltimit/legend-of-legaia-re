@@ -128,6 +128,36 @@ impl Frame {
     /// Crop retail's drawn frame out of a 1 MiB VRAM image at the display
     /// rectangle's origin. `None` when the rectangle is not a `320`-wide
     /// display with room for the draw area.
+    /// [`Self::from_vram_display`] that also takes a 640-wide display, the
+    /// hi-res mode the slot machine runs in (its init sets the video mode to
+    /// `0x280`): each output pixel is the mean of a horizontal pixel pair, so
+    /// the frame is compared at the 320-wide stage both sides draw for.
+    pub fn from_vram_display_hires(vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Self> {
+        let (x0, y0, w, h) = rect;
+        if w as usize != FRAME_W * 2 {
+            return Self::from_vram_display(vram, rect);
+        }
+        if (h as usize) < FRAME_H || vram.len() != 1024 * 512 * 2 || x0 as usize + 640 > 1024 {
+            return None;
+        }
+        let mut rgb = Vec::with_capacity(FRAME_W * FRAME_H * 3);
+        for y in 0..FRAME_H {
+            let vy = y0 as usize + y;
+            if vy >= 512 {
+                return None;
+            }
+            for x in 0..FRAME_W {
+                let px = |dx: usize| {
+                    let o = (vy * 1024 + x0 as usize + 2 * x + dx) * 2;
+                    legaia_mednafen::bgr555_to_rgba8(u16::from_le_bytes([vram[o], vram[o + 1]]))
+                };
+                let (a, b) = (px(0), px(1));
+                rgb.extend((0..3).map(|c| (u16::from(a[c]) + u16::from(b[c])).div_ceil(2) as u8));
+            }
+        }
+        Some(Self { rgb })
+    }
+
     pub fn from_vram_display(vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Self> {
         let (x0, y0, w, h) = rect;
         if w as usize != FRAME_W || (h as usize) < FRAME_H || vram.len() != 1024 * 512 * 2 {

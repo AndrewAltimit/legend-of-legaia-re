@@ -56,6 +56,16 @@ pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
             } else {
                 s.seed_failed += 1;
             }
+        } else if r.class == StateClass::Minigame {
+            // A minigame state is seeded per minigame and phase
+            // ([`super::minigame_run`]); one without a path names why, which
+            // is an instrument limit, while a path that ran and failed is a
+            // failure.
+            if r.unseeded.is_empty() {
+                s.seeded += 1;
+            } else if r.unseeded.starts_with("seeding failed") {
+                s.seed_failed += 1;
+            }
         }
         if let Some(sc) = r.score {
             let (sums, state_sum) = if r.resident_patch.is_some() {
@@ -209,6 +219,10 @@ pub(super) fn run_one(
     report.scene = retail.scene.clone();
     report.game_mode = retail.game_mode;
     report.class = retail.class;
+    if retail.class == StateClass::Minigame {
+        super::minigame_run::run_minigame(opts, entry, &retail, &mut report);
+        return report;
+    }
     if !retail.class.seedable() {
         report.unseeded = retail.class.unseeded_reason().to_string();
         return report;

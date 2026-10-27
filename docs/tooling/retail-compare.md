@@ -217,7 +217,7 @@ by the game-mode word and the scene label:
 | `field_init` | mode `0x02`, the scene mid-load | no |
 | `battle` | mode `0x14` / `0x15` | yes ([below](#battle-states)) |
 | `menu` | mode `0x17` (title, save screens, the pause menu) | the pause-menu screens and the title front end ([below](#menu-states)) |
-| `minigame` | mode `0x19` | no |
+| `minigame` | mode `0x19` | the slot machine at rest on a door entry ([below](#minigame-states)) |
 | `cutscene` | mode `0x1A` / `0x1B` (STR playback) | no |
 | `other` | anything else | no |
 
@@ -2690,6 +2690,45 @@ Each row's name is the record's own `+0x2A7` display name
 (`PartyState::roster_names`), so a save with a renamed hero shows
 that name, as retail does.
 
+## Minigame states
+
+A minigame-class capture (mode `0x19`) names its minigame by the door warp's
+sub-id `_DAT_8007BA34` (field-VM op `0x3E`, stored at `0x801E07B8`); the
+scene label stays the departure scene's. The seed lands the save there and
+takes the same warp (`World::request_minigame_warp`), and the image child
+does it through `play-window --key-script` (the slot machine's `O`). Scored:
+`mode`, `scene`, `minigame` and `image` (`retail_compare::minigame_run`).
+
+Only a phase the warp itself reaches is seeded:
+
+- **Slot machine at rest** (reel state word `DAT_801D3C84 = 1`) on a door
+  entry: the battle-return flag `_DAT_8007B8B8` is up and the balance
+  `DAT_801D4114` still equals the coin bank, which the init `FUN_801CEC94`
+  assigns it from. A flag-clear launch carries the init's 70-coin dev
+  balance; a balance off the bank is a played machine.
+- The slot machine runs in the 640-wide video mode (its init sets `0x280`):
+  the retail frame is box-filtered to 320 columns, a pair of pixels each,
+  before it is scored (`Frame::from_vram_display_hires`, minigame class
+  only).
+
+What stays unseeded, and what each needs:
+
+- **A decided spin** (`minigame_slot_machine_retail_spin_decided`, state
+  `4`): the reel stops and feature rolls are `rand()` history after entry.
+  Seeding it means writing the reel positions `DAT_801D3CC0..` and the
+  stopped-reel count over the engine machine's.
+- **The at-rest reels themselves**: the init builds the strips after a BIOS
+  `rand()` reseed, so the symbols on screen differ (`image` `0.922`) until
+  the strip offsets are seeded the same way.
+- **Baka Fighter, the dance, fishing, the Muscle Dome hub**: no path yet. Each
+  needs its session's phase word mapped the way `SlotMachine::retail_state`
+  maps the slot's - the round state machine `FUN_801D3468`, the beat clock
+  `FUN_801CF470`, the fishing state machine `FUN_801CF3BC`, the hub's
+  `FUN_801CF870` arm. The entry-reachable phases are the fishing venue's
+  rod-ready, the dance's READY count-in and the hub's Welcome card; the
+  Baka Fighter captures are mid-round, behind pad input and the AI's
+  `rand()` picks.
+
 ## Channels
 
 Each channel scores in `[0, 1]`; a state's score is the mean of its
@@ -2712,6 +2751,7 @@ measured channels.
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
 | `enemies` / `enemy_hp` / `battle_party` / `phase` | battle states only ([above](#battle-states)) |
 | `menu` | menu states only: 1 when the engine's pause menu holds retail's sub-screen ([above](#menu-states)) |
+| `minigame` | minigame states only: fraction of the session's words equal - the slot machine's state word and balance and the coin bank ([above](#minigame-states)) |
 | `card_panel` | card-screen states only: fraction of the info panel's pixels within tolerance ([above](#card-screens)) |
 | `image` | fraction of `8 x 8` blocks within tolerance ([below](#the-image-channel)) |
 

@@ -188,6 +188,11 @@
   <p>Fields a capture probe wrote into RAM after battle init, and fields on a patched-disc state, are listed in the detail but left unscored.</p>
 </section>
 
+<section class="doc-section" id="minigame" data-doc="minigame-states">
+  <h2>Minigame states</h2>
+  <p>A minigame capture names its minigame by the door warp&rsquo;s sub-id; the seed lands the save in the departure scene and takes the same warp. Only a phase the warp itself reaches is seeded: today the slot machine at rest on a door entry, scored on mode, scene, the machine&rsquo;s state word, balance and coin bank, and the frame (box-filtered from the machine&rsquo;s 640-wide video mode). A decided spin, Baka Fighter, the dance, fishing and the Muscle Dome hub stay unseeded with their reason.</p>
+</section>
+
 <section class="doc-section" id="menu" data-doc="menu-states">
   <h2>Menu states</h2>
   <p>A menu capture names its screen in the menu overlay&rsquo;s sub-screen word. The pause menu&rsquo;s screens - Items, Magic, Equip (and its slot browse and candidate list), Status, Options, Load, Save - are seeded: the field seed runs, then the pause menu is driven through its own pad path, <code>Start</code>, <code>Down</code> onto the row, <code>Cross</code>. The <code>menu</code> channel is 1 when the engine holds the same sub-screen. The title front end - the menu on either row, the pill row CONTINUE opens, the Continue grid - is seeded by booting the engine&rsquo;s own front end and driving it there with fixed pad edges, and scores its frame only. Other boot screens and script-entered screens (the casino prize exchange) stay in the report as classified limits.</p>
