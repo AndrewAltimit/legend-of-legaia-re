@@ -230,6 +230,13 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     let gold = w.party.money;
     let held = |id: u8| w.party.inventory.get(&id).copied().unwrap_or(0);
     let errands = errands_short(w);
+    // The bag's reserve of heals is not the errand's to spend: a purchase
+    // that does not complete an errand leaves the reserve's price in the
+    // purse. A Sol run that spent 36000 of 38225 on six of its eight loaves
+    // met Gaza (`korb3` P2[2]) with no heal in the bag.
+    let members = (w.present_party_list().len() + joining_members(w).len()).clamp(1, 3) as u32;
+    let reserve_gold =
+        i64::from((HEAL_RESERVE * members).saturating_sub(heals_held(w))) * best_heal_price(w);
     // The stretch's errand items first, as many as the purse pays for: the
     // story waits on them, and a loaf bought as a heal is the same loaf.
     for &(item, short, price) in &errands {
@@ -242,8 +249,14 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             continue;
         };
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(item));
+        let completes = i64::from(short) * i64::from(price) <= i64::from(gold);
+        let spendable = if completes {
+            i64::from(gold)
+        } else {
+            (i64::from(gold) - reserve_gold).max(0)
+        };
         let qty = short
-            .min(u32::try_from(gold).unwrap_or(0) / price)
+            .min(u32::try_from(spendable).unwrap_or(0) / price)
             .min(u32::from(room));
         if qty > 0 {
             return Some(Want::Stack {
@@ -253,10 +266,9 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         }
     }
     // While an errand is short of gold, the purse is the errand's: nothing
-    // else is bought until the items are paid for.
-    if errand_gold_short(w) {
-        return None;
-    }
+    // else is bought until the items are paid for - but the heal reserve
+    // below, which the errand leaves the gold for.
+    let errand_short = errand_gold_short(w);
     // Healing: the stock row that restores the most HP per gold. An errand
     // item is not a heal to buy: it is bought above, for the story. A full
     // restore (`HealAll`: the Healing Berry, "Restores maximum HP") is worth
@@ -310,8 +322,14 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));
         // The errands' price is kept back: the counter that sells their
-        // item may be the next one.
-        let afford = u32::try_from((i64::from(gold) - errand_cost(w)).max(0)).unwrap_or(0) / price;
+        // item may be the next one. Not from the reserve ([`HEAL_RESERVE`]
+        // a member), which comes before the errand.
+        let keep = if target <= HEAL_RESERVE * members {
+            0
+        } else {
+            errand_cost(w)
+        };
+        let afford = u32::try_from((i64::from(gold) - keep).max(0)).unwrap_or(0) / price;
         let qty = target
             .saturating_sub(heals_held)
             .min(afford)
@@ -328,9 +346,11 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // A member the coming stretches seat counts too: the bag is shared,
     // and the one who joins with no counter on her stretch (`cave01`'s Noa)
     // trains and meets her boss out of what it holds.
-    let members = (w.present_party_list().len() + joining_members(w).len()).clamp(1, 3) as u32;
     if let Some(want) = heal_want(HEAL_RESERVE * members) {
         return Some(want);
+    }
+    if errand_short {
+        return None;
     }
     // Then an MP restorative for each present member: a boss's group heals
     // are cast, and a counter whose heals the hand bought alone left Zora's
