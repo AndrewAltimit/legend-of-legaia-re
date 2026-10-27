@@ -4048,6 +4048,14 @@ own - and the in-fight arm reads bit 1 as the shot's tilt: across the
 Pinned for party seats alone, every monster strike framed on the replay's
 roll, and half of them stood on the other tilt.
 
+A monster strike captured on the strike loop's first pass (`0x1E` at
+accumulator `0`) is also gated on the strike clip. That pass commits the clip
+and zeroes the accumulator, so the age alone is met one pass ahead of the
+commit, with the engine's attacker still on its idle and the strike framing
+not yet armed: `battle_chitei2_kemaro_lv2_strike` reads Kemaro on clip `0x06`
+at cursor `-24`. The idle and walk clips (`0` / `1`) are left ungated, since
+the engine may hold them under another id.
+
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's
 (`battle_noa_miracle_art_combo`'s yaw endpoint stays unaligned: it carries

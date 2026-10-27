@@ -577,7 +577,7 @@ impl RetailBattle {
                             seat < 3 && self.queued_category == 3 && self.arts_queue && live > base
                         })
                         .map(|(live, _)| live),
-                    clip: (seat < 3
+                    clip: ((seat < 3
                         // Gate on the direction swing clips 0x0C..=0x0F only:
                         // retail can sit on the dynamic art slot 0x10 / 0x11
                         // while the engine holds the swing's own clip, which
@@ -595,7 +595,19 @@ impl RetailBattle {
                             // (`player_steal_skeleton_banner`: the frame
                             // showed the Somersault still landing, retail the
                             // steal caption over an idle Vahn).
-                            || (self.caster_clip == 0 && state == 0x20))
+                            || (self.caster_clip == 0 && state == 0x20)))
+                        // ...and a monster's strike clip in the strike loop
+                        // `0x1E`: the state's first pass commits it and zeroes
+                        // the accumulator, so an `accum 0` capture reads both
+                        // the state and the age one pass ahead of the commit
+                        // (`battle_chitei2_kemaro_lv2_strike`: retail Kemaro
+                        // on clip `0x06` at cursor `-24`, the engine's still
+                        // on its idle). Clips `0` / `1` are the idle and the
+                        // walk, which the engine may hold under another id.
+                        || (seat >= 3
+                            && state == 0x1E
+                            && self.caster_clip > 1
+                            && self.span_gate == SpanGate::Age { accum: 0 })
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
