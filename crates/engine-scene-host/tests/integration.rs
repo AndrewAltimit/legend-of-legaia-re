@@ -23,6 +23,7 @@ mod bgm_midscene_change_disc;
 mod bgm_track_word_disc;
 mod casino_coin_counter_disc;
 mod cave01_naming_lead_mesh_disc;
+mod cave01_terra_talk_disc;
 mod chapter2_sebucus_hub_sweep_disc;
 mod chitei2_collapse_beats_disc;
 mod code_lock_doman_disc;
