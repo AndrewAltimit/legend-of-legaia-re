@@ -186,6 +186,22 @@ fn heal_sale_gear(session: &NativeSession, sells_heal: bool) -> BTreeSet<u8> {
     sale
 }
 
+/// The characters the coming stretches seat who are not in the party yet:
+/// every record is seeded from the New Game template, so a character counts
+/// only once the anchors ahead show it grown past level 1
+/// ([`pad_training::TARGET_LEVELS`]).
+fn joining_members(w: &legaia_engine_core::world::World) -> Vec<u8> {
+    let party = w.present_party_list();
+    pad_training::TARGET_LEVELS.with(|t| {
+        t.borrow()
+            .iter()
+            .enumerate()
+            .filter(|&(ch, &lv)| lv > 1 && !party.contains(&(ch as u8)))
+            .map(|(ch, _)| ch as u8)
+            .collect()
+    })
+}
+
 /// The worth of a piece of equipment to the hand: the sum of its stat
 /// bonuses. Enough to tell a better weapon or armour from a worse one in
 /// the same slot.
@@ -309,7 +325,10 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // next boss is fought out of the bag the road leaves, and a party of
     // three that bought its armour first met Dohati (`dohaty` P2[10]) with
     // one Healing Flower.
-    let members = w.present_party_list().len().clamp(1, 3) as u32;
+    // A member the coming stretches seat counts too: the bag is shared,
+    // and the one who joins with no counter on her stretch (`cave01`'s Noa)
+    // trains and meets her boss out of what it holds.
+    let members = (w.present_party_list().len() + joining_members(w).len()).clamp(1, 3) as u32;
     if let Some(want) = heal_want(HEAL_RESERVE * members) {
         return Some(want);
     }
@@ -344,14 +363,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // purse spends first otherwise. Retail's Noa meets `rikuroa`'s row 16 alone with
     // the Nail Glove `dolk`'s Arms Shop sells (`rikuroa_post_caruban`:
     // equipment slot 3 `0x28`), and she joins in `cave01` with none.
-    let joining: Vec<u8> = pad_training::TARGET_LEVELS.with(|t| {
-        t.borrow()
-            .iter()
-            .enumerate()
-            .filter(|&(ch, &lv)| lv > 0 && !party.contains(&(ch as u8)))
-            .map(|(ch, _)| ch as u8)
-            .collect()
-    });
+    let joining = joining_members(w);
     let mut joiner: Option<(i32, u32, usize)> = None;
     for (row, it) in session.inventory.items.iter().enumerate() {
         let Some(entry) = info.entry(it.item_id) else {

@@ -677,7 +677,9 @@ worked, and the next stretch's level-9 target came after it had gone dry. And a
 shop buys a weapon for a member the coming stretches seat who has not
 joined yet, into the bag ahead of the present members' armour: retail's Noa
 fights row 16 with the Nail Glove `dolk` sells, and she joins in `cave01`
-unarmed with no counter on her stretch.
+unarmed with no counter on her stretch. The same counters stock heals for
+that member too (`joining_members`: a character the anchors ahead show grown
+past level 1), since her training and her fight draw on the shared bag.
 
 ### A counter the story has closed
 
