@@ -549,7 +549,7 @@
           <tr><td class="num">1220</td><td>hub UI art: two TIMs uploading <code>(320, 0)</code> / <code>(320, 256)</code>, CLUT rows 502 / 503</td></tr>
           <tr><td class="num">1221 / 1222</td><td>the two ringside stills <code>int.tim</code> / <code>int2.tim</code>, headerless 16-bit, <code>320 x 256</code></td></tr>
           <tr><td class="num">1223 / 1224</td><td>pochi fillers</td></tr>
-          <tr><td class="num">1225</td><td>the arena battle backdrop</td></tr>
+          <tr><td class="num">1225</td><td>the arena battle backdrop (byte-matched in the retail leg captures: the fight start points the map id <code>0x80084540</code> at <code>0x4C6</code>, so battle init loads it while the field stays <code>koin1</code>)</td></tr>
         </tbody>
       </table>
       </div>
@@ -596,7 +596,6 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li>The round driver&rsquo;s deal / interval arms outside the capture-pinned input chain are not walked arm by arm.</li>
-        <li>A live byte-match of the backdrop pointer during a contest, to confirm extraction 1225 by capture.</li>
         <li>A retail capture of the sound-bank residency inside a round, and of a round&rsquo;s battle end (win pose and fade back to the arena).</li>
         <li>The pennant&rsquo;s 2-pixel offset above the bar and the off-class widths, by placement-table read; the review screen&rsquo;s and Ra-Seru list window&rsquo;s piece layout.</li>
         <li>Whether live <code>koin1</code> geometry is ordered over the ringside still in a re-entered hub.</li>

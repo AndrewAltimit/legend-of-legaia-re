@@ -79,6 +79,16 @@ pub struct EncounterState {
     /// the two Door gates of scratchpad `0x1F800394`. `None` until a region
     /// has been stood in; retail's globals are sticky, and so is this.
     pub region_setup: Option<crate::region_encounter::RegionBattleSetup>,
+    /// A map id `_DAT_80084540` (raw CDNAME define) the next fight's stage
+    /// pick reads in place of the loaded scene's own. Battle init hands
+    /// `_DAT_80084540 + variant` to the loader `FUN_8001FA88`
+    /// (`0x80051A20..0x80051A3C`), and the word is the scene's define
+    /// unless a fight start rewrote it - the Muscle Dome's `FUN_801D1510`
+    /// stores `0x4C6` (`other6`, the arena backdrop) at `0x801D1554`. Set
+    /// only by a replay of a retail battle capture, whose RAM carries the
+    /// word (`World::seed_battle_map_define`); the port's own dome leg
+    /// names the arena through `World::muscle_leg_in_battle`.
+    pub battle_map_define: Option<u16>,
 }
 
 impl EncounterState {
@@ -93,6 +103,7 @@ impl EncounterState {
             scene_hint_frames: 0,
             step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
             region_setup: None,
+            battle_map_define: None,
         }
     }
 }

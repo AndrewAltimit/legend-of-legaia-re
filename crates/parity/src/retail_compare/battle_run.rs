@@ -449,9 +449,10 @@ pub(super) fn battle_image(
         (
             "LEGAIA_BATTLE_STAGE",
             format!(
-                "{},{}",
+                "{},{},{}",
                 battle.stage_variant,
-                u8::from(battle.keep_backdrop_object_1)
+                u8::from(battle.keep_backdrop_object_1),
+                battle.map_define
             ),
         ),
         // The slot-1 backdrop angle the displayed frame was drawn at: the

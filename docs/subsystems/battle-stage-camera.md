@@ -328,6 +328,7 @@ scene data, not a code table, and it is not uniformly the block's first stream:
 |---|---|---|---|---|
 | `map01` (overworld) | 5 | 88 | 4 objects, 340 verts | the four camera-orbit angle saves |
 | `town01` (Rim Elm) | 6 | 7 | 2 objects, 341 verts | the three Tetsu tutorial anchors |
+| Muscle Dome leg (field `koin1`) | `other6` slot 5 | 1225 | 2 objects, 367 verts | the three retail dome leg captures |
 
 Rim Elm's bundle carries four sub-area backdrops (entries 6..9); the Tetsu
 sparring match is fought in the second. Each row is pinned by reading
@@ -339,6 +340,11 @@ unique length `(next_lba - lba) * 0x800`. An over-reading extraction of entry 6
 also contains the Rim Elm dome, at offset `0x16038`, past entry 6's own
 `0x14000`. Entries 7 and 8 share a vertex count, so only the bytes separate
 them.
+
+The block is the map id word's, `_DAT_80084540`, which is the loaded scene's
+define unless a fight start rewrote it: the Muscle Dome's `FUN_801D1510`
+stores `0x4C6` (`other6`) while the field under the fight stays `koin1`
+([arena backdrop](minigame-muscle-dome.md#arena-backdrop-extraction-1225)).
 
 Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by the one stage
 resolver both hosts run on the battle edge

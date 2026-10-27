@@ -381,6 +381,14 @@ impl ProtIndex {
             .map(|_| idx)
     }
 
+    /// The CDNAME block a map id `_DAT_80084540` names: the block whose
+    /// `#define` is `define` (raw TOC space, the word's own). `None` when the
+    /// index was built without `CDNAME.TXT` or `define` starts no block.
+    pub fn block_name_for_define(&self, define: u32) -> Option<&str> {
+        let map = self.cdname.as_ref()?;
+        map.get(&define).map(String::as_str)
+    }
+
     /// First scene label whose block contains `idx`. Useful for diagnostics
     /// (e.g. "this BGM is part of which scene?").
     pub fn scene_for_index(&self, idx: u32) -> Option<&str> {

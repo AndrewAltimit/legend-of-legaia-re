@@ -724,6 +724,7 @@ impl RetailBattle {
             stage_id: game_anchors::u8_at(ram, STAGE_ID),
             scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
             stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
+            map_define: game_anchors::u16_at(ram, MAP_DEFINE),
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
             mystic_shield: game_anchors::u32_at(ram, MYSTIC_SHIELD_HANDLE) != 0,
             cast_parts: retail_cast_parts(ram),

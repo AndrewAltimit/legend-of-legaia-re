@@ -310,6 +310,12 @@ pub fn run_engine_battle(
         .host
         .world
         .seed_battle_stage_variant(battle.stage_variant);
+    // ... in the block the fight's map id names, which a fight start can
+    // point away from the scene the state stands in (a Muscle Dome leg).
+    session
+        .host
+        .world
+        .seed_battle_map_define(Some(battle.map_define));
     session
         .host
         .world

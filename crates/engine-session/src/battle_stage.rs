@@ -50,17 +50,15 @@ pub struct BattleStage {
 // REF: FUN_800513f0
 pub fn resolve_battle_stage(host: &SceneHost, scus: Option<&[u8]>) -> Option<BattleStage> {
     // A Muscle Dome leg fights on the arena backdrop, which lives in its own
-    // data block rather than the departure scene's.
-    let arena;
-    let scene = if host.world.muscle_leg_in_battle() {
-        arena = Scene::load(
-            &host.index,
-            legaia_engine_scene_host::scene_host::ARENA_STAGE_SCENE,
-        )
-        .ok()?;
-        &arena
-    } else {
-        host.scene.as_ref()?
+    // data block rather than the departure scene's
+    // (`SceneHost::battle_stage_scene`).
+    let other;
+    let scene = match host.battle_stage_scene() {
+        Some(name) => {
+            other = Scene::load(&host.index, name).ok()?;
+            &other
+        }
+        None => host.scene.as_ref()?,
     };
     // Not the block's first stage stream: a scene bundle carries one per
     // sub-area, and the region the fight starts in names which one

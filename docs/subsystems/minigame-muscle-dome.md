@@ -385,7 +385,9 @@ An ordinary battle backdrop in the standard carrier shape ([battle background](b
 
 The dust decal is **not drawn** in a live match: the loader trims it (next section). Its texels are bright (the CLUT ramp at `(16, 479)` climbs to `(208, 208, 248)`), so any draw of it reads as a mist band; the retail match interior is mist-free (capture: the `minigame_muscle_dome_pcsx` scenario run forward into a match).
 
-Confidence: load chain, carrier shape and texture addresses are **Confirmed** (disassembly + structural decode). That a live contest's `_DAT_8007B864` holds this stream is **Inferred** - 1225 is the only backdrop-shaped stream in the file - with no dome-battle save-state byte-match taken.
+Confidence: load chain, carrier shape and texture addresses are **Confirmed** (disassembly + structural decode). That a live contest's `_DAT_8007B864` holds this stream is **Confirmed** by capture: in the three retail leg states (`minigame_muscle_dome_retail_red_piura_vahn_strike` and its two siblings) the pointer is `0x800ABE84`, and the bytes past the relocated TMD header match extraction 1225 at file `+4` (past its chunk header). Those states stand in `koin1` with `_DAT_80084540 = 0x4C6` and `DAT_8007BD60 = 0`: battle init's `map + variant` sum (`0x80051A20..0x80051A3C`) reads the word the fight start `FUN_801D1510` stored at `0x801D1554`, not the field scene's define.
+
+Port: `SceneHost::battle_stage_scene` names the block a fight's stage comes from - the arena on a leg the port opened itself (`World::muscle_leg_in_battle`), or the block a replayed capture's map id names (`World::seed_battle_map_define`, which retail-compare reads off `0x80084540`) - and the stage resolver both hosts run (`engine-session::battle_stage::resolve_battle_stage`) loads that block. Test `a_seeded_map_define_names_the_stage_block` in `crates/engine-scene-host/tests/battle_stage_entries_real.rs`.
 
 <a id="object-1-is-trimmed-by-the-loader-_dat_8007b64b"></a>
 
@@ -1180,7 +1182,6 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 ## Open
 
 - The deal / interval arms of `FUN_801D0748` outside the capture-pinned input chain are not walked arm by arm.
-- A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - A retail capture of the SFX bank residency inside a round.
 - The pennant's 2-px offset above the bar row and the off-class widths, by placement-table read.
 - The review screen's and the Ra-Seru list window's piece decomposition.

@@ -215,11 +215,12 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             "play-window: --battle {row} replays its record's BGM words (track start + sound set)"
         );
     }
-    // `LEGAIA_BATTLE_STAGE=N[,K]` stamps the battle-stage variant the fight
-    // is staged in (`_DAT_8007BD60 & 0x1F`) and, with `K`, battle init's
-    // keep-object-1 byte (`_DAT_8007B64B`), for a fight entered without
+    // `LEGAIA_BATTLE_STAGE=N[,K[,M]]` stamps the battle-stage variant the
+    // fight is staged in (`_DAT_8007BD60 & 0x1F`), with `K` battle init's
+    // keep-object-1 byte (`_DAT_8007B64B`) and with `M` the map id
+    // `_DAT_80084540` the variant is added to, for a fight entered without
     // standing on the region tile that names them - the retail comparison
-    // corpus reads both off the capture.
+    // corpus reads all three off the capture.
     if let Ok(s) = std::env::var("LEGAIA_BATTLE_STAGE") {
         let mut it = s.trim().split(',');
         if let Some(v) = it.next().and_then(|v| v.trim().parse::<u8>().ok()) {
@@ -227,6 +228,9 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         }
         if let Some(k) = it.next().and_then(|k| k.trim().parse::<u8>().ok()) {
             world.seed_battle_backdrop_keep_object_1(k != 0);
+        }
+        if let Some(m) = it.next().and_then(|m| m.trim().parse::<u16>().ok()) {
+            world.seed_battle_map_define(Some(m));
         }
     }
     // `LEGAIA_BATTLE_SHINY_SERU=1` (the retail-compare image channel, for a
