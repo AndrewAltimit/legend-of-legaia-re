@@ -1121,7 +1121,14 @@ the most). The port keeps the word as `World::locomotion.player_8e` with its
 tweens in `player_slot_ramps`; the routed step (`field_step_routed`) runs
 `CC F8 42..44` / `D9` / `DA` on a stand-in seeded from and written back to
 the player, and the height arm's mirror (`World::field_actor_mirrored_y`)
-then holds the player's Y. Several records raise the bit and never drop it
+then holds the player's Y - the player's settle `FUN_801d1ba0` carries the
+same arm (`0x801D1C14..0x801D1C2C`). A scripted arc owns the player's Y
+while it flies, and its watcher releases the record it halted on the
+landing frame: `jouine` `P2[5]` wraps each `C3 F8` hop in `B1 F8 1D` /
+`B2 F8 1D` and never writes `+0x8E`, so the port, which resumes the parked
+record a frame later, keeps the mirror off for that frame
+(`crates/engine-scene-host/tests/jouine_arc_held_height_disc.rs`). Several
+records raise the bit and never drop it
 (`deroa`'s shaft platforms, `station`, `taiku`), so the port clears it, with
 `+0x8E` and the player's tweens, at scene entry (`World::install_field_player`);
 whether retail's player object carries the bit across a scene change is not

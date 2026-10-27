@@ -396,6 +396,23 @@ impl World {
     ///
     /// PORT: FUN_8003BC08 (`0x8003BC4C..0x8003BC64` + `0x8003BCF4`, the
     /// mirror arm of the height dispatch)
+    /// A record is still parked on a player arc (`C3 F8 ..`) whose arc has
+    /// landed: the release the arc's watcher makes on the landing frame has
+    /// not reached the record yet.
+    // REF: FUN_801d5c08 (the watcher's release)
+    fn player_arc_release_pending(&self) -> bool {
+        let parked = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            tl.player_wait.is_some()
+                && tl.bytecode.get(tl.pc) == Some(&0xC3)
+                && tl.bytecode.get(tl.pc + 1) == Some(&0xF8)
+        };
+        self.cutscene
+            .timeline
+            .iter()
+            .chain(&self.field_vm.helper_contexts)
+            .any(parked)
+    }
+
     pub(crate) fn field_actor_mirrored_y(&self, slot: usize) -> Option<i16> {
         if self.player_actor_slot? as usize != slot {
             return None;
@@ -405,7 +422,18 @@ impl World {
         }
         // A script-held height: `B1 F8 1D` / `4C D9` raised the player's
         // `0x20000000` and `4C 42` / `4C D9` wrote (or a tween is stepping)
-        // its `+0x8E`.
+        // its `+0x8E`. The player's settle `FUN_801d1ba0` carries the same
+        // arm (`0x801D1C14..0x801D1C2C` / `0x801D1D14..0x801D1D2C`).
+        //
+        // A scripted arc owns the player's Y while it flies, and its
+        // watcher releases the context it halted on the landing frame, so
+        // the record's `B2 F8 1D` lands before the next settle reads the bit:
+        // `jouine` `P2[5]` raises the bit around each `C3 F8` hop and drops
+        // it after, with `+0x8E` never written. The port resumes the parked
+        // record one frame later, so the frame in between is still the arc's.
+        if self.player_arc_release_pending() {
+            return None;
+        }
         let flags = self.actors.get(slot)?.move_state.flags;
         (flags & crate::world::field_loop::PLAYER_Y_FROM_8E != 0)
             .then(|| self.locomotion.player_8e.wrapping_neg())
