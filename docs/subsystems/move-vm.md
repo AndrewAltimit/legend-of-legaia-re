@@ -215,7 +215,7 @@ subsection under the table.
 | `0x40` | `MOVE_IMAGE` | 7 | VRAM-to-VRAM copy - [below](#0x40---move_image) |
 | `0x41` | - | 2 | `+0xB2 = v1` |
 | `0x42` | - | 0xF | Draw-kind-4 node, `0x2000` ribbon arm - [below](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
-| `0x43` | - | 1 | `+0x86 \|= 0x2000` |
+| `0x43` | - | 1 | `+0x86 \|= 0x2000`: the part tick runs the field actor cull on this part - [move-vm-overlay-ext](move-vm-overlay-ext.md#a-sky-the-cull-hides-kor5) |
 | `0x44` | - | 4 | `+0x9E = v1; +0x68 = v2; +0x6A = v3 << 3` |
 | `0x45` | - | 8 | Render-mode-7 setup (the [framebuffer grab](#mode-7-is-a-framebuffer-grab)): `+0x5A = 7`, `+0xC4/+0xCC/+0xCE/+0xD4/+0xD6/+0xD0/+0xD2 = v1..v7` |
 | `0x46` | - | 4 | Tween-delta seed: `+0x94/+0x96 = +0x92`, `+0x98 = v1 - +0x94`, `+0x9A = v2 - +0x92`, `+0xBC/+0xC0 = v3`, `+0xB8 = 1` |

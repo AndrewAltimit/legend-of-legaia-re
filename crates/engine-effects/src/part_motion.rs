@@ -49,8 +49,9 @@ pub fn runs_motion_block(st: &ActorState) -> bool {
 /// `_DAT_8007B7F8` table; `+0x72 += +0x92`, `+0x7A += +0x94`,
 /// `+0x78 += +0x90`; a negative `+0x7A` is zeroed. Not included: the
 /// `+0x86 & 0x2000` call into the field overlay's visibility cull
-/// `FUN_801D79E8` (`0x80022900..0x80022914`), which only clears the part's
-/// flag bit `2`.
+/// `FUN_801D79E8` (`0x80022900..0x80022914`), which clears the part's flag
+/// bit `2` and sets it again when the part is culled - it needs the field
+/// camera's cull view, so the ambient tick runs it (`World::step_ambient_fx`).
 pub fn motion_block(st: &mut ActorState, delta: u16) {
     let d = i32::from(delta);
     st.tween_scale_x = st.tween_scale_x.wrapping_add(step(st.tween_scale_z, delta));

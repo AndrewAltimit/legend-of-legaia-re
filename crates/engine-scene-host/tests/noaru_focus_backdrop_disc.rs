@@ -72,3 +72,57 @@ fn noaru_backdrop_part_sits_on_the_camera_focus() {
         .world_pos;
     assert_eq!((p[0], p[2]), (6000.0, 11000.0));
 }
+
+/// kor5's sky bowl (stager record 4, model 25) rides the same lerp -
+/// `2F 24 1040 0000 1040 0C00 0000 0C00` - but its record opens with move-VM
+/// op `0x43` (`+0x86 |= 0x2000`), so the part tick runs the field actor cull
+/// `FUN_801D79E8` on it (`0x800228E4..0x80022914` in `FUN_80021DF4`). In
+/// `kor5_post_43a_checkpoint` retail holds the part at `(4160, 0, 9920)`,
+/// south of the region box `[20, 79, 43, 99]`, with flag bit `2` up: it
+/// draws nothing.
+#[test]
+fn kor5_sky_part_is_culled_outside_the_region_box() {
+    let Some(ex) = extracted_dir() else { return };
+    let mut host = SceneHost::open_extracted(&ex).expect("open");
+    host.enter_field_scene("kor5", 0).expect("enter kor5");
+    let view = |attr_box| legaia_engine_field::camera::FieldCullView {
+        focus_stored: [-4160, -11840],
+        attr_box,
+        window: [-15, -7, 13, 18],
+    };
+    let step = |host: &mut SceneHost, attr_box: [u8; 4]| {
+        for _ in 0..8 {
+            host.world.set_camera_focus_stored(-4160, -11840);
+            host.world.npcs.cull_view = Some(view(attr_box));
+            host.tick().expect("tick");
+            let _ = host.step_headless_frame_tail();
+        }
+    };
+    let sky = |host: &SceneHost| {
+        host.world
+            .ambient
+            .fx
+            .iter()
+            .find(|p| p.model_sel == 25)
+            .map(|p| (p.state.world_x, p.state.world_z, p.state.flags & 2))
+    };
+    step(&mut host, [20, 79, 43, 99]);
+    assert_eq!(sky(&host), Some((4160, 9920, 2)), "seated, then culled");
+    assert!(
+        !host
+            .world
+            .active_field_fx_part_draws()
+            .iter()
+            .any(|d| d.model_index == 20),
+        "a culled sky part draws nothing"
+    );
+    // Widen the box over the part and the cull lets it draw.
+    step(&mut host, [20, 70, 43, 99]);
+    assert_eq!(sky(&host), Some((4160, 9920, 0)));
+    assert!(
+        host.world
+            .active_field_fx_part_draws()
+            .iter()
+            .any(|d| d.model_index == 20)
+    );
+}

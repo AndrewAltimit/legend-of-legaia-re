@@ -300,6 +300,25 @@ publish before each world tick (`frame_step::camera_before_world_tick`), the
 same pair the positional sound emitters measure against. Disc test
 `crates/engine-scene-host/tests/noaru_focus_backdrop_disc.rs`.
 
+#### A sky the cull hides (kor5)
+
+`kor5`'s stager record 4 (model 25, scene-pack slot 20, a sunset sky) rides
+the same lerp, `2F 24 1040 0000 1040 0C00 0000 0C00`, so with the focus at
+`(4160, 11840)` it sits at `(4160, 0, 9920)` - where retail holds it in
+`kor5_post_43a_checkpoint`. Retail draws none of it because the record opens
+with move-VM op `0x43` (`+0x86 |= 0x2000`). The part tick `FUN_80021DF4`
+tests that bit inside its motion block (`lhu v1,0x6(s6)` / `andi 0x2000` at
+`0x800228DC..0x800228E4`, `s6 = actor + 0x80`), and when it is up clears
+flag bit `2` and calls the field actor cull `FUN_801D79E8`
+(`0x80022900..0x80022914`) on the position the last VM run left. The cull
+sets the bit again outside the region box `0x1F800384..87` or the camera's
+widened tile window; a part's radius `+0x58` reads `0x7F` in every captured
+part, so in practice only the box culls. The part's `Z` tile `77` is south of
+the capture's box `[20, 79, 43, 99]`, and its flags read `0x08044882`, bit `2`
+up. Port: the ambient tick (`World::step_ambient_fx`) runs the cull against
+the camera's published cull view, and `ambient_mesh_part_draws` skips a part
+with the bit up.
+
 Sub-ops `0x06` / `0x07` are the box-vs-player branches. Both are 7 halfwords
 wide and branch by `op[6]`: `0x06` when the player is **outside** the
 canonicalised box `[xa..xb] x [za..zb]` (each scaled by `0x80` with a `0x40`
