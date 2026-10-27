@@ -512,7 +512,10 @@ impl LegaiaRuntime {
             "art": ui.art.is_some(),
             "muscle": {
                 "monster_id": ui.muscle.monster_id,
-                "char_slot": ui.muscle.char_slot,
+                "char_slot": self
+                    .scene_host
+                    .host()
+                    .map_or(0, |h| u32::from(h.world.muscle_fighter_record())),
             },
             // The three party-side roster rows (`0..=2`) share the PROT 1204
             // party pack (retail folds them at `FIGHTER_PACK_FOLD`), so an

@@ -44,7 +44,10 @@ impl PlayWindowApp {
                 read,
                 session,
                 contest,
-                MUSCLE_DOME_CHAR_SLOT,
+                // The fighter the leg seats (`World::muscle_fighter_record`:
+                // retail's Vahn unless a host picked another) - the body the
+                // battle leg's party swap fields, and the browser page's.
+                u32::from(world.muscle_fighter_record()),
                 world.clock.sim_ticks,
             )
             .is_none()
