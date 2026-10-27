@@ -4040,8 +4040,10 @@ over and one made after it lands a pass late. The drive sets
 and the seed itself; the seed stores the pin over its roll after the draws
 (the `rand()` stream is unchanged).
 
-A monster's action takes the pin and the stamp on the same terms as a party
-member's. Its strike keeps the seed's roll too - Attack makes no store of its
+A monster's strike takes the pin and the stamp on the same terms as a party
+member's action; a monster cast does not (its Magic arm stores `0` over the
+roll, and stamped across the cast states `battle_map01_lippian_kiss_of_death_mid_cast`
+framed `.916` to `.843`). The strike keeps the seed's roll too - Attack makes no store of its
 own - and the in-fight arm reads bit 1 as the shot's tilt: across the
 26 strike captures retail's pitch is `128` exactly where `ctx[+0xD]` has bit
 1 (`battle_korb2_medusa_strike` `3`, `battle_chitei2_kemaro_lv2_strike` `1`).
