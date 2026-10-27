@@ -323,6 +323,35 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         class: "b",
         note: "same mid-conversation capture context as town01_tetsu_topic_prompt vis:33",
     },
+    KnownDivergence {
+        label: "tunnelc_field_route_walk",
+        key: "flag:864",
+        class: "b",
+        note: "set-then-clear inside retail's own entry, captured after the clear: Xain's \
+               P1[4] spawn section (FUN_8003A1E4) sets 0x360 and writes 80 to script \
+               counter 1 (53 60, 4C CA 01 50 00); P1[0]'s per-frame body, past its install \
+               pass's 0x21 at +0x8E, tests 0x360 (+0x165), takes the 79 < counter-1 arm \
+               and clears it (63 60 at +0x1B0), then zeroes the counter (4C CA 01 00 00). \
+               The capture holds that end state (0x360 clear, counter 1 = 0, Xain at his \
+               spawn seat (7872,1856) = 23 3D 0E). The oracle compares before any per-frame \
+               pass; the engine clears it on its fifth tick. Pinned by \
+               engine-scene-host entry_install_slice_disc.rs",
+    },
+    KnownDivergence {
+        label: "balden_field_route_walk",
+        key: "vis:62",
+        class: "a-reported",
+        note: "engine one pass behind retail at scene entry: P1[0] seats P1[62] at tile \
+               (10,105) with A3 55 0A 69 (+0x1A8, 0x1D5 set and 0x1D4 clear, both as \
+               captured) before its first 0x21 (+0x21B), i.e. in the install slice that \
+               FUN_8003AEB0 runs inside the load (jal FUN_8003AB2C at 0x8003BAD8, after \
+               the spawn loop). The engine runs that pass on its first tick instead, so \
+               the cold entry still shows the header park; one tick later the seat matches \
+               retail (entry_install_slice_disc.rs). Running the slice at load moves this \
+               oracle's flag channel too (its install passes clear the region-selector \
+               bands 0x19B..0x1AA / 0x527..0x52E that later passes re-set by position), \
+               so the fix needs the oracle's entry model reworked with it",
+    },
 ];
 
 fn known(label: &str, key: &str) -> Option<&'static KnownDivergence> {
