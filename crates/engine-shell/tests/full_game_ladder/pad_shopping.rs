@@ -126,6 +126,9 @@ enum Want {
     },
     /// Row `row`: `qty` copies of a stackable item.
     Stack { row: usize, qty: u8 },
+    /// Row `row`: one piece of equipment `item` into the bag - the
+    /// recipient picker's row 0 - for a member not in the party yet.
+    Bag { row: usize, item: u8 },
 }
 
 /// Does the bag hold fewer HP restoratives than half the [`HEAL_STOCK`] the
@@ -335,6 +338,69 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         + errand_heal_budget(w);
     let info = menu.equip_info.as_ref()?;
     let party = w.present_party_list();
+    // First a weapon for a member the coming stretches seat who is not in
+    // the party yet: bought into the bag, worn when she joins
+    // (`pad_equip_best`) - ahead of the present members' armour, which a
+    // purse spends first otherwise. Retail's Noa meets `rikuroa`'s row 16 alone with
+    // the Nail Glove `dolk`'s Arms Shop sells (`rikuroa_post_caruban`:
+    // equipment slot 3 `0x28`), and she joins in `cave01` with none.
+    let joining: Vec<u8> = pad_training::TARGET_LEVELS.with(|t| {
+        t.borrow()
+            .iter()
+            .enumerate()
+            .filter(|&(ch, &lv)| lv > 0 && !party.contains(&(ch as u8)))
+            .map(|(ch, _)| ch as u8)
+            .collect()
+    });
+    let mut joiner: Option<(i32, u32, usize)> = None;
+    for (row, it) in session.inventory.items.iter().enumerate() {
+        let Some(entry) = info.entry(it.item_id) else {
+            continue;
+        };
+        if entry.is_ra_seru
+            || entry.category != Disc::Weapon
+            || held(it.item_id) > 0
+            || i64::from(it.price) + reserve > i64::from(gold)
+        {
+            continue;
+        }
+        for &ch in &joining {
+            if !info.can_equip(it.item_id, ch) {
+                continue;
+            }
+            // A member who has not joined holds no roster record yet: she
+            // comes in unarmed (`cave01`'s Noa).
+            let worn = w
+                .party
+                .roster
+                .members
+                .get(usize::from(ch))
+                .map_or(0, |rec| {
+                    rec.equipment().slots[EquipSlot::Weapon.as_index() as usize]
+                });
+            let gain = gear_worth(w, it.item_id) - gear_worth(w, worn);
+            let in_bag = w.party.inventory.keys().any(|&id| {
+                id != worn
+                    && info.can_equip(id, ch)
+                    && info.entry(id).is_some_and(|e| e.category == Disc::Weapon)
+                    && gear_worth(w, id) >= gear_worth(w, it.item_id)
+            });
+            if gain <= 0 || in_bag {
+                continue;
+            }
+            if joiner.as_ref().is_none_or(|&(g, p, _)| {
+                (gain, std::cmp::Reverse(it.price)) > (g, std::cmp::Reverse(p))
+            }) {
+                joiner = Some((gain, it.price, row));
+            }
+        }
+    }
+    if let Some((_, _, row)) = joiner {
+        return Some(Want::Bag {
+            row,
+            item: session.inventory.items[row].item_id,
+        });
+    }
     let mut best: Option<(i32, u32, Want)> = None;
     for (row, it) in session.inventory.items.iter().enumerate() {
         let Some(entry) = info.entry(it.item_id) else {
@@ -587,12 +653,16 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BT
                     PadButton::Right.mask()
                 }
             }
-            Some(Want::Stack { .. }) if q.buying => PadButton::Cross.mask(),
+            Some(Want::Stack { .. } | Want::Bag { .. }) if q.buying => PadButton::Cross.mask(),
             _ => CANCEL,
         };
     }
     if let Some(r) = menu.recipient_session.as_ref() {
         return match want {
+            Some(Want::Bag { item, .. }) if item == r.item_id => match r.cursor & 0xFFF {
+                0 => PadButton::Cross.mask(),
+                _ => PadButton::Up.mask(),
+            },
             Some(Want::Gear { item, member, .. }) if item == r.item_id => {
                 let row = member as u32 + 1;
                 match (r.cursor & 0xFFF).cmp(&row) {
@@ -612,7 +682,7 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BT
             None => CANCEL,
         },
         Some(MenuState::ShopBuy) => match want {
-            Some(Want::Gear { row, .. } | Want::Stack { row, .. }) => {
+            Some(Want::Gear { row, .. } | Want::Stack { row, .. } | Want::Bag { row, .. }) => {
                 list_edge(usize::from(menu.ctx.cursor), row)
             }
             None => CANCEL,

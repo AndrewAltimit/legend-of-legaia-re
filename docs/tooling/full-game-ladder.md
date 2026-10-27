@@ -673,7 +673,11 @@ alone trains to the target level itself rather than one under it
 row 16 only on streams whose drops had left heals in the bag. The level
 target looks six milestones ahead (`LEVEL_LOOKAHEAD`): at five, the stretch
 into `cave01` aimed Noa at the level-6 anchors while Terra's rest still
-worked, and the next stretch's level-9 target came after it had gone dry.
+worked, and the next stretch's level-9 target came after it had gone dry. And a
+shop buys a weapon for a member the coming stretches seat who has not
+joined yet, into the bag ahead of the present members' armour: retail's Noa
+fights row 16 with the Nail Glove `dolk` sells, and she joins in `cave01`
+unarmed with no counter on her stretch.
 
 ### A counter the story has closed
 
