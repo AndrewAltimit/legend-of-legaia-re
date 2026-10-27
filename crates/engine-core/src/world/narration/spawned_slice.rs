@@ -1312,6 +1312,28 @@ impl World {
                     );
                     host.world.field_vm.executing_channel = None;
                     host.world.field_vm.executing_object = None;
+                    // A record's `B1 <id> 08` engages the placement as the
+                    // system script's does: the per-actor tick runs any
+                    // context carrying `+0x10 & 0x100` through the dialog SM
+                    // from its parked PC, whoever raised the bit. `cave01`
+                    // P2[9] walks the player up to Terra and engages her
+                    // (`B1 03 08`); her stage talk is the conversation.
+                    // REF: FUN_8003BC08 (`0x8003BD10..0x8003BD38`), FUN_80039B7C
+                    if opcode_byte == 0xB1
+                        && tl.bytecode.get(pc + 2).is_some_and(|b| b & 0x1F == 8)
+                        && !channels[ci].object_bind
+                        && !host
+                            .world
+                            .field_vm
+                            .pending_engagements
+                            .contains(&channels[ci].placement_index)
+                    {
+                        channels[ci].ctx.saved_26 = channels[ci].ctx.field_26;
+                        host.world
+                            .field_vm
+                            .pending_engagements
+                            .push(channels[ci].placement_index);
+                    }
                     // A poke at a placed object's clip words reaches the
                     // clip it already plays - no `A2` needs to follow.
                     if channels[ci].object_bind {

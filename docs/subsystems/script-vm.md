@@ -360,6 +360,12 @@ plays the engagement as the touch-resumed interaction timeline
 `0x21` leaves the placement context's PC past it, as the shared retail context
 does.
 
+A walk-on record engages the same way. `cave01` `P2[9]` (gated on `0x15A`
+clear) walks the player to `(81, 64)`, turns them to Terra and runs
+`B1 03 08`; Terra's record then plays its stage-`0x159` lesson from its
+interaction cursor, with no button press. The engine queues that engagement
+from the spawned-record slice as it does from the system script.
+
 The system script reaches placed objects the same way. `rugi`'s `P1[0]`, once
 the wall is opened (`0x57B`), freezes the two gate leaves on the first frame
 of their clips with `CC 01 35` / `CC 02 35` (`+0x62 = (+0x62 & 0xFF7F) |

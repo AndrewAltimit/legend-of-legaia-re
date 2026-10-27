@@ -8,6 +8,10 @@
 //! - The stage-`0x15E` join (`+0x1546`): the turn `38 02 16` / `33 0A`, the
 //!   pep talk, `50 13` (Terra rides with the party) and `51 69`.
 //!
+//! - The stage-`0x159` engagement: the walk-on `P2[9]` walks the player up
+//!   to her and raises her `+0x10 & 0x100` (`B1 03 08`), which runs her
+//!   lesson with no button press.
+//!
 //! The halt bit a talker's own `38` raises belongs to the walk kernel's
 //! RotateToAngle leg, whose terminal frame clears it; with the op run on the
 //! stand-in context alone, the `33 0A` behind it ended both talks, and the
@@ -130,4 +134,57 @@ fn cave01_terra_stage_15e_talk_joins_her_to_the_party() {
     assert!(flag(&host, 0x169), "`51 69`: the join is recorded");
     assert!(!host.world.dialogue_owns_input(), "the talk ends");
     eprintln!("[ok] cave01 stage 0x15E: 0x13 and 0x169 raised");
+}
+
+/// At stage `0x159` Terra waits at `(79, 66)` ("I will be waiting up
+/// ahead."), and the walk-on `P2[9]` at `(80..81, 64..65)` walks the player
+/// up to her and engages her (`B1 03 08`, her context's `+0x10 |= 0x100`):
+/// the per-actor tick then runs her record from its parked PC, which is the
+/// stage-`0x159` lesson (`+0x04AE`). No button press starts it.
+#[test]
+fn cave01_p2_9_engages_terras_stage_159_lesson() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    set_flag(&mut host, 0x158);
+    set_flag(&mut host, 0x159);
+    host.world.toggles.use_vm_dialogue = true;
+    host.enter_field_scene("cave01", 0).expect("enter cave01");
+    for _ in 0..60 {
+        let _ = host.tick();
+    }
+    let terra = *host.world.npcs.positions.get(&TERRA).expect("Terra placed");
+    assert_eq!(tile(terra), (79, 66), "stage 0x159 seats Terra on (79, 66)");
+    // Stand east of the band and walk west onto it.
+    let slot = usize::from(host.world.player_actor_slot.expect("player"));
+    host.world.actors[slot].move_state.world_x = 82 * 128 + 64;
+    host.world.actors[slot].move_state.world_z = 64 * 128 + 64;
+    // The engaged record enters at its interaction cursor (`+0x0031`) and
+    // its stage tests branch to the lesson.
+    let mut reached = false;
+    for i in 0..300 {
+        host.world.set_pad(if i < 30 { 0x0080 } else { 0 });
+        let _ = host.tick();
+        if host
+            .world
+            .cutscene
+            .timeline
+            .as_ref()
+            .is_some_and(|tl| tl.interaction_slot == Some(TERRA) && tl.pc == 0x4AE)
+        {
+            reached = true;
+            break;
+        }
+    }
+    assert!(
+        reached,
+        "P2[9]'s `B1 03 08` runs Terra's stage-0x159 lesson"
+    );
+    eprintln!("[ok] cave01 P2[9] engages Terra's stage-0x159 lesson at +0x04AE");
 }
