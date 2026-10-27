@@ -284,6 +284,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
          + rand2 % 600
          + 100 * (rand3 % (rod + 1)) + 50 * (rod + 1)   rod = 0 / 1 / 2</code></pre>
   <p>The last term is the rod you fish with (index <code>0..2</code>, read from the save block), so a better rod raises both the floor and the spread of every catch. <code>strength + 0x400</code> is also the hooked fish&rsquo;s render scale, so a better water cell or rod can produce a visibly larger fish. The weight touches neither the species roll nor the strike credit.</p>
+  <p>The sum is stored once and the fight never changes it. Besides the score and the rank plate, the landed fish&rsquo;s lift reads it (its sparkle bursts climb the same thresholds as the plate), and its <code>+0x400</code> copy is the bias of the fish&rsquo;s per-frame pull. The port sums it at the strike the same way, off three draws of the same random stream in the same order; the pull bias is still the engine&rsquo;s own, because retail scales the pull per behaviour and by the line depth before the tension gauge sees it, and that step is not ported yet.</p>
 
   <h3 id="spawn">Venue spawn tables</h3>
   <p>Each venue has an <code>8 &times; 8</code> table of species ids: the row is the equipped lure (rows 3 to 7 are zero padding), the column is the band (column 4 live only on the gate&rsquo;s row - Normal at Buma, Heavy at Vidna). The ids themselves decode from the player&rsquo;s disc and are not reproduced here.</p>

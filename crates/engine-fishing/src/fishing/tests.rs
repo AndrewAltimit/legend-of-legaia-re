@@ -779,6 +779,16 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     let id = p.hooked().expect("species").index;
     // The hooked species came from the lure row of the spawn table.
     assert!([5usize, 3, 9].contains(&id), "id {id} not in lure-1 row");
+    // The hook summed the fight strength once: no venue, so the off-water
+    // weight `10`; the render scale is the same sum `+ 0x400`.
+    let hooked_strength = p.strength();
+    let line = p.line_record() / 32 + 10;
+    let rod1 = p.rod + 1;
+    assert!(
+        (line + 50 * rod1..line + 50 * rod1 + 10 + 600 + 100 * p.rod).contains(&hooked_strength),
+        "strength {hooked_strength} outside the hook sum's range"
+    );
+    assert_eq!(p.fish_scale(), (hooked_strength + 0x400) as u16);
 
     // Fight: alternate reeling and resting so tension never pins, until
     // the fish lands.
@@ -803,6 +813,10 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
         }
     }
     assert!(landed, "fight never resolved");
+    // The fight itself never moves the strength: the score reads the hook sum.
+    assert_eq!(p.strength(), hooked_strength);
+    let sp = *p.hooked().unwrap();
+    assert_eq!(p.last_award(), sp.score_for(hooked_strength));
     assert!(p.record.points > 0);
     assert!(p.last_award() > 0);
     let events = p.take_events();
@@ -1019,4 +1033,37 @@ fn the_floor_lut_is_one_tier_per_nibble_at_a_fixed_step() {
     // The LUT is indexed by a map cell's low nibble, so it must cover
     // every value a nibble can take.
     assert_eq!(FISHING_FLOOR_LUT.len(), 16);
+}
+
+#[test]
+fn the_hook_sums_strength_from_three_draws_in_retail_order() {
+    // `FUN_801D26CC` `0x801D3708..0x801D3814`: rand1 against the water
+    // weight, rand2 against 600, rand3 against `rod + 1`.
+    for (seed, weight, record, rod) in [
+        (1u32, 10, 1300, 0),
+        (0xBEEF, 100, 900, 1),
+        (77, 300, 2000, 2),
+        (12345, 500, -40, 2),
+    ] {
+        let mut a = BiosRand::new(seed);
+        let mut b = BiosRand::new(seed);
+        let (r1, r2, r3) = (
+            i32::from(b.next_u15()),
+            i32::from(b.next_u15()),
+            i32::from(b.next_u15()),
+        );
+        let want =
+            r1 % weight + (record / 32 + 10) + r2 % 600 + 100 * (r3 % (rod + 1)) + 50 * (rod + 1);
+        let got = hook_strength(&mut a, weight, record, rod);
+        assert_eq!(got.strength, want, "seed {seed}");
+        assert_eq!(got.fish_scale, (want + 0x400) as u16);
+        // Exactly three draws: both streams stand at the same point.
+        assert_eq!(a.next_u15(), b.next_u15());
+    }
+    // `sra` after the `+0x1f` bias rounds a negative line record toward zero.
+    let mut r = BiosRand::new(5);
+    let s = hook_strength(&mut r, 1, -31, 0);
+    let mut r = BiosRand::new(5);
+    let t = hook_strength(&mut r, 1, 0, 0);
+    assert_eq!(s.strength, t.strength);
 }

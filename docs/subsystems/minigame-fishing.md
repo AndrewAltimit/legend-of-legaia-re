@@ -298,7 +298,18 @@ The water class's second half, `$s4`, is callee-saved and survives from the clas
 | `rand2 % 600` | `0x801D3780..0x801D37DC` (magic-multiply reciprocal) | a class-independent spread |
 | `100 * (rand3 % (rod + 1)) + 50 * (rod + 1)` | `0x801D376C..0x801D380C`, `rod` from `$s6+0x314` with `$s6 = 0x80084140` (`0x801D35D4`), i.e. `0x80084454` | the **rod** term: a better rod (index `0..2`) raises both the floor and the spread |
 
-The sum is stored to `DAT_801D91B8` (`sw $a0,-0x6E48($v0)`, `0x801D3814`) - the fight strength the [score](#catch-scoring-and-the-result-plate) reads. `sum + 0x400` goes to `+0x72` of the object the hook just spawned (`addiu $a0,$a0,0x400`, `sh $a0,0x72($s1)` at `0x801D3818` / `0x801D381C`; `$s1` is the return of `jal 0x80024C88` at `0x801D36A8`, also parked at `DAT_801D91D0`) and to `DAT_801D9108`. Actor `+0x72` is the render scale, so a better water cell can produce a visibly larger fish. The weight touches neither the species roll nor the credit.
+The sum is stored to `DAT_801D91B8` (`sw $a0,-0x6E48($v0)`, `0x801D3814`) - the fight strength the [score](#catch-scoring-and-the-result-plate) reads. `sum + 0x400` goes to `+0x72` of the object the hook just spawned (`addiu $a0,$a0,0x400`, `sh $a0,0x72($s1)` at `0x801D3818` / `0x801D381C`; `$s1` is the return of `jal 0x80024C88` at `0x801D36A8`, also parked at `DAT_801D91D0`) and, masked to a halfword, to `DAT_801D9108` (`0x801D3820` / `0x801D3828`). Actor `+0x72` is the render scale, so a better water cell can produce a visibly larger fish. The weight touches neither the species roll nor the credit.
+
+`0x801D3814` is the only store to `DAT_801D91B8` in the overlay; the fight never moves it. Its readers, and those of the `DAT_801D9108` copy *(disassembly)*:
+
+| Reader | Word | Use |
+|---|---|---|
+| `FUN_801D5298` (`0x801D5478`, `0x801D5510`) | `DAT_801D91B8` | the catch score and the rank-plate ladder |
+| `FUN_801D4948` (`0x801D4F34..0x801D5074`) | `DAT_801D91B8` | the landed fish's lift: the same `0xC9` / `0x259` / `0x321` / `0x4B1` thresholds each spawn two `FUN_801D7A5C` effects and store a word into `0x800836D8..0x800836DC` |
+| `FUN_801D4004` (`0x801D40C0`) | `DAT_801D9108` | the per-frame pull's bias: `((rand & 0xFF) + DAT_801D9108) * factor / 150` |
+| `FUN_801D2050` (`0x801D2178`) | `DAT_801D9108` | the `+0x72` of the second fish object it spawns |
+
+Port: `hook_strength` sums the four terms off three `BiosRand` draws in retail's order, at the strike, after `spawn_species`; `PondSession::strength` / `fish_scale` carry the sum and `sum + 0x400`. No host draws the hooked fish's body, so the scale is carried, not shown. The pull's bias stays the engine's literal ([Port fight model](#port-fight-model)).
 
 ### Venue spawn tables
 
@@ -365,6 +376,8 @@ The lure tick `FUN_801d26cc` ends the in-water state from its tail (`0x801D3AFC.
 ### Port fight model
 
 `TensionGauge` ports the divisors, the release decrement and the clamp; `FishAi` ports the per-field pull / dart / sink formulas of the species table. `PondSession` composes them with glue that is an engine-side reconstruction, marked at each call site and listed under [Open](#open).
+
+The pull's bias is one of those pieces. Retail's is `DAT_801D9108`, the [fish weight](#fish-weight) plus `0x400`, so its pull runs several times the port's; but retail does not hand that pull to the gauge directly. `FUN_801D4004` reduces it to `pull >> 4`, scales it per behaviour state and by the line depth (`(s1 * DAT_801D9298 + 0x200) >> 12`) and divides by 3 before the divisors above (`0x801D4384..0x801D4540`). The port's gauge takes the pull itself, so substituting the retail bias alone would make every fight snap the line; the bias moves with that composition, not ahead of it.
 
 The line break is retail's: a hooked frame at the ceiling draws one `rand() % 10` off the session's BIOS-rand stream (the draw is made only there), and a zero breaks the line ahead of the reel-in test. The break consumes one of the equipped lure: `PondSession::take_spent_lures` hands the host `lure + 0x9D` per break, which the play hosts consume from the bag (`World::tick_fishing`, the window-bounded consume-by-id) and the minigames page from its per-row stand-in stock. The two reel buttons are a risk choice: reel A (Cross) recovers line faster and divides the pull harder.
 Measured over the whole `PondSession` parameter space (both venues, three lures, three rods, reel held throughout), reel A never reaches the ceiling (peak `2017` of `0x1000`); reel B does, on the hardest-pulling common fish. Pinned by `fishing::tests::the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure`; ladder `crates/web-play/tests/fishing_banner_ladder.rs`.
@@ -798,7 +811,7 @@ Overlay-resident unless noted; `_DAT_8008xxxx` are in the persistent save block.
 | `0x801d91dc` | `u32` | Cadence ring write index (mod 16). |
 | `0x801d91e4` | `u64[16]` | Cadence ring - sixteen `{button, held-frames}` entries. |
 | `0x801d91cc` | `u32` | Hooked-fish species id; indexes the species table. |
-| `0x801d91b8` | `s32` | Fight strength (the fish-weight sum); feeds the score. |
+| `0x801d91b8` | `s32` | Fight strength (the fish-weight sum, stored once at the hook); feeds the score, the rank plate and the lift. |
 
 **Fight**
 
@@ -903,7 +916,7 @@ The retail tables, kernels and screens above are pinned. What remains is the glu
 
 - **Line break.** The ceiling roll and the lure it spends are ported ([Port fight model](#port-fight-model)); the break seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner (`FishingBanners::on_snapped`). The off-screen latch (`3`) and the far-record tension strain (`tension += step * 300` past record `0x899`, gated on `DAT_801d91b0`) are not ported, and neither is the no-lure screen a spent last lure leads to.
 - **Cast camera.** Retail's cast cuts the view from behind the shore party to a low shot over the water behind the rod, which the line, the lure's flight and the fight play out in (a `minigame_fishing_pcsx` film, `scripts/pcsx-redux/autorun_film.lua`). The camera writes of states `0xd..0x22` are not decoded; the port keeps the shore view throughout and the rod appears at the cast lock.
-- **Fight pacing.** The line-record reel-down rates, the fish-AI branch order and re-roll interval, and the pull bias literal are engine-side readings of `FUN_801d4004`. The held-reel operand order (`pull * step / divisor`) is the natural integer reading, not separately pinned.
+- **Fight pacing.** The line-record reel-down rates, the fish-AI branch order and re-roll interval, and the pull bias literal are engine-side readings of `FUN_801d4004`. The bias's retail source is pinned (`DAT_801D9108`); the per-state scaling between the pull and the gauge is the piece still to port. The held-reel operand order (`pull * step / divisor`) is the natural integer reading, not separately pinned.
 - **Cast.** The power meter's per-frame step (hosts use `0x80`), the flight timing, and the mapping from locked power to the line record are approximations; retail's line-projection vector math is not decoded.
 - **Result plate.** The fish's lift before the plate and the `DAT_801d90bc` recast gate are not modelled.
 - **State `0x2d` has no writer on the disc.** The driver's state word `0x801D926C` is referenced only from the fishing overlay, and every one of its stores resolves: literal `0`, `1`, `0xA`, `0x14`, `0x19`, `0x1E`, `0x20`, `0x28`, `0x32`, `0x64`, `0x66`, `0x78..0x7A`, `0x96`, `0xC8`, and `state + 1` in cases `0xA`, `0xB`, `0xC`, `0x14`, `0x21`, `0x22`. None yields `0x2D`. Its timer `0x801D9268` is stored only inside case `0x2D` itself (the advance at `0x801CFF70` and the zero at `0x801CFF78`), so the miss / retry banner `FUN_801d6f10` is unreachable in retail. The port matches: `FishingBanners::miss` has no starter.

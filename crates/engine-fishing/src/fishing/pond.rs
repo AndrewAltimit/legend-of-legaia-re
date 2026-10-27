@@ -41,6 +41,7 @@ impl PondSession {
             fish: FishAi::default(),
             gauge: TensionGauge::new(0),
             strength: 0,
+            fish_scale: 0,
             last_award: 0,
             result_ramp: 0,
             events: Vec::new(),
@@ -119,9 +120,18 @@ impl PondSession {
         self.gauge.tension()
     }
 
-    /// Accumulated fight strength (`DAT_801d91b8`).
+    /// The hooked fish's fight strength (`DAT_801d91b8`), summed once at the
+    /// hook ([`hook_strength`]); `0` before the first hook.
     pub fn strength(&self) -> i32 {
         self.strength
+    }
+
+    /// The hooked fish object's render scale (actor `+0x72`, mirrored into
+    /// `DAT_801D9108`): `strength + 0x400`, stored as a halfword. `0` before
+    /// the first hook. No host draws the hooked fish's body yet, so this is
+    /// the value a fish model would scale by, not one any frame shows.
+    pub fn fish_scale(&self) -> u16 {
+        self.fish_scale
     }
 
     /// The hooked species record, while fighting (and through the resolved
@@ -375,7 +385,20 @@ impl PondSession {
                         self.fight_species = Some(id);
                         self.fish = FishAi::default();
                         self.gauge = TensionGauge::new(self.rod);
-                        self.strength = 0;
+                        // The hook arm sums the fight strength once, after
+                        // the fish object spawns (`0x801D3708..0x801D3814`),
+                        // off the water class this frame's probe found.
+                        // `$s4` is seeded `10` every frame (`li s4,0xA` at
+                        // `0x801D3304`) ahead of the class walk, so a
+                        // session with no venue (an all-default probe)
+                        // still sums over the off-water weight.
+                        let weight = match self.lure_probe.weight {
+                            0 => crate::fishing_actors::WATER_TILE_DEFAULT.1,
+                            w => w,
+                        };
+                        let hs = hook_strength(&mut self.rng, weight, self.line_record, self.rod);
+                        self.strength = hs.strength;
+                        self.fish_scale = hs.fish_scale;
                         self.lateral = 0;
                         self.events.push(PondEvent::Hooked(id));
                         self.phase = PondPhase::Hooked;
@@ -407,10 +430,6 @@ impl PondSession {
                 self.drive_rod(input, true, fs);
                 let reel = ReelInput::from_pad_mask(input.reel_mask);
                 let frame = self.fish.tick(&sp, self.depth, &mut self.rng, fs);
-                // The per-frame pull accumulates into the fight strength
-                // (`DAT_801d91b8`, "the accumulated pull / strength for the
-                // fight") - the value the landed score is computed over.
-                self.strength = self.strength.saturating_add(frame.pull);
                 self.lateral = (self.lateral + frame.lateral).clamp(-0x400, 0x400);
                 // Tension: the confirmed tug-of-war.
                 self.gauge.apply_reel(reel, frame.pull, fs);
@@ -479,6 +498,60 @@ impl PondSession {
                 }
             }
         }
+    }
+}
+
+/// The hook arm's fight-strength sum ([`hook_strength`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HookStrength {
+    /// The sum, stored to `DAT_801D91B8`: what the catch score, the rank
+    /// plate and the landed fish's lift (`FUN_801D4948`) read.
+    pub strength: i32,
+    /// `strength + 0x400` as the halfword `sh` stores it: the hooked fish
+    /// object's `+0x72` render scale, and `DAT_801D9108`.
+    pub fish_scale: u16,
+}
+
+/// The fight strength the lure tick sums at the hook.
+///
+/// Three `rand()` draws (`jal 0x80056798` at `0x801D3708` / `0x801D3710` /
+/// `0x801D3718`), then four terms into `$a0`:
+///
+/// ```text
+/// rand1 % weight                    ; div s0,s4 / mfhi a3 (0x801D3728, 0x801D3750)
+/// + (line_record >> 5) + 10         ; sra a0,a0,0x5 / addiu a0,a0,0xa (rounds toward zero)
+/// + rand2 % 600                     ; reciprocal 0x1B4E81B5, hi >> 6 (0x801D3780..0x801D37DC)
+/// + 100 * (rand3 % (rod + 1))       ; divu v0,a1 / mfhi a2 (0x801D376C)
+/// + 50 * (rod + 1)                  ; 0x801D37F8..0x801D380C
+/// ```
+///
+/// `weight` is the water class's `$s4` (`10` off every class),
+/// `line_record` is `DAT_801D927C`, `rod` is `_DAT_80084454`
+/// (`$s6 + 0x314`, `$s6 = 0x80084140` from `0x801D35D4`). The sum is stored
+/// at `0x801D3814`, `sum + 0x400` at `0x801D3818` / `0x801D381C` /
+/// `0x801D3828`.
+///
+/// PORT: FUN_801d26cc (the hook arm's fight-strength sum, `0x801D3708..0x801D3828`)
+pub fn hook_strength(rng: &mut BiosRand, weight: i32, line_record: i32, rod: i32) -> HookStrength {
+    let r1 = i32::from(rng.next_u15());
+    let r2 = i32::from(rng.next_u15());
+    let r3 = u32::from(rng.next_u15());
+    // `div` with a zero divisor traps (`break 0x1c00`); the class walk never
+    // yields one, so a zero weight contributes nothing rather than panic.
+    let class = if weight == 0 { 0 } else { r1 % weight };
+    // `sra` after the `+0x1f` bias on a negative word: division toward zero.
+    let line = line_record / 32 + 10;
+    let spread = r2 % 600;
+    let rod1 = (rod + 1) as u32;
+    let rod_roll = if rod1 == 0 { 0 } else { (r3 % rod1) as i32 };
+    let strength = class
+        .wrapping_add(line)
+        .wrapping_add(spread)
+        .wrapping_add(100 * rod_roll)
+        .wrapping_add(50 * rod1 as i32);
+    HookStrength {
+        strength,
+        fish_scale: strength.wrapping_add(0x400) as u16,
     }
 }
 
@@ -687,7 +760,7 @@ impl PondSession {
 pub struct PondCatchResult {
     /// The result actor's `+0x1A` counter, `0..=0x1000`.
     pub ramp: i32,
-    /// The fight's accumulated strength `DAT_801D91B8` - the rank plate's key.
+    /// The fight strength `DAT_801D91B8` summed at the hook - the rank plate's key.
     pub strength: i32,
     /// The awarded points (`s4` in `FUN_801D5298`).
     pub points: i32,
