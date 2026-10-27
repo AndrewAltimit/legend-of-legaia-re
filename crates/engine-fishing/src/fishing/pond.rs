@@ -38,7 +38,7 @@ impl PondSession {
             depth: 0,
             lateral: 0,
             fight_species: None,
-            fish: FishAi::default(),
+            fish: FishAi::hooked(),
             gauge: TensionGauge::new(0),
             strength: 0,
             fish_scale: 0,
@@ -383,8 +383,11 @@ impl PondSession {
                     }
                     if let Some(id) = spawn_species(&self.spawn, self.lure, band) {
                         self.fight_species = Some(id);
-                        self.fish = FishAi::default();
+                        self.fish = FishAi::hooked();
                         self.gauge = TensionGauge::new(self.rod);
+                        // The hook arm seeds the fight's depth
+                        // (`0x801D37A0..0x801D37B0`).
+                        self.depth = FIGHT_DEPTH_SEED;
                         // The hook arm sums the fight strength once, after
                         // the fish object spawns (`0x801D3708..0x801D3814`),
                         // off the water class this frame's probe found.
@@ -429,25 +432,34 @@ impl PondSession {
                 };
                 self.drive_rod(input, true, fs);
                 let reel = ReelInput::from_pad_mask(input.reel_mask);
-                let frame = self.fish.tick(&sp, self.depth, &mut self.rng, fs);
-                self.lateral = (self.lateral + frame.lateral).clamp(-0x400, 0x400);
-                // Tension: the confirmed tug-of-war.
-                self.gauge.apply_reel(reel, frame.pull, fs);
-                // Line record: reeling brings the fish in, the fish's run
-                // pays line back out (rates are engine-side glue - the doc's
-                // Open list).
+                // `FUN_801D4004`: the pull off the hook's bias, the
+                // behaviour arm, the line depth and the reel load.
+                let frame = self.fish.tick(
+                    &sp,
+                    self.fish_scale as i32,
+                    &mut self.depth,
+                    self.line_record,
+                    input.reel_mask,
+                    &mut self.rng,
+                    fs,
+                );
+                // Tension: the reel arms over that load.
+                self.gauge.apply_load(input.reel_mask, frame.load, fs);
+                // The fish's swim offset (24.8, its facing taken as pointing
+                // at the rod) moves the presentation layer's lateral and, on
+                // a slack reel, pays line back out. Retail integrates it
+                // into the fish's position and measures the record off that
+                // (`FUN_801D26CC`, `FUN_801D765C` at `0x801D3A20`); the
+                // projection and the reel-in rates are engine-side glue (the
+                // doc's Open list). The lure tick halves the offset ahead of
+                // the position (`0x801D2D08..0x801D2D18`).
+                let (side, along) = (frame.swim.0 / 2, frame.swim.1 / 2);
+                self.lateral = (self.lateral + (side >> 8)).clamp(-0x400, 0x400);
                 match reel {
-                    ReelInput::ReelA => {
-                        self.line_record -= 3 * fs;
-                        self.depth -= 2 * fs;
-                    }
-                    ReelInput::ReelB => {
-                        self.line_record -= 2 * fs;
-                        self.depth -= fs;
-                    }
-                    ReelInput::Idle => self.line_record += frame.pull >> 6,
+                    ReelInput::ReelA => self.line_record -= 3 * fs,
+                    ReelInput::ReelB => self.line_record -= 2 * fs,
+                    ReelInput::Idle => self.line_record += (-along).max(0) >> 8,
                 }
-                self.depth = (self.depth + frame.sink).clamp(0, 0x1000);
                 // The lure tick's tail: tension at the ceiling is clamped
                 // there and rolls `rand() % 10 == 0` once a frame for the
                 // break latch `DAT_801D91A4 = 2` (`0x801D3B9C..0x801D3BE4`;

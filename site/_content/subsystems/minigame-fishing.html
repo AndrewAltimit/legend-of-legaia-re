@@ -284,7 +284,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
          + rand2 % 600
          + 100 * (rand3 % (rod + 1)) + 50 * (rod + 1)   rod = 0 / 1 / 2</code></pre>
   <p>The last term is the rod you fish with (index <code>0..2</code>, read from the save block), so a better rod raises both the floor and the spread of every catch. <code>strength + 0x400</code> is also the hooked fish&rsquo;s render scale, so a better water cell or rod can produce a visibly larger fish. The weight touches neither the species roll nor the strike credit.</p>
-  <p>The sum is stored once and the fight never changes it. Besides the score and the rank plate, the landed fish&rsquo;s lift reads it (its sparkle bursts climb the same thresholds as the plate), and its <code>+0x400</code> copy is the bias of the fish&rsquo;s per-frame pull. The port sums it at the strike the same way, off three draws of the same random stream in the same order; the pull bias is still the engine&rsquo;s own, because retail scales the pull per behaviour and by the line depth before the tension gauge sees it, and that step is not ported yet.</p>
+  <p>The sum is stored once and the fight never changes it. Besides the score and the rank plate, the landed fish&rsquo;s lift reads it (its sparkle bursts climb the same thresholds as the plate), and its <code>+0x400</code> copy is the bias of the fish&rsquo;s per-frame pull. The port sums it at the strike the same way, off three draws of the same random stream in the same order, and its fish takes that copy as its pull bias.</p>
 
   <h3 id="spawn">Venue spawn tables</h3>
   <p>Each venue has an <code>8 &times; 8</code> table of species ids: the row is the equipped lure (rows 3 to 7 are zero padding), the column is the band (column 4 live only on the gate&rsquo;s row - Normal at Buma, Heavy at Vidna). The ids themselves decode from the player&rsquo;s disc and are not reproduced here.</p>
@@ -299,9 +299,10 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
 
 <section class="doc-section" id="tension" data-doc="tension-and-the-fight">
   <h2>The fight and the tension gauge</h2>
-  <p>A hooked fish is a tug-of-war on one gauge from <code>0</code> to <code>0x1000</code>. Holding a reel button raises it by the fish&rsquo;s pull divided by a rod-dependent divisor; letting go lowers it at a rod-dependent rate. The gauge is clamped at both ends.</p>
+  <p>A hooked fish is a tug-of-war on one gauge from <code>0</code> to <code>0x1000</code>. Holding a reel button raises it by the fish&rsquo;s <em>load</em> divided by a rod-dependent divisor; letting go lowers it at a rod-dependent rate. The gauge is clamped at both ends.</p>
+  <p>The load is the fish&rsquo;s pull scaled by what it is doing and how deep the line is: <code>load = (k * (pull / 16) * depth + 0x200) &gt;&gt; 12</code>, where the pull is <code>((rand &amp; 0xFF) + weight + 0x400) * f / 150</code> and <code>k</code> is the behaviour&rsquo;s factor. The line depth rises <code>0x14</code> a frame and is held at half a ceiling that starts at <code>0x2000</code>; reeling lowers it.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 880 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The tension gauge runs from 0 to 0x1000. Holding reel A or reel B raises it by the fish pull divided by a rod-dependent divisor; releasing lowers it by a rod-dependent amount. At the ceiling each frame rolls a one in ten chance of the line breaking. A fish run far out adds strain on its own.">
+    <svg viewBox="0 0 880 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The tension gauge runs from 0 to 0x1000. Holding reel A or reel B raises it by a third of the fish load divided by a rod-dependent divisor; releasing lowers it by a rod-dependent amount. At the ceiling each frame rolls a one in ten chance of the line breaking. A fish run far out adds strain on its own.">
       <defs><marker id="fsh2-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="60" y="70" width="760" height="40" rx="4"/>
       <rect class="dg-node-accent" x="60" y="70" width="470" height="40" rx="4"/>
@@ -313,11 +314,11 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
       <text class="dg-sub" x="620" y="82">reel held</text>
       <path class="dg-edge-dim" d="M520 124 L380 124" marker-end="url(#fsh2-arrow)"/>
       <text class="dg-sub" x="450" y="142">released</text>
-      <text class="dg-sub dg-start" x="60" y="172">reel A (Cross):   + pull * step / (rod * 9 + 0x23)</text>
-      <text class="dg-sub dg-start" x="60" y="192">reel B (Square):  + pull * step / (rod * 6 + 0x19)</text>
+      <text class="dg-sub dg-start" x="60" y="172">reel A (Cross):   + (load / 3) / (rod * 9 + 0x23) * step</text>
+      <text class="dg-sub dg-start" x="60" y="192">reel B (Square):  + (load / 3) / (rod * 6 + 0x19) * step</text>
       <text class="dg-sub dg-start" x="480" y="172">released:  - (rod * 0x40 + 0x4A) * step</text>
       <text class="dg-sub dg-start" x="480" y="192">far run (record &gt;= 0x899):  + step * 300</text>
-      <text class="dg-sub dg-start" x="60" y="216">rod = 0, 1, 2 for the three rods; step = frame step; pull from the species table</text>
+      <text class="dg-sub dg-start" x="60" y="216">rod = 0, 1, 2 for the three rods; step = frame step; both held: both add</text>
     </svg>
     <figcaption>A better rod softens both directions: bigger divisors on the way up and a faster release on the way down. Reel B divides by less, so for the same fish it climbs faster than reel A.</figcaption>
   </figure>
@@ -332,7 +333,18 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
   </table>
   </div>
   <p class="dg-note">The three rows are the gauge formulas above evaluated at rod index 0, 1 and 2.</p>
-  <p>While hooked, a small behaviour machine (run, dart left, dart right, dive) moves the fish and modulates its pull, re-rolling the next behaviour from the species record&rsquo;s cutoffs when each one&rsquo;s timer runs out. Holding a reel button also lowers the line depth a little each frame.</p>
+  <p>While hooked, a four-state behaviour machine sets <code>k</code>, how far the fish swims and how reeling moves the line, re-rolling the next behaviour from the species record&rsquo;s cutoffs when each one&rsquo;s timer runs out.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Behaviour</th><th class="num">k</th><th>Reeling</th><th>Swim</th><th>Lasts (frames)</th></tr></thead>
+    <tbody>
+      <tr><td>0 sink</td><td class="num">4</td><td>no depth change; the line sinks by the species sink factor</td><td><code>pull / 32</code> away</td><td>20..39</td></tr>
+      <tr><td>1 run</td><td class="num">52</td><td>depth <code>- 0x4A</code> per held button; ends once under <code>0x258</code></td><td><code>pull / 4</code> away; the ceiling falls 2 a frame</td><td>120..219</td></tr>
+      <tr><td>2 / 3 dart</td><td class="num">32</td><td>depth <code>- 0x32</code> per held button</td><td>to one side; the ceiling falls 1 a frame</td><td>100..159</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A run loads the line thirteen times harder than a sink, and every run frame lowers the ceiling, so a long fight tires the fish. A fish near the rod on a deep line can break into a run on its own; a line out past <code>0x709</code> always darts.</p>
   <h3 id="exits">How the fight ends</h3>
   <div class="table-wrap">
   <table>
@@ -348,11 +360,11 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
   </table>
   </div>
   <div class="callout callout-tip">
-    <p class="callout-title">Reel A is the safe button</p>
-    <p>Measured over the port&rsquo;s whole parameter space (both venues, three lures, three rods, reel held throughout), reel A (Cross) never reaches the ceiling - its peak is 2017 of <code>0x1000</code> - while reel B (Square) does, on the hardest-pulling common fish. Reel A also recovers line faster.</p>
+    <p class="callout-title">Let go during a run</p>
+    <p>Measured over the ten species, three rods and twenty seeds each, holding reel A (Cross) from the hook breaks the line in about two fights of three, and reel B (Square) in nine of ten. Reeling only while the gauge is under half breaks none of the 600 and lands every one. Reel A divides harder and recovers line faster, so it is still the better button.</p>
   </div>
   <h3 id="port-fight">The port&rsquo;s fight model</h3>
-  <p>The port carries the gauge divisors, the release rate, the clamp and the species table&rsquo;s pull, dart and sink formulas. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. The glue between them (reel-down rates, the AI&rsquo;s branch order and re-roll interval) is an engine-side reading, listed under <a href="#internals">Internals</a>.</p>
+  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. What stays engine-side is the fish&rsquo;s position, which retail measures the line record from; the port pays line out by the swim on a slack reel and reels it in at fixed rates, listed under <a href="#internals">Internals</a>.</p>
   <p class="dg-note">Provenance: gauge <code>DAT_801D9168</code> updated at the tail of <code>FUN_801D4004</code>; exits in <code>FUN_801D26CC</code> at <code>0x801D3AFC..0x801D3CD4</code>.</p>
 </section>
 
@@ -366,11 +378,11 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
       <tr><td class="hex">+0x00</td><td>name</td><td>the hooked-fish banner and the result plate</td></tr>
       <tr><td class="hex">+0x04</td><td>score value</td><td><code>points = value * (strength + 0x9C0) / 0x32000</code></td></tr>
       <tr><td class="hex">+0x08</td><td>pull factor</td><td>per-frame pull <code>((rand &amp; 0xFF) + bias) * f / 150</code></td></tr>
-      <tr><td class="hex">+0x0C</td><td>dart push</td><td>sideways push while darting <code>((step &gt;&gt; 2) + 0x20) * f / 100</code></td></tr>
-      <tr><td class="hex">+0x10</td><td>depth sink</td><td>line sink while running <code>(pull * f) / 150</code></td></tr>
-      <tr><td class="hex">+0x14</td><td>depth gate</td><td>behaviour pick when <code>f &lt; line depth</code></td></tr>
-      <tr><td class="hex">+0x18 .. +0x20</td><td>behaviour cutoffs A, B, C</td><td>compared against <code>rand &amp; 0xFFF</code> to pick run / dart / dive</td></tr>
-      <tr><td class="hex">+0x24</td><td>strike gate</td><td>hook check <code>record &lt; f + 300</code></td></tr>
+      <tr><td class="hex">+0x0C</td><td>dart push</td><td>swim distance while darting <code>((pull / 4) + 0x20) * f / 100</code></td></tr>
+      <tr><td class="hex">+0x10</td><td>depth sink</td><td>line sink while sinking <code>(pull * f) / 150</code></td></tr>
+      <tr><td class="hex">+0x14</td><td>depth gate</td><td>the sink pick runs only when <code>depth &lt;= f</code></td></tr>
+      <tr><td class="hex">+0x18 .. +0x20</td><td>behaviour cutoffs A, B, C</td><td>compared against <code>rand &amp; 0xFFF</code>: A picks the sink, B the run, C forces a run near the rod</td></tr>
+      <tr><td class="hex">+0x24</td><td>near gate</td><td>the forced run needs <code>record &lt; f + 300</code></td></tr>
     </tbody>
   </table>
   </div>
@@ -427,7 +439,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
     <li><strong>Cast long.</strong> A line readout under 200 cannot bite at all.</li>
     <li><strong>Reel in a rhythm, and keep holding.</strong> A matched rhythm makes a strike roughly twenty times likelier for 64 frame-steps, but a strike only lands on a frame with a reel button held. Completing the band-0 rhythm (idle, Cross, idle, Square) and holding the final Square is the best sequence the game offers: band 0 pinned, bite boosted, reel held by the same press.</li>
     <li><strong>Twitch the bait.</strong> Each D-pad left / right or reel press on a frame adds one to that frame&rsquo;s strike credit.</li>
-    <li><strong>Fight on Cross.</strong> Reel A divides the pull harder; Square is the button that can pin the gauge and snap the line.</li>
+    <li><strong>Fight on Cross, and let go when it runs.</strong> Reel A divides the load harder than Square. A run loads the line thirteen times harder than a sink: ease off until the gauge drops, then reel the line up to end the run.</li>
     <li><strong>Use the best rod you own.</strong> It softens tension both ways, and the third rod is required for both rare-fish gates.</li>
     <li><strong>Rare fish.</strong> At Buma: over 50 lifetime casts, an even count, the Normal Lure, the third rod, band 0, then 1 in 16. At Vidna: the Heavy Lure instead and no cast threshold, then 1 in 4. Every landed cast flips the parity, so only every other cast is eligible.</li>
     <li><strong>Water matters for size, not species.</strong> A better water cell raises both the bite chance and the fight strength, which feeds the points and the rank plate.</li>
@@ -526,7 +538,7 @@ power % = power * 100 &gt;&gt; 12</code></pre>
       <ul class="bullets">
         <li><strong>Line break.</strong> The ceiling roll and the spent lure are ported; the off-screen latch, the far-record strain and the no-lure screen after the last lure are not.</li>
         <li><strong>Cast camera.</strong> Retail cuts from behind the party to a low shot over the water; those camera writes are not decoded, so the port keeps the shore view throughout.</li>
-        <li><strong>Fight pacing.</strong> The reel-down rates, the AI&rsquo;s branch order and re-roll interval, and the pull bias are engine-side readings.</li>
+        <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
         <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
         <li><strong>Result plate.</strong> The fish&rsquo;s lift before the plate and the recast gate on the plate&rsquo;s accept word are not modelled.</li>
         <li><strong>State <code>0x2D</code></strong> has no writer anywhere on the disc; every store to the state word resolves to another value.</li>

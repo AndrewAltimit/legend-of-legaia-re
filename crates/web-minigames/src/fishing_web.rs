@@ -685,10 +685,10 @@ impl LegaiaMinigames {
             None => "null".to_string(),
         };
         let mv = match p.fish_move() {
+            Some(fishing::FishMove::Sink) => r#""sink""#,
             Some(fishing::FishMove::Run) => r#""run""#,
             Some(fishing::FishMove::DartLeft) => r#""dart_left""#,
             Some(fishing::FishMove::DartRight) => r#""dart_right""#,
-            Some(fishing::FishMove::Dive) => r#""dive""#,
             None => "null",
         };
         format!(

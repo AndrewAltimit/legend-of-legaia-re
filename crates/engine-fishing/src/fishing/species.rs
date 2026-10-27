@@ -282,125 +282,239 @@ impl BandCheck {
     }
 }
 
-/// The hooked fish's behaviour sub-state (`DAT_801d910c`): run / dart left /
-/// dart right / dive, re-rolled when its countdown (`DAT_801d9110`) expires.
+/// The hooked fish's behaviour sub-state (`DAT_801d910c`), re-rolled when its
+/// countdown (`DAT_801d9110`) expires. The discriminant is retail's state
+/// number: the jump table at `0x801CF028` sends `0..=3` to the four arms of
+/// `FUN_801D4004`. Its fifth target (`0x801D43C8`) is unreachable: no store
+/// to `DAT_801d910c` in the image writes `4`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FishMove {
-    /// Steady run: full pull, line sinks by the species sink factor.
-    Run,
-    /// Lateral dart (left).
-    DartLeft,
-    /// Lateral dart (right).
-    DartRight,
-    /// Dive: picked when the species depth gate is under the line depth.
-    Dive,
+    /// State `0` (`0x801D4154`): the line sinks by the species sink factor,
+    /// the fish swims off at `pull / 32`, and the reel load is `4 * pull/16`.
+    Sink = 0,
+    /// State `1` (`0x801D41FC`): the hard run - swim `pull / 4`, reel load
+    /// `52 * pull/16`, and the fish tires (the depth ceiling falls `2` a
+    /// frame). Drops back to [`FishMove::Sink`] once the line is reeled
+    /// above depth `0x258`.
+    Run = 1,
+    /// State `2` (`0x801D42BC`): a side dart, angle offset `0xC40`.
+    DartLeft = 2,
+    /// State `3` (`0x801D4300`): the other side dart, angle offset `0x440`.
+    DartRight = 3,
 }
+
+impl FishMove {
+    fn from_state(state: i32) -> Self {
+        match state & 3 {
+            0 => FishMove::Sink,
+            1 => FishMove::Run,
+            2 => FishMove::DartLeft,
+            _ => FishMove::DartRight,
+        }
+    }
+}
+
+/// The depth ceiling `DAT_801D929C` the hook arm seeds (`li v0,0x2000` /
+/// `sw` at `0x801D37AC` / `0x801D37B0`); the line depth is held at half of it.
+pub const FIGHT_DEPTH_CEILING: i32 = 0x2000;
+/// The line depth the hook arm seeds (`li v0,0x1000` / `sw` at `0x801D37A0` /
+/// `0x801D37A4`).
+pub const FIGHT_DEPTH_SEED: i32 = 0x1000;
+/// The per-frame depth rise at the head of `FUN_801D4004` (`addiu v0,v0,0x14`
+/// at `0x801D4094`); not scaled by the frame step.
+pub const FIGHT_DEPTH_RISE: i32 = 0x14;
+/// The surge term `DAT_801D90F4`'s ceiling (`slti v0,v0,0x3C1` at `0x801D4450`).
+pub const FIGHT_SURGE_MAX: i32 = 0x3C0;
 
 /// One frame of fish output from [`FishAi::tick`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FishFrame {
-    /// This frame's pull (`((rand & 0xff) + bias) * pull_factor / 150`).
+    /// This frame's pull `DAT_801D90FC`: `((rand & 0xff) + bias) * f08 / 150`.
     pub pull: i32,
-    /// Lateral dart push (signed; `((step >> 2) + 0x20) * dart_factor / 100`).
-    pub lateral: i32,
-    /// Line-depth sink this frame (`pull * sink_factor / 150` in the run
-    /// state).
-    pub sink: i32,
+    /// The reel load: `(k * (pull / 16) * depth + 0x200) >> 12`, the value
+    /// the reel arms divide by `3` and the rod divisor
+    /// ([`TensionGauge::apply_load`]).
+    pub load: i32,
+    /// The swim offset `FUN_801D7BB8` writes to `DAT_801D9100` / `DAT_801D9104`
+    /// this frame - `(sin, cos) * radius * 3 * step >> 12` at the arm's angle,
+    /// 24.8 - in the fish's own frame (its facing taken as `0`).
+    pub swim: (i32, i32),
+    /// The surge term `DAT_801D90F4`, `0..=0x3C0`: the lure tick caps the
+    /// hooked reel speed at `0x1800 - 2 * surge` (`0x801D2B98..0x801D2BB0`).
+    pub surge: i32,
 }
 
-/// The fish-AI half of `FUN_801d4004`: the behaviour sub-state machine and
-/// the per-frame pull / dart / sink terms, driven by the hooked species'
-/// per-record factors.
+/// `FUN_801d4004`, the hooked-fish tick: the pull, the behaviour sub-state
+/// and its arm, the line depth, and the reel load the tension gauge takes.
 ///
-/// The per-field formulas (pull, dart push, sink, the `rand & 0xfff`
-/// cutoff comparisons, the depth-gate dive pick) are the documented ones;
-/// the *composition* - which cutoff feeds which state and the re-roll
-/// interval - is an engine-side reading of the same function (the doc's
-/// per-field table stops short of the branch order).
-// PORT: FUN_801d4004 (fish behaviour sub-state + pull/dart/sink terms)
+/// Retail order per frame: depth `+= 0x14`; the pull off one `rand` and the
+/// bias `DAT_801D9108`; the state arm (sink, ceiling decay, the run's exit,
+/// the swim offset off a second `rand`, the phase); the surge; the load; the
+/// held-reel depth nudges; the clamps; the countdown and the re-roll.
+/// [`TensionGauge::apply_load`] is the reel arms' tension half and runs on
+/// the load this returns; nothing it does draws `rand` or feeds the re-roll,
+/// so the split leaves the stream in retail's order.
 #[derive(Debug, Clone, Copy)]
 pub struct FishAi {
     /// Current behaviour (`DAT_801d910c`).
     pub state: FishMove,
     /// Frames until the next behaviour re-roll (`DAT_801d9110`).
     pub(super) timer: i32,
+    /// The surge phase `DAT_801D9068`, a 12-bit angle into the sine table.
+    pub(super) phase: i32,
+    /// The depth ceiling `DAT_801D929C`.
+    pub(super) ceiling: i32,
 }
 
 impl Default for FishAi {
     fn default() -> Self {
-        Self {
-            state: FishMove::Run,
-            timer: 0,
-        }
+        Self::hooked()
     }
 }
 
-impl FishAi {
-    /// Per-frame pull bias. The doc pins the `((rand & 0xff) + bias) *
-    /// factor / 150` shape but not the bias literal; `0x40` keeps the pull
-    /// centred near `factor` (rand averages `0x80`).
-    pub const PULL_BIAS: i32 = 0x40;
+/// `x / 0xC8000` the way `0x801D442C..0x801D4448` forms it: the reciprocal
+/// `0x51EB851F`, `hi >> 18`, minus the sign.
+fn div_c8000(x: i32) -> i32 {
+    let hi = ((x as i64 * 0x51EB_851F_i64) >> 32) as i32;
+    (hi >> 18) - (x >> 31)
+}
 
-    pub(super) fn reroll(&mut self, sp: &FishingSpecies, depth: i32, rng: &mut BiosRand) {
-        // Dive is the depth-gated pick (`+0x14`: behaviour pick when
-        // `f < line-depth`); otherwise roll the cutoffs.
-        if sp.depth_gate < depth {
-            self.state = FishMove::Dive;
-        } else {
-            let r = (rng.next_u15() & 0xfff) as i32;
-            self.state = if sp.roll_cutoff_a <= r {
-                FishMove::Run
-            } else if r < sp.roll_cutoff_c {
-                if rng.next_u15() & 1 == 0 {
-                    FishMove::DartLeft
-                } else {
-                    FishMove::DartRight
-                }
-            } else if r < sp.roll_cutoff_b {
-                FishMove::Run
-            } else if rng.next_u15() & 1 == 0 {
-                FishMove::DartLeft
-            } else {
-                FishMove::DartRight
-            };
+impl FishAi {
+    /// The fish as the hook leaves it: state `0` (the landing arm stores it,
+    /// `0x801D295C`) and the seeded depth ceiling. The countdown is not
+    /// re-seeded by retail; a fresh one expires on the first frame.
+    pub fn hooked() -> Self {
+        Self {
+            state: FishMove::Sink,
+            timer: 0,
+            phase: 0,
+            ceiling: FIGHT_DEPTH_CEILING,
         }
-        // Re-roll interval: not byte-pinned; a fraction of a second keeps the
-        // fight lively without thrashing.
-        self.timer = 0x18 + (rng.next_u15() & 0x1f) as i32;
     }
 
-    /// Advance one frame: countdown, re-roll on expiry, and produce this
-    /// frame's pull / lateral / sink terms from the species factors.
+    /// Advance one hooked frame.
+    ///
+    /// `bias` is `DAT_801D9108` (the hook's strength `+ 0x400`,
+    /// [`PondSession::fish_scale`]), `depth` the line depth `DAT_801D9298`,
+    /// `record` the line record `DAT_801D927C`, `reel_mask` the held pad word
+    /// `_DAT_8007B850` (bits `0x40` / `0x80` each run their arm: with both
+    /// held retail nudges the depth twice).
+    // PORT: FUN_801d4004 (pull, behaviour arms, depth, reel load, re-roll)
+    #[allow(clippy::too_many_arguments)] // the retail tick reads exactly these globals
     pub fn tick(
         &mut self,
         sp: &FishingSpecies,
-        depth: i32,
+        bias: i32,
+        depth: &mut i32,
+        record: i32,
+        reel_mask: u32,
         rng: &mut BiosRand,
         frame_step: i32,
     ) -> FishFrame {
         let fs = frame_step.max(1);
-        self.timer -= fs;
-        if self.timer <= 0 {
-            self.reroll(sp, depth, rng);
-        }
-        let pull = (((rng.next_u15() & 0xff) as i32 + Self::PULL_BIAS) * sp.pull_factor) / 150;
-        let mut out = FishFrame {
-            pull,
-            lateral: 0,
-            sink: 0,
-        };
-        match self.state {
-            FishMove::Run => out.sink = (pull * sp.sink_factor) / SINK_DIVISOR,
-            FishMove::Dive => out.sink = (pull * sp.sink_factor) / 75,
+        *depth = depth.wrapping_add(FIGHT_DEPTH_RISE);
+        let pull = ((rng.next_u15() & 0xff) as i32 + bias).wrapping_mul(sp.pull_factor) / 150;
+        let s2 = pull / 16;
+
+        // The arm: (radius, angle offset, phase step, reel-load factor,
+        // surge factor s4, held-reel depth nudge s5).
+        let (radius, angle_k, phase_step, k, s4, s5) = match self.state {
+            FishMove::Sink => {
+                *depth = depth.wrapping_add(pull.wrapping_mul(sp.sink_factor) / 150);
+                (pull / 32, 0x840, fs << 4, 4, 0xF0, 0)
+            }
+            FishMove::Run => {
+                self.ceiling -= fs * 2;
+                if *depth < 0x258 {
+                    self.state = FishMove::Sink;
+                }
+                (pull / 4, 0x840, fs << 5, 52, 0x1E0, -0x4A)
+            }
             FishMove::DartLeft | FishMove::DartRight => {
-                let push = (((fs) >> 2) + 0x20) * sp.dart_factor / 100;
-                out.lateral = if self.state == FishMove::DartLeft {
-                    -push
+                self.ceiling -= fs;
+                let angle_k = if self.state == FishMove::DartLeft {
+                    0xC40
                 } else {
-                    push
+                    0x440
                 };
+                let radius = (pull / 4 + 0x20).wrapping_mul(sp.dart_factor) / 100;
+                (radius, angle_k, fs << 4, 32, 0x17C, -0x32)
+            }
+        };
+        // `FUN_801D7BB8(facing - ((rand & 0x7f) - K), radius, .., step * 3)`.
+        let angle = (angle_k - (rng.next_u15() & 0x7f) as i32) as u16;
+        let scale = fs * 3;
+        let polar = |t: i32| (t.wrapping_mul(radius).wrapping_mul(scale)) >> 12;
+        let swim = (
+            polar(legaia_render_kernels::gte::psx_sin(angle)),
+            polar(legaia_render_kernels::gte::psx_cos(angle)),
+        );
+        self.phase = self.phase.wrapping_add(phase_step);
+
+        let wave = legaia_render_kernels::gte::psx_sin((self.phase & 0xFFF) as u16) + 0x1000;
+        let surge =
+            div_c8000(wave.wrapping_mul(s4).wrapping_mul(sp.pull_factor)).min(FIGHT_SURGE_MAX);
+
+        let v = (k * s2).wrapping_mul(*depth).wrapping_add(0x200);
+        let load = if v >= 0 { v >> 12 } else { (v + 0xFFF) >> 12 };
+
+        if reel_mask & REEL_A_PAD_BIT != 0 {
+            *depth += s5;
+        }
+        if reel_mask & REEL_B_PAD_BIT != 0 {
+            *depth += s5;
+        }
+        self.ceiling = self.ceiling.max(0);
+        *depth = (*depth).max(0).min(self.ceiling / 2);
+
+        self.timer -= fs;
+        self.reroll(sp, *depth, record, rng);
+        FishFrame {
+            pull,
+            load,
+            swim,
+            surge,
+        }
+    }
+
+    /// The countdown's tail (`0x801D46A0..0x801D4920`): the forced run near
+    /// the rod, then - on an expired countdown - the re-roll and its reload.
+    fn reroll(&mut self, sp: &FishingSpecies, depth: i32, record: i32, rng: &mut BiosRand) {
+        let mut forced = false;
+        if record < sp.strike_gate + 300
+            && depth > 0x400
+            && ((rng.next_u15() & 0xFFF) as i32) < sp.roll_cutoff_c
+        {
+            self.timer = -1;
+            forced = true;
+        }
+        if self.timer >= 0 {
+            return;
+        }
+        let mut state = (rng.next_u15() & 3) as i32;
+        let mut sink_pick = false;
+        if sp.depth_gate >= depth && ((rng.next_u15() & 0xFFF) as i32) < sp.roll_cutoff_a {
+            state = 0;
+            sink_pick = true;
+        }
+        if !sink_pick {
+            if ((rng.next_u15() & 0xFFF) as i32) < sp.roll_cutoff_b {
+                state = 1;
+            } else if (rng.next_u15() & 0x1FF) < 0x190 && record >= 0x579 {
+                state = 2 + (rng.next_u15() & 1) as i32;
             }
         }
-        out
+        if record >= 0x709 {
+            state = 2 + (rng.next_u15() & 1) as i32;
+        }
+        if forced {
+            state = 1;
+        }
+        self.state = FishMove::from_state(state);
+        self.timer = match self.state {
+            FishMove::Sink => (rng.next_u15() % 20) as i32 + 20,
+            FishMove::Run => (rng.next_u15() % 100) as i32 + 120,
+            FishMove::DartLeft | FishMove::DartRight => (rng.next_u15() % 60) as i32 + 100,
+        };
     }
 }
