@@ -125,7 +125,7 @@ impl World {
             party_count: self.party.party_count,
         });
         // One fighter: the contest's lead record, alone.
-        self.battle.solo_spar_restore = Some(std::mem::replace(
+        self.battle.battle_party_restore = Some(std::mem::replace(
             &mut self.party.active_party,
             vec![self.minigames.fighter_index() as u8],
         ));

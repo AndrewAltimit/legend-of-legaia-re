@@ -7,6 +7,13 @@ use legaia_engine_mode::mode::SceneMode;
 /// the player's.
 pub(crate) const PLAYER_Y_FROM_8E: u32 = 0x2000_0000;
 
+/// The AI companion's roster record: char id `4`, Terra
+/// (`DAT_8007BD10[slot] == 4`, `docs/subsystems/battle-action-helpers.md`).
+pub(crate) const AI_COMPANION_ROSTER_SLOT: u8 = 3;
+/// The system flag `FUN_801DE190` seats the companion on
+/// (`jal 0x8003CE64` with `a0 = 0x13` at `0x801DE204`).
+pub(crate) const AI_COMPANION_SYSTEM_FLAG: u16 = 0x13;
+
 impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
@@ -380,11 +387,54 @@ impl World {
         const VAHN_ROSTER_SLOT: u8 = 0;
         let mut party_count = self.party.party_count.clamp(1, 3);
         if self.sparring_fight_pending() && party_count > 1 {
-            self.battle.solo_spar_restore = Some(std::mem::replace(
+            self.battle.battle_party_restore = Some(std::mem::replace(
                 &mut self.party.active_party,
                 vec![VAHN_ROSTER_SLOT],
             ));
             party_count = 1;
+        }
+        // **The AI companion's seat.** Retail's battle party table
+        // `DAT_8007BD10` is not the field list alone: the field overlay's
+        // party-table rebuild `FUN_801DE190` (PROT 0897, called by the party
+        // ops `0x3C` / `0x3D` and op `4C 33`) writes `id + 1` for each
+        // present member (`0x801DE1E4..0x801DE1FC`), then tests system flag
+        // `0x13` (`jal 0x8003CE64` with `a0 = 0x13` at `0x801DE204`) and,
+        // when it is up, appends id `4` - Terra (`0x801DE214..0x801DE220`).
+        // `terra_party_battle` holds the table at `02 04` beside a present
+        // list of Noa alone (`0x80084594 = 1`, `0x80084598 = [1]`): Noa's
+        // Snowdrift / Mt. Rikuroa stretch is fought by Noa and the wolf.
+        // The engine's battle composition is the field list, so the flag is
+        // read here, at the seat the table feeds; the scripts raise and
+        // lower `0x13` beside the party ops that rebuild it (`cave01` P1[0],
+        // `rikuroa` P2[48]: `60 12`, `60 13`, then the ops).
+        // PORT: FUN_801DE190 (the flag-`0x13` companion append)
+        if self.battle.battle_party_restore.is_none() {
+            let list = self.present_party_list();
+            if !list.is_empty()
+                && list.len() < 3
+                && !list.contains(&AI_COMPANION_ROSTER_SLOT)
+                && self.system_flag_test(AI_COMPANION_SYSTEM_FLAG)
+            {
+                if let Some(tpl) = self.tables.starting_party.clone() {
+                    let missing: Vec<u8> = (0..=AI_COMPANION_ROSTER_SLOT)
+                        .filter(|&r| {
+                            self.party
+                                .roster
+                                .members
+                                .get(usize::from(r))
+                                .is_none_or(|m| m.hp_mp_sp().hp_max == 0)
+                        })
+                        .collect();
+                    if !missing.is_empty() {
+                        self.seed_party_members(&tpl, &missing);
+                    }
+                }
+                let mut seated = list;
+                seated.push(AI_COMPANION_ROSTER_SLOT);
+                party_count = seated.len() as u8;
+                self.battle.battle_party_restore =
+                    Some(std::mem::replace(&mut self.party.active_party, seated));
+            }
         }
         let monster_count = formation.slots.len().min(5) as u8;
         // Drop any field dialogue left open across the transition. The

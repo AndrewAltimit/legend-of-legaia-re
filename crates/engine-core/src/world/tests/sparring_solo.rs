@@ -64,7 +64,7 @@ fn the_disc_armed_spar_seats_vahn_alone_and_hands_the_party_back() {
     assert_eq!(world.mode, SceneMode::Field);
     assert_eq!(world.party.party_count, 3, "the field party comes back");
     assert_eq!(world.party.active_party, vec![1, 0, 2]);
-    assert!(world.battle.solo_spar_restore.is_none());
+    assert!(world.battle.battle_party_restore.is_none());
 }
 
 #[test]
@@ -74,5 +74,53 @@ fn an_ordinary_fight_keeps_the_full_party() {
     enter(&mut world);
     assert_eq!(world.party.party_count, 3);
     assert_eq!(world.party.active_party, vec![1, 0, 2]);
-    assert!(world.battle.solo_spar_restore.is_none());
+    assert!(world.battle.battle_party_restore.is_none());
+}
+
+/// System flag `0x13` seats the AI companion (Terra, roster record 3) beside
+/// the field list, as the field overlay's party-table rebuild `FUN_801DE190`
+/// appends id `4` (`terra_party_battle`: table `02 04`, field list Noa
+/// alone); the field list comes back on the return.
+#[test]
+fn flag_0x13_seats_the_companion_beside_the_field_list() {
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            active_party: vec![1],
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.install_present_party_list(vec![1]);
+    world.system_flag_set(crate::world::field_loop::AI_COMPANION_SYSTEM_FLAG);
+    enter(&mut world);
+    assert_eq!(world.party.party_count, 2, "Noa and the companion");
+    assert_eq!(
+        world.party_roster_slot(1),
+        3,
+        "the second seat is Terra's record"
+    );
+    world.battle.end = Some(BattleEndCause::MonsterWipe);
+    world.begin_battle_end_sequence();
+    let mut frames = 0;
+    while world.battle.victory.is_some() && frames < 2000 {
+        world.tick_battle_end_sequence();
+        frames += 1;
+    }
+    assert_eq!(world.mode, SceneMode::Field);
+    assert_eq!(
+        world.present_party_list(),
+        vec![1],
+        "the field list is Noa alone"
+    );
+}
+
+#[test]
+fn without_flag_0x13_the_field_list_fights_alone() {
+    let mut world = full_party_world();
+    world.install_present_party_list(vec![1]);
+    world.system_flag_clear(crate::world::field_loop::AI_COMPANION_SYSTEM_FLAG);
+    world.system_flag_clear(TUTORIAL_ARM_FLAG);
+    enter(&mut world);
+    assert_eq!(world.party.party_count, 1);
 }
