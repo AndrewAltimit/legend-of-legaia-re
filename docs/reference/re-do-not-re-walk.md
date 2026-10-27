@@ -1018,13 +1018,16 @@ is a wait on the asynchronous asset load. When it clears,
 `sw v0,-0x4538(a1)` writes `*0x8007BAC8 = id`, the identical store sub-op 1
 makes. Sub-op 11 (`_DAT_8007BA9C = -1`) is the barrier's arming half.
 
-**What is true.** Sub-op 9 is sub-op 1 plus a wait, and it is what a
-**cutscene** changes music with mid-scene. A scene-corpus BGM sweep cannot see
-the difference: it runs only prescripts, which emit sub-op 1 exclusively. The
-audible symptom of the queue reading is a cutscene that plays silent while its
-score starts over the *next* scene the player walks into. Full arm and the
-port's routing:
-[`script-vm.md`](../subsystems/script-vm.md#sub-op-9-is-a-start-not-a-queue).
+**What is true.** Sub-op 9 is sub-op 1's select plus a wait and sound-flag
+bit 0, and it is what a **cutscene** changes music with mid-scene. A
+scene-corpus BGM sweep cannot see the difference: it runs only prescripts,
+which emit sub-op 1 exclusively. The audible symptom of the queue reading is a
+cutscene that plays silent while its score starts over the *next* scene the
+player walks into. The opposite reading - the select *is* the start - is wrong
+too: bit 0 holds the selected track off until the record's own `0xA` commit,
+so starting it at the select plays it over the outgoing score's fade. Full arm
+and the port's routing:
+[`script-vm.md`](../subsystems/script-vm.md#sub-op-9-selects-its-commit-starts-the-track).
 
 ### The 256-slot SPU-address run that was really a CLUT
 
