@@ -291,6 +291,17 @@ impl PlayWindowApp {
         {
             cam.align_summon_focus(body);
         }
+        // The capture band's stage cue on the captured phase
+        // (`LEGAIA_BATTLE_BACKDROP_CUE`, `RetailBattle::capture_band_backdrop_cue`).
+        if let Some(w) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_backdrop_cue)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+        {
+            self.session.host.world.seat_battle_backdrop_cue(w);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)

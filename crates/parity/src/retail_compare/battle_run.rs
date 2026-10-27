@@ -503,6 +503,9 @@ pub(super) fn battle_image(
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
     }
+    if let Some(w) = battle.displayed_backdrop_cue() {
+        env.push(("LEGAIA_BATTLE_BACKDROP_CUE", w.to_string()));
+    }
     // The cast's live parts where retail's passes had put them: a part
     // rolled off `rand()` or aged by the frame-skip history stands where no
     // replay reproduces.

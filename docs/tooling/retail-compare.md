@@ -2207,6 +2207,23 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
+The band has a third clock the hold does not reach: the backdrop pair's
+depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'
+`+0x78` by `step << 6` a pass while `ctx[+0x243]` is up, and the cast begin's
+capture route raises it behind the `0x6E` store (`0x801E44FC`), so it counts
+from the band's entry. Retail's cast begin waits several passes before that
+store where the engine's leaves at once, so with the accumulator and the
+counter held to retail's the engine's weight has run further
+(`battle_noaru_gilium_lv2_thunder_storm_mid_cast`: retail `0x6C0`, the engine
+on the indoor ceiling `0x800`). A capture-band phase stands the weight on the
+capture's word (`RetailBattle::capture_band_backdrop_cue`,
+`World::seat_battle_backdrop_cue`; `LEGAIA_BATTLE_BACKDROP_CUE` for the image
+child). The image child takes the weight the displayed frame drew: `64` a
+vsync of the display lag less, since the ramp runs every pass the latch is
+up, unless the word sits on a ceiling (`RetailBattle::displayed_backdrop_cue`).
+That capture's `image` reads `.414` to `.805` on the RAM's word and `.986` on
+the displayed one.
+
 A capture past the band's start read its counter that many ticks into `0x70`
 too, so for a `0x70` gate the hold stands short of retail's counter by the
 module ticks the band takes to reach the gate's arm and countdown

@@ -702,6 +702,12 @@ impl World {
             .then(|| f32::from(w) / 4096.0)
     }
 
+    /// Capture alignment (never in play): stand the backdrop pair's
+    /// depth-cue weight on a capture's word (the records' `+0x78`).
+    pub fn seat_battle_backdrop_cue(&mut self, weight: u16) {
+        self.battle.backdrop_cue = weight;
+    }
+
     /// The battle ambient base the ground grid is coloured from this frame,
     /// 8 bits a channel: near colour `battle_ground_grid::battle_ambient_colour`
     /// of it, far colour `battle_ground_grid::grid_far_colour` of it. Settles

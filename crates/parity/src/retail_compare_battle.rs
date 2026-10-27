@@ -283,6 +283,9 @@ pub struct Combatant {
 /// `FUN_8004E2F0` reads).
 pub type CapturedActor = ([i16; 2], [i16; 2], u8, u8);
 
+/// The action SM's capture band `0x6E..=0x71`.
+pub(crate) const CAPTURE_BAND_STATES: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
+
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
 pub struct RetailBattle {
@@ -398,6 +401,9 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// The backdrop pair's depth-cue weight, the record `ctx[+0x106C]`'s
+    /// `+0x78` ([`Self::capture_band_backdrop_cue`]).
+    pub backdrop_cue: Option<u16>,
     /// `ctx[+0x26D]` - the per-action track coin `FUN_8004E13C` rolls on a
     /// clip commit (`rand() % 2`).
     pub track_coin: u8,

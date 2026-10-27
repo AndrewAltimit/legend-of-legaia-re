@@ -405,6 +405,9 @@ pub struct ScreenshotConfig {
     /// re-seated attacker's walk onto its target starts where retail's did
     /// (`legaia_engine_core::world::BattleState::capture_approach_yaw`).
     pub battle_approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
+    /// `LEGAIA_BATTLE_BACKDROP_CUE=<weight>`: the backdrop pair's depth-cue
+    /// weight a capture-band capture holds, stood on at the captured phase.
+    pub battle_backdrop_cue: Option<u16>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -875,6 +878,9 @@ impl ScreenshotConfig {
             battle_approach_yaw: std::env::var("LEGAIA_BATTLE_APPROACH_YAW")
                 .ok()
                 .and_then(|v| legaia_engine_core::world::CaptureApproach::from_env(&v)),
+            battle_backdrop_cue: std::env::var("LEGAIA_BATTLE_BACKDROP_CUE")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),

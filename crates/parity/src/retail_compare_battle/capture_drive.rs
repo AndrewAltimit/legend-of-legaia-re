@@ -602,6 +602,42 @@ impl RetailBattle {
             })
     }
 
+    /// The backdrop pair's depth-cue weight a capture-band capture
+    /// (`0x6E..=0x71`) holds, for the phase to stand the engine's on.
+    ///
+    /// `FUN_80050120` ramps the pair's `+0x78` by `step << 6` a pass while
+    /// the latch `ctx[+0x243]` is up (`0x800505B0..0x80050714`), and the
+    /// cast begin's capture route raises the latch behind its `0x6E` store
+    /// (`0x801E44FC`). So the weight is a third clock of the band, from its
+    /// entry - beside the close-up accumulator (from the caster's clip
+    /// commit) and the yaw counter (from the seed) the drive already holds
+    /// the band by. The three disagree on the engine, whose cast begin
+    /// leaves for `0x6E` on its first pass where retail's waits several
+    /// (`battle_noaru_gilium_lv2_thunder_storm_mid_cast`: retail `0x6C0`, the
+    /// engine at the `0x800` indoor ceiling, the cave drawn a fifth darker -
+    /// `image` `.414`; on retail's word `.805`).
+    pub fn capture_band_backdrop_cue(&self) -> Option<u16> {
+        matches!(self.seed_plan(), SeedPlan::Action { .. })
+            .then_some(())
+            .filter(|_| super::CAPTURE_BAND_STATES.contains(&self.action_state))
+            .and(self.backdrop_cue)
+    }
+
+    /// [`Self::capture_band_backdrop_cue`] on the **displayed** frame, for
+    /// the image child: the weight climbed `64` a vsync of the display lag
+    /// since that frame was drawn (`step << 6` a pass), so the frame on
+    /// screen read that much less. A weight on one of the ceilings
+    /// (`0x800` / `0xC00` / `0x1000`) may have sat there through the lag and
+    /// stays as read.
+    pub fn displayed_backdrop_cue(&self) -> Option<u16> {
+        let w = self.capture_band_backdrop_cue()?;
+        Some(if matches!(w, 0x800 | 0xC00 | 0x1000) {
+            w
+        } else {
+            w.saturating_sub(64 * self.display_phase_lag)
+        })
+    }
+
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
     /// (`ActionSteer::walk_clock`).
     pub fn walk_clock_capture(&self) -> bool {

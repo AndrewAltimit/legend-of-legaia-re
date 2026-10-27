@@ -797,6 +797,10 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            backdrop_cue: {
+                let rec = game_anchors::u32_at(ram, ctx + 0x106C);
+                in_ram(rec).then(|| game_anchors::u16_at(ram, rec + 0x78))
+            },
             track_coin: game_anchors::u8_at(ram, ctx + 0x26D) & 1,
             gimard_countdown: game_anchors::u32_at(
                 ram,

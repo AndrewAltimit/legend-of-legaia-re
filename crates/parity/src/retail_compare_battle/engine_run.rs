@@ -790,6 +790,9 @@ pub fn run_engine_battle(
     // does the same at its frame (`LEGAIA_BATTLE_GROUND_SNAP`).
     if matches!(driven, Some(Some(_))) {
         let world = &mut session.host.world;
+        if let Some(w) = battle.capture_band_backdrop_cue() {
+            world.seat_battle_backdrop_cue(w);
+        }
         let target = legaia_engine_capture::ground_snap::snap_battle_ground(
             world,
             &battle.engine_ground_snaps(),
