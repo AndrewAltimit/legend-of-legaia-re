@@ -59,7 +59,7 @@
     <dt>Save block</dt><dd><code>0x80084140..0x80085B57</code>, the <code>0x1A18</code> bytes a save copies: character records at <code>0x80084708 + n*0x414</code>, flag bank <code>0x80085758</code>, item bag <code>0x80085958</code>.</dd>
     <dt>Heap</dt><dd><code>0x80091800..0x801C5FFF</code> (<code>InitHeap(0x80091800, 0x134800)</code>): scene bundles, models, the battle context and actor pool.</dd>
     <dt>Overlays</dt><dd>Slot A at <code>0x801CE818</code> (field, battle, menu, minigames - one at a time); slot B at <code>0x801F69D8</code> (summon / cast modules, world-map render).</dd>
-    <dt>Stack</dt><dd>Starts at <code>0x801FFFF0</code> and grows down.</dd>
+    <dt>Stack</dt><dd>Starts at <code>0x80200000</code> (the startup code replaces the header's <code>0x801FFFF0</code>) and grows down.</dd>
     <dt>Full table</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/memory-map.md" target="_blank" rel="noopener"><code>docs/reference/memory-map.md</code></a> - every row, in the same region order; grep it for your address</dd>
   </dl>
 </section>
@@ -114,7 +114,7 @@
         <div class="amap-lane-label"><a href="#slot-b">slot B</a></div>
         <div class="amap-track"><a class="c-slotb" style="--l:83.82%;--w:6.90%" href="#slot-b" title="0x801F69D8..0x801FA9D7 slot-B modules"></a></div>
         <div class="amap-lane-label"><a href="#stack">stack</a></div>
-        <div class="amap-track"><a class="c-stack" style="--l:90.72%;--w:9.28%" href="#stack" title="0x801FA9D8..0x801FFFFF free RAM, stack from 0x801FFFF0"></a></div>
+        <div class="amap-track"><a class="c-stack" style="--l:90.72%;--w:9.28%" href="#stack" title="0x801FA9D8..0x801FFFFF free RAM, stack from 0x80200000"></a></div>
       </div>
       <div class="amap-lanes" aria-hidden="true">
         <div></div>
@@ -137,7 +137,7 @@
       <tr><td><code>0x801C6000</code></td><td>34 KB</td><td>Resident buffers: PROT TOC, XA clip table, libcd / SsAPI state, battle actor table.</td></tr>
       <tr><td><code>0x801CE818</code></td><td>&le; 162 KB</td><td>Overlay slot A - one per-mode image at a time.</td></tr>
       <tr><td><code>0x801F69D8</code></td><td>&le; 16 KB</td><td>Overlay slot B - small paged modules.</td></tr>
-      <tr><td><code>0x801FA9D8</code></td><td>22 KB</td><td>Free RAM, then the stack from <code>0x801FFFF0</code> down.</td></tr>
+      <tr><td><code>0x801FA9D8</code></td><td>22 KB</td><td>Free RAM, then the stack from <code>0x80200000</code> down.</td></tr>
       <tr><td><code>0x1F800000</code></td><td>1 KB</td><td>Scratchpad - separate on-chip RAM.</td></tr>
       <tr><td><code>0x1F801000+</code></td><td>-</td><td>Hardware I/O registers.</td></tr>
     </tbody>
@@ -146,7 +146,7 @@
   <details class="disclosure">
     <summary>Where these boundaries come from</summary>
     <div class="disclosure-body">
-      <p>The executable's own header fixes the bottom half: <code>t_addr = 0x80010000</code>, <code>t_size = 0x6B800</code>, initial PC <code>0x80026C28</code>, initial <code>sp = 0x801FFFF0</code>, and <strong>no BSS</strong> (<code>b_addr = b_size = 0</code>) - so nothing above the image end is cleared by the loader. The first <code>jr ra</code> in the image is at <code>0x80016228</code> and the last at <code>0x8006F178</code>, which is what places the code between the table head and the data. <code>main()</code> sets the heap from <code>DAT_8007B414 = 0x80091800</code> with size <code>0x134800</code> (<code>0x200000</code> on the 8 MB development console), so the heap ends at <code>0x801C6000</code>. The overlay bases are recovered from each image's own call graph (<a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>).</p>
+      <p>The executable's own header fixes the bottom half: <code>t_addr = 0x80010000</code>, <code>t_size = 0x6B800</code>, initial PC <code>0x80026C28</code>, initial <code>sp = 0x801FFFF0</code> (which the startup code at <code>0x80026C74</code> replaces with <code>0x80200000</code>), and <strong>no BSS</strong> (<code>b_addr = b_size = 0</code>) - so nothing above the image end is cleared by the loader. The first <code>jr ra</code> in the image is at <code>0x80016228</code> and the last at <code>0x8006F178</code>, which is what places the code between the table head and the data. <code>main()</code> sets the heap from <code>DAT_8007B414 = 0x80091800</code> with size <code>0x134800</code> (<code>0x200000</code> on the 8 MB development console), so the heap ends at <code>0x801C6000</code>. The overlay bases are recovered from each image's own call graph (<a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a>).</p>
       <p>The previous version of this map split the executable at <code>0x80060000</code>, gave it ~960 KB, placed a 256 KB overlay window at <code>0x801C0000</code> with a title overlay at its base and an "extended overlay region" past <code>0x80200000</code>. None of that survives the header and the overlay bases: the title screen is PROT 0899 code at <code>0x801CE818</code>, <code>0x801C0000..0x801C5FFF</code> is heap, and there is no RAM past <code>0x801FFFFF</code>.</p>
     </div>
   </details>
@@ -469,8 +469,8 @@
 
 <section class="doc-section" id="stack">
   <h2>Free RAM and the stack</h2>
-  <p>Above the largest slot-B image nothing is loaded. The stack starts at <code>0x801FFFF0</code> and grows down; the deepest use seen across the save-state library is <code>0x801FE420</code>, and <code>0x801FD000..0x801FE000</code> reads all-zero in every state - which is why the disc patcher parks injected code there (<a href="../tooling/randomizer.html">randomizer</a>).</p>
-  <p>No code on the disc builds an address from <code>0x801FA9D8</code> up, apart from the initial stack pointer. The loader reads exactly as many sectors as the PROT table of contents gives, so a larger PROT 0900 / 0901 would carry its extra bytes into this space on every field load, and they would stay until power-off. The catch is that those two entries have no spare room on the disc, so growing them means moving every later PROT entry, which a same-size patch cannot do. In the same way, while the field or menu overlay is loaded, the range <code>0x801F3818..0x801F69D7</code> only holds leftovers from whichever image last used it.</p>
+  <p>Above the largest slot-B image nothing is loaded. The stack starts at <code>0x80200000</code> and grows down; interrupt callbacks run on their own stack at <code>0x8007A7F0</code>, and the render pass moves onto the scratchpad, so only the main thread's own calls land here. A canary fill over the band measures how deep they go: <code>0x801FE420</code> (7,136 bytes) once at boot, while <code>FUN_8001D8FC</code> reads <code>CDNAME.TXT</code> into a 4 KB stack buffer, and never below <code>0x801FF138</code> after it - the FMV decoder, which reserves a per-frame macroblock table on the stack. Battles stay above <code>0x801FFD30</code>, scene loads and card saves above <code>0x801FFA20</code>. <code>0x801FD000..0x801FE000</code> is therefore free, which is why the disc patcher parks injected code there (<a href="../tooling/randomizer.html">randomizer</a>).</p>
+  <p>No code on the disc builds an address from <code>0x801FA9D8</code> up; the stack top comes from a data word. The loader reads exactly as many sectors as the PROT table of contents gives, so a larger PROT 0900 / 0901 would carry its extra bytes into this space on every field load, and they would stay until power-off. The catch is that those two entries have no spare room on the disc, so growing them means moving every later PROT entry, which a same-size patch cannot do. In the same way, while the field or menu overlay is loaded, the range <code>0x801F3818..0x801F69D7</code> only holds leftovers from whichever image last used it.</p>
 </section>
 
 <section class="doc-section" id="scratchpad">
