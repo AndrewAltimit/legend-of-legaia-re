@@ -119,6 +119,32 @@ uncovered scene is reached cold: `isolate_card_save.py` stages the one save
 on a scratch card, `autorun_boot_continue.lua` loads it from the title, and
 the walk starts from that state.
 
+A random walk finds the doors near where it starts and few beyond. A scene
+two or three doors from any save point, a minigame cabinet, or a room behind
+a guard is reached by a **planned** walk instead:
+
+1. `asset scene-nav <scene>...` writes each scene's navigation facts as JSON:
+   the `.MAP` collision grid and trigger tables
+   ([field-map](../formats/field-map.md)), the MAN's door sites with the
+   partition-2 slot each trigger names, and the placements.
+2. [`plan_walk_route.py`](../../scripts/pcsx-redux/plan_walk_route.py) searches
+   the wall sub-cells of each leg (`scene:start:goal`, a goal being a door's
+   trigger tile, a point, or `far:N` steps) with the kind-0 teleports as edges,
+   and writes a route file. Other doors' tiles are walls and are named on an
+   `AVOID` line; an event tile is crossed only when nothing else connects.
+3. [`autorun_walk_route.lua`](../../scripts/pcsx-redux/autorun_walk_route.lua)
+   walks it on the retail disc, pad only: it steers on the live player
+   position through the scene's pad octant, fights a random encounter with
+   the harvester's hand, and saves a state in every scene the route enters.
+   An `ACT` line presses Cross at a cabinet or a sign-up counter and saves
+   the minigame that opens at chosen vsyncs; a `TALK` line opens and pages a
+   conversation that must be had to pass (the Gold Card guard at `koin3`).
+
+The planner sees walls, trigger tiles and spawn points only. A door actor, a
+moving NPC or a story-gated paint can block a planned leg; the probe then
+sidesteps, and a leg that stays blocked ends the run with the states it
+already saved.
+
 A harvested state is a candidate, not a corpus state, until:
 
 1. its census row (`retail-compare --census` over a scratch manifest naming

@@ -29,6 +29,8 @@ mod minigame;
 mod overlay;
 #[path = "asset/packs.rs"]
 mod packs;
+#[path = "asset/scene_nav.rs"]
+mod scene_nav;
 #[path = "asset/shops.rs"]
 mod shops;
 #[path = "asset/side_effect.rs"]
@@ -338,6 +340,11 @@ fn main() -> Result<()> {
         } => man_one(&input, with_encounter, max_formations, max_regions),
         Cmd::ManScan { dir, cdname, json } => man_scan(&dir, cdname.as_deref(), json),
         Cmd::FieldDisasm { cmd } => field_disasm_cli::field_disasm(cmd),
+        Cmd::SceneNav {
+            prot,
+            cdname,
+            scenes,
+        } => scene_nav::scene_nav_cmd(&prot, &cdname, &scenes),
         Cmd::FieldOpCensus {
             dir,
             cdname,

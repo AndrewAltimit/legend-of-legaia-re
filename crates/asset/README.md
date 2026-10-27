@@ -55,6 +55,7 @@ asset player-anm / player-anm-scan
 asset scene-v12 / scene-v12-scan
 asset man / man-scan                      # MAN multi-section walker (--with-encounter)
 asset field-disasm / field-op-census      # field-VM disassembler + disc-wide opcode census
+asset scene-nav <scene>...                # .MAP grid + triggers, door sites, placements as JSON (route planner input)
 asset boot-overlay     [--prot-dir extracted/PROT]  # which entry each boot loader param names
 asset slot-scene       <PROT 0975 .BIN> [--art <PROT 1200 .BIN>]  # reel cylinder + dot marquee
 asset slot-art         <PROT 0975 .BIN> <PROT 1200 .BIN> [--out <dir>]  # slot art + data as PNGs + JSON (VRChat kit)

@@ -100,8 +100,9 @@
   <table>
     <thead><tr><th>Family</th><th>Script</th><th>What it answers</th></tr></thead>
     <tbody>
-      <tr><td id="cat-navigation-state-identification" rowspan="3">Navigation + identity</td><td><code>autorun_identify_state.lua</code></td><td>What a save state <em>is</em>: game mode, scene, which overlay ticks</td></tr>
+      <tr><td id="cat-navigation-state-identification" rowspan="4">Navigation + identity</td><td><code>autorun_identify_state.lua</code></td><td>What a save state <em>is</em>: game mode, scene, which overlay ticks</td></tr>
       <tr><td><code>autorun_pad_walk.lua</code></td><td>Drives a scripted pad sequence and traces the mode transitions it reaches; the distinct-pad-word census proves presses arrived</td></tr>
+      <tr><td><code>autorun_walk_route.lua</code></td><td>Walks a route planned offline (<code>plan_walk_route.py</code> over <code>asset scene-nav</code>) through several scenes, pad only, and saves a state in each scene it enters and in the minigame a cabinet or counter opens - how the retail Sol Tower, dance-hall and fishing states were reached</td></tr>
       <tr><td><code>autorun_confirm_dialog_dump.lua</code></td><td>Captures the save screen's confirm prompt at rest plus the panel drawer's live arguments</td></tr>
       <tr><td id="cat-world-map-slot-4" rowspan="8">World map + slot 4</td><td><code>autorun_world_map_probe.lua</code></td><td>The world-map sprite emitter's one-shot gate flag and its three-parameter block</td></tr>
       <tr><td><code>autorun_ocean_moveimage.lua</code></td><td>Every VRAM transfer with tick + rects; confirms the ocean CLUT-walk cadence on all three kingdoms</td></tr>
