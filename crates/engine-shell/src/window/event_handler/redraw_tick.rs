@@ -435,6 +435,7 @@ impl PlayWindowApp {
                     &mut self.session.host.world,
                     seat,
                     &sc.battle_bars,
+                    sc.battle_approach_yaw,
                 );
             }
         }

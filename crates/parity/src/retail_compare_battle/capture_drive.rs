@@ -517,6 +517,86 @@ impl RetailBattle {
         }
     }
 
+    /// The yaw counter `ctx[+0x6DA]` a driven monster-melee capture's
+    /// attacker reached its target on, for the re-seat's approach start
+    /// (`BattleState::capture_approach_yaw`).
+    ///
+    /// A monster's counter after the Attack arm has one rung, the `0x200`
+    /// the arm stores (`0x801E2F20`): the swing-clip re-seed is a party
+    /// seat's (`FUN_8004E13C`, gated on `ctx[+0x13] < 3`). From there it
+    /// counts SM passes, `max(1, 4 * step / 3)` each (`0x801E29E4`), through
+    /// the walk, the strike loop's first pass and its clips. The close-up
+    /// accumulator (`ctx[+0x87C]`, `8 * step` a framing call) dates the clip
+    /// the capture sits in, so the walk ended that many passes before the
+    /// capture, plus the arrival pass and the strike loop's first; a
+    /// capture still on the walk clip arrived inside its accumulator's
+    /// window. Strike-loop
+    /// states `0x1E..=0x20` of an Attack only; `None` elsewhere. Beside it,
+    /// the engine slot of the capture's target `+0x1DD` - only a walk onto
+    /// that body is the captured one - and both bodies' captured live pairs
+    /// (not the seeds', which [`Self::undrift`] moves).
+    pub fn capture_approach_yaw(&self) -> Option<legaia_engine_core::world::CaptureApproach> {
+        let SeedPlan::Action { seat, state } = self.seed_plan() else {
+            return None;
+        };
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        if seat < 3 || self.queued_category != 3 || !(0x1E..=0x20).contains(&state) {
+            return None;
+        }
+        let step = if self.step_run.1 >= 16 {
+            self.step_run.0
+        } else {
+            2
+        }
+        .max(1);
+        let inc = legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step);
+        // A capture still on the walk clip in the strike loop
+        // ([`Self::walk_clock_capture`]) arrived after the walk's last loop
+        // re-commit - the first loop pass staged the strike, which that
+        // re-commit would have installed - so inside the accumulator's
+        // window: halfway, and at least a pass in, so the loop's framing
+        // (case 7, `0x801E36E8`) has armed.
+        let passes = if self.walk_clock_capture() {
+            (accum / (8 * u16::from(step)) / 2).max(1)
+        } else {
+            accum / (8 * u16::from(step)) + 2
+        };
+        let target = legaia_engine_capture::battle_drive::engine_seat(
+            self.target_code,
+            self.party_count.clamp(1, 3),
+        );
+        let strike = self
+            .captured
+            .get(usize::from(self.active_actor))?
+            .as_ref()?
+            .0;
+        let target_ground = self
+            .captured
+            .get(usize::from(self.target_code))?
+            .as_ref()?
+            .0;
+        self.walk_yaw_base
+            .checked_sub(passes * inc)
+            .filter(|&y| y > 0x200)
+            .map(|arrive| legaia_engine_core::world::CaptureApproach {
+                arrive,
+                target,
+                strike,
+                target_ground,
+            })
+    }
+
+    /// A monster's strike loop `0x1E` captured still on its walk clip `1`
+    /// (`ActionSteer::walk_clock`).
+    pub fn walk_clock_capture(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, state: 0x1E } if seat >= 3)
+            && self.queued_category == 3
+            && self.caster_clip == 1
+            && matches!(self.span_gate, SpanGate::Age { .. })
+    }
+
     /// The pad drive that reaches this capture, when its plan has one.
     pub fn battle_drive(&self) -> Option<BattleDrive> {
         match self.seed_plan() {
@@ -616,7 +696,7 @@ impl RetailBattle {
                     .then(|| self.target_code - 3),
                     queue: (seat < 3 && self.queued_category == 3 && self.arts_queue)
                         .then_some(self.committed_queue),
-                    cursor: (seat < 3
+                    cursor: ((seat < 3
                         && self.queued_category == 3
                         && self.arts_queue
                         && matches!(state, 0x1E | 0x1F)
@@ -625,6 +705,17 @@ impl RetailBattle {
                         // placed by the age and the clip already.
                         && matches!(self.caster_clip, 0x10 | 0x11)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
+                        // ...and a monster's strike clip in the strike loop:
+                        // a stream the replay's AI rolled longer plays the
+                        // capture's clip as a later swing, which the clip
+                        // gate alone takes (`battle_noaru_gilium_lv2_strike`:
+                        // retail's first swing `0x08` at cursor `1`, the
+                        // engine's `0x07` then `0x08`).
+                        || (seat >= 3
+                            && state == 0x1E
+                            && self.queued_category == 3
+                            && self.caster_clip > 1
+                            && self.span_gate == SpanGate::Age { accum: 0 }))
                     .then_some(self.strike_cursor),
                     // A party swing captured after its victim's death commit:
                     // the close-up accumulator restarts on every idle cycle
@@ -645,6 +736,7 @@ impl RetailBattle {
                     // The caption is the steal roll's outcome, a draw: a
                     // stream whose kill rolls no steal shows another frame.
                     spoils: seat < 3 && self.spoils_caption,
+                    walk_clock: self.walk_clock_capture(),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -677,8 +769,14 @@ pub(super) fn run_drive(
                 aged = Some(active_clip_age(world));
             } else if let Some(a) = aged.take() {
                 // The state ended before it was as old as retail's: the
-                // re-run samples its last tick.
-                *age_short = Some(a.min(u32::from(u16::MAX)) as u16);
+                // re-run samples its last tick. A state that ran past
+                // retail's age unreached missed another of the phase's gates
+                // (a monster's strike clip, the art cursor) - a different
+                // swing, which a re-run on its last tick would only score as
+                // retail's.
+                if drive.age_gate().is_none_or(|want| a < u32::from(want)) {
+                    *age_short = Some(a.min(u32::from(u16::MAX)) as u16);
+                }
                 break;
             }
         }

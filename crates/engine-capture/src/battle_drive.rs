@@ -216,6 +216,16 @@ pub struct ActionSteer {
     /// it one a vsync; [`BattleDrive::steer`] rescales the engine's drift by
     /// that ratio before testing the counter against retail's.
     pub drift_step: Option<u8>,
+    /// The capture is a monster's strike loop `0x1E` still on its walk clip
+    /// (`+0x1D9 == 1`). The arrival poll stages idle under the `+0x1DC`
+    /// bit-0 cut (`0x801E35BC..0x801E35C8`), and a walk entry carrying the
+    /// `+0x76` lock refuses it (`0x80047940..0x80047948`), so the walk plays
+    /// on through the loop's passes - the strike byte they stage waits for
+    /// its natural end. The accumulator then dates the walk's last loop
+    /// re-commit, which the engine's clip age leaves out; the yaw counter
+    /// `yaw` places the capture instead: met once the engine's counter has
+    /// run to retail's, and not pinned to it before.
+    pub walk_clock: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -410,6 +420,25 @@ const ACTION_DONE_FADE_STATE: u8 = 0x51;
 /// instant (`BattleDrive::steer`): under half the `0x80` between the nearest
 /// rungs (`0x200` / `0x280`), about a second of drift.
 const YAW_CLOCK_SLACK: i32 = 0x3F;
+
+/// How far short of retail's yaw counter a [`ActionSteer::walk_clock`]
+/// capture's engine counter may stand and be due: one step-`2` SM pass of
+/// drift (`max(1, 4 * 2 / 3)`, `0x801E29E4`), so the gate lands on the pass
+/// whose drift reaches retail's word rather than the one after it.
+const WALK_CLOCK_DUE: i32 = 2;
+
+/// Whether a [`ActionSteer::walk_clock`] capture's engine yaw counter has
+/// run to within [`WALK_CLOCK_DUE`] of retail's `yaw`.
+fn walk_clock_due(world: &legaia_engine_core::world::World, yaw: Option<u16>) -> bool {
+    let Some(yaw) = yaw else {
+        return true;
+    };
+    world
+        .battle
+        .camera
+        .as_ref()
+        .is_none_or(|c| i32::from(yaw) - c.action_yaw_base() <= WALK_CLOCK_DUE)
+}
 
 /// Whether the engine's yaw counter has run as far through `0x6E` as
 /// retail's `yaw` (`ctx[+0x6DA]`) says retail's did: the capture's value
@@ -690,6 +719,9 @@ impl BattleDrive {
                 if let Some(r) = steer.drift_step {
                     s.push_str(&format!(",r{r}"));
                 }
+                if steer.walk_clock {
+                    s.push_str(",w");
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -745,6 +777,8 @@ impl BattleDrive {
                 steer.spoils = true;
             } else if last == "h" {
                 steer.park = true;
+            } else if last == "w" {
+                steer.walk_clock = true;
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(g) = last.strip_prefix('g') {
@@ -849,6 +883,18 @@ impl BattleDrive {
             Self::Opening { .. } => 0,
             Self::Menu { .. } => MENU_DRIVE_TICKS,
             Self::Action { .. } => ACTION_DRIVE_TICKS,
+        }
+    }
+
+    /// The close-up accumulator an [`SpanGate::Age`] action phase waits for,
+    /// `None` on every other drive.
+    pub fn age_gate(&self) -> Option<u16> {
+        match *self {
+            Self::Action {
+                end: SpanGate::Age { accum },
+                ..
+            } => Some(accum),
+            _ => None,
         }
     }
 
@@ -1052,29 +1098,32 @@ impl BattleDrive {
                         SpanGate::Landed => {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
-                        SpanGate::Age { accum } => active_clip_age(world) >= u32::from(accum)
-                            && steer.clip.is_none_or(|k| {
+                        SpanGate::Age { accum } => {
+                            (if steer.walk_clock {
+                                walk_clock_due(world, steer.yaw)
+                            } else {
+                                active_clip_age(world) >= u32::from(accum)
+                            }) && steer.clip.is_none_or(|k| {
                                 world.battle_current_anim(usize::from(engine_seat(seat, pc))) == k
-                            })
-                            && steer.cursor.is_none_or(|u| {
+                            }) && steer.cursor.is_none_or(|u| {
                                 world
                                     .actors
                                     .get(usize::from(engine_seat(seat, pc)))
                                     .is_some_and(|a| a.battle.strike_index == u)
-                            })
-                            && (!steer.spoils
+                            }) && (!steer.spoils
                                 || world.battle_ctx.message_id
                                     == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT)
-                            && steer.fading.is_none_or(|(v, lane)| {
-                                world
-                                    .actors
-                                    .get(usize::from(engine_seat(v, pc)))
-                                    .is_some_and(|a| {
-                                        a.battle.render_flag
+                                && steer.fading.is_none_or(|(v, lane)| {
+                                    world
+                                        .actors
+                                        .get(usize::from(engine_seat(v, pc)))
+                                        .is_some_and(|a| {
+                                            a.battle.render_flag
                                     == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
                                     && (a.battle.render_color & 0x3FF) as u16 <= lane
-                                    })
-                            }),
+                                        })
+                                })
+                        }
                         _ => true,
                     }
             }
@@ -1178,7 +1227,12 @@ impl BattleDrive {
                             sr,
                         ))
                     });
-                    if (state == want && (steer.park || near(cam.action_yaw_base()))) || rescaled {
+                    let clock_held =
+                        steer.walk_clock && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
+                    if !clock_held
+                        && ((state == want && (steer.park || near(cam.action_yaw_base())))
+                            || rescaled)
+                    {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the
                         // pin lands ahead of a tick whose pass adds the drift

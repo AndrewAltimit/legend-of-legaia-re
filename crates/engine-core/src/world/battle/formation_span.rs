@@ -146,6 +146,8 @@ impl World {
                 }
             }
             self.refresh_battle_body_pairs_now();
+            self.battle.capture_approach_due = self.battle.capture_approach_yaw.is_some();
+            self.stand_capture_attacker_off_reach(actor);
         }
         if self.battle.seed_recentre_held {
             return;

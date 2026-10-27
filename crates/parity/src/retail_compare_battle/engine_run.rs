@@ -439,10 +439,20 @@ pub fn run_engine_battle(
     hp_seed.extend(battle.empty_seat_seeds());
     apply_bar_seeds(&mut session.host.world, &hp_seed);
     if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
+        if std::env::var_os("LEGAIA_RC_SEED_TRACE").is_some() {
+            eprintln!(
+                "[seed] reseat seat {seat}: retail yaw counter {} accum {:?} clip {:#04X}, approach {:?}",
+                battle.walk_yaw_base,
+                battle.span_gate,
+                battle.caster_clip,
+                battle.capture_approach_yaw()
+            );
+        }
         legaia_engine_capture::bar_seeds::arm_capture_reseat(
             &mut session.host.world,
             seat,
             &hp_seed,
+            battle.capture_approach_yaw(),
         );
     }
     if battle.mystic_shield {
@@ -783,7 +793,10 @@ pub fn run_engine_battle(
         let target = legaia_engine_capture::ground_snap::snap_battle_ground(
             world,
             &battle.engine_ground_snaps(),
-        );
+        )
+        .map(|t| {
+            legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
+        });
         let mask = match (world.battle.camera.as_mut(), target) {
             (Some(cam), Some(target)) => {
                 cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
@@ -792,6 +805,16 @@ pub fn run_engine_battle(
         };
         if let Some(t) = cam_trace.as_mut() {
             t.push_str(&format!(" | aligned {mask:#010b}"));
+            if let Some(target) = target {
+                t.push_str(&format!(
+                    " against the snapped target {}/{}",
+                    target.pitch,
+                    target.yaw.rem_euclid(4096.0)
+                ));
+            }
+            if let Some(cam) = world.battle.camera.as_ref() {
+                t.push_str(&format!(" (yaw counter {})", cam.action_yaw_base()));
+            }
         }
     }
     let world = &session.host.world;

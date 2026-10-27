@@ -203,10 +203,15 @@ mod tests;
 /// engine slot `seat`'s action seeds, every combatant whose seed places
 /// ground stands back on it. Both the headless seed and the image child
 /// call it beside [`apply_bar_seeds`].
+///
+/// `approach_yaw` is a monster-melee capture's arrival
+/// ([`legaia_engine_core::world::BattleState::capture_approach_yaw`]): the
+/// attacker's walk onto its target then starts where retail's did.
 pub fn arm_capture_reseat(
     world: &mut legaia_engine_core::world::World,
     seat: u8,
     seeds: &[BarSeed],
+    approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
 ) {
     let ground: Vec<(u8, i16, i16)> = seeds
         .iter()
@@ -215,5 +220,6 @@ pub fn arm_capture_reseat(
         .collect();
     if !ground.is_empty() {
         world.battle.capture_reseat = Some((seat, ground));
+        world.battle.capture_approach_yaw = approach_yaw;
     }
 }

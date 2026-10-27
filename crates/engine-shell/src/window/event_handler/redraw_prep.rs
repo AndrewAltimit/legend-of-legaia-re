@@ -307,7 +307,8 @@ impl PlayWindowApp {
                 .map(|sc| sc.battle_ground_snap.clone())
                 .unwrap_or_default();
             let world = &mut self.session.host.world;
-            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps)
+                .map(|t| legaia_engine_capture::ground_snap::strike_heading_target(world, t, end));
             // On a display-lag retake the frame is two game frames older than
             // the RAM the endpoints were read from, and the framing armed
             // here may stand a step of yaw drift or depth ramp short of them;

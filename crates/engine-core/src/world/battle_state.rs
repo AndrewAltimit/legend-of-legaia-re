@@ -1054,6 +1054,76 @@ pub struct BattleState {
     /// attacker keeps the ground its own walk starts from. Set by
     /// `legaia_engine_capture::bar_seeds::arm_capture_reseat`; never in play.
     pub capture_reseat: Option<CaptureReseat>,
+    /// Capture alignment for a driven monster-melee capture
+    /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
+    /// attacker reached its target on.
+    /// Retail's walk is a straight line onto the target's live position (the
+    /// facing recompute every approach pass, `0x801E32EC..0x801E3318`) whose
+    /// passes the counter clocks from the Attack arm's `0x200` rung
+    /// (`0x801E2F20`), so its start lies on the ray from the target through
+    /// the captured strike pair, as many root-motion steps back as the
+    /// counter ran. Each time [`Self::capture_reseat`]'s seat seeds, its
+    /// first walk step stands it there
+    /// (`World::seat_capture_approach_start`) when it walks at the
+    /// capture's target; never in play.
+    pub capture_approach_yaw: Option<CaptureApproach>,
+    /// The seed armed [`Self::capture_approach_yaw`]'s placement and the walk
+    /// has not taken it yet.
+    pub(crate) capture_approach_due: bool,
+}
+
+/// [`BattleState::capture_approach_yaw`]: where a driven monster-melee
+/// capture's walk ended, and on which counter reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureApproach {
+    /// The yaw counter `ctx[+0x6DA]` on the walk's last pass.
+    pub arrive: u16,
+    /// The engine slot of the capture's target `+0x1DD`.
+    pub target: u8,
+    /// The attacker's captured live pair `+0x34` / `+0x38`.
+    pub strike: [i16; 2],
+    /// The target's captured live pair.
+    pub target_ground: [i16; 2],
+}
+
+impl CaptureApproach {
+    /// `arrive:target:sx:sz:tx:tz`.
+    pub fn to_env(&self) -> String {
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            self.arrive,
+            self.target,
+            self.strike[0],
+            self.strike[1],
+            self.target_ground[0],
+            self.target_ground[1]
+        )
+    }
+
+    /// Parse [`Self::to_env`]'s form.
+    pub fn from_env(v: &str) -> Option<Self> {
+        let mut it = v.trim().split(':');
+        let mut next = || it.next().map(str::trim);
+        Some(Self {
+            arrive: next()?.parse().ok()?,
+            target: next()?.parse().ok()?,
+            strike: [next()?.parse().ok()?, next()?.parse().ok()?],
+            target_ground: [next()?.parse().ok()?, next()?.parse().ok()?],
+        })
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn capture_approach_env_round_trips() {
+    let a = CaptureApproach {
+        arrive: 656,
+        target: 2,
+        strike: [168, 290],
+        target_ground: [0, -12],
+    };
+    assert_eq!(CaptureApproach::from_env(&a.to_env()), Some(a));
+    assert_eq!(CaptureApproach::from_env("656:2:168"), None);
 }
 
 /// [`BattleState::capture_reseat`]: the engine slot whose action seeds the
@@ -1226,6 +1296,8 @@ impl BattleState {
             seed_recentre_held: false,
             arrival_spawn_anchor: None,
             capture_reseat: None,
+            capture_approach_yaw: None,
+            capture_approach_due: false,
         }
     }
 

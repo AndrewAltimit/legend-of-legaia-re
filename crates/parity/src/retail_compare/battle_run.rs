@@ -473,6 +473,9 @@ pub(super) fn battle_image(
     // ... and the re-seat of a driven action at its own seed pass.
     if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
         env.push(("LEGAIA_BATTLE_RESEAT", seat.to_string()));
+        if let Some(app) = battle.capture_approach_yaw() {
+            env.push(("LEGAIA_BATTLE_APPROACH_YAW", app.to_env()));
+        }
     }
     // A shiny-Seru build's entry draw, which the child's `--retail` pin would
     // otherwise drop while the headless seed took it

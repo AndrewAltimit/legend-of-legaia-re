@@ -1266,7 +1266,23 @@ The same holds for the round start's squash and recentre (`FUN_801D388C`, `World
 A driven capture of a strike also replays rounds its history did not, and every walk and push in them carries the formation further off (`battle_chitei2_gilium_strike`'s drive ran four rounds and stood the party up to `2000` units from its pairs).
 Retail's own action seeded on the ground the capture holds: state `0x0C` recentres the formation so an Attack's target sits on the origin, and the capture's target reads `(0, 0)`.
 So each time the capture's acting seat seeds an action, the engine stands every other combatant back on its captured pair (`BattleState::capture_reseat`, armed by `legaia_engine_capture::bar_seeds::arm_capture_reseat` on both sides; `LEGAIA_BATTLE_RESEAT` for the image child), and the action plays from there.
-The attacker keeps its own ground: its approach is the walk the action's yaw counter `ctx[+0x6DA]` clocks (`battle_korb2_medusa_strike` holds `664`, `150` passes past the `0x19` rung), and stood on its strike pair it arrived at once with the counter short by the whole walk. The phase's ground snap stands it on the captured pair.
+The attacker is not stood on its captured pair: that is where its walk ended, and the walk is what the action's yaw counter `ctx[+0x6DA]` clocks (`battle_korb2_medusa_strike` holds `664`, about `75` step-`2` passes past the Attack arm's `0x200` rung, `0x801E2F20`). Stood there it arrives at once, the counter short by the whole walk; left on the replay's ground it walks from wherever earlier rounds put it - `battle_korb2_medusa_strike` came in from behind the party, and the case-7 yaw, `counter - heading`, framed the strike from the far side. The case-7 camera read `0.875` on nine monster-strike states for that reason.
+
+So a monster-melee capture also places the walk's start (`BattleState::capture_approach_yaw`, `RetailBattle::capture_approach_yaw`; `LEGAIA_BATTLE_APPROACH_YAW` for the image child). A monster's counter after the Attack arm has one rung, since the swing-clip re-seed is a party seat's (`FUN_8004E13C`, gated on `ctx[+0x13] < 3`), and it climbs `max(1, 4 * step / 3)` an SM pass. The walk is a straight line: every approach pass re-faces the attacker onto the target's live pair (`0x801E32EC..0x801E3318`), and its root motion runs along that heading. So retail's start lies on the ray from the target's captured pair through the attacker's, as far back of the strike pair as the walk covers in the counter units from `0x202` to the arrival:
+
+| Step | Where | What |
+|---|---|---|
+| arrival reading | harness | the capture's counter less the passes since the walk ended: the accumulator dates the strike clip the capture sits in (`8 * step` a framing call), plus the arrival pass and the loop's first |
+| seed `0x0C` | `World::stand_capture_attacker_off_reach` | stands the attacker on the ray, back by the tag-`1` walk entry's speed (`FUN_80050E2C`'s fallback at `0x801E32B0`; `speed * scale / 8` a vsync) times the counter units to arrival, so the bystanders' make-way at `0x14` reads its path and `0x14`'s in-reach shortcut (`0x801E320C`) cannot skip the walk |
+| first walk step | `World::seat_capture_approach_start` | re-seats it on the ray from the counter it walks off, now that the playing clip's speed is known |
+
+Only a walk onto the capture's own target is placed, so the replay's earlier attacks by the same seat walk from where they stood.
+
+Three gates keep the drive on the captured swing once the walk is right. A capture still on the walk clip in `0x1E` (`king_frog`, `twin_tomb`, `warhalf`, `warman`) is placed by the counter, not the accumulator (`ActionSteer::walk_clock`).
+The arrival's idle stage rides the `+0x1DC` bit-0 cut, a walk entry carrying the `+0x76` lock refuses it (`0x80047940..0x80047948`), and the walk plays on until its natural end, restarting the accumulator at each loop re-commit (the [commit](../subsystems/battle-action.md#the-locked-walk-at-arrival)); the engine's clip age leaves those re-commits out.
+A monster strike-clip gate also takes the strike cursor `ctx[+0x15]`: a stream whose AI rolled a longer queue plays the captured clip as a later swing (`battle_noaru_gilium_lv2_strike`, retail's first swing `0x08` against the engine's `0x07` then `0x08`). And a state the engine left past retail's age unreached is not re-run on its last tick: it missed another gate, a different swing.
+
+Case 7 arms (`0x801E36E8`) before the pass re-faces the attacker (`sh v0,0x46(s3)` at `0x801E371C`), so retail's endpoint subtracts the previous pass's heading while the capture holds this pass's. Within `8` units the snapped probe's yaw endpoint is taken as retail's (`ground_snap::strike_heading_target`): `battle_map01_gobu_gobu_strike` probes `2944` against retail's `2941` on the captured words.
 
 ### The ground at the phase
 

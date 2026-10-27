@@ -181,6 +181,8 @@ impl World {
         self.battle.empty_seat_ground = [(0, 0); 7];
         self.battle.seed_recentre_held = false;
         self.battle.capture_reseat = None;
+        self.battle.capture_approach_yaw = None;
+        self.battle.capture_approach_due = false;
         self.battle.monster_flee_attempted = false;
         // No pass has drawn this fight's bodies yet.
         self.battle.readout_trios.clear();

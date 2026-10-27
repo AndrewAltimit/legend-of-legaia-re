@@ -87,6 +87,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 yaw: Some(0xA98),
                 message: Some((0x801C_ED18, 25)),
                 plate_cleared: true,
+                walk_clock: true,
                 ..ActionSteer::default()
             },
         },

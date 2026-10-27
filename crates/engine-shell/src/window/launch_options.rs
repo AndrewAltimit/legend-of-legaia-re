@@ -401,6 +401,10 @@ pub struct ScreenshotConfig {
     /// time that slot's action seeds
     /// (`legaia_engine_capture::bar_seeds::arm_capture_reseat`).
     pub battle_reseat: Option<u8>,
+    /// `LEGAIA_BATTLE_APPROACH_YAW` (`CaptureApproach::to_env`): the
+    /// re-seated attacker's walk onto its target starts where retail's did
+    /// (`legaia_engine_core::world::BattleState::capture_approach_yaw`).
+    pub battle_approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -868,6 +872,9 @@ impl ScreenshotConfig {
             battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            battle_approach_yaw: std::env::var("LEGAIA_BATTLE_APPROACH_YAW")
+                .ok()
+                .and_then(|v| legaia_engine_core::world::CaptureApproach::from_env(&v)),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),
