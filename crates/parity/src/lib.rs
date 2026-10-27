@@ -22,6 +22,7 @@
 //! Tool code, never shipped in a play host: it reads emulator states and links
 //! the wgpu renderer for frame captures.
 
+pub mod audio_sweep;
 pub mod audio_trace_oracle;
 pub mod capture_observations;
 pub mod cast_sequence;

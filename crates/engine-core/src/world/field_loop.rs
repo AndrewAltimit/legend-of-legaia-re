@@ -186,23 +186,17 @@ impl World {
         let Some(configured) = self.audio.battle_bgm else {
             return;
         };
-        let set = self.audio.battle_sound_set;
-        if set < 0 {
+        let alt = self
+            .encounters
+            .region_setup
+            .and_then(|s| s.keep_backdrop_object_1)
+            .unwrap_or(false);
+        let Some(battle) = legaia_engine_system::music_labels::battle_track_for_sound_set(
+            self.audio.battle_sound_set,
+            alt,
+            configured,
+        ) else {
             return;
-        }
-        let battle = if set == 0 {
-            let alt = self
-                .encounters
-                .region_setup
-                .and_then(|s| s.keep_backdrop_object_1)
-                .unwrap_or(false);
-            if alt && configured == legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID {
-                legaia_engine_system::music_labels::BATTLE_THEME_2_BGM_ID
-            } else {
-                configured
-            }
-        } else {
-            legaia_engine_system::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;

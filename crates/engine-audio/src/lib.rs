@@ -445,7 +445,7 @@ impl StreamResampler {
     /// into the SPU output at SPU rate, then the whole sum is resampled.
     /// The `master_fade` multiplier is applied to the SPU contribution only
     /// (not XA) so BGM cross-fades don't interrupt ambient / dialogue audio.
-    fn next_frame(&mut self) -> (i16, i16) {
+    pub fn next_frame(&mut self) -> (i16, i16) {
         // Advance the SPU as many ticks as needed to push `phase` into [0,1).
         while self.phase >= 1.0 {
             // Advance fade one step per SPU tick.
@@ -651,6 +651,7 @@ impl StreamResampler {
             bpm: seq.bpm(),
             active_notes: seq.active_notes(),
             finished: seq.is_finished(),
+            master_vol: seq.master_vol(),
         })
     }
 }
@@ -757,6 +758,9 @@ pub struct SequencerProgress {
     pub active_notes: usize,
     /// Has the sequencer reached end-of-track (looping disabled)?
     pub finished: bool,
+    /// The sequence volume the notes are folded through (`SsSeqSetVol`, the
+    /// record's `+0x58`), after any duck the director applied.
+    pub master_vol: u8,
 }
 
 #[cfg(test)]

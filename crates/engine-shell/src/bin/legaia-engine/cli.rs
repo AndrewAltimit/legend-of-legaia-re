@@ -1573,6 +1573,11 @@ pub(crate) enum Cmd {
     #[command(display_order = 30)]
     #[cfg(feature = "oracles")]
     CastSequenceScore(legaia_parity::cast_sequence::CastSequenceArgs),
+    /// Music and sound state of every retail library state against the
+    /// seeded engine (`docs/subsystems/audio.md`, "The audio state sweep").
+    #[command(display_order = 31)]
+    #[cfg(feature = "oracles")]
+    AudioSweep(legaia_parity::audio_sweep::AudioSweepArgs),
 }
 
 #[derive(Subcommand, Debug)]
