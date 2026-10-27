@@ -324,6 +324,12 @@ pub struct SceneHost {
     /// last start, is the word to compare against a save state's.
     /// `None` until a script selects a track.
     pub bgm_track_word: Option<u16>,
+    /// A sub-op `9` select waiting for its commit: the id and its
+    /// `music_01` entry. Retail's poller `FUN_800243F0` keeps the outgoing
+    /// track in the slot while sound-flag bit `0` is up and attaches this
+    /// one only on the sub-op `0xA` release-ack or once the MAN loader ends
+    /// the window ([`SceneHost::route_bgm_events`]).
+    pub(crate) pending_bgm_swap: Option<(u16, std::sync::Arc<Vec<u8>>)>,
 }
 
 mod audio_dialog;

@@ -162,9 +162,8 @@ pub struct AudioState {
     /// (`0x801E0260`); the sub-op `0xA` commit and the scene loader
     /// `FUN_8003AEB0` end it. While it is up the swap poller `FUN_800243F0`
     /// leaves the **outgoing** track in the BGM slot, so a sub-op `5` timed
-    /// release that expires inside the window releases that outgoing track.
-    /// The port starts the incoming track at sub-op `9` already, so such an
-    /// expiry has nothing of the port's to release ([`crate::world::World::tick`]).
+    /// release that expires inside the window releases that outgoing track,
+    /// and the BGM router holds the incoming one until the commit.
     pub(crate) start_pending_commit: bool,
     /// Bit 1 of the sound flags `_DAT_8007B750`: the script has paused the
     /// BGM slot. Op-`0x35` sub-ops `2` / `3` raise it (`0x801E0150`,
@@ -247,6 +246,20 @@ pub struct AudioState {
 }
 
 impl AudioState {
+    /// Sound-flag bit 0 ([`Self::start_pending_commit`]'s field): a sub-op
+    /// `9` select is waiting for its commit. The BGM router holds the
+    /// selected track while it is up.
+    pub fn start_pending_commit(&self) -> bool {
+        self.start_pending_commit
+    }
+
+    /// Raise or end the window by hand - the field-VM arms and the MAN loader
+    /// are its writers; this is for a driver that routes BGM events without
+    /// running the op.
+    pub fn set_start_pending_commit(&mut self, on: bool) {
+        self.start_pending_commit = on;
+    }
+
     /// Whether the field script holds the BGM slot paused (sound-flags bit
     /// 1; see the field's doc).
     pub fn bgm_script_paused(&self) -> bool {
