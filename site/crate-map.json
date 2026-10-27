@@ -299,6 +299,7 @@
     "engine-session",
     "engine-shell",
     "mednafen",
+    "parity",
     "party-swap",
     "patcher",
     "render-kernels",
@@ -1192,6 +1193,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "arrival_gate",
     "bar_seeds",
     "battle_drive",
     "camera_align",
@@ -2655,6 +2657,7 @@
     "sfx_emitter",
     "u16_list_append",
     "vdf_morph",
+    "vram_grab",
     "vram_rect_copy"
    ],
    "band": "kernels",
@@ -3222,6 +3225,7 @@
   "parity": {
    "package": "legaia-parity",
    "deps": [
+    "actor-formats",
     "art",
     "bytes",
     "engine-audio",
@@ -3258,7 +3262,6 @@
     "vab"
    ],
    "dev_deps": [
-    "actor-formats",
     "arts-patch",
     "disc-patch",
     "engine-world-views",
@@ -3284,6 +3287,7 @@
     "retail_compare_cli",
     "retail_compare_image",
     "retail_compare_script",
+    "retail_coverage",
     "sim_trace",
     "vram_oracle",
     "window_child"
@@ -3423,13 +3427,17 @@
     "ram-image"
    ],
    "dev_deps": [
-    "mednafen"
+    "iso",
+    "mednafen",
+    "seq",
+    "tim"
    ],
    "bins": [
     "pcsxr-state"
    ],
    "lib": true,
    "modules": [
+    "fixture",
     "gpu"
    ],
    "band": "libraries",
@@ -3499,6 +3507,7 @@
     "game_anchors",
     "prim_dispatch",
     "prim_pool",
+    "profile",
     "scenarios",
     "source_hunt"
    ],
@@ -3565,6 +3574,7 @@
     "streak_pass",
     "ui_tint",
     "vram_capture",
+    "vram_grab",
     "world_map_sky"
    ],
    "band": "kernels",
