@@ -3132,8 +3132,18 @@ still reports:
   (flags `0x19`, no field-BGM source open, requested `1009` against loaded
   `1023`): the poller attaches `2019` a call or two later; the engine has it
   attached already.
-- **`tower_field_walk`** - a one-shot on voice 22 from the field bank (VAB
-  slot 6) rings at the capture instant; nothing identifies its cue.
+- **`tower_field_walk`** - the one-shot on voice 22 reads as cue `0x30`
+  (inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 /
+  6 and its note is 63, which is static row `0x30` (program 2, tone 3, note
+  63, category 6, mapped to VAB slot 6 in the state) and the only row that
+  fits among the cues `tower`'s scripts fire. `tower`'s lift pads (partition-0 records `2..17`, gate-0
+  object binds) fire it as the first op of their activation arm
+  (`36 00 80 30 00`), and retail's pad `17` context is parked at `+0xF4`
+  past its `ExecMove`, so the random walk had just stepped on it. The
+  engine resolves a pad contact to its `PlayerMoveTo` alone
+  (`World::check_field_walk_touch`) instead of resuming the object's
+  script, so the cue, the pad's `4C 60` flicker and the `ExecMove` never
+  run; stepping onto any of the sixteen pads in the engine fires no cue.
 
 <a id="whats-left"></a>
 
@@ -3171,7 +3181,9 @@ still reports:
   engine installs at once and never stalls, so a scene's track and a
   cutscene's beats after a `0xA` start earlier than retail's.
 - **The sweep's open rows** ([above](#the-audio-state-sweep)) are the
-  credits chain's carried music, a capture instant and one cue.
+  credits chain's carried music, a capture instant, and `tower`'s pad cue,
+  which needs a walk-touch contact to resume the touched object's script
+  (`FUN_801D5B5C`) rather than post a decoded summary of it.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer
