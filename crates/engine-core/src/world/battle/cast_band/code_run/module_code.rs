@@ -1324,11 +1324,14 @@ impl World {
         // `0x801F75A0`) and, while the victim still stands, scales it by
         // `3/2` toward zero (`0x801F75A8..0x801F75DC`). Arm 12's case-8 calls
         // frame off that depth: a victim the breath killed at the `0x0C00`
-        // floor, a living one a half again further out.
-        if entry == 903 && ctx.phase != phase_entry {
-            let depth = match phase_entry {
-                10 => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
-                11 => {
+        // floor, a living one a half again further out. PROT 0913 (Nova)
+        // runs the same framing on arm 13's pass (`jal` at `0x801F7B6C`,
+        // unscaled): arms 14 / 15 frame the victim at `d` and `(d/2, -d/2)`
+        // and arm 16 lifts it `sin * d >> 14`, all off that depth.
+        if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
+            let depth = match (entry, phase_entry) {
+                (903, 10) => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
+                (903, 11) | (913, 0x0D) => {
                     let target = self
                         .actors
                         .get(usize::from(caster_slot))
@@ -1350,7 +1353,7 @@ impl World {
                         .actors
                         .get(usize::from(victim_slot))
                         .is_some_and(|a| a.battle.hp != 0);
-                    Some(if alive {
+                    Some(if alive && entry == 903 {
                         ((i32::from(h) * 3) / 2) as i16
                     } else {
                         h

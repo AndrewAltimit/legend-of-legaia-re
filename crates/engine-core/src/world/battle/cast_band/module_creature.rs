@@ -44,7 +44,13 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// retail RAM through arms 9..11 holds `+0x1D9 = 1`, its cursor climbing
 /// `0x170` to `0x48E` past arm 11's entry, and arm 12 finds clip `0` some
 /// sixteen frames in - the swim-in plays out to its end before the idle.
-const CLIP_GATED_MODULES: [u32; 7] = [907, 908, 909, 913, 928, 929, 930];
+/// PROT 0927 (Juggernaut) stores `3` bare on every arm-19 pass
+/// (`0x801F7524`) and `5` bare on every arm-24 pass (`sb v0,0x1da(s3)` at
+/// `0x801F7AD4`): arm 23 commits clip `4` with the stage bit at rate `2`
+/// (`0x801F7A9C..0x801F7AB8`), and the head holds that slow clip through
+/// arm 24 until its natural end; committed at once, clip `5`'s lunge
+/// filled the screen from arm 24's first pass.
+const CLIP_GATED_MODULES: [u32; 8] = [907, 908, 909, 913, 927, 928, 929, 930];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
 /// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at

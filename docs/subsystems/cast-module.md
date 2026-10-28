@@ -1894,15 +1894,19 @@ depth `ctx[+0x6D0]`:
 | 5..9 | pass | on the creature: `(0, 0x900, (0, 0x800, 0x800), 0x20)`, spell name and `(-0x80, 0x900, (0, 0x400, 0x800), 0x20)`, attack name and `(-0x80, 0x700, (0, 0x400, 0x600), 1)`, `(-0x40, 0x780, (0, 0x600, 0x400), 0x80)`, `(0x40, 0x800, (0, 0x600, 0x800), 0x80)` as (pitch, yaw `- f`, TR, frames) |
 | 11 | every pass | TR y `+= 4P`, TR z `+= 2P`, pitch `-= P / 4` |
 | 12, 13 | pass / every pass | pitch `-0x200`, yaw `0x800 - f`, TR `(0, 0x1000, 0x200)` on the creature over `0x10` |
-| 13 | pass | the globals stored straight (`0x801F7B10..0x801F7B5C`): pitch `-0x200`, yaw `0x800 - v[+0x46]`, TR y `0x1000`, scaled TR z `0x200`, focus the victim |
+| 13 | pass | the globals stored straight (`0x801F7B10..0x801F7B5C`): pitch `-0x200`, yaw `0x800 - v[+0x46]`, TR y `0x1000`, scaled TR z `0x200`, focus the victim; the creature hidden (`+0x04 = 0`, `+0x21C = 0xFF`); `d` re-run through the target-size framing `FUN_801F0348` (`jal` at `0x801F7B6C`) |
 | 14, 15 | pass | on the victim: pitch `0x40`, TR `(0, 0x600, d)` over `0x40`; pitch `-0x300`, TR `(0, d / 2, -d / 2)` over `0x100`; yaw `0x800 - v[+0x46]` |
 | 16 | every pass | yaw `+= sin(W / 2) / 2`, `W` the climbing countdown - a fixed step a pass, so two engine ticks take half each |
 | 17, 18 | pass | on the victim: cut pitch `-0x300`, yaw `-v[+0x46]`, TR `(0, 4d, 0)`; pitch `0x40`, yaw `0x800 - v[+0x46]`, TR `(0, 0x600, d)` over `0x80` |
 | 20 | every pass | `FUN_801D5854(caster, 8)` |
 
-Arm 16 turns the victim by `sin(W) / 2` a pass. The engine does not spin it,
-so arms 17 and 18 take the turn retail's passes add up at the normal scalar
-(`nova_victim_spin`) off the heading the victim kept.
+Arm 16 turns the victim by `sin(W) / 2` a pass and lifts it `-sin(W) * d >> 14`
+(`nova_motion`), so the shots of arms 14..18 and the lift all scale with the
+`d` arm 13 framed: Gobu Gobu frames at the `0x0C00` floor. Left on the summon
+route's `0x600`, the victim climbed half as high under a camera at half the
+distance, and the shot filled with it. Arm 13's hide is the colour word as
+well as the byte ([renderer](battle-actor-rendering.md)): with the byte alone
+the creature stood in front of arm 15's pulled-back camera.
 
 ### The shatter effect on monsters
 
@@ -2214,6 +2218,13 @@ Beside the directors an engine-side pass applies each arm's seat writes
 | 0918 | the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
 | 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
 | 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
+
+0927's clip stores of arms 19 and 24 are bare (`sb v0,0x1da(s3)` at
+`0x801F7524` and `0x801F7AD4`, no `+0x1DC` bump), so they commit at the
+playing clip's natural end, as on the other
+[clip-gated creatures](battle-actor-rendering.md#one-staged-anim-channel-actor0x1da):
+arm 23 commits clip `4` at rate `2` and the head holds it through arm 24,
+not clip `5`'s lunge toward the camera.
 
 `ctx[+0x278]` bit 0 with the stage ambient on its floor also takes the
 ground grid off the screen

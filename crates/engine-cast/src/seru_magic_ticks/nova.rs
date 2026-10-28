@@ -150,7 +150,10 @@ pub fn nova_tick(
                 if let Some(s) = seats.get_mut(victim_seat as usize) {
                     s.render_flag = 0;
                 }
+                // `sw zero,0x4(s8)` / `sb 0xFF,0x21c(s8)` at
+                // `0x801F7B68..0x801F7B70`: the colour word is the hide.
                 if let Some(s) = seats.get_mut(summon_seat as usize) {
+                    s.present_04 = 0;
                     s.render_flag = 0xFF;
                 }
                 CastArmStep::Advance
