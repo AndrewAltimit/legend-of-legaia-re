@@ -78,7 +78,9 @@ jobs:
   gates:
     name: Repo Gates
     runs-on: self-hosted
-    timeout-minutes: 10
+    # The gates take seconds; the headroom is for a cold cargo-deny install
+    # (the dependency-advisories step), which builds it once per runner.
+    timeout-minutes: 25
     if: github.event_name != 'pull_request' || github.event.action != 'labeled'
     steps:
       - name: Checkout
@@ -158,6 +160,20 @@ jobs:
       # in either direction fails.
       - name: Crate layering
         run: python3 scripts/ci/check-crate-layering.py
+
+      # Cargo.lock against the RustSec advisory database, configured by
+      # deny.toml (docs/tooling/dependency-policy.md). cargo-deny is built
+      # from crates.io at an exact version with its own lockfile; the install
+      # runs only when the runner's copy is missing or a different version,
+      # so a warm runner spends seconds here and a cold one one build.
+      - name: Dependency advisories
+        env:
+          CARGO_DENY_VERSION: 0.20.2
+        run: |
+          if [ "$(cargo deny --version 2>/dev/null)" != "cargo-deny $CARGO_DENY_VERSION" ]; then
+            cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked
+          fi
+          cargo deny check advisories
 
       # The site's crate map, the README's crate diagrams and its layer list
       # are generated from the manifests; a stale copy fails.
