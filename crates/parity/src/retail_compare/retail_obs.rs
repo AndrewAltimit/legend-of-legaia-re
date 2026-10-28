@@ -156,6 +156,10 @@ pub struct RetailObs {
     /// render banks as the displayed frame drew them, handed to the image
     /// child as `LEGAIA_SEAT_TURNING_PARTS`.
     pub turning_parts: Vec<legaia_engine_core::world::ambient::AmbientBankSeed>,
+    /// The text balloon the displayed frame drew ([`retail_balloon`]) - the
+    /// place-name banner a door leaves up - for a field state, handed to the
+    /// image child as `LEGAIA_SEAT_BALLOON` (`none` when it drew none).
+    pub balloon: Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>>,
     /// The live mode-4 scroller rects and their captured texels
     /// ([`retail_scroll_rects`]), handed to the image child as a
     /// `LEGAIA_SEAT_VRAM_RECTS` file.
@@ -361,11 +365,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            balloon: (class == StateClass::Field)
+                .then(|| retail_balloon(ram))
+                .flatten(),
             turning_parts: if matches!(class, StateClass::Field | StateClass::WorldMap) {
-                retail_turning_parts(
-                    ram,
-                    crate::retail_compare_battle::display_lag_vsyncs(ram),
-                )
+                retail_turning_parts(ram, crate::retail_compare_battle::display_lag_vsyncs(ram))
             } else {
                 Vec::new()
             },
@@ -540,6 +544,9 @@ impl RetailObs {
                 "LEGAIA_SEAT_SPRITE_ARMS",
                 sprite_arms_env(&self.sprite_arms),
             ));
+        }
+        if let Some(b) = &self.balloon {
+            env.push(("LEGAIA_SEAT_BALLOON", balloon_env(b.as_ref())));
         }
         if !self.turning_parts.is_empty() {
             env.push((

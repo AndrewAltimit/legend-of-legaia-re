@@ -351,6 +351,12 @@ pub struct ScreenshotConfig {
     /// (`World::seat_ambient_part_banks`); taken once.
     pub seat_turning_parts:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::AmbientBankSeed>>>,
+    /// `LEGAIA_SEAT_BALLOON`: the text balloon a retail state's displayed
+    /// frame drew (the place-name banner a door leaves up, which a card
+    /// load never raises), or none, written over the field's on the frame
+    /// the capture is taken; taken once.
+    pub seat_balloon:
+        std::cell::Cell<Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>>>,
     /// `LEGAIA_SEAT_FADE_LEAD=<vsyncs>`: on the frame the capture is taken,
     /// step every live screen fade that many vsyncs on
     /// (`World::lead_screen_fades`), for a capture whose displayed fade
@@ -825,6 +831,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::sprite_arms_from_env(&v)),
+            ),
+            seat_balloon: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_BALLOON")
+                    .ok()
+                    .and_then(|v| legaia_engine_capture::field_seeds::balloon_from_env(&v)),
             ),
             seat_turning_parts: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_TURNING_PARTS")

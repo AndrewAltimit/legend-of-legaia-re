@@ -43,6 +43,16 @@ fn morph_seeds_round_trip_through_their_env_form() {
 }
 
 #[test]
+fn balloon_seeds_round_trip_through_their_env_form() {
+    let mut b = legaia_engine_dialog::text_balloon::TextBalloon::spawn(b"Sol Broadway");
+    b.timer = 55;
+    b.parent_link = false;
+    assert_eq!(balloon_from_env(&balloon_env(Some(&b))), Some(Some(b)));
+    assert_eq!(balloon_from_env(&balloon_env(None)), Some(None));
+    assert_eq!(balloon_from_env("12:x"), None);
+}
+
+#[test]
 fn turning_part_seeds_round_trip_through_their_env_form() {
     let s = vec![
         legaia_engine_core::world::ambient::AmbientBankSeed {

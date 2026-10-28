@@ -306,6 +306,17 @@ these on NPCs and as many again on the Noa / Gala placements - "Noa turns to
 Vahn" is `CC <noa> 85 <budget> F8`. The port arms the leg as
 `CutsceneTimeline::npc_faces`.
 
+A placement's own spawn section can aim the cross-context form at itself.
+`kor3` `P1[11]` (flat 20) runs `CC 14 85 00 00 13` and `P1[6]` (flat 15)
+`CC 0F 85 00 00 10` in the load-frame slice: each halts its own context,
+and the walk kernel's first visit snaps it toward the placement beside it
+and drops the `0x400`. `kor3_field_route_walk` holds flat 20 at `0x52E` and
+flat 15 at `0xAD2` (the raw `+0x26` of flat 20 reads `0x152E`: the leg adds
+its arc unwrapped). The port arms the leg from the pre-run
+(`World::pre_run_field_channel_prologues`) whether the target byte names
+another context or the executing one, and the landing clears the channel's
+halt (`World::tick_field_npc_face_legs`).
+
 Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the arm also raises the
 caller's own `0x400` (`0x801E21B4..0x801E21CC`), and the leg's terminal frame
 clears both (`0x80038004` / `0x80038028`). A cutscene record therefore waits

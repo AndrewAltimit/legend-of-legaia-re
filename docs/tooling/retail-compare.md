@@ -551,6 +551,24 @@ engine verdict:
   texturing across retail's six screen-sized `POLY_FT4`s (corners up to
   `216` px off screen), a per-prim question for the ambient part draw path.
 
+  So is the text balloon (`4C E1`, and the place-name banner the MAN
+  loader seats through the same handler `FUN_801DA7F0`). A capture under
+  two seconds after a door still shows the banner; a card load never raises
+  it (the loader's flag `2` is already clear in the save), so the image
+  child of `kor3_field_route_walk` drew no `Sol Broadway`. The corpus reads
+  the balloon the displayed frame drew (`retail_balloon`): the live node's
+  timer `+0x54` taken back three handler increments (the two passes and the
+  displayed pass's own: the handler draws with the timer before it adds the
+  frame step), or, when the newest balloon was still in its one-pass startup
+  there, the predecessor its first pass killed. The owner has unlinked that
+  node by the capture, so it is found by its handler word in the actor pool,
+  and taken only when exactly one killed node of the same script bank has a
+  timer short of its total: `kor4_field_route_walk` holds `Elevator 7F` at
+  `5` and shows the killed `Sol Dayschool` at `75`. It goes to the child as
+  `LEGAIA_SEAT_BALLOON` (`none` for a frame that drew none) and replaces the
+  field's balloon on the capture frame. `kor3_field_route_walk` rose from
+  `.917` to `.954` and `kor4_field_route_walk` from `.918` to `.955`.
+
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
   rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the

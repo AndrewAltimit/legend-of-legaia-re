@@ -67,6 +67,11 @@ impl PlayWindowApp {
             if due && let Some(parts) = sc.seat_turning_parts.take() {
                 self.session.host.world.seat_ambient_part_banks(&parts);
             }
+            // ... and the text balloon the displayed frame drew, or none
+            // (`LEGAIA_SEAT_BALLOON`).
+            if due && let Some(b) = sc.seat_balloon.take() {
+                self.session.host.world.cutscene.text_balloon = b;
+            }
             // ... and a captured cast's parts where retail's passes had put
             // them (`LEGAIA_SEAT_CAST_PARTS`).
             if due

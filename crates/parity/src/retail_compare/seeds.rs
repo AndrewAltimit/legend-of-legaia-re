@@ -742,6 +742,130 @@ pub fn retail_turning_parts(
         .collect()
 }
 
+/// The `4C E1` text balloon's handler word (`FUN_801DA7F0`, field overlay),
+/// which the place-name banner shares.
+const BALLOON_TICK: u32 = 0x801D_A7F0;
+
+/// One live text-balloon node: its text (`+0x90`), timer `+0x54`, total
+/// `+0x9C`, parent link `+0x94` and kill bit `+0x10 & 8`.
+struct RetailBalloonNode {
+    text: Vec<u8>,
+    ptr: u32,
+    timer: i16,
+    total: i16,
+    link: bool,
+    killed: bool,
+}
+
+/// The text balloon a field state's **displayed** frame drew, if any - the
+/// place-name banner a capture taken under two seconds after a door shows.
+///
+/// The handler `FUN_801DA7F0` draws on every pass its timer `+0x54` stands
+/// in `1..total`, before it adds the frame step (`timer < 1` is a one-pass
+/// startup that adds `1` and draws nothing), and a new balloon's first pass
+/// kills its predecessor. The displayed frame is the pass two before the
+/// RAM's newest table, so each live balloon's timer is taken back three
+/// increments - the two passes and that pass's own - to the value it drew
+/// with. When the newest balloon was still in its startup there, the
+/// predecessor it killed on that pass (kill bit up, timer short of its
+/// total, already unlinked) is the one on screen: `kor4_field_route_walk`
+/// holds `Elevator 7F` at timer `5` and, in the freed node, a killed
+/// `Sol Dayschool` banner at `75`, and shows the latter.
+pub fn retail_balloon(
+    ram: &[u8],
+) -> Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>> {
+    let step = i16::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    let nodes: Vec<RetailBalloonNode> = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == BALLOON_TICK)
+        .map(|n| {
+            let ptr = game_anchors::u32_at(ram, n + 0x90);
+            let text = (0..64u32)
+                .map(|i| game_anchors::u8_at(ram, ptr + i))
+                .take_while(|&c| c != 0)
+                .collect();
+            RetailBalloonNode {
+                text,
+                ptr,
+                timer: game_anchors::i16_at(ram, n + 0x54),
+                total: game_anchors::i16_at(ram, n + 0x9C),
+                link: game_anchors::u32_at(ram, n + 0x94) != 0,
+                killed: game_anchors::u32_at(ram, n + 0x10) & 0x8 != 0,
+            }
+        })
+        .filter(|b| !b.text.is_empty())
+        .collect();
+    // One handler increment undone: `step` while drawing, `1` out of the
+    // startup band; `None` once it runs back past the spawn.
+    let undo = |t: i16| -> Option<i16> {
+        match t {
+            t if t > step => Some(t - step),
+            1 => Some(0),
+            _ => None,
+        }
+    };
+    let seat = |b: &RetailBalloonNode, timer: i16| {
+        let mut out = legaia_engine_dialog::text_balloon::TextBalloon::spawn(&b.text);
+        out.timer = timer;
+        out.total = b.total;
+        out.parent_link = b.link;
+        out
+    };
+    let Some(live) = nodes.iter().find(|b| !b.killed && b.timer < b.total) else {
+        return Some(None);
+    };
+    let drawn = undo(live.timer).and_then(undo).and_then(undo);
+    if let Some(t) = drawn.filter(|&t| t >= 1) {
+        return Some(Some(seat(live, t)));
+    }
+    // The newest balloon was in its startup pass (or not yet spawned): the
+    // predecessor its first pass killed drew that frame. The owner has
+    // unlinked a killed node by the capture, so it is found by its handler
+    // word in the actor pool: a killed node whose text sits in the same
+    // script bank as the live one's (within `0x1000` bytes) and whose timer
+    // was still short of its total. Anything but exactly one such node
+    // leaves the frame unknown, and the child keeps its own balloon.
+    let live_ptr = live.ptr;
+    let killed: Vec<u32> = (ACTOR_POOL_LO..ACTOR_POOL_HI)
+        .step_by(4)
+        .filter(|&n| {
+            let ptr = game_anchors::u32_at(ram, n + 0x90);
+            game_anchors::u32_at(ram, n + 0x0C) == BALLOON_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 != 0
+                && ptr != live_ptr
+                && ptr.abs_diff(live_ptr) < 0x1000
+                && (1..game_anchors::i16_at(ram, n + 0x9C))
+                    .contains(&game_anchors::i16_at(ram, n + 0x54))
+        })
+        .collect();
+    let [n] = killed[..] else {
+        return None;
+    };
+    let ptr = game_anchors::u32_at(ram, n + 0x90);
+    let text: Vec<u8> = (0..64u32)
+        .map(|i| game_anchors::u8_at(ram, ptr + i))
+        .take_while(|&c| c != 0)
+        .collect();
+    (!text.is_empty()).then(|| {
+        let timer = game_anchors::i16_at(ram, n + 0x54);
+        Some(seat(
+            &RetailBalloonNode {
+                text,
+                timer,
+                total: game_anchors::i16_at(ram, n + 0x9C),
+                link: game_anchors::u32_at(ram, n + 0x94) != 0,
+                killed: true,
+                ptr,
+            },
+            timer,
+        ))
+    })
+}
+
+/// The span of main RAM the actor nodes are allocated in.
+const ACTOR_POOL_LO: u32 = 0x8007_0000;
+const ACTOR_POOL_HI: u32 = 0x800A_0000;
+
 /// A mode-6 node's packed pose (`+0x4C` block: part count byte at `+0`,
 /// 8-byte entries from `+8`), or empty for any other node.
 pub(super) fn retail_pose_entries(ram: &[u8], n: u32) -> Vec<[u8; 8]> {

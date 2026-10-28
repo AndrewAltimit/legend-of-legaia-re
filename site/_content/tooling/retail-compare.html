@@ -141,7 +141,7 @@
   <ol class="steps">
     <li><strong>Resume.</strong> The engine opens the state&rsquo;s scene through its own card-load path over the lifted save: story flags first (retail&rsquo;s order, so an entry script reads the saved story), then the scene entry, then party, flags, bag and gold.</li>
     <li><strong>Seat.</strong> The player stands on retail&rsquo;s <code>(X, Z)</code> with the floor-sampled height, as a warp landing. The walk-on dispatcher&rsquo;s last-tile pair is stamped with the seat tile, because a player <em>standing</em> on a trigger tile has already fired it.</li>
-    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover. A state saved mid-walk shows a frame two passes older than its RAM, so the image child stands the player one walk step behind the previous pass and takes the follow camera back two steps of its ease.</li>
+    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover. A state saved mid-walk shows a frame two passes older than its RAM, so the image child stands the player one walk step behind the previous pass and takes the follow camera back two steps of its ease - also when the camera already stands on its target, since its focus is still the player.</li>
     <li><strong>Frame step.</strong> The step retail was running at is rebuilt from its frame-time ring and handed over; it decides which script waits can complete.</li>
     <li><strong>Settle.</strong> The session ticks a fixed window with no input - or, for a mid-script, battle or menu state, runs to that state&rsquo;s phase.</li>
   </ol>
@@ -151,7 +151,7 @@
   <ul>
     <li><strong>Script progress</strong> outside a running record the phase gate reaches.</li>
     <li><strong>Actor state</strong> - NPC positions, animation phases, open doors, live effects - is whatever the engine&rsquo;s own entry produces.</li>
-    <li><strong>Timing.</strong> Retail&rsquo;s frame is one instant; the engine&rsquo;s is a fixed tick after entry. Some history is held through the warm-up instead of run as game time - the field VM&rsquo;s script counters and the BIOS <code>rand()</code> seed, so every warm-up draw is the one retail would make next - and a few phases are aligned explicitly: the field HUD&rsquo;s idle countdown and the palette the ambient colour cyclers write. Ambient animation and water palette walks cannot be phase-aligned.</li>
+    <li><strong>Timing.</strong> Retail&rsquo;s frame is one instant; the engine&rsquo;s is a fixed tick after entry. Some history is held through the warm-up instead of run as game time - the field VM&rsquo;s script counters and the BIOS <code>rand()</code> seed, so every warm-up draw is the one retail would make next - and a few phases are aligned explicitly: the field HUD&rsquo;s idle countdown and the palette the ambient colour cyclers write, the angle a turning ambient part (noaru&rsquo;s ice floor) has reached since the entry, and the text balloon - a place-name banner a door left up - that the displayed frame drew. Ambient animation and water palette walks cannot be phase-aligned.</li>
   </ul>
 </section>
 

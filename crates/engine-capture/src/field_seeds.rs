@@ -340,6 +340,39 @@ pub fn turning_parts_from_env(v: &str) -> Vec<legaia_engine_core::world::ambient
         .collect()
 }
 
+/// `retail_balloon` as `LEGAIA_SEAT_BALLOON`: `timer:total:link:text`, the
+/// text in hex; `none` for a frame that drew no balloon.
+pub fn balloon_env(b: Option<&legaia_engine_dialog::text_balloon::TextBalloon>) -> String {
+    let Some(b) = b else {
+        return "none".into();
+    };
+    let text: String = b.text.iter().map(|c| format!("{c:02x}")).collect();
+    format!("{}:{}:{}:{text}", b.timer, b.total, u8::from(b.parent_link))
+}
+
+/// Parse [`balloon_env`]: `Some(None)` for `none`, `None` when malformed.
+pub fn balloon_from_env(
+    v: &str,
+) -> Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>> {
+    let v = v.trim();
+    if v == "none" {
+        return Some(None);
+    }
+    let mut f = v.split(':');
+    let timer: i16 = f.next()?.parse().ok()?;
+    let total: i16 = f.next()?.parse().ok()?;
+    let link = f.next()? == "1";
+    let hex = f.next()?;
+    let text = (0..hex.len() / 2)
+        .map(|i| u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    let mut b = legaia_engine_dialog::text_balloon::TextBalloon::spawn(&text);
+    b.timer = timer;
+    b.total = total;
+    b.parent_link = link;
+    Some(Some(b))
+}
+
 /// `retail_cell_fx` as `LEGAIA_SEAT_CLUT_FX`: `x,y,w,h,h,s,v,mode,white`
 /// per part, `;`-separated.
 pub fn cell_fx_env(fx: &[legaia_engine_field::clut_cell_fx::ClutCellFx]) -> String {
