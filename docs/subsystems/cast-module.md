@@ -3480,7 +3480,12 @@ caster there. PROT 0938's Mystic Circle (`0x801F6CCC`) and PROT 0961
 gate, so Cort holds his idle through arm 1: the
 `cort_mystic_circle_mid_cast` and `cort_evolved_final_crisis_mid_cast`
 captures both read `+0x1D9 = 0` in arm 1, and the engine's caster body pair
-now lands on retail's (`(11, 1040)` and `(23, 953)`). Bodies whose ports stage the
+now lands on retail's (`(11, 1040)` and `(23, 953)`). PROT 0960's Neo Star
+Slash (`0x801F6B98`) is the same shape: its clip `0x0A` sits behind arm 1's
+gate (`bgtz v1,0x801F74B0` at `0x801F6B8C`), and
+`gaza2_card_neo_star_slash_mid_cast` reads Gaza on clip `0` with the word at
+`96`; staged at the head of the band, Gaza crouched a whole arm early
+(`image` `.800` against `.996` staged on arm 1). Bodies whose ports stage the
 caster are not in it, nor are bodies that stage nothing on the caster in
 retail (`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table and the three clip
 routes a monster cast can take are on

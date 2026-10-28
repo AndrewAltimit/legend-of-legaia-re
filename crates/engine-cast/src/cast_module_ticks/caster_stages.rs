@@ -236,13 +236,16 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         arms: None,
     },
     // PROT 0960 `0xA6` (`0x801F69D8`, Neo Star Slash): `li v0,0xa;
-    // sb v0,0x1da(s4)` at `0x801F6B98`.
+    // sb v0,0x1da(s4)` at `0x801F6B98`, in arm 1 (`0x801F6B48`) behind its
+    // countdown gate (`bgtz v1,0x801F74B0` at `0x801F6B8C`): Gaza holds
+    // idle through the arm (`gaza2_card_neo_star_slash_mid_cast`, clip `0`
+    // with the word at `96`).
     CasterStageRow {
         prot_entry: 960,
         action_ids: &[0xA6],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[1]),
     },
     // PROT 0961 `0xA1` / `0xB4`: first monster `0xB5` stages `6`
     // (`0x801F6D58`), anything else `8` (`0x801F6DE8`) - both in arm 1
