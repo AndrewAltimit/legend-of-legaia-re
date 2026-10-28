@@ -18,11 +18,14 @@ pub(super) struct SurfaceParts {
 /// the swapchain at `width` x `height`.
 pub(super) async fn open_surface<W>(window: Arc<W>, width: u32, height: u32) -> Result<SurfaceParts>
 where
-    W: wgpu::WindowHandle + 'static,
+    W: wgpu::WindowHandle + wgpu::rwh::HasDisplayHandle + 'static,
 {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    // No instance-wide display handle: the surface takes the window's own
+    // (Vulkan, Metal and DX12 ignore the instance one; it matters only to a
+    // GLES instance presenting on Wayland, which PRIMARY does not select).
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
     let surface = instance
         .create_surface(window)
@@ -32,6 +35,7 @@ where
             power_preference: wgpu::PowerPreference::LowPower,
             compatible_surface: Some(&surface),
             force_fallback_adapter: false,
+            apply_limit_buckets: false,
         })
         .await
         .context("request adapter")?;
@@ -42,6 +46,7 @@ where
             required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
             memory_hints: wgpu::MemoryHints::default(),
             trace: wgpu::Trace::Off,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
         })
         .await
         .context("request device")?;
@@ -68,6 +73,10 @@ where
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,
+        // The backend's historical choice (sRGB for an 8-bit format): the
+        // frame is written as PSX framebuffer bytes, see
+        // `choose_surface_format`.
+        color_space: wgpu::SurfaceColorSpace::Auto,
         width: width.max(1),
         height: height.max(1),
         present_mode,

@@ -28,8 +28,4 @@ ignore = [
     # has no ab_glyph-free title renderer short of `-notitle` (no title text)
     # or `-crossfont` (a system FreeType / fontconfig dependency).
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser via ab_glyph: winit wayland-csd-adwaita title bar + epaint 0.33; no maintained drop-in" },
-    # paste (unmaintained, a proc-macro: build-time only) <- metal 0.32 <-
-    # wgpu-hal 26's Metal backend (macOS builds). wgpu 29+ replaces the metal
-    # crate with objc2-metal, which drops paste; it goes with the wgpu bump.
-    { id = "RUSTSEC-2024-0436", reason = "paste via metal <- wgpu-hal 26 (Metal backend); leaves with a wgpu 29+ bump" },
 ]

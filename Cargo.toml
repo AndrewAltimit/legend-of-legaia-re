@@ -100,10 +100,10 @@ clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
 cpal = "0.18"
 dirs = "7"
-# The desktop GUI toolkit for legaia-studio. Glow (OpenGL) backend only: no
-# egui release builds against the workspace's wgpu 26 (0.32 pins wgpu 25,
-# 0.33 pins wgpu 27), so the glow backend is what keeps a second wgpu out of
-# the tree. Its winit is the workspace's 0.30.
+# The desktop GUI toolkit for legaia-studio. Glow (OpenGL) backend only:
+# eframe 0.33's wgpu backend pins wgpu 27, not the workspace's wgpu 30, so
+# the glow backend is what keeps a second wgpu out of the tree. Its winit is
+# the workspace's 0.30.
 eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
 encoding_rs = "0.8"
 env_logger = "0.11"
@@ -129,10 +129,10 @@ toml = { version = "1", default-features = false, features = ["std", "serde", "p
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
-# The naga version wgpu 26 resolves to; named directly only by the
+# The naga version wgpu 30 resolves to; named directly only by the
 # shading-law parity test, which also needs its GLSL front end.
-naga = { version = "26.0.0", default-features = false }
-wgpu = "26"
+naga = { version = "30.0.1", default-features = false }
+wgpu = "30"
 winit = "0.30"
 
 # Workspace crates. Those carrying a command-line binary are listed with

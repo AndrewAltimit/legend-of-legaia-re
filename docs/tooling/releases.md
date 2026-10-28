@@ -144,7 +144,8 @@ GUI binaries in three ways the pipeline accounts for:
   windows_subsystem = "windows")]`) and needs no launcher stub. Its
   `--version` prints only when a console is attached.
 - **OpenGL, not wgpu.** It draws through `eframe` on the glow backend, because
-  no egui release builds against the workspace's wgpu 26. On Linux it opens
+  the eframe release it uses builds its wgpu backend against an older wgpu
+  than the workspace's, which would put a second wgpu in the tree. On Linux it opens
   libGL / libEGL and X11 / Wayland at runtime (dlopen), so the cross builds
   need nothing beyond the ALSA sysroot the engine already uses; on Windows it
   imports only system DLLs (`opengl32.dll` among them).

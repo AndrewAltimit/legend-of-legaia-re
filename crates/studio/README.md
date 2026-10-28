@@ -62,9 +62,10 @@ finished or cancelled run with *Show folder*, a failure on the error banner
 
 ## How it is built
 
-- **Toolkit:** `eframe` / `egui` on the **glow** (OpenGL) backend. No egui
-  release builds against the workspace's `wgpu` 26, and the glow backend keeps
-  a second `wgpu` out of the tree; `eframe`'s winit is the workspace's 0.30.
+- **Toolkit:** `eframe` / `egui` on the **glow** (OpenGL) backend. The
+  `eframe` release it uses builds its wgpu backend against an older `wgpu`
+  than the workspace's, and the glow backend keeps a second `wgpu` out of the
+  tree; `eframe`'s winit is the workspace's 0.30.
 - **No format logic of its own.** `analyze` finds sub-assets with the format
   crates' scanners, `export` calls the existing writers
   (`legaia_tim::write_png`, `legaia_actor_formats::scene_gltf`,

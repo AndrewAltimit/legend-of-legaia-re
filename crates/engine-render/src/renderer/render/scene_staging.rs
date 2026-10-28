@@ -239,6 +239,7 @@ impl Renderer {
                     stencil_ops: None,
                 }),
                 occlusion_query_set: None,
+                multiview_mask: None,
                 timestamp_writes: None,
             });
             rp.set_pipeline(&self.shadow_vram_pipeline);

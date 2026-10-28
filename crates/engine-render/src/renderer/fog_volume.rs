@@ -458,8 +458,8 @@ impl FogVolumePass {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("fog volume layout"),
-            bind_group_layouts: &[&bgl, &depth_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bgl), Some(&depth_bgl)],
+            immediate_size: 0,
         });
         let attrs = [wgpu::VertexAttribute {
             offset: 0,
@@ -472,11 +472,11 @@ impl FogVolumePass {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: 16,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
-                }],
+                })],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -510,13 +510,13 @@ impl FogVolumePass {
             // of them and never hide one another.
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let n = ((mesh_dim + 1) * (mesh_dim + 1)) as usize;
@@ -792,6 +792,7 @@ impl Renderer {
                 stencil_ops: None,
             }),
             occlusion_query_set: None,
+            multiview_mask: None,
             timestamp_writes: None,
         });
         if let Some((x, y, w, h)) = scene_vp {

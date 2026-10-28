@@ -96,14 +96,14 @@ impl Renderer {
     /// an `Arc<Window>` so the Surface can outlive the borrow.
     pub fn new<W>(window: Arc<W>, width: u32, height: u32) -> Result<Self>
     where
-        W: wgpu::WindowHandle + 'static,
+        W: wgpu::WindowHandle + wgpu::rwh::HasDisplayHandle + 'static,
     {
         pollster::block_on(Self::new_async(window, width, height))
     }
 
     async fn new_async<W>(window: Arc<W>, width: u32, height: u32) -> Result<Self>
     where
-        W: wgpu::WindowHandle + 'static,
+        W: wgpu::WindowHandle + wgpu::rwh::HasDisplayHandle + 'static,
     {
         let surface::SurfaceParts {
             surface,

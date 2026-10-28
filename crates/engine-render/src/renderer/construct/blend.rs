@@ -33,7 +33,7 @@ fn blend_pipeline(
         vertex: wgpu::VertexState {
             module,
             entry_point: Some("vs_main"),
-            buffers: std::slice::from_ref(vertex_layout),
+            buffers: &[Some(vertex_layout.clone())],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -53,13 +53,13 @@ fn blend_pipeline(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::GreaterEqual,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }

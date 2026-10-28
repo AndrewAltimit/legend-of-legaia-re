@@ -113,8 +113,8 @@ fn overlay_quad(
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&bgl)],
+        immediate_size: 0,
     });
     let attrs = [
         wgpu::VertexAttribute {
@@ -145,11 +145,11 @@ fn overlay_quad(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: 32,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &attrs,
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -171,7 +171,7 @@ fn overlay_quad(
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     let mut verts: Vec<f32> = Vec::new();
@@ -230,6 +230,7 @@ fn overlay_quad(
             })],
             depth_stencil_attachment: None,
             occlusion_query_set: None,
+            multiview_mask: None,
             timestamp_writes: None,
         });
         let c = crate::psx_blend::MODE0_BLEND_CONSTANT;
@@ -269,8 +270,8 @@ fn overlay_quad(
     queue.submit(std::iter::once(enc.finish()));
     let slice = readback.slice(..);
     slice.map_async(wgpu::MapMode::Read, |_| {});
-    device.poll(wgpu::PollType::Wait).ok()?;
-    let data = slice.get_mapped_range();
+    device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
+    let data = slice.get_mapped_range().ok()?;
     let off = 2 * 256 + 2 * 4;
     Some([data[off], data[off + 1], data[off + 2], data[off + 3]])
 }

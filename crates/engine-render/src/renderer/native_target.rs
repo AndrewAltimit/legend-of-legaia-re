@@ -173,6 +173,7 @@ impl Renderer {
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
                 timestamp_writes: None,
             });
             rp.set_viewport(x, y, w, h, 0.0, 1.0);

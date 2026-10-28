@@ -2037,7 +2037,7 @@
    ],
    "band": "top",
    "track": "engine",
-   "scope": "winit 0.30 + wgpu 26; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the <code>legaia-font</code> atlas.",
+   "scope": "winit 0.30 + wgpu 30; software PSX VRAM (1024×512 R16Uint, per-prim CBA/TSB + CLUT decode in fragment shader); text overlay via the <code>legaia-font</code> atlas.",
    "dependents": [
     "asset-viewer",
     "engine-shell"

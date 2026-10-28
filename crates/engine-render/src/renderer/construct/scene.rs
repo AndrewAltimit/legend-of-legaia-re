@@ -91,8 +91,12 @@ pub(super) fn build_scene_vram_mesh(
 
     let scene_vram_mesh_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia scene vram mesh pipeline layout"),
-        bind_group_layouts: &[scene_uniforms_bgl, vram_bgl, scene_lights_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[
+            Some(scene_uniforms_bgl),
+            Some(vram_bgl),
+            Some(scene_lights_bgl),
+        ],
+        immediate_size: 0,
     });
     let scene_vram_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("legaia scene vram mesh pipeline"),
@@ -104,7 +108,7 @@ pub(super) fn build_scene_vram_mesh(
             // it rather than restating it, so the two cannot drift (an
             // earlier hand-rolled copy silently omitted the prim-colour
             // attribute and failed pipeline validation).
-            buffers: std::slice::from_ref(vertex_layout),
+            buffers: &[Some(vertex_layout.clone())],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -124,13 +128,13 @@ pub(super) fn build_scene_vram_mesh(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     SceneVramParts {
@@ -150,8 +154,8 @@ pub(super) fn build_scene_wireframe(
 ) -> wgpu::RenderPipeline {
     let scene_lines_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia scene lines pipeline layout"),
-        bind_group_layouts: &[scene_uniforms_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(scene_uniforms_bgl)],
+        immediate_size: 0,
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("legaia scene lines pipeline"),
@@ -159,7 +163,7 @@ pub(super) fn build_scene_wireframe(
         vertex: wgpu::VertexState {
             module: lines_shader,
             entry_point: Some("vs_main"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: 16,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &[
@@ -174,7 +178,7 @@ pub(super) fn build_scene_wireframe(
                         format: wgpu::VertexFormat::Unorm8x4,
                     },
                 ],
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -193,13 +197,13 @@ pub(super) fn build_scene_wireframe(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -232,8 +236,12 @@ pub(super) fn build_scene_color_mesh(
     });
     let scene_color_mesh_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia scene color mesh pipeline layout"),
-        bind_group_layouts: &[scene_uniforms_bgl, vram_bgl, scene_lights_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[
+            Some(scene_uniforms_bgl),
+            Some(vram_bgl),
+            Some(scene_lights_bgl),
+        ],
+        immediate_size: 0,
     });
     let color_mesh_attributes = [
         wgpu::VertexAttribute {
@@ -268,7 +276,7 @@ pub(super) fn build_scene_color_mesh(
             vertex: wgpu::VertexState {
                 module: &color_mesh_shader,
                 entry_point: Some("vs_main"),
-                buffers: std::slice::from_ref(&color_mesh_vertex_layout),
+                buffers: &[Some(color_mesh_vertex_layout.clone())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -287,13 +295,13 @@ pub(super) fn build_scene_color_mesh(
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Greater,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Greater),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
     // PSX semi-transparency blend pipelines for the colour-mesh path,

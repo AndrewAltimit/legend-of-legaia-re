@@ -131,8 +131,8 @@ fn render_cell(
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&ubgl, &vbgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&ubgl), Some(&vbgl)],
+        immediate_size: 0,
     });
     let attrs = [
         (0, 0, wgpu::VertexFormat::Float32x3),
@@ -158,11 +158,11 @@ fn render_cell(
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: VRAM_VERTEX_STRIDE,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &attrs,
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -182,13 +182,13 @@ fn render_cell(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Always,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Always),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
 
@@ -307,6 +307,7 @@ fn render_cell(
                 stencil_ops: None,
             }),
             occlusion_query_set: None,
+            multiview_mask: None,
             timestamp_writes: None,
         });
         rp.set_pipeline(&pipeline);
@@ -372,16 +373,22 @@ fn render_cell(
     crb.slice(..).map_async(wgpu::MapMode::Read, move |r| {
         let _ = ctx.send(r);
     });
-    device.poll(wgpu::PollType::wait()).unwrap();
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     rx.recv().unwrap().unwrap();
     crx.recv().unwrap().unwrap();
-    let data = rb.slice(..).get_mapped_range();
+    let data = rb
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped depth readback");
     let mut out = Vec::new();
     for y in 0..SIDE as usize {
         let r = &data[y * row as usize..y * row as usize + SIDE as usize * 4];
         out.extend(bytemuck::cast_slice::<u8, f32>(r).iter().copied());
     }
-    let cdata = crb.slice(..).get_mapped_range();
+    let cdata = crb
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped colour readback");
     let mut rgba = Vec::new();
     for y in 0..SIDE as usize {
         let r = &cdata[y * row as usize..y * row as usize + SIDE as usize * 4];
