@@ -976,12 +976,13 @@ impl BattleCamera {
         match phase {
             BattleCamPhase::Action => {
                 // A new action: retail's `FUN_8004E13C` re-rolls the per-art
-                // track column (`ctx[+0x26D] = rand() % 2`) and the ramps
-                // restart from zero, so the swing frames from one of the
-                // table's two columns.
+                // track column (`ctx[+0x26D] = rand() % 2`), so the swing
+                // frames from one of the table's two columns. The ramps and
+                // the accumulator restart only on the acting actor's clip
+                // commit (`observe_active_commits` / `observe_active_installs`),
+                // which retail's seed does not make.
                 let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
-                self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(

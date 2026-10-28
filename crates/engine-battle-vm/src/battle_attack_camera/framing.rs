@@ -93,25 +93,27 @@ impl AttackCamCtx {
         self.latch = self.latch.wrapping_add(1);
     }
 
-    /// Clear the per-action state and roll a fresh [`Self::phase_cursor`].
-    /// `coin` is the caller's `rand() % 2` - retail's `FUN_8004E13C` rolls it
-    /// at action seed, and the port's battle camera rolls it on entry into
-    /// the Action phase.
+    /// Roll a fresh [`Self::phase_cursor`] for a new action. `coin` is the
+    /// caller's `rand() % 2` - retail's `FUN_8004E13C` rolls it, and the
+    /// port's battle camera rolls it on entry into the Action phase.
     ///
-    /// [`Self::death_ramp`] is **carried across** the seed. `FUN_8004E13C`
-    /// writes exactly one byte of this quartet - `sb v0,0x26d(a0)` at
-    /// `0x8004E2DC` - and nothing else in the action seed touches
-    /// `ctx[+0x270]`; its only zeroing site is the death re-frame's own gate
-    /// (`sb zero,0x270(a0)` at `0x801D6B4C`). Since the prologue ramp saturates
-    /// in ~25 display frames, a fight's second death therefore reads a ramp
-    /// already at the cap, which is what makes the re-frame a *recovery* from
-    /// the corpse-on-the-floor pose rather than a pull-in from scratch.
+    /// Nothing else in the quartet moves. `FUN_8004E13C` writes exactly one
+    /// byte of it - `sb v0,0x26d(a0)` at `0x8004E2DC` - and the action seed
+    /// stores none of them. The ramp `ctx[+0x26E]`, the accumulator
+    /// `ctx[+0x87C]` and the latch `ctx[+0x26F]` are zeroed only by the
+    /// acting actor's clip commit (`FUN_8004AD80`, `0x8004BF50..0x8004BF78`;
+    /// [`crate::battle_cam_script::BattleCamera::observe_active_commits`])
+    /// and the per-art latch arm (`0x801D7FE8..0x801D7FF8`), so a monster's
+    /// capture-class cast, which commits no clip on its way into `0x6E`,
+    /// reads an accumulator that has run since its caster's last idle
+    /// commit. [`Self::death_ramp`] has its own zeroing site only, the death
+    /// re-frame's gate (`sb zero,0x270(a0)` at `0x801D6B4C`): since the
+    /// prologue ramp saturates in ~25 display frames, a fight's second death
+    /// reads a ramp already at the cap, which is what makes the re-frame a
+    /// *recovery* from the corpse-on-the-floor pose rather than a pull-in
+    /// from scratch.
     pub fn begin_action(&mut self, coin: bool) {
-        *self = AttackCamCtx {
-            phase_cursor: u8::from(coin),
-            death_ramp: self.death_ramp,
-            ..AttackCamCtx::default()
-        };
+        self.phase_cursor = u8::from(coin);
     }
 }
 
