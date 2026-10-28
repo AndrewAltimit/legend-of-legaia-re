@@ -77,7 +77,10 @@ fn kemaro_ramps_its_colour_wash_to_the_cap() {
     for _ in 0..300 {
         w.fire_cast_presentation(918, None, None, 8, 8, false);
     }
-    assert_eq!(w.casting.module_pres.wash.alpha, 0x80, "held over the arm's head");
+    assert_eq!(
+        w.casting.module_pres.wash.alpha, 0x80,
+        "held over the arm's head"
+    );
     // ... and ramps it back down and clears it from there on.
     w.casting.module_pres.word_in = Some((0x801F_92E4, 8 << 7));
     for _ in 0..300 {
