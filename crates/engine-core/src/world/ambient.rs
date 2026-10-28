@@ -569,6 +569,16 @@ impl World {
     /// by then it has already stopped ticking and rendering, and the only
     /// difference is how long its slot stays occupied.
     ///
+    /// The free also silences a positional sound emitter. For a part whose
+    /// tick word is `FUN_80021DF4` and whose `+0x5A` is `5`, the teardown
+    /// calls `FUN_800250D4(+0xAC, +0xB0)` (`0x80025278..0x80025290`), keying
+    /// off the cue's voices whatever the part's key-on latch says. The
+    /// emitter arm itself only releases when the camera focus leaves its box
+    /// or the side-band request goes unsettled, so a halted emitter is
+    /// silenced here or nowhere: `rayman`'s collapse beats (`P2[7]`,
+    /// `P2[19]`) seat a rumble emitter (cue `0x3E`, voices 16..17) that loops
+    /// while system flag `0x5A0` or `0x5A1` is up and halts when both clear.
+    ///
     /// Without this a scene whose tree spawns on an infinite loop grows a
     /// part per tick forever, because every child halts on its own first run
     /// and nothing ever removes it - which is what drove the corpus into the
@@ -580,7 +590,7 @@ impl World {
     /// write retail performed).
     ///
     /// PORT: FUN_8002519C (the halt arm of the per-frame actor-list walk)
-    /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC
+    /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC, FUN_800250D4
     fn retire_finished_ambient_parts(&mut self) {
         if !self
             .ambient
@@ -591,10 +601,14 @@ impl World {
             return;
         }
         let mut retired_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+        let emitter_ops = &mut self.audio.sfx_emitter_ops;
         self.ambient.fx.retain(|p| {
             if p.finished && p.scroll_fx.is_empty() {
                 if let Some(fx) = p.cell_fx {
                     retired_rects.push(fx.rect);
+                }
+                if let Some(op) = legaia_engine_vm::sfx_emitter::emitter_free(&p.state) {
+                    emitter_ops.push(op);
                 }
                 false
             } else {

@@ -212,6 +212,21 @@ pub fn emitter_tick(st: &mut ActorState, listener: &EmitterListener) -> Option<E
     })
 }
 
+/// The release the actor-list walk owes an emitter part it frees.
+///
+/// `FUN_8002519C` frees a halted actor one walk after it halts; when the
+/// actor's tick word is the part tick `FUN_80021DF4` and its `+0x5A` is `5`,
+/// the free calls `FUN_800250D4(+0xAC, +0xB0)` (`0x80025278..0x80025290`)
+/// with no test of the key-on latch `+0xB4`. `None` for any other part.
+///
+/// PORT: FUN_8002519C (the mode-5 release in the free arm)
+pub fn emitter_free(st: &ActorState) -> Option<EmitterOp> {
+    (st.move_submode == EMITTER_RENDER_MODE).then(|| EmitterOp::Release {
+        cue: st.actor_u32(0xAC) as i32,
+        voice: st.actor_u16(0xB0) as i16,
+    })
+}
+
 /// The level ramp (`0x80022260..0x80022344` region): free-running rates
 /// `+0x98` / `+0x9A` while `+0xB8` is clear, otherwise a timed glide from
 /// `+0x94` / `+0x96` by `+0x98` / `+0x9A` over `+0xC0` ticks counted down in
@@ -359,6 +374,17 @@ mod tests {
                 right: 1706
             })
         );
+        // Freed while still latched and keyed: the walk releases it.
+        let mut freed = st.clone();
+        assert_eq!(
+            emitter_free(&freed),
+            Some(EmitterOp::Release {
+                cue: 0x200,
+                voice: 16
+            })
+        );
+        freed.move_submode = 0;
+        assert_eq!(emitter_free(&freed), None, "only a mode-5 part");
         let far = listener((-30000, -2526));
         assert_eq!(
             emitter_tick(&mut st, &far),

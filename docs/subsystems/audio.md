@@ -132,7 +132,20 @@ captured state). The first tick in range keys the descriptor's voices through
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
 the key-on chain; leaving the box, or the side-band request going unsettled,
 releases them (`FUN_800250D4`). The arm keys only in the field mode and
-behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
+behind the settled side-band pair.
+
+**A halted emitter is released when its part is freed, not by the arm.**
+The arm has no halt case: a part whose script halts stops ticking with its
+voices still keyed. The actor-list walk `FUN_8002519C` frees a halted actor
+one walk later, and for a part ticked by `FUN_80021DF4` with `+0x5A == 5`
+the free calls `FUN_800250D4(+0xAC, +0xB0)` (`0x80025278..0x80025290`)
+whatever the key-on latch says. That is how a scripted loop ends: `rayman`'s
+collapse beats (`P2[7]`, `P2[19]`) fire stagers whose emitters - the rumble,
+cue `0x3E` on voices 16..17, and a runtime cue on voice 19 - loop while the
+beat's flags are up (`0x5A0` / `0x5A1` for the rumble) and halt once it
+clears them. Port: `World::retire_finished_ambient_parts` queues
+`sfx_emitter::emitter_free`'s release; without it the rumble outlived the
+beat for good (`engine-session/tests/rayman_collapse_audio_disc.rs`). Port: `engine-vm::sfx_emitter`, ticked from
 `World::tick_ambient_fx` with the focus the camera stored
 (`frame_step::camera_before_world_tick`), its voices driven by
 `AudioDirector::drive_sfx_emitters` on both hosts.
