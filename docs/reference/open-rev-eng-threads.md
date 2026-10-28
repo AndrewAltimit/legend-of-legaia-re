@@ -191,8 +191,31 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 | Thread | Status | What would close it |
 |---|---|---|
+| Where does Koru's 0962 charge shot set out from? | open (measured) | Retail's arm-2 shot starts on the half-turned case-6 framing, which the engine's walk-in never reaches ([detail](#korus-charge-shot-sets-out-half-turned)); a per-vsync film of `ctx[+0x279]`, `ctx[+0xD]` and `0x8007B792` from `koru_pre_blade_breath` through the `0x70` entry. |
 | Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
+
+### Koru's charge shot sets out half-turned
+
+`koru_blade_breath_mid_cast` is saved on arm 3 of PROT 0962's `0xA2` body
+with arm 2's `0xC`-frame shot two frames in: yaw `2366` on endpoint `3345` at
+increment `99`. The arming routine stores the shortest arc and
+`FUN_801D829C` gives it `ceil(arc / 0xC)`, so the arc is `1177..1188` and the
+shot set out from yaw `2157..2168`. That is the walk-in's case-6 framing with
+its half turn - yaw counter `2110` less the caster's facing `2031`, plus
+`0x800`, is `2127` - not the unturned `79`. The Magic arm stores
+`ctx[+0xD] = 0` at the seed (`0x801E2EC8`) and `0x70` pins `1` on its entry
+(`0x801E50CC`), so retail framed the walk-in on the pinned style for long
+enough to swing the half turn. The engine's walk-in reads Koru in reach at
+once (projected separation `732` under the size-class bound `48 << 4`), runs
+arms 0 to 2 on the first ticks of `0x70`, and arms the shot from the unturned
+yaw; held on style `1` from the seed, the image child's frame reads `.878`
+against `.719`. Whether retail's arms 0 and 1 held (a walk-in metric the port
+reads differently) or the band ran its case-6 frames longer before them is
+what the film would show. The `0xA2` dwell row in
+[cast-module.md](../subsystems/cast-module.md#capture-class-walks) (arm 1 for
+`21` ticks) comes from that table's captures, none of them a Koru fight, so it
+does not answer it.
 
 ### Zeto's Big Wave idle, one pass older
 
