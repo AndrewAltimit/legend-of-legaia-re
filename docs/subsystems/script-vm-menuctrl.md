@@ -248,6 +248,13 @@ Typical uses:
   `0` to fade it in, or washes it red at a low blend.
 - `chitei2`'s hologram panels (partition-0 records 19..27) black themselves
   out in their spawn prologue once flag `0x4C5` (the generator destroyed) is up.
+- `rayman`'s sinking set pieces (`P0[5]` / `P0[8]` behind `0x1EB`, `P0[6]` /
+  `P0[9]` behind `0x1FC`) run `CC <own id> 81 00 00 00 FF 0F 00 00` in their
+  spawn section after parking at `+0x8E = -768`, so on every visit after the
+  collapse, and in the frozen `rayman2`, they stand sunk and black. The op
+  names the object's own id while its bind-time prologue runs; the actor
+  exists by then (`FUN_8003A55C` allocates it first), so the resolver finds
+  it.
 - The kingdom MANs' partition-0 records tint the overworld landmarks they bind
   (map02's records 2.. go black at `0x800` or `0x1000` depending on a story
   flag; a retail map02 state holds records 2..28 at `0x800`).
