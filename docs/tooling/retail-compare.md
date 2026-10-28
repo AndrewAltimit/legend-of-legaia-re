@@ -2211,16 +2211,25 @@ inside its state by retail's own clocks (`SpanGate`):
 | `0x70` under a directed module | module arm + countdown, or the arm alone (`PHASE_ONLY`) for a body that gates on no module word | `ctx[+0x279]`, [`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70) |
 
 **A directed body with no module word.** PROT 0962's charge bodies wait on
-the caster's cursor, and Neo Star Slash and Doomsday carry their countdown in
-the director, so `capture_countdown_va` names no word for them. Their `0x70`
-captures are still held to the capture's arm
+the caster's cursor, so `capture_countdown_va` names no word for them. Their
+`0x70` captures are still held to the capture's arm
 (`battle_drive::PHASE_ONLY`), for a body the engine directs only; without it
 the replay was filmed on the band's first tick. `koru_blade_breath_mid_cast`
-sits in arm 3, and the gate took its `camera` from `.763` to `.862`, Neo Star
-Slash's from `.757` to `.780` and Doomsday's from `.718` to `.734`. The Koru
-image stays where it was: the capture's seat is the end of Koru's walk-in,
-so the replay's arms 0 and 1 pass at once, and the frame the display lag
-takes back is the band's opening shot rather than retail's arm-1 glide.
+sits in arm 3, and the gate took its `camera` from `.763` to `.862`. The Koru
+image stays where it was: the replay's arms 0 to 2 pass on the band's first
+ticks, so its arm-2 shot sets out from the unturned walk-in framing where
+retail's set out from the half-turned one
+([open thread](../reference/open-rev-eng-threads.md#korus-charge-shot-sets-out-half-turned)).
+
+Neo Star Slash and Doomsday do gate on module words, which their directors
+carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
+delta` a pass, the director's own unit) and PROT 0965's `0x801F8370`, which
+counts vsyncs and is scaled into it (`capture_countdown_units`). Held to the
+arm alone, both captures were filmed on arm 1's first tick, before the
+engine's camera had walked arm 0's shot, where retail's word (`96`, `16`)
+places the frame most of the way through it: `camera` `.780` to `1.000` for
+`gaza2_card_neo_star_slash_mid_cast` and `.734` to `.965` for
+`cort_evolved_card_doomsday_mid_cast`.
 
 **How far into the state (`SpanGate::Age`).** The acting actor's clip commit
 zeroes `ctx[+0x87C]` and every framing call adds `8 * frame_step`. The drive

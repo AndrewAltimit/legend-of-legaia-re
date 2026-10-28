@@ -1319,3 +1319,16 @@ fn viguro_arm_twelve_draws_sixteen_streaks_every_pass() {
     assert_eq!(d.ribbons.map(|r| r.count), Some(16));
     assert!(d.hold);
 }
+
+/// Neo Star Slash's and Doomsday's words place a capture inside an arm:
+/// PROT 0960's is in the director's own unit, PROT 0965's counts vsyncs and
+/// is scaled into it (`gaza2_card_neo_star_slash_mid_cast` reads `96` on
+/// arm 1, `cort_evolved_card_doomsday_mid_cast` `16`).
+#[test]
+fn neo_star_slash_and_doomsday_name_their_countdown_words() {
+    assert_eq!(capture_countdown_va(0xA6), Some(NEO_STAR_SLASH_COUNTDOWN));
+    assert_eq!(capture_countdown_units(0xA6), 1);
+    assert_eq!(capture_countdown_va(0xB6), Some(DOOMSDAY_COUNTDOWN));
+    assert_eq!(capture_countdown_units(0xB6), SPEED_SCALAR);
+    assert_eq!(capture_countdown_units(0xAC), 1);
+}

@@ -256,9 +256,29 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xB7 => Some(MYSTIC_CIRCLE_COUNTDOWN),
         0x55 | 0x56 => Some(WAVE_COUNTDOWN),
         0xAD => Some(super::EVIL_SERU_MAGIC_COUNTDOWN),
+        0xA6 => Some(NEO_STAR_SLASH_COUNTDOWN),
+        0xB6 => Some(DOOMSDAY_COUNTDOWN),
         _ => None,
     }
 }
+
+/// What one unit of [`capture_countdown_va`]'s word is worth in the
+/// director's countdown ([`super::ModuleCountdown`]): `1` for a word drained
+/// `scalar * delta` a pass, as the directors' own are, and
+/// [`SPEED_SCALAR`] for PROT 0965's, which counts vsyncs (each arm drains it
+/// by the frame step alone) and which its director keeps scaled.
+pub fn capture_countdown_units(action: u8) -> i32 {
+    match action {
+        0xB6 => SPEED_SCALAR,
+        _ => 1,
+    }
+}
+
+/// PROT 0960's `0xA6` countdown word (Neo Star Slash): seeded `scalar << 5`
+/// by arm 0, drained `scalar * delta` a pass.
+pub const NEO_STAR_SLASH_COUNTDOWN: u32 = 0x801F_8E50;
+/// PROT 0965's countdown word (Doomsday), in vsyncs: `0x20` from arm 0.
+pub const DOOMSDAY_COUNTDOWN: u32 = 0x801F_8370;
 
 /// PROT 0940's countdown word (`lui 0x8020` / `-0x79B4`).
 pub const MYSTIC_SHIELD_COUNTDOWN: u32 = 0x801F_864C;
