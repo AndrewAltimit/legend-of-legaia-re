@@ -113,6 +113,7 @@ mod muscle_dome_battle_leg_disc;
 // --- lane D2 ---
 mod muscle_dome_choreo_real;
 // --- end lane D2 ---
+mod four_slot_beat_install_disc;
 mod muscle_dome_lead_max_hp_disc;
 mod muscle_dome_learned_list_disc;
 mod muscle_dome_minigame_real;
