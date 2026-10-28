@@ -2266,11 +2266,16 @@ impl App {
         } else {
             String::new()
         };
+        // The pipeline names its steps with an arrow ("disc → ISO9660
+        // files"). The log's monospace font (Hack) has the glyph; the bar's
+        // proportional font (Ubuntu Light) and egui's emoji fallbacks do
+        // not, so it is spelled the way the skip options spell it.
+        let step_name = p.step_name.replace('\u{2192}', "->");
         let text = match &outcome {
             // Numbered the way the log numbers them: verification is step 0,
             // the rest count from 1.
-            None if p.step == 0 => format!("Checking the disc image: {}{units}", p.step_name),
-            None => format!("Step {} of {}: {}{units}", p.step, steps - 1, p.step_name,),
+            None if p.step == 0 => format!("Checking the disc image: {step_name}{units}"),
+            None => format!("Step {} of {}: {step_name}{units}", p.step, steps - 1),
             Some(Outcome::Done(s)) => format!(
                 "Done: {} disc files, {} PROT entries, {} streams, {} PNGs, {} WAVs{}",
                 s.iso_files,
