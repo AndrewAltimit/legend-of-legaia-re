@@ -32,10 +32,9 @@
 //! (`addiu v0,v1,0x8c; sw v0,0x88(v1)` at `0x8005473C..0x80054740`), so a
 //! read landing on `+0x8B` sees the address's high byte, `0x80`.
 //!
-//! Measured: 143 seat placements over 85 retail battle save states (one and
-//! three seated members) and all 21 four-slot reads in them agree with this
-//! law byte for byte. The two-member offset is the same per-node step,
-//! unmeasured.
+//! Measured: 145 seat placements over 86 retail battle save states (one,
+//! two and three seated members; the AI-companion seat counts as a member)
+//! and all 22 four-slot reads in them agree with this law byte for byte.
 
 use std::collections::BTreeMap;
 

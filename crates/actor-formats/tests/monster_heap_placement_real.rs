@@ -29,6 +29,8 @@ type Case = (usize, [u16; 4], &'static [(u16, u32)]);
 
 /// `(seated party, formation, [(id, measured block payload address)])`.
 const PLACEMENTS: &[Case] = &[
+    // Noa and Terra (the AI-companion seat counts) - a mednafen state.
+    (2, [25, 22, 0, 0], &[(25, 0x800AA8DC), (22, 0x800B0BD0)]),
     (1, [10, 0, 0, 0], &[(10, 0x800AFD4C)]),
     (1, [4, 0, 0, 0], &[(4, 0x800AD4F8)]),
     (3, [1, 0, 0, 0], &[(1, 0x800AA984)]),
@@ -85,6 +87,7 @@ const BEATS: &[(usize, [u16; 4], u16, usize, u8)] = &[
     (3, [113, 113, 24, 0], 24, 5, 215),
     (1, [19, 0, 0, 0], 19, 9, 8),
     (1, [164, 0, 0, 0], 164, 0x0C, 0),
+    (2, [25, 22, 0, 0], 22, 5, 0),
 ];
 
 fn bases(entry: &[u8], seated: usize, form: &[u16; 4]) -> std::collections::BTreeMap<u16, u32> {

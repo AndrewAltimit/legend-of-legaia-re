@@ -297,15 +297,19 @@ block's address follows from three inputs:
 | Block cost | `block[+0x08]` bytes, carved from the **top** of the free node, so each block ends one 12-byte node header below the last. | `lw s0,8(s1)` `0x80054668`; `jal 0x80017888` `0x8005468C` |
 | First top | The first block ends at `0x800B9A50` with one party member seated and `0xA8` (a render node and its header) lower per further seated member: `0x800B9900` with three. | measured |
 
-All of it is measured: 143 seat placements across 85 retail battle save
-states (one and three members seated) and the 21 four-slot reads in them
-match the law byte for byte. The two-member top is the same per-node step,
-unmeasured. The reads are not mostly zero: Demon Fly's tag-`0x0C` entry
+All of it is measured: 145 seat placements across 86 retail battle save
+states (one, two and three members seated) and the 22 four-slot reads in
+them match the law byte for byte. The two-member state is Noa beside Terra:
+the AI-companion seat (`0x8007BD10` value `4`) is a seated member, and the
+first block ends at `0x800B99A8`. The seated count is what the battle seats,
+not the roster: a Muscle Dome leg seats its one fighter with three members
+in the party (`0x80084594`), and its block ends at `0x800B9A50`. The reads are not mostly zero: Demon Fly's tag-`0x0C` entry
 reads `209` in a three-member fight (its clip runs 80 frames, so the window
 holds for the whole clip and the event-path commit never cuts it), Swordie's
 `227`, id 24's `215`, id 1's `16` beside Gobu Gobu with Vahn alone, and
 id 101's entry 6 reads `0` beside id 45 but `0x80` beside id 134. Nivora's
-id 164 entry `0x0C` at `0x800B5D2C` reads `0`.
+id 164 entry `0x0C` at `0x800B5D2C` and the Terra fight's id 22 entry 5 at
+`0x800B7740` read `0`.
 
 The disc carries 34 four-slot entries, one per monster id, all attack-band
 (Gaza's Astral Slash entry `0x0A`, id 165, among them);
