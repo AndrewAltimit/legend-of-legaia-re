@@ -873,16 +873,18 @@ thread_local! {
 ///   the builder replaces the whole queue with the Miracle row;
 /// - else a **Super Art**'s physical input ([`legaia_art::derive_super_input`]
 ///   over the trigger table's `find` pattern), the longest the pool pays for;
-/// - else the longest **normal** arts (constants `0x1F` up, two arrows or
-///   more) the pool pays for, repeated while they fit, then the cheapest
-///   plain direction until nothing more is affordable.
+/// - else the longest **normal** arts (the bank's groups past the first
+///   four, two arrows or more) the pool pays for, repeated while they fit,
+///   then the cheapest plain direction until nothing more is affordable.
 ///
-/// The Miracle and the three Hyper arts (constants `0x1B..=0x1E`) never
-/// tokenize as arts on their own strings - the builder only reaches them
-/// through the Miracle copy and the Super tail-replace - so typing a Hyper
-/// art's string swings plain arrows. The fighter did exactly that for Vahn
-/// (Fiery Miyawaki, `2 3 1 3 1`) and Noa (Illusion Kick), whose "arts" never
-/// spent the gauge.
+/// The bank walk sends its first four record groups - the Miracle Art and
+/// the three Hyper Arts - through the special arm
+/// (`legaia_art::tokenize_bank`), which writes nothing without a Ra-Seru, so
+/// a Hyper Art's string then swings plain arrows. Groups, not constants:
+/// Noa's chained Hurricane Kick spans `0x1C..=0x1E`, so her Vulture Blade
+/// (`0x1F`) and Frost Breath (`0x20`) are Hyper Arts too, and a Noa with no
+/// Ra-Seru (retail's at Caruban: equipment slot 2 empty) gets four swings
+/// out of Frost Breath's `L L R R`.
 pub(super) fn arts_plan(
     w: &legaia_engine_core::world::World,
     s: &legaia_engine_battle::arts_command_input::ArtsCommandInputSession,
@@ -892,7 +894,7 @@ pub(super) fn arts_plan(
     // (`art-data.md`), and a cap below it kept the hand from ever entering
     // one. The pool still decides what fits; this only stops the plan.
     const MAX_ENTRY: usize = 9;
-    const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
+    const MIRACLE_CONSTANT: u8 = 0x1B;
     // The occupying character's table: the actor's `character` key is only
     // written by the first arts commit, so before it every member reads
     // Vahn's.
@@ -909,18 +911,29 @@ pub(super) fn arts_plan(
             .iter()
             .any(|&c| legaia_engine_battle::arts_command_input::rot_blocks(status, c))
     };
+    // The special groups' constants: the Miracle record `0x1B` and every
+    // constant a Hyper group spans.
+    let bank = w.art_bank_rows(character);
+    let hyper: Vec<u8> = legaia_art::hyper_queue_constants(&legaia_art::bank_view(&bank))
+        .into_iter()
+        .flat_map(|(base, consts)| std::iter::once(base).chain(consts))
+        .collect();
+    let armed = miracle_armed(w, s.actor);
     let mut normal: Vec<(legaia_art::ActionConstant, &[Command])> = w
         .tables
         .art_records
         .iter()
         .filter(|((c, a), r)| {
-            *c == character && r.commands.len() >= 2 && a.as_byte() >= NORMAL_ART_MIN_CONSTANT
+            *c == character
+                && r.commands.len() >= 2
+                && a.as_byte() > MIRACLE_CONSTANT
+                && !hyper.contains(&a.as_byte())
         })
         .map(|((_, a), r)| (*a, r.commands.as_slice()))
         .collect();
     normal.sort_by_key(|(a, _)| a.as_byte());
     let bytes = |cmds: &[Command]| cmds.iter().map(|c| c.as_byte()).collect::<Vec<u8>>();
-    if miracle_armed(w, s.actor)
+    if armed
         && let Some(m) = legaia_art::MIRACLE_ARTS
             .iter()
             .find(|m| m.character == character)

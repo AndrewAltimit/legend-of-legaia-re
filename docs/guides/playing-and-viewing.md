@@ -56,6 +56,7 @@ lettered in the game's own dialog font, read from that disc.
 | Left / Right on an option | change it (a switch flips, a list steps, a volume moves by one) |
 | Enter, Space, click | press the focused button, or step an option forward |
 | Right-click an option | step it back |
+| Delete (Backspace with nothing typed), middle-click an option | put it back on its default |
 | Ctrl+O | open the file dialog |
 | typing | enter a disc path (Enter uses it, Esc clears it) |
 | Esc | leave the controls page, or quit |
@@ -118,6 +119,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
+| Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
 | Play | Reduce flashing | `legaia-options.toml` | - | on |
 | Gameplay tweaks | Shiny Seru (off = `--no-shiny-seru`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Run-away EXP (`--flee-exp`) | `launcher.toml` | - | off |
@@ -137,6 +139,10 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Original game | Original ground culling (`retail_view_window`) | `legaia-options.toml` | - | on |
 | Original game | Original prop culling (`retail_static_window`) | `legaia-options.toml` | - | on |
 | Original game | Original game only (`--retail`) | `launcher.toml` | - | off |
+
+A row moved off its first-start value carries a small gold dot before its
+value, and the help box under the buttons names the default (*Default: Off
+(Delete)*), so a changed setting is visible without opening a file.
 
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
@@ -257,9 +263,10 @@ In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
-`F12` (or `?`) opens a panel listing every toggle key with its current state,
-and under it the key each pad button is on (Cross, Circle, Start, ...), read
-from the live Key Config table; press it again to close it. A player's window says so for its first few
+`F12` (or `?`) opens a panel listing every toggle key with its current state
+(`F11` fullscreen among them), under it the key each pad button is on (Cross,
+Circle, Start, ...), read from the live Key Config table, and the mouse's
+camera controls; press it again to close it. A player's window says so for its first few
 seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
 `--screenshot` capture leaves that line, the toggle notices and the quit
 prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
@@ -393,11 +400,14 @@ bit that crosses the Ra-Seru chip out of the command ring
 ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md)).
 
 ```bash
-# `M` opens the dome from any field scene; the ring is drawn with the
-# Ra-Seru chip crossed out because flag 0x538 seeded the word to 0x321.
+# `M` opens the dome from any field scene; the round is an ordinary battle,
+# and its command ring has the Ra-Seru chip crossed out because flag 0x538
+# seeded the word to 0x321 (Item is crossed out on every unlocked course).
+# Cross skips the announcer cards; the last one opens the ring.
 ./legaia-engine play-window --disc "$DISC" --scene town01 --seed-party \
     --set-flag 0x538 --key-script "60:M" \
-    --screenshot /tmp/dome-ban.png --screenshot-tick 200
+    --pad-script "300:Cross,400:Cross,500:Cross,600:Cross,1000:Cross" \
+    --screenshot /tmp/dome-ban.png --screenshot-tick 1060
 ```
 
 The older `LEGAIA_LEARN_SPELLS=0x81,0x9e` environment variable still works and

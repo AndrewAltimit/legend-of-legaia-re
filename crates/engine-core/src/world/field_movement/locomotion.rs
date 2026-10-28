@@ -396,11 +396,47 @@ impl World {
     ///
     /// PORT: FUN_8003BC08 (`0x8003BC4C..0x8003BC64` + `0x8003BCF4`, the
     /// mirror arm of the height dispatch)
-    pub(super) fn field_actor_mirrored_y(&self, slot: usize) -> Option<i16> {
+    /// A record is still parked on a player arc (`C3 F8 ..`) whose arc has
+    /// landed: the release the arc's watcher makes on the landing frame has
+    /// not reached the record yet.
+    // REF: FUN_801d5c08 (the watcher's release)
+    fn player_arc_release_pending(&self) -> bool {
+        let parked = |tl: &legaia_engine_field::cutscene_timeline::CutsceneTimeline| {
+            tl.player_wait.is_some()
+                && tl.bytecode.get(tl.pc) == Some(&0xC3)
+                && tl.bytecode.get(tl.pc + 1) == Some(&0xF8)
+        };
+        self.cutscene
+            .timeline
+            .iter()
+            .chain(&self.field_vm.helper_contexts)
+            .any(parked)
+    }
+
+    pub(crate) fn field_actor_mirrored_y(&self, slot: usize) -> Option<i16> {
         if self.player_actor_slot? as usize != slot {
             return None;
         }
-        self.locomotion.eased_mirror_y.map(|m| m.wrapping_neg())
+        if let Some(m) = self.locomotion.eased_mirror_y {
+            return Some(m.wrapping_neg());
+        }
+        // A script-held height: `B1 F8 1D` / `4C D9` raised the player's
+        // `0x20000000` and `4C 42` / `4C D9` wrote (or a tween is stepping)
+        // its `+0x8E`. The player's settle `FUN_801d1ba0` carries the same
+        // arm (`0x801D1C14..0x801D1C2C` / `0x801D1D14..0x801D1D2C`).
+        //
+        // A scripted arc owns the player's Y while it flies, and its
+        // watcher releases the context it halted on the landing frame, so
+        // the record's `B2 F8 1D` lands before the next settle reads the bit:
+        // `jouine` `P2[5]` raises the bit around each `C3 F8` hop and drops
+        // it after, with `+0x8E` never written. The port resumes the parked
+        // record one frame later, so the frame in between is still the arc's.
+        if self.player_arc_release_pending() {
+            return None;
+        }
+        let flags = self.actors.get(slot)?.move_state.flags;
+        (flags & crate::world::field_loop::PLAYER_Y_FROM_8E != 0)
+            .then(|| self.locomotion.player_8e.wrapping_neg())
     }
 
     /// The height retail's ledge classifier measures its rise **from**: the
@@ -1002,7 +1038,24 @@ impl World {
     ///
     /// REF: FUN_801DE840 (ops `0x31` / `0x32`), FUN_8003C83C (the `0xF8` arm)
     pub fn field_player_cflag(&mut self, bit: u8, set: bool) -> bool {
-        if 1u32 << (bit & 0x1F) != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
+        let mask = 1u32 << (bit & 0x1F);
+        // `B1 F8 1D` / `B2 F8 1D`: the player's height-law bit, which the
+        // height arm reads (`0x8003BC4C`, see `Self::field_actor_mirrored_y`).
+        if mask == crate::world::field_loop::PLAYER_Y_FROM_8E {
+            let Some(slot) = self.player_actor_slot.map(usize::from) else {
+                return false;
+            };
+            let Some(actor) = self.actors.get_mut(slot) else {
+                return false;
+            };
+            if set {
+                actor.move_state.flags |= mask;
+            } else {
+                actor.move_state.flags &= !mask;
+            }
+            return true;
+        }
+        if mask != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
             return false;
         }
         self.locomotion.player_party_bank = set;

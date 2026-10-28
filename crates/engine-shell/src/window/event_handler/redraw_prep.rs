@@ -43,8 +43,10 @@ impl PlayWindowApp {
         // installs the records and re-runs the frame's step over them
         // (`take_field_fog_prims`, `BootSession::seat_field_fog`).
         if let Some(sc) = self.screenshot.as_ref() {
-            let gated =
-                sc.phase_gate.is_some() || sc.script_gate.is_some() || sc.battle_drive.is_some();
+            let gated = sc.phase_gate.is_some()
+                || sc.arrival_gate.is_some()
+                || sc.script_gate.is_some()
+                || sc.battle_drive.is_some();
             let due = if gated {
                 self.capture_phase_met()
             } else {
@@ -219,7 +221,11 @@ impl PlayWindowApp {
         // a menu drive's glide-landed hold (`BattleDrive::reached`) parted
         // from it.
         let capture_frame = self.screenshot.as_ref().is_some_and(|sc| {
-            if sc.battle_drive.is_some() || sc.phase_gate.is_some() || sc.script_gate.is_some() {
+            if sc.battle_drive.is_some()
+                || sc.phase_gate.is_some()
+                || sc.arrival_gate.is_some()
+                || sc.script_gate.is_some()
+            {
                 self.capture_phase_met()
             } else {
                 self.tick_no >= sc.capture_tick
@@ -285,6 +291,17 @@ impl PlayWindowApp {
         {
             cam.align_summon_focus(body);
         }
+        // The capture band's stage cue on the captured phase
+        // (`LEGAIA_BATTLE_BACKDROP_CUE`, `RetailBattle::capture_band_backdrop_cue`).
+        if let Some(w) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_backdrop_cue)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+        {
+            self.session.host.world.seat_battle_backdrop_cue(w);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
@@ -301,7 +318,8 @@ impl PlayWindowApp {
                 .map(|sc| sc.battle_ground_snap.clone())
                 .unwrap_or_default();
             let world = &mut self.session.host.world;
-            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps);
+            let armed = legaia_engine_capture::ground_snap::snap_battle_ground(world, &snaps)
+                .map(|t| legaia_engine_capture::ground_snap::strike_heading_target(world, t, end));
             // On a display-lag retake the frame is two game frames older than
             // the RAM the endpoints were read from, and the framing armed
             // here may stand a step of yaw drift or depth ramp short of them;

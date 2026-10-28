@@ -131,6 +131,12 @@ pub struct FieldNpcState {
     /// field VM's nibble-4 sub-8 ramp on `+0x26`, `FUN_8003C5F0`), owner =
     /// placement slot. Ticked by `World::tick_npc_heading_ramps`.
     pub heading_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
+    /// Height-slot tweens a script scheduled with `4C 42 <value> <ticks>` on a
+    /// placement (the nibble-4 sub-2 ramp on `+0x8E`, `FUN_8003C5F0` kind 2),
+    /// owner = placement slot. Ticked by `World::tick_npc_heading_ramps` into
+    /// the placement context's `field_8e`, which the height arm
+    /// ([`crate::world::World::tick_field_npc_heights`]) mirrors into Y.
+    pub slot_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler,
     /// The face / body deformation rows `DAT_8007BE60 + id * 12` op `43 07`
     /// writes, keyed by row id ([`FieldFaceRow`]). Global in retail, so a row
     /// outlives the actor that wrote it.
@@ -358,6 +364,7 @@ impl FieldNpcState {
             tilts: std::collections::HashMap::new(),
             facing_save: None,
             heading_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
+            slot_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             face_rows: std::collections::BTreeMap::new(),
             faces: std::collections::BTreeMap::new(),
             face_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),

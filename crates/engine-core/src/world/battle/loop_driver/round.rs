@@ -258,10 +258,10 @@ impl World {
         // clips asynchronously - before the first dispatch takes `pending`.
         self.list_round_cast_voices();
         // `0xFE`'s special-battle run arm (`0x801D3228..0x801D328C`): a Run
-        // round in a special battle hands the leader the first turn. Its
-        // other store, the leg outcome `_DAT_80084448 = 4`, has no reader
-        // here - the arena's legs run on the dome session, whose own leave
-        // path reports the run (`World::leave_muscle_dome`).
+        // round in a special battle hands the leader the first turn
+        // (`ctx[+0x274] = 0`) and stores the leg outcome
+        // `_DAT_80084448 = 4`, which the re-entered arena reads as a give-up
+        // (`World::finish_muscle_battle_leg`).
         //
         // REF: FUN_801D0748 (kernel `battle_formulas::special_battle_run_forfeit`)
         let first_monster = self
@@ -282,6 +282,9 @@ impl World {
                 if run_round { 5 } else { 0 },
                 first_monster,
             );
+        if self.battle.round_flow.leader_first && self.minigames.muscle_leg_in_battle {
+            self.minigames.muscle_leg_ran = true;
+        }
         self.battle.command = None;
         self.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a
@@ -751,6 +754,12 @@ impl World {
         use legaia_engine_battle_menus::battle_flow::BattleFlowState;
         use legaia_engine_battle_menus::battle_input::CommandPhase;
         if self.battle.flow != BattleFlowState::TurnPrompt {
+            return;
+        }
+        // State `0x14`'s `0x1E` write is the battle tick's, which the frame
+        // driver does not call under the battle-entry sweep (`0x80046EF8`):
+        // the prompt - and its unfold glide - opens once the sweep is over.
+        if self.battle_entry_sweeping() {
             return;
         }
         let no_escape = self.battle.no_escape;

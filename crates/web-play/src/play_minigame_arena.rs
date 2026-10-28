@@ -66,8 +66,6 @@ pub(crate) struct MuscleUi {
     /// ladder. `None` when the ladder did not decode (the page then draws
     /// the text HUD alone).
     pub(crate) monster_id: Option<u16>,
-    /// Player battle-file slot the fighter mesh assembles from (0 = Vahn).
-    pub(crate) char_slot: u32,
     /// Pristine parse of the PROT 0977 sprite table; the emitters write
     /// variants back, so every frame runs over a copy.
     sprite_table: Option<Vec<HudSprite>>,
@@ -116,7 +114,6 @@ impl LegaiaRuntime {
                 Some(rounds.get(n)?.monster_id as u16)
             });
         ui.sprite_table = raw.as_deref().map(hud::parse_sprite_table);
-        ui.char_slot = 0;
         if let Some((t0, t1)) = self.muscle_hub_tims() {
             self.minigame_ui.muscle.palette_stp =
                 legaia_engine_ui::ringside_backdrop::HubPaletteStp::from_tims(&t0, &t1);
@@ -609,7 +606,10 @@ impl LegaiaRuntime {
             .and_then(|w| w.minigames.muscle_dome.as_ref());
         let contest = world.and_then(|w| w.minigames.muscle_contest.as_ref());
         let read = |i: usize| host.and_then(|h| h.index.entry_bytes(i as u32).ok());
-        let char_slot = self.minigame_ui.muscle.char_slot;
+        // The fighter the leg seats (`World::muscle_fighter_record`, the
+        // "Fight as" pick through `play_mg_set_muscle_fighter`) - the native
+        // window's dome surface reads the same word.
+        let char_slot = world.map_or(0, |w| u32::from(w.muscle_fighter_record()));
         let surface = &mut self.minigame_ui.muscle_surface;
         if let Some(w) = world {
             surface.set_camera_option(w.toggles.battle_camera as u8);
@@ -1279,5 +1279,62 @@ impl LegaiaRuntime {
             .as_mut()
             .map(|a| a.dance_marker_step(frame_delta))
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod muscle_fighter_tests {
+    use crate::runtime::LegaiaRuntime;
+
+    /// One arena warp into `koin1`'s dome with roster record `pick` seated,
+    /// returning the page's `char_slot` and the surface's vertex count.
+    fn dome_with(bytes: Vec<u8>, pick: Option<u32>) -> (u64, usize) {
+        let mut rt = LegaiaRuntime::new();
+        rt.load_disc(bytes, String::new()).expect("disc loads");
+        rt.enter_field("koin1").expect("enter koin1");
+        let mut party = legaia_save::Party::zeroed(3);
+        for i in 0..3 {
+            let mut hms = party.members[i].hp_mp_sp();
+            hms.hp_max = 300;
+            hms.hp_cur = 300;
+            party.members[i].set_hp_mp_sp(hms);
+        }
+        rt.world_mut().load_party(party);
+        if let Some(p) = pick {
+            assert!(rt.play_mg_set_muscle_fighter(p), "record {p} is filled");
+        }
+        assert!(rt.play_mg_debug_warp(5));
+        for _ in 0..2 {
+            rt.tick_frame().expect("tick");
+        }
+        assert_eq!(rt.scene_mode(), "MuscleDome");
+        let g: serde_json::Value = serde_json::from_str(&rt.play_mg_game_json()).unwrap();
+        assert!(
+            rt.play_mg_muscle_scene_frame() >= 0,
+            "the dome surface builds"
+        );
+        (
+            g["muscle"]["char_slot"].as_u64().unwrap(),
+            rt.play_mg_muscle_scene_positions().len(),
+        )
+    }
+
+    /// The dome surface seats the leg's fighter (`World::muscle_fighter_record`),
+    /// the record the battle leg's party swap fields: a "Fight as" pick
+    /// changes the body on the dome panel too, not only in the battle.
+    #[test]
+    fn the_dome_surface_seats_the_picked_fighter() {
+        let Some(bytes) = std::env::var("LEGAIA_DISC_BIN")
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+        else {
+            eprintln!("LEGAIA_DISC_BIN unset - skipping");
+            return;
+        };
+        let (vahn_slot, vahn_verts) = dome_with(bytes.clone(), None);
+        let (gala_slot, gala_verts) = dome_with(bytes, Some(2));
+        eprintln!("[ok] dome surface: Vahn {vahn_verts} verts, Gala {gala_verts} verts");
+        assert_eq!((vahn_slot, gala_slot), (0, 2));
+        assert_ne!(vahn_verts, gala_verts, "Gala's battle form is not Vahn's");
     }
 }

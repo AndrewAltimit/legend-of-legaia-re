@@ -319,6 +319,8 @@ Because a party placement carries the bit, the port does not infer "this is the 
 
 A talk is the case with no channel stepping: the inline dialogue runner steps a cross-context op on the talker's own context, and a talker that carries the bit (`31 18` in its prologue) reads as the player there. So a seat the talk aims at another actor (`A3 <id> x z`, `<id>` not `0xF8`) runs on a copy of the context without the bit and lands on the placement the id names, or on nobody. `vozz` P1[1] parks its two companion actors with `A3 06 7F 7F` / `A3 07 7F 7F` at the end of the talk that hands over item `0xAA`; taken on the player arm, those seats put the player on the hide tile.
 
+The talker's own seat (`23 x z`, no target byte) lands on the talker. The talk and the placement are one retail context, and a context that is not the player takes the `0x801DECAC` arm, which seats that actor; the runner writes the tile through to the talker's placement and channel. `cave01` `P1[2]` ends Terra's stage-`0x15C` hand-off with `23 47 43`, which stands her on `(71, 67)` - the spot her stage-`0x15D` entry branch (`+0x1521`) seats her on too.
+
 <a id="wall-slide-resolution"></a>
 
 ### Wall-slide resolution (`FUN_80046494`)

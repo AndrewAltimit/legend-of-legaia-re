@@ -42,7 +42,8 @@
 //! This is the retail **normal-art** path (`t5 == 0`: art ordinal `>= 4`,
 //! i.e. everything but the Miracle Art and the three Hyper Arts, whose matches
 //! take a different arm and, with the slot's `+0x25F` marker clear, write
-//! nothing). Every Super Art chain is normal arts only, so
+//! nothing; with it set, [`tokenize_bank`] ports that arm too). Every Super
+//! Art chain is normal arts only, so
 //! [`derive_super_input`] needs no more than this. The AP-payment and
 //! learn-on-use side effects (`FUN_801EFBFC`, `+0x170`) are not modelled - they
 //! decide `0x19` vs `0x1A` and whether the walk aborts, not where the tokens
@@ -241,6 +242,261 @@ pub fn derive_super_input(arts: &[ArtEntry<'_>], find: &[u8]) -> Option<Vec<Comm
     None
 }
 
+/// One record of a character's art bank as the builder's walk reads it: the
+/// record's `+0x00` combo and its `+0x0A..+0x0D` stream-source bytes. The
+/// first of those is the record's own `"ME"` stream; a non-zero `+0x0B..`
+/// chains the records after it into one art (Noa's Hurricane Kick, bank
+/// record `0x1C` with `+0x0A..+0x0B = 04 05`, plays records `0x1D` and
+/// `0x1E`).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BankArt<'a> {
+    pub cmds: &'a [Command],
+    pub sources: [u8; 4],
+}
+
+/// The starter the special-art arm writes, whatever the learn verdict
+/// (`li v1,0x1a` at `0x801EF5C8`).
+pub const SPECIAL_STARTER: u8 = 0x1A;
+
+/// How many art groups at the head of the walk take the special arm: the
+/// Miracle Art (ordinal `0`) and the three Hyper Arts (`sltiu a1,a0,0x4` at
+/// `0x801EF330`).
+pub const SPECIAL_ORDINALS: u8 = 4;
+
+/// What [`tokenize_bank`] built.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BankTokens {
+    /// The 16-byte queue window.
+    pub queue: [u8; QUEUE_LEN],
+    /// The builder's per-token side array `0x801F6990` over the window: `1`
+    /// on each normal art's starter, moved with every shift.
+    pub marks: [u32; QUEUE_LEN],
+    /// The bank constant (`0x1B + k`) of each Hyper Art the walk compacted,
+    /// in walk order - the record `FUN_801EFBFC` was handed for it.
+    pub hyper_matches: Vec<u8>,
+    /// Whether the walk matched the Miracle record (ordinal `0`) with the
+    /// marker armed - where retail copies the Miracle row over the window.
+    pub miracle_matched: bool,
+}
+
+/// One owned bank row: a record's combo and its `+0x0A..+0x0D` chain bytes.
+pub type BankRow = (Vec<Command>, [u8; 4]);
+
+/// A character's bank in walk order out of `(constant, combo, chain bytes)`
+/// records in any order: one row per constant from `0x1B` up to the highest
+/// given, a missing constant an empty row (it matches nothing but still
+/// counts as a group). Constants below `0x1B` are not walked
+/// (`li s3,0xb` at `0x801EF2EC`) and are dropped.
+pub fn bank_rows(records: impl IntoIterator<Item = (u8, Vec<Command>, [u8; 4])>) -> Vec<BankRow> {
+    let mut rows: Vec<BankRow> = Vec::new();
+    for (b, cmds, sources) in records {
+        let Some(k) = (b as usize).checked_sub(0x1B) else {
+            continue;
+        };
+        if rows.len() <= k {
+            rows.resize(k + 1, (Vec::new(), [0; 4]));
+        }
+        rows[k] = (cmds, sources);
+    }
+    rows
+}
+
+/// [`BankArt`] views over owned [`BankRow`]s.
+pub fn bank_view(rows: &[BankRow]) -> Vec<BankArt<'_>> {
+    rows.iter()
+        .map(|(cmds, sources)| BankArt {
+            cmds: cmds.as_slice(),
+            sources: *sources,
+        })
+        .collect()
+}
+
+/// The constants the three Hyper-Art groups of `records` write into a queue,
+/// paired with the group's own bank constant. A plain group writes its own
+/// constant; a chained one writes the records after it
+/// ([`BankArt::sources`]).
+pub fn hyper_queue_constants(records: &[BankArt<'_>]) -> Vec<(u8, Vec<u8>)> {
+    let mut out = Vec::new();
+    let mut s3 = 0usize;
+    let mut ordinal = 0u8;
+    while s3 < records.len() && ordinal < SPECIAL_ORDINALS {
+        let rec = records[s3];
+        if ordinal > 0 {
+            let base = 0x1B + s3 as u8;
+            let consts = if rec.sources[1] == 0 {
+                vec![base]
+            } else {
+                rec.sources
+                    .iter()
+                    .take_while(|&&b| b != 0)
+                    .enumerate()
+                    .map(|(i, _)| base + 1 + i as u8)
+                    .collect()
+            };
+            out.push((base, consts));
+        }
+        s3 = group_end(records, s3);
+        ordinal += 1;
+    }
+    out
+}
+
+/// The walk's step past the group at `s3` (`0x801EF7C8..0x801EF828`): each
+/// non-zero `+0x0B..+0x0D` read along the chain moves one record on, and a
+/// chain found skips one more.
+fn group_end(records: &[BankArt<'_>], mut s3: usize) -> usize {
+    let mut chained = 0usize;
+    for a2 in 1..4 {
+        if records.get(s3).is_some_and(|r| r.sources[a2] != 0) {
+            s3 += 1;
+            chained = 1;
+        }
+    }
+    s3 + chained + 1
+}
+
+/// The builder's normalisation walk over a character's whole art bank,
+/// **both** of its arms: `records[k]` is bank record `0x1B + k` (the walk
+/// starts at `s3 = 0xB`, `0x801EF2EC`), and the first
+/// [`SPECIAL_ORDINALS`] groups take the special arm.
+///
+/// - **Normal art** (ordinal `>= 4`): [`tokenize`]'s rewrite - starter over
+///   the run's last arrow, constant inserted after it, leading arrows kept.
+/// - **Hyper Art** (ordinals `1..=3`) with `special_armed` (the slot's
+///   Ra-Seru marker `ctx[+0x25F + slot]`, `0x801EF4C8`): the run **collapses**
+///   to `0x1A` and the art's constant(s), and the queue after the run moves
+///   down behind them (`0x801EF5BC..0x801EF6CC`). Gala's Lightning Storm
+///   `R R U L` becomes `1A 1D`.
+/// - **Miracle** (ordinal `0`) with the marker armed: retail copies the
+///   Miracle row over the window and leaves the run (`0x801EF4E8..`); that
+///   copy is the caller's ([`BankTokens::miracle_matched`]), here the run
+///   just ends.
+/// - A special art with the marker **clear** writes nothing and rewinds
+///   (`0x801EF6D4..0x801EF6DC`, matched count kept).
+///
+/// Ordinals count **groups**, not constants: Noa's chained Hurricane Kick
+/// spans three records, so her Vulture Blade (`0x1F`) and Frost Breath
+/// (`0x20`) are her second and third Hyper Arts.
+///
+/// A one-arrow full match ends the walk at this start
+/// (`0x801EF420..0x801EF434`, `s3` forced to the count). Not modelled, as in
+/// [`tokenize`]: the AP test that ends it the same way and the learn verdict
+/// that drops the run (`FUN_801EFBFC`), which decide whether a run is taken,
+/// not where its tokens land.
+///
+/// PORT: FUN_801EED1C (the art-normalisation loop `0x801EF2EC..0x801EF858`,
+/// both arms)
+pub fn tokenize_bank(
+    records: &[BankArt<'_>],
+    input: &[Command],
+    special_armed: bool,
+) -> BankTokens {
+    let mut q = [0u8; QUEUE_LEN];
+    let mut marks = [0u32; QUEUE_LEN];
+    for (i, c) in input.iter().take(QUEUE_LEN).enumerate() {
+        q[i] = c.as_action().as_byte();
+    }
+    let mut hyper_matches = Vec::new();
+    let mut miracle_matched = false;
+    let in_window = |p: isize| (0..QUEUE_LEN as isize).contains(&p);
+    for start in (0..QUEUE_LEN).rev() {
+        let mut s3 = 0usize;
+        let mut ordinal = 0u8;
+        'groups: while s3 < records.len() {
+            let special = ordinal < SPECIAL_ORDINALS;
+            let mut pos = start as isize;
+            let mut matched = 0usize;
+            // The record is re-read every pass (`0x801EF3BC..0x801EF3D8`), so
+            // a chained match's `s3` step retargets the rest of this run.
+            while in_window(pos) && q[pos as usize] != 0 {
+                let Some(rec) = records.get(s3) else { break };
+                let want = rec.cmds.get(matched).map_or(0, |c| c.as_byte());
+                if q[pos as usize].wrapping_sub(0xB) != want || rec.cmds.is_empty() {
+                    pos -= matched as isize;
+                    matched = 0;
+                    pos += 1;
+                    continue;
+                }
+                matched += 1;
+                if matched < rec.cmds.len() {
+                    pos += 1;
+                    continue;
+                }
+                if matched == 1 {
+                    break 'groups;
+                }
+                let p = pos as usize;
+                if special {
+                    if !special_armed {
+                        // `subu s0,s0,(s2 + 2)`, `s6` left at the length.
+                        pos -= matched as isize + 2;
+                        pos += 1;
+                        continue;
+                    }
+                    if ordinal == 0 {
+                        miracle_matched = true;
+                        break;
+                    }
+                    hyper_matches.push(0x1B + s3 as u8);
+                    let run_start = p + 1 - matched;
+                    q[run_start] = SPECIAL_STARTER;
+                    let written = if rec.sources[1] == 0 {
+                        if run_start + 1 < QUEUE_LEN {
+                            q[run_start + 1] = 0x1B + s3 as u8;
+                        }
+                        1
+                    } else {
+                        let mut n = 0usize;
+                        while n < 4 && rec.sources[n] != 0 {
+                            if run_start + 1 + n < QUEUE_LEN {
+                                q[run_start + 1 + n] = 0x1C + (s3 + n) as u8;
+                            }
+                            n += 1;
+                        }
+                        s3 += n;
+                        n
+                    };
+                    // `0x801EF648..0x801EF6C4`: the queue past the run moves
+                    // down behind the constants, marks with it. The bytes
+                    // the move vacates keep what they held.
+                    let mut a3 = 1usize;
+                    while p + a3 < QUEUE_LEN {
+                        let dst = run_start + written + a3;
+                        if dst < QUEUE_LEN {
+                            q[dst] = q[p + a3];
+                            marks[dst] = marks[p + a3];
+                        }
+                        a3 += 1;
+                    }
+                } else {
+                    q[p] = STARTER;
+                    if p < QUEUE_LEN - 2 {
+                        for k in (p + 1..QUEUE_LEN - 1).rev() {
+                            q[k + 1] = q[k];
+                            marks[k + 1] = marks[k];
+                        }
+                    }
+                    if p + 1 < QUEUE_LEN {
+                        marks[p + 1] = marks[p];
+                        q[p + 1] = 0x1B + s3 as u8;
+                    }
+                    marks[p] = 1;
+                }
+                matched = 0;
+                pos = start as isize + 1;
+            }
+            s3 = group_end(records, s3);
+            ordinal += 1;
+        }
+    }
+    BankTokens {
+        queue: q,
+        marks,
+        hyper_matches,
+        miracle_matched,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,5 +597,114 @@ mod tests {
     fn a_pattern_no_art_produces_derives_nothing() {
         assert!(derive_super_input(&vahn(), &[0x19, 0x27, 0x0C, 0x0C, 0x0C, 0x19, 0x1F]).is_none());
         assert!(derive_super_input(&vahn(), &[0x19, 0x50]).is_none());
+    }
+    /// A bank built from `(combo, sources)` rows, record `0x1B` first.
+    fn bank(rows: &[(&'static [Command], [u8; 4])]) -> Vec<BankArt<'static>> {
+        rows.iter()
+            .map(|&(cmds, sources)| BankArt { cmds, sources })
+            .collect()
+    }
+
+    // Gala's bank head: Biron Rage, Explosive Fist, Lightning Storm, Thunder
+    // Punch, then normal arts (the record `+0x00` combos; `sources[0]` is
+    // each record's own stream).
+    fn gala() -> Vec<BankArt<'static>> {
+        bank(&[
+            (
+                &[Right, Right, Down, Up, Down, Up, Down, Left, Left],
+                [0; 4],
+            ),
+            (&[Right, Right, Left, Left, Left], [0x0C, 0, 0, 0]),
+            (&[Right, Right, Up, Left], [0x04, 0, 0, 0]),
+            (&[Right, Right, Left], [0x0A, 0, 0, 0]),
+            (&[Left, Up, Right, Down, Left], [0x01, 0, 0, 0]),
+            (&[Up, Left, Down, Right, Left], [0x11, 0, 0, 0]),
+        ])
+    }
+
+    #[test]
+    fn a_hyper_art_collapses_to_its_starter_and_constant() {
+        // `koru_pre_*`: Gala's committed Lightning Storm reads `1A 1D`.
+        let t = tokenize_bank(&gala(), &[Right, Right, Up, Left], true);
+        assert_eq!(populated(&t.queue), &[0x1A, 0x1D]);
+        assert_eq!(t.hyper_matches, vec![0x1D]);
+        assert_eq!(t.marks, [0; QUEUE_LEN], "the special arm marks nothing");
+        // The queue past the run moves down behind it.
+        let t = tokenize_bank(&gala(), &[Right, Right, Left, Down, Down], true);
+        assert_eq!(populated(&t.queue), &[0x1A, 0x1E, 0x0E, 0x0E]);
+    }
+
+    #[test]
+    fn a_hyper_art_writes_nothing_without_the_ra_seru() {
+        let t = tokenize_bank(&gala(), &[Right, Right, Up, Left], false);
+        assert_eq!(populated(&t.queue), &[0x0D, 0x0D, 0x0F, 0x0C]);
+        assert!(t.hyper_matches.is_empty());
+    }
+
+    #[test]
+    fn normal_arts_tokenize_as_before_beside_the_special_groups() {
+        let t = tokenize_bank(&gala(), &[Left, Up, Right, Down, Left], true);
+        assert_eq!(populated(&t.queue), &[0x0C, 0x0F, 0x0D, 0x0E, 0x19, 0x1F]);
+        assert_eq!(t.marks[4], 1);
+    }
+
+    #[test]
+    fn a_chained_group_counts_once_toward_the_special_ordinals() {
+        // Noa: Miracle, the chained Hurricane Kick (records 0x1C..0x1E),
+        // Vulture Blade, Frost Breath - the latter two are Hyper Arts.
+        let hk: &[Command] = &[Left, Up, Up, Up, Up, Down, Right];
+        let noa = bank(&[
+            (&[Left, Up, Right, Down, Up, Left, Up, Down, Right], [0; 4]),
+            (hk, [0x04, 0x05, 0, 0]),
+            (hk, [0x04, 0, 0, 0]),
+            (hk, [0x05, 0, 0, 0]),
+            (&[Left, Left, Right, Left, Right], [0x0D, 0, 0, 0]),
+            (&[Left, Left, Right, Right], [0x08, 0, 0, 0]),
+            (&[Right, Right, Left, Up, Up, Up], [0x01, 0, 0, 0]),
+        ]);
+        let t = tokenize_bank(&noa, hk, true);
+        assert_eq!(populated(&t.queue), &[0x1A, 0x1D, 0x1E]);
+        assert_eq!(t.hyper_matches, vec![0x1C]);
+        let t = tokenize_bank(&noa, &[Left, Left, Right, Left, Right], true);
+        assert_eq!(populated(&t.queue), &[0x1A, 0x1F]);
+        let t = tokenize_bank(&noa, &[Left, Left, Right, Right], true);
+        assert_eq!(populated(&t.queue), &[0x1A, 0x20]);
+        // The fifth group is the first normal art.
+        let t = tokenize_bank(&noa, &[Right, Right, Left, Up, Up, Up], true);
+        assert_eq!(
+            populated(&t.queue),
+            &[0x0D, 0x0D, 0x0C, 0x0F, 0x0F, 0x19, 0x21]
+        );
+        let consts = hyper_queue_constants(&noa);
+        assert_eq!(
+            consts,
+            vec![
+                (0x1C, vec![0x1D, 0x1E]),
+                (0x1F, vec![0x1F]),
+                (0x20, vec![0x20])
+            ]
+        );
+    }
+
+    #[test]
+    fn the_bank_walk_agrees_with_the_normal_tokenizer() {
+        // Vahn's normal arts behind four empty special groups.
+        let normal = vahn();
+        let mut rows: Vec<BankArt<'static>> = vec![BankArt::default(); 4];
+        rows.extend(normal.iter().map(|&(_, cmds)| BankArt {
+            cmds,
+            sources: [1, 0, 0, 0],
+        }));
+        for input in [
+            &[Up, Down, Up][..],
+            &[Up, Down, Up, Up, Up, Down, Up],
+            &[Down, Right, Up, Down, Left, Left, Down],
+            &[Up, Down, Right, Left, Left, Down, Up, Up, Left],
+        ] {
+            assert_eq!(
+                tokenize_bank(&rows, input, true).queue,
+                tokenize(&normal, input)
+            );
+        }
     }
 }

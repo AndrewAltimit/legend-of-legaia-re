@@ -367,6 +367,14 @@ impl World {
     /// still in flight, or a staged battle owes its latch pass. What a pad
     /// script waits out before it presses on a freshly opened prompt.
     pub fn battle_command_pad_held(&self) -> bool {
+        // No flow state runs under the battle-entry sweep: the frame driver
+        // calls the battle tick only once its entry counter parks
+        // (`FUN_80046A20`, `0x80046EF8`), so no press reaches a command
+        // surface there.
+        // REF: FUN_80046A20
+        if self.battle_entry_sweeping() {
+            return true;
+        }
         [
             self.battle.action_plaque_glide.as_ref(),
             self.battle.target_plaque_glide.as_ref(),

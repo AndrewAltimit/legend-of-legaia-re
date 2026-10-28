@@ -1,0 +1,127 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; retail-oracle method</div>
+  <h1>The retail-oracle method</h1>
+  <p class="lede">A reimplementation of a console game has one judge: the original, on its hardware or a faithful emulator. This page describes how this project turns that judge into a measurement that runs on every change, in terms that do not depend on the game, the console or the engine. Each step links to the page where this repository does it, as a worked example.</p>
+</header>
+
+<section class="doc-section" id="shape" data-doc="-">
+  <h2>The shape of it</h2>
+  <p>Capture moments of the original as emulator save states. For each one, read what the original was doing out of the state's own memory, put the reimplementation into the same situation, and score what it does against what the original did, channel by channel. Commit the scores as a baseline that may only rise. Around that loop sit the practices that keep it honest: an evidence grade on every claim, a register of disproved readings, a coverage denominator taken from the original's data, and runs that replay bit for bit.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The oracle loop. Retail save states, named by their bytes, are read two ways: memory gives the observables that seed the engine, video memory gives the displayed frame. The seeded engine settles, and each channel is scored from 0 to 1 against retail. The scores go to a report sorted worst first and to a baseline that may only rise, guarded by a loosening ledger. The disc-derived denominator picks the next states to capture.">
+      <defs><marker id="rom-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="95" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="95" y="118">Retail save states</text><text class="dg-sub" x="95" y="136">named by their bytes</text>
+      <rect class="dg-node" x="215" y="30" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="295" y="53">Memory</text><text class="dg-sub" x="295" y="71">observables</text>
+      <rect class="dg-node" x="215" y="160" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="295" y="183">Video memory</text><text class="dg-sub" x="295" y="201">displayed frame</text>
+      <path class="dg-edge" d="M170 112 L213 70" marker-end="url(#rom-arrow)"/>
+      <path class="dg-edge" d="M170 134 L213 178" marker-end="url(#rom-arrow)"/>
+      <rect class="dg-node" x="420" y="30" width="170" height="56" rx="4"/>
+      <text class="dg-label" x="505" y="53">Seed the engine</text><text class="dg-sub" x="505" y="71">its own load path</text>
+      <path class="dg-edge" d="M375 58 L418 58" marker-end="url(#rom-arrow)"/>
+      <rect class="dg-node-accent" x="420" y="160" width="170" height="56" rx="4"/>
+      <text class="dg-label" x="505" y="183">Score channels</text><text class="dg-sub" x="505" y="201">each in 0..1</text>
+      <path class="dg-edge" d="M505 86 L505 158" marker-end="url(#rom-arrow)"/>
+      <path class="dg-edge" d="M375 188 L418 188" marker-end="url(#rom-arrow)"/>
+      <rect class="dg-node" x="640" y="95" width="220" height="56" rx="4"/>
+      <text class="dg-label" x="750" y="118">Baseline that only rises</text><text class="dg-sub" x="750" y="136">plus a loosening ledger</text>
+      <path class="dg-edge" d="M590 180 L638 140" marker-end="url(#rom-arrow)"/>
+      <rect class="dg-node" x="640" y="190" width="220" height="44" rx="4"/>
+      <text class="dg-label" x="750" y="217">Report, worst state first</text>
+      <path class="dg-edge" d="M590 200 L638 210" marker-end="url(#rom-arrow)"/>
+    </svg>
+  </figure>
+  <p>The parts that read emulator states and disc images are reusable code: <a href="reusing-for-other-ps1-games.html">reusing for other PS1 games</a> says which crates carry, and runs them on a made-up game.</p>
+</section>
+
+<section class="doc-section" id="capture" data-doc="capture-retail-states">
+  <h2>Capture retail states</h2>
+  <p>A save state is the unit of evidence: the whole machine at one instant, main RAM, video memory and display registers, sound RAM, scratchpad. Every channel is read out of it offline, so no emulator runs during a measurement and one capture serves every later change.</p>
+  <ul class="bullets">
+    <li><strong>Name each state by its bytes.</strong> Keep an immutable copy under the hash of its contents and a manifest mapping a label to the fingerprint, the scene, how it was made and anything done to it (<a href="pcsx-redux-automation.html#two-tier-capture">capture tiers and the state library</a>).</li>
+    <li><strong>Record what was done to the machine.</strong> A state made after a debugger poke or on a patched disc is not the original's behaviour; name it and keep it out of the headline. A state replays the memory of the disc that booted it, and an emulator may apply a patch file beside the image without asking (<a href="pcsx-redux-automation.html#patched-disc-taint">patched-disc taint</a>). Read the resident executable out of the state rather than trusting a file name.</li>
+    <li><strong>Capture by script where you can.</strong> A closed-loop probe that loads a state, drives the pad, waits for a condition and saves can re-shoot a capture when a build changes. A derived state inherits everything its source carried.</li>
+    <li><strong>Choose what to capture from a worklist</strong> built from the game's own data (see <a href="#denominator">the denominator</a> below), not from what was easy to reach.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="seed" data-doc="seed-the-engine-from-retail-ram">
+  <h2>Seed the engine from retail RAM</h2>
+  <p>A capture is an oracle only if the reimplementation can be put into the same situation. Read the scene, position, party, story flags, camera and fight state from the original's memory; enter that situation through the engine's own code; tick until it settles.</p>
+  <ul class="bullets">
+    <li><strong>Enter through the engine's own load path.</strong> Copying memory into engine structures field by field tests the copy. This project loads the lifted save the way a memory-card load does, in the original's order, then places the player (<a href="retail-compare.html#seeding">the seeding model</a>).</li>
+    <li><strong>Seed history; compute the rest.</strong> Values that are the sum of everything before the capture (the camera region last crossed, a random stream hundreds of draws in, a paused script) are installed from the state. Everything else is left to the engine, because that is what the channel tests. Each installed value is named in the report.</li>
+    <li><strong>Keep unseeded states in the report</strong>, with their reason, so the corpus never silently shrinks to the states that work.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="channels" data-doc="define-scored-channels">
+  <h2>Define scored channels</h2>
+  <p>A channel is one observable read from both sides and scored in <code>0..1</code>, with a stated tolerance and falloff so a near miss counts and noise does not move the number (<a href="retail-compare.html#channels">channels</a>).</p>
+  <ul class="bullets">
+    <li><strong>State channels</strong> compare values read from memory: scene, mode, position, camera, music track, flags, combatants. Cheap, headless, precise; a failing one names the subsystem. Each needs its source address documented with evidence (<a href="retail-compare.html#observables">retail observables</a>).</li>
+    <li><strong>The image channel</strong> compares the displayed frame, cropped from video memory by the original's own display registers, with the engine's. Render the engine's side the way the console did, at native resolution (<a href="../subsystems/renderer-port.html#psx">PSX-mode rasterisation</a>, <a href="retail-compare.html#image">the image channel</a>), and score with a block metric that tolerates dithering rather than a mean pixel error.</li>
+    <li><strong>Time-axis oracles</strong> judge what one frame cannot: record both sides from one state and pair frames on the game's own state-machine clock, not wall time (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">cast-sequence oracle</a>).</li>
+  </ul>
+  <p>Read the worst states first. For each, decide whether the divergence is the instrument's (a seeding gap) or the engine's, and catalogue the shapes that recur (<a href="retail-compare.html#divergence">divergence shapes</a>).</p>
+</section>
+
+<section class="doc-section" id="ratchet" data-doc="ratchet-the-baseline-with-a-loosening-ledger">
+  <h2>Ratchet the baseline with a loosening ledger</h2>
+  <p>Commit per-state, per-channel scores. A check fails when a score falls, when a measured channel goes unmeasured, or when a seedable state stops seeding; a rise is folded in by a reviewed bless (<a href="retail-compare.html#ratchet">the ratchet</a>). The baseline holds scores, never pixels or memory.</p>
+  <div class="callout callout-trap"><p class="callout-title">Two ways a ratchet is defeated without tripping</p><p><strong>The baseline is edited</strong> in the same commit: a second gate compares every baseline with the base revision and fails on any value that moved the wrong way unless a ledger records that exact step with a reason. <strong>The measurement never runs</strong>: a test that skips for want of data reports as a pass, so count skips by reason on the machine that has the data (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">ratchet integrity</a>).</p></div>
+</section>
+
+<section class="doc-section" id="grades" data-doc="grade-every-claim-by-its-evidence">
+  <h2>Grade every claim by its evidence</h2>
+  <p>Every answered question carries the grade of its weakest load-bearing evidence: <code>disassembly</code> (instructions at stated addresses), <code>capture</code> (a state, probe log or measured oracle), <code>decompiled-C</code> (a decompiler's rendering, an inferred signature, a typed-in label) or <code>inference</code> (reasoning from surrounding facts or absence). The third marks a claim nobody has checked against instructions, which makes it a re-audit worklist (<a href="../reference/re-settled-threads.html#grades">the evidence column</a>).</p>
+  <p>Decompilers fail in repeatable ways: arguments left in registers vanish from calls, stores are reordered or dropped, labels inside a large function print as calls, a module imported at the wrong base prints every address shifted (<a href="ghidra.html#decompiler-artifacts">decompiler artifacts</a>). Port from the instructions, and hold a "no writers found" claim to the bar of a positive one (<a href="address-reference-scan.html">address reference scan</a>).</p>
+</section>
+
+<section class="doc-section" id="falsified" data-doc="keep-a-falsified-hypotheses-register">
+  <h2>Keep a falsified-hypotheses register</h2>
+  <p>An undocumented format invites the same wrong readings from every newcomer. Keep each disproved one in three parts: the tempting reading and why it tempts, the decisive instruction, capture or count, and what is true instead. Entries are terminal; new evidence moves a row back to the open questions rather than rewriting its verdict (<a href="../reference/re-do-not-re-walk.html">do not re-walk</a>).</p>
+</section>
+
+<section class="doc-section" id="denominator" data-doc="take-the-denominator-from-the-disc">
+  <h2>Take the denominator from the disc</h2>
+  <p>Progress counted over work already done always flatters. Count against what the original contains:</p>
+  <ul class="bullets">
+    <li><strong>Code</strong>: per executable image, the bytes covered by analysed functions, uncovered runs largest first (<a href="disc-coverage.html">disc coverage</a>).</li>
+    <li><strong>Data</strong>: per archive entry, the bytes some parser consumes and the shape of the rest (<a href="byte-accounting.html">byte accounting</a>).</li>
+    <li><strong>Captures</strong>: per scene, enemy, spell and formation the data defines, whether a corpus state shows it (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/capture-coverage.md" target="_blank" rel="noopener">capture coverage</a>).</li>
+  </ul>
+  <p>Negative results take the same discipline: a search over raw bytes, in every encoding an address can take, is what turns "no caller found" into "no reference exists".</p>
+</section>
+
+<section class="doc-section" id="replay" data-doc="make-runs-replayable">
+  <h2>Make runs replayable</h2>
+  <p>Make the engine deterministic under a recorded input stream: a text file of per-frame pad transitions plus the seed replays to a bit-identical state trace. A test that runs one stream twice, with companions showing that another stream and another seed each change the trace, keeps determinism from regressing without any data from the original (<a href="determinism-replay.html#gate">determinism gate</a>). Then every bug report is a replay file and every fuzzing finding reduces to the inputs that matter (<a href="soak-harness.html">soak harness</a>).</p>
+</section>
+
+<section class="doc-section" id="start" data-doc="where-to-start">
+  <h2>Where to start</h2>
+  <ol class="bullets">
+    <li>A state reader for your emulator and a manifest naming states by their bytes.</li>
+    <li>One state channel (scene and position) over a handful of states, reported worst first.</li>
+    <li>The ratchet, its loosening ledger and the skip tally, before regressions have room to hide.</li>
+    <li>The image channel at native resolution.</li>
+    <li>Evidence grades and the falsified register: free to start, and they only grow in value.</li>
+    <li>The disc-derived denominators, once a count over done work starts to flatter.</li>
+    <li>Determinism replay, as soon as the engine takes input.</li>
+  </ol>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-oracle-method.md" target="_blank" rel="noopener">This page's source</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">Cast-sequence oracle</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">Ratchet integrity</a>
+  </div>
+</section>

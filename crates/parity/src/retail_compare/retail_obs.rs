@@ -103,6 +103,18 @@ pub struct RetailObs {
     /// short of the target (`rimelm_wall_press_left`: yaw `220`, the snap's
     /// `233`). The headless `camera` channel keeps the snap's angles.
     pub seat_angles: Option<[i32; 3]>,
+    /// The player `(X, Z)` the image child stands on, when it is not the
+    /// RAM's: a capture taken while the pad walked the player shows a frame
+    /// two passes old, so the child stands one walk step behind the
+    /// previous-pass pair and lands the follow camera two ease steps back
+    /// (`seat_eye` / `seat_angles` carry the rewound pose,
+    /// [`super::walk_rewind`]).
+    pub image_seat: Option<[i16; 2]>,
+    /// A walking capture's last two passes, which
+    /// [`Self::seat_walk_rewind`] turns into the rewound seat.
+    pub walk: Option<super::walk_rewind::WalkHistory>,
+    /// The minigame a minigame-class state runs ([`super::minigame_run`]).
+    pub minigame: Option<super::RetailMinigame>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
     /// Battle observables for a battle-class state; `Err` names why the
@@ -111,6 +123,10 @@ pub struct RetailObs {
     /// The pause-menu screen a menu-class state shows; `Err` names why the
     /// state is not one the seed can drive to.
     pub menu: Option<std::result::Result<RetailMenu, String>>,
+    /// A menu-class state's raw sub-screen word `DAT_801E46A4`, read whether
+    /// or not the seed drives to that screen (the capture-coverage census,
+    /// [`crate::retail_coverage`]).
+    pub menu_word: Option<u8>,
     /// The field-VM contexts the state holds
     /// ([`crate::retail_compare_script`]).
     pub scripts: crate::retail_compare_script::RetailScripts,
@@ -265,7 +281,7 @@ impl RetailObs {
             crate::retail_compare_battle::ungrant_results_rewards(save, b, ram);
             crate::retail_compare_battle::ungrant_magic_level_up(save, b);
         }
-        Self {
+        let mut obs = Self {
             scene,
             loaded_define: game_anchors::u16_at(ram, LOADED_SCENE_DEFINE),
             pending_scene: None,
@@ -312,13 +328,21 @@ impl RetailObs {
                 i32::from(camera.yaw),
                 i32::from(camera.h),
             ]),
+            image_seat: None,
+            walk: None,
+            minigame: (class == StateClass::Minigame).then(|| super::RetailMinigame::from_ram(ram)),
             frame,
             battle,
             menu,
+            menu_word: (class == StateClass::Menu)
+                .then(|| game_anchors::u8_at(ram, MENU_SUBSCREEN)),
             save_allowed: game_anchors::u32_at(ram, SAVE_ALLOW) != 0,
             memory_card: None,
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
-            cell_fx: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+            cell_fx: if matches!(
+                class,
+                StateClass::Field | StateClass::WorldMap | StateClass::Battle
+            ) {
                 retail_cell_fx(ram)
             } else {
                 Vec::new()
@@ -383,7 +407,14 @@ impl RetailObs {
             },
             rand_seed: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| rd32(ram, legaia_engine_system::rand::BIOS_RAND_SEED_ADDR) as u32),
+        };
+        // A walking capture's frame is two passes old ([`super::walk_rewind`]);
+        // a focus off the player is a poked or script-carried seat, which
+        // the follow ease never ran for.
+        if matches!(class, StateClass::Field | StateClass::WorldMap) && obs.seat_focus.is_none() {
+            obs.walk = super::walk_rewind::walk_history(ram, &obs.camera);
         }
+        obs
     }
 }
 
@@ -704,6 +735,23 @@ impl RetailObs {
         true
     }
 
+    /// Land a walking capture's displayed-frame pose
+    /// ([`super::walk_rewind::WalkHistory::rewind`]) as the image child's
+    /// seat, eye and angles. `scratchpad` gives the walk-region box the
+    /// composer aims from.
+    pub fn seat_walk_rewind(&mut self, scratchpad: Option<&[u8]>) {
+        let Some(walk) = self.walk else {
+            return;
+        };
+        let attr_box = scratchpad
+            .and_then(|s| s.get(0x384..0x388))
+            .map(|b| [b[0], b[1], b[2], b[3]]);
+        let r = walk.rewind(attr_box);
+        self.image_seat = Some(r.seat);
+        self.seat_eye = Some(r.eye);
+        self.seat_angles = Some(r.angles);
+    }
+
     /// Read the visible-tile window off a state's 1 KiB scratchpad image
     /// (index `0` = `0x1F800000`). Field states only: the overworld draws
     /// through its own terrain pass and a battle leaves the bytes stale.
@@ -712,6 +760,18 @@ impl RetailObs {
             .then(|| scratchpad?.get(0x3E8..0x3EC))
             .flatten()
             .map(|b| [b[0] as i8, b[1] as i8, b[2] as i8, b[3] as i8]);
+    }
+}
+
+/// The displayed frame. A minigame state may be in the slot machine's
+/// 640-wide mode ([`Frame::from_vram_display_hires`]); every other class
+/// keeps the 320-wide reader, so no state outside the minigames gains a
+/// frame it was not scored on.
+fn display_frame(ram: &[u8], vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Frame> {
+    if game_anchors::game_mode(ram) == 0x19 {
+        Frame::from_vram_display_hires(vram, rect)
+    } else {
+        Frame::from_vram_display(vram, rect)
     }
 }
 
@@ -725,22 +785,24 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             let ram = st.main_ram()?;
             let gpu = PsxGpu::new(&st);
             let frame = match (gpu.vram_bytes(), gpu.regs().display_crop_rect()) {
-                (Some(v), Some(rect)) => Frame::from_vram_display(v, rect),
+                (Some(v), Some(rect)) => display_frame(ram, v, rect),
                 _ => None,
             };
             let mut obs = RetailObs::from_ram(ram, frame);
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
             obs.seat_view_window(st.scratch_ram().ok());
+            obs.seat_walk_rewind(st.scratch_ram().ok());
             Ok(obs)
         }
         _ => {
             let (st, gpu) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, scus)?;
             let frame = gpu
                 .as_ref()
-                .and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
+                .and_then(|g| display_frame(st.main_ram(), &g.vram, g.display_crop_rect()));
             let mut obs = RetailObs::from_ram(st.main_ram(), frame);
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
             obs.seat_view_window(st.scratchpad());
+            obs.seat_walk_rewind(st.scratchpad());
             Ok(obs)
         }
     }

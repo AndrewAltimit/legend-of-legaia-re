@@ -62,11 +62,14 @@ pub use battle_run::*;
 mod baseline_report;
 mod corpus_run;
 mod engine_run;
+mod minigame_run;
 mod pause_menu_drive;
 pub mod resident_disc;
 mod retail_obs;
 mod save_flags;
 mod scripted_seats;
+mod walk_rewind;
+pub use minigame_run::RetailMinigame;
 pub use scripted_seats::*;
 #[cfg(test)]
 mod tests;

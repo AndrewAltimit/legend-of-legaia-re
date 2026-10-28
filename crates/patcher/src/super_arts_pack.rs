@@ -34,8 +34,11 @@
 //! ## How the bytes get there
 //!
 //! `0x801FD000..0x801FE000` is free RAM in every state of this project's save
-//! library (60 states, battles included): all-zero throughout, with the deepest
-//! observed stack use at `0x801FE420` - 1388 bytes above the block's end. It is
+//! library (60 states, battles included): all-zero throughout. The main stack's
+//! deepest point is `0x801FE420`, 1388 bytes above the block's end, and only at
+//! boot (the `CDNAME.TXT` read under `FUN_8001D424`, before the block is ever
+//! streamed); after boot the deepest is `0x801FF138` during FMV playback, 4740
+//! bytes above it (`docs/reference/memory-map.md`, the measured table). It is
 //! not covered by any overlay: slot A ends at `0x801F7018` (PROT 0898's
 //! `0x28800` bytes from `0x801CE818`).
 //!

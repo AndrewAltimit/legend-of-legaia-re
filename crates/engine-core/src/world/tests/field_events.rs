@@ -708,11 +708,11 @@ fn release_pauses(world: &mut World, ticks: usize) -> usize {
 /// A cutscene's `35 <id> 09 · 35 <n> 05 · 35 00 0A` (korb3's Gaza record,
 /// nilboa's duel records, town0d's Songi beat): the timed release armed
 /// inside the swap window releases the **outgoing** track, which retail's
-/// poller still holds in the slot. The port started the incoming track at
-/// sub-op 9, so the expiry must not pause it - otherwise the commit releases
-/// the paused source and the new score never sounds.
+/// poller still holds in the slot - and which the port's router holds there
+/// too, the incoming one waiting for the commit. So the expiry pauses the
+/// slot's occupant inside the window as well as after it.
 #[test]
-fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
+fn a_timed_release_inside_a_pending_swap_releases_the_outgoing_track() {
     use legaia_engine_vm::field::FieldAudioHost;
 
     let mut world = World::new();
@@ -725,8 +725,8 @@ fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
     world.drain_field_events();
     assert_eq!(
         release_pauses(&mut world, 40),
-        0,
-        "the expiry released the old track"
+        1,
+        "the expiry releases the outgoing track the slot still holds"
     );
     {
         let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut world };

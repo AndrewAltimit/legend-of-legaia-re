@@ -76,6 +76,15 @@ pub struct CameraRig {
     /// reset clears it - so it lives as long as the script leaves it; `uru`,
     /// the one scene that sets it, clears both in its entry record.
     pub script_focus: [i16; 2],
+    /// The camera focus as retail stores it, `_DAT_80089118` (X) /
+    /// `_DAT_80089120` (Z), both **negated**. The camera globals live on the
+    /// host-owned `Camera`; the host copies the pair here before each world
+    /// tick ([`crate::frame_step::camera_before_world_tick`]), and the field
+    /// readers take it from here: the positional sound emitters' box test
+    /// and move-VM ext sub-op `0x24`, which seats a part on the focus
+    /// (noaru's ice-floor backdrop). The three-actor talk's leader swap
+    /// writes it when it moves the focus onto the new leader.
+    pub focus_stored: [i32; 2],
 }
 
 impl CameraRig {
@@ -90,6 +99,7 @@ impl CameraRig {
             registers: Default::default(),
             zone_requests: Vec::new(),
             script_focus: [0, 0],
+            focus_stored: [0, 0],
         }
     }
 }

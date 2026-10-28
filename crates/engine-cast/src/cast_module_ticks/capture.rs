@@ -523,10 +523,16 @@ pub fn puera_tick(
     run_tick(ctx, 25, |c| {
         // `ctx[+0x278]`: `0` on arm 0's pass (`0x801F6C6C`), `2` on arm
         // 11's (`0x801F7374`), `0` again on arm 12's (`0x801F76C4`). The `3`
-        // the stager raises comes off a part's op-`0x20` call.
+        // the stager raises comes off a part's op-`0x20` call, and arm 23's
+        // pass clears it with `ctx[+0x27A]` (`0x801F8D9C..0x801F8DA8`), which
+        // puts the stage back under arm 24's white fade-out.
         match c.phase {
             0 | 12 => c.ctx_278 = 0,
             11 => c.ctx_278 = 2,
+            PUERA_STAGE_BACK_ARM => {
+                c.ctx_278 = 0;
+                c.ctx_27a = 0;
+            }
             _ => {}
         }
         if let Some(roll) = hit
@@ -538,6 +544,9 @@ pub fn puera_tick(
     })
 }
 
+/// PROT 0922's arm whose pass clears `ctx[+0x278]` and `ctx[+0x27A]`
+/// (`0x801F8D9C..0x801F8DA8`), after its countdown `0x801FA0B8` runs out.
+pub const PUERA_STAGE_BACK_ARM: u8 = 23;
 /// PROT 0922's terminal arm (`0x801F8F18`).
 pub const PUERA_TERMINAL_ARM: u8 = 24;
 /// The PROT 0922 arm that steps the phase by two (`0x801F87D0..0x801F87E0`).

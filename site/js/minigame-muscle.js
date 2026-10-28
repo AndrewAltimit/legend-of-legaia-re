@@ -351,7 +351,7 @@ window.MgMuscle = (function () {
       withAbr(g, abr, (sub) => (mod && !sub)
         ? g.drawImage(mod, 0, 0, w, h, dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2)
         : g.drawImage(sub ? hubSilhouette(s) : s, u, v, w, h,
-          dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2));
+          dx * 2, dy * 2, (dw || w) * 2, (dh || h) * 2), rgb);
       return true;
     }
 
@@ -1962,6 +1962,16 @@ window.MgMuscle = (function () {
       contest: () => cst(),
       startContest,
       mode: () => mode,
+      /* Whether the arena's battle theme is owed this frame. Retail's arena
+       * init (FUN_801CEA6C) only loads and opens it, under released BGM
+       * sources; the play is FUN_801D1510's `jal 0x80026478` (0x801D1548),
+       * the fight start past the ROUND card's arm 0x16 - the play hosts'
+       * `World::tick_muscle_dome` gate. So no music under the Welcome card,
+       * the course card, a ROUND card or the INTERVAL tally: only while a
+       * leg is being fought, from the tick this page's ROUND banner (its
+       * stand-in for arms 0x15 / 0x16) clears. */
+      legMusic: () => (mode === 'select' || mode === 'playback' || mode === 'decided')
+        && !(banner && /^ROUND /.test(banner.text)),
       selectSub: () => selectSub,
       sceneOk: () => !!scene,
       arenaOk: () => {

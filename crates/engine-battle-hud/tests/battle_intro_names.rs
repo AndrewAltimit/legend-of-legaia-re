@@ -113,7 +113,9 @@ fn a_dome_leg_opens_on_the_opponents_name() {
         legaia_engine_battle_hud::BattleHudPhase::Idle,
         "no chips under the banner"
     );
-    for _ in 0..0x5A {
+    // The install tick hands nothing over (the hub has not yet put its
+    // screens up over the fresh leg), so the hold drains from the next one.
+    for _ in 0..=0x5A {
         let _ = world.tick();
     }
     assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());

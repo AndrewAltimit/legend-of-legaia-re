@@ -135,30 +135,40 @@ impl TensionGauge {
         self.tension >= TENSION_MAX
     }
 
-    /// Apply one frame of reel input against a fish pulling with `base_pull`,
-    /// scaled by the frame step `frame_step` (`DAT_1f800393`), then clamp.
+    /// Apply one frame of the reel arms against the fish's reel `load`
+    /// ([`FishFrame::load`]), scaled by the frame step `frame_step`
+    /// (`DAT_1f800393`), then clamp.
     ///
-    /// Confirmed (`FUN_801d4004` tail): the reel-held divisors
-    /// (`rod*9 + 0x23` / `rod*6 + 0x19`) and the reel-released decrement
-    /// `(rod*0x40 + 0x4a) * frame_step`, and the `[0, 0x1000]` clamp. The
-    /// held-path grouping `base_pull * frame_step / divisor` is the natural
-    /// integer reading (a stronger fish pull spikes tension faster); the exact
-    /// MIPS operand order of the held term is not separately pinned.
+    /// `reel_mask` is the held pad word `_DAT_8007b850`. Each reel bit runs
+    /// its own arm, so with both held both add (`0x801D44D4` / `0x801D4548`):
+    ///
+    /// ```text
+    /// 0x40 held:  tension += (load / 3) / (rod * 9 + 0x23) * step
+    /// 0x80 held:  tension += (load / 3) / (rod * 6 + 0x19) * step
+    /// neither:    tension -= (rod * 0x40 + 0x4a) * step
+    /// ```
+    ///
+    /// `/ 3` is the reciprocal `0x55555556` (`hi - sign`, toward zero), the
+    /// rod division a `divu`, the step a `mult` / `mflo`
+    /// (`0x801D44E0..0x801D4540`). One clamp to `[0, 0x1000]` follows both
+    /// arms (`0x801D4604..0x801D462C`).
     // PORT: FUN_801d4004 (tension-gauge integration, reel held / released)
-    pub fn apply_reel(&mut self, input: ReelInput, base_pull: i32, frame_step: i32) {
+    pub fn apply_load(&mut self, reel_mask: u32, load: i32, frame_step: i32) {
         let fs = frame_step.max(1);
-        let delta = match input {
-            ReelInput::ReelA => {
-                let div = (self.rod_stat * REEL_A_DIV_MUL + REEL_A_DIV_ADD).max(1);
-                base_pull.max(0) * fs / div
-            }
-            ReelInput::ReelB => {
-                let div = (self.rod_stat * REEL_B_DIV_MUL + REEL_B_DIV_ADD).max(1);
-                base_pull.max(0) * fs / div
-            }
-            ReelInput::Idle => -((self.rod_stat * REEL_RELEASE_MUL + REEL_RELEASE_ADD) * fs),
-        };
-        self.tension = (self.tension + delta).clamp(TENSION_MIN, TENSION_MAX);
+        let third = (load / 3) as u32;
+        let mut t = self.tension;
+        if reel_mask & REEL_A_PAD_BIT != 0 {
+            let div = (self.rod_stat * REEL_A_DIV_MUL + REEL_A_DIV_ADD) as u32;
+            t = t.wrapping_add(((third / div) as i32).wrapping_mul(fs));
+        }
+        if reel_mask & REEL_B_PAD_BIT != 0 {
+            let div = (self.rod_stat * REEL_B_DIV_MUL + REEL_B_DIV_ADD) as u32;
+            t = t.wrapping_add(((third / div) as i32).wrapping_mul(fs));
+        }
+        if reel_mask & (REEL_A_PAD_BIT | REEL_B_PAD_BIT) == 0 {
+            t -= (self.rod_stat * REEL_RELEASE_MUL + REEL_RELEASE_ADD) * fs;
+        }
+        self.tension = t.clamp(TENSION_MIN, TENSION_MAX);
     }
 }
 

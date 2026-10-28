@@ -79,6 +79,17 @@ impl World {
         }
     }
 
+    /// Stamp the map id `_DAT_80084540` the next fight's stage pick reads
+    /// (`FUN_800513F0` loads entry `map + variant` at `0x80051A3C`), for a
+    /// replay of a retail battle capture whose fight start rewrote it - a
+    /// Muscle Dome leg stands in `koin1` with the word at `0x4C6`, the arena
+    /// data file. `None` leaves the pick on the loaded scene.
+    ///
+    /// REF: FUN_800513F0, FUN_801D1510
+    pub fn seed_battle_map_define(&mut self, define: Option<u16>) {
+        self.encounters.battle_map_define = define;
+    }
+
     /// The Door of Light / Door of Wind gates the last region setup left in
     /// scratchpad `0x1F800394` (`0x100000` / `0x200000`): `(light, wind)`,
     /// `true` = blocked. Open until a region has been stood in.

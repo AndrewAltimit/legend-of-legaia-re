@@ -74,6 +74,11 @@ impl Sequencer {
         }
     }
 
+    /// The sequence volume last set ([`Self::set_master_vol`]), `0..=127`.
+    pub fn master_vol(&self) -> u8 {
+        self.master_vol
+    }
+
     /// Set the external loop fallback: rewinds the event index to `to` when
     /// the SEQ hits end-of-track *and* the stream carried no Loop Start marker.
     /// Pass `usize::MAX` to disable (the default). In-stream loop markers (CC

@@ -38,6 +38,17 @@ analysis of the RAM a state carries - `extract`, `game_anchors`, `diff`,
 `bisect`, `prim_pool` + `source_hunt`, `prim_dispatch`, `scenarios` - lives in
 [`legaia-ram-image`](../ram-image/README.md); the CLI below drives both.
 
+The library reads any PSX game's states: `main_ram_structured()` returns the
+`MAIN.MainRAM.data8` entry from mednafen's own section layout, `main_ram()`
+takes it and only falls back to a search for Legaia's executable strings when
+that entry is missing, and `main_ram_with_anchors(exe, profile)` is that
+fallback for another game (its executable, and the strings a
+`legaia_ram_image::GameProfile` names). The CLI is narrower: its `cli`
+feature pulls in `legaia-actor-formats` and `legaia-cheats`, and `identify`,
+`display-list`, `write-taxonomy`, `clut-trace`, `prim-dispatch-*` and
+`world-map-camera` read Legaia structures. See
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#emulator-save-states-legaia-mednafen-legaia-pcsx-redux-legaia-ram-image).
+
 ## CLI
 
 ```text

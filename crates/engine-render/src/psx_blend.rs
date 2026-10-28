@@ -57,6 +57,23 @@ pub fn abr_mode(tsb: u16) -> u8 {
     ((tsb >> 5) & 0x3) as u8
 }
 
+/// The colour-mesh blend words of a hybrid scene buffer's untextured
+/// prims: each vertex's TSB attribute (`cba_tsb[i][1]`) reduced to its ABE
+/// bit and ABR mode, the packing [`pack_blend_word`] produces.
+///
+/// A hybrid mesh (`legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid`) stores
+/// an untextured prim's TSB as `pack_tsb_semi(0, abe)`, which is exactly the
+/// word `tmd_to_color_mesh` emits, so the minigame surfaces' untextured
+/// draws honour the TMD's ABE bit as every other colour-mesh caller does. A
+/// draw that rewrites the TSB (the Baka afterimage's colour word: ABE + ABR
+/// `1`) carries its blend through too. An opaque prim maps to `0`.
+pub fn blend_words_of_tsb(cba_tsb: &[[u16; 2]]) -> Vec<u16> {
+    cba_tsb
+        .iter()
+        .map(|ct| pack_blend_word(prim_semi_transparent(ct[1]), abr_mode(ct[1])))
+        .collect()
+}
+
 /// Pack a prim's semi-transparency state into a blend word using the
 /// same bit positions the textured path rides on the TSB attribute:
 /// ABE → bit 15 ([`TSB_SEMI_TRANSPARENT_BIT`]), ABR → bits 5..=6.

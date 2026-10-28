@@ -33,6 +33,9 @@ pub(super) struct FxFrame {
     pub effect_lines: Option<legaia_engine_render::UploadedLines>,
     pub world_map_slot4_lines: Option<legaia_engine_render::UploadedLines>,
     pub effect_model_draws: Vec<(UploadedVramMesh, Mat4)>,
+    /// The summon / move-FX parts, then the draw-kind-4 nodes and the
+    /// battle ground shadows (a single-sided node's back faces already
+    /// dropped, `effect_draws::retail_front_faces`).
     pub summon_part_draws: Vec<(UploadedVramMesh, Mat4)>,
     /// The field move-VM parts, each with its colour word's double-sided bit
     /// (`ColourWord::double_sided`).
@@ -357,7 +360,7 @@ impl PlayWindowApp {
         // (`FUN_8001CF50`); `None` under a host vantage.
         let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
         let (effect_model_draws, summon_part_draws, field_fx_draws) =
-            self.build_effect_draws(r, part_cam.as_ref());
+            self.build_effect_draws(r, part_cam.as_ref(), fx_cam);
         FxFrame {
             fx_cam,
             effect_billboard,

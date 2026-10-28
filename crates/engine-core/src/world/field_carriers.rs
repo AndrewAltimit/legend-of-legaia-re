@@ -139,6 +139,7 @@ impl World {
         self.npcs.entry_positions.clear();
         self.npcs.headings.clear();
         self.npcs.heading_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
+        self.npcs.slot_ramps = legaia_engine_motion_vm::ambient_motion::RampScheduler::new();
         // Motion state is per-scene: a snapshot carried across a scene change
         // would diff the warp itself as one enormous step and start every
         // actor - the player included - walking on the landing frame.

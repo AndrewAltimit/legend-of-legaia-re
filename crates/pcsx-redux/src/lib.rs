@@ -3,14 +3,21 @@
 //! `s5_tetsu_battle`) feed the engine's disc-gated oracle tests the same way the
 //! mednafen `.mc` saves already do.
 //!
-//! A `.sstate` is `gzip(rawsstate)`, where `rawsstate` is PCSX-Redux's
-//! protobuf-encoded state. We don't need the protobuf schema: the 2 MiB main RAM
-//! is located **format-agnostically** by the existing SCUS anchor search
-//! ([`legaia_ram_image::extract::main_ram_via_anchor`]) - it matches a string
-//! known to live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in both
-//! the SCUS binary and the decompressed payload and derives the RAM base. (For
-//! the captured anchors the RAM happens to start at payload offset `0x27`, but
-//! the anchor search makes the reader robust to that offset.)
+//! A `.sstate` is PCSX-Redux's protobuf-encoded state, gzipped or bare. We
+//! don't need the protobuf schema: the 2 MiB main RAM is located
+//! **structurally**, as the first large member of the one submessage that also
+//! holds a 64 KiB member (the memory submessage: RAM, BIOS, parallel port,
+//! hardware). That rule reads only the emulator's layout, so it works on any
+//! game's state ([`structural_ram_offset`]). For the captured anchors the RAM
+//! starts at payload offset `0x27`.
+//!
+//! The older Legaia-specific route, matching a string from `SCUS_942.54` in
+//! both the executable and the payload
+//! ([`legaia_ram_image::extract::main_ram_via_anchor`]), stays as the fallback
+//! for a payload the walk does not recognise, and a disc-gated test checks
+//! that both routes land on the same offset for every library state.
+//! [`SaveState::from_sstate_bytes_with_anchors`] is the same fallback with
+//! another game's executable and [`GameProfile`].
 //!
 //! A `.sstate` is **not** main RAM only. The protobuf's memory submessage
 //! carries four length-delimited blobs - RAM, BIOS ROM, parallel port and a
@@ -22,8 +29,11 @@
 //! `0x1F80035C`) are readable from a capture instead of only from a live
 //! probe.
 //!
-//! Disc-gated: the anchor search reads `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
+//! The scene / mode / player accessors read Legaia's globals
+//! ([`legaia_ram_image::game_anchors`]); [`SaveState::identity_with`] takes
+//! another game's profile.
 
+pub mod fixture;
 pub mod gpu;
 
 use std::io::Read;
@@ -34,6 +44,7 @@ use anyhow::{Context, Result};
 // The Legaia RAM anchors are shared with the mednafen reader - both land on the
 // same KSEG0-addressed 2 MiB image, so "which scene is this state in?" has one
 // implementation, in `legaia_ram_image::game_anchors`.
+use legaia_ram_image::GameProfile;
 use legaia_ram_image::game_anchors::StateIdentity;
 
 /// PSX scratchpad base address (`0x1F800000`), the "fast RAM" the field and
@@ -58,6 +69,7 @@ const MIN_RAM_LEN: usize = 0x20_0000;
 pub struct SaveState {
     ram: Vec<u8>,
     hardware: Option<Vec<u8>>,
+    ram_source: RamSource,
 }
 
 /// Read one protobuf varint at `off`, returning `(value, next_offset)`.
@@ -110,35 +122,95 @@ fn message_fields(buf: &[u8], start: usize, end: usize) -> Option<Vec<(usize, us
     (off == end).then_some(out)
 }
 
-/// Locate the 64 KiB `hardware` blob in a decompressed `.sstate` payload.
+/// The memory submessage of a decompressed `.sstate` payload, as its
+/// length-delimited members `(payload_start, len)` in file order.
 ///
 /// Structural rather than positional: walk the top-level message, and for each
 /// length-delimited field that itself parses cleanly as a message, accept it
 /// when it holds **both** a blob of exactly [`HARDWARE_LEN`] and one of at
-/// least [`MIN_RAM_LEN`] - i.e. the memory submessage, whose 64 KiB member is
-/// the hardware region. Nothing here depends on the field numbers or on the
-/// blob's file offset, both of which are PCSX-Redux build details.
-fn find_hardware(payload: &[u8]) -> Option<&[u8]> {
+/// least [`MIN_RAM_LEN`]. Nothing here depends on the field numbers or on the
+/// blobs' file offsets, both of which are PCSX-Redux build details, and nothing
+/// depends on the game: the rule reads only the emulator's own layout.
+fn memory_members(payload: &[u8]) -> Option<Vec<(usize, usize)>> {
     for (start, len) in message_fields(payload, 0, payload.len())? {
         let Some(inner) = message_fields(payload, start, start + len) else {
             continue;
         };
-        let Some(hw) = inner.iter().find(|(_, l)| *l == HARDWARE_LEN) else {
-            continue;
-        };
-        if !inner.iter().any(|(_, l)| *l >= MIN_RAM_LEN) {
-            continue;
+        if inner.iter().any(|(_, l)| *l == HARDWARE_LEN)
+            && inner.iter().any(|(_, l)| *l >= MIN_RAM_LEN)
+        {
+            return Some(inner);
         }
-        return payload.get(hw.0..hw.0 + hw.1);
     }
     None
 }
 
+/// Locate the 64 KiB `hardware` blob: the memory submessage's member of
+/// exactly that length.
+fn find_hardware(payload: &[u8]) -> Option<&[u8]> {
+    let (start, len) = *memory_members(payload)?
+        .iter()
+        .find(|(_, l)| *l == HARDWARE_LEN)?;
+    payload.get(start..start + len)
+}
+
+/// Payload offset of main RAM, found structurally: the **first** member of the
+/// memory submessage at least [`MIN_RAM_LEN`] long.
+///
+/// PCSX-Redux serialises the memory submessage as RAM, BIOS ROM (512 KiB),
+/// parallel-port ROM and the 64 KiB hardware region, in that order. Its RAM
+/// member is the emulator's whole RAM allocation (8 MiB, which covers the
+/// debug-unit expansion); the console's 2 MiB is its first
+/// [`legaia_ram_image::PSX_RAM_SIZE`] bytes. The parallel-port member can be
+/// as large, which is why the rule takes the first such member and not any.
+///
+/// Works for any game's state; `None` when the payload carries no memory
+/// submessage this rule recognises (then only the anchor search is left).
+pub fn structural_ram_offset(payload: &[u8]) -> Option<usize> {
+    memory_members(payload)?
+        .iter()
+        .find(|(_, l)| *l >= MIN_RAM_LEN)
+        .map(|(start, _)| *start)
+}
+
+/// The decompressed protobuf payload of a `.sstate`: gunzipped when the bytes
+/// start with the gzip magic `1f 8b`, else the bytes themselves (a state
+/// written from a Lua probe's snapshot call is bare).
+pub fn sstate_payload(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut buf = Vec::new();
+        flate2::read::GzDecoder::new(bytes)
+            .read_to_end(&mut buf)
+            .context("gunzip .sstate")?;
+        Ok(std::borrow::Cow::Owned(buf))
+    } else {
+        Ok(std::borrow::Cow::Borrowed(bytes))
+    }
+}
+
+/// How a [`SaveState`]'s main RAM was located.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RamSource {
+    /// Walked out of the protobuf memory submessage
+    /// ([`structural_ram_offset`]); game-agnostic.
+    Structural,
+    /// Matched by an executable anchor string
+    /// ([`legaia_ram_image::extract::main_ram_via_exe_anchors`]).
+    Anchor,
+}
+
 impl SaveState {
-    /// Load + gunzip a `.sstate`, then locate main RAM via the SCUS anchor search.
+    /// Load a `.sstate` from disk; see [`Self::from_sstate_bytes`].
     pub fn from_path(path: &Path) -> Result<Self> {
         let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         Self::from_sstate_bytes(&raw)
+    }
+
+    /// Load a `.sstate` from disk with no fallback to an anchor search; see
+    /// [`Self::from_sstate_bytes_structural`]. Needs no executable.
+    pub fn from_path_structural(path: &Path) -> Result<Self> {
+        let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+        Self::from_sstate_bytes_structural(&raw)
     }
 
     /// Same as [`Self::from_path`] from in-memory `.sstate` bytes.
@@ -152,28 +224,91 @@ impl SaveState {
     /// `invalid gzip header`, so dispatch on the magic instead: `1f 8b` is
     /// gzip, anything else is already the payload.
     ///
-    /// Either way the main RAM is found by the same format-agnostic anchor
-    /// search, so nothing downstream needs to know which shape it came from.
+    /// Main RAM is located structurally first, which works for any game. Only
+    /// a payload whose memory submessage is not recognised falls back to the
+    /// Legaia anchor search, which reads `extracted/SCUS_942.54` (or
+    /// `$LEGAIA_SCUS`); [`Self::from_sstate_bytes_with_anchors`] is that
+    /// fallback for another game.
     pub fn from_sstate_bytes(bytes: &[u8]) -> Result<Self> {
-        let owned: Vec<u8>;
-        let payload: &[u8] = if bytes.starts_with(&[0x1f, 0x8b]) {
-            let mut buf = Vec::new();
-            flate2::read::GzDecoder::new(bytes)
-                .read_to_end(&mut buf)
-                .context("gunzip .sstate")?;
-            owned = buf;
-            &owned
-        } else {
-            bytes
-        };
-        let ram = legaia_ram_image::extract::main_ram_via_anchor(payload)
+        let payload = sstate_payload(bytes)?;
+        if let Some(st) = Self::structural(&payload) {
+            return Ok(st);
+        }
+        let ram = legaia_ram_image::extract::main_ram_via_anchor(&payload)
             .context("locate main RAM in PCSX-Redux payload (anchor search)")?
             .to_vec();
+        Ok(Self::with_ram(ram, &payload, RamSource::Anchor))
+    }
+
+    /// Main RAM located structurally only, for any game; an error when the
+    /// payload's memory submessage is not recognised.
+    pub fn from_sstate_bytes_structural(bytes: &[u8]) -> Result<Self> {
+        let payload = sstate_payload(bytes)?;
+        Self::structural(&payload).context(
+            "no PCSX-Redux memory submessage (a 64 KiB member beside one of at least 2 MiB) \
+             in the state payload",
+        )
+    }
+
+    /// Structural first, then the anchor search with `profile`'s strings
+    /// matched in `exe` (the game's PSX executable, header included).
+    pub fn from_sstate_bytes_with_anchors(
+        bytes: &[u8],
+        exe: &[u8],
+        profile: &dyn GameProfile,
+    ) -> Result<Self> {
+        let payload = sstate_payload(bytes)?;
+        Self::from_payload_with_anchors(&payload, exe, profile)
+    }
+
+    pub(crate) fn from_payload_with_anchors(
+        payload: &[u8],
+        exe: &[u8],
+        profile: &dyn GameProfile,
+    ) -> Result<Self> {
+        if let Some(st) = Self::structural(payload) {
+            return Ok(st);
+        }
+        let ram = legaia_ram_image::extract::main_ram_via_profile(payload, exe, profile)
+            .with_context(|| {
+                format!(
+                    "locate main RAM in PCSX-Redux payload (anchor search, profile {})",
+                    profile.name()
+                )
+            })?
+            .to_vec();
+        Ok(Self::with_ram(ram, payload, RamSource::Anchor))
+    }
+
+    fn structural(payload: &[u8]) -> Option<Self> {
+        let at = structural_ram_offset(payload)?;
+        let ram = payload
+            .get(at..at + legaia_ram_image::PSX_RAM_SIZE)?
+            .to_vec();
+        Some(Self::with_ram(ram, payload, RamSource::Structural))
+    }
+
+    fn with_ram(ram: Vec<u8>, payload: &[u8], ram_source: RamSource) -> Self {
         // Absent rather than fatal: a state written by a build whose memory
-        // submessage differs still yields main RAM, and every existing
-        // consumer only wants that.
+        // submessage differs still yields main RAM, and most consumers only
+        // want that.
         let hardware = find_hardware(payload).map(<[u8]>::to_vec);
-        Ok(Self { ram, hardware })
+        Self {
+            ram,
+            hardware,
+            ram_source,
+        }
+    }
+
+    /// How main RAM was located.
+    pub fn ram_source(&self) -> RamSource {
+        self.ram_source
+    }
+
+    /// The state's identity read through another game's [`GameProfile`];
+    /// `None` when the profile knows no identity globals.
+    pub fn identity_with(&self, profile: &dyn GameProfile) -> Option<StateIdentity> {
+        profile.identify(&self.ram)
     }
 
     /// The 2 MiB main RAM; index `0` is PSX virtual address `0x80000000`.

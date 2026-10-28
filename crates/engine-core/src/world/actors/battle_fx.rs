@@ -9,6 +9,13 @@ use legaia_engine_mode::mode::SceneMode;
 /// fight's stage (`sltiu v0,a0,0x84` at `0x80046F04`, then
 /// `jal 0x800513F0` at `0x80046F74` while `ctx[+0x11]` is clear).
 pub(crate) const ENTRY_STAGE_LOAD_COUNTER: u32 = 0x84;
+/// The stage loader's entry fade-in length (`li v0,0x14` at `0x80051CFC`).
+pub(crate) const BATTLE_ENTRY_FADE_FRAMES: i16 = 0x14;
+/// The id both entry fades are spawned with (`li a1,0x1`), their OT layer.
+pub(crate) const BATTLE_ENTRY_FADE_ID: i16 = 1;
+/// The formation head the stage loader hides at load (`li v0,0xb5` at
+/// `0x80051998`): the evolved Cort, whom PROT 0968 drops in.
+const ARRIVAL_HIDDEN_MONSTER: u16 = 0xB5;
 
 impl World {
     /// Walk actor `i`'s committed effect script for one frame and queue the
@@ -569,6 +576,7 @@ impl World {
                 _ => {
                     self.battle.stage_registration_pending = false;
                     self.battle_ctx.ambient_base = grid::AMBIENT_BASE_FLOOR;
+                    self.run_battle_stage_load();
                 }
             }
         }
@@ -600,6 +608,81 @@ impl World {
         self.battle.ground_grid_drawn = !skipped;
     }
 
+    /// The stage loader's presentation stores, on the frame driver's
+    /// stage-load pass (`FUN_80046A20`, `0x80046F30..0x80046F78`).
+    ///
+    /// - **Entry fade.** The driver kills battle init's held fade
+    ///   (`lw v0,0xa28(gp)` / `ori v1,v1,0x8` at `0x80046F50..0x80046F64`)
+    ///   and the loader spawns its replacement (`0x80051C98..0x80051D2C`):
+    ///   template kind `1` when the intro left the screen white
+    ///   (`_DAT_8007B8FC`, cleared at `0x80051D44`) or `2`, a `0x14`-frame
+    ///   ramp from `0xFF` to `0`, no delay, hold `1`, id `1`. Kind `1` is
+    ///   `B + F`, so the fight fades in from white; kind `2` from black.
+    /// - **The arrival's hidden boss.** For formation `0xB5` (the evolved
+    ///   Cort) the loader blanks actor-table slot 3 (`0x801C937C`): colour
+    ///   word `+0x04 = 0` and `+0x21C = 0xFF` (`0x80051990..0x800519BC`),
+    ///   the hide PROT 0968's phase 1 lifts when it drops him in.
+    ///
+    /// REF: FUN_800513F0, FUN_80046A20
+    fn run_battle_stage_load(&mut self) {
+        let kind = if self.battle.entry_fade_white { 1 } else { 2 };
+        self.battle.entry_fade_white = false;
+        let mut fade = legaia_engine_system::fade::FadeState::load(
+            &legaia_engine_system::fade::FadeTemplate {
+                kind,
+                duration: BATTLE_ENTRY_FADE_FRAMES,
+                start_rgb: [0xFF; 3],
+                end_rgb: [0; 3],
+                mode: [0, 1, BATTLE_ENTRY_FADE_ID],
+            },
+        );
+        // The new actor ticks on its spawn pass: the effect list runs after
+        // the frame driver. Both PCSX-Redux openings hold the block 18 units
+        // in at counter `0x97`, which only a first step on the loader's own
+        // pass reaches (step `3` from `0x85`, step `2` from `0x85`).
+        fade.step_vsyncs(self.battle.anim_pass_vsyncs);
+        self.battle.entry_fade = Some(fade);
+        let first = self
+            .actors
+            .get(usize::from(self.party.party_count.clamp(1, 3)))
+            .and_then(|a| a.battle_monster_id);
+        if first == Some(ARRIVAL_HIDDEN_MONSTER)
+            && let Some(idx) = self.retail_table_actor(3)
+        {
+            let b = &mut self.actors[idx].battle;
+            b.render_color = 0;
+            b.render_flag = legaia_engine_battle_vm::battle_target_group::RENDER_FLAG_HIDDEN;
+        }
+    }
+
+    /// The battle's entry fade as a full-screen quad, in
+    /// [`World::screen_fade_draw`]'s form: battle init's held fade until
+    /// the stage loads (`FUN_80055B6C`, `0x80055F2C..0x80055F8C`: kind `1`
+    /// on a white intro tail else `2`, `0xFF` held, hold `-1`, id `1` - a
+    /// white or a black screen), then the loader's fade-in
+    /// ([`Self::run_battle_stage_load`]). `None` once that has run out.
+    ///
+    /// REF: FUN_80055B6C
+    pub fn battle_entry_fade_draw(&self) -> Option<(u32, u8, u32)> {
+        if self.mode != SceneMode::Battle {
+            return None;
+        }
+        if self.battle.stage_registration_pending {
+            let abr = if self.battle.entry_fade_white { 1 } else { 2 };
+            return Some((0x00FF_FFFF, abr, BATTLE_ENTRY_FADE_ID as u32));
+        }
+        let f = self.battle.entry_fade.as_ref()?;
+        if !f.visible() {
+            return None;
+        }
+        let [r, g, b] = f.rgb();
+        Some((
+            (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
+            f.abr(),
+            f.ot_layer().into(),
+        ))
+    }
+
     /// Whether the ground grid is on the screen this frame: retail's grid is
     /// drawn by `FUN_80026CE4`, which `FUN_8001D058` skips while bit 3 of
     /// `0x1F800394` is clear (`World::tick_battle_ambient`). Both battle
@@ -617,6 +700,12 @@ impl World {
         let w = self.battle.backdrop_cue;
         (w != legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL)
             .then(|| f32::from(w) / 4096.0)
+    }
+
+    /// Capture alignment (never in play): stand the backdrop pair's
+    /// depth-cue weight on a capture's word (the records' `+0x78`).
+    pub fn seat_battle_backdrop_cue(&mut self, weight: u16) {
+        self.battle.backdrop_cue = weight;
     }
 
     /// The battle ambient base the ground grid is coloured from this frame,

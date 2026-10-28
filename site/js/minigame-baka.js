@@ -203,11 +203,18 @@
 
       /* Combined buffers: player verts, opponent verts, stage verts, then
        * the special's afterimage ghosts (FUN_801d49e8) - two copies of each
-       * fighter, one per ghost pass, their packet colour pulled toward the
-       * black colour word by the pass's depth-cue level (0x800 = half,
-       * 0xC00 = three quarters). A ghost that is not drawing this frame is
+       * fighter, one per ghost pass, drawn under the spawn's colour word
+       * 0x81000000 at depth-cue level 0x800 / 0xC00 as FUN_80043390 decodes
+       * it: every packet colour cued toward the word's black far colour
+       * (c + ((0 - c) * IR0 >> 12), IR0 = level | 1) and every prim's TSB
+       * taking ABE and ABR 1 (B + F). So each ghost is the fighter's texture
+       * ADDED at half / a quarter weight - the same model the engine surface
+       * draws (`engine-minigame-scenes::baka_duel_scene::push_ghost`), never
+       * an opaque darkened copy. A ghost that is not drawing this frame is
        * collapsed to a point. */
-      const GHOST_KEEP = [0.5, 0.25];
+      const GHOST_IR0 = [0x800 | 1, 0xC00 | 1];
+      const GHOST_TSB_BITS = 0x8000 | (1 << 5);
+      const cue = (c, ir0) => Math.max(0, c + ((-c * ir0) >> 12));
       const parts = [P, O, stage, P, P, O, O];
       const counts = parts.map(m => m.pos.length / 3);
       const offs = [];
@@ -226,12 +233,15 @@
         const o = offs[k];
         pos.set(m.pos, o * 3); uvs.set(m.uvs, o * 2); ct.set(m.ct, o * 2);
         if (k >= 3) {
-          const keep = GHOST_KEEP[(k - 3) & 1];
+          const ir0 = GHOST_IR0[(k - 3) & 1];
           for (let i = 0; i < m.flat.length; i += 4) {
-            flat[o * 4 + i] = m.flat[i] * keep;
-            flat[o * 4 + i + 1] = m.flat[i + 1] * keep;
-            flat[o * 4 + i + 2] = m.flat[i + 2] * keep;
+            flat[o * 4 + i] = cue(m.flat[i], ir0);
+            flat[o * 4 + i + 1] = cue(m.flat[i + 1], ir0);
+            flat[o * 4 + i + 2] = cue(m.flat[i + 2], ir0);
             flat[o * 4 + i + 3] = m.flat[i + 3];
+          }
+          for (let v = 0; v < m.ct.length / 2; v++) {
+            ct[(o + v) * 2 + 1] = m.ct[v * 2 + 1] | GHOST_TSB_BITS;
           }
         } else {
           flat.set(m.flat, o * 4);
@@ -253,6 +263,8 @@
       if (!this.renderer) this.renderer = new window.TmdRenderer(this.glCanvas);
       this.renderer.uploadVram(api.baka_duel_vram(opponentRoster));
       this.renderer.uploadMesh(pos, uvs, ct, idx, flat);
+      /* The ghosts' ABE prims draw in the additive pass, as on the engine path. */
+      this.renderer.semiTwoPass = true;
 
       /* Frame the pair: centre between the fighters, radius spanning both.
        * FITTED, not read - the retail camera's GTE matrices live in COP2. */
@@ -645,7 +657,7 @@
         poseInto(S.out, S.base, f.oid, c, frame, vertBase, dx, yaw);
       };
       /* The special's afterimage (FUN_801d49e8): each drawn ghost pass poses
-       * a darkened copy of the thrower on the special clip at the ghost's own
+       * an additive copy of the thrower on the special clip at the ghost's own
        * lagged frame. Retail sorts the ghosts 0x40 deeper in the ordering
        * table, so the fighter always covers them; this depth-tested renderer
        * gets the same by setting each ghost a little further back. */

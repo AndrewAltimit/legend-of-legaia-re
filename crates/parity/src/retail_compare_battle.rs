@@ -92,6 +92,10 @@ const BATTLE_CTX: u32 = 0x8007_BD24;
 const FORMATION_CELL: u32 = 0x8007_BD0C;
 /// Per-battle flags; bit `0x80` = the formation row's header byte was set.
 const PER_BATTLE_FLAGS: u32 = 0x8007_BD60;
+/// The map id word battle init adds the stage variant to (`FUN_800513F0`,
+/// `0x80051A2C`): the loaded scene's raw CDNAME define, unless a fight
+/// start rewrote it.
+const MAP_DEFINE: u32 = 0x8008_4540;
 /// Battle run state (`0xFF` running, `0xFE` ending, `0x00` opening).
 const RUN_STATE: u32 = 0x8007_BD71;
 /// Battle stage id (`0` none; `1` the Tetsu tutorial module).
@@ -283,6 +287,9 @@ pub struct Combatant {
 /// `FUN_8004E2F0` reads).
 pub type CapturedActor = ([i16; 2], [i16; 2], u8, u8);
 
+/// The action SM's capture band `0x6E..=0x71`.
+pub(crate) const CAPTURE_BAND_STATES: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
+
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
 pub struct RetailBattle {
@@ -316,6 +323,11 @@ pub struct RetailBattle {
     /// stamped for the tile the fight started on; battle init loads the
     /// backdrop from entry `scene_index + variant` (`FUN_800513F0`).
     pub stage_variant: u8,
+    /// `0x80084540` - the map id battle init added the variant to. A Muscle
+    /// Dome leg's fight start `FUN_801D1510` stores `0x4C6` (`other6`) while
+    /// the field under it stays `koin1`, so the stage comes from the arena
+    /// data file, not the scene the state stands in.
+    pub map_define: u16,
     /// `0x8007B64B != 0` - battle init kept the backdrop shell's object 1
     /// (the region reader's long-layout `+8` bit 5).
     pub keep_backdrop_object_1: bool,
@@ -376,6 +388,15 @@ pub struct RetailBattle {
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,
+    /// Vsyncs the displayed frame lags the RAM by on the double buffer's
+    /// own phase ([`displayed_lag_vsyncs`]): one pass for a state saved
+    /// after the frame-end flip, two otherwise.
+    pub display_phase_lag: u16,
+    /// The evolved Cort's arrival columns after the hand-back
+    /// ([`arrival_columns`]): `Some(Some(cue))` while the drop's column
+    /// `0x801F72D0` is still up, its depth-cue level `+0x78` on the displayed
+    /// frame; `Some(None)` once it has gone; `None` outside that fight.
+    pub arrival_cue: Option<Option<u16>>,
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
@@ -389,6 +410,9 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// The backdrop pair's depth-cue weight, the record `ctx[+0x106C]`'s
+    /// `+0x78` ([`Self::capture_band_backdrop_cue`]).
+    pub backdrop_cue: Option<u16>,
     /// `ctx[+0x26D]` - the per-action track coin `FUN_8004E13C` rolls on a
     /// clip commit (`rand() % 2`).
     pub track_coin: u8,

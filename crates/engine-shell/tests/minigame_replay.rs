@@ -356,6 +356,8 @@ fn arm_door(host: &mut SceneHost, door: &DoorSite) -> (DoorPath, Option<u8>) {
 /// computes edges itself and a held mask is a single event.
 /// Commit rounds the dome leg gets to resolve its first turn.
 const DOME_COMMIT_ROUNDS: usize = 400;
+/// Cross taps the leg's ordinary battle gets to close its first round.
+const DOME_BATTLE_TICKS: usize = 6000;
 
 fn tap(host: &mut SceneHost, button: PadButton) {
     host.world.set_pad(0);
@@ -550,6 +552,9 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
             // a command, so the budget covers those ticks too.
             let mut commits = 0usize;
             for _ in 0..DOME_COMMIT_ROUNDS {
+                if host.world.muscle_leg_in_battle() {
+                    break;
+                }
                 commits += 1;
                 for _ in 0..24 {
                     let press = host
@@ -570,6 +575,27 @@ fn play_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<String, St
                 if s.turn() != before {
                     break;
                 }
+            }
+            // Once the hub hands over, the leg is the ordinary battle
+            // (`FUN_801D1510`: formation cell + mode `0x14`): it advances
+            // when a battle round closes (`ctx[+0x28A]`) or the fight ends.
+            if host.world.muscle_leg_in_battle() {
+                let opened = host.world.battle_mode();
+                for _ in 0..DOME_BATTLE_TICKS {
+                    tap(host, PadButton::Cross);
+                    if !host.world.muscle_leg_in_battle() {
+                        return Ok("the leg's battle ended".into());
+                    }
+                    if host.world.battle_mode() != opened {
+                        return Ok(format!(
+                            "battle round {opened} -> {}",
+                            host.world.battle_mode()
+                        ));
+                    }
+                }
+                return Err(format!(
+                    "{DOME_BATTLE_TICKS} taps left the leg's battle on round {opened}"
+                ));
             }
             // The warp's opponent is the contest's ladder rung and the fighter
             // takes the lead record's live HP, so a match can be decided inside
@@ -628,6 +654,9 @@ fn exit_minigame(host: &mut SceneHost, slot: MinigameSubId) -> Result<(), String
             }
         }
         MinigameSubId::MuscleDome => {
+            if host.world.mode == SceneMode::Battle {
+                host.world.abandon_live_battle();
+            }
             for _ in 0..120 {
                 tap(host, PadButton::Cross);
                 if host.world.mode != SceneMode::MuscleDome {

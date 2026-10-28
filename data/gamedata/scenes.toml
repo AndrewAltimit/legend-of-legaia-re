@@ -591,17 +591,15 @@ contributor = "Sol rooms E"
 id = "juui1"
 cdname = 587
 category = "field"
-name = "Bio Castle (F)"
-contributor = "Juggernaut F"
-note = "Inside the Juggernaut: the Rogue Fragment and the Ra-Seru farewell."
+name = "Ra-Seru scene (1)"
+note = "Not Bio Castle: entered from conc2 and an uru2 door, its 0x3F warps lead to rugi and noaru. Terra, Meta and Ozma speak; dialogue on Rogue's Tower, the Rogue Fragment and the Genesis Trees."
 
 [[scene]]
 id = "juui2"
 cdname = 596
 category = "field"
-name = "Bio Castle (G)"
-contributor = "Juggernaut G"
-note = "Inside the Juggernaut: the Ra-Seru farewell."
+name = "Ra-Seru scene (2)"
+note = "Not Bio Castle: its 0x3F warps lead to uru2 and noaru. Terra, Meta and Ozma speak, as in juui1."
 
 [[scene]]
 id = "deroa"

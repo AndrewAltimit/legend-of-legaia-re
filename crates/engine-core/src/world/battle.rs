@@ -60,6 +60,7 @@ pub use message_banner::{
     ABSORB_BANNER_ELEMENT, BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,
     MAGIC_LEVEL_BANNER_ELEMENT, TIMED_MESSAGE_ELEMENT,
 };
+pub use sideband::ARRIVAL_MODULE_PROT;
 
 /// The staged command id a generic physical swing runs as.
 ///

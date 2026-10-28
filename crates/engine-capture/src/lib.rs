@@ -33,6 +33,7 @@
 //! - [`field_seeds`] - the field-side seeds: object clips, walkers, morphs,
 //!   fog, sprite arms, CLUT cyclers, scroller rects, panel, camera block.
 
+pub mod arrival_gate;
 pub mod bar_seeds;
 pub mod battle_drive;
 pub mod camera_align;

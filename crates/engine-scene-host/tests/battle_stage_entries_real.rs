@@ -500,3 +500,25 @@ fn four_object_stages_are_only_the_overworld_domes() {
         "only the map01/map02/map03 overworld domes carry more than two objects"
     );
 }
+
+/// A fight whose map id `_DAT_80084540` was rewritten by its fight start
+/// takes its stage from the block the word names, not the loaded scene's:
+/// the Muscle Dome legs' retail captures stand in `koin1` with the word at
+/// `0x4C6` (`other6`), and their `_DAT_8007B864` byte-matches extraction
+/// 1225, the arena backdrop (`minigame_muscle_dome_retail_*`).
+#[test]
+fn a_seeded_map_define_names_the_stage_block() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.world.seed_battle_stage_variant(0);
+    host.world.seed_battle_map_define(Some(0x4C6));
+    assert_eq!(host.battle_stage_scene(), Some("other6"));
+    assert_eq!(host.battle_stage_entry(), Some(1225));
+    // A word that starts no CDNAME block (the `| 0x200` battle init ORs in
+    // for formation `0xAF`) leaves the pick on the loaded scene.
+    host.world.seed_battle_map_define(Some(0x4C6 | 0x200));
+    assert_eq!(host.battle_stage_scene(), None);
+}

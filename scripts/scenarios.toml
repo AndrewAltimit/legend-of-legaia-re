@@ -395,6 +395,10 @@ expected_game_mode = 0x17
 # Re-shot: the label had no durable state (its live slot was reused for the
 # rim_elm_queen_bee_battle capture).
 topics = ["title overlay", "title menu", "menu glyph atlas"]
+memory_card = "playthrough-endgame-7saves.mcr"
+# The screen shows no card contents; the card is what the later grid capture
+# (load_grid_endgame_card) read from this state, and retail-compare mounts it
+# so the port's title does not grey CONTINUE on an empty rack.
 
 [[scenarios]]
 slot = 255
@@ -412,6 +416,10 @@ expected_game_mode = 0x17
 # walks it end-to-end to the confirm prompt. Capturing a state here would still
 # save ~700 vsyncs per probe run.
 topics = ["save screen", "menu overlay"]
+memory_card = "playthrough-endgame-7saves.mcr"
+# The screen shows no card contents; the card is what the later grid capture
+# (load_grid_endgame_card) read from this state, and retail-compare mounts it
+# so the port's title does not grey CONTINUE on an empty rack.
 
 [[scenarios]]
 slot = 255
@@ -3174,3 +3182,791 @@ topics = ["battle", "boss", "cast module", "monster pick", "Cort", "evolved Cort
 phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "jouine"
+
+[[scenarios]]
+label = "battle_korb2_warhalf_strike"
+backup_fingerprint = "94bb6e5423e97fae408b7f09fbb5f754bb90b07895e7d823b3f052b82b067bbe"
+description = "korb2 battle, formation [0x72, 0x83]: Warhalf (seat 3, monster id 114) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit every round), saved 10125 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Warhalf", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_medusa_glare_mid_cast"
+backup_fingerprint = "e136cfdff887962e723a05e19b4c0fbcc4e9a00f4f2d425733adf083634bb494"
+description = "korb2 battle, formation [0x72, 0x83]: Medusa (seat 4, monster id 131) mid-cast Glare (spell 0x3C, module 0940): category 2, action state 0x70. RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit every round), saved 4425 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Medusa", "Glare", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_medusa_strike"
+backup_fingerprint = "3dd26bcbfae2e24d6b7328ef2ead02d4febf0cfec4e6fbbc3a3ab19f062799e2"
+description = "korb2 battle, formation [0x72, 0x83]: Medusa (seat 4, monster id 131) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit every round), saved 2432 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Medusa", "korb2", "harvest"]
+
+[[scenarios]]
+label = "koru_blade_breath_mid_cast"
+backup_fingerprint = "b4640e338d09dffdac82e08c2db5ec78eef520aca5fcfc02bc0ce5dbbc067a9a"
+description = "nilboa battle, formation [0xB6]: Koru (seat 3, monster id 182) mid-cast Blade Breath (spell 0xA2, module 0962): category 2, action state 0x70. From koru_pre_blade_breath (RETAIL disc, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 148 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Blade Breath", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "koru_gigaton_press_mid_cast"
+backup_fingerprint = "20e052a1d07e3d65378cea1e0451b22026c2ac7ca96a38adfc785270a39e28e5"
+description = "nilboa battle, formation [0xB6]: Koru (seat 3, monster id 182) mid-cast Gigaton Press (spell 0xA4, module 0962): category 2, action state 0x70. From koru_pre_gigaton_press (RETAIL disc, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 148 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Gigaton Press", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "koru_thunder_needle_mid_cast"
+backup_fingerprint = "8c6e2184216cc2b9f5da27e9f5ed0cefca3d04870d4cfaf45ace27f2d152da83"
+description = "nilboa battle, formation [0xB6]: Koru (seat 3, monster id 182) mid-cast Thunder Needle (spell 0xA3, module 0962): category 2, action state 0x70. From koru_pre_thunder_needle (RETAIL disc, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 148 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Koru", "Thunder Needle", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_lip_king_kiss_of_death_mid_cast"
+backup_fingerprint = "52c8ccfa7b654b87bf6ea32e741dab99ef7511d10af0f2f931f621c71135f468"
+description = "retona battle, formation [0x21, 0x44]: Lip King (seat 3, monster id 33) mid-cast Kiss of Death (spell 0x6E, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: retona_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4280 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Lip King", "Kiss of Death", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_hells_rat_steal_mid_cast"
+backup_fingerprint = "8fc1a09172a2cd90ab5d604906a92a62f4e41b57a895c4cf023a9171aa8985d8"
+description = "retona battle, formation [0x21, 0x44]: Hell's Rat (seat 4, monster id 68) mid-cast Steal (spell 0x51, module 0941): category 2, action state 0x70. RETAIL disc, pad only, no pokes: retona_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 6775 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Hell's Rat", "Steal", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_hells_rat_strike"
+backup_fingerprint = "aeb0fca7de123d273820f4ef659ae60603c02ade8e2067f3e4eb0e289a11f84d"
+description = "retona battle, formation [0x21, 0x44]: Hell's Rat (seat 4, monster id 68) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3081 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Hell's Rat", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_barra_windcutter_mid_cast"
+backup_fingerprint = "5da06182626b4266e6264e6fe7e4efdffe0431d72a62e5aaa4ebd66af25f952c"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Barra (seat 4, monster id 141) mid-cast Windcutter (spell 0x3A): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 9326 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Barra", "Windcutter", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_barra_strike"
+backup_fingerprint = "0ec4d5554427d899192174c864488768da749f2279fd6879dac0953d3963eb0b"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Barra (seat 3, monster id 141) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3029 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Barra", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_slippery_poisonous_breath_mid_cast"
+backup_fingerprint = "bfd9386b6039ba77ee07e3424082f9446a8c06a9b118b6373cb33ee7f8c98b4c"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Slippery (seat 5, monster id 150) mid-cast Poisonous Breath (spell 0x67): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2577 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy cast", "Slippery", "Poisonous Breath", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_slippery_strike"
+backup_fingerprint = "b33ca11f0ef47d68fe139ebcf673acd0254058f733e36bcb6c7388586136f383"
+description = "rugi battle, formation [0x8D, 0x8D, 0x96]: Slippery (seat 5, monster id 150) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: rugi_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 5081 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Slippery", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_mush_mush_strike"
+backup_fingerprint = "fa257d68659bb006b5cd39cec8bd5655f866af07660552634557fe2bd401476a"
+description = "tunnelb battle, formation [0x71, 0x71, 0x18]: Mush Mush (seat 5, monster id 24) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: tunnelb_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4229 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "Mush Mush", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_warman_strike"
+backup_fingerprint = "3d2acbaebeb3df7084477305d6203e4529cf9fd1bd8cf129fbf3d2d51c82d73e"
+description = "tunnelb battle, formation [0x71, 0x71, 0x18]: Warman (seat 4, monster id 113) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: tunnelb_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 1829 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "Warman", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_twin_tomb_strike"
+backup_fingerprint = "b2b04a97e0c6dc17bd908dacc67d72b0ba3dcc3af405350d573896af30be2d6a"
+description = "vozz battle, formation [0x37, 0x34]: Twin Tomb (seat 4, monster id 52) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: vozz_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2138 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Twin Tomb", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_gizam_water_column_mid_cast"
+backup_fingerprint = "24c06083124bc5984193c060e66a33d55d26976dadfe1e4618a52ecdbd7eb275"
+description = "vozz battle, formation [0x37, 0x34]: Gizam (seat 3, monster id 55) mid-cast Water Column (spell 0x54, module 0945): category 2, action state 0x70. RETAIL disc, pad only, no pokes: vozz_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3776 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy cast", "Gizam", "Water Column", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_gizam_strike"
+backup_fingerprint = "3f809ba1934db25c38891c02efce0618f7aa29f055ec89eed88890f7d249d5c0"
+description = "vozz battle, formation [0x37, 0x34]: Gizam (seat 3, monster id 55) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: vozz_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2501 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Gizam", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_gobu_gobu_strike"
+backup_fingerprint = "7e0dd919ad756d11832094cd9c7e8904b969bb38b42c5acc21de47a88026c02c"
+description = "map01 battle, formation [0x04, 0x01]: Gobu Gobu (seat 3, monster id 4) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: cave01_attached_light played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 2440 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Gobu Gobu", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_gilium_thunder_storm_mid_cast"
+backup_fingerprint = "387391845c741f7abdc1472fe60474ed8bd20707074f55c9dab36d3d2e42c8dd"
+description = "chitei2 battle, formation [0x9F, 0x9F]: Gilium (seat 3, monster id 159) mid-cast Thunder Storm (spell 0x77, module 0957): category 2, action state 0x70. RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 7172 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Gilium", "Thunder Storm", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_gilium_strike"
+backup_fingerprint = "d711ac6f1685aebb1d36d2adfe779dad26fa7b969344af422b449aa21872eaf2"
+description = "chitei2 battle, formation [0x9F, 0x9F]: Gilium (seat 4, monster id 159) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 1859 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy attack", "Gilium", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "cort_evolved_card_doomsday_mid_cast"
+backup_fingerprint = "6d8169fd9fad94ad9b6da951b1bc4183407dc767936cd96429485b75240e773b"
+description = "jouine battle, formation [0xB5]: evolved Cort (seat 3, monster id 181) mid-cast Doomsday (spell 0xB6, module 0965): category 2, action state 0x70. From cort_evolved_card_pre_doomsday (RETAIL executable, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 156 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouine"
+topics = ["battle", "enemy cast", "evolved Cort", "Doomsday", "jouine", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_killer_wolf_terror_scream_mid_cast"
+backup_fingerprint = "fd58748864568406a9d11908abd0244ed09448ba2763618c1330931e6927aa3e"
+description = "doman battle, formation [0x5D, 0x29]: Killer Wolf (seat 4, monster id 41) mid-cast Terror Scream (spell 0x70, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 6996 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy cast", "Killer Wolf", "Terror Scream", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_killer_wolf_strike"
+backup_fingerprint = "c9b49fc8716d2b3ec2ff4e10cba612a7675b8108d1cb54a0739940d5bc2576c2"
+description = "doman battle, formation [0x5D, 0x29]: Killer Wolf (seat 4, monster id 41) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 1809 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy attack", "Killer Wolf", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_freed_water_crystals_mid_cast"
+backup_fingerprint = "9df7e63f070f688f075365fe3564f9b3c36046bb067ab38700c20729db620535"
+description = "doman battle, formation [0x5D, 0x29]: Freed Lv2 (seat 3, monster id 93) mid-cast Water Crystals (spell 0x59, module 0949): category 2, action state 0x70. RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 7597 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy cast", "Freed Lv2", "Water Crystals", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_freed_strike"
+backup_fingerprint = "f8289ae39c5cccecc7c3bc9476ed4aaccd638af15a23821c292f7c1121263c99"
+description = "doman battle, formation [0x5D, 0x29]: Freed Lv2 (seat 3, monster id 93) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: doman_arrival_from_korb2 played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 2398 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy attack", "Freed Lv2", "doman", "harvest"]
+
+[[scenarios]]
+label = "gaza2_card_neo_star_slash_mid_cast"
+backup_fingerprint = "29d87f34b14b42cd175b4b11891294b6b26c6530d47e5e21146e5f1a0c48a0f2"
+description = "korb3 battle, formation [0xA6]: Gaza (seat 3, monster id 166) mid-cast Neo Star Slash (spell 0xA6, module 0960): category 2, action state 0x70. From gaza2_card_pre_neo_star_slash (RETAIL executable, probe-poked: its queue was rewritten to the cast it names; see that scenario) played forward with no further RAM writes by autorun_battle_harvest.lua, saved 156 vsyncs in. Inherits that state's poke; everything after it is retail."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "enemy cast", "Gaza", "Neo Star Slash", "korb3", "harvest"]
+
+[[scenarios]]
+label = "battle_jouind_gilium_lv3_thunder_storm_mid_cast"
+backup_fingerprint = "c95c8b27f50481fa467d726e16b7aacb7d266bc97d28c82f8d8dabe00af2a3f7"
+description = "jouind battle, formation [0xA1, 0xA1, 0xA1]: Gilium Lv3 (seat 4, monster id 161) mid-cast Thunder Storm (spell 0x77, module 0957): category 2, action state 0x70. RETAIL disc, pad only, no pokes: jouind_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 3453 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouind"
+topics = ["battle", "enemy cast", "Gilium Lv3", "Thunder Storm", "jouind", "harvest"]
+
+[[scenarios]]
+label = "battle_jouind_gilium_lv3_strike"
+backup_fingerprint = "d3d909977727e80110772536cffeba66c7bd8a2452c082fd14ff2559e466d736"
+description = "jouind battle, formation [0xA1, 0xA1, 0xA1]: Gilium Lv3 (seat 5, monster id 161) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: jouind_field_card_boot played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 4912 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jouind"
+topics = ["battle", "enemy attack", "Gilium Lv3", "jouind", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_grude_strike"
+backup_fingerprint = "bb7c6003c1620dbf1296ad781a1d94387daf113257b472d9b81a3ba201ff4b4a"
+description = "map03 battle, formation [0x68, 0x68]: Grude (seat 3, monster id 104) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: uru_field_run played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 2001 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Grude", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_lippian_kiss_of_death_mid_cast"
+backup_fingerprint = "32b4da03e9ad06142b13aec20bc78acec5d41e74dc072b3e9381d6818a5c625e"
+description = "map01 battle, formation [0x25, 0x1F, 0x1F]: Lippian (seat 5, monster id 31) mid-cast Kiss of Death (spell 0x6E, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: vell_fog_field played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack; the walk can leave the source scene first), saved 1615 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy cast", "Lippian", "Kiss of Death", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_kemaro_lv2_lava_breath_mid_cast"
+backup_fingerprint = "c195f0d326445226eb721342349ffb8312e97bada69fc3a67eaa8aff564474fa"
+description = "chitei2 battle, formation [0x91, 0x91]: Kemaro Lv2 (seat 3, monster id 145) mid-cast Lava Breath (spell 0x46): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 18333 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Kemaro Lv2", "Lava Breath", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "battle_chitei2_kemaro_lv2_strike"
+backup_fingerprint = "94bcb2f40249fd5e2d94228b7ac0cb8b4de28f5034114ee2ea23ab7a242f0ace"
+description = "chitei2 battle, formation [0x91, 0x91]: Kemaro Lv2 (seat 3, monster id 145) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: chitei2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 20025 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy attack", "Kemaro Lv2", "chitei2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_mage_void_accessories_mid_cast"
+backup_fingerprint = "7c0ff7c5428930abb590bf1cca6e95138271c8e9f25eefcc7f21c0ad12c7c499"
+description = "korb2 battle, formation [0x72, 0x59]: Mage (seat 4, monster id 89) mid-cast Void Accessories (spell 0x73, module 0955): category 2, action state 0x70. RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 4788 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Mage", "Void Accessories", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_mage_strike"
+backup_fingerprint = "e647732b94c76ff4ae65a8942e706b0baa185a70cee692b48833d68be967dfaf"
+description = "korb2 battle, formation [0x72, 0x59]: Mage (seat 4, monster id 89) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 2979 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Mage", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_kemaro_strike"
+backup_fingerprint = "29568c682afa9939bb416895964c81c200416c08d199df336633aa620d832ead"
+description = "korb2 battle, formation [0x59, 0x90]: Kemaro (seat 4, monster id 144) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot played forward by autorun_battle_harvest.lua (LEGAIA_WALK_LEG=77: walk until an encounter, Spirit for three rounds then Attack), saved 13784 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Kemaro", "korb2", "harvest"]
+
+[[scenarios]]
+label = "dohaty_field_card_walk"
+backup_fingerprint = "557e6831d36777a24f6123ece8cd0d9bd6a81a32eeaff334da1617f4ea06949f"
+description = "dohaty (Dohati's Castle) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 9 (isolate_card_save.py --keep 9 --restamp 0, autorun_boot_continue.lua) into dohaty, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dohaty"
+topics = ["field", "dohaty", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "rikuroa_field_card_walk"
+backup_fingerprint = "2c884d773c4d2701a3a8d30e831ceda57495a4f829cf102511d73a08790972fc"
+description = "rikuroa (Mt. Rikuroa) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 1 (isolate_card_save.py --keep 1 --restamp 0, autorun_boot_continue.lua) into rikuroa, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rikuroa"
+topics = ["field", "rikuroa", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "taiku_field_card_walk"
+backup_fingerprint = "96194364eda921e1150e77fa18de0f2bb7cab878cf1be14de05bf233d5f32c10"
+description = "taiku (Zora's Floating Castle) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 15 (isolate_card_save.py --keep 15 --restamp 0, autorun_boot_continue.lua) into taiku, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "taiku"
+topics = ["field", "taiku", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "korb3_field_walk"
+backup_fingerprint = "1182946da580db9daa6dbefe540dd1d2f6f929e7a9a11dcbacd985e057fd0c9f"
+description = "korb3 (Sol Tower (underground B)) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 11 (isolate_card_save.py --keep 11 --restamp 0, autorun_boot_continue.lua) into korb2, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 551 vsyncs in, once the scene had settled and the player had moved (reached by the walk through a door)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "korb3"
+topics = ["field", "korb3", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "deene_field_card_walk"
+backup_fingerprint = "8c8cc3498191f034088bf74c46da291bfd51ae8a752fbb173e67337e318ffb1e"
+description = "deene (Mt. Dhini) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 7 (isolate_card_save.py --keep 7 --restamp 0, autorun_boot_continue.lua) into deene, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "deene"
+topics = ["field", "deene", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "jou_field_card_walk"
+backup_fingerprint = "60879599cbddc6900a17d654bd7dc3a7bf907c7cdefc827b5c78663aed119d0c"
+description = "jou (Rim Elm (Juggernaut)) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of gme23958-endgame-full-spells.mcr block 1, the library card's endgame save (isolate_card_save.py --keep 1 --restamp 0, autorun_boot_continue.lua) into jou, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jou"
+topics = ["field", "jou", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_gilium_lv2_thunder_storm_mid_cast"
+backup_fingerprint = "f4f40869fc4994922d24c9dee3f17e9085ebb4cb41026a7336f4f63fa4f211ee"
+description = "noaru battle, formation [0xA0, 0xA0]: Gilium Lv2 (seat 4, monster id 160) mid-cast Thunder Storm (spell 0x77, module 0957): category 2, action state 0x70. RETAIL disc, pad only, no pokes: the playthrough-endgame-7saves.mcr block 5 save cold-loaded into noaru (isolate_card_save.py + autorun_boot_continue.lua), LEGAIA_WALK_SEED=3, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3483 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Gilium Lv2", "Thunder Storm", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_gilium_lv2_strike"
+backup_fingerprint = "8518deda09b0ace0eeacf9faca4c530787191f2cfd58cd1776a245f6e03d1d4a"
+description = "noaru battle, formation [0xA0, 0xA0]: Gilium Lv2 (seat 3, monster id 160) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: the playthrough-endgame-7saves.mcr block 5 save cold-loaded into noaru (isolate_card_save.py + autorun_boot_continue.lua), LEGAIA_WALK_SEED=3, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4930 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy attack", "Gilium Lv2", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_king_frog_strike"
+backup_fingerprint = "9f3ccdfa1f72e057eac7f151d128850ad1ede7e1ebc30921d56c620bc4a6eb85"
+description = "retona battle, formation [0x65, 0x2D]: King Frog (seat 4, monster id 45) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3733 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "King Frog", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_mushura_strike"
+backup_fingerprint = "1091a8335f6055778cc4d05a84e72d8eae1aa933986b885385eaad5f358be48b"
+description = "retona battle, formation [0x65, 0x2D]: Mushura (seat 3, monster id 101) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4322 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Mushura", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_viguro_lv2_thunder_break_mid_cast"
+backup_fingerprint = "05659287c030bd04c534e20a06afbbc751fd6d3b85697c5f9f212ebdd860220b"
+description = "retona battle, formation [0x86, 0x65]: Viguro Lv2 (seat 3, monster id 134) mid-cast Thunder Break (spell 0x30): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 11448 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Viguro Lv2", "Thunder Break", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_viguro_lv2_strike"
+backup_fingerprint = "9c9a1c04599f2394a7e5beb8b4b1ef38f5ddf7d7cc409cbe668af19b9193acae"
+description = "retona battle, formation [0x86, 0x65]: Viguro Lv2 (seat 3, monster id 134) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: retona_field_card_boot, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 13512 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Viguro Lv2", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_aluru_cannon_mid_cast"
+backup_fingerprint = "f1fdc715139f3fc0e78cb0945861e790616ae20a1697fea90b7de95069052c02"
+description = "korb2 battle, formation [0x90, 0x50]: Aluru (seat 4, monster id 80) mid-cast Aluru Cannon (spell 0x3F): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: korb2_field_card_boot, LEGAIA_WALK_LEG=61, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 2872 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Aluru", "Aluru Cannon", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_aluru_strike"
+backup_fingerprint = "02983a4606ff80652fcfed4a0adcbb888eb22091f04a217186544c2446d556e8"
+description = "korb2 battle, formation [0x90, 0x50]: Aluru (seat 4, monster id 80) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: korb2_field_card_boot, LEGAIA_WALK_LEG=61, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 4414 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Aluru", "korb2", "harvest"]
+
+[[scenarios]]
+label = "noaru_field_card_walk"
+backup_fingerprint = "d1699cde87d0e95a877733d3b3e23ae516c06876fe17535ec912b30a53e05211"
+description = "noaru (Noaru Valley) free field run, player in control. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 5 (isolate_card_save.py --keep 5 --restamp 0, autorun_boot_continue.lua) into noaru, then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 151 vsyncs in, once the scene had settled and the player had moved (the walk's first scene)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "noaru"
+topics = ["field", "noaru", "scene coverage", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_guardian_windhash_mid_cast"
+backup_fingerprint = "f89bc15ac0214ab72d3ae1ac3d372f94022e3653118e5dd47dc88b896764aa76"
+description = "tower battle, formation [0x46, 0x11]: Guardian (seat 4, monster id 17) mid-cast Windhash (spell 0x34): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 14783 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy cast", "Guardian", "Windhash", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_guardian_v_windhash_mid_cast"
+backup_fingerprint = "9e638a1d63e9a4157a11d988e8e72934da09d4f746dbcd0e4c647e9bc142cb5f"
+description = "tower battle, formation [0x46, 0x11]: Guardian (seat 4, monster id 17) mid-cast V-Windhash (spell 0x57, module 0947): category 2, action state 0x70. RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 12769 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy cast", "Guardian", "V-Windhash", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_guardian_strike"
+backup_fingerprint = "76e1659dde212c57f46434bd61500d20fc18e28db72c58162a693b44e6f34bfa"
+description = "tower battle, formation [0x46, 0x11]: Guardian (seat 4, monster id 17) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 11206 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy attack", "Guardian", "tower", "harvest"]
+
+[[scenarios]]
+label = "battle_tower_swordie_strike"
+backup_fingerprint = "245e702dde1a377421de6300fbfc8ecb6d06ed211db44b0bde1cdcc586500b04"
+description = "tower battle, formation [0x46, 0x56]: Swordie (seat 4, monster id 86) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: teien_field_run, which the walk left through a door into tower, LEGAIA_WALK_SEED=7, played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for three rounds then Attack), saved 3703 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tower"
+topics = ["battle", "enemy attack", "Swordie", "tower", "harvest"]
+
+[[scenarios]]
+label = "tower_field_walk"
+backup_fingerprint = "35a957cdfff6191cdeebfebedcd000600fad0e1cc15987d9d96b5c7a3005b4a6"
+description = "tower (Sky Gardens Tower) free field run, player in control. RETAIL disc, pad only, no pokes: teien_field_run (LEGAIA_WALK_SEED=7), then autorun_battle_harvest.lua with LEGAIA_SCENES=1 (random walk) saved it 1106 vsyncs in, once the scene had settled and the player had moved (reached by the walk through a door)."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "tower"
+topics = ["field", "tower", "scene coverage", "harvest"]
+
+# ----------------------------------------------------------------------
+# Retail minigame and far-scene states reached by planned walks
+# (autorun_walk_route.lua over plan_walk_route.py routes; see
+# docs/tooling/capture-coverage.md "Filling the worklist"). Every one
+# starts from a retail memory-card boot; pad only, no pokes.
+# ----------------------------------------------------------------------
+[[scenarios]]
+label = "minigame_baka_fighter_retail_fight"
+backup_fingerprint = "d562859a71729d9cff481ebb9abe74d8d7c522b27fef8ebf354814f25fcd9cf7"
+description = "Baka Fighter, stage 1 round 1 under way (FIGHT!), mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a second walk to the P1[52] cabinet and an ACT (face Z+, Cross: the record seats the player, debits one coin and warps), START at the title, Cross every 20 vsyncs; saved 900 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_baka_fighter_retail_round2"
+backup_fingerprint = "b02de86b008d3e4254198cd0d2613a5b7844d7cc69dd5264023e4e341658b7e1"
+description = "Baka Fighter, round 1 decided: the ROUND 2 banner over the duel, mode 0x19. Same run as minigame_baka_fighter_retail_fight, saved 1800 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_reels"
+backup_fingerprint = "c9720356875d7811d628b151d77c41797cec1079d9e39fe370c4acfed895f2fa"
+description = "Casino slot machine at rest before the first bet, reel state word 0x801D3C84 = 1, mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a walk to the P1[55] cabinet and an ACT (face X-, Cross); the card's coin bank (9999999) is the machine's balance; saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_slot_machine_retail_spin_decided"
+backup_fingerprint = "0203feb61beddaa6c682c7e20a95577ae903122970a42247c88547724b22b884"
+description = "Casino slot machine, a spin decided: all three reels stopped and the machine in its payout state (reel state word 0x801D3C84 = 4, no line paid), mode 0x19. From minigame_slot_machine_retail_reels, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with Cross / Square / Circle taking turns every 20 vsyncs (bet, spin, the three stop buttons); saved by LEGAIA_WATCH=0x801d3c84:4:1, 103 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "slot machine", "casino", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_welcome"
+backup_fingerprint = "4d8231b96abf72680f215d5cc981a623af908731174e7c6ce8927271a6e16848"
+description = "Muscle Dome hub, the 'Welcome to the Muscle Dome!' card, mode 0x19. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1, then from the koin1 arrival state a walk to the P1[9] sign-up counter and an ACT paging the counter's talk with Cross (every picker left on its default: enter, pay the fee, the first entrant, the first course offered); saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "muscle dome", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_red_piura_vahn_strike"
+backup_fingerprint = "23efe84b67397216bbd1d7f8a4ab44689b37421864154d4bf690ade5ab77400f"
+description = "Muscle Dome leg 1, Vahn vs Red Piura (monster id 19): Vahn's arts string mid-swing, acting seat 0, category 3, action state 0x1E. Same run as minigame_muscle_dome_retail_welcome, Cross every 20 vsyncs through the leg; saved 1200 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "koin1"
+topics = ["minigame", "muscle dome", "battle", "Red Piura", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_tornado_flame"
+backup_fingerprint = "eb0f722b31699d1b96b1a1021fd5151c02234caae8a73dbaaa189b799b0ef9e9"
+description = "Muscle Dome leg 1 decided: the Tornado Flame art's 5 HIT / TOTAL readout over the downed Red Piura, action state 0x20. Same run as minigame_muscle_dome_retail_welcome, saved 1800 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "koin1"
+topics = ["minigame", "muscle dome", "battle", "Red Piura", "Tornado Flame", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_skeleton_hyper_arts"
+backup_fingerprint = "941add30595e1fe3d4ff2df7833b9584a45ba169ee3b4322d7abb5acab610141"
+description = "Muscle Dome leg 2, Vahn vs Skeleton (monster id 13): the HYPER ARTS!! banner mid-art, action state 0x1F. Same run as minigame_muscle_dome_retail_welcome, saved 3600 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "koin1"
+topics = ["minigame", "muscle dome", "battle", "Skeleton", "Hyper Arts", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_ready"
+backup_fingerprint = "f96d7602cf3987c89d3e431da668e429d18ff0e0369f2cc8a759da72bd00f69d"
+description = "Noa's dance contest, the READY... count-in, mode 0x19 (the hall is the other7 block). RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> kor3 -> koin3, then from the koin3 arrival state: TALK to the Gold Card guard P1[2] (the card holds a Gold Card), a walk past him to the sign-up host P1[16] and an ACT (face X+, Cross: enter, pay 500G); saved 300 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_dancing"
+backup_fingerprint = "ef7d217ef36ea9845a287dab358c49ff888edcbbc0121bf79bec784f655fc32c"
+description = "Noa's dance contest mid-chart (scores 40 / 0 / 52), mode 0x19. Same run as minigame_dance_retail_ready, Cross every 20 vsyncs; saved 900 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_judged"
+backup_fingerprint = "55f1de4bc4e07fb619dc21355e015effc8ebe90de1ba903260f7fb18af756b76"
+description = "Noa's dance contest decided: the closing tally (295 / 0 / 280) with the judge's portrait, mode 0x19. Same run as minigame_dance_retail_ready, saved 2400 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_ready"
+backup_fingerprint = "3689f097cc88c758a71773608e5216d0a8df084e768c91f9eb26e4fe724ca3e5"
+description = "Fishing at the venue the map02 signboard opens, rod ready, Normal Lure, mode 0x19 (venue block other1). RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), then autorun_walk_route.lua: retock -> map02 (its rec-19 door) -> across the Sebucus overworld, random encounters fought with the harvester's hand, to the map02 P1[7] signboard and an ACT (face Z+, Cross through the prompt); saved 600 vsyncs after the game mode left the field (autorun_walk_route.lua LEGAIA_SHOTS)"
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "route walk", "map02"]
+
+[[scenarios]]
+label = "minigame_fishing_retail_lure_cast"
+backup_fingerprint = "cccf6dc4f504d0605366179a0a7e05b8be2b6265ead0b551f0913b01d435d9e8"
+description = "Fishing, a cast decided: the lure landed (LINE 5.4 m, DEPTH 4.5 m, ripple at the float), mode 0x19. From minigame_fishing_retail_ready, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1: Cross held 45 vsyncs from vsync 60 (power to 92%) and released; saved 700 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "route walk", "map02"]
+
+[[scenarios]]
+label = "kor4_field_route_walk"
+backup_fingerprint = "4b6ba816f8960c90e376dc962d2975c5a65dfac577516ba2040ef08d4a316d2d"
+description = "kor4 (Sol Tower stairs C, the Elevator 7F / Sol Dayschool banner) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk saved it 151 vsyncs into the field once the player had moved."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor4"
+topics = ["field", "kor4", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "kor3_field_route_walk"
+backup_fingerprint = "5653b2518f2bbb278bcae02674e2000871e28859de1f61836bebd6d90bd9e0b3"
+description = "kor3 (Sol Tower stairs B, the Sol Broadway banner) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3; from the kor3 arrival state a second walk saved it 151 vsyncs into the field once the player had moved."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor3"
+topics = ["field", "kor3", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "koin1_field_route_walk"
+backup_fingerprint = "68949490eda7773f2c97375dec1921732d020e7f9a84cb8a5d780cb554feb056"
+description = "koin1 (Sol Tower rooms A, the casino and arena sign-up floor) free field run, player at the Muscle Dome counter. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> koin1; from the koin1 arrival state a second walk saved it 151 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin1"
+topics = ["field", "koin1", "scene coverage", "casino", "route walk"]
+
+[[scenarios]]
+label = "koin3_gold_card_guard_talk"
+backup_fingerprint = "84399dbed5210d8376da85f827b530e655f19f1e102727668bf9dd792314cb63"
+description = "koin3 (Sol Tower rooms C, the dance-hall corridor): the Gold Card guard P1[2]'s 'Hello and welcome! Do you have a Gold Card?' box open. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3 -> kor3 -> koin3; from the koin3 arrival state a second walk with a TALK at the guard, saved 151 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin3"
+topics = ["field", "koin3", "scene coverage", "dialogue", "route walk"]
+
+[[scenarios]]
+label = "koin1b_field_route_walk"
+backup_fingerprint = "5431d5b3f0963cd85f3694888f9cb9c4745924f2fee80500181ce14c3df68373"
+description = "koin1b (Sol Tower rooms F) free field run, party HUD up after the walk stopped. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4 -> kor3; from the kor3 arrival state a second walk through kor3's rec-3 door, saved 1057 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin1b"
+topics = ["field", "koin1b", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "koin6_field_route_walk"
+backup_fingerprint = "b4145de2b9e884ac4fd655da5f32b6ced44c9191abb73db1af5389261c2b5c98"
+description = "koin6 (Sol Tower rooms E) free field run, party HUD up while the route waits. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk through kor4's rec-13 door, saved 747 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin6"
+topics = ["field", "koin6", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "koin4_field_route_walk"
+backup_fingerprint = "f9251be934637702936200c9b210d42e3959b13651017ec91205f8e192223e4f"
+description = "koin4 (Sol Tower rooms D, the weapon shop) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk kor4 -> koin6 -> kor4 -> koin4 (rec-9 door), saved 2063 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin4"
+topics = ["field", "koin4", "scene coverage", "shop", "route walk"]
+
+[[scenarios]]
+label = "kor_field_route_walk"
+backup_fingerprint = "25994a85aba792d55dcf7ef57da734137c8e838397ab28110eddb9a679561d0c"
+description = "kor (Sol Tower stairs A) free field run beside the elevator. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 11 (korb2_field_card_boot), then autorun_walk_route.lua korb2 -> kor (korb2's rec-0 door; random encounters fought with the harvester's hand), saved 8557 vsyncs in, once the scene had settled and the player had moved."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "kor"
+topics = ["field", "kor", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "conc2_field_route_walk"
+backup_fingerprint = "6d2fa3d108c92655587e75b8479097e8a39f8ecd56de35aeaafec9834bd9e48c"
+description = "conc2 (Conkram (Past, 2)) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 1 (conc_field_card_boot), then autorun_walk_route.lua conc -> conc2 (conc's rec-11 door), saved 1255 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "conc2"
+topics = ["field", "conc2", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "tunnelc_field_route_walk"
+backup_fingerprint = "4b83d09fb7e7883245049330c429747145d111f918ef6ae424fa3fdf0e36a6ff"
+description = "tunnelc (Fire Path (2)) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 4 (tunnelb_field_card_boot), then autorun_walk_route.lua tunnelb -> tunnelc (tunnelb's rec-36 door), saved 455 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "tunnelc"
+topics = ["field", "tunnelc", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "retockin_field_route_walk"
+backup_fingerprint = "c87978ed469535a64e6104c4bd88701391e371d2f3e07456b8103b642a7d19c3"
+description = "retockin (Ratayu (interior)) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), then autorun_walk_route.lua retock -> retockin (retock's rec-18 door), saved 1503 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "retockin"
+topics = ["field", "retockin", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "deroa_field_route_walk"
+backup_fingerprint = "7cc51687098f4025bea90baf383e4f77df7da7c69ff68522f6d933b10e3ebe5a"
+description = "deroa (Jette's Fortress (entrance)) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-endgame-7saves.mcr block 3 (chitei2_field_card_boot), then autorun_walk_route.lua chitei2 -> deroa (chitei2's rec-4 door), saved 664 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "deroa"
+topics = ["field", "deroa", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "battle_map02_demon_fly_strike"
+backup_fingerprint = "0781969d2b7324f2bb0f275de7e4ce2945bf6c131f54972d3c55865aa6eeb38b"
+description = "map02 battle, formation [3, 108]: Demon Fly (seat 3, monster id 3) mid physical attack on Noa: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 2927 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Demon Fly", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_wolf_strike"
+backup_fingerprint = "f8e5c91d7339a4dcf33166a211f5082cf28a07800538b7d77423c530c7dcccf8"
+description = "map02 battle, formation [40, 108]: Wolf (seat 3, monster id 40) mid physical attack on Vahn: category 3, action state 0x1E. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 13582 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Wolf", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_mad_ogre_power_charge_mid_cast"
+backup_fingerprint = "c3dd0855118b986dc315572737a64ed0d6f7306fccaeaa3ddcf97443cd00be59"
+description = "map02 battle, formation [3, 108]: Mad Ogre (seat 4, monster id 108) casting Power Charge (spell 0x72, module PROT 0955) with its name banner up: category 2, queued 0x72, action state 0x70 (module running). Its record carries no magic attack id at +0x21..+0x23, so the census counts the cast as scripted. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 3374 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy magic", "Mad Ogre", "Power Charge", "cast module", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_mad_ogre_strike"
+backup_fingerprint = "1dcc215cc7f9ec74e81a6ab80b0af97828a5311eed3edfdb25755cd5bc5dd78f"
+description = "map02 battle, formation [3, 108]: Mad Ogre (seat 4, monster id 108) mid physical attack on Vahn: category 3, action state 0x1E. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02 (the fishing walk's map02 field state, 1625 vsyncs into the overworld), then autorun_battle_harvest.lua (fixed Up / Right / Down / Left walk, Spirit for three rounds then Attack), saved 5291 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Mad Ogre", "map02", "harvest"]
+
+[[scenarios]]
+label = "balden_field_route_walk"
+backup_fingerprint = "c158d0326fe11a61949ca126dc0b3e02a4039c4347532c4c76227d37f2494931"
+description = "balden (Vidna) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02, then from that map02 field state a second walk across the overworld to Vidna's rec-3 door (random encounters fought with the harvester's hand), saved 16933 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "balden"
+topics = ["field", "balden", "Vidna", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "ropeway_field_route_walk"
+backup_fingerprint = "8b639a7e89c53b29f590048ee420fbe3163e44fb91c8722ff65e5c0e8fe82bb3"
+description = "ropeway (Octam) free field run, party HUD up. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02, then from that map02 field state a second walk across the overworld to Octam's rec-4 door (random encounters fought with the harvester's hand), saved 14906 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "ropeway"
+topics = ["field", "ropeway", "Octam", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "stone_field_route_walk"
+backup_fingerprint = "164e335467721f79cf519e551789b3cd4da0c816a3caf4c6fe75bfc4e5405b81"
+description = "stone (Shadow Gate) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 8 (retock_field_card_boot), autorun_walk_route.lua retock -> map02, then from that map02 field state a second walk across the overworld to the Shadow Gate's rec-5 door (random encounters fought with the harvester's hand), saved 17356 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "stone"
+topics = ["field", "stone", "Shadow Gate", "scene coverage", "route walk"]

@@ -93,8 +93,18 @@ impl SceneHost {
             // launchers call `BootSession::start_global_bgm` directly, which
             // is the same track through the same director - this is the
             // *player-reachable* caller that was missing on both hosts.
-            if let Some(bgm) = slot.bgm_id() {
-                self.world.swap_to_minigame_bgm(bgm);
+            //
+            // The arena is the exception: its init only loads the battle
+            // theme and silences the scene's music; the play waits for the
+            // fight start (`FUN_801D1510`'s `jal 0x80026478` at
+            // `0x801D1548`), which the world's dome tick answers.
+            match (slot, slot.bgm_id()) {
+                (MinigameSubId::MuscleDome, Some(bgm)) => {
+                    self.world.silence_for_minigame_bgm();
+                    self.world.minigames.muscle_leg_bgm = Some(bgm);
+                }
+                (_, Some(bgm)) => self.world.swap_to_minigame_bgm(bgm),
+                (_, None) => {}
             }
             log::info!("minigame warp: entered {}", slot.label());
             Some(MinigameWarpOutcome::Entered(slot))
@@ -338,6 +348,9 @@ impl SceneHost {
         // The lead fighter - swing costs, HP, AP pool, stat profile - through
         // the one builder the native window's launcher uses too.
         let lead = self.dome_lead_fighter(&commands);
+        // The record the legs seat: retail's Vahn unless the host picked
+        // another (`World::set_muscle_fighter`).
+        let fighter_slot = self.world.minigames.fighter_index() as u32;
         let hand: [MuscleCard; legaia_engine_minigames::muscle_dome::HAND_SLOTS] =
             std::array::from_fn(|i| MuscleCard {
                 command_id: commands[i],
@@ -432,18 +445,19 @@ impl SceneHost {
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
         }
+        // ... and the whole bank, which the turn's queue walks with the
+        // Hyper arm open to a fighter carrying a Ra-Seru.
+        let bank = legaia_engine_battle_menus::muscle_dome_session::art_bank_for(
+            &self.world.tables.art_records,
+            self.world.caster_character(0),
+        );
+        session.install_art_bank(0, bank);
         // The Auto attack: the record's two saved command strings (the
         // entry opens over them, the review writes them back) and the disc
         // inputs the round's `FUN_801F0450` rebuild reads - the same
         // per-character inputs the field scene staged for the regular
         // battle's Auto.
-        if let Some(rec) = self
-            .world
-            .party
-            .roster
-            .members
-            .get(DOME_LEAD_CHAR_SLOT as usize)
-        {
+        if let Some(rec) = self.world.party.roster.members.get(fighter_slot as usize) {
             use legaia_save::AutoCommandBand;
             session.set_auto_command_strings(
                 rec.auto_command_string(AutoCommandBand::Primary),
@@ -452,12 +466,12 @@ impl SceneHost {
                 // so `sltu` reads false: the secondary band.
                 AutoCommandBand::for_gauge(lead.budget, lead.budget),
             );
-            let staged = &self.world.battle.auto_combo.inputs[DOME_LEAD_CHAR_SLOT as usize];
+            let staged = &self.world.battle.auto_combo.inputs[fighter_slot as usize];
             let skills = rec.displayed_skills();
             let n = (skills.count as usize).min(skills.ids.len());
             // The entry's Triangle list pages over the same record's learned
             // arts, as the arena's copy of the battle pager reads it.
-            session.set_arts_list_owner(DOME_LEAD_CHAR_SLOT as u8, n as u8);
+            session.set_arts_list_owner(fighter_slot as u8, n as u8);
             let bits = rec.ability_bits();
             session.install_auto_inputs(
                 legaia_engine_battle_menus::muscle_dome_session::DomeAutoInputs {
@@ -466,7 +480,7 @@ impl SceneHost {
                     art_records: staged.art_records.clone(),
                     art_count: staged.art_count,
                     learned: skills.ids[..n].to_vec(),
-                    char_id: DOME_LEAD_CHAR_SLOT as u8 + 1,
+                    char_id: fighter_slot as u8 + 1,
                     ability_high: u32::from_le_bytes([bits[4], bits[5], bits[6], bits[7]]),
                     opponent_swing_class: opponent_record.as_ref().map_or(0, |r| r.swing_class),
                 },
@@ -505,10 +519,26 @@ impl SceneHost {
         // seated monster, with the clips, reach and size class the battle's
         // approach and reactions read.
         let monster_id = opponent_record.as_ref().map(|r| r.id);
-        if let Some(bodies) = self.dome_choreo_bodies(DOME_LEAD_CHAR_SLOT, monster_id) {
+        if let Some(bodies) = self.dome_choreo_bodies(fighter_slot, monster_id) {
             session.install_choreo(bodies);
         }
         self.world.enter_muscle_dome(session);
+        // The leg itself is an ordinary battle against the rung's monster
+        // (`FUN_801D1510`: formation cell `DAT_8007BD0C`, mode `0x14`), staged
+        // here and opened by the dome tick when the hub hands over. The
+        // battle loader seats the monster off the catalog, which holds only
+        // the departure scene's own formations, so the rung's record joins it.
+        self.world.minigames.muscle_battle_monster = None;
+        if let (Some(id), Some(archive)) = (monster_id, self.monster_archive_bytes()) {
+            let cat = legaia_engine_battle::monster_catalog::catalog_from_monster_archive(
+                &archive,
+                &[id],
+            );
+            if let Some(def) = cat.by_id.into_values().next() {
+                self.world.tables.monster_catalog.insert(def);
+                self.world.minigames.muscle_battle_monster = Some(id);
+            }
+        }
         true
     }
 
@@ -589,10 +619,6 @@ impl SceneHost {
     }
 }
 
-/// The dome fighter's player battle file slot: the lead's (`0` = PROT 0863,
-/// the file [`SceneHost::lead_swing_costs`] reads), which is also the body
-/// both play hosts draw.
-pub const DOME_LEAD_CHAR_SLOT: u32 = 0;
 /// Flat favored-class swing cost: the opponent's every card, and a lead card
 /// whose swing record does not resolve.
 pub const DOME_FAVORED_COST: u16 = 0x1E;
@@ -647,7 +673,12 @@ impl SceneHost {
         &self,
         commands: &[u8; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
     ) -> DomeLeadFighter {
-        let lead = self.world.party.roster.members.first();
+        let lead = self
+            .world
+            .party
+            .roster
+            .members
+            .get(self.world.minigames.fighter_index());
         let swing = self.lead_swing_costs();
         let costs = std::array::from_fn(|i| {
             swing
@@ -692,14 +723,21 @@ impl SceneHost {
     /// the lead's equipped sections of the player battle file (PROT 0863).
     /// `None` when the file or its equipped sections do not decode.
     pub fn lead_swing_costs(&self) -> Option<[u8; 4]> {
-        let raw = self.index.entry_bytes_extended(863).ok()?;
+        let fighter = self.world.minigames.fighter_index();
+        let raw = self
+            .index
+            .entry_bytes_extended(
+                legaia_actor_formats::battle_texture_catalog::PLAYER_FILE_ENTRIES[0]
+                    + fighter.min(2) as u32,
+            )
+            .ok()?;
         let pack = legaia_actor_formats::battle_data_pack::parse(&raw).ok()?;
         let equipped: [u8; 5] = self
             .world
             .party
             .roster
             .members
-            .first()
+            .get(fighter)
             .map(|rec| {
                 let slots = rec.equipment().slots;
                 [slots[0], slots[1], slots[2], slots[3], slots[4]]

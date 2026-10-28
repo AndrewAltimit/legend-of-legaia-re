@@ -141,6 +141,17 @@ pub(crate) fn body_offset(facing: u16, cx: i16, cz: i16, scale: i32) -> (i16, i1
     motion::body_offset(facing, cx, cz, scale)
 }
 
+/// How far back of its captured strike pair a re-seated attacker stands at
+/// its seed ([`World::stand_capture_attacker_off_reach`]), and the least
+/// distance from its target it stands at: past every reach the range metric
+/// admits (`size << 4` up to `0x1F0`, the small classes' `1024`,
+/// `DAT_80078870`), so the approach walks.
+const CAPTURE_APPROACH_SEED_BACKOFF: f32 = 512.0;
+const CAPTURE_APPROACH_SEED_REACH: f32 = 1100.0;
+/// The yaw counter the captured attacker's walk starts on: the Attack arm's
+/// `0x200` rung (`0x801E2F20`) and the `0x14` pass's drift.
+const CAPTURE_APPROACH_WALK_RUNG: u16 = 0x202;
+
 impl World {
     /// The display trio `+0x3C / +0x3E / +0x40` of battle seat `slot`: the
     /// body pair ([`Self::refresh_battle_body_pairs`]) plus the display
@@ -713,6 +724,15 @@ impl World {
         if self.battle.approach_hold == Some(slot as u8) {
             return;
         }
+        self.seat_capture_approach_start(slot);
+        let Some(a) = self.actors.get(slot) else {
+            return;
+        };
+        let (ax, az) = (a.move_state.world_x, a.move_state.world_z);
+        let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(tz, tx, az, ax)
+            .wrapping_add(0x800)
+            & 0xFFF;
+        self.actors[slot].battle.facing_angle = facing;
         let (speed, scale) = self.battle_root_motion_of(slot);
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
         let raw = motion::root_motion_raw(sin, cos, speed.abs(), dt, scale);
@@ -736,6 +756,137 @@ impl World {
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = clamp(ms.world_x, dx, tx);
         ms.world_z = clamp(ms.world_z, dz, tz);
+    }
+
+    /// Capture alignment ([`BattleState::capture_approach_yaw`], never in
+    /// play): on the first walk step of the captured attacker's action, with
+    /// its walk clip playing, stand it where retail's walk began - on the ray
+    /// from its target's captured pair through its own, as far back of its
+    /// captured strike pair as the walk covers in the counter units it has
+    /// still to run to retail's arrival reading.
+    ///
+    /// The walk moves `speed * scale / 8` a vsync (`root_motion_raw` at
+    /// `frame_dt = 1`, a trig unit of `4096` shifted by `15`) and the counter
+    /// `max(1, 4 * step / 3)` an SM pass of `step` vsyncs
+    /// (`0x801E29E4..0x801E2A24`).
+    ///
+    /// [`BattleState::capture_approach_yaw`]: crate::world::BattleState::capture_approach_yaw
+    fn seat_capture_approach_start(&mut self, slot: usize) {
+        if !self.battle.capture_approach_due {
+            return;
+        }
+        let Some(app) = self.battle.capture_approach_yaw else {
+            return;
+        };
+        let Some((seat, _)) = self.battle.capture_reseat.as_ref() else {
+            return;
+        };
+        if usize::from(*seat) != slot {
+            return;
+        }
+        let Some((speed, scale)) = self.battle_playing_root_motion(slot).filter(|m| m.0 > 0) else {
+            return;
+        };
+        self.battle.capture_approach_due = false;
+        if self.actors[slot].battle.active_target != app.target {
+            return;
+        }
+        let [px, pz] = app.strike.map(i32::from);
+        let [tx, tz] = app.target_ground.map(i32::from);
+        let (ux, uz) = ((px - tx) as f32, (pz - tz) as f32);
+        let len = (ux * ux + uz * uz).sqrt();
+        let Some(counter) = self.battle.camera.as_ref().map(|c| c.action_yaw_base()) else {
+            return;
+        };
+        if len < 1.0 {
+            return;
+        }
+        let units = (i32::from(app.arrive) - counter).max(0) as f32;
+        let step = self.battle_frame_step().max(1);
+        let inc =
+            f32::from(legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step));
+        let per_vsync = f32::from(speed) * f32::from(scale) / 8.0;
+        let back = units * per_vsync * f32::from(step) / inc;
+        let ms = &mut self.actors[slot].move_state;
+        ms.world_x = (px as f32 + ux / len * back).round() as i16;
+        ms.world_z = (pz as f32 + uz / len * back).round() as i16;
+        self.refresh_battle_body_pairs_now();
+    }
+
+    /// Capture alignment at the captured attacker's seed: stand it where
+    /// retail's walk began, on the ray from its target's captured pair
+    /// through its own captured strike pair, as far back of the strike pair
+    /// as its walk entry covers in the counter units from the Attack arm's
+    /// `0x200` rung (`0x801E2F20`) to the capture's arrival reading. The
+    /// walk entry is the one `0x14` stages, the tag-`1` entry
+    /// (`FUN_80050E2C`, the fallback at `0x801E32B0`), whose `+0x0C` speed
+    /// moves `speed * scale / 8` a vsync; the counter climbs
+    /// `max(1, 4 * step / 3)` an SM pass (`0x801E29E4..0x801E2A24`). The
+    /// replay may have left the attacker anywhere - within reach, where
+    /// `0x14` skips the walk (`0x801E320C`), or across the field - and its
+    /// bystanders make way for the path it stands on at `0x14`.
+    ///
+    /// Without a walk entry it stands [`CAPTURE_APPROACH_SEED_BACKOFF`] back
+    /// of the strike pair, at least [`CAPTURE_APPROACH_SEED_REACH`] off the
+    /// target, so the walk runs and its first step seats it
+    /// ([`Self::seat_capture_approach_start`]).
+    pub(in crate::world) fn stand_capture_attacker_off_reach(&mut self, actor: u8) {
+        let Some(app) = self.battle.capture_approach_yaw else {
+            return;
+        };
+        let Some((seat, _)) = self.battle.capture_reseat.as_ref() else {
+            return;
+        };
+        if *seat != actor {
+            return;
+        }
+        let [px, pz] = app.strike.map(f32::from);
+        let [tx, tz] = app.target_ground.map(f32::from);
+        let (ux, uz) = (px - tx, pz - tz);
+        let len = (ux * ux + uz * uz).sqrt();
+        if len < 1.0 {
+            return;
+        }
+        let walk_speed = self.actors.get(usize::from(actor)).and_then(|a| {
+            let clips = a.battle_action_clips.as_ref()?;
+            let tags: Vec<u8> = clips
+                .iter()
+                .map(|c| {
+                    c.as_ref().map_or(
+                        legaia_actor_formats::monster_archive::NO_ACTION_ENTRY,
+                        |c| c.action_id,
+                    )
+                })
+                .collect();
+            let entry = legaia_actor_formats::monster_archive::find_action_by_tag(&tags, 1)?;
+            let speed = clips
+                .get(usize::from(entry))?
+                .as_ref()?
+                .entry_root_speed()?;
+            let scale = match a.battle.anim_rate.get() {
+                0 => DEFAULT_SPEED_SCALE,
+                s => s,
+            };
+            (speed > 0).then(|| f32::from(speed) * f32::from(scale) / 8.0)
+        });
+        let off = match walk_speed {
+            Some(per_vsync) => {
+                let step = self.battle_frame_step().max(1);
+                let inc = f32::from(
+                    legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step),
+                );
+                let units =
+                    (f32::from(app.arrive) - f32::from(CAPTURE_APPROACH_WALK_RUNG)).max(0.0);
+                len + units * per_vsync * f32::from(step) / inc
+            }
+            None => (len + CAPTURE_APPROACH_SEED_BACKOFF).max(CAPTURE_APPROACH_SEED_REACH),
+        };
+        let Some(a) = self.actors.get_mut(usize::from(actor)) else {
+            return;
+        };
+        a.move_state.world_x = (tx + ux / len * off).round() as i16;
+        a.move_state.world_z = (tz + uz / len * off).round() as i16;
+        self.refresh_battle_body_pairs_now();
     }
 
     /// The separation body radius of battle `slot`, the node `+0x58` word the

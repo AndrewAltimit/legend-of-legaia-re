@@ -501,7 +501,9 @@ impl World {
                 // The natural-end commit installs whatever `+0x1DA` holds:
                 // a byte staged over the summon creature's loop waits here
                 // ([`Self::summon_seat_waits_for_cycle`]).
-                if self.summon_seat_waits_for_cycle(i)
+                // So does a byte whose bit-0 cut the loop's `+0x76` lock
+                // refused ([`Self::loop_cut_locked`]).
+                if (self.summon_seat_waits_for_cycle(i) || self.loop_cut_locked(i))
                     && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
                 {
                     self.commit_staged_battle_anim_at_boundary(i);
@@ -631,7 +633,7 @@ impl World {
                 .as_ref()
                 .and_then(|p| p.hit_source())
                 .is_none_or(|s| s.event_lock == 0);
-        if self.summon_seat_waits_for_cycle(i)
+        if (self.summon_seat_waits_for_cycle(i) || self.loop_cut_locked(i))
             && !cut_now
             && actor
                 .battle_animation
@@ -657,6 +659,26 @@ impl World {
             }
         }
         self.commit_staged_battle_anim_at_boundary(i);
+    }
+
+    /// Whether actor `i`'s byte is staged under the `+0x1DC` bit-0 "commit
+    /// now" over a looping clip whose entry carries the `+0x76` lock: the
+    /// tick's cut refuses it (`lbu v0,0x76(s3); bne v0,zero,0x80047a48` at
+    /// `0x80047940..0x80047948`), so the byte waits for the loop's natural
+    /// end (`0x80047B54`). The approach poll's arrival stages idle under bit
+    /// 0 (`0x801E35BC..0x801E35C8`); over a locked walk, retail plays the
+    /// walk on into the strike loop (`battle_retona_king_frog_strike` reads
+    /// `0x1E` on clip `1` with the accumulator `168` into its cycle).
+    pub(in crate::world) fn loop_cut_locked(&self, i: usize) -> bool {
+        let Some(a) = self.actors.get(i) else {
+            return false;
+        };
+        a.battle
+            .flag_bits
+            .has(legaia_engine_battle_vm::battle_action::ActorFlags::WINDUP_DONE)
+            && a.battle_animation.as_ref().is_some_and(|p| {
+                p.is_looping() && p.hit_source().is_some_and(|s| s.event_lock != 0)
+            })
     }
 
     /// The commit body, run at a clip boundary (see

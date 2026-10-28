@@ -24,6 +24,16 @@ fn cutscene_view(cam: CutsceneCam) -> legaia_engine_camera::psx_camera::FieldCam
 }
 
 impl PlayWindowApp {
+    /// Record the field camera this frame is drawn through
+    /// ([`PlayWindowApp::last_frame_field_view`]), the view the next sim
+    /// tick's framebuffer grabs project through.
+    pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
+        self.last_frame_field_view = self
+            .host_view()
+            .frame(cutscene_cam.map(cutscene_view))
+            .field_view();
+    }
+
     /// The world, scene camera and scene box this frame's projections read
     /// (`legaia_engine_world_views::screen_passes::HostView`, the seam the
     /// browser play page reads through too).
@@ -671,6 +681,7 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
         part_cam: Option<&legaia_render_kernels::gte::PartCameraPose>,
+        fx_cam: Mat4,
     ) -> (
         Vec<(UploadedVramMesh, Mat4)>,
         Vec<(UploadedVramMesh, Mat4)>,
@@ -732,8 +743,24 @@ impl PlayWindowApp {
             .map(|n| (n, "draw-kind-4"))
             .chain(lists.shadows.iter().map(|n| (n, "battle ground shadow")))
         {
-            if let Some(m) = upload(&n.mesh, what) {
-                part_draws.push((m, Mat4::from_cols_array(&n.model)));
+            let model = Mat4::from_cols_array(&n.model);
+            // A single-sided node keeps retail's front faces only, the
+            // faces the browser page bakes too
+            // (`effect_draws::retail_front_faces`).
+            let culled;
+            let mesh = if n.single_sided {
+                let mut m = n.mesh.clone();
+                legaia_engine_world_views::effect_draws::retail_front_faces(
+                    &mut m,
+                    &(fx_cam * model).to_cols_array(),
+                );
+                culled = m;
+                &culled
+            } else {
+                &n.mesh
+            };
+            if let Some(m) = upload(mesh, what) {
+                part_draws.push((m, model));
             }
         }
         let field_fx_draws = lists

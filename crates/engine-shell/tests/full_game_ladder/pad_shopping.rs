@@ -126,6 +126,9 @@ enum Want {
     },
     /// Row `row`: `qty` copies of a stackable item.
     Stack { row: usize, qty: u8 },
+    /// Row `row`: one piece of equipment `item` into the bag - the
+    /// recipient picker's row 0 - for a member not in the party yet.
+    Bag { row: usize, item: u8 },
 }
 
 /// Does the bag hold fewer HP restoratives than half the [`HEAL_STOCK`] the
@@ -183,6 +186,22 @@ fn heal_sale_gear(session: &NativeSession, sells_heal: bool) -> BTreeSet<u8> {
     sale
 }
 
+/// The characters the coming stretches seat who are not in the party yet:
+/// every record is seeded from the New Game template, so a character counts
+/// only once the anchors ahead show it grown past level 1
+/// ([`pad_training::TARGET_LEVELS`]).
+fn joining_members(w: &legaia_engine_core::world::World) -> Vec<u8> {
+    let party = w.present_party_list();
+    pad_training::TARGET_LEVELS.with(|t| {
+        t.borrow()
+            .iter()
+            .enumerate()
+            .filter(|&(ch, &lv)| lv > 1 && !party.contains(&(ch as u8)))
+            .map(|(ch, _)| ch as u8)
+            .collect()
+    })
+}
+
 /// The worth of a piece of equipment to the hand: the sum of its stat
 /// bonuses. Enough to tell a better weapon or armour from a worse one in
 /// the same slot.
@@ -211,6 +230,13 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     let gold = w.party.money;
     let held = |id: u8| w.party.inventory.get(&id).copied().unwrap_or(0);
     let errands = errands_short(w);
+    // The bag's reserve of heals is not the errand's to spend: a purchase
+    // that does not complete an errand leaves the reserve's price in the
+    // purse. A Sol run that spent 36000 of 38225 on six of its eight loaves
+    // met Gaza (`korb3` P2[2]) with no heal in the bag.
+    let members = (w.present_party_list().len() + joining_members(w).len()).clamp(1, 3) as u32;
+    let reserve_gold =
+        i64::from((HEAL_RESERVE * members).saturating_sub(heals_held(w))) * best_heal_price(w);
     // The stretch's errand items first, as many as the purse pays for: the
     // story waits on them, and a loaf bought as a heal is the same loaf.
     for &(item, short, price) in &errands {
@@ -223,8 +249,14 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
             continue;
         };
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(item));
+        let completes = i64::from(short) * i64::from(price) <= i64::from(gold);
+        let spendable = if completes {
+            i64::from(gold)
+        } else {
+            (i64::from(gold) - reserve_gold).max(0)
+        };
         let qty = short
-            .min(u32::try_from(gold).unwrap_or(0) / price)
+            .min(u32::try_from(spendable).unwrap_or(0) / price)
             .min(u32::from(room));
         if qty > 0 {
             return Some(Want::Stack {
@@ -234,10 +266,9 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         }
     }
     // While an errand is short of gold, the purse is the errand's: nothing
-    // else is bought until the items are paid for.
-    if errand_gold_short(w) {
-        return None;
-    }
+    // else is bought until the items are paid for - but the heal reserve
+    // below, which the errand leaves the gold for.
+    let errand_short = errand_gold_short(w);
     // Healing: the stock row that restores the most HP per gold. An errand
     // item is not a heal to buy: it is bought above, for the story. A full
     // restore (`HealAll`: the Healing Berry, "Restores maximum HP") is worth
@@ -291,8 +322,14 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));
         // The errands' price is kept back: the counter that sells their
-        // item may be the next one.
-        let afford = u32::try_from((i64::from(gold) - errand_cost(w)).max(0)).unwrap_or(0) / price;
+        // item may be the next one. Not from the reserve ([`HEAL_RESERVE`]
+        // a member), which comes before the errand.
+        let keep = if target <= HEAL_RESERVE * members {
+            0
+        } else {
+            errand_cost(w)
+        };
+        let afford = u32::try_from((i64::from(gold) - keep).max(0)).unwrap_or(0) / price;
         let qty = target
             .saturating_sub(heals_held)
             .min(afford)
@@ -306,9 +343,14 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // next boss is fought out of the bag the road leaves, and a party of
     // three that bought its armour first met Dohati (`dohaty` P2[10]) with
     // one Healing Flower.
-    let members = w.present_party_list().len().clamp(1, 3) as u32;
+    // A member the coming stretches seat counts too: the bag is shared,
+    // and the one who joins with no counter on her stretch (`cave01`'s Noa)
+    // trains and meets her boss out of what it holds.
     if let Some(want) = heal_want(HEAL_RESERVE * members) {
         return Some(want);
+    }
+    if errand_short {
+        return None;
     }
     // Then an MP restorative for each present member: a boss's group heals
     // are cast, and a counter whose heals the hand bought alone left Zora's
@@ -335,6 +377,75 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         + errand_heal_budget(w);
     let info = menu.equip_info.as_ref()?;
     let party = w.present_party_list();
+    // First a weapon for a member the coming stretches seat who is not in
+    // the party yet: bought into the bag, worn when she joins
+    // (`pad_equip_best`) - ahead of the present members' armour, which a
+    // purse spends first otherwise. Retail's Noa meets `rikuroa`'s row 16 alone with
+    // the Nail Glove `dolk`'s Arms Shop sells (`rikuroa_post_caruban`:
+    // equipment slot 3 `0x28`), and she joins in `cave01` with none.
+    let joining = joining_members(w);
+    let weapon_of = |ch: u8| {
+        w.party
+            .roster
+            .members
+            .get(usize::from(ch))
+            .map_or(0, |r| r.equipment().slots[weapon_byte(ch)])
+    };
+    let mut joiner: Option<(i32, u32, usize)> = None;
+    for (row, it) in session.inventory.items.iter().enumerate() {
+        let Some(entry) = info.entry(it.item_id) else {
+            continue;
+        };
+        if entry.is_ra_seru
+            || entry.category != Disc::Weapon
+            || i64::from(it.price) + reserve > i64::from(gold)
+        {
+            continue;
+        }
+        // The best-equipment pass hands a bag weapon to whichever present
+        // member it improves (the Survival Knife went to Vahn), so each such
+        // member takes a copy of its own before the joiner's is left over.
+        let takers = party
+            .iter()
+            .filter(|&&p| {
+                info.can_equip(it.item_id, p)
+                    && gear_worth(w, it.item_id) > gear_worth(w, weapon_of(p))
+            })
+            .count() as u8;
+        if held(it.item_id) > takers {
+            continue;
+        }
+        for &ch in &joining {
+            if !info.can_equip(it.item_id, ch) {
+                continue;
+            }
+            // A member who has not joined holds no roster record yet: she
+            // comes in unarmed (`cave01`'s Noa).
+            let worn = weapon_of(ch);
+            let gain = gear_worth(w, it.item_id) - gear_worth(w, worn);
+            let in_bag = w.party.inventory.keys().any(|&id| {
+                id != worn
+                    && id != it.item_id
+                    && info.can_equip(id, ch)
+                    && info.entry(id).is_some_and(|e| e.category == Disc::Weapon)
+                    && gear_worth(w, id) >= gear_worth(w, it.item_id)
+            });
+            if gain <= 0 || in_bag {
+                continue;
+            }
+            if joiner.as_ref().is_none_or(|&(g, p, _)| {
+                (gain, std::cmp::Reverse(it.price)) > (g, std::cmp::Reverse(p))
+            }) {
+                joiner = Some((gain, it.price, row));
+            }
+        }
+    }
+    if let Some((_, _, row)) = joiner {
+        return Some(Want::Bag {
+            row,
+            item: session.inventory.items[row].item_id,
+        });
+    }
     let mut best: Option<(i32, u32, Want)> = None;
     for (row, it) in session.inventory.items.iter().enumerate() {
         let Some(entry) = info.entry(it.item_id) else {
@@ -448,7 +559,7 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
     ) else {
         return out;
     };
-    let party: Vec<u8> = if joined {
+    let mut party: Vec<u8> = if joined {
         (0..w.party.roster.members.len())
             .filter(|&i| w.party.roster.members[i].hp_mp_sp().hp_max > 0)
             .map(|i| i as u8)
@@ -456,6 +567,8 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
     } else {
         w.present_party_list()
     };
+    // A piece bought for a member about to join is hers, not outgrown.
+    party.extend(joining_members(w));
     for (&id, &n) in w.party.inventory.iter() {
         let Some(entry) = info.entry(id) else {
             continue;
@@ -473,13 +586,14 @@ fn outgrown_gear(session: &NativeSession, joined: bool) -> BTreeSet<u8> {
             if !info.can_equip(id, ch) {
                 return false;
             }
-            let Some(rec) = w.party.roster.members.get(usize::from(ch)) else {
-                return false;
-            };
             let worn = if slot == EquipSlot::Weapon {
                 worn_weapon(session, ch)
             } else {
-                rec.equipment().slots[slot.as_index() as usize]
+                w.party
+                    .roster
+                    .members
+                    .get(usize::from(ch))
+                    .map_or(0, |rec| rec.equipment().slots[slot.as_index() as usize])
             };
             if gear_worth(w, id) > gear_worth(w, worn) {
                 return true;
@@ -587,12 +701,16 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BT
                     PadButton::Right.mask()
                 }
             }
-            Some(Want::Stack { .. }) if q.buying => PadButton::Cross.mask(),
+            Some(Want::Stack { .. } | Want::Bag { .. }) if q.buying => PadButton::Cross.mask(),
             _ => CANCEL,
         };
     }
     if let Some(r) = menu.recipient_session.as_ref() {
         return match want {
+            Some(Want::Bag { item, .. }) if item == r.item_id => match r.cursor & 0xFFF {
+                0 => PadButton::Cross.mask(),
+                _ => PadButton::Up.mask(),
+            },
             Some(Want::Gear { item, member, .. }) if item == r.item_id => {
                 let row = member as u32 + 1;
                 match (r.cursor & 0xFFF).cmp(&row) {
@@ -612,7 +730,7 @@ fn shop_edge(menu: &MenuRuntime, w: &legaia_engine_core::world::World, sell: &BT
             None => CANCEL,
         },
         Some(MenuState::ShopBuy) => match want {
-            Some(Want::Gear { row, .. } | Want::Stack { row, .. }) => {
+            Some(Want::Gear { row, .. } | Want::Stack { row, .. } | Want::Bag { row, .. }) => {
                 list_edge(usize::from(menu.ctx.cursor), row)
             }
             None => CANCEL,

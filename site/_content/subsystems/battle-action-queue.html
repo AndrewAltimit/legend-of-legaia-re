@@ -63,6 +63,7 @@
     </svg>
     <figcaption>The match against an art record compares <code>stream[i] - 0x0B</code> with the record's command bytes; the commit writes the starter over the last matched arrow and inserts <code>art_id + 0x1B</code> after it.</figcaption>
   </figure>
+  <p><strong>Hyper Arts are the exception.</strong> The builder walks the character's art records in groups, and the first four groups (the Miracle Art and the three Hyper Arts) take a separate arm. With the Ra-Seru marker set, a matched Hyper Art's arrows <em>do</em> collapse: the run becomes <code>0x1A</code> and the art constant, and the rest of the queue moves down behind them. Gala's Lightning Storm (Right, Right, Up, Left) reads <code>1A 1D</code>. Without the marker, that arm writes nothing and the arrows stay plain swings. The groups are counted per record group, not per constant: Noa's Hurricane Kick spans three records, so her Vulture Blade and Frost Breath are her second and third Hyper Arts.</p>
   <p>After the per-art commits come two trigger passes, in this order:</p>
   <ol class="steps">
     <li><b>Miracle</b><span>if the input equals the character's Miracle command string, and the Ra-Seru marker is set, the whole queue is replaced with the Miracle row</span></li>

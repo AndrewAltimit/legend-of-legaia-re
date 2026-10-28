@@ -103,8 +103,8 @@ pub struct FishingSpecies {
 }
 
 impl FishingSpecies {
-    /// The awarded catch points for a fight of accumulated `strength`
-    /// (`FUN_801d5298`: `score_value * (strength + 0x9c0) / 0x32000`).
+    /// The awarded catch points for a fight of `strength` (the hook-time sum
+    /// `DAT_801D91B8`, `FUN_801d5298`: `score_value * (strength + 0x9c0) / 0x32000`).
     pub fn score_for(&self, strength: i32) -> i32 {
         ((self.score_value as i64 * (strength as i64 + SCORE_STRENGTH_BIAS as i64))
             / SCORE_DIVISOR as i64) as i32

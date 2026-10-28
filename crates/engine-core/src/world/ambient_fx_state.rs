@@ -85,6 +85,10 @@ pub struct AmbientFxState {
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
     pub(crate) vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,
+    /// The latest ambient tick's move-VM framebuffer grabs (render mode 7,
+    /// `legaia_engine_vm::vram_grab`), waiting for a host to project them
+    /// through its frame's camera ([`crate::world::World::queue_vram_grabs`]).
+    pub(crate) vram_grabs: Vec<legaia_engine_vm::vram_grab::GrabRequest>,
     /// The frame-grab handshake for a rect copy that reads the display
     /// framebuffer - see [`crate::world::World::framebuffer_grab_pending`].
     pub frame_grab: FrameGrab,
@@ -126,6 +130,7 @@ impl AmbientFxState {
             script_vram_moves: Vec::new(),
             script_vram_stp: Vec::new(),
             vram_rect_copies: Vec::new(),
+            vram_grabs: Vec::new(),
             frame_grab: FrameGrab::default(),
             cell_fx_seed: Vec::new(),
             vram_rect_seed: Vec::new(),

@@ -256,6 +256,16 @@ pitch = PITCH[(n % 12) * 16 + fine]  shifted by  (n / 12 - 5)</code></pre>
   </ul>
 </section>
 
+<section class="doc-section" id="state-sweep">
+  <h2>Is the port playing what retail plays?</h2>
+  <p>The script's track word says which track was <em>asked for</em>. The sweep reads what the sound library is actually <em>playing</em> in every retail save state - which track each open sequence holds, whether it is playing, at what volume and tempo, and which sound effects ring beside it - then seeds the port into the same state and compares.</p>
+  <ul class="bullets">
+    <li><strong>What matches everywhere it can be compared:</strong> sequence volume (62 of 62 states), tempo (65 of 65), and the battle track a fight picks from its sound set (122 of 122 battle states).</li>
+    <li><strong>The fix it found:</strong> a cutscene that changes music with sub-op 9 now holds the new track until the script's <code>0xA</code> commit, as retail does. Before, the port started it at the select, over the old score's timed fade - a shape 91 of the disc's cutscene track changes use.</li>
+    <li><strong>What is left</strong> (track 66 of 70 walkable states): two end-credits vignettes whose music is history the seed does not replay, a state caught in the frame between a commit and the install, and one fast-chained opening capture whose slot still plays the opening theme under the overworld's track word.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="port">
   <h2>In the port</h2>
   <p><code>crates/engine-audio</code> rebuilds the stack from this page, the libspu API surface and the public SPU register layout - no Sony bytes. It models the 24 voices with Gaussian resampling, the envelope, the ADPCM decoder, the reverb network (set to Studio C on every voice, as retail runs it) and a sequencer counted in whole output samples that spends retail's tick budget once per vsync period, so playback is locked to the audio clock, lands its key-ons where retail's do, and is bit-deterministic for replays. Both play hosts drive it through the same BGM director (<code>engine-session</code>). Module map, the sequencer details and how the port's sound is measured against retail: <a href="audio-internals.html#engine-spu">internals</a>.</p>

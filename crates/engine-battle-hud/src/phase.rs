@@ -98,6 +98,11 @@ pub fn battle_hud_phase(world: &legaia_engine_core::world::World) -> BattleHudPh
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return BattleHudPhase::Idle;
     }
+    // Under the battle-entry sweep the battle tick has not run, so no menu
+    // SM step has spawned a handle (`FUN_80046A20`, `0x80046EF8`).
+    if world.battle_entry_sweeping() {
+        return BattleHudPhase::Idle;
+    }
     if world.arts_input_active()
         || world.battle.arts_menu.is_some()
         || world.battle.spell_menu.is_some()

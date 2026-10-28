@@ -1701,6 +1701,13 @@ while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain
 the countdown; arm 12 **climbs** it by a quarter of the frame product until
 it reaches `0x201`; arms 11..14 add to the yaw global every pass.
 
+Arm 9's pass hides the creature: `+0x21C = 0xFF` **and** its colour word
+`+0x04 = 0` (`0x801F6FD0..0x801F6FE4`), the pair the hosts' draw gates read,
+then stores the neutral word `0x20080200` on every enemy seat with HP left
+(`0x801F705C..0x801F7084`). With the flag alone the creature stayed drawn on
+its arm-7 blue tint through arms 10..14, over the enemy-row shots retail
+frames without it.
+
 Stager arm 1 also spawns a held additive fade, black to `(0xC0, 0xC0, 0xFF)`
 over `0x1E` frames, and parks it at `ctx[+0x102C]` (`0x801F7BFC..0x801F7C4C`):
 the pale blue the screen rises to while arm 9 counts down, which arm 9's
@@ -1829,6 +1836,15 @@ globals ahead of the gate, a shot re-armed before the gate) runs on every
 tick the body spends in the arm. The clock lives in the director's countdown
 word: `(phase + 1) << 16 | ticks in the arm`. A drift `P` below is the frame
 product `scalar * delta`, per engine tick the scalar alone.
+
+So an arm's first tick carries two retail passes' work: the passed arm's
+shot and the new arm's first drift. Retail's builder tweens from the
+globals the passed arm left, and the drift lands a pass later, so the host
+arms the shot first and drifts after it (`ArmDirection::drift_after_shot`).
+Drifted first, Freed's arm-16 yaw drift (`+2P` a pass) entered the arm-15
+shot's start (yaw `0x810` onto `0x800`): the shot walked the yaw back and
+then held it on its endpoint until it landed, and every later arm framed
+from a yaw about `0x400` short of retail's.
 
 Three inputs come from the host beside the seats
 (`World::feed_seru_cam`): the live yaw `0x8007B792`, for an arm that re-arms
@@ -2196,7 +2212,7 @@ Beside the directors an engine-side pass applies each arm's seat writes
 | PROT | Writes |
 |---|---|
 | 0918 | the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
-| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, and `3` from the stager, which only its parts' op-`0x20` calls reach |
+| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
 | 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
 
 `ctx[+0x278]` bit 0 with the stage ambient on its floor also takes the
@@ -3121,6 +3137,12 @@ Arm 5 seats two records on the caster, three on each point of a ten-point
 ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
 `0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
 left out, as the chain leaves it.
+Arm 5's spawns all sit behind its countdown's expiry (`bgtz t0,0x801F74B0` at
+`0x801F708C`), so they are seated on arm 6's first pass. Its two caster
+records are radius-`0x800` cylinders textured off page `0x9` / `0x8A` (op `0x1F`
+ORs texture mode `2` into `+0x9E`): `0x801F8D44` with word `0xC1000000`, which
+keeps the dispatcher's winding test, and `0x801F8DA8` with `0xC9000000`,
+which draws both sides ([renderer](renderer.md#the-field-pass-culls-back-faces)).
 
 <a id="prot-0965-doomsday"></a>
 
@@ -3841,6 +3863,13 @@ Where the decoder could not split an arm's sites around a ported countdown
 gate, the gate's `bgtz` VA (`summon_holds::gate_va`) does: a site past it
 fires on the pass alone, as in retail (PROT 0919 arm 7's three fades, which
 otherwise flashed white a countdown early).
+Arms that share their code fork on a reload of the phase byte: PROT 0918's
+arms 18 and 19 both enter at `0x801F8698`, and only arm 19 gets past
+`lbu v1,0x0(s6)` / `li v0,0x12` / `bne` (`0x801F878C..0x801F8794`) to the
+fade kills and the wash clear `sb zero,0x27a` (`0x801F8994`). The walk takes
+such a branch the way the arm's own phase decides it; walked both ways, arm
+18's pass took arm 16's pink wash down a whole arm early and the engine
+drew Kemaro's arm 19 on black.
 
 **The colour wash.** Both cast dispatchers end by calling `FUN_801F2410` when
 `ctx[+0x27A]` (the alpha) is non-zero, so the wash draws on every frame the

@@ -224,7 +224,7 @@ impl RetailBattle {
     /// may have moved) - for the phase's ground seat
     /// ([`legaia_engine_capture::ground_snap`]).
     pub fn engine_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        self.ground_snaps(false, false)
+        self.ground_snaps(false, false, false)
     }
 
     /// [`Self::engine_ground_snaps`] for the image child, whose frame is the
@@ -250,10 +250,16 @@ impl RetailBattle {
     /// `battle_melee_hit_spark`'s Gimard is pushed `+11` a frame: his RAM
     /// body pair `(-2, 492)` stands at `(-2, 470)` on the displayed frame
     /// (`image` `.814` to `.847`).
+    ///
+    /// So is a monster still walking in the strike loop
+    /// ([`Self::walk_clock_capture`]): its root motion carries it `speed *
+    /// scale / 8` a vsync, and the frame on screen drew it the ring's pair
+    /// back along the walk (`battle_korb2_warhalf_strike`'s Warhalf).
     pub fn engine_image_ground_snaps(&self) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         self.ground_snaps(
             self.action_state == 0x14 && self.walk_yaw_base == 0x200,
             true,
+            self.walk_clock_capture(),
         )
     }
 
@@ -294,11 +300,13 @@ impl RetailBattle {
     }
 
     /// `displayed` stands every combatant on the displayed frame's pair,
-    /// `displayed_struck` only a struck monster stood on its body pair.
+    /// `displayed_struck` only a struck monster stood on its body pair,
+    /// `displayed_walker` the acting seat.
     fn ground_snaps(
         &self,
         displayed: bool,
         displayed_struck: bool,
+        displayed_walker: bool,
     ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
         // Past the end signal the sequencer poses the winners and the results
         // framing reads poses the replay's clips do not share; the ground
@@ -320,7 +328,7 @@ impl RetailBattle {
                 };
                 let active = pool == usize::from(self.active_actor);
                 let struck = !active && pool >= 3 && matches!(clip, 2..=5 | 0x0B);
-                if (displayed || (displayed_struck && struck))
+                if (displayed || (displayed_struck && struck) || (displayed_walker && active))
                     && let Some(Some(then)) = self.displayed_ground.get(pool)
                 {
                     let d = [then[0].wrapping_sub(live[0]), then[1].wrapping_sub(live[1])];
@@ -426,9 +434,15 @@ impl RetailBattle {
                 // walk into the idle loop, which has run on its own clock
                 // since (`battle_gaza2_park_0x19_target_vahn`'s Gaza).
                 let parked_idle = clip == 0 && slot == self.active_actor && self.parked_approach();
+                // ... and a monster still on its walk in the strike loop
+                // ([`Self::walk_clock_capture`]): the walk loops on its own
+                // clock, re-committing at each cycle end, and the frame on
+                // screen shows the cycle two game frames back.
+                let walking = clip == 1 && slot == self.active_actor && self.walk_clock_capture();
                 !in_flight
                     || capture_band_idle
                     || parked_idle
+                    || walking
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
@@ -479,14 +493,158 @@ impl RetailBattle {
     }
 
     /// [`Self::battle_drive`] for the image child: a menu drive walks to the
-    /// surface the displayed frame shows ([`Self::displayed_menu_flow`]).
+    /// surface the displayed frame shows ([`Self::displayed_menu_flow`]),
+    /// and an opening under the entry sweep is taken at the counter the
+    /// displayed frame was built on - the RAM's less the double buffer's own
+    /// lag ([`displayed_lag_vsyncs`]), since the frame driver advances
+    /// `gp+0x330` by the frame step a pass. The battle's entry fade-in rides
+    /// the same passes (`gaza2_card_battle_init`: the block at `25`, `102`
+    /// on screen at step `3`, two passes back); `s5_tetsu_battle` was saved
+    /// after the flip, and its screen is one pass back.
     pub fn image_drive(&self) -> Option<BattleDrive> {
         match (self.battle_drive(), self.displayed_menu_flow()) {
             (Some(BattleDrive::Menu { seat, spirit, .. }), Some(flow)) => {
                 Some(BattleDrive::Menu { flow, seat, spirit })
             }
+            (Some(BattleDrive::Opening { swept, entry }), _) if (0x80..=0xC0).contains(&entry) => {
+                let lag = u8::try_from(self.display_phase_lag).unwrap_or(u8::MAX);
+                Some(BattleDrive::Opening {
+                    swept,
+                    entry: entry.saturating_sub(lag).max(0x80),
+                })
+            }
             (drive, _) => drive,
         }
+    }
+
+    /// The engine slot whose action a driven action capture holds, for the
+    /// re-seat at that action's seed (`BattleState::capture_reseat`): the
+    /// drive's rounds walk the formation where the capture's history never
+    /// did, and the strike framings aim at where the action stands. `None`
+    /// on every other plan, and on a capture past the end signal.
+    pub fn reseat_engine_seat(&self, party_count: u8) -> Option<u8> {
+        match self.seed_plan() {
+            SeedPlan::Action { seat, .. } if self.run_state != 0xFE => Some(
+                legaia_engine_capture::battle_drive::engine_seat(seat, party_count.clamp(1, 3)),
+            ),
+            _ => None,
+        }
+    }
+
+    /// The yaw counter `ctx[+0x6DA]` a driven monster-melee capture's
+    /// attacker reached its target on, for the re-seat's approach start
+    /// (`BattleState::capture_approach_yaw`).
+    ///
+    /// A monster's counter after the Attack arm has one rung, the `0x200`
+    /// the arm stores (`0x801E2F20`): the swing-clip re-seed is a party
+    /// seat's (`FUN_8004E13C`, gated on `ctx[+0x13] < 3`). From there it
+    /// counts SM passes, `max(1, 4 * step / 3)` each (`0x801E29E4`), through
+    /// the walk, the strike loop's first pass and its clips. The close-up
+    /// accumulator (`ctx[+0x87C]`, `8 * step` a framing call) dates the clip
+    /// the capture sits in, so the walk ended that many passes before the
+    /// capture, plus the arrival pass and the strike loop's first; a
+    /// capture still on the walk clip arrived inside its accumulator's
+    /// window. Strike-loop
+    /// states `0x1E..=0x20` of an Attack only; `None` elsewhere. Beside it,
+    /// the engine slot of the capture's target `+0x1DD` - only a walk onto
+    /// that body is the captured one - and both bodies' captured live pairs
+    /// (not the seeds', which [`Self::undrift`] moves).
+    pub fn capture_approach_yaw(&self) -> Option<legaia_engine_core::world::CaptureApproach> {
+        let SeedPlan::Action { seat, state } = self.seed_plan() else {
+            return None;
+        };
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        if seat < 3 || self.queued_category != 3 || !(0x1E..=0x20).contains(&state) {
+            return None;
+        }
+        let step = if self.step_run.1 >= 16 {
+            self.step_run.0
+        } else {
+            2
+        }
+        .max(1);
+        let inc = legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step);
+        // A capture still on the walk clip in the strike loop
+        // ([`Self::walk_clock_capture`]) arrived after the walk's last loop
+        // re-commit - the first loop pass staged the strike, which that
+        // re-commit would have installed - so inside the accumulator's
+        // window: halfway, and at least a pass in, so the loop's framing
+        // (case 7, `0x801E36E8`) has armed.
+        let passes = if self.walk_clock_capture() {
+            (accum / (8 * u16::from(step)) / 2).max(1)
+        } else {
+            accum / (8 * u16::from(step)) + 2
+        };
+        let target = legaia_engine_capture::battle_drive::engine_seat(
+            self.target_code,
+            self.party_count.clamp(1, 3),
+        );
+        let strike = self
+            .captured
+            .get(usize::from(self.active_actor))?
+            .as_ref()?
+            .0;
+        let target_ground = self
+            .captured
+            .get(usize::from(self.target_code))?
+            .as_ref()?
+            .0;
+        self.walk_yaw_base
+            .checked_sub(passes * inc)
+            .filter(|&y| y > 0x200)
+            .map(|arrive| legaia_engine_core::world::CaptureApproach {
+                arrive,
+                target,
+                strike,
+                target_ground,
+            })
+    }
+
+    /// The backdrop pair's depth-cue weight a capture-band capture
+    /// (`0x6E..=0x71`) holds, for the phase to stand the engine's on.
+    ///
+    /// `FUN_80050120` ramps the pair's `+0x78` by `step << 6` a pass while
+    /// the latch `ctx[+0x243]` is up (`0x800505B0..0x80050714`), and the
+    /// cast begin's capture route raises the latch behind its `0x6E` store
+    /// (`0x801E44FC`). So the weight is a third clock of the band, from its
+    /// entry - beside the close-up accumulator (from the caster's clip
+    /// commit) and the yaw counter (from the seed) the drive already holds
+    /// the band by. The three disagree on the engine, whose cast begin
+    /// leaves for `0x6E` on its first pass where retail's waits several
+    /// (`battle_noaru_gilium_lv2_thunder_storm_mid_cast`: retail `0x6C0`, the
+    /// engine at the `0x800` indoor ceiling, the cave drawn a fifth darker -
+    /// `image` `.414`; on retail's word `.805`).
+    pub fn capture_band_backdrop_cue(&self) -> Option<u16> {
+        matches!(self.seed_plan(), SeedPlan::Action { .. })
+            .then_some(())
+            .filter(|_| super::CAPTURE_BAND_STATES.contains(&self.action_state))
+            .and(self.backdrop_cue)
+    }
+
+    /// [`Self::capture_band_backdrop_cue`] on the **displayed** frame, for
+    /// the image child: the weight climbed `64` a vsync of the display lag
+    /// since that frame was drawn (`step << 6` a pass), so the frame on
+    /// screen read that much less. A weight on one of the ceilings
+    /// (`0x800` / `0xC00` / `0x1000`) may have sat there through the lag and
+    /// stays as read.
+    pub fn displayed_backdrop_cue(&self) -> Option<u16> {
+        let w = self.capture_band_backdrop_cue()?;
+        Some(if matches!(w, 0x800 | 0xC00 | 0x1000) {
+            w
+        } else {
+            w.saturating_sub(64 * self.display_phase_lag)
+        })
+    }
+
+    /// A monster's strike loop `0x1E` captured still on its walk clip `1`
+    /// (`ActionSteer::walk_clock`).
+    pub fn walk_clock_capture(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, state: 0x1E } if seat >= 3)
+            && self.queued_category == 3
+            && self.caster_clip == 1
+            && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
     /// The pad drive that reaches this capture, when its plan has one.
@@ -508,6 +666,9 @@ impl RetailBattle {
                 style: Some(self.cam_style),
                 steer: ActionSteer {
                     park: seat >= 3 && self.parked_approach(),
+                    // A frame-time history that never left one step names the
+                    // rate retail's yaw counter drifted at.
+                    drift_step: (self.step_run.1 >= 16).then_some(self.step_run.0),
                     // A party killing blow on its victim, or a monster
                     // action (a cast or a strike) on the party seat it
                     // aimed at: the monster's pick is a draw, and a run on
@@ -546,7 +707,7 @@ impl RetailBattle {
                             seat < 3 && self.queued_category == 3 && self.arts_queue && live > base
                         })
                         .map(|(live, _)| live),
-                    clip: (seat < 3
+                    clip: ((seat < 3
                         // Gate on the direction swing clips 0x0C..=0x0F only:
                         // retail can sit on the dynamic art slot 0x10 / 0x11
                         // while the engine holds the swing's own clip, which
@@ -564,7 +725,19 @@ impl RetailBattle {
                             // (`player_steal_skeleton_banner`: the frame
                             // showed the Somersault still landing, retail the
                             // steal caption over an idle Vahn).
-                            || (self.caster_clip == 0 && state == 0x20))
+                            || (self.caster_clip == 0 && state == 0x20)))
+                        // ...and a monster's strike clip in the strike loop
+                        // `0x1E`: the state's first pass commits it and zeroes
+                        // the accumulator, so an `accum 0` capture reads both
+                        // the state and the age one pass ahead of the commit
+                        // (`battle_chitei2_kemaro_lv2_strike`: retail Kemaro
+                        // on clip `0x06` at cursor `-24`, the engine's still
+                        // on its idle). Clips `0` / `1` are the idle and the
+                        // walk, which the engine may hold under another id.
+                        || (seat >= 3
+                            && state == 0x1E
+                            && self.caster_clip > 1
+                            && self.span_gate == SpanGate::Age { accum: 0 })
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
@@ -573,7 +746,7 @@ impl RetailBattle {
                     .then(|| self.target_code - 3),
                     queue: (seat < 3 && self.queued_category == 3 && self.arts_queue)
                         .then_some(self.committed_queue),
-                    cursor: (seat < 3
+                    cursor: ((seat < 3
                         && self.queued_category == 3
                         && self.arts_queue
                         && matches!(state, 0x1E | 0x1F)
@@ -582,6 +755,17 @@ impl RetailBattle {
                         // placed by the age and the clip already.
                         && matches!(self.caster_clip, 0x10 | 0x11)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
+                        // ...and a monster's strike clip in the strike loop:
+                        // a stream the replay's AI rolled longer plays the
+                        // capture's clip as a later swing, which the clip
+                        // gate alone takes (`battle_noaru_gilium_lv2_strike`:
+                        // retail's first swing `0x08` at cursor `1`, the
+                        // engine's `0x07` then `0x08`).
+                        || (seat >= 3
+                            && state == 0x1E
+                            && self.queued_category == 3
+                            && self.caster_clip > 1
+                            && self.span_gate == SpanGate::Age { accum: 0 }))
                     .then_some(self.strike_cursor),
                     // A party swing captured after its victim's death commit:
                     // the close-up accumulator restarts on every idle cycle
@@ -602,6 +786,7 @@ impl RetailBattle {
                     // The caption is the steal roll's outcome, a draw: a
                     // stream whose kill rolls no steal shows another frame.
                     spoils: seat < 3 && self.spoils_caption,
+                    walk_clock: self.walk_clock_capture(),
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -634,8 +819,14 @@ pub(super) fn run_drive(
                 aged = Some(active_clip_age(world));
             } else if let Some(a) = aged.take() {
                 // The state ended before it was as old as retail's: the
-                // re-run samples its last tick.
-                *age_short = Some(a.min(u32::from(u16::MAX)) as u16);
+                // re-run samples its last tick. A state that ran past
+                // retail's age unreached missed another of the phase's gates
+                // (a monster's strike clip, the art cursor) - a different
+                // swing, which a re-run on its last tick would only score as
+                // retail's.
+                if drive.age_gate().is_none_or(|want| a < u32::from(want)) {
+                    *age_short = Some(a.min(u32::from(u16::MAX)) as u16);
+                }
                 break;
             }
         }

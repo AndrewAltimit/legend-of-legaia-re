@@ -626,6 +626,46 @@ mod tests {
         assert_eq!(world.battle_ambient_base(), [0x24; 3]);
     }
 
+    /// Battle init holds the screen on the intro's tail colour until the
+    /// stage loads, and the loader fades the fight in from it over `0x14`
+    /// frames, stepping once on its own pass; the evolved Cort is blanked on
+    /// the same pass.
+    #[test]
+    fn the_entry_fade_holds_until_the_stage_load_then_fades_in() {
+        for white in [false, true] {
+            let mut world = World::default();
+            world.enter_battle(3, 1);
+            world.actors[3].battle_monster_id = Some(0xB5);
+            world.battle.entry_fade_white = white;
+            let abr = if white { 1 } else { 2 };
+            assert_eq!(world.screen_fade_draws(), vec![(0xFF_FFFF, abr, 1)]);
+            for _ in 0..64 {
+                if !world.battle.stage_registration_pending {
+                    break;
+                }
+                world.advance_battle_pass();
+                world.tick_battle_camera();
+                world.battle.anim_pass_vsyncs = 1;
+                world.tick_battle_ambient();
+            }
+            assert!(!world.battle.stage_registration_pending);
+            assert!(!world.battle.entry_fade_white, "the loader clears the word");
+            // One step of `0xFF / 0x14` on the spawn pass.
+            let (rgb, kind, ot) = world.screen_fade_draws()[0];
+            assert_eq!((kind, ot), (abr, 1));
+            assert_eq!(rgb & 0xFF, 0xFF - 0xFF / 0x14 - 1);
+            assert!(
+                world.battle_body_hidden(3),
+                "the arrival's boss waits hidden"
+            );
+            world.lead_screen_fades(0x20);
+            assert!(
+                world.screen_fade_draws().is_empty(),
+                "the fade-in has run out"
+            );
+        }
+    }
+
     /// Through `0x33` / `0x34` the band's `ctx[+0x278] = 1` skips the store
     /// once the base sits on the floor, so the grid holds the last pre-floor
     /// ambient - what the summon captures read (`0x68..0x78`, base at the

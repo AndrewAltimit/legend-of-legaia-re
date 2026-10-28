@@ -190,6 +190,21 @@ fn the_puera_stager_is_arm_zero_only() {
 }
 
 #[test]
+fn puera_arm_23_puts_the_stage_back_as_it_passes() {
+    let mut ctx = CastModuleCtx::default();
+    puera_stager(&mut ctx, 0);
+    ctx.ctx_27a = 0x80;
+    ctx.phase = PUERA_STAGE_BACK_ARM - 1;
+    let mut v = actor(100);
+    puera_tick(&mut ctx, &mut v, None);
+    assert_eq!(ctx.ctx_278, 3, "arm 22 leaves the stager's stage byte");
+    assert_eq!(ctx.phase, PUERA_STAGE_BACK_ARM);
+    puera_tick(&mut ctx, &mut v, None);
+    assert_eq!((ctx.ctx_278, ctx.ctx_27a), (0, 0));
+    assert_eq!(ctx.phase, PUERA_TERMINAL_ARM);
+}
+
+#[test]
 fn the_gilium_stager_writes_ctx_278_on_arm_zero() {
     let mut ctx = CastModuleCtx::default();
     gilium_stager(&mut ctx, 2);

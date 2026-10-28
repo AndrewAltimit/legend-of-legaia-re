@@ -1,190 +1,623 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; Muscle Dome</div>
   <h1>Muscle Dome</h1>
-  <p class="lede">An arena contest fought as a ladder of <strong>ordinary battles</strong>. The player picks one of three courses and fights its fixed sequence of rounds, one real monster per round, with one party character. Between rounds the arena shows a tally that heals the fighter and banks casino coins; a finished contest pays the coins out.</p>
+  <p class="lede">An arena contest fought as a ladder of <strong>ordinary battles</strong>. Pick one of three courses and fight its fixed run of rounds (8, 8 or 13), one real monster per round, with one party character. Between rounds the arena shows a tally that heals the fighter and adds casino coins to a running total, and finishing the contest pays the total out. This page covers how a contest runs, what each screen and rule does, and what that means when you play it.</p>
 </header>
 
-<section class="doc-section" id="not">
-  <h2>Three things it is not</h2>
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Where</dt><dd>The Sol Tower arena, entered from the course menu in the <code>koin1</code> scene</dd>
+    <dt>Courses</dt><dd>Beginner (8 rounds), Expert (8), Master (13, cut short until three story flags are set)</dd>
+    <dt>A round</dt><dd>An ordinary Legaia battle against one monster: the same command ring, Arts input, monster AI and damage as anywhere else</dd>
+    <dt>Between rounds</dt><dd>The INTERVAL tally: part of your max HP comes back, and the round&rsquo;s score cell goes into the running coin total</dd>
+    <dt>Payout</dt><dd>A full clear pays 818 / 1,532 / 13,830 coins; a loss pays half the running total; Run pays nothing</dd>
+    <dt>One-off prize</dt><dd>The <strong>War God Icon</strong> for the first clear of Master&rsquo;s 13th fight</dd>
+    <dt>Code</dt><dd>Contest hub PROT 0977; each round runs on the shared battle overlay PROT 0898</dd>
+  </dl>
+  <p>Three things it is <strong>not</strong>:</p>
   <ul class="bullets">
     <li><strong>Not a card battle.</strong> The four &ldquo;cards&rdquo; are the four direction commands, always the same four, each at that fighter&rsquo;s own AP cost. Nothing is drawn, discarded or reshuffled.</li>
-    <li><strong>Not turn-limited.</strong> A leg ends on a knockout and on nothing else. The &ldquo;Turns Left&rdquo; strip in the same overlay belongs to a timed boss fight.</li>
-    <li><strong>Not part of the minigame-hub family.</strong> It shares no controller library with fishing, the slot machine, dance or Baka Fighter.</li>
+    <li><strong>Not turn-limited.</strong> A round ends on a knockout and on nothing else. The &ldquo;Turns Left / HP Left&rdquo; strip in the same overlay belongs to the Koru boss fight (<a href="#koru-strip">below</a>).</li>
+    <li><strong>Not part of the minigame-hub family.</strong> It shares no controller code with fishing, the slot machine, the dance or Baka Fighter.</li>
+  </ul>
+  <p class="dg-note">Contest init <code>FUN_801CEA6C</code>, per-frame hub <code>FUN_801CF870</code> (state byte <code>DAT_801D1A78</code>, 51-entry jump table at <code>0x801CE990</code>), opponent installer <code>FUN_801D1510</code>, settlement <code>FUN_801D0F60</code>, all in PROT 0977; round driver <code>FUN_801D0748</code> and action SM <code>FUN_801E295C</code> in PROT 0898.</p>
+</section>
+
+<section class="doc-section" id="entry" data-doc="entry-from-the-field">
+  <h2>Getting in</h2>
+  <p>Every dome door on the disc is in one record of the <code>koin1</code> scene: the <strong>course menu</strong>. Each of its three arms takes its entry fee, sets its own course flag and clears the other two, then runs the mode-24 minigame door warp (field-VM op <code>0x3E</code>, sub-id 5), which loads the arena overlay. So exactly one course flag is set when the arena starts, and that flag is the course pick. The <code>taiku</code> scene, despite its label, carries no arena door.</p>
+  <p>The warp is the ordinary minigame round trip: the field is backed up, the overlay runs, and the game returns to the exact field state it left. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
+  <p>Two pieces of code run the contest, one inside the other. The <strong>contest hub</strong> owns the ladder: which course, which round, the intro / INTERVAL / ROUND screens, the tally and the payout. Each <strong>round</strong> is a normal battle on the shared battle round driver, which every battle in the game steps; the battle&rsquo;s exit selector sends a finished round back to the arena (mode <code>0x18</code>) instead of to the field when the contest bit <code>0x100</code> is set in the special-battle word <code>_DAT_8007BAC0</code>.</p>
+</section>
+
+<section class="doc-section" id="contest" data-doc="the-contest-hub">
+  <h2>How a contest runs</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Muscle Dome contest flow. The koin1 course menu takes the fee and sets a course flag, then warps to the arena. A fresh contest plays the first-visit screens, then the ROUND card, then the round is fought as an ordinary battle. A knockout or Run re-enters the arena: if the fighter survived and the course has rounds left, the INTERVAL tally heals and banks coins and the next ROUND card follows; otherwise the contest settles and returns to the field.">
+      <defs><marker id="mdm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="160" height="50" rx="4"/>
+      <text class="dg-label" x="100" y="41">koin1 course menu</text>
+      <text class="dg-sub" x="100" y="58">fee + course flag</text>
+      <rect class="dg-node" x="220" y="20" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="310" y="41">Arena init</text>
+      <text class="dg-sub" x="310" y="58">refill, strip gear (Exp/Mas)</text>
+      <rect class="dg-node-accent" x="440" y="20" width="200" height="50" rx="4"/>
+      <text class="dg-label" x="540" y="41">First visit</text>
+      <text class="dg-sub" x="540" y="58">Welcome, title, course card</text>
+      <rect class="dg-node-accent" x="680" y="20" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="41">ROUND card</text>
+      <text class="dg-sub" x="770" y="58">announcer calls the round</text>
+      <rect class="dg-node-warn" x="680" y="140" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="770" y="161">The round</text>
+      <text class="dg-sub" x="770" y="178">ordinary battle, theme plays</text>
+      <rect class="dg-node" x="220" y="140" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="310" y="161">Arena re-entry</text>
+      <text class="dg-sub" x="310" y="178">survived? rounds left?</text>
+      <rect class="dg-node-ok" x="440" y="250" width="200" height="50" rx="4"/>
+      <text class="dg-label" x="540" y="271">INTERVAL tally</text>
+      <text class="dg-sub" x="540" y="288">HP back, score cell banked</text>
+      <rect class="dg-node" x="220" y="250" width="180" height="50" rx="4"/>
+      <text class="dg-label" x="310" y="271">Settle</text>
+      <text class="dg-sub" x="310" y="288">keep, halve or void tally</text>
+      <rect class="dg-node" x="20" y="250" width="160" height="50" rx="4"/>
+      <text class="dg-label" x="100" y="271">Back to the field</text>
+      <text class="dg-sub" x="100" y="288">coins paid out</text>
+      <path class="dg-edge" d="M180 45 L218 45" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M400 45 L438 45" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-edge-label" x="404" y="36">fresh</text>
+      <path class="dg-edge" d="M640 45 L678 45" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M770 70 L770 138" marker-end="url(#mdm-arrow)"/>
+      <path class="dg-edge" d="M680 165 L402 165" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-edge-label" x="540" y="157" text-anchor="middle">KO or Run: back to the arena</text>
+      <path class="dg-edge" d="M380 190 L470 248" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-edge-label" x="432" y="212">survived, rounds left</text>
+      <path class="dg-edge" d="M640 275 L872 275 L872 58 L862 58" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-edge-label" x="756" y="268" text-anchor="middle">next round</text>
+      <path class="dg-edge-dim" d="M300 190 L300 248" marker-end="url(#mdm-arrow)"/>
+      <text class="dg-edge-label" x="294" y="224" text-anchor="end">lost, ran, or cleared</text>
+      <path class="dg-edge" d="M220 275 L182 275" marker-end="url(#mdm-arrow)"/>
+    </svg>
+    <figcaption>The arena re-runs its init after every round, and that re-entry is where the contest decides what happens next. There is no &ldquo;continue?&rdquo; prompt: whether the contest goes on is derived from two facts, whether the fighter is still standing and whether the course has rounds left. The first-visit screens play once per contest.</figcaption>
+  </figure>
+
+  <h3>The cursor</h3>
+  <p>The whole ladder position is one byte. The low byte of the special-battle word <code>_DAT_8007BAC0</code> packs <code>(course, round)</code>: course <code>= ((word - 1) &amp; 0xFF) &gt;&gt; 4</code>, round <code>= (word - 1) &amp; 0xF</code>. Each finished round adds one. The bits above the low byte are the course&rsquo;s restrictions and survive the whole contest unchanged.</p>
+
+  <h3>What happens after each round</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Round result</th><th>Next screen</th><th>Contest</th></tr></thead>
+    <tbody>
+      <tr><td>Survived, course has rounds left</td><td>INTERVAL tally, then the next ROUND card</td><td>goes on</td></tr>
+      <tr><td>Survived, course exhausted</td><td>Settle</td><td>cleared: the &ldquo;continuing&rdquo; latch is up</td></tr>
+      <tr><td>Knocked out</td><td>Settle</td><td>lost: latch down</td></tr>
+      <tr><td>Ran (leg outcome word <code>_DAT_80084448 = 4</code>)</td><td>Settle</td><td>given up</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>&ldquo;Survived&rdquo; is one bit, <code>DAT_8007BD60 &amp; 0x80</code>: the battle&rsquo;s party-wipe scan clears it, and the shared minigame-exit routine raises it again on the way out, so on re-entry it reads &ldquo;the party is still standing&rdquo;.</p>
+
+  <div class="callout callout-tip">
+    <p class="callout-title">The intermission is per fight, not per turn</p>
+    <p>The INTERVAL screen comes between <em>fights</em>. Inside a round, the end of a turn sends the battle straight back to its own command menu: the game is in battle mode, and the hub, which is the only thing that draws INTERVAL, is not running. There is no beat between turns.</p>
+  </div>
+
+  <details class="disclosure">
+    <summary>The hub&rsquo;s fourteen states</summary>
+    <div class="disclosure-body">
+      <p>Fourteen of the 51 jump-table entries are real; the other 37 go to the default arm. Every state but <code>0x32</code> ends by re-packing <code>(course, round)</code> into the word.</p>
+      <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>State</th><th>Screen</th><th>What it does</th><th>Next</th></tr></thead>
+        <tbody>
+          <tr><td class="hex">0</td><td>Welcome fade-in</td><td>&ldquo;Welcome to the Muscle Dome!&rdquo; strip climbs</td><td><code>1</code></td></tr>
+          <tr><td class="hex">1</td><td>Welcome hold</td><td>holds 123 ticks</td><td><code>2</code></td></tr>
+          <tr><td class="hex">2</td><td>Welcome fade-out</td><td>strip drains while the brick wall rises</td><td><code>3</code></td></tr>
+          <tr><td class="hex">3</td><td>Title zoom</td><td>course-title art scales <code>0x1640</code> to <code>0x1000</code></td><td><code>4</code></td></tr>
+          <tr><td class="hex">4</td><td>Course card fade-in</td><td>course card over the title art</td><td><code>5</code></td></tr>
+          <tr><td class="hex">5</td><td>Course card hold</td><td>holds 180 ticks, pad-skippable</td><td><code>6</code></td></tr>
+          <tr><td class="hex">6</td><td>Wall drain</td><td>backdrop drains; kicks the battle load</td><td><code>0x14</code></td></tr>
+          <tr><td class="hex">0x0A</td><td>INTERVAL fade-in</td><td>heading and backdrop climb; arms the four tally cues</td><td><code>0x0B</code></td></tr>
+          <tr><td class="hex">0x0B</td><td>Tally roll</td><td>drains the four tally lanes</td><td><code>0x0C</code></td></tr>
+          <tr><td class="hex">0x0C</td><td>HP restore</td><td><code>hp = min(max, hp + accumulator)</code></td><td><code>0x14</code></td></tr>
+          <tr><td class="hex">0x14</td><td>Backdrop return</td><td>backdrop back to full; one pass-through tick on a first visit</td><td><code>0x15</code></td></tr>
+          <tr><td class="hex">0x15</td><td>ROUND card</td><td>banner fades in, holds 61 ticks, pad-skippable</td><td><code>0x16</code></td></tr>
+          <tr><td class="hex">0x16</td><td>ROUND card fade-out</td><td>card and backdrop drain</td><td>the fight starts</td></tr>
+          <tr><td class="hex">0x32</td><td>Settle</td><td>contest settlement</td><td>leaves the arena</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="courses" data-doc="course-ladder">
+  <h2>The three courses</h2>
+  <p>Each round&rsquo;s opponent is a real monster id from a roster table in the arena overlay: 29 rounds in all, 8 + 8 + 13, one monster per round with no formation variety. The installer writes that id into formation slot 0, clears the other three slots, and sets the game mode to battle init; that is the arena&rsquo;s whole handoff to the battle.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The three Muscle Dome courses as rows of rounds. Beginner: Red Piura, Skeleton, Drake Ghost, Caruban, Gola Gola, Zeto, Viguro Lv2, Xain. Expert: Black Piura, High Gomboo, Dark Ogre, Gold Bison, Ironman, Caruban, Aluru, Xain. Master: Ironman, Viguro Lv2, Gold Bison, Caruban, Zeto, Berserker, Xain, Dohati, Lu Delilas, Che Delilas, Gi Delilas, Zora, Jette. Master can stop after round 8, 11 or 12 when a story flag is missing; round 13 awards the War God Icon.">
+      <text class="dg-label dg-start" x="14" y="22">Beginner</text>
+      <text class="dg-sub dg-start" x="92" y="22">8 rounds &middot; gear kept &middot; no Item &middot; 818 coins</text>
+      <rect class="dg-node" x="14" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="45" y="47">1</text>
+      <text class="dg-sub" x="45" y="63" style="font-size:8px">Red Piura</text>
+      <rect class="dg-node" x="80" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="111" y="47">2</text>
+      <text class="dg-sub" x="111" y="63" style="font-size:8px">Skeleton</text>
+      <rect class="dg-node" x="146" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="177" y="47">3</text>
+      <text class="dg-sub" x="177" y="63" style="font-size:8px">Drake Ghost</text>
+      <rect class="dg-node" x="212" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="243" y="47">4</text>
+      <text class="dg-sub" x="243" y="63" style="font-size:8px">Caruban</text>
+      <rect class="dg-node" x="278" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="309" y="47">5</text>
+      <text class="dg-sub" x="309" y="63" style="font-size:8px">Gola Gola</text>
+      <rect class="dg-node" x="344" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="375" y="47">6</text>
+      <text class="dg-sub" x="375" y="63" style="font-size:8px">Zeto</text>
+      <rect class="dg-node" x="410" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="441" y="47">7</text>
+      <text class="dg-sub" x="441" y="63" style="font-size:8px">Viguro Lv2</text>
+      <rect class="dg-node-accent" x="476" y="30" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="507" y="47">8</text>
+      <text class="dg-sub" x="507" y="63" style="font-size:8px">Xain</text>
+      <text class="dg-label dg-start" x="14" y="100">Expert</text>
+      <text class="dg-sub dg-start" x="92" y="100">8 rounds &middot; gear stripped &middot; no Item &middot; 1,532 coins</text>
+      <rect class="dg-node" x="14" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="45" y="125">1</text>
+      <text class="dg-sub" x="45" y="141" style="font-size:8px">Black Piura</text>
+      <rect class="dg-node" x="80" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="111" y="125">2</text>
+      <text class="dg-sub" x="111" y="141" style="font-size:8px">High Gomboo</text>
+      <rect class="dg-node" x="146" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="177" y="125">3</text>
+      <text class="dg-sub" x="177" y="141" style="font-size:8px">Dark Ogre</text>
+      <rect class="dg-node" x="212" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="243" y="125">4</text>
+      <text class="dg-sub" x="243" y="141" style="font-size:8px">Gold Bison</text>
+      <rect class="dg-node" x="278" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="309" y="125">5</text>
+      <text class="dg-sub" x="309" y="141" style="font-size:8px">Ironman</text>
+      <rect class="dg-node" x="344" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="375" y="125">6</text>
+      <text class="dg-sub" x="375" y="141" style="font-size:8px">Caruban</text>
+      <rect class="dg-node" x="410" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="441" y="125">7</text>
+      <text class="dg-sub" x="441" y="141" style="font-size:8px">Aluru</text>
+      <rect class="dg-node-accent" x="476" y="108" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="507" y="125">8</text>
+      <text class="dg-sub" x="507" y="141" style="font-size:8px">Xain</text>
+      <text class="dg-label dg-start" x="14" y="178">Master</text>
+      <text class="dg-sub dg-start" x="92" y="178">up to 13 rounds &middot; gear stripped &middot; no Item, no Ra-Seru &middot; 13,830 coins</text>
+      <rect class="dg-node" x="14" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="45" y="203">1</text>
+      <text class="dg-sub" x="45" y="219" style="font-size:8px">Ironman</text>
+      <rect class="dg-node" x="80" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="111" y="203">2</text>
+      <text class="dg-sub" x="111" y="219" style="font-size:8px">Viguro Lv2</text>
+      <rect class="dg-node" x="146" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="177" y="203">3</text>
+      <text class="dg-sub" x="177" y="219" style="font-size:8px">Gold Bison</text>
+      <rect class="dg-node" x="212" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="243" y="203">4</text>
+      <text class="dg-sub" x="243" y="219" style="font-size:8px">Caruban</text>
+      <rect class="dg-node" x="278" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="309" y="203">5</text>
+      <text class="dg-sub" x="309" y="219" style="font-size:8px">Zeto</text>
+      <rect class="dg-node" x="344" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="375" y="203">6</text>
+      <text class="dg-sub" x="375" y="219" style="font-size:8px">Berserker</text>
+      <rect class="dg-node" x="410" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="441" y="203">7</text>
+      <text class="dg-sub" x="441" y="219" style="font-size:8px">Xain</text>
+      <rect class="dg-node" x="476" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="507" y="203">8</text>
+      <text class="dg-sub" x="507" y="219" style="font-size:8px">Dohati</text>
+      <rect class="dg-node" x="542" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="573" y="203">9</text>
+      <text class="dg-sub" x="573" y="219" style="font-size:8px">Lu Delilas</text>
+      <rect class="dg-node" x="608" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="639" y="203">10</text>
+      <text class="dg-sub" x="639" y="219" style="font-size:8px">Che Delilas</text>
+      <rect class="dg-node" x="674" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="705" y="203">11</text>
+      <text class="dg-sub" x="705" y="219" style="font-size:8px">Gi Delilas</text>
+      <rect class="dg-node" x="740" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="771" y="203">12</text>
+      <text class="dg-sub" x="771" y="219" style="font-size:8px">Zora</text>
+      <rect class="dg-node-warn" x="806" y="186" width="62" height="42" rx="3"/>
+      <text class="dg-label" x="837" y="203">13</text>
+      <text class="dg-sub" x="837" y="219" style="font-size:8px">Jette</text>
+      <path class="dg-edge-dim" d="M507 230 L507 244"/>
+      <text class="dg-edge-label" x="507" y="256" text-anchor="middle">stop 8?</text>
+      <path class="dg-edge-dim" d="M705 230 L705 244"/>
+      <text class="dg-edge-label" x="705" y="256" text-anchor="middle">stop 11?</text>
+      <path class="dg-edge-dim" d="M771 230 L771 244"/>
+      <text class="dg-edge-label" x="771" y="256" text-anchor="middle">stop 12?</text>
+      <text class="dg-edge-label" x="837" y="270" text-anchor="middle">War God Icon</text>
+    </svg>
+    <figcaption>The 29 rounds in order. Monster names are the curated labels in <code>data/gamedata/casino.toml</code>, which the disc&rsquo;s roster ids reproduce 29 of 29. Coin totals are the sums of each course&rsquo;s score-table row; the disc&rsquo;s Master row sums to 13,830, which corrects the walkthrough figure of 13,856.</figcaption>
+  </figure>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Course</th><th>Rounds</th><th>Monster ids (in order)</th><th>Full-clear coins</th></tr></thead>
+    <tbody>
+      <tr><td>Beginner</td><td class="num">8</td><td class="hex">13 0D 10 49 62 4B 86 8B</td><td class="num">818</td></tr>
+      <tr><td>Expert</td><td class="num">8</td><td class="hex">14 06 6D 3C 81 49 50 8B</td><td class="num">1,532</td></tr>
+      <tr><td>Master</td><td class="num">13</td><td class="hex">81 86 3C 49 4B 4D 8B 8A A4 A3 A2 A9 AA</td><td class="num">13,830</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>How long Master runs</h3>
+  <p>Beginner and Expert always run their 8 rounds. Master is 13 rounds long only once the story has caught up: three story flags each cut it short, and each is checked only when the run reaches its threshold.</p>
+  <div class="table-wrap">
+  <table class="narrow">
+    <thead><tr><th>On reaching round</th><th>If this flag is missing</th><th>The course ends at</th></tr></thead>
+    <tbody>
+      <tr><td class="num">8</td><td class="hex">0x378</td><td class="num">8</td></tr>
+      <tr><td class="num">11</td><td class="hex">0x382</td><td class="num">11</td></tr>
+      <tr><td class="num">12</td><td class="hex">0x471</td><td class="num">12</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Retail applies the three in that order and lets a later one overwrite an earlier one, so a run missing all three stops at 12, not at 8. A course that ends early is still a clear: survived with the course exhausted settles as a win.</p>
+
+  <h3>What each course restricts</h3>
+  <p>The restrictions are bits of the special-battle word, seeded at the arena&rsquo;s first entry from whichever course flag the menu set:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Course flag</th><th>Seed</th><th>Course</th><th>Command ring</th><th>Equipment</th></tr></thead>
+    <tbody>
+      <tr><td class="hex">0x536</td><td class="hex">0x101</td><td>Beginner</td><td>Item crossed out</td><td>kept</td></tr>
+      <tr><td class="hex">0x537</td><td class="hex">0x111</td><td>Expert</td><td>Item crossed out</td><td>armour, head, weapon and leg gear removed</td></tr>
+      <tr><td class="hex">0x538</td><td class="hex">0x321</td><td>Master</td><td>Item and Ra-Seru crossed out</td><td>armour, head, weapon and leg gear removed</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Accessories and the Seru setting are never touched, so a stripped fighter keeps its accessories. Everything comes back at the end: settlement restores the whole party block saved at entry. The curated course rules in <code>casino.toml</code> (no equipment, no items, magic forbidden on Master) are walkthrough labels that agree with these bits.</p>
+  <p class="dg-note">Ladder tables in PROT 0977: score table <code>0x801D1860</code> (3 x 16 <code>i32</code>), round roster <code>0x801D1920</code> (29 x <code>{name_ptr, monster_id}</code>), course descriptors <code>0x801D1A08</code> (3 x <code>{round_count, first_round}</code>). Master clamp at <code>0x801CED28..0x801CEDA4</code>; course seed at <code>0x801CEB8C..0x801CEBC8</code>.</p>
+</section>
+
+<section class="doc-section" id="round" data-doc="the-leg-an-ordinary-battle">
+  <h2>A round is an ordinary battle</h2>
+  <p>Nothing in a round&rsquo;s damage, input or ending is dome-specific. The fighter is the lead party member alone, in the normal assembled battle form; the opponent is the rung&rsquo;s monster, acting on the ordinary <strong>monster AI</strong> from its own action entries in the monster archive (PROT 867). There is no dome-specific AI table and no dome-local damage scaling.</p>
+
+  <h3>A turn</h3>
+  <ol class="steps">
+    <li><b>Begin | Run</b><span>every turn opens on this prompt with the far camera</span></li>
+    <li><b>Command ring</b><span>Attack, Item, Ra-Seru, Spirit; the highlight starts on Attack</span></li>
+    <li><b>Auto | Command</b><span>Auto replays the saved string; Command opens direction entry</span></li>
+    <li><b>Direction entry</b><span>each press spends that command&rsquo;s AP; ends by itself when nothing is affordable</span></li>
+    <li><b>Review</b><span>the committed bar of pennants</span></li>
+    <li><b>Begin | Reselect</b><span>Begin plays the turn; Reselect reopens the ring</span></li>
+    <li><b>Playback</b><span>each fighter&rsquo;s whole string, then back to the prompt</span></li>
+  </ol>
+  <p>The round driver steps through phase bytes <code>0x1E</code> (prompt), <code>0x28</code> (ring), <code>0x78</code> (Auto | Command), <code>0x50</code> (entry), <code>0x5A</code> (review), <code>0x6E</code> (confirm), <code>0xFE</code> / <code>0xFF</code> (playback) and <code>0x14</code> (turn top) - a chain pinned by a phase-byte watch across a driven round. The turn-top arm is the only writer of the prompt phase and stores it unconditionally, which is why every turn opens on <strong>Begin | Run</strong>.</p>
+
+  <h3>What ends a round</h3>
+  <p>A knockout, and nothing else. The battle&rsquo;s end-of-action gate walks the actor table; when one side has nobody standing it raises the battle-end signal (party wipe or monster wipe), and the exit selector sends the game to the arena. The battle&rsquo;s turn counter is a counter, not a budget: its readers pick scripted per-turn enemy behaviour or draw Koru&rsquo;s countdown, and none of them reaches the battle-end signal.</p>
+
+  <h3 id="run">Run gives the contest up</h3>
+  <p>Run is on the prompt every turn, and in the dome it <strong>always ends the contest</strong>. The fight start marks each round as a scripted fight, and the escape roll lets a scripted fight flee only through its forced arm, the special-battle word&rsquo;s <code>0x100</code> bit. Every course the <code>koin1</code> menu opens carries that bit, so Run gets out. The round driver&rsquo;s one contest-gated arm then stores leg outcome <code>4</code>, which the re-entered arena settles as a give-up: the running total is zeroed.</p>
+  <div class="callout callout-tip">
+    <p class="callout-title">Running on purpose</p>
+    <p>Giving up on <strong>round 1</strong> also sets story flag <code>0x130 + course</code>. Doing it on all three courses is the trigger for the Muscle Paradise / Chicken King secret (&ldquo;run from the first battle in all three difficulties&rdquo;).</p>
+  </div>
+  <p class="dg-note">Fight start <code>FUN_801D1510</code> stores <code>DAT_8007BD60 = 0x80</code> (scripted fight); escape roll <code>FUN_801E791C</code>, forced arm <code>0x801E7978..0x801E7A14</code>; the contest-gated flee arm is at <code>0x801D3228..0x801D328C</code> in <code>FUN_801D0748</code>, skipped for monsters <code>0xAF</code> / <code>0x3D..0x3F</code>, none of which is on the ladder.</p>
+</section>
+
+<section class="doc-section" id="commands" data-doc="command-input,retail-presentation">
+  <h2>Commands, AP and the ring</h2>
+  <p>On screen a round looks like any battle with the course restrictions applied: the gold Begin and name chips top-left, the blue-marble Attack / Ra-Seru / Spirit plates with the Item chip crossed out by a red X, the pointed blue status plate (name, HP and MP as <code>cur/max</code>) with the AP plate above it on the right. A committed string that performs an art raises the art banner (&ldquo;HYPER ARTS!!&rdquo;) during playback. As in any battle, the enemy&rsquo;s HP is not shown.</p>
+
+  <h3>The four direction commands</h3>
+  <p>Attack opens the Arts input: four direction commands, the same four every time. Each press debits the command&rsquo;s AP cost from the turn budget and appends the command to the fighter&rsquo;s action queue. The cost is per character and per weapon, copied at battle load from the equipment&rsquo;s swing records:</p>
+  <div class="table-wrap">
+  <table class="narrow">
+    <thead><tr><th>Direction</th><th>AP cost (retail values)</th></tr></thead>
+    <tbody>
+      <tr><td>The weapon&rsquo;s favoured direction</td><td class="num">30 (<code>0x1E</code>)</td></tr>
+      <tr><td>Off-class</td><td class="num">42 (<code>0x2A</code>)</td></tr>
+      <tr><td>Far</td><td class="num">54 (<code>0x36</code>)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>A pennant per press.</strong> Pennant <code>n</code> sits at <code>x = 16 + (cost of the earlier pennants)</code> and is <code>cost - 6</code> wide, so the bar fills in proportion to AP spent; a 100-AP pool spans 128 pixels.</li>
+    <li><strong>Entry ends itself</strong> on the press that leaves no command affordable; there is no confirm step there.</li>
+    <li><strong>Arts.</strong> What plays out is the battle&rsquo;s tokenised queue, so a string that spells an art plays the art. A Hyper Art collapses for a fighter carrying a Ra-Seru, as in any battle. Triangle pages the learned-arts list.</li>
+    <li><strong>The AP plate</strong> on the right reads the Spirit gauge and does not move during entry; the budget&rsquo;s visible form is the bar of pennants.</li>
+  </ul>
+
+  <h3>Auto</h3>
+  <p>Auto is not a picker. The queue is already loaded from a 16-byte saved string in the character&rsquo;s record; Auto skips the editing screen and flags the fighter so each round rebuilds the queue. Confirming the entry screen with nothing entered replays the saved string, and confirming the review screen writes the string back. Two saved strings exist, one per AP band.</p>
+
+  <h3>Ring gates</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Chip</th><th>Refused when</th><th>Mark drawn</th></tr></thead>
+    <tbody>
+      <tr><td>Item</td><td>restriction bit <code>0x100</code> (every course)</td><td>red cross-out X</td></tr>
+      <tr><td>Ra-Seru</td><td>no Ra-Seru equipped; Curse; restriction bit <code>0x200</code> (Master)</td><td>red X for the bit, blue Curse plate for Curse; a fighter with no Ra-Seru shows a plain <code>-</code></td></tr>
+      <tr><td>Attack</td><td>all three Rot limbs (<code>+0x16E &amp; 0x38 == 0x38</code>)</td><td>blue Rot stamp</td></tr>
+      <tr><td>Spirit</td><td>never</td><td>-</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A Ra-Seru cast spends <strong>MP, not AP</strong>: it replaces the direction string with the spell id, at the spell table&rsquo;s cost discounted by the fighter&rsquo;s ability bits (one halves it, one takes a quarter off).</p>
+  <details class="disclosure">
+    <summary>Swing power and the action queue</summary>
+    <div class="disclosure-body">
+      <p>Selection appends raw direction ids (<code>0x0C..=0x0F</code>) to the actor&rsquo;s queue at <code>+0x1DF</code>. Arts and magic route through <code>FUN_801E09F8</code> to <code>FUN_801DD0AC</code>, which indexes the move-power table at <code>0x801F4F5C</code> by a byte map at <code>0x801F4E63</code>. That map sends every bare swing to row 0, which is all zeros, so a bare swing&rsquo;s strength is the melee kernel&rsquo;s per-command scalar <code>12 / 18 / 20 / 22 / 28</code>. The map and the tables are disassembly; that swing damage is therefore the melee kernel&rsquo;s is inference.</p>
+    </div>
+  </details>
+</section>
+
+<section class="doc-section" id="tally" data-doc="score-tally-and-restores">
+  <h2>The INTERVAL tally: healing and coins</h2>
+  <p>After each survived round that is not the last, the INTERVAL screen counts up four rows. Three of them are <strong>healing</strong>, each a percentage of the fighter&rsquo;s max HP; only the fourth is coins.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Row</th><th>Value</th><th>As % of max HP</th><th>Goes to</th></tr></thead>
+    <tbody>
+      <tr><td>Round</td><td><code>round * 2 * max_hp / 100</code></td><td>2% per round number</td><td>HP</td></tr>
+      <tr><td>Turns</td><td><code>min(turns, 8) * max_hp / 100</code></td><td>1% per turn taken, up to 8%</td><td>HP</td></tr>
+      <tr><td>Outcome</td><td><code>[8, 12, 4, 2][min(outcome, 3)] * max_hp / 100</code></td><td>8, 12, 4 or 2%</td><td>HP</td></tr>
+      <tr><td>Score</td><td><code>score_table[course][round - 1]</code></td><td>-</td><td>running coin total</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The three HP rows drain into one accumulator, and the restore state adds it to <strong>current</strong> HP, capped at max. So a later round can open hurt, and the longer the run, the more each interval gives back. Each row drains one step per frame with a voice blip per step; one button press fast-forwards the whole roll.</p>
+  <h3>The contest-start refill</h3>
+  <ul class="bullets">
+    <li>HP, MP and SP are refilled to max when the contest starts.</li>
+    <li>On Expert and Master only, the four gear slots (armour, head, weapon, leg) are emptied first. Beginner keeps its gear.</li>
+    <li>It is <strong>one-shot</strong>: the refill sits on the fresh-contest side of the arena init, so a round boundary never refills MP or SP. Between rounds the only healing is the tally&rsquo;s HP.</li>
+  </ul>
+  <p class="dg-note">Row maths <code>FUN_801D1184</code> (the <code>0x51EB851F</code> reciprocal is the <code>/ 100</code>), tally screen <code>FUN_801CF074</code>, outcome weights <code>DAT_801D1A5C</code>, HP accumulator <code>DAT_801D1AC8</code>; start refill <code>FUN_801D0ED8</code>, gear clear behind <code>bnez</code> at <code>0x801D0EE8</code>.</p>
+</section>
+
+<section class="doc-section" id="settle" data-doc="contest-settlement-and-prize">
+  <h2>Payout and prizes</h2>
+  <p>A <strong>round</strong> pays nothing; a <strong>contest</strong> pays coins. Each score cell is counted once: the non-final rounds through the INTERVAL tally, the last one at settlement. Settlement first restores the saved party block, then settles the running total:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>How it ended</th><th>Running total</th><th>Flags</th></tr></thead>
+    <tbody>
+      <tr><td>Cleared (survived, course exhausted)</td><td>kept, plus the final round&rsquo;s score cell</td><td>sets <code>0x50A</code></td></tr>
+      <tr><td>Knocked out</td><td><strong>halved</strong> (signed <code>/ 2</code>)</td><td>-</td></tr>
+      <tr><td>Ran</td><td><strong>zeroed</strong></td><td>sets <code>0x35</code></td></tr>
+      <tr><td>Ran on round 1</td><td>zeroed</td><td>also sets <code>0x130 + course</code> (Chicken King trigger)</td></tr>
+      <tr><td>Master&rsquo;s 13th fight cleared, flag-bank bit <code>0x6CB</code> clear</td><td>as cleared</td><td>awards item <code>0xCD</code>, the <strong>War God Icon</strong>, once per save</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The total is then paid by the shared minigame-exit routine into the casino <strong>coin bank</strong>, saturating at 9,999,999. The victory caption&rsquo;s &ldquo;acquired the power of&hellip;&rdquo; line is a string, not a grant: nothing in the arena awards anything but coins and the War God Icon.</p>
+  <p class="dg-note">Settlement <code>FUN_801D0F60</code> (PROT 0977 file <code>+0x2748</code>), tail-calling <code>FUN_80026018</code>: <code>coins += tally</code> on the bank at <code>0x800845A4</code>; running total <code>_DAT_80084440</code>; War God Icon through <code>FUN_800421D4(0xCD, 1)</code>.</p>
+</section>
+
+<section class="doc-section" id="hub-screens" data-doc="hub-screens">
+  <h2>The hub screens and their timing</h2>
+  <p>Each hub screen is a fade-in at its own rate, a hold, and a fade-out. Every step is scaled by the adaptive frame-skip factor, so the figures are ticks: frames at the normal cadence. Brightness climbs to <code>0x80</code>, a PSX textured primitive&rsquo;s neutral level.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of the first-visit hub screens in ticks: Welcome fades in over 32, holds 123 and cannot be skipped, fades out; the title zooms for 13; the course card fades in over 64 and holds 180, skippable; the wall drains; the ROUND card fades in over 64, holds 61, skippable, and fades out. Between rounds: INTERVAL fades in over 32, the tally rolls for a data-dependent time that one press finishes, then the ROUND card plays again.">
+      <text class="dg-label dg-start" x="30" y="26">First visit (once per contest)</text>
+      <rect class="dg-node" x="30" y="40" width="37" height="34" rx="2"/>
+      <rect class="dg-node-warn" x="67" y="40" width="141" height="34" rx="2"/>
+      <rect class="dg-node" x="208" y="40" width="37" height="34" rx="2"/>
+      <rect class="dg-node" x="245" y="40" width="15" height="34" rx="2"/>
+      <rect class="dg-node" x="260" y="40" width="74" height="34" rx="2"/>
+      <rect class="dg-node-ok" x="334" y="40" width="207" height="34" rx="2"/>
+      <rect class="dg-node" x="541" y="40" width="36" height="34" rx="2"/>
+      <rect class="dg-node" x="577" y="40" width="74" height="34" rx="2"/>
+      <rect class="dg-node-ok" x="651" y="40" width="70" height="34" rx="2"/>
+      <rect class="dg-node" x="721" y="40" width="74" height="34" rx="2"/>
+      <text class="dg-sub" x="138" y="62">Welcome 123</text>
+      <text class="dg-sub" x="297" y="62">card in</text>
+      <text class="dg-sub" x="437" y="62">course card 180</text>
+      <text class="dg-sub" x="614" y="62">ROUND in</text>
+      <text class="dg-sub" x="686" y="62">61</text>
+      <text class="dg-sub" x="758" y="62">out</text>
+      <text class="dg-edge-label" x="48" y="90" text-anchor="middle">32</text>
+      <text class="dg-edge-label" x="252" y="90" text-anchor="middle">13</text>
+      <text class="dg-edge-label" x="297" y="90" text-anchor="middle">64</text>
+      <text class="dg-edge-label" x="559" y="90" text-anchor="middle">drain</text>
+      <text class="dg-edge-label" x="614" y="90" text-anchor="middle">64</text>
+      <text class="dg-edge-label" x="758" y="90" text-anchor="middle">64</text>
+      <text class="dg-label dg-start" x="30" y="126">Between rounds</text>
+      <rect class="dg-node" x="30" y="140" width="37" height="34" rx="2"/>
+      <rect class="dg-node-ok" x="67" y="140" width="200" height="34" rx="2" stroke-dasharray="4 3"/>
+      <rect class="dg-node" x="267" y="140" width="70" height="34" rx="2"/>
+      <rect class="dg-node" x="337" y="140" width="74" height="34" rx="2"/>
+      <rect class="dg-node-ok" x="411" y="140" width="70" height="34" rx="2"/>
+      <rect class="dg-node" x="481" y="140" width="74" height="34" rx="2"/>
+      <text class="dg-sub" x="167" y="162">tally roll (press: finish)</text>
+      <text class="dg-sub" x="302" y="162">HP restore</text>
+      <text class="dg-sub" x="374" y="162">ROUND in</text>
+      <text class="dg-sub" x="446" y="162">61</text>
+      <text class="dg-sub" x="518" y="162">out</text>
+      <text class="dg-edge-label" x="48" y="190" text-anchor="middle">32</text>
+      <text class="dg-edge-label" x="374" y="190" text-anchor="middle">64</text>
+      <text class="dg-edge-label" x="518" y="190" text-anchor="middle">64</text>
+      <rect class="dg-node-warn" x="600" y="120" width="14" height="12" rx="2"/>
+      <text class="dg-edge-label" x="620" y="130">hold, cannot skip</text>
+      <rect class="dg-node-ok" x="600" y="140" width="14" height="12" rx="2"/>
+      <text class="dg-edge-label" x="620" y="150">hold, any press skips</text>
+      <rect class="dg-node" x="600" y="160" width="14" height="12" rx="2"/>
+      <text class="dg-edge-label" x="620" y="170">fade</text>
+    </svg>
+    <figcaption>Widths are to scale in ticks where the doc gives a count. Fade-ins run at <code>+4</code> (32 ticks) or <code>+2</code> (64 ticks) per tick up to <code>0x80</code>. The tally roll&rsquo;s length depends on the numbers being counted, and the INTERVAL screen fades out at <code>-2</code> per tick to a <code>0x40</code> floor before its last drain.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Screen</th><th>Fade in</th><th>Hold</th><th>Skip</th><th>Fade out</th></tr></thead>
+    <tbody>
+      <tr><td>&ldquo;Welcome to the Muscle Dome!&rdquo;</td><td>+4 / tick, 32 ticks</td><td class="num">123 ticks</td><td>no</td><td>-4 / tick</td></tr>
+      <tr><td>Course-title art</td><td>scale ramp, 13 ticks</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>Course card</td><td>+2 / tick, 64 ticks</td><td class="num">180 ticks</td><td>yes</td><td>the backdrop drains at -4 / tick</td></tr>
+      <tr><td>ROUND <em>n</em> card</td><td>+2 / tick, 64 ticks</td><td class="num">61 ticks</td><td>yes</td><td>-2 / tick</td></tr>
+      <tr><td>INTERVAL + tally</td><td>+4 / tick, 32 ticks</td><td>the tally roll</td><td>fast-forward</td><td>-2 / tick to <code>0x40</code>, then -4 / tick</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>Skip.</strong> A skippable hold leaves on any pad-edge bit of mask <code>0xF4</code>.</li>
+    <li><strong>Tally fast-forward is a latch.</strong> A press during the roll raises the step scaler&rsquo;s bypass, after which each lane moves its whole remainder in one step. Only the arena init clears it, so one press rolls out everything left on that screen.</li>
+    <li><strong>Tally cues.</strong> The INTERVAL screen queues four &ldquo;ka-ching&rdquo; cues (ids <code>0x202</code>, <code>0x202</code>, <code>0x202</code>, <code>0x203</code>) staggered 0 / 30 / 60 / 90 frames, played from the arena&rsquo;s own sound bundle.</li>
+  </ul>
+
+  <h3>The ringside still</h3>
+  <p>Between rounds the hub does not show the brick wall of the first visit. It shows a pre-rendered still of the party at the ring fence, streamed into VRAM at <code>(384, 0)</code> at the battle&rsquo;s teardown. Two stills exist, and the loader picks between them on the lead character&rsquo;s live HP: <code>int.tim</code> (extraction 1221) normally, <code>int2.tim</code> (1222), the different-reaction version, when current HP is below half of max. A re-entry latch set on every return decides still versus wall. The format and the draw are on the <a href="../formats/ringside-still.html">ringside still</a> page.</p>
+</section>
+
+<section class="doc-section" id="sound" data-doc="sound">
+  <h2>Music, announcer and sound</h2>
+  <h3>The battle theme waits for the fight</h3>
+  <p>The arena loads its music itself and plays it only once a fight starts:</p>
+  <ol class="steps">
+    <li><b>Release</b><span>arena init stops both BGM sound sources: whatever was playing stops</span></li>
+    <li><b>Load</b><span>the standard battle theme (extraction 1014, sound-test #26, global <code>2026</code>) is opened, not played</span></li>
+    <li><b>Play</b><span>the fight start resumes it, past the ROUND card&rsquo;s fade-out</span></li>
+  </ol>
+  <p>The arena init runs on the door and again after every round, so the Welcome card, the course card, every ROUND card and every INTERVAL tally play with <strong>no music</strong>, and each round&rsquo;s fight starts the theme afresh. On the way out the venue (<code>koin1</code>, whose casino-floor track is global <code>2018</code>) gets its own music back.</p>
+  <h3>The announcer</h3>
+  <p>Two XA voice lines belong to the hub: the Welcome line on the Welcome screen&rsquo;s first tick, and a ROUND line on each ROUND card&rsquo;s first tick, whose XA channel is the round index. The ROUND card state is the same on a first visit and after every round, so every round&rsquo;s card speaks its number.</p>
+  <h3>Menu blips</h3>
+  <div class="table-wrap">
+  <table class="narrow">
+    <thead><tr><th>Cue</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td class="hex">0x21</td><td>accept / confirm: a direction taken, every confirm that advances the phase</td></tr>
+      <tr><td class="hex">0x22</td><td>highlight moved</td></tr>
+      <tr><td class="hex">0x23</td><td>refused / back: a blocked direction, every cancel</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The round driver carries 37 immediate cue sites over these three ids, all on the system bank. Hits use the shared battle path&rsquo;s melee impact sound.</p>
+  <p class="dg-note">Release at <code>0x801CEFB4..0x801CEFDC</code>, load at <code>0x801CEF50..0x801CEF70</code> / <code>0x801CF000..0x801CF020</code>, play at <code>0x801D1544..0x801D154C</code> (<code>jal 0x80026478</code>, the installer&rsquo;s only audio call); announcer <code>XA31</code> channel <code>0x0B</code> and <code>XA32</code> channel = round. That the channel is the upcoming round&rsquo;s index on a re-entered hub is inference from the first-visit value.</p>
+</section>
+
+<section class="doc-section" id="koru-strip" data-doc="the-koru-timed-fight-strip">
+  <h2>The Koru strip is not the dome&rsquo;s</h2>
+  <p>The &ldquo;Turns Left / HP Left&rdquo; strip lives in the same battle overlay, and its turn-top code runs in every battle, but it draws only when formation slot 0 holds monster <code>0xB6</code>, <strong>Koru</strong>, the game&rsquo;s one turn-limited boss fight. The dome cannot raise it: its highest roster id is <code>0xAA</code>.</p>
+  <ul class="bullets">
+    <li><strong>Turns Left</strong> = <code>4 - turn counter</code>; <strong>HP Left</strong> = the opponent&rsquo;s HP as a percentage of its max.</li>
+    <li>Nothing compares the turn counter to a bound. The four turns end in Koru&rsquo;s own AI: rounds 0 to 3 cast spells <code>0xA2..0xA5</code> and round 4 casts <code>0xA1</code>, the all-party finisher.</li>
+    <li>The strip is up from each turn&rsquo;s start until Begin, and never shares a frame with the per-actor name plate (retail capture: of 27 checkpoints, the three at a Begin / Run prompt show the strip).</li>
   </ul>
 </section>
 
-<section class="doc-section" id="at-a-glance">
-  <h2>At a glance</h2>
-  <dl class="kv">
-    <dt>Contest init / re-entry</dt><dd><code>FUN_801CEA6C</code>, PROT 0977 at base <code>0x801CE818</code></dd>
-    <dt>Contest hub</dt><dd><code>FUN_801CF870</code>, state byte <code>DAT_801D1A78</code>, 51-entry jump table <code>0x801CE990</code> (fourteen real states)</dd>
-    <dt>Opponent installer</dt><dd><code>FUN_801D1510</code></dd>
-    <dt>Tally screen / row maths</dt><dd><code>FUN_801CF074</code> / <code>FUN_801D1184</code></dd>
-    <dt>Settlement</dt><dd><code>FUN_801D0F60</code></dd>
-    <dt>Leg</dt><dd>The shared battle round driver <code>FUN_801D0748</code> and action SM <code>FUN_801E295C</code>, PROT 0898</dd>
-    <dt>Contest cursor</dt><dd><code>_DAT_8007BAC0</code>: low byte packs <code>(course, round)</code>; bits <code>0x100</code> / <code>0x200</code> restrict items / Ra-Seru</dd>
-    <dt>Coins</dt><dd>Running tally <code>_DAT_80084440</code>, coin bank <code>0x800845A4</code></dd>
-    <dt>Tables</dt><dd>Roster <code>0x801D1920</code>, course descriptors <code>0x801D1A08</code>, score table <code>0x801D1860</code></dd>
-    <dt>Port</dt><dd><code>engine-minigames::muscle_dome</code>, <code>muscle_ringside</code>; <code>engine-battle-menus::muscle_dome_session</code>; <code>engine-minigame-scenes::muscle_dome_scene</code></dd>
-  </dl>
+<section class="doc-section" id="tips" data-doc="-">
+  <h2>Tips that follow from the rules</h2>
+  <ul class="bullets">
+    <li><strong>Losing still pays half.</strong> A knockout halves the running total; Run voids it. Unless you want the Chicken King flag, never Run once coins are banked.</li>
+    <li><strong>Only HP comes back between rounds.</strong> MP and SP are refilled once, at the contest start. Budget Ra-Seru casts for the whole course.</li>
+    <li><strong>Long rounds heal more.</strong> The turns row gives back 1% of max HP per turn, up to 8%, and the round row 2% per round number, so late rounds are the most forgiving between fights.</li>
+    <li><strong>Plan Expert and Master without gear.</strong> Armour, head, weapon and leg slots are emptied at the start; accessories stay, so they are the only build you bring.</li>
+    <li><strong>Master needs the story.</strong> Missing story flags end Master early at 8, 11 or 12, and the War God Icon needs the 13th fight.</li>
+    <li><strong>Skipping screens.</strong> The Welcome hold (123 ticks) cannot be skipped; the course card and every ROUND card hold can, and one press during the tally rolls it out.</li>
+    <li><strong>Saved strings carry over.</strong> Auto replays the last confirmed string, and a bare confirm on the entry screen replays it too.</li>
+  </ul>
 </section>
 
-<section class="doc-section" id="entry">
-  <h2>Getting there</h2>
-  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 105</code> (sub-id 5) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
-  <p>Every dome door on the disc is in one casino record - the <strong>course menu</strong>. Each arm debits its entry fee and latches a course flag before its own warp. The battle exit selector is the second of only two writers of game mode 24: with the contest bit set it stores the arena mode instead of the field&rsquo;s, which is what returns a finished round to the arena.</p>
+<section class="doc-section" id="port" data-doc="engine-port">
+  <h2>Where this is in the port</h2>
+  <p>The port models the same two layers, and the same rules run on the native <code>play-window</code>, the browser play page and the site&rsquo;s <a href="../minigames.html#play">minigames page</a>, where you can play it.</p>
+  <ul class="bullets">
+    <li><strong>A round is the ordinary battle</strong> on both play hosts. The fight start becomes a one-slot formation, a scripted-fight flag, the arena stage (extraction 1225) and a battle that returns to the dome; the command ring, Arts input, monster AI, hit sparks, victory pose and battle camera are the battle&rsquo;s.</li>
+    <li><strong>Run</strong> raises the contest&rsquo;s &ldquo;ran&rdquo; outcome and settles it as given up.</li>
+    <li><strong>The theme</strong> is held through the hub screens and started on the tick the hub hands the round over.</li>
+    <li><strong>The minigames page</strong> runs the contest on the play page&rsquo;s runtime (&ldquo;in the game&rsquo;s battle&rdquo;): it opens <code>koin1</code>, makes the course menu&rsquo;s pick and arms the same door warp. The party level defaults to 1, matching the one retail dome capture (Vahn alone, level 1). The dome panel stays for free play against any archive monster.</li>
+    <li><strong>Contest, ladder and tally</strong> are one model (<code>engine-minigames::muscle_dome</code>: <code>DomeContest</code>, <code>settle_contest</code>, the hub envelopes), with no per-host ladder rule.</li>
+  </ul>
+  <p>Where the leg session still runs a round on its own (a monster with no catalog entry, a world-only harness, the free-play panel), a few things are host models rather than retail: the escape roll is not modelled (Run ends the leg on the press), the Item arm always refuses, Spirit commits an empty string, and the Ra-Seru list is a status row outside the game picture.</p>
 </section>
 
-<section class="doc-section" id="hub">
-  <h2>The contest hub</h2>
-  <figure class="diagram">
-    <svg viewBox="0 0 880 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The Muscle Dome contest hub. A fresh contest runs the welcome strip, the title zoom, the course card and the wall drain. A survived leg with the course continuing re-enters at the INTERVAL heading, the tally roll and the HP restore. Both paths reach the backdrop return and the ROUND card, whose fade-out starts the fight. The fight is an ordinary battle on the shared round driver, and its end re-enters the hub. A loss, a flee or an exhausted course goes to the settle state, which pays out and leaves the arena.">
-      <defs><marker id="mdm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
-      <rect class="dg-group" x="10" y="10" width="420" height="166" rx="6"/>
-      <text class="dg-sub dg-start" x="20" y="26">fresh contest</text>
-      <rect class="dg-node" x="24" y="36" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="119" y="56">0..2 Welcome</text>
-      <text class="dg-sub" x="119" y="72">strip in, hold, out</text>
-      <rect class="dg-node" x="226" y="36" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="321" y="56">3 Title zoom</text>
-      <text class="dg-sub" x="321" y="72">scale 0x1640 to 0x1000</text>
-      <rect class="dg-node" x="24" y="106" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="119" y="126">4..5 Course card</text>
-      <text class="dg-sub" x="119" y="142">hold 0xB4, skippable</text>
-      <rect class="dg-node" x="226" y="106" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="321" y="126">6 Wall drain</text>
-      <text class="dg-sub" x="321" y="142">kicks the battle load</text>
-      <path class="dg-edge" d="M214 59 L224 59" marker-end="url(#mdm-arrow)"/>
-      <path class="dg-edge" d="M321 82 L321 94 L119 94 L119 104" marker-end="url(#mdm-arrow)"/>
-      <path class="dg-edge" d="M214 129 L224 129" marker-end="url(#mdm-arrow)"/>
-      <rect class="dg-group" x="450" y="10" width="420" height="166" rx="6"/>
-      <text class="dg-sub dg-start" x="460" y="26">leg survived, course continues</text>
-      <rect class="dg-node" x="464" y="36" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="559" y="56">0x0A INTERVAL</text>
-      <text class="dg-sub" x="559" y="72">heading fades in</text>
-      <rect class="dg-node-accent" x="666" y="36" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="761" y="56">0x0B Tally roll</text>
-      <text class="dg-sub" x="761" y="72">pad latches fast roll</text>
-      <rect class="dg-node" x="464" y="106" width="190" height="46" rx="4"/>
-      <text class="dg-label" x="559" y="126">0x0C HP restore</text>
-      <text class="dg-sub" x="559" y="142">the three healing lanes</text>
-      <path class="dg-edge" d="M654 59 L664 59" marker-end="url(#mdm-arrow)"/>
-      <path class="dg-edge" d="M761 82 L761 94 L559 94 L559 104" marker-end="url(#mdm-arrow)"/>
-      <rect class="dg-node" x="240" y="210" width="180" height="46" rx="4"/>
-      <text class="dg-label" x="330" y="237">0x14 Backdrop return</text>
-      <rect class="dg-node" x="460" y="210" width="180" height="46" rx="4"/>
-      <text class="dg-label" x="550" y="230">0x15 ROUND card</text>
-      <text class="dg-sub" x="550" y="246">hold 0x3D, skippable</text>
-      <rect class="dg-node-ok" x="680" y="210" width="180" height="46" rx="4"/>
-      <text class="dg-label" x="770" y="230">0x16 Card fade-out</text>
-      <text class="dg-sub" x="770" y="246">starts the fight</text>
-      <path class="dg-edge" d="M321 152 L321 208" marker-end="url(#mdm-arrow)"/>
-      <path class="dg-edge" d="M559 152 L559 188 L350 188 L350 208" marker-end="url(#mdm-arrow)"/>
-      <path class="dg-edge" d="M420 233 L458 233" marker-end="url(#mdm-arrow)"/>
-      <path class="dg-edge" d="M640 233 L678 233" marker-end="url(#mdm-arrow)"/>
-      <rect class="dg-node-accent" x="560" y="300" width="300" height="56" rx="4"/>
-      <text class="dg-label" x="710" y="325">The leg: an ordinary battle</text>
-      <text class="dg-sub" x="710" y="341">round driver FUN_801D0748, PROT 0898</text>
-      <path class="dg-edge" d="M770 256 L770 298" marker-end="url(#mdm-arrow)"/>
-      <rect class="dg-node" x="240" y="300" width="260" height="56" rx="4"/>
-      <text class="dg-label" x="370" y="325">Arena re-entry FUN_801CEA6C</text>
-      <text class="dg-sub" x="370" y="341">reads &quot;survived&quot; and the course length</text>
-      <path class="dg-edge" d="M560 328 L502 328" marker-end="url(#mdm-arrow)"/>
-      <text class="dg-edge-label" x="506" y="320">knockout</text>
-      <path class="dg-edge-dim" d="M440 300 L440 280 L444 280 L444 59 L462 59" marker-end="url(#mdm-arrow)"/>
-      <rect class="dg-node-warn" x="20" y="300" width="180" height="56" rx="4"/>
-      <text class="dg-label" x="110" y="325">0x32 Settle</text>
-      <text class="dg-sub" x="110" y="341">pay out, leave the arena</text>
-      <path class="dg-edge" d="M240 328 L202 328" marker-end="url(#mdm-arrow)"/>
-      <text class="dg-sub dg-start" x="20" y="380">lost, ran, or course exhausted</text>
-    </svg>
-    <figcaption>Two state machines are stacked. The inner one is the battle, with exactly one contest-gated arm (the flee). The outer one is the contest, entirely in PROT 0977, re-entered after <em>every</em> leg. No turn boundary reaches the hub: the intermission is per fight, not per turn.</figcaption>
-  </figure>
+<section class="doc-section" id="internals" data-doc="arena-data-file-other6-extraction-12201225,hud-chrome-texture-sources,shared-battle-code-in-the-overlay_muscle_dome_-dumps,ram-state,key-functions,open">
+  <h2>Internals</h2>
+  <details class="disclosure">
+    <summary>The arena data file (<code>other6</code>, extraction 1220..1225)</summary>
+    <div class="disclosure-body">
+      <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Extraction</th><th>Content</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1220</td><td>hub UI art: two TIMs uploading <code>(320, 0)</code> / <code>(320, 256)</code>, CLUT rows 502 / 503</td></tr>
+          <tr><td class="num">1221 / 1222</td><td>the two ringside stills <code>int.tim</code> / <code>int2.tim</code>, headerless 16-bit, <code>320 x 256</code></td></tr>
+          <tr><td class="num">1223 / 1224</td><td>pochi fillers</td></tr>
+          <tr><td class="num">1225</td><td>the arena battle backdrop (byte-matched in the retail leg captures: the fight start points the map id <code>0x80084540</code> at <code>0x4C6</code>, so battle init loads it while the field stays <code>koin1</code>)</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>The backdrop is an ordinary battle stage: an arena-shell TMD (2 objects, 367 verts) drawn twice, the second copy half-turned, to close the half-stage into a full ring; two 4bpp texture pages at <code>(768, 0)</code> / <code>(832, 0)</code>, the second carrying the dirt tile the battle ground grid samples; additive lamp-glow quads. Object 1, a dust decal, is removed from the draw list by the battle scene loader whenever the per-encounter byte <code>_DAT_8007B64B</code> is zero, which the arena leaves it (measured: zero writes over a driven contest), so the match interior is mist-free. That a live contest&rsquo;s backdrop pointer holds this stream is inferred, not byte-matched.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>HUD chrome texture sources</summary>
+    <div class="disclosure-body">
+      <p>The chrome resolves to five disc sources and one layout table, pinned from a live dome battle with every texture page byte-matched: the screen-element placement table at SCUS <code>0x80076C10</code> (24-byte records); the boot-gap widget TIM for chips, plates, the D-pad glyph and the AP plate; the boot-gap ASCII font; the menu-glyph atlas for small digits; the <code>etim</code> page for the red X, the art banner words and the damage numerals; and extraction 1220 for the hub strips. The dome&rsquo;s command cluster is exactly the battle&rsquo;s (centre <code>(228, 70)</code>). The AP meter has no source rect: retail draws it as two untextured gouraud strips.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Shared battle code under the <code>overlay_muscle_dome_*</code> dump names</summary>
+    <div class="disclosure-body">
+      <p>The <code>overlay_muscle_dome_*</code> dumps are the <strong>entire battle-action overlay</strong> (PROT 0898) dumped while the arena was resident; the prefix is not dome evidence. Entries such as the round driver, the living-actor cursor <code>FUN_801D32BC</code>, the outcome-message builder <code>FUN_801D84C0</code>, the damage-popup ring <code>FUN_801F44A0</code>, the Seru-magic side-effect pair <code>FUN_801F3C34</code> / <code>FUN_801F3D3C</code>, the cast colour wash <code>FUN_801F2410</code> and the beam emitter <code>FUN_801F2E10</code> are shared battle code that runs in the dome as in any battle.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>RAM state and key functions</summary>
+    <div class="disclosure-body">
+      <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Address</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="hex">_DAT_8007BAC0</td><td>special-battle word: <code>(course, round)</code> cursor + restriction bits</td></tr>
+          <tr><td class="hex">_DAT_80084440</td><td>running coin total</td></tr>
+          <tr><td class="hex">_DAT_80084444 / 48</td><td>turns taken / leg outcome (4 = ran)</td></tr>
+          <tr><td class="hex">0x800845A4</td><td>casino coin bank</td></tr>
+          <tr><td class="hex">0x8007BD0C..0F</td><td>formation cell (one writer in the arena: the installer)</td></tr>
+          <tr><td class="hex">DAT_8007BD60</td><td>bit <code>0x80</code> = party still standing</td></tr>
+          <tr><td class="hex">DAT_801D1A78</td><td>hub state</td></tr>
+          <tr><td class="hex">DAT_801D1A90 / 94</td><td>decoded course / round</td></tr>
+          <tr><td class="hex">DAT_801D1A74 / DAT_801D1ADC</td><td>gave-up flag / continuing latch</td></tr>
+          <tr><td class="hex">_DAT_801D1AE0</td><td>re-entry latch (still vs brick wall)</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Key functions: <code>FUN_801CEA6C</code> (init / re-entry), <code>FUN_801CF870</code> (hub), <code>FUN_801CF074</code> / <code>FUN_801D1184</code> (tally), <code>FUN_801D0ED8</code> (start refill), <code>FUN_801D1510</code> (installer + theme play), <code>FUN_801D0F60</code> (settlement) in PROT 0977; <code>FUN_801F6B24</code> (ringside still streamer) in PROT 0978; <code>FUN_801D0748</code> / <code>FUN_801E295C</code> in PROT 0898; <code>FUN_80046A20</code> (battle exit selector) and <code>FUN_80026018</code> (minigame exit, coin payout) in <code>SCUS_942.54</code>.</p>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Still open</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li>The round driver&rsquo;s deal / interval arms outside the capture-pinned input chain are not walked arm by arm.</li>
+        <li>A retail capture of the sound-bank residency inside a round, and of a round&rsquo;s battle end (win pose and fade back to the arena).</li>
+        <li>The pennant&rsquo;s 2-pixel offset above the bar and the off-class widths, by placement-table read; the review screen&rsquo;s and Ra-Seru list window&rsquo;s piece layout.</li>
+        <li>Whether live <code>koin1</code> geometry is ordered over the ringside still in a re-entered hub.</li>
+      </ul>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="routing">
-  <h2>What a leg&rsquo;s end routes to</h2>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Leg</th><th>Next hub state</th></tr></thead>
-    <tbody>
-      <tr><td>survived, course not exhausted</td><td><code>0x0A</code> - the between-leg tally</td></tr>
-      <tr><td>survived, course exhausted</td><td><code>0x32</code> - settle, continuing</td></tr>
-      <tr><td>not survived</td><td><code>0x32</code> - settle</td></tr>
-      <tr><td>ran</td><td><code>0x32</code> - settle, gave up</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>&ldquo;Survived&rdquo; is a single bit test on re-entry. &ldquo;Continuing&rdquo; is <strong>derived</strong>, not prompted - there is no continue prompt; the latch is raised on the one path where the course is exhausted and the fighter survived.</p>
-</section>
-
-<section class="doc-section" id="tally">
-  <h2>The tally heals</h2>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Row</th><th>Value</th><th>Drains into</th></tr></thead>
-    <tbody>
-      <tr><td>round</td><td><code>round * 2 * max_hp / 100</code></td><td>the HP accumulator</td></tr>
-      <tr><td>turns</td><td><code>min(turns_taken, 8) * max_hp / 100</code></td><td>the HP accumulator</td></tr>
-      <tr><td>outcome</td><td><code>[8, 12, 4, 2][min(outcome, 3)] * max_hp / 100</code></td><td>the HP accumulator</td></tr>
-      <tr><td>score</td><td><code>score_table[course][round - 1]</code></td><td>the coin tally</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>Three of the four lanes are <strong>healing</strong>, not score; only the fourth is coins. So a contest costs no permanent HP. The lanes drain one after another, one scaled step per frame with a voice blip per step.</p>
-  <p><strong>The roll can be fast-forwarded.</strong> The tally arm opens by testing the press mask against <code>0xF4</code> and latching <code>DAT_801D1AB4</code> (<code>0x801CFD60..0x801CFD7C</code>). That word is the step scaler&rsquo;s bypass: while it is up a lane moves its whole remainder in one step, so one press rolls out everything left. Its only clear is the arena init.</p>
-</section>
-
-<section class="doc-section" id="screens">
-  <h2>Hub screens are envelopes</h2>
-  <p>Each hub screen is a fade-in at its own rate, a hold and a fade-out. The counters are <strong>brightness levels</strong> clamped at <code>0x80</code> - a textured primitive&rsquo;s neutral modulation - not durations, and every step is scaled by the adaptive frame-skip factor. The two card holds end early on any bit of <code>pad &amp; 0xF4</code>. A port that counts frames ends the screens at the wrong instants and cannot be ended early by a button; one that draws them at <code>0x100</code> is twice retail&rsquo;s brightness.</p>
-</section>
-
-<section class="doc-section" id="settle">
-  <h2>Settlement</h2>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Case</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td>Continuing</td><td>keeps the tally and adds the final score cell</td></tr>
-      <tr><td>Not continuing</td><td>halves the tally</td></tr>
-      <tr><td>Gave up</td><td>zeroes the tally</td></tr>
-      <tr><td>Gave up on round 1</td><td>also sets a per-course flag - the trigger for running from the first battle in all three difficulties</td></tr>
-      <tr><td>Master course final fight, first time</td><td>awards the War God Icon, once per save</td></tr>
-    </tbody>
-  </table>
-  </div>
-</section>
-
-<section class="doc-section" id="play-out">
-  <h2>A leg plays out as a battle</h2>
-  <p>Nothing about a leg&rsquo;s choreography is the dome&rsquo;s own: a turn acts out on the battle&rsquo;s animation and locomotion code, and the port plays it on the same kernels its battles use.</p>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Piece</th><th>What decides it</th></tr></thead>
-    <tbody>
-      <tr><td>Clip speed</td><td>the anim tick&rsquo;s rate law: <code>rate / 4</code> keyframes a vsync at the normal speed byte</td></tr>
-      <tr><td>Where the walk stops</td><td>the range law <code>FUN_8004E2F0</code>: the attacker&rsquo;s live position against the target&rsquo;s body pair, the monster&rsquo;s size class and the party reach offset</td></tr>
-      <tr><td>Travel</td><td>each clip&rsquo;s own root speed and end step; a reaction slides its body back</td></tr>
-      <tr><td>The hit</td><td>the swing&rsquo;s event frame; a flinch, or a knockdown on the killing hit</td></tr>
-      <tr><td>Walking home</td><td>none - the next string starts where the last one left the pair</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>A walk that stopped on a margin of its own rather than on the range law is what left daylight between a fist and its target.</p>
-</section>
-
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
-  <p>The cursor packing, the course ladder, both restores, the arena data file and ringside stills, the round driver&rsquo;s phases, the command input and the sound are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-muscle-dome.md</code></a>.</p>
+  <p>The hub states, the ringside loader, the chrome rects, the camera table and the port&rsquo;s module map are in full in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-muscle-dome.md</code></a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="battle.html">Battle</a>
     <a href="battle-command-flow.html">Battle command flow</a>
+    <a href="battle-action.html">Battle action SM</a>
     <a href="battle-round-loop.html">Battle round loop</a>
-    <a href="minigame-baka-fighter.html">Baka Fighter</a>
+    <a href="battle-stage-camera.html">Battle stage and camera</a>
     <a href="arts-command-gauge.html">Arts command gauge</a>
     <a href="../formats/ringside-still.html">Ringside stills</a>
-    <a href="../minigames.html">Minigames page</a>
+    <a href="script-vm.html">Field / event VM</a>
+    <a href="minigame-baka-fighter.html">Baka Fighter</a>
+    <a href="../minigames.html#play">Play it: minigames page</a>
   </div>
 </section>

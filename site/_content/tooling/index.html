@@ -13,6 +13,7 @@
     <li><a href="#ghidra"><strong>Dig in Ghidra</strong></a> - the static path: disassemble the executable, recover the RAM overlays, answer "who calls this?".</li>
     <li><a href="#capture"><strong>Capture the emulator</strong></a> - the dynamic path: watch the retail game run and record what the code actually does.</li>
     <li><a href="#measure"><strong>Measure the port</strong></a> - how much of the game is understood, how much is ported, and whether the port matches retail.</li>
+    <li><a href="#beyond"><strong>Beyond Legaia</strong></a> - the parts that work on other PS1 games, and the method that transfers.</li>
     <li><a href="#more"><strong>More tooling docs</strong></a> - CI gates and triage ledgers, on GitHub only.</li>
   </ul>
 </section>
@@ -168,6 +169,21 @@
     <a class="card" href="soak-harness.html">
       <div class="card-title">Soak harness</div>
       <div class="card-body">Seeded, game-shaped random pad input over every playable scene and minigame - optionally seeded from a library memory-card save, and with a save / load round trip - with panic / softlock / stall detectors and reduced replay repros.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="beyond">
+  <h2>Beyond Legaia</h2>
+  <p>The disc reader, the Sony-format parsers, the GTE and SPU models and the emulator save-state readers describe the PlayStation, not this game.</p>
+  <div class="card-grid">
+    <a class="card" href="reusing-for-other-ps1-games.html">
+      <div class="card-title">Reusing for other PS1 games</div>
+      <div class="card-body">Which crates and scripts carry to another title, every Legaia assumption by name, how to depend on them, and the measurement method that transfers whole.</div>
+    </a>
+    <a class="card" href="retail-oracle-method.html">
+      <div class="card-title">The retail-oracle method</div>
+      <div class="card-body">Engine-neutral: capture retail states, seed an engine from retail RAM, score channels, ratchet a baseline, grade evidence, keep falsified readings, count against the disc, replay runs.</div>
     </a>
   </div>
 </section>

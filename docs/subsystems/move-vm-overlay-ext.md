@@ -116,7 +116,7 @@ the fall-through width in halfwords. "Slot" is a row of the
 | `0x21` | 5 | `actor[+0x3C..+0x40] += op[2..4]` |
 | `0x22` | 5 | World XYZ `+= op[2..4]` |
 | `0x23` | 6 | Anim-bank lerp toward operand world coords, ratio `_DAT_1F800393` over `op[5]` (guarded against `op[5] == 0`) |
-| `0x24` | 8 | World-position lerp, X / Z toward the fixed map origin |
+| `0x24` | 8 | World-position lerp, X / Z toward the camera focus - [below](#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07) |
 | `0x25` / `0x26` | 3 | Save / load world coords (8 bytes) to slot `op[2]` |
 | `0x27` / `0x28` | 3 / 5 | Save / load the tween-source triple at `+0x90` |
 | `0x29` | 5 | Scratchpad write (`op[4] == 0`) or ramp of slot `op[2]` toward `-op[3]` over `op[4]` ticks |
@@ -273,11 +273,51 @@ Port: `MoveHost::ext_world_struct_init` / `_write` / `_add`, wired by
 ### World-position lerp (`0x24` / `0x2A`) and box gates (`0x06` / `0x07`)
 
 Sub-ops `0x24` / `0x2A` share the per-axis form
-`actor[axis] = base + ((target - base) * t) >> 12`. The Y axis always lerps
+`actor[axis] = base + ((target - base) * t) >> 12`, `base` the operand
+(`op[2..4]`) and `t` its partner (`op[5..7]`). The Y axis always lerps
 toward `_DAT_8007C364 + 0x16` (player Y). For X / Z:
 
-- `0x24` uses the fixed map origin `(_DAT_80089118, _DAT_80089120)` (target = `-(base + origin)`);
-- `0x2A` uses the player position (target = player X / Z).
+- `0x24` targets the **camera focus**. `lw v0,-0x6ee8(v0)` with `v0 = 0x80090000`
+  reads `_DAT_80089118` (and `+8`, `_DAT_80089120`), the focus pair retail
+  stores negated, and `negu v0,v0` at `0x801D413C` un-negates it before the
+  `subu` of the base (`0x801D4130..0x801D4158`); the target is the focus,
+  not a fixed origin, and the base is subtracted once.
+- `0x2A` targets the player position (`_DAT_8007C364 + 0x14` / `+0x18`).
+
+`noaru`'s ice cavern is the case that shows. The floor under the pillars is
+neither ground cells nor a placed object: it is the ambient part on stager
+record 40 (model 6, the scene pack's slot 1, a 96-prim bowl on page
+`(640, 0)` through CLUT row 489), looping `2F 24 1640 0000 10C0 1000 0000 1000`
+around a one-frame wait. At `t = 0x1000` the part sits on the focus every
+frame; in `noaru_field_card_walk` the stored pair is `(-5394, -12544)` and the
+part at `(5394, 0, 12544)`. Read as a fixed origin, the port parked the bowl
+at `(-5696, 0, -4288)`, outside the frame, and drew the cavern black.
+
+Port: `move_vm::ext` (the `0x24 | 0x2A` arm) over
+`MoveHost::move_camera_focus_stored_xz`, which `World` answers from
+`CameraRig::focus_stored` - the copy of the camera globals' focus both hosts
+publish before each world tick (`frame_step::camera_before_world_tick`), the
+same pair the positional sound emitters measure against. Disc test
+`crates/engine-scene-host/tests/noaru_focus_backdrop_disc.rs`.
+
+#### A sky the cull hides (kor5)
+
+`kor5`'s stager record 4 (model 25, scene-pack slot 20, a sunset sky) rides
+the same lerp, `2F 24 1040 0000 1040 0C00 0000 0C00`, so with the focus at
+`(4160, 11840)` it sits at `(4160, 0, 9920)` - where retail holds it in
+`kor5_post_43a_checkpoint`. Retail draws none of it because the record opens
+with move-VM op `0x43` (`+0x86 |= 0x2000`). The part tick `FUN_80021DF4`
+tests that bit inside its motion block (`lhu v1,0x6(s6)` / `andi 0x2000` at
+`0x800228DC..0x800228E4`, `s6 = actor + 0x80`), and when it is up clears
+flag bit `2` and calls the field actor cull `FUN_801D79E8`
+(`0x80022900..0x80022914`) on the position the last VM run left. The cull
+sets the bit again outside the region box `0x1F800384..87` or the camera's
+widened tile window; a part's radius `+0x58` reads `0x7F` in every captured
+part, so in practice only the box culls. The part's `Z` tile `77` is south of
+the capture's box `[20, 79, 43, 99]`, and its flags read `0x08044882`, bit `2`
+up. Port: the ambient tick (`World::step_ambient_fx`) runs the cull against
+the camera's published cull view, and `ambient_mesh_part_draws` skips a part
+with the bit up.
 
 Sub-ops `0x06` / `0x07` are the box-vs-player branches. Both are 7 halfwords
 wide and branch by `op[6]`: `0x06` when the player is **outside** the

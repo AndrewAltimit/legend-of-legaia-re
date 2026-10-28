@@ -134,7 +134,10 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // (`v0_1_battle_start_tetsu`: yaw `0`, `TR (0, 0x500, 0x666)`) - and
         // the lesson prompt then orbits out of it, as every retail fight
         // does.
+        // The retail-faithful mode keeps retail's zero for every fight
+        // (`WorldToggles::battle_entry_off_axis`).
         entry_yaw: if world.battle.stage_id == legaia_engine_battle::battle_sideband::STAGE_SPARRING
+            || !world.toggles.battle_entry_off_axis
         {
             0.0
         } else {

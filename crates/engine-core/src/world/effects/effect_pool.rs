@@ -244,7 +244,8 @@ impl World {
             .iter()
             .chain(self.casting.active_move_fx.iter())
             .chain(self.casting.active_action_fx.iter())
-            .chain(self.casting.mystic_shield_fx.iter());
+            .chain(self.casting.mystic_shield_fx.iter())
+            .chain(self.casting.stage_fx.iter());
         for scene in scenes {
             out.extend(scene.sprite_arm_draws());
             out.extend(scene.default_arm_draws());

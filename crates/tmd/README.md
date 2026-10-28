@@ -7,7 +7,10 @@ archive re-encodes byte-identically - the write side of mesh replacement).
 
 TMD is Sony's PlayStation 3D model format (PsyQ `libgte` / `libgs`).
 Legaia ships a custom variant - distinct enough that a stock TMD parser
-won't read it.
+won't read it. The reverse holds too: `parse` requires bit 31 of the `id` word
+and rejects a stock `0x00000041` TMD, and the primitive walker reads only
+Legaia's grouped primitives, so this crate is not a stock TMD reader (see
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#legaia-only-crates)).
 
 ## Header layout (12 bytes)
 

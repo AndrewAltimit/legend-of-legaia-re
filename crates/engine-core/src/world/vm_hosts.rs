@@ -369,8 +369,9 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
             None => [0, 0, 0],
         }
     }
-    fn move_fixed_origin_xz(&self) -> (i32, i32) {
-        self.world.terrain.map_origin_xz
+    fn move_camera_focus_stored_xz(&self) -> (i32, i32) {
+        let [x, z] = self.world.camera.focus_stored;
+        (x, z)
     }
     fn move_axis_threshold(&self) -> i16 {
         self.world

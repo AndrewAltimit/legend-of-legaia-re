@@ -106,7 +106,7 @@
 
 <section class="doc-section" id="tree">
   <h2>The ambient effect tree</h2>
-  <p>Most ambience is a tree of small invisible actors running <a href="move-vm.html">move-VM</a> bytecode out of the scene&rsquo;s prescript bundle. A part draws no mesh; its render tail edits VRAM every frame, or it fires sound cues.</p>
+  <p>Most ambience is a tree of small invisible actors running <a href="move-vm.html">move-VM</a> bytecode out of the scene&rsquo;s prescript bundle. Most parts draw no mesh; their render tail edits VRAM every frame, or they fire sound cues. A part whose model selector names a scene-pack mesh does draw it: noaru&rsquo;s ice floor is a bowl the part keeps on the camera focus with ext <code>0x24</code> (<a href="move-vm-overlay-ext.html">move VM overlay extension</a>).</p>
   <p><strong>Scene entry is not a second mechanism.</strong> The placement installer runs each partition-1 placement through the <a href="script-vm.html">field VM</a> for one frame slice, and every op <code>0x34</code> sub-3 that slice reaches installs one stager record - the same instruction a script reaches at run time. The part is seated at the executing actor&rsquo;s position, not the player&rsquo;s.</p>
   <div class="table-wrap">
   <table>

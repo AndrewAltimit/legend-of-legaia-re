@@ -1133,6 +1133,14 @@ pub(crate) enum Cmd {
         /// row.
         #[arg(long, default_value_t = false)]
         smart_monsters: bool,
+        /// Saved-chain Arts list: the battle command ring's Arts arm opens
+        /// the port's list of saved chains instead of retail's per-press
+        /// directional input. Not retail; `--retail` holds it off. The
+        /// `LEGAIA_ARTS_SAVED_LIST` environment switch raises the same
+        /// toggle; the play page's twin is its "Saved-chain Arts list" box,
+        /// and the launcher stores it as its Saved-chain Arts list row.
+        #[arg(long, default_value_t = false)]
+        arts_saved_list: bool,
         /// No Shiny Seru: battle entry never rolls the rare shiny capturable
         /// enemy (+35% stats, its Seru +35% damage) - the engine twin of the
         /// patcher's `--shiny-seru`, on by default. Retail has no such roll;
@@ -1230,6 +1238,14 @@ pub(crate) enum Cmd {
         /// `0x321` and crosses the Ra-Seru chip out of the command ring.
         #[arg(long, value_name = "N")]
         set_flag: Vec<String>,
+        /// DEBUG affordance, not a player surface: once the scene is entered,
+        /// install scene MAN record `PARTITION:RECORD` (decimal) as a cutscene
+        /// timeline, the way a walk-on trigger or entry script starts one -
+        /// e.g. `--scene kor5 --play-record 2:5` runs the Genesis Tree beat
+        /// whose framebuffer grab (move-VM render mode 7) the capture runs
+        /// look at. The record runs against the launch's flags and seats.
+        #[arg(long, value_name = "P:R")]
+        play_record: Option<String>,
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does
@@ -1340,6 +1356,7 @@ pub(crate) enum Cmd {
             default_value_t = false,
             conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
+                "arts_saved_list",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
                 "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere"]
@@ -1556,6 +1573,11 @@ pub(crate) enum Cmd {
     #[command(display_order = 30)]
     #[cfg(feature = "oracles")]
     CastSequenceScore(legaia_parity::cast_sequence::CastSequenceArgs),
+    /// Music and sound state of every retail library state against the
+    /// seeded engine (`docs/subsystems/audio.md`, "The audio state sweep").
+    #[command(display_order = 31)]
+    #[cfg(feature = "oracles")]
+    AudioSweep(legaia_parity::audio_sweep::AudioSweepArgs),
 }
 
 #[derive(Subcommand, Debug)]

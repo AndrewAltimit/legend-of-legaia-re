@@ -627,3 +627,23 @@ fn psx_blend_snapped_keys_share_a_bucket() {
     let order: Vec<u8> = list.iter().map(|e| e.mode).collect();
     assert_eq!(order, vec![2, 1], "shadow first, face on top");
 }
+
+#[test]
+fn hybrid_tsb_reduces_to_the_colour_mesh_blend_word() {
+    // An opaque prim stays opaque; an ABE prim with TSB 0 (`pack_tsb_semi(0, true)`) is the word
+    // `tmd_to_color_mesh` emits; the Baka afterimage's rewritten TSB (ABE +
+    // ABR 1 over a texpage) keeps ABE and ABR and drops the page bits.
+    let words = psx_blend::blend_words_of_tsb(&[
+        [0x1234, 0x0017],
+        [0, psx_blend::TSB_SEMI_TRANSPARENT_BIT],
+        [0, 0x8000 | (1 << 5) | 0x0017],
+    ]);
+    assert_eq!(
+        words,
+        vec![
+            0,
+            psx_blend::pack_blend_word(true, 0),
+            psx_blend::pack_blend_word(true, 1),
+        ]
+    );
+}

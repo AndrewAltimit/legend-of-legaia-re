@@ -31,7 +31,13 @@ legaia-ram-image.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+# The mednafen reader is a dev-dependency for the cross-emulator tests; tim,
+# iso and seq for the `bring_your_own_game` example, which runs the generic
+# crates on inputs built in code.
+legaia-iso.workspace = true
 legaia-mednafen.workspace = true
+legaia-seq.workspace = true
+legaia-tim.workspace = true
 
 [[test]]
 name = "integration"

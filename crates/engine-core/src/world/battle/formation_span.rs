@@ -104,6 +104,9 @@ impl World {
     /// `0x801D3908`; the `FUN_801D5854(0, 9)` re-frame that follows is the
     /// engine's per-pass far framing)
     pub(in crate::world) fn normalize_battle_formation(&mut self) {
+        if self.battle.seed_recentre_held {
+            return;
+        }
         self.move_battle_pool(|pos, alive| {
             // The camera-focus pair: see the module docs for why it is local.
             let (mut focus_x, mut focus_z) = (0i32, 0i32);
@@ -123,6 +126,29 @@ impl World {
     ///
     /// REF: FUN_801EFE44
     pub(in crate::world) fn seed_battle_formation_recentre(&mut self, actor: u8) {
+        // Capture alignment (`BattleState::capture_reseat`, never in play):
+        // the capture's own action seeds on the captured ground, which is the
+        // ground its recentre left, bar the attacker's.
+        if let Some((seat, ground)) = self.battle.capture_reseat.clone()
+            && seat == actor
+        {
+            // The acting seat keeps its own ground: its approach to the
+            // target is the walk whose passes the action's yaw counter
+            // clocks, and the capture's pair is where that walk ended (the
+            // phase's ground snap stands it there).
+            for (slot, x, z) in ground {
+                if slot == actor {
+                    continue;
+                }
+                if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                    a.move_state.world_x = x;
+                    a.move_state.world_z = z;
+                }
+            }
+            self.refresh_battle_body_pairs_now();
+            self.battle.capture_approach_due = self.battle.capture_approach_yaw.is_some();
+            self.stand_capture_attacker_off_reach(actor);
+        }
         if self.battle.seed_recentre_held {
             return;
         }

@@ -379,6 +379,7 @@ recognisable: match the mechanism, apply the same fix.
 | `801d1a20` | `render-kernels/src/battle_intro_swirl.rs` | STALE-TAG | Same shape: `swirl_band_draw` cited `tick_swirl`, likewise already `WIRED, without a draw`. |
 | `801e1934` | `engine-menus/src/card_flow.rs` | FALSE-EDGE | `save_title_digits` renamed `block_title_digits`; the live copy is `legaia_save::card::save_title_digits`, which the browser card rack writes through. A duplicate free-function name across two crates, never receiver-gated. Its own caller `save_block_summary` has no non-test call site. |
 | `8003cda8` | `engine-motion-vm/src/ambient_motion.rs` | STALE-TAG | `reset_pool` carried `REPLACED-BY:` ("a fresh scheduler per scene") after `World::install_field_player` started resetting the world-owned `player_scale_ramps`, the one scheduler that outlives a scene. The tag came off for a plain note. Retail has no reference to `0x8003CDA8` in SCUS or any PROT entry, so the engine's seat is its own and the note says so. |
+| `801cf754` | `engine-render/src/actor_cull.rs` | FALSE-EDGE | The window test `in_window` renamed `in_contact_window`; the only other `in_window` in the tree is a closure local in `legaia_art::tokenize`, which the bare-identifier edge read as a call and so made the `REPLACED-BY:` module live. The free-function-name-that-is-also-a-local shape. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the

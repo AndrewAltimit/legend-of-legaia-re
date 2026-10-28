@@ -87,6 +87,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 yaw: Some(0xA98),
                 message: Some((0x801C_ED18, 25)),
                 plate_cleared: true,
+                walk_clock: true,
                 ..ActionSteer::default()
             },
         },
@@ -134,15 +135,41 @@ fn entered_arrows_undo_the_queue_builder() {
     q[..5].copy_from_slice(&[0x0D, 0x0F, 0x0E, 0x19, 0x27]);
     let mut want = [0u8; 16];
     want[..4].copy_from_slice(&[0x0D, 0x0F, 0x0E, 0x0F]);
-    assert_eq!(entered_arrows(&q, combo), Some(want));
+    assert_eq!(entered_arrows(&q, &[], combo), Some(want));
     q[3] = 0x1A; // a newly-learned starter reads the same
-    assert_eq!(entered_arrows(&q, combo), Some(want));
+    assert_eq!(entered_arrows(&q, &[], combo), Some(want));
     q[4] = 0x2B;
-    assert_eq!(entered_arrows(&q, combo), None, "unknown art");
-    assert_eq!(entered_arrows(&[0u8; 16], combo), None, "empty queue");
+    assert_eq!(entered_arrows(&q, &[], combo), None, "unknown art");
+    assert_eq!(entered_arrows(&[0u8; 16], &[], combo), None, "empty queue");
     let mut stray = [0u8; 16];
     stray[0] = 0x2B;
-    assert_eq!(entered_arrows(&stray, combo), None, "bare constant");
+    assert_eq!(entered_arrows(&stray, &[], combo), None, "bare constant");
+}
+
+/// A Hyper Art's collapsed pair reads back as its whole arrow string:
+/// `koru_pre_*`'s Gala holds `1A 1D`, Lightning Storm entered as
+/// Right Right Up Left; the chained constants behind a collapsed pair
+/// (Noa's Hurricane Kick `1A 1D 1E`) stand for no arrows of their own.
+#[test]
+fn entered_arrows_expand_a_collapsed_hyper_art() {
+    use legaia_art::Command::{Down, Left, Right, Up};
+    let combo = |a: u8| match a {
+        0x1D => Some(vec![Right, Right, Up, Left]),
+        0x1E => Some(vec![Left, Up, Down]),
+        _ => None,
+    };
+    let mut q = [0u8; 16];
+    q[..2].copy_from_slice(&[0x1A, 0x1D]);
+    let mut want = [0u8; 16];
+    want[..4].copy_from_slice(&[0x0D, 0x0D, 0x0F, 0x0C]);
+    assert_eq!(entered_arrows(&q, &[0x1D], combo), Some(want));
+    q[2] = 0x1E;
+    assert_eq!(entered_arrows(&q, &[0x1D, 0x1E], combo), Some(want));
+    // Uncollapsed, the same pair is the art's last arrow.
+    q[2] = 0;
+    let mut last = [0u8; 16];
+    last[0] = 0x0C;
+    assert_eq!(entered_arrows(&q, &[], combo), Some(last));
 }
 
 /// Taking an absorbed Seru back off a list undoes the Done band's
@@ -215,4 +242,18 @@ fn a_park_steer_holds_the_walk_and_stages_idle_in_the_poll() {
     let (hold, queued, _) = run(false, 0x19);
     assert_eq!(hold, None);
     assert_eq!(queued, 1);
+}
+
+/// The yaw counter's drift rescaled to a steady retail step: `koru_pre_*`'s
+/// engine counter `874` (rung `0x200`, `362` units drifted at step `2`)
+/// reads `994` at retail's step `3`, beside the capture's `997`; the rung
+/// itself is not scaled, and equal steps leave the counter alone.
+#[test]
+fn the_yaw_counter_drift_rescales_to_retails_step() {
+    assert_eq!(rescaled_yaw_counter(874, 362, 2, 3), 994);
+    assert_eq!(rescaled_yaw_counter(874, 362, 2, 2), 874);
+    assert_eq!(rescaled_yaw_counter(0x200, 0, 2, 3), 0x200);
+    let d = BattleDrive::from_env("action,0,81,3,26,0,0,4,60,0,y997,r3").unwrap();
+    assert_eq!(d.steering().and_then(|s| s.drift_step), Some(3));
+    assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
 }

@@ -3,6 +3,17 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+/// The actor-tick flag that pins a field actor's Y to `-(+0x8E)` - here,
+/// the player's.
+pub(crate) const PLAYER_Y_FROM_8E: u32 = 0x2000_0000;
+
+/// The AI companion's roster record: char id `4`, Terra
+/// (`DAT_8007BD10[slot] == 4`, `docs/subsystems/battle-action-helpers.md`).
+pub(crate) const AI_COMPANION_ROSTER_SLOT: u8 = 3;
+/// The system flag `FUN_801DE190` seats the companion on
+/// (`jal 0x8003CE64` with `a0 = 0x13` at `0x801DE204`).
+pub(crate) const AI_COMPANION_SYSTEM_FLAG: u16 = 0x13;
+
 impl World {
     // --- live gameplay loop: Field <-> Battle round trip ------------------
 
@@ -175,23 +186,17 @@ impl World {
         let Some(configured) = self.audio.battle_bgm else {
             return;
         };
-        let set = self.audio.battle_sound_set;
-        if set < 0 {
+        let alt = self
+            .encounters
+            .region_setup
+            .and_then(|s| s.keep_backdrop_object_1)
+            .unwrap_or(false);
+        let Some(battle) = legaia_engine_system::music_labels::battle_track_for_sound_set(
+            self.audio.battle_sound_set,
+            alt,
+            configured,
+        ) else {
             return;
-        }
-        let battle = if set == 0 {
-            let alt = self
-                .encounters
-                .region_setup
-                .and_then(|s| s.keep_backdrop_object_1)
-                .unwrap_or(false);
-            if alt && configured == legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID {
-                legaia_engine_system::music_labels::BATTLE_THEME_2_BGM_ID
-            } else {
-                configured
-            }
-        } else {
-            legaia_engine_system::music_labels::battle_bank_bgm_id(set).unwrap_or(configured)
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
             return;
@@ -255,6 +260,43 @@ impl World {
         }
         self.audio.minigame_bgm_resume = self.audio.current_bgm;
         self.audio.minigame_bgm_active = true;
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: bgm_id,
+            sub_op: 1,
+        });
+    }
+
+    /// Stop the music for a minigame that keys its own track later than its
+    /// entry, remembering the scene's track for
+    /// [`Self::restore_minigame_bgm`] the way [`Self::swap_to_minigame_bgm`]
+    /// does.
+    ///
+    /// The Muscle Dome's arena init (`FUN_801CEA6C`) releases both BGM
+    /// sound sources (`FUN_800266E0` / `FUN_80026520` on `0x8007052C` and
+    /// `0x8007056C`, `0x801CEFBC..0x801CEFDC`) before it loads the battle
+    /// theme, and it runs on the door and again after every leg - so the
+    /// Welcome card, the INTERVAL tally and the ROUND card all play with no
+    /// music under them.
+    pub fn silence_for_minigame_bgm(&mut self) {
+        if !self.audio.minigame_bgm_active {
+            self.audio.minigame_bgm_resume = self.audio.current_bgm;
+            self.audio.minigame_bgm_active = true;
+        }
+        self.pending_field_events.push(FieldEvent::Bgm {
+            text_id: 0,
+            sub_op: crate::world::BGM_SUB_OP_ENGINE_STOP,
+        });
+    }
+
+    /// Start a minigame's own track now, whether or not the scene's music
+    /// was already displaced ([`Self::silence_for_minigame_bgm`] or an
+    /// earlier [`Self::swap_to_minigame_bgm`]); the scene's track still
+    /// comes back through [`Self::restore_minigame_bgm`].
+    pub fn start_minigame_track(&mut self, bgm_id: u16) {
+        if !self.audio.minigame_bgm_active {
+            self.swap_to_minigame_bgm(bgm_id);
+            return;
+        }
         self.pending_field_events.push(FieldEvent::Bgm {
             text_id: bgm_id,
             sub_op: 1,
@@ -339,11 +381,54 @@ impl World {
         const VAHN_ROSTER_SLOT: u8 = 0;
         let mut party_count = self.party.party_count.clamp(1, 3);
         if self.sparring_fight_pending() && party_count > 1 {
-            self.battle.solo_spar_restore = Some(std::mem::replace(
+            self.battle.battle_party_restore = Some(std::mem::replace(
                 &mut self.party.active_party,
                 vec![VAHN_ROSTER_SLOT],
             ));
             party_count = 1;
+        }
+        // **The AI companion's seat.** Retail's battle party table
+        // `DAT_8007BD10` is not the field list alone: the field overlay's
+        // party-table rebuild `FUN_801DE190` (PROT 0897, called by the party
+        // ops `0x3C` / `0x3D` and op `4C 33`) writes `id + 1` for each
+        // present member (`0x801DE1E4..0x801DE1FC`), then tests system flag
+        // `0x13` (`jal 0x8003CE64` with `a0 = 0x13` at `0x801DE204`) and,
+        // when it is up, appends id `4` - Terra (`0x801DE214..0x801DE220`).
+        // `terra_party_battle` holds the table at `02 04` beside a present
+        // list of Noa alone (`0x80084594 = 1`, `0x80084598 = [1]`): Noa's
+        // Snowdrift / Mt. Rikuroa stretch is fought by Noa and the wolf.
+        // The engine's battle composition is the field list, so the flag is
+        // read here, at the seat the table feeds; the scripts raise and
+        // lower `0x13` beside the party ops that rebuild it (`cave01` P1[0],
+        // `rikuroa` P2[48]: `60 12`, `60 13`, then the ops).
+        // PORT: FUN_801DE190 (the flag-`0x13` companion append)
+        if self.battle.battle_party_restore.is_none() {
+            let list = self.present_party_list();
+            if !list.is_empty()
+                && list.len() < 3
+                && !list.contains(&AI_COMPANION_ROSTER_SLOT)
+                && self.system_flag_test(AI_COMPANION_SYSTEM_FLAG)
+            {
+                if let Some(tpl) = self.tables.starting_party.clone() {
+                    let missing: Vec<u8> = (0..=AI_COMPANION_ROSTER_SLOT)
+                        .filter(|&r| {
+                            self.party
+                                .roster
+                                .members
+                                .get(usize::from(r))
+                                .is_none_or(|m| m.hp_mp_sp().hp_max == 0)
+                        })
+                        .collect();
+                    if !missing.is_empty() {
+                        self.seed_party_members(&tpl, &missing);
+                    }
+                }
+                let mut seated = list;
+                seated.push(AI_COMPANION_ROSTER_SLOT);
+                party_count = seated.len() as u8;
+                self.battle.battle_party_restore =
+                    Some(std::mem::replace(&mut self.party.active_party, seated));
+            }
         }
         let monster_count = formation.slots.len().min(5) as u8;
         // Drop any field dialogue left open across the transition. The
@@ -662,6 +747,19 @@ impl World {
         // Scene entry resets the ramp pool (`FUN_8003CDA8`): a ramp the last
         // scene left running must not resize the player on this one.
         self.locomotion.player_scale_ramps.reset_pool();
+        // The player's height law and its slot tweens start clear on every
+        // scene: a held height the last scene's script raised must not pin
+        // the player on this one.
+        self.locomotion.player_slot_ramps.reset_pool();
+        self.locomotion.player_8e = 0;
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.flags &= !PLAYER_Y_FROM_8E;
+            // ...and so do its `+0x24` / `+0x28` angles: the tweens that
+            // drive them were just dropped, and a tilt the last scene left
+            // would otherwise draw on this one (`World::player_draw_tilt`).
+            actor.move_state.render_24 = 0;
+            actor.move_state.render_28 = 0;
+        }
         // Every side buffer is fresh on a scene entry (`+0x9A = -1`).
         self.npcs.looks.clear();
         if self.move_vm.ramp_ratio == 0 {

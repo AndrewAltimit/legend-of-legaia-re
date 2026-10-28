@@ -112,6 +112,12 @@ fn ambient_actor_tick(
     }
 }
 
+/// The cull radius (`+0x58`) an ambient part carries into `FUN_801D79E8`.
+/// The port does not model the byte; every stager part in the noaru and
+/// kor5 captures reads `0x7F`, which widens the window test past any reach,
+/// so only the region box culls a part.
+const AMBIENT_PART_CULL_RADIUS: i16 = 0x7F;
+
 /// Recursion guard for op-`0x25` spawn chains within one tick.
 const MAX_SPAWN_DEPTH: usize = 16;
 
@@ -615,6 +621,9 @@ impl World {
     pub fn tick_ambient_fx(&mut self) {
         // Retail's walk frees the halted parts before ticking the rest.
         self.retire_finished_ambient_parts();
+        // This tick's framebuffer grabs replace the last tick's: a host that
+        // did not take them (no frame was drawn) has nothing to copy from.
+        self.ambient.vram_grabs.clear();
         // The wait-timer drain per game tick: retail decrements `+0x54` by
         // `DAT_1F800393 * DAT_1F80037D` (frame step x the rate byte `8`,
         // `clut_cell_fx::SPEED_SCALAR`) per tick, so `WAIT_SET v` holds `v`
@@ -660,14 +669,43 @@ impl World {
                 {
                     self.ambient.fx[idx].cell_fx = Some(fx);
                 }
-                let st = &mut self.ambient.fx[idx].state;
+                let st = &self.ambient.fx[idx].state;
                 if legaia_engine_effects::part_motion::runs_motion_block(st) {
+                    // Inside the motion block, before the position terms
+                    // (`0x800228E4..0x80022914`): a part whose `+0x86`
+                    // carries `0x2000` (move-VM op `0x43`) clears flag bit
+                    // `2` and runs the field actor cull `FUN_801D79E8` on
+                    // the position its last VM run left, which sets the bit
+                    // again outside the region box or the widened window.
+                    // `ambient_mesh_part_draws` skips a part with the bit
+                    // up: kor5's sky bowl (stager record 4) sits south of
+                    // the region box and retail draws none of it.
+                    if st.field_86 & 0x2000 != 0 {
+                        let culled = self.field_actor_culled_at(
+                            st.world_x,
+                            st.world_z,
+                            AMBIENT_PART_CULL_RADIUS,
+                        );
+                        let st = &mut self.ambient.fx[idx].state;
+                        st.flags &= !2;
+                        if culled {
+                            st.flags |= 2;
+                        }
+                    }
+                    let st = &mut self.ambient.fx[idx].state;
                     legaia_engine_effects::part_motion::motion_block(st, drain);
                 }
             }
             self.tick_ambient_part(idx, 0);
             if let Some(part) = self.ambient.fx.get_mut(idx) {
                 legaia_engine_effects::part_motion::clamp_levels(&mut part.state);
+                // The render-mode-7 arm (`0x80022C20..0x80022CB8`), after the
+                // clamps: a framebuffer grab at the part's projected point.
+                // The projection needs the frame's camera, so the request
+                // waits for the host (`World::queue_vram_grabs`).
+                if let Some(r) = legaia_engine_vm::vram_grab::grab_request(&part.state) {
+                    self.ambient.vram_grabs.push(r);
+                }
             }
         }
         // The scene-entry VDF pulse (enhancement - `legaia_engine_field::vdf_pulse`) rides
@@ -690,7 +728,7 @@ impl World {
     fn sfx_emitter_listener(&self) -> legaia_engine_vm::sfx_emitter::EmitterListener {
         use legaia_engine_mode::mode::GameMode;
         legaia_engine_vm::sfx_emitter::EmitterListener {
-            focus_stored: self.audio.listener_focus,
+            focus_stored: (self.camera.focus_stored[0], self.camera.focus_stored[1]),
             voice_volume: self.audio.levels.voice_volume,
             mono: self.toggles.retail_options.sound != 0,
             scale: (0x80, 0x80),

@@ -36,6 +36,7 @@ impl PlayWindowApp {
         let world = &self.session.host.world;
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
+                || sc.arrival_gate.is_some_and(|g| g.met(world))
                 || sc.script_gate.as_ref().is_some_and(|g| g.met(world))
                 || sc.battle_drive.as_ref().is_some_and(|d| {
                     d.reached(world) && sc.battle_drive_held.get() >= d.hold_ticks()
@@ -63,6 +64,7 @@ impl PlayWindowApp {
         }
         self.sync_battle_frame();
         let cutscene_cam = self.resolve_cutscene_camera();
+        self.note_frame_field_view(cutscene_cam);
         let mut prep = self.take_frame_prep();
         // The field-to-battle transition emitter leaves `self` for the
         // render borrow (see `take_frame_prep`).
@@ -87,7 +89,8 @@ impl PlayWindowApp {
         self.apply_floor_wave();
         let _ = self.sync_field_view();
         self.sync_battle_frame();
-        let _ = self.resolve_cutscene_camera();
+        let cutscene_cam = self.resolve_cutscene_camera();
+        self.note_frame_field_view(cutscene_cam);
         let mut prep = self.take_frame_prep();
         self.battle_intro = prep.battle_intro.take();
     }
@@ -156,7 +159,7 @@ impl PlayWindowApp {
     /// heading, mode word and tint, and every live effect sprite.
     /// `LEGAIA_DIAG_CAPTURE_VRAM=<path>` beside it writes the battle VRAM
     /// (1 MiB, BGR555) for a byte comparison with `mednafen-state vram-dump
-    /// --out-bin`.
+    /// --out-bin` - or, outside a battle, the field scene's CPU VRAM.
     pub(super) fn diag_capture_state(&self) {
         if std::env::var_os("LEGAIA_DIAG_CAPTURE_STATE").is_none() {
             return;
@@ -172,7 +175,7 @@ impl PlayWindowApp {
         );
         if let (Some(path), Some(v)) = (
             std::env::var_os("LEGAIA_DIAG_CAPTURE_VRAM"),
-            self.battle_vram.as_ref(),
+            self.battle_vram.as_ref().or(self.cpu_vram_base.as_ref()),
         ) {
             let _ = std::fs::write(path, v.as_bytes());
         }
@@ -223,6 +226,7 @@ impl PlayWindowApp {
             ("summon", w.casting.active_summon.as_ref()),
             ("move_fx", w.casting.active_move_fx.as_ref()),
             ("mystic_shield", w.casting.mystic_shield_fx.as_ref()),
+            ("stage", w.casting.stage_fx.as_ref()),
         ]
         .into_iter()
         .map(|(n, s)| (n, s.into_iter().collect::<Vec<_>>()))

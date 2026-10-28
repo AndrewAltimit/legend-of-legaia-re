@@ -47,6 +47,7 @@ const ORACLE_SUBCOMMANDS: &[&str] = &[
     "pcm-trace",
     "retail-compare",
     "cast-sequence-score",
+    "audio-sweep",
 ];
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
@@ -95,6 +96,8 @@ fn main() -> Result<()> {
         Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
         #[cfg(feature = "oracles")]
         Cmd::CastSequenceScore(args) => legaia_parity::cast_sequence::run(args),
+        #[cfg(feature = "oracles")]
+        Cmd::AudioSweep(args) => legaia_parity::audio_sweep::run(args),
         Cmd::Info {
             scene,
             extracted_root,
@@ -390,6 +393,7 @@ fn main() -> Result<()> {
             no_dyn_shadows,
             no_entry_pulse,
             smart_monsters,
+            arts_saved_list,
             no_shiny_seru,
             flee_exp,
             exp_rate,
@@ -412,6 +416,7 @@ fn main() -> Result<()> {
             retail,
             learn_spell,
             set_flag,
+            play_record,
             resume_save,
             cheat_level,
             cheat_gold,
@@ -480,6 +485,7 @@ fn main() -> Result<()> {
                     dyn_shadows: !no_dyn_shadows,
                     entry_pulse: !no_entry_pulse,
                     smart_monsters,
+                    arts_saved_list,
                     tweaks: legaia_engine_session::session_switches::GameplayTweaks {
                         shiny_seru: !no_shiny_seru,
                         flee_exp,
@@ -507,8 +513,9 @@ fn main() -> Result<()> {
                     window: window::WindowLaunch::from_flags(fullscreen, windowed, window_scale),
                 }
             },
-            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(
-                window::PlayCheats {
+            window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?
+                .with_play_record(play_record.as_deref())?
+                .with_cheats(window::PlayCheats {
                     level: cheat_level,
                     gold: cheat_gold,
                     coins: cheat_coins,
@@ -519,8 +526,7 @@ fn main() -> Result<()> {
                     arts: cheat_arts,
                     max_items: cheat_max_items,
                     noclip: cheat_noclip,
-                },
-            ),
+                }),
         ),
         Cmd::Save {
             extracted_root,

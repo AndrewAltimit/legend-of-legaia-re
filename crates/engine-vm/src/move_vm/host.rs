@@ -253,10 +253,10 @@ pub trait MoveHost {
         [0, 0, 0]
     }
 
-    /// Map fixed-origin pair `(_DAT_80089118, _DAT_80089120)` - the (x, z)
-    /// origin used by ext sub-op 0x24 (world position lerp toward fixed
-    /// map origin). Default returns `(0, 0)`.
-    fn move_fixed_origin_xz(&self) -> (i32, i32) {
+    /// The camera focus `(_DAT_80089118, _DAT_80089120)` as retail stores it,
+    /// X and Z **negated** - the target ext sub-op 0x24 lerps toward (after
+    /// un-negating it). Default returns `(0, 0)`.
+    fn move_camera_focus_stored_xz(&self) -> (i32, i32) {
         (0, 0)
     }
 

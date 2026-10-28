@@ -29,9 +29,6 @@ pub fn step_floor_ladder(
 
 /// Per-scene field terrain: walkability grid, map-region block, zone table, floor-height LUT, object cells, elevation overrides and the region / tile trackers.
 pub struct FieldTerrain {
-    /// Fixed map origin pair at `(_DAT_80089118, _DAT_80089120)` - used by ext
-    /// sub-op 0x24 (world position lerp toward fixed map origin).
-    pub(crate) map_origin_xz: (i32, i32),
     /// Per-scene field collision / floor grid. Retail equivalent: the
     /// walkability map at `*(_DAT_1F8003EC) + 0x4000` that the locomotion
     /// collision check (`FUN_801cfe4c`) samples. One byte per 128-unit
@@ -176,7 +173,6 @@ pub struct FieldTerrain {
 impl FieldTerrain {
     pub fn new() -> Self {
         Self {
-            map_origin_xz: (0, 0),
             collision_grid: Vec::new(),
             map_region_block: Vec::new(),
             zone_table: Vec::new(),

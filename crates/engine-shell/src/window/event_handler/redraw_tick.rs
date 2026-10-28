@@ -430,6 +430,14 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &sc.battle_bars,
             );
+            if let Some(seat) = sc.battle_reseat {
+                legaia_engine_capture::bar_seeds::arm_capture_reseat(
+                    &mut self.session.host.world,
+                    seat,
+                    &sc.battle_bars,
+                    sc.battle_approach_yaw,
+                );
+            }
         }
         if let Some(sc) = self.screenshot.as_ref()
             && self.session.host.world.mode == SceneMode::Battle

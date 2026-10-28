@@ -78,7 +78,8 @@ read as a different place:
 | `conc`, `conc2`, `conc3` | Conkram in the past | banner "Conkram (Past)" on all three |
 | `concnow` | Conkram in the present | banner "Conkram" |
 | `jou` | Rim Elm under the Juggernaut | banner "Rim Elm"; its door leads into `jouina` |
-| `jouina`..`jouine`, `juui1`, `juui2` | Bio Castle (inside the Juggernaut) | banner on the `jouin*` five; the Ra-Seru farewell in `juui*` |
+| `jouina`..`jouine` | Bio Castle (inside the Juggernaut) | banner on all five |
+| `juui1`, `juui2` | Ra-Seru scenes (Terra, Meta, Ozma speak) | no banner; reached from `conc2` and `uru2`, their `0x3F` warps lead to `rugi` / `noaru` and `uru2` / `noaru` |
 | `kor*`, `koin*`, `korout` | Sol Tower | banner on all thirteen; `koin1` hosts the Muscle Dome and Baka Fighter doors, `koin3` the dance |
 | `edbubu` | Buma's ending | the label; `eddoman` is Usha's |
 

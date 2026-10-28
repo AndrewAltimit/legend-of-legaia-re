@@ -44,7 +44,10 @@ impl PlayWindowApp {
                 read,
                 session,
                 contest,
-                MUSCLE_DOME_CHAR_SLOT,
+                // The fighter the leg seats (`World::muscle_fighter_record`:
+                // retail's Vahn unless a host picked another) - the body the
+                // battle leg's party swap fields, and the browser page's.
+                u32::from(world.muscle_fighter_record()),
                 world.clock.sim_ticks,
             )
             .is_none()
@@ -107,9 +110,14 @@ impl PlayWindowApp {
             .collect();
         let untextured = (!scene.untextured_indices.is_empty())
             .then(|| {
-                r.upload_color_mesh(&scene.positions, &fill, &scene.untextured_indices)
-                    .map_err(|e| log::warn!("muscle dome: untextured upload failed: {e:#}"))
-                    .ok()
+                r.upload_color_mesh_blended(
+                    &scene.positions,
+                    &fill,
+                    &scene.untextured_indices,
+                    &legaia_engine_render::psx_blend::blend_words_of_tsb(&scene.cba_tsb),
+                )
+                .map_err(|e| log::warn!("muscle dome: untextured upload failed: {e:#}"))
+                .ok()
             })
             .flatten();
         self.muscle_mesh_key = Some(MeshKey {

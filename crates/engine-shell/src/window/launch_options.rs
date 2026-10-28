@@ -20,6 +20,9 @@ pub struct LaunchFidelity {
     /// Smarter monster targeting (`--smart-monsters`,
     /// `WorldToggles::smarter_monster_targeting`). Not retail.
     pub smart_monsters: bool,
+    /// The Arts command opens the port's saved-chain list
+    /// (`--arts-saved-list`, `WorldToggles::arts_saved_list`). Not retail.
+    pub arts_saved_list: bool,
     /// The gameplay tweaks - the patcher features graduated into engine
     /// switches (Shiny Seru, run-away EXP, the EXP rate, the Fortress
     /// encounter fix, the jewel fix) and the battle HP-readout guard:
@@ -80,6 +83,7 @@ impl LaunchFidelity {
             dyn_shadows: true,
             entry_pulse: true,
             smart_monsters: false,
+            arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
             occlusion_fade: true,
             volumetric_fog: true,
@@ -97,6 +101,7 @@ impl LaunchFidelity {
             dyn_shadows: false,
             entry_pulse: false,
             smart_monsters: false,
+            arts_saved_list: false,
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
             occlusion_fade: false,
             volumetric_fog: false,
@@ -164,6 +169,11 @@ pub struct ScreenshotConfig {
     /// at a fixed tick; `capture_tick` becomes the deadline, past which the
     /// run exits without a PNG. Set by the retail-compare image channel.
     pub phase_gate: Option<legaia_engine_capture::phase_gate::PhaseGate>,
+    /// `LEGAIA_CAPTURE_ARRIVAL=cue:<level>|gone`: capture an evolved-Cort
+    /// prompt frame on the arrival columns' life
+    /// ([`legaia_engine_capture::arrival_gate::ArrivalGate`]), with
+    /// `capture_tick` the deadline. Set by the retail-compare image channel.
+    pub arrival_gate: Option<legaia_engine_capture::arrival_gate::ArrivalGate>,
     /// `LEGAIA_BATTLE_ORBIT_YAW=<yaw>`: the battle idle orbit's azimuth the
     /// capture must show, held while the orbit owns yaw
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_orbit_yaw`]).
@@ -387,6 +397,17 @@ pub struct ScreenshotConfig {
     /// seeded on the first battle tick as the headless seed seeds them
     /// ([`legaia_engine_capture::bar_seeds::apply_bar_seeds`]).
     pub battle_bars: Vec<legaia_engine_capture::bar_seeds::BarSeed>,
+    /// `LEGAIA_BATTLE_RESEAT=<engine slot>`: re-seat the bars' ground each
+    /// time that slot's action seeds
+    /// (`legaia_engine_capture::bar_seeds::arm_capture_reseat`).
+    pub battle_reseat: Option<u8>,
+    /// `LEGAIA_BATTLE_APPROACH_YAW` (`CaptureApproach::to_env`): the
+    /// re-seated attacker's walk onto its target starts where retail's did
+    /// (`legaia_engine_core::world::BattleState::capture_approach_yaw`).
+    pub battle_approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
+    /// `LEGAIA_BATTLE_BACKDROP_CUE=<weight>`: the backdrop pair's depth-cue
+    /// weight a capture-band capture holds, stood on at the captured phase.
+    pub battle_backdrop_cue: Option<u16>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -453,6 +474,9 @@ pub struct DebugSeeds {
     pub resume_save: Option<std::path::PathBuf>,
     /// `--cheat-*`: the player cheats applied once the scene is entered.
     pub cheats: PlayCheats,
+    /// `--play-record P:R`: a scene MAN record installed as a cutscene
+    /// timeline once the scene is entered.
+    pub play_record: Option<(usize, usize)>,
 }
 
 /// The `--cheat-*` operands - the native twin of the browser play page's
@@ -525,6 +549,25 @@ impl PlayCheats {
 }
 
 impl DebugSeeds {
+    /// Attach the `--play-record P:R` operand (`partition:record`, decimal).
+    pub fn with_play_record(mut self, spec: Option<&str>) -> Result<Self> {
+        if let Some(spec) = spec {
+            let (p, r) = spec
+                .split_once(':')
+                .with_context(|| format!("--play-record '{spec}' is not PARTITION:RECORD"))?;
+            let p: usize = p
+                .trim()
+                .parse()
+                .with_context(|| format!("--play-record partition '{p}'"))?;
+            let r: usize = r
+                .trim()
+                .parse()
+                .with_context(|| format!("--play-record record '{r}'"))?;
+            self.play_record = Some((p, r));
+        }
+        Ok(self)
+    }
+
     /// Attach the `--cheat-*` operands.
     pub fn with_cheats(mut self, cheats: PlayCheats) -> Self {
         self.cheats = cheats;
@@ -683,6 +726,9 @@ impl ScreenshotConfig {
             hud_countdown: std::env::var("LEGAIA_HUD_COUNTDOWN")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            arrival_gate: std::env::var("LEGAIA_CAPTURE_ARRIVAL")
+                .ok()
+                .and_then(|v| legaia_engine_capture::arrival_gate::ArrivalGate::from_env(&v)),
             phase_gate: std::env::var("LEGAIA_CAPTURE_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::phase_gate::PhaseGate::from_env(&v)),
@@ -826,6 +872,15 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
             state_since: std::cell::Cell::new(None),
+            battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
+            battle_approach_yaw: std::env::var("LEGAIA_BATTLE_APPROACH_YAW")
+                .ok()
+                .and_then(|v| legaia_engine_core::world::CaptureApproach::from_env(&v)),
+            battle_backdrop_cue: std::env::var("LEGAIA_BATTLE_BACKDROP_CUE")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             battle_bars: std::env::var("LEGAIA_BATTLE_BARS")
                 .map(|v| legaia_engine_capture::bar_seeds::bar_seeds_from_env(&v))
                 .unwrap_or_default(),

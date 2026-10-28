@@ -607,6 +607,10 @@ the bag is short of an errand's copies:
   its stat bonuses, than what each member who can wear it wears in its slot,
   and for a weapon no cheaper to swing ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md))
   - is sold, the whole stack, before anything is bought.
+- **It keeps the heal reserve.** Three heals a member are bought before the
+  errand's items, and a purchase that does not complete the errand leaves
+  the reserve's price in the purse. Six of eight loaves bought out of 38225
+  left a run with no heal for Gaza (`korb3` P2[2]).
 - **It fights for the rest.** While the purse plus what the outgrown pieces
   sell for is short of the errands' price, it trains as it trains for
   levels, from a bed or, with no bed in reach and heals in the bag, from the
@@ -653,6 +657,33 @@ the first try); the eighth stalled before the fight on the mountain's
 ([below](#how-the-pad-tier-walks)). Caruban (1024 HP, about 150 a round on one member) outlasts a
 level-6 Noa and level-5 Vahn by one or two rounds; a level-8 Noa ends the
 fight first.
+
+Two fights stand in `rikuroa`, and only the second is Caruban. The party the
+continuous run carries in is Noa alone (`cave01` P1[0] removes every member
+and adds her, `3D 00 .. 3D 02`, `3C 01`), and she meets the 640-HP formation
+row 16 alone, staged by the walk-on bands P2[46] / P2[47]. The cutscene band
+P2[48] then hands the party back to Vahn (`3D 00 .. 3D 02`, `3C 00`), and
+P1[3]'s talk adds Noa (`3C 01`) and stages Caruban, row 17, against both -
+`rikuroa_post_caruban` holds Vahn and Noa at level 6. Noa has no Ra-Seru in
+that stretch (her record's equipment slot 2 is empty), so her Hyper Arts -
+Vulture Blade and Frost Breath as well as Hurricane Kick, the bank walk's
+groups 1..3 - swing plain arrows, and the hand plans her normal arts only.
+Two hand rules carry row 16 across streams. A scene whose staging band is
+still ahead runs from its random fights even while another band's flag gates
+that band (P2[47]'s C2 is P2[46]'s `0x283`): fought, they took Noa to 272 of
+423 before row 16 on a stream whose bag held one heal. And a member who stands
+alone trains to the target level itself rather than one under it
+(`pad_training::under_levelled`), since every hit lands on her; level 8 won
+row 16 only on streams whose drops had left heals in the bag. The level
+target looks six milestones ahead (`LEVEL_LOOKAHEAD`): at five, the stretch
+into `cave01` aimed Noa at the level-6 anchors while Terra's rest still
+worked, and the next stretch's level-9 target came after it had gone dry. And a
+shop buys a weapon for a member the coming stretches seat who has not
+joined yet, into the bag ahead of the present members' armour: retail's Noa
+fights row 16 with the Nail Glove `dolk` sells, and she joins in `cave01`
+unarmed with no counter on her stretch. The same counters stock heals for
+that member too (`joining_members`: a character the anchors ahead show grown
+past level 1), since her training and her fight draw on the shared bag.
 
 ### A counter the story has closed
 

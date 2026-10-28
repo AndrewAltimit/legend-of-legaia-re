@@ -830,12 +830,13 @@ pub struct BattleState {
     /// [`crate::world::World::prime_battle_tutorial`]; the engine's stand-in for retail's
     /// per-formation battle-stage id.
     pub(crate) tutorial_pending: bool,
-    /// The field party composition the sparring fight set aside, restored
-    /// when the battle returns to the field ([`crate::world::World::finish_battle`]).
-    /// `Some` only between a Tetsu-spar entry that seated Vahn alone over a
-    /// larger party and its teardown - see
-    /// [`crate::world::World::sparring_fight_pending`].
-    pub(crate) solo_spar_restore: Option<Vec<u8>>,
+    /// The field party composition a battle entry set aside, restored when
+    /// the battle returns to the field ([`crate::world::World::finish_battle`]).
+    /// `Some` only between an entry that seated a party other than the field
+    /// list and its teardown: the Tetsu spar's Vahn alone
+    /// ([`crate::world::World::sparring_fight_pending`]), or the field list
+    /// plus the AI companion (system flag `0x13`, `FUN_801DE190`).
+    pub(crate) battle_party_restore: Option<Vec<u8>>,
     /// Active stat buffs / debuffs applied by battle Magic, one entry per
     /// `(slot, stat)`. Each holds the exact delta written into the per-slot
     /// scalar so expiry can undo it, plus the remaining turn count (decremented
@@ -985,6 +986,17 @@ pub struct BattleState {
     /// `0x80046F74`), four counter units into the entry sweep, so the floor
     /// starts its fade there rather than at the mode flip.
     pub(crate) stage_registration_pending: bool,
+    /// `_DAT_8007B8FC`: the field-to-battle intro left the screen on white
+    /// (`legaia_render_kernels::battle_intro_styles::intro_leaves_white`).
+    /// Battle init holds the screen on that colour and the stage loader
+    /// fades the fight in from it, then clears the word (`sw zero` at
+    /// `0x80051D44`); clear, both fades are the black ones.
+    pub(crate) entry_fade_white: bool,
+    /// The stage loader's 20-frame fade-in (`FUN_800513F0`,
+    /// `0x80051C98..0x80051D2C`), its own fade actor beside the world's seat.
+    /// Until the loader runs, battle init's held fade covers the screen
+    /// ([`crate::world::World::battle_entry_fade_draw`]).
+    pub(crate) entry_fade: Option<legaia_engine_system::fade::FadeState>,
     /// Whether the stage is one of `DAT_80078C1C`'s outdoor stages - the
     /// `0x8007BDA8` byte the backdrop ramp's ceiling reads. The host that
     /// resolved the stage sets it when it enters battle rendering.
@@ -1021,12 +1033,102 @@ pub struct BattleState {
     /// captured shape lands the fight somewhere retail never stood - a
     /// summon capture whose stager has walked the party forward is thrown
     /// six hundred units back - and no undrift pass can take it back. A
-    /// fight seeded this way skips the seed recentre. Set by
+    /// fight seeded this way skips the seed recentre, and the round start's
+    /// squash + recentre (`World::normalize_battle_formation`) for the same
+    /// reason: the capture's round began on it before its strikes moved
+    /// anyone. Set by
     /// `legaia_engine_capture::bar_seeds::apply_bar_seeds` whenever a seed
     /// places ground; never in play. Reset by
     /// [`crate::world::World::enter_battle`].
     pub seed_recentre_held: bool,
+    /// The boss seat's `+0x34` / `+0x44` as the arrival module's pass found
+    /// them, before its own seat stores - where its spawn records stand
+    /// (`World::seat_stage_module_spawn`).
+    pub(crate) arrival_spawn_anchor: Option<([i16; 3], [i16; 3])>,
+    /// Capture alignment for a driven action capture: the engine slot whose
+    /// action the capture holds, and the captured live pairs. The drive
+    /// replays rounds the capture's history did not, and every walk and push
+    /// in them moves the formation; each time that seat's action seeds
+    /// (state `0x0C`, where retail recentred onto the ground the capture
+    /// holds), every other combatant stands back on those pairs; the
+    /// attacker keeps the ground its own walk starts from. Set by
+    /// `legaia_engine_capture::bar_seeds::arm_capture_reseat`; never in play.
+    pub capture_reseat: Option<CaptureReseat>,
+    /// Capture alignment for a driven monster-melee capture
+    /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
+    /// attacker reached its target on.
+    /// Retail's walk is a straight line onto the target's live position (the
+    /// facing recompute every approach pass, `0x801E32EC..0x801E3318`) whose
+    /// passes the counter clocks from the Attack arm's `0x200` rung
+    /// (`0x801E2F20`), so its start lies on the ray from the target through
+    /// the captured strike pair, as many root-motion steps back as the
+    /// counter ran. Each time [`Self::capture_reseat`]'s seat seeds, its
+    /// first walk step stands it there
+    /// (`World::seat_capture_approach_start`) when it walks at the
+    /// capture's target; never in play.
+    pub capture_approach_yaw: Option<CaptureApproach>,
+    /// The seed armed [`Self::capture_approach_yaw`]'s placement and the walk
+    /// has not taken it yet.
+    pub(crate) capture_approach_due: bool,
 }
+
+/// [`BattleState::capture_approach_yaw`]: where a driven monster-melee
+/// capture's walk ended, and on which counter reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureApproach {
+    /// The yaw counter `ctx[+0x6DA]` on the walk's last pass.
+    pub arrive: u16,
+    /// The engine slot of the capture's target `+0x1DD`.
+    pub target: u8,
+    /// The attacker's captured live pair `+0x34` / `+0x38`.
+    pub strike: [i16; 2],
+    /// The target's captured live pair.
+    pub target_ground: [i16; 2],
+}
+
+impl CaptureApproach {
+    /// `arrive:target:sx:sz:tx:tz`.
+    pub fn to_env(&self) -> String {
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            self.arrive,
+            self.target,
+            self.strike[0],
+            self.strike[1],
+            self.target_ground[0],
+            self.target_ground[1]
+        )
+    }
+
+    /// Parse [`Self::to_env`]'s form.
+    pub fn from_env(v: &str) -> Option<Self> {
+        let mut it = v.trim().split(':');
+        let mut next = || it.next().map(str::trim);
+        Some(Self {
+            arrive: next()?.parse().ok()?,
+            target: next()?.parse().ok()?,
+            strike: [next()?.parse().ok()?, next()?.parse().ok()?],
+            target_ground: [next()?.parse().ok()?, next()?.parse().ok()?],
+        })
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn capture_approach_env_round_trips() {
+    let a = CaptureApproach {
+        arrive: 656,
+        target: 2,
+        strike: [168, 290],
+        target_ground: [0, -12],
+    };
+    assert_eq!(CaptureApproach::from_env(&a.to_env()), Some(a));
+    assert_eq!(CaptureApproach::from_env("656:2:168"), None);
+}
+
+/// [`BattleState::capture_reseat`]: the engine slot whose action seeds the
+/// re-seat, and each combatant's `(slot, x, z)` live pair.
+pub type CaptureReseat = (u8, Vec<(u8, i16, i16)>);
 
 /// One frame's tag-`0x67` ribbon source: the `8`-byte seat vector the
 /// retail call hands `FUN_801E1D98` in `$a0` (actor `+0x3C/+0x3E/+0x40`,
@@ -1170,7 +1272,7 @@ impl BattleState {
             spell_anim_pairs: legaia_game_tables::spell_anim_pairs::SpellAnimPairs::default(),
             spell_cam: None,
             tutorial_pending: false,
-            solo_spar_restore: None,
+            battle_party_restore: None,
             active_formation: None,
             last_rewards: None,
             spoils_frames: 0,
@@ -1185,11 +1287,17 @@ impl BattleState {
             backdrop_cue: 0,
             ground_grid_drawn: true,
             stage_registration_pending: false,
+            entry_fade_white: false,
+            entry_fade: None,
             stage_outdoor: false,
             message_banner: None,
             entry_serial: 0,
             empty_seat_ground: [(0, 0); 7],
             seed_recentre_held: false,
+            arrival_spawn_anchor: None,
+            capture_reseat: None,
+            capture_approach_yaw: None,
+            capture_approach_due: false,
         }
     }
 

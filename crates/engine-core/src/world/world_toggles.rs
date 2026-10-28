@@ -238,6 +238,16 @@ pub struct WorldToggles {
     /// the three kingdom world maps) or a save point opens the screen. Not
     /// retail; off by default and under [`Self::pin_retail`].
     pub save_anywhere: bool,
+    /// Open a fight off the seat axis (port judgement, **on** by default):
+    /// the battle camera's idle orbit starts on the field camera's azimuth,
+    /// moved out of the window where the two rows overlap
+    /// (`legaia_engine_battle_vm::battle_cam_script::battle_entry_yaw`).
+    /// Retail's battle init zeroes the yaw word (`0x80055E84`) and every
+    /// fight opens looking down the seat axis, then orbits out of it -
+    /// what both PCSX-Redux openings read (`gaza2_card_battle_init`,
+    /// `cort_evolved_card_battle_init`: yaw `0` under the entry sweep). Off
+    /// under [`Self::pin_retail`].
+    pub battle_entry_off_axis: bool,
     /// The options screen's nine config words as the host last pushed them
     /// (`crate::options::apply_to_world`) or a save last loaded them. The
     /// rows the simulation reads have their own mirrors here and on
@@ -371,6 +381,7 @@ impl WorldToggles {
             enemy_stat_permille: SCALE_RETAIL,
             bonus_drop: false,
             save_anywhere: false,
+            battle_entry_off_axis: true,
             retail_options: legaia_save::card::RetailOptions::default(),
             loaded_options: None,
         }
@@ -412,6 +423,7 @@ impl WorldToggles {
         self.enemy_stat_permille = SCALE_RETAIL;
         self.bonus_drop = false;
         self.save_anywhere = false;
+        self.battle_entry_off_axis = false;
     }
 
     /// The fidelity toggles currently off their retail value, by field name.
@@ -487,6 +499,9 @@ impl WorldToggles {
         if self.save_anywhere {
             out.push("save_anywhere");
         }
+        if self.battle_entry_off_axis {
+            out.push("battle_entry_off_axis");
+        }
         out
     }
 }
@@ -505,7 +520,7 @@ mod fidelity_tests {
     fn pinned_toggles_report_no_deviation() {
         let mut t = WorldToggles::new();
         // The bare default keeps three safety / enhancement toggles, the
-        // shiny roll and the Fortress fix on.
+        // shiny roll, the Fortress fix and the off-axis battle open on.
         assert_eq!(
             t.retail_deviations(),
             [
@@ -514,7 +529,8 @@ mod fidelity_tests {
                 "hop_landing_guard",
                 "shiny_seru",
                 "fortress_encounter_fix",
-                "hp_readout_guard"
+                "hp_readout_guard",
+                "battle_entry_off_axis"
             ]
         );
         t.pin_retail();
@@ -541,7 +557,7 @@ mod fidelity_tests {
         t.enemy_stat_permille = 1500;
         t.bonus_drop = true;
         t.save_anywhere = true;
-        assert_eq!(t.retail_deviations().len(), 23);
+        assert_eq!(t.retail_deviations().len(), 24);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

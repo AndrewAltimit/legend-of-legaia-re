@@ -150,6 +150,41 @@ pub fn snap_battle_ground(world: &mut World, snaps: &[GroundSnap]) -> Option<Bat
     })
 }
 
+/// The strike loop's framing endpoint as retail armed it, for an engine
+/// probe on the snapped ground (`target`) against retail's tween endpoint
+/// `end`.
+///
+/// State `0x1E` arms case 7 (`jal 0x801D5854` with `a1 = 7` at
+/// `0x801E36E8`) before it re-faces the attacker (`sh v0,0x46(s3)` at
+/// `0x801E371C`), so retail's endpoint subtracts the heading the pass
+/// before stored, while the capture - and the snap - hold the one this pass
+/// stored. The strike's turn is a few units a pass; within
+/// [`STRIKE_HEADING_SLACK`] the yaw endpoint is retail's own. Every other
+/// framing, and every other component, is the probe's.
+pub fn strike_heading_target(
+    world: &World,
+    target: BattleCamPose,
+    end: BattleCamPose,
+) -> BattleCamPose {
+    let recover = world.battle.camera.as_ref().is_some_and(|c| {
+        c.phase() == legaia_engine_battle_vm::battle_cam_script::BattleCamPhase::Recover
+    });
+    let turn = (target.yaw - end.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
+    if world.battle_ctx.action_state == 0x1E && recover && turn.abs() <= STRIKE_HEADING_SLACK {
+        BattleCamPose {
+            yaw: target.yaw - turn,
+            ..target
+        }
+    } else {
+        target
+    }
+}
+
+/// How far a strike pass turns the attacker ([`strike_heading_target`]):
+/// the re-facing onto the target's body pair as the swing's root motion
+/// carries the attacker round it.
+const STRIKE_HEADING_SLACK: f32 = 8.0;
+
 /// How far the glide's endpoint may stand from the probe's on an angle
 /// component and still be the same arm: the per-pass yaw counter advance
 /// (`max(1, 4 * step / 3)`) at the largest step, with a unit of rounding.

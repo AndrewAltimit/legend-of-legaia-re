@@ -63,6 +63,12 @@ pub struct RetailCompareArgs {
     /// `Baseline::smoke_breaks`).
     #[arg(long)]
     pub smoke_check: Option<PathBuf>,
+    /// Capture-coverage census: read every corpus state's scene, class and
+    /// on-screen battle action plus the disc's monster / spell / formation
+    /// lists, write them as JSON to this path and exit without seeding the
+    /// engine ([`crate::retail_coverage`], `docs/tooling/capture-coverage.md`).
+    #[arg(long)]
+    pub census: Option<PathBuf>,
 }
 
 pub fn run(args: RetailCompareArgs) -> Result<()> {
@@ -71,6 +77,25 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
     let library = args.library.or(l).context("no save library")?;
     let extracted = args.extracted_root.or(e).context("no extracted disc")?;
     let manifest = legaia_ram_image::ScenarioManifest::from_path(&manifest_path)?;
+    if let Some(p) = &args.census {
+        let c = crate::retail_coverage::census(
+            &extracted,
+            &library,
+            &manifest,
+            args.filter.as_deref(),
+        )?;
+        std::fs::write(p, serde_json::to_string_pretty(&c)?)?;
+        println!(
+            "retail-compare census: {} states {:?}, {} monsters, {} spells, {} scenes -> {}",
+            c.states.len(),
+            crate::retail_coverage::class_counts(&c),
+            c.disc.monsters.len(),
+            c.disc.spells.len(),
+            c.disc.scenes.len(),
+            p.display()
+        );
+        return Ok(());
+    }
     // The ratchet holds the accuracy mode's scores only: a smoke-tier render
     // neither writes nor checks it.
     anyhow::ensure!(

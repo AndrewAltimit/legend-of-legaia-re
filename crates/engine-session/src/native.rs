@@ -52,6 +52,15 @@ impl BootSession<AudioOut> {
         Self::open_with_source(SceneSource::Disc(disc_bin), cfg, AudioOut::new)
     }
 
+    /// [`Self::open`] over a device-less output ([`AudioOut::detached`]) when
+    /// `cfg.enable_audio` is set - the headless drivers that measure what the
+    /// director does (the audio state sweep) without a sound device.
+    pub fn open_extracted_detached_audio(extracted_root: &Path, cfg: &BootConfig) -> Result<Self> {
+        Self::open_with_source(SceneSource::Extracted(extracted_root), cfg, || {
+            Ok(AudioOut::detached(legaia_engine_audio::SPU_INTERNAL_RATE))
+        })
+    }
+
     /// [`Self::open_disc`] over a device-less output
     /// ([`AudioOut::detached`]) when `cfg.enable_audio` is set: the director
     /// stages and routes as it does over a device, and nothing is heard.

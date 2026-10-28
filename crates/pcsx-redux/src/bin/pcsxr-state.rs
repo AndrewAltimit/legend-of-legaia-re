@@ -7,8 +7,11 @@
 //! first consumer. `info` prints the scene / game-mode / player anchors
 //! the library exposes.
 //!
-//! Disc-gated like the library: the RAM anchor search reads
-//! `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
+//! Main RAM is located structurally, so any game's state opens with no
+//! executable. `--game generic` drops the Legaia identity globals `info` and
+//! `identify` otherwise read (and the Legaia anchor fallback, which reads
+//! `extracted/SCUS_942.54` or `$LEGAIA_SCUS` for a payload the structural walk
+//! does not recognise).
 
 use std::path::PathBuf;
 
@@ -17,10 +20,42 @@ use clap::{Parser, Subcommand};
 use legaia_pcsx_redux::SaveState;
 
 #[derive(Parser)]
-#[command(name = "pcsxr-state", about = "PCSX-Redux .sstate main-RAM reader")]
+#[command(
+    name = "pcsxr-state",
+    about = "PCSX-Redux .sstate reader: main RAM, scratchpad, VRAM (any PS1 game)",
+    long_about = "PCSX-Redux .sstate reader. Main RAM, the scratchpad and the GPU \
+                  snapshot are located by walking the state's protobuf, so states of \
+                  any PS1 game open. `info` / `identify` print Legend of Legaia's \
+                  scene / mode / player globals unless `--game generic` is given."
+)]
 struct Cli {
+    /// Which game's globals `info` / `identify` read: `legaia` (scene, game
+    /// mode, player position, plus the SCUS anchor fallback) or `generic`
+    /// (structural location only; reports how RAM was found).
+    #[arg(long, global = true, value_enum, default_value_t = Game::Legaia)]
+    game: Game,
     #[command(subcommand)]
     cmd: Cmd,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Game {
+    Legaia,
+    Generic,
+}
+
+fn load(game: Game, path: &std::path::Path) -> Result<SaveState> {
+    match game {
+        Game::Legaia => SaveState::from_path(path),
+        Game::Generic => SaveState::from_path_structural(path),
+    }
+}
+
+fn source_label(st: &SaveState) -> &'static str {
+    match st.ram_source() {
+        legaia_pcsx_redux::RamSource::Structural => "structural",
+        legaia_pcsx_redux::RamSource::Anchor => "anchor",
+    }
 }
 
 #[derive(Subcommand)]
@@ -76,9 +111,23 @@ fn parse_addr(s: &str) -> Result<u32, String> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let game = cli.game;
     match cli.cmd {
+        Cmd::Info { save } if game == Game::Generic => {
+            let st = load(game, &save)?;
+            println!("ram       {} (2 MiB)", source_label(&st));
+            println!(
+                "scratch   {}",
+                if st.scratchpad().is_some() {
+                    "present"
+                } else {
+                    "absent"
+                }
+            );
+            Ok(())
+        }
         Cmd::Info { save } => {
-            let st = SaveState::from_path(&save)?;
+            let st = load(game, &save)?;
             println!("scene     {}", st.scene_name());
             println!("game mode {:#04x}", st.game_mode());
             match st.player_pos() {
@@ -90,7 +139,21 @@ fn main() -> Result<()> {
         Cmd::Identify { saves, json } => {
             anyhow::ensure!(!saves.is_empty(), "no save states given");
             for path in &saves {
-                match SaveState::from_path(path) {
+                match load(game, path) {
+                    Ok(st) if game == Game::Generic => {
+                        if json {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "file": path.display().to_string(),
+                                    "emulator": "pcsx-redux",
+                                    "ram_source": source_label(&st),
+                                })
+                            );
+                        } else {
+                            println!("{:<10} {}", source_label(&st), path.display());
+                        }
+                    }
                     Ok(st) => {
                         let id = st.identity();
                         let label = legaia_ram_image::game_anchors::game_mode_label(id.game_mode);
@@ -151,7 +214,7 @@ fn main() -> Result<()> {
             out,
         } => {
             anyhow::ensure!(start < end, "start {start:#x} must be below end {end:#x}");
-            let st = SaveState::from_path(&save)?;
+            let st = load(game, &save)?;
             // The 1 KiB scratchpad is the other window a script's transient
             // state lives in (the camera's visible tile window `0x1F8003E8`,
             // the walk-region box `0x1F800384`).

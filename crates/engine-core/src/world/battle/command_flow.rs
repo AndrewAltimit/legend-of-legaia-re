@@ -10,13 +10,6 @@ mod party_dispatch;
 mod spell_item_menus;
 pub mod ui_cues;
 
-/// The first **normal**-art action constant (art ordinal `4`). The queue
-/// builder `FUN_801EED1C` tokenizes only ordinals `>= 4`: the Miracle Art
-/// (ordinal `0`) and the three Hyper Arts (`1..=3`) take its other arm
-/// (`sltiu a1,a0,0x4` at `0x801EF330`), which writes nothing unless the
-/// slot's `+0x25F` Miracle marker is armed.
-const NORMAL_ART_MIN_CONSTANT: u8 = 0x1F;
-
 /// The bias between an art's action-queue byte and its id in the character
 /// record's learned-art list `+0x185..`. The builder `FUN_801EED1C` walks
 /// the art grid with `s3` from `0xB` (`li s3,0xb` at `0x801EF2EC`), writes

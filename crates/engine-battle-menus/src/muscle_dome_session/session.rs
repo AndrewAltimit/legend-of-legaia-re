@@ -25,6 +25,12 @@ pub struct MuscleDomeSession {
     /// "this fighter knows no arts", which is retail's own answer for an
     /// unmatched string.
     pub(super) art_catalog: [Vec<(legaia_art::ActionConstant, Vec<legaia_art::Command>)>; 2],
+    /// Per-fighter **whole art bank** in walk order (record `0x1B` first,
+    /// [`legaia_art::bank_rows`]), when the host has it
+    /// ([`Self::install_art_bank`]). With one installed the turn's queue is
+    /// the builder's walk over both arms, so a Hyper Art collapses for a
+    /// fighter carrying a Ra-Seru.
+    pub(super) art_bank: [Vec<legaia_art::BankRow>; 2],
     /// Per-fighter magic loadout, when the host has one to give
     /// ([`Self::install_magic`]). `None` is a fighter whose Ra-Seru chip
     /// reads `-` and whose ring arm refuses, which is retail's own answer for
@@ -109,6 +115,7 @@ impl MuscleDomeSession {
             last_turn_damage: [0, 0],
             damage: None,
             art_catalog: [Vec::new(), Vec::new()],
+            art_bank: [Vec::new(), Vec::new()],
             magic: [None, None],
             cast: [None, None],
             magic_open: false,
@@ -269,6 +276,14 @@ impl MuscleDomeSession {
     pub fn set_hp_max(&mut self, slot: usize, hp_max: i32) {
         let f = &mut self.f[slot];
         f.max_hp = hp_max.max(f.hp).max(1);
+    }
+
+    /// Set fighter `slot`'s live HP (clamped to `0..=max`) - the leg's
+    /// battle hands its outcome back through this when the leg was fought
+    /// as an ordinary battle.
+    pub fn set_hp(&mut self, slot: usize, hp: i32) {
+        let f = &mut self.f[slot];
+        f.hp = hp.clamp(0, f.max_hp.max(hp.max(0)));
     }
 
     /// A fighter's dealt directions.
@@ -540,6 +555,18 @@ impl MuscleDomeSession {
         self.art_catalog[slot] = rows;
     }
 
+    /// Install fighter `slot`'s whole art bank, the rows
+    /// [`legaia_art::tokenize_bank`] walks ([`art_bank_for`] /
+    /// [`art_bank_from_bank`]). It takes over [`Self::tokenized_queue`] from
+    /// the normal-art catalog: the dome's rounds run the battle overlay's
+    /// queue builder `FUN_801EED1C`, whose Hyper arm the fighter's Ra-Seru
+    /// gate `ctx[+0x25F + member]` opens ([`DomeRing::has_raseru`]).
+    pub fn install_art_bank(&mut self, slot: usize, rows: Vec<legaia_art::BankRow>) {
+        if slot < 2 {
+            self.art_bank[slot] = rows;
+        }
+    }
+
     /// Fighter `slot`'s committed string as the retail **action queue** -
     /// the tokenizer's output over the installed catalog, or the raw
     /// direction string when the fighter has no catalog.
@@ -549,19 +576,18 @@ impl MuscleDomeSession {
     /// constant indexes a real move-power row, while a plain direction byte
     /// indexes row 0, which the disc ships as 26 zero bytes.
     ///
-    /// PORT: FUN_801EED1C (the tokenizer pass only - the dome input has no
-    /// Miracle / Super tail and no learn-on-use check, both of which live in
-    /// the battle command flow's own builder)
+    /// With a whole bank installed ([`Self::install_art_bank`]) this is the
+    /// builder's walk over both arms, so a Hyper Art entered by a fighter
+    /// carrying a Ra-Seru collapses to `0x1A` and its constant; otherwise the
+    /// normal-art catalog's tokenizer.
+    ///
+    /// PORT: FUN_801EED1C (the normalisation walk only - the dome input has
+    /// no Miracle / Super tail and no learn-on-use check, both of which live
+    /// in the battle command flow's own builder)
     pub fn tokenized_queue(&self, slot: usize) -> Vec<u8> {
         let Some(f) = self.f.get(slot) else {
             return Vec::new();
         };
-        let catalog = &self.art_catalog[slot];
-        if catalog.is_empty() {
-            return f.queue.clone();
-        }
-        let entries: Vec<legaia_art::tokenize::ArtEntry<'_>> =
-            catalog.iter().map(|(a, c)| (*a, c.as_slice())).collect();
         // The committed string is action bytes `0x0C..=0x0F`; the tokenizer
         // reads the arrow space `1..=4` (Left / Right / Down / Up).
         let input: Vec<legaia_art::Command> = f
@@ -569,6 +595,18 @@ impl MuscleDomeSession {
             .iter()
             .filter_map(|b| dome_command_of_action_byte(*b))
             .collect();
+        if !self.art_bank[slot].is_empty() {
+            let armed = self.magic(slot).is_some_and(|m| m.ring.has_raseru);
+            let records = legaia_art::bank_view(&self.art_bank[slot]);
+            let built = legaia_art::tokenize_bank(&records, &input, armed);
+            return legaia_art::tokenize::populated(&built.queue).to_vec();
+        }
+        let catalog = &self.art_catalog[slot];
+        if catalog.is_empty() {
+            return f.queue.clone();
+        }
+        let entries: Vec<legaia_art::tokenize::ArtEntry<'_>> =
+            catalog.iter().map(|(a, c)| (*a, c.as_slice())).collect();
         let tokens = legaia_art::tokenize(&entries, &input);
         legaia_art::tokenize::populated(&tokens).to_vec()
     }

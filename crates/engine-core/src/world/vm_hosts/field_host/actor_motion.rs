@@ -125,14 +125,56 @@ impl FieldHostImpl<'_> {
             }
             return;
         }
-        // Sub-2 on a placed object's actor: the `+0x8E` tween the actor
-        // tick's `0x20000000` height law turns into its Y (`chitei2`'s
-        // falling boulder). See `world::object_actor_height`.
-        if sub == 2
-            && let Some(record) = self.world.field_vm.executing_object
-        {
-            self.world
-                .schedule_object_slot_ramp(record, ctx.field_8e, target, ticks);
+        // Sub-2 / 3 / 4: the `+0x8E` height slot (which the actor tick's
+        // `0x20000000` law turns into Y), and the `+0x24` / `+0x28` X / Z
+        // Euler angles the actor draw composes. Retail schedules each on
+        // whichever actor the op resolved, from that actor's live word
+        // (`0x801E1214..0x801E1230`: `a1 = &s5+0x8E`, start `lh +0x8E`;
+        // `0x801E124C..0x801E1268` for `+0x24`; `0x801E1284..0x801E12A0` for
+        // `+0x28`; all kind 2, all through the scheduler exit `0x801E205C`)
+        // - a placed object's actor (`chitei2`'s falling boulder), a
+        // placement's (`rayman`'s bridge planks, `P2[7]`'s
+        // `CC 54 42 00 FD F0 00`) or the player's.
+        if matches!(sub, 2..=4) {
+            use legaia_engine_field::object_tint::ObjectRampSlot;
+            use legaia_engine_motion_vm::ambient_motion::{
+                RAMP_DEST_HEIGHT, RAMP_DEST_PITCH, RAMP_DEST_ROLL, Ramp, RampKind,
+            };
+            let (dest, start, object_slot) = match sub {
+                2 => (RAMP_DEST_HEIGHT, ctx.field_8e, ObjectRampSlot::Height8E),
+                3 => (RAMP_DEST_PITCH, ctx.field_24, ObjectRampSlot::Pitch24),
+                _ => (RAMP_DEST_ROLL, ctx.field_28, ObjectRampSlot::Roll28),
+            };
+            if let Some(record) = self.world.field_vm.executing_object {
+                self.world.schedule_object_ramp(
+                    record,
+                    object_slot,
+                    i32::from(start),
+                    i32::from(target),
+                    ticks,
+                );
+                return;
+            }
+            let total = i32::from(ticks);
+            let ramp = |owner: u32| Ramp {
+                dest,
+                owner,
+                start: i32::from(start),
+                end: i32::from(target),
+                total,
+                remaining: total,
+                kind: RampKind::U16,
+            };
+            match self.world.heading_owner(ctx) {
+                Some(HeadingOwner::Placement(slot)) => {
+                    self.world.npcs.slot_ramps.install(ramp(u32::from(slot)));
+                }
+                Some(HeadingOwner::Player) => {
+                    let owner = u32::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET);
+                    self.world.locomotion.player_slot_ramps.install(ramp(owner));
+                }
+                None => {}
+            }
             return;
         }
         if sub != 0

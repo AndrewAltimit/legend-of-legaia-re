@@ -64,14 +64,17 @@ pub(super) fn play_beats(
     // hand runs from the scene's random encounters on the way, as a player
     // does who means to meet the boss with what the party has
     // ([`continuous::SAVING_FOR_BOSS`]).
-    let _saving = continuous::SavingForBoss::arm(
-        pad_hand()
-            && first_tile.keys().any(|&rec| {
-                record_stages_fight(&mf, &man, 2, usize::from(rec))
-                    && partition2_record_gates(&mf, &man, usize::from(rec))
-                        .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2))
-            }),
-    );
+    // A staging band still ahead counts even while another band's flag
+    // gates it: `rikuroa` P2[47] stages the 640-HP row 16 against a Noa
+    // alone (C1 `0x284`, set by the win) behind P2[46]'s `0x283` (its C2),
+    // and the scene's random fights, taken while P2[47] still read as
+    // gated, left her 272 of 423 on a stream whose bag held one heal.
+    let staging_ahead = first_tile.keys().any(|&rec| {
+        record_stages_fight(&mf, &man, 2, usize::from(rec))
+            && partition2_record_gates(&mf, &man, usize::from(rec))
+                .is_some_and(|(c1, _)| session.host.world.p2_record_gates_pass(&c1, &[]))
+    });
+    let _saving = continuous::SavingForBoss::arm(pad_hand() && staging_ahead);
     // Talk and walk-on beats unlock each other (a conversation sets the flag
     // a walk-on record's C2 gate needs, and a walk-on cutscene sets the flag
     // a conversation branches on), so both passes repeat while a round still
@@ -181,8 +184,24 @@ pub(super) fn play_beats(
             walked.remove(&rec);
             rearmed.insert(rec);
         }
+        // A live walk-on band that changes the party plays before a
+        // stager's fight: the party that fights is the one the story seats
+        // on the way in. Retail's `rikuroa` P2[48] stands on the path from
+        // the scene's entry and seats Vahn, and P1[3]'s Caruban talk then
+        // adds Noa (`rikuroa_post_caruban`: Vahn and Noa, both level 6);
+        // a hand that went to P1[3] first fought Caruban with Noa alone.
+        // Held for the first round only, which walks the bands after the
+        // stagers: a band the round cannot play does not hold the fight.
+        let party_band_pending = pad_hand()
+            && round == 0
+            && first_tile.keys().any(|&rec| {
+                !walked.contains(&rec)
+                    && record_sets_party(&mf, &man, 2, usize::from(rec))
+                    && partition2_record_gates(&mf, &man, usize::from(rec))
+                        .is_some_and(|(c1, c2)| session.host.world.p2_record_gates_pass(&c1, &c2))
+            });
         for p in boss_stager_placements(&mf, &man) {
-            if stager_spent.contains(&p.placement_index) {
+            if stager_spent.contains(&p.placement_index) || party_band_pending {
                 continue;
             }
             STAGED_FIGHTS.with(|s| {

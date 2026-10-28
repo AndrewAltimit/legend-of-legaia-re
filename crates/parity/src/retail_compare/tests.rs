@@ -271,6 +271,24 @@ fn a_card_grid_capture_drives_past_its_pill_row() {
     let title = RetailMenu::from_ram(&grid(0), "opdeene").unwrap();
     assert!(title.title_continue && title.card_grid);
     assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
+    // The live title menu and its pill row are title-front seeds of their
+    // own, the menu carrying its row counter.
+    let title_at = |submode: u32, row: u8| {
+        let mut ram = ram_with_subscreen(0);
+        let o = (CARD_SCREEN_SUBMODE & 0x1F_FFFF) as usize;
+        ram[o..o + 4].copy_from_slice(&submode.to_le_bytes());
+        ram[(TITLE_ROW & 0x1F_FFFF) as usize] = row;
+        RetailMenu::from_ram(&ram, "opdeene").unwrap().title_screen
+    };
+    assert_eq!(
+        title_at(TITLE_SUBMODE_MENU, 1),
+        Some(TitleScreen::Menu { row: 1 })
+    );
+    assert_eq!(title_at(TITLE_SUBMODE_PILL, 1), Some(TitleScreen::Pill));
+    let (menu, menu_tick) = title_screen_drive(TitleScreen::Menu { row: 1 });
+    let (pill, pill_tick) = title_screen_drive(TitleScreen::Pill);
+    assert!(TITLE_CONTINUE_PRESSES.starts_with(&pill) && pill.starts_with(&menu));
+    assert!(menu_tick < pill_tick && pill_tick < TITLE_CONTINUE_CAPTURE_TICK);
 }
 
 #[test]

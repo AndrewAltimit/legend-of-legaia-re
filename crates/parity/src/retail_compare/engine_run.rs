@@ -104,11 +104,50 @@ pub fn run_engine_with(
     retail: &RetailObs,
     order: SeedOrder,
 ) -> Result<EngineObs> {
+    seed_and_settle(extracted, retail, order, None)
+}
+
+/// [`run_engine`] with the audio director attached (over a device-less
+/// output, [`NativeSession::open_extracted_detached_audio`]) and every settle
+/// tick running the play hosts' audio frame and pulling one video frame of
+/// samples: what the music and the sound effects were doing at the sample
+/// ([`crate::audio_sweep`]).
+pub fn run_engine_listening(
+    extracted: &Path,
+    retail: &RetailObs,
+) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
+    let mut audio = crate::audio_sweep::EngineAudio::default();
+    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, Some(&mut audio))?;
+    Ok((obs, audio))
+}
+
+/// Hand the tick's op-`0x35` events to the session's own director when it
+/// has one (it routed the tick's own events already), else to the
+/// recording director.
+fn route_bgm(session: &mut NativeSession, director: &mut RecordingDirector) -> Result<()> {
+    match session.bgm.as_mut() {
+        Some(bgm) => session.host.route_bgm_events(bgm)?,
+        None => session.host.route_bgm_events(director)?,
+    };
+    Ok(())
+}
+
+fn seed_and_settle(
+    extracted: &Path,
+    retail: &RetailObs,
+    order: SeedOrder,
+    mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
+) -> Result<EngineObs> {
     let cfg = BootConfig {
         scene: retail.scene.clone(),
-        enable_audio: false,
+        enable_audio: listen.is_some(),
     };
-    let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
+    let mut session = if listen.is_some() {
+        NativeSession::open_extracted_detached_audio(extracted, &cfg)
+    } else {
+        NativeSession::open(extracted, &cfg)
+    }
+    .context("open boot session")?;
     // The image child's `--retail` mode (`pin_seed_retail`). No field-side
     // switch draws differently under a resident patch.
     crate::retail_compare::pin_seed_retail(&mut session.host.world.toggles, false);
@@ -137,7 +176,7 @@ pub fn run_engine_with(
     session.host.world.seed_frame_step(retail.frame_step());
     let mut director = RecordingDirector::default();
     // The entry itself may already have queued a start.
-    session.host.route_bgm_events(&mut director)?;
+    route_bgm(&mut session, &mut director)?;
     // A non-zero arrival facing is a door's (the card load the seed takes
     // zeroes it): history the seed cannot replay, so it is seated like the
     // position, and the player stands as the state's entry stood it.
@@ -189,6 +228,7 @@ pub fn run_engine_with(
         SETTLE_TICKS
     };
     let mut at_settle = None;
+    let mut audio_at_settle = None;
     let mut met_at = None;
     let mut resumed = false;
     if let Some(g) = &gate
@@ -211,7 +251,10 @@ pub fn run_engine_with(
         // (`BootSession::field_vram_tick`): a cross-context CLUT fade left
         // unstepped keeps its context halted for the whole run.
         session.field_vram_tick();
-        session.host.route_bgm_events(&mut director)?;
+        route_bgm(&mut session, &mut director)?;
+        if let Some(audio) = listen.as_deref_mut() {
+            crate::audio_sweep::listen_frame(&mut session, audio);
+        }
         if let Some(g) = &gate {
             if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some()
                 && (t % 25 == 0
@@ -244,6 +287,12 @@ pub fn run_engine_with(
             }
             if t == SETTLE_TICKS {
                 at_settle = Some(sample_engine(&mut session, retail, &director, None));
+                // The listener's sample sits on the same tick.
+                audio_at_settle = listen.as_deref().map(|a| {
+                    let mut a = a.clone();
+                    crate::audio_sweep::finish_listen(&session, &mut a);
+                    a
+                });
             }
             // The walkers stand where retail's left them before a talk is
             // engaged: the talk snap turns a placement to the bearing from
@@ -272,7 +321,13 @@ pub fn run_engine_with(
     });
     if let (Some(_), None, Some(mut obs)) = (&gate, met_at, at_settle) {
         obs.script = script;
+        if let (Some(audio), Some(a)) = (listen, audio_at_settle) {
+            *audio = a;
+        }
         return Ok(obs);
+    }
+    if let Some(audio) = listen {
+        crate::audio_sweep::finish_listen(&session, audio);
     }
     let menu_subscreen = match &retail.menu {
         Some(Ok(menu)) => {

@@ -339,8 +339,9 @@ impl SceneHost {
     /// op `0x34` sub-3 is what flips the system flag a `4C C5` / `4C C6` wait
     /// holds on (`2F 1C` / `2F 1D`): `garmel` P2[12] stages record 2 with
     /// `B4 1D 30 01` and parks on `4C C6 0A 00` until that part clears
-    /// `0x0A`. A driver that ticks the scene without this tail parks there
-    /// for good. What the tail hands back for drawing is returned; a headless
+    /// `0x0A`, and `rugi` P2[72] parks on the same wait ahead of its player
+    /// tilt (`engine-session`'s `player_tilt_live_disc`). A driver that ticks
+    /// the scene without this tail parks there for good. What the tail hands back for drawing is returned; a headless
     /// caller drops it.
     pub fn step_headless_frame_tail(&mut self) -> legaia_engine_core::world::WorldFrameTail {
         self.world.seat_summon_creature_unrendered();

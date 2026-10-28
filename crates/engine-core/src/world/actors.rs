@@ -293,6 +293,26 @@ impl World {
         f32::from(self.player_scale_word()) / 4096.0
     }
 
+    /// The player's draw tilt, `(pitch, roll)` in 12-bit units: its `+0x24`
+    /// X and `+0x28` Z Euler angles, which field-VM `CC F8 43` / `CC F8 44`
+    /// write or tween. `(0, 0)` with no player actor.
+    ///
+    /// The animated renderer hands the actor's whole angle triple to the
+    /// matrix composer (`addiu a0,s0,0x24` / `jal 0x80026988` at
+    /// `0x8001B9D0`), so the player tilts the way a placement does
+    /// ([`Self::field_npc_tilt`]): both play hosts compose `Rx * Ry * Rz`
+    /// from these and the heading whenever either is non-zero.
+    ///
+    /// REF: FUN_8001B964, FUN_80026988
+    pub fn player_draw_tilt(&self) -> (u16, u16) {
+        self.player_actor_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .map_or((0, 0), |a| {
+                let u = |v: i16| (i32::from(v).rem_euclid(4096)) as u16;
+                (u(a.move_state.render_24), u(a.move_state.render_28))
+            })
+    }
+
     /// `true` while the player's `+0x72` is `0` - retail's animated renderer
     /// skips the actor outright (`FUN_8001B964` at `0x8001B9A0`). Both play
     /// hosts drop the player's draw (textured and colour halves) on it.
@@ -379,6 +399,10 @@ impl World {
     /// One frame of the `4C 48` heading tweens: each lands the scheduler's
     /// retail-space value in the placement's heading (engine space,
     /// `+ 0x800`), raw, as the scheduler's `sh` does.
+    ///
+    /// The `4C 42` height tweens land the same way in the placement
+    /// context's `+0x8E`; the height arm turns the slot into Y on the next
+    /// actor tick.
     pub(crate) fn tick_npc_heading_ramps(&mut self) {
         let speed = self.move_vm.ramp_ratio.max(1);
         if self.npcs.face_ramps.active() != 0 {
@@ -388,6 +412,26 @@ impl World {
                 {
                     // `kind 2`: an `sh` of the low half.
                     face.1 = w.value as i16;
+                }
+            }
+        }
+        if self.npcs.slot_ramps.active() != 0 {
+            for w in self.npcs.slot_ramps.tick(speed) {
+                if let Some(c) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == w.owner as usize)
+                {
+                    // `kind 2`: an `sh` into the tweened word.
+                    use legaia_engine_motion_vm::ambient_motion::{
+                        RAMP_DEST_PITCH, RAMP_DEST_ROLL,
+                    };
+                    match w.dest {
+                        RAMP_DEST_PITCH => c.ctx.field_24 = w.value as i16,
+                        RAMP_DEST_ROLL => c.ctx.field_28 = w.value as i16,
+                        _ => c.ctx.field_8e = w.value as i16,
+                    }
                 }
             }
         }
@@ -404,10 +448,29 @@ impl World {
     }
 
     pub(crate) fn tick_player_scale_ramp(&mut self) {
+        let speed = self.move_vm.ramp_ratio.max(1);
+        if self.locomotion.player_slot_ramps.active() != 0 {
+            use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_PITCH, RAMP_DEST_ROLL};
+            let writes = self.locomotion.player_slot_ramps.tick(speed);
+            let slot = self.player_actor_slot.map(usize::from);
+            for w in writes {
+                match w.dest {
+                    RAMP_DEST_PITCH | RAMP_DEST_ROLL => {
+                        if let Some(a) = slot.and_then(|s| self.actors.get_mut(s)) {
+                            if w.dest == RAMP_DEST_PITCH {
+                                a.move_state.render_24 = w.value as i16;
+                            } else {
+                                a.move_state.render_28 = w.value as i16;
+                            }
+                        }
+                    }
+                    _ => self.locomotion.player_8e = w.value as i16,
+                }
+            }
+        }
         if self.locomotion.player_scale_ramps.active() == 0 {
             return;
         }
-        let speed = self.move_vm.ramp_ratio.max(1);
         let writes = self.locomotion.player_scale_ramps.tick(speed);
         let Some(slot) = self.player_actor_slot.map(usize::from) else {
             return;

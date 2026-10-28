@@ -255,6 +255,10 @@ pub struct BattleCamera {
     /// (`0x801E29E4..0x801E2A24`). Advanced one unit per display frame for
     /// as long as the battle runs, exactly like the SM's own prologue.
     pub(super) action_yaw: i32,
+    /// How far the prologue drift has carried [`Self::action_yaw`] since
+    /// the counter was last stored outright (a rung of the per-action
+    /// ladder, a module's store, an alignment) - the clock half of the word.
+    pub(super) action_yaw_drift: i32,
     /// The last `ctx[7]` [`Self::observe_action_state`] saw, so the yaw
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.

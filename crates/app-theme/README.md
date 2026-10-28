@@ -27,7 +27,12 @@ to the nearest 8-bit step. `LIGHT` carries the same hues on white, with the
 accent darkened until it reads there. Studio's light theme applies only the
 surface, accent, selection, error and outline roles over egui's own light
 widgets; in both themes a control at rest carries the `outline` edge, without
-which an unticked check box all but vanishes into the panel.
+which an unticked check box all but vanishes into the panel, and weak text
+(hints such as the start page's drop line) is `ink_faint`, where egui's own
+alpha-faded grey fell under the 3:1 hint floor.
+
+Key names are `info` (`chrome::KEY`) in all three programs: the launcher's
+Controls panel, Studio's shortcut list and the play window's `F12` panel.
 
 The play window's chrome is always dark: it sits on a scrim over whatever the
 game draws.

@@ -267,9 +267,24 @@ pub const WALL_CULL_DEPTH: f32 = 10001.0;
 
 // ---------------------------------------------------------------- scene
 
-/// The ghost passes' colour keep: the afterimage blends toward the black
-/// colour word by depth-cue level `0x800` then `0xC00`.
-const GHOST_KEEP: [f32; 2] = [0.5, 0.25];
+/// The ghost passes' draw words: the spawn's colour word
+/// ([`AFTERIMAGE_COLOR_WORD`], `0x81000000`) at each pass's depth-cue level
+/// (`0x800`, then `0xC00`), decoded as `FUN_80043390` decodes them. The mode
+/// byte `0x81` raises semi-transparency with ABR `1` (`B + F`), and the cue
+/// pulls the packet colour half, then three quarters, of the way to black:
+/// each ghost is the body's texture at that weight **added** over the frame,
+/// not an opaque dark copy.
+///
+/// [`AFTERIMAGE_COLOR_WORD`]: legaia_engine_minigames::baka_fighter_chrome::AFTERIMAGE_COLOR_WORD
+fn ghost_colour(pass: usize) -> legaia_render_kernels::sprite_arm::ColourWord {
+    use legaia_engine_minigames::baka_fighter_chrome::{
+        AFTERIMAGE_COLOR_WORD, AFTERIMAGE_CUE_START, AFTERIMAGE_CUE_STEP,
+    };
+    legaia_render_kernels::sprite_arm::ColourWord::from_words(
+        AFTERIMAGE_COLOR_WORD,
+        AFTERIMAGE_CUE_START + AFTERIMAGE_CUE_STEP * pass as u16,
+    )
+}
 
 /// World units a ghost pass sits behind its thrower per pass. Retail sorts
 /// the ghosts `0x40` deeper in the ordering table; a depth-tested renderer
@@ -360,9 +375,9 @@ impl BakaDuelScene {
         };
         s.fighter[0] = s.push_tmd(&p.tmd, &p.raw, 1.0);
         s.fighter[1] = s.push_tmd(&o.tmd, &o.raw, 1.0);
-        for (k, keep) in GHOST_KEEP.iter().enumerate() {
-            s.ghost[0][k] = s.push_tmd(&p.tmd, &p.raw, *keep);
-            s.ghost[1][k] = s.push_tmd(&o.tmd, &o.raw, *keep);
+        for k in 0..2 {
+            s.ghost[0][k] = s.push_ghost(&p.tmd, &p.raw, ghost_colour(k));
+            s.ghost[1][k] = s.push_ghost(&o.tmd, &o.raw, ghost_colour(k));
         }
         if let Some((tmd, raw)) = assets.wall.as_ref() {
             for placement in WALL_PLACEMENTS {
@@ -401,6 +416,13 @@ impl BakaDuelScene {
         s.base_cba_tsb = s.cba_tsb.clone();
         s.positions = s.base.clone();
         Some(s)
+    }
+
+    /// The vertex range one ghost pass of fighter `slot` occupies
+    /// (`pass` 0 the nearer ghost, 1 the farther); collapsed to a point
+    /// while that ghost is not drawing.
+    pub fn ghost_range(&self, slot: usize, pass: usize) -> Range<usize> {
+        self.ghost[slot & 1][pass & 1].clone()
     }
 
     /// The `(player, opponent)` roster pair the buffers hold.
@@ -576,6 +598,30 @@ impl BakaDuelScene {
             }
         }
         start..self.base.len()
+    }
+
+    /// One ghost pass's copy of a fighter mesh: the mesh with every packet
+    /// under the pass's colour word - colour depth-cued toward the word's
+    /// black far colour, textured prims' TSB taking the word's ABE bit and
+    /// ABR mode ([`impact_tsb`]), as the afterimage's `FUN_8001B964` draw
+    /// hands both to `FUN_80043390` (`lw a1,0x74(s0); lhu a2,0x78(s0)` at
+    /// `0x8001BC7C`).
+    fn push_ghost(
+        &mut self,
+        tmd: &legaia_tmd::Tmd,
+        raw: &[u8],
+        colour: legaia_render_kernels::sprite_arm::ColourWord,
+    ) -> Range<usize> {
+        let range = self.push_tmd(tmd, raw, 1.0);
+        for i in range.clone() {
+            self.colors[i] = colour.cue(self.colors[i]);
+            let [cba, tsb] = self.cba_tsb[i];
+            self.cba_tsb[i] = [cba, impact_tsb(tsb, colour)];
+            let px = &mut self.flat_rgba[i * 4..i * 4 + 3];
+            let c = colour.cue([px[0], px[1], px[2]]);
+            px.copy_from_slice(&c);
+        }
+        range
     }
 
     /// The floor grid `FUN_801CEB84` emits - the battle ground grid's own

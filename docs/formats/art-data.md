@@ -118,6 +118,7 @@ See [battle-data-pack.md § Battle animations](battle-data-pack.md#battle-animat
 | Offset | Size | Field | Meaning | Confidence |
 |---|---|---|---|---|
 | `+0x00` | u8[] | combo | `1=L, 2=R, 3=D, 4=U`, 0-terminated. A Super Art record holds a one-byte stub here | Confirmed |
+| `+0x0A` | u8[4] | stream sources | `+0x0A` is the record's `"ME"` stream index; a non-zero `+0x0B..+0x0D` chains the next records into one Hyper Art (only Noa's Hurricane Kick, `04 05`), which the queue builder writes as one constant per byte ([Hyper Art arm](../subsystems/battle-action-queue.md#the-hyper-art-arm)) | Confirmed |
 | `+0x10` | 0x14 | name | fixed slot `+0x10..+0x24`. Populated for Super Arts, Miracle finishers, starters (`"Starter"`) and some Hyper Arts; zeros for regular arts, which use the SCUS name table | Confirmed |
 | `+0x24` | u8[1..=4] | power | one damage-power byte per strike ([encoding](#power-encoding)) | Confirmed |
 | `+0x7A` | u8 | impact-effect class | `0` = none, `1..=5` ([below](#impact-effect-class-entry-0x7a)) | Confirmed |

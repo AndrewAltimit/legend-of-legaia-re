@@ -69,11 +69,13 @@ impl World {
         std::mem::take(&mut self.audio.sfx_emitter_ops)
     }
 
-    /// Install the camera focus the emitters listen from, as retail stores
-    /// it (`_DAT_80089118` / `_DAT_80089120`, negated). The session writes
-    /// the frame's camera here before the world tick.
-    pub fn set_sound_listener_focus(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
-        self.audio.listener_focus = (focus_stored_x, focus_stored_z);
+    /// Install the camera focus as retail stores it (`_DAT_80089118` /
+    /// `_DAT_80089120`, negated) - what the sound emitters listen from and
+    /// move-VM ext `0x24` seats a part on. The session writes the frame's
+    /// camera here before the world tick
+    /// ([`legaia_engine_field::camera_rig::CameraRig::focus_stored`]).
+    pub fn set_camera_focus_stored(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
+        self.camera.focus_stored = [focus_stored_x, focus_stored_z];
     }
 }
 

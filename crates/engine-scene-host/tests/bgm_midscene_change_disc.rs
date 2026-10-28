@@ -1,24 +1,13 @@
 //! Disc-gated: a mid-scene BGM change must reach the director's **playback
-//! start** on the frame the field VM asks for it - with no intervening scene
+//! start** inside the scene that asks for it - with no intervening scene
 //! entry.
 //!
 //! Field-VM op `0x35` sub-op `9` is the op a cutscene uses to change music
-//! part-way through a scene. Retail's arm (field overlay `0x801E0224`) is a
-//! *load barrier followed by a track select*:
-//!
-//! ```text
-//! 801e022c  lw a0,-0x4548(v0)       ; a0 = *0x8007BAB8  (resolved index)
-//! 801e0230  lw v0,-0x4564(v1)       ; v0 = *0x8007BA9C  (loaded index)
-//! 801e0238  bne a0,v0,0x801dee4c    ; not settled -> `move s8,s4` = re-run this PC
-//! 801e0240  jal 0x8003ce9c          ; read the u16 operand
-//! 801e0254  sw v0,-0x4538(a1)       ; *0x8007BAC8 = id   <-- sub-op 1's own store
-//! ```
-//!
-//! The store at `0x801E0254` is byte-for-byte the one sub-op 1 makes, so
-//! sub-op 9 **starts** the track; the only extra is that it stalls the script
-//! until the previously requested asset has landed. The port resolves BGM
-//! bytes synchronously, so that barrier is always satisfied and sub-op 9 is
-//! plain start.
+//! part-way through a scene. Its arm (field overlay `0x801E0224`) is a load
+//! barrier, sub-op 1's own track select (`sw v0,-0x4538(a1)` at `0x801E0254`)
+//! and sound-flag bit 0; the swap poller then attaches the selected track on
+//! the record's sub-op `0xA` commit (`bgm_swap_commit_disc.rs` pins the
+//! hold). So the track sounds in its own scene, from the commit.
 //!
 //! Reading it as "queue for the next scene entry" is what this test pins
 //! against: with that reading the whole Biron Monastery (`bylon`) cutscene
@@ -147,17 +136,26 @@ fn midscene_bgm_change_starts_playback_without_a_scene_entry() {
 
     for id in &sub9 {
         let mut d = SplitDirector::default();
+        // The select's window (sound-flag bit 0), as the field VM's arm
+        // raises it.
+        host.world.audio.set_start_pending_commit(true);
         host.world.pending_field_events.push(FieldEvent::Bgm {
             text_id: *id,
             sub_op: 9,
+        });
+        host.route_bgm_events(&mut d).expect("route");
+        assert!(d.started.is_empty(), "the select is held for its commit");
+        host.world.audio.set_start_pending_commit(false);
+        host.world.pending_field_events.push(FieldEvent::Bgm {
+            text_id: 0,
+            sub_op: 0xA,
         });
         let acted = host.route_bgm_events(&mut d).expect("route");
         assert_eq!(
             d.started,
             vec![*id],
-            "sub-op 9 track {id} did not start on the frame it was requested \
-             (acted={acted}) - a mid-scene music change is a start, not a queue \
-             for the next scene",
+            "sub-op 9 track {id} did not start on its commit (acted={acted}) - a \
+             mid-scene music change sounds in its own scene, not at the next one",
         );
         // Nothing may be left on the queue for a later trigger to pick up.
         assert!(
@@ -187,7 +185,7 @@ fn midscene_bgm_change_starts_playback_without_a_scene_entry() {
     assert_eq!(d.started, vec![id], "sub-op 1 start regressed");
 
     eprintln!(
-        "[ok] {SCENE}: {} sub-op-9 tracks start immediately",
+        "[ok] {SCENE}: {} sub-op-9 tracks start on their commit",
         sub9.len()
     );
 }

@@ -7,6 +7,7 @@
 //! Run a single file's tests with
 //! `cargo test -p legaia-engine-scene-host --lib integration::<name>::`.
 
+mod ambient_grab_part_disc;
 mod b3_menu_warp_drain;
 mod baka_duel_ladder;
 mod baka_duel_scene_real;
@@ -19,9 +20,11 @@ mod battle_camera_heights_disc;
 mod battle_stage_entries_real;
 mod battle_tutorial_disc;
 mod bgm_midscene_change_disc;
+mod bgm_swap_commit_disc;
 mod bgm_track_word_disc;
 mod casino_coin_counter_disc;
 mod cave01_naming_lead_mesh_disc;
+mod cave01_terra_talk_disc;
 mod chapter2_sebucus_hub_sweep_disc;
 mod chitei2_collapse_beats_disc;
 mod code_lock_doman_disc;
@@ -42,6 +45,7 @@ mod door_arrival_menu_refusal_disc;
 mod dream_return_seat_disc;
 mod encounter_region_groups_disc;
 mod encounter_step_counter_disc;
+mod entry_install_slice_disc;
 mod field_actor_spawn_disc_e2e;
 mod field_camera_ladder_install_disc;
 mod field_camera_zone_arms_disc;
@@ -86,6 +90,8 @@ mod freeroam_field_channels_disc;
 mod global_bgm_owned_vab_disc;
 mod hub_tables_disc;
 mod inline_dialogue_vm_no_panic_disc;
+mod jouine_arc_held_height_disc;
+mod kor5_genesis_figure_height_disc;
 mod kor5_old_deez_seat_disc;
 mod map01_clut_fx_disc;
 mod map01_flyin_camera;
@@ -94,10 +100,12 @@ mod map03_conditional_walls_disc;
 mod map03_floating_castle_disc;
 mod menu_item_category_disc;
 mod model_rebind_live_disc;
+mod motion_tint_live_disc;
 mod move_ctrl52_census_disc;
 mod move_ext_strip_census_disc;
 mod move_op03_census_disc;
 mod muscle_contest_real;
+mod muscle_dome_battle_leg_disc;
 // --- lane D2 ---
 mod muscle_dome_choreo_real;
 // --- end lane D2 ---
@@ -107,6 +115,7 @@ mod muscle_dome_minigame_real;
 mod muscle_dome_scene_real;
 mod muscle_hub_tally_cues_disc;
 mod narration_ladder;
+mod noaru_focus_backdrop_disc;
 mod npc_morph_placement_disc;
 mod npc_morph_rikuroa_disc;
 mod object_effect_row_disc;
@@ -133,6 +142,7 @@ mod prize_exchange_disc;
 mod prop_ride_player_walk_disc;
 mod prop_run_npc_walk_disc;
 mod raseru_cross_out_atlas_disc;
+mod rayman_bridge_collapse_disc;
 mod region_battle_setup_disc;
 mod region_encounter_disc;
 mod rim_elm_ambush_disc;

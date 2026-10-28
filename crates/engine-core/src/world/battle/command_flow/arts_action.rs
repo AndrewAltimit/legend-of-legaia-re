@@ -42,10 +42,12 @@ impl World {
     /// into `actor[+0x1DF..]` for an entered arrow string - byte-exact, not
     /// structural:
     ///
-    /// 1. the tokenizer pass ([`legaia_art::tokenize`]): the arrows become
-    ///    `0x0C..0x0F` swings, each matched art gets the `0x19` starter
-    ///    written over its **last** arrow and its constant inserted after
-    ///    it, leading arrows stay and arts overlap (`↑↓↑` -> `0F 0E 19 27`);
+    /// 1. the bank walk ([`legaia_art::tokenize_bank`]): the arrows become
+    ///    `0x0C..0x0F` swings, each matched normal art gets the `0x19`
+    ///    starter written over its **last** arrow and its constant inserted
+    ///    after it, leading arrows stay and arts overlap (`↑↓↑` ->
+    ///    `0F 0E 19 27`); a Hyper Art with the Ra-Seru marker up collapses
+    ///    to `0x1A` and its constant (Lightning Storm -> `1A 1D`);
     /// 2. the learn-on-use check per accepted art (`FUN_801EFBFC`, `jal` at
     ///    `0x801EF44C`): a newly learned art's starter is `0x1A` instead
     ///    (`addiu v1,t3,0x18` with `t3 = 2`, `0x801EF6F0`);
@@ -61,7 +63,7 @@ impl World {
     /// swings, which is retail's own answer for an unmatched string.
     ///
     /// PORT: FUN_801EED1C (the player path: normalise + learn + finish;
-    /// the tokenizer body is `legaia_art::tokenize`, the finish passes
+    /// the tokenizer body is `legaia_art::tokenize_bank`, the finish passes
     /// `legaia_engine_battle_vm::battle_action::queue_applier`)
     pub(in crate::world) fn build_arts_action_queue(
         &mut self,
@@ -76,41 +78,20 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ACTION_QUEUE_CAP;
         let roster = self.party_roster_slot(caster as usize) as u8;
         let character = self.caster_character(roster);
-        // The character's art catalog in grid order (ascending constant),
-        // the order the builder's inner loop walks (`s3 = 0xB..`).
-        let mut catalog: Vec<(ActionConstant, Vec<legaia_art::Command>)> = self
-            .tables
-            .art_records
-            .iter()
-            .filter(|((ch, action), rec)| {
-                // Only the **normal** arts (ordinal `>= 4`, constants
-                // `0x1F+`): the builder's inner loop routes the Miracle Art
-                // and the three Hyper Arts (ordinals `0..=3`) through a
-                // different arm (`sltiu a1,a0,0x4` at `0x801EF330`) that,
-                // with the slot's `+0x25F` marker clear, writes nothing -
-                // their combo bytes never tokenize as arts.
-                // ... and only combos of two arrows or more: a fully matched
-                // one-arrow string takes the builder's `s1 == 1` exit
-                // (`0x801EF420..0x801EF434`) with no rewrite - the disc's
-                // one-arrow record is the Miracle finisher's, and letting it
-                // match would steal an arrow from every art containing it.
-                *ch == character
-                    && rec.commands.len() >= 2
-                    && action.as_byte() >= NORMAL_ART_MIN_CONSTANT
-            })
-            .map(|((_, action), rec)| (*action, rec.commands.clone()))
-            .collect();
-        catalog.sort_by_key(|(a, _)| a.as_byte());
-        let entries: Vec<legaia_art::tokenize::ArtEntry<'_>> =
-            catalog.iter().map(|(a, c)| (*a, c.as_slice())).collect();
-        let tokens = legaia_art::tokenize(&entries, commands);
+        let miracle_armed = self.miracle_marker_armed_for(roster);
+        // The character's art bank in walk order, record `0x1B` first (the
+        // builder's inner loop starts at `s3 = 0xB`, `0x801EF2EC`): every
+        // group takes its arm by its ordinal - the Miracle Art and the three
+        // Hyper Arts the special one (`sltiu a1,a0,0x4` at `0x801EF330`),
+        // gated on the slot's `+0x25F` Ra-Seru marker, the rest the normal
+        // rewrite.
+        let bank = self.art_bank_rows(character);
+        let records = legaia_art::bank_view(&bank);
+        let built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
+        let tokens = built.queue;
         log::debug!(
-            "arts queue: {:?} over {:?} -> {:02x?}",
+            "arts queue: {:?} (Ra-Seru {miracle_armed}) -> {:02x?}",
             commands,
-            catalog
-                .iter()
-                .map(|(a, c)| (a.as_byte(), c.as_slice()))
-                .collect::<Vec<_>>(),
             &tokens[..]
         );
         let mut bytes = [0u8; ACTION_QUEUE_CAP];
@@ -159,16 +140,31 @@ impl World {
                 }
             }
         }
-        let miracle_armed = self.miracle_marker_armed_for(roster);
+        // A Hyper Art takes the same learn check on its own record
+        // (`jal 0x801EFBFC` at `0x801EF44C` runs before the arm splits);
+        // its starter is `0x1A` whatever the verdict.
+        for &id in &built.hyper_matches {
+            match self.learn_art_on_record(roster, id) {
+                Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned) | None => {
+                    self.notify_art_used(roster, id)
+                }
+                Some(_) => self.party.tactical_arts.mark_known(roster, id),
+            }
+        }
+        // The build loop's own side array: a normal art's starter carries
+        // `1`, a Hyper Art's none.
+        let mut marks = [0u32; ACTION_QUEUE_CAP];
+        marks[..built.marks.len()].copy_from_slice(&built.marks);
         // The builder's special-trigger flag `0x801F696C` (cleared at its
         // head, set by the Miracle and Super arms) rides out on the context
         // for the strike loop's drift gate.
         let (marks, trigger) =
-            legaia_engine_battle_vm::battle_action::finish_action_queue_with_trigger(
+            legaia_engine_battle_vm::battle_action::finish_action_queue_with_marks(
                 character,
                 commands,
                 miracle_armed,
                 &mut bytes,
+                marks,
             );
         self.battle_ctx.super_trigger = trigger;
         let actions: Vec<ActionConstant> = bytes
@@ -372,4 +368,31 @@ impl World {
         self.battle_ctx.action_state =
             legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
     }
+}
+
+impl World {
+    /// `character`'s art bank as the queue builder walks it: one row per
+    /// constant from `0x1B` up to the highest installed record, its combo and
+    /// its `+0x0A..+0x0D` chain bytes ([`legaia_art::ArtRecord::anim_extra`]).
+    /// A constant with no installed record is an empty row, which matches
+    /// nothing but still counts as a group.
+    pub fn art_bank_rows(&self, character: legaia_art::Character) -> Vec<legaia_art::BankRow> {
+        legaia_art::bank_rows(
+            self.tables
+                .art_records
+                .iter()
+                .filter(|((ch, _), _)| *ch == character)
+                .map(|((_, a), r)| (a.as_byte(), r.commands.clone(), chain_bytes(r))),
+        )
+    }
+}
+
+/// An installed record's `+0x0A..+0x0D` chain bytes
+/// ([`legaia_art::ArtRecord::anim_extra`]).
+fn chain_bytes(r: &legaia_art::ArtRecord) -> [u8; 4] {
+    let mut sources = [0u8; 4];
+    for (d, s) in sources.iter_mut().zip(&r.anim_extra) {
+        *d = *s;
+    }
+    sources
 }

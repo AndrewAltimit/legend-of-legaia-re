@@ -3016,8 +3016,11 @@ dependencies = [
  "anyhow",
  "clap",
  "flate2",
+ "legaia-iso",
  "legaia-mednafen",
  "legaia-ram-image",
+ "legaia-seq",
+ "legaia-tim",
  "serde_json",
 ]
 

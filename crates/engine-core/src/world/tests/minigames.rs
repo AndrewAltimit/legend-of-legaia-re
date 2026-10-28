@@ -492,14 +492,15 @@ fn the_strike_and_catch_edges_queue_their_cues_on_the_world() {
     );
 }
 
-/// The reel buttons are the retail packed-pad bits decoded by
-/// `ReelInput::from_pad_mask`: `0x40` Cross = reel A, `0x80` Square = reel B,
-/// both held = reel A. Circle (`0x20`) is the cast input, not a reel.
+/// The reel buttons are the retail packed-pad bits: `0x40` Cross = reel A,
+/// `0x80` Square = reel B. The hooked-fish tick tests each bit on its own
+/// (`0x801D44D4` / `0x801D4548`), so with both held both arms add. Circle
+/// (`0x20`) is the cast input, not a reel.
 ///
 /// Tension after the hook frame plus one fight frame differs by which reel
 /// was held, because the two divisors differ (`rod*9 + 0x23` / `rod*6 + 0x19`).
 #[test]
-fn fishing_reel_buttons_are_cross_and_square_with_cross_winning() {
+fn fishing_reel_buttons_are_cross_and_square_and_both_arms_add() {
     use legaia_engine_fishing::fishing::PondPhase;
     let run = |mask: u16| -> i32 {
         let mut world = World::new();
@@ -517,7 +518,10 @@ fn fishing_reel_buttons_are_cross_and_square_with_cross_winning() {
     let both = run(input::PadButton::Cross.mask() | input::PadButton::Square.mask());
     let circle = run(input::PadButton::Circle.mask());
     assert_ne!(reel_a, reel_b, "the two divisors must be distinguishable");
-    assert_eq!(both, reel_a, "Cross wins - the retail decoder's priority");
+    assert!(
+        both > reel_a.max(reel_b),
+        "both held runs both reel arms: {both} vs A {reel_a} / B {reel_b}"
+    );
     assert!(circle <= 0, "Circle is not a reel: the gauge bleeds off");
 }
 

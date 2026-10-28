@@ -364,3 +364,10 @@ reason = "Patched-executable state, not an accuracy target. The evolved-Cort are
 changes = [
   ["states/cort_evolved_battle_first_menu/image", 0.988, 0.858],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to c16abd435, which re-seats a driven action capture at its own action seed and lifts the driven battle class. On this patched-disc Gaza 2 summon-melee state the re-seat lands a different melee frame than the old seat did. Patched-executable state, not an accuracy target."
+changes = [
+  ["states/battle_gaza2_park_0x19_summon_melee/image", 0.997, 0.983],
+]

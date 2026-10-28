@@ -56,6 +56,11 @@ fn surfaces(v: &mut egui::Visuals, p: &Palette) {
     // egui's own error red is pure #FF0000 in both themes: 3.9:1 on the
     // light panel, and harsher than every other colour on the dark one.
     v.error_fg_color = c(p.error);
+    // Weak text (the start page's drop hint and no-game-data line, the
+    // model view's orbit hint) is the palette's hint ink. egui's own is the
+    // body grey at 60% alpha: 2.7:1 on the dark panel and 2.8:1 on the
+    // light one, under the 3:1 the palette holds its hints to.
+    v.weak_text_color = Some(c(p.ink_faint));
 }
 
 /// The palette for the current visuals.
@@ -86,4 +91,32 @@ pub fn warn(ui: &egui::Ui) -> Color32 {
 /// The tint for a success line.
 pub fn good(ui: &egui::Ui) -> Color32 {
     c(palette(ui).good)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Weak text reads on every surface Studio draws it over, in both
+    /// themes: the palette's hint floor (`legaia_app_theme`'s 3:1), which
+    /// egui's own alpha-faded grey missed.
+    #[test]
+    fn weak_text_meets_the_hint_floor_in_both_themes() {
+        let ctx = egui::Context::default();
+        install(&ctx);
+        for (theme, p) in [(egui::Theme::Dark, &DARK), (egui::Theme::Light, &LIGHT)] {
+            let v = ctx.style_of(theme).visuals.clone();
+            let weak = v.weak_text_color();
+            let weak = Rgb(weak.r(), weak.g(), weak.b());
+            assert_eq!(weak, p.ink_faint, "{theme:?}: weak text is the hint ink");
+            for (what, surface) in [("panel", v.panel_fill), ("window", v.window_fill)] {
+                let s = Rgb(surface.r(), surface.g(), surface.b());
+                assert!(
+                    weak.contrast(s) >= 3.0,
+                    "{theme:?}: weak text on the {what} is {:.2}:1",
+                    weak.contrast(s)
+                );
+            }
+        }
+    }
 }

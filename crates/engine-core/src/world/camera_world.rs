@@ -135,8 +135,8 @@ impl legaia_engine_field::frame_step::FrameStepWorld for World {
         self.locomotion.camera_azimuth = azimuth;
     }
 
-    fn set_sound_listener_focus(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
-        World::set_sound_listener_focus(self, focus_stored_x, focus_stored_z);
+    fn set_camera_focus_stored(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
+        World::set_camera_focus_stored(self, focus_stored_x, focus_stored_z);
     }
 
     fn take_field_camera_reseat(&mut self) -> bool {

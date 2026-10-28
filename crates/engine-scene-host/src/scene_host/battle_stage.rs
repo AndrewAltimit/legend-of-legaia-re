@@ -166,6 +166,11 @@ pub fn backdrop_shell_nclip(second: SecondCopy) -> u32 {
     backdrop_copy_nclip(second, false)
 }
 
+/// The CDNAME block a Muscle Dome leg's battle stage comes from: the arena
+/// data file `data\field\other6.lzs`, whose only `scene_tmd_stream` is the
+/// arena backdrop.
+pub const ARENA_STAGE_SCENE: &str = "other6";
+
 impl SceneHost {
     /// The battle-stage backdrop entry for a fight starting now: the entry the
     /// last region setup's stage variant names in the loaded scene, falling
@@ -175,15 +180,36 @@ impl SceneHost {
     ///
     /// REF: FUN_800513F0, FUN_801D9E1C
     pub fn battle_stage_entry(&self) -> Option<u32> {
-        let scene = self.scene.as_ref()?;
-        self.world
-            .encounters
-            .region_setup
-            .and_then(|s| {
-                self.index
-                    .battle_stage_entry_for_region(&scene.name, s.stage_variant)
-            })
-            .or_else(|| self.index.battle_stage_entry_for_scene(&scene.name))
+        let variant = self.world.encounters.region_setup.map(|s| s.stage_variant);
+        let (scene, variant) = match self.battle_stage_scene() {
+            // A Muscle Dome leg's battle: the arena's fight start leaves the
+            // map id at `other6` (`_DAT_80084540 = 0x4C6`) and the stage
+            // variant at `DAT_8007BD60 & 0x7F = 0` (`0x80`), so the loader's
+            // `scene_index + variant` names the arena backdrop.
+            Some(name) if self.world.muscle_leg_in_battle() => (name, Some(0)),
+            Some(name) => (name, variant),
+            None => (self.scene.as_ref()?.name.as_str(), variant),
+        };
+        variant
+            .and_then(|v| self.index.battle_stage_entry_for_region(scene, v))
+            .or_else(|| self.index.battle_stage_entry_for_scene(scene))
+    }
+
+    /// The CDNAME block the fight's stage stream comes from when it is not
+    /// the loaded scene: the arena data file on a Muscle Dome leg, or the
+    /// block a seeded map id names
+    /// ([`legaia_engine_battle::encounter_state::EncounterState::battle_map_define`]).
+    /// `None` - the loaded scene's own block.
+    ///
+    /// REF: FUN_800513F0
+    pub fn battle_stage_scene(&self) -> Option<&str> {
+        if self.world.muscle_leg_in_battle() {
+            return Some(ARENA_STAGE_SCENE);
+        }
+        let define = self.world.encounters.battle_map_define?;
+        self.index
+            .block_name_for_define(u32::from(define))
+            .filter(|name| self.scene.as_ref().is_none_or(|s| s.name != *name))
     }
 
     /// Whether battle init keeps the backdrop shell's object 1: retail

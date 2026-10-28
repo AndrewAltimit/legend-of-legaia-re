@@ -157,6 +157,30 @@ impl Automation {
 /// need, with their spacing.
 const VIEW_ABOUT_W: f32 = 110.0;
 
+/// A collapsing header's title laid out to fit the row it sits on, cut with
+/// an ellipsis when it does not; `true` when it was cut.
+fn truncated_header(ui: &egui::Ui, title: &str) -> (egui::WidgetText, bool) {
+    // The header's arrow indent and its button padding sit left and right
+    // of the text.
+    let room = ui.available_width() - ui.spacing().indent - ui.spacing().button_padding.x;
+    let galley = egui::WidgetText::from(title).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        room.max(40.0),
+        egui::TextStyle::Button,
+    );
+    let elided = galley.elided;
+    (egui::WidgetText::Galley(galley), elided)
+}
+
+/// The widest a view's left list may be: 45% of the window, never below
+/// `min`. Every view's side panel takes it, so the preview beside the list
+/// keeps room at the minimum window size (at 720 points the browser's own
+/// 430-point default left a 3D model view a few rows tall).
+pub(crate) fn side_panel_max(ctx: &egui::Context, min: f32) -> f32 {
+    (ctx.content_rect().width() * 0.45).max(min)
+}
+
 /// How long an informational status line ("... written to ...") stays up.
 /// Errors stay until dismissed.
 const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(8);
@@ -1155,7 +1179,12 @@ impl App {
                         }
                         None => format!("{first:04}  {}  ({})", block.name, rows.len()),
                     };
-                    egui::CollapsingHeader::new(title)
+                    // egui lays a header's text out unwrapped, so the
+                    // widest block title would push the panel past its
+                    // width (the panel grows to its content). Truncate it to
+                    // the panel instead; the full title is on hover.
+                    let (header, elided) = truncated_header(ui, &title);
+                    let shown_block = egui::CollapsingHeader::new(header)
                         .id_salt(("block", first))
                         .open(open)
                         .show(ui, |ui| {
@@ -1180,6 +1209,9 @@ impl App {
                                 }
                             }
                         });
+                    if elided {
+                        shown_block.header_response.on_hover_text(title);
+                    }
                 }
                 if !lib.iso_files.is_empty() {
                     ui.separator();
@@ -2309,10 +2341,12 @@ impl eframe::App for App {
                 egui::CentralPanel::default().show(ctx, |ui| self.start_page(ui));
             }
             Mode::Browse => {
+                let side_max = side_panel_max(ctx, 300.0);
                 egui::SidePanel::left("browser")
                     .resizable(true)
-                    .default_width(430.0)
+                    .default_width(430.0f32.min(side_max))
                     .min_width(300.0)
+                    .max_width(side_max)
                     .show(ctx, |ui| self.browser(ui));
                 egui::CentralPanel::default().show(ctx, |ui| self.preview(ui));
             }
@@ -2427,7 +2461,11 @@ impl App {
                             ),
                             ("F1", "this box"),
                         ] {
-                            ui.monospace(keys);
+                            // Key names in the palette's key ink, as the
+                            // launcher's Controls panel and the play
+                            // window's F12 panel draw them.
+                            let ink = crate::theme::c(crate::theme::palette(ui).info);
+                            ui.label(RichText::new(keys).monospace().color(ink));
                             ui.label(what);
                             ui.end_row();
                         }

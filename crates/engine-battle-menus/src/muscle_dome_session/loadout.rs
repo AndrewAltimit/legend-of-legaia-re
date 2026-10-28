@@ -140,6 +140,45 @@ pub fn art_catalog_from_bank(
     }))
 }
 
+/// One fighter's **whole art bank** for [`MuscleDomeSession::install_art_bank`]
+/// out of a world's art records: this character's rows in walk order with
+/// their `+0x0A..+0x0D` chain bytes ([`legaia_art::ArtRecord::anim_extra`]),
+/// the bank the queue builder's two arms walk.
+pub fn art_bank_for(
+    records: &std::collections::HashMap<
+        (legaia_art::Character, legaia_art::ActionConstant),
+        legaia_art::ArtRecord,
+    >,
+    character: legaia_art::Character,
+) -> Vec<legaia_art::BankRow> {
+    legaia_art::bank_rows(records.iter().filter(|((ch, _), _)| *ch == character).map(
+        |((_, a), r)| {
+            let mut sources = [0u8; 4];
+            for (d, s) in sources.iter_mut().zip(&r.anim_extra) {
+                *d = *s;
+            }
+            (a.as_byte(), r.commands.clone(), sources)
+        },
+    ))
+}
+
+/// [`art_bank_for`] over one character's art-animation bank records, for a
+/// host that holds no `World`: record `+0x0A` is `stream_source`,
+/// `+0x0B..+0x0D` `chain_sources`.
+pub fn art_bank_from_bank(
+    records: &[legaia_actor_formats::battle_char_assembly::ArtAnimRecord],
+) -> Vec<legaia_art::BankRow> {
+    legaia_art::bank_rows(records.iter().map(|rec| {
+        let commands = rec
+            .combo
+            .iter()
+            .filter_map(|&b| legaia_art::Command::from_byte(b))
+            .collect();
+        let [b, c, d] = rec.chain_sources;
+        (rec.anim_id, commands, [rec.stream_source, b, c, d])
+    }))
+}
+
 /// The queue builder's normal-art filter and grid order, shared by both
 /// catalog sources.
 fn normal_art_rows(

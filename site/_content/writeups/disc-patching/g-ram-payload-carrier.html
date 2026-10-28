@@ -33,10 +33,10 @@
   <ul>
     <li>No overlay covers it: slot A - where the battle overlay PROT 0898 loads - ends at <code>0x801F7018</code>, and nothing loads higher.</li>
     <li>Across the project's save-state library - 60 states, battles included - <code>0x801FD000..0x801FE000</code> is all-zero in every one.</li>
-    <li>The deepest observed stack use is <code>0x801FE420</code>, still 1,388 bytes above the block's end.</li>
+    <li>The stack never reaches it. A canary fill over the band, run across boot, title, FMV, casts, Super Arts, saves, scene loads and random-pad soaks, finds the deepest use at <code>0x801FE420</code> - 1,388 bytes above the block's end - and only once, while the boot code reads <code>CDNAME.TXT</code>, before any battle has streamed the block. After boot the deepest is <code>0x801FF138</code>, the FMV decoder, 4,740 bytes clear.</li>
   </ul>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 250" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The top of PSX RAM as a strip: the battle overlay ends at 0x801F7018, persistent effect state sits above it, the payload occupies 3764 bytes from 0x801FD000 in free space, and the stack's deepest observed use is 0x801FE420">
+    <svg viewBox="0 0 880 250" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The top of PSX RAM as a strip: the battle overlay ends at 0x801F7018, persistent effect state sits above it, the payload occupies 3764 bytes from 0x801FD000 in free space, and the stack's deepest measured use is 0x801FE420, at boot only">
       <title>The top of RAM: the payload sits in a gap no overlay covers and no observed state touches</title>
       <style>
         .rm-live { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.2; }
@@ -61,7 +61,7 @@
       <text x="560" y="158" class="rm-lab" text-anchor="middle">persistent effect / world state</text>
       <text x="560" y="175" class="rm-lab" text-anchor="middle">(must never be zeroed)</text>
       <line x1="845" y1="84" x2="845" y2="190" class="rm-line"/>
-      <text x="850" y="208" class="rm-lab" text-anchor="end">deepest stack use seen: 0x801FE420 (60 states)</text>
+      <text x="850" y="208" class="rm-lab" text-anchor="end">deepest stack use: 0x801FE420 (boot only)</text>
     </svg>
     <figcaption>The rejected alternative - growing PROT 0898 to cover the address - would zero <code>0x801F7018..0x801FD000</code> at every battle load, wiping the persistent effect state the field overlay leaves there.</figcaption>
   </figure>

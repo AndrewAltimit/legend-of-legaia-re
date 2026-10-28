@@ -166,3 +166,130 @@ fn the_duel_surface_poses_the_real_fighters_under_the_arena_camera() {
     }
     eprintln!("[ok] {frames} duel frames posed");
 }
+
+/// The finishing special's afterimage on the real disc, through the world
+/// tick and the duel surface every host draws: once a round is decided its
+/// two ghosts keep posing (their vertices move) through the round-over hold
+/// and run out inside it, and they draw additive under the spawn's colour
+/// word (ABE + ABR 1 on every textured prim, the colour cued toward black).
+#[test]
+fn the_finishing_specials_ghosts_run_out_inside_the_round_over_hold() {
+    use legaia_engine_minigames::baka_fighter::MatchPhase;
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(host) = SceneHost::open_disc(&disc) else {
+        eprintln!("[skip] open_disc failed");
+        return;
+    };
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = host
+        .index
+        .entry_bytes_extended(rec.prot_index)
+        .expect("read PROT 0976");
+    let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let opponents = baka_opponents::parse(&loaded).expect("roster parses");
+    let actions = baka_opponents::parse_actions(&loaded).expect("actions parse");
+    let read = |i: usize| host.index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+    let opponent = legaia_engine_minigames::baka_fighter::first_rung_roster();
+    let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0x5EED)
+        .expect("fight builds")
+        .with_roster_clip_headers(roster_clip_headers(read));
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.enter_baka_fighter(fight);
+    let mut surface = BakaDuelSurface::default();
+
+    let mut decided_with_ghosts = None;
+    let mut frames = 0;
+    while frames < 6000 {
+        frames += 1;
+        let f = world.minigames.baka_fighter.as_ref().unwrap();
+        if f.match_over() {
+            break;
+        }
+        let pad = if f.can_choose(0) && frames % 90 == 0 {
+            PadButton::Square.mask()
+        } else {
+            0
+        };
+        world.set_pad(pad);
+        let _ = world.tick();
+        let f = world.minigames.baka_fighter.as_ref().unwrap();
+        if matches!(f.phase(), MatchPhase::RoundOver(_)) && !f.afterimages().is_empty() {
+            decided_with_ghosts = Some(f.afterimages()[0].0);
+            break;
+        }
+    }
+    let Some(owner) = decided_with_ghosts else {
+        panic!("no round was decided by a special with its ghosts live ({frames} frames)");
+    };
+
+    // The ghosts' draw words.
+    let scene = surface
+        .frame(read, world.minigames.baka_fighter.as_ref())
+        .expect("live");
+    for pass in 0..2 {
+        let r = scene.ghost_range(owner, pass);
+        assert!(!r.is_empty(), "ghost {pass} has a mesh copy");
+        for i in r {
+            let tsb = scene.cba_tsb[i][1];
+            assert_eq!((tsb >> 5) & 3, 1, "ghost {pass}: ABR 1 (B + F)");
+            assert_ne!(
+                tsb & legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT,
+                0,
+                "ghost {pass}: semi-transparent"
+            );
+        }
+    }
+
+    // Untextured ghost prims carry the same ABE + ABR 1 TSB word, which the
+    // hosts' colour-mesh draws read as their blend word.
+    let ghost_untextured = scene
+        .untextured_indices
+        .iter()
+        .filter(|&&i| (0..2).any(|p| scene.ghost_range(owner, p).contains(&(i as usize))))
+        .count();
+    eprintln!("[ok] {ghost_untextured} untextured ghost corner(s) under the colour word");
+
+    // The hold: the ghosts keep moving, then run out before it ends.
+    let mut last: Option<Vec<[f32; 3]>> = None;
+    let mut moved = 0;
+    let mut held = 0;
+    loop {
+        let f = world.minigames.baka_fighter.as_ref().unwrap();
+        if f.afterimages().is_empty() {
+            break;
+        }
+        assert!(
+            matches!(
+                f.phase(),
+                MatchPhase::RoundOver(_) | MatchPhase::MatchOver(_)
+            ),
+            "the ghosts run out inside the hold ({held} frames in)"
+        );
+        world.set_pad(0);
+        let _ = world.tick();
+        held += 1;
+        assert!(held < 0xB5, "the ghosts outlast the round-over hold");
+        let f = world.minigames.baka_fighter.as_ref().unwrap();
+        let far_drawn = f
+            .afterimages()
+            .first()
+            .is_some_and(|(_, fr)| fr.passes.iter().any(|p| p.bit == 1 && p.drawn));
+        let scene = surface.frame(read, Some(f)).expect("live");
+        let r = scene.ghost_range(owner, 1);
+        let now = far_drawn.then(|| scene.positions[r].to_vec());
+        if let (Some(l), Some(n)) = (&last, &now)
+            && l != n
+        {
+            moved += 1;
+        }
+        last = now;
+    }
+    assert!(moved > 0, "the ghosts pose on through the hold");
+    eprintln!("[ok] the special's ghosts ran out {held} frames into the hold, {moved} moving");
+}

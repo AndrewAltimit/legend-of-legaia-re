@@ -221,47 +221,56 @@ impl SceneHost {
     /// sequence to its start (`+0x4` into the cursor words) before it sets the
     /// play flag, and the port's gate resumes from the playhead.
     ///
-    /// # Sub-op 9 is a start, not a queue
+    /// # Sub-op 9 selects, sub-op 0xA starts
     ///
     /// Sub-op 9 is the op a cutscene changes music with part-way through a
-    /// scene, and its retail arm (field overlay `0x801E0224`) is a load
-    /// barrier followed by sub-op 1's own track select:
+    /// scene. Its arm (field overlay `0x801E0224`) is a load barrier and then
+    /// sub-op 1's own track select, plus sound-flag bit 0:
     ///
     /// ```text
-    /// 801e022c  lw a0,-0x4548(v0)     ; a0 = *0x8007BAB8  (resolved PROT index)
-    /// 801e0230  lw v0,-0x4564(v1)     ; v0 = *0x8007BA9C  (index actually loaded)
-    /// 801e0238  bne a0,v0,0x801dee4c  ; not settled -> `move s8,s4`, i.e. re-run this PC
-    /// 801e0240  jal 0x8003ce9c        ; read the u16 operand
-    /// 801e0254  sw v0,-0x4538(a1)     ; *0x8007BAC8 = id   <-- sub-op 1's store, verbatim
+    /// 801e0238  bne a0,v0,0x801dee4c  ; *0x8007BAB8 != *0x8007BA9C -> re-run this PC
+    /// 801e0254  sw v0,-0x4538(a1)     ; *0x8007BAC8 = id   <-- sub-op 1's own store
+    /// 801e0258  ori a0,a0,0x1         ; _DAT_8007B750 |= 1
     /// ```
     ///
-    /// So the barrier stalls the *script* until the previously requested
-    /// asset has landed, and then the track is selected exactly as sub-op 1
-    /// selects it. This host resolves BGM bytes synchronously
-    /// ([`SceneHost::music_bank_entry_bytes`] is a plain PROT read), so
-    /// nothing is ever in flight and the barrier is satisfied on arrival -
-    /// which leaves sub-op 9 as a plain start.
+    /// The select is not the start. The swap poller `FUN_800243F0` leaves the
+    /// field-BGM source alone while bit 0 is up (`0x80024630..0x80024640`)
+    /// and, once the load has settled, returns without installing while bit
+    /// 0 is up and the commit's release-ack bit 4 is not
+    /// (`0x800246D4..0x800246FC`). So between the select and the commit the
+    /// outgoing track keeps the slot - a sub-op 5 armed in the window fades
+    /// and stops *it* - and the incoming track is first heard after the
+    /// commit. This host resolves the bytes at the select and holds them
+    /// ([`SceneHost::pending_bgm_swap`]); the commit releases the occupant
+    /// and starts them. A select the scene never commits is attached once the
+    /// window ends (the MAN loader `FUN_8003AEB0` clears bit 0 and the poller
+    /// installs what it holds), unless a start in the same drain replaces it.
     ///
-    /// Reading it instead as "queue for the next scene entry" is silent in a
-    /// corpus sweep (a scene's *entry* music uses sub-op 1) and audible only
-    /// inside a cutscene: the score never plays where it belongs and then
-    /// starts over whatever scene the player walks into next.
+    /// Reading sub-op 9 as "queue for the next scene entry" instead leaves a
+    /// committed cutscene score silent in its own scene; starting it at the
+    /// select plays it over the beat the script keeps for the outgoing one
+    /// (`chapter2_garmel_pre_songi`: retail holds `2043` stopped and `2033`
+    /// pending behind the commit).
     ///
     /// Returns the number of events that the director acted on. Call once
     /// per frame after [`SceneHost::tick`].
     pub fn route_bgm_events(&mut self, director: &mut dyn BgmDirector) -> Result<usize> {
         let mut acted = 0usize;
         let mut leftover = Vec::new();
+        let mut started_this_drain = false;
         for ev in self.world.drain_field_events() {
             match ev {
                 legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op } => {
                     match sub_op {
-                        // 1 = start; 9 = start behind a load barrier this host
-                        // never has to wait on (see the doc comment above).
+                        // 1 = start; 9 = select behind the commit (see the
+                        // doc comment above).
                         1 | 9 => {
                             // Both arms store the id into `_DAT_8007BAC8` before
                             // anything resolves it, the park sentinel included.
                             self.bgm_track_word = Some(text_id);
+                            // A later request replaces a held one (the poller
+                            // re-reads the word on every call).
+                            self.pending_bgm_swap = None;
                             // Every track brings its own VAB. A scene-local id
                             // loads retail's fallback track, not a scene bank
                             // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
@@ -270,9 +279,14 @@ impl SceneHost {
                             if let Some(entry) =
                                 self.music_bank_entry_bytes(super::bgm_bank_id(text_id))?
                             {
-                                director.start_owned_vab(text_id, &entry);
+                                if sub_op == 9 {
+                                    self.pending_bgm_swap = Some((text_id, entry));
+                                } else {
+                                    director.start_owned_vab(text_id, &entry);
+                                }
                                 acted += 1;
                             }
+                            started_this_drain |= sub_op == 1;
                         }
                         // 2 / 3 both set pause bit 1 (`0x801E0138`,
                         // `0x801E015C`); 4 clears it and re-attaches the slot
@@ -308,7 +322,17 @@ impl SceneHost {
                         // REF: FUN_80026520 (the close half; both are subsumed by
                         // the director's release of its paused source)
                         10 => {
-                            director.unhalt_pause();
+                            match self.pending_bgm_swap.take() {
+                                // The commit releases the outgoing occupant
+                                // (`FUN_800266E0` + `FUN_80026520`) and the
+                                // poller attaches the held select.
+                                Some((id, entry)) => {
+                                    director.stop();
+                                    director.start_owned_vab(id, &entry);
+                                    started_this_drain = true;
+                                }
+                                None => director.unhalt_pause(),
+                            }
                             acted += 1;
                         }
                         _ => {
@@ -323,6 +347,15 @@ impl SceneHost {
                 }
                 other => leftover.push(other),
             }
+        }
+        // The window ended with the select uncommitted (a scene load cleared
+        // bit 0): the poller installs what it holds.
+        if !self.world.audio.start_pending_commit()
+            && let Some((id, entry)) = self.pending_bgm_swap.take()
+            && !started_this_drain
+        {
+            director.start_owned_vab(id, &entry);
+            acted += 1;
         }
         // Restore non-BGM (and unhandled-BGM) events so engine layers that
         // also consume them aren't shorted by this routing pass.

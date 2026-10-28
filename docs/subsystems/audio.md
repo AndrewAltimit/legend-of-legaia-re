@@ -76,6 +76,7 @@ separate retail chunks.
 - **Music**: [BGM dispatch](#bgm-dispatch) · [which track a scene plays](#which-track-a-scene-plays) · [swap handshake](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa) · [stop / pause / replay](#the-control-words-stop-pause-replay) · [movies](#movies-and-the-score) · [cold scene entry](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like) · [battle track](#the-battle-sound-set-picks-the-fights-track) · [`music_01` bank](#global-pool-bgm-the-music_01-bank)
 - **libsnd**: [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) · [tempo](#where-wall-clock-tempo-becomes-an-integer-tick-step) · [event decode](#the-decoder-does-not-consume-a-whole-event) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)
 - **libspu**: [SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [seq-management layer](#ssapi-seq-management-layer-above-libspu)
+- **Measured**: [audio-trace oracle](#audio-trace-parity-oracle) · [audio state sweep](#the-audio-state-sweep)
 - **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [battle command blips](#the-battle-command-surfaces-blips) · [sustained cues](#sustained-cues-loop-until-the-teardown-releases-them) · [XA-ADPCM](#xa-adpcm)
 - **Voice**: [arts shout](#battle-arts-voice-shout-path-engine) · [animation cue track](#the-second-shout-trigger---the-animation-cue-track-fun_800508dc) · [XA dispatchers and census](#cd-xa-voice-clip-dispatchers-and-static-cue-census) · [a normal attack](#what-a-normal-attack-sounds-like)
 - **Measurement**: [audio-trace parity oracle](#audio-trace-parity-oracle) · [open items](#open-items)
@@ -349,7 +350,7 @@ op `0x35` sub-op 1; a scene's *cutscenes* change music with sub-op 9, from
 partition-2 timeline records the sweep never reaches. So "which track does
 scene X play" has more than one answer per scene, and a defect confined to
 the sub-op 9 path is invisible here - see
-[`script-vm.md`](script-vm.md#sub-op-9-is-a-start-not-a-queue).
+[`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track).
 
 ### The track-swap handshake (`FUN_800243F0` + op-`0x35` sub-op `0xA`)
 
@@ -415,10 +416,16 @@ clear in the boot mode-init `FUN_8001DCF8` - so it reads as the dev/dual-mode
 flag it is everywhere else, zero in retail play.
 
 Engine side: the host resolves BGM bytes synchronously, so bit 3's wait is
-satisfied on arrival (the same reasoning as sub-op 9's barrier) and
-`SceneHost::route_bgm_events` routes sub-op `0xA` straight to
-`BgmDirector::unhalt_pause` - release the source only if the pause latch is
-still set, then clear the latch unconditionally. `see
+satisfied on arrival (the same reasoning as sub-op 9's barrier).
+`SceneHost::route_bgm_events` holds a sub-op 9 select (`pending_bgm_swap`,
+the bytes resolved at the select) while `AudioState::start_pending_commit` -
+the port's bit 0 - is up, and the commit releases the occupant
+(`BgmDirector::stop`) and starts the held track. A commit with nothing held
+routes to `BgmDirector::unhalt_pause` - release the source only if the pause
+latch is still set, then clear the latch unconditionally. A select whose
+window a scene load ends (the MAN loader clears bit 0) is attached at the
+next drain, unless a start in that drain replaces it, as the poller reads the
+latest word. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
 ### The control words: stop, pause, replay
@@ -696,16 +703,14 @@ Which track that is depends on the swap window. A cutscene's commonest
 music change is `9 · 5 · 0xA`: sub-op `9` raises sound-flag bit 0, the poller
 keeps the **outgoing** track in the slot until the `0xA` commit
 ([above](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa)), and
-the release fades that outgoing score out while the new one loads. Most
-sub-op `9` starts on the disc are committed inside their own record, and a
-large share of those run a sub-op `5` before the commit. The port starts the
-incoming track at sub-op `9`, so it keeps retail's bit 0 as
-`AudioState::start_pending_commit` (raised by sub-op `9`, ended by `0xA` and
-by the scene load) and drops an expiry that lands inside the window: the
-track it would release is already gone, and pausing the new score there would
-leave every such cutscene - `korb3`'s Gaza event among them - silent from the
-commit on. An expiry after the commit (`jouine`'s `9 · 0xA · 5`) stops the new
-track, as retail's does.
+the release fades that outgoing score out while the new one loads. 204 of the
+disc's 205 sub-op `9` starts are committed later in their own record, and 91
+of those run a sub-op `5` before the commit
+(`engine-scene-host/tests/bgm_swap_commit_disc.rs`; the one exception is
+`bubu1`'s `2057`). The port holds the selected track until the commit the same
+way, so an expiry inside the window releases the outgoing track and the commit
+then starts the new one; an expiry after the commit (`jouine`'s `9 · 0xA · 5`)
+stops the new track, as retail's does.
 
 ### Sub-op 8 replays an empty record
 
@@ -2249,6 +2254,11 @@ The engine wires this end-to-end:
   cue is then `resolved`. A disc-free world has no tables: the cue goes out
   unresolved and the director picks from its own bank
   (`AudioDirector::play_art_shout`).
+  Both pickers carry the selector's one forced-channel exception: with the
+  first formation id `gp+0x9F4` at `0x4F` the played channel is `0xC`
+  (`0x8004C3FC..0x8004C414`). The world reads its own formation slot 0
+  (`arts_voice_cue::FORCED_SHOUT_FORMATION_ID`); the director's bank is handed
+  the same id each battle frame (`AudioDirector::set_shout_first_enemy_id`).
 - **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
 - **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
@@ -2740,8 +2750,14 @@ trace plays the id that scene's prescript selects, global `2016`. A retail
 capture taken in `town01` can hold a different track: one such capture holds
 `_DAT_8007BAC8 = 2000`, the overworld theme, because the save reached the town
 by chaining forward from the world map (`0x8007BA9C` / `0x8007BC64` both read
-`990`, the pool's first entry). `0x8007BAC8` names the track; the scene does
-not. Paired against an engine trace of a scene that selects `2000` (`map01`):
+`990`, the pool's first entry). `0x8007BAC8` names the track the scripts
+asked for; the scene does not - and in this capture neither does the word.
+Its field-BGM source holds `2064` (sound-test #64, the opening's act 2),
+playing, under the `2000` word ([the audio state
+sweep](#the-audio-state-sweep), `s2_rimelm_town01`), so the pairing below
+sets `2000` against a different score, and its voice-count agreement is not
+evidence of a match. Paired against an engine trace of a scene that selects
+`2000` (`map01`):
 
 | Channel | Engine | Retail | Verdict |
 |---|---|---|---|
@@ -2972,6 +2988,68 @@ itself is pinned on the mode-trace axis
 `playable_default_swaps_to_the_standard_battle_theme`). The battle key-on
 census above covers the battle theme's notes once it is playing.
 
+## The audio state sweep
+
+The comparands above pair one track's notes. The sweep asks the question
+before that, state by state across the whole library: is the engine playing
+the **same** thing retail is? It reads libsnd's own state out of each retail
+state's main RAM - so both emulators' states take part - and seeds the engine
+into the state through the retail comparison corpus's seeding, with the audio
+director attached over a device-less output and every settle tick running the
+hosts' audio frame (`BootSession::step_audio_frame`). Driver
+`scripts/ci/audio-sweep.py`, CLI `legaia-engine audio-sweep`, module
+[`legaia_parity::audio_sweep`](../../crates/parity/src/audio_sweep.rs).
+
+| Retail word | Reads |
+|---|---|
+| `_DAT_801CD2B8`, `*(0x801CD2C0 + slot * 4)` | open libsnd sequences, each record's `+0x04` score start, `+0x26` VAB id (`FUN_80062410` `0x8006244C`), `+0x58` volume, `+0x94` tempo, `+0x98` flags (`0x1` playing) |
+| `0x8007051C + n * 0x10` | the sound-source records: `+0x8` open, `+0xA` the libsnd sequence `SsSeqOpen` returned (`FUN_80026410` `0x8002643C..0x80026464`); source `1` is the field BGM, `5` the battle track, `10` the ending theme |
+| `0x801CDB50 + v * 0x36` | per-voice records: `+0x06` live envelope, `+0x10` owner (`0x21` the cue slot), `+0x18` VAB slot |
+| `0x8007BAC8`, `0x8007BAB8` / `0x8007BA9C`, `0x8007B750` | the track word, the requested / loaded bank index (unequal while a swap is in flight), the sound flags |
+
+A sequence's track is the `music_01` entry whose bytes carry its score and
+whose VAB header matches the bank its id installed. Two ids can carry the
+same score and bank (`2014` and `2015`, which `retock`'s states play under the
+word `2015`); the sweep counts those as one track.
+
+| Channel | Scores | Result |
+|---|---|---|
+| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 66 of 70 walkable states |
+| `playing` | that sequence is playing exactly when the engine's gate is open | 68 of 70 |
+| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 62 of 62 |
+| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 65 of 65 |
+| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 17 of 18 |
+| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 122 of 122 battle states |
+
+Battle states are not seeded - the battle half of the corpus is
+`retail_compare_battle`'s - so their channel tests the rule on retail's
+inputs. Seventeen are not scored, and say why: thirteen forced entries that loaded
+no battle bundle (the field track plays on under sound set `0`), and four
+inside the Gaza fight, whose intro zeroes the set it read (formation head
+`0xA6`).
+
+The sweep found the sub-op 9 defect: the port started a cutscene's new track
+at the select where retail holds it to the commit
+([`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track)),
+the two `chapter2_garmel` states catching retail inside that window. What it
+still reports:
+
+- **`ending_vignette_biron`, `ending_vignette_rimelm_walkaway`** - the
+  credits vignettes park on `0x1000`, and what plays (`2068` on the ending
+  source, `2001` on the field source) is the music the ending chain started
+  scenes earlier. A card-load seed does not replay it.
+- **`kor5_post_436_organic`** - captured between a commit and the install
+  (flags `0x19`, no field-BGM source open, requested `1009` against loaded
+  `1023`): the poller attaches `2019` a call or two later; the engine has it
+  attached already.
+- **`s2_rimelm_town01`** - the field-BGM source plays `2064` under the word
+  `2000` with no swap in flight. The poller latches a request without loading
+  it while sound-flag bit 2 is up (`0x80024518..0x8002456C`, sub-op 6's bit),
+  which is the lead; the capture is a fast-chained opening (Cross every 20
+  vsyncs), not a played one.
+- **`tower_field_walk`** - a one-shot on voice 22 from the field bank (VAB
+  slot 6) rings at the capture instant; nothing identifies its cue.
+
 <a id="whats-left"></a>
 
 ## Open items
@@ -2979,10 +3057,6 @@ census above covers the battle theme's notes once it is playing.
 - **Credits bank SPU layout** is pinned by
   `engine-audio/tests/credits_bank_spu_layout_disc.rs`, not by a listening
   check ([above](#where-the-credits-bank-lands-in-spu-ram)).
-- **Arts-shout forced channel.** `FUN_8004C140` forces channel `0xC` when the
-  first formation id `gp+0x9F4` is `0x4F`; the port carries the rule
-  (`shout::FORCED_CHANNEL_FORMATION_ID`) but neither host supplies the
-  formation id, so it is inert.
 - **Miracle / Super Art shouts** answer one constant, the finisher; the
   per-constant staging inside a replacement queue is not captured.
 - **Field-VM XA seek** (`FUN_80019794`, the zero-duration operand shape) has no
@@ -3002,7 +3076,18 @@ census above covers the battle theme's notes once it is playing.
   write keeps that average, so a mono emitter sounds at the mean of its
   levels, not the larger one `Spu::mono` gives a keyed voice.
 - **The Field↔Battle swap** has no retail audio trace
-  ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
+  ([above](#the-fieldbattle-swap-is-not-on-this-axis)); the track it picks is
+  checked by the sweep's `battle_track` channel.
+- **The swap poller's latency is not modelled.** Retail arms a 30-vsync
+  settle (`gp+0x768 = 0x1E` at `0x8002460C`; 60 in one mode,
+  `0x800246A4`) and a CD read between a start and the install, so a track
+  sounds half a second or more after its op; and the commit stalls the
+  *script* (restore-PC at `0x801E0288`) until that settle has passed. The
+  engine installs at once and never stalls, so a scene's track and a
+  cutscene's beats after a `0xA` start earlier than retail's.
+- **The sweep's open rows** ([above](#the-audio-state-sweep)): the ending
+  vignettes' carried music, the sound-flag bit 2 latch behind
+  `s2_rimelm_town01`, and `tower_field_walk`'s one-shot.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer

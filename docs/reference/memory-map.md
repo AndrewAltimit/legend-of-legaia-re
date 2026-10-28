@@ -13,7 +13,7 @@ Rows carry their provenance: a `FUN_` address, a `ghidra/scripts/funcs/` dump pa
 
 ## Region map
 
-The PlayStation has 2 MB of main RAM, which the game addresses through the cached KSEG0 window `0x80000000..0x801FFFFF` (the same bytes also appear at `0x00000000` and, uncached, at `0xA0000000`). There is nothing above `0x801FFFFF`: on a retail console the next 6 MB of the window mirror the 2 MB, and only the 8 MB development hardware the heap init probes for has RAM there. The layout below is fixed by the `SCUS_942.54` header (`t_addr = 0x80010000`, `t_size = 0x6B800`, initial `sp = 0x801FFFF0`), the heap init in `main()`, and the overlay load bases in `crates/asset/data/static-overlays.toml`.
+The PlayStation has 2 MB of main RAM, which the game addresses through the cached KSEG0 window `0x80000000..0x801FFFFF` (the same bytes also appear at `0x00000000` and, uncached, at `0xA0000000`). There is nothing above `0x801FFFFF`: on a retail console the next 6 MB of the window mirror the 2 MB, and only the 8 MB development hardware the heap init probes for has RAM there. The layout below is fixed by the `SCUS_942.54` header (`t_addr = 0x80010000`, `t_size = 0x6B800`, initial `sp = 0x801FFFF0`, which the startup code replaces with `0x80200000`), the heap init in `main()`, and the overlay load bases in `crates/asset/data/static-overlays.toml`.
 
 | Range | Size | Region |
 |---|---|---|
@@ -30,7 +30,7 @@ The PlayStation has 2 MB of main RAM, which the game addresses through the cache
 | `0x801C6000..0x801CE817` | 34 KB | [Resident buffers](#resident-buffers-0x801c6000-0x801ce817): the in-RAM PROT TOC, the XA clip table, libcd / SsAPI state. |
 | `0x801CE818..0x801F7017` | up to 162 KB | [Overlay slot A](#overlay-slot-a-0x801ce818): one per-mode image at a time - field, battle, menu, a minigame, boot, FMV. |
 | `0x801F69D8..0x801FA9D7` | up to 16 KB | [Overlay slot B](#overlay-slot-b-0x801f69d8): small paged modules - summon / cast, world-map render, battle stage. |
-| `0x801FA9D8..0x801FFFEF` | 22 KB | [Free RAM and stack](#free-ram-and-stack-0x801fa9d8-0x801fffff): the stack grows down from `0x801FFFF0`. |
+| `0x801FA9D8..0x801FFFFF` | 22 KB | [Free RAM and stack](#free-ram-and-stack-0x801fa9d8-0x801fffff): the stack grows down from `0x80200000`. |
 | `0x1F800000..0x1F8003FF` | 1 KB | [Scratchpad](#psx-scratchpad-0x1f800000-0x1f8003ff): separate on-chip RAM, not part of the 2 MB. |
 | `0x1F801000+` | - | [Hardware I/O registers](#hardware-io-registers-0x1f801000): DMA, MDEC, GPU, SPU. |
 
@@ -560,9 +560,39 @@ Because the band starts inside PROT 0898's extent, a module paged during battle 
 
 ## Free RAM and stack (`0x801FA9D8-0x801FFFFF`)
 
-Above the largest slot-B image nothing is loaded. The largest slot-B modules (0923, 0934, 0957, 0966) are exactly `0x4000` bytes and end at `0x801FA9D8`. PROT 0900 and 0901, the field-time modules, end lower, at `0x801F91D8`. No instruction in `SCUS_942.54` or any PROT entry forms an address from `0x801FA9D8` up, except the initial stack pointer.
+Above the largest slot-B image nothing is loaded. The largest slot-B modules (0923, 0934, 0957, 0966) are exactly `0x4000` bytes and end at `0x801FA9D8`. PROT 0900 and 0901, the field-time modules, end lower, at `0x801F91D8`. No instruction in `SCUS_942.54` or any PROT entry forms an address from `0x801FA9D8` up; the stack top comes from a data word (below).
 
-The stack pointer starts at `0x801FFFF0` (the EXE header's `s_addr`) and grows down. The deepest stack use observed reaches `0x801FE420`, the same figure in every one of 275 library states (field, battle, menu, minigame, boot; no FMV state exists). `0x801FA9D8..0x801FE000` reads all-zero in all of them, battles included. That is why the patcher parks injected code at `0x801FD000` ([`randomizer.md`](../tooling/randomizer.md)). The Conkram freeze fix keeps its stand-in render node at `0x801FAA00..0x801FAA9C` ([`randomizer-internals.md`](../tooling/randomizer-internals.md#conkram-freeze-fix)); it stays zero until a render-node allocation fails.
+The BIOS enters the executable with `sp = 0x801FFFF0` (the EXE header's `s_addr`), but the startup code replaces it: `0x80026C6C` loads the `__ramsize` word at `0x80026CD8` (`0x00200000`) and `0x80026C74` ORs in `0x80000000`, so the stack grows down from `0x80200000`. The same code passes `0x80200000 - 0x8000` (the stack-size word at `0x8007A8C8`) as the top of the BIOS malloc arena, which therefore stops at `0x801F8000`.
+
+Nothing asynchronous runs on this stack. The PsyQ interrupt callbacks run on their own stack: `ResetCallback` (`FUN_8005FF20`) stores `0x8007A7F0` in the `sp` slot (`0x80079814`) of the `jmp_buf` it hands `HookEntryInt`, so the exception exit `longjmp`s into the dispatcher `FUN_8005FFFC` on that private stack ([below](#0x800797d8---the-callback-stack)). Four routines move their own calls off it onto the scratchpad: each stores `sp` in a slot word and continues at `slot - 4`. They are the render-pass wrapper `FUN_8001D140` (slot `0x1F8002BC`), the `"ME"` archive reader `FUN_8002B28C` (`0x1F8002DC`), and switches inside `FUN_80021DF4` and `FUN_80026CEC` (`0x1F8002A4`), so the actor render dispatcher `FUN_8001ADA4` and everything under it never touches the main stack.
+
+### How deep it goes
+
+Measured by canary fill (probe [`autorun_stack_highwater.lua`](../../scripts/pcsx-redux/autorun_stack_highwater.lua)): each run fills `0x801FA9D8` up to 64 bytes below the live `sp` with `0xDEADBEEF`, plays a path on the retail disc, and takes the lowest overwritten word as the high-water mark. Write breakpoints just above that mark then name the routine that reaches it. Measured from `0x80200000`:
+
+| Path | High-water mark | Depth | Deepest routine |
+|---|---|---|---|
+| Boot: `CDNAME.TXT` load | `0x801FE420` | 7136 | `FUN_8001D8FC` under the boot initialiser `FUN_8001D424`: a `0x1120`-byte frame holding a 4 KB read buffer, on top of `FUN_8001D424`'s own `0x820` |
+| FMV (`MV1.STR` attract) | `0x801FF138` | 3784 | PROT 0970's frame decoder `FUN_801D0378`, which reserves `(12 * macroblocks + 14) & ~7` bytes on the stack (`subu sp,sp,v0` at `0x801D03F8`) |
+| Dance contest (the counter's warp into the `other7` hall, a chart to the tally) | `0x801FF9E0` | 1568 | `SsVabOpenHead`'s core `FUN_80068D94` (`0x438` frame), reached from the dance entry `FUN_801CEF54` (a `0x138`-byte frame of its own) through `FUN_8001E54C` -> `FUN_80026314` -> `FUN_80068D34` |
+| Pause-menu Save to card | `0x801FFA28` | 1496 | BIOS card calls (kernel RAM `0x00003E84`) under the menu overlay |
+| Battle results, then back to the field | `0x801FFA68` | 1432 | `SsVabOpenHead`'s core `FUN_80068D94`, a `0x438`-byte frame, reached from the results `FUN_8004E568` through `FUN_8001E54C` -> `FUN_80026314` -> `FUN_80068D34` |
+| Field scene load (memory-card Continue, door, world map) | `0x801FFA70` | 1424 | the same VAB open, from the field init `FUN_801D6704` through `FUN_8001E54C` |
+| Fishing (the signboard's warp into `other1`, casts) | `0x801FFA88` | 1400 | |
+| Muscle Dome (the sign-up warp, the hub, two legs) | `0x801FFA88` | 1400 | the VAB open again, under a leg's battle loader `FUN_800520F0` (`FUN_80046A20` from the actor pass) |
+| Baka Fighter (the cabinet warp, the title, two rounds) | `0x801FFAB8` | 1352 | |
+| Slot machine (the cabinet warp, spins) | `0x801FFAD0` | 1328 | |
+| Battle load (Mad Ogre + Demon Fly, `[108, 3]`), then a party wipe back to the CARD screen | `0x801FFA88` | 1400 | |
+| Battle, every cast and Super Art reached | `0x801FFD38..0x801FFDB8` | 584 - 712 | battle main |
+| Field dialogue, inn | `0x801FFD28..0x801FFE60` | 416 - 728 | |
+
+The battle row covers boss and Seru casts (Gaza 2, evolved Cort, Koru, the Nivora duels, Gimard, the flutes, the evolved Seru), the three Super Arts and a 12000-vsync random-pad soak; field soaks of 9000 and 12000 vsyncs stay at the scene-load figure. Every movie on the disc is `320 x 224` (280 macroblocks, a 3368-byte reservation), so the FMV figure holds for all of them.
+
+The minigame rows start at the first vsync after the field VM's warp (game mode `0x18`) of a retail walk to the venue ([capture coverage](../tooling/capture-coverage.md#filling-the-worklist)) and run 3600 vsyncs of seeded pad noise; each figure is the mark before the noise left the venue. The slot machine and Baka Fighter reach theirs while the minigame loads (mode `0x18`), fishing once play starts, the dome in a leg's battle; the dance's VAB open is the deepest use after boot and the FMV decoder.
+
+The boot figure is the `0x801FE420` that every save state carries as its lowest non-zero word, and the run that reaches it is the only one that does: `FUN_8001D424` is called from `0x80016024`, ahead of `main()`'s loop (`0x80016170..0x8001620C`), so it runs once per power-on. After boot the deepest use is the FMV decoder's, `0x801FF138`.
+
+So the band's tenants are clear of the stack. The patcher's Super Arts Pack block (`0x801FD000..0x801FDEB4`) is first written at a battle load, after boot, and sits 4740 bytes below the deepest later use; even the boot path stops 1388 bytes above it. The Conkram freeze fix keeps its stand-in render node at `0x801FAA00..0x801FAA9C` ([`randomizer-internals.md`](../tooling/randomizer-internals.md#conkram-freeze-fix)); it stays zero until a render-node allocation fails.
 
 Three ranges could be filled with no hook at all, because the loader streams exactly the TOC's sector count (`FUN_8003EC70` passes the resolver's count straight to the CD read):
 

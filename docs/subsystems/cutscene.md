@@ -1500,7 +1500,7 @@ rotation seen from a top-down camera ([`world-map.md`](world-map.md)).
 
 Eight scenes stage a non-zero roll, from a `10`-unit (0.9 deg) lean to `-660` (-58 deg):
 `edstati3` (an ending cutscene), `station3`, `map03`, `nilboa`, `taiku`, `korout`, and the two
-Juggernaut interiors `juui1` / `juui2`, which carry the two steepest tilts. Each such beat
+Ra-Seru scenes `juui1` / `juui2`, which carry the two steepest tilts. Each such beat
 carries the full nine-slot mask and holds the same tilt across the beats of its shot. Per-scene
 values are on
 [`re-settled-threads.md`](../reference/re-settled-threads/rendering-camera.md#does-any-retail-shot-author-a-non-zero-camera-roll);

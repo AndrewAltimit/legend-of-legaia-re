@@ -49,7 +49,17 @@ pub struct BattleStage {
 /// second copy is the half turn and the stage indoor, the safer arms.
 // REF: FUN_800513f0
 pub fn resolve_battle_stage(host: &SceneHost, scus: Option<&[u8]>) -> Option<BattleStage> {
-    let scene = host.scene.as_ref()?;
+    // A Muscle Dome leg fights on the arena backdrop, which lives in its own
+    // data block rather than the departure scene's
+    // (`SceneHost::battle_stage_scene`).
+    let other;
+    let scene = match host.battle_stage_scene() {
+        Some(name) => {
+            other = Scene::load(&host.index, name).ok()?;
+            &other
+        }
+        None => host.scene.as_ref()?,
+    };
     // Not the block's first stage stream: a scene bundle carries one per
     // sub-area, and the region the fight starts in names which one
     // (`SceneHost::battle_stage_entry`, the region reader's stage variant

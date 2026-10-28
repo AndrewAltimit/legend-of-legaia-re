@@ -229,6 +229,7 @@ impl World {
             if let Some(slot) = id.own_turn {
                 if host.world.npcs.face_legs.contains_key(&slot)
                     || host.world.npcs.glide_legs.contains_key(&slot)
+                    || host.world.npcs.rotate_legs.contains_key(&slot)
                 {
                     break;
                 }
@@ -346,6 +347,31 @@ impl World {
             {
                 host.world.face_leg_npc(slot, ramp);
                 id.own_turn = Some(slot);
+            }
+            // The talker's own budgeted turn (`38 <op0> <op1>`, no target
+            // byte, `op1 & 0x7F != 0`): the halt-acquire arm raises the
+            // context's own `0x400` and advances by three (`li s7,3` at
+            // `0x801DEEFC`), and the walk kernel's RotateToAngle leg turns
+            // the talker until its terminal frame clears the bit; meanwhile
+            // the dispatcher prologue refuses the context's every op. Run on
+            // the stand-in context, the bit had nothing to clear it and the
+            // record's `33 0A` verify behind the op ended the talk: Terra's
+            // last cave01 talk (`P1[2]` `+0x15A2`, `38 02 16` / `33 0A`)
+            // stopped there, short of the `50 13` join and `51 69`.
+            // REF: FUN_801DE840 (case 0x38, 0x801DEEFC), FUN_8003774C (case 0x38)
+            if b == 0x38
+                && let Some(slot) = host.world.dialog.stepping_inline_npc
+                && let (Some(&op0), Some(&op1)) =
+                    (id.bytecode.get(id.pc + 1), id.bytecode.get(id.pc + 2))
+                && op1 & 0x7F != 0
+            {
+                id.pc += 3;
+                id.park_frames = 0;
+                if host.world.face_npc_by_cam_cfg(slot, op0, op1, id.pc) {
+                    id.ctx.flags |= 0x400;
+                    id.own_turn = Some(slot);
+                }
+                continue;
             }
             // A halt-acquire of a placement (`CC <id> 85|8E|8F <lo> <hi>
             // <bind>`): the target's walk kernel turns it toward the bind
@@ -653,6 +679,37 @@ impl World {
                 field_step_routed(&mut host, &mut id.ctx, &id.bytecode, id.pc)
             };
             host.world.dialog.stepping_inline_npc = talker;
+            // The talker's own seat (`23 x z`, no target byte): the talk and
+            // the placement are one retail context, and a context that is
+            // not the player takes the `0x801DECAC` arm - the seat lands on
+            // the talker's own actor. Stepped on the stand-in context alone,
+            // the tile went nowhere: Terra's cave01 hand-off (`P1[2]`
+            // `+0x14B6`, `23 47 43`) left her where the talk's walk had
+            // stopped, short of the `(71, 67)` spot her next stage talks from.
+            // REF: FUN_801DE840 (0x23 arm, 0x801DEC7C / 0x801DECAC)
+            if op == 0x23
+                && ext_target.is_none()
+                && let Some(slot) = talker
+                && matches!(step, FieldStepResult::Advance { .. })
+                && !host.world.field_vm.entry_prerun
+            {
+                let pos = (id.ctx.world_x as i16, id.ctx.world_z as i16);
+                host.world.npcs.motions.remove(&slot);
+                host.world.npcs.glide_legs.remove(&slot);
+                if let Some(p) = host.world.npcs.positions.get_mut(&slot) {
+                    *p = pos;
+                }
+                if let Some(c) = host
+                    .world
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                {
+                    c.ctx.world_x = id.ctx.world_x;
+                    c.ctx.world_z = id.ctx.world_z;
+                }
+            }
             if let Some((halt, saved_pc, wait_accum)) = caller_halt
                 && halt == 0
                 && id.ctx.flags & 0x400 != 0
@@ -1115,36 +1172,7 @@ impl World {
         match op & 0x7F {
             0x38 => {
                 let (op0, op1) = (*bc.get(pc + 2)?, *bc.get(pc + 3)?);
-                self.npcs.face_legs.remove(&slot);
-                self.npcs.rotate_legs.remove(&slot);
-                if op1 & 0x7F == 0 {
-                    if let Some(h) =
-                        legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(
-                            op0 & 0xF,
-                        )
-                    {
-                        self.npcs.headings.insert(slot, h);
-                    }
-                } else {
-                    let cur = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
-                    let grid = self.clock.script_frame_delta();
-                    let mut leg = legaia_engine_field::cutscene_timeline::TimelineFacing {
-                        slot: Some(slot),
-                        state: legaia_engine_motion_vm::motion_vm::MotionState {
-                            yaw: (cur as u16) & 0x0FFF,
-                            speed: grid,
-                            ..Default::default()
-                        },
-                        program: [0x38, op0, op1],
-                        resume_pc: pc + 4,
-                        frames: 0,
-                    };
-                    if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
-                        self.npcs.rotate_legs.insert(slot, leg);
-                    } else {
-                        self.land_npc_leg(slot);
-                    }
-                }
+                self.face_npc_by_cam_cfg(slot, op0, op1, pc + 4);
                 Some(pc + 4)
             }
             0x4C => {
@@ -1154,6 +1182,52 @@ impl World {
                 Some(pc + 6)
             }
             _ => None,
+        }
+    }
+
+    /// Op `0x38`'s turn landed on placement `slot`: with a zero budget
+    /// (`op1 & 0x7F == 0`) the instant compass write, otherwise the walk
+    /// kernel's RotateToAngle leg, its first frame now and the rest on the
+    /// field tick ([`Self::tick_field_npc_face_legs`]). A new leg replaces
+    /// one the actor had in flight. Returns whether a leg is now in flight.
+    ///
+    /// REF: FUN_801DE840 (case 0x38), FUN_8003774C (case 0x38)
+    pub(crate) fn face_npc_by_cam_cfg(
+        &mut self,
+        slot: u8,
+        op0: u8,
+        op1: u8,
+        resume_pc: usize,
+    ) -> bool {
+        self.npcs.face_legs.remove(&slot);
+        self.npcs.rotate_legs.remove(&slot);
+        if op1 & 0x7F == 0 {
+            if let Some(h) =
+                legaia_engine_field::man_field_scripts::facing_index_to_engine_heading(op0 & 0xF)
+            {
+                self.npcs.headings.insert(slot, h);
+            }
+            return false;
+        }
+        let cur = self.npcs.headings.get(&slot).copied().unwrap_or(0x800);
+        let grid = self.clock.script_frame_delta();
+        let mut leg = legaia_engine_field::cutscene_timeline::TimelineFacing {
+            slot: Some(slot),
+            state: legaia_engine_motion_vm::motion_vm::MotionState {
+                yaw: (cur as u16) & 0x0FFF,
+                speed: grid,
+                ..Default::default()
+            },
+            program: [0x38, op0, op1],
+            resume_pc,
+            frames: 0,
+        };
+        if grid == 0 || !self.step_npc_rotate_leg(&mut leg) {
+            self.npcs.rotate_legs.insert(slot, leg);
+            true
+        } else {
+            self.land_npc_leg(slot);
+            false
         }
     }
 

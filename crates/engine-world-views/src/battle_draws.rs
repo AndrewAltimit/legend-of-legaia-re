@@ -116,6 +116,9 @@ pub fn battle_ground_shadow(
         // A battle body's ground shadow is not a move-VM node; it draws
         // under the full camera (`FUN_80048A08`).
         flags_52: 0,
+        // `0x8A000000` carries no double-sided bit.
+        single_sided: legaia_engine_effects::effect_default_arm::SHADOW_FLAG_WORD & 0x0800_0000
+            == 0,
     })
 }
 

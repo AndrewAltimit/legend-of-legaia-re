@@ -170,6 +170,46 @@ pub struct FxMeshModel {
     pub mesh: legaia_tmd::mesh::VramMesh,
     /// Column-major model matrix in the draw frame.
     pub model: [f32; 16],
+    /// The draw keeps retail's `NCLIP` winding rejection
+    /// ([`legaia_engine_effects::effect_ribbon::RibbonDraw::single_sided`]),
+    /// in a frame whose pass draws both sides: the battle pass. A host draws
+    /// only its front faces, the battle bodies' parity
+    /// ([`legaia_engine_core::world::BATTLE_BODY_NCLIP`]).
+    pub single_sided: bool,
+}
+
+/// Drop the triangles of `mesh` that retail's `NCLIP` winding test rejects
+/// under the draw matrix `mvp` (column-major, model to clip space): the
+/// faces a [`FxMeshModel::single_sided`] draw does not show. A triangle
+/// counter-clockwise in normalised device coordinates (y up) is a retail
+/// back face, the parity the battle bodies' fragment discard keeps
+/// ([`legaia_engine_core::world::BATTLE_BODY_NCLIP`]); one with a vertex at
+/// or behind the eye plane is kept for the clip to handle. Both hosts run
+/// it, so the kind-4 meshes they bake hold the same faces.
+pub fn retail_front_faces(mesh: &mut legaia_tmd::mesh::VramMesh, mvp: &[f32; 16]) {
+    let ndc = |p: [f32; 3]| -> Option<[f32; 2]> {
+        let c = |r: usize| mvp[r] * p[0] + mvp[4 + r] * p[1] + mvp[8 + r] * p[2] + mvp[12 + r];
+        let w = c(3);
+        (w > 1e-6).then(|| [c(0) / w, c(1) / w])
+    };
+    let keep: Vec<u32> = mesh
+        .indices
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .filter(|t| {
+            let v = |k: usize| mesh.positions.get(t[k] as usize).copied().and_then(ndc);
+            match [v(0), v(1), v(2)] {
+                [Some(a), Some(b), Some(c)] => {
+                    (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]) <= 0.0
+                }
+                _ => true,
+            }
+        })
+        .flatten()
+        .copied()
+        .collect();
+    mesh.indices = keep;
 }
 
 /// The live effect layer's 3D draws for this frame, by source.
@@ -244,6 +284,7 @@ pub fn effect_model_draws(
         .into_iter()
         .map(|rb| FxMeshModel {
             model: node(rb.flags_52, rb.world_pos, rb.rot),
+            single_sided: battle && rb.single_sided,
             mesh: rb.mesh,
         })
         .collect();
@@ -257,6 +298,7 @@ pub fn effect_model_draws(
                 &part_model_place(rb.flags_52, rb.world_pos, part_cam, battle),
                 &model_flip,
             ),
+            single_sided: battle && rb.single_sided,
             mesh: rb.mesh,
         })
         .collect();
@@ -286,6 +328,35 @@ pub fn effect_model_draws(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Under the identity draw matrix a clockwise triangle (y up) is a
+    /// retail front face and stays, its reverse winding goes, and a triangle
+    /// reaching behind the eye plane is left to the clip.
+    #[test]
+    fn retail_front_faces_keeps_the_clockwise_winding() {
+        let id = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut m = legaia_tmd::mesh::VramMesh {
+            positions: vec![[0.0, 0.0, 0.5], [0.0, 1.0, 0.5], [1.0, 0.0, 0.5]],
+            uvs: vec![[0, 0]; 3],
+            cba_tsb: vec![[0, 0]; 3],
+            indices: vec![0, 1, 2, 0, 2, 1],
+            normals: vec![[0.0; 3]; 3],
+            colors: vec![[0; 3]; 3],
+        };
+        retail_front_faces(&mut m, &id);
+        assert_eq!(m.indices, vec![0, 1, 2]);
+        let mut behind = id;
+        behind[15] = -1.0;
+        m.indices = vec![0, 2, 1];
+        retail_front_faces(&mut m, &behind);
+        assert_eq!(
+            m.indices,
+            vec![0, 2, 1],
+            "no w > 0 vertex: kept for the clip"
+        );
+    }
 
     fn sprite() -> EffectSprite {
         EffectSprite {

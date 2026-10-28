@@ -60,7 +60,7 @@ impl World {
     ///   reads clear becomes leader (wrap-scan from `leader+1`), flags
     ///   `0x10..=0x12` are re-pointed at the new leader, the player takes
     ///   the incoming participant's pose (+ the negated map origin
-    ///   `_DAT_80089118/20` = [`crate::world::FieldTerrain::map_origin_xz`]), the incoming NPC is
+    ///   `_DAT_80089118/20` = [`legaia_engine_field::camera_rig::CameraRig::focus_stored`]), the incoming NPC is
     ///   parked at the `0x3F80` sentinel, the fade-back-in spawns, and the
     ///   talk's own record is queued as an op-`0x44` spawn (`FUN_8003BDE0`).
     /// - **3** - release the fade object (engine: [`crate::world::ScreenFxState::fade`]
@@ -205,7 +205,7 @@ impl World {
                             a.move_state.world_z = nz;
                             a.move_state.render_26 = heading;
                         }
-                        self.terrain.map_origin_xz = (-i32::from(nx), -i32::from(nz));
+                        self.camera.focus_stored = [-i32::from(nx), -i32::from(nz)];
                         // `FUN_80017EC8(x >> 7, z >> 7, 0, 0)` at `0x801D2BC0`:
                         // the camera re-centre on the new leader's tile, which
                         // re-plans the windowed static-object list.

@@ -26,6 +26,17 @@ From-scratch port; sources: PSX-SPX BS-compression pages + jPSXdec's `PlayStatio
 3. AC bitstream (16-bit LE words, MSB-first) after the table: PSX run/level VLC + `000001` escape (16-bit raw run/level), EOB `10`. A full block is still EOB-terminated.
 4. Dequantize (DC `*Q_MAT[0]`; AC `(level*Q_MAT[i]*qscale+4)>>3`), 8×8 IDCT (`IDCT_C`), 4:2:0 upsample, BT.601 YCbCr→RGBA8 (luma `+128`). Macroblocks are column-major; blocks Cr, Cb, Y0..Y3.
 
+## Other games' movies
+
+The STR sector parser, the frame assembler and the A/V demuxer carry to any
+STR. The decoder does not: most PSX movies are STRv2/v3, and a STRv2 frame
+shares Iki's `0x3800` word at `+2`, so `MdecDecoder::decode_frame` does not
+reject one - it reads the version field as the LZSS size and returns a blank or
+garbage frame with no error. Check `frame[6..8]` (2 or 3 is STRv2/v3) first.
+`strv2_decode` decodes those, but against the VLC table `strv2_table` unpacks
+from Legaia's STR overlay. See
+[reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#legaia-mdec).
+
 ## STR sector format
 
 ```text

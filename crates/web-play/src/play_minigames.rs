@@ -512,7 +512,10 @@ impl LegaiaRuntime {
             "art": ui.art.is_some(),
             "muscle": {
                 "monster_id": ui.muscle.monster_id,
-                "char_slot": ui.muscle.char_slot,
+                "char_slot": self
+                    .scene_host
+                    .host()
+                    .map_or(0, |h| u32::from(h.world.muscle_fighter_record())),
             },
             // The three party-side roster rows (`0..=2`) share the PROT 1204
             // party pack (retail folds them at `FIGHTER_PACK_FOLD`), so an
@@ -569,6 +572,33 @@ impl LegaiaRuntime {
         std::mem::take(&mut self.minigame_ui.vram_restore_pending)
     }
 
+    /// Pick Muscle Dome course `course` (`0` Beginner, `1` Expert, `2`
+    /// Master) the way the `koin1` course menu does, ahead of
+    /// [`Self::play_mg_debug_warp`] (`World::choose_muscle_course`). The
+    /// minigames page's embedded arena passes its course picker through
+    /// this. `false` with no scene host or an out-of-range course.
+    pub fn play_mg_choose_muscle_course(&mut self, course: u32) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        if course as usize >= legaia_engine_minigames::muscle_dome::COURSE_UNLOCK_FLAGS.len() {
+            return false;
+        }
+        host.world.choose_muscle_course(course as usize);
+        true
+    }
+
+    /// Seat roster record `record` (`0` Vahn, `1` Noa, `2` Gala) in the
+    /// Muscle Dome's legs (`World::set_muscle_fighter`) - a host option:
+    /// retail's hub pins the party to Vahn. The minigames page's "Fight as"
+    /// picker passes through this. `false` when the record is not filled.
+    pub fn play_mg_set_muscle_fighter(&mut self, record: u32) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        record <= 2 && host.world.set_muscle_fighter(record as u8)
+    }
+
     /// Developer / test affordance: arm the mode-24 door warp for `sub_id`
     /// exactly as the field-VM `0x3E` arm does (`3` = slot machine, `4` =
     /// Baka Fighter, `5` = Muscle Dome, `6` = dance, `0` = fishing). The
@@ -587,7 +617,7 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        host.world.request_minigame_warp(sub_id);
+        host.world.request_host_minigame_warp(sub_id);
         let lead = host.world.drain_field_xa_prestage();
         if let Some(d) = self.audio_director() {
             for xa in &lead {

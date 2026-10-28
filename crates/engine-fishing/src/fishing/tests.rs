@@ -208,12 +208,12 @@ fn cast_power_bounces_at_ceiling() {
 #[test]
 fn tension_rises_on_reel_and_bleeds_when_idle() {
     let mut g = TensionGauge::new(0);
-    // Reel button A with a base pull raises tension (rod_stat 0 -> div 0x23).
-    g.apply_reel(ReelInput::ReelA, 0x1000, 1);
+    // Reel button A with a load raises tension (rod_stat 0 -> div 0x23).
+    g.apply_load(0x40, 0x1000, 1);
     let after_reel = g.tension();
     assert!(after_reel > 0, "reeling raised tension");
     // Idle bleeds it off by (0*0x40 + 0x4a) * 1 = 0x4a per frame.
-    g.apply_reel(ReelInput::Idle, 0, 1);
+    g.apply_load(0, 0, 1);
     assert_eq!(g.tension(), (after_reel - REEL_RELEASE_ADD).max(0));
 }
 
@@ -221,12 +221,12 @@ fn tension_rises_on_reel_and_bleeds_when_idle() {
 fn tension_clamps_at_bounds() {
     let mut g = TensionGauge::new(0);
     // Huge reel spike pins at the ceiling.
-    g.apply_reel(ReelInput::ReelA, i32::MAX / 2, 1);
+    g.apply_load(0xC0, i32::MAX / 2, 1);
     assert_eq!(g.tension(), TENSION_MAX);
     assert!(g.at_max());
     // Idle can't drive below zero.
     for _ in 0..1000 {
-        g.apply_reel(ReelInput::Idle, 0, 1);
+        g.apply_load(0, 0, 1);
     }
     assert_eq!(g.tension(), TENSION_MIN);
 }
@@ -235,8 +235,8 @@ fn tension_clamps_at_bounds() {
 fn rod_stat_softens_the_reel_spike() {
     let mut weak = TensionGauge::new(0);
     let mut strong = TensionGauge::new(10);
-    weak.apply_reel(ReelInput::ReelA, 0x1000, 1);
-    strong.apply_reel(ReelInput::ReelA, 0x1000, 1);
+    weak.apply_load(0x40, 0x1000, 1);
+    strong.apply_load(0x40, 0x1000, 1);
     assert!(
         strong.tension() < weak.tension(),
         "a higher rod stat divides the tension spike down"
@@ -779,6 +779,16 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     let id = p.hooked().expect("species").index;
     // The hooked species came from the lure row of the spawn table.
     assert!([5usize, 3, 9].contains(&id), "id {id} not in lure-1 row");
+    // The hook summed the fight strength once: no venue, so the off-water
+    // weight `10`; the render scale is the same sum `+ 0x400`.
+    let hooked_strength = p.strength();
+    let line = p.line_record() / 32 + 10;
+    let rod1 = p.rod + 1;
+    assert!(
+        (line + 50 * rod1..line + 50 * rod1 + 10 + 600 + 100 * p.rod).contains(&hooked_strength),
+        "strength {hooked_strength} outside the hook sum's range"
+    );
+    assert_eq!(p.fish_scale(), (hooked_strength + 0x400) as u16);
 
     // Fight: alternate reeling and resting so tension never pins, until
     // the fish lands.
@@ -803,6 +813,10 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
         }
     }
     assert!(landed, "fight never resolved");
+    // The fight itself never moves the strength: the score reads the hook sum.
+    assert_eq!(p.strength(), hooked_strength);
+    let sp = *p.hooked().unwrap();
+    assert_eq!(p.last_award(), sp.score_for(hooked_strength));
     assert!(p.record.points > 0);
     assert!(p.last_award() > 0);
     let events = p.take_events();
@@ -898,7 +912,7 @@ fn pond_snaps_when_tension_pins() {
     // strong pull with the reel held pins the ceiling.
     let mut g = TensionGauge::new(2);
     for _ in 0..0x1000 {
-        g.apply_reel(ReelInput::ReelA, 4000, 1);
+        g.apply_load(0x40, 4000, 1);
     }
     assert!(g.at_max());
 }
@@ -1019,4 +1033,159 @@ fn the_floor_lut_is_one_tier_per_nibble_at_a_fixed_step() {
     // The LUT is indexed by a map cell's low nibble, so it must cover
     // every value a nibble can take.
     assert_eq!(FISHING_FLOOR_LUT.len(), 16);
+}
+
+#[test]
+fn the_hook_sums_strength_from_three_draws_in_retail_order() {
+    // `FUN_801D26CC` `0x801D3708..0x801D3814`: rand1 against the water
+    // weight, rand2 against 600, rand3 against `rod + 1`.
+    for (seed, weight, record, rod) in [
+        (1u32, 10, 1300, 0),
+        (0xBEEF, 100, 900, 1),
+        (77, 300, 2000, 2),
+        (12345, 500, -40, 2),
+    ] {
+        let mut a = BiosRand::new(seed);
+        let mut b = BiosRand::new(seed);
+        let (r1, r2, r3) = (
+            i32::from(b.next_u15()),
+            i32::from(b.next_u15()),
+            i32::from(b.next_u15()),
+        );
+        let want =
+            r1 % weight + (record / 32 + 10) + r2 % 600 + 100 * (r3 % (rod + 1)) + 50 * (rod + 1);
+        let got = hook_strength(&mut a, weight, record, rod);
+        assert_eq!(got.strength, want, "seed {seed}");
+        assert_eq!(got.fish_scale, (want + 0x400) as u16);
+        // Exactly three draws: both streams stand at the same point.
+        assert_eq!(a.next_u15(), b.next_u15());
+    }
+    // `sra` after the `+0x1f` bias rounds a negative line record toward zero.
+    let mut r = BiosRand::new(5);
+    let s = hook_strength(&mut r, 1, -31, 0);
+    let mut r = BiosRand::new(5);
+    let t = hook_strength(&mut r, 1, 0, 0);
+    assert_eq!(s.strength, t.strength);
+}
+
+/// A hooked fish with its countdown parked, so no re-roll runs.
+fn held_fish(state: FishMove) -> FishAi {
+    let mut f = FishAi::hooked();
+    f.state = state;
+    f.timer = 10_000;
+    f
+}
+
+/// The reel load is `(k * (pull / 16) * depth + 0x200) >> 12`, with `k` the
+/// arm's factor - `4` sinking, `52` on the run, `32` darting
+/// (`0x801D41E8` / `0x801D42A4` / `0x801D4384`) - and `depth` the line depth
+/// after the frame's `+0x14` rise (`FUN_801D4004`, `0x801D4494..0x801D44B4`).
+#[test]
+fn the_reel_load_scales_by_state_and_by_depth() {
+    let mut sp = species(0, 1000, 400);
+    sp.sink_factor = 0; // hold the sinking arm's depth still
+    for (state, k) in [
+        (FishMove::Sink, 4),
+        (FishMove::Run, 52),
+        (FishMove::DartLeft, 32),
+        (FishMove::DartRight, 32),
+    ] {
+        for start in [0x400, 0x800] {
+            let mut fish = held_fish(state);
+            let mut rng = BiosRand::new(7);
+            let mut depth = start;
+            let f = fish.tick(&sp, 0x600, &mut depth, 0x600, 0, &mut rng, 1);
+            let d = start + FIGHT_DEPTH_RISE;
+            assert_eq!(f.load, (k * (f.pull / 16) * d + 0x200) >> 12, "{state:?}");
+        }
+    }
+    // The pull carries the hook's bias: `((rand & 0xff) + bias) * f08 / 150`.
+    let mut fish = held_fish(FishMove::Sink);
+    let mut rng = BiosRand::new(7);
+    let mut probe = rng;
+    let mut depth = 0x800;
+    let f = fish.tick(&sp, 0x600, &mut depth, 0x600, 0, &mut rng, 1);
+    let r = (probe.next_u15() & 0xff) as i32;
+    assert_eq!(f.pull, (r + 0x600) * sp.pull_factor / 150);
+}
+
+/// Each held reel bit runs its own arm (`0x801D44D4` / `0x801D4548`): with
+/// both held, both add to the gauge and both nudge the line depth.
+#[test]
+fn each_held_reel_bit_runs_its_arm() {
+    let sp = species(0, 1000, 400);
+    let mut a = TensionGauge::new(0);
+    let mut both = TensionGauge::new(0);
+    a.apply_load(0x40, 3000, 1);
+    both.apply_load(0xC0, 3000, 1);
+    assert_eq!(a.tension(), 1000 / 0x23);
+    assert_eq!(both.tension(), 1000 / 0x23 + 1000 / 0x19);
+    let run = |mask| {
+        let mut fish = held_fish(FishMove::Run);
+        let mut rng = BiosRand::new(1);
+        let mut depth = 0x800;
+        fish.tick(&sp, 0x600, &mut depth, 0x600, mask, &mut rng, 1);
+        depth
+    };
+    assert_eq!(run(0), 0x800 + FIGHT_DEPTH_RISE);
+    assert_eq!(run(0x40), 0x800 + FIGHT_DEPTH_RISE - 0x4A);
+    assert_eq!(run(0xC0), 0x800 + FIGHT_DEPTH_RISE - 2 * 0x4A);
+}
+
+/// The run tires the fish - the depth ceiling falls `2` a frame and the line
+/// depth is held at half of it - and drops back to sinking once the line is
+/// reeled above depth `0x258` (`0x801D4204..0x801D4234`).
+#[test]
+fn the_run_tires_and_ends_when_reeled_shallow() {
+    let sp = species(0, 1000, 400);
+    let mut fish = held_fish(FishMove::Run);
+    let mut rng = BiosRand::new(3);
+    let mut depth = FIGHT_DEPTH_SEED;
+    let mut frames = 0;
+    while fish.state == FishMove::Run && frames < 1000 {
+        fish.tick(&sp, 0x600, &mut depth, 0x600, 0x40, &mut rng, 1);
+        assert!(depth <= fish.ceiling / 2);
+        frames += 1;
+    }
+    assert_eq!(fish.state, FishMove::Sink);
+    assert_eq!(fish.ceiling, FIGHT_DEPTH_CEILING - 2 * frames);
+    // The exit test reads the depth after the frame's rise and ahead of its
+    // nudge: frame `n` sees `0x1000 - n * (0x4A - 0x14) + 0x14`.
+    let n = (FIGHT_DEPTH_SEED + FIGHT_DEPTH_RISE - 0x258) / (0x4A - 0x14) + 1;
+    assert_eq!(frames, n + 1);
+}
+
+/// The re-roll reloads the countdown per state: `rand % 20 + 20` sinking,
+/// `rand % 100 + 120` running, `rand % 60 + 100` darting
+/// (`0x801D4858..0x801D4920`); a line record at or past `0x709` always darts.
+#[test]
+fn the_reroll_reloads_per_state() {
+    let sp = species(0, 1000, 400);
+    let mut seen = [false; 4];
+    for seed in 0..400 {
+        let mut fish = FishAi::hooked();
+        let mut rng = BiosRand::new(seed);
+        let mut depth = 0x800;
+        let record = if seed % 2 == 0 { 0x600 } else { 0x709 };
+        fish.tick(&sp, 0x600, &mut depth, record, 0, &mut rng, 1);
+        let range = match fish.state {
+            FishMove::Sink => 20..40,
+            FishMove::Run => 120..220,
+            _ => 100..160,
+        };
+        assert!(
+            range.contains(&fish.timer),
+            "{:?} {}",
+            fish.state,
+            fish.timer
+        );
+        if record >= 0x709 {
+            assert!(matches!(
+                fish.state,
+                FishMove::DartLeft | FishMove::DartRight
+            ));
+        }
+        seen[fish.state as usize] = true;
+    }
+    assert_eq!(seen, [true; 4]);
 }

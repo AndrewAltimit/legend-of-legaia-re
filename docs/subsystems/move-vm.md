@@ -215,9 +215,9 @@ subsection under the table.
 | `0x40` | `MOVE_IMAGE` | 7 | VRAM-to-VRAM copy - [below](#0x40---move_image) |
 | `0x41` | - | 2 | `+0xB2 = v1` |
 | `0x42` | - | 0xF | Draw-kind-4 node, `0x2000` ribbon arm - [below](#draw-kind-4-setup-ops-0x13-0x23-0x42) |
-| `0x43` | - | 1 | `+0x86 \|= 0x2000` |
+| `0x43` | - | 1 | `+0x86 \|= 0x2000`: the part tick runs the field actor cull on this part - [move-vm-overlay-ext](move-vm-overlay-ext.md#a-sky-the-cull-hides-kor5) |
 | `0x44` | - | 4 | `+0x9E = v1; +0x68 = v2; +0x6A = v3 << 3` |
-| `0x45` | - | 8 | Render-mode-7 setup: `+0x5A = 7`, `+0xC4/+0xCC/+0xCE/+0xD4/+0xD6/+0xD0/+0xD2 = v1..v7` |
+| `0x45` | - | 8 | Render-mode-7 setup (the [framebuffer grab](#mode-7-is-a-framebuffer-grab)): `+0x5A = 7`, `+0xC4/+0xCC/+0xCE/+0xD4/+0xD6/+0xD0/+0xD2 = v1..v7` |
 | `0x46` | - | 4 | Tween-delta seed: `+0x94/+0x96 = +0x92`, `+0x98 = v1 - +0x94`, `+0x9A = v2 - +0x92`, `+0xBC/+0xC0 = v3`, `+0xB8 = 1` |
 
 ### 0x0A - `KEYFRAME_LOAD`
@@ -524,7 +524,7 @@ render-mode nodes. Mode `5` is **not a visual node at all**.
 | `3` | `0x4000` | CLUT-cell HSV cycler | channels `+0x90` / `+0x92` / `+0x94` (+ `+0x68` scale `<= 0x100`) by frame delta | recolour `FUN_80019D50` |
 | `4` | - | cyclic VRAM-rect scroller | `+0xC6` countdown by the frame step, reloaded from `+0xC4`; steps `+0xCC` / `+0xCE` | `StoreImage` / `MoveImage` / `LoadImage` (`FUN_8005842C` / `FUN_80058490` / `FUN_800583C8`) through the scratch `_DAT_1F8003A0` |
 | `5` | `0x4001` | **3D positional sound emitter** | screen-space position + L/R range and volume attenuation (`SE_RANGE` / `SE_VOL` / `CH_NO..SE_NO..VOL_LV` debug strings) | SE trigger `FUN_80065034` / `FUN_800657D0` / `FUN_800250D4` - **no mesh draw** |
-| `7` | - | matrix transform + billboard | screen position from the `_DAT_8007B81C` / `DAT_8007B7F8` sine tables (`+0x96` phase) | matrix `FUN_8003D368` + GP0 emit `FUN_800468A4` |
+| `7` | - | **framebuffer grab** | none of its own | one `RTPS` of `+0x14` (`FUN_8003D368`), then a GP0 `0x80` VRAM-to-VRAM copy of the screen rect round the point (`FUN_800468A4`) - **no draw** ([below](#mode-7-is-a-framebuffer-grab)) |
 | else | `-1` | transform node | `+0x14` / `+0x18` position via the sine tables, `+0x24` / `+0x26` / `+0x28` rotation, `+0x72` / `+0x78` / `+0x7A` scale | none (pivot for child meshes) |
 
 Order within one tick: drain the wait, advance the keyframe cursor, the mode
@@ -534,6 +534,77 @@ when `+0x54` is below zero; `flags & 8` afterwards means halted), the post-VM
 clamps of `+0x78` and `+0x72` (`0x80022BC0..0x80022C1C`), then the mode-`4`
 (`0x80022CB8..0x80022EE0`) / mode-`7` draw and the mode-`6` keyframe-pose pack
 ([keyframe-pose ops](#keyframe-pose-ops-0x3c--0x3d)).
+
+### Mode 7 is a framebuffer grab
+
+The arm at `0x80022C20..0x80022CB8` reads as a billboard from its callees'
+names and is not one: it draws nothing. Read off the disassembly:
+
+1. `jal 0x800172C0` loads the field camera into the GTE. With `+0x52 & 0x400`
+   set, `FUN_8003D1A4(0x8007BF10)` loads the base matrix block in its place,
+   so the point is an eye-space offset locked to the camera.
+2. `FUN_8003D368(part + 0x14, sp + 0x28)` is one `RTPS`: it stores `SXY2` and
+   returns `IR3` (`mfc2 v0, $11`).
+3. `jal 0x800172C0` restores the camera.
+4. `FUN_800468A4(ot, sx + [+0xCC], sy + [+0xCE], [+0xD4], [+0xD6], [+0xD0],
+   [+0xD2])` with `ot = (IR3 + [+0xC4]) >> (byte 0x1F8003A4 + 2)`. The callee
+   builds a `DR_MOVE` (`FUN_80057914`: GP0 `0x01`, then GP0 `0x80` with source
+   corner, destination corner and extent) and links it into that
+   ordering-table bucket.
+
+So each tick the part copies the screen rectangle round its own projected
+point, out of the frame being drawn, into a fixed VRAM rectangle that a
+textured mesh can sample. It is the same primitive the field VM's `43 12`
+photo grab issues.
+
+Op `0x45` is the only binder. The disc census
+(`engine-scene-host/tests/move_op03_census_disc.rs`, `census_move_op_45_carriers`)
+finds it in seven field prescript records - `jou`, `kor5` (two), `korb3`,
+`noaru`, `uru`, `uru2` - and in no summon part. Every one grabs `64 x 64`
+pixels centred on itself (`-32, -32`) into `(832, 0)`, with a depth bias of
+`0x80`, `0x300` or `0x400`. None is a scene-entry part: each is the op-`0x25`
+child of a stager a script fires. In `kor5` it is the Genesis Tree beat
+(`P2[5]`): the record raises system flag `0x0B`, fires `34 30 01` and
+`34 30 03`, and their stagers spawn the grab records `11` / `12`, which loop on
+`2F 13 000B 0001` (branch while flag `0x0B` is set) and halt once it clears.
+The library state `kor5_post_436_organic`, taken later in the same visit,
+still holds the last grab at `(832, 0)` in VRAM: a `64 x 64` crop of a drawn
+frame, which the scene's own textures at that rect do not account for.
+
+**Port.** `legaia_engine_vm::vram_grab::grab_request` reads the operand block
+(op `0x45`'s offsets in `move_vm::dispatch`). `World::tick_ambient_fx` queues
+one request per grab part per tick after the level clamps, where retail runs
+the arm. The projection needs the camera the frame was drawn through, so it
+runs on the host side: `World::queue_vram_grabs(view)` projects each request
+(`legaia_render_kernels::vram_grab::grab_copy`, the `RTPS` port `rtps_point`)
+into the `FUN_800468A4` call and queues it on the `43 12` copy queue. The
+native window passes the field view of its last drawn frame
+(`PlayWindowApp::last_frame_field_view`), and the browser play page the view
+of its last `play_camera_vp` frame. Both then drain the queue in
+`step_field_vram_effects`, and the frame-grab handshake (`FrameGrab`) lands
+the drawn frame before the copy reads it. Two deviations: the port has no
+ordering table, so the copy reads the whole last frame rather than the
+buckets behind the part; and a point at or behind the eye grabs nothing, where
+the GTE's divide would saturate. Disc-gated chain test:
+`engine-scene-host/tests/ambient_grab_part_disc.rs`. `legaia-engine
+play-window --scene kor5 --play-record 2:5` plays the beat, and
+`LEGAIA_DIAG_CAPTURE_STATE=1 LEGAIA_DIAG_CAPTURE_VRAM=<path>` with
+`--screenshot` writes the field VRAM it left.
+
+Measured on that run against `kor5_post_436_organic`: the copy lands at
+`(832, 0)` as retail's does, but it is a different crop. Retail's is centred
+on the figure floating above the party; the port's sits on the party's backs
+near the bottom of the frame, cut short by the display page's last row. The
+grab is placed by its part's `+0x14`, which the stager takes from the firing
+context's position (`34 30` with the cross-context prefix `B4 15`). The beat
+writes the context's `+0x8E = 480` before raising its `0x20000000`, so only
+the actor tick's height arm (`FUN_8003BC08`, store `0x8003BCF4`) lifts the
+context's own `+0x16`; the port's arm stores it too
+([`4C 42`](script-vm-menuctrl.md#0x4c-nibble-4---immediate-or-ramp-cluster)),
+and the context holds `Y = -480`, then follows the beat's 80-frame tween to
+`-250` (`engine-scene-host/tests/kor5_genesis_figure_height_disc.rs`). The
+port's copy now holds the figure on its flower; retail's library crop frames
+it a little higher, a later frame of the same beat.
 
 ### A mesh-bearing part draws its pack mesh
 
@@ -585,6 +656,7 @@ packets, SPU triggers and libgpu VRAM copies. The port splits it by block.
 | Mode 3 CLUT-cell integrator | `engine-field::clut_cell_fx::mode3_integrate`; on the battle part lists `World::queue_battle_part_scrolls`, whose recolours `World::apply_battle_vram_moves` lands |
 | Mode 4 VRAM-rect scroller | `engine-field::vram_scroll::mode4_integrate` |
 | Mode 5 positional sound emitter | `engine-vm::sfx_emitter::emitter_tick`, driven from `World::tick_ambient_fx`; voices by `AudioDirector::drive_sfx_emitters` |
+| Mode 7 framebuffer grab | `engine-vm::vram_grab::grab_request`, queued by `World::tick_ambient_fx`; projected by `render-kernels::vram_grab` through `World::queue_vram_grabs` onto the `43 12` copy queue both hosts drain |
 | `+0x5A` seeding from `model_sel` | `engine-effects::summon::RenderMode::from_model_sel` (`0x4000 -> Particle`, `0x4001 -> SoundEmitter`); the field seater `World::spawn_ambient_record_at` writes `+0x5A` itself (`3` / `5`) |
 | Part seater `FUN_80021B04` | `move_vm::spawn_move_actor`; field host `World::spawn_ambient_record_at` |
 | Case-5 model draw of a mesh-bearing field part (`model_sel >= 0`) | `World::ambient_mesh_part_draws`, through `World::active_field_fx_part_draws` on both hosts ([below](#a-mesh-bearing-part-draws-its-pack-mesh)) |
@@ -597,10 +669,12 @@ dispatch seen at two moments, and both land in
 `World::step_ambient_fx` applies their mode-3 and mode-4 VRAM writes to the
 renderer's software VRAM.
 
-Not ported as executable code: the mode-`5` positional sound emitter and the
-mode-`7` billboard arm. `SummonScene::part_draws` excludes mode-`5` parts from
-the mesh draw list and `special_render_nodes` surfaces them (with the `0x4000`
-nodes) for a host; no host consumes them. `World::spawn_field_stager` is a
+The mode-`7` grab is ported on the field path too
+([below](#mode-7-is-a-framebuffer-grab)). The mode-`5` emitter is
+ported on the field path (table above); on the `SummonScene` path
+`SummonScene::part_draws` excludes mode-`5` parts from the mesh draw list and
+`special_render_nodes` surfaces them (with the `0x4000` nodes), and no host
+consumes them there. `World::spawn_field_stager` is a
 thinner `SummonScene`-backed port of the same `FUN_800252EC` chain with
 neither render tail. It is the `play-window` `J`-key debug exerciser (one
 prescript stager per press, cycling the table) and is on no retail path.

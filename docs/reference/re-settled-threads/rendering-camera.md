@@ -130,8 +130,8 @@ non-zero value.
 | `nilboa` | Nivora Ravine | 638 | P2[33] | `60` | 5.3 |
 | `taiku` | Zora's Floating Castle | 373 | P2[27] | `-120` | -10.5 |
 | `korout` | Sol Tower (entrance) | 534 | P2[3] | `240` | 21.1 |
-| `juui1` | Bio Castle (F) | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
-| `juui2` | Bio Castle (G) | 597 | P2[0] | `-660` | -58.0 |
+| `juui1` | Ra-Seru scene (1) | 588 | P2[0], P2[3], P2[4] | `-400` | -35.2 |
+| `juui2` | Ra-Seru scene (2) | 597 | P2[0] | `-660` | -58.0 |
 
 - **`edstati3` is a real scene:** the ending cutscene block, bundle at extraction entry 826. Its
   CDNAME label inherits forward as far as the battle-data packs at 863 / 864.

@@ -153,7 +153,7 @@ On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C` seeds the 
 | `0x537` | `0x111` | `0x801CEBB4` | 1 - Expert | `0x100` |
 | `0x538` | `0x321` | `0x801CEBC8` | 2 - Master | `0x100` + `0x200` (no Item, no Ra-Seru) |
 
-That `0x538` is the Master unlock is inference from the three arms' course indices; the literals are disassembly. The default `1` is `muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`; the port's seed is `contest_entry_word`. The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not the course choice.
+The three flags are the **course pick**, not unlocks: the `koin1` course menu's three arms each set their own flag and clear the other two before the warp (`P1[9]` `+0xB22..+0xB7A`, [Run gives the contest up](#a-leg-is-the-ordinary-battle)), so exactly one is set on entry and the "last one wins" order never decides anything. That `0x538` is the Master unlock is inference from the three arms' course indices; the literals are disassembly. The default `1` is `muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`; the port's seed is `contest_entry_word`. The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not the course choice.
 
 ### How long a course runs
 
@@ -317,6 +317,7 @@ Each hub screen is a **fade-in at its own rate, a hold, and a fade-out**, and tw
 - **Tally fast-forward.** Arm `0x0B` opens by testing `_DAT_8007B874 & 0xF4` and storing `1` to `DAT_801D1AB4` (`0x801CFD60..0x801CFD7C`), ahead of the roll's `jal 0x801CF074` at `0x801CFDBC`. That word is the step scaler's bypass ([`FUN_801D14B0`](../reference/functions/minigames-debug.md)): while it is up a lane moves its whole remainder in one step. It is a latch - the only clear is the arena init's `sw zero` at `0x801CEB1C` - so one press rolls out everything left on the screen. The function dump of `FUN_801CF870` has a hole over `0x801CFD70..0x801CFE08`; the store is read from the image's bytes. Port `muscle_ringside::HubTimers::tally_boost`.
 - **Course card.** `FUN_801D042C` (drawn at `*(0x801D1A84)` beside the title art at a fixed `0x80`) is six corner-anchored draws: the course-name strip (record `5 + course`, `*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and variant 2 again at `(0x10, 0x80)`, then record `8` the same way at `(0xB8, 0x7B)` / `(0xC0, 0x83)` - a shadow, an under-layer and a face in OT order. Variant-2 packets subtract a white knockout palette and the variant-1 face adds over it; the arena uploads the hub CLUTs STP-set ([`ringside-still.md`](../formats/ringside-still.md#which-hub-packets-blend)). The ROUND banner `FUN_801D02F0` is drawn only by state `0x15`.
 - **Other seats.** The Welcome strip (record 3) is centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` with a variant-2 shadow at `(168, 72)`, the INTERVAL heading (record 16) at `(160, 32)`.
+- **Subtractive packets fade too.** A variant-2 packet is `B - F` with `F` the white knockout palette times the quad's Gouraud colour `c / 128`, so a tally row still at level `0` takes nothing away. Both browser pages draw hub quads through `site/js/canvas-abr.js`, which scales the `B - F` silhouette by that colour (`B * (1 - c/128)`, equal to retail's `B - 255 * c/128` at both ends of the fade); drawn at full strength, every row not yet faded in knocked a black box out of the ringside still.
 - **Tally roll.** The four lanes' tick counters `DAT_801D1AB8 / 1ABC / 1AC0 / 1AC4` each test `slti 0x11` (a 17-tick lead-in) and reseed to `0x10`.
 
 Port: `muscle_dome::HubScreen` (`engine-minigames`, envelope literals), `muscle_dome_hud::course_card_draws`, `muscle_ringside::FirstVisitHub` for the first visit ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)), and `muscle_ringside::HubTimers`, armed and ticked once per world tick by `World::tick_muscle_hub` from the shared scene host. Each play host's own `tick_muscle_hub` only sounds what fired (`World::take_muscle_hub_sounds`); the minigames page samples the same kernel through `muscle_hub_screen_json`. No host picks a count or a brightness of its own.
@@ -354,7 +355,7 @@ A survived leg with the course not exhausted never leaves the arena: the battle 
 
 The first visit (states `0..=6`) plays once per contest. `FUN_801CEA6C` seeds the hub state `0` at `0x801CECA4` and keeps it only while the decoded round `DAT_801D1A94` is zero (`beqz a1, 0x801CEE90` at `0x801CECE8`); a reported leg has already stepped the word, so no later entry gets there. Port: `DomeContest::opens_on_first_visit`, read by `HubTimers` and by the minigames page (`muscle_first_visit_owed`).
 
-In the port the in-world dome's decided leg closes on Cross through `World::tick_muscle_dome`, which reports it and asks `leg_boundary_raises_interval`. A continuing contest sets `MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome` with no leg open; every other leg settles and hands the field back. `HubTimers` raises `HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained, answered by `World::begin_next_muscle_leg`, which stages the next fight through the same mode-24 drain the arena door uses without re-arming the round trip.
+In the port the in-world dome's leg closes when its battle ends (`World::finish_muscle_battle_leg`, the exit selector's mode-`0x18` arm), or on Cross through `World::tick_muscle_dome` where the session runs the leg; both report it through `World::close_muscle_leg`, which asks `leg_boundary_raises_interval`. A continuing contest sets `MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome` with no leg open; every other leg settles and hands the field back. `HubTimers` raises `HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained, answered by `World::begin_next_muscle_leg`, which stages the next fight through the same mode-24 drain the arena door uses without re-arming the round trip.
 
 While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-play/tests/play_ringside_still_disc.rs`.
 
@@ -384,7 +385,9 @@ An ordinary battle backdrop in the standard carrier shape ([battle background](b
 
 The dust decal is **not drawn** in a live match: the loader trims it (next section). Its texels are bright (the CLUT ramp at `(16, 479)` climbs to `(208, 208, 248)`), so any draw of it reads as a mist band; the retail match interior is mist-free (capture: the `minigame_muscle_dome_pcsx` scenario run forward into a match).
 
-Confidence: load chain, carrier shape and texture addresses are **Confirmed** (disassembly + structural decode). That a live contest's `_DAT_8007B864` holds this stream is **Inferred** - 1225 is the only backdrop-shaped stream in the file - with no dome-battle save-state byte-match taken.
+Confidence: load chain, carrier shape and texture addresses are **Confirmed** (disassembly + structural decode). That a live contest's `_DAT_8007B864` holds this stream is **Confirmed** by capture: in the three retail leg states (`minigame_muscle_dome_retail_red_piura_vahn_strike` and its two siblings) the pointer is `0x800ABE84`, and the bytes past the relocated TMD header match extraction 1225 at file `+4` (past its chunk header). Those states stand in `koin1` with `_DAT_80084540 = 0x4C6` and `DAT_8007BD60 = 0`: battle init's `map + variant` sum (`0x80051A20..0x80051A3C`) reads the word the fight start `FUN_801D1510` stored at `0x801D1554`, not the field scene's define.
+
+Port: `SceneHost::battle_stage_scene` names the block a fight's stage comes from - the arena on a leg the port opened itself (`World::muscle_leg_in_battle`), or the block a replayed capture's map id names (`World::seed_battle_map_define`, which retail-compare reads off `0x80084540`) - and the stage resolver both hosts run (`engine-session::battle_stage::resolve_battle_stage`) loads that block. Test `a_seeded_map_define_names_the_stage_block` in `crates/engine-scene-host/tests/battle_stage_entries_real.rs`.
 
 <a id="object-1-is-trimmed-by-the-loader-_dat_8007b64b"></a>
 
@@ -574,7 +577,11 @@ The fighter's four selectable actions are its four direction commands, laid out 
 The opponent never reaches these paths. Its action is the ordinary battle's **monster AI**: the action SM's turn-order pass `FUN_801DABA4` (called from `FUN_801E295C` at `0x801E5AE8` / `0x801E5D58`) calls the picker `FUN_801E9FD4(ctx[+0x274] - 3)` for every actor slot at or past `3` (`sltiu v0,v0,0x3` at `0x801DAF2C`, `jal 0x801e9fd4` at `0x801DAF48`), then the dead-target redirect `FUN_801DB124`. The picker's physical branch fills the monster's `+0x1DF` stream out of its AGL budget from its own PROT 867 action entries ([`battle-action-helpers.md`](battle-action-helpers.md#enemy-agl-action-budget-fun_801e9fd4)), and its per-monster `switch` on `DAT_8007BD0C[slot]` applies to a dome opponent as to any.
 There is no dome-specific AI table *(disassembly: the call chain and slot gate in `overlay_muscle_dome_801daba4.txt`, the PROT 0898 image the arena runs)*.
 
-Port (`crates/engine-battle-menus/src/muscle_dome_session/opponent.rs`): `DomeOpponentAi` over the monster's catalog definition (`monster_def_from_record`) and its magic ids' cast records, installed by all three hosts from the ladder rung's PROT 867 record. At `Begin` the session runs the picker's generic core (`rand() % (1 + magic count)`, MP-gated cast or strike, party target roll), `monster_ai::decide` and the recent-target ring, then on a strike `enemy_action_budget` over the monster's own candidate swings; the stream holds archive entry indices, which the play-out stages as the monster's own clips (`ChoreoClips::by_entry`). A cast goes through the session's cast path with the monster's spells as slot 1's loadout. The draws come off the damage model's `rand()` stream.
+On the play hosts a leg's opponent is the battle's own monster AI. Where the session runs the leg, the port is `crates/engine-battle-menus/src/muscle_dome_session/opponent.rs`: `DomeOpponentAi` over the monster's catalog definition (`monster_def_from_record`) and its magic ids' cast records, installed by all three hosts from the ladder rung's PROT 867 record.
+
+At `Begin` the session runs the picker's generic core (`rand() % (1 + magic count)`, MP-gated cast or strike, party target roll), `monster_ai::decide` and the recent-target ring, then on a strike `enemy_action_budget` over the monster's own candidate swings; the stream holds archive entry indices, which the play-out stages as the monster's own clips (`ChoreoClips::by_entry`). A cast goes through the session's cast path with the monster's spells as slot 1's loadout. The draws come off the damage model's `rand()` stream.
+
+Every host closes the opponent's selection through `MuscleDomeSession::opponent_commit`, the minigames page's `muscle_end_selection` included; that binding used to fill the opponent with the player's direction bytes, so its swing looked up archive entry `0x0C` - past the end of a small monster's table - and acted out a stand-in clip (`web-minigames/tests/muscle_opponent_swing_real.rs`).
 
 <a id="round-resolution"></a>
 
@@ -843,6 +850,15 @@ Port: `MuscleDomeSession::install_art_catalog` + `tokenized_queue` over `legaia_
 
 The minigames page, which holds no `World`, builds the same catalog with `muscle_dome_session::art_catalog_from_bank` over the art-animation bank in the fighter's player battle file (`record[0] +0x58`, PROT 863..865) - the records the play hosts' battle entry installs (`World::install_art_bank_records`) - through the same normal-art filter.
 
+The turn's queue itself is the builder's walk over the **whole** bank, both arms
+(`MuscleDomeSession::install_art_bank`, `legaia_art::tokenize_bank`): the dome's rounds run the
+battle overlay's `FUN_801EED1C`, whose Hyper arm the fighter's Ra-Seru gate `ctx[+0x25F + member]`
+opens, so a Hyper Art entered by a fighter carrying one collapses to `0x1A` and its constant
+([battle-action-queue](battle-action-queue.md#the-hyper-art-arm)). The bank comes from
+`muscle_dome_session::art_bank_for` (play hosts) or `art_bank_from_bank` (the minigames page); the
+gate is the installed magic loadout's `DomeRing::has_raseru`. The normal-art catalog stays the
+fallback when no bank is installed, and the arts list's page count.
+
 ## Sound
 
 **UI cues.** The round driver fires its blips through the one-arg cue funnel `FUN_8004FCC8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor row (`sltiu $s0, 0x40` at `0x8004FD94`, `addiu $a1, $s0, -1` at `0x8004FD9C`, ring append at `0x8004FE28`; [`sfx-table.md`](../formats/sfx-table.md)). `FUN_801D0748` carries **37** immediate call sites: ids `0x21` (15), `0x22` (7), `0x23` (15), i.e. static rows `0x20` / `0x21` / `0x22`, whose category routes them to the slot-0 system bank (extraction PROT **0868**).
@@ -875,13 +891,21 @@ Only two cue sites are `j` targets: `0x801D20D4` (from inside its own arm) and `
 
 **Bank residency.** A retail state parked at the hub (`minigame_muscle_dome`, mode `0x19`) has class-2 slot `2` closed and slot `6` open over PROT 0876's header - the field bank the warp left behind ([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)) - so a category-`2` cue is silent at the hub. A round is entered through mode word `0x14`, the value `FUN_8001DCF8`'s close-6 / clear-latch arm keys on, so a round takes the ordinary battle residency (PROT 0869 staged into slot 2); no retail capture of a round's residency exists. The port's `SceneMode::MuscleDome` is a leg, so `World::sync_sfx_residency` gives it the battle arm.
 
-**BGM.** The arena loads its music itself, bypassing the BGM-id word `_DAT_8007BAC8`. `FUN_801CEA6C` runs two `FUN_8001FC00` / `FUN_8001E54C` pairs: raw `0x3F8` into slot `5` at `0x801CF000..0x801CF020` - extraction **1014**, `music_01` sound-test #26 `M26B1`, the standard battle theme, global `2026` - and raw `*(0x8007BBE4) + 0x57` into slot `3` at `0x801CEF50..0x801CEF70` (extraction **1157**). A state parked in the hub therefore still reads the host scene's id in `_DAT_8007BAC8` (`0x7E0`, `town01`'s track).
+**BGM.** The arena loads its music itself, bypassing the BGM-id word `_DAT_8007BAC8`, and plays it only once a fight starts:
 
-Port: `MinigameSubId::bgm_id` names `2026`; the shared door-warp drain queues it as an op-`0x35` start, both hosts swap to it through their BGM director, and `World::restore_minigame_bgm` restores the venue's track on exit. The venue is `koin1` (PROT 543), whose casino-floor entry arm plays global BGM `2018` ([`minigame-slot-machine.md` § Sound](minigame-slot-machine.md#sound)).
+| Step | Site | What it does |
+|---|---|---|
+| Release | `0x801CEFB4..0x801CEFDC`, `FUN_801CEA6C` | `FUN_800266E0` / `FUN_80026520` on both BGM sound sources `0x8007052C` and `0x8007056C`: whatever was playing stops |
+| Load | `0x801CEF50..0x801CEF70`, `0x801CF000..0x801CF020` | two `FUN_8001FC00` / `FUN_8001E54C` pairs: raw `*(0x8007BBE4) + 0x57` into slot `3` (extraction **1157**), raw `0x3F8` into slot `5` (extraction **1014**, `music_01` sound-test #26 `M26B1`, the standard battle theme, global `2026`). The installer's op `0x02` opens the sequence (`SsSeqOpen` through `FUN_80026410`) and does not play it |
+| Play | `0x801D1544..0x801D154C`, `FUN_801D1510` | `jal 0x80026478` on `0x8007056C`: the slot resumes. This is the fight start, past the ROUND card's arm `0x16` |
+
+The arena init runs on the door and again after every leg, so the Welcome card, the course card, every ROUND card and the INTERVAL tally play with no music under them, and each leg's fight starts the theme afresh. A state parked in the hub still reads the host scene's id in `_DAT_8007BAC8` (`0x7E0`, `town01`'s track). *(disassembly: the three sites above; `0x80026478` is `FUN_801D1510`'s only audio call, and the address scan finds no other `jal 0x80026478` in PROT 0977)*
+
+Port: `MinigameSubId::bgm_id` names `2026`. The door-warp drain silences the venue's track (`World::silence_for_minigame_bgm`) and holds the theme (`MinigameState::muscle_leg_bgm`); `World::tick_muscle_dome` starts it (`World::start_minigame_track`) on the tick the hub hands the leg over, and the leg's close silences it again when the contest continues. `World::restore_minigame_bgm` gives the venue its track back on exit. The venue is `koin1` (PROT 543), whose casino-floor entry arm plays global BGM `2018` ([`minigame-slot-machine.md` § Sound](minigame-slot-machine.md#sound)). Pinned by `engine-session/tests/minigame_audio_disc.rs` (`the_muscle_dome_theme_waits_for_the_fight_start`).
 
 **Announcer lines.** The arena overlay's two `FUN_8003D53C` sites are the hub's: arm `0`'s first tick starts the Welcome line (`XA31` channel `0x0B`, span `0xA9`, `0x801CF918..0x801CF928`) and arm `0x15`'s first tick the ROUND card's (`XA32`, channel `DAT_801D1A94` = the round index, span `0x54`, `0x801CFF4C..0x801CFF70`). Arm `0x15` is the same arm on a first visit and on a hub re-entered after a leg, so every leg's card speaks its round. Port: `FirstVisitHub` starts both on a first visit; `HubTimers` starts `round_card_xa(round - 1)` when a later leg's card goes up (the re-entered hub's backdrop card or the leg-open banner). That the channel is the upcoming leg's index on a re-entered hub is inference from the first-visit value and the card's numbering.
 
-The minigames page starts the arena theme when its tab opens (the arena init's own start, under the Welcome card) and the ROUND card's line where its own ROUND banner goes up (`muscle_round_card_xa`); its first-visit walk hands over to that banner one tick before the engine's arm `0x15` would start it.
+The minigames page starts the ROUND card's line where its own ROUND banner goes up (`muscle_round_card_xa`); its first-visit walk hands over to that banner one tick before the engine's arm `0x15` would start it. It starts the arena theme when that banner clears and stops it on the INTERVAL screen (the renderer's `legMusic`), and no longer starts it when the tab opens; locked by `web-minigames/tests/muscle_page_bgm_and_blend.rs`.
 
 <a id="the-four-turn-strip-belongs-to-koru-not-the-dome"></a>
 
@@ -1059,6 +1083,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-minigames::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
+| Battle leg | `engine-core` (`world/frame_tick/minigame_sessions/muscle_battle_leg.rs`) | `World::start_muscle_battle_leg` / `finish_muscle_battle_leg`: the leg as the ordinary battle ([below](#a-leg-is-the-ordinary-battle)) |
 | Leg session | `engine-battle-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
 | Command flow | `engine-battle-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-world-views::muscle_dome::magic_loadout_for` |
 | Auto | `engine-battle-menus::muscle_dome_session` (`auto.rs`) | saved command strings, the Auto flag, the round's pool-arm rebuild (`DomeAutoInputs`) |
@@ -1066,6 +1091,39 @@ The port models the same two layers and shares every rule between the native `pl
 | Play-out | `engine-battle-menus::muscle_dome_session::choreo` | `DomeChoreo`, `ChoreoBody`: clips at the battle rate, range-law approach, root motion, reaction pick |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera` |
 | Minigames page | `web-minigames::muscle_web` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
+
+<a id="a-leg-is-the-ordinary-battle"></a>
+
+**A leg is the ordinary battle on the play hosts.** Retail's fight start `FUN_801D1510` stages the leg for the shared battle and returns; nothing about the fight is drawn or run by the arena:
+
+| Store | Site | Port (`World::start_muscle_battle_leg`) |
+|---|---|---|
+| formation cell `DAT_8007BD0C` = the rung's monster, slots 1..3 cleared | `0x801D15A4..0x801D15BC` | a one-slot `FormationDef` through `World::enter_battle_from_formation` |
+| `DAT_8007BD60 = 0x80` | `0x801D156C` | `header_flags != 0`: the scripted-fight byte battle init derives from it (`(x >> 5) & 4`) |
+| `_DAT_80084540 = 0x4C6` (`other6`) | `0x801D1558` | `battle.map_id`; `SceneHost::battle_stage_entry` names `other6`'s stage stream (variant `0x80 & 0x1F = 0`), extraction **1225** |
+| game mode `0x14` | `0x801D15B8` | `SceneMode::Battle`, `battle.return_mode = SceneMode::MuscleDome` |
+
+The leg's fighter is Vahn alone: the hub's prologue stores the present-party list `DAT_8007BD10 = [1, 0, 0]` every frame (`0x801CF884..0x801CF8A0`), so retail offers no fighter pick *(disassembly)*. The port swaps the party list for one record and puts it back at the exit; the record is `World::muscle_fighter_record`, retail's Vahn unless a host picks Noa or Gala (`World::set_muscle_fighter`, the minigames page's "Fight as" through `play_mg_set_muscle_fighter`) - a port option, refused for a record the roster does not fill.
+
+The same word picks the body the dome surface assembles (`MuscleDomeSurface::frame_at`'s battle-file slot) on both play hosts, so the hub and the leg session draw the fighter the battle seats; the native window and the browser page used to pin that body to Vahn's file whatever the pick.
+
+The special-battle word is the arena's (`dome_special_word`, so the battle's own ring crosses out Item / Ra-Seru and its spoils gates read non-zero), and the door adds the rung's PROT 867 record to the monster catalog.
+
+Everything else - the command ring, the arts input, the monster AI, the hit sparks and numerals, the victory pose, the battle camera, the arena backdrop through the shared stage resolver (`engine-session::battle_stage::resolve_battle_stage`) - is the battle's, on both play hosts. `World::finish_battle` routes a `MuscleDome` return the way the exit selector `FUN_80046A20` does (`0x80046E50`): no back-from-battle story-flag stores, no game-over gate and no escape-clock penalty (those are the field's `FUN_8003AEB0`), then `World::finish_muscle_battle_leg` closes the session on the outcome - a knockout either way reports the leg, an escape is the give-up arm.
+
+**Run gives the contest up.** The fight start's `DAT_8007BD60 = 0x80` makes the leg a scripted fight (`ctx[+0x287] = 4`), and the escape roll `FUN_801E791C` flees a scripted fight only through its forced arm, the word's `0x100` bit (`0x801E7978..0x801E7A14`, then `0x801E7B14`). Every course the `koin1` menu opens carries it: each of `P1[9]`'s three arms sets `0x509`, sets its own course flag and clears the other two (`55 36 / 65 37 / 65 38` for Beginner at `+0xB22..+0xB28`) before its `3E 69`, so the arena init always seeds `0x101` / `0x111` / `0x321` *(field bytecode, through `field_disasm`)*.
+
+A Run round then meets the `0xFE` arm (`0x801D3228..0x801D328C`): with the word non-zero, the leader's category `5` and a monster outside `0xAF` / `0x3D..=0x3F`, it hands the leader the first turn (`ctx[+0x274] = 0`) and stores `_DAT_80084448 = 4`, which the re-entered arena settles as a give-up.
+
+Port: `battle_formulas::special_battle_run_forfeit` raises `MinigameState::muscle_leg_ran`, which `World::finish_muscle_battle_leg` reports as `LEG_OUTCOME_RAN`; a host's own launch (the native `M` key, the play page's picker) goes through `World::request_host_minigame_warp`, which makes the menu's Beginner pick (`World::choose_muscle_course`) when none stands.
+
+Pinned by `engine-scene-host/tests/muscle_dome_battle_leg_disc.rs` (door to battle against the rung on stage 1225, KO back to the hub one rung on; Run settles the contest as given up) and the dome rung of `engine-shell/tests/minigame_replay.rs` (a battle round closes under Cross taps).
+
+The leg session below still carries the contest's bookkeeping across the battle (the hub reads it as "a leg is open"), and it remains the whole leg where no battle can be staged: a monster with no catalog entry, a harness that ticks only the world, and the minigames page's free-play panel. Its selection, play-out and HUD rows are the session's (next paragraphs).
+
+**The minigames page runs the contest on the play page's runtime.** The page holds no `World`, so its default host ("in the game's battle") embeds `play.html?minigame=5&course=N&level=L&embed=1`: the play page opens `koin1` off its own disc cache, makes the course menu's pick (`LegaiaRuntime::play_mg_choose_muscle_course`), sets the party level, and arms the same door warp its picker does - so the contest, its hub screens and every leg's ordinary battle are the play host's, frame for frame.
+
+The dome panel stays as the other host and as the only one for a hand-picked foe (free play against any archive monster). The page's level defaults to `1`: the one retail dome capture in the library (`minigame_muscle_dome`) enters with Vahn alone (`DAT_8007BD10 = [1, 0, 0, 0]`) at level 1, and at the old default of 30 a fighter took round 1's 75-HP Red Piura out in one string, before it ever acted. Locked by `web-minigames/tests/muscle_page_battle_host.rs`.
 
 **Entry.** Both play hosts enter through the mode-24 door warp (the `koin1` arena door, or the native window's `M` key, which requests the same warp). The warp opens the contest off the party's unlock flags (`DomeContest::from_overlay`), resolves `(course, round)` through `parse_course_ladder` to a monster id, reads that monster's PROT 867 record for the stat block, and installs the lead's art catalog, magic loadout and the battle-theme swap. The minigames page fills a foe picker from the ladder (`muscle_course_ladder_json`, `muscle_start_vs`) or runs a contest (`muscle_contest_*`). Stand-in fighter / opponent constants survive only as the fallback for a disc whose ladder or archive does not decode.
 
@@ -1124,11 +1182,11 @@ The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`
 ## Open
 
 - The deal / interval arms of `FUN_801D0748` outside the capture-pinned input chain are not walked arm by arm.
-- A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
 - A retail capture of the SFX bank residency inside a round.
 - The pennant's 2-px offset above the bar row and the off-class widths, by placement-table read.
 - The review screen's and the Ra-Seru list window's piece decomposition.
 - Whether live `koin1` geometry is ordered over the ringside still in a re-entered hub.
+- A retail capture of a leg's battle end (the win pose and the fade back to mode `0x18`), to pin what the port's ordinary victory sequence shows for a special battle.
 
 ## See also
 

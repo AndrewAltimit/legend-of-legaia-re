@@ -141,7 +141,7 @@
   <ol class="steps">
     <li><strong>Resume.</strong> The engine opens the state&rsquo;s scene through its own card-load path over the lifted save: story flags first (retail&rsquo;s order, so an entry script reads the saved story), then the scene entry, then party, flags, bag and gold.</li>
     <li><strong>Seat.</strong> The player stands on retail&rsquo;s <code>(X, Z)</code> with the floor-sampled height, as a warp landing. The walk-on dispatcher&rsquo;s last-tile pair is stamped with the seat tile, because a player <em>standing</em> on a trigger tile has already fired it.</li>
-    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover.</li>
+    <li><strong>Camera.</strong> The arrival snap composes from the state&rsquo;s own camera parameter block - whichever region record was installed last, which is walk history a tile re-query cannot recover. A state saved mid-walk shows a frame two passes older than its RAM, so the image child stands the player one walk step behind the previous pass and takes the follow camera back two steps of its ease.</li>
     <li><strong>Frame step.</strong> The step retail was running at is rebuilt from its frame-time ring and handed over; it decides which script waits can complete.</li>
     <li><strong>Settle.</strong> The session ticks a fixed window with no input - or, for a mid-script, battle or menu state, runs to that state&rsquo;s phase.</li>
   </ol>
@@ -165,13 +165,15 @@
   <h2>Battle states</h2>
   <p>A battle capture carries its whole encounter in RAM: party and monster counts, the command-flow byte and action-state cursor, the monster ids, the scripted-fight bit, the present party and every combatant&rsquo;s HP and MP. The seed replays the fight from a running field, as retail entered it, and then places it at the capture&rsquo;s phase. Each step exists because leaving it out moves a channel for a reason that is not a port defect:</p>
   <ol class="steps">
-    <li><strong>Enter the fight</strong> with the captured formation, party and stage variant.</li>
+    <li><strong>Enter the fight</strong> with the captured formation, party, stage variant and map id - a Muscle Dome leg stands in <code>koin1</code> while its map id names the arena data file, whose backdrop the fight is drawn on.</li>
     <li><strong>Pin the random stream</strong> at the entry, searched over, since the capture holds the stream at the capture rather than at the entry.</li>
     <li><strong>Stand the combatants</strong> on their captured ground positions and headings, taking back pushes the capture already holds.</li>
     <li><strong>Land the HUD glides</strong> and each body&rsquo;s animation keyframe the capture had already reached.</li>
     <li><strong>Take back</strong> hits already landed this action, rewards already granted and turns already spent.</li>
     <li><strong>Place the phase</strong> - drive the engine&rsquo;s own command surfaces, one press every other tick, to the captured command-flow state, action state and acting seat; a replayed cast runs to its gate.</li>
   </ol>
+  <p>A monster&rsquo;s strike capture also places where its walk began. The walk is a straight line onto the target, and the action&rsquo;s yaw counter counts its passes from the Attack arm&rsquo;s rung, so the start lies on the line from the target through the attacker&rsquo;s captured strike position, as far back as the walk entry&rsquo;s speed covers in the counter units retail ran. Left on the replay&rsquo;s ground, the attacker came in from wherever earlier rounds put it, and the post-strike two-shot, whose yaw is the counter less the attacker&rsquo;s heading, filmed the strike from the wrong side.</p>
+  <p>A monster spell captured inside its capture band also stands the stage&rsquo;s darkening on the capture&rsquo;s word. The backdrop dims a fixed amount every frame from the band&rsquo;s entry, and retail waits longer before entering the band than the engine does, so with the other two clocks held to retail&rsquo;s the engine&rsquo;s cave had already gone darker; the frame on screen takes the weight the displayed frame drew.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Battle channel</th><th>Score</th></tr></thead>
@@ -186,9 +188,14 @@
   <p>Fields a capture probe wrote into RAM after battle init, and fields on a patched-disc state, are listed in the detail but left unscored.</p>
 </section>
 
+<section class="doc-section" id="minigame" data-doc="minigame-states">
+  <h2>Minigame states</h2>
+  <p>A minigame capture names its minigame by the door warp&rsquo;s sub-id; the seed lands the save in the departure scene and takes the same warp. Only a phase the warp itself reaches is seeded: today the slot machine at rest on a door entry, scored on mode, scene, the machine&rsquo;s state word, balance and coin bank, and the frame (box-filtered from the machine&rsquo;s 640-wide video mode). A decided spin, Baka Fighter, the dance, fishing and the Muscle Dome hub stay unseeded with their reason.</p>
+</section>
+
 <section class="doc-section" id="menu" data-doc="menu-states">
   <h2>Menu states</h2>
-  <p>A menu capture names its screen in the menu overlay&rsquo;s sub-screen word. The pause menu&rsquo;s screens - Items, Magic, Equip (and its slot browse and candidate list), Status, Options, Load, Save - are seeded: the field seed runs, then the pause menu is driven through its own pad path, <code>Start</code>, <code>Down</code> onto the row, <code>Cross</code>. The <code>menu</code> channel is 1 when the engine holds the same sub-screen. Title, boot and script-entered screens (the casino prize exchange) stay in the report as classified limits.</p>
+  <p>A menu capture names its screen in the menu overlay&rsquo;s sub-screen word. The pause menu&rsquo;s screens - Items, Magic, Equip (and its slot browse and candidate list), Status, Options, Load, Save - are seeded: the field seed runs, then the pause menu is driven through its own pad path, <code>Start</code>, <code>Down</code> onto the row, <code>Cross</code>. The <code>menu</code> channel is 1 when the engine holds the same sub-screen. The title front end - the menu on either row, the pill row CONTINUE opens, the Continue grid - is seeded by booting the engine&rsquo;s own front end and driving it there with fixed pad edges, and scores its frame only. Other boot screens and script-entered screens (the casino prize exchange) stay in the report as classified limits.</p>
 </section>
 
 <section class="doc-section" id="channels" data-doc="channels">
@@ -233,6 +240,7 @@
     <thead><tr><th>Shape</th><th>Indicates</th></tr></thead>
     <tbody>
       <tr><td>camera exact, frame smeared by stretched planes or one flat colour</td><td>a mesh retail does not draw there - back faces of a sky dome, a never-spawned actor at the origin, a prop at the wrong scale</td></tr>
+      <tr><td>engine frame black where retail shows a floor or backdrop, every other channel exact (<code>noaru_field_card_walk</code>)</td><td>a mesh-bearing ambient part seated off its anchor: noaru&rsquo;s ice floor rides the camera focus through move-VM ext <code>0x24</code>; see <a href="../subsystems/move-vm-overlay-ext.html">move VM overlay extension</a></td></tr>
       <tr><td>retail frame black beyond a rectangle, the engine&rsquo;s filled</td><td>the visible-tile window; see <a href="../subsystems/renderer.html">renderer</a></td></tr>
       <tr><td>an effect missing in the engine frame</td><td>an actor or effect the fresh entry does not spawn, or one the port does not draw</td></tr>
       <tr><td>camera and dialogue off together, phase gate not met</td><td>a script record the gate could not bring the engine to</td></tr>
@@ -255,6 +263,7 @@
     <a href="recomp-differential.html">Recomp differential</a>
     <a href="mednafen-automation.html">Mednafen automation</a>
     <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/capture-coverage.md" target="_blank" rel="noopener">Capture coverage</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/cast-sequence-oracle.md" target="_blank" rel="noopener">Cast-sequence oracle</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/host-drift.md" target="_blank" rel="noopener">Host drift</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">Full doc</a>

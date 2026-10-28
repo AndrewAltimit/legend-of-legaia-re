@@ -39,8 +39,8 @@ struct TestHost {
     global_counter: u16,
     /// Models the player's world coords at `_DAT_8007C364 + 0x14..+0x1A`.
     player_xyz: [i16; 3],
-    /// Models the fixed-origin pair at `_DAT_80089118 / _DAT_80089120`.
-    fixed_origin_xz: (i32, i32),
+    /// Models the stored (negated) camera focus `_DAT_80089118 / _DAT_80089120`.
+    focus_stored_xz: (i32, i32),
     /// Models `_DAT_1F800393` (scratchpad ramp ratio numerator).
     dat_1f800393: u8,
     /// Models `_DAT_8007C348` (axis threshold offset).
@@ -166,8 +166,8 @@ impl MoveHost for TestHost {
     fn move_player_world_xyz(&self) -> [i16; 3] {
         self.player_xyz
     }
-    fn move_fixed_origin_xz(&self) -> (i32, i32) {
-        self.fixed_origin_xz
+    fn move_camera_focus_stored_xz(&self) -> (i32, i32) {
+        self.focus_stored_xz
     }
     fn move_dat_1f800393(&self) -> u8 {
         self.dat_1f800393

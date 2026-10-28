@@ -208,6 +208,24 @@ pub struct ActionSteer {
     /// through the park for as long as retail sat in it, takes the capture's
     /// word outright rather than only within the clock's slack.
     pub park: bool,
+    /// The frame step every pass of the capture's frame-time history ran at
+    /// (`RetailBattle::step_run` over all sixteen entries), when that is one
+    /// step. The yaw counter drifts `max(1, 4 * step / 3)` a pass
+    /// (`0x801E29E4..0x801E2A24`), so over the same vsyncs a steady step `3`
+    /// carries it four units in three where the engine's step `2` carries
+    /// it one a vsync; [`BattleDrive::steer`] rescales the engine's drift by
+    /// that ratio before testing the counter against retail's.
+    pub drift_step: Option<u8>,
+    /// The capture is a monster's strike loop `0x1E` still on its walk clip
+    /// (`+0x1D9 == 1`). The arrival poll stages idle under the `+0x1DC`
+    /// bit-0 cut (`0x801E35BC..0x801E35C8`), and a walk entry carrying the
+    /// `+0x76` lock refuses it (`0x80047940..0x80047948`), so the walk plays
+    /// on through the loop's passes - the strike byte they stage waits for
+    /// its natural end. The accumulator then dates the walk's last loop
+    /// re-commit, which the engine's clip age leaves out; the yaw counter
+    /// `yaw` places the capture instead: met once the engine's counter has
+    /// run to retail's, and not pinned to it before.
+    pub walk_clock: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -274,7 +292,10 @@ pub enum SpanGate {
     /// ([`legaia_engine_cast::cast_module_camera::capture_countdown_va`]): the
     /// phase is held until the engine's module sits in that arm with its
     /// countdown run down at least as far - the module's own clock, which
-    /// places a camera shot or drift in flight.
+    /// places a camera shot or drift in flight. A body that gates on no
+    /// module word carries [`PHASE_ONLY`]: the engine's directed module is
+    /// held to the capture's arm alone (`koru_blade_breath_mid_cast` sits in
+    /// arm 3; without the arm the replay was filmed on `0x70`'s first tick).
     ///
     /// `yaw` is retail's yaw counter `ctx[+0x6DA]` (`None` under the Far
     /// option, which stops it): the action seed `0x0C` stores `0x800` and
@@ -311,6 +332,11 @@ pub enum SpanGate {
     /// until its own glide lands ([`BattleDrive::steer`]).
     Landed,
 }
+
+/// The countdown half of a `0x70` capture's arm gate when the body gates on
+/// no module word ([`SpanGate::CaptureFade`]): the gate is the phase alone,
+/// and only for a body the engine directs.
+pub const PHASE_ONLY: i32 = i32::MAX;
 
 /// The capture band `0x6E..=0x71`. `0x70` pins the style to `1`
 /// (`sb v0,0xd(v1)` at `0x801E50CC`) without re-arming a framing, so a
@@ -372,11 +398,47 @@ pub(crate) fn capture_accum_done(
     active_clip_age(world) >= u32::from(want)
 }
 
+/// The engine's yaw counter `counter` with its drift since the last outright
+/// store (`drift`, run at the engine's step `engine_step`) rescaled to the
+/// rate a steady `retail_step` drifts it at over the same vsyncs:
+/// `inc(s) / s` a vsync, `inc(s) = max(1, 4 * s / 3)` a pass
+/// ([`legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment`]).
+/// The rung the drift started from stays the engine's.
+pub fn rescaled_yaw_counter(counter: i32, drift: i32, engine_step: u8, retail_step: u8) -> i32 {
+    use legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment as inc;
+    let (se, sr) = (i32::from(engine_step.max(1)), i32::from(retail_step.max(1)));
+    let scaled = drift * i32::from(inc(sr as u8)) * se / (i32::from(inc(se as u8)) * sr);
+    counter - drift + scaled
+}
+
+/// The action SM's Done arm and the fade-down it hands to.
+const ACTION_DONE_STATE: u8 = 0x50;
+const ACTION_DONE_FADE_STATE: u8 = 0x51;
+
 /// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may
 /// stand and still be the same rung of the per-action ladder read at another
 /// instant (`BattleDrive::steer`): under half the `0x80` between the nearest
 /// rungs (`0x200` / `0x280`), about a second of drift.
 const YAW_CLOCK_SLACK: i32 = 0x3F;
+
+/// How far short of retail's yaw counter a [`ActionSteer::walk_clock`]
+/// capture's engine counter may stand and be due: one step-`2` SM pass of
+/// drift (`max(1, 4 * 2 / 3)`, `0x801E29E4`), so the gate lands on the pass
+/// whose drift reaches retail's word rather than the one after it.
+const WALK_CLOCK_DUE: i32 = 2;
+
+/// Whether a [`ActionSteer::walk_clock`] capture's engine yaw counter has
+/// run to within [`WALK_CLOCK_DUE`] of retail's `yaw`.
+fn walk_clock_due(world: &legaia_engine_core::world::World, yaw: Option<u16>) -> bool {
+    let Some(yaw) = yaw else {
+        return true;
+    };
+    world
+        .battle
+        .camera
+        .as_ref()
+        .is_none_or(|c| i32::from(yaw) - c.action_yaw_base() <= WALK_CLOCK_DUE)
+}
 
 /// Whether the engine's yaw counter has run as far through `0x6E` as
 /// retail's `yaw` (`ctx[+0x6DA]`) says retail's did: the capture's value
@@ -423,18 +485,9 @@ pub(crate) fn capture_band_ticks_to_arm(
     arm: (u8, i32),
 ) -> u16 {
     use legaia_engine_cast::cast_module_camera as cmc;
-    let Some(action) = world
-        .actors
-        .get(usize::from(seat))
-        .map(|a| a.battle.params[0])
-    else {
+    let Some((entry, body)) = capture_body(world, seat) else {
         return 0;
     };
-    let Some(entry) = world.cast_module_for(action) else {
-        return 0;
-    };
-    let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, action)
-        .unwrap_or(cmc::SINGLE_BODY);
     let director = cmc::capture_camera_director(entry, body);
     let table = cmc::capture_arm_countdowns(entry, body);
     if director.is_none() && table.is_none() {
@@ -465,6 +518,29 @@ pub(crate) fn capture_band_ticks_to_arm(
         }
     }
     0
+}
+
+/// The `(PROT entry, tick body)` of the capture-class cast `seat` has
+/// queued, keyed as [`legaia_engine_cast::cast_module_camera::capture_camera_director`]
+/// takes it.
+fn capture_body(world: &legaia_engine_core::world::World, seat: u8) -> Option<(u32, u32)> {
+    let action = world
+        .actors
+        .get(usize::from(seat))
+        .map(|a| a.battle.params[0])?;
+    let entry = world.cast_module_for(action)?;
+    let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, action)
+        .unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY);
+    Some((entry, body))
+}
+
+/// Whether the engine walks the phase of the capture-class cast `seat` has
+/// queued on retail's arms: a body with a camera director. Only those place
+/// a [`PHASE_ONLY`] gate; another body's engine phase is not retail's clock.
+fn capture_phase_directed(world: &legaia_engine_core::world::World, seat: u8) -> bool {
+    capture_body(world, seat).is_some_and(|(entry, body)| {
+        legaia_engine_cast::cast_module_camera::capture_camera_director(entry, body).is_some()
+    })
 }
 
 /// Whether the engine's `0x6F` pull-in has come down at least as far as
@@ -640,6 +716,12 @@ impl BattleDrive {
                 if steer.park {
                     s.push_str(",h");
                 }
+                if let Some(r) = steer.drift_step {
+                    s.push_str(&format!(",r{r}"));
+                }
+                if steer.walk_clock {
+                    s.push_str(",w");
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -695,6 +777,10 @@ impl BattleDrive {
                 steer.spoils = true;
             } else if last == "h" {
                 steer.park = true;
+            } else if last == "w" {
+                steer.walk_clock = true;
+            } else if let Some(r) = last.strip_prefix('r') {
+                steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -800,6 +886,18 @@ impl BattleDrive {
         }
     }
 
+    /// The close-up accumulator an [`SpanGate::Age`] action phase waits for,
+    /// `None` on every other drive.
+    pub fn age_gate(&self) -> Option<u16> {
+        match *self {
+            Self::Action {
+                end: SpanGate::Age { accum },
+                ..
+            } => Some(accum),
+            _ => None,
+        }
+    }
+
     /// Ticks the reached phase is held before it is sampled
     /// ([`MENU_HOLD_TICKS`]); an action phase moves on by itself, so it is
     /// sampled the tick it is reached.
@@ -889,7 +987,9 @@ impl BattleDrive {
         let pc = world.party.party_count.clamp(1, 3);
         match *self {
             // The first frame whose monsters are drawable: the bodies bind
-            // a few ticks after the mode flip.
+            // a few ticks after the mode flip. A body the stage loader hid
+            // (the evolved Cort, until PROT 0968 drops him in) is as ready
+            // as it will be.
             Self::Opening { swept, entry } => {
                 // A sparring capture past the intro timer also holds the
                 // side-band's caption, which the engine raises on the round
@@ -903,9 +1003,10 @@ impl BattleDrive {
                         a.battle_monster_id.is_none()
                             || !a.active
                             || a.tmd_binding.is_some()
-                                && world
-                                    .battle_actor_draw_plan(i, None, 4.0, false)
-                                    .is_none_or(|p| p.drawn)
+                                && (world.battle_body_hidden(i)
+                                    || world
+                                        .battle_actor_draw_plan(i, None, 4.0, false)
+                                        .is_none_or(|p| p.drawn))
                     });
                 if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
                     for (i, a) in world.actors.iter().enumerate().take(8) {
@@ -971,6 +1072,13 @@ impl BattleDrive {
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
                         SpanGate::CaptureFade {
+                            arm: Some((phase, PHASE_ONLY)),
+                            ..
+                        } if state == 0x70 => {
+                            !capture_phase_directed(world, engine_seat(seat, pc))
+                                || world.casting.module_phase >= phase
+                        }
+                        SpanGate::CaptureFade {
                             arm: Some((phase, countdown)),
                             ..
                         } if state == 0x70 => {
@@ -990,29 +1098,32 @@ impl BattleDrive {
                         SpanGate::Landed => {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
-                        SpanGate::Age { accum } => active_clip_age(world) >= u32::from(accum)
-                            && steer.clip.is_none_or(|k| {
+                        SpanGate::Age { accum } => {
+                            (if steer.walk_clock {
+                                walk_clock_due(world, steer.yaw)
+                            } else {
+                                active_clip_age(world) >= u32::from(accum)
+                            }) && steer.clip.is_none_or(|k| {
                                 world.battle_current_anim(usize::from(engine_seat(seat, pc))) == k
-                            })
-                            && steer.cursor.is_none_or(|u| {
+                            }) && steer.cursor.is_none_or(|u| {
                                 world
                                     .actors
                                     .get(usize::from(engine_seat(seat, pc)))
                                     .is_some_and(|a| a.battle.strike_index == u)
-                            })
-                            && (!steer.spoils
+                            }) && (!steer.spoils
                                 || world.battle_ctx.message_id
                                     == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT)
-                            && steer.fading.is_none_or(|(v, lane)| {
-                                world
-                                    .actors
-                                    .get(usize::from(engine_seat(v, pc)))
-                                    .is_some_and(|a| {
-                                        a.battle.render_flag
+                                && steer.fading.is_none_or(|(v, lane)| {
+                                    world
+                                        .actors
+                                        .get(usize::from(engine_seat(v, pc)))
+                                        .is_some_and(|a| {
+                                            a.battle.render_flag
                                     == legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
                                     && (a.battle.render_color & 0x3FF) as u16 <= lane
-                                    })
-                            }),
+                                        })
+                                })
+                        }
                         _ => true,
                     }
             }
@@ -1061,6 +1172,7 @@ impl BattleDrive {
         let Self::Action {
             seat,
             state: want,
+            category,
             end,
             style,
             steer,
@@ -1095,9 +1207,32 @@ impl BattleDrive {
                 // reads retail's; a wrong rung of the ladder (they stand
                 // `0x80` apart at the nearest) stays the engine's. The
                 // capture band gates on the counter instead.
-                if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
-                    let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
-                    if steer.park || d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
+                // The Done band's fade-down `0x51` arms case 8 from the
+                // counter on its first pass, which a DoneHold capture's own
+                // first tick already shows: the rescaled pin runs from the
+                // Done arm `0x50` that hands over to it.
+                let done_entry = matches!(end, SpanGate::DoneHold { .. })
+                    && want == ACTION_DONE_FADE_STATE
+                    && state == ACTION_DONE_STATE;
+                if (state == want || done_entry) && !matches!(end, SpanGate::CaptureFade { .. }) {
+                    let near = |c: i32| {
+                        let d = (c - i32::from(yaw)).rem_euclid(0x1000);
+                        d.min(0x1000 - d) <= YAW_CLOCK_SLACK
+                    };
+                    let rescaled = steer.drift_step.is_some_and(|sr| {
+                        near(rescaled_yaw_counter(
+                            cam.action_yaw_base(),
+                            cam.action_yaw_drift(),
+                            step,
+                            sr,
+                        ))
+                    });
+                    let clock_held =
+                        steer.walk_clock && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
+                    if !clock_held
+                        && ((state == want && (steer.park || near(cam.action_yaw_base())))
+                            || rescaled)
+                    {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the
                         // pin lands ahead of a tick whose pass adds the drift
@@ -1155,7 +1290,7 @@ impl BattleDrive {
         }
         if let Some(style) = style
             && ours
-            && (state == want || seat < 3 && (0x0C..=want).contains(&state))
+            && (state == want || (seat < 3 || category == 3) && (0x0C..=want).contains(&state))
             && !CAPTURE_BAND.contains(&state)
         {
             world.battle_ctx.camera_variant = style;
@@ -1167,7 +1302,7 @@ impl BattleDrive {
         // Pin it through the seed instead
         // (`BattleActionCtx::camera_variant_pin`), for the driven seat only.
         world.battle_ctx.camera_variant_pin = style.filter(|_| {
-            ours && seat < 3
+            ours && (seat < 3 || category == 3)
                 && (PRE_SEED_STATES.contains(&state) || state == 0x0C)
                 && !CAPTURE_BAND.contains(&want)
         });
@@ -1197,6 +1332,7 @@ impl BattleDrive {
         // then lands on retail's word, and the display lag's frame two passes
         // back on retail's displayed one.
         if let Some((phase, countdown)) = arm
+            && countdown != PHASE_ONLY
             && ours
             && want == 0x70
             && state == 0x70
@@ -1424,31 +1560,49 @@ pub(crate) fn saved_command_string(world: &legaia_engine_core::world::World, sea
 /// The arrows a committed arts queue was entered as, as the swing bytes
 /// `0x0C..=0x0F` the record's saved band holds.
 ///
-/// The queue builder keeps a matched art's leading arrows as swings and
-/// rewrites only its last one into the starter + constant pair (`0x19` /
-/// `0x1A`, then the art), so each pair stands for its art's final arrow and
-/// every other byte is an arrow already. `combo_of` names an art's arrows;
-/// an art it does not know - a Super or Miracle replacement, whose tail the
-/// finish rewrote whole - leaves the entry unrecoverable (`None`).
+/// The queue builder keeps a matched normal art's leading arrows as swings
+/// and rewrites only its last one into the starter + constant pair (`0x19` /
+/// `0x1A`, then the art), so each such pair stands for its art's final arrow
+/// and every other byte is an arrow already. A Hyper Art's run collapses
+/// whole into `0x1A` and its constant(s) (`legaia_art::tokenize_bank`), so a
+/// pair whose constant is in `collapsed` stands for the art's every arrow,
+/// and the chained constants behind it for nothing. `combo_of` names an
+/// art's arrows; an art it does not know - a Super or Miracle replacement,
+/// whose tail the finish rewrote whole - leaves the entry unrecoverable
+/// (`None`).
 pub fn entered_arrows(
     queue: &[u8; 16],
+    collapsed: &[u8],
     combo_of: impl Fn(u8) -> Option<Vec<legaia_art::Command>>,
 ) -> Option<[u8; 16]> {
     let mut out = [0u8; 16];
     let mut n = 0;
     let mut i = 0;
     while i < queue.len() && queue[i] != 0 {
-        let arrow = match queue[i] {
-            b @ 0x0C..=0x0F => b,
+        match queue[i] {
+            b @ 0x0C..=0x0F => {
+                *out.get_mut(n)? = b;
+                n += 1;
+            }
             0x19 | 0x1A => {
                 i += 1;
-                let last = *combo_of(*queue.get(i)?)?.last()?;
-                0x0B + last as u8
+                let art = *queue.get(i)?;
+                let combo = combo_of(art)?;
+                if collapsed.contains(&art) {
+                    for c in &combo {
+                        *out.get_mut(n)? = 0x0B + *c as u8;
+                        n += 1;
+                    }
+                    while queue.get(i + 1).is_some_and(|b| collapsed.contains(b)) {
+                        i += 1;
+                    }
+                } else {
+                    *out.get_mut(n)? = 0x0B + *combo.last()? as u8;
+                    n += 1;
+                }
             }
             _ => return None,
-        };
-        *out.get_mut(n)? = arrow;
-        n += 1;
+        }
         i += 1;
     }
     (n > 0).then_some(out)
@@ -1470,7 +1624,13 @@ pub(crate) fn seed_entered_arrows(
     use legaia_save::character::AutoCommandBand;
     let roster = world.party_roster_slot(usize::from(seat));
     let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
-    let Some(arrows) = entered_arrows(queue, |art| {
+    let bank = world.art_bank_rows(character);
+    let records = legaia_art::bank_view(&bank);
+    let collapsed: Vec<u8> = legaia_art::hyper_queue_constants(&records)
+        .into_iter()
+        .flat_map(|(_, c)| c)
+        .collect();
+    let Some(arrows) = entered_arrows(queue, &collapsed, |art| {
         let action = legaia_art::ActionConstant::from_byte(art)?;
         world
             .tables

@@ -634,7 +634,13 @@ Each frame an empty live mask retires it. Otherwise it re-copies the owner's pos
 
 The body reads `s5` without ever writing it: the transform call `FUN_8003D344(s5 + 0x14, s5 + 0x2c)` runs against whatever the caller left in the register (visible in the disassembly; Ghidra renders it `unaff_s5`). The port takes no such argument.
 
-Port: `baka_fighter_chrome::{afterimage_pass, AfterimageActor}`, spawned and stepped by `BakaFight`. Every host draws the ghosts as darkened copies of the thrower's mesh through the duel surface.
+The colour word's mode byte `0x81` is what makes the ghosts translucent. `FUN_80043390` raises the packets' ABE bit from bit 31 and ORs ABR `1` (`B + F`) into their tpage, so each ghost is the thrower's texture at half, then a quarter, of its weight **added** over the frame - a faint glow that thins with distance from the body, not an opaque dark copy.
+
+**Lifetime.** The afterimage is its own pool actor, run by the pool walk `FUN_8002519C` every frame through `jalr actor[+0x0C]` like the round SM `FUN_801D3468` beside it, so nothing the round SM does pauses it. The special's last strike decides the round, and the ghosts are still mid-clip then. They keep running through the round-over hold: the nearer ghost runs past the clip end and clears bit 0, the farther one three frames later, and the next frame's empty live mask retires the actor. The impact parts are pool actors too and run out the same way.
+
+Port: `baka_fighter_chrome::{afterimage_pass, AfterimageActor}`, spawned by `BakaFight` and stepped with the impact parts by `BakaFight::tick_pool_actors` in every duel phase, a decided round included. When the step ran only while the round was open, the deciding special's ghosts froze on their last drawn pose for the whole hold. Every host draws the ghosts through the duel surface (`BakaDuelScene::push_ghost`): copies of the thrower's mesh under the colour word, the packet colour depth-cued toward black and every prim's TSB taking ABE and ABR `1`.
+
+The native window reads an untextured prim's word as its colour-mesh blend word (`engine-render::psx_blend::blend_words_of_tsb`, the same for the fishing, Muscle Dome and dance surfaces, where it carries the TMD group's ABE bit as every other colour-mesh draw does). The minigames page's pre-surface fallback in `site/js/minigame-baka.js` builds its ghosts from the same colour word. Pinned by `the_finishing_specials_afterimage_runs_out_after_the_round_is_decided` (`crates/engine-minigames/src/baka_fighter/tests.rs`).
 
 ### VRAM cell blit (`FUN_801D65F8`)
 

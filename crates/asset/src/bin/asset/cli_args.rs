@@ -1012,6 +1012,23 @@ pub(super) enum Cmd {
         #[command(subcommand)]
         cmd: field_disasm_cli::FieldDisasmCmd,
     },
+    /// A field scene's **navigation facts** as JSON, for an offline route
+    /// planner (`scripts/pcsx-redux/plan_walk_route.py`): the `.MAP`
+    /// collision grid, every trigger record (primary block and fallback
+    /// window), the MAN's scene-change sites with their partition-2 slots,
+    /// and the partition-1 placements. Output is disc-derived: keep it out
+    /// of the repository.
+    SceneNav {
+        /// `extracted/PROT.DAT`.
+        #[arg(long, default_value = "extracted/PROT.DAT")]
+        prot: PathBuf,
+        /// `extracted/CDNAME.TXT`.
+        #[arg(long, default_value = "extracted/CDNAME.TXT")]
+        cdname: PathBuf,
+        /// CDNAME scene labels (`koin1`, `kor3`, ...).
+        #[arg(required = true)]
+        scenes: Vec<String>,
+    },
     /// Disc-wide field-VM **opcode census**: walk every scene MAN (the
     /// bundle's and every streaming variant's) plus every raw event-script
     /// carrier, decode the bytecode, and count occurrences per opcode - with

@@ -449,9 +449,10 @@ pub(super) fn battle_image(
         (
             "LEGAIA_BATTLE_STAGE",
             format!(
-                "{},{}",
+                "{},{},{}",
                 battle.stage_variant,
-                u8::from(battle.keep_backdrop_object_1)
+                u8::from(battle.keep_backdrop_object_1),
+                battle.map_define
             ),
         ),
         // The slot-1 backdrop angle the displayed frame was drawn at: the
@@ -470,6 +471,13 @@ pub(super) fn battle_image(
             legaia_engine_capture::bar_seeds::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    // ... and the re-seat of a driven action at its own seed pass.
+    if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
+        env.push(("LEGAIA_BATTLE_RESEAT", seat.to_string()));
+        if let Some(app) = battle.capture_approach_yaw() {
+            env.push(("LEGAIA_BATTLE_APPROACH_YAW", app.to_env()));
+        }
+    }
     // A shiny-Seru build's entry draw, which the child's `--retail` pin would
     // otherwise drop while the headless seed took it
     // (`RetailBattle::resident_shiny_seru`).
@@ -495,6 +503,9 @@ pub(super) fn battle_image(
     }
     if battle.mystic_shield {
         env.push(("LEGAIA_BATTLE_MYSTIC_SHIELD", "1".to_string()));
+    }
+    if let Some(w) = battle.displayed_backdrop_cue() {
+        env.push(("LEGAIA_BATTLE_BACKDROP_CUE", w.to_string()));
     }
     // The cast's live parts where retail's passes had put them: a part
     // rolled off `rand()` or aged by the frame-skip history stands where no
@@ -536,6 +547,29 @@ pub(super) fn battle_image(
     // scroller's rotation count is time since its effect was seated.
     if let Some(kv) = retail.vram_rects_env(opts.out_dir, &entry.label) {
         env.push(kv);
+    }
+    // A prompt capture of the evolved-Cort fight is dated by the arrival's
+    // crystal columns: still up and fading ten vsyncs into the prompt
+    // (`cort_evolved_card_first_menu`), gone later. The child takes the
+    // frame at the same point of the engine's own columns rather than on
+    // the fixed tick ([`RetailBattle::arrival_cue`]).
+    if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Prompt
+        && let Some(cue) = battle.arrival_cue
+    {
+        env.push((
+            "LEGAIA_CAPTURE_ARRIVAL",
+            cue.map_or_else(|| "gone".to_string(), |c| format!("cue:{c}")),
+        ));
+    }
+    // ... and the live mode-3 CLUT cyclers at the displayed frame's phase:
+    // the evolved-Cort arena's flesh palette (record `0x80078760` on CLUT
+    // `(32, 479)`) swings its hue add through `0x100` about every 130
+    // vsyncs, and its phase is time since PROT 0968 seated it.
+    if !retail.cell_fx.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_CLUT_FX",
+            legaia_engine_capture::field_seeds::cell_fx_env(&retail.cell_fx),
+        ));
     }
     if !battle.entry_latches.is_empty() {
         env.push((
@@ -694,6 +728,13 @@ pub(super) fn battle_image(
     }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
+    // The arrival gate's deadline: the columns live about a hundred ticks
+    // past the hand-back, longer than the fixed settle.
+    if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Prompt
+        && battle.arrival_cue.is_some()
+    {
+        tick += legaia_engine_capture::arrival_gate::ARRIVAL_GATE_SLACK;
+    }
     if let (Some(seed), Some(gate)) = (battle.inflight_cast(), battle.display_phase_gate()) {
         if engine.inflight == Some(None) {
             report.detail.insert(

@@ -928,20 +928,85 @@ fn is_epilogue(img: &Image, va: u32) -> bool {
 }
 
 /// Instructions an arm reaches from its entry, not entering another arm.
-fn arm_reach(img: &Image, entry: u32, stop: &BTreeSet<u32>, lo: u32, hi: u32) -> BTreeSet<u32> {
+fn arm_reach(
+    img: &Image,
+    entry: u32,
+    stop: &BTreeSet<u32>,
+    lo: u32,
+    hi: u32,
+    phase: u8,
+    alias: &BTreeSet<usize>,
+) -> BTreeSet<u32> {
     let mut seen = BTreeSet::new();
     let mut todo = vec![entry];
     while let Some(pc) = todo.pop() {
         if pc < lo || pc >= hi || (pc != entry && stop.contains(&pc)) || !seen.insert(pc) {
             continue;
         }
-        let (next, delay) = succ(img, pc, lo, hi);
+        let (mut next, delay) = succ(img, pc, lo, hi);
         if let Some(d) = delay {
             seen.insert(d);
+        }
+        if let (Some(taken), Some(i)) = (
+            phase_reload_branch(img, entry, pc, alias, phase),
+            img.ins(pc),
+        ) {
+            let t = i.branch_target();
+            next.retain(|&n| if taken { n == t } else { n != t });
         }
         todo.extend(next);
     }
     seen
+}
+
+/// Whether the branch at `pc` is taken in arm `phase`, when it tests a
+/// reload of the phase byte against a literal: `lbu rA, 0x279(ctx)` (or
+/// `0x0` off a phase alias) and `li rB, K` within the four instructions
+/// before a `beq` / `bne rA, rB`. Arms that share their code fork there -
+/// PROT 0918's arms 18 and 19 both enter at `0x801F8698`, and only 19
+/// reaches the wash clear past `0x801F878C..0x801F8794` (`lbu v1,0x0(s6)`,
+/// `li v0,0x12`, `bne`). The reload reads the arm's own phase only while no
+/// phase store sits between the arm's `entry` and the branch: PROT 0957's
+/// arm 7 stores `phase + 1` first (`0x801F8F54`) and its reload at
+/// `0x801F9014` tests for that `8`.
+fn phase_reload_branch(
+    img: &Image,
+    entry: u32,
+    pc: u32,
+    alias: &BTreeSet<usize>,
+    phase: u8,
+) -> Option<bool> {
+    let b = img.ins(pc)?;
+    if pc < entry
+        || (entry..pc)
+            .step_by(4)
+            .any(|v| img.ins(v).is_some_and(|i| is_phase_store(&i, alias)))
+    {
+        return None;
+    }
+    let eq = match b.op() {
+        0x04 => true,
+        0x05 => false,
+        _ => return None,
+    };
+    let (mut loaded, mut lit) = (None, None);
+    for k in 1..=4u32 {
+        let i = img.ins(pc.checked_sub(4 * k)?)?;
+        if is_phase_store(&i, alias) || i.is_branch() || i.is_j() || i.is_jal() || i.is_jr() {
+            break;
+        }
+        if is_phase_load(&i, alias) && loaded.is_none() {
+            loaded = Some(i.rt());
+        } else if i.op() == 0x09 && i.rs() == 0 && lit.is_none() {
+            lit = Some((i.rt(), i.imm()));
+        }
+    }
+    let (r, (l, k)) = (loaded?, lit?);
+    let regs = [b.rs(), b.rt()];
+    if !(regs.contains(&r) && regs.contains(&l)) || r == l {
+        return None;
+    }
+    Some((u16::from(phase) == k) == eq)
 }
 
 /// Instructions reachable from `from` inside `within` without crossing a
@@ -1639,7 +1704,7 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
         let cands = candidate_sites(&img, lo, hi);
         let mut holding = BTreeSet::new();
         for (&phase, &entry) in &d.arms {
-            let reach = arm_reach(&img, entry, &entries, lo, hi);
+            let reach = arm_reach(&img, entry, &entries, lo, hi, phase, &alias);
             let has_bump = reach
                 .iter()
                 .any(|&v| img.ins(v).is_some_and(|i| is_phase_store(&i, &alias)));

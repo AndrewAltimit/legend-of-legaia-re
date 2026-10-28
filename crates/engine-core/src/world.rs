@@ -101,7 +101,9 @@ pub use audio_state::{
     FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SideBandBank, VAB_01_RAW_BASE,
     runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
-pub use battle_state::{BattleState, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed};
+pub use battle_state::{
+    BattleState, CaptureApproach, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed,
+};
 pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
 pub use cutscene_state::{CappedTimeline, CutsceneState};
@@ -161,6 +163,7 @@ pub use cutscene_elements::{
 pub use rumble_state::WorldRumble;
 mod assets_events;
 mod battle;
+pub use battle::ARRIVAL_MODULE_PROT;
 pub use battle::{
     ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleFrameClock,
     BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP,

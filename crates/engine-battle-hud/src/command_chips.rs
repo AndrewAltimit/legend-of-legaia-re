@@ -48,6 +48,10 @@ pub fn battle_command_chips(
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }
+    // No prompt under the battle-entry sweep ([`crate::battle_hud_phase`]).
+    if world.battle_entry_sweeping() {
+        return None;
+    }
     if world.dialog.current.is_some() || world.dialog.inline.is_some() {
         return None;
     }

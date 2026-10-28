@@ -96,8 +96,22 @@ impl World {
                 // A dead actor (`+0x5C < 0`) keeps whatever Y it had.
                 FieldActorHeight::Hold => {}
                 // The script-held height: `-(+0x8E)`, not a floor sample.
+                // The arm's store is the actor's own `+0x16` (`0x8003BCF4`),
+                // so the placement's context carries the height too: a
+                // reader of the context's Y (the move-VM mode-7 grab's
+                // anchor, a position copy) sees the held height, not the
+                // seat's (`kor5` `P2[5]`'s Genesis Tree figure, `CC 15 42
+                // E0 01` then `B1 15 1D`, floats at `Y = -480`).
                 FieldActorHeight::Mirror(y) => {
                     self.npcs.glide_y.insert(slot, y);
+                    if let Some(c) = self
+                        .field_vm
+                        .channels
+                        .iter_mut()
+                        .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                    {
+                        c.ctx.world_y = y as u16;
+                    }
                 }
                 FieldActorHeight::SnapToFloor => {
                     self.npcs.glide_y.remove(&slot);

@@ -152,6 +152,9 @@ pub struct ArtRecord {
     /// in the spreadsheet) and a handful of arts (e.g. Hurricane Kick)
     /// chain multiple anim records.
     pub anim_index: u8,
+    /// The battle art bank's install fills this with the record's
+    /// `+0x0A..+0x0D` stream-source bytes, the chain the queue builder
+    /// reads ([`crate::tokenize::BankArt::sources`]).
     pub anim_extra: Vec<u8>,
     /// Display name embedded in the record. Populated for Super Arts,
     /// Miracle Art finishers, and some Hyper Arts; `None` otherwise (the

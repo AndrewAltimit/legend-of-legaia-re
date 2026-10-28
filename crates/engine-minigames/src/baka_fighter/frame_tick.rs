@@ -39,6 +39,21 @@ impl BakaFight {
         self.impact.spawn_pair(&spawns);
     }
 
+    /// The duel's effect actors, one frame: the special's afterimages and
+    /// the impact parts. Each is its own pool actor (prototype `0x801D7684`
+    /// for the afterimage; the impact pair's move-VM parts), run by the pool
+    /// walk `FUN_8002519C` every frame through `jalr actor[+0x0C]` whatever
+    /// state the round SM `FUN_801D3468` (itself one more pool actor) is in.
+    /// So they run in every phase of the duel - a decided round included,
+    /// which is where the finishing special's ghosts run out.
+    fn tick_pool_actors(&mut self, frame_step: i32) {
+        self.tick_afterimages(frame_step);
+        // The impact parts ride the actor-pool walk at the same
+        // `frame step x DAT_1F80037D` factor as every part tick.
+        let delta = (frame_step.max(0) * self.rate_divisor.max(0)).min(i32::from(u16::MAX));
+        self.impact.tick(delta as u16);
+    }
+
     /// Step every live afterimage one frame (retail's actor pool runs the
     /// `0x801D7684` callback once per frame per actor).
     fn tick_afterimages(&mut self, frame_step: i32) {
@@ -299,6 +314,12 @@ impl BakaFight {
             // `0x0E`, so nothing of the fight runs yet.
             return;
         }
+        if !matches!(self.phase, MatchPhase::Fighting) {
+            // A decided round stops the round SM's own steps, not the pool
+            // walk: the deciding special's afterimage and impact parts keep
+            // running out through the hold.
+            self.tick_pool_actors(frame_step);
+        }
         match self.phase {
             MatchPhase::MatchOver(_) => {
                 // The match is decided: the tally screen runs (FUN_801d239c).
@@ -378,11 +399,7 @@ impl BakaFight {
                 }
             }
         }
-        self.tick_afterimages(frame_step);
-        // The impact parts ride the actor-pool walk at the same
-        // `frame step x DAT_1F80037D` factor as every part tick.
-        let delta = (frame_step.max(0) * self.rate_divisor.max(0)).min(i32::from(u16::MAX));
-        self.impact.tick(delta as u16);
+        self.tick_pool_actors(frame_step);
 
         let outcome = self.resolve(frame_step);
         // The keyframe gate: the resolution SM books a decided exchange only

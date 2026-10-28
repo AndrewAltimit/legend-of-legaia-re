@@ -285,21 +285,45 @@ fn op2f_subop_2a_at_t_zero_keeps_base() {
 }
 
 #[test]
-fn op2f_subop_24_uses_fixed_origin_for_x_and_z() {
-    // Sub-0x24 X: target = -(base + origin); Y still toward player.
+fn op2f_subop_24_lerps_x_and_z_toward_the_camera_focus() {
+    // Sub-0x24 X / Z target the camera focus, read out of its stored
+    // (negated) form `_DAT_80089118 / 20` and un-negated (`negu` at
+    // `0x801D413C`); Y still toward the player. The operand is the lerp's
+    // base, subtracted once: `base + ((focus - base) * t >> 12)`.
     let mut host = TestHost::default();
-    host.fixed_origin_xz = (200, 300);
+    host.focus_stored_xz = (-200, -300); // focus (200, 300)
     host.player_xyz = [0, 5000, 0]; // Y target
     let mut state = ActorState::new();
     // base = (100, 1000, 50), t = (0x1000, 0x1000, 0x1000)
     let bc = program(&[0x2F, 0x24, 100, 1000, 50, 0x1000, 0x1000, 0x1000]);
     step(&mut host, &mut state, &bc);
-    // X target = -(100 + 200) = -300. Lerp at t=1 → -300.
-    assert_eq!(state.world_x, -300);
-    // Y target = player.world_y (5000). Lerp at t=1 → 5000.
-    assert_eq!(state.world_y, 5000);
-    // Z target = -(50 + 300) = -350.
-    assert_eq!(state.world_z, -350);
+    assert_eq!(
+        (state.world_x, state.world_y, state.world_z),
+        (200, 5000, 300)
+    );
+
+    // Half way: `100 + (200 - 100) / 2`, `50 + (300 - 50) / 2`.
+    let mut state = ActorState::new();
+    let bc = program(&[0x2F, 0x24, 100, 1000, 50, 0x800, 0, 0x800]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!(
+        (state.world_x, state.world_y, state.world_z),
+        (150, 1000, 175)
+    );
+}
+
+#[test]
+fn op2f_subop_24_noaru_backdrop_seats_on_the_focus() {
+    // noaru's ice-floor backdrop (prescript stager record 40, model 6)
+    // loops `2F 24 1640 0000 10C0 1000 0000 1000`. In
+    // `noaru_field_card_walk` retail holds the stored focus at
+    // `(-5394, -12544)` and the part at `(5394, y, 12544)`.
+    let mut host = TestHost::default();
+    host.focus_stored_xz = (-5394, -12544);
+    let mut state = ActorState::new();
+    let bc = program(&[0x2F, 0x24, 0x1640, 0, 0x10C0, 0x1000, 0, 0x1000]);
+    step(&mut host, &mut state, &bc);
+    assert_eq!((state.world_x, state.world_z), (5394, 12544));
 }
 
 #[test]

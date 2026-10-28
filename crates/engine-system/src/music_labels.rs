@@ -91,6 +91,22 @@ pub fn battle_bank_bgm_id(set: i32) -> Option<u16> {
         .and_then(|i| BATTLE_BANK_BGM_IDS.get(i).copied())
 }
 
+/// The track a fight plays, from its battle sound set `set`
+/// (`_DAT_8007B880`) and `DAT_8007B64B` (`alt`): `None` for a negative set
+/// (no battle bundle loads; the field track plays on), the bank's track for
+/// `set > 0`, and for set `0` the configured theme - moved to bundle `0x370`
+/// ([`BATTLE_THEME_2_BGM_ID`]) when `alt` is up and the configured theme is
+/// the bank's own first track. The battle intro `FUN_801CF5BC` phase 2 is
+/// the retail reader.
+pub fn battle_track_for_sound_set(set: i32, alt: bool, configured: u16) -> Option<u16> {
+    match set {
+        s if s < 0 => None,
+        0 if alt && configured == BATTLE_THEME_1_BGM_ID => Some(BATTLE_THEME_2_BGM_ID),
+        0 => Some(configured),
+        s => Some(battle_bank_bgm_id(s).unwrap_or(configured)),
+    }
+}
+
 /// The extraction-space PROT entry that holds a sound-test index's
 /// `[VAB][SEQ]` pair, honoring the 2-entry gap at index 68. `None` past the
 /// last row. This is the inverse of [`sound_test_index_for_prot_entry`] and

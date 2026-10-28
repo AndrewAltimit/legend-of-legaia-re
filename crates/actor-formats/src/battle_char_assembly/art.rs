@@ -42,6 +42,13 @@ pub struct ArtAnimRecord {
     /// Index into the character's art `"ME"` stream archive (record
     /// `+0x0A`) - the `FUN_8002B28C` third argument.
     pub stream_source: u8,
+    /// Record `+0x0B..+0x0D`, the stream sources of the records a chained
+    /// art plays after this one. The queue builder `FUN_801EED1C` reads a
+    /// non-zero `+0x0B` as "this art spans the next records" (`lbu
+    /// v0,0xb(s4)` at `0x801EF5D4`) and steps its walk past them
+    /// (`0x801EF7C8..0x801EF828`); only Noa's Hurricane Kick (record
+    /// `0x1C`, `+0x0A..+0x0B = 04 05`) carries one.
+    pub chain_sources: [u8; 3],
     /// Inline art-name string (record `+0x10`, NUL-terminated ASCII, up to
     /// 20 bytes; empty on the base / un-named records).
     pub name: String,
@@ -189,6 +196,7 @@ pub fn art_animation_bank(record0: &[u8]) -> Result<Vec<ArtAnimRecord>> {
             anim_id: ART_ANIM_ID_BASE + index as u8,
             combo,
             stream_source: rec[0x0A],
+            chain_sources: [rec[0x0B], rec[0x0C], rec[0x0D]],
             name: String::from_utf8_lossy(name_bytes).into_owned(),
             entry_tag: entry[0],
             attach_key: entry[0x77],

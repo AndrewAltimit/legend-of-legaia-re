@@ -54,7 +54,11 @@ Pixel widths in real pixels:
   PNG; `write_png` is the encoder beside it.
 - `vram::Vram` - software model of PSX VRAM (1024×512 R16 framebuffer).
   Used by `legaia-engine-render` for per-primitive texture-page +
-  CLUT-row decode in the fragment shader.
+  CLUT-row decode in the fragment shader. `upload_tim` lands a CLUT block
+  as a **linear run** of `w * h` halfwords along row `fb_y` (palette `i` at
+  `fb_x + 16*i`), which is what Legaia's loader does, pinned against retail
+  VRAM - not the `w x h` rectangle a stock `LoadImage` writes. For another
+  game's TIMs, upload CLUTs with `write_block` until a capture says otherwise.
 - `encode` - the write side: `encode_replacement(original, rgba, w, h, opts)`
   builds a TIM that keeps the original's pixel mode, dimensions, CLUT layout
   and VRAM placement (so output size == input size, the same-size in-place

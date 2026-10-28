@@ -117,6 +117,10 @@ impl LegaiaMinigames {
         if !catalog.is_empty() {
             session.install_art_catalog(0, catalog);
         }
+        // ... and the whole bank, which the turn's queue walks with the
+        // Hyper arm open to a fighter carrying a Ra-Seru
+        // (`muscle_dome_session::art_bank_from_bank`).
+        session.install_art_bank(0, self.muscle_art_bank_rows(char_slot));
         // The Auto attack: the saved command strings the entry opens over and
         // the disc inputs the round's `FUN_801F0450` rebuild reads, through
         // the reader the session owns. This page models no arts learning, so
@@ -344,11 +348,12 @@ impl LegaiaMinigames {
             .is_some_and(|c| c.session.commit_card(0, card_slot))
     }
 
-    /// Run the opponent's greedy in-order commit (the host AI model), then
-    /// close the selection phase so the round is ready to resolve.
+    /// Run the opponent's pick (the battle's monster AI, the same call the
+    /// round prompt's Begin makes), then close the selection phase so the
+    /// round is ready to resolve.
     pub fn muscle_end_selection(&mut self) {
         if let Some(c) = self.muscle.as_mut() {
-            c.session.ai_commit_all(1);
+            c.session.opponent_commit();
             c.session.end_selection();
         }
     }

@@ -98,6 +98,10 @@ fn the_second_leg_plate_keeps_the_record_maximum_through_the_hub() {
         host.drain_minigame_warp(),
         Some(MinigameWarpOutcome::Entered(MinigameSubId::MuscleDome))
     ));
+    // This pins the leg session's own record write-back, so the leg stays
+    // on the session: the battle the door stages for it
+    // (`muscle_battle_monster`) is dropped.
+    host.world.minigames.muscle_battle_monster = None;
     {
         let s = host.world.minigames.muscle_dome.as_mut().expect("leg 1");
         assert_eq!((s.hp(0), s.hp_max(0)), (i32::from(MAX), i32::from(MAX)));

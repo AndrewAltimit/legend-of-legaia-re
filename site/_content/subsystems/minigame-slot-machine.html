@@ -1,157 +1,480 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; slot machine</div>
   <h1>Casino slot machine</h1>
-  <p class="lede">Three reels of ten pictographic symbols. Every spin costs a flat three coins and plays all <strong>five</strong> paylines; a matched line pays a per-symbol amount, and a line of either jackpot symbol opens a bonus round on the same reels. It is a <strong>3D scene</strong>, not a sprite collage: the reels are textured cylinders, the paylines are 3D line segments and the cabinet is a mesh.</p>
+  <p class="lede">Three reels of ten pictographic symbols. Every spin costs a flat three coins and plays all <strong>five</strong> paylines; a matched line pays a per-symbol amount, and a line of either jackpot symbol opens a bonus round on the same reels, where the three numbers you stop on are multiplied together. Behind the face sits a feature roll that pays back what the machine has taken, a stop that nudges a reel only a few rows, and a press latch that punishes mashing. It is a <strong>3D scene</strong>, not a sprite collage: the reels are textured cylinders, the paylines are 3D line segments and the cabinet is a mesh.</p>
 </header>
 
-<section class="doc-section" id="at-a-glance">
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Overlay</dt><dd>Extraction PROT 975 at base <code>0x801CE818</code>; init <code>FUN_801CEC94</code></dd>
-    <dt>Reel state machine</dt><dd><code>FUN_801CF0D8</code>, state word <code>DAT_801D3C84</code></dd>
-    <dt>RNG</dt><dd>The slot generator <code>FUN_801D30CC</code> plus the BIOS <code>rand</code></dd>
-    <dt>Feature roll / stop / landing</dt><dd><code>FUN_801D258C</code> / <code>FUN_801D2114</code> / <code>FUN_801D2440</code></dd>
-    <dt>Win evaluation</dt><dd><code>FUN_801D13E8</code> over the display strip and the ten payout bytes at <code>DAT_801D3598</code></dd>
-    <dt>Coins</dt><dd>Overlay-local balance <code>DAT_801D4114</code>; global coin bank <code>0x800845A4</code></dd>
-    <dt>Assets</dt><dd>PROT 1200 (five textures, cabinet mesh, animation), 1198 (sounds), 1199 (effects)</dd>
-    <dt>Port</dt><dd>Rules <code>engine-minigames::slot_machine</code>; draws <code>engine-ui::slot_cabinet</code> / <code>slot_paylines</code></dd>
+    <dt>Where</dt><dd>Three interchangeable cabinets in the Sol casino, one in Vidna</dd>
+    <dt>Cost</dt><dd>3 coins a spin (1 during a feature spin); you need 3 on the machine to spin at all</dd>
+    <dt>Lines</dt><dd>All five every spin: three rows and two diagonals; no line selection</dd>
+    <dt>Jackpots</dt><dd>Three blue <em>kick</em> (symbol 8) = 1 bonus round; three red <em>punch</em> (symbol 9) = 3 bonus rounds</dd>
+    <dt>Bonus round</dt><dd>Pays the product of the three centre numerals, <code>1</code> to <code>1000</code>; the machine does not steer it</dd>
+    <dt>Coins</dt><dd>Copied from the casino coin bank on entry, assigned back on exit</dd>
   </dl>
+  <p class="dg-note">Provenance: overlay extraction PROT 975 at base <code>0x801CE818</code> (init <code>FUN_801CEC94</code>, reel state machine <code>FUN_801CF0D8</code>, win evaluation <code>FUN_801D13E8</code>). The reel layout, RNG, bet charge, feature odds, payout lookup, entry seed and coin commit are confirmed from the disassembly. The payout <em>values</em> decode from your own disc and are not reproduced here.</p>
+  <div class="callout callout-tip">
+    <p class="callout-title">Not the prize counter</p>
+    <p>Trading coins for items is a separate static table and a separate screen at the koin1 / balden prize counters. Buying coins with gold is a third screen, in the field overlay. The slot machine only pays <em>into</em> the coin balance; the exchange spends it.</p>
+  </div>
 </section>
 
-<section class="doc-section" id="entry">
-  <h2>Getting there</h2>
-  <p>The door is the <strong>mode-24 minigame warp</strong>: field-VM op <code>0x3E</code> with <code>op0 = 103</code> (sub-id 3) sets game mode <code>0x18</code> and loads the overlay. It is the ordinary scene-backup, overlay-load, return-to-field sequence, so the game returns to the exact field state it suspended. The mechanism is on the <a href="script-vm.html">field / event VM</a> page.</p>
-  <p>A disc-wide walk finds five door records: three interchangeable cabinets in the Sol casino, and the Vidna cabinet in both variants of its scene. <strong>The door gate is a coin-bank compare</strong>, not an item check - a player with no coins never reaches the machine and sees the cabinet&rsquo;s refusal line instead. The debit before the warp is a <em>fee</em>, and at a slot cabinet it is zero, because the machine charges its own bets from the balance it copies in.</p>
-  <p>The three Sol cabinets seat the player the way the <a href="minigame-baka-fighter.html">Baka Fighter</a> cabinets do: a walk onto the stool, a turn to the machine and the sit clip before the fade, and a second pass after the warp that clears the fade and stands the player up. Every exit - the quit row, an empty machine, the port&rsquo;s Start escape - comes back through that pass.</p>
+<section class="doc-section" id="entry" data-doc="entry-from-the-field">
+  <h2>Getting to the machine</h2>
+  <p>A disc-wide walk of every scene finds five slot doors: three in the Sol casino (<code>koin1</code>) and the Vidna cabinet, present in both variants of that scene. The three Sol cabinets are interchangeable doors to one machine; the script byte that names the cabinet is never read.</p>
+  <ol class="steps steps-vertical">
+    <li><b>Door gate</b><span>The cabinet record compares the casino coin bank against <code>1</code>. With no coins the script jumps to the refusal line and the machine never loads.</span></li>
+    <li><b>Fee</b><span>A casino-coin debit runs next. At a slot cabinet it is <strong>zero</strong> (a Baka Fighter cabinet takes one coin), because the machine charges its own bets from the balance it copies in.</span></li>
+    <li><b>Seat</b><span>The player walks onto the stool, turns to the machine, plays the sit clip, and the screen washes white.</span></li>
+    <li><b>Warp</b><span>Field-VM op <code>0x3E</code> with <code>op0 = 103</code> (minigame sub-id 3) switches to game mode 24 and loads the overlay. It is the ordinary scene-backup / overlay-load / return sequence, so you come back to the exact field state you left.</span></li>
+    <li><b>Entry seed</b><span>The slot generator is seeded with the literal <code>0x6C0A2AF0</code>, the machine&rsquo;s balance is set equal to the coin bank, and the state word is cleared. A launch outside the casino door path falls back to a 70-coin dev balance.</span></li>
+    <li><b>Return pass</b><span>Every exit - the quit row, an empty machine, the port&rsquo;s Start escape - lands in a second script pass that clears the wash and stands the player up, as at the <a href="minigame-baka-fighter.html">Baka Fighter</a> cabinets.</span></li>
+  </ol>
+  <p>The mechanism behind the warp is on the <a href="script-vm.html">field / event VM</a> page.</p>
 </section>
 
-<section class="doc-section" id="states">
-  <h2>Reel state machine</h2>
+<section class="doc-section" id="states" data-doc="reel-state-machine">
+  <h2>How a spin flows</h2>
   <figure class="diagram">
-    <svg viewBox="0 0 880 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reel state machine: Init builds the strips, Idle waits for a face button and charges the bet, Spin-up runs until the spin timer expires, Stopping takes one stop press per reel, Payout tallies the win and returns to Idle. From Idle, Triangle or Select opens the cash-out picker, and a balance under three coins leads to the no-coins prompt; both can leave through Exit, which commits the balance to the coin bank.">
-      <defs><marker id="slt2-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    <svg viewBox="0 0 880 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Reel state machine. State 0 Init builds the strips and fades in. State 1 Idle charges the bet on a face button and runs the feature roll, then state 2 Spin-up turns the reels until the spin timer expires, state 3 Stopping takes one stop press per reel and evaluates the win when all three are in, and state 4 Payout tallies the win into the balance and returns to Idle. From Idle, Triangle or Select opens the 0x32 cash-out picker, whose rows return to play, quit or open the rules pages 0x33 to 0x39. A balance under three leads to the 0x5A no-coins prompt, which can only leave. State 100 Exit writes the balance into the coin bank and runs the return warp.">
+      <defs><marker id="slt-st-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="20" y="20" width="150" height="46" rx="4"/>
       <text class="dg-label" x="95" y="40">0 Init</text>
-      <text class="dg-sub" x="95" y="56">build strips</text>
+      <text class="dg-sub" x="95" y="56">build strips, fade in</text>
       <rect class="dg-node-accent" x="192" y="20" width="150" height="46" rx="4"/>
       <text class="dg-label" x="267" y="40">1 Idle</text>
-      <text class="dg-sub" x="267" y="56">bet 3 coins</text>
-      <path class="dg-edge" d="M170 43 L190 43" marker-end="url(#slt2-arrow)"/>
+      <text class="dg-sub" x="267" y="56">bet + feature roll</text>
+      <path class="dg-edge" d="M170 43 L190 43" marker-end="url(#slt-st-arrow)"/>
       <rect class="dg-node" x="364" y="20" width="150" height="46" rx="4"/>
       <text class="dg-label" x="439" y="40">2 Spin-up</text>
-      <text class="dg-sub" x="439" y="56">until timer</text>
-      <path class="dg-edge" d="M342 43 L362 43" marker-end="url(#slt2-arrow)"/>
+      <text class="dg-sub" x="439" y="56">until the timer runs out</text>
+      <path class="dg-edge" d="M342 43 L362 43" marker-end="url(#slt-st-arrow)"/>
       <rect class="dg-node" x="536" y="20" width="150" height="46" rx="4"/>
       <text class="dg-label" x="611" y="40">3 Stopping</text>
-      <text class="dg-sub" x="611" y="56">one press a reel</text>
-      <path class="dg-edge" d="M514 43 L534 43" marker-end="url(#slt2-arrow)"/>
-      <rect class="dg-node" x="708" y="20" width="150" height="46" rx="4"/>
+      <text class="dg-sub" x="611" y="56">one press per reel</text>
+      <path class="dg-edge" d="M514 43 L534 43" marker-end="url(#slt-st-arrow)"/>
+      <rect class="dg-node-ok" x="708" y="20" width="150" height="46" rx="4"/>
       <text class="dg-label" x="783" y="40">4 Payout</text>
-      <text class="dg-sub" x="783" y="56">tally the win</text>
-      <path class="dg-edge" d="M686 43 L706 43" marker-end="url(#slt2-arrow)"/>
-      <path class="dg-edge-dim" d="M783 66 L783 86 L267 86 L267 68" marker-end="url(#slt2-arrow)"/>
-      <rect class="dg-node" x="120" y="120" width="180" height="46" rx="4"/>
-      <text class="dg-label" x="210" y="140">0x32 Picker</text>
-      <text class="dg-sub" x="210" y="156">Triangle or Select</text>
-      <rect class="dg-node-warn" x="340" y="120" width="180" height="46" rx="4"/>
-      <text class="dg-label" x="430" y="140">0x5A No coins</text>
-      <text class="dg-sub" x="430" y="156">balance under 3</text>
-      <rect class="dg-node-ok" x="580" y="120" width="220" height="46" rx="4"/>
-      <text class="dg-label" x="690" y="140">100 Exit</text>
-      <text class="dg-sub" x="690" y="156">bank = balance, return warp</text>
-      <path class="dg-edge" d="M240 66 L240 118" marker-end="url(#slt2-arrow)"/>
-      <path class="dg-edge" d="M290 66 L290 100 L430 100 L430 118" marker-end="url(#slt2-arrow)"/>
-      <path class="dg-edge" d="M520 143 L578 143" marker-end="url(#slt2-arrow)"/>
-      <path class="dg-edge-dim" d="M210 166 L210 180 L690 180 L690 168" marker-end="url(#slt2-arrow)"/>
+      <text class="dg-sub" x="783" y="56">tally into balance</text>
+      <path class="dg-edge" d="M686 43 L706 43" marker-end="url(#slt-st-arrow)"/>
+      <text class="dg-edge-label" x="694" y="14">3 stops in: evaluate</text>
+      <path class="dg-edge-dim" d="M783 66 L783 86 L300 86 L300 68" marker-end="url(#slt-st-arrow)"/>
+      <text class="dg-edge-label" x="540" y="100">nothing owed: back to Idle</text>
+      <rect class="dg-node" x="40" y="140" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="135" y="160">0x32 Picker</text>
+      <text class="dg-sub" x="135" y="176">play / quit / rules</text>
+      <rect class="dg-node" x="40" y="200" width="190" height="40" rx="4"/>
+      <text class="dg-label" x="135" y="224">0x33..0x39 Rules pages</text>
+      <path class="dg-edge-dim" d="M135 186 L135 198" marker-end="url(#slt-st-arrow)"/>
+      <rect class="dg-node-warn" x="300" y="140" width="190" height="46" rx="4"/>
+      <text class="dg-label" x="395" y="160">0x5A No coins</text>
+      <text class="dg-sub" x="395" y="176">balance under 3</text>
+      <rect class="dg-node-ok" x="600" y="140" width="250" height="46" rx="4"/>
+      <text class="dg-label" x="725" y="160">100 Exit</text>
+      <text class="dg-sub" x="725" y="176">bank = balance, return warp</text>
+      <path class="dg-edge" d="M220 66 L170 138" marker-end="url(#slt-st-arrow)"/>
+      <text class="dg-edge-label" x="200" y="124" text-anchor="end">Triangle / Select</text>
+      <path class="dg-edge" d="M280 66 L360 138" marker-end="url(#slt-st-arrow)"/>
+      <path class="dg-edge" d="M490 163 L598 163" marker-end="url(#slt-st-arrow)"/>
+      <text class="dg-edge-label" x="492" y="181">any face button</text>
+      <path class="dg-edge-dim" d="M230 160 L250 160 L250 120 L560 120 L560 150 L598 150" marker-end="url(#slt-st-arrow)"/>
+      <text class="dg-edge-label" x="420" y="116">row 1: quit</text>
     </svg>
-    <figcaption>Idle reads the pad in a fixed order: the picker edge first, so the submenu opens even on an empty balance; then the coin gate; then the bet.</figcaption>
+    <figcaption>Idle reads the pad in a fixed order: the picker edge first (so the submenu opens even on an empty balance), then the coin gate, then the bet. The picker&rsquo;s row 0 and its cancel return to Idle; the rules pages fade back to Idle once both are read.</figcaption>
   </figure>
+  <h3>Controls</h3>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>State</th><th>Input</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Idle</td><td>any face button</td><td>charge the bet, run the feature roll, start the spin</td></tr>
+      <tr><td>Idle</td><td>Triangle or Select</td><td>open the cash-out picker</td></tr>
+      <tr><td>Spin-up</td><td>any face button</td><td>raises the <a href="#odds">press latch</a> (makes the next spin&rsquo;s features rarer)</td></tr>
+      <tr><td>Stopping</td><td>Square / Cross / Circle</td><td>stop reel 0 / 1 / 2 (pad bits <code>0x80</code> / <code>0x40</code> / <code>0x20</code>, the glyph each reel&rsquo;s pedestal carries)</td></tr>
+      <tr><td>Picker</td><td>Up / Down, Cross / L1, Circle / L2</td><td>move, take the row, back to play</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The picker cursor wraps with an <em>unsigned</em> remainder: Up on row 0 stays on row 0, Down on row 2 wraps to row 0. Pressing cancel and confirm on the same frame on the rules row lands in a spin-up with no bet charged - a retail collision the port does not reproduce.</p>
+
+  <h3>The reel strips</h3>
+  <p>Each reel is a 20-slot strip. Init builds two source strips per reel in one interleaved pass: for each slot it draws a random position mod 20 and probes forward to a free one (step 13 for symbols, step 1 for numerals). So <strong>every symbol appears exactly twice on every reel</strong>, at scattered positions, and so does every bonus numeral. A third strip, the <strong>display strip</strong>, is the only one the win evaluator and the renderer read.</p>
+  <p>The display strip is refilled one row per reel per frame, <strong>nine rows ahead of the payline</strong>, from whichever source the feature mode names. That is how a bonus round swaps numerals onto the reels: they rotate in from off-screen as the reels turn, and rotate back out when the round ends. Because a reel has to travel about nine rows before the swap reaches the payline, the spin-up is forced 24 frames longer on the first spin of a bonus round and on the first spin after one.</p>
 </section>
 
-<section class="doc-section" id="strips">
-  <h2>Reel strips</h2>
-  <p>Each reel is a 20-slot strip. Init builds two source strips per reel - the ten symbols and the ten bonus numerals - by drawing a random position and probing forward to a free one, so each value lands on two scattered positions. A third strip, the <strong>display strip</strong>, is the only one the win evaluator and the renderer read. It is refilled one row per frame, and that refill is how the bonus round swaps numerals onto the reels.</p>
-  <p>A reel position is a fixed-point angle; the on-screen symbol is <code>(pos &gt;&gt; 8) mod 0x14</code>.</p>
+<section class="doc-section" id="odds" data-doc="rng">
+  <h2>The two generators and the feature roll</h2>
+  <p>Two independent generators feed the machine:</p>
+  <ul class="bullets">
+    <li><strong>The slot generator</strong> builds the strips, picks reel landings and rolls whether a feature stays on. It is one self-contained word, so reel outcomes are reproducible from the seed state:
+<pre><code>x = x * 5 + 1
+x = (x &lt;&lt; 16) + (x &gt;&gt; 16)        fold the 16-bit halves</code></pre></li>
+    <li><strong>The BIOS <code>rand</code></strong> drives the per-spin feature roll and the landing-line pick - the parts that should not be replayable from the visible reels alone.</li>
+  </ul>
+  <p>At every spin start, in this draw order, the roll picks the payline a forced stop will land on (<code>rand % 5</code>), the normal-mode target symbol (<code>rand % 6 + 2</code>, so symbols 2 to 7), and, if no feature is already running, rolls for feature modes 1, 2 and 3:</p>
+<pre><code>widen = press_latch ? rand % 100 + 200 : 0
+mode 1 if rand % (widen + N1)  == 0
+mode 2 if rand % (widen + N2)  == 0
+mode 3 if rand % (widen + 600) == 0</code></pre>
+  <p><code>N1</code> and <code>N2</code> are bracketed on the machine&rsquo;s <strong>net-take counter</strong>, not on your balance. The counter gains 6 per normal spin and 1 per feature spin, and every bonus payout is subtracted from it: the machine pays back what it has taken.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Feature-entry chances per thousand spins in each net-take bracket. Below 1000: mode 1 one in 700, mode 2 one in 500, mode 3 one in 600. From 1001 to 1999: mode 1 one in 350, mode 2 one in 250, mode 3 one in 600. Above 2000: mode 1 one in 175, mode 2 one in 125, mode 3 one in 600. The mode 3 chance never changes.">
+      <text class="dg-sub dg-start" x="200" y="16">chance per 1000 spins (no press latch)</text>
+      <path class="dg-edge-dim" d="M200 24 L200 250"/>
+      <text class="dg-label dg-start" x="10" y="54">net take &lt; 1000</text>
+      <rect class="dg-node-accent" x="200" y="30" width="71" height="14"/>
+      <text class="dg-sub dg-start" x="278" y="42">mode 1: 1 in 700</text>
+      <rect class="dg-node-warn" x="200" y="47" width="100" height="14"/>
+      <text class="dg-sub dg-start" x="307" y="59">mode 2: 1 in 500</text>
+      <rect class="dg-node" x="200" y="64" width="83" height="14"/>
+      <text class="dg-sub dg-start" x="290" y="76">mode 3: 1 in 600</text>
+      <text class="dg-label dg-start" x="10" y="134">1001 .. 1999</text>
+      <rect class="dg-node-accent" x="200" y="110" width="143" height="14"/>
+      <text class="dg-sub dg-start" x="350" y="122">mode 1: 1 in 350</text>
+      <rect class="dg-node-warn" x="200" y="127" width="200" height="14"/>
+      <text class="dg-sub dg-start" x="407" y="139">mode 2: 1 in 250</text>
+      <rect class="dg-node" x="200" y="144" width="83" height="14"/>
+      <text class="dg-sub dg-start" x="290" y="156">mode 3: 1 in 600</text>
+      <text class="dg-label dg-start" x="10" y="214">net take &gt; 2000</text>
+      <rect class="dg-node-accent" x="200" y="190" width="286" height="14"/>
+      <text class="dg-sub dg-start" x="493" y="202">mode 1: 1 in 175</text>
+      <rect class="dg-node-warn" x="200" y="207" width="400" height="14"/>
+      <text class="dg-sub dg-start" x="607" y="219">mode 2: 1 in 125</text>
+      <rect class="dg-node" x="200" y="224" width="83" height="14"/>
+      <text class="dg-sub dg-start" x="290" y="236">mode 3: 1 in 600</text>
+    </svg>
+    <figcaption>Bar length is proportional to the per-roll chance. Once the machine is more than 2000 ahead, the reach modes become four times likelier than at the start. A net take of exactly 1000 or 2000 falls in <strong>no</strong> bracket: only the mode-3 roll runs on that spin.</figcaption>
+  </figure>
+  <h3>The spin-up press latch</h3>
+  <p>Pressing any face button while the reels are still spinning up raises a latch, and the next spin&rsquo;s roll reads it and clears it. A raised latch adds <code>rand % 100 + 200</code> to <strong>every</strong> feature denominator: in the lowest bracket, mode 1 goes from 1 in 700 to between 1 in 900 and 1 in 999. Mashing through the spin-up makes the reach and hot modes rarer.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Net take</th><th class="num">Mode 1</th><th class="num">Mode 2</th><th class="num">Mode 3</th><th class="num">Mode 1, latch raised</th></tr></thead>
+    <tbody>
+      <tr><td>&lt; 1000</td><td class="num">1 in 700</td><td class="num">1 in 500</td><td class="num">1 in 600</td><td class="num">1 in 900..999</td></tr>
+      <tr><td>1001..1999</td><td class="num">1 in 350</td><td class="num">1 in 250</td><td class="num">1 in 600</td><td class="num">1 in 550..649</td></tr>
+      <tr><td>&gt; 2000</td><td class="num">1 in 175</td><td class="num">1 in 125</td><td class="num">1 in 600</td><td class="num">1 in 375..474</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="dg-note">Provenance: feature roll <code>FUN_801D258C</code>, slot generator <code>FUN_801D30CC</code>, press latch <code>DAT_801D3790</code> (raised in state 2, cleared in state 1 straight after the roll). Confirmed from the disassembly.</p>
 </section>
 
-<section class="doc-section" id="paylines">
-  <h2>The five paylines</h2>
+<section class="doc-section" id="stops" data-doc="-">
+  <h2>What a stop press does</h2>
+  <p>A stop never yanks a reel to a result. It searches a short window of rows past where the reel is when you press, for one <em>target</em> symbol; if the target is in the window the reel lands it on the spin&rsquo;s chosen payline, and otherwise the reel simply stops on its next natural row.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The landing search. The reel strip is drawn as a row of cells. The cell where the reel is when the stop is pressed is marked cur. The next depth cells are the search window. If one of them holds the target symbol, the reel lands it on the payline the spin picked; if none does, the reel stops on cur plus one.">
+      <defs><marker id="slt-ls-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="40" width="60" height="44" rx="3"/>
+      <text class="dg-label" x="50" y="67">cur</text>
+      <rect class="dg-node" x="90" y="40" width="60" height="44" rx="3"/>
+      <text class="dg-sub" x="120" y="67">+1</text>
+      <rect class="dg-node" x="160" y="40" width="60" height="44" rx="3"/>
+      <text class="dg-sub" x="190" y="67">+2</text>
+      <rect class="dg-node-ok" x="230" y="40" width="60" height="44" rx="3"/>
+      <text class="dg-label" x="260" y="67">target</text>
+      <rect class="dg-node" x="300" y="40" width="60" height="44" rx="3"/>
+      <text class="dg-sub" x="330" y="67">+depth</text>
+      <rect class="dg-node" x="370" y="40" width="60" height="44" rx="3" style="opacity:.45"/>
+      <rect class="dg-node" x="440" y="40" width="60" height="44" rx="3" style="opacity:.45"/>
+      <text class="dg-sub" x="470" y="67">...</text>
+      <rect class="dg-group" x="84" y="32" width="282" height="60" rx="4"/>
+      <text class="dg-edge-label" x="225" y="24" text-anchor="middle">search window: rows cur+1 .. cur+depth</text>
+      <path class="dg-edge" d="M260 86 L260 130 L560 130" marker-end="url(#slt-ls-arrow)"/>
+      <rect class="dg-node-ok" x="562" y="108" width="300" height="44" rx="4"/>
+      <text class="dg-label" x="712" y="128">found: land it on the spin&rsquo;s payline</text>
+      <text class="dg-sub" x="712" y="144">all three reels share the line</text>
+      <path class="dg-edge-dim" d="M120 86 L120 176 L560 176" marker-end="url(#slt-ls-arrow)"/>
+      <rect class="dg-node" x="562" y="158" width="300" height="36" rx="4"/>
+      <text class="dg-label" x="712" y="181">not found: stop on cur + 1</text>
+    </svg>
+    <figcaption>The payline a forced stop lands on is the spin&rsquo;s <code>rand % 5</code> pick, one of the five lines, so a steered spin lines the target up along a random line rather than always the middle row. The search depth and the target depend on the feature mode.</figcaption>
+  </figure>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Feature mode</th><th>Search depth</th><th>Target</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code> normal</td><td><code>rand % 3 + 2</code> rows</td><td>the spin&rsquo;s target, symbols 2..7</td></tr>
+      <tr><td><code>1</code> reach</td><td><code>(rand &amp; 3) + 6</code> rows</td><td>symbol 9, the red punch</td></tr>
+      <tr><td><code>2</code> reach</td><td><code>(rand &amp; 3) + 6</code> rows</td><td>symbol 8, the blue kick</td></tr>
+      <tr><td><code>3</code> hot</td><td>landing offset <code>rand % 7 + 10</code></td><td>random, <code>rand % 7 + 0x18</code>; a <code>rand % 150 == 0</code> roll can end the mode</td></tr>
+      <tr><td><code>4</code> guaranteed hit</td><td>-</td><td>drives each reel onto a winning symbol, counting down a guarantee</td></tr>
+      <tr><td><code>5</code> hold</td><td>20 rows</td><td><code>rand % 10 + 8</code></td></tr>
+      <tr><td><code>6</code> bonus round</td><td><strong>0</strong></td><td>none: a free stop</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="dg-note">Provenance: per-reel stop <code>FUN_801D2114</code>, landing search <code>FUN_801D2440</code> over the five-row landing-line table at <code>0x801D3630</code>. Confirmed from the disassembly.</p>
+</section>
+
+<section class="doc-section" id="paylines" data-doc="payout--win-evaluation">
+  <h2>Paylines and payouts</h2>
   <figure class="diagram">
     <svg viewBox="0 0 880 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The slot machine window: three reels, three visible rows. Five paylines are read: line 0 the top row, line 1 the middle row, line 2 the bottom row, line 3 the diagonal from bottom left to top right, and line 4 the diagonal from top left to bottom right. Each line pays when its three cells hold the same symbol, and the highest-value matching line wins.">
-      <defs><marker id="slt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-group" x="110" y="20" width="540" height="320" rx="6"/>
-      <text class="dg-sub" x="200" y="44">reel 0</text>
+      <text class="dg-sub" x="200" y="40">reel 0</text>
       <rect class="dg-node" x="140" y="45" width="120" height="70" rx="4"/>
-      <rect class="dg-node" x="140" y="145" width="120" height="70" rx="4"/>
+      <rect class="dg-node-accent" x="140" y="145" width="120" height="70" rx="4"/>
       <rect class="dg-node" x="140" y="245" width="120" height="70" rx="4"/>
-      <text class="dg-sub" x="380" y="44">reel 1</text>
+      <text class="dg-sub" x="380" y="40">reel 1</text>
       <rect class="dg-node" x="320" y="45" width="120" height="70" rx="4"/>
-      <rect class="dg-node" x="320" y="145" width="120" height="70" rx="4"/>
+      <rect class="dg-node-accent" x="320" y="145" width="120" height="70" rx="4"/>
       <rect class="dg-node" x="320" y="245" width="120" height="70" rx="4"/>
-      <text class="dg-sub" x="560" y="44">reel 2</text>
+      <text class="dg-sub" x="560" y="40">reel 2</text>
       <rect class="dg-node" x="500" y="45" width="120" height="70" rx="4"/>
-      <rect class="dg-node" x="500" y="145" width="120" height="70" rx="4"/>
+      <rect class="dg-node-accent" x="500" y="145" width="120" height="70" rx="4"/>
       <rect class="dg-node" x="500" y="245" width="120" height="70" rx="4"/>
+      <text class="dg-sub" x="200" y="108">lines 0, 4</text>
+      <text class="dg-sub" x="380" y="108">line 0</text>
+      <text class="dg-sub" x="560" y="108">lines 0, 3</text>
+      <text class="dg-sub" x="200" y="208">line 1</text>
+      <text class="dg-sub" x="380" y="208">lines 1, 3, 4</text>
+      <text class="dg-sub" x="560" y="208">line 1</text>
+      <text class="dg-sub" x="200" y="308">lines 2, 3</text>
+      <text class="dg-sub" x="380" y="308">line 2</text>
+      <text class="dg-sub" x="560" y="308">lines 2, 4</text>
       <text class="dg-sub" x="96" y="84" text-anchor="end">row +1</text>
       <text class="dg-sub" x="96" y="184" text-anchor="end">row 0</text>
       <text class="dg-sub" x="96" y="284" text-anchor="end">row -1</text>
       <path class="dg-edge" d="M140 80 L620 80"/>
       <path class="dg-edge" d="M140 180 L620 180"/>
       <path class="dg-edge" d="M140 280 L620 280"/>
-      <path class="dg-edge-dim" d="M140 313 L620 47"/>
-      <path class="dg-edge-dim" d="M140 47 L620 313"/>
+      <path class="dg-edge-dim" d="M140 300 L620 60"/>
+      <path class="dg-edge-dim" d="M140 60 L620 300"/>
       <text class="dg-label dg-start" x="680" y="84">line 0  top</text>
       <text class="dg-label dg-start" x="680" y="184">line 1  middle</text>
       <text class="dg-label dg-start" x="680" y="284">line 2  bottom</text>
-      <text class="dg-sub dg-start" x="680" y="52">line 3  diagonal /</text>
-      <text class="dg-sub dg-start" x="680" y="318">line 4  diagonal \</text>
+      <text class="dg-sub dg-start" x="680" y="52">line 3 diagonal, rising</text>
+      <text class="dg-sub dg-start" x="680" y="318">line 4 diagonal, falling</text>
     </svg>
-    <figcaption>Every spin plays all five lines for one flat charge; there is no bet-line selection. The evaluator keeps the highest-value matching line, and the winning line index doubles as the index of the medallion and lamp that light.</figcaption>
+    <figcaption>Every spin plays all five lines for one flat charge. A line pays when its three cells hold the same symbol; the evaluator keeps the <strong>highest-value</strong> matching line, and that line&rsquo;s index doubles as the medallion (left) and lamp (right) that light. The centre cell sits on three lines.</figcaption>
   </figure>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Result</th><th>Credit</th><th>Side effect</th></tr></thead>
     <tbody>
       <tr><td>three of symbol <code>0..7</code> on a line</td><td>that symbol&rsquo;s payout byte</td><td>-</td></tr>
-      <tr><td>three of symbol <code>8</code>, the blue kick</td><td>its payout byte</td><td>one bonus round</td></tr>
-      <tr><td>three of symbol <code>9</code>, the red punch</td><td>its payout byte</td><td>three bonus rounds</td></tr>
-      <tr><td>any bonus-round spin</td><td>the product of the three centre-row numerals, <code>1..=1000</code></td><td>subtracted from the net take</td></tr>
+      <tr><td>three of symbol <code>8</code>, the blue kick</td><td>its payout byte</td><td>feature mode 6, <strong>one</strong> bonus round</td></tr>
+      <tr><td>three of symbol <code>9</code>, the red punch</td><td>its payout byte</td><td>feature mode 6, <strong>three</strong> bonus rounds</td></tr>
+      <tr><td>any bonus-round spin</td><td>the product of the three centre numerals, <code>1..=1000</code></td><td>subtracted from the net take</td></tr>
+      <tr><td>no matching line</td><td><code>0</code></td><td>-</td></tr>
     </tbody>
   </table>
   </div>
-  <p>During a bonus round the product is computed <strong>unconditionally</strong> - no match is needed and no payout byte is read. A separate scanner lights the &ldquo;reach&rdquo; presentation when two stopped reels already hold a jackpot pair; it sets no payout.</p>
+  <p>The payout table is exactly ten bytes, one per symbol, and the byte scales with the symbol&rsquo;s rarity. The values come off your disc: the machine&rsquo;s own rules screen shows them as its second page (each symbol&rsquo;s three faces beside its line payout).</p>
+  <p>Symbols 0, 1 and 2 are one piece of artwork recoloured three ways, as are 4 and 5; the palette is what tells them apart on the reel.</p>
+
+  <h3>The bonus round</h3>
+  <ol class="steps steps-vertical">
+    <li><b>Swap</b><span>The reels rotate onto the numeral strip: the values 1 to 10, each in its own colour, each twice per reel.</span></li>
+    <li><b>Stop</b><span>You stop each reel with <strong>no help from the machine</strong>: mode 6 searches zero rows, so the reel lands on its next natural row. The three numbers are your timing and nothing else.</span></li>
+    <li><b>Pay</b><span>The spin pays the product of the three numbers on the centre line, from <code>1</code> (1&times;1&times;1) to <code>1000</code> (10&times;10&times;10). No match is checked and no payout byte is read; the middle lamp lights.</span></li>
+    <li><b>Count down</b><span>Each bonus spin still costs 1 coin. When the earned rounds run out the feature ends and the next spin runs long enough to rotate the symbols back on.</span></li>
+  </ol>
+  <p>The marquee strip across the top reads <code>0 x 0 x 0</code> at the start of a round and fills in each column&rsquo;s number as its reel is stopped; between spins it shows the rounds still owed as three pips. The number drawn on the reel, the number in the tally and the factor in the product are one byte read through one bias, so the three can never disagree.</p>
+
+  <h3>The reach tease</h3>
+  <p>While exactly two reels are stopped, a scanner checks every line for an equal pair of punches or kicks among the landed reels. A pair scrolls the reach legend across the marquee and plays the reach sting once per spin. It is presentation only: it sets no payout and changes no odds.</p>
+  <p class="dg-note">Provenance: win evaluation <code>FUN_801D13E8</code>, payout bytes <code>DAT_801D3598</code> (PROT 0975 file <code>0x4D80</code>), reach scanner <code>FUN_801D1AF4</code>, tally composer <code>FUN_801CFFF0</code>. Confirmed structure; the payout values are disc data.</p>
 </section>
 
-<section class="doc-section" id="rng">
-  <h2>Two generators</h2>
-<pre><code>x = x * 5 + 1
-x = (x &lt;&lt; 16) + (x &gt;&gt; 16)        fold the halves</code></pre>
-  <p>The slot generator drives strip construction, reel landing and the feature-stays-on rolls, so reel outcomes are reproducible from its one word. The BIOS <code>rand</code> drives the per-spin feature roll and the landing-line row - the parts that should not be replayable from the visible reels.</p>
-  <p><strong>The machine pays back what it has taken.</strong> Feature odds are bracketed on a net-take counter, not on the balance: the denominators shrink from <code>700 / 500</code> to <code>175 / 125</code> once the machine is more than 2000 ahead, and each bonus payout is subtracted from the counter. A net take of exactly 1000 or 2000 falls in no bracket.</p>
-</section>
-
-<section class="doc-section" id="coins">
+<section class="doc-section" id="coins" data-doc="coin-economy">
   <h2>Coin economy</h2>
-  <p>The machine touches the coin bank in exactly two places: it copies the bank into its own balance on entry and assigns the balance back on exit. It is not debited per spin. A normal spin charges 3 from the local balance and a bonus spin charges 1; the not-enough gate tests for 3 either way.</p>
-  <p>That is why the well-known infinite-coins code works at the casino but does not make spins free: it pins the bank, and betting decrements the overlay-local balance.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Event</th><th class="num">Balance</th><th class="num">Net-take counter</th></tr></thead>
+    <tbody>
+      <tr><td>normal spin (modes 0..3)</td><td class="num">&minus;3</td><td class="num">+6</td></tr>
+      <tr><td>feature spin (modes 4..6)</td><td class="num">&minus;1</td><td class="num">+1</td></tr>
+      <tr><td>line win</td><td class="num">+payout byte</td><td class="num">-</td></tr>
+      <tr><td>bonus-round spin</td><td class="num">+product</td><td class="num">&minus;product</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="bullets">
+    <li><strong>Two words hold coins.</strong> The machine plays from its own balance; the casino coin bank is touched exactly twice, both by assignment: bank &rarr; balance on entry, balance &rarr; bank once the exit fade completes. It is never debited or credited per spin.</li>
+    <li>The not-enough gate tests for <strong>3 coins</strong> before it looks at the mode, so even a 1-coin feature spin needs 3 on the machine. An empty machine shows its prompt and can only leave.</li>
+    <li>The balance is capped at <code>9999999</code> in the tally path; the HUD displays at most <code>99999</code>.</li>
+    <li>A win is <strong>tallied over time</strong>: 11 coins per odd frame while more than 20 are owed, then 1 at a time, with a tick sound per move.</li>
+    <li>The well-known infinite-coins code pins the bank at the casino, but does not make spins free: betting decrements the overlay-local balance.</li>
+  </ul>
+  <details class="disclosure">
+    <summary>The coin-exchange counter (buying coins with gold)</summary>
+    <div class="disclosure-body">
+      <p>Coins are bought at a counter, not inside the slot overlay. The counter is a field-overlay screen: field-VM op <code>0x49</code> sub-op 6 at the koin1 / balden counters. Its entry panel shows the coin bank, a six-digit entry field, party gold and the total cost; the cost is <code>entry &times; 100</code> gold, drawn in the warning pen when party gold is below it or the entry exceeds <code>min(gold / 100, 9999999 &minus; bank)</code>. A Yes / No confirm opens over the entry panel, which stays drawn underneath it.</p>
+      <p class="dg-note">Provenance: submode handler <code>FUN_801F0ADC</code> and entry panel <code>FUN_801E6F70</code> in PROT 0897. Port <code>engine-field::submode_hub_actors::coin_exchange</code>, drawn on both hosts through one builder.</p>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="render">
+<section class="doc-section" id="tips" data-doc="-">
+  <h2>What the rules imply</h2>
+  <div class="callout callout-tip">
+    <p class="callout-title">Following from the traced rules</p>
+    <ul class="bullets">
+      <li><strong>Don&rsquo;t press during the spin-up.</strong> Any face button there raises the latch that widens every feature denominator by 200 to 299 on the next spin.</li>
+      <li><strong>Bonus rounds are pure timing.</strong> The machine searches zero rows in mode 6, so where you press is where the reel lands. Watch for the 10s: three of them pay 1000.</li>
+      <li><strong>Normal stops are nudges, not results.</strong> A normal stop searches only 2 to 4 rows for one of symbols 2 to 7 and never steers toward the jackpot symbols; only the reach modes target the kick and the punch, over 6 to 9 rows.</li>
+      <li><strong>The machine gets looser the more it has taken.</strong> The reach modes are four times likelier once the net-take counter is above 2000, and a big bonus payout pulls the counter back down.</li>
+      <li><strong>Cash out to keep it.</strong> Winnings live on the machine until the exit fade writes them back to the coin bank.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="doc-section" id="render" data-doc="rendering---a-3d-scene">
   <h2>A 3D scene</h2>
-  <p>Each reel emits eight textured quads a frame around an ellipse of radius 585 in height and 512 in depth - a cylinder through the geometry coprocessor, which is why symbols curl away from the payline. The paylines are 3D segments, the medallions, lamps and marquee are billboards, and the marquee is composed as a dot-matrix display. The trig comes from the executable&rsquo;s shared sine table, whose entries truncate toward zero; that matters because the cylinder multiplies each entry by a radius before shifting back down.</p>
+  <p>Every element on the machine&rsquo;s face is a quad in a 3D scene, projected through the geometry coprocessor and depth-sorted. The overlay carries no coprocessor instruction of its own - it reaches it through shared executable wrappers - which is why a scan for one inside the overlay wrongly calls the machine 2D.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Element</th><th>Kind</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>cabinet body</td><td>untextured mesh</td><td>1 object, 65 vertices, 76 primitives; grey body, dark-red reel face, navy marquee backing</td></tr>
+      <tr><td>reels</td><td>8 textured quads per reel</td><td>an ellipse of radius 585 in height and 512 in depth: a cylinder, so symbols curl away from the payline</td></tr>
+      <tr><td>paylines</td><td>5 flat semi-transparent lines</td><td>neutral grey idle; the winning line is recoloured and stays semi-transparent</td></tr>
+      <tr><td>medallions, lamps, pedestals, marquee panel, mascots</td><td>billboards</td><td>a reel&rsquo;s pedestal shows its &ldquo;press now&rdquo; button while that stop is still open</td></tr>
+      <tr><td>marquee</td><td>78 &times; 13 dot matrix</td><td>1014 projected 2&times;2 sprites, blinking between two palettes every frame</td></tr>
+      <tr><td>paytable board, COIN label, cursor, coin digits</td><td>screen space</td><td>the only parts not projected</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The reel faces are depth-cued off their distance: the shade peaks (a 1.41&times; brighten) exactly on the payline face and falls to black within about 48 degrees either side, which caps each reel window top and bottom. The camera faces the machine head-on with a 2:1 horizontal scale, the pixel aspect of the 640-wide video mode the machine runs in.</p>
+  <details class="disclosure">
+    <summary>Projection, reel geometry and the marquee in detail</summary>
+    <div class="disclosure-body">
+      <p>The captured camera state while the machine draws reduces every path to one mapping on the 640&times;240 framebuffer:</p>
+<pre><code>view   = (6x - 1440, 3y + 20, 3z + 24480)
+screen = (320 + 1024 * vx / vz, 114 + 1024 * vy / vz)</code></pre>
+      <p><code>-z</code> is toward the viewer: the glass (paylines, medallions, lamps, pedestals, marquee) sits at <code>z = -768</code> / <code>-800</code>, the reel cylinders are centred on <code>z = 0</code> with the payline symbol at <code>z = -512</code>, behind the glass.</p>
+      <p>The payline face is the <strong>fifth</strong> of a reel&rsquo;s eight faces, not the first; a renderer that indexes the strip straight off the face index draws a payline whose three symbols are not the three that paid. Symbol art is arithmetic: a strip value of <code>0x10</code> or more switches that row to the numeral page, which is why one strip can carry both kinds mid-rotation.</p>
+      <p>The marquee is rebuilt from scratch each frame from a 21-record message bank. One occupant wins each frame, in priority order: the payout caption (sliding down into place over 13 frames, leading zeros suppressed against the whole figure), then the bonus tally or round pips, then the attract legend.</p>
+      <p class="dg-note">Provenance: reel renderer <code>FUN_801D0FA8</code>, paylines <code>FUN_801D3380</code>, billboards <code>FUN_801D08E4</code>, marquee <code>FUN_801D0E1C</code>, HUD widgets <code>FUN_801D2CC0</code>; camera matrix and offsets read from the <code>minigame_slot_machine</code> capture&rsquo;s coprocessor registers. That the cabinet&rsquo;s per-frame draw is the shared mesh renderer is inferred, not traced to a GPU word.</p>
+    </div>
+  </details>
 </section>
 
-<section class="doc-section" id="see-also">
+<section class="doc-section" id="art" data-doc="art-pack-prot-1200">
+  <h2>The art pack</h2>
+  <p>The init loads extraction PROT 1200: a container of five textures, the cabinet mesh and a two-record animation bundle. Each texture&rsquo;s framebuffer destination <em>is</em> the texture page the renderers sample, and every image block is byte-identical to a retail VRAM dump at the machine.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th class="num">Texture</th><th>Framebuffer</th><th>Holds</th></tr></thead>
+    <tbody>
+      <tr><td class="num">0</td><td><code>(768, 0)</code></td><td>reel symbols, coin digit font, payline medallion</td></tr>
+      <tr><td class="num">1</td><td><code>(832, 0)</code></td><td>bonus numerals 1..10</td></tr>
+      <tr><td class="num">2</td><td><code>(768, 256)</code></td><td>marquee panel, mascots, reel-stop pedestals, payline lamps</td></tr>
+      <tr><td class="num">3</td><td><code>(832, 256)</code></td><td>dot-matrix message bank, lamp swatches, cursor</td></tr>
+      <tr><td class="num">4</td><td><code>(640, 0)</code></td><td>the paytable / coin board, sampled 8bpp although its header declares 4bpp</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The two jackpot symbols are told apart by their art cell: blue-dominant for the kick (8), red-dominant for the punch (9). The neighbouring PROT 1198 / 1199 entries are the machine&rsquo;s sound bank, not backdrop art.</p>
+</section>
+
+<section class="doc-section" id="sound" data-doc="sound">
+  <h2>Sound and music</h2>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>Event</th><th>Cue</th></tr></thead>
+    <tbody>
+      <tr><td>reel stop, once per stop taken</td><td><code>0x20A</code></td></tr>
+      <tr><td>payout tally, once per transfer</td><td><code>0x209</code></td></tr>
+      <tr><td>spin start in reach mode 1 / 2</td><td><code>0x201</code> / <code>0x202</code></td></tr>
+      <tr><td>two landed bonus symbols, once per spin</td><td><code>0x200</code></td></tr>
+      <tr><td>cash-out menu confirm / cursor / cancel</td><td><code>0x20</code> / <code>0x21</code> / <code>0x37</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The reel motor is not a cue: the bet keys a voice directly, the reach scanner re-keys it on a second tone for the reach loop, and the evaluation releases it. The machine&rsquo;s cues resolve through its own effect bank (PROT 1199) against its VAB (PROT 1198).</p>
+  <p><strong>The machine starts no music.</strong> It inherits the host scene&rsquo;s track: in Sol, the casino floor&rsquo;s <em>Sub-game</em> theme (sound-test slot 18, the same track the Baka Fighter cabinet and the Muscle Dome inherit); in Vidna, the town theme, or the mist theme during the mist story state. See <a href="../reference/music-tracks.html">music tracks</a>.</p>
+</section>
+
+<section class="doc-section" id="port" data-doc="engine-port">
+  <h2>Where this is in the port</h2>
+  <p>The rules engine (<code>engine-minigames::slot_machine</code>) runs on all three hosts: the native play window, the browser play page and the standalone <a href="../minigames.html#play">minigames page</a>, where you can play it now with your own disc. Walking up to a cabinet in either play host runs the record&rsquo;s script through the field VM, including the coin-bank compare that refuses an empty bank. The standalone page racks its own 60 coins.</p>
+  <ul class="bullets">
+    <li><strong>Faithful:</strong> strip construction in retail&rsquo;s draw order, the feature roll with its exact draw order and bracket edges, the bet charge and net-take accrual, the stop plan and landing search including the bonus round&rsquo;s free stop, the five-line evaluation and bonus product, the claimed-column tally and marquee, the cash-out picker and the bank commit on exit.</li>
+    <li><strong>Drawn as retail draws it:</strong> both play hosts build the whole frame through one primitive builder sampling the art pack from VRAM; the standalone page rasterises the same primitive list on the CPU.</li>
+  </ul>
+  <div class="callout callout-warn">
+    <p class="callout-title">Where the port differs</p>
+    <ul class="bullets">
+      <li>The spin-up length and reel speed are engine-chosen; retail&rsquo;s magnitudes are not pinned.</li>
+      <li>The BIOS <code>rand</code> stream is a deterministic generator, so replays stay bit-identical.</li>
+      <li>Hot (3) and hold (5) feature modes fall back to the normal landing plan.</li>
+      <li>A press collects the rest of a payout tally at once.</li>
+      <li>The picker&rsquo;s cancel + confirm collision and a press latched on the spin-up&rsquo;s last frame are not reproduced.</li>
+    </ul>
+  </div>
+  <p>For testing, <code>play-window</code>&rsquo;s <code>O</code> key arms the same door warp without the door gate, and <code>--cheat-coins N</code> (or the play page&rsquo;s Cheats panel) sets the bank.</p>
+</section>
+
+<section class="doc-section" id="internals" data-doc="ram-state,key-functions,open">
+  <h2>Internals</h2>
+  <details class="disclosure">
+    <summary>Key RAM words</summary>
+    <div class="disclosure-body">
+      <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Global</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="hex">DAT_801d3c80</td><td>slot generator state, seeded <code>0x6C0A2AF0</code></td></tr>
+          <tr><td class="hex">DAT_801d3c84</td><td>state word</td></tr>
+          <tr><td class="hex">DAT_801d3c8c</td><td>winning payline index</td></tr>
+          <tr><td class="hex">DAT_801d3c90</td><td>spin timer / guaranteed-hit countdown</td></tr>
+          <tr><td class="hex">DAT_801d3cac</td><td>feature mode (0 normal .. 6 bonus round)</td></tr>
+          <tr><td class="hex">DAT_801d3cb0</td><td>bonus rounds owed</td></tr>
+          <tr><td class="hex">DAT_801d3cc0</td><td>live reel positions (fixed point, three reels)</td></tr>
+          <tr><td class="hex">DAT_801d3d40</td><td>net-take counter, the feature-odds bracket input</td></tr>
+          <tr><td class="hex">DAT_801d3d50</td><td>display strip (3 &times; 20)</td></tr>
+          <tr><td class="hex">DAT_801d3790</td><td>spin-up press latch</td></tr>
+          <tr><td class="hex">DAT_801d4114</td><td>the machine&rsquo;s coin balance</td></tr>
+          <tr><td class="hex">DAT_801d4134</td><td>this spin&rsquo;s landing line (<code>rand % 5</code>)</td></tr>
+          <tr><td class="hex">_DAT_800845A4</td><td>the global casino coin bank</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </details>
+  <details class="disclosure">
+    <summary>Key functions</summary>
+    <div class="disclosure-body">
+      <div class="table-wrap">
+      <table class="compact">
+        <thead><tr><th>Address</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td class="hex">FUN_801cec94</td><td>init: generator seed, balance from the bank, asset load, cabinet actor</td></tr>
+          <tr><td class="hex">FUN_801cf0d8</td><td>per-frame reel state machine (an actor tick, no direct caller)</td></tr>
+          <tr><td class="hex">FUN_801d258c</td><td>per-spin feature roll</td></tr>
+          <tr><td class="hex">FUN_801d2114</td><td>per-reel stop plan by feature mode</td></tr>
+          <tr><td class="hex">FUN_801d2440</td><td>landing search</td></tr>
+          <tr><td class="hex">FUN_801d13e8</td><td>win evaluation, payout and bonus trigger</td></tr>
+          <tr><td class="hex">FUN_801d1af4</td><td>reach scanner (presentation only)</td></tr>
+          <tr><td class="hex">FUN_801d0554</td><td>reel integrator: snaps a stopping reel, latches its claimed value</td></tr>
+          <tr><td class="hex">FUN_801cfff0</td><td>HUD and marquee composer</td></tr>
+          <tr><td class="hex">FUN_801d30cc</td><td>slot generator</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </details>
+  <p><strong>Still open:</strong> the identities of the sibling dev modules PROT 973 / 974; the cabinet&rsquo;s per-frame draw path is inferred rather than traced; the semantics of a cheat-database pointer that lands in this state block; and retail&rsquo;s spin-up timer and velocity magnitudes.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
   <h2>See also</h2>
-  <p>The strip builder, the bonus swap, the cash-out submenu, the RAM state block, every renderer routine and the art pack are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-slot-machine.md</code></a>.</p>
+  <p>Every state, the strip builder, the cash-out picker&rsquo;s draws, the full RAM block and the renderer routine by routine are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-slot-machine.md</code></a>.</p>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
     <a href="script-vm.html">Field / event VM</a>
+    <a href="tile-board.html">Tile board</a>
     <a href="minigame-fishing.html">Fishing</a>
     <a href="minigame-baka-fighter.html">Baka Fighter</a>
     <a href="minigame-dance.html">Dance</a>
     <a href="minigame-muscle-dome.html">Muscle Dome</a>
-    <a href="shop.html">Shop</a>
+    <a href="../reference/cheats.html">Cheats</a>
     <a href="../minigames.html">Minigames page</a>
   </div>
 </section>

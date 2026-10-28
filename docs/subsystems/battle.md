@@ -238,6 +238,10 @@ Each retail test below is on the pool slot, and the port reaches it through the 
 
 The AI companion row is the one a retail party reaches: the companion sits in the Noa + Terra party of two, whose first monster is engine slot `2`. Unmapped, its roll aimed one seat past the monster it drew, and against a lone monster it stood by every turn.
 
+**What seats the companion.** `DAT_8007BD10` is not the field list alone. The field overlay's party-table rebuild `FUN_801DE190` (PROT 0897; called by the party ops `0x3C` / `0x3D` and by op `4C 33`) clears the table, writes `id + 1` for each present member (`0x801DE1E4..0x801DE1FC`), then tests system flag `0x13` (`jal 0x8003CE64` with `a0 = 0x13` at `0x801DE204`) and, when it is up, appends id `4` (`0x801DE214..0x801DE220`). `terra_party_battle` holds the table at `02 04` beside a field list of Noa alone (`0x80084594 = 1`).
+
+`cave01` P1[2]'s last stage and P2[15] raise the flag and rebuild (`50 13`, `4C 33`); `cave01` P1[0] and `rikuroa` P2[48] clear it before their party ops. Port: `World::enter_battle_from_formation` seats roster record 3 beside a field list of fewer than three while the flag is up, and hands the field list back on the return (`BattleState::battle_party_restore`).
+
 A sibling split is the **roster id**. Retail's per-character tables key on `DAT_8007BD10[slot]`, the character seated on a party seat, not on the seat plus one; a party without Noa seats Gala on seat 1. The attack camera's character arm, the action framing's character id, the post-action camera height, the element tables and the summon power table all read it through `World::party_roster_slot` (`World::battle_party_char_id`).
 
 ## Stage seats (`FUN_800513F0` placement tables)
@@ -436,26 +440,46 @@ Two SCUS loaders feed the actor table: `FUN_80052FA0` (party battle files) and `
 
 Everything the loader places in RAM comes from one heap, and its arithmetic - not VRAM and not the AI - bounds a formation. Each battle seat owns its own texture-page column at `(320 + slot*64, 256)` and CLUT row `484 + slot`, so distinct enemies never contend for VRAM. One upload breaks the pattern: [the boss effect page](#the-boss-effect-page).
 
-**The heap.** `FUN_8002B3D4(pool_count=2, DAT_8007B414, size)` initialises a best-fit free-list heap with 12-byte node headers, one shared free ring and a per-pool allocated ring. Stage init (`FUN_8001E1B4`) sizes it `0x134800` (about 1.23 MB) over the arena `0x80091800..0x801C6000`. With `gp = 0x8007B318`: descriptor pointer `gp+0x840 = 0x8007BB58`, allocation counter `gp+0x488 = 0x8007B7A0`, malloc-error accumulator `gp+0x510 = 0x8007B828`. The wrapper `FUN_80017888(pool, size)` -> `FUN_8002B468` returns NULL on exhaustion (dev-console `malloc err size %d`), and `FUN_800542C8` copies through that pointer **unchecked**. An over-budget formation therefore writes the decoded block over low kernel RAM and the machine locks inside the mode-`0x15` tick.
+**The heap.** `FUN_8002B3D4(pool_count=2, DAT_8007B414, size)` initialises a best-fit free-list heap with 12-byte node headers, one shared free ring and a per-pool allocated ring. Stage init (`FUN_8001E1B4`, `jal 0x8002B3D4` at `0x8001E238`) sizes it `0x134800` (1,263,616 bytes, 1234.0 KiB) over the arena `0x80091800..0x801C6000`. With `gp = 0x8007B318`: descriptor pointer `gp+0x840 = 0x8007BB58`, allocation counter `gp+0x488 = 0x8007B7A0`, malloc-error accumulator `gp+0x510 = 0x8007B828`.
+
+The wrapper `FUN_80017888(pool, size)` -> `FUN_8002B468` returns NULL on exhaustion (dev-console `malloc err size %d`), and `FUN_800542C8` copies through that pointer **unchecked**. An over-budget formation therefore writes the decoded block over low kernel RAM and the machine locks inside the mode-`0x15` tick. The free side is `FUN_80017B94` -> `FUN_8002B584` (coalescing insert); `FUN_8002A880` drains a whole pool.
+
+**The heap starts empty for every battle.** Stage init runs twice on the way in: once at game mode `8` (the field-to-battle transition, whose overlay takes two `0x32000` buffers and the field's `0x3C000` packet buffer) and again at mode `0x14`, which re-initialises the arena and discards all of it. Nothing allocated in the field survives into the fight, so the battle ledger is independent of the scene the encounter came from, except for the rows that read scene data.
 
 **Per-monster cost** is `block[+0x08]` bytes: stats, name, TMD, every action entry and animation stream. The texture pool never enters the heap; it is decoded into staging at `DAT_8007B728 + 0x12800` (inside the GPU packet buffer) and uploaded from there (`FUN_80055468`). The loader dedupes by id - only the first occurrence in `DAT_8007BD0C[0..3]` streams and allocates - so instanced trios are nearly free.
 
-**Ledger** (allocator breakpoint trace over a forced battle load from a town scene; every row is `FUN_80017888(0, size)`):
+**Ledger.** Every node on the allocated ring once the fight has settled, in allocation order, from an allocator trace over one battle load: breakpoints on `FUN_8002B468` (entry and both returns), `FUN_8002B584`, `FUN_8002A880` and `FUN_8002B3D4`, each caller resolved two frames out. Measured on formation `[108,3]` (Mad Ogre + Demon Fly, one of the disc's two heaviest distinct-id formations) installed on the Karisto world map `map03` with a one-member party; three traced runs agree byte for byte. "Call site" is the `jal` into the allocator wrapper, then the `jal` that reached that function.
 
-| Allocation | Size | Source |
-|---|---|---|
-| Scene asset buffer | `0x62C00` | - |
-| GPU primitive-packet double buffer | `0x64000` | `FUN_8001E3B8` (`packet_size 0x32000 << 1`) |
-| Enemy stager working buffer | `0x2E390` | `FUN_800513F0` at `0x80051740`, stored `gp+0xA5C = 0x8007BD74`. Fixed size, independent of party count. |
-| Battle context | `0x7A34` | `FUN_80055B6C` |
-| Party-mesh decode temp | `0x19000` | `FUN_80052FA0`, freed in-loop |
-| Sound streaming chunks | `0x1014` each | - |
-| One block per distinct monster | `block[+0x08]` | `FUN_800542C8` |
-| Post-monster tail | `0x1800` + `0x3100` + small nodes (about 19.5 KB) | - |
+| Allocation | Bytes | KiB | Call site |
+|---|---|---|---|
+| Sound resource block (pointer `0x8007B7F4`; the VAB resource table at `0x80091508` points into it) | `0x6800` = 26,624 | 26.0 | `FUN_8001E1B4` at `0x8001E244`, from `FUN_8001DCF8` at `0x8001E020` |
+| Scene asset buffer `_DAT_8007B85C`; holds the party battle meshes | `0x62C00` = 404,480 | 395.0 | `FUN_8001E1B4` at `0x8001E28C` |
+| GPU primitive-packet double buffer (`packet_size 0x32000 << 1`) | `0x64000` = 409,600 | 400.0 | `FUN_8001E3B8` at `0x8001E3D8`, from `FUN_80055B6C` at `0x80055D68` |
+| Ordering tables, two (depth 12: `4096 + 88` words each) | `0x4160` = 16,736 each | 16.3 each | `FUN_8001F690` at `0x8001F6F4` / `0x8001F714`, from `FUN_8001E3B8` at `0x8001E510` |
+| Mode-`0x14` extra buffer (pointer `0x8007B814`) | `0x1000` = 4,096 | 4.0 | `FUN_8001E3B8` at `0x8001E52C` |
+| Battle context | `0x7A34` = 31,284 | 30.6 | `FUN_80055B6C` at `0x80055E98`, from `FUN_800565D8` at `0x800565E0` |
+| Party actor render node, one per member (this roster is Vahn alone) | `0x9C` = 156 | 0.15 | `FUN_80020F88` at `0x80021184`, from `actor_alloc` `FUN_80020DE0` at `0x80020F18`, from `FUN_80024C88` at `0x80024CA0`; spawned by `FUN_800513F0` at `0x800514FC` |
+| Enemy stager working buffer (`gp+0xA5C = 0x8007BD74`), fixed size | `0x2E390` = 189,328 | 184.9 | `FUN_800513F0` at `0x80051740`, from the battle tick `FUN_80046A20` at `0x80046F74` |
+| Monster blocks, one per distinct id: Demon Fly (id 3, loaded first) and Mad Ogre (id 108) | `0xEF7C` = 61,308 and `0x101F0` = 66,032 | 59.9 and 64.5 | `FUN_800542C8` at `0x8005468C`, from `FUN_800513F0` at `0x80051798` |
+| Monster actor render nodes, one per seat | `0x9C` = 156, two | 0.15 each | the same chain to `FUN_80024C88`; spawned by `FUN_800513F0` at `0x80051850` |
+| Battle SFX descriptor bank ([`bse-dat.md`](../formats/bse-dat.md)) | `0x1800` = 6,144 | 6.0 | `FUN_8001FA88` at `0x8001FAB4`, from `FUN_800513F0` at `0x80051A3C` |
+| Battle backdrop TMD (`scene_tmd_stream` chunk-0 size rounded to 32; `0x30F0` in every world-map stream) | `0x3100` = 12,544 | 12.3 | `FUN_8001FE70` at `0x8001FEAC`, from `FUN_800513F0` at `0x80051A50` |
+| Backdrop shell render nodes, one per copy ([`battle-stage-camera.md`](battle-stage-camera.md)) | `0x9C` = 156, two | 0.15 each | `FUN_80020F88` at `0x80021184`, from `actor_alloc` called by `FUN_800513F0` at `0x80051A7C` / `0x80051AA8` |
+| Text-actor list head and two label nodes (the intro enemy-name window) | `0x34` = 52, three | 0.05 each | `FUN_8003541C` at `0x80035468` (head) / `0x80035530`, from the battle overlay's `FUN_801D9D3C` at `0x801DA218` |
 
-About `0x28230` (164.4 KB) remains at the first monster allocation, so the workable distinct-monster budget is about **145 KB**. Probe-bracketed: `[162,10]` (123.3 KB) loads with 18.5 KB free; `[162,79]` (152.2 KB) seats both monsters but dies on the `0x3100` tail allocation; `[162,163]` (165.2 KB) dies on the second monster. The largest distinct-id formation on the disc costs 124.3 KB (`[108,3]` / `[107,2]` in the Drake kingdom bundle). The three Delilas blocks cost `0x15030` / `0x144D0` / `0x147E8` (84.0 / 81.2 / 82.0 KB), so any two overshoot by 20-25 KB - which is why the Delilas Challenge dome course fields them one per round.
+Two allocations come and go inside the load. `FUN_80052FA0` takes a `0x19000` (100.0 KiB) decode temp at `0x80053038` (from `FUN_800513F0` at `0x80051440`) and frees it at `0x80053668`. The LZS decoder `FUN_8001A55C` takes its `0x1014` (4.0 KiB) ring at `0x8001A584` and frees it at `0x8001A680` on every decode: six times in the party load (`0x8005306C`, `0x80053128`) and once per monster block (`0x8005465C`), each freed before the block itself is allocated.
 
-Instruments: `scripts/pcsx-redux/autorun_delilas_battle_load.lua` (formation install, allocator breakpoints, free-ring walk); offline `scripts/asset-investigation/battle-heap-walk.py`.
+**The net.** The twenty nodes hold 1,245,848 bytes of payload and 240 of headers. The free ring is one node of `0x4440` = 17,472 bytes (17.1 KiB) after the last allocation, and the remaining 56 bytes are its header and 44 bytes of heap bookkeeping at the arena's two ends, which sums to the arena exactly. The party's battle meshes take no node of their own; they live in the scene asset buffer, where the installed Vahn mesh pointer `0x80165F48` falls ([above](#battle-scene-loader-fun_800520f0)).
+
+Rows that vary: the backdrop TMD's size comes from the stage's `scene_tmd_stream`, the monster blocks from the formation, the render nodes from the party size and the seated monsters (each costs `0xA8` = 168 bytes with its header), and the label nodes from the intro name window. Every other row is a fixed size.
+
+**The budget.** After the enemy stager allocation the free ring holds `0x2823C` = 164,412 bytes (160.6 KiB; 168 bytes less per further party member), and that is what the first monster block allocates from. The tail after the blocks costs 19,576 bytes (19.1 KiB) with headers here, so two distinct blocks fit in 144,812 bytes (141.4 KiB) of payload. `[108,3]` costs 127,340 bytes (124.4 KiB) and leaves exactly the 17,472 bytes measured.
+
+Probe-bracketed: `[162,10]` (123.3 KiB) loads with about 18.1 KiB free; `[162,79]` (152.2 KiB) seats both monsters but dies on the `0x3100` tail allocation; `[162,163]` (165.2 KiB) dies on the second monster. The largest distinct-id formations on the disc are Mad Ogre + Demon Fly `[108,3]` and Ogre + Death Wings `[107,2]`, both on the Sebucus world map `map02`, at 124.4 KiB. The three Delilas blocks cost `0x15030` / `0x144D0` / `0x147E8` (84.0 / 81.2 / 82.0 KiB), so any two overshoot by 21.8-24.6 KiB - which is why the Delilas Challenge dome course fields them one per round.
+
+Neither species of that Sebucus pair is heavy on its own (Mad Ogre 64.5 KiB, Demon Fly 59.9 KiB, ranks 35 and 48 of 186): the bosses are, at 77-91 KiB for Cort, Zora, Xain, Songi and the Delilas trio, but a boss fights as one species, and a pair pays for both of its members.
+
+Instruments: `scripts/pcsx-redux/autorun_battle_heap_ledger.lua` (the attributed trace above; offline netting `scripts/asset-investigation/battle-heap-ledger.py`), `scripts/pcsx-redux/autorun_delilas_battle_load.lua` (formation install, malloc-fail breakpoint, free-ring walk), offline `scripts/asset-investigation/battle-heap-walk.py`.
 
 <a id="the-species-order-rebuild---why-2-distinct-species-is-an-engine-invariant"></a>
 
@@ -465,7 +489,7 @@ Before any monster streams, `FUN_80055B6C` (loop at `0x80055C80..0x80055D2C`) cl
 
 With **three** distinct species `s3` is overwritten by each later species, so `[a, b, c]` rebuilds as `[c, c, a]`: the middle species vanishes and the last is duplicated. On the other half of the flip the cells load verbatim and all three blocks stream, which turns an over-budget trio into a *probabilistic* load hang. No retail formation has more than two distinct species.
 
-Pinned live (write watchpoints at `0x80055D14` / `0x80055D18` plus cell readback, `autorun_formation_cell_writers.lua`): forced `[133,151,94]`, `[94,133,151]`, `[151,133,94]` and `[32,34,14]` each read back `[c2, c2, c0]`, seat 1 sharing seat 0's block. With the flip forced verbatim, `[133,151,94]` (180.0 KB) ran the heap to 0 bytes free, and `[14,150,93]` (177.2 KB) and `[162,163]` (169.2 KB) each crashed with decoded-block bytes over the exception vector at `0x80000080`. Passing brackets: 146.3 KB with 17 KB free, 137.6 KB with 6 KB free.
+Pinned live (write watchpoints at `0x80055D14` / `0x80055D18` plus cell readback, `autorun_formation_cell_writers.lua`): forced `[133,151,94]`, `[94,133,151]`, `[151,133,94]` and `[32,34,14]` each read back `[c2, c2, c0]`, seat 1 sharing seat 0's block. With the flip forced verbatim, `[133,151,94]` (180.0 KB) ran the heap to 0 bytes free, and `[14,150,93]` (177.2 KB) and `[162,163]` (165.2 KiB) each crashed with decoded-block bytes over the exception vector at `0x80000080`. Passing brackets: 146.3 KB with 17 KB free, 137.6 KB with 6 KB free.
 
 Both limits are why the encounter randomizer's unconditional battle-load safety pass (`legaia_patcher::encounter::SceneEncounters::enforce_species_limits`) caps every random formation at two distinct species and at the disc's own authored heap-cost maximum ([`randomizer.md`](../tooling/randomizer.md)).
 

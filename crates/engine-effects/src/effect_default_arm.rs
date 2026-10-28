@@ -992,6 +992,9 @@ pub fn default_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDr
         world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
         rot: crate::effect_ribbon::node_rotation(s),
         flags_52: s.field_52,
+        // The case falls into the model draw (`0x8001B160`) and the prim
+        // dispatcher with the node's own colour word.
+        single_sided: !ColourWord::of(s).double_sided,
     })
 }
 

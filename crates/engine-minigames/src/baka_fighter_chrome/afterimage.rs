@@ -58,12 +58,13 @@ pub struct AfterimageFrame {
 /// Wired: [`crate::baka_fighter::BakaFight`] spawns one [`AfterimageActor`]
 /// on every special commit, exactly where the combat tick `FUN_801D3F44`
 /// spawns the `0x801D7684` prototype (`0x801D4538..0x801D4634`), steps it
-/// every tick, and exposes the ghosts through
-/// [`crate::baka_fighter::BakaFight::afterimages`]; the minigames page draws
-/// them as darkened copies of the attacker's mesh posed at each ghost's frame.
-/// The native window and the play page draw the duel as labels with no fighter
-/// meshes at all, so neither has a model to ghost - see
-/// `docs/tooling/host-drift.md`.
+/// every frame of the duel - the decided round's hold included, since the
+/// pool walk `FUN_8002519C` runs it whatever the round SM is doing - and
+/// exposes the ghosts through [`crate::baka_fighter::BakaFight::afterimages`].
+/// Every host draws them through the duel surface
+/// (`engine-minigame-scenes::baka_duel_scene`): the attacker's mesh posed at
+/// each ghost's frame under [`AFTERIMAGE_COLOR_WORD`], additive and
+/// depth-cued toward black.
 ///
 /// This was read as a "mirrored two-pass sprite draw" whose second copy was
 /// yawed `0x400` further. The field it steps is `+0x78`, which is not a yaw:

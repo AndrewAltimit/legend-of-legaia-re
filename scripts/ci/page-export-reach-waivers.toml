@@ -83,7 +83,7 @@ names = [
 [[waiver]]
 kind = "probe"
 reason = "Getters of session-only page switches: the boxes write them and never read them back, as no native launch switch is remembered for these (host-drift.md#remembered-between-runs)."
-names = ["arts_saved_list", "world_map_markers", "battle_fx_outline", "debug_compass_azimuth"]
+names = ["world_map_markers", "battle_fx_outline", "debug_compass_azimuth"]
 
 [[waiver]]
 kind = "tick-internal"

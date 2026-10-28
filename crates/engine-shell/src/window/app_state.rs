@@ -612,6 +612,11 @@ pub(super) struct PlayWindowApp {
     /// `take_battle_intro_prims` on the first transition frame and dropped when
     /// the phase ends. See `legaia_engine_render::battle_intro`.
     pub(super) battle_intro: Option<legaia_render_kernels::battle_intro::BattleIntro>,
+    /// The field camera the last drawn frame went through, or `None` under a
+    /// vantage with no retail camera. The move-VM framebuffer grabs project
+    /// through it (`World::queue_vram_grabs`): the frame a grab copies from
+    /// is the last one drawn.
+    pub(super) last_frame_field_view: Option<legaia_engine_camera::psx_camera::FieldCameraView>,
     /// GPU upload of the intro's captured VRAM page, kept for the whole
     /// transition so every frame's strips / tiles sample the captured field
     /// frame (and the shatter's shade page), not just the capture frame's.

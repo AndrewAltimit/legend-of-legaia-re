@@ -162,9 +162,8 @@ pub struct AudioState {
     /// (`0x801E0260`); the sub-op `0xA` commit and the scene loader
     /// `FUN_8003AEB0` end it. While it is up the swap poller `FUN_800243F0`
     /// leaves the **outgoing** track in the BGM slot, so a sub-op `5` timed
-    /// release that expires inside the window releases that outgoing track.
-    /// The port starts the incoming track at sub-op `9` already, so such an
-    /// expiry has nothing of the port's to release ([`crate::world::World::tick`]).
+    /// release that expires inside the window releases that outgoing track,
+    /// and the BGM router holds the incoming one until the commit.
     pub(crate) start_pending_commit: bool,
     /// Bit 1 of the sound flags `_DAT_8007B750`: the script has paused the
     /// BGM slot. Op-`0x35` sub-ops `2` / `3` raise it (`0x801E0150`,
@@ -231,11 +230,6 @@ pub struct AudioState {
     /// render-mode-5 arm, [`legaia_engine_vm::sfx_emitter`]), drained by
     /// [`crate::world::World::take_sfx_emitter_ops`].
     pub(crate) sfx_emitter_ops: Vec<legaia_engine_vm::sfx_emitter::EmitterOp>,
-    /// The camera focus as retail stores it (`_DAT_80089118` / `_DAT_80089120`,
-    /// X and Z negated) - the point the emitters measure their box against.
-    /// The session writes it each frame
-    /// ([`crate::world::World::set_sound_listener_focus`]).
-    pub(crate) listener_focus: (i32, i32),
     /// The two audio-level words the live-state window (and so every save)
     /// carries: the configured level `_DAT_8008457C` - the reference the MAN
     /// loader resets the live level `_DAT_8007B910` to on every scene load
@@ -252,6 +246,20 @@ pub struct AudioState {
 }
 
 impl AudioState {
+    /// Sound-flag bit 0 ([`Self::start_pending_commit`]'s field): a sub-op
+    /// `9` select is waiting for its commit. The BGM router holds the
+    /// selected track while it is up.
+    pub fn start_pending_commit(&self) -> bool {
+        self.start_pending_commit
+    }
+
+    /// Raise or end the window by hand - the field-VM arms and the MAN loader
+    /// are its writers; this is for a driver that routes BGM events without
+    /// running the op.
+    pub fn set_start_pending_commit(&mut self, on: bool) {
+        self.start_pending_commit = on;
+    }
+
     /// Whether the field script holds the BGM slot paused (sound-flags bit
     /// 1; see the field's doc).
     pub fn bgm_script_paused(&self) -> bool {
@@ -305,7 +313,6 @@ impl AudioState {
             sfx_voice_stops: Vec::new(),
             sfx_voice_keys: Vec::new(),
             sfx_emitter_ops: Vec::new(),
-            listener_focus: (0, 0),
         }
     }
 }

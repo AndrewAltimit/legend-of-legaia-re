@@ -254,6 +254,11 @@ impl PlayWindowApp {
         // were empty - a test that left out the `4C DB` blend fades, so a
         // lone blend fade never stepped, and that banked the idle ticks a
         // later effect then consumed at once.
+        // The move-VM framebuffer grabs (render mode 7) project through the
+        // camera of the frame they copy from - the last one drawn, which is
+        // the frame the grab handshake lands.
+        let grab_view = self.last_frame_field_view;
+        let _ = self.session.host.world.queue_vram_grabs(grab_view.as_ref());
         let Some(base) = self.cpu_vram_base.as_mut() else {
             return;
         };

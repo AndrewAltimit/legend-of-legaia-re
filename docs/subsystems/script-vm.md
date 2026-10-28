@@ -360,6 +360,12 @@ plays the engagement as the touch-resumed interaction timeline
 `0x21` leaves the placement context's PC past it, as the shared retail context
 does.
 
+A walk-on record engages the same way. `cave01` `P2[9]` (gated on `0x15A`
+clear) walks the player to `(81, 64)`, turns them to Terra and runs
+`B1 03 08`; Terra's record then plays its stage-`0x159` lesson from its
+interaction cursor, with no button press. The engine queues that engagement
+from the spawned-record slice as it does from the system script.
+
 The system script reaches placed objects the same way. `rugi`'s `P1[0]`, once
 the wall is opened (`0x57B`), freezes the two gate leaves on the first frame
 of their clips with `CC 01 35` / `CC 02 35` (`+0x62 = (+0x62 & 0xFF7F) |
@@ -483,6 +489,13 @@ for the SM's passes. The engine installs the three opening legs' cutscene
 records at scene entry, so `World::pre_run_entry_script` runs those legs'
 passes in the load frame up to the one that spawns the record (`opdeene`
 ends at PC `0x99`, as the `s1_newgame_field` capture does).
+Every other scene's install pass runs on the engine's first tick, not
+inside the load, so a cold entry is one pass behind retail until then:
+`balden`'s install pass seats `P1[62]` at tile `(10, 105)` (`A3 55 0A 69`,
+`+0x1A8`) and the engine shows it parked until the first frame. Running the
+slice at load (after the spawn pre-run, as `0x8003BAD8` does) also lands the
+pass's region-selector clears (`0x19B..0x1AA`, `0x527..0x52E`) in the entry
+state, which the field NPC-state oracle's entry model does not yet expect.
 
 Port: `World::step_field_frame_slice` (the system-script gate,
 `FieldVmState::system_pass_open`), `World::field_scripts_held_for_battle`,
@@ -760,13 +773,13 @@ poke), and no `FUN_801E4470` actor sat in the lists.
 | 6 | Flag set. |
 | 7 | Target-sound-set (`_DAT_8007B880`). |
 | 8 | Re-attach + volume re-apply (`func_0x80019898`): re-attaches the BGM slot's sound source (`FUN_80026478(0x8007057C)`) then re-applies the field volume global `DAT_8007B6EC` - level `(raw << 15) >> 16` - to both channels of the slot's voice via `FUN_80064890`. Port: `engine-scene-host::scene_host::bgm_reattach_volume`. |
-| 9 | **Start behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select. [Detail](#sub-op-9-is-a-start-not-a-queue). |
+| 9 | **Select behind a load barrier** - stalls the script until the previous BGM load has settled, then makes sub-op 1's own track select and raises sound-flag bit 0, which holds the selected track off until the `0xA` commit. [Detail](#sub-op-9-selects-its-commit-starts-the-track). |
 | 10 | **Swap-commit** - waits on flag bit 3 (the resolver's load-settle bit), releases the paused BGM slot (`FUN_800266E0` + `FUN_80026520`), sets ack bit 4, clears pause bit 1. [Detail](#sub-op-0xa-is-the-swap-commit). Port: `BgmDirector::unhalt_pause` via `SceneHost::route_bgm_events`. |
 | 11 | `_DAT_8007BA9C = -1` - arms sub-op 9's barrier (no resolved index equals `-1`). |
 
 PC += 4.
 
-##### Sub-op 9 is a start, not a queue
+##### Sub-op 9 selects, its commit starts the track
 
 Sub-op 9 is the op a **cutscene** changes music with part-way through a
 scene - the scene's *entry* track is sub-op 1. Its arm at `0x801E0224` is two
@@ -786,21 +799,32 @@ halves:
 mismatch arm re-executes this instruction next frame rather than advancing.
 That is a **wait barrier** on the asynchronous asset load, not a hand-off to
 some later trigger. Once it clears, `sw v0,-0x4538(a1)` is byte-for-byte the
-store sub-op 1 makes: the track is selected there and then. The only other
+store sub-op 1 makes: the track is selected there and then. The other
 difference from sub-op 1 is the flag word - sub-op 1 clears bit 1 (the pause
-bit), sub-op 9 sets bit 0.
+bit), sub-op 9 sets bit 0 - and bit 0 decides when the selected track is
+heard. The swap poller `FUN_800243F0` leaves the field-BGM source alone while
+it is up (`0x80024630..0x80024640`) and, once the load has settled, returns
+without installing until the commit's release-ack bit 4
+(`0x800246D4..0x800246FC`). So the outgoing track keeps the slot from the
+select to the [commit](#sub-op-0xa-is-the-swap-commit), and the incoming one
+sounds from the commit. 204 of the disc's 205 sub-op 9 starts are committed
+later in their own record, 91 of them after a sub-op 5 timed release that
+fades the outgoing score out (`engine-scene-host/tests/bgm_swap_commit_disc.rs`).
 
 Sub-op 11 is the barrier's arming half: `_DAT_8007BA9C = -1` can never equal a
 resolved index, so a following sub-op 9 blocks until a load completes.
 
 The engine port resolves BGM bytes synchronously (`SceneHost::music_bank_entry_bytes`
-is a plain PROT read), so nothing is ever in flight and the barrier is
-satisfied on arrival - `route_bgm_events` therefore routes sub-ops 1 and 9 to
-the same director start. Reading sub-op 9 as "queue for the next scene entry"
-instead is invisible to a corpus sweep of scene prescripts (which only ever
-emit sub-op 1) and audible only inside a cutscene, where it leaves the score
-silent where it belongs and starts it over whichever scene the player enters
-next.
+is a plain PROT read), so the barrier is satisfied on arrival.
+`route_bgm_events` resolves the selected track at sub-op 9 and holds it; the
+commit releases the occupant and starts it, and a select whose window a scene
+load ends (the MAN loader clears bit 0) is attached then. Reading sub-op 9 as
+"queue for the next scene entry" is wrong the other way: it leaves a committed
+cutscene score silent in its own scene and starts it over whichever scene the
+player enters next. Starting it at the select plays it over the beat the
+script keeps for the outgoing one: two retail states sit inside such a window
+(`chapter2_garmel_pre_songi`, `chapter2_garmel_pre_zeto`, sound flags `0x9`,
+the slot holding `2043` stopped and `2033` / `2052` pending).
 
 ##### Sub-op 0xA is the swap-commit
 

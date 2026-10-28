@@ -241,22 +241,18 @@ impl World {
                 // `FUN_800266E0` is BGM sub-op 2's primitive, so the expiry
                 // reaches both hosts' BGM routing as that pause.
                 //
-                // Except inside a sub-op 9 -> 0xA swap: there the slot still
-                // holds the *outgoing* track (the poller `FUN_800243F0`
-                // stalls its install on the commit), and that is what the
-                // release stops - a cutscene's `9 · 5 · 0xA` fades the old
-                // score out under the new one's load. The port started the
-                // incoming track at sub-op 9, so pausing here would silence
-                // the new score for good (the commit then releases the paused
-                // source).
-                if !self.audio.start_pending_commit {
-                    self.pending_field_events.push(
-                        legaia_engine_field::field_events::FieldEvent::Bgm {
-                            text_id: 0,
-                            sub_op: 2,
-                        },
-                    );
-                }
+                // Inside a sub-op 9 -> 0xA swap the slot still holds the
+                // *outgoing* track (the poller `FUN_800243F0` stalls its
+                // install on the commit, and the router holds the incoming
+                // one the same way), so that is what the release stops - a
+                // cutscene's `9 · 5 · 0xA` fades the old score out while the
+                // new one waits for the commit.
+                self.pending_field_events.push(
+                    legaia_engine_field::field_events::FieldEvent::Bgm {
+                        text_id: 0,
+                        sub_op: 2,
+                    },
+                );
             }
         }
         // Step the active full-screen fade. A template with a hold countdown
@@ -285,6 +281,7 @@ impl World {
             self.presentation
                 .module_fades
                 .retain_mut(|f| f.step_vsyncs(pass_vsyncs) || f.holds_at_end());
+            self.step_battle_entry_fade(pass_vsyncs);
             self.step_cast_hook_fades(pass_vsyncs);
         }
         // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp

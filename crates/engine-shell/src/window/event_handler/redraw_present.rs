@@ -204,6 +204,7 @@ impl PlayWindowApp {
         let gated = self.screenshot.as_ref().is_some_and(|sc| {
             sc.path.is_some()
                 && (sc.phase_gate.is_some()
+                    || sc.arrival_gate.is_some()
                     || sc.script_gate.is_some()
                     || sc.battle_drive.is_some())
         });
@@ -458,6 +459,41 @@ impl PlayWindowApp {
             w.casting.module_cam.yaw_base,
             hp.join(","),
         );
+        // `LEGAIA_DIAG_CAST_PARTS=1`: every live part of the cast's scene
+        // graph each tick (`parts.csv`) - its record, draw words and
+        // channels, the engine half of a part-pool side-by-side.
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && let Some(sc) = w.casting.active_summon.as_ref()
+            && let Ok(f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("parts.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            for (i, part) in sc.parts.iter().enumerate() {
+                let st = &part.state;
+                let h = |o: usize| st.actor_u16(o) as i16;
+                let _ = writeln!(
+                    f,
+                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{}",
+                    part.model_sel,
+                    u8::from(part.finished),
+                    st.field_74,
+                    st.field_78,
+                    st.actor_u16(0x56),
+                    st.actor_u16(0x9E),
+                    u32::from(st.actor_u16(0xA0)) | u32::from(st.actor_u16(0xA2)) << 16,
+                    u32::from(st.actor_u16(0xA4)) | u32::from(st.actor_u16(0xA6)) << 16,
+                    h(0xB4),
+                    h(0xB6),
+                    h(0xB8),
+                    h(0xBA),
+                    st.world_x,
+                    st.world_y,
+                    st.world_z,
+                );
+            }
+        }
         // The live camera pose each tick (`cam.csv`), the series the retail
         // probe writes beside it: a module shot's tween reads off it.
         {

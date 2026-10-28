@@ -349,3 +349,67 @@ fn a_party_target_never_leaves_the_ordinary_apply_arm() {
         legaia_engine_battle_vm::battle_action::APPLY_MODE_NORMAL
     );
 }
+
+/// An art record carrying only what the queue builder's walk reads: the
+/// combo and the `+0x0A..+0x0D` chain bytes.
+fn walk_record(action: u8, commands: &[legaia_art::Command]) -> legaia_art::ArtRecord {
+    legaia_art::ArtRecord {
+        action: legaia_art::ActionConstant::from_byte(action).expect("art constant"),
+        commands: commands.to_vec(),
+        anim_index: 0,
+        anim_extra: vec![1, 0, 0, 0],
+        name: None,
+        power: vec![],
+        dmg_timing: vec![],
+        effect_cues: Default::default(),
+        hit_cues: vec![],
+        identifier: 0,
+        anim_speed: 0,
+        enemy_effect: legaia_art::EnemyEffect::None,
+        repeat_frames: Default::default(),
+        background: 0,
+        runtime_address: None,
+    }
+}
+
+/// A Hyper Art entered with the Ra-Seru marker up collapses to `0x1A` and its
+/// constant (`FUN_801EED1C`'s special arm, `0x801EF5BC..0x801EF6CC`); with the
+/// marker clear it stays plain arrows. Vahn's bank head: the Miracle row,
+/// then Burning Flare, Fire Blow (`R R D L`), Tornado Flame, then a normal
+/// art.
+#[test]
+fn a_hyper_art_collapses_only_with_the_ra_seru() {
+    use legaia_art::Command::{Down, Left, Right, Up};
+    let install = |w: &mut World| {
+        let ch = legaia_art::Character::Vahn;
+        let rows: [(u8, &[legaia_art::Command]); 5] = [
+            (0x1B, &[Right, Down, Left, Up, Left, Up, Right, Down, Left]),
+            (0x1C, &[Right, Down, Left, Down, Left]),
+            (0x1D, &[Right, Right, Down, Left]),
+            (0x1E, &[Right, Right, Left]),
+            (0x1F, &[Down, Up, Up, Up]),
+        ];
+        for (b, cmds) in rows {
+            let rec = walk_record(b, cmds);
+            w.set_art_record(ch, rec.action, rec);
+        }
+    };
+    let fire_blow = [Right, Right, Down, Left];
+    let mut equip = [0u8; 8];
+    equip[3] = 0x40;
+    let mut w = arts_world(equip);
+    install(&mut w);
+    let (queue, actions, marks) = w.build_arts_action_queue(0, &fire_blow);
+    assert_eq!(&queue[..3], &[0x1A, 0x1D, 0x00]);
+    assert_eq!(
+        actions.iter().map(|a| a.as_byte()).collect::<Vec<_>>(),
+        vec![0x1D]
+    );
+    assert_eq!(marks[0], 0, "the special arm writes no side-array mark");
+
+    let mut w = arts_world([0u8; 8]);
+    install(&mut w);
+    let (queue, actions, _) = w.build_arts_action_queue(0, &fire_blow);
+    assert_eq!(&queue[..5], &[0x0D, 0x0D, 0x0E, 0x0C, 0x00]);
+    assert!(actions.is_empty());
+}

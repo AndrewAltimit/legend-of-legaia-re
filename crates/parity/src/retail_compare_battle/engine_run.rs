@@ -310,6 +310,12 @@ pub fn run_engine_battle(
         .host
         .world
         .seed_battle_stage_variant(battle.stage_variant);
+    // ... in the block the fight's map id names, which a fight start can
+    // point away from the scene the state stands in (a Muscle Dome leg).
+    session
+        .host
+        .world
+        .seed_battle_map_define(Some(battle.map_define));
     session
         .host
         .world
@@ -438,6 +444,23 @@ pub fn run_engine_battle(
     let mut hp_seed = hp_seed;
     hp_seed.extend(battle.empty_seat_seeds());
     apply_bar_seeds(&mut session.host.world, &hp_seed);
+    if let Some(seat) = battle.reseat_engine_seat(battle.party_count) {
+        if std::env::var_os("LEGAIA_RC_SEED_TRACE").is_some() {
+            eprintln!(
+                "[seed] reseat seat {seat}: retail yaw counter {} accum {:?} clip {:#04X}, approach {:?}",
+                battle.walk_yaw_base,
+                battle.span_gate,
+                battle.caster_clip,
+                battle.capture_approach_yaw()
+            );
+        }
+        legaia_engine_capture::bar_seeds::arm_capture_reseat(
+            &mut session.host.world,
+            seat,
+            &hp_seed,
+            battle.capture_approach_yaw(),
+        );
+    }
     if battle.mystic_shield {
         session.host.world.raise_mystic_shield();
     }
@@ -773,10 +796,16 @@ pub fn run_engine_battle(
     // does the same at its frame (`LEGAIA_BATTLE_GROUND_SNAP`).
     if matches!(driven, Some(Some(_))) {
         let world = &mut session.host.world;
+        if let Some(w) = battle.capture_band_backdrop_cue() {
+            world.seat_battle_backdrop_cue(w);
+        }
         let target = legaia_engine_capture::ground_snap::snap_battle_ground(
             world,
             &battle.engine_ground_snaps(),
-        );
+        )
+        .map(|t| {
+            legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
+        });
         let mask = match (world.battle.camera.as_mut(), target) {
             (Some(cam), Some(target)) => {
                 cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
@@ -785,6 +814,16 @@ pub fn run_engine_battle(
         };
         if let Some(t) = cam_trace.as_mut() {
             t.push_str(&format!(" | aligned {mask:#010b}"));
+            if let Some(target) = target {
+                t.push_str(&format!(
+                    " against the snapped target {}/{}",
+                    target.pitch,
+                    target.yaw.rem_euclid(4096.0)
+                ));
+            }
+            if let Some(cam) = world.battle.camera.as_ref() {
+                t.push_str(&format!(" (yaw counter {})", cam.action_yaw_base()));
+            }
         }
     }
     let world = &session.host.world;
@@ -982,6 +1021,13 @@ pub(super) fn combat_snapshot(
 /// retail pool holds them (world position `>> 8`) - the engine half of a
 /// side-by-side against the capture's `_DAT_8007BD30` pool.
 fn trace_effect_pool(world: &legaia_engine_core::world::World) {
+    eprintln!(
+        "[fx] stage backdrop cue {:?} ambient {:?} latch {} 278 {}",
+        world.battle_backdrop_cue(),
+        world.battle_ambient_base(),
+        world.battle_ctx.gauge_rearm_latch,
+        world.battle_ctx.summon_staging_a,
+    );
     for (i, a) in world.actors.iter().enumerate() {
         if !a.active {
             continue;

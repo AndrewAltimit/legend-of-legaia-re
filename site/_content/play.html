@@ -94,6 +94,12 @@
 }
 
 .play-canvas-wrap { position: relative; }
+/* `?embed=1` (the minigames page's arena): the picture alone, filling the
+ * frame it is embedded in. */
+body.play-embedded { margin: 0; background: #000; overflow: hidden; }
+body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); margin: 0 auto; }
+body.play-embedded .play-canvas-wrap { max-width: none; }
+body.play-embedded .play-canvas { border: 0; }
 .play-canvas {
   width: 100%; aspect-ratio: 4 / 3; display: block;
   background: #05070c; border: 1px solid var(--border); outline: none;
@@ -681,7 +687,7 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-battle-frame-cadence"> Retail battle cadence
             </label>
             <label class="play-dev-menu"
-                   title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native LEGAIA_ARTS_SAVED_LIST=1). Not retail; Retail-faithful holds it off.">
+                   title="The Arts command opens the port's saved-chain list instead of retail's per-press directional input (the native --arts-saved-list, the launcher's Saved-chain Arts list row). Not retail; Retail-faithful holds it off. Remembered for your next visit.">
               <input type="checkbox" id="play-arts-saved-list"> Saved-chain Arts list
             </label>
             <label title="Walk straight into a minigame from this scene, through the same door warp a casino, arena or fishing-spot door arms (the native L / O / B / M / K keys). Start leaves it.">
@@ -939,8 +945,9 @@ div.play-vis-head { cursor: default; }
       (<a href="subsystems/inn.html">inn</a>).</li>
     <li><strong>Minigames.</strong> The slot machine, Baka Fighter, the Muscle Dome and the dance
       floor open from their own doors and cabinets, run by the engine and drawn from your disc;
-      the Muscle Dome fights under the battle screen's chips and plates. Start leaves any
-      minigame from anywhere.</li>
+      each Muscle Dome round is an ordinary battle against the ladder's monster on the arena's
+      own backdrop, with the theme starting when the fight does. Start leaves any minigame
+      (a dome round is left the battle's way, by Run).</li>
   </ul>
   <h3>Not here yet</h3>
   <ul>
@@ -1009,6 +1016,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/play-view-frame.js"></script>
 <script src="js/play-view-battle.js"></script>
 <script src="js/play-fmv.js"></script>
+<script src="js/canvas-abr.js"></script>
 <script src="js/play-minigames.js"></script>
 <script>
 (function () {
@@ -1205,6 +1213,8 @@ div.play-vis-head { cursor: default; }
        * portrait faces + card icons now that WASM + disc bytes are available. */
       renderSavesStrip();
       installXaBanks();
+      /* ?minigame=<sub_id>: open that minigame once the disc is up. */
+      if (minigamePending) startPendingMinigame();
       /* ?resume=<id>: auto-resume a stored session once the disc is up. */
       if (resumePending) {
         const entry = LegaiaSaves.listSessions().find(s => s.id === resumePending);
@@ -1853,6 +1863,62 @@ div.play-vis-head { cursor: default; }
   /* Session id from a `?resume=<id>` link (the strips on pages without a
    * runtime link here). Consumed after the first successful disc load. */
   let resumePending = new URLSearchParams(location.search).get('resume');
+
+  /* `?minigame=<sub_id>[&course=N][&level=L][&embed=1]`: open a minigame
+   * straight off the disc load, through the same door warp the picker
+   * arms - from `koin1`, the casino floor whose doors open them. The
+   * minigames page embeds this for the Muscle Dome, so a dome round there
+   * is the ordinary battle this runtime fights (`World::start_muscle_battle_leg`)
+   * rather than a presentation of its own. `course` makes the koin1 course
+   * menu's pick (`play_mg_choose_muscle_course`); `level` sets the party's
+   * level; `lead` seats another record than retail's Vahn
+   * (`play_mg_set_muscle_fighter`). `embed=1` shows the game picture alone. */
+  const embedQuery = new URLSearchParams(location.search);
+  let minigamePending = embedQuery.has('minigame') ? {
+    sub: parseInt(embedQuery.get('minigame'), 10),
+    course: embedQuery.has('course') ? parseInt(embedQuery.get('course'), 10) : null,
+    level: embedQuery.has('level') ? parseInt(embedQuery.get('level'), 10) : null,
+    lead: embedQuery.has('lead') ? parseInt(embedQuery.get('lead'), 10) : null,
+  } : null;
+  if (embedQuery.get('embed') === '1') {
+    /* Only the picture: lift the screen out of the page chrome (the shared
+     * layout injects its rail and header around the content). */
+    const lift = () => {
+      const screen = document.getElementById('play-screen');
+      if (!screen) return;
+      document.body.classList.add('play-embedded');
+      if (screen.parentElement !== document.body) document.body.prepend(screen);
+      for (const el of Array.from(document.body.children)) {
+        if (el !== screen && el.tagName !== 'SCRIPT') el.style.display = 'none';
+      }
+    };
+    lift();
+    window.addEventListener('load', lift);
+  }
+  function startPendingMinigame() {
+    const req = minigamePending;
+    minigamePending = null;
+    if (!req || isNaN(req.sub) || !runtime) return;
+    enter('koin1');
+    const rt = runtime;
+    try {
+      /* The party level goes through the one cheat list both hosts share
+       * (`cheat_apply`, the native `--cheat-level`). */
+      if (req.level && typeof rt.cheat_apply === 'function') {
+        rt.cheat_apply('level', Math.max(1, Math.min(99, req.level)), '');
+      }
+      /* `lead`: the roster record the legs seat (retail's is always Vahn). */
+      if (req.lead != null && typeof rt.play_mg_set_muscle_fighter === 'function'
+          && !rt.play_mg_set_muscle_fighter(req.lead)) {
+        console.warn('minigame launch: record ' + req.lead + ' is not in the party');
+      }
+      if (req.course != null && typeof rt.play_mg_choose_muscle_course === 'function') {
+        rt.play_mg_choose_muscle_course(req.course);
+      }
+      rt.play_mg_debug_warp(req.sub);
+    } catch (e) { console.warn('minigame launch', e); }
+    canvas.focus();
+  }
 
   function saveMsg(msg, isError) {
     saveStatusEl.textContent = msg;
@@ -2707,6 +2773,7 @@ div.play-vis-head { cursor: default; }
     if (r === undefined) return;
     retailModeEl.checked = !!r;
     smartEl.checked = !!rtCall('smart_monsters');
+    savedListEl.checked = !!rtCall('arts_saved_list');
     const pulse = rtCall('entry_pulse');
     if (pulse !== undefined) entryPulseEl.checked = !!pulse;
     const psx = rtCall('psx_render');

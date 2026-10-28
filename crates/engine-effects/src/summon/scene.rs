@@ -432,6 +432,9 @@ impl SummonScene {
                     world_pos: [s.world_x as f32, s.world_y as f32, s.world_z as f32],
                     rot: crate::effect_ribbon::node_rotation(s),
                     flags_52: s.field_52,
+                    // The battle overlay's ribbon emitter is not traced to
+                    // the prim dispatcher's winding test: both sides.
+                    single_sided: false,
                 })
             })
             .collect()

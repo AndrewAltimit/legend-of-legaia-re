@@ -932,8 +932,9 @@ The four edits:
   overlays, use the result without a test.
 - **Where the stand-in lives.** `0x801FA9D8..0x801FE000`, above the largest
   slot-B image, reads all-zero in every library state; no instruction in any
-  image forms an address there and the deepest stack use stops at `0x801FE420`
-  ([memory map](../reference/memory-map.md#free-ram-and-stack-0x801fa9d8-0x801fffff)).
+  image forms an address there, and the stack never reaches it: the deepest
+  use is `0x801FE420`, once at boot, and `0x801FF138` (the FMV decoder) after
+  ([memory map](../reference/memory-map.md#how-deep-it-goes)).
   The Super Arts Pack's block at `0x801FD000` is the band's only other tenant.
   Nothing is written to the disc for it: RAM there is zero until a failure.
 - **The success path is retail's.** The same instructions run in the same
@@ -1221,8 +1222,10 @@ referencing it.
 #### Getting the bytes there
 
 - **The destination is free RAM.** `0x801FD000..0x801FE000` is all-zero in every
-  state of this project's save library, battles included, with the deepest
-  observed stack use at `0x801FE420` - 1388 bytes above the block's end. No
+  state of this project's save library, battles included. After boot the
+  stack's measured high-water mark is `0x801FF138` (FMV decoding), 4740 bytes
+  above the block's end; it reaches `0x801FE420` (1388 bytes above) only during
+  the boot-time `CDNAME.TXT` load, before any battle has streamed the block ([memory map](../reference/memory-map.md#how-deep-it-goes)). No
   overlay covers it: slot A ends at `0x801F7018` (PROT 0898's `0x28800` bytes
   from `0x801CE818`).
 - **The source is the [`DMY.DAT`](../formats/dmy.md) annex**, where the block

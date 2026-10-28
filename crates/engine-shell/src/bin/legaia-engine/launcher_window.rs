@@ -30,8 +30,10 @@
 //!
 //! The screen is keyboard-first: arrows move, Enter activates, Left / Right
 //! change a value, Tab jumps between the columns, Page Up / Page Down / Home
-//! / End move through the option list, Esc quits; the mouse hovers, clicks
-//! (right-click steps a value back) and its wheel scrolls the option list.
+//! / End move through the option list, Delete puts the focused option back
+//! on its default (a changed row carries a gold dot), Esc quits; the mouse
+//! hovers, clicks (right-click steps a value back, middle-click restores the
+//! default) and its wheel scrolls the option list.
 //!
 //! The game runs with its working directory set to [`launcher::data_dir`],
 //! so key bindings, options and saves always land in the same per-user
@@ -228,6 +230,7 @@ const BUTTON: [f32; 4] = P.raised.to_f32();
 const PRIMARY: [f32; 4] = P.accent_fill.to_f32();
 const PRIMARY_FOCUS: [f32; 4] = P.accent_fill_focus.to_f32();
 const RULE: [f32; 4] = P.rule.to_f32();
+const KEY: [f32; 4] = legaia_app_theme::chrome::KEY.to_f32();
 
 /// Virtual stage the screen is laid out on; scaled up by an integer factor
 /// (2x in the 960x720 window, 4x on a 2x HiDPI display) and centred.
@@ -645,20 +648,37 @@ impl LauncherApp {
                     return;
                 }
                 row.adjust(&mut self.options, &mut self.settings, dir);
-                log::info!(
-                    "launcher: {} -> {}",
-                    row.label(),
-                    row.value(&self.options, &self.settings)
-                );
-                self.status = None;
-                if row.is_game_option() {
-                    self.save_options();
-                } else {
-                    self.save_settings();
-                }
+                self.option_changed(row);
             }
         }
         self.win.request_redraw();
+    }
+
+    /// `Delete` (or `Backspace` with nothing typed) on an option row: put
+    /// that row back on its first-start value.
+    fn reset_focused(&mut self) {
+        if let Item::Opt(row) = self.focus
+            && self.panel == Panel::Options
+            && !row.is_default(&self.options, &self.settings)
+        {
+            row.reset(&mut self.options, &mut self.settings);
+            self.option_changed(row);
+        }
+    }
+
+    /// Log and store a row the player just changed.
+    fn option_changed(&mut self, row: OptionRow) {
+        log::info!(
+            "launcher: {} -> {}",
+            row.label(),
+            row.value(&self.options, &self.settings)
+        );
+        self.status = None;
+        if row.is_game_option() {
+            self.save_options();
+        } else {
+            self.save_settings();
+        }
     }
 
     /// Every focusable control in Up / Down order.
@@ -795,10 +815,7 @@ impl LauncherApp {
         // Left column, below the buttons: help for the focused control.
         let help = help_rect();
         c.rect(help, CARD);
-        let lines: Vec<Message> = match &self.status {
-            Some(s) => s.clone(),
-            None => vec![(self.help_text(), DIM)],
-        };
+        let lines = self.help_lines();
         let hl = help_layout(c, &lines);
         let mut y = help.y + 6;
         'outer: for (wrapped, ink) in &hl.lines {
@@ -963,7 +980,14 @@ impl LauncherApp {
                 value
             };
             let w = c.width(&shown);
-            c.text(panel.x + panel.w - 16 - w, y, &shown, vink);
+            let vx = panel.x + panel.w - 16 - w;
+            c.text(vx, y, &shown, vink);
+            // A row moved off its first-start value carries a gold dot
+            // before its value, so a player can see at a glance what they
+            // changed (`Delete` puts it back).
+            if !muted && !row.is_default(&self.options, &self.settings) {
+                c.rect(Rect::new(vx - 8, y + 4, 3, 3), GOLD);
+            }
             y += ROW_PITCH;
         }
         // The scroll bar: the whole list is the track, the view the thumb.
@@ -1027,7 +1051,10 @@ impl LauncherApp {
         for (b, k) in rows {
             c.text(panel.x + 10, y, &b, INK);
             let w = c.width(&k);
-            c.text(panel.x + panel.w - 10 - w, y, &k, GOLD);
+            // Key names take the key ink the play window's F12 panel and
+            // Studio's shortcut list use (`chrome::KEY`); gold is for
+            // headings and values here.
+            c.text(panel.x + panel.w - 10 - w, y, &k, KEY);
             y += ROW_PITCH;
         }
         for (i, l) in controls_note_lines(c, panel).into_iter().enumerate() {
@@ -1069,6 +1096,23 @@ impl LauncherApp {
                 s
             }
         }
+    }
+
+    /// The help box's lines: a status when one outranks the focus, else the
+    /// focused control's help, and under a changed option row the value it
+    /// started on and the key that restores it.
+    fn help_lines(&self) -> Vec<Message> {
+        if let Some(s) = &self.status {
+            return s.clone();
+        }
+        let mut lines = vec![(self.help_text(), DIM)];
+        if let Item::Opt(row) = self.focus
+            && self.panel == Panel::Options
+            && !row.is_default(&self.options, &self.settings)
+        {
+            lines.push((default_note(row), GOLD));
+        }
+        lines
     }
 
     fn redraw(&mut self, evl: &ActiveEventLoop) {
@@ -1191,6 +1235,15 @@ impl ApplicationHandler for LauncherApp {
                 let dir = match button {
                     MouseButton::Left => 1,
                     MouseButton::Right => -1,
+                    // A middle click on an option is its `Delete`.
+                    MouseButton::Middle => {
+                        if let Some(item @ Item::Opt(_)) = self.hit() {
+                            self.focus = item;
+                            self.reset_focused();
+                            self.win.request_redraw();
+                        }
+                        return;
+                    }
                     _ => return,
                 };
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
@@ -1247,6 +1300,7 @@ impl ApplicationHandler for LauncherApp {
                     Key::Named(NamedKey::Backspace) if typing => {
                         self.typed.pop();
                     }
+                    Key::Named(NamedKey::Delete | NamedKey::Backspace) => self.reset_focused(),
                     Key::Named(NamedKey::ArrowUp) if !typing => self.step_focus(-1),
                     Key::Named(NamedKey::ArrowDown) if !typing => self.step_focus(1),
                     Key::Named(NamedKey::Tab) if !typing => self.switch_column(),
@@ -1700,6 +1754,12 @@ fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
     }
 }
 
+/// The help box's note under a changed option row: the first-start value
+/// and the key that restores it.
+fn default_note(row: OptionRow) -> String {
+    format!("Default: {} (Delete)", row.default_value())
+}
+
 fn capitalise_first(s: &str) -> String {
     let mut c = s.chars();
     c.next()
@@ -1856,6 +1916,7 @@ mod tests {
             switches: legaia_engine_session::session_switches::PersistedSwitches {
                 no_entry_pulse: true,
                 smart_monsters: true,
+                arts_saved_list: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -1866,9 +1927,10 @@ mod tests {
             Some(Cmd::PlayWindow {
                 no_entry_pulse,
                 smart_monsters,
+                arts_saved_list,
                 retail,
                 ..
-            }) => assert!(no_entry_pulse && smart_monsters && !retail),
+            }) => assert!(no_entry_pulse && smart_monsters && arts_saved_list && !retail),
             other => panic!("expected play-window, got {other:?}"),
         }
         // So do the gameplay-tweak rows.
@@ -1995,6 +2057,10 @@ mod tests {
         let one = |s: &str| vec![(s.to_string(), DIM)];
         for (_, row) in OPTION_ROWS {
             out.push((row.label().into(), one(row.help())));
+            out.push((
+                format!("{} (changed)", row.label()),
+                vec![(row.help().to_string(), DIM), (default_note(row), GOLD)],
+            ));
             if row.overridden_by_retail() {
                 let s = format!("{} Off while Original game only is on.", row.help());
                 out.push((format!("{} (retail)", row.label()), one(&s)));

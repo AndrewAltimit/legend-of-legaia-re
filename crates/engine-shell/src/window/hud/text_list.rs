@@ -104,7 +104,7 @@ impl PlayWindowApp {
     /// out by [`help_panel_layout`]. Stage pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
         use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
-        let entries: Vec<(&str, String)> = HOST_HOTKEYS
+        let mut entries: Vec<(&str, String)> = HOST_HOTKEYS
             .iter()
             .map(|&(hk, _)| {
                 let line = if hk == HostHotkey::CheatMaxAp {
@@ -115,14 +115,17 @@ impl PlayWindowApp {
                 (hk.key_label(), line)
             })
             .collect();
+        entries.push(fullscreen_entry(self.win.is_fullscreen()));
         let pad = pad_key_rows(&self.mapping);
         let l = help_panel_layout(&self.font, &entries, &pad);
         let mut out = Vec::new();
+        // Near-opaque: the panel sits over the party readout's bright
+        // digits, which at 0.85 still showed through between the rows.
         self.push_scrim(
             &mut out,
             (l.x0 - 4, l.y0 - 4),
             ((l.width + 8) as u32, l.height as u32),
-            0.85,
+            0.94,
         );
         let mut put = |s: &str, at: (i32, i32), color: [f32; 4]| {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));
@@ -152,7 +155,8 @@ impl PlayWindowApp {
             }
             y += l.line_h;
         }
-        put(HELP_FOOTER, (l.x0, y + 2), HEADING);
+        put(HELP_MOUSE, (l.x0, y + 2), TEXT);
+        put(HELP_FOOTER, (l.x0, y + 2 + l.line_h), HEADING);
         out
     }
 
@@ -752,6 +756,20 @@ impl PlayWindowApp {
 const HELP_QUIT: &str = "Quit (press twice)";
 const HELP_SELF: &str = "This help (also ?)";
 const HELP_FOOTER: &str = "Rebind pad keys: Options > Key Config";
+/// The mouse's camera controls (`window/camera.rs`): drag orbits and tilts,
+/// the wheel zooms, a double-click puts the retail framing back.
+const HELP_MOUSE: &str = "Mouse: drag turns, wheel zooms, double-click resets";
+
+/// The fullscreen key's help row. Window chrome outside the shared
+/// [`HOST_HOTKEYS`](legaia_engine_session::hotkeys::HOST_HOTKEYS) table:
+/// the browser page has its own fullscreen button, so only this window
+/// lists it.
+fn fullscreen_entry(on: bool) -> (&'static str, String) {
+    (
+        "F11",
+        format!("Fullscreen: {}", if on { "on" } else { "off" }),
+    )
+}
 
 /// The pad buttons the help panel names a key for, one panel line each. The
 /// arrow keys' D-pad is left out: it is the one binding a player guesses.
@@ -871,8 +889,11 @@ fn help_panel_layout_with(
         let right_w = col(true, HELP_SELF);
         let in_right = right.iter().filter(|r| **r).count();
         let rows = in_right.max(n - in_right);
-        let body = (left_w + right_w).max(width(HELP_FOOTER)).max(pad_w);
-        let height = (rows as i32 + 3 + pad.len() as i32) * line_h + 12;
+        let body = (left_w + right_w)
+            .max(width(HELP_FOOTER))
+            .max(width(HELP_MOUSE))
+            .max(pad_w);
+        let height = (rows as i32 + 4 + pad.len() as i32) * line_h + 12;
         (left_w, body, rows, height)
     };
     let even = n.div_ceil(2);
@@ -929,7 +950,7 @@ mod help_panel_tests {
 
     /// Every hotkey in its widest state.
     fn worst_entries() -> Vec<(&'static str, String)> {
-        HOST_HOTKEYS
+        let mut e: Vec<(&'static str, String)> = HOST_HOTKEYS
             .iter()
             .map(|&(hk, _)| {
                 let state = match hk {
@@ -945,7 +966,9 @@ mod help_panel_tests {
                 };
                 (hk.key_label(), line)
             })
-            .collect()
+            .collect();
+        e.push(fullscreen_entry(false));
+        e
     }
 
     fn assert_fits(width: &dyn Fn(&str) -> i32, line_h: i32, what: &str) -> HelpPanelLayout {
@@ -1009,7 +1032,7 @@ mod help_panel_tests {
     fn help_panel_fits_the_stage_at_dialog_font_metrics() {
         assert_fits(&|s: &str| 6 * s.len() as i32, 13, "6 px metric");
         let l = assert_fits(&|s: &str| 4 * s.len() as i32, 13, "4 px metric");
-        let even = HOST_HOTKEYS.len().div_ceil(2);
+        let even = (HOST_HOTKEYS.len() + 1).div_ceil(2);
         assert!(
             l.cells
                 .iter()

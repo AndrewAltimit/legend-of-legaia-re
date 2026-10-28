@@ -1247,11 +1247,12 @@ table; a switch with no page twin is a host difference, not a world default.
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
 | `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
-| `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
+| `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `--arts-saved-list` (the launcher's Saved-chain Arts list row) or `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
-| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
+| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
-| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map` | none: native capture tooling |
+| `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map`, `--play-record` | none: native capture tooling |
+| `--fullscreen`, `--windowed`, `--window-scale` | none: window chrome; the browser sizes the page's canvas |
 
 ### Remembered between runs
 
@@ -1266,9 +1267,9 @@ so a switch added there is remembered on both hosts or on neither:
 | Remembered | Where each host keeps it |
 |---|---|
 | `OptionsState` rows (lighting, fog, see-through walls, bloom, camera distance, volumes, mono output, ...) | `legaia-options.toml`; `localStorage["legaia.options"]` |
-| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the gameplay tweaks and battle tuning) | the launcher's settings file; `localStorage["legaia.switches"]` |
+| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning) | the launcher's settings file; `localStorage["legaia.switches"]` |
 | key bindings | `legaia-input.toml`; the page's pad-bindings store |
-| nothing (session only) | the world-map markers, the battle cadence and the saved-chain Arts list (environment switches natively), the cheats, the dev menu |
+| nothing (session only) | the world-map markers and the battle cadence (diagnostic environment switches natively), the cheats, the dev menu |
 
 A fresh page runtime seats the stored set before its boxes sync
 (`LegaiaRuntime::restore_persisted_switches`; a remembered retail-faithful goes

@@ -18,6 +18,17 @@ pub const VIGURO_TICK: u32 = 0x801F_69F4;
 /// until the module's stager bumps `ctx[+0x279]` from the effect script.
 pub const VIGURO_RENDEZVOUS_PHASES: [u8; 2] = [3, 8];
 
+/// PROT 0909's arm that hides the creature as it passes: `+0x21C = 0xFF`
+/// and the prim colour word `+0x04 = 0` on the summon seat
+/// (`0x801F6FD0..0x801F6FE4`), then the neutral word
+/// [`VIGURO_ROW_NEUTRAL_COLOUR`] on every enemy seat with HP left
+/// (`0x801F705C..0x801F7084`, seats `3..=6`).
+pub const VIGURO_HIDE_PHASE: u8 = 9;
+
+/// The colour word arm 9 stores on each enemy seat whose `+0x14C` is
+/// non-zero (`lui a1,0x2008; ori a1,a1,0x200` at `0x801F703C`).
+pub const VIGURO_ROW_NEUTRAL_COLOUR: u32 = 0x2008_0200;
+
 /// PROT 0909's damage arm.
 pub const VIGURO_DAMAGE_PHASE: u8 = 0x0D;
 
@@ -65,7 +76,9 @@ pub const VIGURO_HIT_ROOT_SPEED: i32 = 0x1000;
 ///   `0x800754C8[caster[+0x1DF]] + 8`;
 /// * `7` - summon `+0x21C = 4`, then the same `+0x1DA` / `+0x1DC` bump;
 /// * `8` - **rendezvous hold**;
-/// * `9` - summon `+0x21C = 0xFF` (the fade-out), `ctx[+0x278] = 0`, and
+/// * `9` - summon `+0x21C = 0xFF` with its colour word `+0x04 = 0` (the
+///   hide), [`VIGURO_ROW_NEUTRAL_COLOUR`] on every enemy seat with HP left,
+///   `ctx[+0x278] = 0`, and
 ///   `caster[+0x1DD] = 9`. That `9` is not an immediate: the store is
 ///   `sb s0,0x1dd(v0)` at `0x801F7058` and `s0` is still the **phase** the
 ///   prologue loaded at `0x801F6A64`. It happens to equal the enemy-row group
@@ -117,9 +130,17 @@ pub fn viguro_tick(
             bump_stage(seats, summon_seat);
             CastArmStep::Advance
         }
-        9 => {
+        VIGURO_HIDE_PHASE => {
             if let Some(s) = seats.get_mut(summon_seat as usize) {
                 s.render_flag = 0xFF;
+                s.present_04 = 0;
+            }
+            for seat in FIRST_MONSTER_SEAT..ROW_SWEEP_SEAT_END {
+                if let Some(s) = seats.get_mut(seat as usize)
+                    && s.hp != 0
+                {
+                    s.present_04 = VIGURO_ROW_NEUTRAL_COLOUR;
+                }
             }
             if let Some(s) = seats.get_mut(caster_seat as usize) {
                 // The reused-register `9`; see the doc comment.

@@ -8,6 +8,53 @@
 //!
 //! The anchors themselves are documented in
 //! [`docs/reference/memory-map.md`](../../../docs/reference/memory-map.md).
+//!
+//! [`Legaia`] packages them as a [`GameProfile`], the parameter the generic
+//! readers take for another title; the free functions below are the same
+//! reads for callers that only ever handle Legaia.
+
+use crate::profile::{GameProfile, ScenarioProfile};
+
+/// Strings known to live in `SCUS_942.54`'s loaded region. The first one
+/// present in **both** the executable and a save-state payload fixes the
+/// file-to-RAM offset of the anchor RAM search
+/// ([`crate::extract::main_ram_via_exe_anchors`]).
+pub const EXE_ANCHORS: &[&[u8]] = &[
+    b"---- FIELD PROGRAM -----%d",
+    b"PSX TEST PROGRAM",
+    b"enter main loop",
+    b"main free mem%d",
+    b"h:\\prot\\cdname.dat",
+];
+
+/// Scenario-manifest defaults for this project's mednafen captures.
+pub const SCENARIO_DEFAULTS: ScenarioProfile = ScenarioProfile {
+    filename_pattern: "Legend of Legaia (USA).788de08f9c7e652c51d8d08ee374d055.mc{slot}",
+    mcs_dir_env: Some("LEGAIA_MEDNAFEN_DIR"),
+};
+
+/// The Legend of Legaia (USA) [`GameProfile`]: the anchor strings, the
+/// identity globals and the manifest defaults above.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Legaia;
+
+impl GameProfile for Legaia {
+    fn name(&self) -> &str {
+        "legaia"
+    }
+    fn exe_anchor_strings(&self) -> &[&'static [u8]] {
+        EXE_ANCHORS
+    }
+    fn identify(&self, ram: &[u8]) -> Option<StateIdentity> {
+        Some(identify(ram))
+    }
+    fn mode_label(&self, mode: u8) -> String {
+        game_mode_label(mode)
+    }
+    fn scenario_defaults(&self) -> ScenarioProfile {
+        SCENARIO_DEFAULTS
+    }
+}
 
 /// Player context pointer global (`*0x8007C364` = the player actor struct).
 pub const PLAYER_PTR_VA: u32 = 0x8007_C364;
@@ -168,5 +215,17 @@ mod tests {
         let tiny = vec![0u8; 8];
         assert_eq!(u32_at(&tiny, SCENE_NAME_VA), 0);
         assert_eq!(scene_name(&tiny), "");
+    }
+
+    #[test]
+    fn legaia_profile_matches_the_free_functions() {
+        let mut ram = blank_ram();
+        let o = (SCENE_NAME_VA & 0x1F_FFFF) as usize;
+        ram[o..o + 7].copy_from_slice(b"town01\0");
+        ram[(GAME_MODE_VA & 0x1F_FFFF) as usize] = 0x03;
+        assert_eq!(Legaia.identify(&ram), Some(identify(&ram)));
+        assert_eq!(Legaia.mode_label(0x15), game_mode_label(0x15));
+        assert_eq!(Legaia.exe_anchor_strings(), EXE_ANCHORS);
+        assert_eq!(Legaia.scenario_defaults(), SCENARIO_DEFAULTS);
     }
 }

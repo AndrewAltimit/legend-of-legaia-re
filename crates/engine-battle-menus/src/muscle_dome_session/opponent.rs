@@ -86,8 +86,11 @@ impl MuscleDomeSession {
     }
 
     /// The opponent's turn: the monster AI's pick, or - with no picker inputs
-    /// installed - the greedy stand-in over the player's directions.
-    pub(super) fn opponent_commit(&mut self) {
+    /// installed - the greedy stand-in over the player's directions. The
+    /// round prompt's Begin calls it; a host that closes the selection
+    /// itself calls it too, so no host picks the opponent's string another
+    /// way.
+    pub fn opponent_commit(&mut self) {
         if self.opponent_ai.is_some() {
             self.pick_opponent_action();
         } else {

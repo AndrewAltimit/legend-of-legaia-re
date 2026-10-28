@@ -148,6 +148,37 @@ pub struct MinigameState {
     /// hub's INTERVAL / ROUND screens play before the next fight opens
     /// (`World::begin_next_muscle_leg`).
     pub muscle_hub_between_legs: bool,
+    /// The arena's battle theme, held from the leg's install until the hub
+    /// hands the leg over. Retail's arena init (`FUN_801CEA6C`) only loads
+    /// and opens the sequence; the play is the `FUN_80026478` at
+    /// `0x801D1548` inside the fight start `FUN_801D1510`, past hub arm
+    /// `0x16`. Started by `World::tick_muscle_dome`.
+    pub muscle_leg_bgm: Option<u16>,
+    /// The ladder rung's monster id, staged by the arena door for the leg's
+    /// **ordinary battle**: retail's `FUN_801D1510` writes it to the
+    /// formation cell `DAT_8007BD0C` and sets game mode `0x14`, so a leg is
+    /// the shared battle (round driver `FUN_801D0748`, action SM
+    /// `FUN_801E295C`), not a dome presentation. `World::tick_muscle_dome`
+    /// takes it on the hand-off tick and enters the battle; `None` (no
+    /// catalog entry for the monster) keeps the leg on the session's own
+    /// command flow.
+    pub muscle_battle_monster: Option<u16>,
+    /// A leg is being fought as an ordinary battle
+    /// (`World::start_muscle_battle_leg`); its end returns to the arena
+    /// through `World::finish_battle`.
+    pub muscle_leg_in_battle: bool,
+    /// The scene's map id while a leg's battle holds the arena's
+    /// (`_DAT_80084540 = 0x4C6`), put back when the leg ends.
+    pub muscle_saved_map_id: Option<u32>,
+    /// The leg was installed since the dome's last tick, so the arena hub
+    /// has not yet put its first visit / ROUND card over it.
+    pub muscle_leg_fresh: bool,
+    /// The leg's battle took a Run round: retail's `0xFE` arm stored the
+    /// give-up outcome `_DAT_80084448 = 4` (`0x801D328C`).
+    pub muscle_leg_ran: bool,
+    /// A host's fighter pick for the arena's legs (`World::set_muscle_fighter`);
+    /// `None` seats retail's Vahn.
+    pub muscle_fighter: Option<u8>,
     /// The arena hub's screen timers - the first visit, the leg-open ROUND
     /// card, the INTERVAL tally and the re-entered hub's backdrop - ticked by
     /// `World::tick_muscle_hub`; both play hosts draw from
@@ -260,6 +291,13 @@ pub struct MinigameState {
 }
 
 impl MinigameState {
+    /// The roster index a Muscle Dome leg seats: the host's pick
+    /// ([`Self::muscle_fighter`]) or retail's Vahn, record `0` (the hub pins
+    /// the party list to character `1`, `FUN_801CF870` `0x801CF884`).
+    pub fn fighter_index(&self) -> usize {
+        usize::from(self.muscle_fighter.unwrap_or(0))
+    }
+
     /// Whether the dance's **status readout** (score / groove gauge / lane,
     /// the called arrow, the last judgement, the scrolling beat track) is on
     /// screen this frame.
@@ -327,6 +365,13 @@ impl MinigameState {
             muscle_settlement: None,
             muscle_ringside_still: None,
             muscle_hub_between_legs: false,
+            muscle_leg_bgm: None,
+            muscle_battle_monster: None,
+            muscle_leg_in_battle: false,
+            muscle_saved_map_id: None,
+            muscle_leg_fresh: false,
+            muscle_leg_ran: false,
+            muscle_fighter: None,
             muscle_hub: Default::default(),
             muscle_hub_sounds: Default::default(),
             casino_coins: 0,

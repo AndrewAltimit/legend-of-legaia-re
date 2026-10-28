@@ -27,6 +27,24 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_battle::battle_sideband::{self as sb, BattleSidebandEffect as Fx};
 use legaia_engine_battle::battle_stage_module::{self as stage, StageCamera, StageEffect};
 
+/// PROT 0968, the evolved Cort's arrival module (loader-B id `0x49`).
+pub const ARRIVAL_MODULE_PROT: u32 = 968;
+/// Every record the arrival hands `FUN_80050ED4`, in address order: each
+/// record's program is bounded by the next one's start.
+const ARRIVAL_SPAWN_RECORDS: [u32; 7] = [
+    stage::records::ARRIVAL_ENTRY[0],
+    stage::records::ARRIVAL_ENTRY[1],
+    stage::records::ARRIVAL_ENTRY[2],
+    stage::records::ARRIVAL_DROP[0],
+    stage::records::ARRIVAL_DROP[1],
+    stage::records::ARRIVAL_DROP[2],
+    stage::records::ARRIVAL_TRAIL,
+];
+
+fn is_arrival_spawn(record: u32) -> bool {
+    ARRIVAL_SPAWN_RECORDS.contains(&record)
+}
+
 impl World {
     /// The side-band's inputs this frame. `ctx_mode` overrides the command
     /// flow byte (the round start passes `0x14`).
@@ -72,6 +90,18 @@ impl World {
         if self.battle.sparring_round_pending && !self.sparring_open_held() {
             self.battle.sparring_round_pending = false;
             self.begin_battle_round();
+        }
+        // Cort's arrival starts after the entry sweep. Its flow byte reaches
+        // `0x0C` only in state `0x0A`'s `0xB5` arm, which the battle tick
+        // runs once the frame driver's counter has parked at `0xFF`
+        // (`0x80046EF8`), and PROT 0968 pages in only after that park; under
+        // the sweep the stage-2 arm has neither the ramp mode nor the module
+        // (`cort_evolved_card_battle_init`, flow `0x00` at counter `0x97`:
+        // the sweep's own camera, the boss still hidden). The engine's
+        // loader is synchronous, so without this hold the module would walk
+        // the camera from the first battle frame.
+        if self.battle.stage_id == sb::STAGE_ARRIVAL && self.battle_entry_sweeping() {
+            return true;
         }
         let inputs = self.battle_sideband_inputs(None);
         let fx = sb::battle_sideband_tick(&mut self.battle.sideband, &inputs);
@@ -302,7 +332,7 @@ impl World {
 
     /// Engine actor index of retail actor-table slot `slot` (`0..=2` party,
     /// `3..` monsters), when the engine seats one there.
-    fn retail_table_actor(&self, slot: usize) -> Option<usize> {
+    pub(in crate::world) fn retail_table_actor(&self, slot: usize) -> Option<usize> {
         let idx = usize::from(self.battle_seat_map().engine(u8::try_from(slot).ok()?)?);
         (idx < self.actors.len()).then_some(idx)
     }
@@ -331,6 +361,12 @@ impl World {
                 anim_rate: a.battle.anim_rate.get(),
             },
         };
+        // The boss seat as the module's spawns read it: retail's arm calls
+        // `FUN_80050ED4(seat + 0x34, ..)` before its own seat stores, so
+        // phase 1's drop records stand on the floor the boss is lifted off
+        // (`cort_evolved_card_first_menu`: both columns at `y = 0`).
+        self.battle.arrival_spawn_anchor =
+            Some(([v.seat.x, v.seat.y, v.seat.z], [0, v.seat.facing as i16, 0]));
         // Per battle pass by the frame step, so one a vsync tick.
         let step = super::BATTLE_PASS_STEP_PER_TICK;
         let effects = stage::arrival_tick(&mut self.battle.arrival, &mut v, step);
@@ -495,9 +531,97 @@ impl World {
             // Not staged (every record is a meshless `model_sel = -1` part)
             // and the HUD handle list is derived per frame, so its hard reset
             // has nothing to clear - see `legaia_engine_battle::battle_stage_module`.
-            StageEffect::Spawn { .. } | StageEffect::HudReset => {}
+            StageEffect::Spawn { record } => self.seat_stage_module_spawn(record, seat_idx),
+            StageEffect::KillSpawns => {
+                if let Some(scene) = self.casting.stage_fx.as_mut() {
+                    for p in scene
+                        .parts
+                        .iter_mut()
+                        .filter(|p| p.tag.is_some_and(is_arrival_spawn))
+                    {
+                        p.finished = true;
+                    }
+                }
+            }
+            StageEffect::HudReset => {}
             // Consumed by the arrival's own loop above.
             StageEffect::HandBack => {}
+        }
+    }
+
+    /// Install a boss-stage module image (PROT `entry`), whose in-image
+    /// spawn records [`StageEffect::Spawn`] names. The scene host installs
+    /// PROT 0968 with the cast-effect pool.
+    pub fn install_stage_module_image(&mut self, entry: u32, bytes: std::sync::Arc<[u8]>) {
+        self.tables.stage_module_images.insert(entry, bytes);
+    }
+
+    /// `FUN_80050ED4(seat + 0x34, seat + 0x44, record, 0x1000)` under the
+    /// arrival: seat one PROT 0968 record on the boss seat, into the stage
+    /// scene the hand-back's trees join. The records open `model_sel = -1`
+    /// and their programs make them draw-kind-4 parts, each retiring itself:
+    /// the drop's columns (`0x801F72D0` / `0x801F7320`) wait `0x593` frames,
+    /// ramp their depth cue toward black (op `0x0D`) and halt `0x6B` frames
+    /// later, a trail part (`0x801F73A4`) waits `0xFF`. Only the arrival's
+    /// records are seated; the form transition's spawns offset by
+    /// battle-RNG draws the engine does not carry into the record.
+    ///
+    /// REF: FUN_80050ED4, FUN_80021B04
+    fn seat_stage_module_spawn(&mut self, record: u32, seat_idx: usize) {
+        use legaia_overlay_images::summon_overlay::{SUMMON_OVERLAY_LINK_BASE, parse_records_at};
+        if self.battle.stage_id != sb::STAGE_ARRIVAL || !is_arrival_spawn(record) {
+            return;
+        }
+        let Some(bytes) = self
+            .tables
+            .stage_module_images
+            .get(&ARRIVAL_MODULE_PROT)
+            .cloned()
+        else {
+            return;
+        };
+        // `a0 = seat + 0x34` (the live pair and height), `a1 = seat + 0x44`
+        // (the rotation trio, its Y the heading `+0x46`), as the pass read
+        // them before the module's own seat stores.
+        let Some((pos, rot)) = self.battle.arrival_spawn_anchor.or_else(|| {
+            let a = self.actors.get(seat_idx)?;
+            Some((
+                [
+                    a.move_state.world_x,
+                    a.move_state.world_y,
+                    a.move_state.world_z,
+                ],
+                [0, a.battle.facing_angle as i16, 0],
+            ))
+        }) else {
+            return;
+        };
+        let offs: Vec<usize> = ARRIVAL_SPAWN_RECORDS
+            .iter()
+            .map(|va| (va - SUMMON_OVERLAY_LINK_BASE) as usize)
+            .collect();
+        let off = (record - SUMMON_OVERLAY_LINK_BASE) as usize;
+        let parts: Vec<_> = parse_records_at(&bytes, &offs)
+            .into_iter()
+            .filter(|p| p.record_off == off)
+            .collect();
+        if parts.is_empty() {
+            return;
+        }
+        let scene = self.casting.stage_fx.get_or_insert_with(|| {
+            let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
+                &[],
+                &bytes,
+                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                pos,
+            );
+            s.retail_wait_drain = true;
+            s
+        });
+        let first = scene.parts.len();
+        scene.push_parts_scaled(&parts, &bytes, pos, rot, 0x1000);
+        for p in &mut scene.parts[first..] {
+            p.tag.get_or_insert(record);
         }
     }
 

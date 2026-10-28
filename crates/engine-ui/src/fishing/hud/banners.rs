@@ -136,8 +136,8 @@ pub fn strike_splash_draws(frame: i32) -> Option<[HudDraw; 2]> {
     Some([glyph(0x416), glyph(0x816)])
 }
 
-/// The result plate's rank glyph for a fight of accumulated `strength`
-/// (`DAT_801D91B8`): `FUN_801D5298`'s threshold ladder
+/// The result plate's rank glyph for a fight of `strength` (the hook-time
+/// sum `DAT_801D91B8`): `FUN_801D5298`'s threshold ladder
 /// (`0x801D5448..0x801D54B4`) - `0x15` below `0xC9`, then `0x13`, `0x12` and
 /// `0x11` from `0xC9`, `0x259` and `0x321`, and `0x14` from `0x4B1`.
 pub fn catch_rank_glyph(strength: i32) -> u32 {

@@ -140,8 +140,10 @@ pub struct PondSession {
     pub(super) fight_species: Option<usize>,
     pub(super) fish: FishAi,
     pub(super) gauge: TensionGauge,
-    /// Accumulated fight strength (`DAT_801d91b8`).
+    /// Fight strength (`DAT_801d91b8`), summed at the hook.
     pub(super) strength: i32,
+    /// The hooked fish object's render scale (`+0x72`, `DAT_801D9108`).
+    pub(super) fish_scale: u16,
     /// Points awarded by the last landed catch.
     pub(super) last_award: i32,
     /// The landed catch's result-plate counter (the result actor's `+0x1A`

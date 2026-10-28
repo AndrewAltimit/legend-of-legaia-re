@@ -154,6 +154,42 @@ impl World {
             .collect()
     }
 
+    /// Project the latest ambient tick's framebuffer grabs (move-VM render
+    /// mode 7) through `view` - the field camera the host drew its last frame
+    /// through, the frame a grab copies from - and queue each as the
+    /// `FUN_800468A4` call the arm makes
+    /// (`legaia_render_kernels::vram_grab::grab_copy`). Drains the requests;
+    /// with no `view` (a host vantage with no retail camera) they are dropped.
+    ///
+    /// A grab re-issued before the host landed a frame for the previous one
+    /// replaces it rather than stacking behind it: both would copy the same
+    /// landed frame.
+    ///
+    /// Call it before [`Self::step_field_vram_effects`], which drains the
+    /// copies. Returns how many copies it queued.
+    pub fn queue_vram_grabs(
+        &mut self,
+        view: Option<&legaia_engine_camera::psx_camera::FieldCameraView>,
+    ) -> usize {
+        let grabs = std::mem::take(&mut self.ambient.vram_grabs);
+        let Some(view) = view else {
+            return 0;
+        };
+        let mut queued = 0;
+        for g in &grabs {
+            let Some(call) = legaia_render_kernels::vram_grab::grab_copy(g, view) else {
+                continue;
+            };
+            self.ambient.vram_rect_copies.retain(|c| {
+                !(reads_framebuffer(c)
+                    && (c.dst_x, c.dst_y, c.w, c.h) == (call.dst_x, call.dst_y, call.w, call.h))
+            });
+            self.ambient.vram_rect_copies.push(call);
+            queued += 1;
+        }
+        queued
+    }
+
     /// The host has written its frame into the display rect: the held
     /// framebuffer copies run on the next drain.
     pub fn land_framebuffer(&mut self) {

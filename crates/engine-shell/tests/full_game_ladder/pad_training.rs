@@ -20,7 +20,12 @@ thread_local! {
 /// Milestones ahead whose anchors set the level target: a party is trained
 /// before the stretch that needs it, where the rests are, not inside the
 /// dungeon the anchor was saved in.
-pub(super) const LEVEL_LOOKAHEAD: usize = 5;
+///
+/// Six, not five: the stretch into `cave01` is where Noa trains while
+/// Terra's rest still works, and five milestones from it the anchors held
+/// her at level 6, where the next stretch's held her at 9 - by then the rest
+/// had gone dry and a bag-less Noa met `rikuroa`'s row 16 at level 5.
+pub(super) const LEVEL_LOOKAHEAD: usize = 6;
 
 /// Outings one training session takes before the hand moves on regardless.
 const TRAIN_ROUNDS: usize = 24;
@@ -28,21 +33,41 @@ const TRAIN_ROUNDS: usize = 24;
 /// Walk legs one outing takes.
 const OUTING_LEGS: usize = 160;
 
-/// The present members still more than a level short of the target.
+/// The present members short of the target plus its margin
+/// ([`LEVEL_MARGIN`], [`SOLO_LEVEL_MARGIN`]).
+///
+/// A member who stands alone takes a wider margin: every hit lands on the
+/// one body, and nothing shares the damage. `rikuroa` is the case - Noa
+/// alone against a 640-HP row 16 with a thin bag - where a level-8 Noa won
+/// it only on streams whose drops had left her heals.
 pub(super) fn under_levelled(session: &NativeSession) -> Vec<(u8, u8, u8)> {
     let w = &session.host.world;
+    let party = w.present_party_list();
+    let margin = if party.len() == 1 {
+        SOLO_LEVEL_MARGIN
+    } else {
+        LEVEL_MARGIN
+    };
     TARGET_LEVELS.with(|t| {
         let t = t.borrow();
-        w.present_party_list()
+        party
             .into_iter()
             .filter_map(|ch| {
-                let want = t.get(usize::from(ch)).copied()?.saturating_sub(1);
+                let want = t.get(usize::from(ch)).copied()?.saturating_add(margin);
                 let have = w.party.roster.members.get(usize::from(ch))?.level();
                 (have < want).then_some((ch, have, want))
             })
             .collect()
     })
 }
+
+/// Levels over the anchors' target a party trains to: the anchors are one
+/// player's growth, and the hand's fights are dealt off other streams, so a
+/// party a level under them met the bosses the anchors' player only just
+/// beat (Zora, `taiku`, lost on two of fourteen streams).
+pub(super) const LEVEL_MARGIN: u8 = 0;
+/// The same for a member who stands alone: every hit lands on the one body.
+pub(super) const SOLO_LEVEL_MARGIN: u8 = 2;
 
 /// Levels below the target at which a scene with a bed trains before its
 /// beats even with no boss band in it (`segment`'s arrival pass).

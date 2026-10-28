@@ -14,14 +14,6 @@ mod muscle_dome;
 #[path = "minigames/slot_machine.rs"]
 mod slot_machine;
 
-/// The Baka duel surface on the GPU: the duel VRAM (re-uploaded when the
-/// engine's surface generation moves - a rung seats a new opponent) and this
-/// frame's posed meshes, the textured and untextured halves of the one
-/// buffer set `BakaDuelScene` builds.
-/// The player battle-file slot the dome's fighter assembles from (0 = Vahn,
-/// the lead); the browser play page seats the same.
-pub(super) const MUSCLE_DOME_CHAR_SLOT: u32 = 0;
-
 /// The vertex streams a posed surface mesh was last uploaded from: equal
 /// streams mean the GPU buffers already hold this frame's mesh.
 #[derive(Debug, Clone, PartialEq)]
@@ -35,6 +27,10 @@ pub(super) struct MeshKey {
     pub(super) untextured_indices: Vec<u32>,
 }
 
+/// The Baka duel surface on the GPU: the duel VRAM (re-uploaded when the
+/// engine's surface generation moves - a rung seats a new opponent) and this
+/// frame's posed meshes, the textured and untextured halves of the one
+/// buffer set `BakaDuelScene` builds.
 pub(super) struct BakaDuelGpu {
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,

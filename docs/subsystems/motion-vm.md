@@ -158,7 +158,9 @@ placement context, not only the ones it tracks a live position for (the
 talk NPCs and whatever a script has moved): `rayman`'s plank bridges
 (`P1[70..=83]`, `31 1D` + `4C 42 40 01`) never move, and outside the pass
 they fell to the floor sample 64 units above the ledges they span instead of
-the `-320` their prologue holds. The cull is ported too
+the `-320` their prologue holds. The collapse beat (`P2[7]`) then tweens their `+0x8E`
+down to `-768`, and the same arm drops them into the chasm
+([`4C 42`](script-vm-menuctrl.md#0x4c-nibble-4---immediate-or-ramp-cluster)). The cull is ported too
 (`World::field_npc_culled`, `field_actor_culled` in
 `engine-core::world::field_npc_cull`): the glide runs behind it over the
 camera view the hosts publish, so an off-window glider keeps the Y it had, and
@@ -445,6 +447,8 @@ A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---
   Outside a timeline - the scene's entry script, a talk record - a `B8 <id> ..` or `CC <id> 85 ..` aimed at another placement turns that placement, not the context running it (`World::run_placement_facing_op`), its legs free-standing and stepped on the field tick (`FieldNpcState::face_legs` / `rotate_legs`); `rikuroa`'s entry script stands two chests this way. The own-context form `4C 85 <lo> <hi> <bind>` (five bytes, the target the executing actor) turns the placement whose spawn section runs it - `rikuroa` `P1[3]` faces Noa toward the placement she is seated beside.
 
   In a talk record the talker turns the same way, and the record waits for the turn. Retail's arm raises the talker's own `0x400` and advances; the dispatcher's prologue (`0x801DE90C..0x801DE944`) then refuses every op of a context carrying `0x400` - text leads included - unless the scene word `*(_DAT_801C6EA4) + 8` is non-zero (it is `0` in a talk) or the caller's `+0x50` is `0xFB`, so the record holds at its PC until the leg's terminal frame clears the bit (`0x80038004`). The port carries that hold as `InlineDialogue::own_turn`. `rayman` `P1[6]` (Kina) turns this way (`4C 85 10 00 F8`, then `B3 13 0A`) before her "Follow me!" beat walks her to (31, 19) and clears global bit 16.
+
+  The talker's own budgeted rotate (`38 <op0> <op1>` with `op1 & 0x7F != 0`, no target byte) holds the same way: the CAM_CFG arm raises the talker's `0x400`, advances by three (`li s7,3` at `0x801DEEFC`) and seats the `0x38` RotateToAngle leg, and the record's `33 0A` verify behind it waits for the terminal snap. The port arms the leg in `FieldNpcState::rotate_legs` (`World::face_npc_by_cam_cfg`) and holds on `own_turn`. Run on the talk's stand-in context, nothing cleared the bit and the `33 0A` ended the talk: Terra's last two `cave01` talks (`P1[2]` `+0x14A6` and `+0x15A2`) stopped there, so her hand-off never seated her and her final talk never reached `50 13` / `51 69`. Disc-gated: `crates/engine-scene-host/tests/cave01_terra_talk_disc.rs`.
 
   The finished beat arms `rayman`'s guide rail: the P2[4] / P2[5] / P2[6] walk-ons return a player who strays to (31, 20), and after three strays Kina gives up and raises `0x1EC..0x1EE`. The way on to `tunnelb` is Hari's permission chain: talks P1[44..46] raise `0x1FD..0x1FF`, the P2[18] walk-on then raises `0x200`, P2[19] raises `0x1FC`, and only then does the gate guard's P2[16] open the door. A P2[18] stepped on before the three talks runs and gains nothing; it takes a second visit.
 
@@ -1157,6 +1161,28 @@ back with `lhu`.
 The "glide-channel install" reading is **falsified**: nothing in the arm
 touches a coordinate.
 
+The pair reaches the pixel through the field actor draws, which hand
+`+0x74` and `+0x78` straight to the mesh submit (`lw a1,0x74(s0)` /
+`lhu a2,0x78(s0)` before `jal 0x80043390` at `0x8001B46C` in `FUN_8001ADA4`
+and `0x8001BC7C` in `FUN_8001B964`). A non-zero mode word makes the submit
+load the colour's RGB as the GTE far colour (`0x800434C8..0x800434D0`), select
+the depth-cue handler bank, and park the word as the per-object `IR0` the
+leaves load before `DPCS` - so each prim's colour becomes
+`baked + (tint - baked) * mode / 0x1000`, the same rule the field VM's
+`4C 81` tint uses. The disc authors the op at 44 sites in 9 scenes, bound
+to NPCs (`taiku`, `bubu1`, `bubu2`, `garmel`, `edbubu`) and to placed objects
+(`koin3`, `other7`, `ropeway` / `ropeway2`, `taiku`); almost all fade toward
+black. Retail has one actor record that both ops write, so the port publishes
+the motion VM's pair last-writer-wins on a tick that changes it, and seeds
+the stream's copy from the published pair before each tick: the arm reads
+the live `+0x78` to choose its row and ramps from the live pair, whoever
+wrote it. `bubu2`'s NPC 7 is the case that needs it: its entry script tints
+it `0x9B5050` at `3000`, and its system-flag-`0x3D4` variant pulses the mode
+`0xB54 <-> 0x898` over six ticks a leg. Read from its own zeroed copy, the
+first `0x0C` took the fade-in row and dropped the NPC to untinted before
+fading back; from the live pair it ramps `3000 -> 0xB54` and holds the
+band. Disc-gated test: `crates/engine-scene-host/tests/motion_tint_live_disc.rs`.
+
 ### Op `0x0E` - the model swap
 
 `[0E, lo, hi]`, case body `0x800393A0`. Re-binds the actor's mesh through
@@ -1369,9 +1395,9 @@ channel - but it is the thing to check before filing "op X does nothing".
 | `0x14` | published into the field-VM channel's `+0x72` so `World::field_npc_render_scale` - the accessor both hosts consult before drawing an NPC - sees it |
 | `0x02` / `0x0A` / `0x0B` | the requested-move pair reaches `carry_npc_run_anim`; the translucency bit has no consumer |
 | `0x09` | runs the same enqueue the field VM's op `0x36` sub-`0` runs - `World::audio.sfx_cue_cursor` / `sfx_parked_slot` / `sfx_cue_delays` - so a following delay write lands on the slot this op parked; the cue **id** crosses to the hosts as `SfxRingOp::Push`, which both replay into their SFX ring and play |
-| `0x0C` | tint and draw-mode ramp on the channel; no NPC tint reaches either host's draw list |
+| `0x0C` | the channel's `+0x74` / `+0x78` pair, published on every tick that changes it (`World::publish_ambient_tint`) into the tables both hosts stage as a per-draw cue: `World::field_npc_draw_tint` for an NPC, `World::object_draw_tints` for a placed object |
 | `0x0E` | `World::npcs.models`, keyed by placement slot, read back through `World::field_npc_live_model`; each host resolves the bytes through `SceneHost::model_bank` (`model_bank::SceneModelBank::tmd_bytes`, all 215 authored sites) and re-uploads that slot's mesh |
-| `0x13` | no VRAM blit is reachable from a field-actor tick; `engine-render` owns the only VRAM |
+| `0x13` | queued on `World::queue_script_vram_move`, the field VM's `4C 60` blit queue, which both hosts drain into their software VRAM |
 | `0x15` / `0x16` | `World::field_npc_tilt`, published per slot beside the heading; both hosts compose the full `Rx * Ry * Rz` when it is non-zero ([`host-drift.md`](../tooling/host-drift.md#per-actor-pitch-and-roll)) |
 
 ### Flag census
