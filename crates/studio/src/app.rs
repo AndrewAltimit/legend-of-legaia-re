@@ -1308,7 +1308,7 @@ impl App {
         // Keyboard: with no text field focused, the arrows, Page Up / Down,
         // Home and End walk the rows the search shows, opening a block and
         // scrolling to the entry as they go.
-        let typing = ui.ctx().wants_keyboard_input();
+        let typing = ui.egui_wants_keyboard_input();
         if !typing && !visible.is_empty() {
             let cur = self
                 .studio
@@ -1530,11 +1530,11 @@ impl App {
             return;
         }
         self.tim_sel = self.tim_sel.min(a.tims.len() - 1);
-        egui::SidePanel::left("tim_list")
+        egui::Panel::left("tim_list")
             .resizable(true)
             // Wide enough for one unwrapped row ("#0   320x8 4bpp lzs#0 @0x4F00").
-            .default_width(270.0)
-            .show_inside(ui, |ui| {
+            .default_size(270.0)
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (i, t) in a.tims.iter().enumerate() {
                         let text = format!(
@@ -2402,7 +2402,10 @@ impl App {
 }
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Work that goes on whether or not the window is drawn (minimised,
+    /// occluded): the background loads, the extraction and the started game
+    /// are polled, and their ends announced, here.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_appearance(ctx);
         if self.studio.poll() {
             ctx.request_repaint();
@@ -2415,70 +2418,76 @@ impl eframe::App for App {
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
-        let dropped: Vec<PathBuf> = ctx.input(|i| {
-            i.raw
-                .dropped_files
-                .iter()
-                .filter_map(|f| f.path.clone())
-                .collect()
-        });
-        if let Some(p) = dropped.first() {
-            self.open_path(p);
-        }
         self.restore_entry();
-        self.run_automation(ctx);
         self.announce_extraction();
         if self.job.as_ref().is_some_and(|j| j.outcome().is_none()) {
             // Keep polling while a run goes on behind another view.
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
         self.poll_game(ctx);
-        self.shortcuts(ctx);
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F1)) {
+    }
+
+    /// Input and drawing. Everything that reads this frame's events (drops,
+    /// shortcuts, the scripted screenshot) sits here: `logic` also runs
+    /// while the window is hidden, on the last shown frame's events.
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let dropped: Vec<PathBuf> = ui.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect()
+        });
+        if let Some(p) = dropped.first() {
+            self.open_path(p);
+        }
+        self.run_automation(ui);
+        self.shortcuts(ui);
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F1)) {
             self.about_open = !self.about_open;
         }
 
-        if let Some(r) = ctx.input(|i| i.viewport().inner_rect) {
+        if let Some(r) = ui.input(|i| i.viewport().inner_rect) {
             // egui points include the UI zoom; the viewport's inner size at
             // start does not, so store the unzoomed size or a zoomed window
             // would shrink on every start.
-            let z = ctx.zoom_factor();
+            let z = ui.zoom_factor();
             self.window_size = Some([r.width() * z, r.height() * z]);
         }
         // The outer corner in physical pixels (`placement`): points times
         // pixels per point, which already folds in the UI zoom. Wayland
         // reports no position, so nothing is kept there.
-        if let Some(r) = ctx.input(|i| i.viewport().outer_rect) {
-            let ppp = ctx.pixels_per_point();
+        if let Some(r) = ui.input(|i| i.viewport().outer_rect) {
+            let ppp = ui.pixels_per_point();
             self.window_pos = Some([
                 (r.min.x * ppp).round() as i32,
                 (r.min.y * ppp).round() as i32,
             ]);
         }
-        egui::TopBottomPanel::top("top").show(ctx, |ui| self.top_bar(ui));
-        self.about_window(ctx);
+        egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
+        self.about_window(ui);
         match self.mode {
             // Nothing open yet: the start page takes the whole window, in
             // every view that needs a disc to show anything (a view restored
             // from the last session used to open on a bare "open a disc
             // first" line with no way to do it).
             Mode::Browse | Mode::Actors | Mode::Media if self.studio.library.is_none() => {
-                egui::CentralPanel::default().show(ctx, |ui| self.start_page(ui));
+                egui::CentralPanel::default().show(ui, |ui| self.start_page(ui));
             }
             Mode::Browse => {
-                let side_max = side_panel_max(ctx, 300.0);
-                egui::SidePanel::left("browser")
+                let side_max = side_panel_max(ui, 300.0);
+                egui::Panel::left("browser")
                     .resizable(true)
-                    .default_width(430.0f32.min(side_max))
-                    .min_width(300.0)
-                    .max_width(side_max)
-                    .show(ctx, |ui| self.browser(ui));
-                egui::CentralPanel::default().show(ctx, |ui| self.preview(ui));
+                    .default_size(430.0f32.min(side_max))
+                    .min_size(300.0)
+                    .max_size(side_max)
+                    .show(ui, |ui| self.browser(ui));
+                egui::CentralPanel::default().show(ui, |ui| self.preview(ui));
             }
-            Mode::Actors => self.actors_mode(ctx),
-            Mode::Media => self.media_mode(ctx),
+            Mode::Actors => self.actors_mode(ui),
+            Mode::Media => self.media_mode(ui),
             Mode::Extract => {
-                egui::CentralPanel::default().show(ctx, |ui| self.extract_panel(ui));
+                egui::CentralPanel::default().show(ui, |ui| self.extract_panel(ui));
             }
         }
     }

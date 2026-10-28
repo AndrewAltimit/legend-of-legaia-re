@@ -62,10 +62,13 @@ finished or cancelled run with *Show folder*, a failure on the error banner
 
 ## How it is built
 
-- **Toolkit:** `eframe` / `egui` on the **glow** (OpenGL) backend. The
-  `eframe` release it uses builds its wgpu backend against an older `wgpu`
-  than the workspace's, and the glow backend keeps a second `wgpu` out of the
-  tree; `eframe`'s winit is the workspace's 0.30.
+- **Toolkit:** `eframe` / `egui` on the **glow** (OpenGL) backend. Studio
+  draws only egui's own meshes (the model view is a CPU rasteriser, below),
+  so the glow backend keeps `wgpu` out of its build entirely; `eframe`'s
+  winit is the workspace's 0.30. `App::logic` polls the background work
+  (loads, the extraction, a started game), which goes on while the window is
+  minimised; `App::ui` reads the frame's input and lays out the panels on
+  the root `Ui`. egui draws text through skrifa, with hinting.
 - **No format logic of its own.** `analyze` finds sub-assets with the format
   crates' scanners, `export` calls the existing writers
   (`legaia_tim::write_png`, `legaia_actor_formats::scene_gltf`,

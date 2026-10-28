@@ -80,15 +80,15 @@ impl App {
         self.media.playing = false;
     }
 
-    pub(super) fn media_mode(&mut self, ctx: &egui::Context) {
+    pub(super) fn media_mode(&mut self, ui: &mut egui::Ui) {
         let Some(lib) = self.studio.library.clone() else {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 ui.label("Open a disc image first.");
             });
             return;
         };
         let Source::Disc(bin) = lib.source.clone() else {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 ui.label(
                     "CD-XA audio and STR movies are read as raw Mode 2 sectors, which only a disc \
                      image has; an extracted folder's copies lost their Form 2 audio. Open the \
@@ -107,12 +107,12 @@ impl App {
         files.sort_by_key(|f| media::natural_key(&f.path));
 
         let mut pick = None;
-        let side_max = super::side_panel_max(ctx, 200.0);
-        egui::SidePanel::left("media_files")
+        let side_max = super::side_panel_max(ui, 200.0);
+        egui::Panel::left("media_files")
             .resizable(true)
-            .default_width(260.0f32.min(side_max))
-            .max_width(side_max)
-            .show(ctx, |ui| {
+            .default_size(260.0f32.min(side_max))
+            .max_size(side_max)
+            .show(ui, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
@@ -164,10 +164,10 @@ impl App {
             self.media.loading = None;
         }
         if self.media.loading.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            ui.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let Some(sel) = self.media.sel.clone() else {
                 ui.label("Pick a movie or an XA audio file on the left.");
                 ui.label(

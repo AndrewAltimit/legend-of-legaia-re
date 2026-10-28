@@ -68,9 +68,9 @@ impl App {
         });
     }
 
-    pub(super) fn actors_mode(&mut self, ctx: &egui::Context) {
+    pub(super) fn actors_mode(&mut self, ui: &mut egui::Ui) {
         let Some(lib) = self.studio.library.clone() else {
-            egui::CentralPanel::default().show(ctx, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
                 ui.label("Open a disc image first.");
             });
             return;
@@ -84,13 +84,13 @@ impl App {
             st.monsters = Some(actors::monster_rows(&lib).map_err(|e| format!("{e:#}")));
         }
 
-        let side_max = super::side_panel_max(ctx, 260.0);
-        egui::SidePanel::left("actors")
+        let side_max = super::side_panel_max(ui, 260.0);
+        egui::Panel::left("actors")
             .resizable(true)
-            .default_width(330.0f32.min(side_max))
-            .min_width(260.0)
-            .max_width(side_max)
-            .show(ctx, |ui| {
+            .default_size(330.0f32.min(side_max))
+            .min_size(260.0)
+            .max_size(side_max)
+            .show(ui, |ui| {
                 ui.heading("Party");
                 if let Some(Ok(cats)) = &st.catalogs {
                     for c in cats {
@@ -177,7 +177,7 @@ impl App {
         }
 
         let mut export: Option<Pick> = None;
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             let Some(v) = &mut st.view else {
                 ui.label("Pick a party member or a monster on the left.");
                 ui.label(

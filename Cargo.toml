@@ -101,10 +101,11 @@ console_error_panic_hook = "0.1"
 cpal = "0.18"
 dirs = "7"
 # The desktop GUI toolkit for legaia-studio. Glow (OpenGL) backend only:
-# eframe 0.33's wgpu backend pins wgpu 27, not the workspace's wgpu 30, so
-# the glow backend is what keeps a second wgpu out of the tree. Its winit is
-# the workspace's 0.30.
-eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+# Studio draws nothing but egui's own meshes (its model view is a CPU
+# rasteriser), so it links no wgpu at all. eframe 0.36's wgpu backend would
+# be the workspace's wgpu 30, but glow keeps wgpu out of Studio's build.
+# Its winit is the workspace's 0.30.
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
 encoding_rs = "0.8"
 env_logger = "0.11"
 flate2 = "1"
