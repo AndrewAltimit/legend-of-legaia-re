@@ -808,7 +808,15 @@ pub(super) fn battle_image(
         // where it measures better the child re-runs to it
         // (`RetailBattle::display_retake`).
         if battle.display_retake() {
-            env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
+            if battle.retake_on_shot_only() {
+                env.push((
+                    "LEGAIA_CAPTURE_DISPLAY_LAG",
+                    battle.drive_display_lag().to_string(),
+                ));
+                env.push(("LEGAIA_CAPTURE_RETAKE_SHOT", "1".to_string()));
+            } else {
+                env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
+            }
         }
         tick += legaia_engine_capture::battle_drive::DRIVE_DEADLINE;
     }

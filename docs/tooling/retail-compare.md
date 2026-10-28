@@ -2395,6 +2395,17 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 
 #### Open cases
 
+- **The Guardian's Windhash clip.** `battle_tower_guardian_windhash_mid_cast`
+  holds the queue `34 0B 0E FF`: Windhash on archive entry `0x0B`. The
+  Guardian's magic slots read `+0x21 = 0x57`, `+0x22 = 0x34`, and its
+  tag-`0x23` entries are `0x0A` and `0x0B`, so the generic walk
+  (`0x801EA4A4..0x801EA548`) pairs Windhash with `0x0A` and V-Windhash with
+  `0x0B` - which `battle_tower_guardian_v_windhash_mid_cast` confirms
+  (`57 0B 07 FF`) - and the per-monster arm for id `0x11` is the default
+  (`0x801EBDAC`). The engine stages `0x0A`, whose hit lands on Noa on the
+  first `0x2B` pass, where retail's frame still shows her unhurt. What staged
+  `0x0B` is open; the next step is a write watch on the Guardian's `+0x1E0`
+  and on entry `0x0A`'s tag byte through the pick.
 - **Zeto's waves.** The forced cast is armed but never consumed inside the
   budget - the monster pick that would take it is not reached on Zeto's seat -
   so `0x70` is not reached. Why is open.
@@ -2566,6 +2577,13 @@ the yaw (`BattleCamera::align_orbit_yaw`): the headless seed sets its orbit to
 retail's yaw before it samples `camera`, and the image child gets the yaw as
 `LEGAIA_BATTLE_ORBIT_YAW` and holds its orbit there. It is the camera twin of
 the field HUD countdown hold.
+
+**The turning spell shots.** A monster's cast on one of the cast-effect
+driver's turning cases (`3`, `5`, `0xE`, `0x10`) aims the yaw a fixed step past
+the live one every pass, so its endpoint is the same clock: where the yaw
+stands is how far the shot has turned from wherever case 6 left it, which the
+replay's own earlier rounds decide. With the shot's pitch on retail's, the
+alignment takes retail's live yaw (`BattleCamera::align_glide_origin_to`).
 
 **Guests.** A party whose present list names a seat the save window's roster
 does not seat (a guest combatant) reads as a short engine party in
@@ -3192,14 +3210,16 @@ run in the drive's state; when the gate holds and that run already held `lag`
 ticks back, it names the earlier tick beside its frame (`<shot>.retake`), and
 the parent runs the child again with `LEGAIA_DIAG_CAPTURE_TICK` set to it.
 The child is tick-locked, so the re-run walks the same frames. A party seat's
-clip-age gate and every capture-band hold take it; the rest keep the gate's
+clip-age gate and every capture-band hold take it, and a monster's
+magic-band clip age takes it where the gate shows another shot
+([below](#a-shot-armed-after-the-displayed-frame)); the rest keep the gate's
 own frame:
 
 | Gate | Why it keeps the RAM's frame |
 |---|---|
 | under `lag` ticks into its state | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327` |
+| a monster's clip age, the same shot | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); retaken, both `battle_gimard_tail_fire_*` frames fell, and the monster strikes split both ways (`battle_jouind_gilium_lv3_strike` `.850` to `.953`, `battle_vozz_gizam_strike` `.964` to `.921`) |
 | `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
-| a monster's clip age | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); both `battle_gimard_tail_fire_*` frames fell |
 | `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |
 
 The retake is counted in the child's ticks, and with the child in step with
@@ -3325,6 +3345,36 @@ arm. The `super_queue_replace_*` captures are that pass: yaw `3205` walking to
 table the eye stood at depth `1965`, closer than any pose the seed's ease
 passed through; one pass back it stands at `2457`, and the frames read `.656`
 to `.744`.
+
+#### A shot armed after the displayed frame
+
+The magic band's shot arms on the first `0x2B` pass
+([battle-action](../subsystems/battle-action.md#the-cast-effect-drivers-camera-script)),
+so a monster's cast captured two passes into `0x2B` displays the case-6
+framing the shot replaced, and the gate's case 7 or `0xE` is a different
+framing, not a later reading of the same one. The child's first run checks
+when its camera armed the shot it stands on
+(`BattleCamera::spell_shot_armed_at`). On a monster's magic-band clip age
+(`RetailBattle::retake_on_shot_only`, `LEGAIA_CAPTURE_RETAKE_SHOT`) it
+retakes only when that shot was armed after the retake's tick and retail's
+camera already stands on it (its live pose at the tween table's endpoints).
+A one-frame shot lands on its arming pass and keeps nothing of the framing
+before it, so the replay's own case 6 is the only reading of the displayed
+frame; a shot still easing in holds retail's live pose, which the gate's
+frame is aligned to, and the group breaths' six-frame case 9 read lower on
+the replay's case 6 (`battle_chitei2_kemaro_lv2_lava_breath_mid_cast` `.941`
+to `.735`). Anywhere a
+shot armed after the retake's tick leaves the gate's target out of the note,
+so the retake draws the engine's own case 6. The lag of that retake is two of
+the child's own passes (`RetailBattle::drive_display_lag`): a pad drive runs
+the engine's default battle frame step unless the drive seeds retail's, and
+six ticks back from a step-`3` capture's gate is the child's `0x29` exit
+pass, which the state rule refuses.
+`battle_rugi_barra_windcutter_mid_cast` read `.538` on the gate's frame
+(Barra in close-up) and `.864` on the retake (Barra behind Vahn with the whole
+party in view, as on retail's screen);
+`battle_retona_viguro_lv2_thunder_break_mid_cast` `.552` to `.637`,
+`battle_tower_guardian_windhash_mid_cast` `.567` to `.611`.
 
 ## Divergence shapes
 

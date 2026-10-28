@@ -391,6 +391,11 @@ pub struct ScreenshotConfig {
     /// gates where the displayed frame measures closer
     /// (`RetailBattle::display_retake` in `legaia-parity`).
     pub display_lag: u64,
+    /// `LEGAIA_CAPTURE_RETAKE_SHOT=1`: retake only when the battle camera
+    /// armed the magic band's shot it stands on after the retake's tick, so
+    /// the gate's frame shows a different shot than the display did
+    /// (`RetailBattle::retake_on_shot_only` in `legaia-parity`).
+    pub retake_shot_only: bool,
     /// The first tick of the drive's current run in its action state.
     pub state_since: std::cell::Cell<Option<u64>>,
     /// The framing the battle camera's law armed on the gate tick, kept for
@@ -893,6 +898,8 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
+            retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
+                .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),
             battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
                 .ok()

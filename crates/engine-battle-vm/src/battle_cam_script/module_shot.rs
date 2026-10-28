@@ -240,6 +240,16 @@ impl BattleCamera {
         self.spell_cam.is_some()
     }
 
+    /// The display frame the cast-effect driver's current shot was armed
+    /// on: the first camera step that framed the magic band's case the
+    /// camera now walks. `None` while no magic-band shot owns the camera.
+    /// A frame older than this one was drawn by the framing before it -
+    /// what the retail-compare image child needs to know before it borrows
+    /// a later tick's framing for an earlier frame.
+    pub fn spell_shot_armed_at(&self) -> Option<u64> {
+        self.spell_shot.map(|(_, frame)| frame)
+    }
+
     /// Phase-align a module shot still walking to a retail instant: every
     /// component whose shot endpoint agrees with retail's tween-table
     /// endpoint (`end`) takes retail's `live` value, and the walk goes on

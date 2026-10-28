@@ -594,6 +594,25 @@ and slot 0's position is the point case 8 frames. The engine's own census
 leaves `ctx[+0x24D]` at zero, so the camera takes the larger of the two counts;
 the magic band's exit gates still read the census alone.
 
+**The pass the shot arms on.** `0x29`'s exit pass calls the driver
+(`jal 0x801DC0A0` at `0x801E46B8`) and then falls to the state's shared tail,
+`FUN_801D5854(actor, 6)` at `0x801E474C`, which re-arms case 6 over it. The
+`0x2A` pass that meets the queue's terminator stores `0x2B` and calls neither
+(`0x801E4774..0x801E479C`). So the cast's shot first frames the camera on the
+first `0x2B` pass (`jal 0x801DC0A0` at `0x801E4834`), and the frame before it
+is still case 6's. A capture two passes into `0x2B` holds the shot in RAM
+while its displayed frame shows the case-6 framing it replaced:
+`battle_rugi_barra_windcutter_mid_cast` holds case 7 on Barra (pitch `64`,
+TR z `3353`), and its screen shows the wider case-6 view of the whole party
+(the floor grid on the older of its two ordering tables already sits at
+case 7's pose, one accumulator step closer). The port arms the shot on the same pass
+(`BattleCamera::spell_shot_armed_at` records it).
+
+The turning cases `3`, `5`, `0xE` and `0x10` aim the live yaw a fixed step
+on every pass, so their yaw has no endpoint of its own: where it stands is
+how long the shot has turned from the yaw case 6 left
+(`SPELL_CAM_TURNING_CASES`).
+
 ## The summon cast close-up camera
 
 `FUN_801DC0A0` is the cast-effect driver *and* a camera script: its prologue

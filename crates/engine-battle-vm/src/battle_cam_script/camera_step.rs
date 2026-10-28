@@ -89,6 +89,7 @@ impl BattleCamera {
             last_action_state: 0,
             acting_body: None,
             spell_cam: None,
+            spell_shot: None,
             last_active_commits: None,
             last_active_installs: None,
             clip_age: 0,
@@ -213,6 +214,9 @@ impl BattleCamera {
         }
         self.last_action_state = state;
         self.steps_in_state = 0;
+        if !SPELL_CAM_STATES.contains(&state) {
+            self.spell_shot = None;
+        }
         self.release_module_shot(state);
         // The magic exit's camera write, on the pass that leaves `0x2E` for
         // `0x50` (`0x801E4958..0x801E497C`): a pitch at or above `0x191`
@@ -663,7 +667,15 @@ impl BattleCamera {
             self.pose.pitch = nearest(self.pose.pitch, live.pitch);
             mask |= 1;
         }
-        let yaw_exact = ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE;
+        // A turning magic-band shot aims the yaw a step past the live one
+        // every pass, so its endpoint is the live yaw's own clock: with the
+        // shot's pitch on retail's, the live yaw is phase-aligned the way
+        // the idle orbit's is ([`Self::align_orbit_yaw`]).
+        let turning = self
+            .spell_shot
+            .is_some_and(|(case, _)| SPELL_CAM_TURNING_CASES.contains(&case))
+            && ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE;
+        let yaw_exact = turning || ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE;
         if yaw_exact {
             self.pose.yaw = nearest(self.pose.yaw, live.yaw);
             mask |= 2;
@@ -1432,6 +1444,9 @@ impl BattleCamera {
                     si.live_yaw = self.pose.yaw;
                     si.frame_step = self.frame_step;
                     if let Some(shot) = spell_cam_case(&si).shot {
+                        if self.spell_shot.is_none_or(|(case, _)| case != si.case) {
+                            self.spell_shot = Some((si.case, self.last_frames));
+                        }
                         let mut from = self.pose;
                         let steps = self.frames_to_steps(shot.frames);
                         let g = Glide::linear(&mut from, shot.pose, shot.raw_z, steps, true);

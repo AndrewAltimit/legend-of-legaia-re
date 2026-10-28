@@ -556,8 +556,26 @@ impl PlayWindowApp {
             .checked_sub(sc.display_lag)
             .filter(|&t| t >= since)
         {
+            // A magic-band shot the camera armed after the retake's tick
+            // framed none of the frames before it: the retake draws the
+            // framing it replaced, so it borrows no target off the gate's.
+            let w = &self.session.host.world;
+            let shot_after = w
+                .battle
+                .camera
+                .as_ref()
+                .and_then(|c| c.spell_shot_armed_at())
+                .is_some_and(|at| at > w.clock.display_frames - (self.tick_no - want));
+            if sc.retake_shot_only && !shot_after {
+                return;
+            }
             eprintln!("display lag: retake at tick {want} (state since {since})");
-            let _ = std::fs::write(path.with_extension("retake"), retake_note(sc, want));
+            let note = if shot_after {
+                want.to_string()
+            } else {
+                retake_note(sc, want)
+            };
+            let _ = std::fs::write(path.with_extension("retake"), note);
         }
     }
 }

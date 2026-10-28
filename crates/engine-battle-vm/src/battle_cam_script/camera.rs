@@ -269,6 +269,10 @@ pub struct BattleCamera {
     /// This frame's call of the cast-effect driver, when the magic band made
     /// one ([`BattleCamInputs::spell_cam`]).
     pub(super) spell_cam: Option<SpellCamInputs>,
+    /// The cast-effect driver case the camera's shot is framed by, and the
+    /// display frame its first pass armed it on; `None` while no magic-band
+    /// shot owns the camera ([`Self::spell_shot_armed_at`]).
+    pub(super) spell_shot: Option<(u8, u64)>,
     /// The last [`BattleCamInputs::swing_reseed`] count seen; `None` until
     /// the first drive.
     pub(super) last_swing_seeds: Option<u32>,
