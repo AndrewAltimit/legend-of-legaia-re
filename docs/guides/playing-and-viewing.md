@@ -144,6 +144,17 @@ A row moved off its first-start value carries a small gold dot before its
 value, and the help box under the buttons names the default (*Default: Off
 (Delete)*), so a changed setting is visible without opening a file.
 
+A value is drawn green when the original game does not have it (an
+enhancement, a fix or a tweak in effect) and dim when it is the original's,
+whatever the value's words: *PlayStation pixel look: Off* reads green,
+because the original's picture is the PlayStation's own, and *Smarter
+monsters: Off* reads dim. The help box names the original's value under a
+row that departs from it (*Not as in the original game (Off).*), and a
+changed row's default note carries it too (*Default: On (Delete). Original:
+Off.*). The window,
+time-of-day and volume rows have no original counterpart and keep their plain
+colours; the original values are the ones *Original game only* plays with.
+
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
 either place is the one the other shows. The `launcher.toml` rows are launch

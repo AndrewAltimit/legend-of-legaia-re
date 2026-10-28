@@ -20,7 +20,8 @@
 //!   the gameplay tweaks, kept in `launcher.toml`), in six groups. The list scrolls when it is
 //!   longer than the panel: focus keeps the selected row in view, and a bar
 //!   on the panel's edge shows where the view is. Every row says what it
-//!   does in the help box.
+//!   does in the help box; a value the original game does not have reads
+//!   green, the original's own dim (`OptionRow::original_value`).
 //! - **Controls.** The current key bindings (`legaia-input.toml`), so a
 //!   player sees them before the game starts.
 //! - **Play** starts the game in a child process (winit allows one event
@@ -968,10 +969,16 @@ impl LauncherApp {
             } else {
                 row.value(&self.options, &self.settings)
             };
-            let vink = match value.as_str() {
+            // A value the original game has reads dim; one it does not (an
+            // enhancement, a fix or a tweak in effect) reads green. Rows
+            // with no original counterpart (window, volumes) keep the
+            // plain On / Off / value inks.
+            let vink = match (value.as_str(), row.original_value()) {
                 _ if muted => FAINT,
-                "On" => GOOD,
-                "Off" => DIM,
+                (v, Some(orig)) if v == orig => DIM,
+                (_, Some(_)) => GOOD,
+                ("On", None) => GOOD,
+                ("Off", None) => DIM,
                 _ => GOLD,
             };
             let shown = if focused {
@@ -1067,7 +1074,7 @@ impl LauncherApp {
             Item::Play => {
                 if self.disc.is_some() {
                     "Start the game at the title screen. Saves and settings are kept in \
-                     your own folder."
+                     your own folder. Option values in green differ from the original game."
                         .into()
                 } else {
                     "Choose your disc image first.".into()
@@ -1108,9 +1115,15 @@ impl LauncherApp {
         let mut lines = vec![(self.help_text(), DIM)];
         if let Item::Opt(row) = self.focus
             && self.panel == Panel::Options
-            && !row.is_default(&self.options, &self.settings)
         {
-            lines.push((default_note(row), GOLD));
+            if !row.is_default(&self.options, &self.settings) {
+                // The default note names the original's value too.
+                lines.push((default_note(row), GOLD));
+            } else if !(self.settings.switches.retail && row.overridden_by_retail())
+                && let Some(note) = original_note(row, &self.options, &self.settings)
+            {
+                lines.push(note);
+            }
         }
         lines
     }
@@ -1754,10 +1767,29 @@ fn help_layout(c: &Canvas, msg: &[Message]) -> HelpLayout {
     }
 }
 
-/// The help box's note under a changed option row: the first-start value
-/// and the key that restores it.
+/// The help box's note under a changed option row: the first-start value,
+/// the key that restores it, and the original game's value when it has one.
 fn default_note(row: OptionRow) -> String {
-    format!("Default: {} (Delete)", row.default_value())
+    match row.original_value() {
+        Some(orig) => format!(
+            "Default: {} (Delete). Original: {orig}.",
+            row.default_value()
+        ),
+        None => format!("Default: {} (Delete)", row.default_value()),
+    }
+}
+
+/// The help box's note on how the focused row (at its default) compares
+/// with the original game: green when the value is not the original's
+/// (naming the original's), dim when it is. `None` for a row the original
+/// has no counterpart for.
+fn original_note(row: OptionRow, opts: &OptionsState, s: &LauncherSettings) -> Option<Message> {
+    let orig = row.original_value()?;
+    Some(if row.departs_from_original(opts, s) {
+        (format!("Not as in the original game ({orig})."), GOOD)
+    } else {
+        ("As in the original game.".into(), FAINT)
+    })
 }
 
 fn capitalise_first(s: &str) -> String {
@@ -2061,6 +2093,15 @@ mod tests {
                 format!("{} (changed)", row.label()),
                 vec![(row.help().to_string(), DIM), (default_note(row), GOLD)],
             ));
+            if let Some(orig) = row.original_value() {
+                out.push((
+                    format!("{} (not original)", row.label()),
+                    vec![
+                        (row.help().to_string(), DIM),
+                        (format!("Not as in the original game ({orig})."), GOOD),
+                    ],
+                ));
+            }
             if row.overridden_by_retail() {
                 let s = format!("{} Off while Original game only is on.", row.help());
                 out.push((format!("{} (retail)", row.label()), one(&s)));

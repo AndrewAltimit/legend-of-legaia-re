@@ -579,7 +579,7 @@ impl OptionRow {
             Self::Bloom => "Bright lights and lit windows glow softly. In game: F10.",
             Self::PsxRender => {
                 "The PlayStation's own 320x240 picture, magnified, with its wobbling \
-                 vertices and colour dithering. Off draws clean edges at the window's size."
+                 vertices and dithering. Off draws clean edges."
             }
             Self::CameraDistance => {
                 "How far the field camera sits behind your character. Retail is the \
@@ -771,6 +771,62 @@ impl OptionRow {
             Self::RetailObjectWindow => on_off(opts.retail_static_window),
             Self::Retail => on_off(s.switches.retail),
         }
+    }
+
+    /// The row's value in the original game, as [`Self::value`] shows it:
+    /// the options under `OptionsState::pin_retail` and the launch switches
+    /// under `WorldToggles::pin_retail`'s values. `None` for a row the
+    /// original has no counterpart for (the window, the volumes, the
+    /// enhanced lighting's time of day, the *Original game only* switch
+    /// itself).
+    pub fn original_value(self) -> Option<String> {
+        match self {
+            Self::Fullscreen
+            | Self::WindowSize
+            | Self::TimeOfDay
+            | Self::MasterVolume
+            | Self::MusicVolume
+            | Self::SfxVolume
+            | Self::MonoDownmix
+            | Self::Retail => None,
+            _ => {
+                let mut opts = legaia_engine_menus::options::OptionsState::default();
+                opts.pin_retail();
+                let mut s = LauncherSettings::default();
+                let w = &mut s.switches;
+                // The original's picture is the PlayStation's own.
+                w.psx_render = true;
+                w.no_entry_pulse = true;
+                w.smart_monsters = false;
+                w.arts_saved_list = false;
+                w.no_shiny_seru = true;
+                w.flee_exp = false;
+                w.exp_rate_permille = None;
+                w.no_fortress_encounter_fix = true;
+                w.jewel_fix = false;
+                w.no_hp_readout_guard = true;
+                w.spirit_ap = None;
+                w.damage_ap = None;
+                w.seru_catch_pct = None;
+                w.enemy_attack_permille = None;
+                w.enemy_stat_permille = None;
+                w.equipment_drops = false;
+                w.save_anywhere = false;
+                Some(self.value(&opts, &s))
+            }
+        }
+    }
+
+    /// Whether the row shows a value the original game does not have (an
+    /// enhancement, a fix or a tweak switched on). `false` for a row with
+    /// no original counterpart.
+    pub fn departs_from_original(
+        self,
+        opts: &legaia_engine_menus::options::OptionsState,
+        s: &LauncherSettings,
+    ) -> bool {
+        self.original_value()
+            .is_some_and(|o| o != self.value(opts, s))
     }
 
     /// The row's value on a first start: the game's own option default, or
@@ -1001,6 +1057,53 @@ mod tests {
             bin: p.to_path_buf(),
             executable: USA_EXECUTABLE.into(),
         }
+    }
+
+    /// Every row with an original counterpart reads as the original under
+    /// the retail pins both halves use (`OptionsState::pin_retail`, the
+    /// `--retail` tweaks), so the launcher's "original" marking agrees
+    /// with what *Original game only* plays.
+    #[test]
+    fn original_values_are_the_retail_pins() {
+        use legaia_engine_menus::options::OptionsState;
+        let mut o = OptionsState::default();
+        o.pin_retail();
+        assert!(o.retail_deviations().is_empty());
+        let t = legaia_engine_session::session_switches::GameplayTweaks::retail();
+        for (_, row) in OPTION_ROWS {
+            let Some(orig) = row.original_value() else {
+                continue;
+            };
+            if row.is_game_option() {
+                assert_eq!(
+                    orig,
+                    row.value(&o, &LauncherSettings::default()),
+                    "{}",
+                    row.label()
+                );
+            }
+        }
+        // The tweak rows' original is the tweak set `--retail` installs.
+        let shown = |row: OptionRow| row.original_value().unwrap();
+        assert_eq!(shown(OptionRow::ShinySeru), on_off(t.shiny_seru));
+        assert_eq!(shown(OptionRow::FleeExp), on_off(t.flee_exp));
+        assert_eq!(
+            shown(OptionRow::FortressFix),
+            on_off(t.fortress_encounter_fix)
+        );
+        assert_eq!(shown(OptionRow::JewelFix), on_off(t.jewel_fix));
+        assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
+        assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
+        assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
+        assert_eq!(shown(OptionRow::PsxRender), "On");
+        assert_eq!(shown(OptionRow::EnhancedLighting), "Off");
+        assert_eq!(shown(OptionRow::RetailTileCrop), "On");
+        // The shipped defaults keep the enhancements on: those rows read
+        // as departing from the original on a first start.
+        let (d, s) = (OptionsState::default(), LauncherSettings::default());
+        assert!(OptionRow::EnhancedLighting.departs_from_original(&d, &s));
+        assert!(!OptionRow::SmartMonsters.departs_from_original(&d, &s));
+        assert!(!OptionRow::WindowSize.departs_from_original(&d, &s));
     }
 
     #[test]
