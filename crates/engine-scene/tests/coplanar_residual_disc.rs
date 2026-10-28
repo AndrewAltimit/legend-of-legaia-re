@@ -127,7 +127,7 @@ fn clip_tri_tri(mut subject: Vec<[f32; 2]>, clip: &[[f32; 2]; 3]) -> Vec<[f32; 2
 }
 
 struct WTri {
-    /// Index into the combined terrain-then-placements draw list.
+    /// Index into the combined placements-then-terrain draw list.
     draw: usize,
     res_tmd: usize,
     colour_half: bool,
@@ -249,9 +249,7 @@ fn diag_scene(index: &ProtIndex, name: &str) -> (usize, f32) {
         .collect();
     let (placements, _) = field_env::resolve_env_draws(&env_tmds, &placement_records, floor_lut);
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
-    let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
-    combined.extend_from_slice(&terrain);
-    combined.extend_from_slice(&placements);
+    let combined: Vec<EnvDraw> = coplanar_draws::emission_order(&terrain, &placements);
     let planes = coplanar_draws::draw_plane_summaries(&combined, &res);
     let offsets = coplanar_draws::coplanar_draw_offsets(&combined, &planes);
     eprintln!(

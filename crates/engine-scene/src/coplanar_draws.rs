@@ -336,8 +336,9 @@ fn lift_dir(vis: [f32; 3]) -> [f32; 3] {
 /// the surface's visible side - the same "small decal wins" outcome retail's
 /// mean-Z ordering-table bucketing produces. Between draws of equal area the
 /// **earlier** one lifts: equal quads share a bucket, and a bucket draws its
-/// packets last-linked first, so the earlier-emitted draw is the one on top. Ranks are assigned by
-/// greedy graph colouring, so chains of adjacent tiles alternate 0/1 instead
+/// packets last-linked first, so the earlier-emitted draw is the one on top
+/// (hand a field scene's layers in through [`emission_order`]). Ranks are
+/// assigned by greedy graph colouring, so chains of adjacent tiles alternate 0/1 instead
 /// of accumulating.
 pub fn coplanar_draw_offsets(
     draws: &[EnvDraw],
@@ -525,11 +526,12 @@ pub fn coplanar_draw_offsets(
         // the wall panel behind it - put their packets in the same ordering
         // table bucket (equal mean Z), and a bucket is a LIFO list: the
         // packet linked last is drawn first, so the draw the field pass
-        // emitted first paints over the one it emitted after. `koin1`'s
-        // prize-counter banner (env slot 64, additive, CLUT `(80, 504)`) is
-        // emitted before the brick panel it hangs on (slot 63), and retail's
-        // display list holds each brick quad directly ahead of its banner
-        // quad; ranked the other way the panel hid the banner outright.
+        // emitted first paints over the one it emitted after. So `draws`
+        // must arrive in retail's emission order, which across the two
+        // static layers is placed objects first ([`emission_order`]):
+        // `koin1`'s prize-counter banner, a placed sign on its terrain
+        // cell's brick panel, is the case that ranked the wrong way while
+        // the hosts concatenated terrain first.
         order.sort_by(|&a, &b| {
             max_area[&b]
                 .partial_cmp(&max_area[&a])
@@ -662,6 +664,29 @@ pub fn coplanar_draw_offsets(
         // apply).
         out.entry(draws[di]).or_insert(*off);
     }
+    out
+}
+
+/// A field scene's two static layers in the order retail **emits** them, the
+/// order [`coplanar_draw_offsets`] ranks equal-area ties by: the placed
+/// objects first, then the terrain / decoration cells.
+///
+/// The field frame body `FUN_80016444` runs the actor render passes
+/// (`FUN_8001D140` over the actor lists, `0x800166A4..0x80016738`) before
+/// the decoration pass (`FUN_8001D058` at `0x80016784`, which reaches
+/// `FUN_801F7088` / `FUN_801F69D8`), so every placed object's packets are
+/// built ahead of every cell's. Two such packets that land in one
+/// ordering-table bucket draw last-linked first, so on a shared plane the
+/// placed object paints over the cell. `koin1`'s prize-counter banner is
+/// that case: a placed additive sign (CLUT `(80, 504)`) on the same plane as
+/// the terrain cell's brick panel, whose packets retail's display list holds
+/// at lower addresses than the panel's and draws after them. Ranked
+/// terrain-first, the panel lifted over the banner and hid it.
+// REF: FUN_80016444, FUN_8001D140, FUN_8001D058
+pub fn emission_order(terrain: &[EnvDraw], placed: &[EnvDraw]) -> Vec<EnvDraw> {
+    let mut out = Vec::with_capacity(placed.len() + terrain.len());
+    out.extend_from_slice(placed);
+    out.extend_from_slice(terrain);
     out
 }
 

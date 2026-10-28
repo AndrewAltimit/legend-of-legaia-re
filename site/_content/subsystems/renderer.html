@@ -115,7 +115,7 @@
     <thead><tr><th>Case</th><th>Retail outcome</th><th>Port policy</th></tr></thead>
     <tbody>
       <tr><td>Decal on a base surface</td><td>The decal's mean depth is local, the base's averages deeper - the decal lands in a nearer bucket</td><td>A small depth lift so the retail winner stays the winner</td></tr>
-      <tr><td>Same bucket</td><td>Head insertion: the earliest-emitted primitive draws last, on top</td><td>Equal keys draw later-submitted-first</td></tr>
+      <tr><td>Same bucket</td><td>Head insertion: the earliest-emitted primitive draws last, on top. The field emits its placed objects before its map cells, so a sign placed on a wall cell paints over it</td><td>Equal keys draw later-submitted-first; equal coplanar draws rank placed objects ahead of map cells</td></tr>
       <tr><td>Double-sided pair</td><td><code>NCLIP</code> rasterises only the camera-facing copy</td><td>Pairs are marked at mesh build; only the facing copy draws</td></tr>
       <tr><td>Far-bucket floor cell</td><td>Painted under everything else in the frame</td><td>Drawn first, under every other primitive</td></tr>
     </tbody>

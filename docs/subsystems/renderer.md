@@ -2466,7 +2466,17 @@ across a scene's resolved `EnvDraw` list (terrain + placed layers) and
 returns a per-draw world offset: the largest surface in a cluster stays put,
 and each overlapping smaller / later draw lifts `DRAW_NUDGE` per rank toward
 the surface's visible side - the "small decal wins" outcome of mean-Z
-bucketing. A lift never points down: a plane visible from below (a fallen
+bucketing. Equal planes rank by emission order: they share a bucket, a bucket
+draws last-linked first, so the draw emitted first lifts. The hosts hand the
+kernel the placed objects ahead of the terrain cells
+(`coplanar_draws::emission_order`), because the field frame body
+`FUN_80016444` runs the actor render passes (`FUN_8001D140`,
+`0x800166A4..0x80016738`) before the decoration pass (`FUN_8001D058` at
+`0x80016784`). `koin1`'s prize-counter banner, a placed additive sign on its
+terrain cell's brick panel, is that tie: retail's display list holds the
+banner's packets at lower addresses than the panel's and draws them after
+the panel, and ranked terrain-first the panel lifted over the banner and hid
+it. A lift never points down: a plane visible from below (a fallen
 log's underside) moves up, because a downward lift can sink it past the
 ground heightfield's `GROUND_SINK` (`vell`'s log). All three hosts that
 assemble field scenes apply the same map - the native play-window in its

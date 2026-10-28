@@ -326,12 +326,12 @@ pub fn build_field_render(
         .filter(|h| !h.indices.is_empty());
     let occluders =
         legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&terrain, &placements], res);
-    // Cross-draw coplanar lifts over the combined layers (terrain first, then
-    // placements - the same concatenation the native shell and the field-scene
-    // viewer rank, so all three hosts lift the same draws).
-    let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
-    combined.extend_from_slice(&terrain);
-    combined.extend_from_slice(&placements);
+    // Cross-draw coplanar lifts over the combined layers in retail's emission
+    // order (`coplanar_draws::emission_order`: placements, then terrain) - the
+    // order the native shell and the field-scene viewer rank, so all three
+    // hosts lift the same draws.
+    let combined: Vec<EnvDraw> =
+        legaia_engine_scene::coplanar_draws::emission_order(&terrain, &placements);
     let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&combined, res);
     let coplanar_offsets =
         legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
