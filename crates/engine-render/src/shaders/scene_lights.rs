@@ -56,6 +56,10 @@ struct SceneLightsU {
     // engine-ui): (enable, sz_per_w, ot_shift, near_otz). Read by the
     // vertex stage; all-zero (the default) never rejects.
     prim_near: vec4<f32>,
+    // The GTE's register limits (`prim_near_reject::gte_saturated_clip`):
+    // (sz_per_w, H, 0, 0). Read by the vertex stage under PSX mode; all-zero
+    // (the default) leaves every corner where it projects.
+    gte_sat: vec4<f32>,
     lights: array<ScenePointLightU, 8u>,
 };
 
@@ -63,6 +67,10 @@ struct SceneLightsU {
 
 fn prim_near_params() -> vec4<f32> {
     return sl.prim_near;
+}
+
+fn gte_sat_params() -> vec4<f32> {
+    return sl.gte_sat;
 }
 
 // The mood's (ambient rgb, emissive gain) for `dyn_light`.
@@ -224,6 +232,10 @@ fn occl_keep(frag_px: vec2<f32>, frag_w: f32) -> f32 {
 // Per-primitive near reject stub: the single-mesh pipelines carry no scene
 // block, so no primitive is ever rejected.
 fn prim_near_params() -> vec4<f32> {
+    return vec4<f32>(0.0);
+}
+
+fn gte_sat_params() -> vec4<f32> {
     return vec4<f32>(0.0);
 }
 "#;

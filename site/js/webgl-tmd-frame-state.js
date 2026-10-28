@@ -117,6 +117,15 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       ? [+params[0], +params[1], +params[2], +params[3]] : [0, 0, 0, 0];
   }
 
+  /* The GTE's register limits for the assembled scene pass under PSX mode:
+   * the [sz_per_w, h, 0, 0] word from the shared
+   * `camera_frame::gte_saturation` kernel (the native renderer's
+   * `set_gte_saturation`). null / all-zero leaves every corner unclamped. */
+  setGteSat(params) {
+    this.gteSat = (params && params.length === 4)
+      ? [+params[0], +params[1], +params[2], +params[3]] : [0, 0, 0, 0];
+  }
+
   /* (Re)build and bind a scene mesh's primitive-corner stream into its VAO
    * (which must be bound). Without a hook, or when the hook declines, the
    * attributes stay disabled and read the generic default - count 0, never

@@ -228,6 +228,26 @@ impl LegaiaRuntime {
         .to_vec()
     }
 
+    /// This frame's GTE register limits for the scene pass - the `[sz_per_w,
+    /// h, 0, 0]` word the page hands `TmdRenderer.setGteSat` (the GLSL
+    /// `u_gte_sat`, read under PSX mode), from the shared
+    /// [`camera_frame::gte_saturation`] the native window's
+    /// `Renderer::set_gte_saturation` call also reads.
+    pub fn play_render_gte_sat(&self, retail_camera: bool) -> Vec<f32> {
+        let mode = self
+            .scene_host
+            .host()
+            .map_or(SceneMode::Title, |h| h.world.mode);
+        legaia_render_kernels::prim_near_reject::gte_saturation_params(
+            camera_frame::gte_saturation(
+                mode,
+                retail_camera,
+                self.scene_host.camera().globals.0[9] as f32,
+            ),
+        )
+        .to_vec()
+    }
+
     /// Per-vertex primitive-corner records for a triangle mesh - the stream
     /// the page binds as `a_prim_c0..a_prim_c3`, from the same
     /// [`legaia_render_kernels::prim_near_reject::prim_corner_refs`] the native

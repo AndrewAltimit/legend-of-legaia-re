@@ -232,7 +232,10 @@ fn vs_main(
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
+    // PSX mode: the GTE's register limits (a corner past `IR = 0x7FFF` or
+    // `SZ = 0xFFFF` lands where retail's packet put it), then the snap.
     if u.psx_params.z >= 0.5 {
+        clip = gte_saturate_clip(clip);
         clip = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
     }
     if u.psx_params.z >= 1.5 {

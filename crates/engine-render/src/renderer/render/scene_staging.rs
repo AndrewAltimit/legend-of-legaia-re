@@ -92,6 +92,7 @@ impl Renderer {
         ];
         u.ambient = mood.uniforms(true)[2];
         u.prim_near = self.prim_near.get();
+        u.gte_sat = self.gte_sat.get();
         // Camera-occlusion fade focus: project the host-staged player clip
         // position to framebuffer pixels + view depth, carrying the host's
         // eased fade strength in `.w`. The zeroed default (strength 0) is

@@ -546,10 +546,13 @@ engine verdict:
   `displayed_part_halfword`), and its banks are written over the engine's
   part of the same record on the capture frame
   (`World::seat_ambient_part_banks`). The program and its rates stay the
-  engine's. `noaru_field_card_walk` reads `.822`; its texture page and CLUT
-  rows are byte-identical to retail's, and what is left is the bowl's
-  texturing across retail's six screen-sized `POLY_FT4`s (corners up to
-  `216` px off screen), a per-prim question for the ambient part draw path.
+  engine's. Its texture page and CLUT rows are byte-identical to retail's,
+  and the rest was the bowl's six screen-sized `POLY_FT4`s (corners up to
+  `216` px off screen), whose corners are where the GTE's saturated `IR` and
+  `SZ` put them, not a pinhole projection
+  ([renderer](../subsystems/renderer.md#the-gtes-register-limits)). With the
+  limits applied under PSX mode `noaru_field_card_walk` reads `.907`
+  (`.822` before).
 
   So is the text balloon (`4C E1`, and the place-name banner the MAN
   loader seats through the same handler `FUN_801DA7F0`). A capture under

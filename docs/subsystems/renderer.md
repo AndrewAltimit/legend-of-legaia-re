@@ -2336,7 +2336,20 @@ dispatcher loads that floor into `t4` per group (`lhu t4,0x6A(t2)` at
 The scene init writes the floor as `0x10` (`FUN_8001D424` at `0x8001D4E8`,
 `FUN_8001DCF8` at `0x8001DD5C`); the catalogued PCSX-Redux states hold
 `s = 3` on the field and `s = 2` in battle. So a field primitive whose mean
-depth is under 128, or a battle one under 64, is not drawn. `SZ` saturates at
+`SZ` is under 128, or a battle one under 64, is not drawn. Both hosts run
+the field cut on the port's eye depth (`sz_per_w = 1`), and that is a
+calibration rather than the GTE's scale. The field camera folds a 6x world
+scale into its rotation ([the field view matrix](#the-field-view-matrix-where-tr-comes-from)),
+so a field `SZ` is six times the port's `w` ([the register limits](#the-gtes-register-limits)
+measure it), and a cut at `SZ = 6 * w` would drop only what sits within about
+`21` units of the eye. `rikuroa_field_card_walk` is the counter-weight: its
+capture leaves out a near wall quad (corners `(31, 194)`, `(-285, 487)`,
+`(11, 44)`, `(-293, -26)`, mean `w` near `100`) whose packet the display
+list holds, which the `w`-unit cut drops and a `6 * w` cut keeps (`.985`
+against `.959`). The packet's second half spans `513` rows and its first `443`,
+so a size limit that drops the whole quad when one half exceeds it, where the
+port drops it only when both halves do, is the other reading; which rule
+drops it is open. `SZ` saturates at
 `0`, so a corner behind the eye pulls the mean toward zero rather than below
 it. Worked case: the evolved-Cort approach in `jouine` parks the camera
 against a root-wall body that a per-pixel clip would stretch across the
@@ -2394,6 +2407,37 @@ of the Caruban fight (`rikuroa_pre_caruban`, monster HP poked to 1,
 `scripts/pcsx-redux/autorun_film.lua`) shows two such frames on the console;
 the port's flat dark-blue frames on the same sweep are that, not a stray
 primitive.
+
+### The GTE's register limits
+
+`RTPS` / `RTPT` write a corner's screen position from saturated registers:
+`IR1` / `IR2` (the eye-space X / Y in GTE units) clamp to `-0x8000..=0x7FFF`,
+`SZ` to `0..=0xFFFF`, the divide's quotient at `0x1FFFF` (`H / SZ` at most
+`2`) and `SX` / `SY` to `-0x400..=0x3FF`. The prim leaves link whatever the
+FIFO holds (`FUN_80044DC8`'s `swc2` of `SXY0..2`), so a corner past a limit
+is drawn where the clamp put it. On the field the 6x camera scale brings the
+limits within reach of ordinary geometry: `SZ` saturates at an eye depth of
+about `10 900` port units and `IR` at a screen offset of `0x7FFF * H / SZ`.
+
+`noaru`'s ice floor is the case that shows. The bowl the ambient part keeps
+on the focus ([move-vm-overlay-ext](move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07))
+is `20 000` units across, and `noaru_field_card_walk`'s display list holds it
+as six `POLY_FT4`s whose corners no single projection of the mesh reproduces
+(a fitted pinhole camera leaves `33` px of residual). The far rim's corners
+sit `6 * w / 0xFFFF` times as far from the centre as the unclamped
+projection puts them, the off-screen corners nearer, and under `H = 608` with `SZ = 6 *
+w` every corner lands within the engine's own pose error (`3` px). An
+unclamped projection mapped the floor's texture across the wrong quads.
+
+The port applies the limits in the mesh vertex stage under PSX mode only
+(`Renderer::set_psx_mode`): `prim_near_reject::gte_saturated_clip` on the
+CPU, `gte_saturate_clip` in the WGSL and `gteSaturateClip` in the play page's
+GLSL, ahead of the vertex snap, from one per-frame word
+(`camera_frame::gte_saturation`: field only, `sz_per_w = 6` and the frame's
+`H`, staged by `Renderer::set_gte_saturation` and the play page's
+`setGteSat`). A corner inside every limit passes through untouched, and `w`
+is kept, since the textures interpolate affinely in screen space either way;
+clean rendering is unchanged.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 

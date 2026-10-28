@@ -247,6 +247,7 @@ impl Renderer {
             overworld_curve: std::cell::Cell::new(0.0),
             overworld_curve_bias: std::cell::Cell::new(0.0),
             prim_near: std::cell::Cell::new([0.0; 4]),
+            gte_sat: std::cell::Cell::new([0.0; 4]),
             // Semi-transparency (ABE) blending on by default: retail's GPU
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.

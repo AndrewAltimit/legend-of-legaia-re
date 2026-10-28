@@ -88,7 +88,48 @@ fn span_too_big(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> bool {
     return hi.x - lo.x > 1023.0 || hi.y - lo.y > 511.0;
 }
 
+// The GTE's register limits on one projected corner
+// (`prim_near_reject::gte_saturated_clip`): `IR1` / `IR2` saturate to
+// `-0x8000..=0x7FFF`, `SZ` to `0..=0xFFFF`, the divide at `H / SZ = 2` and
+// `SX` / `SY` to `-0x400..=0x3FF`, in GTE units (`sz_per_w` times the eye
+// space; `gte_sat_params()` = `(sz_per_w, H)`, zero off). `w` is kept, a
+// corner inside every limit is returned as it came.
+const GTE_OFY_BIAS: f32 = 0.05;
+
+fn gte_saturate_clip(clip: vec4<f32>) -> vec4<f32> {
+    let p = gte_sat_params();
+    let w = clip.w;
+    if (p.x <= 0.0 || p.y <= 0.0 || w <= 0.0) {
+        return clip;
+    }
+    let h = p.y;
+    let ir = vec2<f32>(clip.x * 160.0, -(clip.y - GTE_OFY_BIAS * w) * 120.0) * p.x / h;
+    let irc = clamp(ir, vec2<f32>(-32768.0), vec2<f32>(32767.0));
+    let sz = w * p.x;
+    let d = max(min(sz, 65535.0), h * 0.5);
+    let centre = vec2<f32>(160.0, 120.0 - GTE_OFY_BIAS * 120.0);
+    let s_raw = centre + h * irc / d;
+    let s = clamp(s_raw, vec2<f32>(-1024.0), vec2<f32>(1023.0));
+    if (all(irc == ir) && d == sz && all(s == s_raw)) {
+        return clip;
+    }
+    return vec4<f32>((s.x - 160.0) / 160.0 * w, (120.0 - s.y) / 120.0 * w, clip.z, w);
+}
+
 // Where a rejected primitive's corners go: one point outside the clip
 // volume, so the triangle has no area and is clipped.
 const PRIM_REJECTED_CLIP: vec4<f32> = vec4<f32>(2.0, 2.0, 2.0, 1.0);
 "#;
+
+#[cfg(test)]
+mod tests {
+    /// The WGSL's `GTE_OFY_BIAS` literal is the projection's `OFY` term.
+    #[test]
+    fn the_saturation_centre_is_the_projection_ofy() {
+        let lit = format!(
+            "const GTE_OFY_BIAS: f32 = {:?};",
+            legaia_engine_camera::projection::GTE_OFY_NDC_BIAS
+        );
+        assert!(super::PRIM_NEAR_WGSL.contains(&lit), "{lit}");
+    }
+}

@@ -327,6 +327,31 @@ vec2 primSxy(mat4 m, vec3 c) {
   return clamp(off + half_, vec2(-1024.0), vec2(1023.0)) - half_;
 }
 
+/* The GTE's register limits on one projected corner - the GLSL twin of
+ * engine-render's gte_saturate_clip (prim_near_reject::gte_saturated_clip):
+ * IR1 / IR2 saturate to -0x8000..0x7FFF, SZ to 0..0xFFFF, the divide at
+ * H / SZ = 2 and SX / SY to -0x400..0x3FF, in GTE units (sz_per_w times the
+ * eye space; 6 on the field). u_gte_sat = (sz_per_w, H, 0, 0) from the
+ * shared camera_frame::gte_saturation (play_render_gte_sat -> setGteSat),
+ * applied under PSX mode; all zeros never clamps. w is kept, a corner inside
+ * every limit is returned as it came. */
+uniform vec4 u_gte_sat;
+const float GTE_OFY_BIAS = 0.05;
+vec4 gteSaturateClip(vec4 clip) {
+  float w = clip.w;
+  if (u_gte_sat.x <= 0.0 || u_gte_sat.y <= 0.0 || w <= 0.0) return clip;
+  float h = u_gte_sat.y;
+  vec2 ir = vec2(clip.x * 160.0, -(clip.y - GTE_OFY_BIAS * w) * 120.0) * u_gte_sat.x / h;
+  vec2 irc = clamp(ir, vec2(-32768.0), vec2(32767.0));
+  float sz = w * u_gte_sat.x;
+  float d = max(min(sz, 65535.0), h * 0.5);
+  vec2 centre = vec2(160.0, 120.0 - GTE_OFY_BIAS * 120.0);
+  vec2 sRaw = centre + h * irc / d;
+  vec2 sc = clamp(sRaw, vec2(-1024.0), vec2(1023.0));
+  if (irc == ir && d == sz && sc == sRaw) return clip;
+  return vec4((sc.x - 160.0) / 160.0 * w, (120.0 - sc.y) / 120.0 * w, clip.z, w);
+}
+
 bool spanTooBig(vec2 a, vec2 b, vec2 c) {
   vec2 lo = min(min(a, b), c);
   vec2 hi = max(max(a, b), c);
@@ -584,7 +609,10 @@ void main() {
                                      a_ground_ref_xz, a_ground_ref_y);
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
-  if (u_psx.z >= 0.5) gl_Position = psxSnapClip(gl_Position, 320.0, 240.0);
+  if (u_psx.z >= 0.5) {
+    gl_Position = gteSaturateClip(gl_Position);
+    gl_Position = psxSnapClip(gl_Position, 320.0, 240.0);
+  }
   /* The native target's pixel centre (engine-render's psx_native_centre):
    * half a stage pixel down and right, so this rasteriser's pixel centre is
    * the GPU's integer sample point. */
