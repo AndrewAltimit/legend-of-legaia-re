@@ -285,7 +285,7 @@ fn every_curated_art_card_resolves_to_a_decoded_clip_chain() {
         return;
     };
     let toml_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../data/gamedata/arts.toml");
-    let curated: toml::Value = std::fs::read_to_string(toml_path)
+    let curated: toml::Table = std::fs::read_to_string(toml_path)
         .expect("arts.toml")
         .parse()
         .expect("arts.toml parses");

@@ -907,7 +907,7 @@ fn baseline() -> u32 {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../scripts/replays/play_compose_baseline.toml");
     let text = std::fs::read_to_string(&path).expect("play_compose_baseline.toml");
-    let value: toml::Value = text.parse().expect("baseline TOML parses");
+    let value: toml::Table = text.parse().expect("baseline TOML parses");
     value["reached"]
         .as_integer()
         .expect("baseline carries `reached`") as u32

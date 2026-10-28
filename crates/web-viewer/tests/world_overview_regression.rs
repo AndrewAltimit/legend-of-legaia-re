@@ -299,7 +299,7 @@ fn load_classifications(repo_root: &Path, kingdom_key: &str) -> BTreeMap<usize, 
     let Ok(text) = fs::read_to_string(&path) else {
         return BTreeMap::new();
     };
-    let Ok(value): Result<toml::Value, _> = text.parse() else {
+    let Ok(value): Result<toml::Table, _> = text.parse() else {
         return BTreeMap::new();
     };
     let mut out = BTreeMap::new();
@@ -417,7 +417,7 @@ fn world_overview_data_digest_matches_fixture() {
             fixture_path().display()
         )
     });
-    let fixture: toml::Value = fixture_text.parse().expect("fixture parses");
+    let fixture: toml::Table = fixture_text.parse().expect("fixture parses");
     let expected_map = fixture
         .get("kingdom")
         .and_then(|v| v.as_table())
