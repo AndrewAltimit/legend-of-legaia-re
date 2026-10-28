@@ -173,6 +173,18 @@ engine. `Renderer::set_psx_texel_rule(PsxTexelRule::PcsxRedux)` samples that
 rule instead; it is an instrument, not a player mode
 ([retail-compare](../tooling/retail-compare.md#the-image-channel)).
 
+Taking the row itself puts a fragment on its triangle's top edge exactly on
+that edge, whose `V` is the corner's own value. The host's interpolation lands
+a hair either side of it, and truncated, the outside value reads the texel row
+above the primitive's UVs. On the battle ground grid that row lies outside the
+tile's `(192..=255)²` window: VRAM zeros, CLUT index `0` (`0x0220`), which the
+stage colour brightens to a pure-green line along every grid row whose top
+edge is on screen. Under this rule a fragment on a top edge moves down to
+`PSX_ROW_EDGE_MARGIN` inside its triangle (`psx_row_inset`), the same margin
+the window-sized mode's row move stops at; a fragment inside its triangle
+keeps its row. The console's rule needs no move: its half-texel bias already
+rounds the edge value onto the corner's row.
+
 The composited screen primitives take the same pixel centre and texel bias
 on the native target: a sprite drawn one texel per pixel samples the same
 texels either way, and a scaled quad - an ending vignette's photo shrunk to
