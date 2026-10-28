@@ -403,6 +403,19 @@ else:                                                Juggle = 1     // 0x801ECA7
 window ticks = 32 * beat / (speed * rate)         = 4 * beat / rate at speed 8
 ```
 
+The window counts anim passes, not vsyncs. The tick advances the cursor
+`(step * speed * rate) >> 1` a pass (`0x80047730..0x80047764`, `step` =
+`DAT_1F800393`, the vsyncs since the last pass), and the commit zeroes it
+(`sh zero,0x68(s5)` at `0x8004B068`), so nothing carries from the clip a hit
+cuts. Measured in vsyncs, the byte drops on the first pass boundary at or
+past `32 * beat / (speed * rate)`, so a pass longer than the battle's usual
+step overshoots by up to `step - 1` vsyncs: the one captured flinch that
+ran long (a tag-3 `f10/2`, 22 vsyncs against 20) is consistent with that
+overshoot, since arts input and cast close-ups run at step `3`
+([battle-stage-camera.md](battle-stage-camera.md)). The
+four-slot list's beat is the byte its load address picks
+([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)).
+
 | Input | Source |
 |---|---|
 | `record` | the action entry the actor is playing (`node+0x4C`) |
@@ -2026,10 +2039,13 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 
 ## What's still open
 
-The page's live hunts are indexed on
-[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
-the two [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
-residuals.
+No live hunt is indexed for this page on
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering).
+The [juggle window](#the-juggle-window---what-makes-a-monster-juggleable)'s
+two former residuals are settled: the four-slot read is fixed by the fight's
+heap placement ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)),
+and the overrun is the pass quantisation described in that section
+([settled](../reference/re-settled-threads/battle.md)).
 The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
 ([settled](../reference/re-settled-threads/battle.md)).

@@ -273,28 +273,57 @@ itself, whose low byte then indexes the list. The tick reads
 So for every list short of four entries - every reaction entry on the disc -
 the consumed beat is the **first** byte, `entry[+0x10]`. It is not "the index
 of the terminator": the routine's result lives in `v0`, which the decompiled C
-renders as `void`. A four-slot list hands the tick a load-address-dependent
-index instead; only attack-band entries carry one (35 monster ids, thirteen distinct entries
-across the archive, Gaza's Astral Slash entry `0x0A` among them).
+renders as `void`. A four-slot list hands the tick an index taken from the entry's load
+address instead; only attack-band entries carry one.
 
 **The four-slot read.** Every action entry sits on a word boundary of a
 word-aligned block, so the low byte of `entry + 0x13` is one of the 64
-values `0x13 + 4k`, and the tick reads `entry[0x23 + 4k]`: the high byte of
-a head word (mostly zero, with a few `1`..`3` and `0xFF` slots) or, from
-`k = 0x1B`, a byte of the animation stream. Which `k` is fixed by where the
-battle heap put the monster block - the base moves with the fight - so no
-disc byte decides it. The two fights measured from save states both read
-`0`: Lu Delilas's entry `0x0C` at `0x800B5D2C` (index `0x3F`) and the Terra
-fight's tag-`0x11` entry at `0x800B7740` (index `0x53`). A `0` beat means
-the window is down for the whole clip and, with the entry's `+0x76` lock
-clear and a byte staged behind, the event-path commit cuts the clip two
-frames in. Nine of the thirteen carry the lock (Gaza's does), which
-leaves only the window. The port takes the measured `0` for both consumers
-(`battle_action::FOUR_SLOT_GATE_FRAME`). No third consumer exists: a
-word-wise `jal` scan over `SCUS_942.54` and every image in
-`extracted/overlays/` finds no third call site for `FUN_80050E00`. Reader
-`legaia_actor_formats::monster_archive::juggle_windows` (`gate_frame()` is the
-resolved beat, `None` for the four-slot case).
+values `0x13 + 4k`, and the tick reads `entry[0x23 + 4k]` as RAM holds it:
+the high byte of a head word or, from `k = 0x1B`, a byte of the animation
+stream. RAM differs from the decoded block at the words the loader
+relocates, and one of them is in reach: the loader rewrites every entry's
+`+0x88` to the absolute address of its own `+0x8C` stream (`addiu
+v0,v1,0x8c; sw v0,0x88(v1)` at `0x8005473C..0x80054740`), so `k = 0x1A`
+reads that address's high byte, `0x80`.
+
+`k` is decided by the fight, and the disc decides it. The battle heap starts
+empty for every fight and allocates in a fixed order
+([battle.md](../subsystems/battle.md#the-battle-heap-budget)), so a monster
+block's address follows from three inputs:
+
+| Input | Rule | Instructions |
+|---|---|---|
+| Load order | The loader `FUN_800542C8` walks monster ids **upward** and, for each id, the four seats `0x8007BD0C[s3]`; the first seat naming the id loads it, a later one copies the pointer. Blocks load in ascending id order, not seat order. | outer loop `s5` `0x800543EC..0x800549F0`; seat match `0x80054414..0x8005442C`; pointer copy `0x80054454..0x800544F0` |
+| Block cost | `block[+0x08]` bytes, carved from the **top** of the free node, so each block ends one 12-byte node header below the last. | `lw s0,8(s1)` `0x80054668`; `jal 0x80017888` `0x8005468C` |
+| First top | The first block ends at `0x800B9A50` with one party member seated and `0xA8` (a render node and its header) lower per further seated member: `0x800B9900` with three. | measured |
+
+All of it is measured: 143 seat placements across 85 retail battle save
+states (one and three members seated) and the 21 four-slot reads in them
+match the law byte for byte. The two-member top is the same per-node step,
+unmeasured. The reads are not mostly zero: Demon Fly's tag-`0x0C` entry
+reads `209` in a three-member fight (its clip runs 80 frames, so the window
+holds for the whole clip and the event-path commit never cuts it), Swordie's
+`227`, id 24's `215`, id 1's `16` beside Gobu Gobu with Vahn alone, and
+id 101's entry 6 reads `0` beside id 45 but `0x80` beside id 134. Nivora's
+id 164 entry `0x0C` at `0x800B5D2C` reads `0`.
+
+The disc carries 34 four-slot entries, one per monster id, all attack-band
+(Gaza's Astral Slash entry `0x0A`, id 165, among them);
+11 lack the `+0x76` lock, so for those the beat also decides how early a
+staged byte cuts the clip. No third consumer exists: a word-wise `jal` scan
+over `SCUS_942.54` and every image in `extracted/overlays/` finds no third
+call site for `FUN_80050E00`.
+
+Port: `legaia_actor_formats::monster_archive::monster_block_bases` places the
+blocks and `four_slot_beats` reads each entry through the relocation; the
+scene host resolves them when it installs a monster's clips
+(`install_battle_monster_action_clips`), and both consumers take the resolved
+beat (`battle_action::event_commit_gate_frame`). An entry with no resolved
+placement falls back to `battle_action::FOUR_SLOT_GATE_FRAME` (`0`). Reader
+`legaia_actor_formats::monster_archive::juggle_windows` (`gate_frame()` is
+the plain beat, `None` for the four-slot case). Disc test
+`actor-formats/tests/monster_heap_placement_real.rs` pins the measured
+placements and reads.
 
 Reading the field as "the hit frames" fits the offensive entries and no more.
 The archive census by tag is unambiguous about that - idle, walk, knockdown,

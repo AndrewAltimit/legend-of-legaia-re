@@ -652,6 +652,7 @@ impl World {
                 .map_or(([0; 4], 0), |s| (s.event_frames, s.event_lock));
             if !legaia_engine_battle_vm::battle_action::event_commit_due(
                 &frames,
+                Self::committed_four_slot_beat(actor),
                 lock,
                 p.current_frame(),
             ) {
@@ -1181,6 +1182,29 @@ impl World {
         if let Some(actor) = self.actors.get_mut(slot) {
             actor.battle_clip_morphs = Some(table);
         }
+    }
+
+    /// Install battle actor `slot`'s four-slot beats
+    /// ([`crate::world::Actor::battle_four_slot_beats`]), resolved by the host
+    /// from the fight's heap placement.
+    pub fn set_actor_battle_four_slot_beats(
+        &mut self,
+        slot: usize,
+        beats: std::sync::Arc<Vec<Option<u8>>>,
+    ) {
+        if let Some(actor) = self.actors.get_mut(slot) {
+            actor.battle_four_slot_beats = Some(beats);
+        }
+    }
+
+    /// The load-address beat of actor `a`'s committed entry (`+0x1D9`), when
+    /// its list is four-slot and the host resolved the placement.
+    pub(in crate::world) fn committed_four_slot_beat(a: &crate::world::Actor) -> Option<u8> {
+        a.battle_four_slot_beats
+            .as_ref()?
+            .get(usize::from(a.battle.current_anim))
+            .copied()
+            .flatten()
     }
 
     /// The clip-morph lanes battle actor `actor_idx`'s playing clip blends

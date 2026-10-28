@@ -121,7 +121,8 @@ impl World {
             .battle
             .flag_bits
             .has(ActorFlags::ADVANCE_DONE);
-        if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
+        let four_slot = Self::committed_four_slot_beat(&self.actors[i]);
+        if staged_behind && event_commit_due(&src.event_frames, four_slot, src.event_lock, frame) {
             // The cut takes the entry's `+0x0E` displacement pro-rated by
             // how far the clip got - no HP test on this path, unlike the
             // natural end (`+0x228` taken as clear, as there).
@@ -1120,8 +1121,9 @@ impl World {
     /// `+0x11..+0x13` ([`vm::battle_action::event_commit_gate_frame`]). So
     /// it is up only before the playing clip's first listed beat, and down
     /// for a clip whose list starts at `0` (every block clip) - not "a
-    /// reaction is playing". A four-slot list (address-dependent in retail)
-    /// reads as down.
+    /// reaction is playing". A four-slot list reads the beat its load
+    /// address picks ([`Self::committed_four_slot_beat`]), down when that is
+    /// unresolved.
     // REF: FUN_80047430, FUN_80050E00
     pub(in crate::world) fn juggle_window_open(a: &crate::world::Actor) -> bool {
         let (Some(player), Some(head)) =
@@ -1133,8 +1135,11 @@ impl World {
             return false;
         };
         let list = [list[0], list[1], list[2], list[3]];
-        legaia_engine_battle_vm::battle_action::event_commit_gate_frame(&list)
-            .is_some_and(|gate| player.current_frame() < i16::from(gate))
+        legaia_engine_battle_vm::battle_action::event_commit_gate_frame(
+            &list,
+            Self::committed_four_slot_beat(a),
+        )
+        .is_some_and(|gate| player.current_frame() < i16::from(gate))
     }
 
     /// Keep the block roll's two approach terms in step with the action SM.

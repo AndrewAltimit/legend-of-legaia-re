@@ -583,6 +583,16 @@ pub struct Actor {
     pub battle_clip_morphs:
         Option<std::sync::Arc<Vec<Option<legaia_actor_formats::monster_archive::ClipMorph>>>>,
 
+    /// The beat each action entry's **four-slot** event list reads in this
+    /// fight, index-aligned with `battle_action_clips` (`None` for an entry
+    /// whose list is not four-slot). Retail reads it at
+    /// `entry[0x10 + ((entry + 0x13) & 0xFF)]`, an address the battle heap
+    /// fixes from the seated party, the formation and the block sizes
+    /// ([`legaia_actor_formats::monster_archive::four_slot_beats`]).
+    /// Installed with the action clips; `None` for an actor that is not a
+    /// monster.
+    pub battle_four_slot_beats: Option<std::sync::Arc<Vec<Option<u8>>>>,
+
     /// Pose id the current `battle_animation` was selected for, in the pose-id
     /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
     /// `9` defeat). Lets a repeated request for the same pose keep the playing

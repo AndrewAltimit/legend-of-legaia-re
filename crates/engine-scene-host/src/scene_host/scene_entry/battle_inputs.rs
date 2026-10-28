@@ -376,6 +376,29 @@ impl SceneHost {
                     .set_actor_battle_clip_morphs(slot, Arc::new(table));
             }
         }
+        // Where the battle heap puts each block, from the seated party, the
+        // formation's ids and the blocks' sizes - which decides what a
+        // four-slot event list reads (`FUN_800542C8` allocation order).
+        let bases = if pending.is_empty() {
+            Default::default()
+        } else {
+            let ids: Vec<u16> = self
+                .world
+                .actors
+                .iter()
+                .filter_map(|a| a.battle_monster_id)
+                .collect();
+            legaia_actor_formats::monster_archive::monster_block_bases(
+                usize::from(self.world.party.party_count),
+                &ids,
+                |id| {
+                    legaia_actor_formats::monster_archive::decode_block(&archive, id)
+                        .ok()
+                        .flatten()
+                        .and_then(|b| legaia_actor_formats::monster_archive::block_heap_bytes(&b))
+                },
+            )
+        };
         for (slot, id) in pending {
             if let Ok(Some(clips)) =
                 legaia_actor_formats::monster_archive::animations_by_entry(&archive, id)
@@ -383,6 +406,15 @@ impl SceneHost {
             {
                 self.world
                     .set_actor_battle_action_clips(slot, Arc::new(clips));
+                if let Some(&base) = bases.get(&id)
+                    && let Ok(Some(block)) =
+                        legaia_actor_formats::monster_archive::decode_block(&archive, id)
+                {
+                    let beats =
+                        legaia_actor_formats::monster_archive::four_slot_beats(&block, base);
+                    self.world
+                        .set_actor_battle_four_slot_beats(slot, Arc::new(beats));
+                }
             }
             // ...and its idle loop, the clip the loader seats the monster
             // on. The play hosts installed it from their render build

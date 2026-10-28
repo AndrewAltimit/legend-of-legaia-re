@@ -22,6 +22,7 @@ mod field_char_textures_real;
 mod lzs_compress_roundtrip_real;
 mod monster_archive_real;
 mod monster_cross_table_integrity;
+mod monster_heap_placement_real;
 mod monster_model_roundtrip_real;
 mod monster_names_pal_real;
 mod monster_readef_group_real;
