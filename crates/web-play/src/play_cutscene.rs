@@ -43,6 +43,19 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Abandon a live opening cutscene chain before a **user-initiated**
+    /// scene entry (the page's scene picker, a card load, the title's
+    /// re-entry) - [`legaia_engine_core::world::World::abandon_opening_chain`].
+    /// The chain's own hand-offs (the intro-skip, the post-movie leg) never
+    /// go through the picker, so they keep their state. Returns whether a
+    /// chain was live. The engine camera's own half of a direct entry is
+    /// `Camera::reset_for_scene_entry`, run inside `enter_field` itself.
+    pub fn play_abandon_opening_chain(&mut self) -> bool {
+        self.scene_host
+            .host_mut()
+            .is_some_and(|h| h.world.abandon_opening_chain())
+    }
+
     /// Per-frame cutscene presentation state:
     /// ```text
     /// { "locked": bool,          // freeze the pad this frame (feed 0)
@@ -58,21 +71,8 @@ impl LegaiaRuntime {
     /// (`window/event_handler/redraw.rs`). The op-`4C 12` word
     /// (`World::scene_screen_tint`) composes into neither: retail reads it
     /// only in the fog particle update, so it never multiplies the frame.
-    /// `palette_grade` has no consumer in `site/js/webgl-tmd.js` yet - see
-    /// `docs/tooling/host-drift.md`.
-    /// Abandon a live opening cutscene chain before a **user-initiated**
-    /// scene entry (the page's scene picker, a card load, the title's
-    /// re-entry) - [`legaia_engine_core::world::World::abandon_opening_chain`].
-    /// The chain's own hand-offs (the intro-skip, the post-movie leg) never
-    /// go through the picker, so they keep their state. Returns whether a
-    /// chain was live. The engine camera's own half of a direct entry is
-    /// `Camera::reset_for_scene_entry`, run inside `enter_field` itself.
-    pub fn play_abandon_opening_chain(&mut self) -> bool {
-        self.scene_host
-            .host_mut()
-            .is_some_and(|h| h.world.abandon_opening_chain())
-    }
-
+    /// `palette_grade` is the native `Renderer::set_palette_grade` pair; the
+    /// page stages it through `setPaletteGrade` (`site/js/play-view-frame.js`).
     pub fn play_cutscene_state_json(&self) -> String {
         let Some(w) = self.world() else {
             return "null".to_string();

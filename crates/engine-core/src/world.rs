@@ -136,7 +136,7 @@ pub use player_rig::PlayerRigSource;
 pub use screen_fx_state::{ClearColourRamp, ScreenFrame, ScreenFxState};
 pub use state::*;
 pub use types::*;
-pub use world_map_state::WorldMapState;
+pub use world_map_state::{MapPointerSource, WorldMapState};
 pub use world_toggles::{
     BONUS_DROP_CHANCE_PCT, DAMAGE_AP_RANGE, DAMAGE_AP_RETAIL, DEFAULT_BATTLE_SM_FRAME_CADENCE,
     EXP_RATE_RANGE, EXP_RATE_RETAIL, FLEE_EXP_PCT, FORTRESS_ENCOUNTER_SCENES, FORTRESS_STALE_FLAG,

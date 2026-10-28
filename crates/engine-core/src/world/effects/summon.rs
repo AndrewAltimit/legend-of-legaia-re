@@ -90,7 +90,7 @@ impl World {
     /// The part tick's channel scale, `DAT_1F800393 * DAT_1F80037D`: the live
     /// frame step (`MoveVmGlobals::ramp_ratio`, the `DAT_1F800393` stand-in)
     /// times the rate byte's boot value.
-    pub(super) fn effect_channel_delta(&self) -> u16 {
+    pub(in crate::world) fn effect_channel_delta(&self) -> u16 {
         u16::from(self.move_vm.ramp_ratio.max(1))
             * legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA
     }

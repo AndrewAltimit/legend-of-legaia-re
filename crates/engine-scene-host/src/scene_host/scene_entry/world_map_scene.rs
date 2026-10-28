@@ -246,6 +246,24 @@ impl SceneHost {
             );
             self.world.install_world_map_entities_at(entities);
         }
+        // The map display's pointer (PROT 0981's spawn record, seated by the
+        // display's mode `1`): the record off the module image, and the
+        // scene pack whose last mesh it draws. Only a kingdom map - the one
+        // kind of scene with a location table - opens the display.
+        if !self.world.world_map.locations.is_empty() {
+            let image = self
+                .index
+                .entry_bytes(legaia_engine_field::map_display::PROT_INDEX)
+                .ok();
+            let pack_len = match (self.scene.as_ref(), self.resources.as_ref()) {
+                (Some(scene), Some(res)) => {
+                    legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res).len()
+                }
+                _ => 0,
+            };
+            self.world
+                .install_map_pointer_source(image.as_deref().map(|b| b.as_slice()), pack_len);
+        }
         // Switch to world-map mode (idempotent; keeps the installed player +
         // collision grid).
         self.world.enter_world_map();

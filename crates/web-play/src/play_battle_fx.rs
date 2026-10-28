@@ -328,6 +328,29 @@ fn bake_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh:
     frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
 }
 
+/// [`bake_mesh`] for a mesh's untextured (`F*` / `G*`) prims: `flat.a = 0`
+/// sends each vertex down the page shader's untextured arm, and the TSB half
+/// carries the prim's blend word (ABE bit 15, ABR bits 5..=6), the packing
+/// the native colour pipeline reads off [`legaia_tmd::mesh::ColorMesh::blend`].
+fn bake_color_mesh(frame: &mut BattleFxFrame, model: &[f32; 16], m: &legaia_tmd::mesh::ColorMesh) {
+    let base = (frame.positions.len() / 3) as u32;
+    for (i, p) in m.positions.iter().enumerate() {
+        let w = [
+            model[0] * p[0] + model[4] * p[1] + model[8] * p[2] + model[12],
+            model[1] * p[0] + model[5] * p[1] + model[9] * p[2] + model[13],
+            model[2] * p[0] + model[6] * p[1] + model[10] * p[2] + model[14],
+        ];
+        frame.positions.extend_from_slice(&w);
+        frame.uvs.extend_from_slice(&[0, 0]);
+        frame
+            .cba_tsb
+            .extend_from_slice(&[0, m.blend.get(i).copied().unwrap_or(0)]);
+        let c = m.colors[i];
+        frame.flat.extend_from_slice(&[c[0], c[1], c[2], 0]);
+    }
+    frame.indices.extend(m.indices.iter().map(|&ix| base + ix));
+}
+
 /// The effect models and the summon / move-FX parts of `lists` into the
 /// page's model list, each behind the page's `outer` frame. A part whose
 /// render state is not its rest mesh (armed VDF morph lanes, a render scale,
@@ -541,6 +564,12 @@ impl LegaiaRuntime {
                 let mut m = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
                 fp.draw.apply_render_state(&mut m);
                 bake_mesh(&mut frame, &model, &m);
+                // The untextured prims take the same state - the native
+                // field-FX pass's colour half. The map display's pointer is
+                // all `F*` / `G*`, so without this it baked nothing.
+                let mut c = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+                fp.draw.apply_render_state_color(&mut c);
+                bake_color_mesh(&mut frame, &model, &c);
                 continue;
             }
             frame.models.push(FxModelDraw {
@@ -653,8 +682,9 @@ impl LegaiaRuntime {
     /// read the cache; a draw whose
     /// [`Self::play_battle_fx_model_is_scene_pack`] is `true` indexes the
     /// scene's env pack (already uploaded as scene mesh `tmd`) rather than
-    /// the battle FX mesh cache. Empty in battle; on the overworld only the
-    /// draw-kind-4 nodes (the sprite-arm quads) draw.
+    /// the battle FX mesh cache. Empty in battle; on the overworld the
+    /// draw-kind-4 nodes (the sprite-arm quads) and the field parts (the map
+    /// display's pointer) draw.
     pub fn play_field_fx_sync(&mut self, vp: &[f32]) -> u32 {
         if vp.len() != 16 {
             self.battle_fx = BattleFxFrame::default();

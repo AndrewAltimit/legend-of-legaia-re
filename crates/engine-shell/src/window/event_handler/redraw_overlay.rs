@@ -40,6 +40,9 @@ pub(super) struct FxFrame {
     /// The field move-VM parts, each with its colour word's double-sided bit
     /// (`ColourWord::double_sided`).
     pub field_fx_draws: Vec<(UploadedVramMesh, Mat4, bool)>,
+    /// The field move-VM parts' untextured prims, each with the same
+    /// double-sided bit.
+    pub field_fx_color_draws: Vec<(UploadedColorMesh, Mat4, bool)>,
 }
 
 impl FxFrame {
@@ -55,6 +58,8 @@ impl FxFrame {
         &'x self,
         draws: &mut Vec<SceneDraw<'x>>,
         nclip_marks: &mut Vec<(usize, u32)>,
+        color_draws: &mut Vec<ColorSceneDraw<'x>>,
+        color_nclip_marks: &mut Vec<(usize, u32)>,
     ) {
         let fx_cam = self.fx_cam;
         let effect_billboard = &self.effect_billboard;
@@ -87,6 +92,16 @@ impl FxFrame {
                 nclip_marks.push((draws.len(), 0));
             }
             draws.push(SceneDraw {
+                mesh,
+                mvp: fx_cam * *model,
+                cue: None,
+            });
+        }
+        for (mesh, model, double_sided) in &self.field_fx_color_draws {
+            if *double_sided {
+                color_nclip_marks.push((color_draws.len(), 0));
+            }
+            color_draws.push(ColorSceneDraw {
                 mesh,
                 mvp: fx_cam * *model,
                 cue: None,
@@ -359,7 +374,7 @@ impl PlayWindowApp {
         // camera-relative bits resolve against the retail camera
         // (`FUN_8001CF50`); `None` under a host vantage.
         let part_cam = self.part_camera_pose(in_world_map, cutscene_cam);
-        let (effect_model_draws, summon_part_draws, field_fx_draws) =
+        let (effect_model_draws, summon_part_draws, field_fx_draws, field_fx_color_draws) =
             self.build_effect_draws(r, part_cam.as_ref(), fx_cam);
         FxFrame {
             fx_cam,
@@ -369,6 +384,7 @@ impl PlayWindowApp {
             effect_model_draws,
             summon_part_draws,
             field_fx_draws,
+            field_fx_color_draws,
         }
     }
 

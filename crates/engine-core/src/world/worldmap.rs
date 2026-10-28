@@ -191,6 +191,8 @@ impl World {
     /// one. Any open map display is dropped: the table it indexes is gone.
     pub fn install_world_map_locations(&mut self, man: Option<&[u8]>) {
         self.world_map.map_display = None;
+        self.world_map.pointer = None;
+        self.world_map.pointer_source = None;
         // The installer's own `FUN_800271A8` (`0x8003AF98`) runs under the
         // `OFY = 120` the field init's display-env setup just stored.
         self.world_map.curve_bias = 0;
@@ -230,6 +232,7 @@ impl World {
         let Some(mut display) = self.world_map.map_display.take() else {
             return;
         };
+        let pointer_was_alive = display.pointer_alive;
         let tick = display.tick(
             packed_pad(raw_held),
             packed_pad(raw_edge),
@@ -265,9 +268,111 @@ impl World {
         if display.camera_staged {
             self.world_map.curve_bias = legaia_render_kernels::overworld_curvature::REBUILD_BIAS;
         }
+        // Mode `1` seats the pointer (`FUN_80021B04` at `0x801CE9B0`) and
+        // mode `4` raises its halt bit (`ori v0,v0,0x8` at `0x801CEBB8`);
+        // a halted part draws no more, so the port drops it there.
+        match (pointer_was_alive, display.pointer_alive) {
+            (false, true) => self.spawn_map_pointer(),
+            (true, false) => self.world_map.pointer = None,
+            _ => {}
+        }
+        // The tick's tail calls the pointer's handler every frame
+        // (`lw a0,-0x878(v0)` / `lw v0,0xc(a0)` / `jalr v0` at
+        // `0x801CEC2C..0x801CEC44`): the mode-13 handler runs no actor-list
+        // walk of its own, so this is the only thing that moves it.
+        self.tick_map_pointer();
         if !tick.exit {
             self.world_map.map_display = Some(display);
+        } else {
+            self.world_map.pointer = None;
         }
+    }
+
+    /// Install the map display pointer's spawn inputs for this scene: the
+    /// PROT 0981 image (`None` off a kingdom map, or when the disc read
+    /// failed) and how many TMDs the scene pack holds. The pointer's mesh
+    /// selector is the last TMD id the scene load issued (`0x8007BB38`), so
+    /// with the pack seated after the five character meshes it names the
+    /// pack's last slot. No pointer is installed for an empty pack.
+    pub fn install_map_pointer_source(&mut self, image: Option<&[u8]>, pack_len: usize) {
+        self.world_map.pointer = None;
+        self.world_map.pointer_source = image
+            .and_then(legaia_engine_field::map_display::pointer_record)
+            .zip(pack_len.checked_sub(1))
+            .map(|(record, pack_slot)| super::MapPointerSource {
+                record: record.to_vec(),
+                pack_slot,
+            });
+    }
+
+    /// Seat the map pointer on the player, as mode `1` does:
+    /// `FUN_80021B04(player + 0x14, player + 0x24, record, 0x1000)` - the
+    /// leader's position and render banks, the record with its `model_sel`
+    /// patched to the last installed mesh.
+    ///
+    /// The engine's field parts index the scene pack directly (spawn base
+    /// `0`), so the patched selector is carried as that pack slot.
+    fn spawn_map_pointer(&mut self) {
+        let Some(src) = self.world_map.pointer_source.as_ref() else {
+            return;
+        };
+        let Some(actor) = self
+            .player_actor_slot
+            .and_then(|s| self.actors.get(s as usize))
+        else {
+            return;
+        };
+        let m = &actor.move_state;
+        let pos = [m.world_x, m.world_y, m.world_z];
+        let rot = [m.render_24, m.render_26, m.render_28];
+        let Ok(model_sel) = i16::try_from(src.pack_slot) else {
+            return;
+        };
+        let part = legaia_overlay_images::summon_overlay::SummonPart {
+            record_off: 0,
+            model_sel,
+            reserved: 0,
+            bytecode: 4..src.record.len(),
+        };
+        let mut scene =
+            legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &src.record, 0, pos);
+        scene.push_parts_scaled(
+            &[part],
+            &src.record,
+            pos,
+            rot,
+            legaia_engine_field::map_display::POINTER_SCALE,
+        );
+        self.world_map.pointer = Some(scene);
+    }
+
+    /// One call of the pointer's handler: the part tick `FUN_80021DF4`,
+    /// whose first call also makes the seater's own VM run.
+    fn tick_map_pointer(&mut self) {
+        let Some(mut scene) = self.world_map.pointer.take() else {
+            return;
+        };
+        scene.channel_delta = self.effect_channel_delta();
+        let mut host = super::vm_hosts::MoveVmHostImpl {
+            world: self,
+            current_slot: None,
+            deferred_writes: std::collections::BTreeMap::new(),
+            field_record_words: None,
+            child_spawns: Vec::new(),
+        };
+        scene.tick(&mut host, EFFECT_SCENE_GRAPH_STEP);
+        self.world_map.pointer = Some(scene);
+    }
+
+    /// The map pointer's mesh draw, `model_index` a scene-pack slot - the
+    /// shape [`Self::active_field_fx_part_draws`] lists. Empty while no
+    /// display is up.
+    pub fn map_pointer_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
+        self.world_map
+            .pointer
+            .as_ref()
+            .map(|s| s.part_draws())
+            .unwrap_or_default()
     }
 
     /// The overworld curvature table's build offset in screen rows, or `None`

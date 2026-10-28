@@ -100,6 +100,7 @@ mod map01_flyin_camera;
 mod map01_overworld_walk_disc;
 mod map03_conditional_walls_disc;
 mod map03_floating_castle_disc;
+mod map_display_pointer_disc;
 mod menu_item_category_disc;
 mod model_rebind_live_disc;
 mod motion_tint_live_disc;

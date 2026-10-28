@@ -86,6 +86,27 @@ pub struct WorldMapState {
     /// outlasts the display and holds until the next scene load
     /// ([`crate::world::World::overworld_curve_bias`]).
     pub curve_bias: i16,
+    /// What the map display's pointer is seated from: the PROT 0981 spawn
+    /// record and the scene-pack slot its mesh selector resolves to.
+    /// Installed by the scene host on a kingdom map
+    /// ([`crate::world::World::install_map_pointer_source`]); `None` off them.
+    pub pointer_source: Option<MapPointerSource>,
+    /// The live map pointer - the move-VM part the display's mode `1`
+    /// seats (`0x801CF788`) and its tick's tail runs every frame. `None`
+    /// outside the display.
+    pub pointer: Option<legaia_engine_effects::summon::SummonScene>,
+}
+
+/// The map display pointer's spawn inputs, read off the disc at scene load.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapPointerSource {
+    /// The spawn record at `0x801CF6E8` to the image's end
+    /// ([`legaia_engine_field::map_display::pointer_record`]).
+    pub record: Vec<u8>,
+    /// The scene-pack slot the patched `model_sel` names: the last TMD the
+    /// scene load installed (`0x8007BB38`), less the global table's
+    /// five-mesh character prefix (`DAT_8007B6F8`).
+    pub pack_slot: usize,
 }
 
 impl WorldMapState {
@@ -105,6 +126,8 @@ impl WorldMapState {
             locations: Vec::new(),
             map_display: None,
             curve_bias: 0,
+            pointer_source: None,
+            pointer: None,
         }
     }
 }

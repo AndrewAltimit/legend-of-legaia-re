@@ -252,6 +252,43 @@ impl SummonPartDraw {
             }
         }
     }
+
+    /// [`Self::apply_render_state`] for the mesh's **untextured** prims - the
+    /// `F*` / `G*` packets the colour pipeline draws
+    /// ([`legaia_tmd::mesh::ColorMesh`]). The dispatcher writes the same
+    /// state into every packet whatever its kind: the render scale, the
+    /// colour word's depth cue on the packet colour (an untextured prim has
+    /// no texel to modulate, so the cued colour is the fill) and its ABE /
+    /// ABR into the blend word, packed as the textured path packs its TSB.
+    ///
+    /// The shatter word is not applied here: no shipped part that carries
+    /// one draws untextured prims, and the shatter kernel splits a
+    /// [`legaia_tmd::mesh::VramMesh`].
+    pub fn apply_render_state_color(&self, mesh: &mut legaia_tmd::mesh::ColorMesh) {
+        if self.scale != SPAWN_RENDER_SCALE {
+            let k = f32::from(self.scale) / 4096.0;
+            for p in &mut mesh.positions {
+                *p = p.map(|v| v * k);
+            }
+        }
+        if self.colour.ir0 != 0 {
+            for c in &mut mesh.colors {
+                *c = self.colour.cue(*c);
+            }
+        }
+        let abr = u16::from(self.colour.abr) << 5;
+        let semi = if self.colour.semi {
+            legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT
+        } else {
+            0
+        };
+        if abr | semi != 0 {
+            mesh.blend.resize(mesh.positions.len(), 0);
+            for b in &mut mesh.blend {
+                *b |= abr | semi;
+            }
+        }
+    }
 }
 
 /// A part's live morph lanes, carried by value on [`SummonPartDraw`] (the

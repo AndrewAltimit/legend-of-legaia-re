@@ -233,7 +233,7 @@ pub struct FxModelDraws {
     /// mesh-bearing ambient parts, `draw.model_index` a scene-pack slot
     /// (`DAT_8007C018[5 + slot]`). The host applies the part's render state
     /// (`SummonPartDraw::apply_render_state`) unless it draws its rest mesh.
-    /// None on the overworld.
+    /// On the overworld too: the map display's pointer is one.
     pub field_parts: Vec<FxPartModel>,
 }
 
@@ -302,26 +302,25 @@ pub fn effect_model_draws(
             mesh: rb.mesh,
         })
         .collect();
-    if !overworld {
-        // Field frame: the models compose on the raw retail frame, so the
-        // camera-relative prefix takes no flip.
-        out.field_parts = world
-            .active_field_fx_part_draws()
-            .into_iter()
-            .map(|fp| {
-                let place =
-                    camera_relative_model_prefix(fp.flags_52, fp.world_pos, part_cam, false)
-                        .unwrap_or_else(|| mat4_translation(fp.world_pos));
-                FxPartModel {
-                    model: mat4_mul(
-                        &place,
-                        &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
-                    ),
-                    draw: fp,
-                }
-            })
-            .collect();
-    }
+    // Field frame: the models compose on the raw retail frame, so the
+    // camera-relative prefix takes no flip. The overworld draws these too:
+    // the render dispatcher's case-5 model arm (`FUN_8001ADA4`) makes no mode
+    // test, and the map display's pointer is one.
+    out.field_parts = world
+        .active_field_fx_part_draws()
+        .into_iter()
+        .map(|fp| {
+            let place = camera_relative_model_prefix(fp.flags_52, fp.world_pos, part_cam, false)
+                .unwrap_or_else(|| mat4_translation(fp.world_pos));
+            FxPartModel {
+                model: mat4_mul(
+                    &place,
+                    &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
+                ),
+                draw: fp,
+            }
+        })
+        .collect();
     out
 }
 

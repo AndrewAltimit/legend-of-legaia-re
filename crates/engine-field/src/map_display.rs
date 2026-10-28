@@ -28,14 +28,47 @@
 //! `_DAT_8007B874` newly pressed), the layout
 //! [`crate::world_map_panel_host::packed_pad`] converts a raw word into.
 //!
-//! What the module also does that this kernel does not: spawn the player's
-//! map pointer (a move-VM effect, program at `0x801CF6E8`, through
-//! `FUN_80021B04`) and tick it. [`MapDisplay::pointer_alive`] carries its
-//! lifetime so a host that draws one knows when; nothing draws it yet.
+//! The module also spawns the player's **map pointer** - a move-VM part
+//! seated through `FUN_80021B04` on the spawn record at `0x801CF6E8`
+//! ([`POINTER_RECORD_VA`], located by [`pointer_record`]) - and calls its
+//! handler from the tick's tail every frame. [`MapDisplay::pointer_alive`]
+//! carries its lifetime; the part itself is the world's
+//! (`legaia_engine_core::world::World::tick_map_display`), because it is a
+//! move-VM part like any other and draws through the field part pass.
 //!
 //! See `ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt` and its
 //! three siblings. The `monster_test` stem is CDNAME inheritance; the image
 //! is the map display.
+
+/// The PROT entry the map display loads into slot A (extraction index).
+pub const PROT_INDEX: u32 = 981;
+/// Where the image sits: the slot-A window base, `0x801CE818` (the static
+/// overlay map's `cross_ref` row for this entry).
+pub const IMAGE_BASE: u32 = 0x801C_E818;
+/// The map pointer's spawn record, the third argument of the mode-`1`
+/// `FUN_80021B04` call (`addiu a0,a0,-0x17e8` under `lui 0x801d` at
+/// `0x801CE970..0x801CE974`, handed on as `a2` at `0x801CE99C`).
+pub const POINTER_RECORD_VA: u32 = 0x801C_F6E8;
+/// The spawn call's fourth argument, the render scale `+0x72`
+/// (`li a3,0x1000` at `0x801CE9A8`).
+pub const POINTER_SCALE: u16 = 0x1000;
+
+/// The map pointer's spawn record inside a PROT 0981 image: the
+/// `[model_sel][reserved]` header and the move-VM bytecode after it, to the
+/// end of the image. `None` when the image is too short to hold it.
+///
+/// Mode `1` overwrites the record's `model_sel` before the spawn with
+/// `0x8007BB38 - 0x8007BA6C` (`lhu`/`lhu`/`subu`/`sh` at
+/// `0x801CE978..0x801CE990`): the global TMD id the last install issued, less
+/// the spawn base `FUN_80021B04` adds back. The pointer therefore draws the
+/// **last** mesh the scene load installed - on each kingdom map that is the
+/// last TMD of the kingdom bundle's pack (the one mesh all three kingdoms
+/// share byte for byte). The on-disc halfword is a placeholder, so callers
+/// take the mesh selector from the scene, not from these bytes.
+pub fn pointer_record(image: &[u8]) -> Option<&[u8]> {
+    let off = (POINTER_RECORD_VA - IMAGE_BASE) as usize;
+    image.get(off..).filter(|r| r.len() >= 6)
+}
 
 /// Interactive mode (`li v0,0x32` at `0x801CE9EC`). Not a jump-table arm: the
 /// dispatcher's `sltiu a0,6` falls through and the tail runs alone.

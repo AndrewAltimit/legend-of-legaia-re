@@ -120,11 +120,11 @@ impl PlayWindowApp {
         };
         let DrawLists {
             mut draws,
-            color_draws,
+            mut color_draws,
             clip_marks,
             mut nclip_marks,
             color_clip_marks,
-            color_nclip_marks,
+            mut color_nclip_marks,
         } = draw_cx.build_scene_draws();
         let OverlayDraws {
             hud,
@@ -205,7 +205,12 @@ impl PlayWindowApp {
         };
         let fx = self.build_fx_frame(r, cam, in_world_map, cutscene_cam);
         let fx_cam = fx.fx_cam;
-        fx.push_draws(&mut draws, &mut nclip_marks);
+        fx.push_draws(
+            &mut draws,
+            &mut nclip_marks,
+            &mut color_draws,
+            &mut color_nclip_marks,
+        );
         // The floating value readout is a screen-space primitive run, not
         // a scene mesh: see `screen_prims` below, where both hosts build
         // it from `legaia_engine_ui::battle_numerals`.
