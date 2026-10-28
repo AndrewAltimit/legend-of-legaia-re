@@ -89,7 +89,13 @@ impl World {
     /// mesh-bearing parts ([`Self::ambient_mesh_part_draws`]) follow, then
     /// the map display's pointer ([`Self::map_pointer_part_draws`]): the
     /// same case-5 model draw, the same pack-slot index.
+    ///
+    /// Empty during a battle: the field's actor pool is off retail's lists
+    /// there ([`Self::field_pool_drawn`]).
     pub fn active_field_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
+        if !self.field_pool_drawn() {
+            return Vec::new();
+        }
         self.props
             .active_fx
             .iter()

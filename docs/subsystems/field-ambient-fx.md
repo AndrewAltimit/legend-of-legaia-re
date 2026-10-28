@@ -231,6 +231,16 @@ pre-battle actor live (33 free against 44 before the trigger). The park of the
 block into VRAM (`FUN_80016230`) and the `0x7B0C`-byte copy back are read from
 the decompiled C only.
 
+The other side of the same branch is the way **into** a battle: the reseed
+runs, every list sentinel points at itself, and no field part - ambient tree
+or stager - is on a list the battle's draw walks. The port keeps its field
+parts across the fight, since the return brings them back, and stops drawing
+them while the mode is a battle (`World::field_pool_drawn`, read by
+`World::active_effect_kind4_draws` and `World::active_field_fx_part_draws`,
+the lists both hosts draw). Drawn there, `map01`'s mist sheets sat at their
+overworld coordinates in the battle frame and stacked into a white bar on the
+horizon under Kemaro's low camera.
+
 So the channel resolver `FUN_8003C83C` (and the inline copy of it in
 `FUN_8003A9D4`) does not index this block by channel either: `0xF8` reads
 `+0x1C`, `0xFB` walks the `+0x04` list for the node whose tick word is the
