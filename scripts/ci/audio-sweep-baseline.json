@@ -1,0 +1,905 @@
+{
+  "states": {
+    "aluru_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "arts_bar_astral_sword_vahn": {
+      "battle_track": 1.0
+    },
+    "arts_bar_ideal_gala_club": {
+      "battle_track": 1.0
+    },
+    "arts_bar_ideal_noa_fangs": {
+      "battle_track": 1.0
+    },
+    "arts_bar_offclass_gala_nail": {
+      "battle_track": 1.0
+    },
+    "arts_input_start_gala_nail": {
+      "battle_track": 1.0
+    },
+    "arts_list_noa_page1": {
+      "battle_track": 1.0
+    },
+    "arts_list_vahn_page1": {
+      "battle_track": 1.0
+    },
+    "arts_list_vahn_page2": {
+      "battle_track": 1.0
+    },
+    "arts_list_vahn_page3": {
+      "battle_track": 1.0
+    },
+    "balden_field_route_walk": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "barra_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_gilium_strike": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_gilium_thunder_storm_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_kemaro_lv2_lava_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_chitei2_kemaro_lv2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_doman_freed_strike": {
+      "battle_track": 1.0
+    },
+    "battle_doman_freed_water_crystals_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_doman_killer_wolf_strike": {
+      "battle_track": 1.0
+    },
+    "battle_doman_killer_wolf_terror_scream_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_gimard_tail_fire_a": {
+      "battle_track": 1.0
+    },
+    "battle_gimard_tail_fire_b": {
+      "battle_track": 1.0
+    },
+    "battle_jouind_gilium_lv3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jouind_gilium_lv3_thunder_storm_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_aluru_cannon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_aluru_strike": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_kemaro_strike": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_mage_strike": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_mage_void_accessories_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_medusa_glare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_medusa_strike": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_warhalf_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map01_gobu_gobu_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map01_lippian_kiss_of_death_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map02_demon_fly_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_mad_ogre_power_charge_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map02_mad_ogre_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_wolf_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_grude_strike": {
+      "battle_track": 1.0
+    },
+    "battle_melee_hit_spark": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_gilium_lv2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_gilium_lv2_thunder_storm_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_retona_hells_rat_steal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_retona_hells_rat_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retona_king_frog_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retona_lip_king_kiss_of_death_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_retona_mushura_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retona_viguro_lv2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retona_viguro_lv2_thunder_break_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_barra_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_barra_windcutter_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_slippery_poisonous_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_slippery_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tower_guardian_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tower_guardian_v_windhash_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tower_guardian_windhash_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tower_swordie_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelb_mush_mush_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelb_warman_strike": {
+      "battle_track": 1.0
+    },
+    "battle_vozz_gizam_strike": {
+      "battle_track": 1.0
+    },
+    "battle_vozz_gizam_water_column_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_vozz_twin_tomb_strike": {
+      "battle_track": 1.0
+    },
+    "cave01_attached_light": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "chapter2_garmel_pre_songi": {
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "chapter2_garmel_pre_zeto": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "chest_open_trace_pcsx": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "chitei2_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc2_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "conc_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "cort_evolved_card_battle_init": {
+      "battle_track": 1.0
+    },
+    "cort_evolved_card_doomsday_mid_cast": {
+      "battle_track": 1.0
+    },
+    "cort_evolved_card_first_menu": {
+      "battle_track": 1.0
+    },
+    "cort_evolved_card_pre_doomsday": {
+      "battle_track": 1.0
+    },
+    "deene_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "deroa_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "dohaty_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "doman_arrival_from_korb2": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "doman_field_card_boot": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "door_warp_rim_elm_to_mei_house": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "door_warp_town01_to_map01": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ending_banner_mask_closed": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ending_panel_corner": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ending_vignette_biron": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "ending_vignette_fullscreen": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ending_vignette_rimelm_walkaway": {
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "evil_medallion_rage_battle": {
+      "battle_track": 1.0
+    },
+    "evolved_0x90_midcast": {
+      "battle_track": 1.0
+    },
+    "evolved_0x91_midcast": {
+      "battle_track": 1.0
+    },
+    "field_walled_collision_pin": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "first_town_interactive": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "flute_lippian_midcast": {
+      "battle_track": 1.0
+    },
+    "flute_spikefish_midcast": {
+      "battle_track": 1.0
+    },
+    "freed_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "gilium_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "gimard_burning_attack": {
+      "battle_track": 1.0
+    },
+    "gimard_summon_start": {
+      "battle_track": 1.0
+    },
+    "gimard_summon_visible": {
+      "battle_track": 1.0
+    },
+    "gizam_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "gola_gola_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "horn_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "iota_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "jedo_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "jou_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "jouind_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "juggernaut_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "karisto_overworld_resident": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "keikoku_chest_open": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "keikoku_chest_pre": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "keikoku_chest_preload": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koin1_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koin1b_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koin3_gold_card_guard_talk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koin4_field_route_walk": {
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "koin6_field_route_walk": {
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "kor3_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "kor4_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "kor5_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "kor5_post_436_organic": {
+      "playing": 0.0,
+      "track": 0.0
+    },
+    "kor5_post_43a_checkpoint": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "kor_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "korb2_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "korb3_field_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koru_blade_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "koru_gigaton_press_mid_cast": {
+      "battle_track": 1.0
+    },
+    "koru_pre_blade_breath": {
+      "battle_track": 1.0
+    },
+    "koru_pre_gigaton_press": {
+      "battle_track": 1.0
+    },
+    "koru_pre_thunder_needle": {
+      "battle_track": 1.0
+    },
+    "koru_strip_forced": {
+      "battle_track": 1.0
+    },
+    "koru_thunder_needle_mid_cast": {
+      "battle_track": 1.0
+    },
+    "mei_house_door_pcsx": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "mei_house_inside": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "mei_house_inside_pcsx": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "meta_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "minigame_muscle_dome_retail_red_piura_vahn_strike": {
+      "battle_track": 1.0
+    },
+    "minigame_muscle_dome_retail_skeleton_hyper_arts": {
+      "battle_track": 1.0
+    },
+    "minigame_muscle_dome_retail_tornado_flame": {
+      "battle_track": 1.0
+    },
+    "mule_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "mushura_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "name_input_ui": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "new_game_cutscene_intro_a": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "nighto_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "nivora_cutscene_delilas_intro": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "nivora_duel_che_vs_gala_start": {
+      "battle_track": 1.0
+    },
+    "nivora_duel_mid_blazing_slash": {
+      "battle_track": 1.0
+    },
+    "nivora_duel_pre_megaton_press": {
+      "battle_track": 1.0
+    },
+    "nivora_duel_pre_plasma_strike": {
+      "battle_track": 1.0
+    },
+    "noa_levelup_banner": {
+      "battle_track": 1.0
+    },
+    "noa_levelup_field_post": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "noa_levelup_field_pre": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "noa_levelup_fight_pre": {
+      "battle_track": 1.0
+    },
+    "noaru_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "nova_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "orb_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "overworld_into_town_man_load": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ozma_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "palma_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "party_basic_attack_vs_gobu_gobu": {
+      "battle_track": 1.0
+    },
+    "party_battle_gobu_gobu": {
+      "battle_track": 1.0
+    },
+    "player_steal_skeleton_banner": {
+      "battle_track": 1.0
+    },
+    "player_steal_skeleton_pre": {
+      "battle_track": 1.0
+    },
+    "puera_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "retock_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "retock_inn_stay_prompt": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "retock_innkeeper_talk_open": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "retockin_field_route_walk": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "retona_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rikuroa_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rim_elm_gimard_seru_capture_after": {
+      "battle_track": 1.0
+    },
+    "rim_elm_gimard_seru_capture_before": {
+      "battle_track": 1.0
+    },
+    "rim_elm_gimard_victory": {
+      "battle_track": 1.0
+    },
+    "rim_elm_queen_bee_battle": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rim_elm_zoom_intro": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "rimelm_npc_press_tetsu": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rimelm_wall_press_down": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rimelm_wall_press_left": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ropeway_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rugi_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "s1_newgame_field": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "s2_rimelm_town01": {
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "s4_rimelm_door_transition": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "s5_tetsu_battle": {
+      "battle_track": 1.0
+    },
+    "sebucus_overworld_resident": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "slippery_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "son_arrival_from_doman": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "stone_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "super_queue_replace_gala_back_punch": {
+      "battle_track": 1.0
+    },
+    "super_queue_replace_noa_triple_lizard": {
+      "battle_track": 1.0
+    },
+    "super_queue_replace_vahn_rolling_combo": {
+      "battle_track": 1.0
+    },
+    "swordie_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "taiku_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "teien_field_run": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "terra_party_battle": {
+      "battle_track": 1.0
+    },
+    "terra_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "theeder_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "tower_field_walk": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town01_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town01_npc16_dialogue_first_page": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "town01_tetsu_topic_prompt": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "tunnelb_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "tunnelc_field_route_walk": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "uru_field_run": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "v0_1_battle_command_menu": {
+      "battle_track": 1.0
+    },
+    "v0_1_battle_command_submenu": {
+      "battle_track": 1.0
+    },
+    "v0_1_battle_loading_tetsu": {
+      "battle_track": 1.0
+    },
+    "v0_1_battle_start_tetsu": {
+      "battle_track": 1.0
+    },
+    "v0_1_post_battle_tetsu_town": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "v0_1_pre_battle_tetsu": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "v0_1_tetsu_dialogue_accept": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vahn_walks_out": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "track": 1.0
+    },
+    "vell_fog_field": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "vera_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "viguro_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "vozz_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "zenoir_summon_mid_cast": {
+      "battle_track": 1.0
+    }
+  }
+}
