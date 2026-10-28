@@ -113,7 +113,7 @@ glam = { version = "0.30", features = ["bytemuck"] }
 js-sys = "0.3"
 libc = "0.2"
 log = "0.4"
-png = "0.17"
+png = "0.18"
 pollster = "0.4"
 rayon = "1"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }

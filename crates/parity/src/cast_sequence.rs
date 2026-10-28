@@ -374,7 +374,12 @@ pub fn read_png_frame(path: &Path) -> Result<Frame> {
         std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?,
     ));
     let mut reader = dec.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .context("PNG frame size overflows usize")?
+    ];
     let info = reader.next_frame(&mut buf)?;
     if (info.width as usize, info.height as usize) != (FRAME_W, FRAME_H) {
         bail!(

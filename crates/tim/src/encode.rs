@@ -224,7 +224,12 @@ pub fn decode_png_rgba(png_bytes: &[u8]) -> Result<(usize, usize, Vec<u8>)> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(png_bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().context("read PNG header")?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![
+        0u8;
+        reader
+            .output_buffer_size()
+            .context("PNG frame size overflows usize")?
+    ];
     let info = reader.next_frame(&mut buf).context("decode PNG frame")?;
     let (w, h) = (info.width as usize, info.height as usize);
     let n = w * h;

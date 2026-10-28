@@ -367,7 +367,7 @@ pub fn read_indexed_png(png_bytes: &[u8]) -> Option<IndexedImage> {
             info.trns.as_ref().map(|t| t.to_vec()).unwrap_or_default(),
         )
     };
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![0u8; reader.output_buffer_size()?];
     let out = reader.next_frame(&mut buf).ok()?;
     let (w, h) = (out.width as usize, out.height as usize);
     let depth = out.bit_depth as usize;

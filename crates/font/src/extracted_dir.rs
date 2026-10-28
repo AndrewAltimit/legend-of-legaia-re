@@ -7,7 +7,12 @@ pub(super) fn decode_atlas_png(path: &Path) -> Result<(Vec<u8>, u32, u32)> {
     let f = File::open(path).with_context(|| format!("open {}", path.display()))?;
     let decoder = png::Decoder::new(BufReader::new(f));
     let mut reader = decoder.read_info().context("read PNG header")?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
+    let mut buf = vec![
+        0u8;
+        reader
+            .output_buffer_size()
+            .context("PNG frame size overflows usize")?
+    ];
     let info = reader.next_frame(&mut buf).context("read PNG frame")?;
     buf.truncate(info.buffer_size());
     let (rgba, w, h) = match info.color_type {

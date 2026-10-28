@@ -335,7 +335,12 @@ fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
         std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?,
     ));
     let mut reader = dec.read_info()?;
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![
+        0;
+        reader
+            .output_buffer_size()
+            .context("PNG frame size overflows usize")?
+    ];
     let info = reader.next_frame(&mut buf)?;
     buf.truncate(info.buffer_size());
     let (w, h) = (info.width as usize, info.height as usize);
