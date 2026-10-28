@@ -406,7 +406,7 @@ These bite repeatedly across subsystems. Skim before chasing a "why is X broken 
 
 ## Ghidra container quick reference
 
-`docker-compose.yml` defines a single `ghidra` service, built from `docker/ghidra.Dockerfile` - a UID/GID-matched wrapper over `blacktop/ghidra:latest` so dumps come back owned by the host user:
+`docker-compose.yml` defines a single `ghidra` service, built from `docker/ghidra.Dockerfile` - a UID/GID-matched wrapper over `blacktop/ghidra` (pinned by digest) so dumps come back owned by the host user:
 
 - `./extracted:/data:ro` - disc-extracted files (read-only into Ghidra).
 - `./ghidra/projects:/projects` - Ghidra project DB (gitignored; local only).

@@ -1,6 +1,6 @@
 # Ghidra service for headless analysis of the Legaia executable + assets.
 #
-# Built from `docker/ghidra.Dockerfile`, which wraps `blacktop/ghidra:latest`
+# Built from `docker/ghidra.Dockerfile`, which wraps `blacktop/ghidra` (pinned by digest)
 # in a UID/GID-matched user so files written by Ghidra (project DB, function
 # dumps, inventory CSVs) come back as the host user instead of root.
 #

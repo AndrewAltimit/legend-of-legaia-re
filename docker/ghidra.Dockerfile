@@ -3,7 +3,7 @@
 # (Ghidra project DB, function dumps, inventory CSVs) come back as the
 # host user instead of root.
 #
-# The base blacktop/ghidra:latest container runs everything as root by
+# The base blacktop/ghidra container runs everything as root by
 # default. That makes any output land root-owned on the host, which then
 # needs `sudo chown -R $(id -u):$(id -g) ghidra/scripts/funcs/` after every
 # script run before the host (or any non-root tool) can read the files.
@@ -28,7 +28,10 @@
 #   docker compose up -d ghidra
 #   docker compose exec ghidra /ghidra/support/analyzeHeadless ...
 
-FROM blacktop/ghidra:latest
+# Pinned by digest: a tag can be re-pushed under the same name. 12.0.4 is the
+# Ghidra release the project's analysis has run on; bump the tag and digest
+# together (`docker buildx imagetools inspect blacktop/ghidra:<tag>`).
+FROM blacktop/ghidra:12.0.4@sha256:8f1e39c69afeca1e59aced466eca254b4578cd7f26ccb96498cca9b08a2b4370
 
 ARG USER_ID=1000
 ARG GROUP_ID=1000
