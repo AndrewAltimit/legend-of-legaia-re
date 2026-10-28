@@ -301,6 +301,18 @@ turns as the player walks. The constant walk step and the floor under the
 player being its footing are inference; the headless `camera` channel keeps
 scoring the compose against the RAM.
 
+The walk is rewound whether or not the camera is still easing. A follow
+camera already on its staging pose keeps its live angles and eye, but its
+focus is the player, so the frame on screen still stands two walk steps
+behind the RAM. `dohaty_field_card_walk` (`-24` X a pass, the camera on its
+yaw-`0` target) shows the scene `13` px left of a frame seated on the RAM's
+player; the state's two framebuffers and its newest ordering table, rasterised
+with `ot-raster.py`, stand `0`, `6` and `13` px apart, one pass each. Seated
+two steps back it reads `.994` (from `.725`), and `jou_field_card_walk` `.993`
+(from `.894`). A capture whose player stood still on its last pass
+(`+0x14/+0x18` equal to `+0x1C/+0x20`) is not rewound even with the pad held,
+since nothing in the RAM says how far the pass before it walked.
+
 The snap composes from the state's own camera parameter block
 (`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
 takes it as `LEGAIA_SEAT_CAMERA_BLOCK`) rather than from a tile re-query.
