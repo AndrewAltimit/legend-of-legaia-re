@@ -172,6 +172,11 @@ pub struct AudioState {
     /// after the pause (the browser page's gesture-gated one) can bring the
     /// track up paused rather than sounding ([`Self::bgm_script_paused`]).
     pub(crate) bgm_script_paused: bool,
+    /// Bit 2 of the sound flags `_DAT_8007B750`: keep the audio across the
+    /// next field init. Op-`0x35` sub-op `6` raises it (`0x801E01D8`); the
+    /// field init `FUN_801D6704` tests it before its key-off of voices
+    /// `0x10..0x17` (`0x801D6B88`) and clears it (`0x801D7348`).
+    pub(crate) keep_audio_across_field_init: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
@@ -292,6 +297,7 @@ impl AudioState {
             pending_sound_release: false,
             start_pending_commit: false,
             bgm_script_paused: false,
+            keep_audio_across_field_init: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
             field_duck_pct: None,

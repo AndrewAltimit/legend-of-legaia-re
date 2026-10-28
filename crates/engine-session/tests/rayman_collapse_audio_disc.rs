@@ -106,3 +106,56 @@ fn the_collapse_emitters_fall_silent_when_their_parts_halt() {
         }
     }
 }
+
+/// A door taken while the rumble still loops: the destination's field init
+/// (`FUN_801D6704`, `0x801D6B84..0x801D6BDC`) keys off voices `0x10..0x17`
+/// with their volume zeroed, so the emitter does not follow the player out.
+#[test]
+fn a_scene_change_silences_a_looping_emitter() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    };
+    let mut s = BootSession::<Sink>::open_disc_detached_audio(
+        std::path::Path::new(&disc),
+        &BootConfig::default(),
+    )
+    .expect("boot session");
+    s.enter_scene_live("rayman", &FieldLiveOpts::default())
+        .expect("enter rayman");
+    s.host
+        .world
+        .field_vm
+        .pending_record_spawns
+        .push(COLLAPSE_BEAT);
+    let audio = s.audio.clone().expect("audio enabled");
+    let sounding = |v: usize| audio.with_spu(|spu| spu.voices[v].adsr.phase == Phase::Sustain);
+    let mut keyed = false;
+    for _ in 0..200 {
+        s.host.world.set_pad(0);
+        s.tick().expect("tick");
+        s.step_audio_frame();
+        audio.with_spu(|spu| spu.render_into(&mut [0i16; 735 * 2]));
+        if sounding(16) && sounding(17) {
+            keyed = true;
+            break;
+        }
+    }
+    assert!(keyed, "the rumble emitter keys voices 16..17");
+    s.enter_scene_live("ropeway", &FieldLiveOpts::default())
+        .expect("enter ropeway");
+    for _ in 0..4 {
+        s.host.world.set_pad(0);
+        s.tick().expect("tick");
+        s.step_audio_frame();
+        audio.with_spu(|spu| spu.render_into(&mut [0i16; 735 * 2]));
+    }
+    for v in [16, 17] {
+        let p = audio.with_spu(|spu| spu.voices[v].adsr.phase);
+        eprintln!("[ran] after the door: voice {v} {p:?}");
+        assert!(
+            matches!(p, Phase::Release | Phase::Off),
+            "voice {v} still sounds ({p:?}) in the next scene"
+        );
+    }
+}

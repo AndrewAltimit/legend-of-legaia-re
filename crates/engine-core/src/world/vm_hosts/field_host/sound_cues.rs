@@ -42,6 +42,10 @@ impl FieldHostImpl<'_> {
             // the poller installs the incoming track and clears bit 0
             // (`0x8002472C`).
             self.world.audio.start_pending_commit = false;
+        } else if sub_op == 6 {
+            // Sub-6 raises sound-flag bit 2 (`0x801E01D8`): the next field
+            // init keeps the audio ([`World::release_field_init_voices`]).
+            self.world.audio.keep_audio_across_field_init = true;
         } else if sub_op == 7 {
             // Sub-7 stores the next fight's battle sound set `_DAT_8007B880`
             // and makes no sequencer call: `lbu v1,0x1(s6)` tests the

@@ -132,7 +132,10 @@ captured state). The first tick in range keys the descriptor's voices through
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
 the key-on chain; leaving the box, or the side-band request going unsettled,
 releases them (`FUN_800250D4`). The arm keys only in the field mode and
-behind the settled side-band pair.
+behind the settled side-band pair. Port: `engine-vm::sfx_emitter`, ticked from
+`World::tick_ambient_fx` with the focus the camera stored
+(`frame_step::camera_before_world_tick`), its voices driven by
+`AudioDirector::drive_sfx_emitters` on both hosts.
 
 **A halted emitter is released when its part is freed, not by the arm.**
 The arm has no halt case: a part whose script halts stops ticking with its
@@ -145,10 +148,17 @@ cue `0x3E` on voices 16..17, and a runtime cue on voice 19 - loop while the
 beat's flags are up (`0x5A0` / `0x5A1` for the rumble) and halt once it
 clears them. Port: `World::retire_finished_ambient_parts` queues
 `sfx_emitter::emitter_free`'s release; without it the rumble outlived the
-beat for good (`engine-session/tests/rayman_collapse_audio_disc.rs`). Port: `engine-vm::sfx_emitter`, ticked from
-`World::tick_ambient_fx` with the focus the camera stored
-(`frame_step::camera_before_world_tick`), its voices driven by
-`AudioDirector::drive_sfx_emitters` on both hosts.
+beat for good (`engine-session/tests/rayman_collapse_audio_disc.rs`).
+
+**A field init silences the cue voices.** The per-scene initializer
+`FUN_801D6704` zeroes the volume of voices `0x10..0x17` and keys them off
+(`0x801D6BB0..0x801D6BDC`) unless sound-flag bit 2 (op-`0x35` sub-op `6`) or
+the warp-entry word `_DAT_8007B8B8` is up (`0x801D6B84..0x801D6BA8`), and
+clears bit 2 later in the same init (`0x801D7348`). So an emitter still
+looping when the player takes a door does not follow them into the next
+scene. Port: `World::release_field_init_voices`, called from the field scene
+entry; the engine's field entry is always cold, so the warp-entry gate never
+applies there.
 
 **The cue's volume pair is a velocity and a pan.** `FUN_80065034` takes the
 larger half as the key-on velocity and stages the ratio as a third pan for the
