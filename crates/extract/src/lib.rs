@@ -399,7 +399,11 @@ pub fn verify(bin: &Path, r: &dyn Reporter) -> Result<()> {
         done += n;
         r.progress(done, total);
     }
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
     r.log(&format!("verify: sha256 = {}", hash));
     if let Some(d) = disc_region(bin) {
         r.log(&format!(

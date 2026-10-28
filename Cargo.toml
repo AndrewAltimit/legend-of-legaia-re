@@ -123,7 +123,7 @@ serde_json = "1"
 # serde_yaml itself is archived and its unsafe-libyaml backend is
 # unmaintained (RUSTSEC-2024-0449).
 serde_norway = "0.9"
-sha2 = "0.10"
+sha2 = "0.11"
 tempfile = "3"
 toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }
 wasm-bindgen = "0.2"
