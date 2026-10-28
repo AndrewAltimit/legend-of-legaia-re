@@ -2436,9 +2436,18 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   `0x0B` - which `battle_tower_guardian_v_windhash_mid_cast` confirms
   (`57 0B 07 FF`) - and the per-monster arm for id `0x11` is the default
   (`0x801EBDAC`). The engine stages `0x0A`, whose hit lands on Noa on the
-  first `0x2B` pass, where retail's frame still shows her unhurt. What staged
-  `0x0B` is open; the next step is a write watch on the Guardian's `+0x1E0`
-  and on entry `0x0A`'s tag byte through the pick.
+  first `0x2B` pass, where retail's frame still shows her unhurt. Both
+  captures are one fight: V-Windhash on round 1 (the Guardian's MP `120` to
+  `40`), Windhash on round 2 (`40` to `20`). A PCSX-Redux run from the
+  V-Windhash state watched the Guardian's next pick (its rolls ended on a
+  strike, not retail's Windhash) walk to entry `0x0B` for V-Windhash
+  (`k = 1`), fail its MP test (`40 < 80`, `0x801EA520`) and restart at
+  `0x801EA058`, twice; every `+0x1E0` store in the battle overlay
+  (`0x801EA540`, the heal arm's `s2 - 1` at `0x801EA6C8`, `0x801EBE74`,
+  the queue builder `FUN_801EED1C`) is accounted for, and none pairs `0x34`
+  with `0x0B` on this record. What staged it is open; the next step is the
+  same probe with its breakpoints armed only from round 2, since the
+  interpreter core faults within some hundred vsyncs on most runs.
 - **Zeto's waves.** The forced cast is armed but never consumed inside the
   budget - the monster pick that would take it is not reached on Zeto's seat -
   so `0x70` is not reached. Why is open.
@@ -3389,8 +3398,12 @@ on the capture's ground from cast begin `0x28` through the pre-cast wait
 replay's earlier rounds can leave it elsewhere, and its effects then spawn off
 retail's (`battle_retona_viguro_lv2_thunder_break_mid_cast` seeded Thunder
 Break's two masters from `(-509, 1099)` against retail's caster at
-`(-434, 874)`). `battle_rugi_slippery_poisonous_breath_mid_cast` read `.966`
-to `.996`.
+`(-434, 874)`). Only the capture's own caster is held, and only on a
+capture of a monster's magic cast: the snap is that capture's ground, and
+held through every monster cast of the replayed fight it moved a strike
+capture's fight off the headless seed's, so the strike never reached its
+phase (`battle_rugi_barra_strike`). `battle_rugi_slippery_poisonous_breath_mid_cast`
+read `.966` to `.982`.
 
 #### A shot armed after the displayed frame
 

@@ -469,6 +469,7 @@ impl PlayWindowApp {
                 // (`ground_snap::hold_cast_caster`).
                 legaia_engine_capture::ground_snap::hold_cast_caster(
                     &mut self.session.host.world,
+                    &drive,
                     &sc.battle_ground_snap,
                 );
                 pad

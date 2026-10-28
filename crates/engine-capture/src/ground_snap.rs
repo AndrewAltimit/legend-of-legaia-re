@@ -17,6 +17,7 @@
 //! endpoint that framing agrees with, as before: a framing the law gets
 //! wrong still reads as one.
 
+use crate::battle_drive::BattleDrive;
 use legaia_engine_camera::projection::BattleCamPose;
 use legaia_engine_core::world::World;
 
@@ -210,9 +211,25 @@ const CAST_HOLD_STATES: std::ops::RangeInclusive<u8> = 0x28..=0x29;
 /// draws them off retail's: `battle_retona_viguro_lv2_thunder_break_mid_cast`
 /// seeded Thunder Break's two masters from `(-509, 1099)` against retail's
 /// caster at `(-434, 874)`. Holding the caster on the capture's ground
-/// through `0x28` / `0x29` seats them where retail's were. A no-op outside
-/// a monster's magic band or without a snap for the acting slot.
-pub fn hold_cast_caster(world: &mut World, snaps: &[GroundSnap]) {
+/// through `0x28` / `0x29` seats them where retail's were.
+///
+/// Only the capture's own caster is held, and only for a capture of a
+/// monster's magic cast (`drive` an action drive of category `2`): the
+/// snap is that capture's ground, and standing another seat or another
+/// action on it moves the replay's fight off the headless seed's (a strike
+/// capture held its fight's earlier casts and never reached its phase).
+/// A no-op otherwise, or without a snap for the acting slot.
+pub fn hold_cast_caster(world: &mut World, drive: &BattleDrive, snaps: &[GroundSnap]) {
+    let BattleDrive::Action {
+        seat, category: 2, ..
+    } = *drive
+    else {
+        return;
+    };
+    let pc = world.party.party_count.clamp(1, 3);
+    if world.battle_ctx.active_actor != crate::battle_drive::engine_seat(seat, pc) {
+        return;
+    }
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || !CAST_HOLD_STATES.contains(&world.battle_ctx.action_state)
         || world.battle_ctx.queued_action
@@ -281,13 +298,18 @@ mod tests {
             facing: Some(2170),
             body: None,
         }];
+        let drive = BattleDrive::from_env("action,3,43,2,48,0,0,6,48").expect("drive");
+        let strike = BattleDrive::from_env("action,3,30,3,8,0,0,6,0").expect("drive");
         w.battle_ctx.active_actor = 3;
+        w.battle_ctx.action_state = 0x28;
+        hold_cast_caster(&mut w, &strike, &snap);
+        assert_eq!(w.actors[3].move_state.world_x, 0);
         w.battle_ctx.queued_action = ActionCategory::Magic.as_byte();
         w.battle_ctx.action_state = 0x2B;
-        hold_cast_caster(&mut w, &snap);
+        hold_cast_caster(&mut w, &drive, &snap);
         assert_eq!(w.actors[3].move_state.world_x, 0);
         w.battle_ctx.action_state = 0x28;
-        hold_cast_caster(&mut w, &snap);
+        hold_cast_caster(&mut w, &drive, &snap);
         assert_eq!(
             (
                 w.actors[3].move_state.world_x,
@@ -298,7 +320,7 @@ mod tests {
         assert_eq!(w.actors[3].battle.facing_angle, 2170);
         w.battle_ctx.active_actor = 0;
         let party = [GroundSnap { slot: 0, ..snap[0] }];
-        hold_cast_caster(&mut w, &party);
+        hold_cast_caster(&mut w, &drive, &party);
         assert_eq!(w.actors[0].move_state.world_x, 0);
     }
 }
