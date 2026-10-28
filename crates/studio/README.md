@@ -13,9 +13,9 @@ runtime, and writes only into folders the user chooses.
 
 | Area | What the user gets |
 |---|---|
-| Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does. A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, and a file that is not a raw dump is named for what it is (`legaia_iso::sniff`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. Every view that needs a disc shows the start page until one is open. *Recent* (and the start screen) lists up to eight recent sources, newest first (`Settings::remember_recent`); gone paths are pruned, and each has a remove button. |
+| Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does. A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, and a file that is not a raw dump is named for what it is (`legaia_iso::sniff`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. Every view that needs a disc shows the start page until one is open. The top bar's *Open* menu holds every way in ([below](#the-top-bar)). |
 | Browse | The `PROT.DAT` entries grouped under the CDNAME block each belongs to on the disc (the retail block: the filename labels start every block two entries late) and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the retail block, the place name, the filename label, the category or the index (`Studio::entry_matches`), plus a category filter, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. The next start reopens the selected entry. |
-| Overview | PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, the DATA_FIELD chunk list, raw `.BIN` export. |
+| Overview | PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, size, the sub-assets found (only the kinds present), the DATA_FIELD chunk list, raw `.BIN` export. A value wider than the panel ends in an ellipsis and shows whole on hover. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom; PNG export of one or all. A 4 / 8 bpp TIM with no CLUT in its file (its palette is another upload's VRAM cell) shows its indices as a grey ramp. |
 | 3D model | Every TMD (`tmd_scan`, `scene_tmd_stream`) in an orbit view (drag, scroll, double-click to reset; the triangle count and the hint are drawn inside the view, on the theme's `stage` backdrop) with retail shading (`texel * colour / 128`) or untextured under a viewer light, picked from one compact toolbar row that holds at the minimum window width. Textures come from the entry's own TIMs or from its **scene** (see below); the view opens on the entry only when its TIMs hold every CLUT and texel the textured prims read (`Model::texture_coverage`), else on the scene; OBJ and textured `.glb` export from the *Export* menu. |
 | Audio | VAB banks (spans resolved through the DATA_FIELD body chunk) with per-sample play and WAV export; SEQ playback on the `legaia-engine-audio` SPU + sequencer with a chosen bank. |
@@ -28,6 +28,18 @@ runtime, and writes only into folders the user chooses.
 | View | Light, dark or follow-system theme, and the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0); both remembered. Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels and the title gold for the selection and the primary buttons. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the binary, or beside the macOS `.app`), the keyboard shortcuts. |
 | Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder* (progress and outcome: [below](#extraction-progress)); the output folder defaults to one beside the disc image; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
+
+## The top bar
+
+One *Open* menu holds the disc dialog (Ctrl+O), the folder dialog, *Type a
+path* (Ctrl+L) and the recent list. The path field shows on its own only
+while nothing is open; with a disc open the bar is one row of controls plus
+the disc line at the minimum window width. Below about 860 points the app's
+name leaves the bar (it stays in the window's title bar), and View and About
+move to the right edge only when the row has room left for them.
+The recent list (also on the start screen) holds up to eight sources, newest
+first (`Settings::remember_recent`); gone paths are pruned, and each has a
+remove button.
 
 ## Extraction progress
 
@@ -130,7 +142,7 @@ would land on a monitor that is still connected (`placement`, checked
 against the monitors the windowing system reports as the event loop
 starts); otherwise the window opens centred.
 
-Keyboard: Ctrl+O opens a disc image, Ctrl+1 .. Ctrl+4 switch between Browse,
+Keyboard: Ctrl+O opens a disc image, Ctrl+L shows the path field, Ctrl+1 .. Ctrl+4 switch between Browse,
 Characters & monsters, Movies & voice and Extract, F5 plays the open disc,
 Ctrl+F focuses the archive search (Escape clears it), F1 toggles the About
 box, Ctrl+= / Ctrl+- / Ctrl+0 zoom, and Up / Down, Page Up / Down, Home / End

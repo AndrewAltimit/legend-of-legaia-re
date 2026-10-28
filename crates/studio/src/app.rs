@@ -156,6 +156,8 @@ impl Automation {
 /// The width (points) the top bar's right-aligned View and About buttons
 /// need, with their spacing.
 const VIEW_ABOUT_W: f32 = 110.0;
+/// The bar width from which the first row also carries the app's name.
+const TITLE_ROOM_W: f32 = 860.0;
 
 /// A collapsing header's title laid out to fit the row it sits on, cut with
 /// an ellipsis when it does not; `true` when it was cut.
@@ -220,6 +222,11 @@ pub struct App {
     window_size: Option<[f32; 2]>,
     window_pos: Option<[i32; 2]>,
     path_text: String,
+    /// The typed-path row with a source open (`Ctrl+L` / *Open > Type a
+    /// path*); with nothing open the row always shows.
+    path_row: bool,
+    /// Focus the path field on its next draw.
+    path_focus: bool,
     filter: String,
     class_filter: Option<String>,
     // Textures tab.
@@ -327,6 +334,8 @@ impl App {
             window_size: None,
             window_pos: None,
             path_text,
+            path_row: false,
+            path_focus: false,
             filter: String::new(),
             class_filter: None,
             tim_sel: 0,
@@ -616,6 +625,10 @@ impl App {
         if ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::O))) {
             self.pick_disc();
         }
+        if ctx.input_mut(|i| i.consume_shortcut(&cmd(egui::Key::L))) {
+            self.path_row = !self.path_row;
+            self.path_focus = self.path_row;
+        }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
             self.start_game();
         }
@@ -636,12 +649,17 @@ impl App {
         // zoom) moves the last buttons to a second row instead of pushing
         // Play, View and About off the edge.
         ui.horizontal_wrapped(|ui| {
-            ui.label(
-                RichText::new("Legaia Studio")
-                    .heading()
-                    .color(crate::theme::accent(ui)),
-            );
-            ui.separator();
+            // The name is in the window's title bar too; a narrow window
+            // spends its first row on the controls instead, so the bar
+            // stays one row down to the minimum width.
+            if ui.available_width() >= TITLE_ROOM_W {
+                ui.label(
+                    RichText::new("Legaia Studio")
+                        .heading()
+                        .color(crate::theme::accent(ui)),
+                );
+                ui.separator();
+            }
             for (mode, label, key) in [
                 (Mode::Browse, "Browse", "Ctrl+1"),
                 (Mode::Actors, "Characters & monsters", "Ctrl+2"),
@@ -652,31 +670,66 @@ impl App {
                     .on_hover_text(key);
             }
             ui.separator();
-            if ui
-                .button("Open disc image...")
-                .on_hover_text("Ctrl+O")
-                .clicked()
-            {
-                self.pick_disc();
-            }
-            if ui.button("Open extracted folder...").clicked() {
-                self.pick_folder();
-            }
-            ui.add_enabled_ui(!self.studio.settings.recent.is_empty(), |ui| {
-                ui.menu_button("Recent", |ui| {
+            // One menu for every way in, so the first row holds at the
+            // minimum width: the three buttons it replaces wrapped the bar.
+            let mut picked: Option<PathBuf> = None;
+            let mut action = None;
+            ui.menu_button("Open", |ui| {
+                if ui
+                    .add(egui::Button::new("Disc image...").shortcut_text("Ctrl+O"))
+                    .clicked()
+                {
+                    action = Some(0);
+                    ui.close();
+                }
+                if ui
+                    .button("Extracted folder...")
+                    .on_hover_text("A folder legaia-extract (or Extract) wrote")
+                    .clicked()
+                {
+                    action = Some(1);
+                    ui.close();
+                }
+                if ui
+                    .add(egui::Button::new("Type a path...").shortcut_text("Ctrl+L"))
+                    .clicked()
+                {
+                    action = Some(2);
+                    ui.close();
+                }
+                ui.separator();
+                if self.studio.settings.recent.is_empty() {
+                    ui.label(RichText::new("Discs and folders you open are listed here.").weak());
+                } else {
+                    ui.label(RichText::new("Recent").strong());
                     if let Some(p) = self.recent_list(ui) {
+                        picked = Some(p);
                         ui.close();
-                        self.open_path(&p);
                     }
-                })
-                .response
-                .on_disabled_hover_text("Discs and folders you open are listed here.");
-            });
+                }
+            })
+            .response
+            .on_hover_text("Open a disc image or an extracted folder (Ctrl+O), or a recent one");
+            match action {
+                Some(0) => self.pick_disc(),
+                Some(1) => self.pick_folder(),
+                Some(2) => {
+                    self.path_row = true;
+                    self.path_focus = true;
+                }
+                _ => {}
+            }
+            if let Some(p) = picked {
+                self.open_path(&p);
+            }
             ui.separator();
             self.play_button(ui);
             // View and About sit at the right edge when the row has room
             // for them, else they flow on after Play.
-            if ui.available_width() >= VIEW_ABOUT_W {
+            // What is left of this row: in a wrapping row `available_width`
+            // is the whole row's, which put View and About over Play.
+            let left = ui.max_rect().right() - ui.cursor().left();
+            if left >= VIEW_ABOUT_W {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("About").on_hover_text("F1").clicked() {
                         self.about_open = !self.about_open;
@@ -690,21 +743,28 @@ impl App {
                 }
             }
         });
-        ui.horizontal(|ui| {
-            ui.label("Path:");
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut self.path_text)
-                    .hint_text(
-                        "disc .bin / .cue, or an extracted folder - or drop it on the window",
-                    )
-                    .desired_width(ui.available_width() - 70.0),
-            );
-            let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if (ui.button("Open").clicked() || enter) && !self.path_text.trim().is_empty() {
-                let p = PathBuf::from(self.path_text.trim());
-                self.open_path(&p);
-            }
-        });
+        let show_path = self.path_row || self.studio.library.is_none();
+        if show_path {
+            ui.horizontal(|ui| {
+                ui.label("Path:");
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut self.path_text)
+                        .hint_text(
+                            "disc .bin / .cue, or an extracted folder - or drop it on the window",
+                        )
+                        .desired_width(ui.available_width() - 70.0),
+                );
+                let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if self.path_row && std::mem::take(&mut self.path_focus) {
+                    resp.request_focus();
+                }
+                if (ui.button("Open").clicked() || enter) && !self.path_text.trim().is_empty() {
+                    let p = PathBuf::from(self.path_text.trim());
+                    self.path_row = false;
+                    self.open_path(&p);
+                }
+            });
+        }
         ui.horizontal_wrapped(|ui| {
             if let Some(p) = self.studio.loading() {
                 ui.spinner();
@@ -1383,36 +1443,57 @@ impl App {
 
     fn overview(&mut self, ui: &mut egui::Ui, lib: &crate::Library, a: &Analysis) {
         let e = &lib.entries[a.pos];
+        // A value wider than the panel ends in an ellipsis and shows whole
+        // on hover; the grid's value column is otherwise unbounded and ran
+        // off the window's edge at the minimum width.
+        let value = |ui: &mut egui::Ui, text: String| {
+            ui.add(egui::Label::new(RichText::new(&text).monospace()).truncate())
+                .on_hover_text(text)
+        };
+        let contents: Vec<String> = [
+            (a.tims.len(), "TIM"),
+            (a.tmds.len(), "TMD"),
+            (a.vabs.len(), "VAB"),
+            (a.seqs.len(), "SEQ"),
+            (a.mes.len(), "MES"),
+            (a.tim_sections.len(), "LZS sections"),
+        ]
+        .into_iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, what)| format!("{n} {what}"))
+        .collect();
         egui::Grid::new("overview").num_columns(2).striped(true).show(ui, |ui| {
             ui.label("PROT index");
-            ui.monospace(format!("{} (0x{:X})", e.index, e.index));
+            value(ui, format!("{} (0x{:X})", e.index, e.index));
             ui.end_row();
             ui.label("Filename label");
-            ui.monospace(lib.label(e.index).unwrap_or("-"));
+            value(ui, lib.label(e.index).unwrap_or("-").to_string());
             ui.end_row();
-            ui.label("Retail CDNAME block");
-            ui.monospace(lib.retail_block(e.index).unwrap_or("-"))
+            ui.label("Retail CDNAME block")
                 .on_hover_text("CDNAME #define numbers are raw-TOC indices, two above extraction indices (docs/formats/cdname.md)");
+            value(ui, lib.retail_block(e.index).unwrap_or("-").to_string());
             ui.end_row();
             ui.label("Category");
-            ui.monospace(a.class.name());
+            value(ui, a.class.name().to_string());
             ui.end_row();
             ui.label("Location");
-            ui.monospace(format!(
-                "PROT.DAT LBA {} (+0x{:X}), {} sectors, {} bytes",
-                e.start_lba, e.byte_offset, e.size_sectors, e.size_bytes
-            ));
+            value(ui, format!("PROT.DAT LBA {} (+0x{:X})", e.start_lba, e.byte_offset));
+            ui.end_row();
+            ui.label("Size");
+            value(
+                ui,
+                format!("{} ({} sectors, {} bytes)", human_size(e.size_bytes), e.size_sectors, e.size_bytes),
+            );
             ui.end_row();
             ui.label("Contents");
-            ui.monospace(format!(
-                "{} TIM, {} TMD, {} VAB, {} SEQ, {} MES, {} LZS sections",
-                a.tims.len(),
-                a.tmds.len(),
-                a.vabs.len(),
-                a.seqs.len(),
-                a.mes.len(),
-                a.tim_sections.len()
-            ));
+            value(
+                ui,
+                if contents.is_empty() {
+                    "no recognised sub-assets".to_string()
+                } else {
+                    contents.join(", ")
+                },
+            );
             ui.end_row();
         });
         if !a.chunks.is_empty() {
@@ -2492,6 +2573,7 @@ impl App {
                     .show(ui, |ui| {
                         for (keys, what) in [
                             ("Ctrl+O", "open a disc image"),
+                            ("Ctrl+L", "type a path to open"),
                             ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
                             ("F5", "play the open disc"),
                             ("Ctrl+F, Esc", "search the archive, clear the search"),
