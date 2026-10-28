@@ -189,6 +189,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, super::THUNDER_NEEDLE_BODY) => Some(super::thunder_needle_camera),
         (962, super::GIGATON_PRESS_BODY) => Some(super::gigaton_press_camera),
         (965, super::DOOMSDAY_BODY) => Some(super::doomsday_camera),
+        (955, super::KISS_OF_DEATH_BODY) => Some(super::kiss_of_death_camera),
         _ => None,
     }
 }
@@ -258,6 +259,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xAD => Some(super::EVIL_SERU_MAGIC_COUNTDOWN),
         0xA6 => Some(NEO_STAR_SLASH_COUNTDOWN),
         0xB6 => Some(DOOMSDAY_COUNTDOWN),
+        0x6E => Some(super::KISS_OF_DEATH_COUNTDOWN),
         _ => None,
     }
 }

@@ -2332,14 +2332,26 @@ capture whose accumulator has run more frames than its counter has units
 since the seed is one of these (`accum_predates_seed`), and the counter alone
 places its hold. `battle_korb2_mage_void_accessories_mid_cast` reads
 accumulator `384` (`48` frames) against counter `0x820` (`32` units): gated
-on both, the engine held `0x6E` until its own clip age (counted from the
-action's start) reached the idle loop's, its counter ran `18` to `24` units
+on both, the engine held `0x6E` until its own clip age, which leaves the
+idle loop's natural-end wraps out, reached retail's reading of it; its counter ran `18` to `24` units
 past retail's, and its camera had landed where retail's is still turning
 (yaw `1117` against `1257`). The landed camera put the second monster
 between the eye and the caster, drawn as the near-camera ghost
 ([`FUN_8004DC68`](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68),
 mode `3`): a large dark translucent body behind the caster. Retail ghosts
 the same slot on that frame (`+0x8 = 0x83000000`), out of its shot.
+
+A `0x70` capture inside a module arm's own shot (a director's `FUN_801D829C`
+call, built once: `0x70` arms no framing) is aligned as a summon module's is
+(`BattleCamera::align_module_shot`), on both the headless seed and the image
+child, whenever the engine's shot is still walking; the glide-origin align
+compares a chase glide's endpoint and misses it.
+`battle_map01_lippian_kiss_of_death_mid_cast` (PROT 0955 arm 1, the arm-0
+shot one pass in) reads camera `.916` to `1.000`, image `.704` to `.849`.
+Walking its displayed frame back on the table's own increments instead of
+the re-arm's share reads `.886` there, but takes `zeto_call_wave_mid_cast`
+(PROT 0946 arm 2, whose drifts move the live pose off a landed table) from
+`1.000` to `.996`, so the displayed walk-back stays the re-arm's.
 
 The band has a third clock the hold does not reach: the backdrop pair's
 depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'

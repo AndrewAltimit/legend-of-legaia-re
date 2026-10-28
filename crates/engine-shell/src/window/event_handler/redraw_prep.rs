@@ -370,6 +370,11 @@ impl PlayWindowApp {
                 .and_then(|sc| sc.battle_cam_align_displayed);
             let world = &mut self.session.host.world;
             let mask = match (world.battle.camera.as_mut(), target) {
+                // A capture-band module's own shot still walking (`0x70`
+                // arms no framing; a slot-B arm built the table once): its
+                // walk takes retail's pose on the shot's increments, as a
+                // summon module's does (`BattleCamera::align_module_shot`).
+                (Some(cam), _) if cam.module_shot_walking() => cam.align_module_shot(live, end),
                 (Some(cam), Some(target)) => {
                     let live = match displayed {
                         Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,

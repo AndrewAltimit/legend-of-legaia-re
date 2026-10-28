@@ -301,6 +301,11 @@ impl BattleCamera {
         mask
     }
 
+    /// Whether a module shot is armed and still walking toward its endpoint.
+    pub fn module_shot_walking(&self) -> bool {
+        self.module_glide.is_some_and(|g| !g.landed())
+    }
+
     /// Whether a module shot is armed (tweening or landed and holding).
     pub fn module_shot_armed(&self) -> bool {
         self.module_glide.is_some()

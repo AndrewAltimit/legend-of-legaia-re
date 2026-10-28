@@ -3000,6 +3000,7 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 | 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
 | 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
+| 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown. Arm 0's seat tints (every standing seat `+0x21C = 0xFF`, the caster restored) and arm 1's caster `+0x21C = 7` are not ported |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too

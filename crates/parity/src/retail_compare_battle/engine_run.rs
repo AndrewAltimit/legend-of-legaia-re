@@ -807,6 +807,11 @@ pub fn run_engine_battle(
             legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
         });
         let mask = match (world.battle.camera.as_mut(), target) {
+            // A capture-band module's own shot still walking: the image
+            // child's routing (`redraw_prep`, `align_module_shot`).
+            (Some(cam), _) if cam.module_shot_walking() => {
+                cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1)
+            }
             (Some(cam), Some(target)) => {
                 cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
             }
