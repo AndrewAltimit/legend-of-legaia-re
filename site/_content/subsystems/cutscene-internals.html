@@ -121,6 +121,7 @@
       <tr><td>script</td><td>-</td><td>Entry PC; <code>opdeene</code> record 18 opens with an effect-colour reset then <code>GFLAG_SET 26</code></td></tr>
     </tbody>
   </table>
+  <p>System flag <code>7</code> is raised by the MAN loader <code>FUN_8003AEB0</code> on every scene load (<code>ori 0x1</code> into <code>0x80085758</code> at <code>0x8003AEF4</code>), and no shipped script clears it. A record whose C1 list names it never spawns: over a hundred developer leftovers carry one, among them <code>town01</code>'s two <code>サウンド外</code> / <code>サウンド内</code> walk-on records south of the Genesis Tree, whose whole body is a <code>Greetings.</code> box.</p>
   <p>Nearly every op in the record carries the cross-context target <code>0xF8</code>, which resolves to the player / camera-anchor actor - so the timeline drives the camera and the lead actor rather than itself. On-disc records have no end opcode: they park in a <code>Nop</code>+<code>JmpRel</code>-to-self loop or loop back to their top as a resident driver, and retail leaves them spinning invisibly.</p>
 
   <h3 id="camera">Camera Configure (op <code>0x45</code>)</h3>

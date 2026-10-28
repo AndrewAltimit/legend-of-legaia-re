@@ -794,7 +794,7 @@ flowchart TD
 - **Timer idle** (`<= 0`, `0x801D2068..0x801D227C`) - the tile compare. `tile = world >> 7` (the raw shift at `0x801d2068`, not the `(world - 0x40) >> 7` the region refresh uses; the two differ by a half-tile band and a door tile is one tile deep) against the last-tile pair `(_DAT_8007BDC8, _DAT_8007BDCC)`.
 
   On a new tile it clears the re-poll bit, applies the `cell & 0x600` filter (`0x801d2140`) and the player's movement-lock test - each failure stores the tile and returns - then runs the kind-1 arm (`FUN_801D5630(1, x, z)` -> `FUN_8003BDE0(x, z, rec[2], rec[3])`, ra `0x801D218C`), under `_DAT_8007B6A8` resets the clip base to `2` with the party-bank bit, then the kind-0 arm (`0x801d21c0..0x801d2268`).
-- **Record gates.** `FUN_8003BDE0` checks the record's own C1 / C2 story-flag headers against the bitmap at `DAT_80085758` (C1 = block if ANY set).
+- **Record gates.** `FUN_8003BDE0` checks the record's own C1 / C2 story-flag headers against the bitmap at `DAT_80085758` (C1 = block if ANY set). Flag `7`, which the MAN loader raises on every scene load, shuts the developer walk-on records that list it in C1 ([`cutscene.md`](cutscene.md#flag-7-the-records-retail-never-spawns)).
 
 <a id="a-crossing-made-under-the-movement-lock-is-consumed"></a>
 

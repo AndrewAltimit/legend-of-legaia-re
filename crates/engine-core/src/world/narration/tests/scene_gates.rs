@@ -76,3 +76,18 @@ fn scene_depth_cue_tracks_the_prologue_grade_gate() {
         );
     }
 }
+
+/// The MAN loader raises system flag 7 (`0x80085758 |= 1` at `0x8003AEF4`),
+/// and a partition-2 record that lists it in C1 stops passing its gates -
+/// the developer walk-on records retail never spawns.
+#[test]
+fn man_load_raises_flag_7_and_shuts_its_c1_records() {
+    let mut w = World::default();
+    assert!(w.p2_record_gates_pass(&[crate::world::MAN_LOAD_FLAG], &[]));
+    w.man_load_entry_flags();
+    assert!(w.system_flag_test(7));
+    assert_eq!(w.flags.system_flags.first().copied(), Some(0x01));
+    assert!(!w.p2_record_gates_pass(&[crate::world::MAN_LOAD_FLAG], &[]));
+    // A record that does not name it is untouched.
+    assert!(w.p2_record_gates_pass(&[0x225], &[]));
+}

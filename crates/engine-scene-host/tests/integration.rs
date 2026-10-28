@@ -93,6 +93,7 @@ mod inline_dialogue_vm_no_panic_disc;
 mod jouine_arc_held_height_disc;
 mod kor5_genesis_figure_height_disc;
 mod kor5_old_deez_seat_disc;
+mod man_load_flag7_dev_records_disc;
 mod map01_clut_fx_disc;
 mod map01_flyin_camera;
 mod map01_overworld_walk_disc;

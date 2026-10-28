@@ -245,6 +245,12 @@ impl SceneHost {
         // one cached payload, and a scene with no MAN clears it.
         // PORT: FUN_8003AEB0 (live wiring; kernel =
         //       `World::install_scene_save_permission`)
+        // The loader's first act, ahead of any payload read: system flag 7
+        // goes up on every scene load. It is what keeps the developer
+        // records gated on it (C1 = [7]) from ever spawning.
+        // PORT: FUN_8003AEB0 (live wiring; kernel =
+        //       `World::man_load_entry_flags`)
+        self.world.man_load_entry_flags();
         let man_header = self
             .field_man_cache
             .as_ref()
