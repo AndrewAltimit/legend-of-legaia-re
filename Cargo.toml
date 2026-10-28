@@ -99,7 +99,7 @@ bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
 cpal = "0.15"
-dirs = "6"
+dirs = "7"
 # The desktop GUI toolkit for legaia-studio. Glow (OpenGL) backend only: no
 # egui release builds against the workspace's wgpu 26 (0.32 pins wgpu 25,
 # 0.33 pins wgpu 27), so the glow backend is what keeps a second wgpu out of
