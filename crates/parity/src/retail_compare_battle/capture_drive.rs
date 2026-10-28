@@ -121,13 +121,19 @@ impl RetailBattle {
     ///   parked on the CD wait with its glide long landed, while the
     ///   engine's gate is the tick its own glide lands, so the frames before
     ///   it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`);
-    /// * a [`SpanGate::DoneHold`] keeps it (`noa_levelup_fight_pre` fell).
+    /// * a [`SpanGate::DoneHold`] keeps it (`noa_levelup_fight_pre` fell);
+    /// * a capture past a walk-in the replay skips
+    ///   ([`Self::walk_in_shot_aligned`]) keeps the gate's frame: the replay
+    ///   runs that walk's arms in a tick or two, so the lag back from its
+    ///   gate lands on `0x70`'s first tick, ahead of the shot retail's
+    ///   display shows walking, and the shot is aligned onto the displayed
+    ///   frame's pose instead (`koru_blade_breath_mid_cast`).
     pub fn display_retake(&self) -> bool {
         self.display_lag > 0
             && match self.seed_plan() {
                 SeedPlan::Action { seat, .. } => match self.span_gate {
                     SpanGate::Age { .. } => seat < 3 || self.retake_on_shot_only(),
-                    SpanGate::CaptureFade { .. } => true,
+                    SpanGate::CaptureFade { .. } => !self.walk_in_shot_aligned(),
                     _ => false,
                 },
                 _ => false,
@@ -260,14 +266,42 @@ impl RetailBattle {
     /// Elsewhere the module's own clocks place its shot: aligned on PROT
     /// 0930's side-band wait, `horn_summon_mid_cast` read `.976` against
     /// `.988`.
+    ///
+    /// The same holds for a capture-class shot armed past a walk-in the
+    /// replay does not run ([`Self::walk_in_shot_aligned`]).
     pub fn module_cam_aligned(&self) -> bool {
         let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
-        matches!(self.seed_plan(), SeedPlan::Cast)
+        (matches!(self.seed_plan(), SeedPlan::Cast)
             && (0x81..=0xA0).contains(&self.queued_action)
             && matches!(self.action_state, 0x35 | 0x36)
             && legaia_engine_cast::cast_module_camera::creature_poll_arm(entry)
                 == Some(self.module_phase)
+            && !self.cam_landed)
+            || self.walk_in_shot_aligned()
+    }
+
+    /// A `0x70` capture of a body whose walk-in frames the caster through
+    /// case 6 every pass (PROT 0962's charge bodies,
+    /// `cast_module_camera::capture_approach_follows`), saved past the walk
+    /// with its arm-2 shot still walking. The arming routine takes the
+    /// shortest arc from the live camera (`FUN_80021248`), so the shot sets
+    /// out from wherever the walk-in's framing had swung: in a retail film
+    /// of the walk (`koru_pre_thunder_needle`, `36` vsyncs of arm 1 from
+    /// Koru's seat) the half-turned case-6 framing lands on yaw `2168` and
+    /// the shot leaves from there. The replay stands the caster on the
+    /// capture's walked ground, already in reach, so its arms 0..2 run in
+    /// one tick and the shot leaves from the unturned yaw instead; the
+    /// shot's own table places it (`koru_blade_breath_mid_cast`, two frames
+    /// into the arm-2 shot).
+    pub fn walk_in_shot_aligned(&self) -> bool {
+        self.action_state == 0x70
+            && self.module_phase >= 2
             && !self.cam_landed
+            && (0xA2..=0xA4).contains(&self.queued_action)
+            && legaia_engine_cast::cast_module_camera::capture_approach_follows(
+                962,
+                legaia_engine_cast::cast_module_ticks::capture_tick_body(962, self.queued_action),
+            )
     }
 
     /// Every captured combatant's live pair and heading by engine slot - the

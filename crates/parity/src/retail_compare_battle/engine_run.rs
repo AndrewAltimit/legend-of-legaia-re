@@ -812,6 +812,13 @@ pub fn run_engine_battle(
             }
             _ => 0,
         };
+        // A capture-class shot armed past a walk-in the replay skipped
+        // (`RetailBattle::walk_in_shot_aligned`).
+        if battle.walk_in_shot_aligned()
+            && let Some(cam) = world.battle.camera.as_mut()
+        {
+            cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1);
+        }
         if let Some(t) = cam_trace.as_mut() {
             t.push_str(&format!(" | aligned {mask:#010b}"));
             if let Some(target) = target {

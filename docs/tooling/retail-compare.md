@@ -2218,11 +2218,21 @@ the caster's cursor, so `capture_countdown_va` names no word for them. Their
 `0x70` captures are still held to the capture's arm
 (`battle_drive::PHASE_ONLY`), for a body the engine directs only; without it
 the replay was filmed on the band's first tick. `koru_blade_breath_mid_cast`
-sits in arm 3, and the gate took its `camera` from `.763` to `.862`. The Koru
-image stays where it was: the replay's arms 0 to 2 pass on the band's first
-ticks, so its arm-2 shot sets out from the unturned walk-in framing where
-retail's set out from the half-turned one
-([open thread](../reference/open-rev-eng-threads.md#korus-charge-shot-sets-out-half-turned)).
+sits in arm 3, and the gate took its `camera` from `.763` to `.862`.
+
+**A shot armed past a skipped walk-in.** Those bodies' arms 0 and 1 walk Koru
+into reach and frame him through case 6 on every pass; a retail film of the
+walk (`koru_pre_thunder_needle`, 36 vsyncs of arm 1) swings that framing onto
+yaw `2168`, and arm 2's shot sets out from there. A `0x70` capture stands
+Koru on the walked ground, already in reach, so the replay's arms 0 to 2 pass
+in a tick or two and its shot would leave from the unturned framing. For
+such a capture (`RetailBattle::walk_in_shot_aligned`: a charge body, arm 2 or
+later, retail's shot still walking) both channels align the shot onto
+retail's pose (`BattleCamera::align_module_shot`; the image child onto the
+displayed frame's, walked back along the shot's own table) and the image
+child keeps the gate's tick: a display-lag retake would land on `0x70`'s
+first tick, ahead of the shot. The three Koru mid-casts read `camera`
+`1.000` (`.862`) and `image` `.822` / `.790` / `.789` (`.719` each).
 
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
