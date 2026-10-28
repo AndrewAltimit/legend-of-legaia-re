@@ -109,10 +109,10 @@
       <tr><td><code>2</code> / <code>3</code></td><td>Stop (notes killed, cursor back to the start) / pause (notes keyed off, cursor kept)</td></tr>
       <tr><td><code>4</code></td><td>Replay: re-attach the slot and play the track again from its first event - no script word resumes mid-phrase (<a href="audio.html">audio</a>)</td></tr>
       <tr><td><code>5</code></td><td>Arm a timed sound-source auto-release after <code>id</code> vsyncs</td></tr>
-      <tr><td><code>6</code> / <code>7</code></td><td>Flag set / target-sound-set</td></tr>
+      <tr><td><code>6</code> / <code>7</code></td><td>Keep the audio across the next field init (skips that init&rsquo;s BGM level ramp and its key-off of voices <code>0x10..0x17</code>) / target-sound-set</td></tr>
       <tr><td><code>8</code></td><td>Re-attach and re-apply the field volume</td></tr>
-      <tr><td><code>9</code></td><td>Start behind a load barrier - how a cutscene changes music part-way</td></tr>
-      <tr><td><code>0xA</code></td><td>Swap-commit: wait for the load to settle, release the paused slot</td></tr>
+      <tr><td><code>9</code></td><td>Select behind a load barrier - how a cutscene changes music part-way; the outgoing track keeps the slot until the <code>0xA</code> commit</td></tr>
+      <tr><td><code>0xA</code></td><td>Swap-commit: wait for the load to settle, release the paused slot - the track sub-op 9 selected sounds from here</td></tr>
       <tr><td><code>0xB</code></td><td>Arm sub-op 9's barrier</td></tr>
     </tbody>
   </table>

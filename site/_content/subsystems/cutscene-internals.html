@@ -12,7 +12,7 @@
     <dt>Opening timeline</dt><dd>Partition-2 named records in each scene MAN, run by the field VM <code>FUN_801DE840</code> as a spawned context</dd>
     <dt>Camera</dt><dd>Op <code>0x45</code>: 10 params into globals; mover actor <code>FUN_801DD310</code>; port <code>engine-camera::camera_mover</code></dd>
     <dt>Roller</dt><dd>Handler <code>FUN_80037174</code>; geometry at <code>_DAT_801C6EA4 + 0x4C..0x52</code>; port <code>CutsceneNarration</code></dd>
-    <dt>Grade</dt><dd>Palette law <code>(L, L&minus;1, L&gt;&gt;1)</code> on every CLUT entry; port <code>Renderer::set_palette_grade</code></dd>
+    <dt>Grade</dt><dd>Palette law <code>(L, (L&middot;247)&gt;&gt;8, L&gt;&gt;1)</code> on the two graded CLUT rects; port <code>Renderer::set_palette_grade</code></dd>
     <dt>Confidence</dt><dd>Confirmed; the gold-grade CLUT rewrite is the prologue effect scripts' CLUT-cell cyclers</dd>
   </dl>
   <figure class="diagram">
@@ -200,7 +200,7 @@
     <li><strong>Measured.</strong> Every row is read off a per-vsync capture of the zero-input opening; all 59 waits the chain holds at one step from end to end fit the formula.</li>
     <li><strong>The step is the adaptive one.</strong> <code>opdeene</code> runs at 3 because its prescript raises the floor; <code>opstati</code> and <code>opurud</code> sit on a floor of 2 and step by 2, 3 or 4 as their frames cost. No field scene steps by 1 - that floor belongs to name entry, the menus and battle.</li>
     <li><strong>Why crediting one per vsync is wrong.</strong> It holds a wait for <code>N &minus; 1</code> ticks, up to two vsyncs long per wait at step 3, which over the opening record's waits puts it some thirty vsyncs behind retail by its last vignette.</li>
-    <li><strong>What is not on the frame grid yet:</strong> a wait a record times through an actor. A spin on a poked clip's end latch holds for the clip's length at a per-vsync step, where retail steps the clip cursor once a game frame; the opening's four such spins differ from retail by zero to three vsyncs each.</li>
+    <li><strong>End-latch spins are on the grid too.</strong> The anim tick runs once a game frame and multiplies each clip's step by the frame step, so the engine advances every placed-prop, NPC and cross-context clip cursor on game frames only. The actor ticks after the record, so the record sees a clip's end latch on the next game frame and every spin ends on one.</li>
     <li><strong>The residual is one-sided.</strong> A retail leg, measured scene label to scene label, includes the load and mode-transition window before the record's first tick; the engine's scene loads are instant, so it lands short by that window. Running <em>long</em> is the regression signal.</li>
   </ul>
   <details class="disclosure">
