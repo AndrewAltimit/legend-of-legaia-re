@@ -398,6 +398,39 @@ pub(crate) fn capture_accum_done(
     active_clip_age(world) >= u32::from(want)
 }
 
+/// The yaw counter's rung at the seed pass (`li v0,0x800` /
+/// `sh v0,0x4(s7)` at `0x801E2CEC..0x801E2CF8`): every capture-band cast
+/// counts from it.
+const SEED_YAW_RUNG: i32 = 0x800;
+
+/// Whether a capture-band capture's accumulator `accum` (`ctx[+0x87C]`)
+/// started before the action's seed pass, so it cannot place the `0x6E`
+/// hold.
+///
+/// Only a clip commit zeroes the accumulator (`FUN_8004AD80`,
+/// `sw zero,0x87c` at `0x8004BF74`; the per-art latch at `0x801D7FF8` is an
+/// Attack-band arm), and a monster's capture-class cast commits none on its
+/// way into the band: the seed pass calls `FUN_801EFE44` and the framing,
+/// neither of which stages a clip, and the cast begin's capture route
+/// (`0x801E4480..0x801E44FC`) goes straight to `0x6E`. Its accumulator
+/// therefore counts from the caster's last idle commit or wrap, wherever
+/// that fell. The yaw counter does count from the seed: `0x800` there, then
+/// at least one unit a display frame (`max(1, 4 * step / 3)` a pass of
+/// `step` frames, `0x801E29E4`), while the accumulator gains exactly `8` a
+/// frame (`8 * step` a framing call, `0x801D5900..0x801D5920`). An
+/// accumulator that has run more frames than the counter has units since
+/// the seed therefore began before it, and says where the caster's idle
+/// loop stood rather than how long the band has run
+/// (`battle_korb2_mage_void_accessories_mid_cast`: accumulator `384`, `48`
+/// frames, against a counter `0x820`, `32` units past the seed). The
+/// counter alone places such a capture.
+pub(crate) fn accum_predates_seed(accum: u16, yaw: Option<u16>) -> bool {
+    yaw.is_some_and(|y| {
+        let run = i32::from(y) - SEED_YAW_RUNG;
+        run >= 0 && i32::from(accum) / 8 > run
+    })
+}
+
 /// The engine's yaw counter `counter` with its drift since the last outright
 /// store (`drift`, run at the engine's step `engine_step`) rescaled to the
 /// rate a steady `retail_step` drifts it at over the same vsyncs:
@@ -1347,6 +1380,9 @@ impl BattleDrive {
                 world.stretch_battle_frame((step + off / per_vsync) as u8);
             }
         }
+        // Whether retail's accumulator was already running before the seed
+        // pass, read before the band adjustment below.
+        let accum_stale = accum_predates_seed(accum, yaw);
         // A `0x70` capture read its yaw counter some ticks into the band:
         // the `0x6E` hold stands that far short of it.
         let yaw = match arm {
@@ -1361,7 +1397,8 @@ impl BattleDrive {
         };
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
-            && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
+            && !((accum_stale || capture_accum_done(world, height, accum))
+                && capture_yaw_done(world, height, yaw)));
         // `0x6F` ramps the depth before it polls (`0x801E4FFC..0x801E5014`,
         // then `FUN_8003F2B8(1)`), so the pass that leaves the state has
         // ramped too: retail's depth on entering `0x70` is the exit pass's.

@@ -257,3 +257,16 @@ fn the_yaw_counter_drift_rescales_to_retails_step() {
     assert_eq!(d.steering().and_then(|s| s.drift_step), Some(3));
     assert_eq!(BattleDrive::from_env(&d.to_env()), Some(d));
 }
+
+#[test]
+fn an_accumulator_older_than_the_seed_does_not_place_the_band() {
+    // The Void Accessories capture: 48 frames of accumulator against 32
+    // counter units past the seed's 0x800.
+    assert!(accum_predates_seed(384, Some(0x820)));
+    // An accumulator inside the counter's run is the band's own clock.
+    assert!(!accum_predates_seed(256, Some(0x820)));
+    assert!(!accum_predates_seed(384, Some(0x848)));
+    // Far stops the counter; a counter under the seed's rung is no rung of it.
+    assert!(!accum_predates_seed(384, None));
+    assert!(!accum_predates_seed(384, Some(0x200)));
+}

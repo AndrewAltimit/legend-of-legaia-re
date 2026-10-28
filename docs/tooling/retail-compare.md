@@ -2310,6 +2310,27 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
+The accumulator can also be older than the action. Only a clip commit zeroes
+it (`FUN_8004AD80`, `sw zero,0x87c` at `0x8004BF74`), and a monster's
+capture-class cast commits none on its way into the band: the seed pass calls
+`FUN_801EFE44` and the framing, neither of which stages a clip, and the cast
+begin's capture route stores `0x6E` at once. Its accumulator then counts from
+the caster's last idle commit or wrap, wherever the idle loop stood when the
+action began. The counter does count from the seed's `0x800`, and gains at
+least a unit a display frame where the accumulator gains exactly `8`, so a
+capture whose accumulator has run more frames than its counter has units
+since the seed is one of these (`accum_predates_seed`), and the counter alone
+places its hold. `battle_korb2_mage_void_accessories_mid_cast` reads
+accumulator `384` (`48` frames) against counter `0x820` (`32` units): gated
+on both, the engine held `0x6E` until its own clip age (counted from the
+action's start) reached the idle loop's, its counter ran `18` to `24` units
+past retail's, and its camera had landed where retail's is still turning
+(yaw `1117` against `1257`). The landed camera put the second monster
+between the eye and the caster, drawn as the near-camera ghost
+([`FUN_8004DC68`](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68),
+mode `3`): a large dark translucent body behind the caster. Retail ghosts
+the same slot on that frame (`+0x8 = 0x83000000`), out of its shot.
+
 The band has a third clock the hold does not reach: the backdrop pair's
 depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'
 `+0x78` by `step << 6` a pass while `ctx[+0x243]` is up, and the cast begin's
