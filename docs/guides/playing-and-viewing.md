@@ -24,8 +24,8 @@ On this page:
   [script disassembly](#9-read-the-games-scripts),
   [the browser build](#10-run-the-browser-version-locally).
 
-Every subcommand accepts the disc directly via `--disc` - no extraction step
-required to play. Without `--disc`, tools read an `extracted/` tree
+Every subcommand that reads game data accepts the disc directly via `--disc` -
+no extraction step required to play. Without `--disc`, tools read an `extracted/` tree
 (`--extracted-root`, default `extracted`, resolved against the current
 directory) produced by `legaia-extract`
 ([getting-started.md](getting-started.md)).

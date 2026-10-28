@@ -6,12 +6,14 @@ The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
 `Legaia Studio.app` on macOS) does the common cases with buttons:
 
 1. **Open** your disc image - the `.bin` of a Mode2/2352 dump, or its `.cue` -
-   with *Open disc image...*, by typing its path, or by dropping it on the
-   window. A folder `legaia-extract` already wrote opens too. The app checks
-   the image before loading and reopens it next time. *Recent* in the top bar
-   (and the start screen, when nothing is open) lists the last eight discs and
-   folders you opened; *x* takes one off the list, and one that has been moved
-   or deleted drops off by itself.
+   with *Open disc image...* (Ctrl+O), by typing its path (Ctrl+L), or by
+   dropping it on the window. A folder `legaia-extract` already wrote opens
+   too. The app checks the image before loading and reopens it next time.
+   With something open, the *Open* menu in the top bar holds all of these:
+   *Disc image...*, *Extracted folder...*, *Type a path...* and the recent
+   list. The recent list (also on the start screen, when nothing is open)
+   holds the last eight discs and folders you opened; *x* takes one off the
+   list, and one that has been moved or deleted drops off by itself.
 2. **Browse** the archive on the left: entries grouped under their CDNAME
    names and the place each scene is (`town01 - Rim Elm`), each entry with
    its category and size. The search (Ctrl+F) matches every word you type
