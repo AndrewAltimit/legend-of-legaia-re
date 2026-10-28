@@ -300,10 +300,9 @@ pub fn render(
     w: usize,
     h: usize,
 ) -> Vec<u8> {
+    // Transparent where nothing is drawn: the view paints its backdrop
+    // (`Palette::stage`) under the image, so it follows the theme.
     let mut rgba = vec![0u8; w * h * 4];
-    for px in rgba.as_chunks_mut::<4>().0 {
-        px.copy_from_slice(&[30, 32, 36, 255]);
-    }
     if w == 0 || h == 0 {
         return rgba;
     }

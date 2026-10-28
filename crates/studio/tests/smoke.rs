@@ -105,7 +105,7 @@ fn a_mesh_baked_black_on_the_disc_is_named_and_lit_shows_its_shape() {
                 .as_chunks::<4>()
                 .0
                 .iter()
-                .filter(|p| p[..3] != [30, 32, 36])
+                .filter(|p| p[3] != 0)
                 .map(|p| p[0].max(p[1]).max(p[2]) < 16)
                 .collect();
             (px.iter().filter(|&&b| b).count(), px.len().max(1))
@@ -233,7 +233,7 @@ fn real_disc_lists_prot_entries_and_previews() {
     let t = a.tmds.first().expect("TMD found").clone();
     let model = Model::from_tmd(a.tmd_bytes(&t)).expect("drawable TMD");
     let rgba = raster::render(&model, &a.vram(), Camera::default(), Shading::Lit, 160, 120);
-    let bg = [30u8, 32, 36, 255];
+    let bg = [0u8, 0, 0, 0];
     assert!(
         rgba.as_chunks::<4>().0.iter().any(|p| *p != bg),
         "the rasteriser drew something"
@@ -281,7 +281,7 @@ fn real_disc_battle_actors_and_scene_textures() {
     let mut s = Studio::new(Some(out.join("settings.json")));
     s.open_blocking(&bin).expect("load disc");
     let lib = s.library.clone().unwrap();
-    let bg = [30u8, 32, 36, 255];
+    let bg = [0u8, 0, 0, 0];
     let drawn = |rgba: &[u8]| rgba.as_chunks::<4>().0.iter().filter(|p| **p != bg).count();
 
     // Monsters: named rows, a textured, posed mesh with clips.

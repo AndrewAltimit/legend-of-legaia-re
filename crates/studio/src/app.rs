@@ -714,16 +714,24 @@ impl App {
                     Source::Disc(_) => "disc image",
                     Source::Extracted(_) => "extracted folder",
                 };
+                // The path is in the field above; this line names the file
+                // and what it holds, and stays one row (full path on hover).
+                let name = lib
+                    .source
+                    .path()
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| lib.source.path().display().to_string());
                 ui.label(format!(
-                    "{kind}: {} - {} PROT entries, {} ISO files{}",
-                    lib.source.path().display(),
+                    "{kind} {name}: {} PROT entries, {} ISO files{}",
                     lib.entries.len(),
                     lib.iso_files.len(),
                     lib.region
                         .as_ref()
                         .map(|r| format!(", region {r}"))
                         .unwrap_or_default()
-                ));
+                ))
+                .on_hover_text(lib.source.path().display().to_string());
                 // Another region's disc browses fine but cannot start the
                 // game; say so where the region is named, not only in the
                 // greyed-out Play button's hover text.
@@ -1618,8 +1626,9 @@ impl App {
                 view: Viewport::new(Shading::Textured),
             });
         }
-        // Wraps: at the default window width the export buttons used to run
-        // off the right edge.
+        // One row at the minimum window width: the mesh picker, the shading
+        // picker, reset, and the exports folded into one menu. The triangle
+        // count and the orbit hint are drawn inside the view.
         ui.horizontal_wrapped(|ui| {
             egui::ComboBox::from_id_salt("tmd")
                 .selected_text(format!("TMD #{}", self.tmd_sel))
@@ -1643,34 +1652,52 @@ impl App {
                             ),
                         );
                     }
-                });
+                })
+                .response
+                .on_hover_text(format!("{} meshes in this entry", a.tmds.len()));
             if let Some(mv) = &mut self.model {
                 mv.view.controls(
                     ui,
                     "texel x colour / 128, sampled from the chosen VRAM image",
                 );
-                if let Some(m) = &mv.model {
-                    ui.label(format!("{} triangles", m.triangles()));
-                }
             }
-            ui.separator();
-            if ui.button("Export OBJ...").clicked() {
-                let name = format!("{}_tmd{:02}.obj", lib.stem(a.index), self.tmd_sel);
-                if let Some(out) = self.export_target(&name, "obj") {
-                    let res = export::tmd_obj(a, &t, &out);
-                    self.report("OBJ", res, &out);
+            let mut wanted = None;
+            ui.menu_button("Export", |ui| {
+                if ui.button("Wavefront OBJ (.obj)...").clicked() {
+                    wanted = Some("obj");
+                    ui.close();
                 }
-            }
-            if ui.button("Export glTF (.glb)...").clicked() {
-                let name = format!("{}_tmd{:02}.glb", lib.stem(a.index), self.tmd_sel);
-                let scene = match self.model.as_ref().map(|m| m.source) {
-                    Some(TexSource::Scene) => self.scene_vram(lib, a).ok().map(|(_, v)| v),
-                    _ => None,
-                };
-                if let Some(out) = self.export_target(&name, "glb") {
-                    let res = export::tmd_glb(a, &t, scene.as_ref().map(|v| &v.vram), &out);
-                    self.report("glTF", res, &out);
+                if ui
+                    .button("glTF binary (.glb), textured...")
+                    .on_hover_text("Textured from the VRAM image the view samples")
+                    .clicked()
+                {
+                    wanted = Some("glb");
+                    ui.close();
                 }
+            })
+            .response
+            .on_hover_text("Save this mesh as OBJ or textured glTF");
+            match wanted {
+                Some("obj") => {
+                    let name = format!("{}_tmd{:02}.obj", lib.stem(a.index), self.tmd_sel);
+                    if let Some(out) = self.export_target(&name, "obj") {
+                        let res = export::tmd_obj(a, &t, &out);
+                        self.report("OBJ", res, &out);
+                    }
+                }
+                Some(_) => {
+                    let name = format!("{}_tmd{:02}.glb", lib.stem(a.index), self.tmd_sel);
+                    let scene = match self.model.as_ref().map(|m| m.source) {
+                        Some(TexSource::Scene) => self.scene_vram(lib, a).ok().map(|(_, v)| v),
+                        _ => None,
+                    };
+                    if let Some(out) = self.export_target(&name, "glb") {
+                        let res = export::tmd_glb(a, &t, scene.as_ref().map(|v| &v.vram), &out);
+                        self.report("glTF", res, &out);
+                    }
+                }
+                None => {}
             }
         });
         let mut status = None;
@@ -1730,7 +1757,6 @@ impl App {
                 }
                 _ => {}
             }
-            ui.label(RichText::new("Drag to orbit, scroll to zoom.").weak());
         });
         let Some(model) = &mv.model else {
             ui.colored_label(
@@ -1749,19 +1775,37 @@ impl App {
         }
         let dark = model.dark_baked_share();
         if mv.view.shading == Shading::Textured && dark >= legaia_tmd::mesh::MOSTLY_DARK_SHARE {
-            ui.label(
-                RichText::new(format!(
-                    "{:.0}% of this mesh's surface carries near-black colour words on the disc. \
-                     Retail scales every texel by that word, so it draws black here (in the \
-                     game the scene's depth cue then blends it toward the far colour): the \
-                     darkness is the data, not a missing texture. \
-                     \"Untextured + viewer light\" shows the shape.",
-                    dark * 100.0
-                ))
-                .weak(),
-            );
+            // One line, the explanation on hover: as a paragraph it took
+            // five rows from the view at the minimum window size.
+            ui.horizontal(|ui| {
+                // The button first: the truncated line takes what is left.
+                if ui
+                    .small_button("Show the shape")
+                    .on_hover_text("Switch to Untextured + viewer light")
+                    .clicked()
+                {
+                    mv.view.shading = Shading::Lit;
+                }
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(format!(
+                            "{:.0}% of this mesh is baked near-black on the disc.",
+                            dark * 100.0
+                        ))
+                        .color(crate::theme::warn(ui)),
+                    )
+                    .truncate(),
+                )
+                .on_hover_text(
+                    "The mesh carries near-black colour words on the disc. Retail scales every \
+                     texel by that word, so it draws black here (in the game the scene's depth \
+                     cue then blends it toward the far colour): the darkness is the data, not a \
+                     missing texture.",
+                );
+            });
         }
-        mv.view.show(ui, model, vram);
+        let caption = format!("{} triangles", model.triangles());
+        mv.view.show(ui, model, vram, &caption);
     }
 
     fn audio(&mut self, ui: &mut egui::Ui, lib: &crate::Library, a: &Analysis) {

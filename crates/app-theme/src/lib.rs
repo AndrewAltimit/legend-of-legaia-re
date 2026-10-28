@@ -81,6 +81,9 @@ pub struct Palette {
     /// The deepest surface: the launcher's body, Studio's text fields and
     /// viewports.
     pub ground: Rgb,
+    /// The backdrop behind a preview (Studio's 3D view): a mid tone, so a
+    /// mesh the disc bakes near black and a bright one both stand off it.
+    pub stage: Rgb,
     /// Panels and bands (Studio's side and top panels, the launcher's
     /// header band).
     pub band: Rgb,
@@ -135,6 +138,7 @@ pub struct Palette {
 /// The dark palette: the launcher's.
 pub const DARK: Palette = Palette {
     ground: Rgb(14, 15, 24),
+    stage: Rgb(46, 50, 74),
     band: Rgb(22, 24, 38),
     card: Rgb(28, 31, 46),
     stripe: Rgb(28, 31, 46),
@@ -164,6 +168,7 @@ pub const DARK: Palette = Palette {
 /// on it.
 pub const LIGHT: Palette = Palette {
     ground: Rgb(255, 255, 255),
+    stage: Rgb(196, 200, 214),
     band: Rgb(244, 244, 248),
     card: Rgb(250, 250, 252),
     stripe: Rgb(234, 235, 242),

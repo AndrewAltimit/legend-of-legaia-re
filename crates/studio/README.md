@@ -17,7 +17,7 @@ runtime, and writes only into folders the user chooses.
 | Browse | The `PROT.DAT` entries grouped under the CDNAME block each belongs to on the disc (the retail block: the filename labels start every block two entries late) and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the retail block, the place name, the filename label, the category or the index (`Studio::entry_matches`), plus a category filter, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. The next start reopens the selected entry. |
 | Overview | PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, the DATA_FIELD chunk list, raw `.BIN` export. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom; PNG export of one or all. A 4 / 8 bpp TIM with no CLUT in its file (its palette is another upload's VRAM cell) shows its indices as a grey ramp. |
-| 3D model | Every TMD (`tmd_scan`, `scene_tmd_stream`) in an orbit view with retail shading (`texel * colour / 128`) or untextured under a viewer light. Textures come from the entry's own TIMs or from its **scene** (see below); the view opens on the entry only when its TIMs hold every CLUT and texel the textured prims read (`Model::texture_coverage`), else on the scene; OBJ and textured `.glb` export. |
+| 3D model | Every TMD (`tmd_scan`, `scene_tmd_stream`) in an orbit view (drag, scroll, double-click to reset; the triangle count and the hint are drawn inside the view, on the theme's `stage` backdrop) with retail shading (`texel * colour / 128`) or untextured under a viewer light, picked from one compact toolbar row that holds at the minimum window width. Textures come from the entry's own TIMs or from its **scene** (see below); the view opens on the entry only when its TIMs hold every CLUT and texel the textured prims read (`Model::texture_coverage`), else on the scene; OBJ and textured `.glb` export from the *Export* menu. |
 | Audio | VAB banks (spans resolved through the DATA_FIELD body chunk) with per-sample play and WAV export; SEQ playback on the `legaia-engine-audio` SPU + sequencer with a chosen bank. |
 | Text | Field dialog read out of the scene MAN script and raw carriers the way `legaia-patcher translate export` reads it, in the language-pack markup and with the build's own codec (accented cells shown as letters on the PAL builds, `legaia_font::latin`); MES messages (Compact: per offset-table message; Records: the `0x1F`-led segments of each record); text export. |
 | Hex | A virtualised hex / ASCII dump of the whole entry. |
@@ -92,7 +92,8 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   untextured sky dome authored `(0, 0, 0)` at every corner and near-black
   colour words over a dim palette on the island. When most of a mesh's
   surface is baked that dark (`Model::dark_baked_share`), the model tab says
-  the darkness is the disc's; the Lit aid floors colours to a grey so the
+  the darkness is the disc's (one line, the explanation on hover, with a
+  *Show the shape* button); the Lit aid floors colours to a grey so the
   shape still reads.
 - **Text codec.** `Library::text_codec` picks the dialog codec from the boot
   executable the way `legaia_translate::build::detect` does (Latin with the

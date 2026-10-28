@@ -198,11 +198,13 @@ impl App {
             };
             ui.horizontal_wrapped(|ui| {
                 ui.heading(&a.label);
-                ui.label(format!("{} triangles, {} clips", a.model.triangles(), a.clips.len()));
                 ui.separator();
                 v.view.controls(ui, "texel x colour / 128 from the actor's own battle VRAM band");
-                ui.separator();
-                if ui.button("Export glTF (.glb)...").clicked() {
+                if ui
+                    .button("Export .glb...")
+                    .on_hover_text("Save this model with its animation clips as glTF binary")
+                    .clicked()
+                {
                     export = Some(v.pick);
                 }
             });
@@ -229,7 +231,7 @@ impl App {
                             .find(|(id, _)| *id == cur)
                             .map(|(_, n)| n.as_str())
                             .unwrap_or("?");
-                        format!("{label}: {name}")
+                        format!("{}: {name}", short_section(label))
                     })
                     .collect();
                 let widths: Vec<f32> = texts
@@ -285,16 +287,24 @@ impl App {
                         v.since = Instant::now();
                     }
                     let n = a.clips[v.clip].frames.len();
+                    // egui's 100-point default left a long clip's frames a
+                    // pixel apart; the slider takes the row's spare width,
+                    // less its value box and label.
+                    // (`available_width` in a wrapping row is the whole
+                    // row's, not what is left of it.)
+                    let left = ui.max_rect().right() - ui.cursor().left();
+                    ui.spacing_mut().slider_width = (left - 130.0).clamp(80.0, 480.0);
                     if ui
                         .add(egui::Slider::new(&mut v.frame, 0..=n.saturating_sub(1)).text("frame"))
+                        .on_hover_text(format!(
+                            "{n} keyframes, played at {:.1} per second",
+                            a.clips[v.clip].fps
+                        ))
                         .changed()
                     {
                         v.playing = false;
                         changed = true;
                     }
-                    ui.label(
-                        RichText::new(format!("{:.1} keyframes/s", a.clips[v.clip].fps)).weak(),
-                    );
                 });
                 if v.playing {
                     let c = &a.clips[v.clip];
@@ -313,8 +323,8 @@ impl App {
             for n in &a.notes {
                 ui.label(RichText::new(n).weak());
             }
-            ui.label(RichText::new("Drag to orbit, scroll to zoom.").weak());
-            v.view.show(ui, &a.model, &a.vram);
+            let caption = format!("{} triangles, {} clips", a.model.triangles(), a.clips.len());
+            v.view.show(ui, &a.model, &a.vram, &caption);
         });
 
         if let Some(pick) = export {
@@ -356,6 +366,16 @@ fn flow_rows(widths: &[f32], max: f32) -> Vec<Vec<usize>> {
     rows
 }
 
+/// A section picker's label without its index: `Section 2 (Weapon)` reads
+/// `Weapon`, so the five pickers flow two or three to a row.
+fn short_section(label: &str) -> &str {
+    label
+        .strip_prefix("Section ")
+        .and_then(|rest| rest.split_once(" ("))
+        .and_then(|(_, name)| name.strip_suffix(')'))
+        .unwrap_or(label)
+}
+
 #[cfg(test)]
 mod tests {
     use super::flow_rows;
@@ -368,5 +388,12 @@ mod tests {
         );
         assert_eq!(flow_rows(&[900.0, 100.0], 700.0), vec![vec![0], vec![1]]);
         assert!(flow_rows(&[], 700.0).is_empty());
+    }
+
+    #[test]
+    fn section_labels_drop_their_index() {
+        assert_eq!(super::short_section("Section 2 (Weapon)"), "Weapon");
+        assert_eq!(super::short_section("Section 3 (Ra-Seru)"), "Ra-Seru");
+        assert_eq!(super::short_section("Body"), "Body");
     }
 }
