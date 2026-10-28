@@ -158,6 +158,16 @@ pub struct SpriteArmSeed {
     pub pose: Vec<[u8; 8]>,
 }
 
+/// A turning ambient part's render banks `+0x24..+0x28` as a capture's
+/// displayed frame drew them ([`World::seat_ambient_part_banks`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AmbientBankSeed {
+    /// The part's record offset inside the stager bundle (`+0x48` less
+    /// `_DAT_8007B8D0`), the key [`AmbientPart::record_off`] carries.
+    pub record_off: u32,
+    pub rot: [i16; 3],
+}
+
 /// Seat a keyframe-pose node so its mode-6 pack reproduces `entries`: each
 /// part's current and target keyframes both hold the packed values, so the
 /// blend at any cursor packs them back byte for byte.
@@ -282,6 +292,35 @@ impl World {
             if *k > used.get(&p.record_off).copied().unwrap_or(0) {
                 p.finished = true;
             }
+        }
+    }
+
+    /// Seat the render banks of the live ambient parts that turn on a
+    /// retail state's own ([`AmbientBankSeed`]), record by record, in list
+    /// order. A part with a bank rate `+0x80..+0x84` turns by it every pass
+    /// from its spawn, so the angle it stands at is time since the scene
+    /// entry - `noaru`'s ice-floor bowl turns `-1` a vsync about Y - which a
+    /// seed that settles on its own clock does not reproduce. Only the banks
+    /// are written; the program, its waits and the rates stay the engine's.
+    /// The image child of the retail comparison calls this on the frame it
+    /// captures. A no-op for an empty snapshot.
+    pub fn seat_ambient_part_banks(&mut self, seeds: &[AmbientBankSeed]) {
+        let mut used: std::collections::HashMap<usize, usize> = Default::default();
+        for seed in seeds {
+            let off = seed.record_off as usize;
+            let n = used.entry(off).or_insert(0);
+            let Some(part) = self
+                .ambient
+                .fx
+                .iter_mut()
+                .filter(|p| !p.finished && p.record_off == off)
+                .nth(*n)
+            else {
+                continue;
+            };
+            *n += 1;
+            let st = &mut part.state;
+            [st.render_24, st.render_26, st.render_28] = seed.rot;
         }
     }
 

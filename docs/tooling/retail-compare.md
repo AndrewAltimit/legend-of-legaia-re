@@ -533,6 +533,24 @@ engine verdict:
   packed clip entries of its `+0x4C` block, seated as both keyframes of every
   part so the mode-6 tail packs them back unchanged.
 
+  A mesh-bearing ambient part that turns is a clock of the same kind. The
+  part tick adds its bank rates `+0x80..+0x84` to the render banks every
+  pass, so the angle it stands at is time since the scene entry. `noaru`'s
+  ice-floor bowl (stager record 40, rate `-8`, `-1` a vsync about Y) reads
+  `+0x26 = -241` in `noaru_field_card_walk`, where the image child's own
+  settle had turned it half as far, and the floor's texture swung round the
+  focus under the pillars (`image` `.629`). Every live part with a non-zero
+  rate outside render modes `3` / `5` and the sprite-arm sheets
+  (`retail_turning_parts`) goes to the child as `LEGAIA_SEAT_TURNING_PARTS`
+  with its banks taken back the display lag (the battle half's
+  `displayed_part_halfword`), and its banks are written over the engine's
+  part of the same record on the capture frame
+  (`World::seat_ambient_part_banks`). The program and its rates stay the
+  engine's. `noaru_field_card_walk` reads `.822`; its texture page and CLUT
+  rows are byte-identical to retail's, and what is left is the bowl's
+  texturing across retail's six screen-sized `POLY_FT4`s (corners up to
+  `216` px off screen), a per-prim question for the ambient part draw path.
+
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
   rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the

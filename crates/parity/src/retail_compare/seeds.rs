@@ -696,6 +696,52 @@ pub fn retail_sprite_arms(ram: &[u8]) -> Vec<legaia_engine_core::world::ambient:
         .collect()
 }
 
+/// Every live ambient part on a retail state's actor lists that turns: a
+/// part ticked by `FUN_80021DF4`, not halted (`+0x10 & 0x8`), whose record
+/// lies in the stager bundle and whose bank rates `+0x80..+0x84` are not all
+/// zero, outside render modes `3` / `5` (whose banks the tick leaves alone,
+/// `0x800228A0..0x800228B0`) and the sprite-arm sheets
+/// ([`retail_sprite_arms`] seats those whole). Each carries its render banks taken back the
+/// display lag ([`crate::retail_compare_battle::ram_read::displayed_part_halfword`]),
+/// in list order.
+pub fn retail_turning_parts(
+    ram: &[u8],
+    lag: u16,
+) -> Vec<legaia_engine_core::world::ambient::AmbientBankSeed> {
+    let base = game_anchors::u32_at(ram, STAGER_BUNDLE_PTR);
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| {
+            let mode = game_anchors::i16_at(ram, n + 0x5A);
+            game_anchors::u32_at(ram, n + 0x0C) == PART_TICK
+                && game_anchors::u32_at(ram, n + 0x10) & 0x8 == 0
+                && mode != 3
+                && mode != 5
+                && !(game_anchors::u16_at(ram, n + 0x56) == 4
+                    && game_anchors::u16_at(ram, n + 0x9E) & 0x4000 != 0)
+                && [0x80, 0x82, 0x84]
+                    .iter()
+                    .any(|&o| game_anchors::u16_at(ram, n + o) != 0)
+        })
+        .filter_map(|n| {
+            let rec = game_anchors::u32_at(ram, n + 0x48).checked_sub(base)?;
+            (rec < 0x10_0000).then_some(())?;
+            let rot = [0x24u16, 0x26, 0x28].map(|o| {
+                crate::retail_compare_battle::ram_read::displayed_part_halfword(
+                    ram,
+                    n,
+                    o,
+                    i32::from(lag),
+                ) as i16
+            });
+            Some(legaia_engine_core::world::ambient::AmbientBankSeed {
+                record_off: rec,
+                rot,
+            })
+        })
+        .collect()
+}
+
 /// A mode-6 node's packed pose (`+0x4C` block: part count byte at `+0`,
 /// 8-byte entries from `+8`), or empty for any other node.
 pub(super) fn retail_pose_entries(ram: &[u8], n: u32) -> Vec<[u8; 8]> {

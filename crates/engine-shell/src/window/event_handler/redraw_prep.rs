@@ -61,6 +61,12 @@ impl PlayWindowApp {
             if due && let Some(arms) = sc.seat_sprite_arms.take() {
                 self.session.host.world.install_sprite_arm_snapshot(&arms);
             }
+            // ... and the turning ambient parts' banks as the displayed frame
+            // drew them: their angle is time since the entry
+            // (`LEGAIA_SEAT_TURNING_PARTS`).
+            if due && let Some(parts) = sc.seat_turning_parts.take() {
+                self.session.host.world.seat_ambient_part_banks(&parts);
+            }
             // ... and a captured cast's parts where retail's passes had put
             // them (`LEGAIA_SEAT_CAST_PARTS`).
             if due

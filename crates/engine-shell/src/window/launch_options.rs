@@ -345,6 +345,12 @@ pub struct ScreenshotConfig {
     /// (`World::install_sprite_arm_snapshot`); taken once.
     pub seat_sprite_arms:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
+    /// `LEGAIA_SEAT_TURNING_PARTS`: the render banks of a retail state's
+    /// turning ambient parts as its displayed frame drew them, written over
+    /// the engine's on the frame the capture is taken
+    /// (`World::seat_ambient_part_banks`); taken once.
+    pub seat_turning_parts:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::AmbientBankSeed>>>,
     /// `LEGAIA_SEAT_FADE_LEAD=<vsyncs>`: on the frame the capture is taken,
     /// step every live screen fade that many vsyncs on
     /// (`World::lead_screen_fades`), for a capture whose displayed fade
@@ -819,6 +825,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::sprite_arms_from_env(&v)),
+            ),
+            seat_turning_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_TURNING_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::turning_parts_from_env(&v)),
             ),
             seat_clear: std::env::var("LEGAIA_SEAT_CLEAR").ok().and_then(|v| {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();

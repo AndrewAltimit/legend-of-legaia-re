@@ -1,5 +1,5 @@
 //! The field-side seeds a capture carries - a scene's placed-object clips,
-//! ambient walkers, morph envelopes, fog pool, sprite arms, CLUT-cell
+//! ambient walkers, morph envelopes, fog pool, sprite arms, turning parts, CLUT-cell
 //! cyclers, scroller rects, panel widget and camera block - as records with
 //! the environment form the image child reads them back from.
 
@@ -309,6 +309,32 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
                 colour: colour as u32,
                 level: level as u16,
                 pose: bytes.as_chunks::<8>().0.to_vec(),
+            })
+        })
+        .collect()
+}
+
+/// `retail_turning_parts` as `LEGAIA_SEAT_TURNING_PARTS`:
+/// `record:r24:r26:r28` per part, `;`-joined, decimal.
+pub fn turning_parts_env(s: &[legaia_engine_core::world::ambient::AmbientBankSeed]) -> String {
+    s.iter()
+        .map(|p| format!("{}:{}:{}:{}", p.record_off, p.rot[0], p.rot[1], p.rot[2]))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`turning_parts_env`]; malformed entries are dropped.
+pub fn turning_parts_from_env(v: &str) -> Vec<legaia_engine_core::world::ambient::AmbientBankSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            Some(legaia_engine_core::world::ambient::AmbientBankSeed {
+                record_off: f.next()?.parse().ok()?,
+                rot: [
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                ],
             })
         })
         .collect()

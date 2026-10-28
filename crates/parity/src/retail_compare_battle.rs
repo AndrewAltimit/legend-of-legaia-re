@@ -65,7 +65,7 @@ mod inflight_seeds;
 mod popup_cells;
 mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;
-mod ram_read;
+pub(crate) mod ram_read;
 mod scoring;
 mod seed_plan;
 mod summon_fade;

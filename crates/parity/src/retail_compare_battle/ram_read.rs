@@ -533,7 +533,7 @@ fn length_restarted_inside_lag(ram: &[u8], node: u32, lag: i32) -> bool {
     now >= 0 && per_vsync > 0 && now - per_vsync * lag < 0
 }
 
-pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
+pub(crate) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
     let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
     let now = h(u32::from(off));
     let mode = h(0x5A);
