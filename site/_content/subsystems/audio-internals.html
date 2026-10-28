@@ -64,13 +64,14 @@
     <tbody>
       <tr><td>0</td><td>script-owned start pending (defer the slot teardown)</td><td>sub-op 9</td><td>poller commit, scene entry</td></tr>
       <tr><td>1</td><td>BGM slot paused / detached</td><td>sub-op 2, 3, the dance overlay</td><td>sub-op 1, 4, <code>0xA</code>, scene entry, game over</td></tr>
-      <tr><td>2</td><td>keep the audio across the next scene load: the scene initializer skips its music level ramp and its effect-voice cut</td><td>sub-op 6</td><td>field overlay</td></tr>
+      <tr><td>2</td><td>"music not change": keep the audio across the next scene load. The scene initializer skips its music fade-and-close and its effect-voice cut, and the poller marks any track request as loaded without loading it</td><td>sub-op 6</td><td>field overlay</td></tr>
       <tr><td>3</td><td>load settled - payload staged and delay elapsed</td><td>the poller</td><td>poller commit</td></tr>
       <tr><td>4</td><td>release-ack - the script has released the old occupant</td><td>sub-op <code>0xA</code></td><td>poller commit</td></tr>
     </tbody>
   </table>
   </div>
   <p>After setting bit 3 the poller stalls while bit 0 is set and bit 4 is not, so a swap started by sub-op 9 keeps the old track until the script commits with sub-op <code>0xA</code>, which detaches and closes the old occupant, sets bit 4 and clears bit 1. A port that honours the sub-op 2 pause but drops the <code>0xA</code> commit leaves the music paused after the cutscene.</p>
+  <p><strong>A door keeps its music only behind sub-op 6.</strong> Every scene load decides the music on bit 2. With it clear, the initializer fades the field track out while the map reads, closes it, and loads the new scene's track afresh - even the same one, so a plain door restarts the score. With it set, the track keeps playing and the new scene's start is marked as loaded without loading: the track word names the new scene's music while the old one plays on. The new scene's first script slice runs inside the load, before the bit is cleared, so its opening start is the one that gets marked. The disc uses it as the "same area" mark: town interiors, the kingdom maps' doors and the Sol tower floors raise it on their doors. A retail state leaving the opening shows it: on the overworld the word is the overworld theme while the opening's track still plays.</p>
   <p>The libsnd calls under the control words settle their meaning: the pause raises a status flag and keeps the cursor; the play core rewinds the cursor to the start for every mode before it plays - which is why sub-op 4 is a replay from the first event, not a resume.</p>
 </section>
 

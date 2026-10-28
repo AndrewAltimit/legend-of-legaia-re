@@ -63,9 +63,13 @@ fn town01_cold_entry_keeps_the_authored_silent_dawn_pause() {
     let calls = run_bgm(&mut host, 300);
     assert_eq!(
         calls,
-        vec!["start_owned_vab(2016)".to_string(), "pause".to_string()],
-        "cold entry = the new-game shape: start the theme, then the \
-         flag-0x225-clear pause"
+        vec![
+            "stop".to_string(),
+            "start_owned_vab(2016)".to_string(),
+            "pause".to_string()
+        ],
+        "cold entry = the new-game shape: the field init's close of the \
+         field-BGM source, start the theme, then the flag-0x225-clear pause"
     );
 }
 
@@ -80,8 +84,8 @@ fn town01_free_roam_staging_drops_the_entry_pause() {
     let calls = run_bgm(&mut host, 300);
     assert_eq!(
         calls,
-        vec!["start_owned_vab(2016)".to_string()],
-        "staged entry starts the theme and drops the entry-window pause"
+        vec!["stop".to_string(), "start_owned_vab(2016)".to_string()],
+        "staged entry: the init's close, then the theme, and no entry-window pause"
     );
 }
 

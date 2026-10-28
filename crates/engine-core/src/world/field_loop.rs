@@ -1219,7 +1219,18 @@ impl World {
     ///
     /// PORT: FUN_8003CF7C
     /// REF: FUN_8003AB2C (the same loop, run once at scene-script install)
+    ///
+    /// The first slice after a field entry stands for the install's own
+    /// (`FUN_8003AB2C`), which the field init runs before it settles the BGM
+    /// swap and clears sound-flag bit 2: it ends the entry latch
+    /// ([`crate::world::AudioState::bgm_entry_latch`]).
     pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
+        let last = self.run_field_frame_slice();
+        self.audio.bgm_entry_latch = false;
+        last
+    }
+
+    fn run_field_frame_slice(&mut self) -> Option<FieldStepResult> {
         if self.field_bytecode.is_empty() {
             return None;
         }
@@ -1385,8 +1396,10 @@ impl World {
                 spawned = true;
             }
             if op == Some(0x21) {
-                // The executed `0x21` ends the pass.
+                // The executed `0x21` ends the pass - and the first pass is
+                // the install's slice, which ends the entry latch.
                 self.field_vm.system_pass_open = false;
+                self.audio.bgm_entry_latch = false;
                 passes += 1;
                 if spawned || passes >= ENTRY_SCRIPT_PASS_LIMIT {
                     break;
@@ -1405,6 +1418,8 @@ impl World {
                 _ => break,
             }
         }
+        // The load-frame run is the install's slice: the entry latch ends.
+        self.audio.bgm_entry_latch = false;
     }
 
     /// Drain a queued scripted-encounter install (set by the `+0x94`

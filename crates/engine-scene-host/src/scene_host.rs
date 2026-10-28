@@ -160,7 +160,9 @@ pub fn bgm_bank_id(bgm_id: u16) -> u16 {
     }
 }
 
-use legaia_engine_core::world::BGM_SUB_OP_ENGINE_STOP;
+use legaia_engine_core::world::{
+    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
+};
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
 /// audio yet.
@@ -330,6 +332,19 @@ pub struct SceneHost {
     /// one only on the sub-op `0xA` release-ack or once the MAN loader ends
     /// the window ([`SceneHost::route_bgm_events`]).
     pub(crate) pending_bgm_swap: Option<(u16, std::sync::Arc<Vec<u8>>)>,
+    /// A start the swap poller latched without loading
+    /// ([`legaia_engine_core::world::BGM_SUB_OP_ENGINE_LATCH`]): retail's
+    /// loaded-index barrier `_DAT_8007BA9C` names this id while the slot
+    /// still sounds the track it held. A later start of the same id is no
+    /// change (`0x80024584`: requested equals loaded); any other id tears
+    /// the slot down and loads afresh. `None` once a real load or a stop
+    /// replaces the occupant.
+    pub(crate) bgm_latched: Option<u16>,
+    /// The director's occupant is the ending theme
+    /// ([`legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID`]),
+    /// which retail installs on sound source 10 (`0x800705BC`), not the
+    /// field-BGM source a field init closes.
+    pub(crate) bgm_ending_source: bool,
 }
 
 mod audio_dialog;

@@ -42,6 +42,7 @@ mod dialog_window_disc;
 mod dome_leg_ends_on_ko_real;
 mod dome_leg_ladder;
 mod door_arrival_menu_refusal_disc;
+mod door_keep_bgm_disc;
 mod dream_return_seat_disc;
 mod encounter_region_groups_disc;
 mod encounter_step_counter_disc;

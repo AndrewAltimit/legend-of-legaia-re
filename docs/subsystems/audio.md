@@ -330,9 +330,12 @@ comparison corpus compares against a state's `0x8007BAC8`
 Several field entry scripts open with a park start and select their own
 track only under a story or position test: `bylon` parks, then starts `2019`
 only inside its monastery box; `retockin` and `station` park on the
-free-roam story state. On every retail path the park keeps the music the
-door brought. A scene-picker entry has no previous scene, so the park left
-it silent on a first pick and kept the previously picked scene's track on a
+free-roam story state. A park keeps whatever the slot holds: behind a door
+that raised sub-op 6 that is the music the door brought (`retock`'s rec-18
+door into `retockin` raises it), behind a plain door the field init has
+closed the slot and the park is silence
+([below](#a-door-keeps-its-music-only-behind-sub-op-6)). A scene-picker
+entry has no previous scene, so the park left it silent on a first pick and kept the previously picked scene's track on a
 later one.
 
 The port's picker seat is a door of another scene
@@ -417,7 +420,7 @@ writer census (SCUS + every based overlay image; store-offset scan, see
 |---|---|---|---|
 | 0 | script-owned start pending (defer the slot teardown to the script) | sub-op 9 (`0x801E0260`) | poller commit (`0x8002472C` clears 0/3/4), scene entry `FUN_8003AEB0` |
 | 1 | BGM slot paused / detached | sub-op 2 (`0x801E0150`), sub-op 3 (`0x801E0174`), dance overlay `0x801CF328` | sub-op 1, sub-op 4, sub-op `0xA`, scene entry, game-over `FUN_8003C7EC` |
-| 2 | keep the audio across the next field init: the per-scene initializer skips its BGM level ramp (`FUN_80062004`, `0x78` ticks, test at `0x801D6A84`) and its key-off of voices `0x10..0x17` (test at `0x801D6B88`) while it is set | sub-op 6 (`0x801E01D8`) | field overlay `0x801D7348` |
+| 2 | "music not change": keep the audio across the next field init. The initializer skips its BGM ramp and close (`0x801D6A84`) and its key-off of voices `0x10..0x17` (`0x801D6B88`), and the poller latches any start without loading it ([below](#a-door-keeps-its-music-only-behind-sub-op-6)) | sub-op 6 (`0x801E01D8`) | field overlay `0x801D7348` |
 | 3 | **load settled** - payload staged and the settle delay elapsed | the poller, one site only: `0x800246D0` (`\| 8`) | poller commit `0x8002472C` |
 | 4 | **release-ack** - script has released the old slot occupant | sub-op `0xA` (`0x801E02B8`) | poller commit `0x8002472C` |
 
@@ -450,6 +453,55 @@ window a scene load ends (the MAN loader clears bit 0) is attached at the
 next drain, unless a start in that drain replaces it, as the poller reads the
 latest word. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
+
+### A door keeps its music only behind sub-op 6
+
+Every field init decides the field BGM on bit 2 (`FUN_801D6704`, PROT 0897;
+the initializer's debug print names the bit `meswork music_not_change`):
+
+- **Bit 2 clear.** With the field-BGM source open (`_DAT_80070534`), the
+  init ramps it down (`FUN_80062004(.., 0x78)`, `0x801D6AC0`) while the map
+  reads, then detaches and closes it (`FUN_800266E0` + `FUN_80026520` on
+  `0x8007052C`, `0x801D7154..0x801D7170`). It forces the loaded-index
+  barrier `_DAT_8007BA9C` to `-100` and drives the poller to completion
+  (`0x801D72D4..0x801D7320`), so the scene's track loads afresh - the same
+  id included: a door with no sub-op 6 restarts the score.
+- **Bit 2 set.** The source is left sounding. The poller tests bit 2 before
+  its park test (`0x80024518`: `andi 0x4` / `bne` to `0x80024560`) and copies
+  the requested index onto the loaded one, so the start never loads. The
+  track word takes the new scene's id while the slot plays the track the
+  door brought; a later start of that id is no change, and any other id
+  tears the slot down and loads it.
+
+The entry script's head start falls inside that window: the MAN installer
+`FUN_8003AEB0` runs the scene script's first frame slice (`FUN_8003AB2C`,
+`0x8003BAD8`) before the init's poller loop, and bit 2 is cleared only after
+the loop (`0x801D7348`). The capture `s2_rimelm_town01` shows the result: in
+`map01`, entered from `opurud` behind its `P2[9]` sub-op 6, the word is
+`2000` (`map01`'s head start), the requested and loaded index are both `990`,
+and the field source plays `2064`, the opening's track. Sol's floors are the
+other measured case: `kor4` starts `2045`, its rooms `koin6` / `koin4` start
+`2041`, every `kor4` door into them carries sub-op 6, and the route-walk
+states hold `2045` under the word `2041`.
+
+The disc uses it as the "same area" mark: the door records of a town's
+interiors, the kingdom maps' door records and the Sol floors raise sub-op 6 right
+before their scene change. The ending theme is outside the rule: it sounds
+from sound source 10 (`0x800705BC`), which the close never touches, and its
+one-shot latch `_DAT_8007B9B8` skips the init's whole BGM block once it is
+installed.
+
+Engine side: `World::release_field_init_voices` consumes the bit at the
+field entry. Clear, it queues `BGM_SUB_OP_ENGINE_FIELD_CLOSE`, which
+`SceneHost::route_bgm_events` turns into a director stop unless the
+occupant is the ending theme. Set, it opens `AudioState::bgm_entry_latch`
+for the first system-script slice (the install's), and the field host turns
+every start issued while bit 2 or that latch is up into
+`BGM_SUB_OP_ENGINE_LATCH`: the host stores the word and remembers the id
+(`SceneHost::bgm_latched`) without calling the director. Pinned by
+`engine-scene-host/tests/door_keep_bgm_disc.rs`. `see
+ghidra/scripts/funcs/overlay_0897_801d6704.txt`, `800243f0.txt`,
+`8003aeb0.txt`.
 
 ### The control words: stop, pause, replay
 
@@ -3057,6 +3109,13 @@ at the select where retail holds it to the commit
 the two `chapter2_garmel` states catching retail inside that window. What it
 still reports:
 
+- **Door history** - `s2_rimelm_town01` (in `map01`, `2064` under the word
+  `2000`), `koin6_field_route_walk` / `koin4_field_route_walk` (`2045` under
+  `2041`) and `retockin_field_route_walk` (`2014` under the park word). Each
+  is a sub-op 6 door keeping the music it brought
+  ([above](#a-door-keeps-its-music-only-behind-sub-op-6)); the engine models
+  the rule, but the card-load seed lands in the scene with no door behind
+  it, so it plays the scene's own entry track (or the park's silence).
 - **`ending_vignette_biron`, `ending_vignette_rimelm_walkaway`** - the
   credits vignettes park on `0x1000`, and what plays (`2068` on the ending
   source, `2001` on the field source) is the music the ending chain started
@@ -3065,11 +3124,6 @@ still reports:
   (flags `0x19`, no field-BGM source open, requested `1009` against loaded
   `1023`): the poller attaches `2019` a call or two later; the engine has it
   attached already.
-- **`s2_rimelm_town01`** - the field-BGM source plays `2064` under the word
-  `2000` with no swap in flight. The poller latches a request without loading
-  it while sound-flag bit 2 is up (`0x80024518..0x8002456C`, sub-op 6's bit),
-  which is the lead; the capture is a fast-chained opening (Cross every 20
-  vsyncs), not a played one.
 - **`tower_field_walk`** - a one-shot on voice 22 from the field bank (VAB
   slot 6) rings at the capture instant; nothing identifies its cue.
 
@@ -3108,9 +3162,10 @@ still reports:
   *script* (restore-PC at `0x801E0288`) until that settle has passed. The
   engine installs at once and never stalls, so a scene's track and a
   cutscene's beats after a `0xA` start earlier than retail's.
-- **The sweep's open rows** ([above](#the-audio-state-sweep)): the ending
-  vignettes' carried music, the sound-flag bit 2 latch behind
-  `s2_rimelm_town01`, and `tower_field_walk`'s one-shot.
+- **The sweep's open rows** ([above](#the-audio-state-sweep)) are seed
+  history, a capture instant and one unidentified cue. The door rows need a
+  seed that enters through the door the route walk took (the arrival scene,
+  then its door record) instead of a card load.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer

@@ -70,6 +70,8 @@ impl SceneHost {
             bgm_volume_raw: legaia_engine_menus::new_game::GAME_STATE_COLD_RESET.bgm_volume_raw,
             bgm_track_word: None,
             pending_bgm_swap: None,
+            bgm_latched: None,
+            bgm_ending_source: false,
         }
     }
 

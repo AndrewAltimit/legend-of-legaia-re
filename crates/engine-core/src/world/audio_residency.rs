@@ -59,10 +59,27 @@ impl World {
     /// always a cold one (a battle return keeps the scene resident), so the
     /// warp-entry gate is never up here.
     ///
-    /// PORT: FUN_801D6704 (0x801D6B84..0x801D6BDC, 0x801D7348)
+    /// The same bit decides the field BGM. With it clear the init ramps the
+    /// field-BGM source down (`FUN_80062004(.., 0x78)`, `0x801D6AC0`) and,
+    /// once the map is read, detaches and closes it (`FUN_800266E0` +
+    /// `FUN_80026520` on `0x8007052C`, `0x801D7154..0x801D7170`), then forces
+    /// the loaded-index barrier to `-100` so the poller loads the scene's
+    /// track afresh - the same id included. The engine's load is instant, so
+    /// the ramp collapses into the close it ends in
+    /// ([`crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE`]). With it set, the source is
+    /// left sounding and the entry script's head start is latched, not
+    /// loaded ([`crate::world::AudioState::bgm_entry_latch`]).
+    ///
+    /// PORT: FUN_801D6704 (0x801D6B84..0x801D6BDC, 0x801D7154..0x801D7170, 0x801D7348)
     pub fn release_field_init_voices(&mut self) {
-        if !std::mem::take(&mut self.audio.keep_audio_across_field_init) {
+        let keep = std::mem::take(&mut self.audio.keep_audio_across_field_init);
+        self.audio.bgm_entry_latch = keep;
+        if !keep {
             self.audio.sfx_voice_stops.extend(0x10..=0x17);
+            self.pending_field_events.push(FieldEvent::Bgm {
+                text_id: 0,
+                sub_op: crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE,
+            });
         }
     }
 
@@ -226,5 +243,29 @@ mod tests {
         assert!(w.take_sfx_voice_stops().is_empty(), "bit 2 keeps them");
         w.release_field_init_voices();
         assert_eq!(w.take_sfx_voice_stops().len(), 8, "for one init only");
+    }
+
+    /// The same bit decides the field BGM: a plain init closes the field-BGM
+    /// source (`0x801D7154..0x801D7170`); a kept one leaves it sounding and
+    /// opens the install slice's latch instead.
+    #[test]
+    fn field_init_closes_the_score_unless_sub_op_6_kept_it() {
+        let stops = |w: &mut World| {
+            w.drain_field_events()
+                .iter()
+                .filter(|e| {
+                    matches!(e, FieldEvent::Bgm { sub_op, .. }
+                        if *sub_op == crate::world::BGM_SUB_OP_ENGINE_FIELD_CLOSE)
+                })
+                .count()
+        };
+        let mut w = world_in(SceneMode::Field, "rayman");
+        w.release_field_init_voices();
+        assert_eq!(stops(&mut w), 1);
+        assert!(!w.audio.bgm_entry_latch);
+        w.audio.keep_audio_across_field_init = true;
+        w.release_field_init_voices();
+        assert_eq!(stops(&mut w), 0, "bit 2 keeps the score");
+        assert!(w.audio.bgm_entry_latch);
     }
 }

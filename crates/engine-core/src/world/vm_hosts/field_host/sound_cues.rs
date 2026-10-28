@@ -29,6 +29,23 @@ impl FieldHostImpl<'_> {
             1 | 9 | 4 | 0xA => self.world.audio.bgm_script_paused = false,
             _ => {}
         }
+        // Sound-flag bit 2 up - raised by sub-op 6 and not yet cleared by the
+        // field init (`0x801D7348`), or the init's install slice still open
+        // over it: the poller copies the requested index onto the loaded one
+        // and loads nothing (`0x80024518` -> `0x80024560`). The word takes
+        // the id, the slot keeps what it holds, and no commit is owed (the
+        // load never runs, so a sub-op 9's bit 0 never meets a settle).
+        if matches!(sub_op, 1 | 9)
+            && (self.world.audio.keep_audio_across_field_init || self.world.audio.bgm_entry_latch)
+        {
+            self.world.audio.bgm_script_paused = false;
+            self.world.audio.current_bgm = Some(text_id);
+            self.world.pending_field_events.push(FieldEvent::Bgm {
+                text_id,
+                sub_op: crate::world::BGM_SUB_OP_ENGINE_LATCH,
+            });
+            return;
+        }
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
             // Sub-op 9 also raises the script-owned start bit 0 of
