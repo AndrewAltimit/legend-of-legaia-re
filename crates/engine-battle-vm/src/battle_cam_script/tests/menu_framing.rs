@@ -471,7 +471,10 @@ fn a_far_framing_arm_stands_its_frames_left_short() {
     let p = cam.framing_pose();
     let inc_z = ((end.tr[2] - close.tr[2]) / 14.0).ceil();
     assert_eq!(p.tr[2], close.tr[2] + 5.0 * inc_z);
-    assert_eq!(p.tr[1], close.tr[1] - 5.0 * ((close.tr[1] - end.tr[1]) / 14.0).ceil());
+    assert_eq!(
+        p.tr[1],
+        close.tr[1] - 5.0 * ((close.tr[1] - end.tr[1]) / 14.0).ceil()
+    );
     assert_eq!(p.pitch, 5.0 * (end.pitch / 14.0).ceil());
     assert_eq!(p.yaw, yaw, "the orbit owns the yaw");
     // Past the arm's length the pose is the origin; none left, the framing.
