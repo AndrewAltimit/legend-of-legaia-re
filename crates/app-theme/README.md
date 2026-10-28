@@ -9,7 +9,7 @@ so every consumer converts a token into its own colour type.
 |---|---|
 | `legaia-studio` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
 | The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | The dark palette, as `[f32; 4]` for its software canvas; `game_exit` for its help box after a failed game. |
-| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel, and the chrome inset and line gap. |
+| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel, `chrome::CHANGED` for a panel state the original game does not have, and the chrome inset and line gap. |
 
 ## The palette
 

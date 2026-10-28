@@ -224,6 +224,10 @@ pub mod chrome {
     pub const KEY: Rgb = DARK.info;
     /// Body text of the help panel.
     pub const TEXT: Rgb = DARK.ink;
+    /// A setting's state the original game does not have (an enhancement
+    /// in effect), in the help panel; the launcher draws such a value in
+    /// the same green.
+    pub const CHANGED: Rgb = DARK.good;
 }
 
 #[cfg(test)]

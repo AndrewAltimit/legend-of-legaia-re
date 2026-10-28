@@ -277,7 +277,10 @@ around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state
 (`F11` fullscreen among them), under it the key each pad button is on (Cross,
 Circle, Start, ...), read from the live Key Config table, and the mouse's
-camera controls; press it again to close it. A player's window says so for its first few
+camera controls; press it again to close it. A state the original game does
+not have is drawn green (*Enhanced lighting: on*), the same marking and the
+same original values as the launcher's option list; a toggle's notice line
+stays hidden while the panel is up. A player's window says so for its first few
 seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
 `--screenshot` capture leaves that line, the toggle notices and the quit
 prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps

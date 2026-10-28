@@ -81,7 +81,26 @@ pub fn open_boot_session(
         enable_audio,
     };
     match disc {
-        Some(disc_path) => NativeSession::open_disc(disc_path, &cfg),
+        // A disc that does not open gets the launcher's reading of why (not
+        // there, not a raw dump, another region) on top of the reader's
+        // error, and the way to the picker.
+        Some(disc_path) => NativeSession::open_disc(disc_path, &cfg).map_err(|e| {
+            match crate::launcher::validate_disc(disc_path) {
+                Err(problem) => {
+                    let why = problem.to_string();
+                    e.context(format!("{}. {PICK_DISC_HINT}", why.trim_end_matches('.')))
+                }
+                Ok(_) => e,
+            }
+        }),
+        None if !extracted_root.join("PROT.DAT").exists() => anyhow::bail!(
+            "No disc image given (--disc) and no extracted game folder at {}. {PICK_DISC_HINT}",
+            extracted_root.display()
+        ),
         None => NativeSession::open(extracted_root, &cfg),
     }
 }
+
+/// How a player gets from a failed start to a disc that boots.
+const PICK_DISC_HINT: &str = "Pass --disc with your Legend of Legaia (USA) .bin or .cue, or start \
+     legaia-engine with no arguments to choose the disc in the launcher.";

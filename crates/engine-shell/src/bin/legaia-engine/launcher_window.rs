@@ -69,6 +69,9 @@ const PANEL_ENV: &str = "LEGAIA_LAUNCHER_PANEL";
 /// With [`SCREENSHOT_ENV`]: focus option row N (0-based, clamped), so a
 /// capture can show the list scrolled.
 const FOCUS_ENV: &str = "LEGAIA_LAUNCHER_FOCUS_ROW";
+/// With [`SCREENSHOT_ENV`]: open the window at this logical size (`WxH`),
+/// so a capture can show the screen on a large or odd-sized window.
+const SIZE_ENV: &str = "LEGAIA_LAUNCHER_SIZE";
 /// Skip the screen when the remembered disc is good (the older behaviour).
 const DIRECT_ENV: &str = "LEGAIA_LAUNCHER_DIRECT";
 const TITLE: &str = "Legend of Legaia";
@@ -551,7 +554,15 @@ impl LauncherApp {
     }
 
     fn open_window(&mut self, evl: &ActiveEventLoop) {
-        if !self.win.open(evl, TITLE) {
+        let mut setup = legaia_engine_render::window::WindowSetup::default();
+        if let Some((w, h)) = std::env::var(SIZE_ENV)
+            .ok()
+            .and_then(|v| v.split_once('x').map(|(w, h)| (w.parse(), h.parse())))
+            .and_then(|(w, h)| Some((w.ok()?, h.ok()?)))
+        {
+            setup.logical_size = (w, h);
+        }
+        if !self.win.open_with(evl, TITLE, setup) {
             return;
         }
         if let Some(w) = self.win.window.as_deref() {
@@ -762,8 +773,11 @@ impl LauncherApp {
     fn layout(&self, c: &mut Canvas, hits: &mut Vec<(Item, Rect)>) {
         // Header band.
         c.fill_surface(BODY);
-        c.rect(Rect::new(0, 0, STAGE_W, 44), BAND);
-        c.rect(Rect::new(0, 44, STAGE_W, 1), RULE);
+        // The header band and its rule run edge to edge: the stage scales
+        // by whole steps, so a large window centres it with margins, and a
+        // band drawn only across the stage stopped short of them.
+        c.full_width(0, 44, BAND);
+        c.full_width(44, 1, RULE);
         c.text_scaled(PAD, 7, "Legend of Legaia", GOLD, 2);
         let sub = format!("engine port {}", env!("CARGO_PKG_VERSION"));
         let w = c.width(&sub);
@@ -1411,6 +1425,22 @@ impl Canvas<'_> {
     fn fill_surface(&mut self, color: [f32; 4]) {
         self.draws.push(TextDraw {
             dst: (0, 0, self.stage.surface.0, self.stage.surface.1),
+            src: self.solid,
+            color,
+        });
+    }
+
+    /// A band `h` stage rows tall at stage row `y`, across the whole
+    /// surface (the margins beside the stage included).
+    fn full_width(&mut self, y: i32, h: i32, color: [f32; 4]) {
+        let s = self.stage.scale;
+        self.draws.push(TextDraw {
+            dst: (
+                0,
+                (self.stage.origin.1 + y * s).max(0),
+                self.stage.surface.0,
+                (h.max(0) * s) as u32,
+            ),
             src: self.solid,
             color,
         });

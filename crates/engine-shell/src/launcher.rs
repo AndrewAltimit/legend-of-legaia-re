@@ -493,6 +493,45 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
     (None, OptionRow::Retail),
 ];
 
+/// The options and launch switches the original game plays with: the
+/// options under `OptionsState::pin_retail`, the switches at
+/// `WorldToggles::pin_retail`'s values. [`OptionRow::original_value`] and
+/// [`hotkey_original_state`] both read this one pair.
+fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSettings) {
+    let mut opts = legaia_engine_menus::options::OptionsState::default();
+    opts.pin_retail();
+    let mut s = LauncherSettings::default();
+    let w = &mut s.switches;
+    // The original's picture is the PlayStation's own.
+    w.psx_render = true;
+    w.no_entry_pulse = true;
+    w.smart_monsters = false;
+    w.arts_saved_list = false;
+    w.no_shiny_seru = true;
+    w.flee_exp = false;
+    w.exp_rate_permille = None;
+    w.no_fortress_encounter_fix = true;
+    w.jewel_fix = false;
+    w.no_hp_readout_guard = true;
+    w.spirit_ap = None;
+    w.damage_ap = None;
+    w.seru_catch_pct = None;
+    w.enemy_attack_permille = None;
+    w.enemy_stat_permille = None;
+    w.equipment_drops = false;
+    w.save_anywhere = false;
+    (opts, s)
+}
+
+/// The original game's state of a play-window hotkey, in the words the
+/// hotkey panel shows (`options_hotkey_state`): `Some("off")` for the
+/// see-through walls, `None` for a key whose row has no original
+/// counterpart ([`OptionRow::original_value`]) or no row at all.
+pub fn hotkey_original_state(hotkey: legaia_engine_session::hotkeys::HostHotkey) -> Option<String> {
+    OptionRow::for_hotkey(hotkey)?.original_value()?;
+    legaia_engine_session::hotkeys::options_hotkey_state(&original_state().0, hotkey)
+}
+
 const TIMES_OF_DAY: [&str; 4] = ["auto", "day", "dusk", "night"];
 
 /// `OptionsState::window_scale`'s range
@@ -790,31 +829,30 @@ impl OptionRow {
             | Self::MonoDownmix
             | Self::Retail => None,
             _ => {
-                let mut opts = legaia_engine_menus::options::OptionsState::default();
-                opts.pin_retail();
-                let mut s = LauncherSettings::default();
-                let w = &mut s.switches;
-                // The original's picture is the PlayStation's own.
-                w.psx_render = true;
-                w.no_entry_pulse = true;
-                w.smart_monsters = false;
-                w.arts_saved_list = false;
-                w.no_shiny_seru = true;
-                w.flee_exp = false;
-                w.exp_rate_permille = None;
-                w.no_fortress_encounter_fix = true;
-                w.jewel_fix = false;
-                w.no_hp_readout_guard = true;
-                w.spirit_ap = None;
-                w.damage_ap = None;
-                w.seru_catch_pct = None;
-                w.enemy_attack_permille = None;
-                w.enemy_stat_permille = None;
-                w.equipment_drops = false;
-                w.save_anywhere = false;
+                let (opts, s) = original_state();
                 Some(self.value(&opts, &s))
             }
         }
+    }
+
+    /// The row a play-window hotkey toggles (`F4` See-through walls, `I`
+    /// Enhanced lighting, ...), so the hotkey panel reads the same
+    /// original value the launcher shows.
+    pub fn for_hotkey(hotkey: legaia_engine_session::hotkeys::HostHotkey) -> Option<OptionRow> {
+        use legaia_engine_session::hotkeys::HostHotkey as H;
+        Some(match hotkey {
+            H::OcclusionFade => Self::SeeThroughWalls,
+            H::TimeOfDay => Self::TimeOfDay,
+            H::VolumetricFog => Self::GroundFog,
+            H::EnhancedLighting => Self::EnhancedLighting,
+            H::LightShadows => Self::LampShadows,
+            H::CameraDistance => Self::CameraDistance,
+            H::PreciseMovement => Self::PreciseMovement,
+            H::Bloom => Self::Bloom,
+            H::DiagRows | H::AudioMute | H::DebugCamera | H::CheatMaxAp | H::CheatEncounters => {
+                return None;
+            }
+        })
     }
 
     /// Whether the row shows a value the original game does not have (an
@@ -1057,6 +1095,34 @@ mod tests {
             bin: p.to_path_buf(),
             executable: USA_EXECUTABLE.into(),
         }
+    }
+
+    /// The hotkey panel's original states are the launcher rows': one
+    /// value, in the panel's words.
+    #[test]
+    fn hotkey_original_states_match_their_rows() {
+        use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
+        let mut marked = 0;
+        for (hk, _) in HOST_HOTKEYS {
+            match (
+                OptionRow::for_hotkey(hk).and_then(OptionRow::original_value),
+                hotkey_original_state(hk),
+            ) {
+                (Some(row), Some(key)) => {
+                    assert!(row.eq_ignore_ascii_case(&key), "{hk:?}: {row} vs {key}");
+                    marked += 1;
+                }
+                (None, None) => {}
+                other => panic!("{hk:?}: {other:?}"),
+            }
+        }
+        assert_eq!(
+            hotkey_original_state(HostHotkey::OcclusionFade).as_deref(),
+            Some("off")
+        );
+        assert_eq!(hotkey_original_state(HostHotkey::TimeOfDay), None);
+        assert_eq!(hotkey_original_state(HostHotkey::AudioMute), None);
+        assert!(marked >= 6);
     }
 
     /// Every row with an original counterpart reads as the original under
