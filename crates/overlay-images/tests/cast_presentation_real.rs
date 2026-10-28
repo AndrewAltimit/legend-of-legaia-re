@@ -40,8 +40,13 @@ fn dump(p: &cast_presentation::CastPresentation) -> String {
     }
     for x in &p.sites {
         s += &format!(
-            "  {:08X} body {:08X} arm {:>3} {:?} {:?}\n",
-            x.va, x.body, x.arm, x.timing, x.call
+            "  {:08X} body {:08X} arm {:>3} {:?} {:?}{}\n",
+            x.va,
+            x.body,
+            x.arm,
+            x.timing,
+            x.call,
+            x.guard.map_or(String::new(), |g| format!(" guard {g:?}"))
         );
     }
     for x in &p.unplaced {
@@ -277,4 +282,53 @@ fn decode_every_module() {
             exit: Some(cast_presentation::PhaseExit::Rel(1)),
         }
     )));
+}
+
+/// PROT 0918 (Kemaro)'s arm 8 ramps its colour wash down only once its
+/// countdown `0x801F92E4` is at or under `scalar << 7`
+/// (`0x801F75C4..0x801F75D0`): both the ramp store and the clear behind it
+/// carry the guard, and no site outside a word compare does.
+#[test]
+fn kemaro_arm_eight_ramps_its_wash_behind_the_countdown() {
+    use cast_presentation::{WordGuard, WordTest};
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] cast presentation: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let bytes = read_entry(&mut archive, 918);
+    let p = cast_presentation::decode(&bytes, content_end(&bytes, SLOT_B_LINK_BASE));
+    let want = Some(WordGuard {
+        word: 0x801F_92E4,
+        test: WordTest::AtMost(cast_presentation::SPEED_SCALAR << 7),
+    });
+    let wash: Vec<_> = p
+        .arm_sites(None, 8)
+        .filter(|s| matches!(s.call, PresentationCall::WashField { field: 0x27A, .. }))
+        .collect();
+    assert_eq!(wash.len(), 2, "{}", dump(&p));
+    for s in &wash {
+        assert_eq!(s.guard, want, "{:08X}", s.va);
+    }
+    // Arm 6's ramp up runs on every held pass.
+    assert!(
+        p.arm_sites(None, 6)
+            .filter(|s| matches!(s.call, PresentationCall::WashField { field: 0x27A, .. }))
+            .all(|s| s.guard.is_none())
+    );
+    assert!(
+        WordGuard {
+            word: 0,
+            test: WordTest::AtMost(1024)
+        }
+        .admits(1024)
+    );
+    assert!(
+        !WordGuard {
+            word: 0,
+            test: WordTest::AtMost(1024)
+        }
+        .admits(1032)
+    );
 }

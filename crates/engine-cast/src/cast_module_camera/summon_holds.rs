@@ -327,6 +327,21 @@ pub fn summon_holds(prot_entry: u32) -> Option<&'static [HoldArm]> {
     })
 }
 
+/// The countdown word of a summon module this file covers (the word each
+/// table's doc names), whose value the director carries in
+/// `ModuleCamState::countdown` in the word's own units.
+pub fn countdown_word(prot_entry: u32) -> Option<u32> {
+    Some(match prot_entry {
+        918 => 0x801F_92E4,
+        919 => 0x801F_8E5C,
+        922 => 0x801F_A0B8,
+        924 => 0x801F_7C48,
+        925 => 0x801F_800C,
+        927 => 0x801F_9C8C,
+        _ => return None,
+    })
+}
+
 /// One tick of `table`'s arm for `phase`: `true` while it holds. On the tick
 /// it lets the arm run it applies the arm's re-arm and ramp seed.
 pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool {

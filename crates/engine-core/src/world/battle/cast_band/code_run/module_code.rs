@@ -1617,7 +1617,11 @@ impl World {
             self.refresh_party_ability_bits();
         }
         // The arm's calls into the shared presentation helpers (fades,
-        // washes, CLUT copies), decoded off the module image.
+        // washes, CLUT copies), decoded off the module image. A guarded site
+        // reads the countdown word as this pass opened on it.
+        self.casting.module_pres.word_in =
+            legaia_engine_cast::cast_module_camera::summon_holds::countdown_word(entry)
+                .map(|va| (va, countdown_before));
         self.fire_cast_presentation(
             entry,
             if has_trampoline { body } else { None },

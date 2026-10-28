@@ -3913,6 +3913,22 @@ lists run that render tail as the field's ambient parts do
 (`World::queue_battle_part_scrolls` queues the recolour, `apply_battle_vram_moves`
 lands it on the battle VRAM).
 
+**Sites behind a module word.** A site can sit on the fall-through of a
+branch on one of the module's own words: PROT 0918's arm 8 ramps the wash
+down only once its countdown `0x801F92E4` (pre-drain) is at or under
+`scalar << 7` (`lw` / `slt v0, v0, v1` / `bne v0, zero, 0x801F76AC` at
+`0x801F75C4..0x801F75D0`), the last eighth of the arm's `scalar * 0x1C0`,
+so Kemaro's dive plays over the full blue wash. The decoder folds such a
+compare (`cast_presentation::WordGuard`, the nearest word-compare branch
+before the site whose target lies past it) and the hook runs the site only
+on the passes the word admits, for a module whose countdown the engine
+carries (`summon_holds::countdown_word`, read as the pass opened on it).
+Fired on every held pass, the ramp took the wash off a few frames into the
+arm and the creature's sky drew dark and warm where retail's is lavender:
+the `0x90` cast-sequence oracle's arm-8 segment scores `0.507` without the
+guard and `0.922` with it. The two Kemaro sites are the only guarded ones
+the decoder finds in `0903..=0966`.
+
 **The stage byte.** `ctx[+0x278]` is what darkens the stage under a cast:
 the ambient pass drives the backdrop pair's depth cue to black once the byte
 is `2` or more with the close-up latch `ctx[+0x243]` up, and with bit 0 set it

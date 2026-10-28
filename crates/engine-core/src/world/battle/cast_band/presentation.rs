@@ -136,6 +136,10 @@ pub struct ModulePresentation {
     /// it was seated off (`PresentationCall::PartStore`): a later kill of
     /// the slot halts the parts of that record.
     pub(crate) part_slots: Vec<(HandleSlot, u32)>,
+    /// The module word the engine carries, `(VA, value)`, as the tick that
+    /// just ran opened on it: what a site's
+    /// [`legaia_overlay_images::cast_presentation::WordGuard`] reads.
+    pub(crate) word_in: Option<(u32, i32)>,
 }
 
 impl World {
@@ -266,6 +270,15 @@ impl World {
         // that held fade unkillable.
         let mut spawned_now: Vec<u32> = Vec::new();
         for s in &sites {
+            // A site behind a test of the module's own word runs only on
+            // the passes the word admits; a word the engine does not carry
+            // leaves the site to its timing.
+            if let (Some(g), Some((va, value))) = (s.guard, self.casting.module_pres.word_in)
+                && g.word == va
+                && !g.admits(value)
+            {
+                continue;
+            }
             // Past a ported countdown gate a site runs on the pass alone
             // (`summon_holds::gate_va`), whatever timing the decoder read.
             let timing = match legaia_engine_cast::cast_module_camera::summon_holds::gate_va(
