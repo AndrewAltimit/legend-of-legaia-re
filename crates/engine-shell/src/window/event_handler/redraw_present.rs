@@ -284,6 +284,8 @@ struct CastSeqRecorder {
     meta: std::io::BufWriter<std::fs::File>,
     /// `cam.csv`: the live camera pose per tick.
     cam: std::io::BufWriter<std::fs::File>,
+    /// `body.csv`: the acting seat's clip, cursor and live pair per tick.
+    body: std::io::BufWriter<std::fs::File>,
     /// Only a cast by this acting seat starts the recording
     /// (`LEGAIA_DIAG_CAST_SEQ_SEAT`); any seat when unset.
     seat: Option<u8>,
@@ -339,8 +341,11 @@ impl PlayWindowApp {
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
+            let mut body = std::io::BufWriter::new(std::fs::File::create(dir.join("body.csv")).ok()?);
+            let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
             Some(std::sync::Mutex::new(CastSeqRecorder {
                 cam,
+                body,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
                 tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
                 max: num("LEGAIA_DIAG_CAST_SEQ_MAX", 2000),
@@ -512,9 +517,26 @@ impl PlayWindowApp {
                 p.focus[2] as i32,
             );
         }
+        // The acting seat's clip each tick (`body.csv`), the engine half of
+        // the retail probe's file of the same name: `+0x1D9`, `+0x1DA`, the
+        // cursor in sixteenths of a keyframe and the live pair.
+        if let Some(a) = w.actors.get(usize::from(w.battle_ctx.active_actor)) {
+            let p = a.battle_animation.as_ref();
+            let _ = writeln!(
+                rec.body,
+                "{tick},{st},{acting},{},{},{},{},{},{}",
+                a.battle.current_anim,
+                a.battle.queued_anim,
+                p.map_or(-1, |p| i32::from(p.is_looping())),
+                p.map_or(-1, |p| i32::from(p.cursor_sixteenths())),
+                a.move_state.world_x,
+                a.move_state.world_z,
+            );
+        }
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();
             let _ = rec.cam.flush();
+            let _ = rec.body.flush();
             println!(
                 "[ok] cast sequence: {} frames in {} (ticks {start}..={tick})",
                 rec.shots,

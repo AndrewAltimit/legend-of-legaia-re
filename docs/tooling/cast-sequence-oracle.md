@@ -116,7 +116,11 @@ already cropped and box-filtered to the compared `320 x 224`
 (`Frame::from_engine_capture`, the corpus's alignment). Its `meta.csv` uses
 retail seat numbers: the engine packs the party ahead of the monsters, and the
 recorder maps them back. Beside it, `cam.csv` holds the live camera pose per
-tick (pitch, yaw, TR trio), the engine half of the retail side's file.
+tick (pitch, yaw, TR trio), the engine half of the retail side's file, and
+`body.csv` the acting seat's clip `+0x1D9`, staged byte `+0x1DA`, whether the
+clip loops, its cursor in sixteenths of a keyframe and the live pair: the
+engine half of the retail `body.csv`, which a clip that ends early or late
+is read off.
 
 ## The pairing rule
 
