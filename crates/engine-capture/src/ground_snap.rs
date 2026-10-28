@@ -194,6 +194,47 @@ const PROBE_ANGLE_SLACK: f32 = 8.0;
 /// refresh moves a body pair, not a different framing.
 const PROBE_LINEAR_SLACK: f32 = 16.0;
 
+/// The action-SM states a monster's magic cast stands still through before
+/// its clip's effect script spawns anything: cast begin `0x28` (bearing and
+/// facing) and the pre-cast wait `0x29`.
+const CAST_HOLD_STATES: std::ops::RangeInclusive<u8> = 0x28..=0x29;
+
+/// Stand a monster caster on its captured ground from the cast's first pass.
+///
+/// Nothing in the magic band moves a monster caster (`0x28..0x2E` only face
+/// and stage clips), so the capture's live pair and heading are where it
+/// stood when its clip's effect script spawned the cast's effects
+/// (`FUN_801DEA50` -> `FUN_801DFDF0`, seated at the caster's position and
+/// rotated by its heading). Snapped only at the captured phase, a replay
+/// whose earlier rounds left the caster elsewhere spawns them there and
+/// draws them off retail's: `battle_retona_viguro_lv2_thunder_break_mid_cast`
+/// seeded Thunder Break's two masters from `(-509, 1099)` against retail's
+/// caster at `(-434, 874)`. Holding the caster on the capture's ground
+/// through `0x28` / `0x29` seats them where retail's were. A no-op outside
+/// a monster's magic band or without a snap for the acting slot.
+pub fn hold_cast_caster(world: &mut World, snaps: &[GroundSnap]) {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle
+        || !CAST_HOLD_STATES.contains(&world.battle_ctx.action_state)
+        || world.battle_ctx.queued_action
+            != legaia_engine_battle_vm::battle_action::ActionCategory::Magic.as_byte()
+    {
+        return;
+    }
+    let caster = world.battle_ctx.active_actor;
+    if caster < world.party.party_count {
+        return;
+    }
+    let mine: Vec<GroundSnap> = snaps
+        .iter()
+        .filter(|s| s.slot == caster)
+        .map(|s| GroundSnap { body: None, ..*s })
+        .collect();
+    if mine.is_empty() {
+        return;
+    }
+    let _ = snap_battle_ground(world, &mine);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,5 +260,45 @@ mod tests {
         let env = ground_snaps_to_env(&snaps);
         assert_eq!(env, "0:-195:-214:484,3:5:5:-:20:20");
         assert_eq!(ground_snaps_from_env(&env), snaps);
+    }
+
+    /// A monster's magic cast is stood on its captured ground through
+    /// `0x28` / `0x29`; a party seat, another category or a later state is
+    /// left where it stands.
+    #[test]
+    fn a_monster_caster_holds_its_captured_ground_before_its_effects_spawn() {
+        use legaia_engine_battle_vm::battle_action::ActionCategory;
+        let mut w = World::new();
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        w.party.party_count = 3;
+        while w.actors.len() < 5 {
+            w.actors.push(Default::default());
+        }
+        let snap = [GroundSnap {
+            slot: 3,
+            x: -434,
+            z: 874,
+            facing: Some(2170),
+            body: None,
+        }];
+        w.battle_ctx.active_actor = 3;
+        w.battle_ctx.queued_action = ActionCategory::Magic.as_byte();
+        w.battle_ctx.action_state = 0x2B;
+        hold_cast_caster(&mut w, &snap);
+        assert_eq!(w.actors[3].move_state.world_x, 0);
+        w.battle_ctx.action_state = 0x28;
+        hold_cast_caster(&mut w, &snap);
+        assert_eq!(
+            (
+                w.actors[3].move_state.world_x,
+                w.actors[3].move_state.world_z
+            ),
+            (-434, 874)
+        );
+        assert_eq!(w.actors[3].battle.facing_angle, 2170);
+        w.battle_ctx.active_actor = 0;
+        let party = [GroundSnap { slot: 0, ..snap[0] }];
+        hold_cast_caster(&mut w, &party);
+        assert_eq!(w.actors[0].move_state.world_x, 0);
     }
 }

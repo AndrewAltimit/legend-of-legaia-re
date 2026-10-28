@@ -3379,6 +3379,19 @@ table the eye stood at depth `1965`, closer than any pose the seed's ease
 passed through; one pass back it stands at `2457`, and the frames read `.656`
 to `.744`.
 
+#### A caster held on its ground through the cast
+
+A monster's magic cast spawns its effects from its clip's effect script at
+the caster's live pair, rotated by its heading, and nothing in the magic band
+moves a monster caster. The image child therefore stands the acting monster
+on the capture's ground from cast begin `0x28` through the pre-cast wait
+`0x29` (`ground_snap::hold_cast_caster`), not only at the captured phase: the
+replay's earlier rounds can leave it elsewhere, and its effects then spawn off
+retail's (`battle_retona_viguro_lv2_thunder_break_mid_cast` seeded Thunder
+Break's two masters from `(-509, 1099)` against retail's caster at
+`(-434, 874)`). `battle_rugi_slippery_poisonous_breath_mid_cast` read `.966`
+to `.996`.
+
 #### A shot armed after the displayed frame
 
 The magic band's shot arms on the first `0x2B` pass
