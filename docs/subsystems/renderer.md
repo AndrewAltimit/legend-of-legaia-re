@@ -2701,10 +2701,11 @@ Two things are routinely mis-stated about this table:
   one value, `snap`, which drives the vertex snap and is shared as the dither
   enable.
 
-### `set_psx_mode` - vertex snap + dither
+### `set_psx_mode` - GTE limits, vertex snap + dither
 
-`Renderer::set_psx_mode(true)` enables the two strict-PS1 rasterisation
-artefacts that are off by default:
+`Renderer::set_psx_mode(true)` enables the strict-PS1 rasterisation
+artefacts that are off by default: the GTE's register limits
+([above](#the-gtes-register-limits)) and the two below.
 
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are
   snapped to integer pixel positions in the vertex shader (NDC to pixel grid
