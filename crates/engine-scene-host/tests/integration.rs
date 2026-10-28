@@ -90,6 +90,7 @@ mod freeroam_field_channels_disc;
 mod global_bgm_owned_vab_disc;
 mod hub_tables_disc;
 mod inline_dialogue_vm_no_panic_disc;
+mod jouind_object_morph_cflag_disc;
 mod jouine_arc_held_height_disc;
 mod kor3_self_face_acquire_disc;
 mod kor5_genesis_figure_height_disc;

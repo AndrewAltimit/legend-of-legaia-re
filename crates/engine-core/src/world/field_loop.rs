@@ -934,10 +934,16 @@ impl World {
     /// `B1 0C 08`, which restarts Xain's record past the `3E FF 0A` / `21`
     /// that staged the fight - the post-fight scene that sets `0x1D5`.
     ///
-    /// Only placement contexts resolve here; the player (`0xF8`) and the
-    /// system context (`0xFB`) take the ordinary step. The system context
-    /// bypasses the halted-target early-out, as retail's `+0x50 == 0xFB`
-    /// test does (`0x801DE90C..0x801DE940`).
+    /// A placed object's bind context resolves here too: the write lands on
+    /// its `+0x10` as on a placement's, and only a placement's bit-8 write
+    /// queues an engagement. `jouind`'s `P1[0]` raises bit 12 on objects
+    /// `9..=12` (`B1 <id> 0C`, behind the `0x4C0` / `0x4C1` tests) after their
+    /// bind prologues dropped it (`32 0C`), so their op-`0x4B` morphs draw
+    /// held at peak - the collapsed flesh walls; routed to the system
+    /// context instead, the walls stood at full height. The player (`0xF8`)
+    /// and the system context (`0xFB`) take the ordinary step. The system
+    /// context bypasses the halted-target early-out, as retail's
+    /// `+0x50 == 0xFB` test does (`0x801DE90C..0x801DE940`).
     ///
     /// REF: FUN_801DE840 (cases 0x31 / 0x32), FUN_8003C83C, FUN_8003BC08
     fn step_field_cross_context_cflag(&mut self) -> Option<FieldStepResult> {
@@ -954,11 +960,14 @@ impl World {
         let ci =
             legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
         let ch = &mut self.field_vm.channels[ci];
-        if ch.object_bind {
-            return None;
-        }
         let mask = 1u32 << bit;
-        if op == 0xB1 {
+        if ch.object_bind {
+            if op == 0xB1 {
+                ch.ctx.flags |= mask;
+            } else {
+                ch.ctx.flags &= !mask;
+            }
+        } else if op == 0xB1 {
             // The engine runs no placement channel on its own (the touch
             // and this engagement play its interactions), so a stale `0x100`
             // left by the spawn pre-run does not mean the context is already

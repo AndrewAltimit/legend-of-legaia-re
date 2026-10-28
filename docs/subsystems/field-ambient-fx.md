@@ -544,6 +544,17 @@ Two worked examples on this side:
 - **Rim Elm's Genesis tree** - placement `P1[50]` in `town01`, clip-less,
   holds sub-entries `3..=6` at peak until the tree revives, so the withered
   tree is drawn over an authored mesh that is the revived one.
+- **jouind's flesh walls** - placed objects `9..=12`, whose bind prologues
+  arm `4B 01 ..` and then drop `+0x10` bit 12 again (`32 0C`, `2C 0C`,
+  `2B 0A`, `2C 0D`), so the bind leaves the walls standing. The entry
+  script `P1[0]` re-raises the bit on each from the system context
+  (`B1 <id> 0C` with `AC` / `AB` beside it) while flag `0x4C0` is set and
+  `0x4C1` clear, and the held envelope primes the lane to `0x1000`: the walls
+  lie collapsed. The draw substitutes the morph only under that bit
+  (`FUN_8001ADA4` tests `+0x10 & 0x1000` before `jal 0x8001C604` at
+  `0x8001B43C`). `jouind_field_card_boot` holds all four at `0x08009881`; the
+  engine lands the system context's `B1` / `B2` on a placed object's context
+  as on a placement's (`World::step_field_cross_context_cflag`).
 
 #### town0e's installer is a placed actor, not an effect actor
 
