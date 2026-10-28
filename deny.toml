@@ -1,0 +1,35 @@
+# cargo-deny configuration. Only the advisories check is gated:
+#
+#     cargo deny check advisories
+#
+# runs in the `gates` job of .github/workflows/main-ci.yml against the RustSec
+# advisory database. See docs/tooling/dependency-policy.md for the policy this
+# file belongs to (publish cooldown, pinning, how an ignore gets added).
+#
+# Every ignore below is an *unmaintained* notice for a crate that reaches the
+# tree only through a third-party dependency with no maintained alternative we
+# can select. None is a vulnerability: a vulnerability or unsoundness advisory
+# is fixed by an update, never ignored. Each entry names the parent that keeps
+# the crate in, so the entry can be dropped the day that parent moves.
+
+# No [graph] `targets` filter: the check covers every platform's dependencies
+# (Linux, Windows, macOS, wasm32), not only the host's.
+
+[advisories]
+# A yanked crate in the lockfile is reported, not failed: a yank is not an
+# advisory, and the publish cooldown can leave a yanked release as the newest
+# version old enough to take (every clipboard-win before 5.4.2 is yanked).
+yanked = "warn"
+ignore = [
+    # ttf-parser (unmaintained) <- owned_ttf_parser <- ab_glyph, pulled in by
+    # winit 0.30's default `wayland-csd-adwaita` feature (sctk-adwaita draws
+    # the Wayland title-bar text with it) and by epaint 0.33 (egui's font
+    # rasteriser, legaia-studio). epaint 0.36 moves to skrifa; sctk-adwaita
+    # has no ab_glyph-free title renderer short of `-notitle` (no title text)
+    # or `-crossfont` (a system FreeType / fontconfig dependency).
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser via ab_glyph: winit wayland-csd-adwaita title bar + epaint 0.33; no maintained drop-in" },
+    # paste (unmaintained, a proc-macro: build-time only) <- metal 0.32 <-
+    # wgpu-hal 26's Metal backend (macOS builds). wgpu 29+ replaces the metal
+    # crate with objc2-metal, which drops paste; it goes with the wgpu bump.
+    { id = "RUSTSEC-2024-0436", reason = "paste via metal <- wgpu-hal 26 (Metal backend); leaves with a wgpu 29+ bump" },
+]

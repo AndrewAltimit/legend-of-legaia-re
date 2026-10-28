@@ -121,6 +121,12 @@ That job is disc-independent by construction - every gate in it reads the
 repo's own sources, docs and site fragments - so it stays green on a runner
 that has no `extracted/`.
 
+One gate in that job runs in CI only, the reverse of the exemption below:
+`cargo deny check advisories` reads `Cargo.lock` against the RustSec
+database, which it fetches over the network, and a new advisory is news about
+the world rather than about the commit being made. It and its `deny.toml` are
+described in [`dependency-policy.md`](dependency-policy.md).
+
 ### The one class of gate allowed to be hook-only
 
 "Every gate runs in both places" is the rule, not a description of the whole
