@@ -3485,7 +3485,15 @@ Slash (`0x801F6B98`) is the same shape: its clip `0x0A` sits behind arm 1's
 gate (`bgtz v1,0x801F74B0` at `0x801F6B8C`), and
 `gaza2_card_neo_star_slash_mid_cast` reads Gaza on clip `0` with the word at
 `96`; staged at the head of the band, Gaza crouched a whole arm early
-(`image` `.800` against `.996` staged on arm 1). Bodies whose ports stage the
+(`image` `.800` against `.996` staged on arm 1). PROT 0965's Doomsday
+stages clip `7` in arm 0 (`0x801F6B30`, with the `+0x1DC` bump), which has no
+gate, and runs on to arm 1 on the next pass while the clip plays: a retail
+film holds arm 1 from the pass after the commit with the clip at cursor `0`,
+and the clip ends as arm 3 begins. Staged at the head of the band, the module
+waited the whole clip (about `100` ticks) on arm 0, so every later arm ran
+that late and the clip was over by the time `cort_evolved_card_doomsday_mid_cast`
+(arm 1, clip `7` in its RAM) is filmed; arm 1's bare `sb zero,0x1da`
+(`0x801F6B94`) waits on the clip's end in both. Bodies whose ports stage the
 caster are not in it, nor are bodies that stage nothing on the caster in
 retail (`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`). The table and the three clip
 routes a monster cast can take are on

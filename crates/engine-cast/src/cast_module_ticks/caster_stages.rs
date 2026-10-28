@@ -283,13 +283,18 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: None,
     },
-    // PROT 0965 Doomsday `0xB6`: `7` at `0x801F6B30`.
+    // PROT 0965 Doomsday `0xB6`: `7` at `0x801F6B30`, in arm 0
+    // (`0x801F6B0C`, no gate) with the `+0x1DC` bump (`0x801F6B28..0x801F6B38`):
+    // the body runs on to arm 1 on the next pass while clip `7` plays out
+    // (a retail capture holds arm 1 from the pass after the commit, the clip
+    // at cursor `0`). Staged at the head of the band, the module waited the
+    // whole clip on arm 0.
     CasterStageRow {
         prot_entry: 965,
         action_ids: &[0xB6],
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0966 Evil Seru Magic has no row: its body's port stages the
     // caster itself (`li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`, arm 1;
