@@ -1417,11 +1417,23 @@ impl World {
         if grid == 0 {
             return;
         }
+        // The `0x4C` arm's terminal frame clears the turning actor's halt
+        // bit `0x400` (`0x80038004`), which the acquire raised on its
+        // context, so the placement's record can run and be poked again.
+        // REF: FUN_8003774C (0x80038004)
         for (slot, mut ramp) in std::mem::take(&mut self.npcs.face_legs) {
             if !self.step_npc_face_leg_by(slot, &mut ramp, grid) {
                 self.npcs.face_legs.insert(slot, ramp);
             } else {
                 self.land_npc_leg(slot);
+                if let Some(c) = self
+                    .field_vm
+                    .channels
+                    .iter_mut()
+                    .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                {
+                    c.ctx.flags &= !0x400;
+                }
             }
         }
         for (slot, mut leg) in std::mem::take(&mut self.npcs.rotate_legs) {
