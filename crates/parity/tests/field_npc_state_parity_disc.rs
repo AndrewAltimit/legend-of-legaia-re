@@ -17,6 +17,9 @@
 //! - **heading**: diagnostic-only (`+0x26`, retail `0` = Z-, engine `0` = Z+):
 //!   a captured walker faces whichever way it last moved, so heading drift is
 //!   expected dynamics, not a seat bug - reported, never gated;
+//! - **collision class**: both placed -> the script's pass-through bit
+//!   (`+0x10 & 1`, which `FUN_801CF754` reads with the cull bit `2`) must
+//!   match the engine channel's word;
 //! - **story flags**: after the engine's scene entry (which runs the real MAN
 //!   entry script + spawn prologues against the seeded bank), the engine's
 //!   `DAT_80085758` mirror must still equal the capture's bank bit-for-bit.
@@ -262,6 +265,13 @@ const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
         key: "pos:*",
         class: "b",
         note: "same pre-load capture context as doman_arrival_from_korb2 vis:*",
+    },
+    KnownDivergence {
+        label: "son_arrival_from_doman",
+        key: "solid:*",
+        class: "b",
+        note: "same pre-load capture context as doman_arrival_from_korb2 vis:*: the node \
+               still carries the previous scene's actor word",
     },
     KnownDivergence {
         label: "kor5_post_436_organic",
@@ -596,6 +606,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
     let mut total_parked_both = 0usize;
     let mut heading_checked = 0usize;
     let mut heading_drift = 0usize;
+    let mut solid_checked = 0usize;
 
     for cap in &captures {
         // ---- Engine side: seed the capture's flag bank, cold-enter. ----
@@ -711,6 +722,43 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
                 }
                 continue;
             }
+            // Collision class: `FUN_801CF754` admits a placement while its
+            // `+0x10 & 3` is clear. Bit 1 is the visibility cull, rewritten
+            // every tick from the camera window, so only the script's bit 0
+            // is a property of the seat; the engine carries it on the
+            // placement channel's own word.
+            if let Some(ef) = host
+                .world
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == pi as usize)
+                .map(|c| c.ctx.flags)
+            {
+                solid_checked += 1;
+                if (ef ^ ra.flags) & 1 != 0 {
+                    let key = format!("solid:{pi}");
+                    let detail = format!(
+                        "pass-through bit: retail +0x10 {:#010x}, engine {ef:#010x}",
+                        ra.flags
+                    );
+                    match known(&cap.label, &key) {
+                        Some(k) => {
+                            tolerated += 1;
+                            eprintln!(
+                                "[known-{}] {} ({}) {key}: {detail} - {}",
+                                k.class, cap.label, cap.scene, k.note
+                            );
+                        }
+                        None => divergences.push(Divergence {
+                            label: cap.label.clone(),
+                            scene: cap.scene.clone(),
+                            key,
+                            detail,
+                        }),
+                    }
+                }
+            }
             // Heading: diagnostic only. Engine convention 0 = Z+, retail
             // 0 = Z- (engine = retail + 0x800 mod 0x1000); a walker keeps its
             // last travel direction, so drift is expected dynamics.
@@ -787,7 +835,7 @@ fn catalogued_field_states_match_retail_npc_and_flag_state() {
     eprintln!(
         "[sweep] {states_compared} field states compared, {total_slots} placement slots \
          ({total_parked_both} parked in both), heading checked {heading_checked} \
-         (drift {heading_drift}), {tolerated} known divergences tolerated, {} open",
+         (drift {heading_drift}), collision class checked {solid_checked}, {tolerated} known divergences tolerated, {} open",
         divergences.len()
     );
     for d in &divergences {

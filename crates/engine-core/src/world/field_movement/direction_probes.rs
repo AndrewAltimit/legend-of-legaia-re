@@ -334,9 +334,16 @@ impl World {
     /// into its `+0x10` at spawn (with `0x1000000` for a special model), so
     /// `FUN_801CFC40` boxes it at its live `+0x14` / `+0x18`. The table
     /// builder skips an actor whose `+0x10 & 3` is non-zero, and nothing
-    /// else: a placement is solid whether or not it talks, until its script
-    /// raises bit 0 or 1 (`31 00` / `31 01`), and solid again once a script
-    /// drops them. `rayman`'s plank bridges are the case that shows it: each
+    /// else. Bit 0 is the script's: a placement is solid whether or not it
+    /// talks, until its script raises it (`31 00`), and solid again once a
+    /// script drops it. Bit 1 is the visibility cull's: `FUN_801D79E8`
+    /// rewrites it on every actor tick from the region box and the camera's
+    /// tile window, so an actor outside either is not a candidate however
+    /// near it stands. The port's channel words carry bit 0 and leave bit 1
+    /// to [`Self::field_npc_culled`], the same kernel the height arm reads.
+    /// Across the library's field captures the engine's bit 0 matches
+    /// retail's on every placement but one mid-load capture
+    /// (`parity/tests/field_npc_state_parity_disc.rs`). `rayman`'s plank bridges are the case that shows it: each
     /// plank's spawn section runs `31 00`, leaving the ledge row walkable, and
     /// once the collapse flag (`0x1EB`, `0x1FC`) is up the same section runs
     /// `32 00`, so the fallen planks wall the row off where the bridge stood.
@@ -349,7 +356,7 @@ impl World {
     /// stand-in a host or test seats directly) keeps the moving-class box.
     ///
     /// PORT: FUN_801CF754 (the `flags & 3` filter), FUN_801CFC40 (the moving arm)
-    /// REF: FUN_8003A1E4
+    /// REF: FUN_8003A1E4, FUN_801D79E8
     pub(crate) fn field_moving_actor_centres(&self) -> impl Iterator<Item = (i32, i32)> + '_ {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
         let channels = self.field_vm.channels.iter().filter(|c| !c.object_bind);
@@ -364,7 +371,8 @@ impl World {
                 .get(&slot)
                 .copied()
                 .unwrap_or((c.ctx.world_x as i16, c.ctx.world_z as i16));
-            (x != hide || z != hide).then_some((i32::from(x), i32::from(z)))
+            (!(x == hide && z == hide) && !self.field_npc_culled(x, z))
+                .then_some((i32::from(x), i32::from(z)))
         });
         let bare = self
             .npcs
@@ -373,7 +381,8 @@ impl World {
             .filter_map(move |(&slot, &(x, z))| {
                 (!channels
                     .clone()
-                    .any(|c| c.placement_index == usize::from(slot)))
+                    .any(|c| c.placement_index == usize::from(slot))
+                    && !self.field_npc_culled(x, z))
                 .then_some((i32::from(x), i32::from(z)))
             });
         placed.chain(bare)
