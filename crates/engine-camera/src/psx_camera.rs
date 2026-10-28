@@ -265,7 +265,7 @@ pub fn orbit_clip_planes(distance: f32) -> (f32, f32) {
 }
 
 /// Right-handed look-at, column-major - the same basis
-/// `glam::Mat4::look_at_rh` and the site's `lookAt` build.
+/// `glam::camera::rh::view::look_at_mat4` and the site's `lookAt` build.
 pub fn look_at_rh(eye: [f32; 3], target: [f32; 3], up: [f32; 3]) -> [f32; 16] {
     let mut f = [target[0] - eye[0], target[1] - eye[1], target[2] - eye[2]];
     let fl = (f[0] * f[0] + f[1] * f[1] + f[2] * f[2]).sqrt().max(1e-6);
@@ -307,7 +307,7 @@ pub fn look_at_rh(eye: [f32; 3], target: [f32; 3], up: [f32; 3]) -> [f32; 16] {
 }
 
 /// Right-handed perspective with depth in `[0, 1]`, column-major - the same
-/// matrix `glam::Mat4::perspective_rh` builds.
+/// matrix `glam::camera::rh::proj::directx::perspective` builds.
 pub fn perspective_rh(fov_y: f32, aspect: f32, near: f32, far: f32) -> [f32; 16] {
     let (sin_fov, cos_fov) = (0.5 * fov_y).sin_cos();
     let h = cos_fov / sin_fov;

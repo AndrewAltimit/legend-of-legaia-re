@@ -859,8 +859,10 @@ mod depth_mapping_tests {
 
     #[test]
     fn inverts_a_reversed_perspective() {
-        let proj = reverse_z(Mat4::perspective_rh(1.0, 1.3, 8.0, 50_000.0));
-        let view = Mat4::look_at_rh(
+        let proj = reverse_z(glam::camera::rh::proj::directx::perspective(
+            1.0, 1.3, 8.0, 50_000.0,
+        ));
+        let view = glam::camera::rh::view::look_at_mat4(
             glam::Vec3::new(100.0, -400.0, 900.0),
             glam::Vec3::ZERO,
             glam::Vec3::Y,

@@ -319,9 +319,14 @@ pub fn orbit_camera_mvp(
             distance * eye_height,
             distance * angle.sin(),
         );
-    let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);
     let (near, far) = scene_clip_planes(distance);
-    let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+    let proj = glam::camera::rh::proj::directx::perspective(
+        60f32.to_radians(),
+        aspect.max(0.01),
+        near,
+        far,
+    );
     let mirror_fix = Mat4::from_scale(Vec3::new(1.0, 1.0, -1.0));
     proj * view * mirror_fix
 }
@@ -410,9 +415,14 @@ pub fn walk_view_camera_mvp(
             distance * WALK_EYE_HEIGHT,
             distance * angle.sin(),
         );
-    let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);
     let (near, far) = scene_clip_planes(distance);
-    let proj = Mat4::perspective_rh(60f32.to_radians(), aspect.max(0.01), near, far);
+    let proj = glam::camera::rh::proj::directx::perspective(
+        60f32.to_radians(),
+        aspect.max(0.01),
+        near,
+        far,
+    );
     proj * view
 }
 
@@ -465,7 +475,7 @@ pub fn walk_view_camera_mvp(
 /// `Rx(pitch) * Ry(yaw) * Rz(roll)` inline from the sin/cos LUT at
 /// `0x80070A2C` (each angle masked to 12 bits, `4096 = 360 deg`). This MVP
 /// folds the pitch + yaw pair into a spherical orbit +
-/// `glam::Mat4::look_at_rh` rather than a literal `RotMatrixX` *
+/// `glam::camera::rh::view::look_at_mat4` rather than a literal `RotMatrixX` *
 /// `RotMatrixY` matrix product, then rolls the resulting view frame; the
 /// visible result matches retail's framing.
 ///
@@ -476,8 +486,8 @@ pub fn walk_view_camera_mvp(
 /// control-flow-reachable Configure beats staging a non-zero roll in eight
 /// scenes, in-range and held across the beats of one shot. Roll enters as a
 /// camera-space rotation about the view axis, applied after the orbit places
-/// the eye - the up vector that `Mat4::look_at_rh` fixes to `+Y` is what a
-/// non-zero `_DAT_8007B794` rotates.
+/// the eye - the up vector that `glam::camera::rh::view::look_at_mat4` fixes
+/// to `+Y` is what a non-zero `_DAT_8007B794` rotates.
 #[allow(clippy::too_many_arguments)]
 pub fn cutscene_camera_mvp(
     look_at: [f32; 3],
@@ -516,14 +526,14 @@ pub fn cutscene_camera_mvp(
     let (ys, yc) = yaw_radians.sin_cos();
     let (ps, pc) = pitch.sin_cos();
     let eye = center + Vec3::new(distance * pc * ys, -distance * ps, distance * pc * yc);
-    let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+    let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);
     // Retail's third factor. `FUN_80026988` composes `Rz(roll)` after
     // `Rx * Ry`, i.e. it rotates about the axis the first two already
     // aimed - the view axis - so in this orbit rendition the equivalent is a
     // roll of the view frame, left-multiplied onto the look-at view.
     let view = Mat4::from_rotation_z(roll_radians) * view;
     let (near, far) = scene_clip_planes(distance);
-    let proj = Mat4::perspective_rh(fov, aspect.max(0.01), near, far);
+    let proj = glam::camera::rh::proj::directx::perspective(fov, aspect.max(0.01), near, far);
     proj * view
 }
 

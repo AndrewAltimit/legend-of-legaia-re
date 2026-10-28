@@ -35,8 +35,8 @@ use legaia_render_kernels::streak_pass::{
 /// the `RIBBON_MAX_TOP_EDGE_SPAN` suppression test - the same condition a
 /// mid-arena monster meets in a real fight.
 fn cam() -> Mat4 {
-    Mat4::perspective_rh(1.0, 4.0 / 3.0, 1.0, 10_000.0)
-        * Mat4::look_at_rh(
+    glam::camera::rh::proj::directx::perspective(1.0, 4.0 / 3.0, 1.0, 10_000.0)
+        * glam::camera::rh::view::look_at_mat4(
             Vec3::new(0.0, 0.0, 1000.0),
             Vec3::ZERO,
             Vec3::new(0.0, 1.0, 0.0),

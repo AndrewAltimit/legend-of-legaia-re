@@ -134,7 +134,7 @@ mod reverse_z_tests {
     fn near_maps_to_one_far_to_zero_and_w_is_preserved() {
         let near = 4.0f32;
         let far = 1_000_000.0f32;
-        let proj = glam::Mat4::perspective_rh(1.0, 1.0, near, far);
+        let proj = glam::camera::rh::proj::directx::perspective(1.0, 1.0, near, far);
         let rz = reverse_z(proj);
         for (z_eye, expect) in [(near, 1.0f32), (far, 0.0f32)] {
             let clip = rz * glam::Vec4::new(0.0, 0.0, -z_eye, 1.0);
@@ -161,8 +161,8 @@ mod reverse_z_tests {
     #[test]
     fn a_far_bucket_draw_sits_behind_the_scene() {
         let near = 4.0f32;
-        let proj = glam::Mat4::perspective_rh(1.0, 4.0 / 3.0, near, 1_000_000.0);
-        let view = glam::Mat4::look_at_rh(
+        let proj = glam::camera::rh::proj::directx::perspective(1.0, 4.0 / 3.0, near, 1_000_000.0);
+        let view = glam::camera::rh::view::look_at_mat4(
             glam::Vec3::new(1234.5, 2900.0, -5600.25),
             glam::Vec3::new(37.0, 0.0, 1.0),
             glam::Vec3::Y,
@@ -193,7 +193,7 @@ mod reverse_z_tests {
     /// leaves `x`, depth and `w` alone. `-6` (the map display's rebuild) is up.
     #[test]
     fn folded_rows_shift_every_depth_alike() {
-        let proj = glam::Mat4::perspective_rh(1.0, 4.0 / 3.0, 4.0, 1_000_000.0);
+        let proj = glam::camera::rh::proj::directx::perspective(1.0, 4.0 / 3.0, 4.0, 1_000_000.0);
         let folded = fold_screen_rows(proj, -6.0);
         for z in [10.0f32, 500.0, 40_000.0] {
             let p = glam::Vec4::new(3.0, -2.0, -z, 1.0);

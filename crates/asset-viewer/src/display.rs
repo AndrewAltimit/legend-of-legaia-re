@@ -101,10 +101,11 @@ impl MeshView {
         let model = Mat4::from_scale(flip);
         let eye = self.eye_psx(secs) * flip;
         let center = self.center * flip;
-        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+        let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);
         let near = (self.distance * 0.05).max(0.1);
         let far = self.distance * 4.0 + 100.0;
-        let proj = Mat4::perspective_rh(MESH_FOV_Y, aspect.max(0.01), near, far);
+        let proj =
+            glam::camera::rh::proj::directx::perspective(MESH_FOV_Y, aspect.max(0.01), near, far);
         proj * view * model
     }
 }
