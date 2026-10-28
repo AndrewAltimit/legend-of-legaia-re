@@ -139,3 +139,37 @@ fn a_field_init_leaves_the_ending_theme_alone() {
         calls.0
     );
 }
+
+/// The real door, not a synthesized op: `kor4`'s `P2[13]` walk-on door into
+/// `koin6` raises sub-op 6 itself, and the room plays on under `2045`.
+#[test]
+fn kor4s_own_door_keeps_its_music_in_koin6() {
+    let Some(mut host) = host() else { return };
+    let _ = enter(&mut host, "kor4", 30);
+    let taken = host
+        .take_door_to("koin6", Some(13))
+        .expect("kor4 has the door");
+    eprintln!("taken {taken:?}");
+    let mut calls = Calls::default();
+    for _ in 0..600 {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+        if host.scene.as_ref().is_some_and(|s| s.name == "koin6") {
+            break;
+        }
+    }
+    assert_eq!(host.scene.as_ref().map(|s| s.name.as_str()), Some("koin6"));
+    for _ in 0..30 {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+    }
+    assert!(
+        !calls
+            .0
+            .iter()
+            .any(|c| matches!(c, Call::Stop | Call::Start(_))),
+        "the door kept 2045: {:?}",
+        calls.0
+    );
+    assert_eq!(host.bgm_track_word, Some(2041));
+}

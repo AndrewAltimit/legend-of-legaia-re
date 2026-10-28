@@ -3103,19 +3103,27 @@ no battle bundle (the field track plays on under sound set `0`), and four
 inside the Gaza fight, whose intro zeroes the set it read (formation head
 `0xA6`).
 
+A state reached through a door carries history a card load does not replay:
+the music a sub-op 6 door kept
+([above](#a-door-keeps-its-music-only-behind-sub-op-6)). A manifest entry
+that names its door (`arrival = { from = "kor4", door = 13 }`,
+`legaia_ram_image::scenarios::ScenarioArrival`) is seeded through it
+instead: the card load lands in the door's scene, its entry settles,
+`SceneHost::take_door_to` stands the player on the door's walk-on tile (or
+installs a door record no tile spawns), and the session ticks until it holds
+the captured scene. Whatever track sounds there is the engine's own door
+logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
+`kor4`, `P2[13]` / `P2[9]`) and `retockin_field_route_walk` (from `retock`,
+`P2[18]`) are seeded this way and match retail; with the sub-op 6 latch
+disabled the first three fail again (the head start replaces the kept
+track), while `retockin` passes either way because its entry parks.
+
 The sweep found the sub-op 9 defect: the port started a cutscene's new track
 at the select where retail holds it to the commit
 ([`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track)),
 the two `chapter2_garmel` states catching retail inside that window. What it
 still reports:
 
-- **Door history** - `s2_rimelm_town01` (in `map01`, `2064` under the word
-  `2000`), `koin6_field_route_walk` / `koin4_field_route_walk` (`2045` under
-  `2041`) and `retockin_field_route_walk` (`2014` under the park word). Each
-  is a sub-op 6 door keeping the music it brought
-  ([above](#a-door-keeps-its-music-only-behind-sub-op-6)); the engine models
-  the rule, but the card-load seed lands in the scene with no door behind
-  it, so it plays the scene's own entry track (or the park's silence).
 - **`ending_vignette_biron`, `ending_vignette_rimelm_walkaway`** - the
   credits vignettes park on `0x1000`, and what plays (`2068` on the ending
   source, `2001` on the field source) is the music the ending chain started
@@ -3162,10 +3170,8 @@ still reports:
   *script* (restore-PC at `0x801E0288`) until that settle has passed. The
   engine installs at once and never stalls, so a scene's track and a
   cutscene's beats after a `0xA` start earlier than retail's.
-- **The sweep's open rows** ([above](#the-audio-state-sweep)) are seed
-  history, a capture instant and one unidentified cue. The door rows need a
-  seed that enters through the door the route walk took (the arrival scene,
-  then its door record) instead of a card load.
+- **The sweep's open rows** ([above](#the-audio-state-sweep)) are the
+  credits chain's carried music, a capture instant and one cue.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer

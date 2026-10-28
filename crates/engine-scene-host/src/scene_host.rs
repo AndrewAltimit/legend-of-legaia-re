@@ -367,7 +367,7 @@ pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,
 };
-pub use scene_entry::{FmvHandoffOutcome, PickerSeat};
+pub use scene_entry::{DoorTaken, FmvHandoffOutcome, PickerSeat};
 
 #[cfg(test)]
 mod tests;

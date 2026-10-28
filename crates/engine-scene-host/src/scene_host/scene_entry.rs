@@ -10,6 +10,7 @@ use super::*;
 use legaia_engine_system::movie::cutscene::FmvHandoff;
 
 mod battle_inputs;
+mod door_replay;
 mod entry_seat;
 mod field_scene;
 mod fmv_handoff;
@@ -17,6 +18,7 @@ mod tick;
 mod walk_on_triggers;
 mod world_map_scene;
 
+pub use door_replay::DoorTaken;
 pub use entry_seat::PickerSeat;
 pub use fmv_handoff::*;
 

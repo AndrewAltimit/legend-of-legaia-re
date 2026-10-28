@@ -160,6 +160,23 @@ pub struct Scenario {
     /// and the poke is named here so nothing downstream reads it as such.
     #[serde(default)]
     pub ram_poked: Vec<String>,
+    /// The door a walked capture last came through: the scene it was taken
+    /// from and, when that scene has several into this one, the
+    /// partition-2 record. A state reached through a door carries history a
+    /// card load does not replay (the music a door keeps), so a seeding
+    /// harness may enter the source scene and take the door instead.
+    #[serde(default)]
+    pub arrival: Option<ScenarioArrival>,
+}
+
+/// [`Scenario::arrival`]: the door a capture came through.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ScenarioArrival {
+    /// CDNAME label of the scene the door is in.
+    pub from: String,
+    /// The door's partition-2 record in `from`'s MAN.
+    #[serde(default)]
+    pub door: Option<u16>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

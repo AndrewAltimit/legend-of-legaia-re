@@ -635,7 +635,19 @@ pub fn run_sweep(
             rows.push(row);
             continue;
         }
-        match crate::retail_compare::run_engine_listening(extracted, &obs) {
+        // A walked capture whose manifest names its door is entered through
+        // it, so the music the door kept comes from the engine's own door
+        // logic; any other walkable state seeds through the card load.
+        let door = manifest
+            .scenarios
+            .iter()
+            .find(|sc| sc.label == entry.label)
+            .and_then(|sc| sc.arrival.as_ref());
+        let run = match door {
+            Some(d) => crate::retail_compare::run_engine_listening_through_door(extracted, &obs, d),
+            None => crate::retail_compare::run_engine_listening(extracted, &obs),
+        };
+        match run {
             Ok((_, engine)) => {
                 let (c, d) = score(&row.retail, &engine, &bank);
                 row.channels = c;
