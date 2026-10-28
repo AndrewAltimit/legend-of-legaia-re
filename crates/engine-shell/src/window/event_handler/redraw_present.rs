@@ -533,6 +533,11 @@ impl PlayWindowApp {
                 a.move_state.world_z,
             );
         }
+        // A `--screenshot` child exits on its capture tick without reaching
+        // the recorder's own end: keep the files whole on every tick.
+        let _ = rec.meta.flush();
+        let _ = rec.cam.flush();
+        let _ = rec.body.flush();
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();
             let _ = rec.cam.flush();
