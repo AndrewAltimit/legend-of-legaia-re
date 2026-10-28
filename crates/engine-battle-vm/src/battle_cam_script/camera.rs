@@ -26,6 +26,8 @@ pub(super) const DIALOGUE_EXIT_Z_RATE: f32 = 864.0;
 pub(super) const SUBMENU_ENTER_STEPS: u32 = 6;
 pub(super) const SUBMENU_SWING_STEPS: u32 = 6;
 pub(super) const SWING_RETURN_STEPS: u32 = 7;
+/// Case 9's tween duration in display frames, `a3 = 0xE` (`0x801D712C`).
+pub(super) const MENU_GLIDE_FRAMES: u32 = 0xE;
 /// The target-cursor framings (cases `1` / `3`, `a3 = 0xC`).
 pub(super) const CURSOR_STEPS: u32 = 6;
 
@@ -316,6 +318,11 @@ pub struct BattleCamera {
     /// battle-entry sweep owns the camera ([`BattleCamera::start_entry_sweep`]);
     /// `None` once the battle tick has it.
     pub(super) entry_sweep: Option<u32>,
+    /// Where the last fresh case-9 arm set out from, and its duration in
+    /// display frames (`a3 = 0xE`): the origin
+    /// [`BattleCamera::align_menu_glide_frames_left`] walks the far framing
+    /// from. Kept after the glide lands.
+    pub(super) menu_glide_from: Option<(BattleCamPose, u32)>,
 }
 
 /// [`BattleCamera`]'s per-art attack-camera state - retail's `ctx[+0x26D]` /

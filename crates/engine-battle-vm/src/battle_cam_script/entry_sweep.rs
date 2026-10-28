@@ -140,6 +140,7 @@ impl BattleCamera {
                 );
                 self.pose = from;
                 self.glides.push_back(g);
+                self.menu_glide_from = Some((from, MENU_GLIDE_FRAMES));
             }
             // An action already running is re-framed every pass.
             BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd => {}

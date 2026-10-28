@@ -593,6 +593,14 @@ pub(super) fn battle_image(
         let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_PASS * back).rem_euclid(4096);
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", yaw.to_string()));
     }
+    // A round prompt caught with its far framing still walking: the
+    // engine's own case-9 arm, stood as far along as retail's displayed
+    // frame had come (`RetailBattle::menu_glide_left`).
+    if battle.seed_plan() == crate::retail_compare_battle::SeedPlan::Prompt
+        && let Some(left) = battle.menu_glide_left
+    {
+        env.push(("LEGAIA_SEAT_MENU_GLIDE_LEFT", format!("{left:.2}")));
+    }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
     // A replayed cast in the invoke `0x32`: the frame on screen is two game

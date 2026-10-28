@@ -547,6 +547,15 @@ mode `0`, so each spawns at seat A and glides to seat B over sixteen vsyncs.
 The two chips unfold from the cluster centre and the panels rise from under
 the screen.
 
+**`Begin` is drawn over `Run`.** Each chip is a text actor that queues its
+plate and then its label, and the later chip walks first in the ordering
+table: `gaza2_card_first_menu`'s table, taken with the pair still folded
+together, holds `Run`'s plate pieces and glyphs ahead of `Begin`'s, so
+`Begin`'s plate covers the left of `Run`'s, label and all. Apart, the two
+never overlap. The port draws the plates last chip first and cuts each label
+where an earlier chip's plate lies over it
+(`engine-ui::battle_command_ui::chip_plate_rect`).
+
 **No D-pad glyph until it lands.** The menu SM runs the glide stepper ahead of
 its state switch and leaves without dispatching while the stepper reports a
 glide in flight (`jal 0x801D9BBC` at `0x801D0B2C`, `bne s0,zero` at

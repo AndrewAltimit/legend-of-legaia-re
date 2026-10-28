@@ -1992,9 +1992,15 @@ opens with the names still up, which the recorded replays pace off), so an
 ordinary fight holds its prompt already at the flip and an opening capture of
 one reads `phase` `0`. The sparring fight's opening the tutorial holds back;
 the evolved Cort's the arrival module holds (flow `0x0C`). `gaza2_card_battle_init`
-is the one ordinary fight caught under its sweep, and its frame shows the
-engine's round prompt and party plaques over a field retail has not opened
-yet.
+is the one ordinary fight caught under its sweep. Its frame matches: the
+engine holds every surface of the round open while the sweep runs (the prompt
+and its unfold, `World::arm_round_open_prompt`; the pad,
+`World::battle_command_pad_held`). Its `phase` still reads `0`, because the
+port runs round one's start (`World::begin_battle_round`, flow `0x14`'s sweep,
+seeder and `0x1E` store) at the flip, so its flow word already reads the
+prompt where retail's battle tick has not run and holds `0x00`. Moving that
+start behind the sweep moves the opening's draws and the replays paced off
+it, so the channel stands as a known opening-order difference.
 
 **The entry sweep.** An opening capture's `camera` reads the
 [battle-entry sweep](../subsystems/battle.md#the-battle-entry-sweep) the SCUS
@@ -2020,6 +2026,24 @@ since retail's battle tick opens no prompt under it, while the engine's prompt
 opens at the flip. So the seed waits the engine's sweep out before it counts
 the first prompt, the in-flight cast seed dispatches only once it is over, and
 the image child's pad drive holds until then.
+
+**A round prompt's camera can still be on its far framing's arm.** The
+prompt's first frames walk the case-9 table the round's opening armed, from
+the close-up the entry sweep (or the arrival module) left: the menu SM leaves
+before its state arm, which is what re-arms case 9, while the chips unfold
+([battle-hud](../subsystems/battle-hud.md#the-round-prompt-opens-on-a-glide)).
+That table is linear - `FUN_801D829C` gives each component `ceil(|gap| /
+0xE)` a frame, once - so `gap / inc` on any component still short of its
+endpoint is the frames it had left. `gaza2_card_first_menu` reads TR z `6750`
+on `7800` at `353` a frame (three frames left) and `cort_evolved_card_first_menu`
+TR z `7294` at `255` (two); the displayed frame is the display lag earlier
+(`RetailBattle::menu_glide_left`). The engine's own arm stands as far along on
+the captured frame (`LEGAIA_SEAT_MENU_GLIDE_LEFT`,
+`BattleCamera::align_menu_glide_frames_left`), its yaw left to the orbit. On
+the fixed settle tick the engine's arm had landed long before, framing the
+whole formation where retail's frame is still behind the leader's back:
+`gaza2_card_first_menu` `0.634` to `0.921`, `cort_evolved_card_first_menu`
+`0.338` to `0.930`.
 
 **The arrival's columns date a prompt capture.** A round-prompt capture of the
 evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns

@@ -121,6 +121,15 @@ impl PlayWindowApp {
                     &sc.seat_battle_clips,
                 );
             }
+            // A round prompt caught with its far framing still walking
+            // stands the engine's arm as many frames short of its end
+            // (`LEGAIA_SEAT_MENU_GLIDE_LEFT`).
+            if due
+                && let Some(left) = sc.seat_menu_glide_left
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.align_menu_glide_frames_left(left);
+            }
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.land_battle_hud_glides();
             }

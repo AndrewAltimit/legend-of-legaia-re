@@ -787,6 +787,15 @@ The step table at `ctx[+0x118C]` pins this in two captures.
 one pass old with one walk applied. A drifting yaw trails its counter by a few
 units while the gap stays under `0xC` - the eight units the `0x19` parks read.
 
+Case 9 is the exception while the round prompt unfolds. The menu SM leaves
+before its state arm, which is what re-arms case 9, while any widget glide is
+in flight (`0x801D0B2C..0x801D0BA0`), so the prompt's first frames walk the
+table the round's opening armed, once, linearly: `gaza2_card_first_menu`,
+ten vsyncs into `0x1E`, reads TR z increment `353` with `1050` to go and TR y
+`19` with `47`, which is `ceil(gap / 0xE)` of a table armed eleven frames
+earlier from the entry sweep's close-up (TR `(0, 0x600, 2867)`), not a
+re-arm's `ceil(1050 / 0xE) = 75`.
+
 Port: `BattleCamera::retarget_action_glide` / `retarget_post_action_glide` /
 `retarget_menu_glide` are the re-arms, each a `Glide::chase` over the case's
 frame count. `retarget_menu_glide` skips only the two segments that are not a

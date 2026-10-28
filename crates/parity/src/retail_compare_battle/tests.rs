@@ -1378,3 +1378,32 @@ fn a_recommitted_swing_stands_on_the_displayed_pair() {
         "no commit in the window"
     );
 }
+
+/// A round prompt caught on its far framing's arm: `gaza2_card_first_menu`'s
+/// table (TR z `353` a frame with `1050` to go, TR y `19` with `47`, pitch
+/// landed) has three frames left, and the displayed frame six vsyncs more.
+/// Off the case-9 surfaces, or landed, there is no seat.
+#[test]
+fn a_prompt_on_its_far_framing_arm_names_the_frames_left() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put8(&mut ram, ctx + 6, 0x1E);
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, rec(0), 3);
+    put16(&mut ram, rec(0) + 2, 32);
+    put16(&mut ram, 0x8007_B790, 32);
+    put16(&mut ram, rec(4), 19);
+    put16(&mut ram, rec(4) + 2, 1280);
+    put32(&mut ram, 0x8008_40BC, 1327);
+    put16(&mut ram, rec(5), 353);
+    put16(&mut ram, rec(5) + 2, 7800);
+    put32(&mut ram, 0x8008_40C0, 6750);
+    let left = camera_align::displayed_menu_glide_left(&ram, ctx, 6).expect("walking");
+    assert!((left - (6.0 + 1050.0 / 353.0)).abs() < 1e-3, "{left}");
+    put8(&mut ram, ctx + 6, 0x28);
+    assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put32(&mut ram, 0x8008_40BC, 1280);
+    put32(&mut ram, 0x8008_40C0, 7800);
+    assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
+}

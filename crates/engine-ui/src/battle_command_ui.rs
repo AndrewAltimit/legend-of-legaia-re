@@ -493,7 +493,9 @@ pub fn battle_command_chip_sprites(
     let mut out: Vec<SpriteDraw> = Vec::new();
     let seats = frame.phase.seats();
     let mut any = false;
-    for (i, _) in frame.chips.iter().enumerate() {
+    // The later chip is drawn first ([`chip_plate_rect`]): an earlier
+    // chip's plate lands over it where the two overlap.
+    for (i, _) in frame.chips.iter().enumerate().rev() {
         let Some(seat) = seats.get(i).copied() else {
             continue;
         };
@@ -702,8 +704,62 @@ pub fn battle_command_menu_sprites(
     out
 }
 
+/// Chip `i`'s plate this frame in stage pixels, `(x0, y0, x1, y1)` with the
+/// far edges exclusive: its seat's plate run moved by the chip's glide
+/// offset.
+///
+/// The chips are text actors that queue their plate and then their label
+/// into one ordering-table slot, chip by chip, and the later chip walks
+/// first. `gaza2_card_first_menu`'s table, taken while `Begin` and `Run`
+/// unfold from the cluster centre, holds `Run`'s plate pieces and glyphs
+/// ahead of `Begin`'s: `Begin`'s plate covers the left of `Run`'s, label
+/// and all. So the plates are drawn last chip first, and each label is cut
+/// where an earlier chip's plate lies over it ([`battle_command_chip_text`]).
+/// Apart, the chips never overlap and the order shows nowhere.
+pub fn chip_plate_rect(
+    frame: &BattleCommandMenuFrame<'_>,
+    i: usize,
+) -> Option<(i32, i32, i32, i32)> {
+    let seat = frame.phase.seats().get(i).copied()?;
+    let (px, py) = seat.plate_origin();
+    let (dx, dy) = frame.offsets.get(i).copied().unwrap_or((0, 0));
+    let w = seat.cluster().interior_w + 2 * PLATE_CAP_W;
+    Some((px + dx, py + dy, px + dx + w, py + dy + PLATE_H))
+}
+
+/// Cut a glyph cell `(x, y, w, h)` (stage pixels) and its atlas source
+/// against the plates drawn over it: a plate spanning the cell's rows hides
+/// the columns it covers. Returns the visible span, or `None` when a plate
+/// hides it whole. A plate standing inside the cell's columns leaves both
+/// ends showing; the glyph is kept whole then, as no unfolding cluster puts
+/// a plate there.
+fn clip_glyph_under(
+    mut cell: (i32, i32, i32, i32),
+    mut src_x: u32,
+    over: &[(i32, i32, i32, i32)],
+) -> Option<((i32, i32, i32, i32), u32)> {
+    for &(x0, y0, x1, y1) in over {
+        let (cx, cy, cw, ch) = cell;
+        if y0 > cy || y1 < cy + ch || x1 <= cx || x0 >= cx + cw {
+            continue;
+        }
+        if x0 <= cx && x1 >= cx + cw {
+            return None;
+        }
+        if x0 <= cx {
+            let cut = x1 - cx;
+            cell = (cx + cut, cy, cw - cut, ch);
+            src_x += cut as u32;
+        } else if x1 >= cx + cw {
+            cell = (cx, cy, x0 - cx, ch);
+        }
+    }
+    Some((cell, src_x))
+}
+
 /// The command cluster's text half: each chip's label left-aligned in its
-/// interior, or a single `-` when the command cannot be chosen.
+/// interior, or a single `-` when the command cannot be chosen, cut where
+/// an earlier chip's plate lies over it ([`chip_plate_rect`]).
 pub fn battle_command_chip_text(
     font: &legaia_font::Font,
     frame: &BattleCommandMenuFrame<'_>,
@@ -722,19 +778,25 @@ pub fn battle_command_chip_text(
         let layout = font.layout_ascii(text);
         let (lx, ly) = seat.label_seat();
         let (dx, dy) = frame.offsets.get(i).copied().unwrap_or((0, 0));
-        let pen = (
-            stage_origin.0 + (lx + dx) * scale,
-            stage_origin.1 + (ly + dy) * scale,
-        );
+        let over: Vec<_> = (0..i).filter_map(|j| chip_plate_rect(frame, j)).collect();
         for g in &layout.glyphs {
+            let cell = (
+                lx + dx + g.dst_x,
+                ly + dy + g.dst_y,
+                g.width as i32,
+                g.height as i32,
+            );
+            let Some(((cx, cy, cw, ch), src_x)) = clip_glyph_under(cell, g.atlas_x, &over) else {
+                continue;
+            };
             out.push(TextDraw {
                 dst: (
-                    pen.0 + g.dst_x * scale,
-                    pen.1 + g.dst_y * scale,
-                    g.width * scale as u32,
-                    g.height * scale as u32,
+                    stage_origin.0 + cx * scale,
+                    stage_origin.1 + cy * scale,
+                    cw as u32 * scale as u32,
+                    ch as u32 * scale as u32,
                 ),
-                src: (g.atlas_x, g.atlas_y, g.width, g.height),
+                src: (src_x, g.atlas_y, cw as u32, ch as u32),
                 color: ink,
             });
         }
@@ -1134,18 +1196,59 @@ mod tests {
         let a = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &rest, (0, 0), 2);
         let b = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &open, (0, 0), 2);
         assert_eq!(b.len(), a.len() - 1, "no D-pad glyph while unfolding");
-        // Begin's five pieces move right by 38 stage pixels, Run's left.
+        // Run's five pieces come first (the later chip is drawn first) and
+        // move left by 38 stage pixels; Begin's, drawn over them, right.
         for (r, o) in a.iter().zip(&b).take(5) {
-            assert_eq!(o.dst.0, r.dst.0 + 38 * 2);
+            assert_eq!(o.dst.0, r.dst.0 - 38 * 2);
             assert_eq!(o.dst.1, r.dst.1);
         }
         for (r, o) in a.iter().zip(&b).skip(5).take(5) {
-            assert_eq!(o.dst.0, r.dst.0 - 38 * 2);
+            assert_eq!(o.dst.0, r.dst.0 + 38 * 2);
         }
         let ta = battle_command_chip_text(&font, &rest, (0, 0), 2);
         let tb = battle_command_chip_text(&font, &open, (0, 0), 2);
-        assert_eq!(ta.len(), tb.len());
+        // Folded onto one seat, the second chip's label lies under the
+        // first chip's plate but where it runs past the plate's right edge;
+        // the first's label moves with its plate.
+        let first = font.layout_ascii(all[0].label).glyphs.len();
+        assert!(tb.len() < ta.len());
+        let (_, _, edge, _) = chip_plate_rect(&open, 0).unwrap();
+        assert!(tb[first..].iter().all(|t| t.dst.0 >= edge * 2));
         assert_eq!(tb[0].dst.0, ta[0].dst.0 + 38 * 2);
+    }
+
+    /// Part way through the unfold, the first chip's plate covers the left
+    /// of the second chip's label: the label is cut at the plate's right
+    /// edge and shows only past it (`gaza2_card_first_menu`'s table).
+    #[test]
+    fn an_earlier_chip_plate_cuts_the_later_chips_label() {
+        let font = legaia_font::Font::placeholder();
+        let all = chips(2);
+        let frame = BattleCommandMenuFrame {
+            chips: &all,
+            cursor: None,
+            phase: ChipPhase::RoundPrompt,
+            offsets: [(24, 0), (-24, 0), (0, 0), (0, 0)],
+            dpad: false,
+        };
+        let (_, _, edge, _) = chip_plate_rect(&frame, 0).unwrap();
+        let first = font.layout_ascii(all[0].label).glyphs.len();
+        let text = battle_command_chip_text(&font, &frame, (0, 0), 1);
+        assert!(text.len() > first, "part of the second label shows");
+        for t in &text[first..] {
+            assert!(t.dst.0 >= edge, "a glyph left of the covering plate's edge");
+            assert!(t.dst.2 > 0);
+        }
+        // The plates: the second chip's run first, the first chip's over it.
+        let sprites = battle_command_chip_sprites(&CommandChipAtlas::SHEET, &frame, (0, 0), 1);
+        let (x0, ..) = chip_plate_rect(&frame, 0).unwrap();
+        assert_eq!(sprites.last().unwrap().dst.0 + 8, edge);
+        assert!(
+            sprites
+                .iter()
+                .skip(sprites.len() / 2)
+                .any(|s| s.dst.0 == x0)
+        );
     }
 
     /// The directional-buttons entry highlights nothing: four blue chips,

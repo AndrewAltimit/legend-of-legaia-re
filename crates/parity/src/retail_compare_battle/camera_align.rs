@@ -62,6 +62,48 @@ pub(super) fn retail_cam_tween(
     (live, end)
 }
 
+/// The display frames a round prompt's far framing had left on the frame
+/// the display showed, while it was still walking; `None` once it has
+/// landed, or off the two case-9 surfaces (`ctx[+0x06]` `0x1E` / `0x6E`).
+///
+/// Case 9 arms its table once (`FUN_801D829C` with `a3 = 0xE`,
+/// `0x801D712C`): each component's increment is `ceil(|gap| / 0xE)` per
+/// frame, and the walker `FUN_8002149C` adds it once a frame, so a
+/// component still short of its endpoint has `gap / inc` frames to go.
+/// `gaza2_card_first_menu` reads TR z `6750` on `7800` at `353` a frame
+/// (TR y `1327` on `1280` at `19`, pitch landed at `3`): eleven frames of
+/// an arm that set out from the case-2 close-up the entry sweep ended on,
+/// three to go. The display shows the frame `lag` vsyncs older
+/// ([`pass_steps`]), which adds those frames back.
+pub(super) fn displayed_menu_glide_left(ram: &[u8], ctx: u32, lag: u16) -> Option<f32> {
+    if !matches!(game_anchors::u8_at(ram, ctx + 6), 0x1E | 0x6E) {
+        return None;
+    }
+    let live: [i32; 9] = [
+        i32::from(game_anchors::u16_at(ram, 0x8007_B790) as i16),
+        0,
+        0,
+        game_anchors::u32_at(ram, 0x8008_40B8) as i32,
+        game_anchors::u32_at(ram, 0x8008_40BC) as i32,
+        game_anchors::u32_at(ram, 0x8008_40C0) as i32,
+        game_anchors::u32_at(ram, 0x8008_9118) as i32,
+        game_anchors::u32_at(ram, 0x8008_911C) as i32,
+        game_anchors::u32_at(ram, 0x8008_9120) as i32,
+    ];
+    // Yaw belongs to the idle orbit and roll is never driven.
+    let left = [0u32, 3, 4, 5, 6, 7, 8]
+        .into_iter()
+        .filter_map(|k| {
+            let at = ctx + TWEEN_TABLE + k * 4;
+            let inc = i32::from(game_anchors::u16_at(ram, at) as i16).abs();
+            let end = game_anchors::u16_at(ram, at + 2) as i16;
+            let gap = i32::from(end.wrapping_sub(live[k as usize] as i16)).abs();
+            (inc > 0 && gap > 0).then(|| gap as f32 / inc as f32)
+        })
+        .fold(None, |m: Option<f32>, l| Some(m.map_or(l, |m| m.max(l))))?;
+    Some(left + f32::from(lag))
+}
+
 /// The tween divisor of the action shots (`nivora_duel_mid_blazing_slash`
 /// reads yaw `59` with `589` to go at step `2`: `(589 + 2 * 59) / 59 = 12`).
 const SHOT_TWEEN_DIVISOR: i32 = 0xC;

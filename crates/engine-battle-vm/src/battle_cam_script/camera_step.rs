@@ -103,6 +103,7 @@ impl BattleCamera {
             escape_shot: false,
             cursor: None,
             entry_sweep: None,
+            menu_glide_from: None,
         }
     }
 
@@ -590,6 +591,51 @@ impl BattleCamera {
         true
     }
 
+    /// Stand the far framing `left` display frames short of its end, on the
+    /// case-9 arm the camera last set out on: each component at its origin
+    /// moved `inc * walked` toward the framing and clamped there, with
+    /// `inc = ceil(|gap| / 0xE)` - `FUN_801D829C`'s per-frame increment
+    /// (`0x801D8438..0x801D847C`), which `FUN_8002149C` adds once a frame and
+    /// clamps on the endpoint. Yaw is left to the idle orbit
+    /// ([`Self::align_orbit_yaw`]). A glide toward the framing is re-armed
+    /// from the new pose. Returns `false` outside [`BattleCamPhase::Menu`] or
+    /// before any case-9 arm.
+    ///
+    /// The engine's own arm sets out from its own origin; this places it on
+    /// retail's clock - how many frames of the arm retail's displayed frame
+    /// had left - which a capture read off retail's step table. The capture
+    /// harness's handle, the far-framing twin of [`Self::align_glide_origin`].
+    /// Nothing in play calls it.
+    ///
+    /// REF: FUN_801D829C, FUN_8002149C
+    pub fn align_menu_glide_frames_left(&mut self, left: f32) -> bool {
+        let Some((origin, frames)) = self.menu_glide_from else {
+            return false;
+        };
+        if self.phase != BattleCamPhase::Menu {
+            return false;
+        }
+        let target = self.menu_pose();
+        let walked = (frames as f32 - left.max(0.0)).clamp(0.0, frames as f32);
+        let walk = |from: f32, to: f32| {
+            let gap = to - from;
+            let inc = (gap.abs() / frames as f32).ceil();
+            from + (inc * walked).min(gap.abs()).copysign(gap)
+        };
+        self.pose.pitch = walk(origin.pitch, target.pitch);
+        for k in 0..3 {
+            self.pose.tr[k] = walk(origin.tr[k], target.tr[k]);
+            self.pose.focus[k] = walk(origin.focus[k], target.focus[k]);
+        }
+        self.glides.clear();
+        let steps = self.frames_to_steps(left.max(0.0).ceil() as u32);
+        let mut from = self.pose;
+        let g = Glide::linear(&mut from, target, menu_raw_z(self.formation), steps, false);
+        self.pose = from;
+        self.glides.push_back(g);
+        true
+    }
+
     /// Whether the glide in flight heads for retail's framing on every
     /// component: its endpoint agrees with `end` (retail's tween-table
     /// endpoints) within [`Self::align_glide_origin`]'s per-component
@@ -914,6 +960,7 @@ impl BattleCamera {
         ));
         self.pose = from;
         self.phase = BattleCamPhase::Menu;
+        self.menu_glide_from = Some((from, MENU_GLIDE_FRAMES));
     }
 
     /// Observe the live battle phase; a change arms the measured glide.
@@ -1002,6 +1049,7 @@ impl BattleCamera {
                     self.steps_of(SWING_RETURN_STEPS),
                     false,
                 ));
+                self.menu_glide_from = Some((from, MENU_GLIDE_FRAMES));
             }
             BattleCamPhase::Menu => {
                 if self.phase == BattleCamPhase::Dialogue {

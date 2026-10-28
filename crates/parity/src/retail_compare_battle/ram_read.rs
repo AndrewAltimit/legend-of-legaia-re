@@ -847,6 +847,11 @@ impl RetailBattle {
                 &display_pass_steps(ram)[..usize::from(DISPLAY_LAG_PASSES).min(2)],
             ),
             cam_landed: camera_landed(ram, ctx),
+            menu_glide_left: displayed_menu_glide_left(
+                ram,
+                ctx,
+                pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {

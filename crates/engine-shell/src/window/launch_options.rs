@@ -252,6 +252,13 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_MENU_GLIDE_LEFT=<frames>`: a round-prompt capture whose
+    /// far framing (case 9) was still walking, with the frames of its arm
+    /// the displayed frame had left; the captured frame stands the engine's
+    /// own arm as far along
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_frames_left`]).
+    /// Set by the retail-compare image channel.
+    pub seat_menu_glide_left: Option<f32>,
     /// `LEGAIA_SEAT_POPUP_AGE=<engine slot>:<age>`: the newest damage
     /// numeral's age as the retail capture's displayed frame drew it; the
     /// captured frame ages the engine's newest popup on that slot to it.
@@ -797,6 +804,9 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_menu_glide_left: std::env::var("LEGAIA_SEAT_MENU_GLIDE_LEFT")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             seat_popup_cells: std::env::var("LEGAIA_SEAT_POPUP_CELLS")
                 .map(|v| {
                     v.split(',')
