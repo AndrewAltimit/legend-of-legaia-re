@@ -3140,10 +3140,13 @@ still reports:
   object binds) fire it as the first op of their activation arm
   (`36 00 80 30 00`), and retail's pad `17` context is parked at `+0xF4`
   past its `ExecMove`, so the random walk had just stepped on it. The
-  engine resolves a pad contact to its `PlayerMoveTo` alone
-  (`World::check_field_walk_touch`) instead of resuming the object's
-  script, so the cue, the pad's `4C 60` flicker and the `ExecMove` never
-  run; stepping onto any of the sixteen pads in the engine fires no cue.
+  engine runs the same record on contact: the lifts are prop-bank entries,
+  so a touch resumes the record from its parked cursor, and the cue, the
+  `4C 60` flicker and the jump follow in that order
+  (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`). The row misses
+  because the seed stands the player still: the touch is history the
+  capture holds (the record's context at `+0xF4`, the cue voice keyed) and
+  a seat does not replay it.
 
 <a id="whats-left"></a>
 
@@ -3181,9 +3184,10 @@ still reports:
   engine installs at once and never stalls, so a scene's track and a
   cutscene's beats after a `0xA` start earlier than retail's.
 - **The sweep's open rows** ([above](#the-audio-state-sweep)) are the
-  credits chain's carried music, a capture instant, and `tower`'s pad cue,
-  which needs a walk-touch contact to resume the touched object's script
-  (`FUN_801D5B5C`) rather than post a decoded summary of it.
+  credits chain's carried music, a capture instant, and `tower`'s lift
+  cue, which sounded on a contact before the capture: seeding it means
+  resuming the lift's context mid-record (`+0xF4`) with its cue voice
+  still keyed, which no seed does yet.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer

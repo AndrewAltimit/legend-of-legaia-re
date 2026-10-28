@@ -516,7 +516,7 @@ Disc-gated `engine-scene-host/tests/field_prop_anim_disc.rs`: a closed door bloc
 
 `World::check_field_walk_touch` tests contact with the **same forward probe points that block movement** (plus a stand-inside fallback) against the placement's +-80 box and posts once per contact through `trigger_field_interact`, so a solid doorway object fires while the player stands pressed against it.
 
-Only `PlayerMoveTo` and `SpawnRecord` apply their decoded effect; a `Warp` applies none on contact, because retail's contact only resumes the record. The warp runs when the record's own `0x3E` arm is reached from the button probe.
+A `.MAP` object bind applies no decoded effect at all: every one is a bank entry, and its contact resumes its record through the prop runner (see [Engine port of the doors](#engine-port-of-the-doors)). What is left to the decoded effect is a partition-1 placement's contact. There, `PlayerMoveTo` and `SpawnRecord` apply; a `Warp` applies none, because retail's contact only resumes the record. The warp runs when the record's own `0x3E` arm is reached from the button probe.
 
 Disc-gated: `engine-core/tests/field_walk_touch_disc.rs` (koin1 cabinets, cave01 guard throw-backs) and `engine-shell/tests/casino_floor_softlock.rs`, which walks the player into every koin1 cabinet and NPC from four sides and asserts the scene mode never leaves the field. (koin1 seats its NPCs inside neighbouring cabinets' +-`0x50` boxes, so the two inputs overlap; leaving a minigame is an engine affordance, [`engine.md`](engine.md#fidelity-and-enhancements).)
 
@@ -948,7 +948,7 @@ The window sweep differs in four more ways, all mirrored by the port `legaia_eng
 
 `FUN_80017EC8` is every mid-scene re-centre: the `0x23` `MOVE_TO` and `4C 51` player arms (`0x801DEC9C` / `0x801E1A58`), the kind-0 warp landing (`0x801D1FE0`), the leader swap (`0x801D2BC0`), and three sites the engine does not model - the player arms of `FUN_801D03A4` (`0x801D0484`) and `FUN_801D4908` (`0x801D4990`), and a dev-menu row handler (`0x801EA7A4`). So the list follows the camera's re-centres, not the player's tile: walking across a region boundary keeps the old list, and a door warp into an interior brings the interior's placements in.
 
-A house door is usually not a warp but a door object whose record teleports the player with a cross-context `0x23` (or `4C 51`), and the re-centre comes from that op's player arm: `0x801DEC74..0x801DECA0` compares the target actor against the player context `*(0x8007C348 + 0x1C)` and only then calls `FUN_80017EC8(op[0] & 0x7F, op[1] & 0x7F)`. The engine models that teleport in the walk-touch dispatch (`WalkTouchEvent::PlayerMoveTo`), which therefore re-centres on the landing tile as well; a door object with a prop runs its record instead, whose `A3 F8` re-centres through the same player arm of the field host.
+A house door is usually not a warp but a door object whose record teleports the player with a cross-context `0x23` (or `4C 51`), and the re-centre comes from that op's player arm: `0x801DEC74..0x801DECA0` compares the target actor against the player context `*(0x8007C348 + 0x1C)` and only then calls `FUN_80017EC8(op[0] & 0x7F, op[1] & 0x7F)`. The engine runs that record on contact, so its `A3 F8` re-centres through the same player arm of the field host.
 
 Without that re-centre, leaving a house keeps the interior's box and every window-owned placement outside it stays hidden under retail windowing - Jeremi's street slabs outside the inn, Rim Elm's riverside cliff piece and cavern shell - until something else re-centres (a kind-0 warp such as Rim Elm's cave, or a scene change). Pinned by `crates/engine-scene-host/tests/field_door_recentre_disc.rs`.
 
@@ -1010,7 +1010,7 @@ Live PCSX-Redux Rim Elm captures read those words back off the actor list: a res
 
 The bank also holds the **unposed** interact-gated binds. `FUN_8003A55C` copies the header's anim byte into `+0x5C` (`0x8003A8DC`) without branching on it, so a bind whose anim byte is `0` is still examined for its record. `rikuroa` P0[2], the Genesis Tree, has no clip: its body polls `0x28A` / `0x142`, and examining it after Caruban spawns P2[53], the revival that carries the party down to `map01`.
 
-An unposed entry gets a one-frame stand-in clip that never draws. An unposed touch-class object (a door marker) stays with the walk-touch dispatch, which resolves its record's arm against live flags at contact time. Disc-gated: `crates/engine-scene-host/tests/field_prop_anim_disc.rs`. Raw record evidence: `cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`.
+An unposed entry gets a one-frame stand-in clip that never draws. An unposed touch-class object (a door marker) is banked the same way, so its contact resumes its record. Disc-gated: `crates/engine-scene-host/tests/field_prop_anim_disc.rs`. Raw record evidence: `cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`.
 
 **NPC clips use the same cursor.** Each bound NPC clip has a cursor in `World::npcs.clip_cursors` (a `PropAnim`), stepped by `World::tick_npc_clips` once per field frame under the actor's own `+0x62` word (the spawned channel's `ctx.local_flags`), with the end latch written back; both hosts pose their `FieldClipPlayer` from it (`World::sync_npc_clip`) and rotate the model to the live heading `World::npcs.headings`.
 
@@ -1182,7 +1182,7 @@ A door with no prop takes the decoded `MoveTo` at contact, so the engine keeps t
 
 `FUN_8003C83C` resolves each `<id>` to the actor whose `+0x50` holds it, and a bound object's `+0x50` is its flat record index (`FUN_8003A55C`), so step 5 lands on the partner door. The prop runner (`World::step_prop_interaction`) steps those actor-word ops (`2B`..`2D`, `31`..`33`, `4C 35` / `36` / `41`) on a context seeded from the target prop and writes the words back (`World::cross_context_object_prop`).
 
-Two engine shortcuts used to hide both doors: the walk-touch dispatch applied the record's decoded `MoveTo` on the first contact frame, so the player stood on the far floor before the near door moved, and the runner stepped the partner ops on the record's own context, so the partner door never moved and the near door swung a second time, out of view. The walk-touch dispatch now leaves a prop door's record to the runner (an interact-gated object, such as `nilboa` P0[6]'s lever, waits for the confirm press instead).
+Two engine shortcuts used to hide both doors: the walk-touch dispatch applied the record's decoded `MoveTo` on the first contact frame, so the player stood on the far floor before the near door moved, and the runner stepped the partner ops on the record's own context, so the partner door never moved and the near door swung a second time, out of view. The walk-touch dispatch now leaves every object door's record to the runner (an interact-gated object, such as `nilboa` P0[6]'s lever, waits for the confirm press instead).
 
 The same cross-object ops sit in `bylon` / `edbylon`, `chitei2`, `jiji`, `korb3`, `suimon`, `taiku`, `rayman` and `balden` records. Disc-gated: `crates/engine-scene-host/tests/tower_elevator_doors_disc.rs` rides every `tower` lift and asserts the near door opens before the jump and the landing door opens after it.
 
@@ -1203,7 +1203,13 @@ There is no ＯＵＴ record for Vahn's house in the MAN; a byte-scan of partiti
 
 ### Engine port of the doors
 
-`man_field_scripts::object_walk_touch_binds` joins the `.MAP` object layer to the trigger table and the flat MAN record space. The binds install in `SceneHost::enter_field_scene`, keyed at each object's contact centre with the record index alongside. `World::check_field_walk_touch` re-resolves the record's arm on contact and applies position + facing + a fresh floor-height sample (the interior sits at its own elevation on the shared grid), or spawns the record the arm names. A door whose object has a prop is the exception: its touch goes to the prop runner, which plays the record itself ([Prop-door rides](#prop-door-rides)). Map doors run through the tile-crossing dispatch: `Scene::field_intra_scene_teleports` caches the kind-0 tables at scene load.
+`man_field_scripts::object_walk_touch_binds` joins the `.MAP` object layer to the trigger table and the flat MAN record space. The binds install in `SceneHost::enter_field_scene`, keyed at each object's contact centre with the record index alongside. Every bound object, posed or not, is a prop-bank entry, and `World::check_field_walk_touch` hands its contact to the prop runner, which plays the record from its parked cursor ([Prop-door rides](#prop-door-rides)).
+
+That is retail's whole contact: the touch post `FUN_801D5B5C` raises the actor's `+0x10 |= 0x100` (`0x801D5BB0..0x801D5BBC`) beside the engagement bookkeeping, and that bit is what the dialog SM `FUN_80039B7C` gates the actor's context on.
+
+Nothing is decoded ahead of the run, so a doorway marker plays its own sequence: `town01` P0[32] washes white (`34 01 FF FF FF 30`), waits `4A 30` / `4A 0C`, sets the camera, jumps with `A3 F8 19 1B`, re-centres, and fades back in under the time-of-day tint its `71 46` / `72 2E` tests pick; a story-gated door reaches its own `44` spawn.
+
+The interior sits at its own elevation on the shared grid; the field host's player arm resamples the floor at the landing. Map doors run through the tile-crossing dispatch: `Scene::field_intra_scene_teleports` caches the kind-0 tables at scene load.
 
 Disc-gated: `crates/engine-scene-host/tests/rim_elm_door_roundtrip_disc.rs` (both members of each script-door pair install with their decoded target and facing in all three Rim Elm scenes, the pairs are reciprocal and cannot re-fire, and the locomotion walks each doorway in and back out); `vahn_house_roundtrip_disc.rs` (pad-walk in through the script door and out through the map door, no story flags); `walk_on_trigger_dispatch_disc.rs`.
 

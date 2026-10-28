@@ -316,7 +316,10 @@ fn house_door_binds_teleport_on_contact() {
         Some((12480, 6976)),
         "the Mei's-house door bind decodes the pinned interior landing"
     );
-    // Pad-walk into the doorway; the touch dispatch snaps the player inside.
+    // Pad-walk into the doorway. The contact resumes the door object's own
+    // record (`FUN_801D5B5C`): it washes the screen white (`34 01 FF FF FF
+    // 30`), waits out the fade (`4A 30`, `4A 0C`), and only then makes the
+    // jump with its own `A3 F8 19 1B`.
     for _ in 0..3 {
         host.tick().expect("tick");
     }
@@ -325,17 +328,35 @@ fn house_door_binds_teleport_on_contact() {
     host.world.actors[slot].move_state.world_z = doorway.1 - 200;
     host.world
         .set_pad(legaia_engine_system::input::PadButton::Up.mask());
-    let mut landed = false;
-    for _ in 0..60 {
+    let mut touched = None;
+    let mut landed = None;
+    for f in 0..240 {
         host.tick().expect("tick");
+        if touched.is_none()
+            && host
+                .world
+                .dialog
+                .inline
+                .as_ref()
+                .is_some_and(|i| i.prop_anchor.is_some())
+        {
+            touched = Some(f);
+        }
         let ms = &host.world.actors[slot].move_state;
         if (ms.world_x, ms.world_z) == (12480, 6976) {
-            landed = true;
+            landed = Some(f);
             break;
         }
     }
     host.world.set_pad(0);
-    assert!(landed, "walking into the door lands at the interior tile");
+    eprintln!("[town01] touch at {touched:?}, landing at {landed:?}");
+    let (Some(touched), Some(landed)) = (touched, landed) else {
+        panic!("walking into the door lands at the interior tile (touch {touched:?})");
+    };
+    assert!(
+        landed - touched >= 48,
+        "the jump waits out the record's white fade ({touched} -> {landed})"
+    );
 }
 
 /// Ambient walk-on records - fog-config / flag-reset parks with empty gates

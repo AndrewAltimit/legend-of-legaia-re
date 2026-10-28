@@ -6,13 +6,18 @@ use super::*;
 impl World {
     /// The locomotion's per-step **walk-touch dispatch**: when the player's
     /// body stands inside a walk-touch placement's static contact box
-    /// (±[`FIELD_PROP_BOX_HALF`]), post that placement's event - no button
-    /// press, the same dispatch path the button-gated interact uses
-    /// ([`Self::trigger_field_interact`]) plus the decoded script effect:
+    /// (±[`FIELD_PROP_BOX_HALF`]), post the touch - no button press, the same
+    /// dispatch path the button-gated interact uses
+    /// ([`Self::trigger_field_interact`]).
     ///
-    /// - [`WalkTouchEvent::Warp`] → arm the **mode-24 minigame door-warp**
-    ///   (the effect of the record's `0x3E` op, staged exactly as the
-    ///   field-VM arm stages it - see [`legaia_engine_mode::minigame_entry`]);
+    /// A `.MAP` object bind (a door, a lift, a door marker) resumes its own
+    /// record from the parked cursor through the prop runner
+    /// ([`Self::start_prop_interaction`]); whatever the record does - sound
+    /// cue, fade, walk-in, `A3 F8` jump, spawn - it does as it runs. Only a
+    /// partition-1 placement's contact with no bank entry still applies a
+    /// decoded effect:
+    ///
+    /// - [`WalkTouchEvent::Warp`] → nothing on contact (see the arm below);
     /// - [`WalkTouchEvent::PlayerMoveTo`] → snap the player to the decoded
     ///   world coords (the record's cross-context `0x23` into the player
     ///   channel) and surface a [`FieldEvent::MoveTo`].
@@ -107,16 +112,40 @@ impl World {
             return; // still inside the same contact - already posted
         }
         self.props.active_walk_touch = Some(touch_slot);
-        // A door record is a field-VM script, not a constant: its opening
-        // `SysFlag.Test` chain picks which arm runs (teleport into the
-        // interior vs. spawn the story beat). Retail resumes the record on
-        // contact, so the arm is chosen against the *live* flags - re-resolve
-        // here rather than reusing the load-time structural decode. Falls back
-        // to that decode only when the record can't be re-walked: a record
-        // walked to its idle loop with no teleport on the taken arm (the
-        // `tower` rapid elevator while its switch `0x1C6` is off) moves
-        // nobody - its static first `MoveTo` belongs to the other arm.
-        // REF: FUN_801d5b5c (contact resumes the object's script)
+        // Post through the same dispatch path the button-gated interact uses.
+        self.trigger_field_interact(0, touch_slot);
+        // A `.MAP` object bind is a placed actor with its own context, and
+        // the touch post (`FUN_801D5B5C`) does nothing but raise that
+        // actor's `+0x10 |= 0x100` (`0x801D5BB0..0x801D5BBC`) beside the
+        // engagement bookkeeping - the bit the dialog SM `FUN_80039B7C`
+        // gates the context's run on. So the effect of a contact is the
+        // object's own record, resumed from its parked cursor: the tower
+        // lifts' cue `0x30`, flicker, walk-in and `A3 F8` jump, a house
+        // doorway's white wash before its `A3 F8`, a story-gated door's own
+        // `44` spawn. Nothing is decoded ahead of it.
+        //
+        // An interact-gated object (`+0x10 & 0x40020000`, contact result
+        // bit `1`) blocks but posts nothing on contact: only the confirm
+        // press runs it (`nilboa` P0[6], the Shield Control Panel lever,
+        // whose `A3 F8` is the cutscene after its Yes/No).
+        // REF: FUN_801D5B5C, FUN_801CFC40, FUN_801CF9F4
+        if let Some(anchor) = self
+            .props
+            .walk_touch_records
+            .get(&touch_slot)
+            .and_then(|&r| self.walk_touch_door_prop(r))
+        {
+            if !self.props.bank.props[&anchor].interact_gated()
+                && self.props.pending_touch.is_none()
+            {
+                self.props.pending_touch = Some(anchor);
+            }
+            return;
+        }
+        // What is left is a partition-1 placement's contact (a boss stager,
+        // a minigame cabinet) or a bind whose record does not resolve to a
+        // bank entry: the record is re-walked against the live flags, falling
+        // back to the load-time decode when it cannot be.
         let resolved = self
             .props
             .walk_touch_records
@@ -135,39 +164,9 @@ impl World {
                 )
             })
             .unwrap_or(Some(event));
-        // Post through the same dispatch path the button-gated interact uses.
-        self.trigger_field_interact(0, touch_slot);
         let Some(event) = resolved else {
             return;
         };
-        // A door bound to a placed object with a prop runs its own record on
-        // contact (`FUN_801d5b5c` resumes the object's script, which the prop
-        // runner executes): the door swings open, the record walks the player
-        // in, closes it, and its own `A3 F8 x z` makes the jump. Applying the
-        // decoded `MoveTo` here as well put the player on the far side before
-        // the door had moved, so the swing played out of view and the
-        // partner door's opening, run by the same record afterwards, never
-        // showed (`tower`'s floor doors). Post the touch to the prop instead.
-        // REF: FUN_801d5b5c
-        if matches!(event, WalkTouchEvent::PlayerMoveTo { .. })
-            && let Some(anchor) = self
-                .props
-                .walk_touch_records
-                .get(&touch_slot)
-                .and_then(|&r| self.walk_touch_door_prop(r))
-        {
-            // An interact-gated object (`+0x10 & 0x40020000`, contact result
-            // bit `1`) blocks but posts nothing on contact: only the confirm
-            // press runs it (`nilboa` P0[6], the Shield Control Panel lever,
-            // whose `A3 F8` is the cutscene after its Yes/No).
-            // REF: FUN_801CFC40, FUN_801CF9F4
-            if !self.props.bank.props[&anchor].interact_gated()
-                && self.props.pending_touch.is_none()
-            {
-                self.props.pending_touch = Some(anchor);
-            }
-            return;
-        }
         match event {
             // A `Warp` event is, by construction, **only** ever a mode-24
             // minigame sub-id: `is_genuine_warp` gates the decoded `0x3E`'s
