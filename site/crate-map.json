@@ -3277,6 +3277,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "audio_sweep",
     "audio_trace_oracle",
     "capture_observations",
     "cast_sequence",
