@@ -674,6 +674,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/cutscene.html",   "Cutscene (STR mode)",           "subsystems/cutscene",        "subsystems/cutscene.html"),
     ("subsystems/cutscene-internals.html","Cutscene: internals",     "subsystems/cutscene-internals","subsystems/cutscene-internals.html"),
     ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
+    ("subsystems/gameplay-tweaks.html","Gameplay tweaks",           "subsystems/gameplay-tweaks", "subsystems/gameplay-tweaks.html"),
     ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
     # Per-format pages (mirrored from docs/formats/)
     ("formats/disc.html",          "PSX disc geometry",             "formats/disc",               "formats/disc.html"),
