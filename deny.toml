@@ -24,7 +24,7 @@ ignore = [
     # ttf-parser (unmaintained) <- owned_ttf_parser <- ab_glyph, pulled in by
     # winit 0.30's default `wayland-csd-adwaita` feature (sctk-adwaita draws
     # the Wayland title-bar text with it) and by epaint 0.33 (egui's font
-    # rasteriser, legaia-studio). epaint 0.36 moves to skrifa; sctk-adwaita
+    # rasteriser, legaia-studio). epaint 0.34+ moves to skrifa; sctk-adwaita
     # has no ab_glyph-free title renderer short of `-notitle` (no title text)
     # or `-crossfont` (a system FreeType / fontconfig dependency).
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser via ab_glyph: winit wayland-csd-adwaita title bar + epaint 0.33; no maintained drop-in" },
