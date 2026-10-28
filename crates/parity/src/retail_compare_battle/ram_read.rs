@@ -8,6 +8,9 @@ pub(super) const NEXT_ACTOR: u32 = 0x274;
 /// The magic-capture fade (`ctx[+0x07] = 0x6F`): audio duck and a CD wait,
 /// with no framing call of its own (`docs/subsystems/battle-action.md`).
 const CAPTURE_FADE_STATE: u8 = 0x6F;
+/// The capture band's module state, which runs the slot-B tick and arms no
+/// framing of its own.
+const CAPTURE_MODULE_STATE: u8 = 0x70;
 
 pub(super) fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
@@ -829,7 +832,17 @@ impl RetailBattle {
                 // that increment further out each, not the re-arm's widening
                 // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
                 // walk, `.971`; `4883` on the table's, `.996`).
-                if action_state == CAPTURE_FADE_STATE {
+                // `0x70` arms none either (`0x801E50C8..0x801E50E8`: the
+                // module tick, then `0x71`), so once the module's arm 0 has
+                // built its own shot (`ctx[+0x279]` past `0`) and that shot
+                // is still walking, the table the RAM holds is the one the
+                // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0:
+                // `image` `.849` on the re-arm's walk, `.886` on the
+                // table's). Before arm 0 the table is `0x6F`'s.
+                let module_shot = action_state == CAPTURE_MODULE_STATE
+                    && game_anchors::u8_at(ram, ctx + 0x279) > 0
+                    && module_shot_walking(ram, ctx);
+                if action_state == CAPTURE_FADE_STATE || module_shot {
                     displayed_module_cam_live(ram, ctx, &steps)
                 } else {
                     displayed_cam_live_steps(

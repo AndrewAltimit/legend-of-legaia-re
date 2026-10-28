@@ -2344,14 +2344,19 @@ the same slot on that frame (`+0x8 = 0x83000000`), out of its shot.
 A `0x70` capture inside a module arm's own shot (a director's `FUN_801D829C`
 call, built once: `0x70` arms no framing) is aligned as a summon module's is
 (`BattleCamera::align_module_shot`), on both the headless seed and the image
-child, whenever the engine's shot is still walking; the glide-origin align
-compares a chase glide's endpoint and misses it.
+child, when that aligns more of the pose than the glide-origin align, which
+compares a chase glide's endpoint and misses a module shot's. Its displayed
+frame then walks the RAM's table back on the table's own increments, as a
+`0x6F` capture's does, once retail's module has left arm 0 (`ctx[+0x279]`
+past `0`) and the table still walks on its angles or focus
+(`module_shot_walking`; a drift moves TR alone, so a table home on those has
+finished). Walked back on the re-arm's share instead, the Koru captures
+(PROT 0962) stood the displayed pose `64` yaw units round of the frame on
+screen (`image` `.789` to `.579`).
 `battle_map01_lippian_kiss_of_death_mid_cast` (PROT 0955 arm 1, the arm-0
-shot one pass in) reads camera `.916` to `1.000`, image `.704` to `.849`.
-Walking its displayed frame back on the table's own increments instead of
-the re-arm's share reads `.886` there, but takes `zeto_call_wave_mid_cast`
-(PROT 0946 arm 2, whose drifts move the live pose off a landed table) from
-`1.000` to `.996`, so the displayed walk-back stays the re-arm's.
+shot one pass in) reads camera `.916` to `1.000`, image `.704` to `.886`;
+`zeto_call_wave_mid_cast` (PROT 0946 arm 2, on arm 1's `0x100`-frame pan)
+reads `.998` to `.996` on the table's walk.
 
 The band has a third clock the hold does not reach: the backdrop pair's
 depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'

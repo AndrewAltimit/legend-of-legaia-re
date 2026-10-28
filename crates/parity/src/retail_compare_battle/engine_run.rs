@@ -807,13 +807,23 @@ pub fn run_engine_battle(
             legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
         });
         let mask = match (world.battle.camera.as_mut(), target) {
-            // A capture-band module's own shot still walking: the image
+            // A capture-band module's own shot still walking, whose
+            // endpoints are retail's where the glide's are not: the image
             // child's routing (`redraw_prep`, `align_module_shot`).
-            (Some(cam), _) if cam.module_shot_walking() => {
-                cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1)
-            }
+            // Otherwise the glide's origin.
             (Some(cam), Some(target)) => {
-                cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
+                let (live, end) = battle.cam_tween;
+                let mut glide = cam.clone();
+                let by_glide = glide.align_glide_origin_to(live, end, target);
+                let mut shot = cam.clone();
+                let by_shot = shot.align_module_shot(live, end);
+                if by_shot.count_ones() > by_glide.count_ones() {
+                    *cam = shot;
+                    by_shot
+                } else {
+                    *cam = glide;
+                    by_glide
+                }
             }
             _ => 0,
         };

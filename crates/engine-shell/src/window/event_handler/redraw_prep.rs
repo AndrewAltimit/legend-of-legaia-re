@@ -370,17 +370,29 @@ impl PlayWindowApp {
                 .and_then(|sc| sc.battle_cam_align_displayed);
             let world = &mut self.session.host.world;
             let mask = match (world.battle.camera.as_mut(), target) {
-                // A capture-band module's own shot still walking (`0x70`
-                // arms no framing; a slot-B arm built the table once): its
-                // walk takes retail's pose on the shot's increments, as a
-                // summon module's does (`BattleCamera::align_module_shot`).
-                (Some(cam), _) if cam.module_shot_walking() => cam.align_module_shot(live, end),
                 (Some(cam), Some(target)) => {
-                    let live = match displayed {
+                    let shown = match displayed {
                         Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,
                         _ => live,
                     };
-                    cam.align_glide_origin_to(live, end, target)
+                    // A capture-band module's own shot still walking (`0x70`
+                    // arms no framing; a slot-B arm built the table once)
+                    // whose endpoints are retail's where the glide's are
+                    // not: its walk takes retail's pose on the shot's
+                    // increments, as a summon module's does
+                    // (`BattleCamera::align_module_shot`). Otherwise the
+                    // glide's origin.
+                    let mut glide = cam.clone();
+                    let by_glide = glide.align_glide_origin_to(shown, end, target);
+                    let mut shot = cam.clone();
+                    let by_shot = shot.align_module_shot(live, end);
+                    if by_shot.count_ones() > by_glide.count_ones() {
+                        *cam = shot;
+                        by_shot
+                    } else {
+                        *cam = glide;
+                        by_glide
+                    }
                 }
                 _ => 0,
             };

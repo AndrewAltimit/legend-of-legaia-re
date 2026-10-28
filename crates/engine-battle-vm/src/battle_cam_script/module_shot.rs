@@ -288,6 +288,25 @@ impl BattleCamera {
             self.pose.yaw = nearest(self.pose.yaw, live.yaw);
             mask |= 2;
         }
+        // A per-vsync shot counts its angles down on the arc left
+        // (`0x800214C0..0x80021534`), not on the live value, so an angle
+        // stood elsewhere takes the arc from there to the endpoint, in the
+        // lane's own direction: left at the arc the replay's start gave,
+        // the lane would stop that far past (or short of) its endpoint and
+        // snap onto it a pass early or late.
+        if g.per_vsync {
+            let arc = |from: f32, to: f32, dir: f32| ((to - from) * dir).rem_euclid(4096.0);
+            let mut left = g.angle_left;
+            if mask & 1 != 0 {
+                left[0] = arc(self.pose.pitch, g.target.pitch, g.angle_dir[0]);
+            }
+            if mask & 2 != 0 {
+                left[1] = arc(self.pose.yaw, g.target.yaw, g.angle_dir[1]);
+            }
+            if let Some(m) = self.module_glide.as_mut() {
+                m.angle_left = left;
+            }
+        }
         for k in 0..3 {
             if (g.target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE {
                 self.pose.tr[k] = live.tr[k];

@@ -352,6 +352,26 @@ pub(super) fn displayed_cam_live_steps(
 /// The live pose the displayed frame was drawn at under a **module shot**:
 /// retail's live camera walked back along a tween table built once.
 ///
+/// Whether retail's camera is still walking a table on its angles or focus
+/// (`0x8007B790` / `0x8007B792`, `0x80089118..0x80089120` off their tween
+/// endpoints). A module's drifts move TR alone (PROT 0946's arms add to TR
+/// z after their shot has landed), so the translation is left out: a table
+/// whose angles and focus are home has finished, whatever a drift did to
+/// the eye since.
+pub(super) fn module_shot_walking(ram: &[u8], ctx: u32) -> bool {
+    let live = [
+        (0u32, game_anchors::u16_at(ram, 0x8007_B790), 0xFFFu16),
+        (1, game_anchors::u16_at(ram, 0x8007_B792), 0xFFF),
+        (6, game_anchors::u16_at(ram, 0x8008_9118), 0xFFFF),
+        (7, game_anchors::u16_at(ram, 0x8008_911C), 0xFFFF),
+        (8, game_anchors::u16_at(ram, 0x8008_9120), 0xFFFF),
+    ];
+    live.iter().any(|&(k, v, mask)| {
+        let end = game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2);
+        v & mask != end & mask
+    })
+}
+
 /// A slot-B arm calls the builder `FUN_801D829C` on the pass it runs and
 /// never again, so the table the RAM holds is the one every pass since has
 /// walked: each pass moved a component `increment * frame_step` toward its
