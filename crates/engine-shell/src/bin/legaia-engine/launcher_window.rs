@@ -929,12 +929,7 @@ impl LauncherApp {
             Some(_) => "Pack: has errors".to_string(),
         };
         for (i, item) in BUTTONS.iter().enumerate() {
-            let r = Rect::new(
-                LEFT_X,
-                COLUMNS_Y + i as i32 * BUTTON_PITCH,
-                LEFT_W,
-                BUTTON_H,
-            );
+            let r = button_rect(i);
             hits.push((*item, r));
             let focused = self.focus == *item;
             let enabled = !matches!(item, Item::Play | Item::Online) || self.disc.is_some();
@@ -964,7 +959,7 @@ impl LauncherApp {
                     Panel::Controls => "Back to options",
                 },
                 Item::Expansion => &expansion_label,
-                Item::DataFolder => "Open saves folder",
+                Item::DataFolder => "Saves folder",
                 Item::Quit => "Quit",
                 Item::Opt(_) => "",
             };
@@ -1897,9 +1892,30 @@ fn sentence(s: &str) -> String {
     }
 }
 
+/// The rows the buttons take: the last two (the saves folder and Quit) share
+/// one, so the help box under them keeps room for a whole message.
+const BUTTON_ROWS: i32 = BUTTONS.len() as i32 - 1;
+
+/// Button `i`'s rect: one full-width row each, except the last two, which
+/// split the bottom row.
+fn button_rect(i: usize) -> Rect {
+    let last_row = BUTTON_ROWS - 1;
+    let y = COLUMNS_Y + (i as i32).min(last_row) * BUTTON_PITCH;
+    if (i as i32) < last_row {
+        return Rect::new(LEFT_X, y, LEFT_W, BUTTON_H);
+    }
+    let half = (LEFT_W - 4) / 2;
+    let x = if (i as i32) == last_row {
+        LEFT_X
+    } else {
+        LEFT_X + LEFT_W - half
+    };
+    Rect::new(x, y, half, BUTTON_H)
+}
+
 /// The help box under the buttons.
 fn help_rect() -> Rect {
-    let y = COLUMNS_Y + BUTTONS.len() as i32 * BUTTON_PITCH + 4;
+    let y = COLUMNS_Y + BUTTON_ROWS * BUTTON_PITCH + 4;
     Rect::new(LEFT_X, y, LEFT_W, STAGE_H - PAD - y)
 }
 
