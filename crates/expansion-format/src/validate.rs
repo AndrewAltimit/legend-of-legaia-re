@@ -27,7 +27,7 @@ use crate::manifest::{
     SCHEMA_VERSION, SUPPORTED_DISC, is_valid_content_id, is_valid_pack_id, is_valid_semver,
 };
 use crate::refs::{DiscRef, DiscResolver};
-use crate::{ExpansionPack, PackFiles, cards, map, modes};
+use crate::{ExpansionPack, PackFiles, map, modes};
 
 /// How bad an issue is. An `Error` stops the engine loading the pack; a
 /// `Warning` does not.
@@ -575,7 +575,6 @@ fn check_asset_budget(cx: &mut Checker<'_>) {
 }
 
 // Placeholder rules; see the module docs.
-impl SectionRules for cards::CardSection {}
 impl SectionRules for modes::ModeSection {}
 impl SectionRules for map::MapDef {}
 

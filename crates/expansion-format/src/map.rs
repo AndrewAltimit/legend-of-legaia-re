@@ -420,6 +420,11 @@ pub enum MapEvent {
         #[serde(default = "one_i64")]
         add: i64,
     },
+    /// Open a card dealer (`cards.toml` `dealers`; empty = the first one).
+    CardDealer {
+        #[serde(default)]
+        dealer: String,
+    },
 }
 
 fn one_i64() -> i64 {

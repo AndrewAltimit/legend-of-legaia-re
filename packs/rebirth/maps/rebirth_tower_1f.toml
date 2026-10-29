@@ -67,6 +67,13 @@ rect = [6, 9, 8, 9]
 event = { kind = "talk", npc = "tower_guide" }
 once = true
 
+# The card dealer keeps a stall in the west corner by the entrance: step
+# onto it to buy boosters or sell cards (`cards.toml` dealer `tower`).
+[[triggers]]
+id = "card_dealer"
+rect = [1, 9, 2, 10]
+event = { kind = "card_dealer", dealer = "tower" }
+
 # The far ring past the dais rolls the floor's encounter table
 # (`battle.toml`, `scene = "tower_1f"`).
 [[encounters]]

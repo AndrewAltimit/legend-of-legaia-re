@@ -1,6 +1,11 @@
 # Rebirth trading cards. Each card's art is a retail monster by its
-# PROT 867 id; names and flavour text are the pack's own. Sides are
-# [top, right, bottom, left] for the Grid Duel.
+# monster-archive id (1-based, PROT 867): the engine renders that monster
+# off the player's own disc as the card's portrait. Names and flavour text
+# are the pack's own. Sides are [top, right, bottom, left] for the Grid
+# Duel. Format: docs/formats/expansion-pack.md#cardstoml.
+
+# Handed over the first time the collection opens: a duel deck to start.
+starter = ["mist-wisp", "burrow-pup", "reed-skimmer", "ember-moth", "hollow-shell"]
 
 [sell_prices]
 common = 10
@@ -24,7 +29,7 @@ flavor = "Digs faster than it thinks."
 rarity = "common"
 element = "earth"
 sides = [3, 1, 2, 2]
-art = { kind = "monster", id = 2 }
+art = { kind = "monster", id = 34 }
 
 [[cards]]
 id = "reed-skimmer"
@@ -33,7 +38,7 @@ flavor = "Never touches the pond it hunts."
 rarity = "common"
 element = "water"
 sides = [1, 2, 3, 2]
-art = { kind = "monster", id = 3 }
+art = { kind = "monster", id = 43 }
 
 [[cards]]
 id = "ember-moth"
@@ -42,7 +47,7 @@ flavor = "Its wings leave scorch marks on lanterns."
 rarity = "common"
 element = "fire"
 sides = [2, 2, 2, 3]
-art = { kind = "monster", id = 4 }
+art = { kind = "monster", id = 61 }
 
 [[cards]]
 id = "hollow-shell"
@@ -50,7 +55,7 @@ name = "Hollow Shell"
 flavor = "Nobody remembers what lived inside."
 rarity = "common"
 sides = [4, 1, 1, 2]
-art = { kind = "monster", id = 5 }
+art = { kind = "monster", id = 52 }
 
 [[cards]]
 id = "thorn-crawler"
@@ -59,7 +64,7 @@ flavor = "Moves an inch an hour, never stops."
 rarity = "common"
 element = "earth"
 sides = [1, 3, 2, 3]
-art = { kind = "monster", id = 6 }
+art = { kind = "monster", id = 22 }
 
 [[cards]]
 id = "static-beetle"
@@ -68,7 +73,7 @@ flavor = "Sparks when startled, which is always."
 rarity = "common"
 element = "thunder"
 sides = [3, 2, 1, 3]
-art = { kind = "monster", id = 7 }
+art = { kind = "monster", id = 62 }
 
 [[cards]]
 id = "ash-hound"
@@ -77,7 +82,7 @@ flavor = "Tracks by the smell of old campfires."
 rarity = "common"
 element = "fire"
 sides = [2, 4, 2, 1]
-art = { kind = "monster", id = 8 }
+art = { kind = "monster", id = 40 }
 
 [[cards]]
 id = "fen-lurker"
@@ -86,7 +91,7 @@ flavor = "The ripple you saw was not the wind."
 rarity = "uncommon"
 element = "water"
 sides = [4, 3, 2, 3]
-art = { kind = "monster", id = 9 }
+art = { kind = "monster", id = 44 }
 
 [[cards]]
 id = "gale-harrier"
@@ -95,7 +100,7 @@ flavor = "Rides the updraft above every cliff road."
 rarity = "uncommon"
 element = "wind"
 sides = [3, 4, 3, 2]
-art = { kind = "monster", id = 10 }
+art = { kind = "monster", id = 71 }
 
 [[cards]]
 id = "gloom-stalker"
@@ -104,7 +109,7 @@ flavor = "Waits where the lamplight gives out."
 rarity = "uncommon"
 element = "dark"
 sides = [2, 3, 4, 4]
-art = { kind = "monster", id = 11 }
+art = { kind = "monster", id = 49 }
 
 [[cards]]
 id = "bramble-ogre"
@@ -113,7 +118,7 @@ flavor = "Wears the forest it walked through."
 rarity = "uncommon"
 element = "earth"
 sides = [5, 2, 3, 3]
-art = { kind = "monster", id = 12 }
+art = { kind = "monster", id = 107 }
 
 [[cards]]
 id = "cinder-drake"
@@ -122,7 +127,7 @@ flavor = "Young, loud, and hotter than it looks."
 rarity = "uncommon"
 element = "fire"
 sides = [3, 3, 5, 2]
-art = { kind = "monster", id = 13 }
+art = { kind = "monster", id = 123 }
 
 [[cards]]
 id = "tide-serpent"
@@ -131,7 +136,7 @@ flavor = "Coils with the turning of the tide."
 rarity = "uncommon"
 element = "water"
 sides = [2, 5, 3, 3]
-art = { kind = "monster", id = 14 }
+art = { kind = "monster", id = 133 }
 
 [[cards]]
 id = "storm-ram"
@@ -140,7 +145,7 @@ flavor = "Its horns ring like struck bells."
 rarity = "uncommon"
 element = "thunder"
 sides = [4, 4, 2, 3]
-art = { kind = "monster", id = 15 }
+art = { kind = "monster", id = 58 }
 
 [[cards]]
 id = "dawn-sprite"
@@ -149,7 +154,7 @@ flavor = "Arrives with the first clear morning."
 rarity = "uncommon"
 element = "light"
 sides = [3, 2, 4, 4]
-art = { kind = "monster", id = 16 }
+art = { kind = "monster", id = 83 }
 
 [[cards]]
 id = "iron-colossus"
@@ -158,7 +163,7 @@ flavor = "A wall that decided to walk."
 rarity = "rare"
 element = "earth"
 sides = [6, 4, 5, 3]
-art = { kind = "monster", id = 17 }
+art = { kind = "monster", id = 129 }
 
 [[cards]]
 id = "veil-phantom"
@@ -176,7 +181,7 @@ flavor = "Its shadow arrives a beat before the storm."
 rarity = "rare"
 element = "thunder"
 sides = [5, 3, 6, 4]
-art = { kind = "monster", id = 19 }
+art = { kind = "monster", id = 72 }
 
 [[cards]]
 id = "frost-maw"
@@ -185,7 +190,7 @@ flavor = "Breathes winter onto summer fields."
 rarity = "rare"
 element = "water"
 sides = [3, 5, 4, 6]
-art = { kind = "monster", id = 20 }
+art = { kind = "monster", id = 150 }
 
 [[cards]]
 id = "radiant-warden"
@@ -194,7 +199,7 @@ flavor = "Keeps a vigil no one asked of it."
 rarity = "rare"
 element = "light"
 sides = [6, 5, 3, 4]
-art = { kind = "monster", id = 21 }
+art = { kind = "monster", id = 17 }
 
 [[cards]]
 id = "ruin-titan"
@@ -203,7 +208,7 @@ flavor = "Older than the walls it broke."
 rarity = "legendary"
 element = "dark"
 sides = [7, 6, 7, 5]
-art = { kind = "monster", id = 22 }
+art = { kind = "monster", id = 77 }
 
 [[cards]]
 id = "sky-sovereign"
@@ -212,7 +217,7 @@ flavor = "The clouds part when it wants to pass."
 rarity = "legendary"
 element = "wind"
 sides = [6, 7, 5, 7]
-art = { kind = "monster", id = 23 }
+art = { kind = "monster", id = 75 }
 
 [[cards]]
 id = "heart-of-the-mist"
@@ -220,7 +225,49 @@ name = "Heart of the Mist"
 flavor = "What every shadow in the fog answers to."
 rarity = "legendary"
 sides = [8, 6, 6, 6]
-art = { kind = "monster", id = 24 }
+art = { kind = "monster", id = 167 }
+
+# --- The Hollow Court: the tower's own monsters -----------------------------
+# Won from the Tower of Rebirth's fights; the art is the retail monster
+# each pack monster is built on (battle.toml `base`).
+
+[[cards]]
+id = "ironhide-brute"
+name = "Ironhide Brute"
+flavor = "Its hide turned the tower's first door."
+rarity = "rare"
+element = "earth"
+sides = [6, 5, 4, 4]
+art = { kind = "monster", id = 109 }
+
+[[cards]]
+id = "ember-scale"
+name = "Ember Scale"
+flavor = "Basks in the forge-heat of the second ring."
+rarity = "uncommon"
+element = "fire"
+sides = [4, 4, 3, 4]
+art = { kind = "monster", id = 124 }
+
+[[cards]]
+id = "rune-sentinel"
+name = "Rune Sentinel"
+flavor = "Every glyph on it is a forgotten order."
+rarity = "rare"
+element = "earth"
+sides = [5, 4, 6, 5]
+art = { kind = "monster", id = 130 }
+
+[[cards]]
+id = "hollow-sovereign"
+name = "Hollow Sovereign"
+flavor = "The throne was empty. Then it was not."
+rarity = "legendary"
+element = "dark"
+sides = [8, 7, 7, 7]
+art = { kind = "monster", id = 138 }
+
+# --- Boosters ----------------------------------------------------------------
 
 [[boosters]]
 id = "rebirth-starter"
@@ -239,16 +286,101 @@ weights = { common = 40, uncommon = 35, rare = 20, legendary = 5 }
 guaranteed = "rare"
 price = 1200
 
-# Early field monsters drop the odd starter pack.
+[[boosters]]
+id = "hollow-court"
+name = "Hollow Court Pack"
+cards_per_pack = 3
+pool = ["ironhide-brute", "ember-scale", "rune-sentinel", "hollow-sovereign", "iron-colossus", "cinder-drake"]
+weights = { uncommon = 50, rare = 40, legendary = 4 }
+guaranteed = "rare"
+price = 4000
+
+# --- Dealers -----------------------------------------------------------------
+
+# The tower's ground floor (maps/rebirth_tower_1f.toml, trigger
+# `card_dealer`).
+[[dealers]]
+id = "tower"
+name = "Tower Card Dealer"
+stock = ["rebirth-starter", "mistborn", "hollow-court"]
+sell_percent = 100
+
+# --- Rewards -----------------------------------------------------------------
+
+# Early field monsters drop the odd starter pack, in any fight.
 [[rewards]]
 source = { kind = "monster", id = 1 }
 booster = "rebirth-starter"
 chance_percent = 5
 
 [[rewards]]
-source = { kind = "monster", id = 2 }
+source = { kind = "monster", id = 4 }
 booster = "rebirth-starter"
 chance_percent = 5
+
+[[rewards]]
+source = { kind = "monster", id = 7 }
+card = "mist-wisp"
+chance_percent = 10
+
+# Late-game retail monsters carry their own card.
+[[rewards]]
+source = { kind = "monster", id = 129 }
+card = "iron-colossus"
+chance_percent = 6
+
+[[rewards]]
+source = { kind = "monster", id = 77 }
+card = "ruin-titan"
+chance_percent = 3
+
+[[rewards]]
+source = { kind = "monster", id = 150 }
+card = "frost-maw"
+chance_percent = 6
+
+[[rewards]]
+source = { kind = "monster", id = 72 }
+card = "thunder-roc"
+chance_percent = 6
+
+# The tower's monsters drop their own cards. The pack monsters fight on
+# their retail bases, so these keys are the base ids.
+[[rewards]]
+source = { kind = "monster", id = 109 }
+card = "ironhide-brute"
+chance_percent = 8
+
+[[rewards]]
+source = { kind = "monster", id = 124 }
+card = "ember-scale"
+chance_percent = 12
+
+[[rewards]]
+source = { kind = "monster", id = 130 }
+card = "rune-sentinel"
+chance_percent = 8
+
+# A won tower formation pays a booster on top.
+[[rewards]]
+source = { kind = "formation", id = "ogre_pack" }
+booster = "rebirth-starter"
+chance_percent = 25
+
+[[rewards]]
+source = { kind = "formation", id = "forge_guard" }
+booster = "hollow-court"
+chance_percent = 15
+
+# The superboss always leaves its card.
+[[rewards]]
+source = { kind = "boss", id = "hollow_sovereign" }
+card = "hollow-sovereign"
+
+[[rewards]]
+source = { kind = "boss", id = "hollow_sovereign" }
+booster = "hollow-court"
+count = 2
 
 # A won card duel or poker night pays in cards too.
 [[rewards]]

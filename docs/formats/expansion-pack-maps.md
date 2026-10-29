@@ -171,6 +171,7 @@ hands it to that section's runtime the tick it fires:
 | `{ kind = "start_quest", quest = Q }` | `World::expansion_start_quest(Q)` |
 | `{ kind = "set_flag", flag = X }` | raises pack flag `X` |
 | `{ kind = "counter", counter = C, add = 1 }` | adds to pack counter `C` |
+| `{ kind = "card_dealer", dealer = D }` | opens the `cards.toml` dealer `D`'s counter (`World::open_card_dealer`; empty = the first dealer) |
 
 `once = true` fires a trigger once **ever**: firing raises the pack flag
 `map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),

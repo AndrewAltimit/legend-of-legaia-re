@@ -132,7 +132,27 @@ Dialogue lines in the translation markup, as rows and pages, with two- to four-o
 
 ### cards.toml
 
-Reserved; schema not yet defined.
+Trading cards, the boosters they come in, the dealers that sell them and the rules that hand them out. Card, booster and dealer ids are the section's own (cards keep hyphenated ids such as `mist-wisp`, which save files key on), so the section checks them itself rather than declaring pack-wide ids; it references `formation` and `boss`, and records each card's art and each monster reward source as a disc coordinate.
+
+| Key | Meaning |
+|---|---|
+| `[[cards]]` | `id`, `name`, `flavor`, `rarity` (`common` / `uncommon` / `rare` / `legendary`), optional `element`, `sides = [top, right, bottom, left]` (each `1..=10`), `art` (a `DiscRef`; a monster is drawn as the card's portrait), optional `sell` (gold) |
+| `[sell_prices]` | Gold per sold card by rarity; a card's own `sell` overrides; omitted, a built-in table |
+| `starter` | Card ids handed over once, the first time the collection opens: a duel deck to begin with |
+| `[[boosters]]` | `id`, `name`, `cards_per_pack`, `pool` (card ids; empty = every card), `weights` by rarity, `guaranteed` (the last slot's minimum rarity), `price` (a booster with no price is never sold) |
+| `[[dealers]]` | `id`, `name`, `stock` (booster ids; empty = every priced booster), `buys_cards` (default true), `sell_percent` of a card's sell value (default 100) |
+| `[[rewards]]` | `source`, then `booster` and / or `card`, `chance_percent` (default 100) and `count` (rolls, default 1) |
+
+A reward `source` is one of:
+
+| Source | Rolls when |
+|---|---|
+| `{ kind = "monster", id = N }` | A won fight seated retail monster `N`, once per seat - any fight while the pack is active, retail fights included. A pack monster fights on its retail base, so its base id is the key |
+| `{ kind = "formation", id = F }` | The pack formation `F` was won |
+| `{ kind = "boss", id = B }` | The pack boss `B` was beaten |
+| `{ kind = "mode", id = M }` | The player won mode instance `M` (`modes.toml`) |
+
+The validator rejects a repeated or empty id, a side outside `1..=10`, a booster pool, starter, reward or dealer stock naming a card or booster that does not exist, a booster whose weights are all zero, a reward with neither a booster nor a card, a chance over 100 and a mode source no `modes.toml` instance has; it warns on a dealer stocking an unpriced booster and on a dealer paying over the sell value. The runtime is in [`expansion-modes.md`](../subsystems/expansion-modes.md#trading-cards).
 
 ### modes.toml
 

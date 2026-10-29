@@ -8,6 +8,9 @@
 //! lockstep session or a replay opens the same cards everywhere.
 
 pub mod duel;
+pub mod economy;
+pub mod screen;
+pub mod trade;
 
 use std::collections::BTreeMap;
 
@@ -170,6 +173,50 @@ impl CardBook {
             out.push(pick.id.clone());
         }
         Ok(out)
+    }
+
+    /// Distinct cards of the book `collection` owns, and the book's size -
+    /// the set completion a binder shows.
+    pub fn completion(&self, collection: &Collection) -> (usize, usize) {
+        let owned = self
+            .section
+            .cards
+            .iter()
+            .filter(|c| collection.count(&c.id) > 0)
+            .count();
+        (owned, self.section.cards.len())
+    }
+
+    /// The `n` strongest cards `collection` can field (a card fills as many
+    /// slots as it has copies), strongest first; ties keep book order. Fewer
+    /// than `n` when the collection is short.
+    pub fn strongest_deck(&self, collection: &Collection, n: usize) -> Vec<String> {
+        let mut pool: Vec<(u32, usize, &CardDef)> = self
+            .section
+            .cards
+            .iter()
+            .enumerate()
+            .flat_map(|(i, c)| {
+                let strength: u32 = c.sides.iter().map(|&s| u32::from(s)).sum();
+                std::iter::repeat_n((strength, i, c), collection.count(&c.id) as usize)
+            })
+            .collect();
+        pool.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+        pool.into_iter()
+            .take(n)
+            .map(|(_, _, c)| c.id.clone())
+            .collect()
+    }
+
+    /// Whether `deck` can be fielded from `collection`: every card known,
+    /// and no card used more times than it is owned.
+    pub fn deck_is_owned(&self, collection: &Collection, deck: &[String]) -> bool {
+        let mut need: BTreeMap<&str, u32> = BTreeMap::new();
+        for id in deck {
+            *need.entry(id.as_str()).or_insert(0) += 1;
+        }
+        need.iter()
+            .all(|(id, n)| self.card(id).is_some() && collection.count(id) >= *n)
     }
 
     /// Roll every reward rule matching `source`.
@@ -419,7 +466,7 @@ mod tests {
                 chance_percent: 50,
                 count: 2,
             }],
-            sell_prices: RarityTable::default(),
+            ..Default::default()
         })
     }
 

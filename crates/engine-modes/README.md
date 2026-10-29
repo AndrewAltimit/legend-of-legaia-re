@@ -15,7 +15,7 @@ Rules, the session contract and the lockstep rationale are in
 | `session` | The `ModeSession` trait, seats and AI tiers, results and rewards, pad press edges, the session RNG and the state hasher. |
 | `fixed` | 20.12 fixed point, 12-bit angles, table sine and cosine, integer `atan2` and square root. |
 | `poker` | Texas Hold'em: table session, hand evaluator (`hand`), side pots (`pots`), AI tiers (`ai`). |
-| `cards` | Card book, collection, boosters, reward rolls, selling and trades; `cards::duel` is the Grid Duel card game. |
+| `cards` | Card book, collection, boosters, reward rolls, selling and trades; `cards::duel` is the Grid Duel card game, `cards::economy` the player's card progress and shop operations, `cards::screen` the binder / booster / dealer / deck screen state machine, `cards::trade` the authority-run trade table and its wire messages. |
 | `golf` | Mini-golf: tile courses and ball physics (`course`), stroke and turn session. |
 | `racing` | Checkpoint racing on a closed centerline track. |
 | `prop_hunt` | Prop-hunt round rules over a minimal 2D arena. |
