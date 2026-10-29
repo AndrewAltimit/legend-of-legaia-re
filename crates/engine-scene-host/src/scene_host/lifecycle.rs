@@ -57,6 +57,7 @@ impl SceneHost {
             last_minigame_warp: None,
             pending_entry_seat: None,
             pending_scene_override: None,
+            failed_pack_mode_map: None,
             arrival_catalog: None,
             pending_picker_arrivals: None,
             picker_seat: None,

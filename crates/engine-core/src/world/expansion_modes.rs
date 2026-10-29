@@ -14,11 +14,15 @@
 //! [`legaia_engine_expansion::ExpansionState::pending_card_rewards`] for the
 //! card economy.
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use legaia_engine_expansion::modes::{ModeSource, PackModeSeat, SeatStep, pending_cards};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_modes::active::{ActiveMode, BuildError, BuildOptions, ModeEntry, entries};
 use legaia_engine_modes::session::{Currency, ModeRng, Reward};
 use legaia_expansion_format::cards::CardSection;
+use legaia_expansion_format::map::MapDef;
 use legaia_expansion_format::modes::ModeSection;
 
 use super::World;
@@ -57,6 +61,15 @@ impl World {
         self.mode = SceneMode::Expansion;
     }
 
+    /// The active pack's maps, for a golf course or race played on one
+    /// (the seat's builds, and a networked session's).
+    pub fn pack_mode_maps(&self) -> Arc<BTreeMap<String, MapDef>> {
+        match self.expansion.pack.as_deref() {
+            Some(p) if !p.maps.is_empty() => Arc::new(p.maps.clone()),
+            _ => Arc::default(),
+        }
+    }
+
     /// The mode instances the seat offers right now.
     pub fn pack_mode_entries(&self) -> Vec<ModeEntry> {
         entries(self.mode_sections().1)
@@ -85,9 +98,11 @@ impl World {
     /// Open the mode picker, suspending the current mode.
     pub fn open_pack_mode_picker(&mut self) {
         let return_mode = self.pack_mode_return();
+        let maps = self.pack_mode_maps();
         let (source, modes, _) = self.mode_sections();
-        let seat = PackModeSeat::picker(return_mode, source, modes);
+        let seat = PackModeSeat::picker(return_mode, source, modes).with_maps(maps);
         self.expansion.mode_seat = Some(Box::new(seat));
+        self.remember_pack_mode_player();
         self.mode = SceneMode::Expansion;
     }
 
@@ -96,10 +111,12 @@ impl World {
         let return_mode = self.pack_mode_return();
         let seed = self.pack_mode_seed(id);
         let opts = self.pack_mode_build_options();
+        let maps = self.pack_mode_maps();
         let (source, modes, cards) = self.mode_sections();
-        let mode = ActiveMode::build(modes, cards, id, seed, &opts)?;
-        let seat = PackModeSeat::playing(return_mode, source, mode);
+        let mode = ActiveMode::build_with_maps(modes, cards, &maps, id, seed, &opts)?;
+        let seat = PackModeSeat::playing(return_mode, source, mode).with_maps(maps);
         self.expansion.mode_seat = Some(Box::new(seat));
+        self.remember_pack_mode_player();
         self.mode = SceneMode::Expansion;
         Ok(())
     }
@@ -117,6 +134,23 @@ impl World {
         if self.mode == SceneMode::Expansion {
             self.mode = seat.return_mode;
         }
+        self.restore_pack_mode_player_from(seat.player_return);
+        self.restore_pack_mode_bodies(&seat.body_idle);
+    }
+
+    /// Action movement's dash as the racer's boost: with the toggle on, an
+    /// in-world race reads the dash button
+    /// ([`crate::world::ACTION_DASH_BUTTON`]) as R1 too.
+    fn dash_boost(&self, seat: &PackModeSeat, pad: u16) -> u16 {
+        let racing = seat.stage_frame.is_some()
+            && seat
+                .active()
+                .is_some_and(|m| m.kind() == legaia_engine_modes::active::ModeKind::Race);
+        if self.toggles.action_movement && racing && pad & super::ACTION_DASH_BUTTON.mask() != 0 {
+            pad | legaia_engine_system::pad::PadButton::R1.mask()
+        } else {
+            pad
+        }
     }
 
     /// One frame of the seat, off this frame's pad (seat 0).
@@ -131,6 +165,7 @@ impl World {
             return;
         };
         let (pad, prev) = (self.input.pad(), self.input.pad_prev());
+        let (pad, prev) = (self.dash_boost(&seat, pad), self.dash_boost(&seat, prev));
         let id = match &seat.stage {
             legaia_engine_expansion::modes::ModeStage::Picker {
                 entries, cursor, ..
@@ -152,9 +187,14 @@ impl World {
             let (_, modes, cards) = self.mode_sections();
             seat.step(pad, prev, modes, cards, &opts, seed, &mut rng)
         };
+        self.stage_pack_mode(&mut seat);
         match step {
             SeatStep::Stay => self.expansion.mode_seat = Some(seat),
-            SeatStep::Leave => self.mode = seat.return_mode,
+            SeatStep::Leave => {
+                self.mode = seat.return_mode;
+                self.restore_pack_mode_player_from(seat.player_return);
+                self.restore_pack_mode_bodies(&seat.body_idle);
+            }
             SeatStep::Settled {
                 mode_id,
                 settlement,

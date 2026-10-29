@@ -160,7 +160,10 @@ impl World {
     /// port's separate [`SceneMode::WorldMap`] is the camera / encounter
     /// controller, not a different actor frame, so the clips run there too.
     pub fn field_npc_clips_advance(&self) -> bool {
+        // An in-world golf round or race keeps the field's NPCs - its
+        // bodies among them - animating under the mode seat.
         matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
+            || self.pack_mode_stage().is_some()
     }
 
     /// Drain this tick's ANIMATE cues, in every scene mode.

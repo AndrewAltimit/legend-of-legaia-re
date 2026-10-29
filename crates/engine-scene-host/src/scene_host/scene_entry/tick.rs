@@ -181,6 +181,11 @@ impl SceneHost {
         if let Some(event) = self.step_expansion_entrances() {
             return Ok(event);
         }
+        // A golf round or race played on a pack map: enter its map under
+        // the running mode seat.
+        if let Some(event) = self.sync_pack_mode_map() {
+            return Ok(event);
+        }
         if self.advance_scene_transition_hold() {
             return Ok(SceneTickEvent::Stepped);
         }

@@ -68,6 +68,9 @@ pub struct HostScreenPrims {
     pub world_map_markers: Vec<ScreenPrim>,
     /// The overworld sky band.
     pub world_map_sky: Vec<ScreenPrim>,
+    /// An in-world golf round's or race's pieces (balls, cup, aim arrow,
+    /// bodies, trails), `HostView::pack_mode_world_prims`.
+    pub pack_mode_world: Vec<ScreenPrim>,
 }
 
 /// One frame of the PROT-0900 screen-effect widget family as screen
@@ -170,16 +173,25 @@ pub fn compose_screen_prims(
         fishing_hud,
         world_map_markers,
         world_map_sky,
+        pack_mode_world,
     } = host;
 
     // An expansion mode screen owns the whole frame: its panels are the
-    // under-text list, and only the pause wipe may cover it.
+    // under-text list, and only the pause wipe may cover it. A golf round or
+    // race played on its pack map draws in the field instead: the stage's
+    // world pieces and the actors' shadows under its HUD.
     if world.mode == legaia_engine_mode::mode::SceneMode::Expansion {
         let mut over = Vec::new();
         if let Some(level) = pause_wipe {
             over.push(level_fade(level));
         }
-        return (crate::expansion_modes::pack_mode_prims(world), over);
+        let mut under = Vec::new();
+        if world.pack_mode_stage().is_some() {
+            under.extend(drop_shadows);
+            under.extend(pack_mode_world);
+        }
+        under.extend(crate::expansion_modes::pack_mode_prims(world));
+        return (under, over);
     }
 
     // The overworld sky band leads the under-text list: retail links it into
@@ -343,6 +355,7 @@ mod tests {
             fishing_hud: tag(109),
             world_map_markers: tag(110),
             world_map_sky: tag(111),
+            pack_mode_world: tag(112),
         };
         let (under, over) = compose_screen_prims(&w, &menu, None, host);
         assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 5]);

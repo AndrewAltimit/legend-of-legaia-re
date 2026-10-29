@@ -89,6 +89,7 @@ impl LegaiaRuntime {
             fishing_hud: self.fishing_hud_sprite_prims(),
             world_map_markers: self.world_map_marker_prims(),
             world_map_sky: self.world_map_sky_prims(),
+            pack_mode_world: self.pack_mode_world_prims(),
         };
         self.screen_prims_base = host;
         self.rebuild_screen_geom();

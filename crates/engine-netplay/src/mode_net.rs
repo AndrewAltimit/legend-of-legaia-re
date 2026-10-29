@@ -80,7 +80,8 @@ pub struct NetMode {
 }
 
 impl NetMode {
-    /// Build `start`'s instance from `modes` / `cards`. The first room seats
+    /// Build `start`'s instance from `modes` / `cards`, with `maps` (the
+    /// active pack's) for a golf course or race played on a pack map. The first room seats
     /// fill the mode's seats in order; a mode seat with no player is the
     /// AI, and a player whose room seat the mode does not have spectates.
     /// Golf, which seats any number, seats the whole room.
@@ -93,6 +94,7 @@ impl NetMode {
     pub fn build(
         modes: &ModeSection,
         cards: &CardSection,
+        maps: &std::collections::BTreeMap<String, legaia_expansion_format::map::MapDef>,
         start: &StartGame,
         me: PlayerId,
         host: PlayerId,
@@ -104,7 +106,7 @@ impl NetMode {
         };
         let guest_copy = matches!(start.model, SimModel::HostAuthoritative { .. }) && me != host;
         let seed = if guest_copy { !start.seed } else { start.seed };
-        let mut mode = ActiveMode::build(modes, cards, &start.mode, seed, &opts)
+        let mut mode = ActiveMode::build_with_maps(modes, cards, maps, &start.mode, seed, &opts)
             .map_err(NetModeError::Build)?;
         if model_for(mode.kind()) != start.model {
             return Err(NetModeError::WrongModel);

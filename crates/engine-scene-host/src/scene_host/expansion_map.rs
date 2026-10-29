@@ -215,6 +215,43 @@ impl SceneHost {
         Ok(())
     }
 
+    /// Enter the pack map the running mode instance is played on
+    /// (`World::pack_mode_wants_map`) without closing the mode seat: the
+    /// seat is lifted off the world across the map entry, put back with the
+    /// world in `SceneMode::Expansion`, and set to return to the field of
+    /// that map. A map that fails to enter is logged and not tried again,
+    /// and the mode keeps drawing as its top-down screen.
+    ///
+    /// Run from [`SceneHost::tick`] after the world stepped, so a seat that
+    /// `World::enter_pack_mode` or the picker opened this frame is on its map
+    /// by the next.
+    pub fn sync_pack_mode_map(&mut self) -> Option<SceneTickEvent> {
+        let (map, spawn) = self.world.pack_mode_wants_map()?;
+        if self.failed_pack_mode_map.as_deref() == Some(map.as_str()) {
+            return None;
+        }
+        let seat = self.world.expansion.mode_seat.take();
+        let entered = self.enter_expansion_map(&map, &spawn);
+        self.world.expansion.mode_seat = seat;
+        self.world.mode = legaia_engine_mode::mode::SceneMode::Expansion;
+        if let Err(e) = entered {
+            log::warn!("expansion: mode map '{map}' did not enter: {e:#}");
+            self.failed_pack_mode_map = Some(map);
+            return None;
+        }
+        if let Some(seat) = self.world.expansion.mode_seat.as_deref_mut() {
+            seat.return_mode = legaia_engine_mode::mode::SceneMode::Field;
+        }
+        // The seat closes onto the map's spawn, not the scene it left.
+        self.world.remember_pack_mode_player();
+        let name = self
+            .scene
+            .as_ref()
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        Some(SceneTickEvent::SceneEntered { name })
+    }
+
     /// Hand a fired trigger to its runtime: a battle or boss to the pack's
     /// fight path, a line to the pack dialogue runner, the rest to the quest
     /// tracker. A `once` trigger's flag goes up whether or not its content

@@ -48,6 +48,11 @@ Each module is named for the kernel module whose types it fills in.
   `engine-field::world_map_markers`.
 - **`world_map_sky`** - the overworld sky band's sprites off the world map
   state (`render-kernels::world_map_sky`).
+- **`pack_mode_world`** - a golf round or race played on a pack map: the
+  camera frame its stage's shot resolves to (the `Venue` arm of
+  `resolve_field_camera`) and its world pieces (balls, cup and flag, aim
+  arrow, the other seats' bodies, boost trails) as depth-tested screen
+  primitives (`HostView::pack_mode_world_prims`).
 - **`screen_passes`** - the host seam. `HostView` borrows the `World`, the
   scene camera and the scene box together; its methods are the frame's
   camera (`frame`, `follow_frame`, `scripted_target`), the overworld curve

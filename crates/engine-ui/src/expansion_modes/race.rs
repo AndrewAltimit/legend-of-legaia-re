@@ -1,6 +1,6 @@
 //! The race screen: a top-down track map with every racer, and the lap /
-//! place / boost panel. A functional view; the race gets its 3D treatment
-//! on a world map later.
+//! place / boost panel; and the in-world HUD over a race run on its pack
+//! map ([`hud`]).
 
 use legaia_engine_modes::active::ActiveMode;
 use legaia_engine_modes::racing::{BOOST_METER, RacePhase, RaceView};
@@ -145,4 +145,66 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &RaceView, log: &[Strin
         c.text_centre(n.to_string(), VIEW.0 + VIEW.2 / 2, 104, pen::GOLD);
     }
     footer(c, "Cross: gas  Square: brake  R1: boost");
+}
+
+/// The in-world HUD: lap and place at the top left, the boost gauge and
+/// speed at the bottom, and a small running order at the right. The track
+/// itself is the field under it.
+pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &RaceView) {
+    let Some(track) = mode.race_track() else {
+        return;
+    };
+    let plate = [10, 14, 24, 190];
+    let laps = track.laps.max(1);
+    if let Some(me) = v.racers.get(mode.local_seat) {
+        let lap = (me.lap + 1).min(laps);
+        let place = v
+            .standings
+            .iter()
+            .position(|&s| s == mode.local_seat)
+            .map_or(0, |p| p + 1);
+        c.panel(4, 4, 110, 32, plate, ink::PANEL_EDGE);
+        c.text(format!("Lap {lap}/{laps}"), 8, 5, pen::GOLD);
+        c.text(
+            format!("Place {place}/{}", v.racers.len()),
+            8,
+            19,
+            pen::WHITE,
+        );
+        let (bx, by, bw) = (60, 210, 200);
+        c.panel(bx - 4, by - 14, bw + 8, 24, plate, ink::PANEL_EDGE);
+        c.text("Boost", bx, by - 14, pen::DIM);
+        c.text_right(
+            format!("Speed {}", (fx(me.speed) * 10.0) as i32),
+            bx + bw,
+            by - 14,
+            pen::DIM,
+        );
+        c.panel(bx, by, bw, 8, [20, 24, 36, 255], ink::PANEL_EDGE);
+        let fill = ((bw - 2) as u32 * me.boost_meter.min(BOOST_METER) / BOOST_METER) as i32;
+        let col = if me.boost_meter >= BOOST_METER {
+            [120, 230, 255, 255]
+        } else {
+            [60, 140, 200, 255]
+        };
+        c.rect(bx + 1, by + 1, fill, 6, col);
+    }
+    let (x, w) = (246, 70);
+    let rows = v.standings.len().min(6);
+    c.panel(x, 4, w, 6 + rows as i32 * 14, plate, ink::PANEL_EDGE);
+    for (i, &seat) in v.standings.iter().enumerate().take(rows) {
+        let y = 6 + i as i32 * 14;
+        c.dot(x + 6, y + 7, 2, seat_color(seat));
+        c.text(
+            format!("{} {}", i + 1, mode.seat_name(seat)),
+            x + 12,
+            y,
+            if seat == mode.local_seat {
+                pen::GOLD
+            } else {
+                pen::WHITE
+            },
+        );
+    }
+    footer(c, "Cross: gas  Square: brake  Left/Right: steer  R1: boost");
 }

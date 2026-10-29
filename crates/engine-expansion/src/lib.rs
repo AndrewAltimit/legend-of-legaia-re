@@ -17,6 +17,7 @@ pub mod entrance;
 pub mod flags;
 pub mod journal;
 pub mod map;
+pub mod mode_stage;
 pub mod modes;
 pub mod progression;
 pub mod quest;

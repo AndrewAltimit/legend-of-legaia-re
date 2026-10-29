@@ -158,6 +158,10 @@ pub struct GolfCourse {
     /// not listed falls back on its style's `label` (one naming rough,
     /// sand, bunker, water, pond or lava plays as that), else fairway.
     pub surfaces: BTreeMap<String, GolfSurface>,
+    /// On a map course: the map NPC ids (`[[npcs]]`) that stand in as the
+    /// other seats' golfers, in seat order with the player's seat skipped.
+    /// A seat with none draws as a stand-in figure.
+    pub bodies: Vec<String>,
     pub holes: Vec<GolfHole>,
 }
 
@@ -235,6 +239,11 @@ pub struct RaceTrack {
     pub half_width: u32,
     /// Segment indices (`points[i] -> points[i+1]`) carrying a boost pad.
     pub boost_segments: Vec<u16>,
+    /// On a map race: the map NPC ids (`[[npcs]]`) that drive the other
+    /// seats' racers, in seat order with the player's seat skipped; each
+    /// runs its `walk_clip` while it moves. A seat with none draws as a
+    /// stand-in figure.
+    pub bodies: Vec<String>,
     pub racers: u8,
     pub ai_tier: AiTier,
 }
@@ -252,6 +261,7 @@ impl Default for RaceTrack {
             waypoints: Vec::new(),
             half_width: 64,
             boost_segments: Vec::new(),
+            bodies: Vec::new(),
             racers: 4,
             ai_tier: AiTier::Regular,
         }

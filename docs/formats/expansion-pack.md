@@ -181,6 +181,7 @@ A golf course or a race may name a pack map, and is then played in the 3D field 
 | `tee`, `cup` | `[[golf.holes]]` | Map tiles `[column, row]` of the tee and the cup; both required on a map course |
 | `area` | `[[golf.holes]]` | Inclusive map-tile rectangle `[col0, row0, col1, row1]` the hole plays in; the whole map when left out |
 | `waypoints` | `[[races]]` | The centerline as map tiles, in driving order, closing back on the first; replaces `points` |
+| `bodies` | `[[golf]]`, `[[races]]` | Map NPC ids (`[[npcs]]` of the map) that play the other seats, in seat order with the player's skipped |
 
 A map hole needs no `rows`: its walls, void and heights are the map's tiles. A legend character missing from `surfaces` plays as the surface its style's `label` names (rough; sand or bunker; water or pond; lava, chasm or pit as out of bounds), else as fairway. A map race's `half_width` is in race units, two field world units each. Sample: the `links` test pack, `crates/engine-modes/tests/fixtures/links/`.
 

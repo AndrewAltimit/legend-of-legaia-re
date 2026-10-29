@@ -147,6 +147,88 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[Strin
     );
 }
 
+/// The in-world HUD: the hole and whose stroke at the top, a compact
+/// scorecard at the right, the power meter and the hint at the bottom. The
+/// course itself is the field under it.
+pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String]) {
+    let holes = v.scorecard.first().map_or(0, Vec::len);
+    let to_play = match v.phase {
+        GolfPhase::Aim { seat } | GolfPhase::Power { seat, .. } | GolfPhase::Rolling { seat } => {
+            Some(seat)
+        }
+        _ => None,
+    };
+    let plate = [10, 14, 24, 190];
+    c.panel(4, 4, 150, 32, plate, ink::PANEL_EDGE);
+    c.text(
+        format!("Hole {}/{holes}  Par {}", v.hole + 1, v.par),
+        8,
+        5,
+        pen::GOLD,
+    );
+    if let Some(seat) = to_play {
+        let b = &v.balls[seat];
+        c.dot(10, 26, 2, seat_color(seat));
+        c.text(
+            format!("{} - stroke {}", mode.seat_name(seat), b.strokes + 1),
+            16,
+            19,
+            pen::WHITE,
+        );
+    }
+    // The scorecard: this hole's strokes and the running total per seat.
+    let (x, w) = (226, 90);
+    let h = 6 + v.balls.len() as i32 * 14;
+    c.panel(x, 4, w, h, plate, ink::PANEL_EDGE);
+    for (seat, b) in v.balls.iter().enumerate() {
+        let y = 6 + seat as i32 * 14;
+        let total: u32 = v.scorecard[seat]
+            .iter()
+            .flatten()
+            .map(|&s| u32::from(s))
+            .sum();
+        let ink = if to_play == Some(seat) {
+            pen::GOLD
+        } else {
+            pen::WHITE
+        };
+        c.dot(x + 6, y + 7, 2, seat_color(seat));
+        c.text(mode.seat_name(seat), x + 12, y, ink);
+        let now = if b.done {
+            format!("{}*", b.strokes)
+        } else {
+            b.strokes.to_string()
+        };
+        c.text_right(format!("{now} ({total})"), x + w - 4, y, ink);
+    }
+    // The power meter while it runs.
+    if let GolfPhase::Power { meter, .. } = v.phase {
+        let (mx, my, mw) = (60, 202, 200);
+        c.panel(mx - 4, my - 14, mw + 8, 24, plate, ink::PANEL_EDGE);
+        c.text("Power", mx, my - 14, pen::DIM);
+        c.panel(mx, my, mw, 8, [20, 24, 36, 255], ink::PANEL_EDGE);
+        let fill = (mw - 2) * meter.min(100) as i32 / 100;
+        let col = if meter > 85 {
+            [230, 80, 60, 255]
+        } else {
+            ink::HIGHLIGHT
+        };
+        c.rect(mx + 1, my + 1, fill, 6, col);
+    } else if let Some(last) = log.last() {
+        c.text_centre(last.clone(), 160, 196, pen::WHITE);
+    }
+    footer(
+        c,
+        match v.phase {
+            GolfPhase::Power { .. } => "Cross: strike   Circle: re-aim",
+            GolfPhase::Aim { seat } if seat == mode.local_seat => {
+                "Left/Right: aim (Square: fine)   Cross: power"
+            }
+            _ => "Start: leave",
+        },
+    );
+}
+
 fn scorecard(c: &mut Canvas, mode: &ActiveMode, v: &GolfView) {
     let (x, w) = (CARD_X, 320 - CARD_X - 4);
     let holes = v.scorecard.first().map_or(0, Vec::len);

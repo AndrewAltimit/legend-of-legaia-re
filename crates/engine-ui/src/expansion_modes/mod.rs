@@ -207,6 +207,17 @@ pub enum ModeScreen<'a> {
         log: &'a [String],
         quit_prompt: bool,
     },
+    /// A golf round or race played in the world on its pack map: the field
+    /// draws under it, so this is only the HUD - the hole and scorecard or
+    /// the lap and place, the power meter or boost gauge, the stage's banner
+    /// - over a clear stage.
+    InWorld {
+        mode: &'a ActiveMode,
+        log: &'a [String],
+        quit_prompt: bool,
+        /// The stage's banner ("Birdie!", "Lap 2", the countdown).
+        banner: Option<&'a str>,
+    },
     /// A finished (or quit) session.
     Results {
         name: &'a str,
@@ -252,8 +263,33 @@ fn labels_to_draws(font: &legaia_font::Font, labels: &[Label]) -> Vec<TextDraw> 
 
 pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
     let mut c = Canvas::default();
-    c.rect(0, 0, STAGE_W, STAGE_H, ink::BACKDROP);
+    if !matches!(screen, ModeScreen::InWorld { .. }) {
+        c.rect(0, 0, STAGE_W, STAGE_H, ink::BACKDROP);
+    }
     match *screen {
+        ModeScreen::InWorld {
+            mode,
+            log,
+            quit_prompt,
+            banner,
+        } => {
+            match mode.view() {
+                ModeView::Golf(v) => golf::hud(&mut c, mode, &v, log),
+                ModeView::Race(v) => race::hud(&mut c, mode, &v),
+                _ => {}
+            }
+            if let Some(text) = banner {
+                stage_banner(&mut c, text);
+            }
+            if quit_prompt {
+                modal(
+                    &mut c,
+                    "Leave this game?",
+                    &["Nothing is won by leaving early."],
+                    "Cross: leave    Circle: keep playing",
+                );
+            }
+        }
         ModeScreen::Picker {
             heading,
             entries,
@@ -300,6 +336,14 @@ pub(crate) fn header(c: &mut Canvas, name: &str, kind: &str) {
     c.rect(0, 16, STAGE_W, 1, ink::PANEL_EDGE);
     c.text(name, 6, 1, pen::GOLD);
     c.text_right(kind, STAGE_W - 6, 1, pen::DIM);
+}
+
+/// A banner across the upper middle of the stage, over the world.
+pub(crate) fn stage_banner(c: &mut Canvas, text: &str) {
+    let (w, h) = (180, 22);
+    let (x, y) = ((STAGE_W - w) / 2, 52);
+    c.panel(x, y, w, h, [10, 14, 24, 200], ink::HIGHLIGHT);
+    c.text_centre(text, STAGE_W / 2, y + 4, pen::GOLD);
 }
 
 /// The control hint bar along the bottom.

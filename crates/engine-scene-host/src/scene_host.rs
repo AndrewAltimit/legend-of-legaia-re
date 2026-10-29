@@ -261,6 +261,10 @@ pub struct SceneHost {
     /// entry cannot hand it to the scene loaded after).
     pub(crate) pending_scene_override:
         Option<Arc<legaia_engine_scene::expansion_map::SceneOverride>>,
+    /// The pack map an in-world mode last failed to enter
+    /// ([`SceneHost::sync_pack_mode_map`]), so a broken map is tried once
+    /// and the mode draws its top-down screen instead.
+    pub(crate) failed_pack_mode_map: Option<String>,
     /// The disc's inbound door / warp arrivals keyed by destination
     /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
     /// first scene-picker entry that asks for it and kept for the session.

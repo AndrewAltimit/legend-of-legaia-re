@@ -341,6 +341,11 @@ pub fn resolve_field_camera(
     {
         return FieldCameraFrame::Venue(stage.camera);
     }
+    // A golf round or race played on a pack map frames through its stage's
+    // shot (behind the ball down the aim, chasing the racer).
+    if let Some(frame) = crate::pack_mode_world::stage_frame(world, cam) {
+        return frame;
+    }
     if world.mode == SceneMode::WorldMap {
         let (az, zoom, px, pz, top_view) = world
             .world_map

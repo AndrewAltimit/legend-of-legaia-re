@@ -5,6 +5,8 @@ id = "links-golf"
 name = "Tower Green"
 map = "links_green"
 surfaces = { "," = "rough" }
+# The AI seat's body: a map NPC (seats in order, the player's skipped).
+bodies = ["rival_noa"]
 
 [[golf.holes]]
 par = 2
@@ -27,4 +29,5 @@ racers = 3
 half_width = 90
 ai_tier = "novice"
 waypoints = [[2, 2], [15, 2], [15, 9], [2, 9]]
+bodies = ["racer_noa", "racer_gala"]
 boost_segments = [0]

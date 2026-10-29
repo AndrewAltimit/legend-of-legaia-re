@@ -8,6 +8,12 @@
 //! scales with the rest of its stage group. Both come from
 //! `legaia_engine_ui::expansion_modes`, so the two hosts draw one screen.
 //!
+//! A golf round or race played on its pack map draws in the world: the
+//! field renders under the seat, the world pieces come from
+//! `legaia_engine_world_views::pack_mode_world` (the host's
+//! `HostScreenPrims::pack_mode_world`), and the screen here is only the HUD
+//! (`ModeScreen::InWorld`).
+//!
 //! The trading-card screen shares the seat's frame: while the card seat is
 //! open the same two calls draw it instead (`card_screen_prims` /
 //! `card_screen_texts`), with the portraits the scene host cached on the
@@ -44,6 +50,16 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
             cursor: *cursor,
             error: error.as_deref(),
         },
+        // Played on its pack map: the field draws the game, the screen only
+        // its HUD.
+        ModeStage::Playing { mode, quit_prompt } if seat.stage_frame.is_some() => {
+            ModeScreen::InWorld {
+                mode,
+                log: &seat.log,
+                quit_prompt: *quit_prompt,
+                banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+            }
+        }
         ModeStage::Playing { mode, quit_prompt } => ModeScreen::Playing {
             mode,
             log: &seat.log,

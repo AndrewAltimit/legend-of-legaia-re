@@ -190,6 +190,7 @@ mod expansion_map;
 mod expansion_map_npcs;
 mod expansion_modes;
 mod expansion_quests;
+pub mod expansion_stage;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;

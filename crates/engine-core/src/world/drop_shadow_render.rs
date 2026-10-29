@@ -70,7 +70,9 @@ impl World {
     ///
     /// REF: FUN_8001B964 (the gate at `0x8001BE20..0x8001BE48`)
     pub fn field_drop_shadows(&self, view: &FieldCameraView) -> Vec<DropShadowQuad> {
-        if !Self::fog_mode(self.mode) {
+        // An in-world golf round or race keeps the field under it, and the
+        // leader on that field keeps its blob.
+        if !Self::fog_mode(self.mode) && self.pack_mode_stage().is_none() {
             return Vec::new();
         }
         let curve_bias = self.overworld_curve_bias();

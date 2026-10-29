@@ -23,6 +23,9 @@
 //! [`PendingCardReward`]s until the card economy collects them. A forfeited
 //! session grants nothing.
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_modes::active::{
     ActiveMode, BuildOptions, ModeEntry, ModeKind, ModeView, Settlement, entries,
@@ -30,7 +33,10 @@ use legaia_engine_modes::active::{
 use legaia_engine_modes::session::{Currency, ModeRng, Placement, Reward};
 use legaia_engine_system::pad::PadButton;
 use legaia_expansion_format::cards::CardSection;
+use legaia_expansion_format::map::MapDef;
 use legaia_expansion_format::modes::ModeSection;
+
+use crate::mode_stage::{StageFrame, WorldStage};
 
 /// Log lines the playing stage keeps.
 pub const LOG_LINES: usize = 4;
@@ -86,6 +92,21 @@ pub struct PackModeSeat {
     pub held_over: u16,
     /// A netplay driver advances the session; the seat does not tick it.
     pub networked: bool,
+    /// The pack's maps, which a golf course or race played on a map is
+    /// built from ([`ActiveMode::build_with_maps`]).
+    pub maps: Arc<BTreeMap<String, MapDef>>,
+    /// The in-world stage's memory (camera ease, the leader's walk,
+    /// banners). Presentation only: the session never reads it.
+    pub world_stage: WorldStage,
+    /// This frame's in-world stage, while a session played on a map runs
+    /// on that map; `None` draws the top-down screen.
+    pub stage_frame: Option<StageFrame>,
+    /// The player's field pose `[x, y, z, facing]` when the seat opened,
+    /// restored when it closes (the in-world stage moves the leader).
+    pub player_return: Option<[i16; 4]>,
+    /// The map NPC slots the in-world stage drives as other seats' bodies,
+    /// with the clip each stood in before (restored when the seat closes).
+    pub body_idle: Vec<(u8, u8)>,
 }
 
 /// A card grant waiting for the card economy.
@@ -123,8 +144,19 @@ impl PackModeSeat {
             },
             log: Vec::new(),
             held_over: u16::MAX,
+            maps: Arc::default(),
+            world_stage: WorldStage::default(),
+            stage_frame: None,
+            player_return: None,
+            body_idle: Vec::new(),
             networked: false,
         }
+    }
+
+    /// The seat with the pack's maps to build map instances from.
+    pub fn with_maps(mut self, maps: Arc<BTreeMap<String, MapDef>>) -> Self {
+        self.maps = maps;
+        self
     }
 
     /// A seat already playing `mode`.
@@ -138,6 +170,11 @@ impl PackModeSeat {
             },
             log: Vec::new(),
             held_over: u16::MAX,
+            maps: Arc::default(),
+            world_stage: WorldStage::default(),
+            stage_frame: None,
+            player_return: None,
+            body_idle: Vec::new(),
             networked: false,
         }
     }
@@ -231,7 +268,7 @@ impl PackModeSeat {
                 }
                 if pressed(PadButton::Cross) {
                     let id = entries[*cursor].id.clone();
-                    match ActiveMode::build(modes, cards, &id, seed, opts) {
+                    match ActiveMode::build_with_maps(modes, cards, &self.maps, &id, seed, opts) {
                         Ok(mode) => {
                             self.stage = ModeStage::Playing {
                                 mode: Box::new(mode),
@@ -239,6 +276,8 @@ impl PackModeSeat {
                             };
                             self.log.clear();
                             self.held_over = u16::MAX;
+                            self.world_stage = WorldStage::default();
+                            self.stage_frame = None;
                         }
                         Err(e) => *error = Some(e.to_string()),
                     }

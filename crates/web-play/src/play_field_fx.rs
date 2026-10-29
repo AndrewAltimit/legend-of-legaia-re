@@ -117,6 +117,15 @@ impl LegaiaRuntime {
             .map(|v| v.drop_shadow_prims())
             .unwrap_or_default()
     }
+
+    /// An in-world golf round's or race's pieces (balls, cup and flag, aim
+    /// arrow, bodies, boost trails) - the shared pass both hosts draw
+    /// (`legaia_engine_world_views::screen_passes::HostView::pack_mode_world_prims`).
+    pub(crate) fn pack_mode_world_prims(&self) -> Vec<ScreenPrim> {
+        self.host_view_at(self.field_pass_box())
+            .map(|v| v.pack_mode_world_prims())
+            .unwrap_or_default()
+    }
 }
 
 impl LegaiaRuntime {

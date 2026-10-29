@@ -2700,6 +2700,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-dev-menu",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",

@@ -128,7 +128,7 @@ impl<'a> HostView<'a> {
     /// host depth-tests it against the scene already drawn: under the actor
     /// standing on it, over the ground. Empty outside game mode 3.
     pub fn drop_shadow_prims(&self) -> Vec<ScreenPrim> {
-        if !World::fog_mode(self.world.mode) {
+        if !World::fog_mode(self.world.mode) && self.world.pack_mode_stage().is_none() {
             return Vec::new();
         }
         let Some(view) = self.follow_frame().field_view() else {
@@ -196,6 +196,18 @@ impl<'a> HostView<'a> {
             self.scene_box,
             draw_player,
         )
+    }
+
+    /// This frame's in-world mode pieces - golf balls, the cup and flag,
+    /// the aim arrow, the other seats' bodies, boost trails
+    /// ([`crate::pack_mode_world::stage_prims`]) - through the frame the
+    /// stage's shot resolves to. Empty unless a golf round or race played on
+    /// a pack map owns the frame.
+    pub fn pack_mode_world_prims(&self) -> Vec<ScreenPrim> {
+        if self.world.pack_mode_stage().is_none() {
+            return Vec::new();
+        }
+        crate::pack_mode_world::stage_prims(self.world, &self.follow_frame(), self.scene_box)
     }
 
     /// This frame's overworld sky band (`FUN_801F73E4`) through the gate

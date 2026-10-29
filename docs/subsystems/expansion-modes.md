@@ -199,6 +199,80 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 | Prop hunt | A top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts. A functional view |
 | Results | Placements with each mode's score, and what was won |
 
+## In-world golf and racing
+
+A golf course or a race that names a pack map (`map = "<id>"`, schema in the expansion-pack format page's `modes.toml` section) is played in the 3D field scene the map builds ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md)) instead of on a top-down board. The session is unchanged and stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. The pieces:
+
+| Piece | Where |
+|---|---|
+| Course and track from a map | `golf::course::Course::from_map`, `racing::Track::from_map`, built by `ActiveMode::build_with_maps` |
+| Mode units on the field | `map_frame::MapFrame` (origin and scale), `ActiveMode::map_frame` |
+| The stage (leader, balls, aim, bodies, trails, camera shot, banner) | `legaia_engine_expansion::mode_stage::WorldStage`, kept on `PackModeSeat` |
+| Moving the leader | `World::stage_pack_mode` (`world::expansion_stage`), after the seat's tick |
+| Entering the map | `SceneHost::sync_pack_mode_map`, off `World::pack_mode_wants_map` |
+| Camera | `legaia_engine_world_views::pack_mode_world::stage_frame`, a `FieldCameraFrame::Venue` arm of `resolve_field_camera` |
+| World pieces | `pack_mode_world::stage_prims` through `HostView::pack_mode_world_prims` |
+| HUD | `ModeScreen::InWorld` (`engine-ui` `golf::hud`, `race::hud`) |
+
+### Laying a course out on a map
+
+A map hole is the map's tile grid inside the hole's `area`, one golf tile per map tile: a tile with any wall quarter is a wall, a void tile and everything outside the area is out of bounds, and an open tile plays as its legend character's surface. Heights are the rank of each tier's floor height among the tiers the hole uses, doubled, because the session's slope is a central difference that halves a one-step change. The tee and the cup sit on their tiles' centres.
+
+The session runs in its own mode units, exactly as for a tile-string course, and `MapFrame` places them on the field: mode `(0, 0)` at the area's corner tile, mode `+x` / `+y` on world `+X` / `+Z`, so a 12-bit mode angle keeps its meaning on the ground. The scale is per mode. Golf runs at four world units a mode unit, which makes a golf tile one 128-unit map tile and keeps a hole the length the ball physics was tuned for; racing runs at two, where the racers' top speed is about the field player's run. A race's centerline is its `waypoints`' tile centres in those units; the track edge is still the session's half-width, so a map's corridor should be drawn to match it.
+
+### The stage
+
+`WorldStage::step` turns the session's view into a `StageFrame` once a frame, while the session's map is the one the player is in:
+
+- **Golf.** The party leader stands beside the player's ball facing the aim, plays the swing for 24 frames after a strike, and runs to the ball's new lie once it rests; holed, it waits by the cup. The other seats stand at their own balls as bodies, on the far side from where the leader would stand. Every ball not yet holed draws, the rolling one at the session's rolling position. The aim arrow lies on the ground from the ball to play, lengthening with the power meter and warming from yellow to red as it fills. The camera sits behind the ball to play looking down its aim, follows a rolling ball along the shot's line, and settles on the cup between holes; it eases toward each target. Banners name the hole and par at its start and the score as a ball drops ("Birdie!", "Hole in one!").
+- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it. The other racers are bodies. A boosting racer leaves a fading ribbon of its last positions. The camera chases from behind on the heading, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
+
+The party bank has no swing clip, so the swing plays the landing clip (clip base `7`, the hop phase machine's landing), whose crouch and rise reads as a putt. The leader's walk to its ball, the camera ease and the banner timers are the stage's own memory; nothing the stage keeps reaches the session.
+
+`World::stage_pack_mode` applies the leader: world position, the floor height under it, the field heading (`render_26`, `(1024 - angle) & 0xFFF` from a mode angle), the clip through the strided-clip binder when it changes, and one step of the player animation. When the seat closes the player returns to the pose it had when the seat opened - on the map's spawn when the mode entered its map.
+
+### Bodies, the leader seat and online play
+
+The leader is the session's local seat (`ActiveMode::local_seat`, seat `0` offline), so a networked peer stands its own golfer or racer and sees the others as bodies. An instance's `bodies` names map NPCs (`[[npcs]]` of its map) for the other seats, in seat order with the leader's skipped: `World::stage_pack_mode` moves each named NPC to its body's pose - its anchor in `World::npcs.positions`, its heading - cues its `walk_clip` while the body moves and its idle clip at rest, and both hosts draw it through the field NPC path, so the bodies are real meshes (a party member placement, model byte `0xF0` and up, draws on any map).
+
+The field's NPC clips keep advancing under the stage (`World::field_npc_clips_advance`). When the seat closes each NPC returns to its tile and idle clip. A networked session builds with the active pack's maps (`NetMode::build` takes them), so map instances play online.
+
+With action movement on (`WorldToggles::action_movement`), an in-world race reads the action dash button (`ACTION_DASH_BUTTON`, R2) as the boost (R1) too.
+
+### Entering the map
+
+`World::enter_pack_mode` and the picker build a map instance with the active pack's maps. The world cannot load a scene, so `World::pack_mode_wants_map` names the map while the player is elsewhere, and `SceneHost::tick` hands it to `sync_pack_mode_map`: the seat is lifted off the world, the map is entered at the instance's `spawn`, and the seat is put back under `SceneMode::Expansion`, set to return to the field of the map. A map that fails to enter is logged once and the instance plays as its top-down screen. An instance with no map is always the top-down screen.
+
+### Drawing it
+
+Both hosts draw the field under the seat as they draw any field scene, the leader with the field's actors and its drop shadow included. The camera is the shared resolver's: under an in-world stage `resolve_field_camera` returns `FieldCameraFrame::Venue` built from the stage's shot (the field follow camera's pitch, `H` and eye depth, the shot's yaw and pull). The stage's own pieces are screen primitives projected through that frame, every corner carrying its scene depth so each host depth-tests them against the field it drew:
+
+| Piece | Shape |
+|---|---|
+| Ball | A shaded disc facing the camera with a band of the seat's colour, over a blob shadow |
+| Cup | A dark disc with a white rim, a flagpole and a red pennant |
+| Aim arrow | A ground strip and head, translucent |
+| Body | A capsule billboard in the seat's colour with a head, over a blob shadow |
+| Boost trail | A translucent cyan ribbon |
+
+They are built in code from no disc bytes. `screen_layers::compose_screen_prims` puts them, with the drop shadows, under the seat's HUD, which is `ModeScreen::InWorld`: the hole, par and whose stroke, a compact scorecard, the power meter; or the lap and place, the running order and the boost gauge; and the stage's banner. The native window fills `HostScreenPrims::pack_mode_world` from `HostView::pack_mode_world_prims`, and the browser play page from the same call (`play_field_fx.rs`).
+
+### Running it
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion crates/engine-modes/tests/fixtures/links \
+    --map links_green --mode links-golf
+```
+
+`--mode links-race` with `--map links_ring` runs the race. The test pack's maps draw their walls as boxes (`wall = { kind = "box" }`) and seat Noa and Gala as map NPCs, the AI golfer and racers. Entered from anywhere else (the picker, `--mode` without `--map`), the scene host takes the player to the instance's map first. A headless capture (`--screenshot-every`) presses the pad through `--pad-script`, e.g. `--pad-script 120:Cross,150:Cross` to start the meter and strike.
+
+### Gaps
+
+- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a capsule billboard in its seat's colour.
+- **Racer collision is the session's.** Racers keep to the track by its half-width, not by the map's walls, so a map draws its corridor to the track.
+- **The browser host enters no pack map** yet ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#gaps)); its draw path for the stage is in place for when it does.
+
 ## Tests
 
 - **Rules.** Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.
@@ -207,6 +281,7 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 - **Pack.** `tests/rebirth_pack.rs` parses the Rebirth `cards.toml` / `modes.toml` and converts every instance into a session config.
 - **Seat.** `engine-modes` `active` builds every built-in instance and rolls a won mode's reward rules; `engine-expansion` `modes` drives the picker, the quit prompt and the results card.
 - **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
+- **In the world.** `engine-modes` `tests/map_modes.rs` lays the `links` test pack's course and track out on their maps (surfaces, walls, heights, tee and cup in their tiles, a putt holing inside the cup's tile). `engine-core` `tests/expansion_stage_world.rs` stands the map's field image under the session and plays a scripted golf round and a scripted race to their ends through `World::tick` (the leader at the ball and on the floor, the swing, the camera following the rolling ball, the chase camera), and runs both with and without the map, asserting the session's state hash matches frame for frame. The disc-gated `engine-scene-host` `expansion_stage_disc` enters both through the scene host over the retail `tower`.
 - **Screens.** `engine-ui` `expansion_modes::tests` checks each screen's key labels and that every panel lies on the stage; `expansion_modes::binder` checks the card screens' labels, the portrait runs and the toast placement.
 - **Card economy.** `engine-modes` `cards::economy`, `cards::screen` and `cards::trade` test buying, opening (the same saved stream opens the same pack), selling at a dealer's rate, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. Further:
   - `engine-expansion` tests the grant drain, the battle sources, stakes, the toasts, and the save block's card record (round trip, and no record without card state).

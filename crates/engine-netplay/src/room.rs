@@ -832,8 +832,9 @@ impl NetPlay {
             self.start_field_hunt(world, &start, me, host);
             return;
         }
+        let maps = world.pack_mode_maps();
         let (modes, cards) = world.pack_mode_sections();
-        let net = match NetMode::build(modes, cards, &start, me, host) {
+        let net = match NetMode::build(modes, cards, &maps, &start, me, host) {
             Ok(n) => n,
             Err(e) => {
                 let text = format!("Could not start {}: {e}", start.mode);
