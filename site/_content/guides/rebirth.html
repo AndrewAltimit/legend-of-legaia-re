@@ -1,0 +1,73 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; <a href="expansion-packs.html">expansion packs</a> &middot; rebirth</div>
+  <h1>Legend of Legaia: Rebirth</h1>
+  <p class="lede">The flagship expansion pack for the port. Rebirth gives levelling to 99 a purpose: an endgame tower of new fights and superbosses tuned for a late-game party, a quest chain that threads them through the world you know, custom maps built from the disc's own scenery, trading cards won in battle and traded or sold, and modes the original never had. It is also the worked example of the format - nothing in the engine knows the pack by name, so anything Rebirth does, another pack can do.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Pack id</dt><dd><code>rebirth</code></dd>
+    <dt>Needs</dt><dd>Your own Legend of Legaia (NA, <code>SCUS-94254</code>) disc. The pack carries no game data.</dd>
+    <dt>Where</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/packs/rebirth" target="_blank" rel="noopener"><code>packs/rebirth/</code></a> in the repository; the <a href="../tooling/expansion-workbench.html">workbench</a> offers it as its example.</dd>
+    <dt>Aimed at</dt><dd>A late-game party: its entrances open once the party is strong enough (the level gates are in the maps table below), and its fights and rewards grow with the party toward 99.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="contents" data-doc="-">
+  <h2>What is in it</h2>
+  <p>The tables below are generated from the pack's files when the site is built, so they show the pack as it stands rather than as it was planned. Every retail monster, scene, item and cue is named by its coordinate, exactly as the pack names it.</p>
+  <!--REBIRTH_CONTENTS-->
+</section>
+
+<section class="doc-section" id="play" data-doc="-">
+  <h2>How to play it</h2>
+  <ol class="steps steps-vertical">
+    <li><b>Get the pack</b><span>Bundle it from a checkout (<code>asset expansion bundle packs/rebirth -o rebirth.lxpack</code>), or open the <a href="../tooling/expansion-workbench.html">workbench</a>, load the Rebirth example and <em>Download .lxpack</em> - or press <em>Play in browser</em> and skip the file entirely.</span></li>
+    <li><b>Load it</b><span>Desktop: the launcher's <em>Expansion pack...</em> button. Browser: the play page's <em>Expansion pack</em> card, once your disc is loaded.</span></li>
+    <li><b>Play to the tower</b><span>Start a new game or continue a late save. The way in is an entrance in the retail world that opens for a strong enough party; until then, the Journal's <em>Travel</em> page enters the pack's maps directly.</span></li>
+    <li><b>Follow the Journal</b><span>Select on the pause menu: the quest chain, the challenges with their best scores, your cards.</span></li>
+  </ol>
+<pre><code># Native, straight onto the tower's first floor
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion packs/rebirth --map rebirth_tower_1f</code></pre>
+  <p>More on loading, the Journal and saves: <a href="playing-expansion-packs.html">playing an expansion pack</a>.</p>
+</section>
+
+<section class="doc-section" id="built-with" data-doc="-">
+  <h2>How it is built</h2>
+  <p>Rebirth is written with exactly the files and tools any modder uses: plain TOML, checked by the same validator, editable on the same workbench. Opening it on the workbench is the quickest way to see how each piece is made.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How Rebirth is built. The pack's TOML files in packs/rebirth are edited by hand or on the workbench with the disc's pickers. The validator checks them, in CI without a disc and on the workbench with one. The bundle step makes rebirth.lxpack, which both play hosts load. The site build reads the same files to generate this page's tables and the workbench's example.">
+      <defs><marker id="rb-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="90" y="44">Edit</text><text class="dg-sub" x="90" y="62">by hand or workbench</text>
+      <rect class="dg-node-accent" x="200" y="20" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="280" y="44">packs/rebirth/</text><text class="dg-sub" x="280" y="62">TOML, no disc bytes</text>
+      <rect class="dg-node" x="390" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="465" y="44">Validate</text><text class="dg-sub" x="465" y="62">CI, workbench</text>
+      <rect class="dg-node-ok" x="570" y="20" width="140" height="56" rx="4"/>
+      <text class="dg-label" x="640" y="44">rebirth.lxpack</text><text class="dg-sub" x="640" y="62">both play hosts</text>
+      <rect class="dg-node" x="200" y="124" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="280" y="148">Site build</text><text class="dg-sub" x="280" y="166">this page, example</text>
+      <path class="dg-edge" d="M170 48 L198 48" marker-end="url(#rb-arrow)"/>
+      <path class="dg-edge" d="M360 48 L388 48" marker-end="url(#rb-arrow)"/>
+      <path class="dg-edge" d="M540 48 L568 48" marker-end="url(#rb-arrow)"/>
+      <path class="dg-edge" d="M280 76 L280 122" marker-end="url(#rb-arrow)"/>
+    </svg>
+    <figcaption>One set of files feeds the game, the checks and this page.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>Piece</th><th>How it is written</th><th>Reference</th></tr></thead>
+    <tbody>
+      <tr><td>Endgame monsters</td><td>Retail monsters with scaled stats and new names; the engine reads their meshes and moves off the disc.</td><td><a href="../formats/expansion-pack-battle.html#monsters">monsters</a></td></tr>
+      <tr><td>A gauntlet fight</td><td>A formation whose later monsters arrive in waves as seats free up.</td><td><a href="../formats/expansion-pack-battle.html#waves">waves</a></td></tr>
+      <tr><td>Levels 60 to 99</td><td>A banded XP curve over retail's steps, multiplied EXP and gold, pack enemies that scale with the party.</td><td><a href="../formats/expansion-pack-battle.html#progression">progression</a></td></tr>
+      <tr><td>The quest chain</td><td>Quests gated on party level and on each other, with dialogue lines and a once-only superboss.</td><td><a href="../formats/expansion-pack-quests.html">quests</a></td></tr>
+      <tr><td>The tower</td><td>A map painted on the workbench's tile painter over a retail scene's scenery, with props, zones and an entrance in a retail town.</td><td><a href="../formats/expansion-pack-maps.html">maps</a></td></tr>
+      <tr><td>The card set</td><td>Cards whose portraits are retail monsters, boosters, a dealer and drop rules on retail and pack fights.</td><td><a href="../formats/expansion-pack.html#cards-toml">cards</a></td></tr>
+      <tr><td>Modes</td><td>A poker table, a duel, a golf course, a race track and a prop-hunt arena, each a few lines of numbers and layout.</td><td><a href="../formats/expansion-pack.html#modes-toml">modes</a></td></tr>
+    </tbody>
+  </table>
+  <p class="callout callout-tip">Check it yourself: <code>asset expansion validate packs/rebirth</code> runs the same checks the game runs before it loads the pack.</p>
+</section>

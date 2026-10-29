@@ -1,0 +1,251 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; netplay</div>
+  <h1>Netplay</h1>
+  <p class="lede">Multiplayer for the port: one player hosts a world and others join it - for a card table, a golf round, prop hunt, or roaming a shared map. Retail has no networking at all (it reads only pad port 0), so everything here is the port's own: a versioned wire protocol, two session cores, the transports and the <code>legaia-relay</code> server in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/netplay/README.md" target="_blank" rel="noopener"><code>crates/netplay</code></a>, joined to a running game by <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-netplay/README.md" target="_blank" rel="noopener"><code>crates/engine-netplay</code></a>. How to play: <a href="../guides/playing-online.html">playing online</a>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <p>The netplay crate names no engine crate. A session drives anything that implements one of two small traits, so a game-mode session from <code>engine-modes</code> and a whole <code>World</code> plug in the same way, and the protocol and session cores do no I/O, which keeps them buildable for the browser host.</p>
+  <dl class="kv">
+    <dt>Simulation contract</dt><dd><code>lockstep::Simulation</code> (<code>tick(&amp;[u16])</code>, <code>state_hash()</code>) or <code>authority::EventSim</code> (<code>apply_event</code>, <code>state_hash</code>).</dd>
+    <dt>Models</dt><dd>Lockstep (every peer simulates from every seat's pad) and host-authoritative (the host simulates; the others send actions).</dd>
+    <dt>Transports</dt><dd>In-memory loopback with simulated latency / jitter / loss, native raw TCP and WebSocket, browser <code>WebSocket</code> (feature <code>web</code>, wasm32 only).</dd>
+    <dt>Server</dt><dd>The <code>legaia-relay</code> binary, or the same server in-process via <code>RelayServer::spawn(addr)</code>.</dd>
+    <dt>Access control</dt><dd>Room codes only - LAN and friends use (<a href="#security-posture">security posture</a>).</dd>
+    <dt>Dependencies</dt><dd>None beyond the workspace's <code>clap</code> (CLI) and the <code>web-sys</code> family (browser); the WebSocket handshake's SHA-1 and base64 are in-crate.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="the-layers" data-doc="the-layers">
+  <h2>The layers</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Netplay layer stack: the game host passes pad words to the session core and gets steps and events back; the session core exchanges Message values with a transport; the transport carries bytes to the relay, a state machine run on threads or in the caller's loop">
+      <defs><marker id="np-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="120" y="10" width="400" height="48" rx="4"/>
+      <text class="dg-label" x="320" y="31">Game host</text><text class="dg-sub" x="320" y="48">play-window, web-play (engine-netplay NetPlay)</text>
+      <rect class="dg-node-accent" x="120" y="88" width="400" height="48" rx="4"/>
+      <text class="dg-label" x="320" y="109">Session core (no I/O)</text><text class="dg-sub" x="320" y="126">LockstepSession | AuthorityHost / AuthorityReplica</text>
+      <rect class="dg-node" x="120" y="166" width="400" height="48" rx="4"/>
+      <text class="dg-label" x="320" y="187">Transport</text><text class="dg-sub" x="320" y="204">Loopback | StreamTransport | WebSocketTransport</text>
+      <rect class="dg-node-ok" x="120" y="244" width="400" height="48" rx="4"/>
+      <text class="dg-label" x="320" y="265">Relay (RelayCore state machine)</text><text class="dg-sub" x="320" y="282">RelayServer threads, or LocalRelay in the caller's loop</text>
+      <path class="dg-edge" d="M300 58 L300 86" marker-end="url(#np-arrow)"/><path class="dg-edge" d="M340 86 L340 60" marker-end="url(#np-arrow)"/>
+      <path class="dg-edge" d="M300 136 L300 164" marker-end="url(#np-arrow)"/><path class="dg-edge" d="M340 164 L340 138" marker-end="url(#np-arrow)"/>
+      <path class="dg-edge" d="M300 214 L300 242" marker-end="url(#np-arrow)"/><path class="dg-edge" d="M340 242 L340 216" marker-end="url(#np-arrow)"/>
+      <text class="dg-edge-label" x="530" y="77">pad words / steps, events</text>
+      <text class="dg-edge-label" x="530" y="155">Message values</text>
+      <text class="dg-edge-label" x="530" y="233">bytes</text>
+    </svg>
+    <figcaption>Every layer polls. A host calls the session once per frame - push the local pad, <code>advance()</code>, <code>pump(&amp;mut transport)</code> - and nothing blocks the frame.</figcaption>
+  </figure>
+  <p>The relay's <code>RelayCore</code> is the whole relay as a state machine with no sockets; <code>RelayServer</code> runs it on threads, and <code>LocalRelay</code> runs it over any transports from the caller's loop (the test harness, or a same-machine room with no sockets).</p>
+</section>
+
+<section class="doc-section" id="wire-format" data-doc="wire-format">
+  <h2>Wire format</h2>
+  <p>One relay port serves two stream framings, told apart by the first four bytes a client sends:</p>
+  <table>
+    <thead><tr><th>First bytes</th><th>Framing</th></tr></thead>
+    <tbody>
+      <tr><td class="hex">LGNP</td><td>Raw TCP: then <code>u32 LE length</code> + message bytes, both directions.</td></tr>
+      <tr><td class="hex">GET&nbsp;</td><td>WebSocket (RFC 6455): the opening handshake, then one binary frame per message. Client frames are masked, server frames are not; text frames and extensions are refused.</td></tr>
+      <tr><td>anything else</td><td>The connection is closed. A <code>GET</code> that is not an upgrade gets <code>400</code> and is closed.</td></tr>
+    </tbody>
+  </table>
+  <p>A message is a one-byte tag followed by its fields. Frame numbers, ids and lengths are LEB128 varints; hashes are fixed 8-byte little-endian; pad words are 2-byte little-endian. Every variable-length field has a cap, checked before anything is allocated, and a whole message is at most 16 KiB. Trailing bytes after a message are an error. The protocol version is negotiated once, in <code>Hello</code>: a relay refuses a client of another version, so no later message repeats it.</p>
+  <table class="compact narrow">
+    <thead><tr><th>Field</th><th>Cap</th></tr></thead>
+    <tbody>
+      <tr><td>Player name</td><td>24 bytes</td></tr>
+      <tr><td>Chat line</td><td>256 bytes</td></tr>
+      <tr><td>Engine build id, pack id, mode id</td><td>64 bytes</td></tr>
+      <tr><td>Start configuration</td><td>4 KiB</td></tr>
+      <tr><td>Action / event / state payload</td><td>8 KiB</td></tr>
+      <tr><td>Seats</td><td>8</td></tr>
+      <tr><td>Room members (seated + spectators)</td><td>16</td></tr>
+      <tr><td>Pad words per input packet</td><td>32</td></tr>
+    </tbody>
+  </table>
+  <h3 id="messages">Messages</h3>
+  <table class="compact">
+    <thead><tr><th>Tag</th><th>Message</th><th>Direction</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td class="hex">0x01</td><td><code>Hello</code></td><td>client to relay</td><td>Protocol version, engine build id, player name, pack identity, create-or-join.</td></tr>
+      <tr><td class="hex">0x02</td><td><code>Welcome</code></td><td>relay to client</td><td>Admitted: the room code and the client's player id.</td></tr>
+      <tr><td class="hex">0x03</td><td><code>Reject</code></td><td>relay to client</td><td>A refused request and why; some reasons also close the connection.</td></tr>
+      <tr><td class="hex">0x04 / 0x05</td><td><code>Ping</code> / <code>Pong</code></td><td>either</td><td>Latency probe; the relay answers pings itself.</td></tr>
+      <tr><td class="hex">0x10</td><td><code>Lobby</code></td><td>relay to room</td><td>The whole lobby (host, seat count, members), re-sent after every change.</td></tr>
+      <tr><td class="hex">0x11</td><td><code>SetReady</code></td><td>client to relay</td><td>Ready toggle.</td></tr>
+      <tr><td class="hex">0x12</td><td><code>AssignSeat</code></td><td>host to relay</td><td>Move a member to a seat or to spectating.</td></tr>
+      <tr><td class="hex">0x13</td><td><code>Chat</code></td><td>both</td><td>A chat line; the relay stamps the real sender and strips control characters.</td></tr>
+      <tr><td class="hex">0x14</td><td><code>Leave</code></td><td>client to relay</td><td>Leave the room; the connection closes.</td></tr>
+      <tr><td class="hex">0x15</td><td><code>PlayerLeft</code></td><td>relay to room</td><td>A member left or dropped.</td></tr>
+      <tr><td class="hex">0x16</td><td><code>HostChanged</code></td><td>relay to room</td><td>Host migration.</td></tr>
+      <tr><td class="hex">0x17</td><td><code>RoomClosed</code></td><td>relay to room</td><td>The room is gone (host of a host-authoritative room left, or relay shutdown).</td></tr>
+      <tr><td class="hex">0x20</td><td><code>Start</code></td><td>host to relay to room</td><td>Seed, mode id, configuration, simulation model; the relay fills in the seat map.</td></tr>
+      <tr><td class="hex">0x21</td><td><code>Input</code></td><td>peer to relay to peers</td><td>One seat's pad words for a run of frames.</td></tr>
+      <tr><td class="hex">0x22</td><td><code>Checkpoint</code></td><td>peer to relay to peers</td><td>A state hash after a frame.</td></tr>
+      <tr><td class="hex">0x23</td><td><code>SeatController</code></td><td>relay to room</td><td>A seat changes hands (a dropped player's seat goes to the AI) from a given frame.</td></tr>
+      <tr><td class="hex">0x24 / 0x25</td><td><code>Pause</code> / <code>Resume</code></td><td>peer to relay to peers</td><td>Session pause; the relay stamps the sender.</td></tr>
+      <tr><td class="hex">0x26</td><td><code>EndSession</code></td><td>peer to relay to room</td><td>The running session is over: the room returns to its lobby.</td></tr>
+      <tr><td class="hex">0x30</td><td><code>Action</code></td><td>client to relay to host</td><td>A player's intention in a host-authoritative session, or a roaming avatar report in the lobby.</td></tr>
+      <tr><td class="hex">0x31</td><td><code>Event</code></td><td>host to relay to room</td><td>A validated event with its sequence number and post-event state hash.</td></tr>
+      <tr><td class="hex">0x32</td><td><code>StateRequest</code></td><td>client to relay to host</td><td>Ask for the full state.</td></tr>
+      <tr><td class="hex">0x33</td><td><code>StateBlob</code></td><td>host to relay to one client</td><td>The state after the first <code>seq</code> events.</td></tr>
+      <tr><td class="hex">0x34</td><td><code>Snapshot</code></td><td>host to relay to room</td><td>Avatar positions and animation state for shared-world roaming.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="rooms-and-the-lobby" data-doc="rooms-and-the-lobby">
+  <h2>Rooms and the lobby</h2>
+  <p>The first message on a connection is <code>Hello</code>. To <strong>create</strong> a room it names a seat count (1 to 8); the relay picks a six-character code from a 32-symbol alphabet without the look-alikes <code>0</code>/<code>O</code> and <code>1</code>/<code>I</code>, makes the sender host and seats them at seat 0. To <strong>join</strong> it names a code; the relay admits the client only if the room is still in its lobby, has room, and the client's engine build id and pack identity (pack id plus SHA-256 of its bundle) equal the host's byte for byte - two different builds or packs would run different rules and diverge on the first frame that touches them. A joiner takes the lowest free seat, or spectates when the seats are full; the host can move anyone with <code>AssignSeat</code>.</p>
+  <p><code>Start</code> is the host's alone, and only once every seated member other than the host is ready. The relay replaces the start order's seat map with the lobby's (seat index to player, empty seats to the AI) and sends it to the whole room, host included, so every peer starts from the same order. A started room admits no one.</p>
+  <p><code>EndSession</code>, from any member of a started room, returns it to the lobby: the relay clears everyone's readiness, sends the notice (stamped with the sender) and the lobby, and admits joiners again. The lobby is not idle time: shared-world roaming runs there, so the relay carries guests' <code>Action</code>s to the host and the host's <code>Snapshot</code>s to the room in the lobby as well as in a host-authoritative session.</p>
+  <p>When the host leaves the lobby, the earliest-joined remaining member becomes host (<code>HostChanged</code>). During a lockstep session the same migration happens; the host has no simulation privilege there. A host-authoritative session ends instead (<code>RoomClosed(HostLeft)</code>): the state lives on the host and nobody else holds it. An empty room is freed at once.</p>
+  <p>Refusals that only concern the request (no such room, room full, wrong build or pack, not ready, not host) leave the connection open so the client can try again; a protocol-version mismatch, a malformed frame, the connection or room cap, and the rate limits close it.</p>
+</section>
+
+<section class="doc-section" id="lockstep" data-doc="lockstep">
+  <h2>Lockstep</h2>
+  <p>Every peer runs the same deterministic simulation from every seat's pad word, frame by frame. <code>LockstepSession&lt;S: Simulation&gt;</code> is the core:</p>
+  <ul class="bullets">
+    <li><strong>Input delay.</strong> A peer samples its pad for frame <code>f + input_delay</code> while simulating frame <code>f</code>, and sends it. Frames <code>0..input_delay</code> run on zero pads everywhere, so nobody waits at the start. The delay hides that much one-way latency through the relay; beyond it the slowest link sets the pace.</li>
+    <li><strong>Stall.</strong> Frame <code>f</code> is simulated only once every human seat's word for <code>f</code> is known; until then <code>advance()</code> returns <code>Stalled</code> with the seats being waited on. <code>wants_local_input()</code> stops the local pad running more than the delay ahead.</li>
+    <li><strong>Redundancy.</strong> Every input packet repeats the sender's last K words (default 8, at most 32). After a few consecutive stalled calls the latest packet is sent again, so a lost packet is covered even when the stall itself stops new packets. The relay transports are reliable streams; the redundancy serves an unreliable input channel and is exercised by the loopback link's input loss.</li>
+    <li><strong>Checkpoints.</strong> Every <code>checkpoint_interval</code> frames each peer hashes its state after the tick and sends the hash. A hash that differs from a peer's for the same frame is a desync, reported once with the frame, both hashes and the peer's seat; by default the session then halts. Spectators verify but send nothing.</li>
+    <li><strong>Pause.</strong> <code>pause()</code> stops the local pad and tells the room; every peer stops sampling, and the simulations stop within the input delay, all on frames fixed by the inputs already sent. <code>resume()</code> clears it.</li>
+    <li><strong>Dropped players.</strong> When a seated player disconnects, the relay re-sends that seat's last packet and announces <code>SeatController { seat, Ai, from_frame }</code> with the end of the last input frame it forwarded. No peer can have simulated <code>from_frame</code> without an input that never comes, so every peer switches the seat to the AI at the same frame (<code>Simulation::set_seat_controller</code>).</li>
+  </ul>
+  <h3 id="what-a-simulation-owes">What a simulation owes</h3>
+  <p><code>state_hash()</code> must be equal for equal states on every platform: no pointer values, no <code>HashMap</code> iteration order, no floating point a target can round differently. <code>tick()</code> must depend on nothing but the state and the pad words - no wall clock, no host RNG. It is the contract the <a href="../tooling/determinism-replay.html">replay harness</a> already holds <code>World::tick</code> to. A <code>World</code>-backed simulation additionally has to give each seat's word somewhere to go - retail reads only pad port 0 - which is the hosts' multi-avatar work, not this crate's.</p>
+  <h3 id="rollback">Rollback</h3>
+  <p>Rollback - predict missing inputs, simulate ahead, restore a snapshot and re-simulate on a misprediction - needs a snapshot cheap enough to take every frame. The mode sessions could provide one; a whole <code>World</code> cannot (it is large and holds scene resources), which is why the core is delay-based. Input packets already carry frame numbers, so rollback would add a <code>RollbackSimulation</code> trait (<code>snapshot</code> / <code>restore</code>) and leave the wire format unchanged.</p>
+</section>
+
+<section class="doc-section" id="host-authoritative" data-doc="host-authoritative">
+  <h2>Host-authoritative</h2>
+  <p>One player owns the state; the rest send intentions and follow. It suits what is turn-based or what only the host can resolve.</p>
+  <ul class="bullets">
+    <li><strong>Turn-based events</strong> (cards, poker). A client sends <code>Action</code>; the relay carries it to the host stamped with the sender. <code>AuthorityHost</code> turns it into an event through a host-supplied validator (which can refuse it, for example out of turn), applies it, and broadcasts <code>Event</code> with a sequence number and the post-event hash. <code>AuthorityReplica</code> applies events in sequence order, buffering early ones, and checks each hash. A replica whose simulation can serialise itself (<code>EventSim::save_state</code> / <code>load_state</code>) recovers from a mismatch, or from joining late, by asking for a <code>StateBlob</code> and holding events until it arrives.</li>
+    <li><strong>Shared-world roaming.</strong> The host broadcasts every avatar's scene, position, facing and animation frame as a <code>Snapshot</code> at 10 to 20 Hz. <code>AvatarInterpolator</code> keeps an estimate of the host's frame clock and draws each avatar two snapshot intervals in the past, between the two snapshots that bracket that moment: positions interpolate linearly, facing the short way round the 4096-unit circle, and a scene change snaps. Past the newest snapshot it holds the last pose rather than extrapolating, so a stalled link freezes an avatar instead of walking it through a wall.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="host-a-world" data-doc="host-a-world">
+  <h2>Host a world</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 700 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three topologies. A: a native play window hosting with --host runs an in-process RelayServer on 0.0.0.0:7462 and joins it over 127.0.0.1; guests join from native play windows over TCP or WebSocket and from the browser play page over ws://. B: a standalone legaia-relay on a dedicated machine serves the same clients. C: a page from the published https site may only open wss://, so it reaches the relay through a TLS-terminating reverse proxy that forwards the WebSocket upgrade">
+      <defs><marker id="np-arrow2" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="6" y="6" width="688" height="160" rx="6"/>
+      <text class="dg-edge-label" x="16" y="24">A - a play window hosts</text>
+      <rect class="dg-node-ok" x="24" y="40" width="220" height="110" rx="4"/>
+      <text class="dg-label" x="134" y="62">play-window --host</text>
+      <rect class="dg-node-accent" x="40" y="76" width="188" height="30" rx="3"/>
+      <text class="dg-sub" x="134" y="95">RelayServer 0.0.0.0:7462</text>
+      <text class="dg-sub" x="134" y="128">joins over 127.0.0.1</text>
+      <rect class="dg-node" x="440" y="36" width="236" height="44" rx="4"/>
+      <text class="dg-label" x="558" y="55">play-window --join</text><text class="dg-sub" x="558" y="71">LAN guest, TCP or WebSocket</text>
+      <rect class="dg-node" x="440" y="104" width="236" height="44" rx="4"/>
+      <text class="dg-label" x="558" y="123">Browser play page</text><text class="dg-sub" x="558" y="139">Online panel, ws://host:7462/</text>
+      <path class="dg-edge" d="M438 58 L246 80" marker-end="url(#np-arrow2)"/>
+      <path class="dg-edge" d="M438 126 L246 112" marker-end="url(#np-arrow2)"/>
+      <rect class="dg-group" x="6" y="178" width="688" height="90" rx="6"/>
+      <text class="dg-edge-label" x="16" y="196">B - a dedicated relay</text>
+      <rect class="dg-node-ok" x="24" y="208" width="220" height="48" rx="4"/>
+      <text class="dg-label" x="134" y="228">legaia-relay</text><text class="dg-sub" x="134" y="245">--bind 0.0.0.0:7462</text>
+      <rect class="dg-node" x="440" y="208" width="236" height="48" rx="4"/>
+      <text class="dg-label" x="558" y="228">Every player joins</text><text class="dg-sub" x="558" y="245">windows and pages alike</text>
+      <path class="dg-edge" d="M438 232 L246 232" marker-end="url(#np-arrow2)"/>
+      <rect class="dg-group" x="6" y="280" width="688" height="112" rx="6"/>
+      <text class="dg-edge-label" x="16" y="298">C - from the published https site</text>
+      <rect class="dg-node" x="440" y="316" width="236" height="56" rx="4"/>
+      <text class="dg-label" x="558" y="338">Page over https://</text><text class="dg-sub" x="558" y="356">may only open wss://</text>
+      <rect class="dg-node-warn" x="250" y="316" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="325" y="338">TLS proxy</text><text class="dg-sub" x="325" y="356">forwards the upgrade</text>
+      <rect class="dg-node-ok" x="24" y="316" width="190" height="56" rx="4"/>
+      <text class="dg-label" x="119" y="338">Relay</text><text class="dg-sub" x="119" y="356">plain ws://, no TLS</text>
+      <path class="dg-edge" d="M438 344 L402 344" marker-end="url(#np-arrow2)"/>
+      <path class="dg-edge" d="M250 344 L216 344" marker-end="url(#np-arrow2)"/>
+      <text class="dg-edge-label" x="420" y="310" text-anchor="middle">wss</text>
+      <text class="dg-edge-label" x="232" y="310" text-anchor="middle">ws</text>
+    </svg>
+    <figcaption>Where the relay runs. A page cannot listen on a socket, so a browser always joins; a native window or <code>legaia-relay</code> hosts.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Standalone:</strong> <code>legaia-relay --bind 0.0.0.0:7462</code> (the default port), for a dedicated machine on a LAN or a small server.</li>
+    <li><strong>In-process:</strong> the hosting game calls <code>RelayServer::spawn(addr)</code> and gets a <code>RelayHandle</code> with the bound address; it then connects to <code>127.0.0.1:&lt;port&gt;</code> like any other client, creates the room and shows the room code and its address. Dropping the handle (or <code>shutdown()</code>) closes every room, tells each client <code>RoomClosed(ServerShutdown)</code>, and joins every thread; nothing is left listening.</li>
+  </ul>
+  <p>Native clients connect with <code>StreamTransport::connect_tcp</code> or <code>connect_ws</code>; the browser host connects with <code>WebSocketTransport::connect("ws://host:port/")</code>. A page served over <code>https://</code> may only open <code>wss://</code> sockets (loopback excepted), and the relay does not do TLS itself, so a relay reached from the published site sits behind a TLS-terminating reverse proxy that forwards the WebSocket upgrade.</p>
+</section>
+
+<section class="doc-section" id="security-posture" data-doc="security-posture">
+  <h2>Security posture</h2>
+  <p>The relay is for LAN and friends. Its only access control is the room code, and it never touches the file system or the game: it speaks the netplay protocol and nothing else, refuses every HTTP request that is not a WebSocket upgrade, and holds no game data.</p>
+  <table>
+    <thead><tr><th>Bound</th><th>Default</th><th>What it stops</th></tr></thead>
+    <tbody>
+      <tr><td>Message size</td><td>16 KiB</td><td>Memory blow-up from one frame (checked before buffering).</td></tr>
+      <tr><td>Message rate</td><td>240/s sustained, 480 burst, per connection</td><td>Flooding; over it, the connection is dropped.</td></tr>
+      <tr><td>Bad room codes</td><td>5 per connection</td><td>Code guessing; the connection is dropped.</td></tr>
+      <tr><td>Connections</td><td>256 total, 16 per IP address</td><td>Socket exhaustion.</td></tr>
+      <tr><td>Rooms</td><td>64</td><td>Room-table growth.</td></tr>
+      <tr><td>Members per room</td><td>16</td><td>Lobby growth.</td></tr>
+      <tr><td>Outbound queue</td><td>1024 messages per connection</td><td>A client that stops reading is dropped, not buffered.</td></tr>
+      <tr><td>Handshake</td><td>5 s</td><td>Half-open connections.</td></tr>
+    </tbody>
+  </table>
+  <p>Per room the relay keeps only the lobby rows, the seat map and, per seat, one frame counter and the last input packet - no frame history - so a room's memory is bounded by the caps above whatever a session's length.</p>
+  <div class="callout callout-warn"><p class="callout-title">Play with people you trust</p><p>There is no authentication beyond the code, no encryption (use the TLS proxy) and no cheat prevention. The relay stamps every input, checkpoint, chat line and action with the sender's real seat and id, so a peer cannot speak for another, but a lockstep peer chooses its own seat's inputs freely and a host-authoritative host decides everything.</p></div>
+</section>
+
+<section class="doc-section" id="in-the-hosts" data-doc="in-the-hosts">
+  <h2>In the hosts</h2>
+  <p><code>engine-netplay</code> joins the protocol to a running <code>World</code>. Both play hosts drive one <code>room::NetPlay</code> per player, once per tick, before the world's tick: it pumps the transport, runs the room screen when it is open (the pad goes to the screen, not the world), and drives whichever phase the room is in.</p>
+  <h3 id="the-flow">The flow</h3>
+  <table>
+    <thead><tr><th>Step</th><th>Native play window</th><th>Browser play page</th></tr></thead>
+    <tbody>
+      <tr><td>Host</td><td><code>play-window --host [PORT]</code> starts <code>RelayServer::spawn</code> on <code>0.0.0.0:PORT</code> (default <code>7462</code>) and joins it over <code>127.0.0.1</code>.</td><td>Cannot host: a page cannot listen on a socket.</td></tr>
+      <tr><td>Join</td><td><code>play-window --join ADDR --room CODE --name NAME</code>.</td><td>The Online panel: relay URL (<code>ws://host:port/</code>), room code, name.</td></tr>
+      <tr><td>Room screen</td><td><code>Tab</code> (and, in a room, the backquote key); <code>T</code> types a chat line.</td><td>The Room button or <code>Tab</code>; the panel's chat box.</td></tr>
+      <tr><td>Avatars</td><td>The leader mesh posed per avatar in the actor pass.</td><td>Copies of the leader rig, mesh ids above the player's.</td></tr>
+    </tbody>
+  </table>
+  <p>The room screen lists the players (seat colour, ready, host), and rows for the host's game pick and Start, a guest's Ready, an emote, a quick-chat line, Leave and Close; chat and room notices run along its bottom. The title shows the room code and the address others join at - the host's LAN address for a hosting window. Closed, a small panel over the field names the room, its players and the newest chat lines.</p>
+  <h3 id="modes">Modes</h3>
+  <p>The host picks an instance from the world's mode list (the active pack's, or the built-in practice set) and starts it; every peer builds that instance from the start order's id and seed. The first room seats fill the mode's seats; a mode seat with no player is the AI, and a player whose room seat the mode lacks roams instead. Golf seats the whole room. The session runs in the world's own mode seat (<code>PackModeSeat::networked</code>), so it draws through the offline screens, with "You" on each player's own seat; it grants nothing.</p>
+  <table>
+    <thead><tr><th>Kind</th><th>Model</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Golf, racing, prop hunt</td><td>Lockstep</td><td>Real-time; only pad words and checkpoint hashes travel.</td></tr>
+      <tr><td>Poker, Grid Duel</td><td>Host-authoritative view stream</td><td>Turn-based; poker hides hole cards.</td></tr>
+    </tbody>
+  </table>
+  <p><strong>Lockstep.</strong> <code>ModeSim</code> is the <code>Simulation</code>: the real session lives in the world's seat and is swapped into the lockstep core around each advance, so the screens draw the simulated state. A desync ends the game for everyone with the frame and seat on the room screen; a dropped player's seat goes to the AI on the same frame everywhere.</p>
+  <p><strong>View stream.</strong> Only the host runs the session. A guest sends its pad word when it changes; the host feeds one change per tick to that seat, so a press and its release arriving together still give the session a pressed frame. After a tick that changed what a guest sees, the host sends it a numbered <code>StateBlob</code>: the table as that seat may see it plus the tick's log lines worded for it. A guest's own copy of the instance is built from another seed and only labels the screen. Under the view stream a poker guest never receives another seat's hole cards before the showdown, and then only the live hands; Grid Duel is played with open hands and passes through unredacted. The price is a round trip of input latency, which a turn-based table does not notice, and that the session ends if its host leaves (diagram on <a href="expansion-modes.html#session-contract">expansion game modes</a>).</p>
+  <p>Leaving a mode (the quit prompt, or the results screen) sends <code>EndSession</code>; another player still mid-game is returned to the lobby with a notice, while one reading the results keeps them until they leave.</p>
+  <h3 id="roaming">Roaming</h3>
+  <p>Players roam their own worlds. A guest reports its avatar (scene id - the scene's first PROT entry -, position, facing, idle or walk clip and frame) to the host at 15 Hz; the host broadcasts all of them, its own included, as one snapshot; every peer draws the others in its scene through the <code>AvatarInterpolator</code>. Outside the field (a menu, a battle, a mode) an avatar is reported with no scene and drawn nowhere.</p>
+  <p>The limits, by design: nothing but avatars is shared. Each world runs its own scripts, encounters, doors, dialogue and battles, so two players see each other walk but not each other's fights or story state; there is no collision between avatars. A remote player is drawn as the local party leader (posed with the local leader's clips at the reported frame), since a field scene loads only its own leader's rig. Emotes are chat lines (<code>* Vahn waves</code>), not animations. Prop hunt runs on the mode's own arena and pad movement, not on a field map.</p>
+</section>
+
+<section class="doc-section" id="tests" data-doc="tests">
+  <h2>Tests</h2>
+  <p><code>crates/netplay/tests/</code> is disc-free, all of it:</p>
+  <ul class="bullets">
+    <li><code>codec_roundtrip.rs</code> - every message variant round-trips, every strict prefix of an encoding is refused, random bytes never panic the decoder.</li>
+    <li><code>lockstep_loopback.rs</code> - 2, 3 and 4 peers through the relay core over links with latency, jitter (so reordering) and 5% input loss agree on the state after 10 000 frames of a toy simulation; a diverging peer is caught by everyone at the next checkpoint; a dropped seat goes to the AI on the same frame everywhere; pause and resume.</li>
+    <li><code>relay_lobby.rs</code> - admission checks, seats and spectators, readiness, host migration, sender stamping, rate limits and caps.</li>
+    <li><code>authority_rooms.rs</code> - replicas follow the host through validated turn-based events, a stale replica recovers from a state blob, snapshots reach the others, the room closes when its host leaves.</li>
+    <li><code>socket_smoke.rs</code> - the threaded relay on an ephemeral <code>127.0.0.1</code> port with one raw-TCP and one WebSocket client playing lockstep; every wait has a deadline and the port is checked closed after shutdown.</li>
+  </ul>
+  <p><code>crates/engine-netplay/tests/</code> (disc-free) runs whole <code>World</code>s, each with its own <code>NetPlay</code>, through the relay core on loopback links:</p>
+  <ul class="bullets">
+    <li><code>modes.rs</code> - two poker hands over the view stream, the guest never holding the host's hole cards before a showdown; a golf round and a prop hunt match in lockstep with every shared frame's hash equal and one result; a desync caught on both peers, both back in the lobby and able to start again; a racer who leaves handing the seat to the AI while the rest race on.</li>
+    <li><code>roaming.rs</code> - a guest walking moves its avatar on the host, trailing it and never backwards; chat and emotes reach the room.</li>
+    <li><code>sockets.rs</code> - a host and a guest on the threaded relay over real TCP on an ephemeral port play poker frames; the port is closed after shutdown.</li>
+  </ul>
+  <div class="see-also"><span class="see-also-label">See also</span> <a href="expansion-modes.html">Expansion game modes</a> <a href="../guides/playing-online.html">Playing online</a> <a href="../guides/expansion-packs.html">Expansion packs</a> <a href="../tooling/determinism-replay.html">Determinism replay</a></div>
+</section>

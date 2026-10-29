@@ -197,7 +197,7 @@ The tracker (`QuestRuntime`) is a deterministic state machine: the same pack, pr
 |---|---|
 | `BattleEnded` | `World::finish_battle`, with the seated formation, its monsters and its boss byte. |
 | `SceneEntered` | `World::set_active_scene_label`, on every scene entry. |
-| `Talked` | `World::expansion_talked`: a map's `talk` trigger, and every talk to a retail NPC (`World::trigger_field_interact`). |
+| `Talked` | `World::expansion_talked`: a map's `talk` trigger, a talk to a pack map's NPC, and every talk to a retail NPC (`World::trigger_field_interact`). |
 | `ModeWon` | `World::expansion_mode_won`, from a pack mode's host. |
 | `CounterAdd`, `FlagSet`, `FlagCleared` | Scripts, dialogue choices and hosts. |
 | `Refresh` | Every world tick outside battle. |

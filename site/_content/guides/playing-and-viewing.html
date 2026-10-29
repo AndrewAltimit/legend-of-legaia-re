@@ -267,7 +267,7 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --ro
   <p><kbd>Tab</kbd> opens the room screen: the room code and the address to join at, the players, Ready (guests), the game pick and Start (the host), emotes, quick chat, Leave. <kbd>T</kbd> on it types a chat line, Enter sends. Start needs every seated guest ready. Start inside a game asks to leave, which ends the game for the table. Online games grant no coins, gold or cards.</p>
   <p>Without the flags, <kbd>Tab</kbd> (or the launcher's <strong>Play online</strong> button) opens the Multiplayer screen, which hosts a room or joins one by address and code from inside the game. Standing in a town, the host can start <strong>Prop hunt here</strong>: hiders pick one of the scene's own props and hide as it, the hunter tags props with Cross, and a wrong guess costs health. With an expansion pack's card collection, the room screen also trades cards one for one with another player.</p>
   <p>On the browser play page, open <strong>Online</strong> in the tools, enter the relay address as a WebSocket URL (<code>ws://192.168.1.4:7462/</code>), the room code and a name, and press Join. A browser cannot host. A page served over <code>https://</code> can only reach <code>wss://</code>, so playing from the published site needs the relay behind a TLS proxy. A standalone <code>legaia-relay --bind 0.0.0.0:7462</code> hosts rooms without a game window.</p>
-  <p class="hint">Everyone in a room runs the same engine build and the same expansion pack (or none). Each player's world is their own: only avatars are shared, so battles, doors and story progress are not.</p>
+  <p class="hint">Everyone in a room runs the same engine build and the same expansion pack (or none). Each player's world is their own: only avatars are shared, so battles, doors and story progress are not. The full walkthrough, with the browser's TLS caveat drawn out: <a href="playing-online.html">playing online</a>.</p>
 </section>
 
 <section class="doc-section" id="audio">
@@ -361,6 +361,12 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --ro
   <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just the four <code>crates/web-*</code> crates (<code>web-viewer</code> over <code>web-play</code>, <code>web-minigames</code> and <code>web-patcher</code>). To check whether the bundle you built still matches your sources:</p>
   <div class="cli"><code>python3 scripts/ci/check-wasm-freshness.py</code></div>
   <p class="hint">Worth running before concluding a change did or didn't work in the browser: a stale bundle looks exactly like a fix that had no effect. Background: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shipped-bundle-freshness.md" target="_blank" rel="noopener"><code>tooling/shipped-bundle-freshness.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="expansion-packs">
+  <h2>11 &middot; Play an expansion pack</h2>
+  <p>An expansion pack adds content made for the port - maps, quests, fights, challenges, trading cards, game modes - and plays beside your own disc; it carries no game data of its own. On the desktop, the launcher's <em>Expansion pack...</em> button picks one (or pass <code>--expansion &lt;pack&gt;</code> to <code>play-window</code>); in the browser, the play page's <em>Expansion pack</em> card loads an <code>.lxpack</code> once the disc is up. With a pack loaded, Select on the pause menu opens its Journal.</p>
+  <p>Step by step: <a href="playing-expansion-packs.html">playing an expansion pack</a>. What one is: <a href="expansion-packs.html">expansion packs</a>. The flagship pack: <a href="rebirth.html">Rebirth</a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

@@ -1,0 +1,77 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; <a href="expansion-packs.html">expansion packs</a> &middot; playing online</div>
+  <h1>Playing online</h1>
+  <p class="lede">Several players can share a world: walk the same town and see each other, chat, and sit down together at poker, Grid Duel, golf, a race or prop hunt. One player hosts with the native play window; the others join from a play window or from the browser play page. The original game has no networking at all - this is the port's own.</p>
+</header>
+
+<section class="doc-section" id="host" data-doc="-">
+  <h2>Host and join</h2>
+<pre><code># Host: runs the room server inside the window, on port 7462 by default.
+legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --host --name Vahn
+# Join from another machine on the network (address and room code from the
+# host's room screen).
+legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --room K7QX2M --name Noa</code></pre>
+  <p>On the browser <a href="../play.html">play page</a>, open <strong>Online</strong> in the tools, enter the relay address as a WebSocket URL (<code>ws://192.168.1.4:7462/</code>), the room code and a name, and press Join. A browser cannot host: a page cannot listen on a socket. A standalone <code>legaia-relay --bind 0.0.0.0:7462</code> hosts rooms with no game window at all.</p>
+  <p class="callout callout-warn">A page served over <code>https://</code> may only open <code>wss://</code> sockets, and the relay does not do TLS itself. Playing from the published site therefore needs the relay behind a TLS-terminating reverse proxy that forwards the WebSocket upgrade; a page served locally over <code>http://</code> reaches <code>ws://</code> directly.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Who connects to what. The host's play window runs the relay in-process on port 7462 and joins it itself. A second native play window joins over TCP. A browser play page served over http joins with ws. A browser on the published https site must go through a TLS proxy with wss, which forwards to the relay.">
+      <defs><marker id="po-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="260" y="70" width="200" height="80" rx="4"/>
+      <text class="dg-label" x="360" y="96">Host play window</text>
+      <text class="dg-sub" x="360" y="116">--host: relay in-process</text>
+      <text class="dg-sub" x="360" y="132">0.0.0.0:7462</text>
+      <rect class="dg-node" x="10" y="20" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="105" y="40">Play window</text><text class="dg-sub" x="105" y="56">--join ADDR --room CODE</text>
+      <rect class="dg-node" x="10" y="152" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="105" y="172">Browser, local http</text><text class="dg-sub" x="105" y="188">ws://host:7462/</text>
+      <rect class="dg-node" x="520" y="20" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="615" y="40">Browser, https site</text><text class="dg-sub" x="615" y="56">wss:// only</text>
+      <rect class="dg-node-warn" x="520" y="152" width="190" height="48" rx="4"/>
+      <text class="dg-label" x="615" y="172">TLS reverse proxy</text><text class="dg-sub" x="615" y="188">forwards the upgrade</text>
+      <path class="dg-edge" d="M200 44 L258 92" marker-end="url(#po-arrow)"/>
+      <text class="dg-edge-label" x="206" y="84">TCP</text>
+      <path class="dg-edge" d="M200 176 L258 130" marker-end="url(#po-arrow)"/>
+      <text class="dg-edge-label" x="206" y="150">ws</text>
+      <path class="dg-edge" d="M615 68 L615 150" marker-end="url(#po-arrow)"/>
+      <text class="dg-edge-label" x="622" y="114">wss</text>
+      <path class="dg-edge" d="M520 176 L462 130" marker-end="url(#po-arrow)"/>
+      <text class="dg-edge-label" x="482" y="168">ws</text>
+    </svg>
+    <figcaption>The host's window is the relay; <code>legaia-relay</code> can stand in its place on a machine nobody plays on.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="room" data-doc="-">
+  <h2>The room</h2>
+  <table>
+    <thead><tr><th></th><th>Native play window</th><th>Browser play page</th></tr></thead>
+    <tbody>
+      <tr><td>Room screen</td><td><code>Tab</code> (and the backquote key in a room)</td><td>The Room button or <code>Tab</code></td></tr>
+      <tr><td>Chat</td><td><code>T</code> on the room screen types a line, Enter sends</td><td>The Online panel's chat box</td></tr>
+      <tr><td>Other players</td><td>Drawn as your party leader, walking where they walk</td><td>The same</td></tr>
+    </tbody>
+  </table>
+  <p>The room screen shows the room code and the address others join at, the players with their seat colour and readiness, Ready (guests), the game pick and Start (the host), an emote, quick chat, Leave and Close. Start needs every seated guest ready. Closed, a small panel over the field names the room, its players and the newest chat lines.</p>
+</section>
+
+<section class="doc-section" id="games" data-doc="-">
+  <h2>Games together</h2>
+  <p>The host picks an instance from the world's mode list - the loaded pack's, or the built-in practice set with no pack - and starts it; it draws on the usual mode screen with "You" on your own seat. Start inside it asks to leave, which ends the game for the table. Online games grant no coins, gold or cards.</p>
+  <table>
+    <thead><tr><th>Game</th><th>How it runs</th><th>What that means</th></tr></thead>
+    <tbody>
+      <tr><td>Golf, racing, prop hunt</td><td>Lockstep</td><td>Every player runs the game from everyone's buttons. A dropped player's seat goes to the AI.</td></tr>
+      <tr><td>Poker, Grid Duel</td><td>On the host</td><td>Only the host runs the table; you never receive another player's hole cards before the showdown. It ends if the host leaves.</td></tr>
+    </tbody>
+  </table>
+  <p>How each model works, and why: <a href="../subsystems/netplay.html#in-the-hosts">netplay</a>.</p>
+</section>
+
+<section class="doc-section" id="limits" data-doc="-">
+  <h2>Limits</h2>
+  <ul class="bullets">
+    <li><strong>Same build, same pack.</strong> Everyone in a room runs the same engine build and the same expansion pack (or none); the relay turns a mismatch away.</li>
+    <li><strong>Your world is yours.</strong> Only avatars are shared while roaming: battles, doors, dialogue and story progress are each player's own, and avatars do not collide.</li>
+    <li><strong>Play with people you trust.</strong> The room code is the only access control, there is no encryption beyond a TLS proxy, and a host decides everything in a game it runs.</li>
+  </ul>
+</section>

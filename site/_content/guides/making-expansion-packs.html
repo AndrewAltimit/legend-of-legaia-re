@@ -1,0 +1,80 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; <a href="expansion-packs.html">expansion packs</a> &middot; making a pack</div>
+  <h1>Making an expansion pack</h1>
+  <p class="lede">A pack is a folder of TOML files, so any text editor makes one. The <a href="../tooling/expansion-workbench.html">expansion workbench</a> makes it easier: it reads your disc for the pickers, re-checks the pack after every edit, paints maps tile by tile and exports the shareable <code>.lxpack</code> - all in the browser, with nothing uploaded. Either way the result is the same files, and the same checks decide whether the engine will load it.</p>
+</header>
+
+<section class="doc-section" id="workbench" data-doc="-">
+  <h2>On the workbench</h2>
+  <ol class="steps steps-vertical">
+    <li><b>Pick your disc</b><span>The workbench reads its monsters, items, scenes and music for the pickers. Nothing is uploaded, and no name from the disc is written into the pack: a picker writes the coordinate (<code>{ kind = "monster", id = 109 }</code>), never the name beside it.</span></li>
+    <li><b>Start from something</b><span>Load the <strong>Rebirth example</strong> (the project's own flagship pack), a <code>.lxpack</code>, a pack folder of your own, or start fresh with only a manifest.</span></li>
+    <li><b>Edit section by section</b><span>One tab per file. The checks panel re-runs the validator after every edit with your disc resolving every coordinate; clicking an issue opens its tab and focuses the field.</span></li>
+    <li><b>Lay out a map</b><span>On the <strong>Maps</strong> tab: paint tiles from the legend, place spawns, exits, trigger and encounter zones, props and NPCs, and turn on <strong>Heights</strong> to see which cells the floor slopes across.</span></li>
+    <li><b>Try it</b><span><strong>Play in browser</strong> exports the bundle and opens the play page with it loaded.</span></li>
+    <li><b>Share it</b><span><strong>Download .lxpack</strong>, or take the TOML files one at a time on the Files tab for a pack kept as a folder.</span></li>
+  </ol>
+  <p>The working pack autosaves in the browser, so closing the tab loses nothing; a returning visitor who loads the disc is offered to resume. A file you did not edit exports as the bytes it was loaded from, comments included. Page reference: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/expansion-workbench.md" target="_blank" rel="noopener">expansion-workbench.md</a>.</p>
+</section>
+
+<section class="doc-section" id="by-hand" data-doc="-">
+  <h2>By hand</h2>
+  <p>The smallest pack is a manifest. Each section is a file of its own, and everything in it is optional:</p>
+<pre><code># pack.toml
+id = "tower"
+name = "The Tower"
+version = "0.1.0"
+authors = ["you"]
+license = "CC-BY-4.0"
+
+# battle.toml - a retail monster with new numbers
+[monsters.ironhide_ogre]
+base = { kind = "monster", id = 109 }
+name = "Ironhide Ogre"
+hp = { mul = 3.5 }          # scale the base monster's
+exp = { mul = 6.0 }
+
+[formations.ogre_pack]
+label = "Ironhide Ogres"
+monsters = ["ironhide_ogre", "ironhide_ogre", "ironhide_ogre"]
+
+[[encounters]]
+scene = "chitei2"            # Jette's Fortress keeps its fights, mixes these in
+retail_weight = 3
+formations = [{ formation = "ogre_pack", weight = 1 }]</code></pre>
+  <table>
+    <thead><tr><th>To add</th><th>Write</th><th>Reference</th></tr></thead>
+    <tbody>
+      <tr><td>Monsters, fights, bosses</td><td><code>battle.toml</code></td><td><a href="../formats/expansion-pack-battle.html">battles</a></td></tr>
+      <tr><td>A level curve, rewards, enemy scaling</td><td><code>progression.toml</code></td><td><a href="../formats/expansion-pack-battle.html#progression">progression</a></td></tr>
+      <tr><td>Quests and challenges</td><td><code>quests.toml</code></td><td><a href="../formats/expansion-pack-quests.html">quests</a></td></tr>
+      <tr><td>Things people say</td><td><code>dialog.toml</code></td><td><a href="../formats/expansion-pack-quests.html#dialogtoml">dialogue</a></td></tr>
+      <tr><td>Trading cards and dealers</td><td><code>cards.toml</code></td><td><a href="../formats/expansion-pack.html#cards-toml">cards</a></td></tr>
+      <tr><td>Poker, duels, golf, races, prop hunt</td><td><code>modes.toml</code></td><td><a href="../formats/expansion-pack.html#modes-toml">modes</a></td></tr>
+      <tr><td>A new place</td><td><code>maps/&lt;id&gt;.toml</code></td><td><a href="../formats/expansion-pack-maps.html">maps</a></td></tr>
+    </tbody>
+  </table>
+  <p class="callout callout-warn">Ids are lowercase <code>[a-z0-9_]</code> (cards and mode instances may use <code>-</code>), unique within their kind across the pack, and never carry a <code>:</code> where they are defined. A file under <code>assets/</code> must be a PNG, glTF, Ogg, WAV or text file - nothing taken from the disc (<a href="../formats/expansion-pack.html#the-no-disc-bytes-rule">the rule</a>).</p>
+</section>
+
+<section class="doc-section" id="cli" data-doc="-">
+  <h2>Check and bundle from the command line</h2>
+<pre><code>asset expansion validate my-pack            # every issue, with file and field
+asset expansion validate my-pack --strict   # warnings fail too
+asset expansion bundle my-pack -o my-pack.lxpack   # refuses a pack with errors
+asset expansion info my-pack.lxpack [--json]
+asset expansion unbundle my-pack.lxpack -o my-pack-copy/</code></pre>
+  <p>None of these reads a disc, so they range-check coordinates without confirming them; the engine and the workbench check them against a real disc. Then play it: <code>legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --expansion my-pack</code>, adding <code>--map &lt;id&gt;</code> to walk straight onto a map (<a href="playing-expansion-packs.html">playing a pack</a>).</p>
+</section>
+
+<section class="doc-section" id="tips" data-doc="-">
+  <h2>Things that catch people out</h2>
+  <ul class="bullets">
+    <li><strong>One version of each base monster per fight.</strong> A pack monster fights under its base monster's id, so a formation cannot hold a pack variant beside the retail monster it is built on (<a href="../formats/expansion-pack-battle.html">battles</a>).</li>
+    <li><strong>Four monsters at once.</strong> A battle has four monster seats; more enemies come in <a href="../formats/expansion-pack-battle.html#waves">waves</a>.</li>
+    <li><strong>Heights are corner heights.</strong> A raised block of tiles slopes down along its high-X and high-Z edges; turn on the workbench's <em>Heights</em> overlay to see where (<a href="../formats/expansion-pack-maps.html#the-tile-layer">tiers</a>).</li>
+    <li><strong>An entrance needs a free tile.</strong> Pick a rectangle the retail walk reaches and no retail door shares, and give it a <code>requires</code> gate if it should open later in the game (<a href="../formats/expansion-pack-maps.html#entrances">entrances</a>).</li>
+    <li><strong>Dialogue rows are short.</strong> No retail text box wraps; keep a row within 36 characters, and the workbench's dialog check shows every row page by page.</li>
+  </ul>
+  <p>The <a href="rebirth.html">Rebirth</a> pack is the worked example of all of it.</p>
+</section>

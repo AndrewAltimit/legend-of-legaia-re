@@ -1,0 +1,80 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; <a href="expansion-packs.html">expansion packs</a> &middot; playing a pack</div>
+  <h1>Playing an expansion pack</h1>
+  <p class="lede">Load a pack, start a game, and the pack's content sits inside the world you know: entrances in retail towns lead to its maps, its quests show up in a Journal on the pause menu, its fights and cards turn up in battle. You need your own Legend of Legaia (NA) disc and the pack; the pack carries no game data of its own.</p>
+</header>
+
+<section class="doc-section" id="desktop" data-doc="-">
+  <h2>On the desktop</h2>
+  <ol class="steps steps-vertical">
+    <li><b>Pick the pack</b><span>The launcher's <em>Expansion pack...</em> button takes an <code>.lxpack</code> file, or the <code>pack.toml</code> inside a pack folder. Dropping either on the window works too.</span></li>
+    <li><b>It is checked</b><span>The launcher runs the same validator the game does. A pack with errors is refused and the help box lists the first few; a good one shows on the button by name, with its version and authors in the help box.</span></li>
+    <li><b>Play</b><span>New Game and Continue now play with the pack. The choice is remembered (<code>expansion = "..."</code> in <code>launcher.toml</code>); <em>Delete</em> or a right-click on the button goes back to no pack.</span></li>
+  </ol>
+  <p>The launcher hands the pack to the game as <code>--expansion</code>, which works by hand too:</p>
+<pre><code># New Game and Continue play with the pack
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
+    --expansion packs/rebirth
+# Straight onto one of its maps (a folder or an .lxpack)
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion rebirth.lxpack --map rebirth_tower_1f [--spawn dais]</code></pre>
+  <p>With <code>--resume-save</code>, a save made on one of the pack's maps lands back on that map instead of <code>--map</code>.</p>
+</section>
+
+<section class="doc-section" id="browser" data-doc="-">
+  <h2>In the browser</h2>
+  <p>On the <a href="../play.html">play page</a>, load your disc first: a pack activates against it. The <strong>Expansion pack</strong> card then takes an <code>.lxpack</code>; its map list and <em>Enter map</em> walk you straight onto one of the pack's maps, and <em>Unload</em> goes back to the game as it shipped. The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s <em>Play in browser</em> button opens the play page with the pack it is editing already handed over.</p>
+  <p class="callout callout-tip">The browser takes the bundled <code>.lxpack</code> form only. A pack kept as a folder becomes one with <code>asset expansion bundle</code>, or on the workbench (load the folder, <em>Download .lxpack</em>).</p>
+</section>
+
+<section class="doc-section" id="in-game" data-doc="-">
+  <h2>With a pack loaded</h2>
+  <table>
+    <thead><tr><th>Where</th><th>What the pack adds</th></tr></thead>
+    <tbody>
+      <tr><td>New Game / Continue</td><td>New Game starts the pack fresh; Continue loads a save with the pack's progress.</td></tr>
+      <tr><td>Entrances</td><td>A tile in a retail scene that enters a pack map when stepped on, often only once a story point, quest or party level is reached.</td></tr>
+      <tr><td>Journal</td><td>Select on the pause menu (the hint under the menu says so): <em>Quests</em>, <em>Challenges</em>, <em>Cards</em>, <em>Travel</em>.</td></tr>
+      <tr><td>Toasts</td><td>A line at the top of the screen when a quest starts, an objective moves, a quest completes or a card arrives.</td></tr>
+      <tr><td>Battles</td><td>Pack formations and bosses, encounter overrides in retail scenes, the pack's XP curve and rewards.</td></tr>
+      <tr><td>Modes</td><td>The pack's poker tables, duels, golf courses, races and prop-hunt arenas, from the mode picker.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="journal">The Journal</h3>
+  <ul class="bullets">
+    <li><strong>Quests</strong> lists the started quests, active first, with each objective's progress and the reward.</li>
+    <li><strong>Challenges</strong> lists the challenges with their best scores; Cross arms one for the next battle.</li>
+    <li><strong>Cards</strong> shows the trading-card collection and opens the card menu (binder, boosters, selling, the duel deck).</li>
+    <li><strong>Travel</strong> enters any of the pack's maps directly - the way in for testing a map whose entrance is out of reach.</li>
+  </ul>
+  <p>The pack's name and version head the screen, with the count of new cards.</p>
+  <h3 id="modes">Game modes and cards</h3>
+  <table>
+    <thead><tr><th></th><th>Native window</th><th>Browser play page</th></tr></thead>
+    <tbody>
+      <tr><td>Mode picker</td><td><code>`</code> (backquote) on the field; again to leave. <code>--mode &lt;instance&gt;</code> or <code>--mode picker</code> at launch.</td><td>The <em>Game mode</em> select in the play tools.</td></tr>
+      <tr><td>Card menu</td><td><code>\</code> (backslash); <code>--mode cards</code>, <code>cards-binder</code>, <code>cards-dealer[:ID]</code> at launch.</td><td>The Journal's <em>Cards</em> page.</td></tr>
+    </tbody>
+  </table>
+  <p>Inside every mode, Start raises the quit prompt. Each mode's controls and rules are on <a href="../subsystems/expansion-modes.html#hosts">game modes</a>.</p>
+</section>
+
+<section class="doc-section" id="saves" data-doc="-">
+  <h2>Saves</h2>
+  <p>A save made with a pack carries that pack's progress - quests, pack flags, challenge records, beaten bosses, the map you stood on, your cards - in a block of its own, and reloads it. A save made without a pack has no such block and is the same bytes it always was.</p>
+  <ul class="bullets">
+    <li><strong>A save naming a pack that is not loaded</strong> still loads, says so ("Saved with expansion 'rebirth' - not loaded"), and keeps the pack's progress to write back on the next save, so playing a while without the pack loses nothing.</li>
+    <li><strong>A save made on a pack map</strong> returns to the map with the player where they stood; without the pack it lands in the map's base scene.</li>
+  </ul>
+  <p>The block's layout is on <a href="../formats/expansion-pack-quests.html#saves">quests and saves</a>.</p>
+</section>
+
+<section class="doc-section" id="next" data-doc="-">
+  <h2>Next</h2>
+  <div class="see-also">
+    <span class="see-also-label">Guides</span>
+    <a href="rebirth.html">Rebirth: what is in it</a>
+    <a href="making-expansion-packs.html">Making a pack</a>
+    <a href="playing-online.html">Playing online</a>
+  </div>
+</section>

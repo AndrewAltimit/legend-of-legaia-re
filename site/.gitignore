@@ -27,6 +27,10 @@
 /formats/effect.html
 /formats/encounter.html
 /formats/equipment-table.html
+/formats/expansion-pack-battle.html
+/formats/expansion-pack-maps.html
+/formats/expansion-pack-quests.html
+/formats/expansion-pack.html
 /formats/field-map.html
 /formats/field-pack.html
 /formats/index.html
@@ -68,10 +72,15 @@
 /formats/world-map-overlay.html
 /formats/xa.html
 /guides/desktop-apps.html
+/guides/expansion-packs.html
 /guides/extracting-assets.html
 /guides/getting-started.html
+/guides/making-expansion-packs.html
 /guides/modding-and-translation.html
 /guides/playing-and-viewing.html
+/guides/playing-expansion-packs.html
+/guides/playing-online.html
+/guides/rebirth.html
 /guides/translating.html
 /guides/vrchat-world.html
 /index.html
@@ -126,6 +135,7 @@
 /subsystems/cutscene.html
 /subsystems/effect-vm.html
 /subsystems/engine.html
+/subsystems/expansion-modes.html
 /subsystems/field-ambient-fx.html
 /subsystems/field-locomotion.html
 /subsystems/field-menu.html
@@ -144,6 +154,7 @@
 /subsystems/motion-vm.html
 /subsystems/move-vm-overlay-ext.html
 /subsystems/move-vm.html
+/subsystems/netplay.html
 /subsystems/renderer-internals.html
 /subsystems/renderer-port.html
 /subsystems/renderer.html
