@@ -134,7 +134,7 @@ pub fn element_color(e: Option<CardElement>) -> [u8; 4] {
     }
 }
 
-fn rarity_color(r: Rarity) -> [u8; 4] {
+pub(crate) fn rarity_color(r: Rarity) -> [u8; 4] {
     match r {
         Rarity::Common => [150, 150, 150, 255],
         Rarity::Uncommon => [90, 190, 110, 255],
@@ -144,7 +144,7 @@ fn rarity_color(r: Rarity) -> [u8; 4] {
 }
 
 /// A side strength as printed ("A" for 10, as the classic card game does).
-fn side_label(v: u8) -> String {
+pub(crate) fn side_label(v: u8) -> String {
     if v >= 10 { "A".into() } else { v.to_string() }
 }
 

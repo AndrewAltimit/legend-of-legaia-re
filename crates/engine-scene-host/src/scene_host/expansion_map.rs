@@ -228,6 +228,11 @@ impl SceneHost {
                 counter: counter.clone(),
                 add: *add,
             }),
+            MapEvent::CardDealer { dealer } => {
+                if !w.open_card_dealer(dealer) {
+                    log::warn!("expansion: map trigger card dealer `{dealer}` did not open");
+                }
+            }
         }
         if let Some(flag) = trigger.once_flag {
             self.world.expansion_notify(QuestEvent::FlagSet(flag));

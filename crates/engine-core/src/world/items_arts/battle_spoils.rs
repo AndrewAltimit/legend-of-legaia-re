@@ -319,6 +319,8 @@ impl World {
         };
         // A pack boss's own victory reward.
         self.expansion_boss_victory(&mut rewards);
+        // The pack's trading-card drops (identity without a pack).
+        self.expansion_card_drops(formation);
         rewards
     }
 

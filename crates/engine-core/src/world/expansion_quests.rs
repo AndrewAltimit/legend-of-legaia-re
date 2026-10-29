@@ -266,6 +266,7 @@ impl World {
         if !self.expansion.is_active() {
             return;
         }
+        self.expansion.cards.tick_toasts();
         self.resolve_expansion_line();
         if !matches!(self.mode, SceneMode::Battle) {
             self.expansion_notify(QuestEvent::Refresh);
@@ -376,6 +377,7 @@ impl World {
                 Grant::Fight(f) => self.expansion.quests.fights.push(f),
             }
         }
+        self.collect_card_grants();
         for n in self.expansion.quests.notices.iter().skip(seen) {
             if let QuestNotice::Started {
                 dialog: Some(line), ..

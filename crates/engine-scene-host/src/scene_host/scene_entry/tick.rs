@@ -85,6 +85,7 @@ impl SceneHost {
         // The arena hub's screens run every tick, including the ones after a
         // leg has closed; its hand-off arms the next leg's drain below.
         self.world.tick_muscle_hub();
+        self.ensure_card_portraits();
         if matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             if !was_battle || self.world.audio.battle_sfx_bank.is_none() {
                 self.install_battle_sfx_bank();

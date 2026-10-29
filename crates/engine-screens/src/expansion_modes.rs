@@ -7,12 +7,21 @@
 //! [`pack_mode_stage_texts`], which each host's text layer appends and
 //! scales with the rest of its stage group. Both come from
 //! `legaia_engine_ui::expansion_modes`, so the two hosts draw one screen.
+//!
+//! The trading-card screen shares the seat's frame: while the card seat is
+//! open the same two calls draw it instead (`card_screen_prims` /
+//! `card_screen_texts`), with the portraits the scene host cached on the
+//! world.
 
 use legaia_engine_core::world::World;
 use legaia_engine_expansion::modes::{ModeSource, ModeStage};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_modes::cards::CardBook;
 use legaia_engine_ui::TextDraw;
-use legaia_engine_ui::expansion_modes::{ModeScreen, mode_screen_prims, mode_screen_texts};
+use legaia_engine_ui::expansion_modes::{
+    CardScreenView, ModeScreen, PortraitRef, card_screen_prims, card_screen_texts,
+    card_toast_texts, mode_screen_prims, mode_screen_texts,
+};
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
 /// The seat's screen this frame, `None` unless the seat owns the frame.
@@ -56,17 +65,55 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
     })
 }
 
+/// Run `f` on the card screen's view, when the card seat owns the frame.
+pub fn with_card_screen<T>(world: &World, f: impl FnOnce(&CardScreenView<'_>) -> T) -> Option<T> {
+    if !world.card_screen_open() {
+        return None;
+    }
+    let seat = world.expansion.cards.seat.as_deref()?;
+    let book = CardBook::new(world.expansion.pack.as_deref()?.cards.clone());
+    let portraits = &world.expansion.cards.portraits;
+    let portrait = |id: u16| {
+        portraits.get(id).map(|p| PortraitRef {
+            w: p.w,
+            h: p.h,
+            rgba: &p.rgba,
+        })
+    };
+    let view = CardScreenView {
+        screen: &seat.screen,
+        book: &book,
+        progress: &world.expansion.quests.progress.cards,
+        gold: world.party.money,
+        portrait: &portrait,
+    };
+    Some(f(&view))
+}
+
 /// The seat's flat prims in display space; empty unless it owns the frame.
 pub fn pack_mode_prims(world: &World) -> Vec<ScreenPrim> {
+    if let Some(p) = with_card_screen(world, card_screen_prims) {
+        return p;
+    }
     pack_mode_screen(world)
         .map(|s| mode_screen_prims(&s))
         .unwrap_or_default()
 }
 
 /// The seat's labels in **stage** pixels (the host scales them with its
-/// stage group); empty unless it owns the frame.
+/// stage group), then the card toasts ("Got card: X") - those in any mode,
+/// so a battle drop shows over the results. Empty while neither is up.
 pub fn pack_mode_stage_texts(world: &World, font: &legaia_font::Font) -> Vec<TextDraw> {
-    pack_mode_screen(world)
-        .map(|s| mode_screen_texts(font, &s))
-        .unwrap_or_default()
+    let mut out = with_card_screen(world, |v| card_screen_texts(font, v))
+        .or_else(|| pack_mode_screen(world).map(|s| mode_screen_texts(font, &s)))
+        .unwrap_or_default();
+    let toasts = world.expansion.cards.toast_lines();
+    if !toasts.is_empty() {
+        out.extend(card_toast_texts(
+            font,
+            &toasts,
+            world.mode != SceneMode::Expansion,
+        ));
+    }
+    out
 }

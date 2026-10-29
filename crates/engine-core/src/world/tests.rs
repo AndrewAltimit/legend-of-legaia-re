@@ -332,6 +332,7 @@ mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;
 mod expansion_battle;
+mod expansion_cards;
 mod expansion_quest_battles;
 mod expansion_quests;
 mod expansion_waves;

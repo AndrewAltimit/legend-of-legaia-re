@@ -14,9 +14,11 @@
 //! it; a panel's geometry never depends on a label's measured width, which
 //! is what lets the prim half build without a font.
 //!
-//! Monster card art is a placeholder frame with the card's name; a later
-//! pass draws the portraits.
+//! The trading-card screens (binder, boosters, dealer, deck builder) are
+//! [`binder`]'s, drawn the same way; a Grid Duel card's art box stays a
+//! frame.
 
+mod binder;
 mod cards;
 mod duel;
 mod golf;
@@ -31,6 +33,11 @@ use legaia_engine_modes::session::Placement;
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, line_quad};
 
 use crate::TextDraw;
+
+pub use binder::{
+    CardScreenView, PortraitRef, card_screen_prims, card_screen_strings, card_screen_texts,
+    card_toast_texts,
+};
 
 /// Stage width.
 pub const STAGE_W: i32 = 320;

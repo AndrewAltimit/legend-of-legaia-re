@@ -361,6 +361,7 @@ pub use battle_stage::{
     backdrop_shell_mesh, backdrop_shell_nclip, backdrop_slot_1_basis,
 };
 mod effects;
+pub mod expansion_cards;
 mod expansion_map;
 mod lifecycle;
 mod minigame_warp;

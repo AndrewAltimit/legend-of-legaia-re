@@ -12,8 +12,8 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | Contract | `session::ModeSession`: `tick(&[PadWord]) -> Vec<Event>`, `view()`, `state_hash()`, `is_finished()`, `results()` |
 | Math | `fixed`: 20.12 fixed point, 12-bit angles, table sine, integer `atan2` and square root |
 | RNG | `session::ModeRng` (SplitMix64), one per session, seeded from the config |
-| Modes | `poker`, `cards` + `cards::duel`, `golf`, `racing`, `prop_hunt` |
-| Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]` in `modes.toml`; `[[cards]]`, `[[boosters]]`, `[[rewards]]` in `cards.toml` |
+| Modes | `poker`, `cards` + `cards::duel` (and the economy: `cards::economy`, `cards::screen`, `cards::trade`), `golf`, `racing`, `prop_hunt` |
+| Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
 | Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
 | Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
 | Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion` |
@@ -57,10 +57,50 @@ The pad menu: Left / Right choose Fold, Check-Call, Raise or All-in; Up / Down s
 A pack's `cards.toml` defines the cards. Each has an id, a name and flavour text of the pack's own, a rarity (common, uncommon, rare, legendary), an optional element, four side strengths for the duel, and a disc coordinate for its art (a retail monster by id, an item). `cards::CardBook` wraps the section:
 
 - **Boosters.** A booster set has a size, an optional card pool (default: every card), rarity weights and an optional guaranteed rarity for the last slot. Each slot rolls a rarity on the weights, with any rarity the pool lacks weighted zero, then a card uniformly within it.
-- **Rewards.** A reward rule ties a source (a retail monster id, a pack formation id, or a pack mode id) to a booster or a card, a chance and a count; `roll_rewards` rolls each.
+- **Rewards.** A reward rule ties a source (a retail monster id, a pack formation, a pack boss, or a pack mode id) to a booster or a card, a chance and a count; `roll_rewards` rolls each.
 - **Selling.** A card's own `sell` price, else the section's per-rarity table, else a built-in default.
 - **Collection.** Copies per id plus a binder order (every owned id once, new ids appended, the last copy leaving the binder). It is serde-derived for saves, and `normalize` repairs one read from an older save.
 - **Trades.** A `TradeOffer` lists what each side gives. `execute` validates both collections first (and, given a book, that every card exists), then moves every line; a refused trade leaves both collections untouched.
+
+### The card economy
+
+The player's cards are pack progress: `cards::economy::CardProgress` (the collection, unopened boosters by set, the chosen duel deck, the ids already shown, whether the starter cards were handed over, and the card stream's state) sits in `ExpansionProgress::cards` and rides the save's expansion block as tail record 3, written only once it holds anything - so a save with no card state, and every save made without a pack, keeps its bytes. Like quests, it follows the pack: parked in the dormant block when the pack is deactivated, adopted again when it returns. `legaia_engine_expansion::cards` is the plumbing around it, and `world::expansion_cards` the `World` side.
+
+- **Grants.** Every path lands in the collection: quest rewards (`quests.card_inbox`) and mode wins (`pending_card_rewards`) are drained by `World::collect_card_grants`, which the quest settle and the mode settle both call; battle drops are credited where they roll. An id the book does not know is dropped. Each credited grant raises a `CardNotice`; the world turns notices into toast lines ("Got card: Mist Wisp (new!)") shown for 150 frames, three at a time, and keeps them for a host to take (`World::take_card_notices`).
+- **Starter.** The section's `starter` cards are handed over once, the first time the card screen opens or a pack duel is dealt.
+- **Battle drops.** `World::apply_battle_loot`, after the retail spoils and the pack boss reward, makes one call into `expansion_card_drops`: the sources are each defeated seat's retail monster id, the pack formation's local key and the pack boss whose formation was fought, and every matching rule rolls. A no-reward fight (the special-battle word set) rolls nothing.
+- **The card stream.** Every card roll - drops and boosters - draws from `CardProgress::rng`, a SplitMix stream saved with the collection. It is seeded once from a read of the world's frame counter and RNG word mixed with the pack id, and never touches the game's RNG: a fight's spoils, its item drop and the world's RNG word come out identical with a pack active or not, and a reloaded save opens the same boosters.
+- **Shop.** `buy_booster` charges a dealer's priced stock out of the party purse; `open_booster` consumes one and adds its cards; `sell_card` pays the dealer's `sell_percent` of the card's sell value into the purse, clamped at 9,999,999.
+- **Decks and stakes.** A pack Grid Duel deals the player `CardProgress::duel_deck`: the chosen deck while all five are still owned, else the strongest five owned cards (a card fills as many slots as it has copies), else - with fewer than five owned - the duel's lent starter (the first five cards of the section). Under the duel's `stakes` rule the winner's take is real: a card the player wins arrives as a pending reward, and a card the opponent takes from the player's deck leaves the collection (`settle_card_stakes`; a lent card costs nothing). The built-in practice duel keeps the starter deck.
+
+### Trading between players
+
+`cards::trade::TradeTable` runs one trade on an authority - the netplay host. The proposer puts an offer on the table, which bumps its revision and clears both confirmations; each side confirms that revision; once both have, the host's `settle` validates the offer against its own collection and the partner's last reported holdings and swaps, every line or none. A failed validation reopens the table with the confirmations cleared. The partner then applies its half with `TradeOffer::apply_one_side`, validated against its own collection.
+
+The wire form is `TradeMsg` (holdings, offer, confirm, cancel, settled, refused) with its own byte codec. It is the payload of the netplay protocol's existing host-authoritative messages - `Action` from a client, `Event` from the host - so the netplay crate carries trades with no message of its own.
+
+### Card screens
+
+`cards::screen::CardScreen` is one pad-driven state machine over a `CardProgress`, the party purse and the card book; `World` seats it as `ExpansionState::cards.seat` under `SceneMode::Expansion`, and `World::tick_pack_mode` hands it the frame before the mode seat.
+
+| Stage | Shows and does |
+|---|---|
+| Card menu | Binder, Open boosters, Sell cards, Duel deck. Opened by `World::open_card_menu` |
+| Dealer counter | The dealer's priced stock as Buy rows, then Sell cards, Open boosters, Binder. Opened by a map's `card_dealer` trigger (`World::open_card_dealer`) |
+| Binder | The whole set four by two per page: an owned card's face (portrait, element strip, name, sides, copies, a NEW tag for a card never shown), a missing one as a numbered blank. L1 / R1 page; Square cycles the sort (set order, newest last, rarity, strength, copies), Triangle the filter (all, owned, missing, each rarity); Cross opens the detail |
+| Card detail | The portrait large, the sides on a cross, rarity, element, copies, sell value and the flavour text; Left / Right browse |
+| Boosters | Unopened sets with their counts and what a pack holds; Cross opens one |
+| Reveal | The pack's cards face down; Cross turns the next, Triangle all, and a card never owned before is marked NEW |
+| Sell | Owned cards with what the dealer pays; Cross sells one copy |
+| Deck builder | Owned cards with copies in the deck, and the deck's five slots; Cross adds, Square removes the last, Triangle fills with the strongest, Circle keeps a full deck |
+
+Circle backs out a stage and Start leaves from any; the header shows the purse and the set completion. `legaia_engine_ui::expansion_modes::card_screen_prims` / `card_screen_texts` draw every stage, and `legaia_engine_screens::expansion_modes` routes them through the same `pack_mode_prims` / `pack_mode_stage_texts` calls as the mode screens, so both hosts draw them with no code of their own. The toasts ride `pack_mode_stage_texts` in every mode: over play at the top of the stage (a battle drop shows over the results), above the footer inside an expansion screen.
+
+### Portraits
+
+A card whose art is a retail monster shows that monster. The first time the card screen opens with a pack whose portraits are not built, the scene host renders one `64 x 48` RGBA image per monster off the player's own disc (`legaia_actor_formats::monster_portrait`): the battle mesh and texture pool staged as battle slot 0 (boss effect page included), posed in the idle action's first frame, drawn by the `mesh_raster` software rasteriser from a three-quarter view. The images stay in memory on the world (`ExpansionState::cards.portraits`); a pack carries only the monster id.
+
+The screen draws an image as flat stage-pixel runs of equal 15-bit colour, scaled nearest to its box, so it reaches both hosts through the ordinary screen-prim pass with no texture upload. Without a disc a card shows its element colour in the art box.
 
 ### Grid Duel
 
@@ -70,7 +110,7 @@ The card battle. Two players, five cards each with both hands face up, a 3x3 gri
 - **Elemental cells** (optional). One to three cells carry an element; a card of that element plays every side at +1 there, a card of another element at -1 (never below 1).
 - **Chain** (optional). Each card a placement captured then captures its own weaker opponent neighbours, one step and no further.
 - **Score.** Owned grid cards plus unplayed hand cards; more wins, equal draws.
-- **Stakes** (optional). The winner takes one card of the loser's deck: picked with the pad, or the strongest for an AI winner.
+- **Stakes** (optional). The winner takes one card of the loser's deck: picked with the pad, or the strongest for an AI winner. In a pack the card moves between collections ([The card economy](#the-card-economy)).
 
 The novice AI plays a random legal move; the regular maximises immediate captures while not exposing weak sides; the expert also subtracts the opponent's best reply.
 
@@ -117,7 +157,7 @@ Both play hosts run the modes inside the running game, through one seat on the `
 
 `active::ActiveMode` is any one of the five sessions behind a common surface: build an instance by id from a mode section and a card section, tick it, read its view, settle it. `PackModeSeat` (in `engine-expansion`) holds one `ActiveMode` at a time, or the instance picker, or a finished session's results, and the mode the world returns to. `World::open_pack_mode_picker` and `World::enter_pack_mode(id)` seat it and switch the world to `SceneMode::Expansion`; the mode tick then runs `World::tick_pack_mode` in place of field and battle dispatch, feeding seat 0 the frame's pad word. `World::exit_pack_mode` closes it from outside (a session still in play is forfeited).
 
-The instances are the active pack's `modes.toml` (with its `cards.toml` as the duel's card book) when the pack defines any mode, else the built-in practice set. A duel deals the player the first five cards of the card section until a collection supplies a deck; a golf round seats one regular AI beside the player.
+The instances are the active pack's `modes.toml` (with its `cards.toml` as the duel's card book) when the pack defines any mode, else the built-in practice set. A pack duel deals the player their collection's deck ([The card economy](#the-card-economy)); the practice duel, and a pack duel before the player owns five cards, deal the first five cards of the card section. A golf round seats one regular AI beside the player.
 
 `SceneMode::Expansion` is not a retail mode: `GameMode::for_scene_mode` answers `None` for it, as for `Title`, and nothing reaches it without a host entering the seat, so a world that never does plays exactly as before.
 
@@ -131,6 +171,7 @@ When a session finishes, the seat settles it: the session's own rewards, plus, w
 |---|---|
 | Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
 | Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
+| Card screens | Native: `\` (backslash) opens the card menu and closes it; `--mode cards`, `--mode cards-binder` and `--mode cards-dealer[:ID]` open a card screen at launch. Browser: `play_cards_open("menu" / "binder" / "dealer:ID")`, `play_cards_close`, with `play_cards_json` (counts, completion) and `play_card_notices_json`. A pack map opens a dealer through its `card_dealer` trigger |
 
 ### Controls
 
@@ -152,7 +193,7 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 |---|---|
 | Picker | Every instance with its mode kind, the cursor row, the last entry error |
 | Poker | Opponent plates along the far rail (chips or state, dealer button, card backs, street bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu with the raise size, the event log |
-| Grid Duel | The 3x3 grid with elemental cells, both hands down the sides (the selected card lifted), the score and turn line. A card shows its four side strengths, element strip, name, and a placeholder frame where the monster portrait goes |
+| Grid Duel | The 3x3 grid with elemental cells, both hands down the sides (the selected card lifted), the score and turn line. A card shows its four side strengths, element strip, name and an art frame |
 | Golf | The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard |
 | Racing | A top-down track map with boost segments and the start line, every racer with its heading, and the lap / place / speed / boost / order panel. A functional view |
 | Prop hunt | A top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts. A functional view |
@@ -166,4 +207,8 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 - **Pack.** `tests/rebirth_pack.rs` parses the Rebirth `cards.toml` / `modes.toml` and converts every instance into a session config.
 - **Seat.** `engine-modes` `active` builds every built-in instance and rolls a won mode's reward rules; `engine-expansion` `modes` drives the picker, the quit prompt and the results card.
 - **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
-- **Screens.** `engine-ui` `expansion_modes::tests` checks each screen's key labels and that every panel lies on the stage.
+- **Screens.** `engine-ui` `expansion_modes::tests` checks each screen's key labels and that every panel lies on the stage; `expansion_modes::binder` checks the card screens' labels, the portrait runs and the toast placement.
+- **Card economy.** `engine-modes` `cards::economy`, `cards::screen` and `cards::trade` test buying, opening (the same saved stream opens the same pack), selling at a dealer's rate, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. Further:
+  - `engine-expansion` tests the grant drain, the battle sources, stakes, the toasts, and the save block's card record (round trip, and no record without card state).
+  - `engine-core` `world::tests::expansion_cards` checks that drops leave the retail spoils and RNG word untouched while crediting the collection, that a no-reward fight drops nothing, the grant drain, stakes both ways, a dealer purchase through `World::tick`, the duel deck and the save block.
+  - The disc-gated `engine-scene-host` `expansion_cards_disc` checks every Rebirth card's art against a real monster record, renders every portrait, and builds the cache through the scene host.

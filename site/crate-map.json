@@ -275,6 +275,7 @@
     "monster_archive",
     "monster_gltf",
     "monster_model",
+    "monster_portrait",
     "player_anm",
     "player_file_annex",
     "scene_gltf",
@@ -1584,6 +1585,7 @@
    "modules": [
     "battle",
     "battle_waves",
+    "cards",
     "dialog",
     "flags",
     "map",
@@ -2128,6 +2130,7 @@
    "dependents": [
     "engine-core",
     "engine-expansion",
+    "engine-screens",
     "engine-ui"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
@@ -2419,6 +2422,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
@@ -4512,6 +4516,7 @@
     "play_battle_vram",
     "play_bgm",
     "play_camera",
+    "play_cards",
     "play_cheats",
     "play_cutscene",
     "play_dance_art",

@@ -125,6 +125,22 @@ pub(super) fn enter_debug_pack_mode(session: &mut NativeSession, seeds: &super::
         return;
     };
     let world = &mut session.host.world;
+    // The trading-card screens ride the same flag.
+    let card_screen = match id {
+        "cards" => Some(world.open_card_menu()),
+        "cards-binder" => Some(world.open_card_binder()),
+        _ => id
+            .strip_prefix("cards-dealer")
+            .map(|d| world.open_card_dealer(d.trim_start_matches(':'))),
+    };
+    if let Some(opened) = card_screen {
+        if opened {
+            log::info!("play-window: --mode {id}: the card screen is open");
+        } else {
+            log::warn!("play-window: --mode {id}: no pack cards (or no such dealer)");
+        }
+        return;
+    }
     if id == "picker" {
         world.open_pack_mode_picker();
         log::info!("play-window: --mode picker: the mode picker is open");

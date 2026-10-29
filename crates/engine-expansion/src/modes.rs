@@ -144,14 +144,17 @@ impl PackModeSeat {
     }
 
     /// One frame. `pad` / `prev` are this and last frame's raw pad words;
-    /// `modes` / `cards` the sections a picker builds from; `seed` seeds a
+    /// `modes` / `cards` the sections a picker builds from, `opts` the host
+    /// choices it builds with (the player's duel deck); `seed` seeds a
     /// session the picker enters; `rng` rolls a win's reward rules.
+    #[allow(clippy::too_many_arguments)]
     pub fn step(
         &mut self,
         pad: u16,
         prev: u16,
         modes: &ModeSection,
         cards: &CardSection,
+        opts: &BuildOptions,
         seed: u64,
         rng: &mut ModeRng,
     ) -> SeatStep {
@@ -177,7 +180,7 @@ impl PackModeSeat {
                 }
                 if pressed(PadButton::Cross) {
                     let id = entries[*cursor].id.clone();
-                    match ActiveMode::build(modes, cards, &id, seed, &BuildOptions::default()) {
+                    match ActiveMode::build(modes, cards, &id, seed, opts) {
                         Ok(mode) => {
                             self.stage = ModeStage::Playing {
                                 mode: Box::new(mode),
@@ -295,8 +298,9 @@ mod tests {
 
     fn press(seat: &mut PackModeSeat, b: PadButton, rng: &mut ModeRng) -> SeatStep {
         let (modes, cards) = builtin_sections();
-        seat.step(0, 0, modes, cards, 1, rng);
-        seat.step(b.mask(), 0, modes, cards, 1, rng)
+        let opts = BuildOptions::default();
+        seat.step(0, 0, modes, cards, &opts, 1, rng);
+        seat.step(b.mask(), 0, modes, cards, &opts, 1, rng)
     }
 
     #[test]

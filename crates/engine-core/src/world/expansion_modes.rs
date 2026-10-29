@@ -25,7 +25,7 @@ use super::World;
 use crate::casino_coin_bank::COIN_BANK_CEILING;
 
 /// The party gold purse's ceiling (the op `0x3A` clamp).
-const GOLD_CEILING: i64 = 9_999_999;
+pub(in crate::world) const GOLD_CEILING: i64 = 9_999_999;
 
 impl World {
     /// The sections the mode seat builds from, and where they came from:
@@ -78,8 +78,9 @@ impl World {
     pub fn enter_pack_mode(&mut self, id: &str) -> Result<(), BuildError> {
         let return_mode = self.pack_mode_return();
         let seed = self.pack_mode_seed(id);
+        let opts = self.pack_mode_build_options();
         let (source, modes, cards) = self.mode_sections();
-        let mode = ActiveMode::build(modes, cards, id, seed, &BuildOptions::default())?;
+        let mode = ActiveMode::build(modes, cards, id, seed, &opts)?;
         let seat = PackModeSeat::playing(return_mode, source, mode);
         self.expansion.mode_seat = Some(Box::new(seat));
         self.mode = SceneMode::Expansion;
@@ -89,6 +90,10 @@ impl World {
     /// Close the seat and restore the suspended mode. A session still
     /// running is forfeited (no rewards). No-op while no seat is open.
     pub fn exit_pack_mode(&mut self) {
+        if self.expansion.cards.seat.is_some() {
+            self.close_card_screen();
+            return;
+        }
         let Some(seat) = self.expansion.mode_seat.take() else {
             return;
         };
@@ -99,6 +104,10 @@ impl World {
 
     /// One frame of the seat, off this frame's pad (seat 0).
     pub(crate) fn tick_pack_mode(&mut self) {
+        if self.expansion.cards.seat.is_some() {
+            self.tick_card_seat();
+            return;
+        }
         let Some(mut seat) = self.expansion.mode_seat.take() else {
             // Mode is Expansion but no seat (a pack swap dropped it).
             self.mode = SceneMode::Field;
@@ -116,9 +125,15 @@ impl World {
         };
         let seed = self.pack_mode_seed(&id);
         let mut rng = ModeRng::new(seed ^ 0x5EED);
+        let opts = match &seat.stage {
+            legaia_engine_expansion::modes::ModeStage::Picker { .. } => {
+                self.pack_mode_build_options()
+            }
+            _ => BuildOptions::default(),
+        };
         let step = {
             let (_, modes, cards) = self.mode_sections();
-            seat.step(pad, prev, modes, cards, seed, &mut rng)
+            seat.step(pad, prev, modes, cards, &opts, seed, &mut rng)
         };
         match step {
             SeatStep::Stay => self.expansion.mode_seat = Some(seat),
@@ -159,5 +174,9 @@ impl World {
         self.expansion
             .pending_card_rewards
             .extend(pending_cards(mode_id, rewards));
+        // The card economy: a lost stake leaves the collection, the
+        // winnings join it.
+        self.settle_card_stakes(rewards);
+        self.collect_card_grants();
     }
 }

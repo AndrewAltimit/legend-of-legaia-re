@@ -2433,6 +2433,7 @@ dependencies = [
  "legaia-ui-formats",
  "legaia-vab",
  "log",
+ "png",
 ]
 
 [[package]]
@@ -2457,6 +2458,7 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",

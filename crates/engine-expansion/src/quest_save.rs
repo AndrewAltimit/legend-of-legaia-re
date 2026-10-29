@@ -19,6 +19,11 @@
 //!          1 = cleared bosses: u16 count, then str each (only when one is)
 //!          2 = map: str map id, i16 x, i16 z, u16 facing, only on a save
 //!              made on a pack map (`crate::map::MapLocation`)
+//!          3 = cards (only once the player has any card state):
+//!              u8 flags (bit 0: starter cards handed over), u64 card-stream
+//!              state, u16 count then str id + u32 copies each (binder
+//!              order), u16 count then str booster id + u32 unopened each,
+//!              u16 deck count then str each, u16 seen count then str each
 //! ```
 //!
 //! `str` is a `u16` byte length then UTF-8. Integers are little-endian.
@@ -54,6 +59,9 @@ pub struct ExpansionProgress {
     /// The pack map the save was made on. Written only when set, so a save
     /// made off every map keeps the block it had.
     pub map: Option<crate::map::MapLocation>,
+    /// The trading-card collection, boosters and duel deck. Written only
+    /// when it holds anything.
+    pub cards: legaia_engine_modes::cards::economy::CardProgress,
 }
 
 impl ExpansionProgress {
@@ -117,6 +125,31 @@ impl ExpansionProgress {
             w.extend_from_slice(&m.x.to_le_bytes());
             w.extend_from_slice(&m.z.to_le_bytes());
             w.extend_from_slice(&m.facing.to_le_bytes());
+        }
+        let c = &self.cards;
+        if *c != Default::default() {
+            w.push(TAIL_CARDS);
+            w.push(u8::from(c.starter_granted));
+            w.extend_from_slice(&c.rng.to_le_bytes());
+            let binder = c.collection.binder();
+            put_len(&mut w, binder.len());
+            for id in binder.iter().take(MAX_LEN) {
+                put_str(&mut w, id);
+                w.extend_from_slice(&c.collection.count(id).to_le_bytes());
+            }
+            put_len(&mut w, c.boosters.len());
+            for (id, n) in c.boosters.iter().take(MAX_LEN) {
+                put_str(&mut w, id);
+                w.extend_from_slice(&n.to_le_bytes());
+            }
+            put_len(&mut w, c.deck.len());
+            for id in c.deck.iter().take(MAX_LEN) {
+                put_str(&mut w, id);
+            }
+            put_len(&mut w, c.seen.len());
+            for id in c.seen.iter().take(MAX_LEN) {
+                put_str(&mut w, id);
+            }
         }
         w
     }
@@ -183,6 +216,33 @@ impl ExpansionProgress {
                         facing: r.u16()?,
                     });
                 }
+                TAIL_CARDS => {
+                    let c = &mut out.cards;
+                    c.starter_granted = match r.u8()? {
+                        0 => false,
+                        1 => true,
+                        _ => return None,
+                    };
+                    c.rng = u64::from_le_bytes(r.take(8)?.try_into().ok()?);
+                    for _ in 0..r.u16()? {
+                        let id = r.str()?;
+                        let n = r.u32()?;
+                        c.collection.add(&id, n);
+                    }
+                    for _ in 0..r.u16()? {
+                        let id = r.str()?;
+                        let n = r.u32()?;
+                        if n > 0 {
+                            c.boosters.insert(id, n);
+                        }
+                    }
+                    for _ in 0..r.u16()? {
+                        c.deck.push(r.str()?);
+                    }
+                    for _ in 0..r.u16()? {
+                        c.seen.insert(r.str()?);
+                    }
+                }
                 _ => return None,
             }
         }
@@ -212,6 +272,8 @@ fn put_str(w: &mut Vec<u8>, s: &str) {
 const TAIL_CLEARED_BOSSES: u8 = 1;
 /// Tail record tag: the pack map the save was made on.
 const TAIL_MAP: u8 = 2;
+/// Tail record tag: the trading-card state.
+const TAIL_CARDS: u8 = 3;
 
 struct Reader<'a> {
     b: &'a [u8],
@@ -306,6 +368,37 @@ mod tests {
         );
         assert_eq!(ExpansionProgress::decode(&bytes), Some(p));
         assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
+    }
+
+    #[test]
+    fn the_card_record_round_trips_and_is_absent_without_cards() {
+        let plain = sample().encode();
+        let mut p = sample();
+        assert_eq!(p.cards, Default::default());
+        assert_eq!(p.encode(), plain, "no card state, no card record");
+        let c = &mut p.cards;
+        c.collection.add("mist-wisp", 2);
+        c.collection.add("ash-hound", 1);
+        c.collection.move_in_binder(1, 0);
+        c.boosters.insert("rebirth-starter".into(), 3);
+        c.deck = vec!["ash-hound".into(), "mist-wisp".into()];
+        c.seen.insert("mist-wisp".into());
+        c.starter_granted = true;
+        c.rng = 0xDEAD_BEEF_0123_4567;
+        let bytes = p.encode();
+        assert_eq!(&bytes[..plain.len()], &plain[..], "appended after the rest");
+        let back = ExpansionProgress::decode(&bytes).unwrap();
+        assert_eq!(back.cards.collection.binder(), ["ash-hound", "mist-wisp"]);
+        assert_eq!(back, p);
+        assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
+        // The card record follows the map record when both are present.
+        p.map = Some(crate::map::MapLocation {
+            map_id: "m".into(),
+            x: 1,
+            z: 2,
+            facing: 3,
+        });
+        assert_eq!(ExpansionProgress::decode(&p.encode()), Some(p));
     }
 
     #[test]

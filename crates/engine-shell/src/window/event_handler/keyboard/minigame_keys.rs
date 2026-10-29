@@ -14,6 +14,29 @@ impl PlayWindowApp {
             || self.key_muscle_dome(code, state)
             || self.key_baka_fighter(code, state)
             || self.key_pack_modes(code, state)
+            || self.key_card_screen(code, state)
+    }
+
+    /// `\` (backslash): open the active pack's card menu (binder, boosters,
+    /// sell, deck) over the field or the overworld - the twin of the pause
+    /// menu's card row; pressed inside it, close it. Inert without pack
+    /// cards.
+    fn key_card_screen(&mut self, code: KeyCode, state: ElementState) -> bool {
+        if code != KeyCode::Backslash || state != ElementState::Pressed || self.boot_ui.is_active()
+        {
+            return false;
+        }
+        let world = &mut self.session.host.world;
+        if world.card_screen_open() {
+            world.close_card_screen();
+        } else if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
+            if !world.open_card_menu() {
+                log::info!("cards: the active pack has no cards");
+            }
+        } else {
+            return false;
+        }
+        true
     }
 
     // --- expansion game modes ---

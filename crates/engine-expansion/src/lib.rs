@@ -11,6 +11,7 @@
 
 pub mod battle;
 pub mod battle_waves;
+pub mod cards;
 pub mod dialog;
 pub mod flags;
 pub mod map;
@@ -43,6 +44,9 @@ pub struct ExpansionState {
     pub mode_seat: Option<Box<modes::PackModeSeat>>,
     /// Card grants won in modes, waiting for the card economy.
     pub pending_card_rewards: Vec<modes::PendingCardReward>,
+    /// The card economy's notices, screen and portraits; the cards
+    /// themselves are `quests.progress.cards`.
+    pub cards: cards::CardRuntime,
 }
 
 impl ExpansionState {

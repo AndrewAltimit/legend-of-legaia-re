@@ -66,3 +66,6 @@ legaia-mes.workspace = true
 legaia-seq.workspace = true
 legaia-vab.workspace = true
 legaia-expansion-format.workspace = true
+# expansion_cards_disc writes the card portraits it renders to a scratch
+# directory when asked, for a person to look at.
+png.workspace = true
