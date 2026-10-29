@@ -25,6 +25,8 @@ SUBCOMMAND GROUPS:
     battle-data-pack, battle-data-pack-scan, player-anm, player-anm-scan,
     scene-v12, scene-v12-scan, man, man-scan, kingdom-slot, slot4-png,
     befect-cluster, find-overlay, summon-overlay, summon-readef, overlay
+  Expansion packs (the port's modder content, no disc needed):
+    expansion validate | bundle | unbundle | info
 
 TYPICAL PIPELINE (from a disc image to per-entry files):
     disc-extract extract game.bin out/
@@ -1095,6 +1097,13 @@ pub(super) enum Cmd {
         #[command(subcommand)]
         cmd: OverlayCmd,
     },
+    /// Expansion packs for the port: validate a pack, pack a directory into
+    /// a shareable `.lxpack` bundle and back, summarise one. Needs no disc.
+    /// Format: docs/formats/expansion-pack.md.
+    Expansion {
+        #[command(subcommand)]
+        cmd: ExpansionCmd,
+    },
 
     /// Byte-account one PROT entry: which bytes a parser claims, and what
     /// shape the rest has.
@@ -1240,6 +1249,46 @@ pub(super) enum OverlayCmd {
         /// Minimum corroborating call targets to accept a recovered base.
         #[arg(long, default_value_t = 8)]
         min_votes: u32,
+    },
+}
+
+#[derive(Subcommand)]
+pub(super) enum ExpansionCmd {
+    /// Check a pack (a directory or an `.lxpack` bundle): manifest, layout,
+    /// cross-references, and the no-disc-data rule. Exits non-zero on any
+    /// error.
+    Validate {
+        /// Pack directory or `.lxpack` file.
+        pack: PathBuf,
+        /// Also fail on warnings.
+        #[arg(long, default_value_t = false)]
+        strict: bool,
+    },
+    /// Pack a pack directory into one `.lxpack` bundle. Refuses a pack that
+    /// fails validation.
+    Bundle {
+        /// Pack directory.
+        dir: PathBuf,
+        /// Output `.lxpack` path.
+        #[arg(short, long)]
+        out: PathBuf,
+    },
+    /// Unpack an `.lxpack` bundle into a directory.
+    Unbundle {
+        /// The `.lxpack` file.
+        file: PathBuf,
+        /// Output directory (created; must be empty if it exists).
+        #[arg(short, long)]
+        out: PathBuf,
+    },
+    /// Summarise a pack, or with no argument describe the format: the
+    /// schema and bundle versions this build reads and the pack layout.
+    Info {
+        /// Pack directory or `.lxpack` file.
+        pack: Option<PathBuf>,
+        /// Emit JSON instead of text.
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
 }
 

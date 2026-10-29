@@ -19,6 +19,8 @@ mod cli_io;
 mod disc_map;
 #[path = "asset/dispatch.rs"]
 mod dispatch;
+#[path = "asset/expansion.rs"]
+mod expansion;
 #[path = "asset/field_census.rs"]
 mod field_census;
 #[path = "asset/field_disasm_cli.rs"]
@@ -490,5 +492,6 @@ fn main() -> Result<()> {
                 to,
             } => overlay_find_sig_cmd(&prot_dat, &sig_hex, anchor_va, from, to),
         },
+        Cmd::Expansion { cmd } => expansion::run(cmd),
     }
 }

@@ -459,6 +459,7 @@
     "bytes",
     "container-formats",
     "disc-audit",
+    "expansion-format",
     "game-tables",
     "iso",
     "lzs",
@@ -2892,6 +2893,7 @@
    "track": "patcher",
    "scope": "The expansion-pack format for the port: manifest, monsters and formations, level curve, quests, dialogue, trading cards, game modes, custom maps, the <code>.lxpack</code> bundle. Disc content by coordinate only - no Sony bytes.",
    "dependents": [
+    "asset",
     "engine-core",
     "engine-expansion"
    ],
