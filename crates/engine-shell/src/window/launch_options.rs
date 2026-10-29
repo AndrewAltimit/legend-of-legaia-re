@@ -1087,6 +1087,9 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "/" | "?" | "SLASH" => KeyCode::Slash,
         // The multiplayer room screen (`window::netplay`).
         "TAB" => KeyCode::Tab,
+        // The expansion game-mode picker (`` ` ``) and the card menu (`\`).
+        "`" | "BACKQUOTE" => KeyCode::Backquote,
+        "\\" | "BACKSLASH" => KeyCode::Backslash,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -1258,6 +1261,9 @@ mod key_script_tests {
         names.extend((0..=9).map(|d| d.to_string()));
         names.extend((1..=12).map(|f| format!("F{f}")));
         names.push("/".to_string());
+        names.push("Tab".to_string());
+        names.push("`".to_string());
+        names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names
             .iter()
             .filter_map(|n| key_from_name(n))
