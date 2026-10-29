@@ -170,6 +170,12 @@ retuning is a number edit in `battle.toml`.
 
 The pack needs your own Legend of Legaia (NA) disc; it carries no game data.
 
+In play, the tower is entered from the retail game: once the party reaches
+level 30, the tiles behind the woodpile by Rim Elm's south gate (`town01`,
+field-grid tiles 17-18 x 43) lead up into the Atrium - the 1F map's
+`[[entrances]]` table - and the Atrium's stair down returns beside them. The
+Journal's Travel page enters the tower from anywhere once it is open.
+
 ```bash
 # Validate (no disc needed)
 asset expansion validate packs/rebirth
@@ -256,11 +262,6 @@ What the format cannot yet express, found while building this pack:
   a pack flag, so the stairs are open from the start (the quest chain paces
   the climb by level instead), and a boss's offer line repeats after its
   quest is done.
-- **Entrance from the world.** The 1F stair leads down to Rim Elm, but no
-  retail scene leads up into the tower; until a pack can add an entrance to a
-  retail scene, the tower is entered with `--map`. The natural place is a
-  late-game town: the Sol Tower entrance (`korout`) or the revisited Rim Elm
-  (`town0d`).
 - **Rest and save.** The pack has no save point or heal of its own; on the
   Gambler's Rest, a save made with the port's Save anywhere option resumes on
   the floor.

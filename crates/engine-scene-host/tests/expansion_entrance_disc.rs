@@ -1,19 +1,20 @@
-//! Disc-gated: the Rebirth pack's way in from the retail game. The
-//! `rim_elm_mist_stair` entrance (`maps/rebirth_tower_1f.toml`) stands in
+//! Disc-gated: a pack's way in from the retail game. The fixture pack's
+//! `rim_elm_stair` entrance (`maps/fixture_tower.toml`) stands in
 //! Rim Elm's `town01`, behind the woodpile by the south gate: stepping onto
 //! it enters the tower map once the party has reached level 30, the arrival
 //! back from the tower does not bounce into it, and the pause menu's Travel
 //! request enters the map from anywhere.
 //!
-//! The pack is the committed `packs/rebirth`. Skips when `LEGAIA_DISC_BIN`
-//! is unset.
+//! The pack is the committed fixture `tests/fixtures/tower_fixture`, which
+//! carries the same entrance as the flagship `packs/rebirth`. Skips when
+//! `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;
 
 use crate::scene_host::{SceneHost, SceneTickEvent};
 use legaia_expansion_format::ExpansionPack;
 
-const MAP_ID: &str = "rebirth_tower_1f";
+const MAP_ID: &str = "fixture_tower";
 
 fn host() -> Option<SceneHost> {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
@@ -21,11 +22,11 @@ fn host() -> Option<SceneHost> {
         return None;
     };
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tower_fixture");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    let pack = ExpansionPack::from_files(&files).expect("the Rebirth pack parses");
+    let pack = ExpansionPack::from_files(&files).expect("the fixture pack parses");
     host.activate_expansion_pack(Arc::new(pack))
-        .expect("the Rebirth pack activates");
+        .expect("the fixture pack activates");
     Some(host)
 }
 

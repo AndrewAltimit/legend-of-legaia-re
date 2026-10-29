@@ -1,11 +1,14 @@
-//! Disc-gated: the Rebirth pack's `rebirth_tower_1f` map entered as a live
-//! field scene over its retail base scene (`tower`): walked, blocked by a
-//! wall, its triggers run through the pack's quest and battle runtimes, its
-//! encounter zone rolling the pack's table, a save made on it carrying the
-//! map, and its stair exit into Rim Elm.
+//! Disc-gated: a pack map entered as a live field scene over its retail base
+//! scene (`tower`): walked, blocked by a wall, its triggers run through the
+//! pack's quest and battle runtimes, its encounter zone rolling the pack's
+//! table, a save made on it carrying the map, and its stair exit into Rim Elm.
+//! Then a smoke test that every floor of the flagship pack enters.
 //!
-//! The pack is the committed `packs/rebirth`, read the way the host reads it
-//! (`read_files`). Skips when `LEGAIA_DISC_BIN` is unset.
+//! The mechanics run on the committed fixture pack
+//! `tests/fixtures/tower_fixture` (the engine's own test content), so the
+//! flagship `packs/rebirth` can change its floors without moving these
+//! tests. Both are read the way the host reads a pack (`read_files`). Skips
+//! when `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;
 
@@ -17,12 +20,22 @@ use legaia_engine_system::input::PadButton;
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::MapDef;
 
-const MAP_ID: &str = "rebirth_tower_1f";
+const MAP_ID: &str = "fixture_tower";
+
+fn read_pack(dir: &str) -> ExpansionPack {
+    let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
+    ExpansionPack::from_files(&files).expect("the pack parses")
+}
+
+fn fixture_pack() -> ExpansionPack {
+    read_pack(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/tower_fixture"
+    ))
+}
 
 fn rebirth_pack() -> ExpansionPack {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
-    let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    ExpansionPack::from_files(&files).expect("the Rebirth pack parses")
+    read_pack(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"))
 }
 
 fn host() -> Option<SceneHost> {
@@ -31,8 +44,8 @@ fn host() -> Option<SceneHost> {
         return None;
     };
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
-    host.activate_expansion_pack(Arc::new(rebirth_pack()))
-        .expect("the Rebirth pack activates");
+    host.activate_expansion_pack(Arc::new(fixture_pack()))
+        .expect("the fixture pack activates");
     Some(host)
 }
 
@@ -127,10 +140,10 @@ fn the_tower_floor_enters_walks_blocks_and_exits_to_rim_elm() {
 
     // The entrance trigger counts as talking to the tower guide, and its
     // once-flag goes up with the pack's progress.
-    assert!(!flag(&host, "map.rebirth_tower_1f.entrance_guide"));
+    assert!(!flag(&host, "map.fixture_tower.entrance_guide"));
     seat(&mut host, 7, 9);
     let _ = host.tick().expect("tick");
-    assert!(flag(&host, "map.rebirth_tower_1f.entrance_guide"));
+    assert!(flag(&host, "map.fixture_tower.entrance_guide"));
     assert!(
         host.world
             .expansion
@@ -185,7 +198,7 @@ fn the_dais_wakes_its_guardian_once_ever() {
     host.enter_expansion_map(MAP_ID, "entrance").unwrap();
     seat(&mut host, 7, 6);
     let _ = host.tick().expect("tick");
-    assert!(flag(&host, "map.rebirth_tower_1f.dais_guardian"));
+    assert!(flag(&host, "map.fixture_tower.dais_guardian"));
     let forge = host.world.expansion_formation_id("forge_guard").unwrap();
     let mut fought = None;
     for _ in 0..400 {
@@ -301,4 +314,36 @@ fn a_save_on_the_map_carries_the_map_and_where_on_it() {
     let save = other.world.save_full();
     other.world.load_full(save);
     assert!(other.world.expansion_saved_map_location().is_none());
+}
+
+#[test]
+fn every_rebirth_floor_validates_and_enters_over_its_base_scene() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let pack = rebirth_pack();
+    let errors: Vec<_> = legaia_expansion_format::validate::validate(&pack)
+        .into_iter()
+        .filter(|i| i.severity == legaia_expansion_format::validate::Severity::Error)
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    let mut host = SceneHost::open_disc(disc).expect("open the disc");
+    host.activate_expansion_pack(Arc::new(pack.clone()))
+        .expect("the Rebirth pack activates");
+    assert!(!pack.maps.is_empty());
+    for (id, def) in &pack.maps {
+        host.enter_expansion_map(id, "")
+            .unwrap_or_else(|e| panic!("{id}: {e:#}"));
+        assert_eq!(host.active_expansion_map(), Some(id.as_str()));
+        assert_eq!(
+            host.scene.as_ref().map(|s| s.name.as_str()),
+            def.base.scene_name(),
+            "{id}"
+        );
+        assert!(matches!(
+            host.tick().expect("tick"),
+            SceneTickEvent::Stepped | SceneTickEvent::SceneEntered { .. }
+        ));
+    }
 }

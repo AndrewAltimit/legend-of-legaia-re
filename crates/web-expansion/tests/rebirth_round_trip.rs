@@ -125,7 +125,9 @@ fn xp_chart_and_dialog_check() {
     let line = &pack["dialog"]["lines"]["guide_intro"];
     let d = core.check_dialog(&line.to_string()).unwrap();
     assert!(d["error"].is_null(), "{d}");
-    assert_eq!(d["pages"].as_array().unwrap().len(), 3);
+    // One page per blank-line-separated block of the line's text.
+    let pages = line["text"].as_str().unwrap().split("\n\n").count();
+    assert_eq!(d["pages"].as_array().unwrap().len(), pages);
     let long = serde_json::json!({ "text": "x".repeat(40) });
     let d = core.check_dialog(&long.to_string()).unwrap();
     assert_eq!(d["pages"][0][0]["long"], true);

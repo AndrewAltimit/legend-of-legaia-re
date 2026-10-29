@@ -1,0 +1,8 @@
+# Engine test fixture: one map over the retail `tower` and the fights its
+# triggers and zone name. Our own content, coordinates only.
+id = "tower-fixture"
+name = "Tower Fixture"
+version = "0.1.0"
+authors = ["The legend-of-legaia-re contributors"]
+license = "MIT OR Unlicense"
+description = "The engine-scene-host disc tests' fixture pack."

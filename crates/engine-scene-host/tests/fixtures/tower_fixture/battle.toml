@@ -1,0 +1,31 @@
+# The fixture map's fights: the dais trigger's formation and the outer
+# ring's encounter table.
+
+[monsters.ogre]
+base = { kind = "monster", id = 109 }
+name = "Fixture Ogre"
+hp = { mul = 2.0 }
+
+[monsters.lizard]
+base = { kind = "monster", id = 124 }
+name = "Fixture Lizard"
+
+[monsters.golem]
+base = { kind = "monster", id = 130 }
+name = "Fixture Golem"
+
+[formations.ogre_pack]
+label = "Ogres"
+monsters = ["ogre", "ogre", "ogre"]
+
+[formations.forge_guard]
+label = "Forge Guard"
+monsters = ["golem", "lizard", "lizard", "ogre"]
+
+[[encounters]]
+scene = "tower_1f"
+steps = [12, 24]
+formations = [
+    { formation = "ogre_pack", weight = 2 },
+    { formation = "forge_guard", weight = 1 },
+]

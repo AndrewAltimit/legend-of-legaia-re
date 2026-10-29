@@ -50,6 +50,11 @@ facing = 4
 id = "from_above"
 tile = [7, 2]
 
+# On the dais beside the Warden's Stone: where the Journal's Travel lands.
+[[spawns]]
+id = "dais"
+tile = [7, 7]
+
 [[exits]]
 id = "stair_down"
 rect = [7, 12, 7, 12]
