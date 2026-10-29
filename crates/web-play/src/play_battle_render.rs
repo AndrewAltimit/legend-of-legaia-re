@@ -324,6 +324,18 @@ impl BattleRender {
     }
 }
 
+impl BattleRender {
+    /// Put a monster an expansion wave seated mid-battle on its seat: adopt
+    /// the VRAM its texture was injected into and replace whatever mesh the
+    /// seat drew (the downed monster it takes over from). The caller bumps
+    /// the generation so the page re-uploads the battle scene.
+    fn push_wave_monster(&mut self, vram: legaia_tim::Vram, render: BattleActorRender) {
+        self.vram = vram;
+        self.actors.retain(|a| a.actor_idx != render.actor_idx);
+        self.actors.push(render);
+    }
+}
+
 /// Flatten one animation frame to the `[tx, ty, tz, rx, ry, rz] x parts`
 /// stream the page animator consumes (angles unsigned 12-bit, `4096` = turn).
 fn flatten_frame(frame: &[legaia_actor_formats::monster_archive::PartPose]) -> Vec<i32> {
@@ -596,6 +608,83 @@ impl LegaiaRuntime {
         sh.objects = objects;
         self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
         br.generation = self.battle_render_generation;
+    }
+
+    /// Bind the meshes of the monsters an expansion pack's wave seated since
+    /// the last tick - the browser twin of the native window's
+    /// `bind_wave_monsters`. The world half (each seat's texture slot and
+    /// idle) is the session step both hosts run
+    /// (`battle_stage::stage_wave_monsters`), whether or not this page holds
+    /// a battle render; the render half injects each texture into its slot
+    /// and swaps the seat's mesh, as [`Self::enter_battle_render`] builds the
+    /// opening monsters'. Nothing arrives without a pack.
+    pub(crate) fn bind_wave_monsters_web(&mut self) {
+        let Some(host) = self.scene_host.host_mut() else {
+            return;
+        };
+        if host.world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+            return;
+        }
+        let archive = host
+            .index
+            .entry_bytes_extended(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
+            .ok();
+        let seats =
+            legaia_engine_session::battle_stage::stage_wave_monsters(host, archive.as_deref());
+        let (Some(archive), false) = (archive, seats.is_empty()) else {
+            return;
+        };
+        let Some(br) = self.battle_render.as_mut() else {
+            return;
+        };
+        let mut vram = br.vram.clone();
+        let mut bound = 0usize;
+        for seat in seats {
+            let Ok(Some(mesh)) =
+                legaia_actor_formats::monster_archive::mesh(&archive, seat.monster_id)
+            else {
+                continue;
+            };
+            let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
+                continue;
+            };
+            let Some(vmesh) = mesh.battle_render_mesh(seat.tex_slot, &mut vram) else {
+                continue;
+            };
+            legaia_actor_formats::monster_archive::write_boss_effect_page(
+                &archive,
+                seat.monster_id,
+                &mut vram,
+            );
+            if vmesh.indices.is_empty() {
+                continue;
+            }
+            let object_ids =
+                legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
+            let rest_pose =
+                legaia_actor_formats::monster_archive::idle_animation(&archive, seat.monster_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|a| a.frames.first().map(|f| flatten_frame(f)))
+                    .unwrap_or_default();
+            br.push_wave_monster(
+                vram.clone(),
+                BattleActorRender {
+                    actor_idx: seat.actor,
+                    mesh: BattleMesh::textured(vmesh),
+                    object_ids,
+                    rest_pose,
+                    morph_src: Some(std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()))),
+                },
+            );
+            bound += 1;
+        }
+        if bound == 0 {
+            return;
+        }
+        self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
+        br.generation = self.battle_render_generation;
+        web_log(&format!("play battle: bound {bound} wave monster mesh(es)"));
     }
 
     /// Drop the battle render state on the `Battle -> Field` edge. The page

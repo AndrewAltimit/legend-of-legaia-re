@@ -54,13 +54,59 @@ monsters = ["ashen_caruban", { kind = "monster", id = 12 }]
 scripted = false
 ```
 
-A slot is a pack monster key or a retail monster ref. `scripted = true` makes the formation a retail-style boss row: no escape, the boss battle intro, the alternate seat layout and the scripted stat boost (the formation header byte `record[+0]`, [`encounter.md`](encounter.md)).
+A slot is a pack monster key or a retail monster ref. A formation may continue in [waves](#waves). `scripted = true` makes the formation a retail-style boss row: no escape, the boss battle intro, the alternate seat layout and the scripted stat boost (the formation header byte `record[+0]`, [`encounter.md`](encounter.md)).
 
 Pack formations register in the formation table at ids `0xE000` and up, in key order, beside the scene's own MAN rows. They are re-registered before every pack fight, since a scene's MAN install fills the table.
 
 ### Formation size
 
-A formation holds at most **four** monsters. The battle actor table has eight seats: the party takes seats `0..=2`, and seat `7` is the summon seat every Seru cast poses its creature on, which leaves four monster seats beside a full party. Retail's largest formations are four monsters, so four is both the retail and the engine limit; a fifth monster would share the summon seat with the first summon cast. More enemies than four in one fight needs a seat model the engine does not have.
+A formation holds at most **four** monsters at once. The battle actor table has eight seats: the party takes seats `0..=2`, and seat `7` is the summon seat every Seru cast poses its creature on, which leaves four monster seats beside a full party. Retail's largest formations are four monsters, so four is both the retail and the engine limit; a fifth monster would share the summon seat with the first summon cast. A fight with more enemies than that brings them in [waves](#waves): later monsters take the seats earlier ones vacate.
+
+## Waves
+
+```toml
+[formations.tower_gauntlet]
+label = "Tower Gauntlet"
+monsters = ["ironhide_ogre", "ironhide_ogre"]        # wave 1
+
+[[formations.tower_gauntlet.waves]]                  # wave 2
+monsters = ["ember_lizard", "ember_lizard", "ember_lizard"]
+
+[[formations.tower_gauntlet.waves]]                  # wave 3
+monsters = ["runed_golem", "ironhide_ogre"]
+arrival = "refill"
+count = 6
+max_standing = 3
+```
+
+`monsters` is the first wave, the monsters the battle opens on. Each `[[formations.<key>.waves]]` table after it is one more wave, in order. The battle never returns to the field between waves: a wave's monsters take the monster seats of the fight in progress, a "Wave N / M" banner stands for two seconds as a wave begins, and when the last wave is down the ordinary victory runs once.
+
+| Field | Effect |
+|---|---|
+| `monsters` | The wave's monsters, pack keys or retail refs. |
+| `arrival` | `wipe` (the default): the whole wave seats together once every monster standing is down, at most four. `refill`: one monster per freed seat, at the start of a round. |
+| `count` | `refill` only: arrivals in all, cycling through `monsters` (default one per listed monster, at most 64). |
+| `max_standing` | `refill` only: no arrival while this many monsters stand (default four). |
+
+A formation lists at most 16 waves after its first.
+
+### When a wave arrives
+
+A `wipe` wave arrives at the moment the action that downed the last standing monster resolves: the battle action SM's end-of-action wipe scan asks the `World` for more monsters before it signals the victory, and seats them before any frame sees an empty monster side. The round then runs on: party members still owed a turn act against the new arrivals, and the next round opens with every seat's initiative rolled afresh.
+
+A `refill` wave tops up freed seats as each round opens, ahead of the round's initiative seed, so its arrivals act in that round; a wipe also refills every free seat at once. When a wave starts that stands more monsters than the seats laid out, the seat layout widens to it and the monsters still standing move to the wider layout's seats. The next wave, of either kind, takes over once a `refill` wave has sent its `count`.
+
+### Spoils
+
+Every monster a wave seats joins the fight's formation, so the one victory pays all of them together: the EXP of every wave summed (then the pack's `xp_mul`, the retail `3/4` share), the gold accumulated over every monster (then the retail halving and the pack's `gold_mul`), and one drop roll over every seat. A fight the party flees or loses pays nothing, as any fight.
+
+### One version of each base monster
+
+A pack monster fights under its base monster's id, and one catalog swap covers the whole battle, so the one-variant rule holds across all of a formation's waves together: an `ashen_caruban` in wave 1 and a retail Caruban in wave 3 is a validation error.
+
+### Escape and bosses
+
+Escape stays open between and during waves unless the formation is scripted (`scripted = true`, or a `no_escape` boss's formation). A boss whose formation has waves pays its `reward_items` and `reward_gold` once, after the last wave.
 
 ## Encounter overrides
 
@@ -133,7 +179,9 @@ Enemy scaling multiplies HP, MP, ATK, both defences, INT and SPD, and EXP and go
 |---|---|
 | Activation, formation install, XP curve swap | `World::activate_expansion` / `deactivate_expansion` |
 | Base monsters merged from the disc's monster archive at each scene entry | `SceneHost::merge_expansion_monsters` |
-| Catalog swap at seat time, restore after the spoils | `World::enter_battle_from_formation`, `finish_battle`, `abandon_live_battle` |
+| Catalog swap at seat time (every wave's monsters), restore after the spoils | `World::enter_battle_from_formation`, `finish_battle`, `abandon_live_battle` |
+| Wave arrivals | `World::expansion_seat_wave`, from the action SM's wipe hold (`BattleActionHost::reinforce_monster_wipe`) and `World::begin_battle_round` |
+| Wave meshes | `battle_stage::stage_wave_monsters` (world half), the play window's `bind_wave_monsters`, the browser page's `bind_wave_monsters_web` |
 | Encounter override | `World::on_field_step` |
 | Spoils scaling, boss reward | `World::apply_battle_loot` |
 | Level-up rewards | `World::apply_battle_xp` |

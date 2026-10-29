@@ -66,6 +66,21 @@ monsters = ["runed_golem", "ember_lizard", "ember_lizard", "ironhide_ogre"]
 label = "Hollow Throne"
 monsters = ["hollow_sovereign", "runed_golem", "runed_golem"]
 
+# Three waves in one battle: two ogres, then three lizards together, then
+# six more arriving one at a time as seats free up, three at most at once.
+[formations.tower_gauntlet]
+label = "Tower Gauntlet"
+monsters = ["ironhide_ogre", "ironhide_ogre"]
+
+[[formations.tower_gauntlet.waves]]
+monsters = ["ember_lizard", "ember_lizard", "ember_lizard"]
+
+[[formations.tower_gauntlet.waves]]
+monsters = ["runed_golem", "ironhide_ogre"]
+arrival = "refill"
+count = 6
+max_standing = 3
+
 # Jette's Fortress keeps its own fights and mixes the pack's in.
 [[encounters]]
 scene = "chitei2"
