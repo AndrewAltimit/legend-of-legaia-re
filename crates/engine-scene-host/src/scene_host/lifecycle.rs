@@ -56,6 +56,7 @@ impl SceneHost {
             battle_party_forms: None,
             last_minigame_warp: None,
             pending_entry_seat: None,
+            pending_scene_override: None,
             arrival_catalog: None,
             pending_picker_arrivals: None,
             picker_seat: None,
@@ -177,7 +178,12 @@ impl SceneHost {
         // REF: FUN_8003A024
         self.world.cutscene.narration_seed =
             legaia_engine_field::cutscene_narration::RollerSeed::SCENE_RESET;
-        let scene = Scene::load(&self.index, name)?;
+        // Any scene load leaves the pack map the player was in; an
+        // expansion-map entry seats the next one after its load.
+        self.world.expansion.map = None;
+        let overrides = self.pending_scene_override.take();
+        let mut scene = Scene::load(&self.index, name)?;
+        scene.overrides = overrides;
         // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
         // start, before the extraction-frame shift `Scene::start` carries).
         self.world.battle.map_id = self.index.block_range(name).map_or(0, |(raw, _)| raw);

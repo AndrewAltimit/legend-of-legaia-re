@@ -1582,7 +1582,8 @@
     "flags",
     "quest",
     "quest_challenge",
-    "quest_save"
+    "quest_save",
+    "map"
    ],
    "band": "kernels",
    "track": "engine",
@@ -1590,7 +1591,9 @@
    "role": "expansion-pack runtime kernels: monster and formation overrides, level curve, quests",
    "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. <code>World::expansion</code> is its seat; inert with no pack.",
    "dependents": [
-    "engine-core"
+    "engine-core",
+    "engine-scene-host",
+    "engine-session"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/README.md"
   },
@@ -2229,6 +2232,7 @@
     "engine-field",
     "engine-system",
     "engine-vm",
+    "expansion-format",
     "game-tables",
     "iso",
     "lzs",
@@ -2258,6 +2262,7 @@
     "clut_walk_anim",
     "coplanar_draws",
     "cutscene_caption",
+    "expansion_map",
     "field_env",
     "field_ground",
     "field_occlusion",
@@ -2313,6 +2318,7 @@
     "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menus",
@@ -2324,6 +2330,7 @@
     "engine-system",
     "engine-vm",
     "engine-world-views",
+    "expansion-format",
     "game-tables",
     "minigame-formats",
     "overlay-images",
@@ -2340,7 +2347,6 @@
     "disc-patch",
     "engine-battle-hud",
     "engine-camera",
-    "expansion-format",
     "font",
     "gamedata",
     "lzs",
@@ -2450,6 +2456,7 @@
     "engine-camera",
     "engine-core",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-menu-runtime",
     "engine-menus",
@@ -2462,6 +2469,7 @@
     "engine-title",
     "engine-vm",
     "engine-world-views",
+    "expansion-format",
     "font",
     "game-tables",
     "iso",
@@ -2552,6 +2560,7 @@
     "engine-title",
     "engine-ui",
     "engine-world-views",
+    "expansion-format",
     "font",
     "game-tables",
     "iso",
@@ -2917,7 +2926,11 @@
     "asset",
     "engine-core",
     "engine-expansion",
-    "engine-modes"
+    "engine-modes",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },

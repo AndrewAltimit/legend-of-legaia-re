@@ -170,6 +170,11 @@ impl SceneHost {
         // streaming actor `FUN_80021934` and returns, and the departing scene
         // keeps running under the actor's `0x46`-frame countdown. Park every
         // transition behind that hold and commit it on the hand-off tick.
+        // A pack map's exits: a retail exit raises the named scene change
+        // the hold below parks, a map-to-map exit enters at once.
+        if let Some(event) = self.step_expansion_map()? {
+            return Ok(event);
+        }
         if self.advance_scene_transition_hold() {
             return Ok(SceneTickEvent::Stepped);
         }

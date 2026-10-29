@@ -43,6 +43,7 @@ legaia-engine-export.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-session.workspace = true
+legaia-expansion-format.workspace = true
 legaia-engine-screens.workspace = true
 legaia-engine-render.workspace = true
 legaia-prot.workspace = true

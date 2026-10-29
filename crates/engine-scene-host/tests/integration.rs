@@ -48,6 +48,8 @@ mod encounter_region_groups_disc;
 mod encounter_step_counter_disc;
 mod entry_install_slice_disc;
 mod expansion_boss_disc;
+mod expansion_map_disc;
+mod expansion_map_grid;
 mod field_actor_spawn_disc_e2e;
 mod field_camera_ladder_install_disc;
 mod field_camera_zone_arms_disc;

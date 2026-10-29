@@ -394,16 +394,16 @@ impl SceneHost {
         // corner nibbles (see `World::sample_field_floor_height`). Installed
         // unconditionally (cleared when absent) so a stale scene's ramps never
         // leak across a transition.
-        let map_bytes: Option<Vec<u8>> = self.scene.as_ref().and_then(|scene| {
-            let idx = scene.field_map_index(&self.index)?;
-            match self.index.entry_bytes_extended(idx) {
-                Ok(bytes) => Some(bytes),
-                Err(err) => {
-                    eprintln!("[scene] field elevation-override load skipped: {err:#}");
-                    None
-                }
-            }
-        });
+        let map_bytes: Option<Vec<u8>> =
+            self.scene
+                .as_ref()
+                .and_then(|scene| match scene.field_map_bytes(&self.index) {
+                    Ok(bytes) => bytes,
+                    Err(err) => {
+                        eprintln!("[scene] field elevation-override load skipped: {err:#}");
+                        None
+                    }
+                });
         match map_bytes {
             Some(mut bytes) => {
                 // `MAIN_INIT` runs the grid-mark refresh over the freshly

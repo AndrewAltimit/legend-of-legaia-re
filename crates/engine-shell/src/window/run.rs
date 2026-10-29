@@ -232,6 +232,19 @@ fn enter_launch_scene(
     // it `--scene map01` entered the overworld as a plain field scene here
     // unless `--world-map` was also passed. The flag still forces the
     // world-map entry for any other label.
+    // `--expansion` / `--map`: the pack map is the launch scene. Its base
+    // scene loads under it, so the render build below draws it like any
+    // field scene.
+    if let Some(launch) = debug_seeds.expansion.as_ref() {
+        let pack = launch.load()?;
+        session.host.set_expansion_pack(std::sync::Arc::new(pack));
+        let mode = session.enter_expansion_map_live(&launch.map, &launch.spawn, field_live_opts)?;
+        log::info!(
+            "play-window: entered expansion map '{}' (mode={mode:?})",
+            launch.map
+        );
+        return Ok(());
+    }
     let world_map = world_map || legaia_engine_scene::scene::is_world_map_scene(scene);
     // `--resume-save`: land an LGSF file through the card-load path instead
     // of the door entry below - the order the retail comparison corpus's

@@ -501,6 +501,35 @@ pub struct DebugSeeds {
     /// `--play-record P:R`: a scene MAN record installed as a cutscene
     /// timeline once the scene is entered.
     pub play_record: Option<(usize, usize)>,
+    /// `--expansion DIR --map ID [--spawn ID]`: an expansion-pack map
+    /// entered in place of the `--scene` door entry.
+    pub expansion: Option<ExpansionLaunch>,
+}
+
+/// The `--expansion` / `--map` / `--spawn` operands.
+#[derive(Debug, Clone)]
+pub struct ExpansionLaunch {
+    /// The pack directory.
+    pub pack: std::path::PathBuf,
+    pub map: String,
+    /// Empty for the map's first spawn.
+    pub spawn: String,
+}
+
+impl ExpansionLaunch {
+    /// Read the pack. A directory parses through
+    /// `ExpansionPack::from_dir`.
+    // TODO(expansion): read a `.lxpack` bundle once the bundle reader lands.
+    pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
+        if !self.pack.is_dir() {
+            anyhow::bail!(
+                "--expansion {}: only a pack directory is read; .lxpack bundles are not yet",
+                self.pack.display()
+            );
+        }
+        legaia_expansion_format::ExpansionPack::from_dir(&self.pack)
+            .with_context(|| format!("--expansion {}", self.pack.display()))
+    }
 }
 
 /// The `--cheat-*` operands - the native twin of the browser play page's
@@ -589,6 +618,26 @@ impl DebugSeeds {
                 .with_context(|| format!("--play-record record '{r}'"))?;
             self.play_record = Some((p, r));
         }
+        Ok(self)
+    }
+
+    /// Attach the `--expansion` / `--map` / `--spawn` operands (clap pairs
+    /// the first two).
+    pub fn with_expansion(
+        mut self,
+        pack: Option<std::path::PathBuf>,
+        map: Option<String>,
+        spawn: Option<String>,
+    ) -> Result<Self> {
+        self.expansion = match (pack, map) {
+            (Some(pack), Some(map)) => Some(ExpansionLaunch {
+                pack,
+                map,
+                spawn: spawn.unwrap_or_default(),
+            }),
+            (None, None) => None,
+            _ => anyhow::bail!("--expansion and --map go together"),
+        };
         Ok(self)
     }
 

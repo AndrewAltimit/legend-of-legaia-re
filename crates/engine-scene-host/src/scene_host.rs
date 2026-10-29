@@ -255,6 +255,12 @@ pub struct SceneHost {
     /// [`SceneHost::set_entry_seat`]; consumed (and cleared) by the next
     /// [`SceneHost::enter_field_scene`].
     pub(crate) pending_entry_seat: Option<(i16, i16)>,
+    /// The field layer of an expansion-pack map, armed by
+    /// [`SceneHost::enter_expansion_map`] and seated on the next
+    /// [`SceneHost::load_scene`]'s [`Scene`] (taken either way, so a failed
+    /// entry cannot hand it to the scene loaded after).
+    pub(crate) pending_scene_override:
+        Option<Arc<legaia_engine_scene::expansion_map::SceneOverride>>,
     /// The disc's inbound door / warp arrivals keyed by destination
     /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
     /// first scene-picker entry that asks for it and kept for the session.
@@ -355,6 +361,7 @@ pub use battle_stage::{
     backdrop_shell_mesh, backdrop_shell_nclip, backdrop_slot_1_basis,
 };
 mod effects;
+mod expansion_map;
 mod lifecycle;
 mod minigame_warp;
 mod player_rig;

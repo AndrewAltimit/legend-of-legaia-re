@@ -1246,6 +1246,18 @@ pub(crate) enum Cmd {
         /// look at. The record runs against the launch's flags and seats.
         #[arg(long, value_name = "P:R")]
         play_record: Option<String>,
+        /// Load an expansion pack (a pack directory; the single-file
+        /// `.lxpack` bundle is not read yet) and boot straight into one of
+        /// its maps, named by `--map`, in place of the `--scene` entry.
+        #[arg(long, value_name = "DIR", requires = "map")]
+        expansion: Option<PathBuf>,
+        /// The pack map `--expansion` boots into (`maps/<id>.toml`).
+        #[arg(long, value_name = "ID", requires = "expansion")]
+        map: Option<String>,
+        /// The spawn of `--map` the player arrives at; the map's first spawn
+        /// when omitted.
+        #[arg(long, value_name = "ID", requires = "map")]
+        spawn: Option<String>,
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does
@@ -1698,5 +1710,32 @@ mod locomotion_flag_tests {
                 "{old} must not parse"
             );
         }
+    }
+
+    /// `--expansion` and `--map` come as a pair, and `--spawn` needs a map.
+    #[test]
+    fn expansion_flags_parse_as_a_pair() {
+        let parse = |args: &[&str]| {
+            let mut argv = vec!["legaia-engine", "play-window"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv)
+        };
+        let cli = parse(&["--expansion", "packs/rebirth", "--map", "m", "--spawn", "s"])
+            .expect("the pair parses");
+        match cli.cmd.expect("subcommand") {
+            Cmd::PlayWindow {
+                expansion,
+                map,
+                spawn,
+                ..
+            } => assert_eq!(
+                (expansion, map.as_deref(), spawn.as_deref()),
+                (Some("packs/rebirth".into()), Some("m"), Some("s"))
+            ),
+            other => panic!("parsed {other:?}"),
+        }
+        assert!(parse(&["--expansion", "packs/rebirth"]).is_err());
+        assert!(parse(&["--map", "m"]).is_err());
+        assert!(parse(&["--spawn", "s"]).is_err());
     }
 }
