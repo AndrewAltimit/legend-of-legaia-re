@@ -42,13 +42,14 @@ impl World {
     /// | 11 (every pass while counting) | the creature sinks `2 * scalar` a tick (`0x801F7330..0x801F734C`) |
     /// | 12 (every pass; pass `0x801F7524..0x801F75A0`) | the creature sinks `2 * scalar` a tick (`0x801F74A0..0x801F74B0`); on the pass it is hidden and each live monster shown |
     /// | 18 (`0x801F7FE0..0x801F8020`, pass) | the creature at `(0, -0x1100, -0x1100)`, shown, its next clip staged |
-    /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown`, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden |
+    /// | 19 (`0x801F81C8..0x801F8210`, while counting; pass `0x801F82B4..0x801F82C0`) | with `w = (scalar << 6) - countdown`, the creature at `y = 17 w / 2 - 0x1100`, `z = 13 w - 0x1100`; on the pass it is hidden and arm 18's ring re-seated as the crystals ([`Self::seat_puera_crystals`]) |
+    /// | 20 (every pass, `0x801F85F8..0x801F8690`) | the crystals fall ([`Self::fall_puera_crystals`]) |
     /// | 24 (`0x801F9014..0x801F90A0`, pass) | each live monster back on its saved pose |
     ///
     /// plus the part halts of [`legaia_engine_cast::cast_module_camera::puera_arm_kills`]
     /// on each pass.
     ///
-    /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; the monster, creature and part-halt writes of arms 0, 5, 11, 12, 18, 19, 22 and 24)
+    /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; the monster, creature and part-halt writes of arms 0, 5, 11, 12, 18, 19, 22 and 24, the crystal re-seat of arm 19 and the fall of arm 20)
     pub(in crate::world::battle::cast_band) fn apply_puera_writes(
         &mut self,
         phase: u8,
@@ -77,6 +78,10 @@ impl World {
                 }
                 _ => {}
             }
+        }
+        // Arm 20's fall runs ahead of its gate, on every pass.
+        if phase == 20 {
+            self.fall_puera_crystals();
         }
         if !passed {
             return;
@@ -146,6 +151,7 @@ impl World {
                     a.battle.render_color = 0;
                     a.battle.render_flag = HIDDEN;
                 }
+                self.seat_puera_crystals();
             }
             24 => {
                 for &(slot, pos, facing) in &self.casting.module_saved_poses {
@@ -163,6 +169,58 @@ impl World {
                 }
             }
             _ => {}
+        }
+    }
+    /// The live parts of arm 18's ring, in the order arm 18 seated them
+    /// (the handle slots `0x801F9F90 + (0x16 + i) * 4`).
+    fn puera_ring_parts(
+        &mut self,
+    ) -> impl Iterator<Item = &mut legaia_engine_effects::summon::SummonPartRuntime> {
+        self.casting
+            .active_summon
+            .iter_mut()
+            .flat_map(|s| s.parts.iter_mut())
+            .filter(|p| {
+                !p.finished
+                    && p.tag == Some(legaia_engine_cast::cast_module_camera::PUERA_RING_RECORD)
+            })
+    }
+
+    /// PROT 0922 arm 19's pass: arm 18's ring re-seated as the crystals,
+    /// each on its ring point at its dealt height and turned by its draws
+    /// ([`legaia_engine_cast::cast_module_camera::puera_crystal_seats`], off
+    /// the world `rand()` stream).
+    fn seat_puera_crystals(&mut self) {
+        let seats =
+            legaia_engine_cast::cast_module_camera::puera_crystal_seats(|| self.next_rand());
+        for (part, seat) in self.puera_ring_parts().zip(seats.iter()) {
+            let st = &mut part.state;
+            [st.world_x, st.world_y, st.world_z] = seat.pos;
+            st.world_y_mirror = seat.pos[1];
+            [st.render_24, st.render_26, st.render_28] = seat.rot;
+        }
+    }
+
+    /// PROT 0922 arm 20, every pass: each crystal drops `(step * scalar) <<
+    /// 7` until it lands at `-0x100`; a landing raises the pad's rumble
+    /// (`FF / FF`, rates `0x10`, `0x801F8658..0x801F8680`) behind the Battles
+    /// vibration row.
+    fn fall_puera_crystals(&mut self) {
+        let drop = legaia_engine_cast::cast_module_camera::SPEED_SCALAR << 7;
+        let mut landed = false;
+        for part in self.puera_ring_parts() {
+            let st = &mut part.state;
+            let (y, hit) =
+                legaia_engine_cast::cast_module_camera::puera_crystal_fall(st.world_y, drop);
+            st.world_y = y;
+            st.world_y_mirror = y;
+            landed |= hit;
+        }
+        if landed && !self.battle_vibration_off() {
+            self.rumble
+                .battle_write(legaia_engine_system::rumble::BattleRumbleWrite::even(
+                    0xFF, 0x10,
+                ));
         }
     }
 }

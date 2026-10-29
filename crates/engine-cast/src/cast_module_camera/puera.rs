@@ -148,6 +148,80 @@ pub fn puera_arm18_spawns() -> &'static [ModuleSpawn] {
     })
 }
 
+/// One of arm 18's ring parts as arm 19's pass re-seats it: its position
+/// `+0x14..+0x18` and angle trio `+0x24..+0x28`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PueraCrystalSeat {
+    pub pos: [i16; 3],
+    pub rot: [i16; 3],
+}
+
+/// The height a falling crystal stops at (`li t6,-0x100` at `0x801F85D8`).
+pub const PUERA_CRYSTAL_FLOOR: i16 = -0x100;
+
+/// PROT 0922 arm 19's pass (`0x801F8318..0x801F85B8`) re-seats arm 18's
+/// twenty-three ring parts as the crystals arm 20 drops round the monster.
+///
+/// It first deals the heights: a 24-byte table at `0x801FA0D0` is zeroed and
+/// each value `1..=23` is written into the slot `rand() % 23` names, drawing
+/// again while that slot is taken (`0x801F8340..0x801F83BC`). Then, for the
+/// part `i` whose handle sits at `0x801F9F90 + (0x16 + i) * 4`
+/// (`0x801F83E8..0x801F85B8`), five draws: two `rand() % 0x801 - 0x400` for
+/// `x` / `z` that the ring point overwrites at once (`trunc(2 sin h / 7)`,
+/// `trunc(2 cos h / 7)` with `h = i * 0xB2`, the table index `s1` stepping
+/// `0x164` bytes), the pitch and roll `rand() % 0x101 - 0x80`, and the yaw
+/// `rand() & 0xFFF`. The height is `-0x2000 - (table[i] << 10)`. A point
+/// with `|x| + |z| < 0x400` would draw all five again; on a ring of radius
+/// `0x2000 / 7` none does.
+pub fn puera_crystal_seats(mut rand: impl FnMut() -> u32) -> [PueraCrystalSeat; 23] {
+    let mut table = [0u8; 24];
+    for v in 1..=23u8 {
+        loop {
+            let slot = (rand() % 23) as usize;
+            if table[slot] == 0 {
+                table[slot] = v;
+                break;
+            }
+        }
+    }
+    std::array::from_fn(|i| {
+        let draw = |rand: &mut dyn FnMut() -> u32, m: u32, off: i32| (rand() % m) as i32 - off;
+        let (s, c) = trig12((i as u16).wrapping_mul(0xB2));
+        loop {
+            let _ = draw(&mut rand, 0x801, 0x400);
+            let _ = draw(&mut rand, 0x801, 0x400);
+            let x = tdiv(2 * i32::from(s), 7);
+            let z = tdiv(2 * i32::from(c), 7);
+            let pitch = draw(&mut rand, 0x101, 0x80) as i16;
+            let roll = draw(&mut rand, 0x101, 0x80) as i16;
+            let yaw = (rand() & 0xFFF) as i16;
+            if i32::from(x).abs() + i32::from(z).abs() >= 0x400 {
+                break PueraCrystalSeat {
+                    pos: [x, -0x2000 - (i16::from(table[i]) << 10), z],
+                    rot: [pitch, yaw, roll],
+                };
+            }
+        }
+    })
+}
+
+/// One pass of arm 20's fall (`0x801F85F8..0x801F8690`, every pass, held or
+/// not): a crystal above [`PUERA_CRYSTAL_FLOOR`] drops `(step * scalar) <<
+/// 7`, `drop` here; one that is then at `-0xFF` or lower down is put back on
+/// the floor, and has landed this pass.
+/// Returns the new height and whether it landed this pass (the arm then
+/// raises the pad's rumble words, unless the option at `0x800845C8` is set).
+pub fn puera_crystal_fall(y: i16, drop: i32) -> (i16, bool) {
+    let mut y = y;
+    if y < PUERA_CRYSTAL_FLOOR {
+        y = y.wrapping_add(drop as i16);
+    }
+    if y > PUERA_CRYSTAL_FLOOR {
+        return (PUERA_CRYSTAL_FLOOR, true);
+    }
+    (y, false)
+}
+
 /// The parts each arm halts on its pass (`ori 0x8` into the handle's flag
 /// word), by record: arm 5 arm 2's second (`0x801F6F28`), arm 12 arm 11's
 /// three (`0x801F75D8..0x801F7654`, with its two fades), arm 19 arm 17's
@@ -207,8 +281,9 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
         16 => d(-(p / 8), 0, -5 * p, 6 * p),
         // `0x801F7E58..0x801F7ECC`.
         17 => d(p / 8, p / 4, 7 * p, p / 8),
-        // `0x801F86E4..0x801F871C`.
-        20 => d(0, p / 2, -2 * p, 16 * p),
+        // `0x801F86E4..0x801F871C`: the half-step lands on the pitch
+        // (`lhu v0,-0x4870(a0)` = `0x8007B790`), not the yaw.
+        20 => d(p / 2, 0, -2 * p, 16 * p),
         // `0x801F8F4C..0x801F8F64`.
         24 => d(0, 0, 0, -p),
         _ => None,
@@ -239,8 +314,10 @@ pub fn puera_drift(phase: u8) -> Option<CaptureDrift> {
 ///
 /// The drifts are [`puera_drift`]'s; the halts are [`puera_arm_kills`]'.
 /// Not carried: the TR y shake arms 14 and 15 store absolutely on alternate
-/// passes (`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`), arm 19's
-/// `rand()` scatter and arm 22's colour-wash writes.
+/// passes (`0x801F7A0C..0x801F7A60`, `0x801F7BDC..0x801F7C6C`) and arm 22's
+/// colour-wash writes. Arm 19's crystal re-seat and arm 20's fall are
+/// [`puera_crystal_seats`] / [`puera_crystal_fall`], applied to the parts by
+/// the engine.
 ///
 /// PORT: overlay_summon_puera_0922_801f6a3c (PROT 0922; camera arms 0, 6, 9, 10, 12, 16, 19, 22 and 23, the drifts of arms 1, 2, 13..17, 20 and 24, the spawn calls of arms 2, 5, 11, 12, 13, 17, 18, 20 and 22 and the captions of arms 6, 9 and 24)
 pub fn puera_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
@@ -339,6 +416,40 @@ mod tests {
         };
         // h = 0: sin 0, cos 0x1000.
         assert_eq!(pos, [0, 0x200 - 0x1200, -0x1100]);
+    }
+
+    #[test]
+    fn puera_crystals_ring_the_floor_at_staggered_heights() {
+        let mut seed = 0x1234_5678u32;
+        let seats = puera_crystal_seats(|| {
+            seed = seed.wrapping_mul(0x41C6_4E6D).wrapping_add(0x3039);
+            (seed >> 16) & 0x7FFF
+        });
+        // h = 0: (0, 2 * 0x1000 / 7).
+        assert_eq!([seats[0].pos[0], seats[0].pos[2]], [0, 0x2000 / 7]);
+        let mut heights: Vec<i16> = seats.iter().map(|s| s.pos[1]).collect();
+        heights.sort_unstable();
+        let want: Vec<i16> = (1..=23).rev().map(|k: i16| -0x2000 - (k << 10)).collect();
+        assert_eq!(heights, want);
+        assert!(seats.iter().all(|s| (-0x80..=0x80).contains(&s.rot[0])));
+    }
+
+    #[test]
+    fn a_crystal_stops_on_the_floor() {
+        assert_eq!(puera_crystal_fall(-0x2400, 0x100), (-0x2300, false));
+        assert_eq!(
+            puera_crystal_fall(-0x180, 0x100),
+            (PUERA_CRYSTAL_FLOOR, true)
+        );
+        // Exactly on the floor is not past it: no landing, no rumble.
+        assert_eq!(
+            puera_crystal_fall(-0x200, 0x100),
+            (PUERA_CRYSTAL_FLOOR, false)
+        );
+        assert_eq!(
+            puera_crystal_fall(PUERA_CRYSTAL_FLOOR, 0x100),
+            (PUERA_CRYSTAL_FLOOR, false)
+        );
     }
 
     #[test]
