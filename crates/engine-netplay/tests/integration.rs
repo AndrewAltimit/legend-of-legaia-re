@@ -4,6 +4,7 @@
 //! Synthetic worlds with no pack (the built-in practice modes), no disc
 //! gate, no Sony bytes.
 
+mod field_hunt;
 mod harness;
 mod modes;
 mod roaming;

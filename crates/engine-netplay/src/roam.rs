@@ -95,6 +95,11 @@ impl Roam {
         }
     }
 
+    /// The latest report from `player` (host side).
+    pub fn report_of(&self, player: PlayerId) -> Option<AvatarState> {
+        self.reports.get(&player).map(|(_, a)| *a)
+    }
+
     /// A player left: forget their report.
     pub fn forget(&mut self, player: PlayerId) {
         self.reports.remove(&player);

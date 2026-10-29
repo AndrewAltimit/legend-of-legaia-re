@@ -30,6 +30,9 @@ pub struct NetLaunch {
     pub room: Option<String>,
     /// `--name NAME`: the name the room shows.
     pub name: Option<String>,
+    /// `--multiplayer`: open the Multiplayer screen (host or join) once the
+    /// field is up - the launcher's Play online button.
+    pub menu: bool,
 }
 
 impl NetLaunch {
@@ -38,11 +41,28 @@ impl NetLaunch {
     }
 }
 
+/// The Multiplayer screen before a room: the menu and last tick's pad.
+pub(in crate::window) struct NetMenu {
+    pub menu: legaia_engine_netplay::connect::ConnectMenu,
+    prev_pad: u16,
+}
+
+impl NetMenu {
+    pub fn new(name: Option<&str>) -> Self {
+        Self {
+            menu: legaia_engine_netplay::connect::ConnectMenu::new(true, name.unwrap_or("")),
+            prev_pad: u16::MAX,
+        }
+    }
+}
+
 /// The window's room connection, and the relay when this window hosts it.
 pub(in crate::window) struct NetHost {
     pub net: NetPlay,
     /// Dropped with the window: every room closes and the port is freed.
     pub _relay: Option<RelayHandle>,
+    /// The scene the prop catalog was last built for.
+    props_scene: Option<u16>,
     /// The room code was logged.
     logged_room: bool,
 }
@@ -83,6 +103,7 @@ pub(in crate::window) fn start_netplay(
         return Ok(Some(NetHost {
             net,
             _relay: Some(relay),
+            props_scene: None,
             logged_room: false,
         }));
     }
@@ -100,17 +121,39 @@ pub(in crate::window) fn start_netplay(
     Ok(Some(NetHost {
         net,
         _relay: None,
+        props_scene: None,
         logged_room: false,
     }))
 }
 
 impl PlayWindowApp {
     /// This tick's room frame, before the world's, on `pad` (zero on a tick
-    /// the field does not own). `true` when the room screen holds the pad
-    /// and the field should see none.
-    pub(in crate::window) fn step_netplay(&mut self, pad: u16) -> bool {
+    /// the field does not own). The return is the pad bits the field may
+    /// see: none while a multiplayer screen holds the pad, movement only in
+    /// a field prop hunt (`NetPlay::world_pad_filter`).
+    pub(in crate::window) fn step_netplay(&mut self, pad: u16) -> u16 {
+        if self.netplay.is_none() {
+            return if self.step_netplay_menu(pad) {
+                0
+            } else {
+                u16::MAX
+            };
+        }
+        let scene = legaia_engine_netplay::room::scene_id(&self.session.host);
+        if self
+            .netplay
+            .as_ref()
+            .is_some_and(|n| n.props_scene != Some(scene))
+        {
+            let props = self.scene_prop_catalog();
+            log::info!("netplay: {} props to hide as in this scene", props.len());
+            if let Some(nh) = self.netplay.as_mut() {
+                nh.props_scene = Some(scene);
+                nh.net.set_scene_props(props);
+            }
+        }
         let Some(nh) = self.netplay.as_mut() else {
-            return false;
+            return u16::MAX;
         };
         nh.net.frame_host(&mut self.session.host, pad);
         if !nh.logged_room
@@ -119,7 +162,48 @@ impl PlayWindowApp {
             nh.logged_room = true;
             log::info!("netplay: room {code}");
         }
-        nh.net.owns_pad()
+        nh.net.world_pad_filter()
+    }
+
+    /// The Multiplayer screen's tick: its pad edges, then the host or join it
+    /// asks for. `true` while it is open (it holds the pad).
+    fn step_netplay_menu(&mut self, pad: u16) -> bool {
+        use legaia_engine_netplay::connect::ConnectAction;
+        let Some(m) = self.netplay_menu.as_mut() else {
+            return false;
+        };
+        let pressed = pad & !m.prev_pad;
+        m.prev_pad = pad;
+        let launch = match m.menu.step(pressed) {
+            None => return true,
+            Some(ConnectAction::Close) => {
+                self.netplay_menu = None;
+                return true;
+            }
+            Some(ConnectAction::Host { port, name }) => NetLaunch {
+                host: Some(port),
+                name: Some(name),
+                ..NetLaunch::default()
+            },
+            Some(ConnectAction::Join { addr, room, name }) => NetLaunch {
+                join: Some(addr),
+                room: Some(room.to_string()),
+                name: Some(name),
+                ..NetLaunch::default()
+            },
+        };
+        match start_netplay(&launch, &self.session.host.world) {
+            Ok(nh) => {
+                self.netplay = nh;
+                self.netplay_menu = None;
+            }
+            Err(e) => {
+                if let Some(m) = self.netplay_menu.as_mut() {
+                    m.menu.notice = Some(format!("{e:#}"));
+                }
+            }
+        }
+        true
     }
 
     /// `Tab`: open or close the room screen (and, online, the backquote
@@ -130,10 +214,12 @@ impl PlayWindowApp {
             return false;
         }
         let Some(nh) = self.netplay.as_mut() else {
+            // Offline, Tab opens (or closes) the Multiplayer screen.
             if code == KeyCode::Tab {
-                self.show_notice(
-                    "Multiplayer: start with --host [PORT] or --join ADDR --room CODE".to_string(),
-                );
+                self.netplay_menu = match self.netplay_menu.take() {
+                    Some(_) => None,
+                    None => Some(NetMenu::new(None)),
+                };
                 return true;
             }
             return false;
@@ -160,6 +246,23 @@ impl PlayWindowApp {
         state: ElementState,
         text: Option<&str>,
     ) -> bool {
+        if let Some(m) = self.netplay_menu.as_mut()
+            && m.menu.editing.is_some()
+        {
+            if state == ElementState::Pressed {
+                match code {
+                    KeyCode::Enter | KeyCode::NumpadEnter => m.menu.commit(),
+                    KeyCode::Escape => m.menu.cancel_edit(),
+                    KeyCode::Backspace => m.menu.backspace(),
+                    _ => {
+                        if let Some(t) = text {
+                            m.menu.type_text(t);
+                        }
+                    }
+                }
+            }
+            return true;
+        }
         let Some(nh) = self.netplay.as_mut() else {
             return false;
         };
@@ -184,24 +287,98 @@ impl PlayWindowApp {
 
     /// The room screen / roaming panel's prims, in stage pixels.
     pub(in crate::window) fn netplay_prims(&self) -> Vec<ScreenPrim> {
-        match &self.netplay {
-            Some(nh) => {
+        match (&self.netplay, &self.netplay_menu) {
+            (Some(nh), _) => {
                 legaia_engine_netplay::screens::net_overlay_prims(&nh.net, &self.session.host.world)
             }
-            None => Vec::new(),
+            (None, Some(m)) => legaia_engine_netplay::screens::connect_overlay_prims(&m.menu),
+            (None, None) => Vec::new(),
         }
     }
 
     /// The room screen / roaming panel's labels, in stage pixels.
     pub(in crate::window) fn netplay_stage_texts(&self) -> Vec<legaia_engine_ui::TextDraw> {
-        match &self.netplay {
-            Some(nh) => legaia_engine_netplay::screens::net_overlay_stage_texts(
+        match (&self.netplay, &self.netplay_menu) {
+            (Some(nh), _) => legaia_engine_netplay::screens::net_overlay_stage_texts(
                 &nh.net,
                 &self.session.host.world,
                 &self.font,
             ),
-            None => Vec::new(),
+            (None, Some(m)) => {
+                legaia_engine_netplay::screens::connect_overlay_stage_texts(&m.menu, &self.font)
+            }
+            (None, None) => Vec::new(),
         }
+    }
+
+    /// The prop slot this window's player hides as, in a field prop hunt.
+    pub(in crate::window) fn netplay_self_disguise(&self) -> Option<usize> {
+        self.netplay.as_ref()?.net.self_disguise()
+    }
+
+    /// A field prop hunt's hiders drawn as their props: each disguised
+    /// remote avatar, and this player when it hides, as the env-pack slot's
+    /// uploaded mesh at the avatar's position and heading.
+    pub(in crate::window) fn remote_prop_draws(&self) -> Vec<(usize, Mat4)> {
+        let Some(nh) = &self.netplay else {
+            return Vec::new();
+        };
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::Field {
+            return Vec::new();
+        }
+        let mesh_of = |slot: usize| self.field_pack_meshes.get(slot).copied().flatten();
+        let model = |pos: [i32; 3], facing: u16| {
+            let yaw = std::f32::consts::PI + f32::from(facing) / 4096.0 * std::f32::consts::TAU;
+            Mat4::from_translation(Vec3::new(pos[0] as f32, pos[1] as f32, pos[2] as f32))
+                * Mat4::from_rotation_y(yaw)
+        };
+        let mut out: Vec<(usize, Mat4)> = nh
+            .net
+            .remote_avatars()
+            .iter()
+            .filter_map(|a| {
+                Some((
+                    mesh_of(nh.net.disguise_of(a.player)?)?,
+                    model(a.pos, a.facing),
+                ))
+            })
+            .collect();
+        if let (Some(slot), Some(p)) = (
+            nh.net.self_disguise(),
+            world
+                .player_actor_slot
+                .and_then(|s| world.actors.get(usize::from(s))),
+        ) && let Some(mi) = mesh_of(slot)
+        {
+            let m = &p.move_state;
+            out.push((
+                mi,
+                model(
+                    [
+                        i32::from(m.world_x),
+                        i32::from(m.world_y),
+                        i32::from(m.world_z),
+                    ],
+                    m.render_26 as u16,
+                ),
+            ));
+        }
+        out
+    }
+
+    /// The scene's prop catalog for a field prop hunt
+    /// (`legaia_engine_netplay::field_hunt::prop_catalog`): the placed
+    /// objects, each named by its env-pack slot and sized from its mesh.
+    fn scene_prop_catalog(&self) -> Vec<legaia_engine_netplay::field_hunt::FieldProp> {
+        let slot_of = |mi: usize| self.field_pack_meshes.iter().position(|m| *m == Some(mi));
+        let placed = self.field_placement_draws.iter().filter_map(|(mi, model)| {
+            let slot = slot_of(*mi)?;
+            let (tmd, _) = self.scene_tmd_data.get(*mi)?;
+            let t = model.w_axis;
+            Some((slot, [t.x as i32, t.y as i32, t.z as i32], tmd))
+        });
+        legaia_engine_netplay::field_hunt::prop_catalog(placed)
     }
 
     /// The other players in this scene, each the local leader's mesh posed
@@ -231,6 +408,9 @@ impl PlayWindowApp {
         let scale = world.player_render_scale();
         let mut out = Vec::new();
         for a in nh.net.remote_avatars() {
+            if nh.net.disguise_of(a.player).is_some() {
+                continue;
+            }
             let Some(pose) = legaia_engine_netplay::avatar_pose::avatar_pose(world, &a) else {
                 continue;
             };

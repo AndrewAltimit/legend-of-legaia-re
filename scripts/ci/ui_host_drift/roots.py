@@ -58,5 +58,7 @@ SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
     REPO / "crates" / "engine-netplay" / "src": (
         "net_overlay_prims",
         "net_overlay_stage_texts",
+        "connect_overlay_prims",
+        "connect_overlay_stage_texts",
     ),
 }

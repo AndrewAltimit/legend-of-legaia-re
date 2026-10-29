@@ -23,6 +23,7 @@ legaia-font.workspace = true
 legaia-render-kernels.workspace = true
 legaia-expansion-format.workspace = true
 legaia-netplay.workspace = true
+legaia-tmd.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

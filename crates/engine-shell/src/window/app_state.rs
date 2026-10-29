@@ -724,6 +724,8 @@ pub(super) struct PlayWindowApp {
     pub(super) slot_gpu: Option<UploadedVram>,
     /// The multiplayer room this window is in (`--host` / `--join`).
     pub(super) netplay: Option<super::netplay::NetHost>,
+    /// The Multiplayer screen while no room is open (Tab, `--multiplayer`).
+    pub(super) netplay_menu: Option<super::netplay::NetMenu>,
     /// The marquee's legend / blink counters.
     pub(super) slot_marquee_clock: legaia_engine_ui::slot_cabinet::SlotMarqueeClock,
     /// This frame's composed dot buffer.

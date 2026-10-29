@@ -63,6 +63,70 @@ pub struct NetPanel<'a> {
     pub notice: Option<&'a str>,
 }
 
+/// The field prop hunt's HUD: a corner panel over the field.
+#[derive(Debug, Clone, Copy)]
+pub struct NetHuntHud<'a> {
+    /// "Choose a prop", "Hide!", "Hunt", "Round over".
+    pub phase: &'a str,
+    /// Seconds left in the phase.
+    pub seconds: u32,
+    pub round: u8,
+    /// "Hunter - health 80", "Hider - slot12", "Found".
+    pub role: &'a str,
+    /// The control line for this phase and role.
+    pub hint: &'a str,
+    /// Hiders still hidden / all hiders.
+    pub hidden: (usize, usize),
+    /// The newest event line.
+    pub last: Option<&'a str>,
+}
+
+/// The hunt HUD's flat prims, in stage pixels.
+pub fn net_hunt_prims(h: &NetHuntHud<'_>) -> Vec<ScreenPrim> {
+    compose_hunt(h).prims
+}
+
+/// The hunt HUD's labels, in stage pixels.
+pub fn net_hunt_texts(font: &legaia_font::Font, h: &NetHuntHud<'_>) -> Vec<TextDraw> {
+    labels_to_draws(font, &compose_hunt(h).labels)
+}
+
+/// The hunt HUD's labels as strings.
+pub fn net_hunt_strings(h: &NetHuntHud<'_>) -> Vec<String> {
+    compose_hunt(h).labels.into_iter().map(|l| l.text).collect()
+}
+
+fn compose_hunt(h: &NetHuntHud<'_>) -> Canvas {
+    let mut c = Canvas::default();
+    let (x, y, w) = (STAGE_W - 150, 18, 146);
+    let lines = 4 + i32::from(h.last.is_some());
+    c.panel(x, y, w, lines * 12 + 6, [10, 14, 24, 200], ink::HIGHLIGHT);
+    c.text(
+        format!("Prop hunt - round {}", h.round + 1),
+        x + 4,
+        y + 1,
+        pen::GOLD,
+    );
+    c.text(
+        format!("{} {}s", h.phase, h.seconds),
+        x + 4,
+        y + 13,
+        pen::WHITE,
+    );
+    c.text(h.role, x + 4, y + 25, pen::GREEN);
+    c.text(
+        format!("Hidden {}/{}", h.hidden.0, h.hidden.1),
+        x + 4,
+        y + 37,
+        pen::DIM,
+    );
+    if let Some(l) = h.last {
+        c.text(l, x + 4, y + 49, pen::WHITE);
+    }
+    footer(&mut c, h.hint);
+    c
+}
+
 /// The room screen's flat prims, in stage pixels.
 pub fn net_screen_prims(s: &NetScreen<'_>) -> Vec<ScreenPrim> {
     compose_screen(s).prims
@@ -298,6 +362,29 @@ mod tests {
             );
         }
         assert!(net_screen_prims(&s).len() > 5);
+    }
+
+    #[test]
+    fn the_hunt_hud_reads_the_phase_and_role() {
+        let h = NetHuntHud {
+            phase: "Hunt",
+            seconds: 42,
+            round: 0,
+            role: "Hunter - health 80",
+            hint: "Cross: tag a prop",
+            hidden: (1, 2),
+            last: Some("Seat 2: decoy!"),
+        };
+        let s = net_hunt_strings(&h);
+        for needle in [
+            "Prop hunt - round 1",
+            "Hunt 42s",
+            "Hunter - health 80",
+            "Hidden 1/2",
+        ] {
+            assert!(s.iter().any(|l| l == needle), "{needle}: {s:?}");
+        }
+        assert!(!net_hunt_prims(&h).is_empty());
     }
 
     #[test]

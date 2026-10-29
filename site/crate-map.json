@@ -2189,17 +2189,21 @@
     "expansion-format",
     "font",
     "netplay",
-    "render-kernels"
+    "render-kernels",
+    "tmd"
    ],
    "dev_deps": [],
    "bins": [],
    "lib": true,
    "modules": [
     "avatar_pose",
+    "connect",
+    "field_hunt",
     "mode_net",
     "roam",
     "room",
     "screens",
+    "trade",
     "view_stream"
    ],
    "band": "top",
@@ -4234,6 +4238,7 @@
     "engine-field",
     "engine-fishing",
     "engine-minigame-scenes",
+    "engine-netplay",
     "engine-scene",
     "engine-scene-host",
     "engine-session",

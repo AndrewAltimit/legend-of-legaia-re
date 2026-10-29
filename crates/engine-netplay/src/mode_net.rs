@@ -22,6 +22,7 @@
 use legaia_engine_modes::active::{ActiveMode, BuildError, BuildOptions, ModeKind, ModeView};
 use legaia_engine_modes::cards::duel::DuelView;
 use legaia_engine_modes::poker::{Phase, PokerView};
+use legaia_engine_modes::prop_hunt::HuntView;
 use legaia_engine_modes::session::{AiTier, ModeResults, PadWord, SeatKind};
 use legaia_expansion_format::cards::CardSection;
 use legaia_expansion_format::modes::ModeSection;
@@ -199,6 +200,8 @@ impl Simulation for ModeSim {
 pub enum StreamedView {
     Poker(PokerView),
     Duel(DuelView),
+    /// A field prop hunt ([`crate::field_hunt`]).
+    Hunt(HuntView),
 }
 
 impl StreamedView {
@@ -207,6 +210,7 @@ impl StreamedView {
         match view {
             ModeView::Poker(v) => Some(Self::Poker(v)),
             ModeView::Duel(v) => Some(Self::Duel(v)),
+            ModeView::PropHunt(v) => Some(Self::Hunt(v)),
             _ => None,
         }
     }
@@ -215,6 +219,7 @@ impl StreamedView {
         match self {
             Self::Poker(v) => ModeView::Poker(v),
             Self::Duel(v) => ModeView::Duel(v),
+            Self::Hunt(v) => ModeView::PropHunt(v),
         }
     }
 }
@@ -255,7 +260,9 @@ pub fn redact(view: StreamedView, seat: usize) -> StreamedView {
             }
             StreamedView::Poker(v)
         }
-        v @ StreamedView::Duel(_) => v,
+        // Grid Duel is played with open hands, and a prop hunt's props are
+        // in plain sight in every world.
+        v @ (StreamedView::Duel(_) | StreamedView::Hunt(_)) => v,
     }
 }
 

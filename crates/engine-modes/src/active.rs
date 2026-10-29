@@ -290,6 +290,27 @@ impl ActiveMode {
         }
     }
 
+    /// [`Self::tick_for`] for prop hunt with host-authored positions
+    /// ([`PropHuntSession::tick_with_positions`]); any other mode ignores
+    /// `positions`.
+    pub fn tick_for_positions(
+        &mut self,
+        pads: &[PadWord],
+        positions: &[Option<crate::fixed::Vec2>],
+        viewers: &[usize],
+    ) -> Vec<Vec<String>> {
+        match &mut self.runner {
+            ModeRunner::PropHunt(s) => {
+                let ev = s.tick_with_positions(pads, positions);
+                viewers
+                    .iter()
+                    .map(|&me| ev.iter().filter_map(|e| hunt_line(e, me)).collect())
+                    .collect()
+            }
+            _ => self.tick_for(pads, viewers),
+        }
+    }
+
     /// [`Self::tick`] for prop hunt with host-authored positions
     /// ([`PropHuntSession::tick_with_positions`]); any other mode ticks
     /// normally and ignores `positions`.

@@ -93,6 +93,17 @@ impl ViewHost {
     /// queue a frame for every guest whose view changed. Returns the host's
     /// own log lines.
     pub fn tick(&mut self, mode: &mut ActiveMode, local_pad: PadWord) -> Vec<String> {
+        self.tick_with_positions(mode, local_pad, &[])
+    }
+
+    /// [`Self::tick`] with host-authored seat positions (a field prop hunt:
+    /// `ActiveMode::tick_for_positions`).
+    pub fn tick_with_positions(
+        &mut self,
+        mode: &mut ActiveMode,
+        local_pad: PadWord,
+        positions: &[Option<legaia_engine_modes::fixed::Vec2>],
+    ) -> Vec<String> {
         let mut pads = vec![0; self.seats];
         if let Some(s) = self.host_seat {
             pads[s] = local_pad;
@@ -105,7 +116,12 @@ impl ViewHost {
         }
         let mut viewers: Vec<usize> = vec![mode.local_seat];
         viewers.extend(self.guests.iter().map(|g| g.seat));
-        let mut logs = mode.tick_for(&pads, &viewers).into_iter();
+        let mut logs = if positions.is_empty() {
+            mode.tick_for(&pads, &viewers)
+        } else {
+            mode.tick_for_positions(&pads, positions, &viewers)
+        }
+        .into_iter();
         let own = logs.next().unwrap_or_default();
         let results = mode.results();
         let view = StreamedView::from_view(mode.view());
@@ -166,6 +182,19 @@ impl ViewGuest {
                 payload: encode_pad(pad),
             });
         }
+    }
+
+    /// Host frame `seq`, decoded, for a guest that draws it itself (a field
+    /// prop hunt keeps no session of its own). `None` for a stale or
+    /// malformed frame.
+    pub fn receive_frame(&mut self, seq: u32, bytes: &[u8]) -> Option<StreamFrame> {
+        if seq <= self.seq {
+            return None;
+        }
+        let frame = StreamFrame::decode(bytes)?;
+        self.seq = seq;
+        self.frames += 1;
+        Some(frame)
     }
 
     /// Host frame `seq`: draw it on `mode`. Returns its log lines; a frame

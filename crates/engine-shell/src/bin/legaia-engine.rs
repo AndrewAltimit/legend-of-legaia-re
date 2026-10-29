@@ -448,6 +448,7 @@ fn main() -> Result<()> {
             join,
             room,
             name,
+            multiplayer,
             resume_save,
             cheat_level,
             cheat_gold,
@@ -554,6 +555,7 @@ fn main() -> Result<()> {
                     join,
                     room,
                     name,
+                    menu: multiplayer,
                 })
                 .with_cheats(window::PlayCheats {
                     level: cheat_level,

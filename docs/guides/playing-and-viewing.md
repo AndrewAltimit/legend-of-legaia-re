@@ -546,12 +546,20 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --host --name Vahn
 legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --room K7QX2M --name Noa
 ```
 
-`Tab` opens the room screen: the room code and the address to join at,
+Without the flags, `Tab` (or the launcher's **Play online** button)
+opens the Multiplayer screen, which hosts a room or joins one by address
+and code from inside the game.
+
+In a room, `Tab` opens the room screen: the room code and the address to join at,
 the players, Ready (guests), the game pick and Start (the host), emotes,
 quick chat, Leave. `T` on it types a chat line, Enter sends. Start needs
 every seated guest ready. A game draws on the usual mode screen; Start
 inside it asks to leave, which ends the game for the table. Online games
-grant no coins, gold or cards.
+grant no coins, gold or cards. Standing in a town, the host can start
+**Prop hunt here**: hiders pick one of the scene's own props and hide as
+it, the hunter tags props with Cross, and a wrong guess costs health.
+With an expansion pack's card collection, the room screen also trades
+cards one for one with another player.
 
 On the browser play page, open **Online** in the tools, enter the relay
 address as a WebSocket URL (`ws://192.168.1.4:7462/`), the room code and a

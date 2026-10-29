@@ -53,6 +53,8 @@ pub(super) struct PosedFrame {
     /// The other netplay players in this scene: posed leader meshes and
     /// their model matrices.
     pub remote_avatars: Vec<(UploadedVramMesh, Option<UploadedColorMesh>, Mat4)>,
+    /// A field prop hunt's disguised hiders: `(meshes index, model)`.
+    pub remote_props: Vec<(usize, Mat4)>,
 }
 
 impl PlayWindowApp {
@@ -321,6 +323,7 @@ impl PlayWindowApp {
         legaia_engine_render::profile::mark("pose:prop");
         // The other netplay players in this scene (`window::netplay`).
         let remote_avatars = self.build_remote_avatar_draws(r);
+        let remote_props = self.remote_prop_draws();
         // VDF vertex morphs: upload this frame's rebuilt morph meshes;
         // the draw loops below substitute them for the static uploads
         // (`field_morph_live` - the `FUN_8001C604` render substitution).
@@ -392,6 +395,7 @@ impl PlayWindowApp {
             npc_frames,
             npc_shattered,
             remote_avatars,
+            remote_props,
         }
     }
 

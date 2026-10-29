@@ -298,6 +298,7 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
     Play,
+    Online,
     ChooseDisc,
     Expansion,
     Panel,
@@ -306,8 +307,9 @@ enum Item {
     Opt(OptionRow),
 }
 
-const BUTTONS: [Item; 6] = [
+const BUTTONS: [Item; 7] = [
     Item::Play,
+    Item::Online,
     Item::ChooseDisc,
     Item::Expansion,
     Item::Panel,
@@ -620,7 +622,9 @@ impl LauncherApp {
     }
 
     /// Start the game and close the window while it runs.
-    fn play(&mut self, evl: &ActiveEventLoop) {
+    /// Start the game; `online` opens its Multiplayer screen once the
+    /// field is up (`--multiplayer`).
+    fn play(&mut self, evl: &ActiveEventLoop, online: bool) {
         let Some(info) = self.disc.clone() else {
             self.status = Some(vec![(
                 "Choose your Legend of Legaia (USA) disc image first.".into(),
@@ -634,7 +638,7 @@ impl LauncherApp {
             self.focus = Item::Expansion;
             return;
         }
-        match spawn_game(&info, &self.settings) {
+        match spawn_game(&info, &self.settings, online) {
             Ok(g) => {
                 log::info!("launcher: game started on {}", info.bin.display());
                 self.game = Some(g);
@@ -769,7 +773,8 @@ impl LauncherApp {
     fn activate(&mut self, item: Item, dir: i8, evl: &ActiveEventLoop) {
         self.focus = item;
         match item {
-            Item::Play => self.play(evl),
+            Item::Play => self.play(evl, false),
+            Item::Online => self.play(evl, true),
             Item::ChooseDisc => self.browse(),
             Item::Expansion if dir < 0 => self.clear_expansion(),
             Item::Expansion => self.browse_expansion(),
@@ -932,7 +937,7 @@ impl LauncherApp {
             );
             hits.push((*item, r));
             let focused = self.focus == *item;
-            let enabled = *item != Item::Play || self.disc.is_some();
+            let enabled = !matches!(item, Item::Play | Item::Online) || self.disc.is_some();
             let (bg, ink) = match (*item == Item::Play, enabled, focused) {
                 (true, true, false) => (PRIMARY, ON_GOLD),
                 (true, true, true) => (PRIMARY_FOCUS, ON_GOLD),
@@ -946,6 +951,7 @@ impl LauncherApp {
             }
             let label = match item {
                 Item::Play => "Play",
+                Item::Online => "Play online",
                 Item::ChooseDisc => {
                     if self.disc.is_some() {
                         "Change disc..."
@@ -1238,6 +1244,10 @@ impl LauncherApp {
                          Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
                     .into(),
             },
+            Item::Online => "Start the game with the Multiplayer screen open: host a room \
+                             others on your network join, or join one with its address and \
+                             room code. Tab opens the same screen in play."
+                .into(),
             Item::Expansion => match &self.expansion {
                 None => "Play with an expansion pack: new maps, quests and fights made for \
                          the port. Choose an .lxpack file, or the pack.toml in a pack folder."
@@ -1722,12 +1732,15 @@ impl Canvas<'_> {
 /// Start the game in a child process, its output copied into
 /// [`launcher::GAME_LOG`] (in the data directory) as well as to this
 /// process's own stdout / stderr, so a terminal still shows it.
-fn spawn_game(info: &DiscInfo, settings: &LauncherSettings) -> Result<Running> {
+fn spawn_game(info: &DiscInfo, settings: &LauncherSettings, online: bool) -> Result<Running> {
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe().context("locate the legaia-engine executable")?;
     let mut cmd = Command::new(&exe);
-    cmd.args(launcher::play_args_with(info, settings))
-        .stdin(Stdio::null())
+    cmd.args(launcher::play_args_with(info, settings));
+    if online {
+        cmd.arg("--multiplayer");
+    }
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     console::no_window_if_detached(&mut cmd);

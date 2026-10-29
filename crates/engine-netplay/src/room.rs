@@ -32,12 +32,15 @@ use legaia_netplay::protocol::{
 };
 use legaia_netplay::transport::Transport;
 
-use crate::mode_net::{ModeSim, NetMode, model_for};
+use crate::field_hunt::{FIELD_HUNT_ID, FieldProp, prop_slot, to_session};
+use crate::mode_net::{ModeSim, NetMode, StreamedView, model_for};
 use crate::roam::{NO_SCENE, Roam};
 use crate::trade::{TradeDesk, TradeEnvelope, TradeHost, describe};
 use crate::view_stream::{ViewGuest, ViewHost};
+use legaia_engine_modes::active::{ActiveMode, BuildOptions, ModeView};
 use legaia_engine_modes::cards::TradeOffer;
 use legaia_engine_modes::cards::trade::{TradeMsg, TradeSide};
+use legaia_engine_modes::prop_hunt::{HuntPhase, HuntView, Role};
 
 /// Pad seats a hosted room offers.
 pub const ROOM_SEATS: u8 = 4;
@@ -127,6 +130,28 @@ struct LockstepRun {
     session: LockstepSession<ModeSim>,
 }
 
+/// A field prop hunt in play ([`crate::field_hunt`]): the session on the
+/// host (never in the world's mode seat - the world stays in the field),
+/// the view every player draws, and who sits where.
+struct FieldHunt {
+    /// Host only: the session.
+    mode: Option<Box<ActiveMode>>,
+    host: Option<ViewHost>,
+    guest: Option<ViewGuest>,
+    /// The host's view, or the last one it streamed.
+    view: Option<HuntView>,
+    /// Mode seat -> player.
+    seats: Vec<PlayerId>,
+    local_seat: Option<usize>,
+    /// The newest event line.
+    last: Option<String>,
+    /// Frames since the session finished (the host ends it after a beat).
+    finished_for: u32,
+}
+
+/// Frames the host leaves a finished field hunt on screen before ending it.
+const HUNT_OVER_HOLD: u32 = 4 * 60;
+
 enum Phase {
     /// Hello sent, no welcome yet.
     Joining,
@@ -134,6 +159,7 @@ enum Phase {
     Lockstep(Box<LockstepRun>),
     ViewHost(Box<ViewHost>),
     ViewGuest(Box<ViewGuest>),
+    FieldHunt(Box<FieldHunt>),
 }
 
 /// The room screen's rows.
@@ -191,6 +217,9 @@ pub struct NetPlay {
     trade_partner: usize,
     trade_give: usize,
     trade_take: usize,
+    /// The current field scene's props a prop hunt plays with, from the host
+    /// ([`Self::set_scene_props`]).
+    scene_props: Vec<FieldProp>,
     /// The connection is gone; the host should drop the controller.
     pub closed: bool,
     /// The scene id this frame (for drawing remote avatars).
@@ -225,6 +254,7 @@ impl NetPlay {
             trade_partner: 0,
             trade_give: 0,
             trade_take: 0,
+            scene_props: Vec::new(),
             closed: false,
             scene: NO_SCENE,
         }
@@ -277,7 +307,7 @@ impl NetPlay {
     pub fn in_mode(&self) -> bool {
         matches!(
             self.phase,
-            Phase::Lockstep(_) | Phase::ViewHost(_) | Phase::ViewGuest(_)
+            Phase::Lockstep(_) | Phase::ViewHost(_) | Phase::ViewGuest(_) | Phase::FieldHunt(_)
         )
     }
 
@@ -426,7 +456,7 @@ impl NetPlay {
     fn drive(&mut self, world: &mut World, pad: u16) {
         // A mode whose seat the player has left (or the world lost) is over
         // for this player; tell the room.
-        if self.in_mode() {
+        if self.in_mode() && !matches!(self.phase, Phase::FieldHunt(_)) {
             let seated = world.mode == SceneMode::Expansion
                 && world
                     .expansion
@@ -451,6 +481,7 @@ impl NetPlay {
         }
         let mut outbox = Vec::new();
         let mut desync = None;
+        let mut hunt_over = false;
         match &mut self.phase {
             Phase::Joining => {}
             Phase::Lobby => {
@@ -515,9 +546,56 @@ impl NetPlay {
                 }
                 outbox = vg.drain_outbox();
             }
+            Phase::FieldHunt(h) => {
+                let Some(me) = self.me else {
+                    return;
+                };
+                // Roaming carries on: it is where the host learns where
+                // every guest stands, and what every world draws.
+                let own = own_avatar(world, me, self.scene);
+                let hosting = self.lobby.as_ref().is_some_and(|l| l.host == me);
+                outbox = self.roam.frame(own, hosting);
+                if let (Some(mode), Some(vh)) = (h.mode.as_deref_mut(), h.host.as_mut()) {
+                    let scene = self.scene;
+                    let positions: Vec<_> = h
+                        .seats
+                        .iter()
+                        .map(|&p| {
+                            let a = if p == me {
+                                Some(own)
+                            } else {
+                                self.roam.report_of(p)
+                            };
+                            a.filter(|a| a.scene == scene && scene != NO_SCENE)
+                                .map(|a| to_session(a.pos))
+                        })
+                        .collect();
+                    let lines = vh.tick_with_positions(mode, pad, &positions);
+                    if let Some(l) = lines.last() {
+                        h.last = Some(l.clone());
+                    }
+                    if let ModeView::PropHunt(v) = mode.view() {
+                        h.view = Some(v);
+                    }
+                    outbox.extend(vh.drain_outbox());
+                    if mode.is_finished() {
+                        h.finished_for += 1;
+                        if h.finished_for == HUNT_OVER_HOLD {
+                            hunt_over = true;
+                        }
+                    }
+                } else if let Some(vg) = h.guest.as_mut() {
+                    vg.push_pad(pad);
+                    outbox.extend(vg.drain_outbox());
+                }
+            }
         }
         for m in outbox {
             self.send(m);
+        }
+        if hunt_over {
+            self.note("Prop hunt over".to_string());
+            self.leave_mode(world, true);
         }
         if let Some(d) = desync {
             let d: legaia_netplay::lockstep::DesyncReport = d;
@@ -619,6 +697,14 @@ impl NetPlay {
                 }
                 let dropped = match &mut self.phase {
                     Phase::ViewHost(vh) => vh.drop_player(player),
+                    Phase::FieldHunt(h) => {
+                        if let (Some(vh), Some(mode)) = (h.host.as_mut(), h.mode.as_deref_mut())
+                            && let Some(seat) = vh.drop_player(player)
+                        {
+                            mode.set_seat_kind(seat, SeatKind::Ai(AiTier::Regular));
+                        }
+                        None
+                    }
                     _ => None,
                 };
                 if let Some(seat) = dropped
@@ -649,11 +735,14 @@ impl NetPlay {
             Message::Start(start) => self.start(world, start),
             Message::EndSession { by } => {
                 if self.in_mode() {
-                    let finished = world
-                        .expansion
-                        .mode_seat
-                        .as_ref()
-                        .is_some_and(|s| matches!(s.stage, ModeStage::Results { .. }));
+                    let hunt_done = matches!(&self.phase, Phase::FieldHunt(h)
+                        if h.view.as_ref().is_some_and(|v| v.phase == HuntPhase::Finished));
+                    let finished = hunt_done
+                        || world
+                            .expansion
+                            .mode_seat
+                            .as_ref()
+                            .is_some_and(|s| matches!(s.stage, ModeStage::Results { .. }));
                     if !finished {
                         let name = self.name_of(by);
                         self.note(format!("{name} ended the game"));
@@ -684,8 +773,28 @@ impl NetPlay {
                 Phase::ViewHost(vh) => {
                     vh.receive_action(from, &payload);
                 }
+                Phase::FieldHunt(h) => {
+                    if !self.roam.receive_report(from, &payload)
+                        && let Some(vh) = h.host.as_mut()
+                    {
+                        vh.receive_action(from, &payload);
+                    }
+                }
                 _ => {}
             },
+            Message::StateBlob { seq, bytes, .. } if matches!(self.phase, Phase::FieldHunt(_)) => {
+                if let Phase::FieldHunt(h) = &mut self.phase
+                    && let Some(vg) = h.guest.as_mut()
+                    && let Some(frame) = vg.receive_frame(seq, &bytes)
+                {
+                    if let StreamedView::Hunt(v) = frame.view {
+                        h.view = Some(v);
+                    }
+                    if let Some(l) = frame.log.last() {
+                        h.last = Some(l.clone());
+                    }
+                }
+            }
             Message::StateBlob { seq, bytes, .. } => {
                 if let Phase::ViewGuest(vg) = &mut self.phase
                     && let Some(seat) = world.expansion.mode_seat.as_deref_mut()
@@ -719,6 +828,10 @@ impl NetPlay {
         let (Some(me), Some(host)) = (self.me, self.lobby.as_ref().map(|l| l.host)) else {
             return;
         };
+        if start.mode == FIELD_HUNT_ID {
+            self.start_field_hunt(world, &start, me, host);
+            return;
+        }
         let (modes, cards) = world.pack_mode_sections();
         let net = match NetMode::build(modes, cards, &start, me, host) {
             Ok(n) => n,
@@ -752,6 +865,198 @@ impl NetPlay {
         self.notice = None;
     }
 
+    /// A field prop hunt's start order: the host builds the session from
+    /// this scene's props, every player keeps walking its own world.
+    fn start_field_hunt(&mut self, world: &World, start: &StartGame, me: PlayerId, host: PlayerId) {
+        let seats: Vec<PlayerId> = start.seats.iter().flatten().copied().collect();
+        let local_seat = seats.iter().position(|p| *p == me);
+        let fail = |net: &mut Self, why: &str| {
+            net.notice = Some(why.to_string());
+            net.note(why.to_string());
+            if me == host {
+                net.send(Message::EndSession { by: me });
+            }
+        };
+        if seats.len() < 2 {
+            return fail(self, "Prop hunt needs two seated players");
+        }
+        let (mode, vh) = if me == host {
+            let around = [own_avatar(world, me, self.scene).pos];
+            let Some(arena) =
+                crate::field_hunt::arena(&self.scene_props, &around, seats.len() as u8)
+            else {
+                return fail(self, "No props in this scene to hide as");
+            };
+            let modes = legaia_expansion_format::modes::ModeSection {
+                prop_hunt: vec![arena],
+                ..Default::default()
+            };
+            let cards = legaia_expansion_format::cards::CardSection::default();
+            let built = ActiveMode::build(
+                &modes,
+                &cards,
+                FIELD_HUNT_ID,
+                start.seed,
+                &BuildOptions::default(),
+            );
+            let Ok(mut m) = built else {
+                return fail(self, "This scene's props make no arena");
+            };
+            for s in 0..seats.len() {
+                m.set_seat_kind(s, SeatKind::Human);
+            }
+            m.local_seat = local_seat.unwrap_or(0);
+            let opt: Vec<Option<PlayerId>> = seats.iter().map(|p| Some(*p)).collect();
+            (Some(Box::new(m)), Some(ViewHost::new(&opt, me)))
+        } else {
+            (None, None)
+        };
+        let guest = (me != host).then(ViewGuest::new);
+        self.phase = Phase::FieldHunt(Box::new(FieldHunt {
+            mode,
+            host: vh,
+            guest,
+            view: None,
+            seats,
+            local_seat,
+            last: None,
+            finished_for: 0,
+        }));
+        self.note("Prop hunt: hiders pick a prop (Left / Right, Cross)".to_string());
+        self.screen_open = false;
+        self.draft = None;
+        self.notice = None;
+    }
+
+    /// The scene's props a field prop hunt plays with; the host sets them on
+    /// every scene entry ([`crate::field_hunt::prop_catalog`]).
+    pub fn set_scene_props(&mut self, props: Vec<FieldProp>) {
+        self.scene_props = props;
+    }
+
+    /// The games the room screen offers: the world's mode list, plus a prop
+    /// hunt in this scene while in the field with props to hide as.
+    pub fn game_entries(&self, world: &World) -> Vec<ModeEntry> {
+        let mut out = world.pack_mode_entries();
+        if world.mode == SceneMode::Field && !self.scene_props.is_empty() {
+            out.push(ModeEntry {
+                id: FIELD_HUNT_ID.to_string(),
+                name: "Prop hunt here".to_string(),
+                kind: ModeKind::PropHunt,
+            });
+        }
+        out
+    }
+
+    /// The bits of the pad the world should see this frame: none under the
+    /// room screen; in a field prop hunt, movement only (Cross tags, so it
+    /// must not also talk to a villager), and none while a hunter waits or
+    /// everyone picks a prop.
+    pub fn world_pad_filter(&self) -> u16 {
+        if self.owns_pad() {
+            return 0;
+        }
+        let Phase::FieldHunt(h) = &self.phase else {
+            return u16::MAX;
+        };
+        let block = PadButton::Cross.mask()
+            | PadButton::Square.mask()
+            | PadButton::Triangle.mask()
+            | PadButton::Start.mask()
+            | PadButton::Select.mask();
+        let dpad = PadButton::Up.mask()
+            | PadButton::Down.mask()
+            | PadButton::Left.mask()
+            | PadButton::Right.mask();
+        let frozen = h.view.as_ref().is_some_and(|v| match v.phase {
+            HuntPhase::Choose { .. } => true,
+            HuntPhase::Hide { .. } => h
+                .local_seat
+                .and_then(|s| v.avatars.get(s))
+                .is_some_and(|a| a.role == Role::Hunter),
+            _ => false,
+        });
+        !(block | if frozen { dpad } else { 0 })
+    }
+
+    /// The field prop hunt's view and its seat order, while one runs.
+    pub fn hunt_view(&self) -> Option<(&HuntView, &[PlayerId])> {
+        match &self.phase {
+            Phase::FieldHunt(h) => Some((h.view.as_ref()?, &h.seats)),
+            _ => None,
+        }
+    }
+
+    /// The prop slot `player` is disguised as, if a field prop hunt has
+    /// them hiding.
+    pub fn disguise_of(&self, player: PlayerId) -> Option<usize> {
+        let Phase::FieldHunt(h) = &self.phase else {
+            return None;
+        };
+        let v = h.view.as_ref()?;
+        if matches!(v.phase, HuntPhase::Choose { .. } | HuntPhase::Finished) {
+            return None;
+        }
+        let seat = h.seats.iter().position(|p| *p == player)?;
+        let a = v.avatars.get(seat)?;
+        if a.role != Role::Hider || a.out {
+            return None;
+        }
+        prop_slot(v.prop_ids.get(a.prop)?)
+    }
+
+    /// The prop slot this player is disguised as.
+    pub fn self_disguise(&self) -> Option<usize> {
+        self.disguise_of(self.me?)
+    }
+
+    /// The field prop hunt's HUD, while one runs.
+    pub fn hunt_hud(&self) -> Option<HuntHud> {
+        let Phase::FieldHunt(h) = &self.phase else {
+            return None;
+        };
+        let v = h.view.as_ref()?;
+        let me = h.local_seat.and_then(|s| v.avatars.get(s));
+        let (phase, timer) = match v.phase {
+            HuntPhase::Choose { timer } => ("Choose a prop", timer),
+            HuntPhase::Hide { timer } => ("Hide!", timer),
+            HuntPhase::Hunt { timer } => ("Hunt", timer),
+            HuntPhase::RoundOver { timer, .. } => ("Round over", timer),
+            HuntPhase::Finished => ("Match over", 0),
+        };
+        let prop = |a: &legaia_engine_modes::prop_hunt::Avatar| {
+            v.prop_ids.get(a.prop).cloned().unwrap_or_default()
+        };
+        let (role, hint) = match me {
+            Some(a) if a.out => ("Found - watching".to_string(), "Walk around and watch"),
+            Some(a) if a.role == Role::Hunter => (
+                format!("Hunter - health {}", a.health),
+                match v.phase {
+                    HuntPhase::Hunt { .. } => "Cross by a prop: tag it (a decoy hurts)",
+                    _ => "Wait: the hiders are hiding",
+                },
+            ),
+            Some(a) => (
+                format!("Hider - {}", prop(a)),
+                match v.phase {
+                    HuntPhase::Choose { .. } => "Left / Right: prop   Cross: take it",
+                    _ => "Stand still among the props   Triangle: taunt",
+                },
+            ),
+            None => ("Watching".to_string(), ""),
+        };
+        let hiders: Vec<_> = v.avatars.iter().filter(|a| a.role == Role::Hider).collect();
+        Some(HuntHud {
+            phase,
+            seconds: timer / 60,
+            round: v.round,
+            role,
+            hint,
+            hidden: (hiders.iter().filter(|a| !a.out).count(), hiders.len()),
+            last: h.last.clone(),
+        })
+    }
+
     /// Ask the room to start mode `entry` (host only; the relay checks).
     pub fn request_start(&mut self, world: &World, entry: &ModeEntry) {
         let seed = world.frame.rotate_left(29) ^ u64::from(world.rng_state) ^ 0x4C47_4E50;
@@ -759,7 +1064,13 @@ impl NetPlay {
             seed,
             mode: entry.id.clone(),
             config: Vec::new(),
-            model: model_for(entry.kind),
+            model: if entry.id == FIELD_HUNT_ID {
+                legaia_netplay::protocol::SimModel::HostAuthoritative {
+                    snapshot_hz: crate::mode_net::SNAPSHOT_HZ,
+                }
+            } else {
+                model_for(entry.kind)
+            },
             seats: Vec::new(),
         }));
     }
@@ -964,7 +1275,7 @@ impl NetPlay {
             0
         };
         let cycle = |v: usize, n: usize| (v as i32 + step).rem_euclid(n.max(1) as i32) as usize;
-        let entries = world.pack_mode_entries();
+        let entries = self.game_entries(world);
         match rows[self.cursor] {
             Row::Game => self.game_pick = cycle(self.game_pick, entries.len()),
             Row::Emote => self.emote_pick = cycle(self.emote_pick, EMOTES.len()),
@@ -1040,7 +1351,7 @@ impl NetPlay {
         &self,
         world: &World,
     ) -> Vec<legaia_engine_ui::expansion_modes::netplay::NetMenuRow> {
-        let entries = &world.pack_mode_entries()[..];
+        let entries = &self.game_entries(world)[..];
         use legaia_engine_ui::expansion_modes::netplay::NetMenuRow;
         let everyone_ready = self.lobby.as_ref().is_some_and(|l| {
             l.players
@@ -1123,7 +1434,9 @@ impl NetPlay {
     /// The other players' avatars in this player's scene, for drawing.
     pub fn remote_avatars(&self) -> Vec<AvatarState> {
         match (self.me, &self.phase) {
-            (Some(me), Phase::Lobby) => self.roam.remote_avatars(me, self.scene),
+            (Some(me), Phase::Lobby | Phase::FieldHunt(_)) => {
+                self.roam.remote_avatars(me, self.scene)
+            }
             _ => Vec::new(),
         }
     }
@@ -1158,4 +1471,16 @@ fn reject_text(r: RejectReason) -> &'static str {
         RejectReason::NotReady => "Everyone seated must be ready first",
         RejectReason::Unexpected => "That is not possible right now",
     }
+}
+
+/// The field prop hunt's HUD model ([`NetPlay::hunt_hud`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HuntHud {
+    pub phase: &'static str,
+    pub seconds: u32,
+    pub round: u8,
+    pub role: String,
+    pub hint: &'static str,
+    pub hidden: (usize, usize),
+    pub last: Option<String>,
 }

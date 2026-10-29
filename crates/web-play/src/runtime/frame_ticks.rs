@@ -80,7 +80,7 @@ impl LegaiaRuntime {
                 .map_or(TickOwner::Field(false), |s| s.claim_tick(claims, edge));
             // The multiplayer room's frame, every tick whoever owns it (the
             // native window's twin): only the field's tick hands it the pad.
-            let net_owns_pad = self.step_netplay(match owner {
+            let net_pad_filter = self.step_netplay(match owner {
                 TickOwner::Field(false) => pad,
                 _ => 0,
             });
@@ -164,7 +164,7 @@ impl LegaiaRuntime {
                 TickOwner::Field(neutral) => {
                     // The room frame first: its screen may hold the pad.
                     let pad = if neutral { 0 } else { pad };
-                    let pad = if net_owns_pad { 0 } else { pad };
+                    let pad = pad & net_pad_filter;
                     self.set_pad(pad);
                 }
             }

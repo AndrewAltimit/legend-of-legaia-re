@@ -8,11 +8,14 @@
 //!   instance identically on every peer, the lockstep adapter and the
 //!   host-authoritative view stream's payloads;
 //! - [`view_stream`] - the view stream's host and guest ends;
+//! - [`field_hunt`] - prop hunt in the field scene the room stands in;
 //! - [`roam`] - avatar reports and snapshots for players walking their own
 //!   worlds;
 //! - [`room`] - [`room::NetPlay`], one player's connection, phases and room
 //!   screen, called once per frame by the native play window and the
 //!   browser play page alike;
+//! - [`connect`] - the Multiplayer screen before a room exists (host or
+//!   join);
 //! - [`screens`] - the room screen and roaming panel off a controller, as
 //!   `legaia_engine_ui` draw lists;
 //! - [`trade`] - card trades between two players, settled by the host;
@@ -22,6 +25,8 @@
 //! limits.
 
 pub mod avatar_pose;
+pub mod connect;
+pub mod field_hunt;
 pub mod mode_net;
 pub mod roam;
 pub mod room;

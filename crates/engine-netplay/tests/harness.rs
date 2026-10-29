@@ -137,9 +137,10 @@ impl Room {
                 l.players.len() == n && l.players.iter().filter(|p| p.ready).count() == n - 1
             }))
         );
-        let entry: ModeEntry = self.peers[0]
-            .world
-            .pack_mode_entries()
+        let host = &self.peers[0];
+        let entry: ModeEntry = host
+            .net
+            .game_entries(&host.world)
             .into_iter()
             .find(|e| e.id == id)
             .expect("a built-in instance");

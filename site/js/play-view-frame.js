@@ -311,7 +311,18 @@
        * opening prologue's vignette shots have none), the native actor
        * pass's skip. */
       const leadDrawn = typeof rt.play_player_drawn !== 'function' || rt.play_player_drawn();
-      if (this.player && leadDrawn) {
+      /* A field prop hunt's hider is drawn as its prop instead of the lead
+       * (`play_net_self_disguise`, the env-pack slot's mesh). */
+      const selfProp = typeof rt.play_net_self_disguise === 'function'
+        ? rt.play_net_self_disguise() : -1;
+      if (selfProp >= 0 && this._ensureEnvMesh) {
+        const meshId = this._ensureEnvMesh(selfProp);
+        if (meshId >= 0) {
+          draws.push({ meshId, x: pt[0], y: -pt[1], z: pt[2],
+            rotY: -(pt[3] + 2048) * A2R, scale: 1.0, noOccl: true });
+        }
+      }
+      if (this.player && leadDrawn && selfProp < 0) {
         const posed = rt.player_mesh_positions();
         if (posed.length) this.renderer.updateSceneMeshPositions(PLAYER_MESH_ID, posed);
         const playerDraw = {
@@ -349,11 +360,23 @@
       /* Netplay: the other players walking this scene, each a copy of the
        * lead's rig posed at the avatar's reported clip frame
        * (`play_net_avatars` / `play_net_avatar_positions`, the native
-       * window's remote-avatar draws). Mesh ids PLAYER_MESH_ID+1..+16. */
+       * window's remote-avatar draws). Mesh ids PLAYER_MESH_ID+1..+16. A
+       * field prop hunt's hider (lane 4, an env-pack slot) draws as that
+       * slot's mesh instead. */
       if (this.player && typeof rt.play_net_avatars === 'function') {
         const av = rt.play_net_avatars();
+        const S = 5;
         if (!this.netAvatarMeshes) this.netAvatarMeshes = new Set();
-        for (let i = 0; i * 4 < av.length && i < 16; i++) {
+        for (let i = 0; i * S < av.length && i < 16; i++) {
+          const slot = av[i * S + 4];
+          if (slot >= 0 && this._ensureEnvMesh) {
+            const meshId = this._ensureEnvMesh(slot);
+            if (meshId >= 0) {
+              draws.push({ meshId, x: av[i * S], y: -av[i * S + 1], z: av[i * S + 2],
+                rotY: -(av[i * S + 3] + 2048) * A2R, scale: 1.0, noOccl: true });
+            }
+            continue;
+          }
           const id = PLAYER_MESH_ID + 1 + i;
           const posed = rt.play_net_avatar_positions(i);
           if (!posed.length) continue;
@@ -367,8 +390,8 @@
           }
           draws.push({
             meshId: id,
-            x: av[i * 4], y: -av[i * 4 + 1], z: av[i * 4 + 2],
-            rotY: -(av[i * 4 + 3] + 2048) * A2R,
+            x: av[i * S], y: -av[i * S + 1], z: av[i * S + 2],
+            rotY: -(av[i * S + 3] + 2048) * A2R,
             scale: 1.0,
             noOccl: true,
           });

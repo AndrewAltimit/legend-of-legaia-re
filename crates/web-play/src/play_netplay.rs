@@ -17,14 +17,43 @@ use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
     /// This tick's room frame, before the world's, on `pad` (zero on a tick
-    /// the field does not own). `true` when the room screen holds the pad
-    /// and the field should see none.
-    pub(crate) fn step_netplay(&mut self, pad: u16) -> bool {
+    /// the field does not own). The return is the pad bits the field may
+    /// see (`NetPlay::world_pad_filter`): none under the room screen,
+    /// movement only in a field prop hunt.
+    pub(crate) fn step_netplay(&mut self, pad: u16) -> u16 {
+        if self.netplay.is_none() {
+            return u16::MAX;
+        }
+        let scene = self.scene_host.host().map_or(
+            legaia_engine_netplay::roam::NO_SCENE,
+            legaia_engine_netplay::room::scene_id,
+        );
+        if self.netplay_props_scene != Some(scene) {
+            self.netplay_props_scene = Some(scene);
+            let props = self.scene_prop_catalog();
+            if let Some(net) = self.netplay.as_mut() {
+                net.set_scene_props(props);
+            }
+        }
         let (Some(net), Some(host)) = (self.netplay.as_mut(), self.scene_host.host_mut()) else {
-            return false;
+            return u16::MAX;
         };
         net.frame_host(host, pad);
-        net.owns_pad()
+        net.world_pad_filter()
+    }
+
+    /// The scene's prop catalog for a field prop hunt
+    /// (`legaia_engine_netplay::field_hunt::prop_catalog`): the placed
+    /// objects, each named by its env-pack slot - the native window's twin.
+    fn scene_prop_catalog(&self) -> Vec<legaia_engine_netplay::field_hunt::FieldProp> {
+        let (Some(f), Some(res)) = (self.field.as_ref(), self.res()) else {
+            return Vec::new();
+        };
+        let placed = f.placements.iter().filter_map(|d| {
+            let tmd = &res.tmds.get(*f.env_tmds.get(d.env_slot)?)?.tmd;
+            Some((d.env_slot, [d.world_x, d.world_y, d.world_z], tmd))
+        });
+        legaia_engine_netplay::field_hunt::prop_catalog(placed)
     }
 
     /// The room screen / roaming panel's prims, in stage pixels.
@@ -75,6 +104,7 @@ impl LegaiaRuntime {
                 let mut net = NetPlay::join(link, name, code, pack);
                 net.address = Some(url.to_string());
                 self.netplay = Some(net);
+                self.netplay_props_scene = None;
                 String::new()
             }
             Err(e) => e,
@@ -141,9 +171,20 @@ impl LegaiaRuntime {
         .to_string()
     }
 
-    /// The other players in this scene: `[x, y, z, facing]` per avatar
-    /// (retail frame, `+Y` down; `facing` the 12-bit heading, as
-    /// [`Self::player_transform`]). Empty outside a room or the field.
+    /// The env-pack slot this player hides as in a field prop hunt (the
+    /// page draws that mesh in place of the lead), `-1` when not hiding.
+    pub fn play_net_self_disguise(&self) -> i32 {
+        self.netplay
+            .as_ref()
+            .and_then(NetPlay::self_disguise)
+            .map_or(-1, |s| s as i32)
+    }
+
+    /// The other players in this scene: `[x, y, z, facing, slot]` per
+    /// avatar (retail frame, `+Y` down; `facing` the 12-bit heading, as
+    /// [`Self::player_transform`]; `slot` the env-pack mesh a field prop
+    /// hunt's hider is drawn as, `-1` for the lead's mesh). Empty outside a
+    /// room or the field.
     pub fn play_net_avatars(&self) -> Vec<f32> {
         let (Some(net), Some(h)) = (&self.netplay, self.scene_host.host()) else {
             return Vec::new();
@@ -159,6 +200,7 @@ impl LegaiaRuntime {
                     a.pos[1] as f32,
                     a.pos[2] as f32,
                     f32::from(a.facing),
+                    net.disguise_of(a.player).map_or(-1.0, |s| s as f32),
                 ]
             })
             .collect()

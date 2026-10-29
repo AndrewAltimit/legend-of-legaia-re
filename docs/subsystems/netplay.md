@@ -350,8 +350,71 @@ each other walk but not each other's fights or story state; there is no
 collision between avatars. A remote player is drawn as the local party
 leader (posed with the local leader's clips at the reported frame), since
 a field scene loads only its own leader's rig. Emotes are chat lines
-(`* Vahn waves`), not animations. Prop hunt runs on the mode's own arena
-and pad movement, not on a field map.
+(`* Vahn waves`), not animations. The practice prop hunt from the mode
+list runs on its own flat arena in lockstep; the one played in the world
+is the field prop hunt below.
+
+### Prop hunt in the field
+
+The host's room screen offers **Prop hunt here** while it stands in a field
+scene with props to hide as. The scene is the arena: its placed objects
+small enough to hide as (a horizontal half-extent of 24 to 200 world units
+- a barrel or a cart, not a house) are the disguises and the decoys, one
+prop kind per environment-pack slot, so a prop names its mesh by the slot
+every peer that loaded the scene from the same disc agrees on. The arena
+is framed around those props and the players.
+
+Only the host runs the session (`legaia_engine_modes::prop_hunt` through
+`ActiveMode::tick_with_positions`), from every player's real field
+position: its own player's and each guest's avatar report, scaled four
+world units to a session unit. The session alone decides roles, timers
+and tags, and its view rides the view stream to the guests. Nothing else
+changes in a world: it stays in the field, with its own collision, camera
+and movement model (action movement too, when that toggle is on). While a
+hunt runs the world sees only movement - Cross tags, so it must not also
+open a door or talk to a villager - and no movement at all while everyone
+picks a prop, or while a hunter waits out the hiding time.
+
+| Player | Controls |
+|---|---|
+| Hider, choosing | Left / Right cycles the prop, Cross takes it. |
+| Hider, hiding | Walk to a spot among the props of that kind and keep still; Triangle taunts. |
+| Hunter | Waits out the hiding time, then Cross next to a prop tags it: a hider is found, a decoy costs health. |
+
+A hider is drawn as its prop's mesh in place of the leader, in every world
+including its own; the HUD (round, phase and time left, role, hiders still
+hidden, the newest event) is an `engine-ui` panel both hosts draw. The
+match runs two rounds with the hunter role passing on; four seconds after
+it ends the host closes it and the room is back in its lobby.
+
+### Trading cards
+
+With a card economy (a pack that defines cards), the room screen gains
+Trade with / Give / For / Offer rows. Trades run on the cards rules'
+`TradeTable`, settled by the host:
+
+1. Every player reports its holdings to the host when they change; the
+   host relays them, so a proposer sees what a partner owns.
+2. An offer (one card for one card) goes to the host, which puts it on
+   the table and confirms it for its proposer; the partner sees Accept /
+   Decline, the proposer Withdraw.
+3. With both confirmed, the host settles the table against the holdings it
+   was told and broadcasts the result. Each side applies it to its own
+   collection, validating again, so the cards move on both worlds or on
+   neither; the collection is saved with the rest of the card progress.
+
+Messages ride the same `Action` / `Event` pair as a host-authoritative
+mode, tagged apart from roaming reports and pad words; the relay carries
+the host's events in the lobby for this.
+
+### Hosting and joining from the window
+
+Offline, `Tab` opens the Multiplayer screen: host on a port (Left / Right,
+or Cross to type one), or join by address, room code and name, each typed
+after Cross on its row and kept with Enter. The launcher's **Play online**
+button starts the game with that screen open (`play-window
+--multiplayer`). The browser page joins from its Online panel; it cannot
+host.
 
 ## Tests
 

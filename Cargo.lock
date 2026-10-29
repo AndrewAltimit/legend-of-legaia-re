@@ -2320,6 +2320,7 @@ dependencies = [
  "legaia-font",
  "legaia-netplay",
  "legaia-render-kernels",
+ "legaia-tmd",
  "serde",
  "serde_json",
  "sha2",

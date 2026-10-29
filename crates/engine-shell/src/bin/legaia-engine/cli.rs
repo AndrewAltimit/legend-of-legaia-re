@@ -1293,6 +1293,11 @@ pub(crate) enum Cmd {
         /// The name other players see.
         #[arg(long, value_name = "NAME")]
         name: Option<String>,
+        /// Open the Multiplayer screen (host a room, or join one by address
+        /// and code) once the field is up - what the launcher's Play online
+        /// button passes. Tab opens the same screen in play.
+        #[arg(long, default_value_t = false)]
+        multiplayer: bool,
         // --- end netplay ---
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
