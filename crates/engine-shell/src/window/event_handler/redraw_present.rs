@@ -480,7 +480,7 @@ impl PlayWindowApp {
                 let h = |o: usize| st.actor_u16(o) as i16;
                 let _ = writeln!(
                     f,
-                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{}",
+                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{}",
                     part.model_sel,
                     u8::from(part.finished),
                     st.field_74,
@@ -496,6 +496,22 @@ impl PlayWindowApp {
                     st.world_x,
                     st.world_y,
                     st.world_z,
+                    st.move_substate,
+                    st.field_72,
+                    st.field_52,
+                    st.actor_u16(0x9C) as i16,
+                    st.actor_u16(0xA8),
+                    st.actor_u16(0xAC),
+                    st.actor_u16(0xB0),
+                    st.actor_u16(0xB2),
+                    legaia_engine_effects::effect_default_arm::default_arm_vram_mesh(st)
+                        .map_or(0, |m| m.positions.len()),
+                    part.tag.unwrap_or(0),
+                    st.flags,
+                    st.render_24,
+                    st.render_26,
+                    st.render_28,
+                    st.field_7a,
                 );
             }
         }

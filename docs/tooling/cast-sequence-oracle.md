@@ -63,8 +63,12 @@ Flags worth knowing:
 `LEGAIA_DIAG_CAST_PARTS=1` beside the engine recorder (`--engine-env`) adds
 `parts.csv`: every live part of the cast's scene graph each tick - record
 `model_sel`, halted, colour word `+0x74`, level `+0x78`, `+0x9E`, the packed
-colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA` and
-the position - the engine half of a part-by-part comparison. It is how Neo
+colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA`, the
+position, then the draw kind `+0x56`, scale `+0x72`, `+0x52`, the count
+`+0x9C`, the UV words `+0xA8` / `+0xAC`, tpage `+0xB0`, CLUT `+0xB2`, the
+default-arm mesh's vertex count, the spawn record's address, the flag word
+`+0x10`, the angle trio `+0x24..+0x28` and `+0x7A` - the engine half of a
+part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
