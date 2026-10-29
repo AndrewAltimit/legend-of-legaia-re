@@ -115,7 +115,9 @@ pub fn fx_mul(a: Fx, b: Fx) -> Fx {
 }
 
 /// A 2D fixed-point vector.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Vec2 {
     pub x: Fx,
     pub y: Fx,

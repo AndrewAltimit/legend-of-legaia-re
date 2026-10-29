@@ -13,5 +13,7 @@
 
 pub mod cards;
 pub mod fixed;
+pub mod golf;
 pub mod poker;
+pub mod racing;
 pub mod session;
