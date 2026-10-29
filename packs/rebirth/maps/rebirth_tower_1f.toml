@@ -124,7 +124,7 @@ requires = { quests = ["tower_trial"] }
 # may write a save.
 [[triggers]]
 id = "rest_landing"
-rect = [12, 11, 13, 11]
+rect = [9, 11, 11, 11]
 event = { kind = "rest", save = true }
 
 # The far ring past the dais rolls the floor's encounter table

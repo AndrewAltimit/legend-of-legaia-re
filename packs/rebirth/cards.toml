@@ -389,13 +389,13 @@ sides = [5, 4, 3, 4]
 art = { kind = "monster", id = 127 }
 
 [[cards]]
-id = "storm-barra"
-name = "Storm Barra"
-flavor = "Carries the thunderhead on its back."
+id = "echo-lamia"
+name = "Echo Lamia"
+flavor = "Sings back whatever the engine says."
 rarity = "uncommon"
-element = "thunder"
+element = "water"
 sides = [4, 5, 4, 3]
-art = { kind = "monster", id = 143 }
+art = { kind = "monster", id = 133 }
 
 [[cards]]
 id = "sleepless-one"
@@ -597,8 +597,8 @@ card = "furnace-mask"
 chance_percent = 8
 
 [[rewards]]
-source = { kind = "monster", id = 143 }
-card = "storm-barra"
+source = { kind = "monster", id = 133 }
+card = "echo-lamia"
 chance_percent = 8
 
 [[rewards]]

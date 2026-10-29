@@ -33,7 +33,7 @@ Rebirth is built for the climb from there to 99.
 | `progression.toml` | The level curve past 60, EXP and gold multipliers, enemy scaling, level-up rewards. |
 | `quests.toml` | A ten-quest main chain, ten side quests, five challenges. |
 | `dialog.toml` | Every line the pack says. |
-| `modes.toml` | Two poker tables, two card duels, two golf courses, two race tracks, two prop-hunt arenas. |
+| `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
 
 ### The tower
@@ -87,6 +87,13 @@ Challenges: **Bare Hands** (ten rounds, no items, no magic), **Garden
 Sprint** (the Garden Gauntlet in twelve rounds), **Lone Fist** (Vahn alone
 against the Engine Gauntlet), **Humble Before the Seraph** (nobody above level
 85), **Echo Storm** (the Echo at x1.5 strength within fifteen rounds).
+Bare Hands is armed at the 1F trial stone (`kind = "challenge"` through a
+dialogue choice) once the Warden's Trial is done; the other four are a
+choice on their fight's own offer (`challenge = ...` beside `battle` /
+`boss`), so the challenge applies to that fight.
+
+Rest points (`kind = "rest"`, with a save) stand on the 1F stair landing,
+by the 5F hearth and in a 7F alcove.
 
 Quest and boss rewards hand out cards by id from `cards.toml`, among them
 the four legendaries.
@@ -108,6 +115,13 @@ keeper's quests count wins at each by id:
   six racers with three boost pads.
 - **The Old Vault** (`old-vault`): six-player prop hunt, two hunters, among
   urns, crates, chests and braziers between pillar rows.
+
+Once the keeper has welcomed the party, the 5F card room and games room
+offer every table through dialogue choices (`mode = ...`), and the High
+Table's empty seat deals in on a step (`kind = "mode"`). Two more instances
+play on the tower itself, in the 3D field: **Tower Green** (`tower-green`),
+one hole across the 1F dais, and **Sol Ring** (`sol-ring`), three laps of
+the 1F floor round the dais; both open from the mode picker.
 
 The earlier village instances (`mist-lantern-table`, `rim-elm-duel`,
 `windmill-links`, `drake-circuit`, `storehouse`) stay as the gentler set.
@@ -196,9 +210,8 @@ asset expansion unbundle rebirth.lxpack -o rebirth-copy
 In the browser, the **Expansion workbench** page loads Rebirth as its
 example pack; **Play in browser** hands the bundle to the play page.
 
-The Rest's tables open from the mode picker (`` ` `` on the field in the
-native window, the Game mode select on the play page). The challenges are
-defined, but nothing in a pack can arm one yet (see [Gaps](#gaps)).
+Every table also opens from the mode picker (`` ` `` on the field in the
+native window, the Game mode select on the play page).
 
 ## How it was built
 
@@ -231,9 +244,13 @@ a carved face pillar, mesh 37 a stone altar block (the Warden's Stone).
 
 **NPCs without models.** A pack NPC is a talk zone: stepping onto the tiles in
 front of the Warden's Stone raises `talk tower_guide`, which is what a quest's
-`giver` and `talk` objective listen for. Every boss is a quest whose
+`giver` and `talk` objective listen for. Most bosses are a quest whose
 `start_dialog` and `active_dialog` is a line with a fight choice, so the
-player can step back from a fight and return to it.
+player can step back from a fight and return to it. The Iron Regent's quest
+also asks for the Engine Gauntlet, so his offer is a trigger of its own,
+gated on him still standing (`requires = { bosses_unbeaten = [...] }`); a
+second trigger on the same tiles says an after line once he has fallen
+(`requires = { bosses = [...] }`), as on every boss floor.
 
 **Monsters.** Every monster is a retail one renumbered: the workbench's
 Battle tab picks the base from the disc catalog and shows its retail stats
@@ -250,18 +267,7 @@ own copy, so the pack is safe to share. The validator enforces it.
 
 ## Gaps
 
-What the format cannot yet express, found while building this pack:
-
-- **Arming a challenge.** A challenge is armed only by
-  `World::expansion_arm_challenge`; no map trigger, dialogue choice or quest
-  field arms one, so the five challenges (and Trial Master) wait on a host or
-  format hook.
-- **Entering a mode from a map.** The Rest's tables open from the mode
-  picker, not from a trigger beside the table.
-- **Gated exits and conditional triggers.** An exit or trigger cannot require
-  a pack flag, so the stairs are open from the start (the quest chain paces
-  the climb by level instead), and a boss's offer line repeats after its
-  quest is done.
-- **Rest and save.** The pack has no save point or heal of its own; on the
-  Gambler's Rest, a save made with the port's Save anywhere option resumes on
-  the floor.
+The gaps found while building this pack - arming a challenge, entering a
+mode from a map, gated exits, triggers and NPC lines, rest points - are
+format features now ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#gates)).
+The stairs stay open by choice: the quest chain paces the climb by level.

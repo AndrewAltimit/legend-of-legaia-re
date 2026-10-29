@@ -40,9 +40,12 @@ fn every_rebirth_card_names_a_real_monster_and_renders_its_portrait() {
             _ => None,
         })
         .collect();
-    assert_eq!(
-        ids.len(),
-        pack.cards.cards.len(),
+    // Two cards may share a portrait (a boss and the legend it echoes).
+    assert!(
+        pack.cards
+            .cards
+            .iter()
+            .all(|c| matches!(c.art, Some(DiscRef::Monster { .. }))),
         "every card is a monster card"
     );
     for c in &pack.cards.cards {
@@ -62,7 +65,7 @@ fn every_rebirth_card_names_a_real_monster_and_renders_its_portrait() {
         .filter(|id| cache.get(*id).is_none())
         .collect();
     assert!(missing.is_empty(), "no portrait for {missing:?}");
-    for p in cache.by_monster.values() {
+    for (id, p) in &cache.by_monster {
         assert_eq!((p.w, p.h), (PORTRAIT_W, PORTRAIT_H));
         let lit = p
             .rgba
@@ -73,7 +76,7 @@ fn every_rebirth_card_names_a_real_monster_and_renders_its_portrait() {
             .count();
         assert!(
             lit * 10 > p.rgba.len() / 4,
-            "a portrait fills a tenth of its box"
+            "monster {id}'s portrait fills a tenth of its box ({lit} px)"
         );
     }
     if let Some(dir) = std::env::var_os("LEGAIA_CARD_PORTRAIT_DIR") {

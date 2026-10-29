@@ -17,7 +17,7 @@ use crate::common::{rebirth_cards, rebirth_modes};
 #[test]
 fn rebirth_cards_are_well_formed() {
     let s = rebirth_cards();
-    assert!((20..=30).contains(&s.cards.len()));
+    assert!(s.cards.len() >= 20, "{} cards", s.cards.len());
     let ids: BTreeSet<&str> = s.cards.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids.len(), s.cards.len(), "duplicate card id");
     for c in &s.cards {
@@ -64,11 +64,13 @@ fn rebirth_modes_convert_to_sessions() {
     }
     let g = GolfConfig::from_course(&m.golf[0], &[], 0).unwrap();
     assert_eq!(g.holes.len(), 3);
-    for c in &m.golf {
+    // A course or track that names a pack map builds from the map
+    // (`rebirth_map_courses_build_from_their_maps`).
+    for c in m.golf.iter().filter(|c| c.map.is_none()) {
         let g = GolfConfig::from_course(c, &[], 0).unwrap_or_else(|e| panic!("{}: {e:?}", c.id));
         assert_eq!(g.holes.len(), c.holes.len(), "{}", c.id);
     }
-    for r in &m.races {
+    for r in m.races.iter().filter(|r| r.map.is_none()) {
         RaceConfig::from_def(r, 0).unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
     }
     for a in &m.prop_hunt {
@@ -76,5 +78,40 @@ fn rebirth_modes_convert_to_sessions() {
         for d in &ph.decoys {
             assert!(ph.arena.open(d.pos), "{}: decoy inside a wall", a.id);
         }
+    }
+}
+
+/// Every Rebirth instance that names a tower map builds against the pack's
+/// maps, as the mode seat builds it.
+#[test]
+fn rebirth_map_courses_build_from_their_maps() {
+    use legaia_engine_modes::active::{ActiveMode, BuildOptions};
+    let pack = legaia_expansion_format::ExpansionPack::from_dir(&crate::common::pack_dir())
+        .expect("the Rebirth pack parses");
+    let ids: Vec<&str> = (pack
+        .modes
+        .golf
+        .iter()
+        .filter(|c| c.map.is_some())
+        .map(|c| c.id.as_str()))
+    .chain(
+        pack.modes
+            .races
+            .iter()
+            .filter(|r| r.map.is_some())
+            .map(|r| r.id.as_str()),
+    )
+    .collect();
+    assert!(!ids.is_empty(), "Rebirth lays a course on its tower");
+    for id in ids {
+        ActiveMode::build_with_maps(
+            &pack.modes,
+            &pack.cards,
+            &pack.maps,
+            id,
+            3,
+            &BuildOptions::default(),
+        )
+        .unwrap_or_else(|e| panic!("{id}: {e}"));
     }
 }

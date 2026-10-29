@@ -317,3 +317,35 @@ decoys = [
   { prop = "brazier", x = 980, y = 300 },
   { prop = "brazier", x = 640, y = 820 },
 ]
+
+# --- Played on the tower itself ----------------------------------------------
+# In-world courses: the map's own tiles are the course or track
+# (docs/subsystems/expansion-modes.md#in-world-golf-and-racing).
+
+# One hole across the 1F dais, tee at its south-west corner, cup at the
+# north-east, the Warden's Stone in between.
+[[golf]]
+id = "tower-green"
+name = "Tower Green"
+map = "rebirth_tower_1f"
+spawn = "dais"
+
+[[golf.holes]]
+par = 3
+tee = [5, 8]
+cup = [9, 4]
+area = [5, 4, 9, 8]
+
+# Three laps of the 1F arena floor, round the dais between the pillars.
+[[races]]
+id = "sol-ring"
+name = "Sol Ring"
+map = "rebirth_tower_1f"
+spawn = "entrance"
+laps = 3
+racers = 3
+half_width = 90
+ai_tier = "regular"
+waypoints = [[4, 3], [10, 3], [10, 9], [4, 9]]
+boost_segments = [0, 2]
+
