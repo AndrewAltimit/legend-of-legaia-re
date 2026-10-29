@@ -1,0 +1,69 @@
+# Tower of Rebirth, fifth floor: the Gambler's Rest. The lobby of the
+# retail Sol Tower rooms (`koin1`), kept whole. No monster climbs this
+# high-ceilinged room; the Rest's keeper runs the tower's tables instead
+# (`modes.toml`), and their quests send the party to every one of them.
+
+name = "Tower of Rebirth 5F - Gambler's Rest"
+base = { scene = { kind = "scene", name = "koin1" }, geometry = "keep" }
+# Sound-test track 24, "Where Everyone Drinks".
+bgm = { kind = "bgm", id = 24 }
+camera = "default"
+
+[tiles]
+origin = [62, 56]
+rows = [
+  "      #..#",
+  "      #..#",
+  "      #..#",
+  "#cccccc..cccccc#",
+  "#..............#",
+  "#..............#",
+  "#..............#",
+  "#.b#.......##.##",
+  "#.b#.......##.#",
+  "#.b####....##.#",
+  "#.b   ###.#####",
+  "###     ###",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"b" = { label = "wall edge", walls = ["tr", "br"] }
+"c" = { label = "wall edge", walls = ["tl", "tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [13, 6]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [8, 3]
+
+[[exits]]
+id = "stair_down"
+rect = [13, 9, 13, 9]
+to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [8, 0, 9, 0]
+to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [9, 4, 12, 6]
+event = { kind = "dialog", line = "floor_5f_intro" }
+once = true
+
+# The keeper's counter: every table quest is given here.
+[[triggers]]
+id = "keeper"
+rect = [5, 4, 6, 5]
+event = { kind = "talk", npc = "rest_keeper" }
+
+[[triggers]]
+id = "table_board"
+rect = [1, 4, 1, 6]
+event = { kind = "dialog", line = "rest_board" }

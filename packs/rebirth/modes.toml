@@ -108,3 +108,212 @@ decoys = [
   { prop = "sack", x = 140, y = 520 },
   { prop = "barrel", x = 480, y = 300 },
 ]
+
+# --- The Gambler's Rest (Tower of Rebirth, 5F) -------------------------------
+#
+# Keeper Odalric's five tables. The keeper's quests (quests.toml,
+# `keeper_tables`, `high_roller`) count wins at each of them by id.
+
+# High stakes for a late-game purse: buy in for 5,000 gold, five expert
+# opponents, blinds doubling every eight hands.
+[[poker]]
+id = "tower-high-table"
+name = "Tower High Table"
+location = { kind = "scene", name = "koin1" }
+seats = 6
+buy_in = 5000
+small_blind = 50
+big_blind = 100
+currency = "gold"
+chip_value = 1
+ai_tier = "expert"
+max_hands = 60
+blind_double_every = 8
+
+# The keeper plays the tower's own breed, hands face up, captures chaining
+# and the loser's best card on the line.
+[[card_duels]]
+id = "wardens-duel"
+name = "The Warden's Duel"
+deck = ["ironhide-brute", "rune-sentinel", "ember-scale", "iron-colossus", "frost-maw"]
+ai_tier = "expert"
+elemental_cells = true
+chain = true
+stakes = true
+win_booster = "mistborn"
+
+# Six holes up the tower's side. Each is a real-looking golf hole in
+# miniature: bunkers guarding the green, a dogleg, an island green,
+# terraces, a run of ramps, and a long finishing hole with a sloped green.
+[[golf]]
+id = "rebirth-links"
+name = "The Rebirth Links"
+location = { kind = "scene", name = "teien" }
+
+# 1 - Atrium Approach: straight in, with a bunker either side of the green.
+[[golf.holes]]
+par = 3
+rows = [
+  "##############",
+  "#,,,,,,,ss,,,#",
+  "#T.........O.#",
+  "#,,,,,,,ss,,,#",
+  "##############",
+]
+
+# 2 - Ember Dogleg: the fairway turns left; cutting the corner means rough.
+[[golf.holes]]
+par = 4
+rows = [
+  "#############",
+  "#O..,,,,,,,,#",
+  "#...,,,,,,,,#",
+  "#ss.,,,,,,,,#",
+  "#,..,,,,,,,,#",
+  "#,...,,,,,,,#",
+  "#,,.........#",
+  "#,,,,,.....T#",
+  "#############",
+]
+
+# 3 - Garden Island: the green is an island; one narrow bridge crosses
+# the water, and the bunker behind punishes a long shot.
+[[golf.holes]]
+par = 3
+rows = [
+  "###############",
+  "#wwwwwwwwwwwww#",
+  "#wwwwwww...sww#",
+  "#T....,ww..O.w#",
+  "#,....,....s.w#",
+  "#wwwwwwwww...w#",
+  "#wwwwwwwwwwwww#",
+  "###############",
+]
+
+# 4 - Vault Terraces: three terraces stepping down to the cup; the ball
+# runs off each step, so aim short.
+[[golf.holes]]
+par = 4
+rows = [
+  "##############",
+  "#T...........#",
+  "#............#",
+  "#,,,,,,,,,,,,#",
+  "#............#",
+  "#....s..s....#",
+  "#,,,,,,,,,,,,#",
+  "#.....O......#",
+  "##############",
+]
+heights = [
+  "00000000000000",
+  "06666666666660",
+  "06666666666660",
+  "05555555555550",
+  "03333333333330",
+  "03333333333330",
+  "02222222222220",
+  "01111111111110",
+  "00000000000000",
+]
+
+# 5 - Engine Ramps: conveyor ramps push the ball sideways; let them carry
+# it round the wall.
+[[golf.holes]]
+par = 4
+rows = [
+  "##############",
+  "#T....#......#",
+  "#.....#......#",
+  "#.....#..O...#",
+  "#>>>>>#......#",
+  "#.....#,,,,,,#",
+  "#..........<<#",
+  "#............#",
+  "##############",
+]
+
+# 6 - Throne Green: a long par 5 past water and sand to a green that
+# slopes away from the approach.
+[[golf.holes]]
+par = 5
+rows = [
+  "##################",
+  "#T.....,,,,,.....#",
+  "#......ww,,,.....#",
+  "#,,....ww,,..ss..#",
+  "#,,....ww,.......#",
+  "#......,,,....,,.#",
+  "#ss...,,,,.....O.#",
+  "##################",
+]
+heights = [
+  "000000000000000000",
+  "011111111111111110",
+  "011111111111111110",
+  "011111111111111110",
+  "011111111111112210",
+  "011111111111123210",
+  "011111111111123210",
+  "000000000000000000",
+]
+max_strokes = 9
+
+# A spiral of the tower's floors, run as a closed circuit: a long back
+# straight with a boost pad, a hairpin at the top, and a fast sweep home.
+[[races]]
+id = "spiral-circuit"
+name = "The Spiral Circuit"
+location = { kind = "scene", name = "tower" }
+laps = 3
+half_width = 100
+racers = 6
+ai_tier = "expert"
+points = [
+  [0, 0], [1200, 0], [2000, 300], [2400, 900],
+  [2200, 1600], [1500, 1900], [900, 1600], [1100, 1100],
+  [600, 800], [-200, 1300], [-700, 900], [-500, 300],
+]
+boost_segments = [0, 5, 10]
+
+# Hide and seek among the Old Vault's urns and crates: a wide hall broken
+# by pillar rows, two hunters against four hiders.
+[[prop_hunt]]
+id = "old-vault"
+name = "The Old Vault"
+location = { kind = "scene", name = "korb3" }
+players = 6
+hunters = 2
+rounds = 6
+bounds = [0, 0, 1280, 896]
+blockers = [
+  [200, 160, 260, 220], [200, 420, 260, 480], [200, 680, 260, 740],
+  [1020, 160, 1080, 220], [1020, 420, 1080, 480], [1020, 680, 1080, 740],
+  [560, 360, 720, 540],
+]
+hide_frames = 1500
+round_frames = 9000
+hunter_health = 100
+miss_penalty = 15
+ai_tier = "expert"
+props = [
+  { id = "urn", radius = 14 },
+  { id = "crate", radius = 18 },
+  { id = "chest", radius = 16 },
+  { id = "brazier", radius = 12 },
+]
+decoys = [
+  { prop = "urn", x = 120, y = 120 },
+  { prop = "urn", x = 150, y = 760 },
+  { prop = "urn", x = 640, y = 300 },
+  { prop = "crate", x = 400, y = 100 },
+  { prop = "crate", x = 880, y = 800 },
+  { prop = "crate", x = 1160, y = 300 },
+  { prop = "chest", x = 640, y = 620 },
+  { prop = "chest", x = 330, y = 560 },
+  { prop = "chest", x = 950, y = 560 },
+  { prop = "brazier", x = 300, y = 300 },
+  { prop = "brazier", x = 980, y = 300 },
+  { prop = "brazier", x = 640, y = 820 },
+]

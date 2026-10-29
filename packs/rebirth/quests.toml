@@ -1,52 +1,304 @@
 # Legend of Legaia: Rebirth - quests and challenges.
 #
-# The opening of the tower chain. Objectives name what happens in play: a
-# pack NPC talked to, battles won, a party level reached. Pack flags
-# (`tower_*`) are the pack's own and never touch a retail story flag.
+# The main chain climbs the Tower of Rebirth floor by floor; side quests
+# hang off the floors' NPCs. Every NPC here is a talk zone on a pack map
+# (`[[triggers]] event = { kind = "talk", npc = ... }`), so "talking to"
+# the Warden's Stone or the 2F brazier is stepping up to it. Pack flags
+# and counters are the pack's own and never touch a retail story flag.
 # Format: docs/formats/expansion-pack-quests.md.
+#
+# NPC ids and where they stand:
+#   tower_guide    1F  the Warden's Stone, at the foot of the dais
+#   ember_brazier  2F  the brazier between the middle pillars
+#   vault_heart    4F  the sunken court
+#   rest_keeper    5F  the keeper's counter
+#   regent_seat    6F  the upper alcove
+#   sanctum_echo   7F  the inner hall
+#   hollow_throne  8F  the throne
 
-# --- The Rebirth Tower -------------------------------------------------------
+# --- The main chain ----------------------------------------------------------
 
 [[quests]]
 id = "tower_rumour"
 title = "A Tower Wakes"
-description = "Travellers speak of a tower that rose from the mist. Someone who has seen it is waiting to talk."
+description = "Since the Mist lifted, travellers speak of a tower that was never there before. Something inside it is waiting to be heard."
 auto_start = true
 prerequisites = { min_level = 30 }
 objectives = [
-    { kind = "talk", npc = "tower_guide", text = "Find the guide who has seen the tower" },
+    { kind = "talk", npc = "tower_guide", text = "Find the voice in the tower's first hall" },
 ]
 complete_dialog = "guide_intro"
 rewards = { set_flags = ["tower_heard"] }
 
 [[quests]]
 id = "tower_trial"
-title = "The Rebirth Tower"
-description = "The guide will open the tower to a party that proves itself in battle and grows strong enough to survive it."
+title = "The Warden's Trial"
+description = "Warden Ysolde will lift the tower's seal for a party that proves itself in battle and grows strong enough to survive the climb."
 giver = "tower_guide"
 prerequisites = { quests = ["tower_rumour"] }
 start_dialog = "guide_trial"
+active_dialog = "guide_trial_active"
 objectives = [
     { kind = "win_battles", count = 3, text = "Win three battles" },
     { kind = "reach_level", level = 40, text = "Reach level 40" },
-    { kind = "talk", npc = "tower_guide", text = "Return to the guide" },
+    { kind = "talk", npc = "tower_guide", text = "Return to the Warden's Stone" },
 ]
 complete_dialog = "guide_done"
-rewards = { gold = 10000, set_flags = ["tower_open"] }
+rewards = { gold = 10000, items = [{ item = 121, count = 5 }], set_flags = ["tower_open"] }
+
+[[quests]]
+id = "ember_stair"
+title = "The Ember Stair"
+description = "On the second floor a shape of ash tends a fire that has burned since the Mist came. Put it out."
+giver = "ember_brazier"
+prerequisites = { quests = ["tower_trial"], min_level = 50 }
+start_dialog = "ember_offer"
+active_dialog = "ember_offer"
+objectives = [
+    { kind = "win_boss", boss = "cinder_warden", text = "Defeat the Cinder Warden" },
+]
+complete_dialog = "ember_done"
+rewards = { xp = 20000, cards = ["ember-scale"], counters = [{ counter = "bosses_felled" }] }
+
+[[quests]]
+id = "hanging_garden"
+title = "The Hanging Garden"
+description = "The third floor's sundial counts out a trial of four waves. Outlast the garden."
+auto_start = true
+prerequisites = { quests = ["ember_stair"] }
+start_dialog = "garden_hint"
+objectives = [
+    { kind = "defeat_formation", formation = "garden_gauntlet", text = "Clear the Garden Gauntlet" },
+]
+complete_dialog = "garden_done"
+rewards = { gold = 25000, items = [{ item = 252, count = 1 }] }
+
+[[quests]]
+id = "verdant_vault"
+title = "The Verdant Vault"
+description = "Something vast is asleep in the fourth floor's sunken court, and the moss over it is breathing."
+giver = "vault_heart"
+prerequisites = { quests = ["hanging_garden"], min_level = 60 }
+start_dialog = "vault_offer"
+active_dialog = "vault_offer"
+objectives = [
+    { kind = "win_boss", boss = "verdant_colossus", text = "Defeat the Verdant Colossus" },
+]
+complete_dialog = "vault_done"
+rewards = { xp = 30000, cards = ["ironhide-brute"], counters = [{ counter = "bosses_felled" }] }
+
+[[quests]]
+id = "gamblers_rest"
+title = "The Gambler's Rest"
+description = "Halfway up the tower, a hall where nothing hunts. Its keeper still runs the tables."
+auto_start = true
+prerequisites = { quests = ["verdant_vault"] }
+objectives = [
+    { kind = "enter_scene", scene = "rebirth_tower_5f", text = "Reach the fifth floor" },
+    { kind = "talk", npc = "rest_keeper", text = "Talk to the keeper" },
+]
+complete_dialog = "keeper_welcome"
+rewards = { set_flags = ["rest_open"] }
+
+[[quests]]
+id = "engine_deep"
+title = "The Engine Deep"
+description = "The sixth floor's machines still run for their master. Stop the engine and the one who drives it."
+giver = "regent_seat"
+prerequisites = { quests = ["gamblers_rest"], min_level = 70 }
+start_dialog = "regent_offer"
+active_dialog = "regent_offer"
+ordered = false
+objectives = [
+    { kind = "defeat_formation", formation = "engine_gauntlet", text = "Outlast the Engine Gauntlet" },
+    { kind = "win_boss", boss = "iron_regent", text = "Defeat the Iron Regent" },
+]
+complete_dialog = "regent_done"
+rewards = { xp = 40000, cards = ["rune-sentinel"], counters = [{ counter = "bosses_felled" }] }
+
+[[quests]]
+id = "sanctum_echoes"
+title = "The Sanctum of Echoes"
+description = "Every prayer the Mist drowned is still whispering on the seventh floor. One voice speaks over all of them."
+giver = "sanctum_echo"
+prerequisites = { quests = ["engine_deep"], min_level = 85 }
+start_dialog = "seraph_offer"
+active_dialog = "seraph_offer"
+objectives = [
+    { kind = "win_boss", boss = "azure_seraph", text = "Silence the Azure Seraph" },
+]
+complete_dialog = "seraph_done"
+rewards = { xp = 50000, cards = ["radiant-warden"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
 id = "tower_sovereign"
 title = "The Hollow Throne"
-description = "Something waits at the top of the tower. The guide will take the party to it when they are ready."
-giver = "tower_guide"
-prerequisites = { quests = ["tower_trial"] }
+description = "Something hollow sits on the throne at the top of the tower, made of everything the Mist took."
+giver = "hollow_throne"
+prerequisites = { quests = ["sanctum_echoes"], min_level = 90 }
 start_dialog = "guide_sovereign"
 active_dialog = "guide_sovereign"
 objectives = [
     { kind = "win_boss", boss = "hollow_sovereign", text = "Defeat the Hollow Sovereign" },
 ]
 complete_dialog = "guide_sovereign_done"
-rewards = { set_flags = ["sovereign_fallen"], counters = [{ counter = "bosses_felled" }] }
+rewards = { cards = ["hollow-sovereign"], set_flags = ["sovereign_fallen"], counters = [{ counter = "bosses_felled" }] }
+
+[[quests]]
+id = "rebirth"
+title = "Rebirth"
+description = "The throne is empty. Warden Ysolde asks one last thing: reach the peak of your own strength."
+auto_start = true
+prerequisites = { quests = ["tower_sovereign"] }
+start_dialog = "guide_rebirth"
+objectives = [
+    { kind = "reach_level", level = 99, text = "Reach level 99" },
+    { kind = "talk", npc = "tower_guide", text = "Return to the Warden's Stone" },
+]
+complete_dialog = "guide_rebirth_done"
+rewards = { cards = ["heart-of-the-mist"], set_flags = ["reborn"] }
+
+# --- Side quests -------------------------------------------------------------
+
+[[quests]]
+id = "every_floor"
+title = "Every Floor"
+description = "Set foot on all eight floors of the Tower of Rebirth."
+auto_start = true
+prerequisites = { quests = ["tower_trial"] }
+ordered = false
+objectives = [
+    { kind = "enter_scene", scene = "rebirth_tower_2f", text = "The Ember Stair" },
+    { kind = "enter_scene", scene = "rebirth_tower_3f", text = "The Hanging Garden" },
+    { kind = "enter_scene", scene = "rebirth_tower_4f", text = "The Verdant Vault" },
+    { kind = "enter_scene", scene = "rebirth_tower_5f", text = "The Gambler's Rest" },
+    { kind = "enter_scene", scene = "rebirth_tower_6f", text = "The Engine Deep" },
+    { kind = "enter_scene", scene = "rebirth_tower_7f", text = "The Sanctum of Echoes" },
+    { kind = "enter_scene", scene = "rebirth_tower_8f", text = "The Hollow Throne" },
+]
+complete_dialog = "every_floor_done"
+rewards = { gold = 20000, cards = ["sky-sovereign"] }
+
+[[quests]]
+id = "bounty_ironhide"
+title = "Bounty: Ironhide Ogres"
+description = "The Ironhide breed is spreading out of the tower. Thin it out - any monster built on the Dark Ogre counts."
+giver = "tower_guide"
+prerequisites = { quests = ["tower_trial"] }
+start_dialog = "bounty_ogres_start"
+objectives = [
+    { kind = "defeat_monster", monster = 109, count = 10, text = "Defeat ten Ironhide Ogres" },
+    { kind = "talk", npc = "tower_guide", text = "Report to the Warden's Stone" },
+]
+complete_dialog = "bounty_ogres_done"
+rewards = { gold = 15000, counters = [{ counter = "bounties" }] }
+repeat = { repeatable = true, cooldown_seconds = 1800 }
+
+[[quests]]
+id = "warden_remedy"
+title = "A Remedy for Stone"
+description = "The Warden's Stone is cracking. Ysolde asks for Healing Fruit to close the cracks."
+giver = "tower_guide"
+prerequisites = { quests = ["tower_trial"] }
+start_dialog = "remedy_start"
+objectives = [
+    { kind = "collect_item", item = 123, count = 5, hand_in = true, text = "Gather five Healing Fruit" },
+    { kind = "talk", npc = "tower_guide", text = "Bring them to the Warden's Stone" },
+]
+complete_dialog = "remedy_done"
+rewards = { items = [{ item = 248, count = 1 }, { item = 249, count = 1 }] }
+
+[[quests]]
+id = "gilded_hunt"
+title = "The Gilded Herd"
+description = "The Hanging Garden's golden bison are worth a fortune each. Bring down three herds."
+auto_start = true
+prerequisites = { quests = ["ember_stair"] }
+objectives = [
+    { kind = "defeat_formation", formation = "gilded_herd", count = 3, text = "Defeat three Gilded Herds" },
+]
+rewards = { gold = 30000, items = [{ item = 156, count = 1 }] }
+
+[[quests]]
+id = "sentinel_hunt"
+title = "Bounty: Brass Sentinels"
+description = "Break the Brass Sentinels marching out of the Engine Deep."
+giver = "regent_seat"
+prerequisites = { quests = ["engine_deep"] }
+start_dialog = "sentinel_hunt_start"
+objectives = [
+    { kind = "defeat_monster", monster = 129, count = 12, text = "Scrap twelve Brass Sentinels" },
+]
+complete_dialog = "sentinel_hunt_done"
+rewards = { gold = 40000, items = [{ item = 131, count = 2 }], counters = [{ counter = "bounties" }] }
+repeat = { repeatable = true, cooldown_seconds = 3600 }
+
+[[quests]]
+id = "throne_echo_hunt"
+title = "Echo of the Throne"
+description = "An echo of the Sovereign keeps re-forming on the empty throne. Break it again, as often as it returns."
+giver = "hollow_throne"
+prerequisites = { quests = ["tower_sovereign"] }
+start_dialog = "echo_offer"
+active_dialog = "echo_offer"
+objectives = [
+    { kind = "win_boss", boss = "throne_echo", text = "Break the Echo of the Throne" },
+]
+rewards = { xp = 30000, counters = [{ counter = "echoes_broken" }] }
+repeat = { repeatable = true, cooldown_seconds = 600 }
+
+[[quests]]
+id = "seasoned_hunter"
+title = "Seasoned Hunter"
+description = "Win a hundred battles anywhere once the tower is open."
+auto_start = true
+prerequisites = { quests = ["tower_trial"] }
+objectives = [
+    { kind = "win_battles", count = 100, text = "Win one hundred battles" },
+]
+rewards = { gold = 50000, items = [{ item = 236, count = 1 }] }
+
+# --- The keeper's tables (5F) ------------------------------------------------
+
+[[quests]]
+id = "keeper_tables"
+title = "The Keeper's Tables"
+description = "Keeper Odalric runs five tables in the Gambler's Rest. Win one of each. (Open the tables with the mode picker.)"
+giver = "rest_keeper"
+prerequisites = { quests = ["gamblers_rest"] }
+start_dialog = "keeper_tables"
+ordered = false
+objectives = [
+    { kind = "win_mode", mode = "tower-high-table", text = "Win at the Tower High Table" },
+    { kind = "win_mode", mode = "wardens-duel", text = "Win the Warden's Duel" },
+    { kind = "win_mode", mode = "rebirth-links", text = "Win the Rebirth Links" },
+    { kind = "win_mode", mode = "spiral-circuit", text = "Win the Spiral Circuit" },
+    { kind = "win_mode", mode = "old-vault", text = "Win hide and seek in the Old Vault" },
+]
+complete_dialog = "keeper_done"
+rewards = { gold = 30000, cards = ["thunder-roc", "frost-maw"], set_flags = ["tables_beaten"] }
+
+[[quests]]
+id = "high_roller"
+title = "High Roller"
+description = "Win the Tower High Table three times."
+auto_start = true
+prerequisites = { quests = ["gamblers_rest"] }
+objectives = [
+    { kind = "win_mode", mode = "tower-high-table", count = 3, text = "Win the High Table three times" },
+]
+rewards = { cards = ["veil-phantom"] }
+
+[[quests]]
+id = "trial_master"
+title = "Trial Master"
+description = "Clear three of the tower's challenges."
+auto_start = true
+prerequisites = { quests = ["tower_trial"] }
+objectives = [
+    { kind = "counter", counter = "challenges_cleared", at_least = 3, text = "Clear three challenges" },
+]
+rewards = { gold = 50000, cards = ["ruin-titan"] }
 
 # --- Challenges --------------------------------------------------------------
 
@@ -57,3 +309,39 @@ description = "Win your next battle in ten rounds or fewer, with no items and no
 rules = { turn_limit = 10, no_items = true, no_magic = true }
 score = { base = 1000, turn_bonus = 100 }
 rewards = { gold = 2000, counters = [{ counter = "challenges_cleared" }] }
+
+[[challenges]]
+id = "garden_sprint"
+title = "Garden Sprint"
+description = "Clear the Garden Gauntlet - all four waves - in twelve rounds or fewer."
+formation = "garden_gauntlet"
+rules = { turn_limit = 12 }
+score = { base = 3000, turn_bonus = 250 }
+rewards = { gold = 20000, counters = [{ counter = "challenges_cleared" }] }
+
+[[challenges]]
+id = "lone_fist"
+title = "Lone Fist"
+description = "Vahn alone against the Engine Gauntlet. No items."
+formation = "engine_gauntlet"
+rules = { solo = 0, no_items = true }
+score = { base = 5000 }
+rewards = { gold = 40000, items = [{ item = 232, count = 1 }], counters = [{ counter = "challenges_cleared" }] }
+
+[[challenges]]
+id = "humble_seraph"
+title = "Humble Before the Seraph"
+description = "Silence the Azure Seraph with nobody above level 85."
+formation = "sanctum_seraph"
+rules = { level_cap = 85 }
+score = { base = 8000, level_bonus = 500 }
+rewards = { gold = 60000, counters = [{ counter = "challenges_cleared" }] }
+
+[[challenges]]
+id = "echo_storm"
+title = "Echo Storm"
+description = "Break the Echo of the Throne at one and a half times its strength, within fifteen rounds."
+formation = "throne_echo"
+rules = { turn_limit = 15, enemy_scale_permille = 1500 }
+score = { base = 10000, turn_bonus = 500 }
+rewards = { gold = 100000, items = [{ item = 235, count = 1 }], counters = [{ counter = "challenges_cleared" }] }

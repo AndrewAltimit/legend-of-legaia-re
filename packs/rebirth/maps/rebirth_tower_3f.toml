@@ -1,0 +1,97 @@
+# Tower of Rebirth, third floor: the Hanging Garden. The terraces of the
+# retail Sky Gardens (`teien`), kept whole, with the garden's own walls
+# re-traced. The sundial on the middle terrace runs the Garden Gauntlet:
+# four waves in one battle, as often as the party asks for it.
+
+name = "Tower of Rebirth 3F - Hanging Garden"
+base = { scene = { kind = "scene", name = "teien" }, geometry = "keep" }
+# Sound-test track 12, "The Sacred Realm".
+bgm = { kind = "bgm", id = 12 }
+camera = "default"
+
+[tiles]
+origin = [31, 28]
+rows = [
+  "     #............a#",
+  "   #b#.####cd####..a",
+  "  #b.#.............e#",
+  " #b..#....f...f.....###",
+  "#b.#.######...#.......a#",
+  "b....#....#g.e#####....a",
+  ".##....#..#h.i#..#...#.#",
+  ".......#..#...#..#...#..",
+  "#......#.........#...##.",
+  "#.####.#....f....#f..#..",
+  "###....#############.#.#",
+  "  #....#.........#.#.#..",
+  "  #....#.#.........#.##.",
+  "  #....##..........#.#..",
+  "  #.####.......#########",
+  "  #..................#",
+  "###....##............#",
+  "g.#.#####........#...#",
+  "c.......ibh..ia####..#",
+  "###....#.g....e......#",
+  "  #g.#...g....e.a...##",
+  "   c.....g....ec...e#",
+  "   #c..#.g....e#g#.d",
+  "    #c...g....e   d#",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"b" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"c" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"d" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"e" = { label = "wall edge", walls = ["tr", "br"] }
+"f" = { label = "wall edge", walls = ["bl", "br"] }
+"g" = { label = "wall edge", walls = ["tl", "bl"] }
+"h" = { label = "wall corner", walls = ["tl"] }
+"i" = { label = "wall corner", walls = ["tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [11, 21]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [11, 2]
+
+[[exits]]
+id = "stair_down"
+rect = [10, 23, 13, 23]
+to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [8, 0, 15, 0]
+to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [9, 19, 14, 20]
+event = { kind = "dialog", line = "floor_3f_intro" }
+once = true
+
+[[triggers]]
+id = "sundial"
+rect = [10, 12, 15, 12]
+event = { kind = "dialog", line = "sundial_offer" }
+
+[[encounters]]
+id = "west_terrace"
+rect = [0, 4, 9, 9]
+table = "tower_3f"
+
+[[encounters]]
+id = "east_terrace"
+rect = [15, 4, 23, 13]
+table = "tower_3f"
+
+[[encounters]]
+id = "lower_garden"
+rect = [2, 15, 20, 18]
+table = "tower_3f"

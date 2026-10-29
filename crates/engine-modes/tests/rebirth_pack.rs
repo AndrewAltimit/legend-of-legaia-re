@@ -48,19 +48,33 @@ fn rebirth_cards_are_well_formed() {
 fn rebirth_modes_convert_to_sessions() {
     let m = rebirth_modes();
     let book = CardBook::new(rebirth_cards());
-    assert_eq!(m.poker.len(), 1);
+    assert!(!m.poker.is_empty());
     let p = PokerConfig::from_table(&m.poker[0], 0);
     assert_eq!(p.seats.len(), 4);
+    for t in &m.poker {
+        let p = PokerConfig::from_table(t, 0);
+        assert_eq!(p.seats.len(), usize::from(t.seats), "{}", t.id);
+    }
     let deck: Vec<String> = book.section().cards[..5]
         .iter()
         .map(|c| c.id.clone())
         .collect();
-    DuelConfig::from_duel(&m.card_duels[0], &book, &deck, 0).unwrap();
+    for d in &m.card_duels {
+        DuelConfig::from_duel(d, &book, &deck, 0).unwrap_or_else(|e| panic!("{}: {e:?}", d.id));
+    }
     let g = GolfConfig::from_course(&m.golf[0], &[], 0).unwrap();
     assert_eq!(g.holes.len(), 3);
-    RaceConfig::from_def(&m.races[0], 0).unwrap();
-    let ph = PropHuntConfig::from_arena(&m.prop_hunt[0], 0).unwrap();
-    for d in &ph.decoys {
-        assert!(ph.arena.open(d.pos), "decoy inside a wall");
+    for c in &m.golf {
+        let g = GolfConfig::from_course(c, &[], 0).unwrap_or_else(|e| panic!("{}: {e:?}", c.id));
+        assert_eq!(g.holes.len(), c.holes.len(), "{}", c.id);
+    }
+    for r in &m.races {
+        RaceConfig::from_def(r, 0).unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+    }
+    for a in &m.prop_hunt {
+        let ph = PropHuntConfig::from_arena(a, 0).unwrap_or_else(|e| panic!("{}: {e:?}", a.id));
+        for d in &ph.decoys {
+            assert!(ph.arena.open(d.pos), "{}: decoy inside a wall", a.id);
+        }
     }
 }

@@ -1,0 +1,98 @@
+# Tower of Rebirth, second floor: the Ember Stair. A pillared hall of the
+# retail Rogue's Tower (`rugi`), kept whole (`geometry = "keep"`): its
+# torches, brickwork and pillars draw as they do on the disc, and the tile
+# walls below are the retail room's own, re-traced so the hall walks the
+# way it looks. The Cinder Warden waits at the brazier in the middle.
+
+name = "Tower of Rebirth 2F - Ember Stair"
+base = { scene = { kind = "scene", name = "rugi" }, geometry = "keep" }
+# Sound-test track 7, "The Fire Fortress".
+bgm = { kind = "bgm", id = 7 }
+camera = "default"
+
+[tiles]
+origin = [22, 41]
+rows = [
+  "       #######",
+  "       #.....#",
+  "  ######.....######",
+  "  b...............a",
+  "  b...............a",
+  "  b...............a",
+  "  b...............a",
+  "  b.....#...#.....a###",
+  "efg..................a",
+  "b....................a",
+  "b....................h",
+  "b.......#...#........a",
+  "b....................a",
+  "b....................a",
+  "b....................a",
+  "b.......#...#........a",
+  "b....................a",
+  "b....................a",
+  "##b...............h###",
+  "  b.....#...#.....a",
+  "  b...............a",
+  "  b...............a",
+  "  b...............a",
+  "  iccccj.....cckcjd",
+  "       #.....#",
+  "       #######",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall edge", walls = ["tr", "br"] }
+"b" = { label = "wall edge", walls = ["tl", "bl"] }
+"c" = { label = "wall edge", walls = ["bl", "br"] }
+"d" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"e" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"f" = { label = "wall edge", walls = ["tl", "tr"] }
+"g" = { label = "wall corner", walls = ["tl"] }
+"h" = { label = "wall edge", walls = ["tr", "br"] }
+"i" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"j" = { label = "wall edge", walls = ["bl", "br"] }
+"k" = { label = "wall edge", walls = ["bl", "br"] }
+
+[[spawns]]
+id = "from_below"
+tile = [10, 22]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [10, 3]
+
+[[exits]]
+id = "stair_down"
+rect = [8, 24, 12, 24]
+to = { kind = "map", map = "rebirth_tower_1f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [8, 1, 12, 1]
+to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [8, 20, 12, 21]
+event = { kind = "dialog", line = "floor_2f_intro" }
+once = true
+
+# The brazier between the middle pillars: the Cinder Warden's quest giver.
+[[triggers]]
+id = "brazier"
+rect = [9, 12, 11, 13]
+event = { kind = "talk", npc = "ember_brazier" }
+
+[[encounters]]
+id = "west_aisle"
+rect = [0, 8, 6, 17]
+table = "tower_2f"
+
+[[encounters]]
+id = "east_aisle"
+rect = [13, 3, 18, 22]
+table = "tower_2f"

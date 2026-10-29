@@ -5,54 +5,351 @@
 # monster's mesh, animation and attacks off the player's own disc. Stats are
 # record values; a bare number sets one, `{ mul = x }` scales the base's.
 # Format: docs/formats/expansion-pack-battle.md.
+#
+# Element ids: 0 earth, 1 water, 2 fire, 3 wind, 4 thunder, 5 light,
+# 6 dark, 7 neutral.
+#
+# Stats are tuned for the floor's party level *before* the pack's enemy
+# scaling (progression.toml: +1% per party level past 50, at most x1.5),
+# and before the battle loader's own boost (a random encounter installs
+# both defences x7/4, a boss formation ATK x5/4 and both defences x2).
+# The README works the numbers through.
 
-# --- Endgame field monsters --------------------------------------------------
+# --- 1F, the Atrium (party level 40-50) --------------------------------------
 
 [monsters.ironhide_ogre]
 base = { kind = "monster", id = 109 }
 name = "Ironhide Ogre"
-hp = { mul = 3.5 }
-attack = { mul = 1.6 }
-defence = { mul = 1.5 }
+hp = 5300
+attack = 340
+defence = 170
 speed = { mul = 1.2 }
-exp = { mul = 6.0 }
-gold = { mul = 2.0 }
+exp = 5600
+gold = 3600
 drop = { item = { kind = "item", id = 121 }, chance_pct = 25 }
 
 [monsters.ember_lizard]
 base = { kind = "monster", id = 124 }
 name = "Ember Lizard"
-hp = { mul = 3.0 }
-attack = { mul = 1.4 }
+hp = 4900
+attack = 360
+defence = 160
 intelligence = { mul = 1.5 }
-exp = { mul = 6.0 }
-gold = { mul = 2.0 }
-element = 1
+exp = 5400
+gold = 3400
+# Scale Lizard is a water monster; the ember breed burns.
+element = 2
 
 [monsters.runed_golem]
 base = { kind = "monster", id = 130 }
 name = "Runed Golem"
-hp = { mul = 4.0 }
-attack = { mul = 1.5 }
-defence = { mul = 1.8 }
-exp = { mul = 7.0 }
-gold = { mul = 2.0 }
+hp = 6000
+attack = 320
+defence = 190
+exp = 6000
+gold = 3800
 steal = { item = { kind = "item", id = 125 }, chance_pct = 20 }
 
-# --- Superboss ---------------------------------------------------------------
+[monsters.gale_hound]
+base = { kind = "monster", id = 42 }
+name = "Gale Hound"
+hp = 3900
+attack = 350
+defence = 150
+speed = { mul = 1.3 }
+exp = 5000
+gold = 3000
+drop = { item = { kind = "item", id = 133 }, chance_pct = 10 }
+
+# --- 2F, the Ember Stair (party level 50-60) ---------------------------------
+
+[monsters.magma_visage]
+base = { kind = "monster", id = 126 }
+name = "Magma Visage"
+hp = 6500
+attack = 380
+defence = 185
+intelligence = { mul = 1.6 }
+exp = 7000
+gold = 4200
+drop = { item = { kind = "item", id = 223 }, chance_pct = 4 }
+
+[monsters.pyre_wisp]
+base = { kind = "monster", id = 66 }
+name = "Pyre Wisp"
+hp = 5800
+attack = 360
+defence = 180
+speed = { mul = 1.3 }
+exp = 6600
+gold = 4000
+drop = { item = { kind = "item", id = 125 }, chance_pct = 15 }
+
+[monsters.hearth_gola]
+base = { kind = "monster", id = 100 }
+name = "Hearth Gola"
+hp = 7300
+attack = 370
+defence = 200
+exp = 7400
+gold = 4400
+steal = { item = { kind = "item", id = 139 }, chance_pct = 15 }
+
+# --- 3F, the Hanging Garden (party level 55-65) ------------------------------
+
+[monsters.thorn_mantis]
+base = { kind = "monster", id = 54 }
+name = "Thorn Mantis"
+hp = 7100
+attack = 400
+defence = 195
+speed = { mul = 1.3 }
+exp = 8000
+gold = 4600
+
+[monsters.mire_slime]
+base = { kind = "monster", id = 9 }
+name = "Mire Slime"
+hp = 7600
+attack = 380
+defence = 210
+exp = 7800
+gold = 4400
+drop = { item = { kind = "item", id = 122 }, chance_pct = 20 }
+
+[monsters.gilded_bison]
+base = { kind = "monster", id = 60 }
+name = "Gilded Bison"
+hp = 8500
+attack = 400
+defence = 200
+exp = 8200
+# The garden's prize: a bison worth a small fortune.
+gold = 12000
+drop = { item = { kind = "item", id = 252 }, chance_pct = 3 }
+
+[monsters.bloom_mushura]
+base = { kind = "monster", id = 103 }
+name = "Bloom Mushura"
+hp = 8000
+attack = 410
+defence = 205
+exp = 8400
+gold = 4800
+drop = { item = { kind = "item", id = 123 }, chance_pct = 20 }
+
+# --- 4F, the Verdant Vault (party level 60-70) -------------------------------
+
+[monsters.verdant_iota]
+base = { kind = "monster", id = 155 }
+name = "Verdant Iota"
+hp = 9200
+attack = 430
+defence = 215
+exp = 9600
+gold = 5200
+drop = { item = { kind = "item", id = 221 }, chance_pct = 4 }
+
+[monsters.grove_kemaro]
+base = { kind = "monster", id = 146 }
+name = "Grove Kemaro"
+hp = 8700
+attack = 420
+defence = 220
+intelligence = { mul = 1.4 }
+exp = 9400
+gold = 5000
+
+[monsters.fountain_freed]
+base = { kind = "monster", id = 94 }
+name = "Fountain Freed"
+hp = 9700
+attack = 410
+defence = 210
+intelligence = { mul = 1.4 }
+exp = 9800
+gold = 5400
+drop = { item = { kind = "item", id = 222 }, chance_pct = 4 }
+
+[monsters.moss_grude]
+base = { kind = "monster", id = 106 }
+name = "Moss Grude"
+hp = 10200
+attack = 440
+defence = 230
+exp = 10000
+gold = 5600
+steal = { item = { kind = "item", id = 140 }, chance_pct = 15 }
+
+# --- 6F, the Engine Deep (party level 70-85) ---------------------------------
+
+[monsters.brass_sentinel]
+base = { kind = "monster", id = 129 }
+name = "Brass Sentinel"
+hp = 11900
+attack = 490
+defence = 240
+exp = 12400
+gold = 6800
+drop = { item = { kind = "item", id = 131 }, chance_pct = 6 }
+
+[monsters.furnace_mask]
+base = { kind = "monster", id = 127 }
+name = "Furnace Mask"
+hp = 11000
+attack = 500
+defence = 230
+intelligence = { mul = 1.5 }
+exp = 12000
+gold = 6600
+element = 2
+
+[monsters.storm_barra]
+base = { kind = "monster", id = 143 }
+name = "Storm Barra"
+hp = 11600
+attack = 520
+defence = 235
+speed = { mul = 1.2 }
+exp = 12600
+gold = 7000
+drop = { item = { kind = "item", id = 224 }, chance_pct = 4 }
+
+[monsters.echo_lamia]
+base = { kind = "monster", id = 133 }
+name = "Echo Lamia"
+hp = 12800
+attack = 500
+defence = 245
+intelligence = { mul = 1.5 }
+exp = 13000
+gold = 7200
+steal = { item = { kind = "item", id = 142 }, chance_pct = 10 }
+
+# --- 7F, the Sanctum of Echoes (party level 85-95) ---------------------------
+
+[monsters.sleepless_one]
+base = { kind = "monster", id = 121 }
+name = "Sleepless One"
+hp = 16200
+attack = 580
+defence = 255
+exp = 16000
+gold = 8800
+drop = { item = { kind = "item", id = 227 }, chance_pct = 4 }
+
+[monsters.fallen_lantern]
+base = { kind = "monster", id = 118 }
+name = "Fallen Lantern"
+hp = 15300
+attack = 610
+defence = 250
+exp = 15600
+gold = 8600
+drop = { item = { kind = "item", id = 128 }, chance_pct = 10 }
+
+[monsters.storm_gilium]
+base = { kind = "monster", id = 161 }
+name = "Storm Gilium"
+hp = 17800
+attack = 560
+defence = 265
+exp = 16800
+gold = 9200
+
+[monsters.prism_topaz]
+base = { kind = "monster", id = 112 }
+name = "Prism Topaz"
+hp = 17000
+attack = 590
+defence = 270
+exp = 16400
+gold = 9000
+drop = { item = { kind = "item", id = 226 }, chance_pct = 4 }
+
+# --- Named bosses ------------------------------------------------------------
+
+[monsters.cinder_warden]
+base = { kind = "monster", id = 172 }
+name = "Cinder Warden"
+hp = 30000
+mp = 900
+attack = 470
+defence = 240
+intelligence = { mul = 1.5 }
+exp = 40000
+gold = 30000
+
+[monsters.verdant_colossus]
+base = { kind = "monster", id = 174 }
+name = "Verdant Colossus"
+hp = 40000
+mp = 1500
+attack = 540
+defence = 255
+exp = 48000
+gold = 36000
+
+[monsters.iron_regent]
+base = { kind = "monster", id = 170 }
+name = "Iron Regent"
+hp = 50000
+mp = 1500
+attack = 620
+defence = 270
+exp = 56000
+gold = 42000
+
+[monsters.azure_seraph]
+base = { kind = "monster", id = 167 }
+name = "Azure Seraph"
+hp = 60000
+mp = 4000
+attack = 700
+# Lapis's own record defence is 975; the seraph trades armour for reach.
+defence = 300
+intelligence = 900
+exp = 62000
+gold = 50000
+
+# --- 8F, the Hollow Throne (party level 95-99) -------------------------------
+
+[monsters.throne_herald]
+base = { kind = "monster", id = 149 }
+name = "Throne Herald"
+hp = 24000
+attack = 700
+defence = 270
+exp = 20000
+gold = 10000
 
 [monsters.hollow_sovereign]
 base = { kind = "monster", id = 138 }
 name = "Hollow Sovereign"
-hp = 65000
+hp = 44000
 mp = 3000
-attack = { mul = 1.9 }
-defence = { mul = 1.6 }
+attack = 780
+defence = 260
 speed = { mul = 1.4 }
 intelligence = { mul = 1.6 }
 exp = 65000
 gold = 60000
 drop = { item = { kind = "item", id = 237 }, chance_pct = 100 }
+
+[monsters.sovereign_unbound]
+base = { kind = "monster", id = 179 }
+name = "Sovereign Unbound"
+hp = 44000
+mp = 4000
+attack = 850
+defence = 280
+speed = { mul = 1.3 }
+intelligence = { mul = 1.5 }
+exp = 65000
+gold = 60000
+drop = { item = { kind = "item", id = 236 }, chance_pct = 100 }
+
+# --- Formations: field encounters --------------------------------------------
 
 [formations.ogre_pack]
 label = "Ironhide Ogres"
@@ -62,12 +359,58 @@ monsters = ["ironhide_ogre", "ironhide_ogre", "ironhide_ogre"]
 label = "Forge Guard"
 monsters = ["runed_golem", "ember_lizard", "ember_lizard", "ironhide_ogre"]
 
-[formations.hollow_throne]
-label = "Hollow Throne"
-monsters = ["hollow_sovereign", "runed_golem", "runed_golem"]
+[formations.hound_pack]
+label = "Gale Hounds"
+monsters = ["gale_hound", "gale_hound", "runed_golem", "gale_hound"]
 
-# Three waves in one battle: two ogres, then three lizards together, then
-# six more arriving one at a time as seats free up, three at most at once.
+[formations.ember_court]
+label = "Ember Court"
+monsters = ["magma_visage", "pyre_wisp", "pyre_wisp"]
+
+[formations.hearth_guard]
+label = "Hearth Guard"
+monsters = ["hearth_gola", "hearth_gola", "magma_visage", "ember_lizard"]
+
+[formations.thorn_thicket]
+label = "Thorn Thicket"
+monsters = ["thorn_mantis", "thorn_mantis", "bloom_mushura"]
+
+[formations.mire_bloom]
+label = "Mire Bloom"
+monsters = ["mire_slime", "bloom_mushura", "mire_slime", "thorn_mantis"]
+
+[formations.gilded_herd]
+label = "Gilded Herd"
+monsters = ["gilded_bison", "gilded_bison"]
+
+[formations.vault_wardens]
+label = "Vault Wardens"
+monsters = ["verdant_iota", "grove_kemaro", "verdant_iota"]
+
+[formations.fountain_court]
+label = "Fountain Court"
+monsters = ["fountain_freed", "moss_grude", "fountain_freed", "grove_kemaro"]
+
+[formations.brass_line]
+label = "Brass Line"
+monsters = ["brass_sentinel", "brass_sentinel", "furnace_mask"]
+
+[formations.storm_engine]
+label = "Storm Engine"
+monsters = ["storm_barra", "echo_lamia", "storm_barra", "furnace_mask"]
+
+[formations.sleepless_choir]
+label = "Sleepless Choir"
+monsters = ["sleepless_one", "fallen_lantern", "sleepless_one"]
+
+[formations.prism_storm]
+label = "Prism Storm"
+monsters = ["prism_topaz", "storm_gilium", "prism_topaz", "fallen_lantern"]
+
+# --- Formations: gauntlets (waves) -------------------------------------------
+
+# The first floor's training gauntlet: two ogres, then three lizards
+# together, then six more arriving one at a time, three at most at once.
 [formations.tower_gauntlet]
 label = "Tower Gauntlet"
 monsters = ["ironhide_ogre", "ironhide_ogre"]
@@ -81,7 +424,75 @@ arrival = "refill"
 count = 6
 max_standing = 3
 
-# Jette's Fortress keeps its own fights and mixes the pack's in.
+# 3F: four full waves of the garden, the last one the gilded herd.
+[formations.garden_gauntlet]
+label = "Garden Gauntlet"
+monsters = ["thorn_mantis", "thorn_mantis", "thorn_mantis"]
+
+[[formations.garden_gauntlet.waves]]
+monsters = ["mire_slime", "mire_slime", "bloom_mushura", "bloom_mushura"]
+
+[[formations.garden_gauntlet.waves]]
+monsters = ["thorn_mantis", "bloom_mushura", "mire_slime", "thorn_mantis"]
+
+[[formations.garden_gauntlet.waves]]
+monsters = ["gilded_bison", "gilded_bison", "gilded_bison"]
+
+# 6F: the engine never stops. One opening line, then twelve arrivals
+# feeding every free seat, four standing at once.
+[formations.engine_gauntlet]
+label = "Engine Gauntlet"
+monsters = ["brass_sentinel", "brass_sentinel", "brass_sentinel"]
+
+[[formations.engine_gauntlet.waves]]
+monsters = ["furnace_mask", "storm_barra", "echo_lamia", "brass_sentinel"]
+arrival = "refill"
+count = 12
+max_standing = 4
+
+# --- Formations: bosses ------------------------------------------------------
+
+[formations.ember_throne]
+label = "Cinder Warden"
+monsters = ["cinder_warden", "pyre_wisp", "pyre_wisp"]
+
+[formations.verdant_heart]
+label = "Verdant Colossus"
+monsters = ["verdant_colossus", "moss_grude"]
+
+[formations.regent_hall]
+label = "Iron Regent"
+monsters = ["iron_regent", "brass_sentinel", "brass_sentinel"]
+
+[formations.sanctum_seraph]
+label = "Azure Seraph"
+monsters = ["azure_seraph"]
+
+# The superboss: the Sovereign and its heralds, then - once they fall -
+# what the Sovereign was hollowing out all along.
+[formations.hollow_throne]
+label = "Hollow Throne"
+monsters = ["hollow_sovereign", "throne_herald", "throne_herald"]
+
+[[formations.hollow_throne.waves]]
+monsters = ["sovereign_unbound"]
+
+# The throne's echo: a repeatable rematch of the second phase alone, with
+# heralds feeding back in while it stands.
+[formations.throne_echo]
+label = "Echo of the Throne"
+monsters = ["sovereign_unbound", "throne_herald"]
+
+[[formations.throne_echo.waves]]
+monsters = ["throne_herald"]
+arrival = "refill"
+count = 4
+max_standing = 3
+
+# --- Encounter overrides -----------------------------------------------------
+
+# Jette's Fortress keeps its own fights and mixes the pack's in, so a party
+# still finishing the story meets the tower's first breed there.
 [[encounters]]
 scene = "chitei2"
 retail_weight = 3
@@ -90,8 +501,8 @@ formations = [
     { formation = "forge_guard", weight = 1 },
 ]
 
-# The Tower of Rebirth's first floor rolls these in its outer ring - the
-# encounter zone of maps/rebirth_tower_1f.toml that names table `tower_1f`.
+# Each tower floor's encounter zones name one of these tables
+# (`maps/rebirth_tower_<n>f.toml`, `[[encounters]] table = ...`).
 [[encounters]]
 scene = "tower_1f"
 steps = [12, 24]
@@ -100,9 +511,101 @@ formations = [
     { formation = "forge_guard", weight = 1 },
 ]
 
-[bosses.hollow_sovereign]
-formation = "hollow_throne"
-music = { kind = "bgm", id = 30 }
-reward_items = [{ item = { kind = "item", id = 233 }, count = 1 }]
+[[encounters]]
+scene = "tower_1f_wings"
+steps = [12, 24]
+formations = [
+    { formation = "hound_pack", weight = 3 },
+    { formation = "ogre_pack", weight = 1 },
+]
+
+[[encounters]]
+scene = "tower_2f"
+steps = [14, 26]
+formations = [
+    { formation = "ember_court", weight = 3 },
+    { formation = "hearth_guard", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_3f"
+steps = [14, 26]
+formations = [
+    { formation = "thorn_thicket", weight = 3 },
+    { formation = "mire_bloom", weight = 3 },
+    { formation = "gilded_herd", weight = 1 },
+]
+
+[[encounters]]
+scene = "tower_4f"
+steps = [14, 28]
+formations = [
+    { formation = "vault_wardens", weight = 3 },
+    { formation = "fountain_court", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_6f"
+steps = [16, 30]
+formations = [
+    { formation = "brass_line", weight = 3 },
+    { formation = "storm_engine", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_7f"
+steps = [16, 30]
+formations = [
+    { formation = "sleepless_choir", weight = 3 },
+    { formation = "prism_storm", weight = 2 },
+]
+
+# --- Bosses ------------------------------------------------------------------
+
+# Sound-test cues: 28 "Attack!" (boss theme 1), 32 "Apostles of the Mist"
+# (boss theme 2), 31 "Cort's War", 29 "The Cold Koru", 61 "Apocalypse".
+
+[bosses.cinder_warden]
+formation = "ember_throne"
+music = { kind = "bgm", id = 28 }
+reward_items = [{ item = { kind = "item", id = 223 }, count = 1 }]
+reward_gold = 20000
+once = true
+
+[bosses.verdant_colossus]
+formation = "verdant_heart"
+music = { kind = "bgm", id = 32 }
+reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }]
+reward_gold = 30000
+once = true
+
+[bosses.iron_regent]
+formation = "regent_hall"
+music = { kind = "bgm", id = 31 }
+reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }]
+reward_gold = 40000
+once = true
+
+[bosses.azure_seraph]
+formation = "sanctum_seraph"
+music = { kind = "bgm", id = 29 }
+reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }]
 reward_gold = 50000
 once = true
+
+[bosses.hollow_sovereign]
+formation = "hollow_throne"
+music = { kind = "bgm", id = 61 }
+reward_items = [
+    { item = { kind = "item", id = 233 }, count = 1 },
+    { item = { kind = "item", id = 250 }, count = 2 },
+]
+reward_gold = 100000
+once = true
+
+# Not once: the echo can be fought again and again for its spoils.
+[bosses.throne_echo]
+formation = "throne_echo"
+music = { kind = "bgm", id = 61 }
+reward_gold = 20000
+once = false

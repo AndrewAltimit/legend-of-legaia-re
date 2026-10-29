@@ -1,54 +1,443 @@
 # Legend of Legaia: Rebirth - dialogue.
 #
 # Each line of `text` is one row of the dialog box; a blank line starts a
-# new page. Rows are short: retail boxes do not wrap.
+# new page. Rows are short: retail boxes do not wrap, and the validator
+# warns past 36 characters.
 # Format: docs/formats/expansion-pack-quests.md.
+#
+# The tower's guide is Warden Ysolde, a keeper who once held the tower's
+# seal and now speaks through the Warden's Stone on the first floor. Every
+# word here is the pack's own.
+
+# --- The Warden's Stone (1F) -------------------------------------------------
 
 [lines.guide_intro]
-speaker = "Tower Guide"
+speaker = "Warden Ysolde"
 text = """
-You have the look of someone who
-has walked a long road.
+...So the stone wakes, and someone
+stands before it at last.
 
-A tower rose from the mist where
-nothing stood before. It calls to
-the strong.
+I am Ysolde. I kept the seal of
+this tower, long before the Mist.
 
-Will you hear what it asks?"""
+When the Mist was torn away, it
+did not simply vanish. What it
+had swallowed came here.
+
+Every place it smothered is
+remembered inside these walls.
+Every beast it twisted, too.
+
+Will you hear what the tower asks
+of those who climb it?"""
 choices = [
     { label = "Tell me.", set_flags = ["tower_listened"] },
-    { label = "Who are you?", reply = "Only one who watches the mist.\nListen, then.", set_flags = ["guide_asked"] },
+    { label = "Who are you, really?", reply = "A voice with no body left.\nA warden with nothing to guard.\n\nListen, then.", set_flags = ["guide_asked"] },
 ]
 
 [lines.guide_trial]
-speaker = "Tower Guide"
+speaker = "Warden Ysolde"
 text = """
-Win three battles, and grow until
-you stand at level 40.
+The tower will not open its stair
+to the weak. It would only eat you.
 
-Then come back to me, and the
-tower will open its doors."""
+Win three battles. Grow until you
+stand at level 40.
+
+Then come back to the stone, and
+I will unseal the way up."""
+
+[lines.guide_trial_active]
+speaker = "Warden Ysolde"
+text = """
+Three battles, and level 40.
+
+The tower is patient. It has
+waited longer than you have
+lived."""
 
 [lines.guide_done]
-speaker = "Tower Guide"
+speaker = "Warden Ysolde"
 text = """
-You are ready. The tower is open.
-May the Seru walk beside you."""
+Yes... you will do.
+
+The seal is lifted. Eight floors
+rise above us, each one a memory
+the Mist would not let go.
+
+At the top sits the thing that
+gathered them. Climb, and do not
+let the Seru beside you falter."""
+
+[lines.guide_rebirth]
+speaker = "Warden Ysolde"
+text = """
+The throne is empty, and still
+you climb these floors.
+
+Then reach the very peak of
+yourself. Level 99, and nothing
+less.
+
+Come back to the stone when there
+is nothing left in you to grow."""
+
+[lines.guide_rebirth_done]
+speaker = "Warden Ysolde"
+text = """
+There is nothing more the tower
+can teach you.
+
+The memories are at rest. The
+seal can sleep, and so can I.
+
+Thank you. Whatever you face out
+there, you face it reborn."""
+
+[lines.gauntlet_offer]
+speaker = "The Bell"
+text = """
+A bronze bell hangs over the back
+of the dais. Its rope is warm.
+
+Ring it, and the tower will send
+its first breed against you, wave
+after wave."""
+choices = [
+    { label = "Ring the bell.", battle = "tower_gauntlet" },
+    { label = "Leave it.", reply = "The bell sways, and is still." },
+]
+
+# --- Floor arrivals ----------------------------------------------------------
+
+[lines.floor_2f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Ember Stair. Can you feel the
+heat? The Mist burned here once.
+
+Something tends the brazier at the
+heart of this hall. Approach it
+only when you are ready.)"""
+
+[lines.floor_3f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Hanging Garden. Pretty, isn't
+it? Nothing grows here that does
+not bite.
+
+The sundial on the middle terrace
+counts out the garden's trial.)"""
+
+[lines.floor_4f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Verdant Vault. A palace court
+the green swallowed whole.
+
+Something vast sleeps in the
+sunken court. Let it sleep, or
+wake it on your own terms.)"""
+
+[lines.floor_5f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Gambler's Rest. No beast will
+follow you this high.
+
+Catch your breath. The keeper here
+plays for stakes, not for blood.)"""
+
+[lines.floor_6f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Engine Deep. The Mist built
+machines once. They remember how
+to run.
+
+Their master waits in the upper
+alcove. The lever below starts
+something that does not stop.)"""
+
+[lines.floor_7f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Sanctum of Echoes. Every
+prayer the Mist drowned is still
+whispering in these walls.
+
+The voice in the inner hall is
+not one of them. Be careful.)"""
+
+[lines.floor_8f_intro]
+speaker = "Warden Ysolde"
+text = """
+(The Hollow Throne.
+
+This is where it all gathered.
+Whatever sits up there, it has
+been waiting for you.)"""
+
+# --- Floor trials ------------------------------------------------------------
+
+[lines.sundial_offer]
+speaker = "The Sundial"
+text = """
+The sundial's shadow points at no
+hour you know.
+
+Turn the dial, and the garden will
+test you four times over."""
+choices = [
+    { label = "Turn the dial.", battle = "garden_gauntlet" },
+    { label = "Not now.", reply = "The shadow creeps back to where\nit started." },
+]
+
+[lines.garden_hint]
+speaker = "Warden Ysolde"
+text = """
+(The Hanging Garden waits above.
+
+Turn its sundial and outlast what
+comes. The stair beyond answers
+only to those who do.)"""
+
+[lines.garden_done]
+speaker = "Warden Ysolde"
+text = """
+(The garden is quiet. Even the
+thorns are watching you now.)"""
+
+[lines.engine_offer]
+speaker = "The Lever"
+text = """
+A great iron lever, worn smooth by
+hands that are long gone.
+
+Pull it, and the engine will feed
+you everything it has."""
+choices = [
+    { label = "Pull the lever.", battle = "engine_gauntlet" },
+    { label = "Step back.", reply = "The engine ticks over, waiting." },
+]
+
+# --- Bosses ------------------------------------------------------------------
+
+[lines.ember_offer]
+speaker = "The Brazier"
+text = """
+The brazier flares. A shape of ash
+and cinder rises out of it, and
+turns its burning face to you.
+
+It has kept this fire since the
+Mist first came."""
+choices = [
+    { label = "Face the Warden.", boss = "cinder_warden" },
+    { label = "Step back.", reply = "The flame sinks, but does not\ngo out." },
+]
+
+[lines.ember_done]
+speaker = "Warden Ysolde"
+text = """
+(The fire is out. For the first
+time in an age, the stair is
+cold.)"""
+
+[lines.vault_offer]
+speaker = "The Sunken Court"
+text = """
+The moss in the sunken court is
+breathing. Slowly, the whole floor
+rises - it was never a floor."""
+choices = [
+    { label = "Stand and fight.", boss = "verdant_colossus" },
+    { label = "Back away quietly.", reply = "The court settles. The moss\nkeeps breathing." },
+]
+
+[lines.vault_done]
+speaker = "Warden Ysolde"
+text = """
+(It sleeps for good now. Let the
+green have the rest of it.)"""
+
+[lines.regent_offer]
+speaker = "The Iron Regent"
+text = """
+"You walk my halls as if they
+belonged to you."
+
+"The engine answers to me. And I
+answer to no one.\""""
+choices = [
+    { label = "Then answer to us.", boss = "iron_regent" },
+    { label = "Leave him be.", reply = "\"Run along. The engine will\nstill be here.\"" },
+]
+
+[lines.regent_done]
+speaker = "Warden Ysolde"
+text = """
+(The engine is winding down. You
+can hear the tower breathe again.)"""
+
+[lines.seraph_offer]
+speaker = "The Azure Seraph"
+text = """
+"Every prayer drowned in the Mist
+came to me. I am all of them."
+
+"Will you silence the last voice
+left in this sanctum?\""""
+choices = [
+    { label = "We will.", boss = "azure_seraph" },
+    { label = "Not yet.", reply = "\"Then I will keep singing.\"" },
+]
+
+[lines.seraph_done]
+speaker = "Warden Ysolde"
+text = """
+(The sanctum is silent. Only the
+throne is left above you.)"""
 
 [lines.guide_sovereign]
-speaker = "Tower Guide"
+speaker = "The Hollow Throne"
 text = """
 The throne at the top is not empty.
-Something hollow sits there.
+Something hollow sits there, made
+of everything the Mist took.
 
-Shall I take you to it now?"""
+It knows your names. It has been
+saying them for a long time.
+
+Will you climb the last steps?"""
 choices = [
-    { label = "Take us.", boss = "hollow_sovereign" },
-    { label = "Not yet.", reply = "The throne will wait. So will I." },
+    { label = "Climb.", boss = "hollow_sovereign" },
+    { label = "Not yet.", reply = "The throne will wait. It has\nnothing else to do." },
 ]
 
 [lines.guide_sovereign_done]
-speaker = "Tower Guide"
+speaker = "Warden Ysolde"
 text = """
-The throne is empty at last.
-The mist is lifting."""
+The throne is empty at last. The
+memories are drifting home.
+
+You did what no one before you
+could. The tower is yours now."""
+
+[lines.echo_offer]
+speaker = "The Hollow Throne"
+text = """
+Something stirs on the empty
+throne - an echo of what you
+broke, still holding its shape."""
+choices = [
+    { label = "Break it again.", boss = "throne_echo" },
+    { label = "Let it fade.", reply = "The echo thins, and waits." },
+]
+
+# --- The Gambler's Rest (5F) -------------------------------------------------
+
+[lines.keeper_welcome]
+speaker = "Keeper Odalric"
+text = """
+Well now! Visitors who climbed all
+the way up here. Sit, sit.
+
+I am Odalric. I kept the dice when
+this was a gambling hall, and I
+see no reason to stop now.
+
+Cards, golf, a race, a game of
+hide and seek. Win my tables and
+I will make it worth your while."""
+
+[lines.keeper_tables]
+speaker = "Keeper Odalric"
+text = """
+Every table in the tower is open
+to you now.
+
+Win one of each, and come back to
+tell me about it."""
+
+[lines.keeper_done]
+speaker = "Keeper Odalric"
+text = """
+Ha! Every table, beaten.
+
+I have not lost like this since
+before the Mist. Take this, and
+come back any time."""
+
+[lines.rest_board]
+speaker = "The Notice Board"
+text = """
+THE GAMBLER'S REST
+
+Hold'em at the Tower High Table.
+The Warden's Duel, cards on view.
+
+The Rebirth Links, nine holes up
+the tower's side. The Spiral
+Circuit. And hide and seek in the
+Old Vault."""
+
+# --- Bounties and errands ----------------------------------------------------
+
+[lines.bounty_ogres_start]
+speaker = "Warden Ysolde"
+text = """
+The Ironhide breed is spreading
+out of the tower and into the
+fortress below.
+
+Thin them out. Ten will do, for
+now."""
+
+[lines.bounty_ogres_done]
+speaker = "Warden Ysolde"
+text = """
+Ten fewer. They will breed again,
+of course. Come back when they
+do."""
+
+[lines.remedy_start]
+speaker = "Warden Ysolde"
+text = """
+I need a remedy for the stone. It
+cracks a little more each day.
+
+Bring me five Healing Fruit, and I
+will share what the seal kept for
+me."""
+
+[lines.remedy_done]
+speaker = "Warden Ysolde"
+text = """
+Thank you. The cracks are already
+closing.
+
+Take these. I have no use for a
+body's strength anymore."""
+
+[lines.sentinel_hunt_start]
+speaker = "Warden Ysolde"
+text = """
+(The Brass Sentinels keep marching
+out of the Engine Deep.
+
+Break a dozen of them, and the
+engine will run slower for it.)"""
+
+[lines.sentinel_hunt_done]
+speaker = "Warden Ysolde"
+text = """
+(A dozen sentinels scrapped. The
+engine stutters. Well done.)"""
+
+[lines.every_floor_done]
+speaker = "Warden Ysolde"
+text = """
+(You have stood on every floor of
+the tower. Not many can say that.)"""

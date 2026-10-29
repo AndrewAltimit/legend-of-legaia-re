@@ -1,0 +1,80 @@
+# Tower of Rebirth, eighth floor: the Hollow Throne. The pillared throne
+# hall of the retail Zora's Floating Castle (`taiku2`), kept whole. No
+# encounters: the long walk up the carpet is the floor's only fight's
+# build-up. The superboss fights in two waves (battle.toml,
+# `hollow_throne`).
+
+name = "Tower of Rebirth 8F - Hollow Throne"
+base = { scene = { kind = "scene", name = "taiku2" }, geometry = "keep" }
+# Sound-test track 52, "Ominous Presence".
+bgm = { kind = "bgm", id = 52 }
+camera = "default"
+
+[tiles]
+origin = [46, 3]
+rows = [
+  "    ###...###",
+  "  #cd.......ef#",
+  " #c...........f#",
+  "#c.............fi",
+  "#...............#",
+  "#j.#.........#.h#",
+  "#...............#",
+  "#.#...........#.#",
+  "#...............#",
+  "#j.#.........#.h#",
+  "#...............#",
+  "#.#...........#.#",
+  "#...............#",
+  "#j.#.........#.h#",
+  "#...............#",
+  "#.#....k.g....#.#",
+  "#....c.h.j.f....#",
+  "###...kc.fg...###",
+  "  #..bc...fi..#",
+  "  ###l..a..l###",
+  "  #.....#.....#",
+  "  #...#...#...#",
+  "  #...........#",
+  "  ##.........##",
+  "   ##.#...#.##",
+  "    #a##.##a#",
+  "       #a#",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall edge", walls = ["bl", "br"] }
+"b" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"c" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"d" = { label = "wall corner", walls = ["tl"] }
+"e" = { label = "wall corner", walls = ["tr"] }
+"f" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"g" = { label = "wall corner", walls = ["bl"] }
+"h" = { label = "wall edge", walls = ["tr", "br"] }
+"i" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"j" = { label = "wall edge", walls = ["tl", "bl"] }
+"k" = { label = "wall corner", walls = ["br"] }
+"l" = { label = "wall edge", walls = ["tl", "tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [8, 23]
+facing = 4
+
+[[exits]]
+id = "stair_down"
+rect = [8, 25, 8, 25]
+to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_above" }
+
+[[triggers]]
+id = "arrival"
+rect = [5, 20, 11, 22]
+event = { kind = "dialog", line = "floor_8f_intro" }
+once = true
+
+[[triggers]]
+id = "throne"
+rect = [5, 1, 11, 2]
+event = { kind = "talk", npc = "hollow_throne" }

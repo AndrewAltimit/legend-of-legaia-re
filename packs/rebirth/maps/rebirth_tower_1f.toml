@@ -1,9 +1,11 @@
-# Tower of Rebirth, first floor: a walled arena with a raised dais, a few
-# props from the base scene's geometry pack, and the stair back down to Rim
-# Elm. The base scene is the retail `tower`; every texture and mesh below is
-# a coordinate into the player's own disc.
+# Tower of Rebirth, first floor: the Atrium. Unlike the floors above, this
+# one is laid out from scratch (`geometry = "none"`): a walled arena with a
+# raised dais floating in the dark, built from the retail Sky Gardens
+# Tower's (`tower`) textures and meshes. The Warden's Stone stands on the
+# dais; the stair at the south edge leads back down to Rim Elm, the one at
+# the north edge up into the tower.
 
-name = "Tower of Rebirth 1F"
+name = "Tower of Rebirth 1F - Atrium"
 size = [15, 13]
 base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
 # Sound-test track 45, "The Sol Tower".
@@ -15,7 +17,7 @@ floor_heights = [0, 48]
 [tiles]
 origin = [16, 16]
 rows = [
-  "###############",
+  "#######<#######",
   "#.............#",
   "#.,.,.,.,.,.,.#",
   "#.............#",
@@ -37,6 +39,7 @@ rows = [
 "^" = { label = "dais", height = 1, ground = { kind = "texture", tpage = 28, clut = 32576, tile = 0 } }
 "=" = { label = "stair landing", ground = { kind = "base_cell", cell = [8, 11] } }
 ">" = { label = "stair down", ground = { kind = "base_cell", cell = [8, 11] } }
+"<" = { label = "stair up", ground = { kind = "base_cell", cell = [8, 11] } }
 
 [[spawns]]
 id = "entrance"
@@ -44,8 +47,8 @@ tile = [7, 10]
 facing = 4
 
 [[spawns]]
-id = "dais"
-tile = [7, 6]
+id = "from_above"
+tile = [7, 2]
 
 [[exits]]
 id = "stair_down"
@@ -64,15 +67,20 @@ rect = [17, 43, 18, 43]
 spawn = "entrance"
 requires = { min_level = 30 }
 
+[[exits]]
+id = "stair_up"
+rect = [7, 0, 7, 0]
+to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_below" }
+
 # Stepping onto the dais wakes the floor's guardian - once, ever.
 [[triggers]]
 id = "dais_guardian"
-rect = [5, 4, 9, 8]
+rect = [5, 5, 9, 8]
 event = { kind = "battle", formation = "forge_guard" }
 once = true
 
-# The guide waits inside the entrance: this counts as talking to them for
-# the `tower_rumour` quest.
+# Inside the entrance the Warden's voice first reaches the party: this
+# counts as talking to the guide (`tower_guide`) for `tower_rumour`.
 [[triggers]]
 id = "entrance_guide"
 rect = [6, 9, 8, 9]
@@ -86,6 +94,19 @@ id = "card_dealer"
 rect = [1, 9, 2, 10]
 event = { kind = "card_dealer", dealer = "tower" }
 
+# The foot of the dais, in front of the Warden's Stone: stepping up to it
+# is talking to the guide, every time.
+[[triggers]]
+id = "warden_stone"
+rect = [5, 8, 9, 8]
+event = { kind = "talk", npc = "tower_guide" }
+
+# The back of the dais offers the training gauntlet, as often as wanted.
+[[triggers]]
+id = "gauntlet_bell"
+rect = [5, 4, 9, 4]
+event = { kind = "dialog", line = "gauntlet_offer" }
+
 # The far ring past the dais rolls the floor's encounter table
 # (`battle.toml`, `scene = "tower_1f"`).
 [[encounters]]
@@ -93,31 +114,66 @@ id = "outer_ring"
 rect = [1, 1, 13, 3]
 table = "tower_1f"
 
+# The wings beside the dais roll the hound packs (`tower_1f_wings`).
+[[encounters]]
+id = "west_wing"
+rect = [1, 4, 3, 8]
+table = "tower_1f_wings"
+
+[[encounters]]
+id = "east_wing"
+rect = [11, 4, 13, 8]
+table = "tower_1f_wings"
+
+# The Warden's Stone: the base pack's altar block (mesh 37).
+[[props]]
+id = "warden_stone"
+mesh = { object = 37 }
+tile = [7, 6]
+solid = true
+
+# Octagonal pillars (mesh 20, about two tiles across at full size).
 [[props]]
 id = "pillar_nw"
-scale = 0.75
-mesh = { object = 7 }
+mesh = { object = 20 }
 tile = [2, 2]
-rotation = [0.0, 45.0, 0.0]
+scale = 0.6
 solid = true
 
 [[props]]
 id = "pillar_ne"
-mesh = { object = 7 }
+mesh = { object = 20 }
 tile = [12, 2]
-rotation = [0.0, 315.0, 0.0]
+scale = 0.6
 solid = true
 
 [[props]]
+id = "pillar_sw"
+mesh = { object = 20 }
+tile = [2, 11]
+scale = 0.6
+solid = true
+
+[[props]]
+id = "pillar_se"
+mesh = { object = 20 }
+tile = [12, 11]
+scale = 0.6
+solid = true
+
+# Carved face pillars (mesh 19) flanking the dais.
+[[props]]
 id = "statue_w"
 mesh = { object = 19 }
-tile = [2, 7]
+tile = [3, 6]
 rotation = [0.0, 90.0, 0.0]
+scale = 0.8
 solid = true
 
 [[props]]
 id = "statue_e"
 mesh = { object = 19 }
-tile = [12, 7]
+tile = [11, 6]
 rotation = [0.0, 270.0, 0.0]
+scale = 0.8
 solid = true

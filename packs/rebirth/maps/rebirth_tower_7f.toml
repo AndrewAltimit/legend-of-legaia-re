@@ -1,0 +1,98 @@
+# Tower of Rebirth, seventh floor: the Sanctum of Echoes. The octagonal
+# vault at the bottom of the retail Sol Tower (`korb3`), kept whole, its
+# ring corridor re-traced tile by tile. The Azure Seraph keeps the inner
+# hall.
+
+name = "Tower of Rebirth 7F - Sanctum of Echoes"
+base = { scene = { kind = "scene", name = "korb3" }, geometry = "keep" }
+# Sound-test track 11, "The Profane Realm".
+bgm = { kind = "bgm", id = 11 }
+camera = "default"
+
+[tiles]
+origin = [26, 17]
+rows = [
+  "    ab.....c.....de",
+  "   ab...ccc#ccc...de",
+  "  ab...fgh###hij...de",
+  " ab...fg.......ij...de",
+  "ab...fg..#k.l#..ij...de",
+  "b...fg..##k.l#j..ij...d",
+  "...fg..#b.....hj..i#...",
+  "..lg..fh.......ij..dk..",
+  "..#..#k..a###e..ij..#..",
+  "..ih.ih..#   #..##.hg..",
+  ".........#   #..##.....",
+  "..ac.ac..#   #..##.ce..",
+  "..#..le..i# #g..ab..#..",
+  "..le..de..ihg..ab..a#..",
+  "...#e..#e.....ab..a#...",
+  "j...de.##e###ab..ab...f",
+  "ij...d#######b..ab...fg",
+  " ij...# h......ab...fg",
+  "  ij..# e.###.ab...fg",
+  "   i####hhh#hhh...fg",
+  "      #g...h.....fg",
+  "      j.........fg",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall corner", walls = ["br"] }
+"b" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"c" = { label = "wall edge", walls = ["bl", "br"] }
+"d" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"e" = { label = "wall corner", walls = ["bl"] }
+"f" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"g" = { label = "wall corner", walls = ["tl"] }
+"h" = { label = "wall edge", walls = ["tl", "tr"] }
+"i" = { label = "wall corner", walls = ["tr"] }
+"j" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"k" = { label = "wall edge", walls = ["tl", "bl"] }
+"l" = { label = "wall edge", walls = ["tr", "br"] }
+
+[[spawns]]
+id = "from_below"
+tile = [9, 20]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [7, 1]
+
+[[exits]]
+id = "stair_down"
+rect = [9, 21, 13, 21]
+to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [6, 0, 10, 0]
+to = { kind = "map", map = "rebirth_tower_8f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [12, 20, 16, 20]
+event = { kind = "dialog", line = "floor_7f_intro" }
+once = true
+
+[[triggers]]
+id = "inner_hall"
+rect = [10, 7, 12, 7]
+event = { kind = "talk", npc = "sanctum_echo" }
+
+[[encounters]]
+id = "north_ring"
+rect = [0, 0, 22, 4]
+table = "tower_7f"
+
+[[encounters]]
+id = "west_ring"
+rect = [0, 5, 6, 16]
+table = "tower_7f"
+
+[[encounters]]
+id = "east_ring"
+rect = [16, 5, 22, 16]
+table = "tower_7f"

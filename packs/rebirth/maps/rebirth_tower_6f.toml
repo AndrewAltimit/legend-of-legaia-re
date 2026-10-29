@@ -1,0 +1,110 @@
+# Tower of Rebirth, sixth floor: the Engine Deep. The oval transport hall
+# of the retail Jette's Fortress (`chitei2`), kept whole. The Iron Regent
+# holds the upper alcove; the lower one starts the Engine Gauntlet, a
+# battle that keeps feeding monsters into every seat that frees.
+
+name = "Tower of Rebirth 6F - Engine Deep"
+base = { scene = { kind = "scene", name = "chitei2" }, geometry = "keep" }
+# Sound-test track 13, "Bio-Castle".
+bgm = { kind = "bgm", id = 13 }
+camera = "default"
+
+[tiles]
+origin = [42, 7]
+rows = [
+  "      #...#",
+  "  #####...#####",
+  " #a...........a#",
+  " b.............c",
+  " d.............e",
+  " #.............#",
+  " #....f###f....#",
+  " #...c#   #b...#",
+  "#b...c     b...c#",
+  "#....#     #....#",
+  "#....# ### #....#",
+  "#....# b.c #....#",
+  "#b...##b.c##...c#",
+  " b....ag.ha....c",
+  " b.............c",
+  " b.............c",
+  " b.............c",
+  " b.............c",
+  " b.............c",
+  " b.............c",
+  " b....fi.jf....c",
+  "#b...##b.c##...c#",
+  "#....# b.c #....#",
+  "#....# ### #....#",
+  "#....#     #....#",
+  "#b...c     b...c#",
+  " #...c#   #b...#",
+  " #....a###a....#",
+  " #.............#",
+  " k.............l",
+  " b.............c",
+  " #f...........f#",
+  "  #####...#####",
+  "      #b.c#",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall edge", walls = ["tl", "tr"] }
+"b" = { label = "wall edge", walls = ["tl", "bl"] }
+"c" = { label = "wall edge", walls = ["tr", "br"] }
+"d" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"e" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"f" = { label = "wall edge", walls = ["bl", "br"] }
+"g" = { label = "wall corner", walls = ["tl"] }
+"h" = { label = "wall corner", walls = ["tr"] }
+"i" = { label = "wall corner", walls = ["bl"] }
+"j" = { label = "wall corner", walls = ["br"] }
+"k" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"l" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+
+[[spawns]]
+id = "from_below"
+tile = [8, 31]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [8, 2]
+
+[[exits]]
+id = "stair_down"
+rect = [8, 33, 8, 33]
+to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [7, 0, 9, 0]
+to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [6, 28, 10, 30]
+event = { kind = "dialog", line = "floor_6f_intro" }
+once = true
+
+[[triggers]]
+id = "regent_alcove"
+rect = [8, 11, 8, 11]
+event = { kind = "talk", npc = "regent_seat" }
+
+[[triggers]]
+id = "gauntlet_lever"
+rect = [8, 22, 8, 22]
+event = { kind = "dialog", line = "engine_offer" }
+
+[[encounters]]
+id = "west_track"
+rect = [1, 2, 5, 27]
+table = "tower_6f"
+
+[[encounters]]
+id = "east_track"
+rect = [11, 2, 16, 27]
+table = "tower_6f"

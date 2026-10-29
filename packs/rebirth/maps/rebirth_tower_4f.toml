@@ -1,0 +1,135 @@
+# Tower of Rebirth, fourth floor: the Verdant Vault. The overgrown palace
+# court of present-day Conkram (`concnow`), kept whole on the base
+# scene's own floor ladder: a high terrace ring (tier 8), the broken
+# colonnade inside it (tier 7) and the sunken court at the centre (tier
+# 1), with the retail stairs between them re-traced. The Verdant Colossus
+# sleeps in the sunken court.
+
+name = "Tower of Rebirth 4F - Verdant Vault"
+base = { scene = { kind = "scene", name = "concnow" }, geometry = "keep" }
+# Sound-test track 8, "Call of the Ruins".
+bgm = { kind = "bgm", id = 8 }
+camera = "default"
+
+[tiles]
+origin = [13, 16]
+rows = [
+  "##############a.....b#############",
+  "##%%%%%%c%,,%##e....###,,%%%%%%%%%",
+  "##%%%%%%c,,,%#h.....i##,,%f%%%%%%%",
+  "##%%%%%%c,,,%#.......i#,,,f%%%%%%%",
+  "##%%%%%%c,,,%j.......k#,,,f%%%%%%%",
+  "##%%%%%%m,,,n.........k,,,f%%%%%%%",
+  "%%%%%ollm,,,,,,,,,,,,,,,,,pllq%%%%",
+  "%%%%%c,,,,,,,,,,,,,,,,,,,,,,,f%%%%",
+  "%%%%%c,,,,,,,_,_,_,_,_,,,,,,,f%%%%",
+  "%%%%%c,,,,,,___&_``_+_t,,,,,,f%%%%",
+  "%%%%%c,,,,,___u+v``_`w__,,,,,f%%%%",
+  "%%%%om,,,,,_________x__,,,,,,pl%%%",
+  "%%%%c,,,,,,_yuvzA``BC__+,,,,,,f%%%",
+  "%%%%c,,,,,,Czv__``__v___,,,,,,f%%%",
+  "%%%%c,,,,,,n`___`__`_____,,,,,f%%%",
+  "%%%%co,,,,,,_```````_DDvcf,,,,f%%%",
+  "%%%%%%f,,,,%,_``__`_`___+,,,m%f%%%",
+  "%%%%%%F,,EEn___GH___````_,,,I%%%%%",
+  "%%%%%%c,,,,,,______`````,,,,f%%%%%",
+  "%%%%%%c,,,,,u%,__w_```&`_,,,f%%%%%",
+  "%%%%%%c,,,,,v,,_z___uuC__,,,f%%%%%",
+  "%%%%%%cll,l,,____`__```_l,llf%%%%%",
+  "%%%%%%%%%%%%,,+_``z+&``,IEE%%%%%%%",
+  "#%%%%%%%%%cn,,,_``_DJH`,f%%%%%%%%%",
+  "#%%%%%%%%%c,,,,_``____,,f%%%%%%%%%",
+  "#%%%%%%%%%c%%%q_____K%%%f%%%%%%%%%",
+  "#%==========%%%_`,,_%%%%==========",
+  "#%=@@$$$@@$=%%n,,,,,g%%%=$$@@@$$$=",
+  "%%=@@$$$$$$=%n,,,,,,,c%%=$$@@@$$$=",
+  "%%==$$$@@@$=n,,,,,,,,,F%=$$@@@$$$=",
+]
+
+[tiles.legend]
+"," = { label = "floor, tier 8", height = 8 }
+"." = { label = "floor" }
+"_" = { label = "floor, tier 7", height = 7 }
+"`" = { label = "floor, tier 1", height = 1 }
+"#" = { label = "wall", walls = "all" }
+"$" = { label = "wall, tier 3", height = 3, walls = "all" }
+"%" = { label = "wall, tier 8", height = 8, walls = "all" }
+"&" = { label = "wall, tier 1", height = 1, walls = "all" }
+"+" = { label = "wall, tier 7", height = 7, walls = "all" }
+"=" = { label = "wall, tier 11", height = 11, walls = "all" }
+"@" = { label = "wall, tier 2", height = 2, walls = "all" }
+"A" = { label = "wall nook", height = 1, walls = ["tl", "tr", "bl"] }
+"B" = { label = "wall corner", height = 7, walls = ["br"] }
+"C" = { label = "wall edge", height = 7, walls = ["tl", "bl"] }
+"D" = { label = "wall edge", height = 7, walls = ["tl", "tr"] }
+"E" = { label = "wall edge", height = 8, walls = ["tl", "tr"] }
+"F" = { label = "wall nook", height = 8, walls = ["tl", "tr", "br"] }
+"G" = { label = "wall edge", height = 7, walls = ["tr", "br"] }
+"H" = { label = "wall edge", height = 1, walls = ["tl", "bl"] }
+"I" = { label = "wall nook", height = 8, walls = ["tl", "tr", "bl"] }
+"J" = { label = "wall edge", height = 1, walls = ["tl", "tr"] }
+"K" = { label = "wall corner", height = 1, walls = ["br"] }
+"a" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"b" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"c" = { label = "wall edge", height = 8, walls = ["tr", "br"] }
+"e" = { label = "wall edge", walls = ["tl", "bl"] }
+"f" = { label = "wall edge", height = 8, walls = ["tl", "bl"] }
+"g" = { label = "wall corner", height = 8, walls = ["tr"] }
+"h" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"i" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"j" = { label = "wall corner", walls = ["tl"] }
+"k" = { label = "wall corner", walls = ["tr"] }
+"l" = { label = "wall edge", height = 8, walls = ["bl", "br"] }
+"m" = { label = "wall nook", height = 8, walls = ["tr", "bl", "br"] }
+"n" = { label = "wall corner", height = 8, walls = ["tl"] }
+"o" = { label = "wall corner", height = 8, walls = ["br"] }
+"p" = { label = "wall nook", height = 8, walls = ["tl", "bl", "br"] }
+"q" = { label = "wall corner", height = 8, walls = ["bl"] }
+"t" = { label = "wall corner", height = 7, walls = ["bl"] }
+"u" = { label = "wall edge", height = 7, walls = ["bl", "br"] }
+"v" = { label = "wall corner", height = 7, walls = ["tl"] }
+"w" = { label = "wall edge", height = 7, walls = ["tr", "bl"] }
+"x" = { label = "wall corner", height = 1, walls = ["tr"] }
+"y" = { label = "wall nook", height = 7, walls = ["tl", "bl", "br"] }
+"z" = { label = "wall corner", height = 7, walls = ["tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [17, 27]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [17, 2]
+
+[[exits]]
+id = "stair_down"
+rect = [13, 29, 21, 29]
+to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [15, 0, 19, 0]
+to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [12, 24, 20, 25]
+event = { kind = "dialog", line = "floor_4f_intro" }
+once = true
+
+# The sunken court: the Verdant Colossus's quest giver.
+[[triggers]]
+id = "sunken_court"
+rect = [14, 15, 18, 15]
+event = { kind = "talk", npc = "vault_heart" }
+
+[[encounters]]
+id = "west_terrace"
+rect = [5, 6, 10, 21]
+table = "tower_4f"
+
+[[encounters]]
+id = "east_terrace"
+rect = [24, 6, 29, 21]
+table = "tower_4f"
