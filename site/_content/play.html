@@ -590,6 +590,10 @@ div.play-vis-head { cursor: default; }
                    title="The pause menu's Save row works in every scene, not only on the world map and at save points as in the original (play-window --save-anywhere). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-save-anywhere"> Save anywhere
             </label>
+            <label class="play-dev-menu"
+                   title="A faster, platformer-style walk in towns and dungeons: momentum, Square to jump (and again in mid-air), R2 to dash, the run button to sprint (play-window --action-movement). Not retail; Retail-faithful holds it off.">
+              <input type="checkbox" id="play-action-movement"> Action movement
+            </label>
           </div>
         </details>
         <details class="play-battle-tools" id="play-battle-tuning">
@@ -2727,6 +2731,7 @@ div.play-vis-head { cursor: default; }
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
   const bonusDropEl = document.getElementById('play-bonus-drop');
   const saveAnywhereEl = document.getElementById('play-save-anywhere');
+  const actionMoveEl = document.getElementById('play-action-movement');
   /* The battle-tuning selectors: element, setter, getter. Values are the
    * engine's step lists (GameplayTweaks; a web-play test pins them). */
   const tuningSelects = [
@@ -2751,6 +2756,7 @@ div.play-vis-head { cursor: default; }
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
     bonusDropEl.checked = !!rtCall('bonus_drop');
     saveAnywhereEl.checked = !!rtCall('save_anywhere');
+    actionMoveEl.checked = !!rtCall('action_movement');
     for (const [el, , getter] of tuningSelects) {
       const v = rtCall(getter);
       if (v !== undefined) el.value = String(v);
@@ -2812,6 +2818,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
     rtCall('set_save_anywhere', !!saveAnywhereEl.checked);
+    rtCall('set_action_movement', !!actionMoveEl.checked);
     for (const [el, setter] of tuningSelects) rtCall(setter, parseInt(el.value, 10));
     rtCall('set_retail_mode', !!retailModeEl.checked);
   }
@@ -2854,6 +2861,7 @@ div.play-vis-head { cursor: default; }
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });
   saveAnywhereEl.addEventListener('change', () => { rtCall('set_save_anywhere', !!saveAnywhereEl.checked); canvas.focus(); });
+  actionMoveEl.addEventListener('change', () => { rtCall('set_action_movement', !!actionMoveEl.checked); canvas.focus(); });
   for (const [el, setter] of tuningSelects) {
     el.addEventListener('change', () => { rtCall(setter, parseInt(el.value, 10)); canvas.focus(); });
   }

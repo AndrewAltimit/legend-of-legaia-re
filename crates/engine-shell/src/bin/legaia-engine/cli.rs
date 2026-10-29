@@ -1217,6 +1217,11 @@ pub(crate) enum Cmd {
         /// holds it off.
         #[arg(long, default_value_t = false)]
         save_anywhere: bool,
+        /// Action movement: a faster, platformer-style field walk - Square
+        /// jumps (and jumps again in the air), R2 dashes, the run button
+        /// sprints. Not retail; `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        action_movement: bool,
         /// DEBUG affordance, not a player surface: teach the lead party
         /// member a spell id (at level 1) before the first world tick, so a
         /// capture run can open the battle Magic arm without playing to the
@@ -1382,7 +1387,8 @@ pub(crate) enum Cmd {
                 "arts_saved_list",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
-                "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere"]
+                "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",
+                "action_movement"]
         )]
         retail: bool,
     },

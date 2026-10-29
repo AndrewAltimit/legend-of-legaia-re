@@ -383,6 +383,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.save_anywhere {
         args.push("--save-anywhere".into());
     }
+    if settings.switches.action_movement {
+        args.push("--action-movement".into());
+    }
     args
 }
 
@@ -427,6 +430,7 @@ pub enum OptionRow {
     PsxRender,
     CameraDistance,
     PreciseMovement,
+    ActionMovement,
     ReduceFlashing,
     MasterVolume,
     MusicVolume,
@@ -455,7 +459,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 36] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -468,6 +472,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
     (None, OptionRow::SeeThroughWalls),
     (None, OptionRow::EntryPulse),
     (Some("Play"), OptionRow::PreciseMovement),
+    (None, OptionRow::ActionMovement),
     (None, OptionRow::SmartMonsters),
     (None, OptionRow::ArtsSavedList),
     (None, OptionRow::ReduceFlashing),
@@ -520,6 +525,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.enemy_stat_permille = None;
     w.equipment_drops = false;
     w.save_anywhere = false;
+    w.action_movement = false;
     (opts, s)
 }
 
@@ -564,6 +570,7 @@ impl OptionRow {
             Self::PsxRender => "PlayStation pixel look",
             Self::CameraDistance => "Camera distance",
             Self::PreciseMovement => "Free-angle movement",
+            Self::ActionMovement => "Action movement",
             Self::ReduceFlashing => "Reduce flashing",
             Self::MasterVolume => "Master volume",
             Self::MusicVolume => "Music volume",
@@ -675,6 +682,10 @@ impl OptionRow {
                 "The pause menu's Save works everywhere, not only on the world map \
                  and at save points as in the original."
             }
+            Self::ActionMovement => {
+                "A faster, platformer-style walk in towns and dungeons: Square jumps \
+                 (twice in the air), R2 dashes. Not in the original."
+            }
             Self::SpiritAp => {
                 "How much AP the Spirit command charges; 32 is the original. Negative \
                  values make Spirit drain the gauge."
@@ -724,6 +735,7 @@ impl OptionRow {
                 | Self::EntryPulse
                 | Self::SmartMonsters
                 | Self::ArtsSavedList
+                | Self::ActionMovement
                 | Self::ShinySeru
                 | Self::FleeExp
                 | Self::ExpRate
@@ -797,6 +809,7 @@ impl OptionRow {
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
             Self::SaveAnywhere => on_off(s.switches.save_anywhere),
+            Self::ActionMovement => on_off(s.switches.action_movement),
             Self::SpiritAp => s.switches.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL).to_string(),
             Self::DamageAp => s.switches.damage_ap.unwrap_or(DAMAGE_AP_RETAIL).to_string(),
             Self::SeruCatchRate => Tweaks::catch_rate_label(s.switches.seru_catch_pct),
@@ -923,6 +936,7 @@ impl OptionRow {
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
             Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
+            Self::ActionMovement => w.action_movement = d.action_movement,
             Self::SpiritAp => w.spirit_ap = d.spirit_ap,
             Self::DamageAp => w.damage_ap = d.damage_ap,
             Self::SeruCatchRate => w.seru_catch_pct = d.seru_catch_pct,
@@ -1019,6 +1033,7 @@ impl OptionRow {
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
             Self::SaveAnywhere => s.switches.save_anywhere ^= true,
+            Self::ActionMovement => s.switches.action_movement ^= true,
             Self::SpiritAp => step_opt(&mut s.switches.spirit_ap, &Tweaks::SPIRIT_AP_STEPS, dir),
             Self::DamageAp => step_opt(&mut s.switches.damage_ap, &Tweaks::DAMAGE_AP_STEPS, dir),
             Self::SeruCatchRate => {
@@ -1161,6 +1176,7 @@ mod tests {
         assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
         assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
         assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
+        assert_eq!(shown(OptionRow::ActionMovement), on_off(t.action_movement));
         assert_eq!(shown(OptionRow::PsxRender), "On");
         assert_eq!(shown(OptionRow::EnhancedLighting), "Off");
         assert_eq!(shown(OptionRow::RetailTileCrop), "On");
@@ -1415,6 +1431,7 @@ mod tests {
         for row in [
             OptionRow::BonusDrop,
             OptionRow::SaveAnywhere,
+            OptionRow::ActionMovement,
             OptionRow::SpiritAp,
             OptionRow::DamageAp,
             OptionRow::SeruCatchRate,
@@ -1443,6 +1460,7 @@ mod tests {
             "--enemy-stat-scale=1.25",
             "--equipment-drops",
             "--save-anywhere",
+            "--action-movement",
         ] {
             assert!(a.iter().any(|x| x == flag), "{flag}");
             assert!(!plain.iter().any(|x| x == flag), "{flag} off by default");
@@ -1495,6 +1513,7 @@ mod tests {
             HpReadoutGuard => "play-hp-readout-guard",
             BonusDrop => "play-bonus-drop",
             SaveAnywhere => "play-save-anywhere",
+            ActionMovement => "play-action-movement",
             SpiritAp => "play-spirit-ap",
             DamageAp => "play-damage-ap",
             SeruCatchRate => "play-seru-catch-rate",
