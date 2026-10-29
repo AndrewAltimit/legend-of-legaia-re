@@ -27,6 +27,11 @@ pub enum DiscRef {
     Item { id: u8 },
     /// A music cue by its sound-test id.
     Bgm { id: u16 },
+    /// A retail field NPC: placement `index` of scene `scene`'s MAN actor
+    /// list (partition 1; `0` is the scene controller, so NPCs are `1..`).
+    /// The placement's model and idle clip are what a pack NPC borrows; the
+    /// site's NPC page lists the same index as an NPC's `slot`.
+    Npc { scene: String, index: u16 },
 }
 
 /// The monster archive's record count (PROT 867); ids are `1..=MONSTER_COUNT`.
@@ -49,6 +54,7 @@ impl DiscRef {
             DiscRef::Tim { .. } => "tim",
             DiscRef::Item { .. } => "item",
             DiscRef::Bgm { .. } => "bgm",
+            DiscRef::Npc { .. } => "npc",
         }
     }
 
@@ -80,6 +86,12 @@ impl DiscRef {
             DiscRef::Bgm { id } if *id >= BGM_COUNT => {
                 Err(format!("bgm id {id} is outside 0..{BGM_COUNT}"))
             }
+            DiscRef::Npc { scene, .. } if !is_valid_scene_name(scene) => Err(format!(
+                "scene name {scene:?} is not a CDNAME name ([a-z0-9_], at most {MAX_SCENE_NAME_LEN} characters)"
+            )),
+            DiscRef::Npc { index: 0, .. } => Err(
+                "NPC placement 0 is the scene controller; NPC placements start at 1".to_string(),
+            ),
             _ => Ok(()),
         }
     }
@@ -94,6 +106,7 @@ impl fmt::Display for DiscRef {
             DiscRef::Tim { prot, index } => write!(f, "tim PROT {prot:04} #{index}"),
             DiscRef::Item { id } => write!(f, "item 0x{id:02X}"),
             DiscRef::Bgm { id } => write!(f, "bgm {id}"),
+            DiscRef::Npc { scene, index } => write!(f, "npc {scene} #{index}"),
         }
     }
 }
@@ -113,6 +126,13 @@ pub fn is_valid_scene_name(name: &str) -> bool {
 pub trait DiscResolver {
     /// Does `r` name something of its kind on this disc.
     fn resolve(&self, r: &DiscRef) -> Result<(), String>;
+
+    /// How many meshes scene `scene`'s environment geometry pack holds -
+    /// the index space of a map's `{ object = N }` props and `mesh`
+    /// grounds. `None` when the resolver cannot tell, which skips the check.
+    fn scene_geometry_len(&self, _scene: &str) -> Option<usize> {
+        None
+    }
 }
 
 #[cfg(test)]

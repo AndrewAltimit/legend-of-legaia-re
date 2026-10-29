@@ -49,6 +49,12 @@ impl ExpansionWorkbench {
         self.core.scene_objects_json(scene).map_err(err)
     }
 
+    /// A scene's NPC placements: `{ scene, npcs: [{ index, model_index,
+    /// anim_id, special, kind, label }] }`.
+    pub fn scene_npcs(&self, scene: &str) -> Result<String, JsValue> {
+        self.core.scene_npcs_json(scene).map_err(err)
+    }
+
     /// Start handing over a pack tree (a folder pick or the published
     /// example), one [`Self::add_file`] per file.
     pub fn begin_files(&mut self) {

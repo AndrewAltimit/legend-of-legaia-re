@@ -32,15 +32,19 @@
 //! carries no disc bytes of its own. With [`BaseGeometry::Keep`] it starts
 //! from the base scene's map read off the player's disc at load time.
 
-use anyhow::{Result, bail};
-use legaia_expansion_format::map::{BaseGeometry, FLOOR_TIERS, Ground, MapDef, PropMesh, TileGrid};
+use anyhow::{Context, Result, bail};
+use legaia_expansion_format::map::{
+    BaseGeometry, FLOOR_TIERS, Ground, MapDef, PropMesh, TileGrid, WallMesh, npc_slot,
+};
 use legaia_expansion_format::refs::DiscRef;
 use legaia_scene_formats::field_objects::{
     COLLISION_GRID_OFFSET, GRID_DIM, OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, OBJECT_RECORD_STRIDE,
     ObjectRecord, TILE_CENTER,
 };
 
-use crate::scene::FIELD_MAP_LEN;
+use legaia_scene_formats::man_section::ActorPlacement;
+
+use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 
 /// The length of a synthetic field image: the `0x12000`-byte map plus the
 /// `0x800`-byte fallback window the scene loader stages behind it (here all
@@ -88,6 +92,18 @@ pub struct SceneOverride {
     /// Each scaled prop's uniform scale, keyed by the field-grid tile its
     /// placement anchors on (the prop's own tile).
     pub prop_scales: Vec<((u8, u8), f32)>,
+    /// The map's NPCs as actor placements ([`resolve_map_npcs`]): the list a
+    /// retail scene reads out of its MAN, which the hosts' NPC draw and the
+    /// world's talk / collision install read in its place.
+    pub npcs: Vec<ActorPlacement>,
+    /// Generated wall-box meshes ([`wall_box_tmd`]), as TMD bytes. The
+    /// scene's resource build appends them to the geometry pack, so a wall
+    /// tile's decoration record reaches box `k` at pack index
+    /// `geometry_len + k` ([`BaseInputs::geometry_len`]).
+    pub wall_tmds: Vec<Vec<u8>>,
+    /// The PROT entry the geometry pack is registered under: the wall boxes
+    /// join it.
+    pub geometry_entry: Option<u32>,
 }
 
 impl SceneOverride {
@@ -142,6 +158,19 @@ pub fn world_to_map_tile(def: &MapDef, grid: &TileGrid, x: i32, z: i32) -> Optio
 pub struct BaseInputs<'a> {
     pub base_map: Option<&'a [u8]>,
     pub geometry_entry: Option<u32>,
+    /// How many meshes the base scene's geometry pack holds
+    /// ([`crate::scene_resources::field_geometry_pack`]): where the
+    /// generated wall boxes start in its index space.
+    pub geometry_len: Option<usize>,
+}
+
+/// What [`build_field_map_image`] produced: the image and the wall-box
+/// meshes its wall records name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldImage {
+    pub image: Vec<u8>,
+    /// [`SceneOverride::wall_tmds`].
+    pub wall_tmds: Vec<Vec<u8>>,
 }
 
 /// Build the synthetic field image of `def` (whose resolved tiles are
@@ -151,6 +180,16 @@ pub fn build_field_map_image(
     grid: &TileGrid,
     base: BaseInputs<'_>,
 ) -> Result<Vec<u8>> {
+    build_field_image(def, grid, base).map(|f| f.image)
+}
+
+/// [`build_field_map_image`] with the generated wall-box meshes the image's
+/// wall records name.
+pub fn build_field_image(
+    def: &MapDef,
+    grid: &TileGrid,
+    base: BaseInputs<'_>,
+) -> Result<FieldImage> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     // The last map row's walls land one byte row lower.
     if ox + grid.width + 1 > GRID_DIM || oy + grid.height + 1 > GRID_DIM {
@@ -175,9 +214,12 @@ pub fn build_field_map_image(
         }
     }
     write_collision_grid(&mut img, def, grid);
-    write_objects(&mut img, def, grid, base, keep)?;
+    let wall_tmds = write_objects(&mut img, def, grid, base, keep)?;
     write_empty_trigger_block(&mut img);
-    Ok(img)
+    Ok(FieldImage {
+        image: img,
+        wall_tmds,
+    })
 }
 
 /// The `+0x4000` grid. Everything off the map is a wall; a void tile takes
@@ -254,19 +296,24 @@ fn put_record(
     }
 }
 
+/// A ground texture's record words: atlas cell, texture page, palette.
+type GroundTexture = (u8, u8, u16);
+
 /// Degrees to the PSX 12-bit angle (`4096` = a full turn).
 fn psx_angle(deg: f32) -> u16 {
     ((deg / 360.0 * 4096.0).round() as i32).rem_euclid(4096) as u16
 }
 
-/// The `+0x0000` records and `+0x8000` cells for the map's ground and props.
+/// The `+0x0000` records and `+0x8000` cells for the map's ground, walls
+/// and props. Returns the generated wall boxes, in the order their pack
+/// indices count up from [`BaseInputs::geometry_len`].
 fn write_objects(
     img: &mut [u8],
     def: &MapDef,
     grid: &TileGrid,
     base: BaseInputs<'_>,
     keep: bool,
-) -> Result<()> {
+) -> Result<Vec<Vec<u8>>> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     // Record 0 is the empty slot every unnamed cell points at. In a kept
@@ -315,13 +362,67 @@ fn write_objects(
     let mut mesh_records: Vec<(u16, usize)> = Vec::new();
     // The texture of each map tile, for a prop record standing on it.
     let mut tile_texture: Vec<Option<(u8, u8, u16)>> = vec![None; grid.width * grid.height];
+    // Wall boxes: one generated mesh per distinct box, and one record per
+    // distinct (wall mesh, ground texture) pair.
+    let mut wall_boxes: Vec<(WallMesh, Vec<u8>)> = Vec::new();
+    let mut wall_records: Vec<((u16, Option<GroundTexture>), usize)> = Vec::new();
     for row in 0..grid.height {
         for col in 0..grid.width {
             let c = grid.char_at(col, row).expect("in range");
-            let Some(ground) = def.style(c).and_then(|s| s.ground.as_ref()) else {
+            let Some(style) = def.style(c) else {
                 continue;
             };
-            let (slot, flags) = if let Ground::Mesh { index } = *ground {
+            let tex = match &style.ground {
+                Some(g @ (Ground::Texture { .. } | Ground::BaseCell { .. })) => ground_texture(g)?,
+                _ => None,
+            };
+            if let Some(tex) = tex {
+                tile_texture[row * grid.width + col] = Some(tex);
+            }
+            let (slot, flags) = if let Some(wall) = &style.wall {
+                if matches!(style.ground, Some(Ground::Mesh { .. })) {
+                    bail!("tile ({col}, {row}): a mesh ground and a wall cannot share a tile");
+                }
+                let mesh = match wall {
+                    WallMesh::Mesh { index } => *index,
+                    WallMesh::Box {
+                        height,
+                        tpage,
+                        clut,
+                        tile,
+                    } => {
+                        let Some(len) = base.geometry_len else {
+                            bail!("a wall box needs the base scene's geometry pack length");
+                        };
+                        let k = match wall_boxes.iter().position(|(w, _)| w == wall) {
+                            Some(k) => k,
+                            None => {
+                                wall_boxes.push((
+                                    wall.clone(),
+                                    wall_box_tmd(*height, *tpage, *clut, *tile)?,
+                                ));
+                                wall_boxes.len() - 1
+                            }
+                        };
+                        u16::try_from(len + k).context("wall box pack index")?
+                    }
+                };
+                let flags = if tex.is_some() {
+                    FLAGS_DECORATION | FLAGS_GROUND
+                } else {
+                    FLAGS_DECORATION
+                };
+                let slot = match wall_records.iter().find(|(k, _)| *k == (mesh, tex)) {
+                    Some(&(_, s)) => s,
+                    None => {
+                        let s = alloc("a wall")?;
+                        put_record(img, s, [0; 3], [0; 3], mesh, flags, tex);
+                        wall_records.push(((mesh, tex), s));
+                        s
+                    }
+                };
+                (slot, flags)
+            } else if let Some(Ground::Mesh { index }) = style.ground {
                 let slot = match mesh_records.iter().find(|(m, _)| *m == index) {
                     Some(&(_, s)) => s,
                     None => {
@@ -332,9 +433,7 @@ fn write_objects(
                     }
                 };
                 (slot, FLAGS_DECORATION)
-            } else {
-                let tex = ground_texture(ground)?.expect("a texture ground");
-                tile_texture[row * grid.width + col] = Some(tex);
+            } else if let Some(tex) = tex {
                 let slot = match texture_records.iter().find(|(t, _)| *t == tex) {
                     Some(&(_, s)) => s,
                     None => {
@@ -345,6 +444,8 @@ fn write_objects(
                     }
                 };
                 (slot, FLAGS_GROUND)
+            } else {
+                continue;
             };
             let o = cell_off(ox + col, oy + row);
             img[o..o + 2].copy_from_slice(&(slot as u16 | cell_gates(flags)).to_le_bytes());
@@ -400,13 +501,13 @@ fn write_objects(
         let (gc, gr) = grid_tile(def, col, row);
         let o = cell_off(gc, gr);
         img[o..o + 2].copy_from_slice(&(s as u16 | cell_gates(flags)).to_le_bytes());
-        if prop.solid {
+        if prop.solid && prop.top.is_none() {
             // Close the prop's tile: its wall quarters sit one byte row down.
             let b = COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc;
             img[b] |= 0xF0;
         }
     }
-    Ok(())
+    Ok(wall_boxes.into_iter().map(|(_, tmd)| tmd).collect())
 }
 
 /// The `+0x10000` block's header chain with all four sub-tables empty:
@@ -422,6 +523,141 @@ fn write_empty_trigger_block(img: &mut [u8]) {
         off += 2;
     }
     b[0..2].copy_from_slice(&off.to_le_bytes());
+}
+
+/// The tallest face a wall box textures with one atlas cell; a taller box
+/// stacks faces.
+const WALL_FACE_HEIGHT: i32 = 128;
+
+/// A generated wall box: a `128 x 128` tile footprint `height` world units
+/// tall, its four sides and its top each textured with atlas cell `tile` of
+/// texture page `tpage` through palette `clut` (all base-scene VRAM, the
+/// [`Ground::Texture`] words). Built when the map loads; the bytes are the
+/// map's numbers run through the TMD encoder.
+///
+/// The mesh is one object in the decoration-cell frame - origin at the tile
+/// centre on its floor, Y down - drawn at the baked texel colour `128`
+/// (unlit, the retail field mesh path). Each face is emitted in both
+/// windings, so the box reads from inside a wall run as well as outside.
+pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u8>> {
+    use legaia_tmd::descriptor::PacketShape;
+    use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
+    if height == 0 {
+        bail!("a wall box needs a height");
+    }
+    let h = i32::from(height);
+    let px = usize::from(legaia_scene_formats::field_objects::GROUND_ATLAS_TILE_PX);
+    let axis = legaia_scene_formats::field_objects::GROUND_ATLAS_AXIS;
+    let u0 = ((usize::from(tile) % axis) * px).min(224) as u8;
+    let v0 = ((usize::from(tile) / axis % axis) * px).min(224) as u8;
+    let (u1, v1) = (u0 + (px as u8 - 1), v0 + (px as u8 - 1));
+    let mut vertices: Vec<[i16; 3]> = Vec::new();
+    let mut prims = Vec::new();
+    let mut vert = |p: [i32; 3]| -> u16 {
+        let p = p.map(|c| c as i16);
+        match vertices.iter().position(|v| *v == p) {
+            Some(i) => i as u16,
+            None => {
+                vertices.push(p);
+                (vertices.len() - 1) as u16
+            }
+        }
+    };
+    // `quad(a, b, c, d)` is a face in perimeter order with `a`-`b` its top
+    // edge; the file stores Z-order `a, b, d, c`.
+    let mut quad = |a: [i32; 3], b: [i32; 3], c: [i32; 3], d: [i32; 3]| {
+        let (a, b, c, d) = (vert(a), vert(b), vert(c), vert(d));
+        let uvs = vec![(u0, v0), (u1, v0), (u0, v1), (u1, v1)];
+        for order in [[a, b, d, c], [b, a, c, d]] {
+            prims.push(ModelPrim {
+                vertices: order.to_vec(),
+                uvs: uvs.clone(),
+                cba: clut,
+                tsb: u16::from(tpage),
+                colors: vec![[128, 128, 128]],
+            });
+        }
+    };
+    let e = 64;
+    let corners = [[-e, -e], [e, -e], [e, e], [-e, e]];
+    let mut y = 0;
+    while y < h {
+        let top = (y + WALL_FACE_HEIGHT).min(h);
+        for k in 0..4 {
+            let [x0, z0] = corners[k];
+            let [x1, z1] = corners[(k + 1) % 4];
+            quad([x0, -top, z0], [x1, -top, z1], [x1, -y, z1], [x0, -y, z0]);
+        }
+        y = top;
+    }
+    quad([-e, -h, -e], [e, -h, -e], [e, -h, e], [-e, -h, e]);
+    encode(&[ModelObject {
+        vertices,
+        groups: vec![ModelGroup {
+            shape: PacketShape::Ft4,
+            semi_transparent: false,
+            prims,
+        }],
+        scale: LEGAIA_OBJECT_SCALE,
+    }])
+}
+
+/// Resolve the map's NPCs into actor placements: each [`DiscRef::Npc`]'s
+/// retail placement read off its scene's MAN for the model byte and idle
+/// clip, seated on the NPC's tile in placement slot [`npc_slot`].
+///
+/// Fails on an NPC with no model, a placement the scene does not have, or a
+/// model from another scene than `base_scene` that is not a party member:
+/// that mesh indexes another scene's model pool and samples another scene's
+/// VRAM, neither of which the map loads.
+pub fn resolve_map_npcs(
+    index: &ProtIndex,
+    def: &MapDef,
+    base_scene: &str,
+) -> Result<Vec<ActorPlacement>> {
+    let mut lists: std::collections::BTreeMap<String, Vec<ActorPlacement>> = Default::default();
+    let mut out = Vec::with_capacity(def.npcs.len());
+    for (n, npc) in def.npcs.iter().enumerate() {
+        let Some(DiscRef::Npc { scene, index: pi }) = &npc.model else {
+            bail!("npc {:?} names no npc model", npc.id);
+        };
+        if !lists.contains_key(scene) {
+            let s = Scene::load(index, scene)?;
+            let man = s
+                .field_man_payload(index)?
+                .with_context(|| format!("scene `{scene}` has no MAN"))?;
+            let mf = legaia_scene_formats::man_section::parse(&man)?;
+            lists.insert(scene.clone(), mf.actor_placements(&man));
+        }
+        let src = lists[scene]
+            .iter()
+            .find(|p| p.index == usize::from(*pi))
+            .with_context(|| format!("npc {:?}: scene `{scene}` has no placement {pi}", npc.id))?;
+        if scene != base_scene && !src.special_model {
+            bail!(
+                "npc {:?}: placement {pi} of `{scene}` draws only in its own scene \
+                 (the map's base scene is `{base_scene}`)",
+                npc.id
+            );
+        }
+        let slot = npc_slot(n).context("too many NPCs on one map")?;
+        let (gc, gr) = grid_tile(def, npc.tile[0], npc.tile[1]);
+        let (wx, wz) = tile_centre_world(def, npc.tile[0], npc.tile[1]);
+        out.push(ActorPlacement {
+            index: usize::from(slot),
+            record_offset: 0,
+            local_count: 0,
+            model_index: src.model_index,
+            special_model: src.special_model,
+            anim_id: npc.clip.unwrap_or(src.anim_id),
+            tile_x: gc as u8,
+            tile_z: gr as u8,
+            world_x: wx,
+            world_z: wz,
+            script_pc0: 0,
+        });
+    }
+    Ok(out)
 }
 
 /// The map's floor ladder in the MAN convention, falling back to `base_lut`

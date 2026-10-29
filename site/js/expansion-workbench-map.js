@@ -3,8 +3,13 @@
  * The painter edits a `MapDef` (legaia_expansion_format::map) 1:1: its canvas
  * is `tiles.rows` (one character per tile) and its palette is `tiles.legend`,
  * so a painted map and a hand-written one are the same file. Spawns, exits,
- * trigger and encounter zones and props are placed on the same grid, in
- * map-local tiles `[column, row]` (column = world +X, row = world +Z).
+ * trigger and encounter zones, props and NPCs are placed on the same grid,
+ * in map-local tiles `[column, row]` (column = world +X, row = world +Z).
+ *
+ * An NPC's model is a retail placement by coordinate (`{ kind = "npc",
+ * scene, index }`); the picker shows the first line each placement says,
+ * which is the only name retail gives an NPC, and the pack stores only the
+ * coordinate.
  *
  * What a tile means to the engine is not re-derived here. The session's
  * `map_preview` builds the synthetic field image the engine itself enters and
@@ -25,13 +30,14 @@ const SWATCH = ['#6b8f71', '#8a9a5b', '#b08d57', '#7d8fa6', '#a37a74', '#6f9fa0'
 const TOOLS = [
   ['paint', 'Paint', 'B'], ['rect', 'Fill rect', 'R'], ['pick', 'Pick', 'I'], ['select', 'Select / move', 'V'],
   ['spawn', 'Spawn', 'S'], ['exit', 'Exit', 'E'], ['trigger', 'Trigger', 'T'], ['encounter', 'Encounters', 'N'], ['prop', 'Prop', 'P'],
+  ['npc', 'NPC', 'C'],
 ];
 
 // View state survives the tab re-rendering on every structural edit.
 const V = {
   map: null, tool: 'paint', brush: '.', cell: 22, heights: true, sel: null,
   scroll: {}, undo: {}, redo: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null,
-  propObject: 0, drag: null,
+  propObject: 0, drag: null, npcs: {}, npcModel: null,
 };
 
 function legendKeys(map) {
@@ -107,6 +113,7 @@ function undo(ctx, dir) {
 function objectsAt(map, c, r) {
   const out = [];
   const inRect = (q) => c >= Math.min(q[0], q[2]) && c <= Math.max(q[0], q[2]) && r >= Math.min(q[1], q[3]) && r <= Math.max(q[1], q[3]);
+  (map.npcs || []).forEach((p, i) => { if (p.tile[0] === c && p.tile[1] === r) out.push({ type: 'npcs', i }); });
   (map.props || []).forEach((p, i) => { if (p.tile[0] === c && p.tile[1] === r) out.push({ type: 'props', i }); });
   (map.spawns || []).forEach((p, i) => { if (p.tile[0] === c && p.tile[1] === r) out.push({ type: 'spawns', i }); });
   for (const t of ['exits', 'triggers', 'encounters']) (map[t] || []).forEach((z, i) => { if (inRect(z.rect)) out.push({ type: t, i }); });
@@ -174,6 +181,12 @@ function draw(ctx, cv) {
         for (let k = -cs; k < cs; k += 5) { g.beginPath(); g.moveTo(x + k, y + cs); g.lineTo(x + k + cs, y); g.stroke(); }
         g.restore();
       }
+      if (st && st.wall) {
+        // A visible wall: the box or mesh the tile draws.
+        g.strokeStyle = 'rgba(200,210,225,0.7)';
+        g.lineWidth = 1;
+        g.strokeRect(x + 2.5, y + 2.5, cs - 5, cs - 5);
+      }
       if (V.heights && cs >= 18 && mask !== 15) {
         g.fillStyle = 'rgba(0,0,0,0.7)';
         g.font = `${Math.round(cs * 0.42)}px monospace`;
@@ -204,6 +217,14 @@ function draw(ctx, cv) {
   (map.encounters || []).forEach((z, i) => zone(z.rect, isSel('encounters', i) ? '#fff' : '#e0605a', 'rgba(224,96,90,0.12)', [4, 3]));
   (map.triggers || []).forEach((z, i) => zone(z.rect, isSel('triggers', i) ? '#fff' : '#e6a23c', 'rgba(230,162,60,0.18)'));
   (map.exits || []).forEach((z, i) => zone(z.rect, isSel('exits', i) ? '#fff' : '#4aa3e8', 'rgba(74,163,232,0.25)'));
+  if (good && pv.tops) {
+    // Standable prop tops: what action movement stands on.
+    g.setLineDash([2, 2]);
+    g.strokeStyle = '#f0e6a0';
+    g.lineWidth = 1;
+    for (const [c0, r0, c1, r1] of pv.tops) g.strokeRect(c0 * cs + 0.5, r0 * cs + 0.5, (c1 - c0) * cs - 1, (r1 - r0) * cs - 1);
+    g.setLineDash([]);
+  }
   const objs = V.objects[baseScene(map)];
   (map.props || []).forEach((p, i) => {
     const cx = (p.tile[0] + 0.5) * cs + ((p.offset || [0])[0] / 128) * cs;
@@ -245,6 +266,35 @@ function draw(ctx, cv) {
       g.fillText(String(s.facing || 0), cx, cy + cs * 0.14);
       g.textAlign = 'left';
     }
+  });
+  (map.npcs || []).forEach((n, i) => {
+    const at = (t) => [(t[0] + 0.5) * cs, (t[1] + 0.5) * cs];
+    const [cx, cy] = at(n.tile);
+    if ((n.patrol || []).length) {
+      g.strokeStyle = 'rgba(186,140,255,0.7)';
+      g.setLineDash([4, 3]);
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(cx, cy);
+      for (const t of n.patrol) g.lineTo(...at(t));
+      g.closePath();
+      g.stroke();
+      g.setLineDash([]);
+    }
+    g.fillStyle = '#9b6cf0';
+    g.strokeStyle = isSel('npcs', i) ? '#fff' : '#2a1650';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.rect(cx - cs * 0.3, cy - cs * 0.3, cs * 0.6, cs * 0.6);
+    g.fill();
+    g.stroke();
+    // The facing sector, as a tick toward it (sector 0 faces +Z, down).
+    const a = ((n.facing || 0) * Math.PI) / 4;
+    g.strokeStyle = '#f4ecff';
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.lineTo(cx + Math.sin(a) * cs * 0.45, cy + Math.cos(a) * cs * 0.45);
+    g.stroke();
   });
   if (V.drag && V.drag.rect) {
     const [c0, r0, c1, r1] = V.drag.rect;
@@ -292,7 +342,7 @@ export function renderMaps(ctx, el) {
   map.tiles = map.tiles || { origin: [16, 16], rows: [], legend: {} };
   map.tiles.legend = map.tiles.legend || {};
   map.tiles.rows = map.tiles.rows || [];
-  for (const k of ['props', 'spawns', 'exits', 'triggers', 'encounters']) map[k] = map[k] || [];
+  for (const k of ['props', 'npcs', 'spawns', 'exits', 'triggers', 'encounters']) map[k] = map[k] || [];
   const path = '';
 
   const cv = h('canvas', {});
@@ -421,6 +471,14 @@ export function renderMaps(ctx, el) {
       V.sel = { type: 'spawns', i: map.spawns.length - 1 };
       V.tool = 'select';
       ctx.changed(true);
+    } else if (t === 'npc') {
+      snapshot(ctx, V.map);
+      const scene = baseScene(map) || 'town01';
+      const model = V.npcModel && V.npcModel.scene === scene ? V.npcModel : { kind: 'npc', scene, index: 1 };
+      map.npcs.push({ id: freshId('npc', ctx.ids('npc')), tile: [c, r], facing: 0, model: { ...model }, line: ctx.ids('line')[0] || '', patrol: [] });
+      V.sel = { type: 'npcs', i: map.npcs.length - 1 };
+      V.tool = 'select';
+      ctx.changed(true);
     } else if (t === 'prop') {
       snapshot(ctx, V.map);
       map.props.push({ id: freshId('prop', map.props.map((p) => p.id)), mesh: { object: V.propObject }, tile: [c, r], offset: [0, 0, 0], rotation: [0, 0, 0], scale: null, solid: false });
@@ -450,6 +508,7 @@ export function renderMaps(ctx, el) {
       const dc = c - d.from[0], dr = r - d.from[1];
       const o = map[V.sel.type][V.sel.i];
       if (o.tile) o.tile = [o.tile[0] + dc, o.tile[1] + dr];
+      if (o.patrol) o.patrol = o.patrol.map((t) => [t[0] + dc, t[1] + dr]);
       if (o.rect) o.rect = [o.rect[0] + dc, o.rect[1] + dr, o.rect[2] + dc, o.rect[3] + dr];
       d.from = [c, r];
       mctx.changed();
@@ -537,7 +596,7 @@ function newMap(ctx) {
       rows: ['#########', '#.......#', '#.......#', '#.......#', '#########'],
       legend: { '#': { label: 'wall', walls: 'all', height: 0, ground: null }, '.': { label: 'floor', height: 0, ground: null } },
     },
-    props: [], spawns: [{ id: 'start', tile: [4, 2], facing: 0 }], exits: [], triggers: [], encounters: [],
+    props: [], npcs: [], spawns: [{ id: 'start', tile: [4, 2], facing: 0 }], exits: [], triggers: [], encounters: [],
     bgm: null, camera: 'default',
   };
 }
@@ -565,6 +624,33 @@ function loadObjects(ctx, scene, done) {
     V.objectsPending = null;
     done();
   }, 30);
+}
+
+function loadNpcs(ctx, scene, done) {
+  if (!scene || V.npcs[scene] || !ctx.cat) return;
+  try {
+    V.npcs[scene] = ctx.sceneNpcs(scene);
+  } catch (e) {
+    V.npcs[scene] = { scene, npcs: [], error: String(e && e.message ? e.message : e) };
+  }
+  done();
+}
+
+/** The NPC model picker: the placements of `scene` a pack NPC can borrow,
+ * labelled with what each says (shown, not stored). */
+function npcModelPicker(ctx, model, onPick) {
+  const list = V.npcs[model.scene];
+  const wrap = h('div', {});
+  wrap.append(field(ctx, model, { k: 'scene', t: 'scenename', label: 'Model scene', hint: 'the map\'s base scene, unless a party member' }, ''));
+  if (!list || !list.npcs.length) {
+    wrap.append(field(ctx, model, { k: 'index', t: 'int', label: 'Placement', hint: list && list.error ? list.error : (ctx.cat ? 'reading the scene...' : 'load your disc to list NPCs') }, ''));
+    return wrap;
+  }
+  const sel = h('select', { 'aria-label': 'NPC model' }, ...list.npcs.map((p) => h('option', { value: p.index, selected: p.index === model.index },
+    `#${p.index} ${p.kind}${p.special ? ' (party/global)' : ''}${p.label ? ' - "' + p.label + '"' : ''}`)));
+  sel.addEventListener('change', () => { model.index = parseInt(sel.value, 10); onPick(); });
+  wrap.append(h('label', { class: 'xw-field' }, h('span', {}, 'Model (retail placement)'), sel));
+  return wrap;
 }
 
 function describe(ctx, map, c, r) {
@@ -669,6 +755,17 @@ function renderPalette(ctx, mctx, side, map) {
     if (g && g.kind === 'texture') ed.append(grid(lctx, g, [{ k: 'tpage', t: 'int', label: 'Texture page' }, { k: 'clut', t: 'int', label: 'Palette (CLUT word)' }, { k: 'tile', t: 'int', label: 'Atlas cell 0..63' }], `${p}.ground`));
     if (g && g.kind === 'base_cell') ed.append(grid(lctx, g, [{ k: 'cell', t: 'tuple', n: 2, label: 'Base scene cell', hint: '[column, row] on its field grid' }], `${p}.ground`));
     if (g && g.kind === 'mesh') ed.append(meshPicker(lctx, g, 'index', `${p}.ground`, map));
+    // Visible wall: a generated box or a base-scene mesh standing on the tile.
+    const wl = st.wall;
+    const wkind = h('select', {}, ...[['', 'nothing'], ['box', 'a textured box'], ['mesh', 'a base-scene mesh']].map(([k, label]) => h('option', { value: k, selected: (wl ? wl.kind : '') === k }, label)));
+    wkind.addEventListener('change', () => {
+      const k = wkind.value;
+      st.wall = k === 'box' ? { kind: k, height: 128, tpage: 0, clut: 0, tile: 0 } : k === 'mesh' ? { kind: k, index: 0 } : null;
+      ctx.changed(true);
+    });
+    ed.append(h('label', { class: 'xw-field', 'data-path': `${p}.wall` }, h('span', {}, 'Visible wall', h('span', { class: 'xw-hint' }, ' draws only; collision is the quarters above')), wkind));
+    if (wl && wl.kind === 'box') ed.append(grid(lctx, wl, [{ k: 'height', t: 'int', label: 'Height (world units)' }, { k: 'tpage', t: 'int', label: 'Texture page' }, { k: 'clut', t: 'int', label: 'Palette (CLUT word)' }, { k: 'tile', t: 'int', label: 'Atlas cell 0..63' }], `${p}.wall`));
+    if (wl && wl.kind === 'mesh') ed.append(meshPicker(lctx, wl, 'index', `${p}.wall`, map));
     box.append(ed);
   }
   side.append(box);
@@ -696,9 +793,17 @@ function renderSelection(ctx, mctx, side, map) {
     pctx.changed = () => { V.propObject = o.object; };
     box.append(h('div', { class: 'xw-box-head' }, 'New prop'), meshPicker(pctx, o, 'object', '', map), h('p', { class: 'xw-note' }, 'Click a tile to place the mesh there.'));
   }
+  if (V.tool === 'npc') {
+    const scene = baseScene(map) || 'town01';
+    if (!V.npcModel || V.npcModel.scene !== scene) V.npcModel = { kind: 'npc', scene, index: 1 };
+    loadNpcs(ctx, scene, () => {});
+    const nctx = Object.create(mctx);
+    nctx.changed = () => {};
+    box.append(h('div', { class: 'xw-box-head' }, 'New NPC'), npcModelPicker(nctx, V.npcModel, () => {}), h('p', { class: 'xw-note' }, 'Click a tile to stand the NPC there.'));
+  }
   const sel = V.sel && map[V.sel.type] && map[V.sel.type][V.sel.i] ? V.sel : null;
   if (!sel) {
-    if (V.tool !== 'prop') box.append(h('div', { class: 'wb-empty' }, 'Select an object (Select tool) or place one.'));
+    if (V.tool !== 'prop' && V.tool !== 'npc') box.append(h('div', { class: 'wb-empty' }, 'Select an object (Select tool) or place one.'));
     side.append(box);
     return;
   }
@@ -729,15 +834,26 @@ function renderSelection(ctx, mctx, side, map) {
   } else if (sel.type === 'triggers') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'once', t: 'bool', label: 'Once per visit' }], p));
     const ev = o.event;
-    const kind = h('select', {}, ...['battle', 'dialog', 'quest'].map((k) => h('option', { value: k, selected: ev.kind === k }, k)));
+    const EVENTS = {
+      battle: [{ k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' }],
+      boss: [{ k: 'boss', t: 'ref', kind: 'boss', label: 'Boss' }],
+      dialog: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line' }],
+      talk: [{ k: 'npc', label: 'NPC id', hint: 'a quest giver / talk objective' }],
+      start_quest: [{ k: 'quest', t: 'ref', kind: 'quest', label: 'Quest' }],
+      set_flag: [{ k: 'flag', label: 'Pack flag' }],
+      counter: [{ k: 'counter', label: 'Pack counter' }, { k: 'add', t: 'int', label: 'Add' }],
+      card_dealer: [{ k: 'dealer', label: 'Card dealer', hint: 'a cards.toml dealer id; empty = the first' }],
+    };
+    const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, k.replace('_', ' '))));
     kind.addEventListener('change', () => {
       const k = kind.value;
-      o.event = k === 'battle' ? { kind: k, formation: ctx.ids('formation')[0] || '' } : k === 'dialog' ? { kind: k, line: ctx.ids('line')[0] || '' } : { kind: k, event: '' };
+      const first = (kd) => ctx.ids(kd)[0] || '';
+      o.event = { kind: k };
+      for (const f of EVENTS[k]) o.event[f.k] = f.t === 'ref' ? first(f.kind) : f.t === 'int' ? 1 : (k === 'talk' ? first('npc') : '');
       ctx.changed(true);
     });
     box.append(h('label', { class: 'xw-field', 'data-path': `${p}.event` }, h('span', {}, 'Raises'), kind));
-    const spec = ev.kind === 'battle' ? { k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' } : ev.kind === 'dialog' ? { k: 'line', t: 'ref', kind: 'line', label: 'Line' } : { k: 'event', label: 'Quest event' };
-    box.append(grid(mctx, ev, [spec], `${p}.event`));
+    box.append(grid(mctx, ev, EVENTS[ev.kind] || [], `${p}.event`));
   } else if (sel.type === 'encounters') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'table', label: 'Encounter table' }], p));
   } else if (sel.type === 'props') {
@@ -747,9 +863,32 @@ function renderSelection(ctx, mctx, side, map) {
     box.append(grid(mctx, o, [
       { k: 'offset', t: 'tuple', n: 3, label: 'Offset', hint: 'x y z, y up' },
       { k: 'rotation', t: 'tuple', n: 3, float: true, label: 'Rotation (deg)', hint: 'y is the yaw' },
-      { k: 'scale', t: 'ofloat', label: 'Scale', hint: 'carried; drawn at 1' },
+      { k: 'scale', t: 'ofloat', label: 'Scale' },
       { k: 'solid', t: 'bool', label: 'Solid (closes its tile)' },
+      { k: 'top', t: 'oint', label: 'Standable top', hint: 'world units up; action movement stands on it' },
+      { k: 'footprint', t: 'tuple', n: 2, label: 'Top footprint', hint: '[x, z] world units; untouched = the tile' },
     ], p));
+  } else if (sel.type === 'npcs') {
+    box.append(grid(mctx, o, [{ k: 'id', label: 'Id', hint: 'the quest talk key' }, { k: 'label', label: 'Label' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },
+      { k: 'facing', t: 'sel', num: true, opts: Array.from({ length: 8 }, (_, i) => [String(i), `sector ${i} (${i * 45} deg)`]), label: 'Facing' }], p));
+    o.model = o.model || { kind: 'npc', scene: baseScene(map) || 'town01', index: 1 };
+    loadNpcs(ctx, o.model.scene, () => renderSelection(ctx, mctx, side, map));
+    const nctx = Object.create(mctx);
+    nctx.changed = (s) => { loadNpcs(ctx, o.model.scene, () => {}); mctx.changed(s); };
+    box.append(npcModelPicker(nctx, o.model, () => mctx.changed(true)));
+    box.append(grid(mctx, o, [
+      { k: 'clip', t: 'oint', label: 'Idle clip', hint: 'ANM record + 1; empty keeps the placement\'s' },
+      { k: 'walk_clip', t: 'oint', label: 'Walk clip', hint: 'played on patrol legs' },
+      { k: 'line', t: 'oref', kind: 'line', label: 'Says (dialog line)' },
+      { k: 'shop', t: 'otext', label: 'Card dealer', hint: 'a cards.toml dealer id; talking opens its counter' },
+    ], p));
+    const pat = h('input', { type: 'text', value: (o.patrol || []).map((t) => t.join(',')).join(' '), placeholder: 'c,r c,r ...', spellcheck: 'false', 'aria-label': 'Patrol waypoints' });
+    pat.addEventListener('change', () => {
+      o.patrol = pat.value.trim().split(/\s+/).filter(Boolean).map((t) => t.split(',').map((x) => parseInt(x, 10) || 0).slice(0, 2)).filter((t) => t.length === 2);
+      mctx.changed(true);
+    });
+    box.append(h('label', { class: 'xw-field', 'data-path': `${p}.patrol` }, h('span', {}, 'Patrol', h('span', { class: 'xw-hint' }, ' tiles it walks to and back from, in order')), pat));
+    box.append(h('p', { class: 'xw-note' }, 'Talking to the NPC says its line and counts as talking to its id: a quest whose giver or talk objective names that id advances.'));
   }
   side.append(box);
 }

@@ -35,6 +35,7 @@ pub mod cards;
 pub mod dialog;
 pub mod manifest;
 pub mod map;
+pub mod map_rules;
 pub mod modes;
 pub mod progression;
 pub mod quest;

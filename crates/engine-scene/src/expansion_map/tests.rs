@@ -56,6 +56,7 @@ fn image(def: &MapDef) -> Vec<u8> {
         BaseInputs {
             base_map: None,
             geometry_entry: Some(99),
+            geometry_len: Some(20),
         },
     )
     .unwrap()
@@ -215,4 +216,75 @@ fn a_map_off_the_field_grid_is_refused() {
     def.tiles.origin = [124, 0];
     let grid = def.tile_grid().unwrap();
     assert!(build_field_map_image(&def, &grid, BaseInputs::default()).is_err());
+}
+
+#[test]
+fn wall_tiles_name_a_generated_box_past_the_geometry_pack() {
+    let mut def = def();
+    def.tiles.legend.get_mut("#").unwrap().wall = Some(WallMesh::Box {
+        height: 200,
+        tpage: 28,
+        clut: 32576,
+        tile: 9,
+    });
+    let grid = def.tile_grid().unwrap();
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(20),
+        },
+    )
+    .unwrap();
+    assert_eq!(out.wall_tmds.len(), 1, "one box for every wall tile");
+    let tiles = legaia_scene_formats::field_objects::parse_terrain_tiles(&out.image);
+    let walls = def
+        .tiles
+        .rows
+        .iter()
+        .flat_map(|r| r.chars())
+        .filter(|&c| c == '#')
+        .count();
+    assert_eq!(
+        tiles.iter().filter(|p| p.pack_index == Some(20)).count(),
+        walls,
+        "every wall cell draws pack mesh 20, the first past the pack"
+    );
+    // Without the pack's length there is nowhere to put the box.
+    assert!(build_field_image(&def, &grid, BaseInputs::default()).is_err());
+}
+
+#[test]
+fn a_wall_box_is_a_textured_tmd_of_the_tile_footprint() {
+    let raw = wall_box_tmd(200, 28, 32576, 9).unwrap();
+    let tmd = legaia_tmd::parse(&raw).expect("the box parses as a Legaia TMD");
+    assert_eq!(tmd.objects.len(), 1);
+    let v = &tmd.objects[0].vertices;
+    let (lo, hi) = v
+        .iter()
+        .fold(([i16::MAX; 3], [i16::MIN; 3]), |(lo, hi), p| {
+            let p = [p.x, p.y, p.z];
+            (
+                [lo[0].min(p[0]), lo[1].min(p[1]), lo[2].min(p[2])],
+                [hi[0].max(p[0]), hi[1].max(p[1]), hi[2].max(p[2])],
+            )
+        });
+    assert_eq!(
+        (lo, hi),
+        ([-64, -200, -64], [64, 0, 64]),
+        "Y down, tile wide"
+    );
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, &raw);
+    // Four sides in two 128 / 72 storeys plus the top, both windings, two
+    // triangles a face.
+    assert_eq!(mesh.indices.len() / 3, (4 * 2 + 1) * 2 * 2);
+    // Atlas cell 9 is (32, 32) on the page.
+    assert!(
+        mesh.uvs
+            .iter()
+            .all(|uv| (32..64).contains(&uv[0]) && (32..64).contains(&uv[1]))
+    );
+    assert!(wall_box_tmd(0, 28, 0, 0).is_err());
 }

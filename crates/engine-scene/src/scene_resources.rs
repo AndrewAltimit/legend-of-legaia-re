@@ -107,6 +107,48 @@ pub const FIELD_SHARED_BLOCKS: &[&str] = &["init_data", "player_data"];
 /// block) when an engine wants the boot VRAM populated.
 pub const BATTLE_BOOT_BLOCKS: &[&str] = &["edstati3", "battle_data"];
 
+/// A field scene's environment geometry pack as the field load enumerates
+/// it: the PROT entry holding it and how many meshes it has - the index
+/// space a `.MAP` record's `+0x10` mesh field names. The pack is the entry
+/// the scene's descriptor walk registers the most meshes under, the same
+/// vote [`crate::field_env::env_pack_entry`] takes over a built pool. `None`
+/// for a scene the walk cannot enumerate (its pool comes from the magic
+/// sweep instead).
+pub fn field_geometry_pack(scene: &Scene) -> Option<(u32, usize)> {
+    let mut counts: std::collections::BTreeMap<u32, usize> = Default::default();
+    for t in descriptor_walk_pool(scene) {
+        *counts.entry(t.entry_idx).or_default() += 1;
+    }
+    counts
+        .into_iter()
+        .max_by_key(|&(idx, n)| (n, std::cmp::Reverse(idx)))
+}
+
+/// The generated meshes a pack map adds to its base scene's geometry pack
+/// ([`crate::expansion_map::SceneOverride::wall_tmds`]), registered under
+/// the pack's entry after the pack's own meshes.
+fn override_tmds(scene: &Scene) -> Vec<ResolvedTmd> {
+    let Some(o) = scene.overrides.as_ref() else {
+        return Vec::new();
+    };
+    let Some(entry_idx) = o.geometry_entry else {
+        return Vec::new();
+    };
+    o.wall_tmds
+        .iter()
+        .filter_map(|raw| {
+            let tmd = legaia_tmd::parse(raw).ok()?;
+            Some(ResolvedTmd {
+                entry_idx,
+                offset: 0,
+                byte_len: raw.len(),
+                tmd,
+                raw: raw.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Per-scene runtime resources: VRAM populated from every TIM in the
 /// CDNAME block, plus a parsed TMD pool, plus a count of how many TIMs
 /// fed VRAM. Owns its bytes - safe to hold across a subsequent scene

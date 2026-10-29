@@ -250,7 +250,19 @@ impl World {
     ///
     /// PORT: FUN_80019278
     pub fn sample_field_floor_height(&self, world_x: i32, world_z: i32) -> i32 {
-        self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut)
+        let y =
+            self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut);
+        self.with_expansion_floor_top(y, world_x, world_z)
+    }
+
+    /// `y` raised to a pack map's standable top under `(x, z)` when the top
+    /// stands above it (`World::expansion_floor_top_y`); `y` itself off
+    /// every top and with no pack map.
+    fn with_expansion_floor_top(&self, y: i32, x: i32, z: i32) -> i32 {
+        match self.expansion_floor_top_y(x, z) {
+            Some(top) => y.min(top),
+            None => y,
+        }
     }
 
     /// The same sample taken through the scene's **MAN-header** ladder
@@ -270,7 +282,12 @@ impl World {
     ///
     /// REF: FUN_801DAB90
     pub fn sample_field_floor_height_static(&self, world_x: i32, world_z: i32) -> i32 {
-        self.sample_field_floor_height_with(world_x, world_z, &self.terrain.floor_height_lut_static)
+        let y = self.sample_field_floor_height_with(
+            world_x,
+            world_z,
+            &self.terrain.floor_height_lut_static,
+        );
+        self.with_expansion_floor_top(y, world_x, world_z)
     }
 
     fn sample_field_floor_height_with(&self, world_x: i32, world_z: i32, lut: &[i16; 16]) -> i32 {

@@ -15,6 +15,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 
 use legaia_actor_formats::monster_archive;
+use legaia_engine_scene::npc_catalog::{NpcPick, scene_npc_picks};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_expansion_format::refs::{BGM_COUNT, DiscRef, DiscResolver, PROT_ENTRY_COUNT};
 use legaia_game_tables::item_names::ItemNameTable;
@@ -78,6 +79,16 @@ pub struct CatalogLists {
 pub struct DiscCatalog {
     pub index: ProtIndex,
     pub lists: CatalogLists,
+    /// Per scene, read once: its geometry pack's length and the placements
+    /// a pack NPC can borrow (`None` for a scene that has none to read).
+    scenes: std::cell::RefCell<BTreeMap<String, SceneFacts>>,
+}
+
+/// What the validator and the NPC picker read off one scene.
+#[derive(Debug, Clone, Default)]
+struct SceneFacts {
+    geometry_len: Option<usize>,
+    npcs: Option<Vec<NpcPick>>,
 }
 
 impl DiscCatalog {
@@ -155,7 +166,42 @@ impl DiscCatalog {
         }
         lists.bgm = bgm_list(&db);
 
-        Ok(Self { index, lists })
+        Ok(Self {
+            index,
+            lists,
+            scenes: Default::default(),
+        })
+    }
+
+    /// Scene `name`'s facts, read on first use.
+    fn scene_facts(&self, name: &str) -> SceneFacts {
+        if let Some(f) = self.scenes.borrow().get(name) {
+            return f.clone();
+        }
+        let facts = SceneFacts {
+            geometry_len: Scene::load(&self.index, name)
+                .ok()
+                .and_then(|s| legaia_engine_scene::scene_resources::field_geometry_pack(&s))
+                .map(|(_, n)| n),
+            npcs: scene_npc_picks(&self.index, name).ok(),
+        };
+        self.scenes
+            .borrow_mut()
+            .insert(name.to_string(), facts.clone());
+        facts
+    }
+
+    /// The placements of scene `name` a pack NPC can borrow its model from,
+    /// with the first line each says (the only name retail gives an NPC).
+    pub fn scene_npcs(&self, name: &str) -> Result<SceneNpcs> {
+        let picks = self
+            .scene_facts(name)
+            .npcs
+            .with_context(|| format!("scene `{name}` has no NPC placements to read"))?;
+        Ok(SceneNpcs {
+            scene: name.to_string(),
+            npcs: picks,
+        })
     }
 
     fn monster(&self, id: u16) -> Option<&MonsterRow> {
@@ -229,6 +275,13 @@ impl DiscCatalog {
             scene.field_floor_height_lut(&self.index).ok().flatten(),
         ))
     }
+}
+
+/// A scene's NPC placements, for the NPC model picker.
+#[derive(Debug, Clone, Serialize)]
+pub struct SceneNpcs {
+    pub scene: String,
+    pub npcs: Vec<NpcPick>,
 }
 
 /// A base scene's field map (`None` when it has none) and floor ladder.
@@ -347,7 +400,21 @@ impl DiscResolver for DiscCatalog {
                     Err(format!("PROT entry {prot} is not on this disc"))
                 }
             }
+            DiscRef::Npc { scene, index } => {
+                let Some(npcs) = self.scene_facts(scene).npcs else {
+                    return Err(format!("scene `{scene}` has no NPC placements"));
+                };
+                if npcs.iter().any(|p| p.index == *index) {
+                    Ok(())
+                } else {
+                    Err(format!("scene `{scene}` has no placement {index}"))
+                }
+            }
         }
+    }
+
+    fn scene_geometry_len(&self, scene: &str) -> Option<usize> {
+        self.scene_facts(scene).geometry_len
     }
 }
 

@@ -234,3 +234,129 @@ pub fn catalog_scene_npcs(
         unposable_count,
     })
 }
+
+/// [`catalog_scene_npcs`] for the scene a host is running, which a pack map
+/// may have overlaid: with a [`crate::expansion_map::SceneOverride`] on
+/// `scene` the catalog is the map's NPCs (its
+/// [`npcs`](crate::expansion_map::SceneOverride::npcs) placements, resolved
+/// against the base scene's pool like any placement) instead of the MAN's.
+/// Every host builds its NPC draws through this, so a pack NPC draws through
+/// the same path a retail one does.
+pub fn catalog_live_scene_npcs(
+    index: &ProtIndex,
+    scene: &Scene,
+    res: &SceneResources,
+    play_pool: Option<&[Option<Arc<GlobalTmd>>]>,
+) -> Result<NpcCatalog, String> {
+    let Some(o) = scene.overrides.as_ref() else {
+        return catalog_scene_npcs(index, &scene.name, res, play_pool);
+    };
+    let mut entries = Vec::with_capacity(o.npcs.len());
+    let mut special_count = 0;
+    for p in &o.npcs {
+        let nobj = if p.special_model {
+            special_count += 1;
+            let Some(g) = play_pool
+                .and_then(|pool| pool.get(usize::from(p.model_index - 0xF0)))
+                .and_then(|s| s.as_ref())
+            else {
+                continue;
+            };
+            g.tmd.objects.len() as u32
+        } else {
+            let Some(t) = res.tmds.get(usize::from(p.model_index)) else {
+                continue;
+            };
+            t.tmd.objects.len() as u32
+        };
+        entries.push(NpcEntry {
+            placement: p.clone(),
+            kind: "talk",
+            target_map: None,
+            dialog: None,
+            dialog_tree: None,
+            nobj,
+            conditional: false,
+            special: p.special_model,
+        });
+    }
+    Ok(NpcCatalog {
+        scene: scene.name.clone(),
+        entries,
+        anm_prot: scene_anm_prot(scene),
+        special_count,
+        unposable_count: 0,
+    })
+}
+
+/// The actor placements of the scene a host is running: a pack map's NPCs
+/// under a [`crate::expansion_map::SceneOverride`], else the MAN's
+/// partition-1 list. Empty for a scene with neither.
+pub fn live_scene_placements(index: &ProtIndex, scene: &Scene) -> Vec<ActorPlacement> {
+    if let Some(o) = scene.overrides.as_ref() {
+        return o.npcs.clone();
+    }
+    scene
+        .field_man_payload(index)
+        .ok()
+        .flatten()
+        .and_then(|man| {
+            legaia_scene_formats::man_section::parse(&man)
+                .ok()
+                .map(|mf| classify_placements(&mf, &man))
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect()
+}
+
+/// One retail placement a pack NPC can borrow ([`legaia_expansion_format::refs::DiscRef::Npc`]),
+/// as a picker lists it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NpcPick {
+    /// The placement index a `DiscRef::Npc` names.
+    pub index: u16,
+    pub model_index: u8,
+    pub anim_id: u8,
+    /// A party member / save point from the global pool, which draws in
+    /// any scene.
+    pub special: bool,
+    /// `talk` / `door` / `prop`.
+    pub kind: &'static str,
+    /// The first line of the placement's dialogue, the only name retail
+    /// gives an NPC.
+    pub label: Option<String>,
+}
+
+/// Every placement scene `name`'s MAN lists, for an NPC model picker. Needs
+/// no scene resources: the placement bytes alone.
+pub fn scene_npc_picks(index: &ProtIndex, name: &str) -> Result<Vec<NpcPick>, String> {
+    let scene = Scene::load(index, name).map_err(|e| format!("{e:#}"))?;
+    let man = scene
+        .field_man_payload(index)
+        .map_err(|e| format!("MAN: {e:#}"))?
+        .ok_or_else(|| format!("{name}: scene has no MAN"))?;
+    let mf =
+        legaia_scene_formats::man_section::parse(&man).map_err(|e| format!("MAN parse: {e:#}"))?;
+    Ok(classify_placements(&mf, &man)
+        .into_iter()
+        .map(|(p, kind)| {
+            let (kind, label) = match &kind {
+                PlacementKind::Portal { .. } => ("door", None),
+                PlacementKind::Npc { dialog_inline, .. } => {
+                    ("talk", dialog_inline.as_deref().and_then(dialog_label))
+                }
+                PlacementKind::Plain => ("prop", None),
+            };
+            NpcPick {
+                index: p.index as u16,
+                model_index: p.model_index,
+                anim_id: p.anim_id,
+                special: p.special_model,
+                kind,
+                label,
+            }
+        })
+        .collect())
+}

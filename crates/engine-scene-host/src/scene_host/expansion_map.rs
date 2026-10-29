@@ -22,7 +22,8 @@ use super::*;
 use legaia_engine_expansion::map::{ActiveMap, FiredTrigger};
 use legaia_engine_expansion::quest::QuestEvent;
 use legaia_engine_scene::expansion_map::{
-    BaseInputs, SceneOverride, build_field_map_image, floor_lut, prop_scales, tile_centre_world,
+    BaseInputs, SceneOverride, build_field_image, floor_lut, prop_scales, resolve_map_npcs,
+    tile_centre_world,
 };
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
@@ -104,21 +105,30 @@ impl SceneHost {
         let base_lut = base.field_floor_height_lut(&self.index)?;
         let geometry_entry =
             legaia_engine_scene::scene_bundle::find_bundle(&base).map(|b| b.entry_idx());
-        let image = build_field_map_image(
+        // The geometry pack as the field load registers it: where generated
+        // wall boxes join it.
+        let geometry = legaia_engine_scene::scene_resources::field_geometry_pack(&base);
+        let image = build_field_image(
             def,
             &grid,
             BaseInputs {
                 base_map: base_map.as_deref(),
                 geometry_entry,
+                geometry_len: geometry.map(|(_, n)| n),
             },
         )
         .with_context(|| format!("map '{map_id}' field image"))?;
         drop(base);
+        let npcs = resolve_map_npcs(&self.index, def, &base_name)
+            .with_context(|| format!("map '{map_id}' NPCs"))?;
         let overrides = SceneOverride {
             map_id: map_id.to_string(),
-            field_map: image,
+            field_map: image.image,
             floor_lut: floor_lut(def, base_lut),
             prop_scales: prop_scales(def),
+            npcs,
+            wall_tmds: image.wall_tmds,
+            geometry_entry: geometry.map(|(e, _)| e),
         };
         let (sx, sz) = match seat {
             Some((x, z, _)) => (x, z),
@@ -154,6 +164,16 @@ impl SceneHost {
             player.move_state.world_y = y.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
         }
         self.world.face_player_sector(point.facing);
+        // The map's NPCs: the placements the entry seated on the scene,
+        // standing on their tiles (`World::install_expansion_npcs`).
+        let npcs = self
+            .scene
+            .as_ref()
+            .and_then(|s| s.overrides.as_ref())
+            .map(|o| o.npcs.clone())
+            .unwrap_or_default();
+        let facings: Vec<u8> = def.npcs.iter().map(|n| n.facing).collect();
+        self.world.install_expansion_npcs(&npcs, &facings);
         if let Some((_, _, facing)) = seat
             && let Some(player) = self.world.actors.first_mut()
         {
@@ -265,6 +285,10 @@ impl SceneHost {
         };
         let tile = active.tile_at_world(x, z);
         let exit = active.step(tile);
+        self.world.step_expansion_npc_patrols();
+        let Some(active) = self.world.expansion.map.as_mut() else {
+            return Ok(None);
+        };
         let fired = active.take_events();
         let map_id = active.map_id.clone();
         for trigger in fired {

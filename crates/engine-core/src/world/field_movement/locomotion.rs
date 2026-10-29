@@ -1239,7 +1239,8 @@ impl World {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz), (cx, nz));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.locomotion.step_delta.1 = FIELD_PROBE_DELTA;
@@ -1251,7 +1252,8 @@ impl World {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz), (cx, nz));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.locomotion.step_delta.1 = -FIELD_PROBE_DELTA;
@@ -1267,7 +1269,8 @@ impl World {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz2), (nx, cz2));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.locomotion.step_delta.0 = FIELD_PROBE_DELTA;
@@ -1279,7 +1282,8 @@ impl World {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz2), (nx, cz2));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.locomotion.step_delta.0 = -FIELD_PROBE_DELTA;

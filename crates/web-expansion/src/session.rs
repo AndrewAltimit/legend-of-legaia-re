@@ -107,6 +107,13 @@ impl Core {
         }
     }
 
+    /// Scene `scene`'s NPC placements for the NPC model picker
+    /// ([`DiscCatalog::scene_npcs`]), as JSON.
+    pub fn scene_npcs_json(&self, scene: &str) -> Result<String> {
+        let cat = self.catalog.as_ref().context("load your disc first")?;
+        Ok(serde_json::to_string(&cat.scene_npcs(scene)?)?)
+    }
+
     /// The base scene's geometry pack (see [`DiscCatalog::scene_objects`]),
     /// assembled once per scene.
     pub fn scene_objects_json(&mut self, scene: &str) -> Result<String> {
@@ -387,6 +394,9 @@ impl Core {
             BaseInputs {
                 base_map: base_map.as_deref(),
                 geometry_entry: None,
+                // Wall boxes do not touch the collision grid; any pack
+                // length places them.
+                geometry_len: Some(0),
             },
         )?;
         let ladder = floor_lut(&def, base_lut);
@@ -431,6 +441,23 @@ impl Core {
             "ladder_from_base": def.floor_heights.is_empty() && base_lut.is_some(),
             "tiers": FLOOR_TIERS,
             "off_grid": off_grid,
+            // Standable prop tops in map-local tiles: `[col0, row0, col1,
+            // row1, top]`, the painter's overlay of what action movement
+            // stands on.
+            "tops": def
+                .floor_tops()
+                .iter()
+                .map(|t| {
+                    let to_tile = |w: i32, o: u8| f64::from(w) / 128.0 - f64::from(o);
+                    json!([
+                        to_tile(t.rect[0], def.tiles.origin[0]),
+                        to_tile(t.rect[1], def.tiles.origin[1]),
+                        to_tile(t.rect[2], def.tiles.origin[0]),
+                        to_tile(t.rect[3], def.tiles.origin[1]),
+                        t.top,
+                    ])
+                })
+                .collect::<Vec<_>>(),
         }))
     }
 }

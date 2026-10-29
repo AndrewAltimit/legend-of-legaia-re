@@ -273,6 +273,9 @@ impl SceneResources {
         // special range), so the shared blocks' head TMDs (the retail
         // `player_data` character pack) append after the scene's own.
         parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize, true);
+        // A pack map's generated wall boxes join the geometry pack, after
+        // its own meshes.
+        tmds.extend(override_tmds(scene));
         for shared in shared_scenes {
             parse_scene_tmds_anms(
                 shared,

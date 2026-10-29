@@ -249,18 +249,18 @@ impl PlayWindowApp {
             // under the narration crawl. Resolved once at the top of this fn -
             // the placed static objects pose from the same bundle.
             let locomotion_bundle = self.npc_anim_bundles.1.clone();
+            // The live scene's placements: a pack map's NPCs when one
+            // overlays the scene, else the MAN's partition-1 list.
             let placements = self
                 .session
                 .host
                 .scene
                 .as_ref()
-                .and_then(|s| s.field_man_payload(&self.session.host.index).ok().flatten())
-                .and_then(|man| {
-                    legaia_scene_formats::man_section::parse(&man)
-                        .ok()
-                        .map(|mf| {
-                            legaia_engine_field::man_field_scripts::classify_placements(&mf, &man)
-                        })
+                .map(|s| {
+                    legaia_engine_scene::npc_catalog::live_scene_placements(
+                        &self.session.host.index,
+                        s,
+                    )
                 })
                 .unwrap_or_default();
             let sources = NpcUploadSources {
@@ -269,7 +269,7 @@ impl PlayWindowApp {
                 locomotion_bundle: &locomotion_bundle,
                 live_npc_meshes,
             };
-            for (p, _kind) in &placements {
+            for p in &placements {
                 self.upload_field_npc(p, &sources, &mut prop_light_sets);
             }
             if !self.field_npc_draws.is_empty() {

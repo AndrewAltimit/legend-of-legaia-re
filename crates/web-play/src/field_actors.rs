@@ -121,12 +121,15 @@ impl FieldActors {
             return;
         };
         let name = scene.name.clone();
-        match crate::field_npc::build_npc_catalog_play(
+        // The live scene's catalog: a pack map's NPCs when one overlays it.
+        match legaia_engine_scene::npc_catalog::catalog_live_scene_npcs(
             &host.index,
-            &name,
+            scene,
             res,
-            &host.world.field_head_pool,
-        ) {
+            Some(&host.world.field_head_pool),
+        )
+        .map(crate::field_npc::FieldNpcPack::from_catalog)
+        {
             Ok(mut pack) => {
                 for e in &mut pack.entries {
                     if let Some(a) = host.world.field_npc_live_anim(e.placement.index) {

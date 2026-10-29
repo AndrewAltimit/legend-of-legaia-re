@@ -128,6 +128,7 @@ function idsOf(kind) {
     case 'booster': return arr(p.cards.boosters);
     case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
     case 'map': return keys(p.maps);
+    case 'npc': return Object.values(p.maps || {}).flatMap((m) => arr(m.npcs));
     default: return [];
   }
 }
@@ -158,6 +159,7 @@ const ctx = {
     try { return JSON.parse(S.wb.map_preview(JSON.stringify(map))); } catch (e) { return { error: String(e) }; }
   },
   sceneObjects: (scene) => JSON.parse(S.wb.scene_objects(scene)),
+  sceneNpcs: (scene) => JSON.parse(S.wb.scene_npcs(scene)),
 };
 
 function setStatus(msg, kind, id) {

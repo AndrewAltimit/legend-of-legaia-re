@@ -386,6 +386,10 @@ impl World {
         // snap (`town0c` `P1[21]`, Nene's "Bees!" beat, turns to the player
         // before the Queen Bee ambush).
         self.face_field_npc_at_player(slot);
+        // A pack map's NPC talks through the pack, not a MAN record.
+        if self.expansion_npc_interact(interact_id, slot) {
+            return;
+        }
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
         // approach / interact runs the placement's own partition-1 record
         // through the field VM - the engine mirror of retail's touch

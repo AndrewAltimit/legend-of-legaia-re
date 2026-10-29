@@ -95,6 +95,9 @@ pub struct Checker<'a> {
     declared: BTreeMap<&'static str, BTreeMap<String, String>>,
     pending: Vec<PendingRef>,
     disc_refs: Vec<(String, String, DiscRef)>,
+    /// `(file, field, scene, mesh index)`: geometry-pack indices to check
+    /// against the scene's pack once a resolver is supplied.
+    geometry_refs: Vec<(String, String, String, u16)>,
 }
 
 impl<'a> Checker<'a> {
@@ -106,6 +109,7 @@ impl<'a> Checker<'a> {
             declared: BTreeMap::new(),
             pending: Vec::new(),
             disc_refs: Vec::new(),
+            geometry_refs: Vec::new(),
         }
     }
 
@@ -205,6 +209,18 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Record that `field` names mesh `index` of scene `scene`'s environment
+    /// geometry pack: checked against the pack's length when the resolver
+    /// knows it ([`DiscResolver::scene_geometry_len`]).
+    pub fn geometry_index(&mut self, field: &str, scene: &str, index: u16) {
+        self.geometry_refs.push((
+            self.file.clone(),
+            field.to_string(),
+            scene.to_string(),
+            index,
+        ));
+    }
+
     fn resolve_references(&mut self) {
         let own = self.pack.manifest.id.clone();
         let requires: BTreeSet<&str> = self
@@ -254,6 +270,18 @@ impl<'a> Checker<'a> {
         for (path, field, r) in refs {
             if let Err(e) = resolver.resolve(&r) {
                 self.push(Severity::Error, &path, &field, format!("{r}: {e}"));
+            }
+        }
+        for (path, field, scene, index) in std::mem::take(&mut self.geometry_refs) {
+            if let Some(len) = resolver.scene_geometry_len(&scene)
+                && usize::from(index) >= len
+            {
+                self.push(
+                    Severity::Error,
+                    &path,
+                    &field,
+                    format!("scene `{scene}`'s geometry pack has {len} meshes; mesh {index} is past the last"),
+                );
             }
         }
     }

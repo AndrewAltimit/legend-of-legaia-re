@@ -4,13 +4,15 @@ A pack map is a walkable field scene a modder lays out tile by tile, with no
 disc bytes in the pack. It borrows its look from a retail **base scene** - the
 scene's texture pages, palettes and geometry pack stay on the player's disc and
 are named only by coordinate - and supplies everything that makes it a place:
-walls, floor heights, props, spawns, exits, trigger zones and encounter zones.
+walls, floor heights, props, NPCs, spawns, exits, trigger zones and
+encounter zones.
 
 Schema: [`legaia_expansion_format::map`](../../crates/expansion-format/src/map.rs).
 Field image builder: [`legaia_engine_scene::expansion_map`](../../crates/engine-scene/src/expansion_map.rs).
 Entry and per-tick step: `SceneHost::enter_expansion_map` in
 [`engine-scene-host`](../../crates/engine-scene-host/src/scene_host/expansion_map.rs);
-zone runtime: [`legaia_engine_expansion::map`](../../crates/engine-expansion/src/map.rs).
+zone and NPC runtime: [`legaia_engine_expansion::map`](../../crates/engine-expansion/src/map.rs);
+validation: [`legaia_expansion_format::map_rules`](../../crates/expansion-format/src/map_rules.rs).
 Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/rebirth_tower_1f.toml).
 
 ## File layout
@@ -22,7 +24,8 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `base` | `scene` (a `DiscRef::Scene`) and `geometry` (`"none"` or `"keep"`). |
 | `floor_heights` | Up to 16 tier heights, world units, up positive. Empty takes the base scene's ladder. |
 | `tiles` | `origin`, `rows`, `legend` - the painter's grid, below. |
-| `props` | Placed meshes from the base scene's geometry pack. |
+| `props` | Placed meshes from the base scene's geometry pack; a prop with a `top` is standable. |
+| `npcs` | Field NPCs wearing a retail placement's model, saying pack lines. |
 | `spawns` | Named arrival points; the first is the default. |
 | `exits` | Tile rectangles leading to a retail scene or another pack map. |
 | `triggers` | Tile rectangles that raise a pack event (battle, dialog, quest). |
@@ -51,6 +54,7 @@ A style is:
 "^" = { height = 1, ground = { kind = "texture", tpage = 28, clut = 32576, tile = 0 } }
 "." = { ground = { kind = "base_cell", cell = [8, 11] } }
 "d" = { ground = { kind = "mesh", index = 4 } }
+"W" = { walls = "all", wall = { kind = "box", height = 160, tpage = 28, clut = 32576, tile = 2 } }
 ```
 
 - `walls` is `"none"`, `"all"`, or a list of quarters. A tile is four `64 x 64`
@@ -62,6 +66,8 @@ A style is:
   scene's VRAM), a `base_cell` (the ground texture of one of the base scene's
   own cells, in its field-grid coordinates), or a `mesh` (a base-pack mesh
   stamped on the tile as a decoration cell). No `ground` draws nothing.
+- `wall` is what stands on the tile so a modder can see it
+  ([Visible walls](#visible-walls)). It draws only: collision stays `walls`.
 
 ### Tiers are corner heights
 
@@ -119,6 +125,7 @@ real palette, so a textured tile keeps its gate.
 |---|---|---|
 | Ground texture | `0x0001` | `+0x14` atlas cell, `+0x15` tpage, `+0x16` clut |
 | Decoration mesh | `0x0012` | `+0x10` pack mesh |
+| Wall | `0x0012` (`0x0013` on a textured tile) | `+0x10` wall mesh, the tile's ground texture |
 | Prop | `0x0016` (`0x0017` on a textured tile) | `+0x00..+0x0C` offset and rotation, `+0x10` pack mesh, the tile's ground texture |
 
 A cell names one record, so a prop's record also carries the ground texture of
@@ -134,6 +141,8 @@ offset = [0, 0, 0]                          # world units from the tile centre, 
 rotation = [0.0, 45.0, 0.0]                 # degrees; y is the yaw
 scale = 0.75                                # uniform; 1 when left out
 solid = true                                # close the prop's tile
+top = 64                                    # standable: a floor 64 units up
+footprint = [128, 128]                      # the top's extent, world units
 ```
 
 `mesh` is either `{ object = N }` or `{ tmd = { kind = "tmd", prot = P, index = N } }`.
@@ -142,6 +151,125 @@ scene's geometry pack (its scene-asset bundle); anything else is refused at
 entry. `scale` folds into the prop's model matrix after its rotation, where a
 retail placed object's render scale lands. Props carry no collision box of
 their own: `solid` closes the tile.
+
+### Standable props
+
+A prop with a `top` is a floor box: a flat surface `top` world units up (the
+`floor_heights` convention) over its `footprint`, centred on the tile centre
+plus `offset`, the whole tile when the footprint is left out. It does not
+close its tile, so `solid` is unread.
+
+The floor sampler (`World::sample_field_floor_height`, the
+`FUN_80019278` port, and its camera-ladder sibling) answers the higher of
+the grid floor and the top inside the box. The tier grid is untouched: a
+top is not a corner height, so it neither slopes into its neighbours nor
+bends the ground mesh around it, which is why it is a separate surface
+rather than a raised tier ([Tiers are corner heights](#tiers-are-corner-heights)).
+The prop's mesh draws on the tile's floor as before; matching `top` to the
+mesh's visible height is the modder's call.
+
+| Mover | On a standable prop |
+|---|---|
+| Action movement | Stands, walks across, climbs a rise up to its step height, jumps onto a taller top and lands on it, falls off its edge. |
+| The retail walk | Refused at the edge of any top higher than the one it stands on: the walk climbs nothing. Walking off a top is not refused. |
+| NPC patrols | Walk the sampled floor; route them around a top. |
+
+## NPCs
+
+```toml
+[[npcs]]
+id = "tower_guide"                              # the quest talk key
+model = { kind = "npc", scene = "tower", index = 3 }
+tile = [7, 8]
+facing = 0                                      # compass sector, 0..8
+clip = 2                                        # optional idle clip id
+patrol = [[9, 8], [9, 6]]                       # optional loop of tiles
+walk_clip = 4                                   # optional clip a patrol leg plays
+line = "tower_guide_hello"                      # a dialog.toml line
+shop = "tower_dealer"                           # optional: a cards.toml dealer
+```
+
+An NPC is not an asset: a retail NPC is one record of its scene's MAN actor
+placement list, whose model byte indexes the scene's model pool and whose
+clip byte names a record of the scene's ANM bundle
+([`anm.md`](anm.md), [`script-vm.md`](../subsystems/script-vm.md)). A pack NPC
+borrows one by coordinate, `DiscRef::Npc { scene, index }`, the placement's
+partition-1 index (the site's NPC page lists it as the NPC's slot; `0` is
+the scene controller). Its model and idle clip come from that record; `clip`
+overrides the clip with another record of the same bundle (id = record + 1).
+The model scene must be the base scene - the mesh indexes the base scene's
+pool and samples its VRAM - unless the placement is a party member or save
+point (model byte `0xF0` and up), whose mesh is the resident global pool.
+
+At entry the engine reads each NPC's placement off the disc
+(`legaia_engine_scene::expansion_map::resolve_map_npcs`) and seats it as an
+actor placement of its own, slot `1 + n` for the map's `n`th NPC
+(`map::npc_slot`): the pack map runs no MAN, so nothing else holds those
+slots. From there the NPC is a field NPC on every path a retail one takes:
+
+| Path | What reads the pack NPC |
+|---|---|
+| Draw | The live-scene placement list (`npc_catalog::live_scene_placements`, `catalog_live_scene_npcs`) both hosts build their NPC meshes and clips from, posed by the base scene's ANM bundle. |
+| Collision | Its anchor in `World::npcs.positions`: the moving-actor box (`FUN_801CFC40`'s moving arm, ±40 units) blocks the player as a village NPC does. |
+| Talk | The facing probe (`FUN_801CF9F4`'s port) picks it on Cross; `World::trigger_field_interact` turns it to the player and hands the talk to the map. |
+| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. A leg starts only while no dialogue holds the field. |
+
+Talking to an NPC runs its `line` through the pack dialogue runner
+(`World::expansion_say`) and then raises the quest event `Talked(id)`
+(`World::expansion_talked`), so a quest naming the NPC as `giver` or in a
+`talk` objective advances; a quest line the talk starts plays after the
+NPC's own. An NPC with a `shop` (a `cards.toml` `[[dealers]]` id) opens that
+dealer's counter instead (`World::open_card_dealer`, the `card_dealer`
+trigger's path), and says its `line` only when the counter cannot open.
+
+## Visible walls
+
+A legend style's `wall` draws on every tile of that style:
+
+- `{ kind = "box", height, tpage, clut, tile }` - a box the tile's size,
+  `height` world units tall, each side and the top textured with one `32 x 32`
+  atlas cell of the base scene's VRAM (the three words of a `texture`
+  ground). Faces taller than `128` units stack.
+- `{ kind = "mesh", index }` - the base scene's geometry-pack mesh `index`.
+
+The box is built when the map loads
+(`legaia_engine_scene::expansion_map::wall_box_tmd`): the pack carries the
+five numbers, and the engine runs them through the Legaia TMD encoder. The
+scene's resource build appends each distinct box to the base scene's
+geometry pack after the pack's own meshes, so box `k` is pack mesh
+`geometry_len + k`, where `geometry_len` is the pack's length as the field
+load's descriptor walk registers it
+(`scene_resources::field_geometry_pack`). Each wall tile is a decoration
+cell naming that mesh, which both hosts draw through the ordinary
+decoration-cell path. A scene whose geometry the descriptor walk cannot
+enumerate has no length to append to, and a box on it is refused at entry.
+A tile holds one cell mesh, so a style cannot carry both a `mesh` ground
+and a `wall`.
+
+## Validation
+
+The validator (`legaia_expansion_format::validate`) checks each map against
+the sections it names, with or without a disc:
+
+| Check | Severity |
+|---|---|
+| `tiles` resolve (legend, sizes, tiers); at most 16 floor tiers | error |
+| Every spawn, exit, zone, prop, NPC tile and patrol waypoint lies on the grid | error |
+| The map has a spawn; spawn, exit, trigger, encounter and prop ids are unique in the map | error |
+| NPC ids are unique across the pack | error |
+| A trigger's `battle` / `boss` / `dialog` / `start_quest` / `card_dealer` names a defined formation, boss, line, quest, dealer | error |
+| An NPC's `line` and `shop` name a defined line and dealer | error |
+| An encounter zone's `table` is a `battle.toml` `[[encounters]]` `scene` | error |
+| ... whose table has no `steps` (it can never roll on a map) | warning |
+| A `talk` trigger's NPC id that no quest gives from or talks to | warning |
+| An exit to another map names a map of the pack and a spawn it has | error |
+| Facings are sectors `0..8`; a retail exit's tile is on the `128 x 128` grid | error |
+| Disc refs: the base scene, retail exit scenes, NPC models, BGM, prop TMDs (range rules, then the disc when one is loaded) | error |
+| One prop and one NPC a tile; a style with both a `mesh` ground and a `wall` | error |
+| Wall box height `1..=512`; standable footprint `1..=1024` a side | error |
+| An NPC model from a scene other than the base scene | warning |
+| A spawn, NPC or waypoint on a void or fully walled tile; an NPC on a prop's tile | warning |
+| With a disc: a geometry-pack index (`{ object = N }` props, `mesh` grounds and walls) past the base scene's pack | error |
 
 ## Exits, triggers and encounter zones
 
@@ -279,15 +407,12 @@ returns to it. The map's `name` shows as the place-name banner on entry.
 
 ## Gaps
 
-- **Wall visuals.** A wall tile blocks but draws nothing; a visible wall is
-  a prop or a `mesh` ground on the tile.
 - **Props from other scenes.** A prop mesh must come from the base scene's
   geometry pack; a TMD from another PROT entry (and the VRAM it samples) is not
   loaded.
-- **Map references are partly validated.** The validator checks a map's
-  entrances but not yet its trigger, encounter and exit ids against the
-  sections they name; a broken one logs at run time.
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
   preset applies on a host's direct entry (`--map`, the play page's
   *Enter map*).
+- **NPC clips.** A patrolling NPC keeps `walk_clip` (or its idle clip) at the
+  ends of its legs; nothing cues the idle clip back between legs.

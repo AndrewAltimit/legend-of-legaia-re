@@ -20,7 +20,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use legaia_expansion_format::map::{
-    ExitTarget, MapDef, MapEvent, TileGrid, once_flag, rect_contains,
+    ExitTarget, FloorTop, MapDef, MapEvent, NpcDef, TileGrid, npc_slot, once_flag, rect_contains,
 };
 
 /// A trigger zone the player stepped into.
@@ -58,6 +58,22 @@ pub struct ActiveMap {
     encounter: Option<usize>,
     /// Trigger events raised and not yet taken by their runtime.
     events: Vec<FiredTrigger>,
+    /// Each NPC's next patrol stop, an index into its route
+    /// ([`Self::patrol_route`]), parallel to `def.npcs`.
+    patrol_next: Vec<usize>,
+    /// The standable props' tops ([`MapDef::floor_tops`]).
+    floor_tops: Vec<FloorTop>,
+}
+
+/// What talking to a pack NPC does ([`ActiveMap::talk`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NpcTalk {
+    /// The NPC id: the quest event `Talked(id)`.
+    pub npc: String,
+    /// The `dialog.toml` line it says, `None` for a silent NPC.
+    pub line: Option<String>,
+    /// The card dealer it runs.
+    pub shop: Option<String>,
 }
 
 impl ActiveMap {
@@ -86,7 +102,11 @@ impl ActiveMap {
             fired,
             encounter: None,
             events: Vec::new(),
+            patrol_next: Vec::new(),
+            floor_tops: Vec::new(),
         };
+        m.patrol_next = vec![0; m.def.npcs.len()];
+        m.floor_tops = m.def.floor_tops();
         m.encounter = m.encounter_zone_at(spawn);
         m
     }
@@ -159,6 +179,77 @@ impl ActiveMap {
     /// The triggers fired and not yet taken.
     pub fn pending_events(&self) -> &[FiredTrigger] {
         &self.events
+    }
+
+    /// Every NPC with the actor placement slot it stands in
+    /// ([`npc_slot`]).
+    pub fn npcs(&self) -> impl Iterator<Item = (u8, &NpcDef)> + '_ {
+        self.def
+            .npcs
+            .iter()
+            .enumerate()
+            .filter_map(|(n, d)| Some((npc_slot(n)?, d)))
+    }
+
+    /// The NPC standing in placement slot `slot`.
+    pub fn npc_at_slot(&self, slot: u8) -> Option<&NpcDef> {
+        self.npcs().find(|&(s, _)| s == slot).map(|(_, d)| d)
+    }
+
+    /// The player talked to the NPC in `slot`: what it says and does.
+    pub fn talk(&self, slot: u8) -> Option<NpcTalk> {
+        let npc = self.npc_at_slot(slot)?;
+        Some(NpcTalk {
+            npc: npc.id.clone(),
+            line: (!npc.line.is_empty()).then(|| npc.line.clone()),
+            shop: npc.shop.clone(),
+        })
+    }
+
+    /// The world-space route NPC `n` loops: its own tile, then each patrol
+    /// waypoint. Empty for an NPC that stands still.
+    pub fn patrol_route(&self, n: usize) -> Vec<(i16, i16)> {
+        let Some(npc) = self.def.npcs.get(n) else {
+            return Vec::new();
+        };
+        if npc.patrol.is_empty() {
+            return Vec::new();
+        }
+        std::iter::once(&npc.tile)
+            .chain(&npc.patrol)
+            .map(|t| {
+                let (x, z) = self.def.tile_centre(t[0], t[1]);
+                (x as i16, z as i16)
+            })
+            .collect()
+    }
+
+    /// The next stop of NPC `n`'s patrol, advancing its cursor: the
+    /// waypoint after the one it last reached, wrapping back to its own
+    /// tile. `None` for an NPC that stands still.
+    pub fn next_patrol_stop(&mut self, n: usize) -> Option<(i16, i16)> {
+        let route = self.patrol_route(n);
+        let cursor = self.patrol_next.get_mut(n)?;
+        if route.is_empty() {
+            return None;
+        }
+        *cursor = (*cursor + 1) % route.len();
+        Some(route[*cursor])
+    }
+
+    /// The height (up positive) of the standable top under world `(x, z)`,
+    /// the highest when several overlap. `None` off every top.
+    pub fn floor_top_at(&self, x: i32, z: i32) -> Option<i16> {
+        self.floor_tops
+            .iter()
+            .filter(|t| t.contains(x, z))
+            .map(|t| t.top)
+            .max()
+    }
+
+    /// Whether the map has any standable top.
+    pub fn has_floor_tops(&self) -> bool {
+        !self.floor_tops.is_empty()
     }
 }
 
@@ -253,6 +344,75 @@ table = "west"
         });
         m.step(Some((2, 1)));
         assert!(m.take_events().is_empty());
+    }
+
+    const NPC_MAP: &str = r######"
+[tiles]
+origin = [10, 20]
+rows = ["......", "......"]
+[tiles.legend]
+"." = {}
+
+[[npcs]]
+id = "elder"
+tile = [1, 0]
+line = "hello"
+
+[[npcs]]
+id = "dealer"
+tile = [4, 1]
+shop = "cards"
+patrol = [[5, 1], [5, 0]]
+
+[[props]]
+mesh = { object = 1 }
+tile = [2, 1]
+top = 64
+"######;
+
+    fn npc_map() -> ActiveMap {
+        let def: MapDef = toml::from_str(NPC_MAP).unwrap();
+        let grid = def.tile_grid().unwrap();
+        ActiveMap::new("m", Arc::new(def), Arc::new(grid), (0, 0), |_| false)
+    }
+
+    #[test]
+    fn npcs_take_slots_from_one_and_talk_reports_line_and_shop() {
+        let m = npc_map();
+        let slots: Vec<(u8, &str)> = m.npcs().map(|(s, n)| (s, n.id.as_str())).collect();
+        assert_eq!(slots, vec![(1, "elder"), (2, "dealer")]);
+        assert!(m.talk(0).is_none());
+        let t = m.talk(1).unwrap();
+        assert_eq!(
+            (t.npc.as_str(), t.line.as_deref()),
+            ("elder", Some("hello"))
+        );
+        assert_eq!(t.shop, None);
+        let t = m.talk(2).unwrap();
+        assert_eq!(t.line, None);
+        assert_eq!(t.shop.as_deref(), Some("cards"));
+    }
+
+    #[test]
+    fn a_patrol_loops_through_its_waypoints_and_home() {
+        let mut m = npc_map();
+        assert_eq!(m.next_patrol_stop(0), None, "the elder stands still");
+        let centre = |c: i16, r: i16| ((10 + c) * 128 + 64, (20 + r) * 128 + 64);
+        assert_eq!(m.next_patrol_stop(1), Some(centre(5, 1)));
+        assert_eq!(m.next_patrol_stop(1), Some(centre(5, 0)));
+        assert_eq!(m.next_patrol_stop(1), Some(centre(4, 1)));
+        assert_eq!(m.next_patrol_stop(1), Some(centre(5, 1)));
+    }
+
+    #[test]
+    fn a_standable_prop_raises_the_floor_over_its_tile() {
+        let m = npc_map();
+        assert!(m.has_floor_tops());
+        let (x0, z0) = (12 * 128, 21 * 128);
+        assert_eq!(m.floor_top_at(x0, z0), Some(64));
+        assert_eq!(m.floor_top_at(x0 + 127, z0 + 127), Some(64));
+        assert_eq!(m.floor_top_at(x0 + 128, z0), None);
+        assert_eq!(m.floor_top_at(x0 - 1, z0), None);
     }
 
     #[test]

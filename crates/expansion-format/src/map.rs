@@ -86,6 +86,8 @@ pub struct MapDef {
     pub tiles: TileLayer,
     /// Placed props.
     pub props: Vec<PropDef>,
+    /// Pack NPCs standing on the map ([`NpcDef`]).
+    pub npcs: Vec<NpcDef>,
     /// Where the player can arrive. The first is the default.
     pub spawns: Vec<SpawnPoint>,
     /// Tile rectangles that leave the map.
@@ -190,7 +192,33 @@ pub struct TileStyle {
     /// What draws on the tile's floor. `None` draws nothing of the map's own
     /// (the base scene's geometry, when kept, still draws).
     pub ground: Option<Ground>,
+    /// What draws standing on the tile: a wall face the player can see
+    /// ([`WallMesh`]). Usually set on a walled style; it draws nothing of
+    /// collision, which stays [`Self::walls`].
+    pub wall: Option<WallMesh>,
 }
+
+/// A visible wall on a tile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WallMesh {
+    /// A box the size of the tile, `height` world units tall, every face
+    /// textured with one `32 x 32` atlas cell of the base scene's VRAM (the
+    /// three words of a [`Ground::Texture`]). The engine builds the mesh when
+    /// the map loads; the pack carries only these numbers.
+    Box {
+        height: u16,
+        tpage: u8,
+        clut: u16,
+        tile: u8,
+    },
+    /// The `index`th mesh of the base scene's geometry pack, stamped on the
+    /// tile the way a [`Ground::Mesh`] is.
+    Mesh { index: u16 },
+}
+
+/// The tallest generated wall box, in world units (four storeys).
+pub const MAX_WALL_HEIGHT: u16 = 512;
 
 /// The wall quarters of a tile. A tile is four `64 x 64` sub-cells; `tl` is
 /// the low-X / low-Z quarter (top-left in the painter's view), `br` the
@@ -300,6 +328,59 @@ pub struct PropDef {
     /// Whether the prop's tile is wall. A prop has no collision box of its
     /// own; a solid one closes its tile.
     pub solid: bool,
+    /// Make the prop **standable**: a flat floor at `top` world units (up
+    /// positive, the [`MapDef::floor_heights`] convention) over its
+    /// [`Self::footprint`]. The action-movement body lands on it, climbs it
+    /// when the rise is a step and jumps onto it when it is a ledge; the
+    /// retail walk, which climbs nothing, is blocked by it as by a wall. A
+    /// standable prop does not close its tile, so [`Self::solid`] is unread.
+    pub top: Option<i16>,
+    /// The standable top's extent `[x, z]` in world units, centred on the
+    /// tile centre plus [`Self::offset`]. `None` is the whole tile
+    /// (`[128, 128]`).
+    pub footprint: Option<[u16; 2]>,
+}
+
+/// A field NPC a pack places on a map.
+///
+/// The NPC borrows its look from a retail placement (its mesh and idle
+/// clip) by [`DiscRef::Npc`] coordinate, and takes everything else from the
+/// pack: where it stands, where it walks, and what it says.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NpcDef {
+    /// Pack-unique NPC id. Talking to the NPC raises the quest event
+    /// `Talked(id)`, so this is the id a quest's `giver` and talk
+    /// objectives name.
+    pub id: String,
+    /// Workbench label. Carried, not read.
+    pub label: String,
+    /// The retail placement whose model and clip the NPC uses
+    /// ([`DiscRef::Npc`]). Its scene must be the map's base scene - the mesh
+    /// indexes that scene's model pool and samples its VRAM - unless the
+    /// placement is a party member (a special model), which every scene
+    /// carries.
+    pub model: Option<DiscRef>,
+    /// Map-local tile the NPC stands on.
+    pub tile: [u16; 2],
+    /// Facing, a compass sector `0..8` (the [`SpawnPoint::facing`] table).
+    pub facing: u8,
+    /// Idle clip override: the clip id (scene ANM record + 1) the NPC plays.
+    /// `None` keeps the placement's own.
+    pub clip: Option<u8>,
+    /// Patrol waypoints, map-local tiles. The NPC walks from its tile to each
+    /// in turn and back to its tile, looping; empty stands still.
+    pub patrol: Vec<[u16; 2]>,
+    /// The clip id a patrol leg plays (a walk cycle of the same bundle).
+    /// `None` keeps the idle clip while walking.
+    pub walk_clip: Option<u8>,
+    /// The `dialog.toml` line the NPC says when talked to. Empty says
+    /// nothing (a quest giver whose quest lines do the talking).
+    pub line: String,
+    /// The card dealer the NPC runs (a `cards.toml` `[[dealers]]` id):
+    /// talking to it opens that dealer's counter, as a `card_dealer`
+    /// trigger does. Its `line` is said only when the counter cannot open.
+    pub shop: Option<String>,
 }
 
 /// Where a prop's mesh comes from.
@@ -317,6 +398,30 @@ pub enum PropMesh {
 impl Default for PropMesh {
     fn default() -> Self {
         Self::Object { object: 0 }
+    }
+}
+
+/// The actor placement slot a map's `n`th NPC takes: `1 + n`, the retail
+/// partition-1 numbering (record `0` is the scene controller). A pack map
+/// runs no MAN, so nothing else holds these slots. `None` past the
+/// placement range (`0xF0` and up select the special models).
+pub fn npc_slot(n: usize) -> Option<u8> {
+    u8::try_from(n + 1).ok().filter(|&s| s < 0xF0)
+}
+
+/// A standable prop's top in world space ([`MapDef::floor_tops`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloorTop {
+    /// `[x0, z0, x1, z1]`, world units, half-open.
+    pub rect: [i32; 4],
+    /// Height of the top, up positive.
+    pub top: i16,
+}
+
+impl FloorTop {
+    /// Whether world `(x, z)` stands over the top.
+    pub fn contains(&self, x: i32, z: i32) -> bool {
+        (self.rect[0]..self.rect[2]).contains(&x) && (self.rect[1]..self.rect[3]).contains(&z)
     }
 }
 
@@ -645,6 +750,36 @@ impl MapDef {
             .then_some((col as u16, row as u16))
     }
 
+    /// The world-space centre `(x, z)` of map-local tile `(col, row)`: field
+    /// grid tile [`TileLayer::origin`] `+ (col, row)`, `128` units a tile.
+    pub fn tile_centre(&self, col: u16, row: u16) -> (i32, i32) {
+        let c = |o: u8, t: u16| (i32::from(o) + i32::from(t)) * 128 + 64;
+        (c(self.tiles.origin[0], col), c(self.tiles.origin[1], row))
+    }
+
+    /// Every standable prop's top as a world-space box: `[x0, z0, x1, z1]`
+    /// (half-open) and the top's height, up positive.
+    pub fn floor_tops(&self) -> Vec<FloorTop> {
+        self.props
+            .iter()
+            .filter_map(|p| {
+                let top = p.top?;
+                let (cx, cz) = self.tile_centre(p.tile[0], p.tile[1]);
+                let (cx, cz) = (cx + i32::from(p.offset[0]), cz + i32::from(p.offset[2]));
+                let [w, d] = p.footprint.unwrap_or([128, 128]).map(i32::from);
+                Some(FloorTop {
+                    rect: [cx - w / 2, cz - d / 2, cx - w / 2 + w, cz - d / 2 + d],
+                    top,
+                })
+            })
+            .collect()
+    }
+
+    /// The NPC with id `id`.
+    pub fn npc(&self, id: &str) -> Option<&NpcDef> {
+        self.npcs.iter().find(|n| n.id == id)
+    }
+
     /// The spawn named `id`, or the first spawn when `id` is empty.
     pub fn spawn(&self, id: &str) -> Option<&SpawnPoint> {
         if id.is_empty() {
@@ -681,6 +816,13 @@ impl MapDef {
         for p in &self.props {
             if !on(p.tile[0], p.tile[1]) {
                 out.push((format!("prop {:?}", p.id), p.tile[0], p.tile[1]));
+            }
+        }
+        for n in &self.npcs {
+            for t in std::iter::once(&n.tile).chain(&n.patrol) {
+                if !on(t[0], t[1]) {
+                    out.push((format!("npc {:?}", n.id), t[0], t[1]));
+                }
             }
         }
         let rects = self

@@ -187,6 +187,7 @@ mod expansion;
 mod expansion_cards;
 mod expansion_hosts;
 mod expansion_map;
+mod expansion_map_npcs;
 mod expansion_modes;
 mod expansion_quests;
 pub use encounters::FieldBossStager;
