@@ -56,6 +56,9 @@ impl World {
         self.expansion.progression = progression;
         self.expansion.pack = Some(pack);
         self.install_expansion_formations();
+        // One activation path for battles and quests: the quest runtime
+        // follows the pack (adopting progress a save left dormant for it).
+        self.adopt_expansion_progress();
         Ok(())
     }
 
@@ -77,7 +80,15 @@ impl World {
         if let Some(table) = self.expansion.progression.saved_xp_table.take() {
             self.party.level_up_tracker.xp_table = table;
         }
+        // The quest progress outlives the pack as the dormant block, with the
+        // once-only boss record folded in, so a re-activation (or a save made
+        // meanwhile) keeps it.
+        self.expansion.quests.progress.cleared_bosses =
+            std::mem::take(&mut self.expansion.battle.cleared_bosses);
+        let mut quests = std::mem::take(&mut self.expansion.quests);
+        quests.park();
         self.expansion = Default::default();
+        self.expansion.quests = quests;
     }
 
     /// The retail monster ids the active pack's fights can seat (empty with

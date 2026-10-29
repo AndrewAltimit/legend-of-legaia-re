@@ -80,6 +80,12 @@ pub trait QuestWorld {
         let _ = id;
         None
     }
+    /// The runtime formation id of the pack's `battle.toml` boss `id`;
+    /// `None` when there is none.
+    fn pack_boss_formation_id(&self, id: &str) -> Option<u16> {
+        let _ = id;
+        None
+    }
     /// The highest level in the present party.
     fn party_level(&self) -> u8 {
         self.party().iter().map(|&(_, l)| l).max().unwrap_or(0)
@@ -106,6 +112,9 @@ pub enum QuestNotice {
         quest: String,
         dialog: Option<String>,
     },
+    /// The player talked to the giver of an active quest; `dialog` is the
+    /// quest's `active_dialog`.
+    Reminder { quest: String, dialog: String },
     /// A challenge was armed for the next battle it applies to.
     ChallengeArmed { challenge: String },
     /// A challenge battle was won under its rules.
@@ -149,6 +158,17 @@ pub enum Grant {
         count: u32,
     },
     Card(String),
+    /// A pack fight to start once no dialogue is up.
+    Fight(PackFight),
+}
+
+/// A pack fight a quest or a dialogue choice starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackFight {
+    /// A `battle.toml` formation, by id.
+    Formation(String),
+    /// A `battle.toml` boss, by id.
+    Boss(String),
 }
 
 /// Where a quest stands. A quest with no entry has never started.
@@ -189,6 +209,9 @@ pub struct QuestRuntime {
     /// Trading-card ids the `World` received from [`Grant::Card`], oldest
     /// first, for the card collection to take.
     pub card_inbox: Vec<String>,
+    /// Pack fights waiting for the dialogue channel to free up, oldest
+    /// first.
+    pub fights: Vec<PackFight>,
 }
 
 /// One objective's progress target.
@@ -243,19 +266,21 @@ fn apply_event(
             },
         ) => true,
         (
-            Goal::WinBoss { formation },
+            Goal::WinBoss {
+                formation,
+                boss: named,
+            },
             QuestEvent::BattleEnded {
                 outcome: BattleOutcome::Won,
                 formation_id,
                 boss,
                 ..
             },
-        ) => {
-            *boss
-                && formation
-                    .as_ref()
-                    .is_none_or(|f| resolve_formation(f, world) == Some(*formation_id))
-        }
+        ) => match (named, formation) {
+            (Some(b), _) => world.pack_boss_formation_id(b) == Some(*formation_id),
+            (None, Some(f)) => *boss && resolve_formation(f, world) == Some(*formation_id),
+            (None, None) => *boss,
+        },
         (Goal::EnterScene { scene }, QuestEvent::SceneEntered(s)) => scene == s,
         (Goal::Talk { npc }, QuestEvent::Talked(n)) => npc == n,
         (Goal::WinMode { mode, .. }, QuestEvent::ModeWon(m)) => mode == m,
@@ -326,6 +351,19 @@ impl QuestRuntime {
         self.challenge = None;
     }
 
+    /// Set the active pack's progress aside as the dormant block (the pack
+    /// is being deactivated), leaving the runtime empty.
+    pub fn park(&mut self) {
+        let progress = std::mem::take(&mut self.progress);
+        let dormant = self.dormant.take();
+        *self = Self::default();
+        self.dormant = if progress.pack_id.is_empty() {
+            dormant
+        } else {
+            Some(progress.encode())
+        };
+    }
+
     /// The save block for this runtime: the active pack's progress (synced
     /// first, so a block loaded before the pack was activated is adopted),
     /// else a dormant block, else nothing.
@@ -347,6 +385,7 @@ impl QuestRuntime {
         self.notices.clear();
         self.grants.clear();
         self.card_inbox.clear();
+        self.fights.clear();
         self.challenge = None;
         self.dialog = DialogRuntime::default();
         let decoded = block.and_then(ExpansionProgress::decode);
@@ -396,12 +435,35 @@ impl QuestRuntime {
             QuestEvent::BattleEnded { .. } => self.resolve_challenge(section, world, &event),
             _ => {}
         }
+        let was_active: Vec<String> = self
+            .progress
+            .quests
+            .iter()
+            .filter(|(_, s)| s.status == QuestStatus::Active)
+            .map(|(id, _)| id.clone())
+            .collect();
         // Active quests first, so the talk that starts a quest is not
         // counted toward that quest's own talk objective.
         for q in &section.quests {
             self.advance(q, world, Some(&event));
         }
         if let QuestEvent::Talked(npc) = &event {
+            // A talk to the giver of a quest that was already active (and is
+            // still: this talk did not complete it) shows its reminder.
+            for q in &section.quests {
+                if q.giver.as_deref() == Some(npc)
+                    && was_active.contains(&q.id)
+                    && self
+                        .quest(&q.id)
+                        .is_some_and(|s| s.status == QuestStatus::Active)
+                    && let Some(line) = &q.active_dialog
+                {
+                    self.notices.push(QuestNotice::Reminder {
+                        quest: q.id.clone(),
+                        dialog: line.clone(),
+                    });
+                }
+            }
             for q in &section.quests {
                 if q.giver.as_deref() == Some(npc) && self.startable(section, q, world) {
                     self.begin(q, world);
@@ -490,6 +552,13 @@ impl QuestRuntime {
             quest: q.id.clone(),
             dialog: q.start_dialog.clone(),
         });
+        if let Some(f) = &q.start_battle {
+            self.grants
+                .push(Grant::Fight(PackFight::Formation(f.clone())));
+        }
+        if let Some(b) = &q.start_boss {
+            self.grants.push(Grant::Fight(PackFight::Boss(b.clone())));
+        }
         self.advance(q, world, None);
     }
 
@@ -672,6 +741,7 @@ pub struct JournalObjective<'a> {
 pub struct StaticQuestWorld {
     pub story_flags: Vec<u16>,
     pub pack_formations: BTreeMap<String, u16>,
+    pub pack_bosses: BTreeMap<String, u16>,
     pub party: Vec<(u8, u8)>,
     pub items: BTreeMap<u8, u32>,
     pub play_seconds: u32,
@@ -692,6 +762,9 @@ impl QuestWorld for StaticQuestWorld {
     }
     fn pack_formation_id(&self, id: &str) -> Option<u16> {
         self.pack_formations.get(id).copied()
+    }
+    fn pack_boss_formation_id(&self, id: &str) -> Option<u16> {
+        self.pack_bosses.get(id).copied()
     }
 }
 

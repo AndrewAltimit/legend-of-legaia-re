@@ -10,9 +10,9 @@
 #![forbid(unsafe_code)]
 
 pub mod battle;
-pub mod progression;
 pub mod dialog;
 pub mod flags;
+pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
 pub mod quest_save;

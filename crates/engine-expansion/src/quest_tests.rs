@@ -516,7 +516,8 @@ fn the_rebirth_tower_chain_plays_through() {
     );
     let p = ExpansionPack::from_files(&files).expect("rebirth parses");
     for (id, line) in &p.dialog.lines {
-        crate::dialog::compile_line(line).unwrap_or_else(|e| panic!("{id}: {e:?}"));
+        legaia_expansion_format::dialog::compile_line(line)
+            .unwrap_or_else(|e| panic!("{id}: {e:?}"));
     }
     for q in &p.quests.quests {
         for l in q.start_dialog.iter().chain(&q.complete_dialog) {
@@ -546,4 +547,70 @@ fn the_rebirth_tower_chain_plays_through() {
 
     rt.arm_challenge(&p, &w, "bare_hands").unwrap();
     assert!(!rt.item_use_allowed(Some(1)) && !rt.magic_allowed(Some(1)));
+}
+
+#[test]
+fn a_named_boss_matches_its_own_formation_and_the_start_queues_the_fight() {
+    let p = pack(
+        r#"
+        [[quests]]
+        id = "q"
+        giver = "npc"
+        start_boss = "king"
+        objectives = [{ kind = "win_boss", boss = "king" }]
+        "#,
+    );
+    let mut rt = QuestRuntime::default();
+    let mut w = world(1);
+    w.pack_bosses.insert("king".into(), 0xE003);
+    rt.handle(&p, &w, talked("npc"));
+    assert_eq!(
+        rt.take_grants(),
+        vec![Grant::Fight(PackFight::Boss("king".into()))]
+    );
+    rt.handle(&p, &w, won(0xE001, &[], true));
+    assert_eq!(rt.quest("q").unwrap().objectives, vec![0], "another boss");
+    rt.handle(&p, &w, won(0xE003, &[], false));
+    assert_eq!(rt.quest("q").unwrap().status, QuestStatus::Completed);
+}
+
+#[test]
+fn parking_keeps_the_progress_as_the_dormant_block() {
+    let p = pack(TOWER);
+    let mut rt = QuestRuntime::default();
+    rt.handle(&p, &world(10), talked("guide"));
+    let progress = rt.progress.clone();
+    rt.park();
+    assert!(rt.progress.pack_id.is_empty());
+    rt.sync_pack(&p);
+    assert_eq!(
+        rt.progress, progress,
+        "re-activation adopts the parked block"
+    );
+}
+
+#[test]
+fn talking_to_the_giver_of_an_active_quest_shows_its_reminder() {
+    let p = pack(
+        r#"
+        [[quests]]
+        id = "q"
+        giver = "npc"
+        active_dialog = "again"
+        objectives = [{ kind = "win_battles" }]
+        "#,
+    );
+    let mut rt = QuestRuntime::default();
+    rt.handle(&p, &world(1), talked("npc"));
+    assert!(
+        !rt.notices
+            .iter()
+            .any(|n| matches!(n, QuestNotice::Reminder { .. })),
+        "the starting talk is no reminder"
+    );
+    rt.handle(&p, &world(1), talked("npc"));
+    assert!(rt.notices.contains(&QuestNotice::Reminder {
+        quest: "q".into(),
+        dialog: "again".into()
+    }));
 }

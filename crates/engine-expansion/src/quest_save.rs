@@ -15,12 +15,13 @@
 //! u16    flag count, then str each
 //! u16    counter count, then str id + i64 value each
 //! u16    challenge count, then str id + u32 best + u32 clears each
+//! [u16   cleared-boss count, then str each]   only when there is one
 //! ```
 //!
 //! `str` is a `u16` byte length then UTF-8. Integers are little-endian.
 //! Maps are written in key order, so equal progress encodes to equal bytes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use legaia_expansion_format::ExpansionPack;
 
@@ -44,6 +45,9 @@ pub struct ExpansionProgress {
     pub flags: PackFlags,
     /// Challenge records.
     pub challenges: BTreeMap<String, ChallengeRecord>,
+    /// Once-only `battle.toml` bosses the party has beaten, by local key
+    /// (the battle runtime's `cleared_bosses`, mirrored here for the save).
+    pub cleared_bosses: BTreeSet<String>,
 }
 
 impl ExpansionProgress {
@@ -90,6 +94,14 @@ impl ExpansionProgress {
             put_str(&mut w, id);
             w.extend_from_slice(&c.best.to_le_bytes());
             w.extend_from_slice(&c.clears.to_le_bytes());
+        }
+        // The optional tail: written only when there is a cleared boss, so a
+        // block without one is the block an older writer made.
+        if !self.cleared_bosses.is_empty() {
+            put_len(&mut w, self.cleared_bosses.len());
+            for b in self.cleared_bosses.iter().take(MAX_LEN) {
+                put_str(&mut w, b);
+            }
         }
         w
     }
@@ -140,6 +152,11 @@ impl ExpansionProgress {
             let best = r.u32()?;
             let clears = r.u32()?;
             out.challenges.insert(id, ChallengeRecord { best, clears });
+        }
+        if r.p < bytes.len() {
+            for _ in 0..r.u16()? {
+                out.cleared_bosses.insert(r.str()?);
+            }
         }
         (r.p == bytes.len()).then_some(out)
     }
@@ -219,6 +236,7 @@ mod tests {
         );
         p.flags.set("door");
         p.flags.add("kills", -4);
+        p.cleared_bosses.insert("hollow_sovereign".into());
         p.challenges.insert(
             "c".into(),
             ChallengeRecord {
@@ -253,5 +271,21 @@ mod tests {
         bad[0] = b'X';
         assert!(ExpansionProgress::decode(&bad).is_none());
         assert!(ExpansionProgress::decode(&[]).is_none());
+    }
+
+    #[test]
+    fn a_block_without_cleared_bosses_is_the_older_layout() {
+        let mut p = sample();
+        p.cleared_bosses.clear();
+        let bytes = p.encode();
+        // The challenge list is the last field written.
+        let tail = b"c";
+        let at = bytes.windows(1).rposition(|w| w == tail).unwrap();
+        assert_eq!(
+            bytes.len(),
+            at + 1 + 8,
+            "nothing follows the challenge record"
+        );
+        assert_eq!(ExpansionProgress::decode(&bytes), Some(p));
     }
 }

@@ -16,10 +16,10 @@
 //! ([`World::expansion_notify`] with [`QuestEvent::ModeWon`]).
 
 use super::*;
-use legaia_engine_expansion::dialog::{DialogError, compile_line};
-use legaia_engine_expansion::quest::{Grant, QuestEvent, QuestNotice, QuestWorld};
+use legaia_engine_expansion::quest::{Grant, PackFight, QuestEvent, QuestNotice, QuestWorld};
 use legaia_engine_expansion::quest_challenge::ArmRefusal;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_expansion_format::dialog::{DialogError, compile_line};
 
 /// The `World` as the quest tracker reads it.
 struct WorldQuestView<'a>(&'a World);
@@ -59,13 +59,20 @@ impl QuestWorld for WorldQuestView<'_> {
         self.0.clock.play_time_seconds
     }
 
-    // INTEGRATION: a pack's `battle.toml` formations get runtime ids when the
-    // battle section compiles (`legaia_engine_expansion::battle`); this view
-    // resolves a quest's or challenge's named formation once that compiled
-    // table is seated on the World. Until then only numeric formation ids
-    // match, and a named one matches nothing.
-    fn pack_formation_id(&self, _id: &str) -> Option<u16> {
-        None
+    /// The compiled battle table's id for the pack formation (`0xE000+`).
+    fn pack_formation_id(&self, id: &str) -> Option<u16> {
+        self.0.expansion_formation_id(id)
+    }
+
+    /// The compiled battle table's formation id for the pack boss.
+    fn pack_boss_formation_id(&self, id: &str) -> Option<u16> {
+        self.0
+            .expansion
+            .battle
+            .compiled
+            .as_ref()?
+            .boss(id)
+            .map(|b| b.formation_id)
     }
 }
 
@@ -119,6 +126,12 @@ impl World {
     /// that never had a pack, so its saves stay byte-identical.
     pub fn expansion_save_block(&mut self) -> Option<Vec<u8>> {
         let pack = self.expansion.pack.clone();
+        if let Some(p) = pack.as_deref() {
+            // The battle runtime's once-only boss record rides in the block.
+            self.expansion.quests.sync_pack(p);
+            self.expansion.quests.progress.cleared_bosses =
+                self.expansion.battle.cleared_bosses.clone();
+        }
         self.expansion.quests.save_block(pack.as_deref())
     }
 
@@ -128,6 +141,19 @@ impl World {
     pub fn expansion_load_block(&mut self, block: Option<&[u8]>) {
         let pack = self.expansion.pack.clone();
         self.expansion.quests.load_block(pack.as_deref(), block);
+        self.adopt_expansion_progress();
+    }
+
+    /// Bring the quest runtime onto the active pack (adopting a dormant
+    /// block saved for it) and hand the progress's once-only boss record to
+    /// the battle runtime. Called on activation and after a save load.
+    pub(in crate::world) fn adopt_expansion_progress(&mut self) {
+        let Some(pack) = self.expansion.pack.clone() else {
+            return;
+        };
+        self.expansion.quests.sync_pack(&pack);
+        self.expansion.battle.cleared_bosses =
+            self.expansion.quests.progress.cleared_bosses.clone();
     }
 
     /// Take the quest and challenge notices queued since the last call, for
@@ -253,6 +279,22 @@ impl World {
                 log::warn!("expansion line {next}: {e:?}");
             }
         }
+        // A queued fight starts once its lines are done and the player walks.
+        if !self.expansion.quests.fights.is_empty()
+            && self.expansion.quests.dialog.pending.is_none()
+            && self.expansion.quests.dialog.queued.is_empty()
+            && !self.dialogue_owns_input()
+            && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
+        {
+            let fight = self.expansion.quests.fights.remove(0);
+            let started = match &fight {
+                PackFight::Formation(f) => self.start_expansion_battle(f),
+                PackFight::Boss(b) => self.start_expansion_boss(b),
+            };
+            if !started {
+                log::warn!("expansion: {fight:?} did not start");
+            }
+        }
     }
 
     /// A pack line whose run has ended (finished, cleared, or replaced by
@@ -294,6 +336,18 @@ impl World {
         if let Some(next) = &choice.next {
             self.expansion.quests.dialog.queued.insert(0, next.clone());
         }
+        if let Some(f) = &choice.battle {
+            self.expansion
+                .quests
+                .fights
+                .push(PackFight::Formation(f.clone()));
+        }
+        if let Some(b) = &choice.boss {
+            self.expansion
+                .quests
+                .fights
+                .push(PackFight::Boss(b.clone()));
+        }
     }
 
     /// Apply the tracker's queued grants and queue the lines named by the
@@ -319,6 +373,7 @@ impl World {
                     }
                 }
                 Grant::Card(id) => self.expansion.quests.card_inbox.push(id),
+                Grant::Fight(f) => self.expansion.quests.fights.push(f),
             }
         }
         for n in self.expansion.quests.notices.iter().skip(seen) {
@@ -327,40 +382,21 @@ impl World {
             }
             | QuestNotice::Completed {
                 dialog: Some(line), ..
-            } = n
+            }
+            | QuestNotice::Reminder { dialog: line, .. } = n
             {
                 self.expansion.quests.dialog.queued.push(line.clone());
             }
         }
     }
 
-    /// `xp` EXP to every present party member, through the level-up tracker
-    /// and the record words `apply_battle_xp` keeps (cumulative / next-level
-    /// EXP, level byte, grown maxima). No 3/4 scale and no living-member
-    /// split: a quest reward is the figure the pack names, per member.
+    /// `xp` EXP to every present party member through the battle EXP path's
+    /// per-member credit ([`World::credit_character_xp`]), without the
+    /// battle's 3/4 scale and living-member split: a quest reward is the
+    /// figure the pack names, per member.
     fn grant_expansion_xp(&mut self, xp: u32) {
         for slot in self.present_party_list() {
-            let slot = usize::from(slot);
-            let result = self.party.level_up_tracker.grant_xp(slot as u8, xp);
-            if slot < self.party.level_up_tracker.level.len() {
-                let level = self.party.level_up_tracker.level[slot];
-                let next = self
-                    .party
-                    .level_up_tracker
-                    .threshold_for(slot, level)
-                    .unwrap_or(0);
-                if let Some(rec) = self.party.roster.members.get_mut(slot) {
-                    rec.set_cumulative_xp(self.party.level_up_tracker.xp[slot]);
-                    rec.set_next_level_xp(next);
-                    rec.set_magic_rank(level);
-                }
-            }
-            if let Some(result) = result {
-                if let Some(rec) = self.party.roster.members.get_mut(slot) {
-                    LevelUpTracker::apply_to_record(&result, rec);
-                }
-                self.rebuild_record_live_hp_mp(slot);
-            }
+            self.credit_character_xp(slot, xp);
         }
     }
 }

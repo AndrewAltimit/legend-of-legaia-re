@@ -129,3 +129,50 @@ fn a_block_for_an_absent_pack_survives_a_resave() {
         vec![1, 0]
     );
 }
+
+fn boss_pack() -> Arc<ExpansionPack> {
+    let mut files = PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"id = \"b\"\nname = \"B\"\nversion = \"1.0.0\"\n".to_vec(),
+    );
+    files.insert(
+        "battle.toml".into(),
+        br#"
+[formations.den]
+monsters = [{ kind = "monster", id = 9 }]
+[bosses.alpha]
+formation = "den"
+once = true
+"#
+        .to_vec(),
+    );
+    Arc::new(ExpansionPack::from_files(&files).unwrap())
+}
+
+#[test]
+fn a_beaten_once_only_boss_survives_a_save_and_load() {
+    let mut w = world();
+    w.activate_expansion(boss_pack()).unwrap();
+    assert!(!w.expansion_boss_cleared("alpha"));
+    w.expansion.battle.cleared_bosses.insert("alpha".into());
+    let bytes = w.save_full().write();
+
+    // Loaded under the pack.
+    let mut w2 = world();
+    w2.activate_expansion(boss_pack()).unwrap();
+    w2.load_full(legaia_save::SaveFile::parse(&bytes).unwrap());
+    assert!(w2.expansion_boss_cleared("alpha"));
+
+    // Loaded first, the pack activated after.
+    let mut w3 = world();
+    w3.load_full(legaia_save::SaveFile::parse(&bytes).unwrap());
+    w3.activate_expansion(boss_pack()).unwrap();
+    assert!(w3.expansion_boss_cleared("alpha"));
+
+    // A save with no boss beaten writes no boss record.
+    let mut fresh = world();
+    fresh.activate_expansion(boss_pack()).unwrap();
+    let block = fresh.save_full().ext_v2.expansion.unwrap();
+    assert!(!block.windows(5).any(|x| x == b"alpha"));
+}
