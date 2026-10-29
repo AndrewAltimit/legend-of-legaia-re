@@ -89,6 +89,9 @@ struct RecHost {
     cue_tables: Option<(Vec<u8>, Vec<u8>)>,
     /// `spirit_turn_ap`'s answer (`None` = the trait default, retail).
     spirit_ap: Option<i16>,
+    /// The monster slot `reinforce_monster_wipe` revives (`None` = the
+    /// trait default: nothing is seated).
+    reinforce_slot: Option<u8>,
 }
 
 impl RecHost {
@@ -262,6 +265,13 @@ impl BattleActionHost for RecHost {
     }
     fn slot_count(&self) -> u8 {
         self.slot_count
+    }
+    fn reinforce_monster_wipe(&mut self) -> bool {
+        let Some(slot) = self.reinforce_slot.take() else {
+            return false;
+        };
+        self.actors[usize::from(slot)].liveness = 1;
+        true
     }
 }
 

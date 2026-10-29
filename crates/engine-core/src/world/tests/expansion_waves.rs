@@ -243,3 +243,57 @@ fn a_retail_fight_beside_a_waved_pack_plays_as_without_one() {
     active.activate_expansion(pack()).unwrap();
     assert_eq!(retail_fight(&mut active), retail);
 }
+
+/// Two rats, then one more arriving into the first freed seat. The member
+/// whose strike downs the second rat ends its action on a wipe the refill
+/// answers: the action SM must idle at `EndOfAction` for the turn cycling
+/// (the next pick by initiative, or the next round), never step on to
+/// `PreActionWait`, which re-seeds that member's spent action at the corpse
+/// it just killed - an approach (`0x19`) that never comes within reach.
+#[test]
+fn a_refill_on_the_wipe_hands_the_turn_back_to_the_turn_cycling() {
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    let battle = r#"
+[formations.refill]
+monsters = [{ kind = "monster", id = 10 }, { kind = "monster", id = 10 }]
+
+[[formations.refill.waves]]
+monsters = [{ kind = "monster", id = 10 }]
+arrival = "refill"
+count = 2
+max_standing = 1
+"#;
+    let mut files = PackFiles::new();
+    files.insert("pack.toml".into(), PACK_TOML.as_bytes().to_vec());
+    files.insert("battle.toml".into(), battle.as_bytes().to_vec());
+    let pack = Arc::new(ExpansionPack::from_files(&files).unwrap());
+    let mut w = world();
+    w.activate_expansion(pack).unwrap();
+    assert!(w.start_expansion_battle("refill"));
+    for _ in 0..400 {
+        if w.mode == SceneMode::Battle {
+            break;
+        }
+        w.tick();
+    }
+    assert_eq!(w.mode, SceneMode::Battle);
+    let end = ActionState::EndOfAction.as_byte();
+    let wait = ActionState::PreActionWait.as_byte();
+    let mut prev = w.battle_ctx.action_state;
+    let mut reseats = 0;
+    for tick in 0..30_000 {
+        w.tick();
+        if w.mode != SceneMode::Battle {
+            assert!(reseats >= 2, "both refills arrived ({reseats})");
+            return;
+        }
+        reseats += w.take_expansion_reseated_monsters().len();
+        let now = w.battle_ctx.action_state;
+        assert!(
+            !(prev == end && now == wait),
+            "tick {tick}: EndOfAction stepped to PreActionWait (a stale re-seed)"
+        );
+        prev = now;
+    }
+    panic!("the fight never ended");
+}

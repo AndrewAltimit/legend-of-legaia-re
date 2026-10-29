@@ -215,8 +215,11 @@ pub trait BattleActionHost {
     /// scan found no monster standing, and the host may seat further
     /// monsters into the battle (an expansion pack's next wave) before the
     /// scan decides. `true` means it seated some; the scan then counts the
-    /// monster side again. Retail has no such step - the default seats
-    /// nothing and the wipe ends the battle as it always does.
+    /// monster side again, and with a monster standing the SM stays at
+    /// `EndOfAction` for the host's turn cycling to claim, as every other
+    /// idle with both sides standing is claimed. Retail has no such step -
+    /// the default seats nothing and the wipe ends the battle as it always
+    /// does.
     fn reinforce_monster_wipe(&mut self) -> bool {
         false
     }

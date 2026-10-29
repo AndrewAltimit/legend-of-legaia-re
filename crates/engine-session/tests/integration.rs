@@ -23,6 +23,7 @@ mod dead_target_redirect_disc;
 mod dialog_font_metrics;
 mod expansion_map_resume_disc;
 mod expansion_new_game_disc;
+mod expansion_refill_wave_disc;
 mod field_actor_guard_skip;
 mod field_ambient_ring_cue;
 mod fmv_handoff;

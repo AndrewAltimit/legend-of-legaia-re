@@ -794,9 +794,18 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
         return StepOutcome::BattleComplete;
     }
     // A host with more monsters to seat holds the victory (port-only; the
-    // default seats nothing).
+    // default seats nothing). A seated wave leaves the SM idling here: the
+    // host's turn cycling claims an `EndOfAction` with both sides standing,
+    // and it never saw this one (the side was wiped when the action
+    // ended). Stepping on to `PreActionWait` instead re-seeds the actor
+    // that just acted from its spent action bytes - a free second action
+    // at its old target, which a wave that did not refill that seat leaves
+    // a corpse the approach (`0x19`) never comes within reach of.
     if monsters_alive == 0 && host.reinforce_monster_wipe() {
         monsters_alive = count_monsters(&*host);
+        if monsters_alive != 0 {
+            return StepOutcome::Stay;
+        }
     }
     if monsters_alive == 0 {
         // Retail order: end signal (0x801E6670..0x801E6680), then the
