@@ -188,4 +188,4 @@ Enemy scaling multiplies HP, MP, ATK, both defences, INT and SPD, and EXP and go
 | Steal override | the death-spoils steal in `battle/steal_attack.rs` |
 | Boss track | `World::swap_to_battle_bgm` |
 
-A boss's `once` record lives in the runtime (`BattleRuntime::cleared_bosses`) and is not yet carried in a save.
+A boss's `once` record lives in the runtime (`BattleRuntime::cleared_bosses`) and is saved as tail record 1 of the save's expansion block ([`expansion-pack-quests.md`](expansion-pack-quests.md#saves)), so a beaten once-only boss stays beaten across a Load.

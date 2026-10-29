@@ -255,7 +255,8 @@ page builds one in the browser:
 
 The same pack works from the command line (`asset expansion validate`,
 `asset expansion bundle`) and runs in the native port with
-`legaia-engine play-window --expansion <dir>`. Page reference:
+`legaia-engine play-window --expansion <dir>`, or on the browser play page:
+the workbench's **Play in browser** button hands the pack straight to it. Page reference:
 [expansion-workbench.md](../tooling/expansion-workbench.md); format:
 [expansion-pack.md](../formats/expansion-pack.md).
 

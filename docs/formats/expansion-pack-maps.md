@@ -380,10 +380,12 @@ whose entrance is out of reach ([`field-menu.md`](../subsystems/field-menu.md#ex
 ## Saving on a map
 
 A save made on a map writes the map id, the player's world position and
-facing at the tail of the pack's expansion block (`LXP1`, after the challenge
-records); a save made off every map writes no tail, so its block is the one it
-was before. The save's resume scene is the base scene, so a Load lands there
-first; `NativeSession::resume_save` then re-enters the map with the player
+facing as tail record 2 of the pack's expansion block (`LXP1`,
+[`expansion-pack-quests.md`](expansion-pack-quests.md#saves)); a save made off
+every map writes no such record, so its block is the one it was before. The
+save's resume scene is the base scene, so a Load lands there first;
+`BootSession::resume_save` - the native window's resume and the browser
+page's `play_resume_save` alike - then re-enters the map with the player
 seated where the save was made. Without the pack active the save lands in the
 base scene.
 

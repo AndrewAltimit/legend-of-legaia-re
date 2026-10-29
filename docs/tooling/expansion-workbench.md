@@ -90,7 +90,11 @@ The painter edits a `MapDef` 1:1: the canvas is `tiles.rows`, the palette is
 `tr`, `bl`, `br`; none and all write `"none"` / `"all"`), floor tier and ground
 (a texture cell, a base-scene cell or a base-pack mesh). Tools: paint, fill
 rectangle, pick, select / move, and place spawn, exit, trigger zone, encounter
-zone and prop. Each stroke is one undo step (`Ctrl+Z` / `Ctrl+Y`); `Ctrl+wheel`
+zone, prop and NPC. An NPC's model picker lists the base scene's retail
+placements by the first line each one says (the only name retail gives an
+NPC) and stores only the `npc` coordinate; a selected prop edits its
+standable `top` and footprint, and a legend entry its visible `wall` (a box or
+a base-scene mesh). Each stroke is one undo step (`Ctrl+Z` / `Ctrl+Y`); `Ctrl+wheel`
 zooms; a right or middle drag, or Space with a drag, pans. A placed prop draws
 as its mesh's footprint, rotated by its yaw.
 
@@ -117,9 +121,10 @@ works.
 **Play in browser** exports the bundle and stores it in database
 `legaia-expansion`, store `packs`, key `play`, as
 `{ id, name, version, bytes, savedAt }` (`bytes` a `Uint8Array` of the
-`.lxpack`), then opens `play.html?expansion=1`. The play page reading that key
-is the browser host's half; until it reads it, the link opens the ordinary
-play page.
+`.lxpack`), then opens `play.html?expansion=1`. The play page reads that key
+once its disc is up and loads the bundle through `LegaiaRuntime::load_expansion`,
+the same call as its own *Load expansion* file input
+([`browser-host.md`](../subsystems/browser-host.md)).
 
 ## The example pack
 

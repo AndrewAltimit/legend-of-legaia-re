@@ -35,7 +35,7 @@ Lockstep netplay sends only pad words between peers; every peer runs the full se
 - **No unordered iteration.** State is `Vec` and `BTreeMap`, never a hash map.
 - **A checkable digest.** `state_hash()` is FNV-1a 64 over every field the rules read, written field by field (not `std`'s `DefaultHasher`, whose algorithm is not stable across Rust releases). Peers compare it to detect a desync; the determinism tests compare it frame by frame.
 
-Hidden information (poker hole cards) is part of every peer's state under lockstep; a host shows each player only their own seat's cards. A deployment that needs hidden information to stay hidden needs an authoritative server instead, which the same session supports by running it on the server and sending views.
+Hidden information (poker hole cards) would be part of every peer's state under lockstep, so netplay does not run the turn-based modes that way: poker and Grid Duel run on the host alone, which sends each guest only the view its seat may see ([`netplay.md`](netplay.md#modes)). The real-time modes - golf, racing, prop hunt - hide nothing and run in lockstep.
 
 Prop hunt is geometry-agnostic: its built-in `Arena` (bounds and rectangle blockers) is enough to play and test the rules, and a host with real scene collision feeds positions through `PropHuntSession::tick_with_positions`, which makes those positions part of the lockstep input.
 

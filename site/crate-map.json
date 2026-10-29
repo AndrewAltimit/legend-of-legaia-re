@@ -1605,7 +1605,7 @@
    "track": "engine",
    "rank": 4,
    "role": "expansion-pack runtime kernels: monster and formation overrides, level curve, quests, the mode seat",
-   "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. <code>World::expansion</code> is its seat; inert with no pack.",
+   "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides and battle waves, level curve, rewards, quests, dialogue and pack flags, map zones and entrances, the card economy, the mode seat, the Journal and toasts, the <code>LXP1</code> save block. <code>World::expansion</code> is its seat; inert with no pack.",
    "dependents": [
     "engine-core",
     "engine-menu-runtime",
@@ -2137,7 +2137,7 @@
    "track": "engine",
    "rank": 1,
    "role": "rules engines for the port's own game modes: poker, golf, racing, card battles, prop hunt",
-   "scope": "Rules engines for the port's own game modes (poker, golf, racing, card battles, prop hunt): deterministic, <code>World</code>-free, lockstep-ready.",
+   "scope": "Rules engines for the port's own game modes (poker, golf, racing, the Grid Duel card battle, prop hunt) and the trading-card economy, card screens and trade table: deterministic, <code>World</code>-free, lockstep-ready.",
    "dependents": [
     "engine-core",
     "engine-expansion",

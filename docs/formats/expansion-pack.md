@@ -95,6 +95,7 @@ mesh       = { kind = "tmd", prot = 874, index = 3 }
 | `tim` | `prot`, `index` | PROT extraction index, `index`th TIM in its pack | `prot` in `0..=1232` |
 | `item` | `id` | Item id ([item-table.md](item-table.md)) | the `u8` range |
 | `bgm` | `id` | Sound-test id ([music-tracks.md](../reference/music-tracks.md)) | `0..=80` |
+| `npc` | `scene`, `index` | A retail NPC placement: the scene's MAN partition-1 record `index` ([maps](expansion-pack-maps.md#npcs)) | scene-name syntax; `index` not `0` (the scene controller) |
 
 PROT numbers are **extraction** indices, the `NNNN` in `extracted/PROT/NNNN_*.BIN`, not raw TOC indices ([cdname.md](cdname.md#numbering-space)).
 
@@ -102,7 +103,7 @@ Checking happens in two halves. `DiscRef::check_range` needs no disc and rejects
 
 ## Sections
 
-Each content section is a TOML file whose type lives in its own module of `legaia_expansion_format`. A section's keys are documented in its subsection here once its schema is defined; until then the section parses only as an empty table.
+Each content section is a TOML file whose type lives in its own module of `legaia_expansion_format`. Every key in a section is optional (`#[serde(default)]`), so a pack writes only what it uses. The subsections below summarise each one; the battle, quest and map sections have pages of their own.
 
 | File | Type | Module |
 |---|---|---|
@@ -156,7 +157,19 @@ The validator rejects a repeated or empty id, a side outside `1..=10`, a booster
 
 ### modes.toml
 
-Instances of the port's own game modes: `[[poker]]` tables, `[[card_duels]]` opponents, `[[golf]]` courses, `[[races]]` tracks and `[[prop_hunt]]` arenas, each with an `id` and a display `name`. The rules each runs and the keys that tune them are in [`expansion-modes.md`](../subsystems/expansion-modes.md); a mode `id` is what a `cards.toml` reward source of kind `mode` names.
+Instances of the port's own game modes: a pack picks the numbers and the layout, and the rules live in `legaia_engine_modes` ([`expansion-modes.md`](../subsystems/expansion-modes.md)). Each instance has an `id` (the key a `cards.toml` reward source of `kind = "mode"` names), a display `name` and, where the mode is staged somewhere, an optional `location` (`DiscRef`).
+
+| Table | Keys (defaults) |
+|---|---|
+| `[[poker]]` | `seats` (4, `2..=6` with the player), `buy_in` (1000), `small_blind` (10), `big_blind` (20), `currency` (`gold` / `coins`), `chip_value` (1), `ai_tier` (`novice` / `regular` / `expert`), `max_hands`, `blind_double_every` |
+| `[[card_duels]]` | `deck` (the opponent's five `cards.toml` ids), `ai_tier`, `elemental_cells`, `chain`, `stakes`, `win_booster` |
+| `[[golf]]` | `[[golf.holes]]`, each `par` (3), `rows` (tile strings), `heights` (digit strings of the same shape), `max_strokes` (0 = `par + 5`) |
+| `[[races]]` | `laps` (3), `points` (closed centerline, world units), `half_width` (64), `boost_segments`, `racers` (4), `ai_tier` |
+| `[[prop_hunt]]` | `props` (`id`, `mesh`, `radius`), `decoys` (`prop`, `x`, `y`), `bounds`, `blockers`, `rounds` (3), `hunters` (1), `players` (4), `hide_frames`, `round_frames`, `hunter_health` (100), `miss_penalty` (10), `ai_tier` |
+
+A golf hole's tile legend is one character per tile: `.` fairway, `,` rough, `s` sand, `w` water, `#` wall, space out of bounds, `T` tee, `O` cup, and `^` `v` `<` `>` fairway sloping downhill that way.
+
+The validator parses the section and runs no checks of its own on it. An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
 
 A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
 
@@ -173,7 +186,7 @@ A map hole needs no `rows`: its walls, void and heights are the map's tiles. A l
 
 ### maps/&lt;id&gt;.toml
 
-Reserved; schema not yet defined.
+One custom map per file, the file stem its id: a tile grid with walls and floor tiers laid over a retail base scene, props, NPCs borrowed from retail placements, spawns, exits, trigger and encounter zones, and the entrances that lead into the map from the retail game. Declares `map` ids and the pack-wide NPC ids; references `formation`, `boss`, `line`, `quest` and the `cards.toml` dealers. Reference: [`expansion-pack-maps.md`](expansion-pack-maps.md).
 
 ## The `.lxpack` bundle
 
@@ -234,7 +247,7 @@ A section implements `validate::SectionRules`, whose two methods default to doin
 | `error` / `warning(field, msg)` | Report against the current file. |
 | `pack()`, `qualified(id)` | Read the whole pack; form `pack:id`. |
 
-Every section type sits in the section list in `validate.rs`. The battle, progression, quest and dialogue sections implement the trait in their own modules; the others still have an empty placeholder `impl` there, which a section deletes when it implements its checks in its own module.
+Every section type sits in the section list in `validate.rs`. The battle, progression, quest, dialogue and card sections implement the trait in their own modules, and maps in `map_rules`; `modes.toml` alone keeps the empty `impl` in `validate.rs`, since its instances are checked when they are built.
 
 ## The no-disc-bytes rule
 

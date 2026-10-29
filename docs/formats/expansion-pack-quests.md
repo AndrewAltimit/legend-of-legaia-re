@@ -231,14 +231,28 @@ u16    quest count, then per quest:
 u16    flag count, then str each
 u16    counter count, then str id + i64 value each
 u16    challenge count, then str id + u32 best + u32 clears each
-[u16   cleared-boss count, then str each]   only when a once-only boss is beaten
+[tail] zero or more tagged records, each u8 tag + body:
+         1 = cleared bosses: u16 count, then str each
+         2 = map: str map id, i16 x, i16 z, u16 facing
+         3 = cards: u8 flags (bit 0: starter handed over), u64 card-stream
+             state, u16 count then str id + u32 copies each (binder order),
+             u16 count then str booster id + u32 unopened each,
+             u16 deck count then str each, u16 seen count then str each
 ```
 
 `str` is a `u16` byte length then UTF-8; integers are little-endian; maps are written in key order, so equal progress encodes to equal bytes. An armed challenge, queued notices and the line on screen are not saved.
 
 `legaia_save` stores the block opaquely as `SaveExtV2::expansion`. An `LGSF` file carries it as the optional `LGXD` block after `LGXC`; a retail SC block carries it as a third `u16`-length segment of the `LGXE` engine-ext tail, written only when it fits whole after the `LGX2` and `LGX4` bodies ([`save-screen.md`](../subsystems/save-screen.md)). A save made with no pack writes neither, so its bytes are the bytes the engine wrote before the block existed.
 
-The cleared-boss list is the battle runtime's `cleared_bosses` (once-only `battle.toml` bosses beaten). It is the block's optional tail, so a block with none is the layout an older writer made, and such a block loads with an empty list.
+Each tail record is written only when it carries something, so a block with none of them is the layout an older writer made, and such a block loads with an empty list, no map and no cards:
+
+| Tag | Record | Written when | Owner |
+|---|---|---|---|
+| `1` | Cleared bosses | A once-only `battle.toml` boss is beaten | The battle runtime's `cleared_bosses` |
+| `2` | Map | The save is made on a pack map | `map::MapLocation` ([maps](expansion-pack-maps.md#saving-on-a-map)) |
+| `3` | Cards | The player has any card state | `CardProgress` ([cards](../subsystems/expansion-modes.md#the-card-economy)) |
+
+The reader takes records until the block ends; a tag it does not know, or a block with bytes left over, decodes to nothing (`ExpansionProgress::decode` answers `None`), so a new record kind needs a tag the reader learns at the same time.
 
 `World::activate_expansion` is the one activation path: it compiles the battle tables and brings the quest runtime onto the pack, adopting a dormant block saved for it and handing its cleared bosses to the battle runtime. `World::deactivate_expansion` folds the cleared bosses into the progress and parks it as the dormant block, so a re-activation picks it up.
 

@@ -190,6 +190,9 @@ Formats the port defines rather than decodes. They carry no disc bytes, so they 
 | Page | What it covers |
 |---|---|
 | [Expansion packs](expansion-pack.md) | Modder content packs: directory layout, `pack.toml`, `DiscRef` coordinates, the `.lxpack` bundle, validation and the no-disc-bytes rule. |
+| [Expansion packs: battles](expansion-pack-battle.md) | `battle.toml` (derived monsters, formations and waves, encounter overrides, bosses) and `progression.toml`. |
+| [Expansion packs: quests](expansion-pack-quests.md) | `quests.toml`, challenges, `dialog.toml`, and the save's expansion block. |
+| [Expansion packs: maps](expansion-pack-maps.md) | `maps/<id>.toml`: tiles, tiers, props, NPCs, walls, zones and entrances. |
 
 ## Video and streamed audio
 
