@@ -1,0 +1,110 @@
+# Rebirth game-mode instances. Rules live in the engine; these pick the
+# numbers and the layout.
+
+[[poker]]
+id = "mist-lantern-table"
+name = "Mist Lantern Table"
+seats = 4
+buy_in = 1000
+small_blind = 10
+big_blind = 20
+currency = "coins"
+chip_value = 1
+ai_tier = "regular"
+blind_double_every = 10
+
+[[card_duels]]
+id = "rim-elm-duel"
+name = "Village Duel"
+deck = ["burrow-pup", "ember-moth", "fen-lurker", "storm-ram", "hollow-shell"]
+ai_tier = "novice"
+elemental_cells = true
+chain = false
+stakes = false
+win_booster = "rebirth-starter"
+
+[[golf]]
+id = "windmill-links"
+name = "Windmill Links"
+location = { kind = "scene", name = "town01" }
+
+[[golf.holes]]
+par = 2
+rows = [
+  "############",
+  "#T........O#",
+  "############",
+]
+
+[[golf.holes]]
+par = 3
+rows = [
+  "###########",
+  "#T....,,,,#",
+  "######.,,.#",
+  "#O..ww....#",
+  "#..sss.>>.#",
+  "###########",
+]
+
+[[golf.holes]]
+par = 3
+rows = [
+  "##########",
+  "#T.......#",
+  "#........#",
+  "#...##...#",
+  "#...##...#",
+  "#.......O#",
+  "##########",
+]
+heights = [
+  "0000000000",
+  "0444332210",
+  "0443322110",
+  "0432002110",
+  "0321002100",
+  "0211110000",
+  "0000000000",
+]
+
+[[races]]
+id = "drake-circuit"
+name = "Drake Circuit"
+laps = 3
+half_width = 90
+racers = 4
+ai_tier = "regular"
+points = [
+  [0, 0], [800, 0], [1400, 200], [1600, 700],
+  [1300, 1200], [600, 1300], [100, 1000], [-200, 500],
+]
+boost_segments = [0, 4]
+
+[[prop_hunt]]
+id = "storehouse"
+name = "Storehouse"
+players = 4
+hunters = 1
+rounds = 4
+bounds = [0, 0, 960, 640]
+blockers = [[300, 200, 420, 440], [600, 100, 700, 200]]
+hide_frames = 1800
+round_frames = 10800
+hunter_health = 100
+miss_penalty = 10
+ai_tier = "regular"
+props = [
+  { id = "barrel", radius = 14 },
+  { id = "crate", radius = 18 },
+  { id = "sack", radius = 12 },
+]
+decoys = [
+  { prop = "barrel", x = 80, y = 80 },
+  { prop = "barrel", x = 120, y = 90 },
+  { prop = "crate", x = 860, y = 560 },
+  { prop = "crate", x = 820, y = 80 },
+  { prop = "sack", x = 500, y = 600 },
+  { prop = "sack", x = 140, y = 520 },
+  { prop = "barrel", x = 480, y = 300 },
+]

@@ -3,6 +3,8 @@ name = "legaia-engine-modes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_modes"
@@ -16,3 +18,7 @@ serde.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 toml.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

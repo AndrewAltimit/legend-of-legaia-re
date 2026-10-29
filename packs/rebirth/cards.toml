@@ -1,0 +1,261 @@
+# Rebirth trading cards. Each card's art is a retail monster by its
+# PROT 867 id; names and flavour text are the pack's own. Sides are
+# [top, right, bottom, left] for the Grid Duel.
+
+[sell_prices]
+common = 10
+uncommon = 40
+rare = 150
+legendary = 600
+
+[[cards]]
+id = "mist-wisp"
+name = "Mist Wisp"
+flavor = "Drifts wherever the fog runs thickest."
+rarity = "common"
+element = "wind"
+sides = [2, 3, 1, 2]
+art = { kind = "monster", id = 1 }
+
+[[cards]]
+id = "burrow-pup"
+name = "Burrow Pup"
+flavor = "Digs faster than it thinks."
+rarity = "common"
+element = "earth"
+sides = [3, 1, 2, 2]
+art = { kind = "monster", id = 2 }
+
+[[cards]]
+id = "reed-skimmer"
+name = "Reed Skimmer"
+flavor = "Never touches the pond it hunts."
+rarity = "common"
+element = "water"
+sides = [1, 2, 3, 2]
+art = { kind = "monster", id = 3 }
+
+[[cards]]
+id = "ember-moth"
+name = "Ember Moth"
+flavor = "Its wings leave scorch marks on lanterns."
+rarity = "common"
+element = "fire"
+sides = [2, 2, 2, 3]
+art = { kind = "monster", id = 4 }
+
+[[cards]]
+id = "hollow-shell"
+name = "Hollow Shell"
+flavor = "Nobody remembers what lived inside."
+rarity = "common"
+sides = [4, 1, 1, 2]
+art = { kind = "monster", id = 5 }
+
+[[cards]]
+id = "thorn-crawler"
+name = "Thorn Crawler"
+flavor = "Moves an inch an hour, never stops."
+rarity = "common"
+element = "earth"
+sides = [1, 3, 2, 3]
+art = { kind = "monster", id = 6 }
+
+[[cards]]
+id = "static-beetle"
+name = "Static Beetle"
+flavor = "Sparks when startled, which is always."
+rarity = "common"
+element = "thunder"
+sides = [3, 2, 1, 3]
+art = { kind = "monster", id = 7 }
+
+[[cards]]
+id = "ash-hound"
+name = "Ash Hound"
+flavor = "Tracks by the smell of old campfires."
+rarity = "common"
+element = "fire"
+sides = [2, 4, 2, 1]
+art = { kind = "monster", id = 8 }
+
+[[cards]]
+id = "fen-lurker"
+name = "Fen Lurker"
+flavor = "The ripple you saw was not the wind."
+rarity = "uncommon"
+element = "water"
+sides = [4, 3, 2, 3]
+art = { kind = "monster", id = 9 }
+
+[[cards]]
+id = "gale-harrier"
+name = "Gale Harrier"
+flavor = "Rides the updraft above every cliff road."
+rarity = "uncommon"
+element = "wind"
+sides = [3, 4, 3, 2]
+art = { kind = "monster", id = 10 }
+
+[[cards]]
+id = "gloom-stalker"
+name = "Gloom Stalker"
+flavor = "Waits where the lamplight gives out."
+rarity = "uncommon"
+element = "dark"
+sides = [2, 3, 4, 4]
+art = { kind = "monster", id = 11 }
+
+[[cards]]
+id = "bramble-ogre"
+name = "Bramble Ogre"
+flavor = "Wears the forest it walked through."
+rarity = "uncommon"
+element = "earth"
+sides = [5, 2, 3, 3]
+art = { kind = "monster", id = 12 }
+
+[[cards]]
+id = "cinder-drake"
+name = "Cinder Drake"
+flavor = "Young, loud, and hotter than it looks."
+rarity = "uncommon"
+element = "fire"
+sides = [3, 3, 5, 2]
+art = { kind = "monster", id = 13 }
+
+[[cards]]
+id = "tide-serpent"
+name = "Tide Serpent"
+flavor = "Coils with the turning of the tide."
+rarity = "uncommon"
+element = "water"
+sides = [2, 5, 3, 3]
+art = { kind = "monster", id = 14 }
+
+[[cards]]
+id = "storm-ram"
+name = "Storm Ram"
+flavor = "Its horns ring like struck bells."
+rarity = "uncommon"
+element = "thunder"
+sides = [4, 4, 2, 3]
+art = { kind = "monster", id = 15 }
+
+[[cards]]
+id = "dawn-sprite"
+name = "Dawn Sprite"
+flavor = "Arrives with the first clear morning."
+rarity = "uncommon"
+element = "light"
+sides = [3, 2, 4, 4]
+art = { kind = "monster", id = 16 }
+
+[[cards]]
+id = "iron-colossus"
+name = "Iron Colossus"
+flavor = "A wall that decided to walk."
+rarity = "rare"
+element = "earth"
+sides = [6, 4, 5, 3]
+art = { kind = "monster", id = 17 }
+
+[[cards]]
+id = "veil-phantom"
+name = "Veil Phantom"
+flavor = "Half here, half in the mist."
+rarity = "rare"
+element = "dark"
+sides = [4, 6, 3, 5]
+art = { kind = "monster", id = 18 }
+
+[[cards]]
+id = "thunder-roc"
+name = "Thunder Roc"
+flavor = "Its shadow arrives a beat before the storm."
+rarity = "rare"
+element = "thunder"
+sides = [5, 3, 6, 4]
+art = { kind = "monster", id = 19 }
+
+[[cards]]
+id = "frost-maw"
+name = "Frost Maw"
+flavor = "Breathes winter onto summer fields."
+rarity = "rare"
+element = "water"
+sides = [3, 5, 4, 6]
+art = { kind = "monster", id = 20 }
+
+[[cards]]
+id = "radiant-warden"
+name = "Radiant Warden"
+flavor = "Keeps a vigil no one asked of it."
+rarity = "rare"
+element = "light"
+sides = [6, 5, 3, 4]
+art = { kind = "monster", id = 21 }
+
+[[cards]]
+id = "ruin-titan"
+name = "Ruin Titan"
+flavor = "Older than the walls it broke."
+rarity = "legendary"
+element = "dark"
+sides = [7, 6, 7, 5]
+art = { kind = "monster", id = 22 }
+
+[[cards]]
+id = "sky-sovereign"
+name = "Sky Sovereign"
+flavor = "The clouds part when it wants to pass."
+rarity = "legendary"
+element = "wind"
+sides = [6, 7, 5, 7]
+art = { kind = "monster", id = 23 }
+
+[[cards]]
+id = "heart-of-the-mist"
+name = "Heart of the Mist"
+flavor = "What every shadow in the fog answers to."
+rarity = "legendary"
+sides = [8, 6, 6, 6]
+art = { kind = "monster", id = 24 }
+
+[[boosters]]
+id = "rebirth-starter"
+name = "Rebirth Starter Pack"
+cards_per_pack = 5
+weights = { common = 70, uncommon = 23, rare = 6, legendary = 1 }
+guaranteed = "uncommon"
+price = 300
+
+[[boosters]]
+id = "mistborn"
+name = "Mistborn Pack"
+cards_per_pack = 3
+pool = ["fen-lurker", "gloom-stalker", "veil-phantom", "ruin-titan", "heart-of-the-mist", "mist-wisp"]
+weights = { common = 40, uncommon = 35, rare = 20, legendary = 5 }
+guaranteed = "rare"
+price = 1200
+
+# Early field monsters drop the odd starter pack.
+[[rewards]]
+source = { kind = "monster", id = 1 }
+booster = "rebirth-starter"
+chance_percent = 5
+
+[[rewards]]
+source = { kind = "monster", id = 2 }
+booster = "rebirth-starter"
+chance_percent = 5
+
+# A won card duel or poker night pays in cards too.
+[[rewards]]
+source = { kind = "mode", id = "rim-elm-duel" }
+booster = "rebirth-starter"
+
+[[rewards]]
+source = { kind = "mode", id = "mist-lantern-table" }
+booster = "mistborn"
+chance_percent = 25

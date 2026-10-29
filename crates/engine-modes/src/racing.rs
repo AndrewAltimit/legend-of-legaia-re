@@ -17,9 +17,9 @@
 //! collides. Everything is 20.12 fixed point.
 //!
 //! The race starts after a countdown and ends when every racer has
-//! finished, or [`RaceConfig::finish_grace`] frames after the first
-//! finisher; racers still running are placed behind the finishers by
-//! progress.
+//! finished, [`RaceConfig::finish_grace`] frames after the first
+//! finisher, or at [`RaceConfig::time_limit`]; racers still running are
+//! placed behind the finishers by progress.
 
 use legaia_engine_system::pad::PadButton;
 use serde::{Deserialize, Serialize};
@@ -157,6 +157,8 @@ pub struct RaceConfig {
     pub track: Track,
     /// Frames the race runs on after the first finisher.
     pub finish_grace: u32,
+    /// Frames after the start at which the race ends regardless.
+    pub time_limit: u32,
     pub seed: u64,
 }
 
@@ -173,6 +175,7 @@ impl RaceConfig {
             seats,
             track: Track::from_def(t)?,
             finish_grace: 30 * 60,
+            time_limit: t.laps.max(1) as u32 * 3 * 60 * 60,
             seed,
         })
     }
@@ -544,7 +547,7 @@ impl ModeSession for RaceSession {
         let grace_out = self
             .first_finish
             .is_some_and(|f| self.frame >= f + self.cfg.finish_grace);
-        if all_done || grace_out {
+        if all_done || grace_out || self.frame >= self.cfg.time_limit {
             self.phase = RacePhase::Finished;
             ev.push(RaceEvent::RaceOver);
         }
@@ -648,6 +651,7 @@ mod tests {
             seats,
             track: oval(laps),
             finish_grace: 60 * 60,
+            time_limit: 60 * 60 * 10,
             seed,
         })
     }
