@@ -105,6 +105,22 @@ impl World {
         armed
     }
 
+    /// The expansion block a save carries: the active pack's progress, else
+    /// a dormant block a load kept, else `None` - always `None` for a session
+    /// that never had a pack, so its saves stay byte-identical.
+    pub fn expansion_save_block(&mut self) -> Option<Vec<u8>> {
+        let pack = self.expansion.pack.clone();
+        self.expansion.quests.save_block(pack.as_deref())
+    }
+
+    /// Restore the expansion block of a loaded save (`None` = it carries
+    /// none): progress for the active pack, else kept dormant until that
+    /// pack is active.
+    pub fn expansion_load_block(&mut self, block: Option<&[u8]>) {
+        let pack = self.expansion.pack.clone();
+        self.expansion.quests.load_block(pack.as_deref(), block);
+    }
+
     /// Take the quest and challenge notices queued since the last call, for
     /// the host to show.
     pub fn take_expansion_notices(&mut self) -> Vec<QuestNotice> {

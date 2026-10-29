@@ -8,6 +8,7 @@
 mod battle_capture_bgm;
 mod battle_loot_use_item;
 mod end_to_end_gameplay_loop;
+mod expansion_progress;
 mod item_bag_steal;
 mod party_composition;
 mod save_block_checksum;

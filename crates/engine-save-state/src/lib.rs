@@ -197,6 +197,9 @@ impl WorldSaveState for World {
                 // base a card Save lays its regions over.
                 retail_window: self.party.retail_window.clone(),
                 previous_scene: self.party.previous_scene.clone(),
+                // The expansion pack's progress; `None` with no pack, so a
+                // save made without one is byte-identical to a pre-block file.
+                expansion: self.expansion_save_block(),
             },
         }
     }
@@ -298,6 +301,9 @@ impl LoadFullTail for World {
         // that never was a retail block, which composes from zero.
         self.party.retail_window = sf.ext_v2.retail_window.clone();
         self.party.previous_scene = sf.ext_v2.previous_scene.clone();
+        // The expansion pack's progress, or a dormant block for a pack that
+        // is not active; a save without one resets the pack's progress.
+        self.expansion_load_block(sf.ext_v2.expansion.as_deref());
         // The configured audio level and the voice volume ride in the same
         // live-state window as the gold; retail's card load restores them with
         // it and the next MAN load re-applies the level. A save naming no

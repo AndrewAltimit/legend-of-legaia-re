@@ -74,9 +74,9 @@ pub use character::{
 pub use ext::{
     CharSaveExt, LeaderSummary, RETAIL_ENGINE_EXT_CAPACITY, RETAIL_ENGINE_EXT_MAGIC,
     RETAIL_ENGINE_EXT_OFFSET, SAVE_FILE_EXT_MAGIC, SAVE_FILE_EXT3_MAGIC, SAVE_FILE_EXT4_MAGIC,
-    SAVE_FILE_EXT5_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION, SAVE_FILE_VERSION_V1,
-    SAVE_FILE_VERSION_V2, SAVE_FILE_VERSION_V3, SaveExt, SaveExtV2, SaveFile, SaveResume,
-    SavedChainRecord, displayed_level,
+    SAVE_FILE_EXT5_MAGIC, SAVE_FILE_EXTD_MAGIC, SAVE_FILE_MAGIC, SAVE_FILE_VERSION,
+    SAVE_FILE_VERSION_V1, SAVE_FILE_VERSION_V2, SAVE_FILE_VERSION_V3, SaveExt, SaveExtV2, SaveFile,
+    SaveResume, SavedChainRecord, displayed_level,
 };
 pub use minigame_save::MinigameSave;
 pub use retail_inventory::{

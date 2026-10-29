@@ -93,6 +93,7 @@ fn round_trip_v2_full_ext() {
             field_position: None,
             audio_levels: None,
             options: None,
+            expansion: None,
             active_party: vec![0, 1, 2],
             per_char: vec![
                 (
@@ -354,6 +355,7 @@ fn save_with_saved_chain() -> SaveFile {
             field_position: None,
             audio_levels: None,
             options: None,
+            expansion: None,
             active_party: vec![0, 1],
             per_char: vec![(
                 0,

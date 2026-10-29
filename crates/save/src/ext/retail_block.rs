@@ -123,12 +123,22 @@ impl SaveFile {
         let v4_len = u16::from_le_bytes(tail.get(p..p + 2)?.try_into().ok()?) as usize;
         p += 2;
         let v4 = tail.get(p..p + v4_len)?;
+        p += v4_len;
         let mut ext_v2 = parse_ext_v2(v2).ok()?;
         apply_ext_v4(v4, &mut ext_v2).ok()?;
+        // The expansion segment: absent (zero length) on every blob written
+        // without one.
+        let xp_len = tail
+            .get(p..p + 2)
+            .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]) as usize);
+        if xp_len > 0 {
+            ext_v2.expansion = Some(tail.get(p + 2..p + 2 + xp_len)?.to_vec());
+        }
         Some(ext_v2)
     }
 
-    /// Write this save's `LGX2` / `LGX4` payload into a retail SC block's
+    /// Write this save's `LGX2` / `LGX4` payload, and its expansion block
+    /// when it has one and there is room after them, into a retail SC block's
     /// unread tail (`0x1A18..0x1FFC`) and restamp the block checksum. Returns
     /// `Ok(false)` - with the tail zeroed - when the blob does not fit the
     /// `0x5E4`-byte capacity (a chain library of hundreds of named chains);
@@ -158,6 +168,17 @@ impl SaveFile {
             tail[p..p + 2].copy_from_slice(&(v4.len() as u16).to_le_bytes());
             p += 2;
             tail[p..p + v4.len()].copy_from_slice(&v4);
+            p += v4.len();
+            // The expansion segment rides only when it fits whole: the
+            // play clock and the party composition outrank a quest log.
+            if let Some(xp) = self.ext_v2.expansion.as_deref()
+                && !xp.is_empty()
+                && p + 2 + xp.len() <= tail.len()
+            {
+                tail[p..p + 2].copy_from_slice(&(xp.len() as u16).to_le_bytes());
+                p += 2;
+                tail[p..p + xp.len()].copy_from_slice(xp);
+            }
         }
         crate::card::restamp_sc_block_checksum(sc_block);
         Ok(fits)

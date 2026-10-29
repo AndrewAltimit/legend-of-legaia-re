@@ -26,6 +26,9 @@ legaia-engine-battle-vm.workspace = true
 legaia-engine-field.workspace = true
 legaia-prot.workspace = true
 legaia-scene-formats.workspace = true
+# The expansion-progress round trips build a synthetic pack.
+legaia-engine-expansion.workspace = true
+legaia-expansion-format.workspace = true
 
 [[test]]
 name = "integration"
