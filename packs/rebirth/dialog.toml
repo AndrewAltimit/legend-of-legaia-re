@@ -191,6 +191,7 @@ Turn the dial, and the garden will
 test you four times over."""
 choices = [
     { label = "Turn the dial.", battle = "garden_gauntlet" },
+    { label = "Race the shadow.", challenge = "garden_sprint", battle = "garden_gauntlet" },
     { label = "Not now.", reply = "The shadow creeps back to where\nit started." },
 ]
 
@@ -219,7 +220,22 @@ Pull it, and the engine will feed
 you everything it has."""
 choices = [
     { label = "Pull the lever.", battle = "engine_gauntlet" },
+    { label = "Vahn pulls alone.", challenge = "lone_fist", battle = "engine_gauntlet" },
     { label = "Step back.", reply = "The engine ticks over, waiting." },
+]
+
+[lines.challenge_board]
+speaker = "The Trial Stone"
+text = """
+A plain stone, carved with the
+tower's old trials. One glows.
+
+BARE HANDS: win the next battle
+in ten rounds, with no items and
+no Ra-Seru magic."""
+choices = [
+    { label = "Take the trial.", challenge = "bare_hands" },
+    { label = "Not today.", reply = "The glow fades back into\nthe stone." },
 ]
 
 # --- Bosses ------------------------------------------------------------------
@@ -291,6 +307,7 @@ came to me. I am all of them."
 left in this sanctum?\""""
 choices = [
     { label = "We will.", boss = "azure_seraph" },
+    { label = "We will, humbly.", challenge = "humble_seraph", boss = "azure_seraph" },
     { label = "Not yet.", reply = "\"Then I will keep singing.\"" },
 ]
 
@@ -333,8 +350,36 @@ throne - an echo of what you
 broke, still holding its shape."""
 choices = [
     { label = "Break it again.", boss = "throne_echo" },
+    { label = "Break the storm.", challenge = "echo_storm", boss = "throne_echo" },
     { label = "Let it fade.", reply = "The echo thins, and waits." },
 ]
+
+# Said at a beaten boss's place in place of its challenge (a trigger gated
+# on `requires = { bosses = [...] }`).
+
+[lines.ember_after]
+speaker = "The Brazier"
+text = """
+Cold ash. Nothing rises from it
+any more."""
+
+[lines.vault_after]
+speaker = "The Sunken Court"
+text = """
+The moss lies still. It is only
+a floor now."""
+
+[lines.regent_after]
+speaker = "The Empty Seat"
+text = """
+The Regent's seat is cold. The
+engine runs on without him."""
+
+[lines.seraph_after]
+speaker = "The Sanctum"
+text = """
+No hymn. Only the echo of your
+own steps."""
 
 # --- The Gambler's Rest (5F) -------------------------------------------------
 
@@ -382,6 +427,31 @@ The Rebirth Links, nine holes up
 the tower's side. The Spiral
 Circuit. And hide and seek in the
 Old Vault."""
+
+[lines.rest_cards]
+speaker = "Keeper Odalric"
+text = """
+The card room. Hold'em at the
+High Table, or the Warden's Duel
+with every card face up."""
+choices = [
+    { label = "The High Table.", mode = "tower-high-table" },
+    { label = "The Warden's Duel.", mode = "wardens-duel" },
+    { label = "Not now.", reply = "\"The cards will keep.\"" },
+]
+
+[lines.rest_games]
+speaker = "Keeper Odalric"
+text = """
+The games room. Nine holes, a
+race, or hide and seek in the
+old vault."""
+choices = [
+    { label = "The Rebirth Links.", mode = "rebirth-links" },
+    { label = "The Spiral Circuit.", mode = "spiral-circuit" },
+    { label = "The Old Vault.", mode = "old-vault" },
+    { label = "Not now.", reply = "\"Come back when you are\nfeeling lucky.\"" },
+]
 
 # --- Bounties and errands ----------------------------------------------------
 

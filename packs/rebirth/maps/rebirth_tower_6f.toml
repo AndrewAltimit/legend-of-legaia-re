@@ -94,6 +94,20 @@ id = "regent_alcove"
 rect = [8, 11, 8, 11]
 event = { kind = "talk", npc = "regent_seat" }
 
+# The Regent's challenge: offered while he stands, so a won fight is not
+# offered again while the gauntlet is still to clear.
+[[triggers]]
+id = "regent_challenge"
+rect = [8, 11, 8, 11]
+event = { kind = "dialog", line = "regent_offer" }
+requires = { quests = ["gamblers_rest"], min_level = 70, bosses_unbeaten = ["iron_regent"] }
+
+[[triggers]]
+id = "regent_seat_cold"
+rect = [8, 11, 8, 11]
+event = { kind = "dialog", line = "regent_after" }
+requires = { bosses = ["iron_regent"] }
+
 [[triggers]]
 id = "gauntlet_lever"
 rect = [8, 22, 8, 22]

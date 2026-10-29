@@ -87,6 +87,13 @@ id = "brazier"
 rect = [9, 12, 11, 13]
 event = { kind = "talk", npc = "ember_brazier" }
 
+# Once the Warden has fallen the brazier is only ash.
+[[triggers]]
+id = "brazier_cold"
+rect = [9, 12, 11, 13]
+event = { kind = "dialog", line = "ember_after" }
+requires = { bosses = ["cinder_warden"] }
+
 [[encounters]]
 id = "west_aisle"
 rect = [0, 8, 6, 17]

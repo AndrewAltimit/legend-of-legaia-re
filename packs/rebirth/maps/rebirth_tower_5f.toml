@@ -67,3 +67,30 @@ event = { kind = "talk", npc = "rest_keeper" }
 id = "table_board"
 rect = [1, 4, 1, 6]
 event = { kind = "dialog", line = "rest_board" }
+
+# The keeper's tables open once he has welcomed the party: the card room
+# on the west side, the games room on the east.
+[[triggers]]
+id = "card_room"
+rect = [4, 8, 5, 8]
+event = { kind = "dialog", line = "rest_cards" }
+requires = { quests = ["gamblers_rest"] }
+
+[[triggers]]
+id = "games_room"
+rect = [9, 8, 10, 8]
+event = { kind = "dialog", line = "rest_games" }
+requires = { quests = ["gamblers_rest"] }
+
+# The High Table's empty seat: sitting down deals in.
+[[triggers]]
+id = "high_table_seat"
+rect = [7, 9, 7, 9]
+event = { kind = "mode", mode = "tower-high-table" }
+requires = { quests = ["gamblers_rest"] }
+
+# The Rest itself: the party recovers by the hearth, and may save.
+[[triggers]]
+id = "hearth"
+rect = [13, 4, 14, 4]
+event = { kind = "rest", save = true }

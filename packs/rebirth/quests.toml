@@ -106,8 +106,9 @@ title = "The Engine Deep"
 description = "The sixth floor's machines still run for their master. Stop the engine and the one who drives it."
 giver = "regent_seat"
 prerequisites = { quests = ["gamblers_rest"], min_level = 70 }
-start_dialog = "regent_offer"
-active_dialog = "regent_offer"
+# The offer is the alcove's own trigger (maps/rebirth_tower_6f.toml), gated
+# on the Regent still standing, so a won fight is not offered again while
+# the gauntlet remains.
 ordered = false
 objectives = [
     { kind = "defeat_formation", formation = "engine_gauntlet", text = "Outlast the Engine Gauntlet" },

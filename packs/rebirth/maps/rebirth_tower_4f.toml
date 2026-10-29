@@ -124,6 +124,12 @@ id = "sunken_court"
 rect = [14, 15, 18, 15]
 event = { kind = "talk", npc = "vault_heart" }
 
+[[triggers]]
+id = "sunken_court_still"
+rect = [14, 15, 18, 15]
+event = { kind = "dialog", line = "vault_after" }
+requires = { bosses = ["verdant_colossus"] }
+
 [[encounters]]
 id = "west_terrace"
 rect = [5, 6, 10, 21]

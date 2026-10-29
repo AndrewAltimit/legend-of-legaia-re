@@ -112,6 +112,21 @@ id = "gauntlet_bell"
 rect = [5, 4, 9, 4]
 event = { kind = "dialog", line = "gauntlet_offer" }
 
+# The trial stone east of the entrance arms the Bare Hands challenge once
+# the Warden's Trial is done.
+[[triggers]]
+id = "trial_stone"
+rect = [12, 9, 13, 9]
+event = { kind = "dialog", line = "challenge_board" }
+requires = { quests = ["tower_trial"] }
+
+# The landing by the stair down is a rest point: the party recovers, and
+# may write a save.
+[[triggers]]
+id = "rest_landing"
+rect = [12, 11, 13, 11]
+event = { kind = "rest", save = true }
+
 # The far ring past the dais rolls the floor's encounter table
 # (`battle.toml`, `scene = "tower_1f"`).
 [[encounters]]

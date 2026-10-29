@@ -82,6 +82,19 @@ id = "inner_hall"
 rect = [10, 7, 12, 7]
 event = { kind = "talk", npc = "sanctum_echo" }
 
+[[triggers]]
+id = "inner_hall_silent"
+rect = [10, 7, 12, 7]
+event = { kind = "dialog", line = "seraph_after" }
+requires = { bosses = ["azure_seraph"] }
+
+# A quiet alcove by the stair from below: the last rest point under the
+# throne.
+[[triggers]]
+id = "rest_alcove"
+rect = [15, 19, 17, 19]
+event = { kind = "rest", save = true }
+
 [[encounters]]
 id = "north_ring"
 rect = [0, 0, 22, 4]
