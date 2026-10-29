@@ -48,7 +48,7 @@
   {
    "id": "top",
    "title": "Session, presentation, tools",
-   "blurb": "What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside.",
+   "blurb": "What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside.",
    "rows": [
     {
      "label": "",
@@ -59,7 +59,8 @@
       "engine-audio",
       "engine-export",
       "parity",
-      "engine-capture"
+      "engine-capture",
+      "netplay"
      ]
     }
    ]
@@ -3396,6 +3397,30 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/minigame-formats/README.md"
+  },
+  "netplay": {
+   "package": "legaia-netplay",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "legaia-relay"
+   ],
+   "lib": true,
+   "modules": [
+    "authority",
+    "codec",
+    "lockstep",
+    "protocol",
+    "relay",
+    "transport",
+    "websocket",
+    "wire"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "Multiplayer: versioned wire protocol, delay-based lockstep and host-authoritative session cores over a generic <code>Simulation</code>, loopback / TCP / WebSocket / browser transports, the room relay (standalone or in-process <code>RelayServer::spawn</code>). Names no engine crate.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/netplay/README.md"
   },
   "overlay-images": {
    "package": "legaia-overlay-images",

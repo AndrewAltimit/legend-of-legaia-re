@@ -44,9 +44,9 @@ crates = ["engine-shell", "web-viewer", "web-play", "web-minigames", "web-patche
 [[bands]]
 id = "top"
 title = "Session, presentation, tools"
-blurb = "What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside."
+blurb = "What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside."
 track = "engine"
-crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture"]
+crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture", "netplay"]
 
 [[bands]]
 id = "drivers"

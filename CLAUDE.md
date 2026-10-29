@@ -167,6 +167,7 @@ How the runtime engine works.
 | [`shop.md`](docs/subsystems/shop.md) | Town shop buy / sell / quantity / confirm flow. UI lives in the **menu overlay** (no separate shop overlay); per-scene stock is inline in the scene MAN's field-VM script, prices from the static item table. Port = `engine-core` shop session. |
 | [`inn.md`](docs/subsystems/inn.md) | Inn HP/MP restore. **No inn overlay and no cost table** - each inn is an ordinary field-VM dialogue and the price is a script literal in the scene MAN. Port `engine-menus::inn`; cost scanned from the MAN at scene load. |
 | [`level-up.md`](docs/subsystems/level-up.md) | Post-battle XP distribution, the per-level stat-gain table, and the banner. Retail applies XP + growth + level bump in overlay `FUN_801E9504`; port `engine-battle::levelup::LevelUpTracker`. |
+| [`netplay.md`](docs/subsystems/netplay.md) | Multiplayer (the port's own; retail has none): wire protocol, lockstep and host-authoritative models, desync detection, AI seat handover, the relay and "host a world", security posture. Crate `legaia-netplay`. |
 
 ### Tooling - [`docs/tooling/`](docs/tooling/)
 
@@ -307,6 +308,7 @@ The edges among the engine's kernel crates are a committed table (`scripts/ci/cr
 | [`crates/engine-fishing`](crates/engine-fishing/README.md) | - | The fishing rules engine, a sibling of `engine-minigames`: `PondSession`, the rod / lure / line actors, venue chrome and hub screen. The minigame floor it stands on is `engine-field`'s. |
 | [`crates/engine-expansion`](crates/engine-expansion/README.md) | - | The `World`-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. `World::expansion` is its seat; inert with no pack. |
 | [`crates/engine-modes`](crates/engine-modes/README.md) | - | Rules engines for the port's own game modes (poker, golf, racing, card battles, prop hunt): deterministic, `World`-free, lockstep-ready. |
+| [`crates/netplay`](crates/netplay/README.md) | `legaia-relay` | Multiplayer: versioned wire protocol, delay-based lockstep and host-authoritative session cores over a generic `Simulation`, loopback / TCP / WebSocket / browser transports, the room relay (standalone or in-process `RelayServer::spawn`). Names no engine crate. |
 | [`crates/engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) | - | The minigames' 3D scene surfaces and venues (Baka Fighter duel, Muscle Dome arena, dance hall, fishing venue) and `MinigameState`, the `World`'s minigame seat. |
 | [`crates/engine-effects`](crates/engine-effects/README.md) | - | The `World`-free effect kernels: action effect scripts, ribbon and render-mode-4 emitters, summon scene-graph driver, PROT-0900 screen effects, object effects. |
 | [`crates/engine-system`](crates/engine-system/README.md) | - | The `World`-free runtime system at the bottom of the engine stack: pad words + pad input + retail pad pump, menu cursor primitive, options value enums, BIOS `rand`, stream chunk installer, the FMV modules (`movie/`), sound state, the SCUS leaf kernels, fades, mode-entry initialisers, RAM-cell map. |
