@@ -158,6 +158,7 @@ fn quit_prompt_and_results_read() {
         rows: &rows,
         granted: &granted,
         completed: true,
+        local_seat: 0,
     });
     for needle in ["Game over", "1st", "2nd", "7 strokes", "+40 coins"] {
         assert!(has(&s, needle), "`{needle}` missing from {s:?}");
@@ -180,4 +181,18 @@ fn texts_lay_out_through_the_font() {
     for d in &draws {
         assert!(d.dst.1 >= 0 && d.dst.1 < STAGE_H, "{:?}", d.dst);
     }
+}
+
+#[test]
+fn a_networked_player_reads_their_own_seat_as_you() {
+    let mut m = build("builtin-poker");
+    m.local_seat = 1;
+    let s = mode_screen_strings(&ModeScreen::Playing {
+        mode: &m,
+        log: &[],
+        quit_prompt: false,
+    });
+    // Seat 1 is "You" along the near edge, so seat 0 sits on the far rail.
+    assert!(has(&s, "Seat 1"), "{s:?}");
+    assert!(!has(&s, "Seat 2"), "{s:?}");
 }

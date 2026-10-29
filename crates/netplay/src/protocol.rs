@@ -13,7 +13,7 @@ use crate::codec::{CodecError, Reader, Writer};
 
 /// The protocol revision this build speaks. Bumped on any change to a
 /// message's layout or meaning.
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 /// Largest encoded message, tag included. Transports refuse a frame over it.
 pub const MAX_MESSAGE_LEN: usize = 16 * 1024;
 /// Player display name, in bytes.
@@ -353,6 +353,12 @@ pub enum Message {
     Resume {
         by: PlayerId,
     },
+    /// Peer -> relay -> room: the running session is over and the room
+    /// returns to its lobby (readiness cleared, joins admitted again). The
+    /// relay overwrites `by` with the sender.
+    EndSession {
+        by: PlayerId,
+    },
 
     // --- Host-authoritative ---
     /// Client -> relay -> host; the relay overwrites `from`.
@@ -404,6 +410,7 @@ mod tag {
     pub const SEAT_CONTROLLER: u8 = 0x23;
     pub const PAUSE: u8 = 0x24;
     pub const RESUME: u8 = 0x25;
+    pub const END_SESSION: u8 = 0x26;
     pub const ACTION: u8 = 0x30;
     pub const EVENT: u8 = 0x31;
     pub const STATE_REQUEST: u8 = 0x32;
@@ -614,6 +621,10 @@ impl Message {
             }
             Self::Pause { by } => {
                 w.u8(tag::PAUSE);
+                put_player(&mut w, *by);
+            }
+            Self::EndSession { by } => {
+                w.u8(tag::END_SESSION);
                 put_player(&mut w, *by);
             }
             Self::Resume { by } => {
@@ -845,6 +856,7 @@ impl Message {
             },
             tag::PAUSE => Self::Pause { by: get_player(r)? },
             tag::RESUME => Self::Resume { by: get_player(r)? },
+            tag::END_SESSION => Self::EndSession { by: get_player(r)? },
             tag::ACTION => Self::Action {
                 from: get_player(r)?,
                 payload: r.bytes("action", MAX_PAYLOAD_LEN)?,

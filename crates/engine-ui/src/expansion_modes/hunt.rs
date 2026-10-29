@@ -5,7 +5,7 @@
 //! A hidden hider draws exactly like a decoy of its prop while the player
 //! hunts - telling them apart is the game.
 
-use legaia_engine_modes::active::{ActiveMode, seat_name};
+use legaia_engine_modes::active::ActiveMode;
 use legaia_engine_modes::prop_hunt::{HuntPhase, HuntView, Role};
 
 use super::{Canvas, Fit, STAGE_W, footer, fx, ink, pen, seat_color};
@@ -62,7 +62,8 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &HuntView, log: &[Strin
     for d in &v.decoys {
         prop_box(c, d.prop, fx(d.pos.x), fx(d.pos.y));
     }
-    let me = v.avatars.first();
+    let mine = mode.local_seat;
+    let me = v.avatars.get(mine);
     let i_hunt = me.is_some_and(|a| a.role == Role::Hunter);
     for (seat, a) in v.avatars.iter().enumerate() {
         let (x, y) = (fx(a.pos.x), fx(a.pos.y));
@@ -85,12 +86,12 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &HuntView, log: &[Strin
                 }
                 // The player sees its own hider, and every hider while
                 // the player is one too; a hunting player sees only props.
-                if !a.out && (seat == 0 || !i_hunt) {
+                if !a.out && (seat == mine || !i_hunt) {
                     c.dot(xi, yi, 1, seat_color(seat));
                 }
             }
         }
-        if seat == 0 && !a.out {
+        if seat == mine && !a.out {
             let r = 7;
             c.outline(xi - r, yi - r, 2 * r + 1, 2 * r + 1, ink::HIGHLIGHT);
         }
@@ -123,7 +124,7 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &HuntView, log: &[Strin
         let y = 83 + seat as i32 * 14;
         let ink = if a.out { pen::DIM } else { pen::WHITE };
         c.dot(px + 7, y + 7, 2, seat_color(seat));
-        c.text(seat_name(seat), px + 13, y, ink);
+        c.text(mode.seat_name(seat), px + 13, y, ink);
         c.text_right(a.score.to_string(), px + pw - 4, y, ink);
     }
     if let Some(last) = log.last() {

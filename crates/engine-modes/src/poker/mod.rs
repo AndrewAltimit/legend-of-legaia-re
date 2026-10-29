@@ -268,6 +268,16 @@ pub struct PokerSession {
 }
 
 impl PokerSession {
+    /// Hand `seat` to `kind` from the next tick on: a networked table
+    /// seats its players as humans and gives a dropped player's seat to the
+    /// AI. Out-of-range seats are ignored.
+    pub fn set_seat_kind(&mut self, seat: usize, kind: SeatKind) {
+        if let Some(s) = self.seats.get_mut(seat) {
+            s.kind = kind;
+            self.cfg.seats[seat] = kind;
+        }
+    }
+
     /// Seat the table and deal the first hand.
     pub fn new(cfg: PokerConfig) -> Self {
         Self::build(cfg, Vec::new())

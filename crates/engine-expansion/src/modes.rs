@@ -12,6 +12,12 @@
 //! - **Results** - the finished session's placements and what was granted;
 //!   any of Cross, Circle or Start leaves.
 //!
+//! A **networked** seat ([`PackModeSeat::networked`]) holds a session a
+//! netplay driver advances from every player's pad: the seat never ticks
+//! it, only filters the local pad for the driver
+//! ([`PackModeSeat::local_pad`]) and keeps the quit prompt. A networked
+//! session grants nothing; its results screen only ranks the table.
+//!
 //! What a finished session grants is reported in [`SeatStep::Settled`]; the
 //! `World` credits the currency to its purses and keeps the card grants in
 //! [`PendingCardReward`]s until the card economy collects them. A forfeited
@@ -60,6 +66,8 @@ pub enum ModeStage {
         granted: Vec<String>,
         /// The session ran to its end (`false`: the player quit).
         completed: bool,
+        /// The local player's seat ("You" on the rows).
+        local_seat: usize,
     },
 }
 
@@ -76,6 +84,8 @@ pub struct PackModeSeat {
     /// quit prompt closing), withheld from it until released - so the Cross
     /// that picked a mode is not also its first move.
     pub held_over: u16,
+    /// A netplay driver advances the session; the seat does not tick it.
+    pub networked: bool,
 }
 
 /// A card grant waiting for the card economy.
@@ -113,6 +123,7 @@ impl PackModeSeat {
             },
             log: Vec::new(),
             held_over: u16::MAX,
+            networked: false,
         }
     }
 
@@ -127,6 +138,15 @@ impl PackModeSeat {
             },
             log: Vec::new(),
             held_over: u16::MAX,
+            networked: false,
+        }
+    }
+
+    /// A seat playing `mode` for a netplay driver.
+    pub fn networked(return_mode: SceneMode, mode: ActiveMode) -> Self {
+        Self {
+            networked: true,
+            ..Self::playing(return_mode, ModeSource::Builtin, mode)
         }
     }
 
@@ -136,6 +156,37 @@ impl PackModeSeat {
             ModeStage::Playing { mode, .. } => Some(mode),
             _ => None,
         }
+    }
+
+    /// The running session, for a netplay driver.
+    pub fn active_mut(&mut self) -> Option<&mut Box<ActiveMode>> {
+        match &mut self.stage {
+            ModeStage::Playing { mode, .. } => Some(mode),
+            _ => None,
+        }
+    }
+
+    /// The pad word a networked session should see from this machine's
+    /// player this frame: nothing while the quit prompt is up, never Start
+    /// (it raises the prompt), and no button held over from entry until it
+    /// is released.
+    pub fn local_pad(&mut self, pad: u16) -> u16 {
+        match &self.stage {
+            ModeStage::Playing {
+                quit_prompt: false, ..
+            } => {
+                self.held_over &= pad;
+                pad & !self.held_over & !PadButton::Start.mask()
+            }
+            _ => 0,
+        }
+    }
+
+    /// Append a networked session's event lines to the log.
+    pub fn push_log(&mut self, lines: Vec<String>) {
+        self.log.extend(lines);
+        let excess = self.log.len().saturating_sub(LOG_LINES);
+        self.log.drain(..excess);
     }
 
     /// The running session's view, while playing.
@@ -203,6 +254,7 @@ impl PackModeSeat {
                             rows: Vec::new(),
                             granted: Vec::new(),
                             completed: false,
+                            local_seat: mode.local_seat,
                         };
                     } else if pressed(PadButton::Circle) || pressed(PadButton::Start) {
                         *quit_prompt = false;
@@ -212,6 +264,21 @@ impl PackModeSeat {
                 }
                 if pressed(PadButton::Start) {
                     *quit_prompt = true;
+                    return SeatStep::Stay;
+                }
+                if self.networked {
+                    // The driver ticks the session; the seat only notices
+                    // its end. Nothing is granted online.
+                    if let Some(results) = mode.results() {
+                        self.stage = ModeStage::Results {
+                            name: mode.name.clone(),
+                            kind: mode.kind(),
+                            rows: results.placements,
+                            granted: Vec::new(),
+                            completed: true,
+                            local_seat: mode.local_seat,
+                        };
+                    }
                     return SeatStep::Stay;
                 }
                 self.held_over &= pad;
@@ -230,6 +297,7 @@ impl PackModeSeat {
                     rows,
                     granted: granted_lines(&settlement.results.rewards),
                     completed: true,
+                    local_seat: mode.local_seat,
                 };
                 SeatStep::Settled {
                     mode_id,

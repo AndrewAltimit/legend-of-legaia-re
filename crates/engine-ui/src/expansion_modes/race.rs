@@ -2,7 +2,7 @@
 //! place / boost panel. A functional view; the race gets its 3D treatment
 //! on a world map later.
 
-use legaia_engine_modes::active::{ActiveMode, seat_name};
+use legaia_engine_modes::active::ActiveMode;
 use legaia_engine_modes::racing::{BOOST_METER, RacePhase, RaceView};
 
 use super::{Canvas, Fit, STAGE_W, footer, fx, ink, pen, seat_color};
@@ -90,7 +90,8 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &RaceView, log: &[Strin
     // The panel.
     let (px, pw) = (PANEL_X, STAGE_W - PANEL_X - 4);
     c.panel(px, 20, pw, 200, ink::PANEL, ink::PANEL_EDGE);
-    let me = v.racers.first();
+    let mine = mode.local_seat;
+    let me = v.racers.get(mine);
     let laps = track.laps.max(1);
     if let Some(me) = me {
         let lap = (me.lap + 1).min(laps);
@@ -98,7 +99,7 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &RaceView, log: &[Strin
         let place = v
             .standings
             .iter()
-            .position(|&s| s == 0)
+            .position(|&s| s == mine)
             .map_or(0, |p| p + 1);
         c.text(
             format!("Place {place}/{}", v.racers.len()),
@@ -122,10 +123,10 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &RaceView, log: &[Strin
         let y = 106 + i as i32 * 14;
         c.dot(px + 7, y + 7, 2, seat_color(seat));
         c.text(
-            seat_name(seat),
+            mode.seat_name(seat),
             px + 13,
             y,
-            if seat == 0 { pen::GOLD } else { pen::WHITE },
+            if seat == mine { pen::GOLD } else { pen::WHITE },
         );
     }
     if let Some(last) = log.last() {

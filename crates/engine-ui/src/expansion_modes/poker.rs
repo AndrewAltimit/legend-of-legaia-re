@@ -1,7 +1,7 @@
 //! The poker table: opponents along the far rail, the board and pot in the
 //! middle, the player's hand and action menu along the near edge.
 
-use legaia_engine_modes::active::{category_label, seat_name};
+use legaia_engine_modes::active::{category_label, seat_name_for};
 use legaia_engine_modes::poker::{Phase, PokerView, SeatView, Street};
 
 use super::cards::{CARD_H, CARD_W, card_back, card_slot, pip, playing_card, rank_label};
@@ -9,7 +9,9 @@ use super::{Canvas, footer, ink, log_box, pen};
 
 const TABLE: (i32, i32, i32, i32) = (8, 20, 304, 150);
 
-pub(super) fn draw(c: &mut Canvas, v: &PokerView, log: &[String]) {
+/// `me` is the local player's seat: the near edge's hand and menu.
+pub(super) fn draw(c: &mut Canvas, v: &PokerView, me: usize, log: &[String]) {
+    let mine = me;
     let (tx, ty, tw, th) = TABLE;
     c.rect(tx, ty, tw, th, ink::FELT_EDGE);
     c.rect(tx + 4, ty + 4, tw - 8, th - 8, ink::FELT);
@@ -21,7 +23,7 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, log: &[String]) {
         .collect();
 
     // Opponents along the far rail.
-    let others: Vec<usize> = (1..v.seats.len()).collect();
+    let others: Vec<usize> = (0..v.seats.len()).filter(|&s| s != mine).collect();
     let slot = (tw - 8) / others.len().max(1) as i32;
     let pw = (slot - 6).min(64);
     for (i, &seat) in others.iter().enumerate() {
@@ -41,7 +43,7 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, log: &[String]) {
         } else {
             pen::WHITE
         };
-        c.text_centre(seat_name(seat), cx, 27, name_ink);
+        c.text_centre(seat_name_for(seat, mine), cx, 27, name_ink);
         c.text_centre(seat_status(s), cx, 41, status_ink(s));
         if v.button == seat {
             button_marker(c, x + pw - 4, 29);
@@ -75,8 +77,8 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, log: &[String]) {
     // The pot line, or the showdown's awards over it.
     if showdown && !v.last_awards.is_empty() {
         let (w, amount, hand) = &v.last_awards[0];
-        let names: Vec<String> = w.iter().map(|&s| seat_name(s)).collect();
-        let verb = if w == &[0] { "win" } else { "wins" };
+        let names: Vec<String> = w.iter().map(|&s| seat_name_for(s, mine)).collect();
+        let verb = if w == &[mine] { "win" } else { "wins" };
         let text = match hand {
             Some(h) => format!(
                 "{} {verb} {amount} - {}",
@@ -103,7 +105,7 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, log: &[String]) {
             pen::DIM,
         );
     }
-    let me = &v.seats[0];
+    let me = &v.seats[mine];
     if me.street_bet > 0 && !showdown {
         c.text_centre(format!("your bet {}", me.street_bet), 160, 152, pen::GOLD);
     }
@@ -125,20 +127,20 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, log: &[String]) {
             card_slot(c, hx + CARD_W + 3, 174);
         }
     }
-    if v.button == 0 {
+    if v.button == mine {
         button_marker(c, hx - 4, 176);
     }
     c.text_centre(
         format!("You {}", me.chips),
         hx + CARD_W + 1,
         210,
-        if showdown && winners.contains(&0) {
+        if showdown && winners.contains(&mine) {
             pen::GOLD
         } else {
             pen::WHITE
         },
     );
-    action_menu(c, v, 186, 172);
+    action_menu(c, v, mine, 186, 172);
     footer(
         c,
         if showdown {
@@ -190,9 +192,9 @@ fn mini_card(c: &mut Canvas, card: legaia_engine_modes::poker::hand::Card, x: i3
     pip(c, card.suit(), x + 4, y + 15, 1);
 }
 
-fn action_menu(c: &mut Canvas, v: &PokerView, x: i32, y: i32) {
+fn action_menu(c: &mut Canvas, v: &PokerView, seat: usize, x: i32, y: i32) {
     let (w, h) = (130, 52);
-    let mine = v.to_act == Some(0) && matches!(v.phase, Phase::Betting(_));
+    let mine = v.to_act == Some(seat) && matches!(v.phase, Phase::Betting(_));
     c.panel(
         x,
         y,
@@ -209,14 +211,14 @@ fn action_menu(c: &mut Canvas, v: &PokerView, x: i32, y: i32) {
         let msg = match v.phase {
             Phase::Showdown { .. } => "Showdown",
             Phase::Finished => "Table closed",
-            _ if !v.seats[0].in_hand || v.seats[0].folded => "Sitting out",
+            _ if !v.seats[seat].in_hand || v.seats[seat].folded => "Sitting out",
             _ => "Waiting...",
         };
         c.text_centre(msg, x + w / 2, y + 18, pen::DIM);
         return;
     }
-    let me = &v.seats[0];
-    let menu = v.menus.first().copied().unwrap_or_default();
+    let me = &v.seats[seat];
+    let menu = v.menus.get(seat).copied().unwrap_or_default();
     let to_call = v.current_bet.saturating_sub(me.street_bet).min(me.chips);
     let labels = [
         "Fold".to_string(),

@@ -330,6 +330,15 @@ pub struct PropHuntSession {
 }
 
 impl PropHuntSession {
+    /// Hand `seat` to `kind` from the next tick on: a networked table
+    /// seats its players as humans and gives a dropped player's seat to the
+    /// AI. Out-of-range seats are ignored.
+    pub fn set_seat_kind(&mut self, seat: usize, kind: SeatKind) {
+        if let Some(k) = self.cfg.seats.get_mut(seat) {
+            *k = kind;
+        }
+    }
+
     pub fn new(cfg: PropHuntConfig) -> Self {
         let n = cfg.seats.len();
         assert!((2..=crate::session::MAX_SEATS).contains(&n));

@@ -518,7 +518,19 @@ impl RelayCore {
                 };
                 self.broadcast(code, Some(id), &msg);
             }
-            Message::Action { payload, .. } if matches!(room.phase, Phase::Authoritative) => {
+            Message::EndSession { .. } if !in_lobby => {
+                room.phase = Phase::Lobby;
+                for m in &mut room.members {
+                    m.ready = false;
+                }
+                self.broadcast(code, None, &Message::EndSession { by: id });
+                self.broadcast_lobby(code);
+            }
+            // Actions reach the host in the lobby too: shared-world roaming
+            // runs there, each guest reporting its own avatar.
+            Message::Action { payload, .. }
+                if in_lobby || matches!(room.phase, Phase::Authoritative) =>
+            {
                 if let Some(host) = room.member(room.host).map(|m| m.conn)
                     && !is_host
                 {
@@ -532,8 +544,11 @@ impl RelayCore {
                     self.send(host, Message::StateRequest { from: id });
                 }
             }
-            Message::Event { .. } | Message::Snapshot { .. }
-                if is_host && matches!(room.phase, Phase::Authoritative) =>
+            Message::Event { .. } if is_host && matches!(room.phase, Phase::Authoritative) => {
+                self.broadcast(code, Some(id), &msg);
+            }
+            Message::Snapshot { .. }
+                if is_host && (in_lobby || matches!(room.phase, Phase::Authoritative)) =>
             {
                 self.broadcast(code, Some(id), &msg);
             }

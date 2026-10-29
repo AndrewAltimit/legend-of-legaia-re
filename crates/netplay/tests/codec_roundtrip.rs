@@ -104,6 +104,7 @@ pub fn every_message() -> Vec<Message> {
         },
         Message::Pause { by: PlayerId(1) },
         Message::Resume { by: PlayerId(1) },
+        Message::EndSession { by: PlayerId(3) },
         Message::Action {
             from: PlayerId(4),
             payload: vec![0xFF; 100],

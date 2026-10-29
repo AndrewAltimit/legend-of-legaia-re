@@ -242,6 +242,15 @@ pub struct RaceSession {
 }
 
 impl RaceSession {
+    /// Hand `seat` to `kind` from the next tick on: a networked table
+    /// seats its players as humans and gives a dropped player's seat to the
+    /// AI. Out-of-range seats are ignored.
+    pub fn set_seat_kind(&mut self, seat: usize, kind: SeatKind) {
+        if let Some(k) = self.cfg.seats.get_mut(seat) {
+            *k = kind;
+        }
+    }
+
     pub fn new(cfg: RaceConfig) -> Self {
         assert!(!cfg.seats.is_empty() && cfg.seats.len() <= crate::session::MAX_SEATS);
         let mut rng = ModeRng::new(cfg.seed);

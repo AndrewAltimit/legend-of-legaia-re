@@ -1,7 +1,7 @@
 //! The golf screen: the hole top-down from its tiles, the balls, the cup,
 //! the aim line and power meter, and the scorecard.
 
-use legaia_engine_modes::active::{ActiveMode, seat_name};
+use legaia_engine_modes::active::ActiveMode;
 use legaia_engine_modes::golf::course::{Surface, TILE};
 use legaia_engine_modes::golf::{GolfPhase, GolfView};
 
@@ -128,7 +128,7 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[Strin
         c.text(last.clone(), VIEW.0, 209, pen::DIM);
     }
 
-    scorecard(c, v);
+    scorecard(c, mode, v);
     if let GolfPhase::HoleOver { .. } = v.phase {
         c.panel(VIEW.0 + 40, 90, VIEW.2 - 80, 24, ink::PANEL, ink::HIGHLIGHT);
         c.text_centre(
@@ -147,7 +147,7 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[Strin
     );
 }
 
-fn scorecard(c: &mut Canvas, v: &GolfView) {
+fn scorecard(c: &mut Canvas, mode: &ActiveMode, v: &GolfView) {
     let (x, w) = (CARD_X, 320 - CARD_X - 4);
     let holes = v.scorecard.first().map_or(0, Vec::len);
     c.panel(x, 20, w, 176, ink::PANEL, ink::PANEL_EDGE);
@@ -168,7 +168,7 @@ fn scorecard(c: &mut Canvas, v: &GolfView) {
             pen::WHITE
         };
         c.dot(x + 6, y + 7, 2, seat_color(seat));
-        c.text(seat_name(seat), x + 12, y, ink);
+        c.text(mode.seat_name(seat), x + 12, y, ink);
         let s = if b.done {
             format!("{} in", b.strokes)
         } else {
@@ -181,7 +181,7 @@ fn scorecard(c: &mut Canvas, v: &GolfView) {
     for (seat, card) in v.scorecard.iter().enumerate() {
         let y = ty + 14 + seat as i32 * 14;
         let total: u32 = card.iter().flatten().map(|&s| u32::from(s)).sum();
-        c.text(seat_name(seat), x + 12, y, pen::WHITE);
+        c.text(mode.seat_name(seat), x + 12, y, pen::WHITE);
         c.text_right(total.to_string(), x + w - 4, y, pen::WHITE);
     }
 }

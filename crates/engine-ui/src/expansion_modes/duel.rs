@@ -12,6 +12,10 @@ const GRID_X: i32 = (STAGE_W - 3 * CELL) / 2;
 const GRID_Y: i32 = 20;
 
 pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[String]) {
+    // The local player's seat and the rival's: the player's hand is drawn
+    // down the left whichever seat they hold.
+    let me = mode.local_seat.min(1);
+    let rival = 1 - me;
     // The grid.
     c.panel(
         GRID_X - 3,
@@ -22,7 +26,7 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
         ink::PANEL_EDGE,
     );
     let picking_cell = match v.phase {
-        DuelPhase::PickCell { seat: 0, .. } => Some(v.cell_cursor[0]),
+        DuelPhase::PickCell { seat, .. } if seat == me => Some(v.cell_cursor[me]),
         _ => None,
     };
     for cell in 0..CELLS {
@@ -50,7 +54,7 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
     // The hands: the player's down the left, the opponent's down the right,
     // one row per card still in hand.
     for seat in 0..2 {
-        let x = if seat == 0 { 2 } else { STAGE_W - 2 - ROW_W };
+        let x = if seat == me { 2 } else { STAGE_W - 2 - ROW_W };
         let (turn, held) = match v.phase {
             DuelPhase::PickCard { seat: s } => (s == seat, None),
             DuelPhase::PickCell { seat: s, card } => (s == seat, Some(card)),
@@ -80,22 +84,22 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
     // The score and the turn line.
     let sy = GRID_Y + 3 * CELL + 4;
     c.text_centre(
-        format!("You {}  -  {} Rival", v.scores[0], v.scores[1]),
+        format!("You {}  -  {} Rival", v.scores[me], v.scores[rival]),
         STAGE_W / 2,
         sy,
         pen::WHITE,
     );
     let turn = match v.phase {
-        DuelPhase::PickCard { seat: 0 } => "Your turn: pick a card",
-        DuelPhase::PickCell { seat: 0, .. } => "Your turn: pick a cell",
+        DuelPhase::PickCard { seat } if seat == me => "Your turn: pick a card",
+        DuelPhase::PickCell { seat, .. } if seat == me => "Your turn: pick a cell",
         DuelPhase::PickCard { .. } | DuelPhase::PickCell { .. } => "Rival is thinking...",
-        DuelPhase::Spoils { winner: 0 } => "Take one of the rival's cards",
+        DuelPhase::Spoils { winner } if winner == me => "Take one of the rival's cards",
         DuelPhase::Spoils { .. } => "The rival takes a card",
         DuelPhase::Finished => "Duel over",
     };
     c.text_centre(turn, STAGE_W / 2, sy + 14, pen::GOLD);
-    if let DuelPhase::Spoils { winner: 0 } = v.phase {
-        spoils(c, mode, v);
+    if matches!(v.phase, DuelPhase::Spoils { winner } if winner == me) {
+        spoils(c, mode, v, rival);
     }
     // The newest event under the turn line.
     if let Some(last) = log.last() {
@@ -118,10 +122,10 @@ fn cell_xy(cell: usize) -> (i32, i32) {
 }
 
 /// The stakes pick: the rival's deck as a list.
-fn spoils(c: &mut Canvas, mode: &ActiveMode, v: &DuelView) {
+fn spoils(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, rival: usize) {
     let (x, y, w) = (90, 60, 140);
     c.panel(x, y, w, HAND as i32 * 16 + 8, ink::PANEL, ink::HIGHLIGHT);
-    for (i, card) in v.hands[1].iter().enumerate() {
+    for (i, card) in v.hands[rival].iter().enumerate() {
         let ry = y + 4 + i as i32 * 16;
         let on = v.spoil_cursor == i;
         if on {

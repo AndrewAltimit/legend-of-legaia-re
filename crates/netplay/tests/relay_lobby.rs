@@ -283,3 +283,64 @@ fn an_empty_room_is_freed() {
     assert_eq!(core.room_count(), 0);
     assert_eq!(core.connection_count(), 0);
 }
+
+#[test]
+fn an_ended_session_returns_the_room_to_its_lobby() {
+    let mut net = Net::new(3, instant(), 11);
+    let start = net.open_room(
+        2,
+        SimModel::Lockstep {
+            input_delay: 2,
+            checkpoint_interval: 30,
+        },
+    );
+    assert_eq!(start.seats.len(), 2);
+    // Anyone at the table may end it; the relay stamps the sender.
+    net.clients[1].send(Message::EndSession { by: PlayerId(99) });
+    net.step();
+    let me1 = net.clients[1].me.unwrap();
+    assert!(
+        net.clients[0]
+            .inbox
+            .contains(&Message::EndSession { by: me1 })
+    );
+    let lobby = net.clients[0].lobby.clone().unwrap();
+    assert!(
+        lobby.players.iter().all(|p| !p.ready),
+        "readiness is cleared"
+    );
+    // Back in the lobby: guests' actions reach the host (roaming reports),
+    // the host's snapshots reach the room, and the room starts again.
+    net.clients[1].send(Message::Action {
+        from: PlayerId(0),
+        payload: vec![1, 2, 3],
+    });
+    net.clients[0].send(Message::Snapshot {
+        tick: 5,
+        avatars: vec![AvatarState::default()],
+    });
+    net.step();
+    assert!(net.clients[0].inbox.contains(&Message::Action {
+        from: me1,
+        payload: vec![1, 2, 3]
+    }));
+    assert!(
+        net.clients[2]
+            .inbox
+            .iter()
+            .any(|m| matches!(m, Message::Snapshot { tick: 5, .. }))
+    );
+    net.clients[1].send(Message::SetReady(true));
+    net.clients[2].send(Message::SetReady(true));
+    net.step();
+    net.clients[0].start = None;
+    net.clients[0].send(Message::Start(StartGame {
+        seed: 9,
+        mode: "again".into(),
+        config: vec![],
+        model: SimModel::HostAuthoritative { snapshot_hz: 15 },
+        seats: vec![],
+    }));
+    net.step();
+    assert_eq!(net.clients[0].start.as_ref().map(|s| s.seed), Some(9));
+}

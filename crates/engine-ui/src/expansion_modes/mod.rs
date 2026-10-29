@@ -27,7 +27,7 @@ mod poker;
 mod race;
 
 use legaia_engine_modes::active::{
-    ActiveMode, ModeEntry, ModeKind, ModeView, score_unit, seat_name,
+    ActiveMode, ModeEntry, ModeKind, ModeView, score_unit, seat_name_for,
 };
 use legaia_engine_modes::session::Placement;
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, line_quad};
@@ -213,6 +213,8 @@ pub enum ModeScreen<'a> {
         rows: &'a [Placement],
         granted: &'a [String],
         completed: bool,
+        /// The local player's seat (the highlighted "You" row).
+        local_seat: usize,
     },
 }
 
@@ -264,7 +266,7 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
         } => {
             header(&mut c, &mode.name, mode.kind().label());
             match mode.view() {
-                ModeView::Poker(v) => poker::draw(&mut c, &v, log),
+                ModeView::Poker(v) => poker::draw(&mut c, &v, mode.local_seat, log),
                 ModeView::Duel(v) => duel::draw(&mut c, mode, &v, log),
                 ModeView::Golf(v) => golf::draw(&mut c, mode, &v, log),
                 ModeView::Race(v) => race::draw(&mut c, mode, &v, log),
@@ -285,7 +287,8 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
             rows,
             granted,
             completed,
-        } => results(&mut c, name, kind, rows, granted, completed),
+            local_seat,
+        } => results(&mut c, name, kind, rows, granted, completed, local_seat),
     }
     c
 }
@@ -407,12 +410,13 @@ fn results(
     rows: &[Placement],
     granted: &[String],
     completed: bool,
+    me: usize,
 ) {
     header(c, name, kind.label());
     let (x, w) = (40, 240);
     let title = if !completed {
         "Left early"
-    } else if rows.iter().any(|p| p.seat == 0 && p.place == 1) {
+    } else if rows.iter().any(|p| p.seat == me && p.place == 1) {
         "You win!"
     } else {
         "Game over"
@@ -426,13 +430,13 @@ fn results(
     }
     for (i, p) in rows.iter().enumerate() {
         let y = y0 + 4 + i as i32 * 16;
-        let you = p.seat == 0;
+        let you = p.seat == me;
         if you {
             c.rect(x + 2, y - 1, w - 4, 16, ink::SELECT);
         }
         let ink = if you { pen::WHITE } else { pen::DIM };
         c.text(place_label(p.place), x + 8, y, ink);
-        c.text(seat_name(p.seat), x + 48, y, ink);
+        c.text(seat_name_for(p.seat, me), x + 48, y, ink);
         let score = if kind == ModeKind::Race && p.score == i64::MAX {
             "DNF".to_string()
         } else if kind == ModeKind::Race {

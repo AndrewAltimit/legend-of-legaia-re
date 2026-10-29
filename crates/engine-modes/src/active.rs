@@ -24,7 +24,7 @@ use crate::golf::{GolfConfig, GolfEvent, GolfSession, GolfView};
 use crate::poker::{Action, PokerConfig, PokerEvent, PokerSession, PokerView};
 use crate::prop_hunt::{Arena, HuntEvent, HuntView, PropHuntConfig, PropHuntSession};
 use crate::racing::{RaceConfig, RaceEvent, RaceSession, RaceView, Track};
-use crate::session::{AiTier, ModeResults, ModeRng, ModeSession, PadWord, Reward};
+use crate::session::{AiTier, ModeResults, ModeRng, ModeSession, PadWord, Reward, SeatKind};
 
 /// Which rules engine an instance runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -163,6 +163,14 @@ pub struct ActiveMode {
     pub runner: ModeRunner,
     /// Card id -> card name, for the duel's hands.
     pub card_names: BTreeMap<String, String>,
+    /// The seat this machine's player sits in: the one the screens draw as
+    /// "You" and the one [`Self::settle`] settles for. `0` offline; a
+    /// networked session seats each peer where the room put it.
+    pub local_seat: usize,
+    /// A view received from a hosting peer, drawn in place of the local
+    /// session's (a host-authoritative guest holds the session only for its
+    /// labels; see [`Self::set_remote_view`]).
+    remote_view: Option<ModeView>,
     book: CardBook,
 }
 
@@ -183,7 +191,7 @@ pub enum ModeView {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settlement {
     pub results: ModeResults,
-    /// Seat 0's place (1 = won).
+    /// The local seat's place (1 = won).
     pub place: u8,
 }
 
@@ -234,6 +242,8 @@ impl ActiveMode {
             name: if name.is_empty() { id } else { name }.to_string(),
             runner,
             card_names,
+            local_seat: 0,
+            remote_view: None,
             book,
         })
     }
@@ -250,16 +260,79 @@ impl ActiveMode {
 
     /// Advance one frame; returns this tick's events as log lines.
     pub fn tick(&mut self, pads: &[PadWord]) -> Vec<String> {
+        let me = self.local_seat;
         match &mut self.runner {
-            ModeRunner::Poker(s) => s.tick(pads).iter().filter_map(poker_line).collect(),
-            ModeRunner::Duel(s) => s.tick(pads).iter().filter_map(duel_line).collect(),
-            ModeRunner::Golf(s) => s.tick(pads).iter().filter_map(golf_line).collect(),
-            ModeRunner::Race(s) => s.tick(pads).iter().filter_map(race_line).collect(),
-            ModeRunner::PropHunt(s) => s.tick(pads).iter().filter_map(hunt_line).collect(),
+            ModeRunner::Poker(s) => s
+                .tick(pads)
+                .iter()
+                .filter_map(|e| poker_line(e, me))
+                .collect(),
+            ModeRunner::Duel(s) => s
+                .tick(pads)
+                .iter()
+                .filter_map(|e| duel_line(e, me))
+                .collect(),
+            ModeRunner::Golf(s) => s
+                .tick(pads)
+                .iter()
+                .filter_map(|e| golf_line(e, me))
+                .collect(),
+            ModeRunner::Race(s) => s
+                .tick(pads)
+                .iter()
+                .filter_map(|e| race_line(e, me))
+                .collect(),
+            ModeRunner::PropHunt(s) => s
+                .tick(pads)
+                .iter()
+                .filter_map(|e| hunt_line(e, me))
+                .collect(),
         }
     }
 
+    /// Seats in the session.
+    pub fn seats(&self) -> usize {
+        match &self.runner {
+            ModeRunner::Poker(s) => s.seats(),
+            ModeRunner::Duel(s) => s.seats(),
+            ModeRunner::Golf(s) => s.seats(),
+            ModeRunner::Race(s) => s.seats(),
+            ModeRunner::PropHunt(s) => s.seats(),
+        }
+    }
+
+    /// Hand `seat` to a human or the AI from the next tick on.
+    pub fn set_seat_kind(&mut self, seat: usize, kind: SeatKind) {
+        match &mut self.runner {
+            ModeRunner::Poker(s) => s.set_seat_kind(seat, kind),
+            ModeRunner::Duel(s) => s.set_seat_kind(seat, kind),
+            ModeRunner::Golf(s) => s.set_seat_kind(seat, kind),
+            ModeRunner::Race(s) => s.set_seat_kind(seat, kind),
+            ModeRunner::PropHunt(s) => s.set_seat_kind(seat, kind),
+        }
+    }
+
+    /// Draw `view` in place of the session's own (a host-authoritative
+    /// guest's copy of the host's table); `None` returns to the session's.
+    pub fn set_remote_view(&mut self, view: Option<ModeView>) {
+        self.remote_view = view;
+    }
+
+    /// Whether the drawn view is a hosting peer's.
+    pub fn has_remote_view(&self) -> bool {
+        self.remote_view.is_some()
+    }
+
+    /// Seat `seat` as this machine's player reads it ("You" for
+    /// [`Self::local_seat`]).
+    pub fn seat_name(&self, seat: usize) -> String {
+        seat_name_for(seat, self.local_seat)
+    }
+
     pub fn view(&self) -> ModeView {
+        if let Some(v) = &self.remote_view {
+            return v.clone();
+        }
         match &self.runner {
             ModeRunner::Poker(s) => ModeView::Poker(s.view()),
             ModeRunner::Duel(s) => ModeView::Duel(s.view()),
@@ -301,13 +374,14 @@ impl ActiveMode {
 
     /// The finished session's settlement: its results, plus a win's
     /// mode-source reward rules from the card section rolled on `rng`
-    /// (granted to seat 0). `None` before the session ends.
+    /// (granted to [`Self::local_seat`]). `None` before the session ends.
     pub fn settle(&self, rng: &mut ModeRng) -> Option<Settlement> {
         let mut results = self.results()?;
+        let me = self.local_seat;
         let place = results
             .placements
             .iter()
-            .find(|p| p.seat == 0)
+            .find(|p| p.seat == me)
             .map_or(u8::MAX, |p| p.place);
         if place == 1 {
             let source = RewardSource::Mode {
@@ -316,9 +390,9 @@ impl ActiveMode {
             for g in self.book.roll_rewards(&source, rng) {
                 results.rewards.push(match g {
                     crate::cards::CardGrant::Booster(booster) => {
-                        Reward::Booster { seat: 0, booster }
+                        Reward::Booster { seat: me, booster }
                     }
-                    crate::cards::CardGrant::Card(card) => Reward::Card { seat: 0, card },
+                    crate::cards::CardGrant::Card(card) => Reward::Card { seat: me, card },
                 });
             }
         }
@@ -401,18 +475,23 @@ pub fn score_unit(kind: ModeKind) -> &'static str {
 
 /// Seat `seat` as a player reads it: "You" for seat 0.
 pub fn seat_name(seat: usize) -> String {
-    if seat == 0 {
+    seat_name_for(seat, 0)
+}
+
+/// Seat `seat` as the player in seat `me` reads it.
+pub fn seat_name_for(seat: usize, me: usize) -> String {
+    if seat == me {
         "You".to_string()
     } else {
         format!("Seat {}", seat + 1)
     }
 }
 
-fn poker_line(e: &PokerEvent) -> Option<String> {
+fn poker_line(e: &PokerEvent, me: usize) -> Option<String> {
     Some(match e {
         PokerEvent::HandStarted { hand, .. } => format!("Hand {hand}"),
         PokerEvent::Acted { seat, action } => {
-            let who = seat_name(*seat);
+            let who = seat_name_for(*seat, me);
             match action {
                 Action::Fold => format!("{who}: fold"),
                 Action::Check => format!("{who}: check"),
@@ -427,7 +506,7 @@ fn poker_line(e: &PokerEvent) -> Option<String> {
             hand,
             ..
         } => {
-            let who: Vec<String> = winners.iter().map(|&s| seat_name(s)).collect();
+            let who: Vec<String> = winners.iter().map(|&s| seat_name_for(s, me)).collect();
             match hand {
                 Some(h) => format!(
                     "{} win {amount} ({})",
@@ -437,32 +516,34 @@ fn poker_line(e: &PokerEvent) -> Option<String> {
                 None => format!("{} win {amount}", who.join(", ")),
             }
         }
-        PokerEvent::SeatBusted { seat } => format!("{} busted", seat_name(*seat)),
+        PokerEvent::SeatBusted { seat } => format!("{} busted", seat_name_for(*seat, me)),
         PokerEvent::Finished => "Table closed".to_string(),
         PokerEvent::BlindPosted { .. } | PokerEvent::Dealt { .. } => return None,
     })
 }
 
-fn duel_line(e: &DuelEvent) -> Option<String> {
+fn duel_line(e: &DuelEvent, me: usize) -> Option<String> {
     Some(match e {
         DuelEvent::Captured { by, chained, .. } => {
             let what = if *chained { "chain capture" } else { "capture" };
-            format!("{}: {what}", seat_name(*by))
+            format!("{}: {what}", seat_name_for(*by, me))
         }
         DuelEvent::GameOver { scores } => format!("Final {} - {}", scores[0], scores[1]),
-        DuelEvent::SpoilTaken { seat, card } => format!("{} takes {card}", seat_name(*seat)),
+        DuelEvent::SpoilTaken { seat, card } => {
+            format!("{} takes {card}", seat_name_for(*seat, me))
+        }
         DuelEvent::Placed { .. } => return None,
     })
 }
 
-fn golf_line(e: &GolfEvent) -> Option<String> {
+fn golf_line(e: &GolfEvent, me: usize) -> Option<String> {
     Some(match e {
         GolfEvent::HoleStarted { hole } => format!("Hole {}", hole + 1),
-        GolfEvent::Hazard { seat } => format!("{}: hazard, +1 stroke", seat_name(*seat)),
+        GolfEvent::Hazard { seat } => format!("{}: hazard, +1 stroke", seat_name_for(*seat, me)),
         GolfEvent::Holed { seat, strokes } => {
-            format!("{}: holed in {strokes}", seat_name(*seat))
+            format!("{}: holed in {strokes}", seat_name_for(*seat, me))
         }
-        GolfEvent::PickedUp { seat } => format!("{}: picked up", seat_name(*seat)),
+        GolfEvent::PickedUp { seat } => format!("{}: picked up", seat_name_for(*seat, me)),
         GolfEvent::Finished => "Round over".to_string(),
         GolfEvent::Struck { .. } | GolfEvent::WallHit { .. } | GolfEvent::HoleFinished { .. } => {
             return None;
@@ -470,28 +551,32 @@ fn golf_line(e: &GolfEvent) -> Option<String> {
     })
 }
 
-fn race_line(e: &RaceEvent) -> Option<String> {
+fn race_line(e: &RaceEvent, me: usize) -> Option<String> {
     Some(match e {
         RaceEvent::Go => "Go!".to_string(),
-        RaceEvent::Lap { seat, lap } => format!("{}: lap {}", seat_name(*seat), lap + 1),
+        RaceEvent::Lap { seat, lap } => format!("{}: lap {}", seat_name_for(*seat, me), lap + 1),
         RaceEvent::Finished { seat, place, .. } => {
-            format!("{} finished #{place}", seat_name(*seat))
+            format!("{} finished #{place}", seat_name_for(*seat, me))
         }
         RaceEvent::RaceOver => "Race over".to_string(),
         _ => return None,
     })
 }
 
-fn hunt_line(e: &HuntEvent) -> Option<String> {
+fn hunt_line(e: &HuntEvent, me: usize) -> Option<String> {
     Some(match e {
         HuntEvent::RoundStarted { round, .. } => format!("Round {}", round + 1),
         HuntEvent::HuntersReleased => "Hunters released".to_string(),
         HuntEvent::Found { hunter, hider } => {
-            format!("{} found {}", seat_name(*hunter), seat_name(*hider))
+            format!(
+                "{} found {}",
+                seat_name_for(*hunter, me),
+                seat_name_for(*hider, me)
+            )
         }
-        HuntEvent::Missed { hunter, .. } => format!("{}: decoy!", seat_name(*hunter)),
-        HuntEvent::HunterOut { seat } => format!("{} is out", seat_name(*seat)),
-        HuntEvent::Taunt { seat, .. } => format!("{} taunts", seat_name(*seat)),
+        HuntEvent::Missed { hunter, .. } => format!("{}: decoy!", seat_name_for(*hunter, me)),
+        HuntEvent::HunterOut { seat } => format!("{} is out", seat_name_for(*seat, me)),
+        HuntEvent::Taunt { seat, .. } => format!("{} taunts", seat_name_for(*seat, me)),
         HuntEvent::RoundOver { hunters_won } => if *hunters_won {
             "Hunters win the round"
         } else {

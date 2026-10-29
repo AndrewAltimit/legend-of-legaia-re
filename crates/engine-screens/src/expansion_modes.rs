@@ -55,12 +55,14 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
             rows,
             granted,
             completed,
+            local_seat,
         } => ModeScreen::Results {
             name,
             kind: *kind,
             rows,
             granted,
             completed: *completed,
+            local_seat: *local_seat,
         },
     })
 }
