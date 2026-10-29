@@ -372,6 +372,7 @@ mod tests {
     fn make_scene(entries: Vec<SceneEntry>) -> Scene {
         Scene {
             name: "test".into(),
+            overrides: None,
             start: 100,
             end: 100 + entries.len() as u32,
             entries,
@@ -445,6 +446,7 @@ mod tests {
     fn bgm_seq_entry_uses_block_offset_math() {
         let scene = Scene {
             name: "t".into(),
+            overrides: None,
             start: 100,
             end: 200,
             entries: vec![SceneEntry {

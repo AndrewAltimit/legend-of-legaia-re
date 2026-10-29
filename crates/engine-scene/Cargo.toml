@@ -21,6 +21,7 @@ legaia-engine-camera.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
+legaia-expansion-format.workspace = true
 legaia-render-kernels.workspace = true
 legaia-actor-formats.workspace = true
 legaia-anm.workspace = true

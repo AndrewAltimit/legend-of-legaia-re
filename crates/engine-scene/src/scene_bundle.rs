@@ -797,6 +797,7 @@ mod tests {
     fn make_scene_with_plain_bundle(entry_bytes: Vec<u8>) -> Scene {
         Scene {
             name: "test".into(),
+            overrides: None,
             start: 0,
             end: 1,
             entries: vec![SceneEntry {
@@ -875,6 +876,7 @@ mod tests {
     fn find_bundle_returns_none_for_scene_with_no_asset_table() {
         let scene = Scene {
             name: "empty".into(),
+            overrides: None,
             start: 0,
             end: 1,
             entries: vec![SceneEntry {

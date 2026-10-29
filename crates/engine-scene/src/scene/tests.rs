@@ -320,6 +320,7 @@ fn scene_destination_resolver_resolves_by_index() {
 fn find_bgm_uses_documented_offset() {
     let scene = Scene {
         name: "test".into(),
+        overrides: None,
         start: 100,
         end: 200,
         entries: (100..200u32)
@@ -343,6 +344,7 @@ fn find_bgm_uses_documented_offset() {
 fn find_bgm_global_pool_returns_none() {
     let scene = Scene {
         name: "test".into(),
+        overrides: None,
         start: 0,
         end: 10,
         entries: vec![],
@@ -371,6 +373,7 @@ fn null_map_id_resolver_returns_none() {
 fn class_counts_matches_entries() {
     let scene = Scene {
         name: "t".into(),
+        overrides: None,
         start: 0,
         end: 3,
         entries: vec![

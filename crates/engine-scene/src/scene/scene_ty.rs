@@ -74,6 +74,11 @@ pub struct Scene {
     /// is populated when `Scene::load` is called, but the entries
     /// themselves cache through `ProtIndex` so re-loading is cheap.
     pub entries: Vec<SceneEntry>,
+    /// A synthetic field layer standing in for this block's own: an
+    /// expansion-pack map entered over this scene as its base
+    /// ([`crate::expansion_map`]). `None` for every retail scene, which then
+    /// reads its `.MAP` and MAN off the disc exactly as before.
+    pub overrides: Option<Arc<crate::expansion_map::SceneOverride>>,
 }
 
 impl Scene {
@@ -130,6 +135,7 @@ impl Scene {
             start,
             end,
             entries,
+            overrides: None,
         })
     }
 
@@ -309,6 +315,21 @@ impl Scene {
             .then_some(idx)
     }
 
+    /// The scene's field map image: the [`Self::field_map_index`] entry's
+    /// **extended** footprint (the `0x12000`-byte map plus the trailing
+    /// fallback window), or the synthetic image of an
+    /// [`overrides`](Self::overrides) layer. `Ok(None)` when the scene has
+    /// neither. Every `.MAP` accessor below reads through this.
+    pub fn field_map_bytes(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        if let Some(o) = self.overrides.as_ref() {
+            return Ok(Some(o.field_map.clone()));
+        }
+        match self.field_map_index(index) {
+            Some(idx) => Ok(Some(index.entry_bytes_extended(idx)?)),
+            None => Ok(None),
+        }
+    }
+
     /// The per-scene base collision/floor grid: the `+0x4000..+0x8000` region
     /// of the [`field_map`](Self::field_map_index) file (`0x80 x 0x80` bytes,
     /// high nibble = sub-cell wall bits, low nibble = floor-elevation tier).
@@ -320,10 +341,9 @@ impl Scene {
     /// the TOC-indexed payload). Returns `Ok(None)` if the scene has no field
     /// map or the entry is too short to hold a full grid.
     pub fn field_collision_grid(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         Ok(bytes
             .get(FIELD_MAP_COLLISION_OFFSET..FIELD_MAP_COLLISION_OFFSET + FIELD_COLLISION_GRID_LEN)
             .map(<[u8]>::to_vec))
@@ -339,10 +359,9 @@ impl Scene {
     ///
     /// REF: FUN_80017FBC, FUN_800180EC (ports in [`legaia_engine_field::field_regions`])
     pub fn field_map_region_block(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         Ok(bytes
             .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..FIELD_MAP_LEN)
             .map(<[u8]>::to_vec))
@@ -365,10 +384,9 @@ impl Scene {
         Vec<legaia_engine_field::field_regions::TileTrigger>,
         Vec<legaia_engine_field::field_regions::TileTrigger>,
     )> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         let primary = bytes
             .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..)
             .map(legaia_engine_field::field_regions::parse_tile_triggers)
@@ -381,6 +399,8 @@ impl Scene {
             .map(legaia_engine_field::field_regions::parse_tile_triggers)
             .unwrap_or_default();
         if fallback.is_empty()
+            && self.overrides.is_none()
+            && let Some(idx) = self.field_map_index(index)
             && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
         {
             fallback = legaia_engine_field::field_regions::parse_tile_triggers(&sibling);
@@ -402,10 +422,9 @@ impl Scene {
         Vec<legaia_engine_field::field_regions::IntraSceneTeleport>,
         Vec<legaia_engine_field::field_regions::IntraSceneTeleport>,
     )> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         let primary = bytes
             .get(legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET..)
             .map(legaia_engine_field::field_regions::parse_intra_scene_teleports)
@@ -415,6 +434,8 @@ impl Scene {
             .map(legaia_engine_field::field_regions::parse_intra_scene_teleports)
             .unwrap_or_default();
         if fallback.is_empty()
+            && self.overrides.is_none()
+            && let Some(idx) = self.field_map_index(index)
             && let Ok(sibling) = index.entry_bytes_extended(idx + 1)
         {
             fallback = legaia_engine_field::field_regions::parse_intra_scene_teleports(&sibling);
@@ -436,10 +457,9 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         Ok(Some(legaia_scene_formats::field_objects::parse_placements(
             &bytes,
         )))
@@ -459,7 +479,7 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<std::collections::HashMap<(u8, u8), crate::field_env::ObjectBind>>> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(map) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
         let Some(man) = self.field_man_payload(index)? else {
@@ -468,7 +488,6 @@ impl Scene {
         let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
             return Ok(None);
         };
-        let map = index.entry_bytes_extended(idx)?;
         Ok(Some(crate::field_env::object_binds(&map, &man_file, &man)))
     }
 
@@ -483,10 +502,9 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
-        let Some(idx) = self.field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         Ok(Some(
             legaia_scene_formats::field_objects::parse_terrain_tiles(&bytes),
         ))
@@ -515,13 +533,12 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<legaia_scene_formats::field_objects::WalkHeightfield>> {
-        let Some(idx) = self.walk_field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
         let Some(lut) = self.field_floor_height_lut(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         // A kingdom overworld's ground is `FUN_801F89B8`'s, which tests no
         // `0x1000` cell bit (`GroundCellGate::TerrainRecord`).
         let gate = if crate::scene::is_world_map_scene(&self.name) {
@@ -541,10 +558,9 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
-        let Some(idx) = self.walk_field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         Ok(Some(legaia_scene_formats::field_objects::parse_placements(
             &bytes,
         )))
@@ -559,10 +575,9 @@ impl Scene {
         &self,
         index: &ProtIndex,
     ) -> Result<Option<Vec<legaia_scene_formats::field_objects::Placement>>> {
-        let Some(idx) = self.walk_field_map_index(index) else {
+        let Some(bytes) = self.field_map_bytes(index)? else {
             return Ok(None);
         };
-        let bytes = index.entry_bytes_extended(idx)?;
         Ok(Some(
             legaia_scene_formats::field_objects::parse_walk_decorations(&bytes),
         ))
@@ -579,6 +594,9 @@ impl Scene {
     /// whose MAN ships in a streaming variant carrier, e.g. `rikuroa`,
     /// resolve their floor LUT too).
     pub fn field_floor_height_lut(&self, index: &ProtIndex) -> Result<Option<[i16; 16]>> {
+        if let Some(o) = self.overrides.as_ref() {
+            return Ok(Some(o.floor_lut));
+        }
         let Some(man) = self.field_man_payload(index)? else {
             return Ok(None);
         };
@@ -694,6 +712,11 @@ impl Scene {
     /// ([`crate::scene_bundle::streaming_man_payloads`]) - the carrier the
     /// live script heap byte-matches at the Mt. Rikuroa Caruban beat.
     pub fn field_man_payload(&self, index: &ProtIndex) -> Result<Option<Vec<u8>>> {
+        // A pack map runs no retail script: the base scene's MAN - its
+        // entry script, NPCs, object binds, encounters - stays off.
+        if self.overrides.is_some() {
+            return Ok(None);
+        }
         if let Some(bundle) = crate::scene_bundle::find_bundle(self) {
             let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
             if let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? {

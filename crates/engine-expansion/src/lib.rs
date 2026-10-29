@@ -16,6 +16,7 @@ pub mod flags;
 pub mod quest;
 pub mod quest_challenge;
 pub mod quest_save;
+pub mod map;
 
 use std::sync::Arc;
 
@@ -33,6 +34,8 @@ pub struct ExpansionState {
     /// Quest, challenge, pack-flag and pack-dialogue state
     /// ([`quest::QuestRuntime`]); what the save's expansion block carries.
     pub quests: quest::QuestRuntime,
+    /// The pack map the player is in, if any.
+    pub map: Option<map::ActiveMap>,
 }
 
 impl ExpansionState {

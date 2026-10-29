@@ -23,6 +23,7 @@ fn synth_tim_16bpp(fb_x: u16, fb_y: u16) -> Vec<u8> {
 fn make_scene(entries: Vec<SceneEntry>) -> Scene {
     Scene {
         name: "test".into(),
+        overrides: None,
         start: 0,
         end: entries.len() as u32,
         entries,
