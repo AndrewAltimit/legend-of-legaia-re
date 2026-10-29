@@ -2664,6 +2664,8 @@
     "xa"
    ],
    "dev_deps": [
+    "engine-expansion",
+    "engine-modes",
     "pcsx-redux",
     "web-play"
    ],

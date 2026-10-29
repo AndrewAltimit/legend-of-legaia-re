@@ -713,6 +713,15 @@ div.play-vis-head { cursor: default; }
                 <option value="exit">Leave the mode</option>
               </select>
             </label>
+            <label title="The loaded expansion pack's trading cards: the card menu (binder, boosters, sell, deck) or the binder alone, drawn by the engine (the native backslash key). Circle backs out, Start leaves.">
+              <span id="play-cards-label">Cards</span>
+              <select id="play-cards">
+                <option value="">open...</option>
+                <option value="menu">Card menu</option>
+                <option value="binder">Binder</option>
+                <option value="close">Close</option>
+              </select>
+            </label>
             <details class="play-netplay" id="play-netplay">
               <summary title="Join a multiplayer room hosted by a native play window (--host) or a legaia-relay server. A browser cannot host. Inside the room: Tab opens the room screen.">Online</summary>
               <label>Relay <input type="text" id="play-net-url" size="22" placeholder="ws://192.168.1.4:7462/"></label>
@@ -3255,6 +3264,52 @@ div.play-vis-head { cursor: default; }
         : rt.play_pack_mode_enter(id);
     } catch (e) { err = 'This page build has no game modes yet.'; }
     saveMsg(err || 'Game mode started. Start asks to leave.', !!err);
+    canvas.focus();
+  });
+  /* Trading cards: the engine's card screens (World::open_card_menu), the
+   * page twin of the native backslash key. The label shows the collection
+   * summary (set completion, cards not yet looked at, unopened packs),
+   * refreshed each time the select is opened and on each drop notice. */
+  const cardsEl = document.getElementById('play-cards');
+  const cardsLabelEl = document.getElementById('play-cards-label');
+  const refreshCards = () => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.play_cards_json !== 'function') return;
+    let c = {};
+    try { c = JSON.parse(rt.play_cards_json()); } catch (e) { c = {}; }
+    cardsLabelEl.textContent = c.available
+      ? 'Cards ' + c.distinct + '/' + c.set_size
+        + (c.unseen ? ', ' + c.unseen + ' new' : '')
+        + (c.boosters ? ', ' + c.boosters + ' packs' : '')
+      : 'Cards';
+  };
+  /* Card drops ("Got card: ...") raised since the last poll: the newest
+   * goes on the status line, and the label's counts refresh with it. */
+  setInterval(() => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.play_card_notices_json !== 'function') return;
+    let lines = [];
+    try { lines = JSON.parse(rt.play_card_notices_json()); } catch (e) { lines = []; }
+    if (!lines.length) return;
+    saveMsg(lines.length > 1 ? lines[lines.length - 1] + ' (+' + (lines.length - 1) + ' more)'
+                             : lines[0], false);
+    refreshCards();
+  }, 1000);
+  cardsEl.addEventListener('focus', refreshCards);
+  cardsEl.addEventListener('pointerdown', refreshCards);
+  cardsEl.addEventListener('change', () => {
+    const screen = cardsEl.value;
+    cardsEl.value = '';
+    const rt = window.__playRuntime;
+    if (!rt || !screen || typeof rt.play_cards_open !== 'function') return;
+    if (screen === 'close') {
+      rt.play_cards_close();
+      canvas.focus();
+      return;
+    }
+    const ok = !!rt.play_cards_open(screen);
+    saveMsg(ok ? 'Card screen open. Start leaves.'
+               : 'Cards open from the field or the overworld, with a pack that has cards.', !ok);
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;
