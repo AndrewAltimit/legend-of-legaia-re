@@ -103,11 +103,16 @@ impl LegaiaRuntime {
 
     /// `true` when the current scene can produce a random encounter at all.
     /// The page shows a "no random encounters here" hint when it is `false`,
-    /// so a town's designed silence doesn't read as a broken engine.
+    /// so a town's designed silence doesn't read as a broken engine. On an
+    /// expansion-pack map the answer is the map's own: its encounter zones
+    /// roll the pack's tables, whatever the base scene's MAN carries.
     pub fn scene_rolls_encounters(&self) -> bool {
         self.scene_host
             .host()
-            .is_some_and(|h| h.world.encounters.scene_rollable)
+            .is_some_and(|h| match h.world.expansion.map.as_ref() {
+                Some(map) => !map.def.encounters.is_empty(),
+                None => h.world.encounters.scene_rollable,
+            })
     }
 
     /// The formation rows the current scene registered, as a JSON array of

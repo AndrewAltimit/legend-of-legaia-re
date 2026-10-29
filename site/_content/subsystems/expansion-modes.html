@@ -235,6 +235,18 @@
   <p>AI hiders stand beside a decoy of their own prop (the expert picks the prop with the most decoys), and novices fidget and taunt. AI hunters inspect unchecked props nearest first; regulars and experts prefer a prop they saw move.</p>
 </section>
 
+<section class="doc-section" id="in-world-golf-and-racing" data-doc="in-world-golf-and-racing">
+  <h2>In-world golf and racing</h2>
+  <p>A golf course or a race that names a pack map (<code>map = "&lt;id&gt;"</code> in <code>modes.toml</code>) is played in the 3D field scene that map builds instead of on a top-down board. The session stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. An instance with no map is always the top-down screen.</p>
+  <ul class="bullets">
+    <li><strong>Laying it out.</strong> A map hole is the map's tile grid inside the hole's <code>area</code>, one golf tile per map tile: a walled tile is a wall, a void tile or anything outside the area is out of bounds, and an open tile plays as its legend surface. A race's centerline is its waypoints' tile centres. <code>MapFrame</code> places the mode units on the field - four world units a mode unit for golf, two for racing.</li>
+    <li><strong>The stage.</strong> <code>WorldStage</code> turns the view into a frame: in golf the party leader stands at the player's ball facing the aim, swings and walks to the new lie, other seats stand at their balls, and the camera sits behind the ball looking down its aim; in a race the leader is the player's racer and the camera chases from behind. Banners carry the hole, par, countdown, laps and results.</li>
+    <li><strong>Bodies and online play.</strong> The leader is the session's local seat, so a networked peer stands its own golfer or racer. An instance's <code>bodies</code> names map NPCs that stand in for the other seats, posed and animated by <code>World::stage_pack_mode</code>.</li>
+    <li><strong>Entering the map.</strong> <code>World::pack_mode_wants_map</code> names the map and the scene host enters it at the instance's spawn, then puts the seat back under the expansion mode; a map that fails to enter falls back to the top-down screen.</li>
+    <li><strong>Drawing it.</strong> Both hosts draw the field as for any scene, with the camera from the shared resolver's venue arm, and the balls, cup, aim arrow, bodies and boost trail as depth-tested screen primitives built in code from no disc bytes, under the in-world HUD.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="hosts" data-doc="hosts">
   <h2>Hosts</h2>
   <p>Both play hosts run the modes inside the running game, through one seat on the <code>World</code> and one screen composition.</p>

@@ -56,6 +56,10 @@ impl LegaiaRuntime {
             "player": player,
             "dialog": self.dialog_value(),
             "bgm": self.bgm_value(),
+            "expansion_map": w.expansion.map.as_ref().map(|m| serde_json::json!({
+                "id": m.map_id,
+                "name": m.def.name,
+            })),
         })
         .to_string()
     }

@@ -1585,8 +1585,12 @@ div.play-vis-head { cursor: default; }
           hint = ' No random encounters in this scene (retail) - head out to a field area to fight.';
         }
       } catch (e) {}
+      /* A pack map runs over a retail base scene: name the map, not the
+       * base scene it borrows its textures from. */
+      const xmap = st && st.expansion_map;
+      const running = xmap ? `${xmap.name || xmap.id} (expansion map)` : (active || label);
       statusEl.textContent =
-        `Running ${active || label}. Click the canvas, then walk with the arrow keys.${hint}`;
+        `Running ${running}. Click the canvas, then walk with the arrow keys.${hint}`;
       window.__playState = st;
       canvas.focus();
     } catch (err) {

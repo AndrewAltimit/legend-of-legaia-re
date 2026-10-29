@@ -18,6 +18,7 @@ mod boot_logos_ladder;
 mod commit_log_all_target_page;
 mod dev_menu_equip_ladder;
 mod dream_yaw_part_page_ladder;
+mod expansion_map_page;
 mod fishing_banner_ladder;
 mod fishing_line_hosts;
 mod fog_page_prims;
