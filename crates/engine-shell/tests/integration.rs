@@ -20,6 +20,7 @@ mod controller_input;
 mod critical_path_replay;
 mod determinism_j2;
 mod dome_cast_band_ladder;
+mod expansion_replay;
 mod field_walk_host_parity;
 mod full_game_ladder;
 mod gte_sin_lut_real;

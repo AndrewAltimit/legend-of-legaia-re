@@ -136,6 +136,9 @@ legaia-web-play.workspace = true
 # minigame ladders) name the parity crate directly, with or without the
 # `oracles` feature.
 legaia-parity.workspace = true
+# `expansion_replay` reads the mode seat's stage and the mode views.
+legaia-engine-expansion.workspace = true
+legaia-engine-modes.workspace = true
 
 [[test]]
 name = "integration"
