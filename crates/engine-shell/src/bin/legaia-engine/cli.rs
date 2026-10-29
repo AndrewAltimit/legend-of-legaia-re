@@ -1321,7 +1321,9 @@ pub(crate) enum Cmd {
         /// (`legaia_engine_cheats::cheats`, the same mutation the browser play
         /// page's Cheats panel makes). Raising grants the XP; lowering
         /// rebuilds each character from the executable's New Game template
-        /// plus the growth for the levels it keeps.
+        /// plus the growth for the levels it keeps. As a retail level-up,
+        /// it raises the HP / MP maxima but not the current values (pair it
+        /// with `--cheat-restore`) and changes no equipment.
         #[arg(long, value_name = "LEVEL")]
         cheat_level: Option<u8>,
         /// Cheat: set the gold purse (clamped to 9,999,999).

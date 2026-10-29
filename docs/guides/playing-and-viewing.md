@@ -458,7 +458,7 @@ so the state they leave is one a playthrough could reach:
 
 | Cheat | Native | Effect |
 |---|---|---|
-| Level | `--cheat-level N` | Raising grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. Lowering rebuilds the character from its New Game stats plus the growth for the levels it keeps; stat-up items used along the way are lost. |
+| Level | `--cheat-level N` | Raising grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. As in retail, a level-up raises the maxima but not current HP / MP (add `--cheat-restore` to fill them) and changes no equipment. Lowering rebuilds the character from its New Game stats plus the growth for the levels it keeps; stat-up items used along the way are lost. |
 | Restore | `--cheat-restore` | Refills HP / MP and revives, mid-battle included. |
 | Max AP | `--cheat-max-ap`, `F6` | Fills the AP (Spirit) gauge to 100; in battle the Spirit / Super Art command opens at once. |
 | Grant Seru | `--cheat-seru N` | Teaches the 21 Seru and the member's own Ra-Seru (Vahn also the Sim-Seru and Evil Seru summons, as retail carries them), every spell at level `N` (1-9). |
