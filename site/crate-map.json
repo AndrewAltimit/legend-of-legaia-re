@@ -2199,7 +2199,10 @@
    "band": "top",
    "track": "engine",
    "scope": "Netplay in the play hosts: <code>NetPlay</code> (one player's room connection, lobby, room screen, chat and emotes), networked modes (lockstep golf / racing / prop hunt, host-authoritative poker / Grid Duel view stream), shared-world roaming avatars. Above <code>engine-core</code>.",
-   "dependents": [],
+   "dependents": [
+    "engine-shell",
+    "web-play"
+   ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-netplay/README.md"
   },
   "engine-render": {
@@ -2614,6 +2617,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-netplay",
     "engine-render",
     "engine-save-state",
     "engine-scene",
@@ -2631,6 +2635,7 @@
     "mdec",
     "mednafen",
     "minigame-formats",
+    "netplay",
     "overlay-images",
     "parity",
     "prot",
@@ -3517,7 +3522,9 @@
    "track": "engine",
    "scope": "Multiplayer: versioned wire protocol, delay-based lockstep and host-authoritative session cores over a generic <code>Simulation</code>, loopback / TCP / WebSocket / browser transports, the room relay (standalone or in-process <code>RelayServer::spawn</code>). Names no engine crate.",
    "dependents": [
-    "engine-netplay"
+    "engine-netplay",
+    "engine-shell",
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/netplay/README.md"
   },
@@ -4515,6 +4522,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -4530,6 +4538,7 @@
     "iso",
     "mdec",
     "minigame-formats",
+    "netplay",
     "overlay-images",
     "render-kernels",
     "save",
@@ -4583,6 +4592,7 @@
     "play_minigame_slots",
     "play_minigames",
     "play_name_entry",
+    "play_netplay",
     "play_pack_modes",
     "play_rumble",
     "play_sfx",

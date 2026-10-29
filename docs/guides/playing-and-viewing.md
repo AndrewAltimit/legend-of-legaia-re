@@ -530,6 +530,41 @@ and caption rows from the dialog font and skip its glyphs. The captions are
 engine-side English placeholders at the retail pen positions, so a long
 placeholder can overlap the count beside it.
 
+### Playing online
+
+Several players can share a world: walk the same town and see each other,
+chat, and sit down together at poker, Grid Duel, golf, a race or prop hunt.
+One player hosts with a native play window; the others join from a play
+window or the browser play page.
+
+```bash
+# Host: runs the room server inside the window, on port 7462 by default.
+legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --host --name Vahn
+# Join from another machine on the network (address and code from the
+# host's room screen).
+legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --room K7QX2M --name Noa
+```
+
+`Tab` opens the room screen: the room code and the address to join at,
+the players, Ready (guests), the game pick and Start (the host), emotes,
+quick chat, Leave. `T` on it types a chat line, Enter sends. Start needs
+every seated guest ready. A game draws on the usual mode screen; Start
+inside it asks to leave, which ends the game for the table. Online games
+grant no coins, gold or cards.
+
+On the browser play page, open **Online** in the tools, enter the relay
+address as a WebSocket URL (`ws://192.168.1.4:7462/`), the room code and a
+name, and press Join. A browser cannot host. A page served over
+`https://` can only reach `wss://`, so playing from the published site
+needs the relay behind a TLS proxy; a page served locally over `http://`
+reaches `ws://` directly. A standalone `legaia-relay --bind 0.0.0.0:7462`
+hosts rooms without a game window.
+
+Everyone in a room runs the same engine build and the same expansion pack
+(or none); the relay turns a mismatch away. Each player's world is their
+own: only avatars are shared, so battles, doors and story progress are
+not. Details and limits: [netplay.md](../subsystems/netplay.md#in-the-hosts).
+
 ## 5. What you hear
 
 Both hosts decode their audio from the disc you supply - no samples ship with

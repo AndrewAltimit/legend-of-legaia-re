@@ -93,11 +93,12 @@ no later message repeats it.
 | `0x22` | `Checkpoint` | peer to relay to peers | A state hash after a frame. |
 | `0x23` | `SeatController` | relay to room | A seat changes hands (a dropped player's seat goes to the AI) from a given frame. |
 | `0x24` / `0x25` | `Pause` / `Resume` | peer to relay to peers | Session pause; the relay stamps the sender. |
-| `0x30` | `Action` | client to relay to host | A player's intention in a host-authoritative session. |
+| `0x26` | `EndSession` | peer to relay to room | The running session is over: the room returns to its lobby. |
+| `0x30` | `Action` | client to relay to host | A player's intention in a host-authoritative session, or a roaming avatar report in the lobby. |
 | `0x31` | `Event` | host to relay to room | A validated event with its sequence number and post-event state hash. |
 | `0x32` | `StateRequest` | client to relay to host | Ask for the full state. |
 | `0x33` | `StateBlob` | host to relay to one client | The state after the first `seq` events. |
-| `0x34` | `Snapshot` | host to relay to room | Avatar positions and animation state for shared-world roaming. |
+| `0x34` | `Snapshot` | host to relay to room | Avatar positions and animation state for shared-world roaming (lobby or host-authoritative session). |
 
 ## Rooms and the lobby
 
@@ -117,6 +118,13 @@ the host is ready. The relay replaces the start order's seat map with the
 lobby's (seat index to player, empty seats to the AI) and sends it to the
 whole room, host included, so every peer starts from the same order. A
 started room admits no one.
+
+`EndSession`, from any member of a started room, returns it to the lobby:
+the relay clears everyone's readiness, sends the notice (stamped with the
+sender) and the lobby, and admits joiners again. The lobby is not idle
+time: shared-world roaming runs there, so the relay carries guests'
+`Action`s to the host and the host's `Snapshot`s to the room in the lobby
+as well as in a host-authoritative session.
 
 When the host leaves the lobby, the earliest-joined remaining member becomes
 host (`HostChanged`). During a lockstep session the same migration happens;
@@ -262,6 +270,88 @@ and id, so a peer cannot speak for another, but a lockstep peer chooses its
 own seat's inputs freely and a host-authoritative host decides everything.
 Play with people you trust.
 
+## In the hosts
+
+[`crates/engine-netplay`](../../crates/engine-netplay/README.md) joins the
+protocol to a running `World`. Both play hosts drive one
+`room::NetPlay` per player, once per tick, before the world's tick: it
+pumps the transport, runs the room screen when it is open (the pad goes to
+the screen, not the world), and drives whichever phase the room is in.
+
+### The flow
+
+| Step | Native play window | Browser play page |
+|---|---|---|
+| Host | `play-window --host [PORT]` starts `RelayServer::spawn` on `0.0.0.0:PORT` (default `7462`) and joins it over `127.0.0.1`. | Cannot host: a page cannot listen on a socket. A native play window or `legaia-relay` hosts. |
+| Join | `play-window --join ADDR --room CODE --name NAME`. | The Online panel: relay URL (`ws://host:port/`), room code, name. |
+| Room screen | `Tab` (and, in a room, the backquote key); `T` types a chat line. | The Room button or `Tab`; the panel's chat box. |
+| Avatars | The leader mesh posed per avatar in the actor pass. | Copies of the leader rig, mesh ids above the player's. |
+
+The room screen lists the players (seat colour, ready, host), and rows for
+the host's game pick and Start, a guest's Ready, an emote, a quick-chat
+line, Leave and Close; chat and room notices run along its bottom. The
+title shows the room code and the address others join at - the host's LAN
+address for a hosting window. Closed, a small panel over the field names
+the room, its players and the newest chat lines.
+
+### Modes
+
+The host picks an instance from the world's mode list (the active pack's,
+or the built-in practice set) and starts it; every peer builds that
+instance from the start order's id and seed. The first room seats fill
+the mode's seats; a mode seat with no player is the AI, and a player whose
+room seat the mode lacks roams instead. Golf seats the whole room. The
+session runs in the world's own mode seat (`PackModeSeat::networked`), so
+it draws through the offline screens, with "You" on each player's own
+seat; it grants nothing.
+
+| Kind | Model | Why |
+|---|---|---|
+| Golf, racing, prop hunt | Lockstep | Real-time; only pad words and checkpoint hashes travel. |
+| Poker, Grid Duel | Host-authoritative view stream | Turn-based; poker hides hole cards. |
+
+**Lockstep.** `ModeSim` is the `Simulation`: the real session lives in the
+world's seat and is swapped into the lockstep core around each advance, so
+the screens draw the simulated state. A desync ends the game for everyone
+with the frame and seat on the room screen; a dropped player's seat goes to
+the AI on the same frame everywhere.
+
+**View stream.** Only the host runs the session. A guest sends its pad
+word when it changes; the host feeds one change per tick to that seat, so a
+press and its release arriving together still give the session a pressed
+frame. After a tick that changed what a guest sees, the host sends it a
+numbered `StateBlob`: the table as that seat may see it plus the tick's log
+lines worded for it. A guest's own copy of the instance is built from
+another seed and only labels the screen. The hidden-information trade-off:
+under lockstep every peer holds the whole deal, so a modified client could
+read every hole card; under the view stream a poker guest never receives
+another seat's hole cards before the showdown, and then only the live
+hands. Grid Duel is played with open hands and passes through unredacted.
+The price is a round trip of input latency, which a turn-based table does
+not notice, and that the session ends if its host leaves.
+
+Leaving a mode (the quit prompt, or the results screen) sends
+`EndSession`; another player still mid-game is returned to the lobby with
+a notice, while one reading the results keeps them until they leave.
+
+### Roaming
+
+Players roam their own worlds. A guest reports its avatar (scene id - the
+scene's first PROT entry -, position, facing, idle or walk clip and frame)
+to the host at 15 Hz; the host broadcasts all of them, its own included, as
+one snapshot; every peer draws the others in its scene through the
+`AvatarInterpolator`. Outside the field (a menu, a battle, a mode) an
+avatar is reported with no scene and drawn nowhere.
+
+The limits, by design: nothing but avatars is shared. Each world runs its
+own scripts, encounters, doors, dialogue and battles, so two players see
+each other walk but not each other's fights or story state; there is no
+collision between avatars. A remote player is drawn as the local party
+leader (posed with the local leader's clips at the reported frame), since
+a field scene loads only its own leader's rig. Emotes are chat lines
+(`* Vahn waves`), not animations. Prop hunt runs on the mode's own arena
+and pad movement, not on a field map.
+
 ## Tests
 
 `crates/netplay/tests/` (disc-free, all of it):
@@ -281,3 +371,17 @@ Play with people you trust.
 - `socket_smoke.rs` - the threaded relay on an ephemeral `127.0.0.1` port
   with one raw-TCP and one WebSocket client playing lockstep; every wait has
   a deadline and the port is checked closed after shutdown.
+
+`crates/engine-netplay/tests/` (disc-free) runs whole `World`s, each with
+its own `NetPlay`, through the relay core on loopback links:
+
+- `modes.rs` - two poker hands over the view stream, the guest never
+  holding the host's hole cards before a showdown and ending on the host's
+  table; a golf round and a prop hunt match in lockstep with every shared
+  frame's hash equal and one result; a desync caught on both peers, both
+  back in the lobby and able to start again; a racer who leaves handing
+  the seat to the AI while the rest race on.
+- `roaming.rs` - a guest walking moves its avatar on the host, trailing it
+  and never backwards; chat and emotes reach the room.
+- `sockets.rs` - a host and a guest on the threaded relay over real TCP on
+  an ephemeral port play poker frames; the port is closed after shutdown.
