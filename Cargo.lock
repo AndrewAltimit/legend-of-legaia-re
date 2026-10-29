@@ -2283,6 +2283,10 @@ name = "legaia-engine-modes"
 version = "0.1.0"
 dependencies = [
  "legaia-engine-system",
+ "legaia-expansion-format",
+ "serde",
+ "serde_json",
+ "toml",
 ]
 
 [[package]]

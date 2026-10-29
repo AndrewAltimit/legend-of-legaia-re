@@ -10,3 +10,9 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-engine-system.workspace = true
+legaia-expansion-format.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+toml.workspace = true
