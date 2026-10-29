@@ -62,12 +62,47 @@ impl SectionRules for MapDef {
         check_encounters(self, cx);
         check_props(self, cx, base.as_deref());
         check_npcs(self, cx, base.as_deref(), grid.as_ref());
+        check_entrances(self, cx);
         if let Some(bgm) = &self.bgm {
             if matches!(bgm, DiscRef::Bgm { .. }) {
                 cx.disc_ref("bgm", bgm);
             } else {
                 cx.error("bgm", format!("{bgm} is not a bgm ref"));
             }
+        }
+    }
+}
+
+/// Entrances: a retail scene tile rect that warps onto one of this map's
+/// spawns, gated by quest prerequisites.
+fn check_entrances(m: &MapDef, cx: &mut Checker<'_>) {
+    for (i, e) in m.entrances.iter().enumerate() {
+        let at = format!("entrances[{i}]");
+        if !matches!(e.scene, DiscRef::Scene { .. }) {
+            cx.error(
+                &format!("{at}.scene"),
+                "an entrance names a scene (kind = \"scene\")",
+            );
+        }
+        cx.disc_ref(&format!("{at}.scene"), &e.scene);
+        if e.rect.iter().any(|&t| t > 0x7F) {
+            cx.error(
+                &format!("{at}.rect"),
+                "field-grid tiles run 0..=127 on each axis",
+            );
+        }
+        if m.spawn(&e.spawn).is_none() {
+            cx.error(
+                &format!("{at}.spawn"),
+                if e.spawn.is_empty() {
+                    "the map has no spawn to arrive at".to_string()
+                } else {
+                    format!("the map has no spawn {:?}", e.spawn)
+                },
+            );
+        }
+        for q in &e.requires.quests {
+            cx.reference("quest", q, &format!("{at}.requires.quests"));
         }
     }
 }

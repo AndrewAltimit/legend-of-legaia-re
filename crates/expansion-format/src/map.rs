@@ -849,40 +849,6 @@ impl MapDef {
 /// A map's checks. The tile layer, zones and props are checked when the map
 /// is entered; the validator covers its entrances, which are what reach the
 /// map from retail.
-impl crate::validate::SectionRules for MapDef {
-    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
-        for (i, e) in self.entrances.iter().enumerate() {
-            let at = format!("entrances[{i}]");
-            if !matches!(e.scene, DiscRef::Scene { .. }) {
-                cx.error(
-                    &format!("{at}.scene"),
-                    "an entrance names a scene (kind = \"scene\")",
-                );
-            }
-            cx.disc_ref(&format!("{at}.scene"), &e.scene);
-            if e.rect.iter().any(|&t| t > 0x7F) {
-                cx.error(
-                    &format!("{at}.rect"),
-                    "field-grid tiles run 0..=127 on each axis",
-                );
-            }
-            if self.spawn(&e.spawn).is_none() {
-                cx.error(
-                    &format!("{at}.spawn"),
-                    if e.spawn.is_empty() {
-                        "the map has no spawn to arrive at".to_string()
-                    } else {
-                        format!("the map has no spawn {:?}", e.spawn)
-                    },
-                );
-            }
-            for q in &e.requires.quests {
-                cx.reference("quest", q, &format!("{at}.requires.quests"));
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
