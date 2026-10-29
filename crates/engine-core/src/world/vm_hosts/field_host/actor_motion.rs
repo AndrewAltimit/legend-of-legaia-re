@@ -359,6 +359,7 @@ impl FieldHostImpl<'_> {
                 .npcs
                 .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
+            self.world.script_npc_move(slot, move_id);
             let party_bank =
                 ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
             if let Some(flags) = self.world.bind_npc_scene_clip(
@@ -501,6 +502,7 @@ impl FieldHostImpl<'_> {
             // `CC 09 51 .. 0A` / `CC 0A 51 .. 0F` ahead of their `C1`
             // legs) plays its walk clip instead of gliding in the idle.
             self.world.carry_npc_run_anim(slot, move_id);
+            self.world.script_npc_move(slot, move_id);
             return;
         }
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
@@ -571,6 +573,7 @@ impl FieldHostImpl<'_> {
                     self.world.npcs.headings.insert(slot, heading);
                 }
                 self.world.carry_npc_run_anim(slot, move_id);
+                self.world.script_npc_move(slot, move_id);
             }
         }
     }

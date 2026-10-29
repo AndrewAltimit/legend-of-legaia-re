@@ -991,6 +991,13 @@ every NPC arm and raises the clip cue on the cross-context arm; the
 pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
 port's cue skips a re-request of the clip already playing
 (`World::carry_npc_run_anim`), where retail's `+0x5E = -2` restarts it.
+The run's byte is the actor's one `+0x5C`, which the scripted motion VM
+`FUN_80038158` also writes from its own ops, so the port stores it into that
+VM's requested move as well (`World::script_npc_move`, with the `A2` ExecMove
+write): otherwise the ambient tick re-requests the VM's older move and takes
+the clip back. `rikuroa`'s post-Caruban beat seats Noa with
+`CC 10 51 44 4A 00 18`, and the capture's `+0x5C` reads `0x18` over a tail
+stream standing on move `8`.
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

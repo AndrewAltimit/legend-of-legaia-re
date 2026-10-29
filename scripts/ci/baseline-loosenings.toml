@@ -401,10 +401,3 @@ reason = "Bisected to 87b01887d (1.000 at its parent): a 0x70 capture past arm 0
 changes = [
   ["states/zeto_call_wave_mid_cast/image", 0.998, 0.996],
 ]
-
-[[loosening]]
-file = "scripts/ci/retail-compare-baseline.json"
-reason = "Bisected to d0772309b, whose face-leg landing clears the placement's halt 0x400 as retail's terminal frame does (0x80038004). The capture RAM confirms it: every rikuroa placement spawns with +0x94 = -1 (FUN_8003A1E4 0x8003A464, FUN_8003A55C 0x8003A8C0), so the acquire arm 0x801E2148 does raise the halt on Noa (P1[3]) for her own-context 4C 85 00 00 16 at record +0x4E, and in rikuroa_pre_caruban her actor carries +0x94 at that op with 0x400 clear. Before the change her halt never dropped, so the post-fight beat's ops on her (B1 10 18, A2 10 09, CC 10 51 44 4A 00 18, CC 10 85 00 00 16) were refused and she stood on the seeded retail pose, which scored 0.999 by accident. Now the beat runs them: her heading lands on retail's (engine 0xA0 against retail +0x26 0x89F), but she is drawn on the NpcRun's move 24 turned from the camera where retail draws her standing in profile (929 pixels, MAE 6.5 -> 6.9). Open: the drawn pose and heading after a cross-context 4C 51 run with a move id. Patched-executable state (shiny charm), outside the ratchet."
-changes = [
-  ["states/rikuroa_post_caruban/image", 0.999, 0.988],
-]
