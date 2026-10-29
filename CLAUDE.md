@@ -111,6 +111,8 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`overlay-ptr-table.md`](docs/formats/overlay-ptr-table.md) | Sister of `mips-overlay`. |
 | [`slot-b-module-layout.md`](docs/formats/slot-b-module-layout.md) | File layout of the 64 slot-B cast / summon images (`0903..=0966`): head table, code, spawn-record band, inherited tail. Parser `legaia_overlay_images::slot_b_module`. |
 | **The port's own formats** | |
+| [`expansion-pack-battle.md`](docs/formats/expansion-pack-battle.md) | An expansion pack's `battle.toml` (derived monsters, formations from `0xE000`, encounter overrides, bosses) and `progression.toml` (XP curve, multipliers, enemy scaling, level rewards). Runtime `engine-expansion::{battle, progression}`. |
+| [`expansion-pack-quests.md`](docs/formats/expansion-pack-quests.md) | An expansion pack's `quests.toml` (quests, challenges) and `dialog.toml` (lines compiled for the inline dialogue runner); the quest tracker's events and the save's `LXP1` expansion block (`LGXD`). Runtime `engine-expansion::quest*`. |
 | [`expansion-pack.md`](docs/formats/expansion-pack.md) | Modder expansion packs: layout, `pack.toml`, `DiscRef` coordinates, the deterministic `.lxpack` bundle, validation and the no-disc-bytes rule. Parser `legaia_expansion_format`; CLI `asset expansion`; flagship `packs/rebirth/`. |
 
 ### Subsystems - [`docs/subsystems/`](docs/subsystems/)
@@ -137,6 +139,7 @@ How the runtime engine works.
 | [`minigame-slot-machine.md`](docs/subsystems/minigame-slot-machine.md) | Casino slot machine: reel SM (`FUN_801cf0d8`), dual RNG, **five**-payline payout (`FUN_801d13e8`). A **3D scene** through the GTE, not 2D sprites. Parser `legaia_minigame_formats::minigame_slot_scene`. |
 | [`minigame-baka-fighter.md`](docs/subsystems/minigame-baka-fighter.md) | Baka Fighter duel minigame: round SM (`FUN_801d3468`), rock-paper-scissors exchange resolver (`FUN_801d3a14`), stat/combo damage, pad-vs-AI move pick; reuses the PROT 1204 battle-form party meshes. |
 | [`minigame-dance.md`](docs/subsystems/minigame-dance.md) | Noa dance rhythm minigame: beat-clock state machine (`FUN_801cf470`), timing-window judge (`FUN_801d1960`, accuracy-weighted), step chart at `0x801d509c`, groove gauge `DAT_801d544c` as difficulty/multiplier. |
+| [`expansion-modes.md`](docs/subsystems/expansion-modes.md) | The port's own game modes (Hold'em, the trading-card game, mini-golf, racing, prop hunt): the lockstep-ready session contract and each mode's rules. `engine-modes`, configured by a pack's `modes.toml` / `cards.toml`. |
 | [`minigame-muscle-dome.md`](docs/subsystems/minigame-muscle-dome.md) | Muscle Dome arena ladder: rounds run on the general battle round SM (`FUN_801d0748`), the contest hub (`FUN_801cf870`) in PROT 0977. Not a card battle. |
 | [`actor-vm.md`](docs/subsystems/actor-vm.md) | Actor / sprite VM at `FUN_801D6628` (13 opcodes) - the menu overlay's window-widget script interpreter; programs in [`window-script.md`](docs/formats/window-script.md). |
 | [`effect-vm.md`](docs/subsystems/effect-vm.md) | Effect-bundle pool; spawn API; the three render-mode-4 emitters, all three carrying shipped content (the move VM selects them). |

@@ -1,6 +1,6 @@
 # Expansion pack: quests, challenges and dialogue
 
-Two files of an expansion pack describe what the player is asked to do and what the pack's characters say: `quests.toml` (quests and challenges, parsed by `legaia_expansion_format::quest`) and `dialog.toml` (dialogue lines, `legaia_expansion_format::dialog`). The engine runs them through `legaia_engine_expansion::quest` (the quest tracker), `quest_challenge` (challenge rules and scores), `flags` (the pack's own flags and counters), `dialog` (lines compiled for the field VM's dialogue runner) and `quest_save` (the save block). `engine-core`'s `world::expansion_quests` wires those kernels to the `World`.
+Two files of an expansion pack describe what the player is asked to do and what the pack's characters say: `quests.toml` (quests and challenges, parsed by `legaia_expansion_format::quest`) and `dialog.toml` (dialogue lines, `legaia_expansion_format::dialog`). The engine runs them through `legaia_engine_expansion::quest` (the quest tracker), `quest_challenge` (challenge rules and scores), `flags` (the pack's own flags and counters), `dialog` (the pack line on screen) and `quest_save` (the save block); the line compiler `compile_line` and the markup encoder sit in the format crate's `dialog` module, so the validator compiles every line too. `engine-core`'s `world::expansion_quests` wires those kernels to the `World`.
 
 Every hook is the identity with no pack active: no event is built, no battle command is refused, no line starts, and a save carries no expansion block.
 
@@ -41,6 +41,8 @@ rewards = { gold = 10000, set_flags = ["tower_open"] }
 | `rewards` | Granted on completion (below). |
 | `repeat` | Whether the quest can run again (below). |
 | `start_dialog`, `complete_dialog` | Line ids shown on start and on completion. |
+| `active_dialog` | Line id shown when the player talks to the giver while the quest is active. |
+| `start_battle`, `start_boss` | A `battle.toml` formation or boss fought once the quest's start line is done. |
 
 A quest with neither `giver` nor `auto_start` starts only from a script (`World::expansion_start_quest`).
 
@@ -65,7 +67,7 @@ Each objective is a table with a `kind`, that kind's keys, and an optional `text
 | `defeat_formation` | `formation`, `count` | `count` battles against the formation are won. |
 | `defeat_monster` | `monster`, `count` | `count` won battles had the monster in them. |
 | `win_battles` | `count` | `count` battles of any kind are won. |
-| `win_boss` | `formation` (optional) | A boss battle is won (optionally that one). |
+| `win_boss` | `boss` or `formation` (optional) | A boss battle is won (optionally that one). |
 | `enter_scene` | `scene` | The player enters the scene (CDNAME name or pack map id). |
 | `reach_level` | `level` | The party's highest level reaches `level`. |
 | `collect_item` | `item`, `count`, `hand_in` | The bag holds `count` of the item. |
@@ -74,7 +76,7 @@ Each objective is a table with a `kind`, that kind's keys, and an optional `text
 | `counter` | `counter`, `at_least` | The pack counter reaches `at_least`. |
 | `flag` | `flag` | The pack flag is set. |
 
-`count` defaults to 1. A `formation` is a number (a runtime formation id) or a string (a `battle.toml` formation id, resolved through `QuestWorld::pack_formation_id`; a name that resolves to nothing matches no battle). A boss battle is one whose formation record carries a non-zero header byte (`FormationDef::header_flags`, retail's scripted and boss rows).
+`count` defaults to 1. A `formation` is a number (a runtime formation id) or a string (a `battle.toml` formation id, resolved through `QuestWorld::pack_formation_id` to its compiled `0xE000+` id). A `win_boss` naming a `battle.toml` `boss` matches a won battle against that boss's formation; one naming a `formation`, or nothing, matches a won battle whose formation record carries a non-zero header byte (`FormationDef::header_flags`, retail's scripted and boss rows, and every pack boss's formation).
 
 **Event objectives** (`defeat_*`, `win_*`, `enter_scene`, `talk`) count events. **State objectives** (`reach_level`, `counter`, `flag`) are re-tested against the world and latch once met. A `collect_item` objective tracks the bag live and does not latch: dropping the items takes the progress back. With `hand_in = true`, completing the quest takes the items.
 
@@ -155,7 +157,7 @@ Each line of `text` is one dialog-box row and a blank line starts a new page. Ro
 
 Text is the translation pipeline's markup: printable ASCII as itself, `{xx}` for any byte, `{op:arg}` for a two-byte token (`{c1:00}` is party member 0's name, `{cf:31}` a colour change), with typographic quotes, dashes and the ellipsis folded onto their ASCII glyphs. `dialog::encode_markup` is the dialog-segment subset of `legaia_translate::markup::encode`: the same grammar and the same bytes, without the patcher stack. Bytes `0x00..=0x1F` are refused as a token's opcode, since they would end the segment; the symbol aliases (`{btn:x}`) are not part of the subset.
 
-A line may end on a menu of two to four `choices`. Each choice has a `label`, an optional `reply` (rows and pages as `text`), pack flags it raises (`set_flags`) and clears (`clear_flags`), and a `next` line shown once the talk ends.
+A line may end on a menu of two to four `choices`. Each choice has a `label`, an optional `reply` (rows and pages as `text`), pack flags it raises (`set_flags`) and clears (`clear_flags`), a `next` line shown once the talk ends, and a fight (`battle`, a formation id, or `boss`) started once the talk and any chained lines are done.
 
 ### Dialogue on the inline runner
 
@@ -172,7 +174,20 @@ line    = text 0x21                  no menu: the talk ends
   branch= [text] 0x21                the option's reply, then the end
 ```
 
-The runner records the committed option on the pack line's own run (matched by the identity of the compiled buffer), and the world tick that sees the run finished applies the option's flags and queues its `next` line. A quest's `start_dialog` and `complete_dialog` lines queue the same way and start when no dialogue owns the player.
+The runner records the committed option on the pack line's own run (matched by the identity of the compiled buffer), and the world tick that sees the run finished applies the option's flags and queues its `next` line. A quest's `start_dialog`, `complete_dialog` and `active_dialog` lines queue the same way and start when no dialogue owns the player. A fight a choice or a quest start names waits behind them: once no line is pending or queued and the player is walking the field or the world map, the world tick starts it through `World::start_expansion_battle` or `World::start_expansion_boss`.
+
+## Validation
+
+Both sections implement `validate::SectionRules` ([`expansion-pack.md`](expansion-pack.md#validation)). `quests.toml` declares `quest` and `challenge` ids; `dialog.toml` declares `line` ids. The checks:
+
+| Check | Severity |
+|---|---|
+| A prerequisite quest, line, formation or boss that is not defined | error |
+| A line that does not compile (no text, a menu outside 2..=4 options, text with no glyph) | error |
+| A quest or choice naming both a battle and a boss | error |
+| A quest requiring itself; `reach_level` outside 1..=99; a turn limit or enemy scale of 0; `solo` past slot 3 | error |
+| An item or monster id out of range | error |
+| A quest with no giver and no `auto_start`; repeat settings on a one-shot quest; a count of 0; a row over 36 characters | warning |
 
 ## Runtime
 
@@ -205,10 +220,15 @@ u16    quest count, then per quest:
 u16    flag count, then str each
 u16    counter count, then str id + i64 value each
 u16    challenge count, then str id + u32 best + u32 clears each
+[u16   cleared-boss count, then str each]   only when a once-only boss is beaten
 ```
 
 `str` is a `u16` byte length then UTF-8; integers are little-endian; maps are written in key order, so equal progress encodes to equal bytes. An armed challenge, queued notices and the line on screen are not saved.
 
 `legaia_save` stores the block opaquely as `SaveExtV2::expansion`. An `LGSF` file carries it as the optional `LGXD` block after `LGXC`; a retail SC block carries it as a third `u16`-length segment of the `LGXE` engine-ext tail, written only when it fits whole after the `LGX2` and `LGX4` bodies ([`save-screen.md`](../subsystems/save-screen.md)). A save made with no pack writes neither, so its bytes are the bytes the engine wrote before the block existed.
+
+The cleared-boss list is the battle runtime's `cleared_bosses` (once-only `battle.toml` bosses beaten). It is the block's optional tail, so a block with none is the layout an older writer made, and such a block loads with an empty list.
+
+`World::activate_expansion` is the one activation path: it compiles the battle tables and brings the quest runtime onto the pack, adopting a dormant block saved for it and handing its cleared bosses to the battle runtime. `World::deactivate_expansion` folds the cleared bosses into the progress and parks it as the dormant block, so a re-activation picks it up.
 
 `WorldSaveState::save_full` writes the active pack's progress; `load_full` restores it when the block's pack id is the active pack's. A block for any other pack, or one loaded with no pack active, is kept **dormant** and written back verbatim on the next save, so playing a session without the pack does not erase its progress; activating that pack later adopts the dormant block. A save without a block loads under a pack as fresh progress.

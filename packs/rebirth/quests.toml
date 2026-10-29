@@ -34,6 +34,20 @@ objectives = [
 complete_dialog = "guide_done"
 rewards = { gold = 10000, set_flags = ["tower_open"] }
 
+[[quests]]
+id = "tower_sovereign"
+title = "The Hollow Throne"
+description = "Something waits at the top of the tower. The guide will take the party to it when they are ready."
+giver = "tower_guide"
+prerequisites = { quests = ["tower_trial"] }
+start_dialog = "guide_sovereign"
+active_dialog = "guide_sovereign"
+objectives = [
+    { kind = "win_boss", boss = "hollow_sovereign", text = "Defeat the Hollow Sovereign" },
+]
+complete_dialog = "guide_sovereign_done"
+rewards = { set_flags = ["sovereign_fallen"], counters = [{ counter = "bosses_felled" }] }
+
 # --- Challenges --------------------------------------------------------------
 
 [[challenges]]

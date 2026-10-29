@@ -116,19 +116,19 @@ Each content section is a TOML file whose type lives in its own module of `legai
 
 ### battle.toml
 
-Reserved; schema not yet defined.
+Monsters derived from a retail record (set or scaled stats, drop, steal, element, spells), formations of up to four monsters, per-scene encounter overrides and named bosses. Formations compile to engine ids from `0xE000`; a once-only boss's victory is recorded in the save's expansion block. Declares `monster`, `formation` and `boss` ids. Reference: [`expansion-pack-battle.md`](expansion-pack-battle.md).
 
 ### progression.toml
 
-Reserved; schema not yet defined.
+The XP curve (retail, scaled, banded or explicit), EXP and gold multipliers, enemy level scaling and level-up item rewards. Declares no ids. Reference: [`expansion-pack-battle.md`](expansion-pack-battle.md).
 
 ### quests.toml
 
-Reserved; schema not yet defined.
+Quests (giver, prerequisites keyed to retail system flags, party level and other quests, ordered or unordered objectives, rewards, repeat rules, a battle or boss started on the quest's start) and challenges (rule sets over one battle with a score). Declares `quest` and `challenge` ids; references `quest`, `line`, `formation` and `boss`. Reference: [`expansion-pack-quests.md`](expansion-pack-quests.md).
 
 ### dialog.toml
 
-Reserved; schema not yet defined.
+Dialogue lines in the translation markup, as rows and pages, with two- to four-option menus that set pack flags, chain a line or start a fight. Every line is compiled at validation, so text with no glyph is an error. Declares `line` ids; references `line`, `formation` and `boss`. Reference: [`expansion-pack-quests.md`](expansion-pack-quests.md#dialogtoml).
 
 ### cards.toml
 
@@ -201,7 +201,7 @@ A section implements `validate::SectionRules`, whose two methods default to doin
 | `error` / `warning(field, msg)` | Report against the current file. |
 | `pack()`, `qualified(id)` | Read the whole pack; form `pack:id`. |
 
-Every section type already sits in the section list in `validate.rs` with an empty placeholder `impl`. A section that grows checks implements the trait in its own module and deletes its placeholder line.
+Every section type sits in the section list in `validate.rs`. The battle, progression, quest and dialogue sections implement the trait in their own modules; the others still have an empty placeholder `impl` there, which a section deletes when it implements its checks in its own module.
 
 ## The no-disc-bytes rule
 

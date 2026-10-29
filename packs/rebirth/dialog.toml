@@ -34,3 +34,21 @@ speaker = "Tower Guide"
 text = """
 You are ready. The tower is open.
 May the Seru walk beside you."""
+
+[lines.guide_sovereign]
+speaker = "Tower Guide"
+text = """
+The throne at the top is not empty.
+Something hollow sits there.
+
+Shall I take you to it now?"""
+choices = [
+    { label = "Take us.", boss = "hollow_sovereign" },
+    { label = "Not yet.", reply = "The throne will wait. So will I." },
+]
+
+[lines.guide_sovereign_done]
+speaker = "Tower Guide"
+text = """
+The throne is empty at last.
+The mist is lifting."""
