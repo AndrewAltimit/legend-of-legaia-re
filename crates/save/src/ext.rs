@@ -113,6 +113,16 @@
 //! M      location display name (ASCII)
 //! ```
 //!
+//! ## Optional trailing blocks (`LGX6`..`LGXD`)
+//!
+//! After `LGX4` come the optional blocks, each `magic, u32 size, body` and
+//! each written only when its field is populated, in the order `LGX6`
+//! (item slots), `LGX7` (minigame purses), `LGX8` (field position), `LGX9`
+//! (audio levels), `LGXA` (options), `LGXB` (retail window), `LGXC`
+//! (previous scene), `LGXD` (expansion-pack progress, an opaque body whose
+//! layout `legaia_engine_expansion::quest_save` owns), then the `LGX5`
+//! resume trailer.
+//!
 //! ## The engine-ext blob inside a retail SC block (`LGXE`)
 //!
 //! Retail's composer copies `0x1A18` bytes of live game state to the front
