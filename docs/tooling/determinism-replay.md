@@ -58,9 +58,67 @@ Cross = `0x4000`, Circle = `0x2000`, Up = `0x0010`, Down = `0x0040`,
 Left = `0x0080`, Right = `0x0020`, etc. Stored as a plain `u16` so the
 on-disk wire form stays byte-readable.
 
-`ReplayFile::validate` rejects schema mismatches, out-of-order events,
-and frame indices past `meta.frames` at parse time. Writers MUST emit
-events in frame-ascending order; readers don't sort.
+`ReplayFile::validate` rejects schema mismatches, out-of-order events or
+switches, and frame indices past `meta.frames` at parse time. Writers MUST
+emit events and switches in frame-ascending order; readers don't sort.
+
+### Session switches
+
+Some session changes reach the simulation without being pad input: a host
+key that opens the expansion mode seat, the action-movement switch, the
+expansion pack the session runs. A sparse `[[switch]]` array carries them.
+A switch at frame `N` is applied before frame `N` ticks, the frame its pad
+event would take effect on; several on one frame apply in file order.
+
+```toml
+[[switch]]
+frame = 0
+set = "pack"
+id = "rebirth"
+hash = "3f1c...e0"                 # pack_content_hash, 64 hex digits
+
+[[switch]]
+frame = 0
+set = "action_movement"
+on = true
+
+[[switch]]
+frame = 240
+set = "mode"
+id = "builtin-golf"
+```
+
+| `set` | Fields | Applies |
+|---|---|---|
+| `action_movement` | `on` | `WorldToggles::action_movement` |
+| `pack` | `id`, `hash` | the pack with that id and content hash becomes the active pack |
+| `no_pack` | - | `World::deactivate_expansion` |
+| `mode_picker` | - | `World::open_pack_mode_picker` |
+| `mode` | `id` | `World::enter_pack_mode` |
+| `leave_mode` | - | `World::exit_pack_mode` (also closes a card screen) |
+| `card_menu` | - | `World::open_card_menu` |
+| `battle` | `formation` | `World::start_expansion_battle` |
+| `map` | `map`, `spawn` | `SceneHost::enter_expansion_map` (a scene host only) |
+
+The `hash` is `replay::pack_content_hash`: SHA-256 over the pack's canonical
+file tree (`ExpansionPack::to_files`), each file as its path, a NUL, its
+length and its bytes. A pack read from its directory and from its `.lxpack`
+bundle hash the same, and any edit to its content moves the hash. A replay
+names a pack only by that pair; the driver resolves it against the packs it
+was handed (`replay::PackShelf`) and refuses a pack of the right id whose
+content differs, since the recording would not reproduce on it.
+
+The value-setting rows (`action_movement`, `pack`, `no_pack`) are idempotent:
+applying one that already holds changes nothing, and re-applying the active
+pack does not re-activate it. That lets a recorder note them by watching the
+state. The entry rows open something, so a recorder writes them where the
+host makes the call.
+
+`replay::apply_switch` applies one row to a `ReplaySeat`: a bare `World`, or
+a `SceneHost`, which also enters pack maps and merges a pack's base monsters
+on activation. Every switch field is optional in the schema and skipped when
+empty, so a file written before switches existed parses to the same events
+and serialises back byte for byte.
 
 ## Subcommands
 
@@ -75,10 +133,13 @@ legaia-engine replay --input my.replay.toml [--out trace.jsonl] [--strict]
 
 Every argument is a flag - `--input` is not positional - and `--out`
 defaults to `-` (stdout), so the trace pipes without a temporary file.
+`--pack <dir or .lxpack>` (repeatable) supplies the packs the replay's `pack`
+switches may activate.
 
 The synthetic driver mirrors the determinism-gate harness: `World::new`
 + an 8-slot actor pool, RNG seeded from `meta.rng_seed`, ticked once
-per replay frame. No disc required.
+per replay frame. Each frame applies its switches, then its pad, then
+ticks. No disc required; a `map` switch needs a scene host and fails here.
 
 `--strict` exits non-zero on the first divergence between the recorded
 trace and the file's `[[expected]]` fixture. Without it, divergence is
@@ -109,10 +170,17 @@ The file's `meta.frames` reflects the actual recorded duration
 (highest `session.frames` observed during the run), so playback of the
 captured file replays exactly as long as the human session was.
 
-**Interactive-toggle caveat.** `j-replay-v1` captures the pad stream
-only - the play-window's interactive camera/movement toggles (camera
-distance preset, left-mouse drag-orbit / drag-tilt, wheel zoom, the
-precise-movement toggle) are not recorded. The defaults are safe: the
+The recorder also writes `[[switch]]` rows. Before every tick it watches
+the world's action-movement switch and its active pack (id and content
+hash) and records a row when either moves, whatever moved it - a key, the
+options screen, the launch flags. The backquote key's mode picker and leave,
+and the backslash key's card menu, record their rows where the key handler
+makes the call.
+
+**Interactive-toggle caveat.** Beyond the switches above, `j-replay-v1`
+captures the pad stream only - the play-window's interactive camera/movement
+toggles (camera distance preset, left-mouse drag-orbit / drag-tilt, wheel
+zoom, the precise-movement toggle) are not recorded. The defaults are safe: the
 distance preset, orbit, tilt and zoom are pure render framing (no
 simulation effect - only the orbit reaches the compass), and replays run with
 `precise_movement` off (the retail-faithful quantised remap), matching
@@ -143,6 +211,29 @@ observed), and an `[[expected]]` fixture round-trips through
 `ReplayFile::diff` so the regression-comparison side stays honest.
 
 Runs in CI without `LEGAIA_DISC_BIN`.
+
+### Expansion replays
+
+[`crates/engine-shell/tests/expansion_replay.rs`](../../crates/engine-shell/tests/expansion_replay.rs)
+holds replays whose switches carry the expansion layer, each run twice and
+required to give a bit-identical trace (frame, mode, RNG, purses, party HP,
+the active pack, the action-movement switch, the player's position, the
+seated monsters, the mode seat's stage and its session `state_hash`, the
+mode view, the pack map). Every replay goes through its TOML text before it
+runs, and each has a control that must move the trace.
+
+| Replay | Seat | Control |
+|---|---|---|
+| a three-wave pack formation fought to victory | synthetic `World` | another RNG seed |
+| [`builtin_poker_hand`](../../scripts/replays/expansion/builtin_poker_hand.replay.toml): the built-in table, hands folded until the fifth is dealt | synthetic `World` | another RNG seed |
+| [`builtin_golf_hole`](../../scripts/replays/expansion/builtin_golf_hole.replay.toml): the picker opened, golf picked, the first hole played out | synthetic `World` | the switches removed |
+| a walk into the Rebirth tower map with action-movement jumps (it reaches the arena's encounter zone) | `SceneHost` over the disc | the action-movement switch removed |
+
+The battle and both mode replays are disc-free; the map walk is disc-gated.
+A pack content edit moves its hash, so the two pack replays build their
+`pack` rows from the pack in hand rather than from a committed file. A
+replay that names a pack whose content moved is refused by name (the
+`a_replay_refuses_a_pack_whose_content_moved` case).
 
 ## Composition with the other oracles
 

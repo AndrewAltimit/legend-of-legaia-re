@@ -621,6 +621,11 @@ pub(crate) enum Cmd {
         /// fixture (if present).
         #[arg(long, default_value_t = false)]
         strict: bool,
+        /// An expansion pack the replay's `pack` switches may activate (a
+        /// pack directory or `.lxpack` bundle); repeatable. A pack whose
+        /// content hash differs from the recorded one is refused.
+        #[arg(long = "pack")]
+        packs: Vec<PathBuf>,
     },
     /// Open a play-window session and capture your pad input into a
     /// replay file for `replay`. Thin shim over `play-window`: every

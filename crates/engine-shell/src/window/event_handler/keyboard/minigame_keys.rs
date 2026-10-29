@@ -26,11 +26,15 @@ impl PlayWindowApp {
         {
             return false;
         }
+        let frame = self.session.frames;
         let world = &mut self.session.host.world;
         if world.card_screen_open() {
             world.close_card_screen();
+            self.record_switch(frame, crate::replay::SwitchChange::LeaveMode);
         } else if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
-            if !world.open_card_menu() {
+            if world.open_card_menu() {
+                self.record_switch(frame, crate::replay::SwitchChange::CardMenu);
+            } else {
                 log::info!("cards: the active pack has no cards");
             }
         } else {
@@ -50,12 +54,15 @@ impl PlayWindowApp {
         {
             return false;
         }
+        let frame = self.session.frames;
         let world = &mut self.session.host.world;
         if world.mode == SceneMode::Expansion {
             world.exit_pack_mode();
+            self.record_switch(frame, crate::replay::SwitchChange::LeaveMode);
             log::info!("modes: left the mode seat");
         } else if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
             world.open_pack_mode_picker();
+            self.record_switch(frame, crate::replay::SwitchChange::ModePicker);
             log::info!("modes: picker open - Up/Down choose, Cross play, Circle back");
         } else {
             return false;
@@ -63,6 +70,13 @@ impl PlayWindowApp {
         true
     }
     // --- end expansion game modes ---
+
+    /// Note a session switch on the record log, when recording.
+    fn record_switch(&mut self, frame: u64, change: crate::replay::SwitchChange) {
+        if let Some(log) = self.record_log.as_mut() {
+            log.record_switch(frame, change);
+        }
+    }
 
     /// `K`: toggle the Noa dance (rhythm) minigame. Arms the mode-24 door
     /// warp to the hall (PROT 0980 loads on the drain, the floor read off the

@@ -336,7 +336,12 @@ fn main() -> Result<()> {
             retail_wav: retail_wav.as_deref(),
             strict,
         }),
-        Cmd::Replay { input, out, strict } => cmd_replay(&input, &out, strict),
+        Cmd::Replay {
+            input,
+            out,
+            strict,
+            packs,
+        } => cmd_replay(&input, &out, strict, &packs),
         Cmd::Record {
             out,
             scene,

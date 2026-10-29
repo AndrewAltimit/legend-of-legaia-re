@@ -172,6 +172,9 @@ impl PlayWindowApp {
     fn sim_tick(&mut self) -> bool {
         crate::window::run::fire_deferred_battle(&mut self.session, self.tick_no);
         self.inject_scripted_tick_input();
+        if let Some(log) = self.record_log.as_mut() {
+            log.observe_world(self.session.frames, &self.session.host.world);
+        }
         // Party wipe: the world raises `game_over` when a battle resolves to
         // `BattleEndCause::PartyWipe`. The probe starts the return-to-title
         // hold, which owns the frame from here (the arm below skips the

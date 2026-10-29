@@ -105,6 +105,12 @@ pub(super) struct RecordLog {
     /// `meta.frames` value of the last on-disk checkpoint (`None` =
     /// nothing written yet - the first `observe_frame` writes).
     checkpointed_frame: Option<u64>,
+    /// Session switches (`[[switch]]` rows) recorded so far.
+    switches: Vec<crate::replay::SessionSwitch>,
+    /// The action-movement switch and the active pack row as last
+    /// recorded; [`Self::observe_world`] records a row when either moves.
+    noted_action_movement: bool,
+    noted_pack: Option<crate::replay::SwitchChange>,
     /// Events recorded since the last successful on-disk write.
     dirty: bool,
     /// Once the final flush has run, additional Close events become
@@ -123,6 +129,9 @@ impl RecordLog {
             rng_seed: target.rng_seed,
             last_frame: 0,
             checkpointed_frame: None,
+            switches: Vec::new(),
+            noted_action_movement: false,
+            noted_pack: None,
             dirty: false,
             flushed: false,
         }
@@ -141,6 +150,54 @@ impl RecordLog {
         if frame > self.last_frame {
             self.last_frame = frame;
         }
+    }
+
+    /// Record a session switch the host made before frame `frame` ticks (a
+    /// mode seat or card menu it opened outside the pad).
+    pub(super) fn record_switch(&mut self, frame: u64, change: crate::replay::SwitchChange) {
+        self.switches
+            .push(crate::replay::SessionSwitch { frame, change });
+        self.dirty = true;
+        if frame > self.last_frame {
+            self.last_frame = frame;
+        }
+    }
+
+    /// Record the value-setting switches by watching `world` before frame
+    /// `frame` ticks: the action-movement switch and the active pack (its
+    /// id and content hash). Whatever path changed them - a key, the
+    /// options screen, the launch flags - lands as one idempotent row.
+    pub(super) fn observe_world(&mut self, frame: u64, world: &legaia_engine_core::world::World) {
+        use crate::replay::SwitchChange;
+        let on = world.toggles.action_movement;
+        if on != self.noted_action_movement {
+            self.noted_action_movement = on;
+            self.record_switch(frame, SwitchChange::ActionMovement { on });
+        }
+        let id = world
+            .expansion
+            .pack
+            .as_ref()
+            .map(|p| p.manifest.id.as_str());
+        let noted_id = match &self.noted_pack {
+            Some(SwitchChange::Pack { id, .. }) => Some(id.as_str()),
+            _ => None,
+        };
+        if id == noted_id {
+            return;
+        }
+        let row = match world.expansion.pack.as_deref() {
+            Some(p) => match crate::replay::pack_switch(p) {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    log::warn!("record: cannot hash the active pack: {e:#}");
+                    return;
+                }
+            },
+            None => None,
+        };
+        self.noted_pack = row.clone();
+        self.record_switch(frame, row.unwrap_or(SwitchChange::NoPack));
     }
 
     /// Note the frame counter advanced past `frame` without a pad
@@ -187,6 +244,7 @@ impl RecordLog {
         };
         let mut file = ReplayFile::new(meta);
         file.events = self.events.clone();
+        file.switches = self.switches.clone();
         file.validate()?;
         let mut tmp_name = self
             .out_path
