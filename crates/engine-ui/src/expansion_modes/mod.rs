@@ -23,6 +23,7 @@ mod cards;
 mod duel;
 mod golf;
 mod hunt;
+pub mod netplay;
 mod poker;
 mod race;
 

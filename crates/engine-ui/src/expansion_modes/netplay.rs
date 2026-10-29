@@ -1,0 +1,317 @@
+//! The multiplayer screens: the room screen (players, the host's game
+//! pick, ready and start, chat, emotes) and the small room panel drawn over
+//! the field while players roam.
+//!
+//! Like the mode screens these are the port's own, in the same flat style
+//! and from one composition for both play hosts. The host's netplay driver
+//! fills a [`NetScreen`] / [`NetPanel`] with plain rows; nothing here knows
+//! about sockets or sessions.
+
+use legaia_render_kernels::screen_prim::ScreenPrim;
+
+use super::{
+    Canvas, LINE, STAGE_H, STAGE_W, footer, header, ink, labels_to_draws, pen, seat_color,
+};
+use crate::TextDraw;
+
+/// One room member as the screen lists them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetPlayerRow {
+    pub name: String,
+    /// `None` = spectating.
+    pub seat: Option<u8>,
+    pub ready: bool,
+    pub host: bool,
+    /// This machine's player.
+    pub you: bool,
+}
+
+/// One menu row: a label and, for a row that cycles, its current value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetMenuRow {
+    pub label: String,
+    pub value: Option<String>,
+    /// Greyed out (the host cannot start until everyone is ready).
+    pub enabled: bool,
+}
+
+/// The room screen.
+#[derive(Debug, Clone, Copy)]
+pub struct NetScreen<'a> {
+    /// "Room K7QX2M" (or "Connecting...").
+    pub title: &'a str,
+    /// Where others join: the host's LAN address, or the relay's.
+    pub address: Option<&'a str>,
+    pub players: &'a [NetPlayerRow],
+    pub rows: &'a [NetMenuRow],
+    pub cursor: usize,
+    /// Recent chat and room notices, newest last.
+    pub chat: &'a [String],
+    /// A chat line being typed.
+    pub draft: Option<&'a str>,
+    /// The last error or notice (a desync, a refused join).
+    pub notice: Option<&'a str>,
+}
+
+/// The roaming panel: a corner box naming the room and its players.
+#[derive(Debug, Clone, Copy)]
+pub struct NetPanel<'a> {
+    pub title: &'a str,
+    pub players: &'a [NetPlayerRow],
+    /// The newest chat lines.
+    pub chat: &'a [String],
+    pub notice: Option<&'a str>,
+}
+
+/// The room screen's flat prims, in stage pixels.
+pub fn net_screen_prims(s: &NetScreen<'_>) -> Vec<ScreenPrim> {
+    compose_screen(s).prims
+}
+
+/// The room screen's labels, in stage pixels.
+pub fn net_screen_texts(font: &legaia_font::Font, s: &NetScreen<'_>) -> Vec<TextDraw> {
+    labels_to_draws(font, &compose_screen(s).labels)
+}
+
+/// The room screen's labels as strings, in draw order.
+pub fn net_screen_strings(s: &NetScreen<'_>) -> Vec<String> {
+    compose_screen(s)
+        .labels
+        .into_iter()
+        .map(|l| l.text)
+        .collect()
+}
+
+/// The roaming panel's flat prims, in stage pixels.
+pub fn net_panel_prims(p: &NetPanel<'_>) -> Vec<ScreenPrim> {
+    compose_panel(p).prims
+}
+
+/// The roaming panel's labels, in stage pixels.
+pub fn net_panel_texts(font: &legaia_font::Font, p: &NetPanel<'_>) -> Vec<TextDraw> {
+    labels_to_draws(font, &compose_panel(p).labels)
+}
+
+/// The roaming panel's labels as strings.
+pub fn net_panel_strings(p: &NetPanel<'_>) -> Vec<String> {
+    compose_panel(p)
+        .labels
+        .into_iter()
+        .map(|l| l.text)
+        .collect()
+}
+
+fn player_label(p: &NetPlayerRow) -> String {
+    let mut s = p.name.clone();
+    if p.you {
+        s.push_str(" (you)");
+    }
+    s
+}
+
+fn player_state(p: &NetPlayerRow) -> &'static str {
+    match (p.host, p.seat, p.ready) {
+        (true, _, _) => "Host",
+        (_, None, _) => "Watching",
+        (_, _, true) => "Ready",
+        _ => "Not ready",
+    }
+}
+
+fn compose_screen(s: &NetScreen<'_>) -> Canvas {
+    let mut c = Canvas::default();
+    c.rect(0, 0, STAGE_W, STAGE_H, ink::BACKDROP);
+    header(&mut c, s.title, "Multiplayer");
+    let mut y = 20;
+    if let Some(a) = s.address {
+        c.text(format!("Join at {a}"), 8, y, pen::DIM);
+        y += LINE;
+    }
+
+    // Players down the left.
+    let (px, pw) = (6, 150);
+    let ph = s.players.len().max(1) as i32 * LINE + 6;
+    c.panel(px, y + 2, pw, ph, ink::PANEL, ink::PANEL_EDGE);
+    for (i, p) in s.players.iter().enumerate() {
+        let ry = y + 4 + i as i32 * LINE;
+        if let Some(seat) = p.seat {
+            c.dot(px + 7, ry + 7, 2, seat_color(usize::from(seat)));
+        }
+        let ink = if p.you { pen::WHITE } else { pen::DIM };
+        c.text(player_label(p), px + 13, ry, ink);
+        let state_ink = if p.ready || p.host {
+            pen::GREEN
+        } else {
+            pen::DIM
+        };
+        c.text_right(player_state(p), px + pw - 4, ry, state_ink);
+    }
+
+    // The menu down the right.
+    let (mx, mw) = (162, 152);
+    let mh = s.rows.len().max(1) as i32 * 16 + 6;
+    c.panel(mx, y + 2, mw, mh, ink::PANEL, ink::PANEL_EDGE);
+    for (i, r) in s.rows.iter().enumerate() {
+        let ry = y + 5 + i as i32 * 16;
+        let on = i == s.cursor;
+        if on {
+            c.rect(mx + 2, ry - 1, mw - 4, 16, ink::SELECT);
+            c.rect(mx + 2, ry - 1, 3, 16, ink::HIGHLIGHT);
+        }
+        let ink = match (r.enabled, on) {
+            (false, _) => pen::DIM,
+            (true, true) => pen::WHITE,
+            (true, false) => [0.78, 0.80, 0.84, 1.0],
+        };
+        c.text(r.label.clone(), mx + 9, ry, ink);
+        if let Some(v) = &r.value {
+            c.text_right(
+                v.clone(),
+                mx + mw - 6,
+                ry,
+                if on { pen::GOLD } else { pen::DIM },
+            );
+        }
+    }
+
+    // Chat along the bottom.
+    let rows = 5usize;
+    let cy = STAGE_H - 17 - (rows as i32 + 1) * LINE - 6;
+    c.panel(
+        6,
+        cy,
+        STAGE_W - 12,
+        (rows as i32 + 1) * LINE + 4,
+        ink::PANEL,
+        ink::PANEL_EDGE,
+    );
+    let start = s.chat.len().saturating_sub(rows);
+    for (i, l) in s.chat[start..].iter().enumerate() {
+        c.text(l.clone(), 10, cy + 1 + i as i32 * LINE, pen::WHITE);
+    }
+    let draft = match s.draft {
+        Some(d) => format!("> {d}_"),
+        None => String::new(),
+    };
+    c.text(draft, 10, cy + 1 + rows as i32 * LINE, pen::GOLD);
+    if let Some(n) = s.notice {
+        c.text_centre(n, STAGE_W / 2, cy - LINE - 2, pen::RED);
+    }
+    footer(
+        &mut c,
+        if s.draft.is_some() {
+            "Enter: send   Esc: cancel"
+        } else {
+            "Up/Down: row  Left/Right: change  Cross: go  Circle: close"
+        },
+    );
+    c
+}
+
+fn compose_panel(p: &NetPanel<'_>) -> Canvas {
+    let mut c = Canvas::default();
+    let lines = p.players.len() + p.chat.len() + usize::from(p.notice.is_some()) + 1;
+    let (w, x, y) = (128, STAGE_W - 132, 20);
+    let h = lines as i32 * 12 + 6;
+    c.panel(x, y, w, h, [10, 14, 24, 200], ink::PANEL_EDGE);
+    c.text(p.title, x + 4, y + 1, pen::GOLD);
+    let mut ry = y + 1 + 12;
+    for pl in p.players {
+        if let Some(seat) = pl.seat {
+            c.dot(x + 7, ry + 7, 2, seat_color(usize::from(seat)));
+        }
+        c.text(
+            player_label(pl),
+            x + 13,
+            ry,
+            if pl.you { pen::WHITE } else { pen::DIM },
+        );
+        ry += 12;
+    }
+    for l in p.chat {
+        c.text(l.clone(), x + 4, ry, pen::WHITE);
+        ry += 12;
+    }
+    if let Some(n) = p.notice {
+        c.text(n, x + 4, ry, pen::RED);
+    }
+    c
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows() -> Vec<NetPlayerRow> {
+        vec![
+            NetPlayerRow {
+                name: "Vahn".into(),
+                seat: Some(0),
+                ready: false,
+                host: true,
+                you: true,
+            },
+            NetPlayerRow {
+                name: "Noa".into(),
+                seat: Some(1),
+                ready: true,
+                host: false,
+                you: false,
+            },
+        ]
+    }
+
+    #[test]
+    fn the_room_screen_lists_players_rows_and_chat() {
+        let players = rows();
+        let menu = vec![NetMenuRow {
+            label: "Game".into(),
+            value: Some("Practice Table".into()),
+            enabled: true,
+        }];
+        let chat = vec!["Noa: hi".to_string()];
+        let s = NetScreen {
+            title: "Room K7QX2M",
+            address: Some("192.168.1.4:7462"),
+            players: &players,
+            rows: &menu,
+            cursor: 0,
+            chat: &chat,
+            draft: Some("hel"),
+            notice: Some("Desync at frame 120"),
+        };
+        let strings = net_screen_strings(&s);
+        for needle in [
+            "Room K7QX2M",
+            "Join at 192.168.1.4:7462",
+            "Vahn (you)",
+            "Host",
+            "Ready",
+            "Practice Table",
+            "Noa: hi",
+            "> hel_",
+            "Desync at frame 120",
+        ] {
+            assert!(
+                strings.iter().any(|l| l == needle),
+                "`{needle}` missing: {strings:?}"
+            );
+        }
+        assert!(net_screen_prims(&s).len() > 5);
+    }
+
+    #[test]
+    fn the_roaming_panel_names_the_room() {
+        let players = rows();
+        let p = NetPanel {
+            title: "Room K7QX2M",
+            players: &players,
+            chat: &[],
+            notice: None,
+        };
+        let s = net_panel_strings(&p);
+        assert_eq!(s[0], "Room K7QX2M");
+        assert!(s.contains(&"Noa".to_string()));
+        assert!(!net_panel_prims(&p).is_empty());
+    }
+}

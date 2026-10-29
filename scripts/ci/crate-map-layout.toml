@@ -46,7 +46,7 @@ id = "top"
 title = "Session, presentation, tools"
 blurb = "What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside."
 track = "engine"
-crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture", "netplay"]
+crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture", "netplay", "engine-netplay"]
 
 [[bands]]
 id = "drivers"

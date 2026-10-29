@@ -228,6 +228,13 @@ impl<S: Simulation> LockstepSession<S> {
         &self.sim
     }
 
+    /// The simulation, for a host that keeps its drawn copy elsewhere and
+    /// swaps it in around [`Self::advance`]. Mutating the simulated state
+    /// any other way diverges this peer.
+    pub fn sim_mut(&mut self) -> &mut S {
+        &mut self.sim
+    }
+
     pub fn into_sim(self) -> S {
         self.sim
     }

@@ -203,7 +203,7 @@ Top of the stack first. Every crate name links its README.
   [`asset`](crates/asset/README.md)
 - **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside. \
   [`engine-session`](crates/engine-session/README.md), [`engine-screens`](crates/engine-screens/README.md), [`engine-render`](crates/engine-render/README.md), [`engine-audio`](crates/engine-audio/README.md), [`engine-export`](crates/engine-export/README.md),
-  [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md), [`netplay`](crates/netplay/README.md)
+  [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md), [`netplay`](crates/netplay/README.md), [`engine-netplay`](crates/engine-netplay/README.md)
 - **World drivers.** Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats, the LGSF saves. \
   [`engine-scene-host`](crates/engine-scene-host/README.md), [`engine-menu-runtime`](crates/engine-menu-runtime/README.md), [`engine-battle-hud`](crates/engine-battle-hud/README.md), [`engine-world-views`](crates/engine-world-views/README.md), [`engine-cheats`](crates/engine-cheats/README.md),
   [`engine-save-state`](crates/engine-save-state/README.md)

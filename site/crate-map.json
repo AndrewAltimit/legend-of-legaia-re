@@ -61,7 +61,8 @@
       "engine-export",
       "parity",
       "engine-capture",
-      "netplay"
+      "netplay",
+      "engine-netplay"
      ]
     }
    ]
@@ -341,6 +342,7 @@
     "engine-battle",
     "engine-core",
     "engine-field",
+    "engine-netplay",
     "engine-scene",
     "engine-vm"
    ],
@@ -1443,6 +1445,7 @@
     "engine-cheats",
     "engine-export",
     "engine-menu-runtime",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene-host",
     "engine-screens",
@@ -1602,6 +1605,7 @@
    "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. <code>World::expansion</code> is its seat; inert with no pack.",
    "dependents": [
     "engine-core",
+    "engine-netplay",
     "engine-scene-host",
     "engine-screens",
     "engine-session",
@@ -2091,6 +2095,7 @@
     "engine-expansion",
     "engine-field",
     "engine-minigame-scenes",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene-host",
     "engine-screens",
@@ -2130,6 +2135,7 @@
    "dependents": [
     "engine-core",
     "engine-expansion",
+    "engine-netplay",
     "engine-screens",
     "engine-ui"
    ],
@@ -2162,6 +2168,39 @@
     "engine-field"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-motion-vm/README.md"
+  },
+  "engine-netplay": {
+   "package": "legaia-engine-netplay",
+   "deps": [
+    "anm",
+    "engine-core",
+    "engine-expansion",
+    "engine-mode",
+    "engine-modes",
+    "engine-scene-host",
+    "engine-system",
+    "engine-ui",
+    "expansion-format",
+    "font",
+    "netplay",
+    "render-kernels"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "avatar_pose",
+    "mode_net",
+    "roam",
+    "room",
+    "screens",
+    "view_stream"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "Netplay in the play hosts: <code>NetPlay</code> (one player's room connection, lobby, room screen, chat and emotes), networked modes (lockstep golf / racing / prop hunt, host-authoritative poker / Grid Duel view stream), shared-world roaming avatars. Above <code>engine-core</code>.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-netplay/README.md"
   },
   "engine-render": {
    "package": "legaia-engine-render",
@@ -2393,6 +2432,7 @@
    "dependents": [
     "engine-capture",
     "engine-menu-runtime",
+    "engine-netplay",
     "engine-screens",
     "engine-session",
     "engine-shell",
@@ -2695,6 +2735,7 @@
     "engine-mode",
     "engine-modes",
     "engine-motion-vm",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2797,6 +2838,7 @@
    "scope": "Renderer-agnostic UI draw-list builders over the wgpu-free kernels of <code>render-kernels</code> and the battle HUD model in <code>engine-battle-vm</code> - the draw layer both the native renderer and the browser play page use.",
    "dependents": [
     "asset-viewer",
+    "engine-netplay",
     "engine-render",
     "engine-screens",
     "engine-shell",
@@ -2954,6 +2996,7 @@
     "engine-core",
     "engine-expansion",
     "engine-modes",
+    "engine-netplay",
     "engine-scene",
     "engine-scene-host",
     "engine-session",
@@ -3075,6 +3118,7 @@
     "engine-battle-hud",
     "engine-dialog",
     "engine-menus",
+    "engine-netplay",
     "engine-render",
     "engine-screens",
     "engine-session",
@@ -3472,7 +3516,9 @@
    "band": "top",
    "track": "engine",
    "scope": "Multiplayer: versioned wire protocol, delay-based lockstep and host-authoritative session cores over a generic <code>Simulation</code>, loopback / TCP / WebSocket / browser transports, the room relay (standalone or in-process <code>RelayServer::spawn</code>). Names no engine crate.",
-   "dependents": [],
+   "dependents": [
+    "engine-netplay"
+   ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/netplay/README.md"
   },
   "overlay-images": {
@@ -3896,6 +3942,7 @@
     "engine-fishing",
     "engine-minigame-scenes",
     "engine-minigames",
+    "engine-netplay",
     "engine-render",
     "engine-scene",
     "engine-scene-host",

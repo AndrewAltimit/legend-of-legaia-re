@@ -2303,6 +2303,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-netplay"
+version = "0.1.0"
+dependencies = [
+ "legaia-anm",
+ "legaia-engine-core",
+ "legaia-engine-expansion",
+ "legaia-engine-mode",
+ "legaia-engine-modes",
+ "legaia-engine-scene-host",
+ "legaia-engine-system",
+ "legaia-engine-ui",
+ "legaia-expansion-format",
+ "legaia-font",
+ "legaia-netplay",
+ "legaia-render-kernels",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "legaia-engine-render"
 version = "0.1.0"
 dependencies = [

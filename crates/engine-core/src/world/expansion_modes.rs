@@ -40,6 +40,23 @@ impl World {
         (ModeSource::Builtin, modes, cards)
     }
 
+    /// The mode and card sections the seat builds from right now (the
+    /// active pack's, or the built-in set): what a networked session builds
+    /// its instance from.
+    pub fn pack_mode_sections(&self) -> (&ModeSection, &CardSection) {
+        let (_, modes, cards) = self.mode_sections();
+        (modes, cards)
+    }
+
+    /// Seat `mode` for a netplay driver ([`PackModeSeat::networked`]),
+    /// suspending the current mode. The world never ticks the session; the
+    /// driver does, and the seat grants nothing.
+    pub fn enter_networked_pack_mode(&mut self, mode: ActiveMode) {
+        let return_mode = self.pack_mode_return();
+        self.expansion.mode_seat = Some(Box::new(PackModeSeat::networked(return_mode, mode)));
+        self.mode = SceneMode::Expansion;
+    }
+
     /// The mode instances the seat offers right now.
     pub fn pack_mode_entries(&self) -> Vec<ModeEntry> {
         entries(self.mode_sections().1)

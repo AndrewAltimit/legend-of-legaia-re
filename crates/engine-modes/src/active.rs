@@ -171,6 +171,8 @@ pub struct ActiveMode {
     /// session's (a host-authoritative guest holds the session only for its
     /// labels; see [`Self::set_remote_view`]).
     remote_view: Option<ModeView>,
+    /// The hosting peer's results, once its session ended.
+    remote_results: Option<ModeResults>,
     book: CardBook,
 }
 
@@ -244,6 +246,7 @@ impl ActiveMode {
             card_names,
             local_seat: 0,
             remote_view: None,
+            remote_results: None,
             book,
         })
     }
@@ -261,32 +264,48 @@ impl ActiveMode {
     /// Advance one frame; returns this tick's events as log lines.
     pub fn tick(&mut self, pads: &[PadWord]) -> Vec<String> {
         let me = self.local_seat;
+        self.tick_for(pads, &[me]).pop().unwrap_or_default()
+    }
+
+    /// Advance one frame; returns this tick's events as log lines once per
+    /// seat in `viewers`, each worded for that seat ("You" where it is the
+    /// viewer) - a hosting peer words its guests' logs this way.
+    pub fn tick_for(&mut self, pads: &[PadWord], viewers: &[usize]) -> Vec<Vec<String>> {
+        fn lines<E>(
+            ev: &[E],
+            viewers: &[usize],
+            f: fn(&E, usize) -> Option<String>,
+        ) -> Vec<Vec<String>> {
+            viewers
+                .iter()
+                .map(|&me| ev.iter().filter_map(|e| f(e, me)).collect())
+                .collect()
+        }
         match &mut self.runner {
-            ModeRunner::Poker(s) => s
-                .tick(pads)
-                .iter()
-                .filter_map(|e| poker_line(e, me))
-                .collect(),
-            ModeRunner::Duel(s) => s
-                .tick(pads)
-                .iter()
-                .filter_map(|e| duel_line(e, me))
-                .collect(),
-            ModeRunner::Golf(s) => s
-                .tick(pads)
-                .iter()
-                .filter_map(|e| golf_line(e, me))
-                .collect(),
-            ModeRunner::Race(s) => s
-                .tick(pads)
-                .iter()
-                .filter_map(|e| race_line(e, me))
-                .collect(),
+            ModeRunner::Poker(s) => lines(&s.tick(pads), viewers, poker_line),
+            ModeRunner::Duel(s) => lines(&s.tick(pads), viewers, duel_line),
+            ModeRunner::Golf(s) => lines(&s.tick(pads), viewers, golf_line),
+            ModeRunner::Race(s) => lines(&s.tick(pads), viewers, race_line),
+            ModeRunner::PropHunt(s) => lines(&s.tick(pads), viewers, hunt_line),
+        }
+    }
+
+    /// [`Self::tick`] for prop hunt with host-authored positions
+    /// ([`PropHuntSession::tick_with_positions`]); any other mode ticks
+    /// normally and ignores `positions`.
+    pub fn tick_with_positions(
+        &mut self,
+        pads: &[PadWord],
+        positions: &[Option<crate::fixed::Vec2>],
+    ) -> Vec<String> {
+        let me = self.local_seat;
+        match &mut self.runner {
             ModeRunner::PropHunt(s) => s
-                .tick(pads)
+                .tick_with_positions(pads, positions)
                 .iter()
                 .filter_map(|e| hunt_line(e, me))
                 .collect(),
+            _ => self.tick(pads),
         }
     }
 
@@ -298,6 +317,17 @@ impl ActiveMode {
             ModeRunner::Golf(s) => s.seats(),
             ModeRunner::Race(s) => s.seats(),
             ModeRunner::PropHunt(s) => s.seats(),
+        }
+    }
+
+    /// Who drives `seat`.
+    pub fn seat_kind(&self, seat: usize) -> SeatKind {
+        match &self.runner {
+            ModeRunner::Poker(s) => s.seat_kind(seat),
+            ModeRunner::Duel(s) => s.seat_kind(seat),
+            ModeRunner::Golf(s) => s.seat_kind(seat),
+            ModeRunner::Race(s) => s.seat_kind(seat),
+            ModeRunner::PropHunt(s) => s.seat_kind(seat),
         }
     }
 
@@ -313,8 +343,10 @@ impl ActiveMode {
     }
 
     /// Draw `view` in place of the session's own (a host-authoritative
-    /// guest's copy of the host's table); `None` returns to the session's.
-    pub fn set_remote_view(&mut self, view: Option<ModeView>) {
+    /// guest's copy of the host's table), and finish with `results` once the
+    /// host's session has; `None` returns to the session's own.
+    pub fn set_remote_view(&mut self, view: Option<ModeView>, results: Option<ModeResults>) {
+        self.remote_results = view.as_ref().and(results);
         self.remote_view = view;
     }
 
@@ -343,6 +375,9 @@ impl ActiveMode {
     }
 
     pub fn is_finished(&self) -> bool {
+        if self.remote_view.is_some() {
+            return self.remote_results.is_some();
+        }
         match &self.runner {
             ModeRunner::Poker(s) => s.is_finished(),
             ModeRunner::Duel(s) => s.is_finished(),
@@ -353,6 +388,9 @@ impl ActiveMode {
     }
 
     pub fn results(&self) -> Option<ModeResults> {
+        if self.remote_view.is_some() {
+            return self.remote_results.clone();
+        }
         match &self.runner {
             ModeRunner::Poker(s) => s.results(),
             ModeRunner::Duel(s) => s.results(),
