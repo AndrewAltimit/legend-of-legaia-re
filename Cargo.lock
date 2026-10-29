@@ -1686,6 +1686,7 @@ dependencies = [
  "legaia-bytes",
  "legaia-container-formats",
  "legaia-disc-audit",
+ "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-lzs",
@@ -2674,7 +2675,9 @@ name = "legaia-expansion-format"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "flate2",
  "serde",
+ "sha2",
  "toml",
 ]
 

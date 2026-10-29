@@ -110,6 +110,8 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`mips-overlay.md`](docs/formats/mips-overlay.md) | Per-PROT MIPS-code-likelihood detection. |
 | [`overlay-ptr-table.md`](docs/formats/overlay-ptr-table.md) | Sister of `mips-overlay`. |
 | [`slot-b-module-layout.md`](docs/formats/slot-b-module-layout.md) | File layout of the 64 slot-B cast / summon images (`0903..=0966`): head table, code, spawn-record band, inherited tail. Parser `legaia_overlay_images::slot_b_module`. |
+| **The port's own formats** | |
+| [`expansion-pack.md`](docs/formats/expansion-pack.md) | Modder expansion packs: layout, `pack.toml`, `DiscRef` coordinates, the deterministic `.lxpack` bundle, validation and the no-disc-bytes rule. Parser `legaia_expansion_format`; CLI `asset expansion`; flagship `packs/rebirth/`. |
 
 ### Subsystems - [`docs/subsystems/`](docs/subsystems/)
 
