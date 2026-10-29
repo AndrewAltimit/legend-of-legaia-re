@@ -167,6 +167,10 @@ impl World {
         if self.battle_sideband_holds_round() {
             return;
         }
+        // An expansion fight's refill wave tops up the freed monster seats
+        // as the round opens, ahead of the sweep and the initiative seed so
+        // the arrivals take their turns this round (never without a pack).
+        self.expansion_seat_wave(legaia_engine_expansion::battle_waves::Moment::RoundStart);
         self.battle.round_flow.flat_walk_last = None;
         // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
         // `+0x1DF` action-stream clear, and the party band's stale-target

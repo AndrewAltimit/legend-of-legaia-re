@@ -334,6 +334,7 @@ mod encounters;
 mod expansion_battle;
 mod expansion_quest_battles;
 mod expansion_quests;
+mod expansion_waves;
 mod fatal_decision;
 mod field_events;
 mod field_grid;

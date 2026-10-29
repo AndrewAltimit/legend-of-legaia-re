@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod battle;
+pub mod battle_waves;
 pub mod dialog;
 pub mod flags;
 pub mod map;

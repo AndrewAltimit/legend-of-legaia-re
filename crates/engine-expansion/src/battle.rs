@@ -26,6 +26,8 @@ use legaia_expansion_format::battle::{
 };
 use legaia_expansion_format::refs::DiscRef;
 
+use crate::battle_waves::CompiledWave;
+
 /// The first formation id a pack formation takes.
 pub const EXPANSION_FORMATION_BASE: u16 = 0xE000;
 
@@ -45,8 +47,27 @@ pub struct CompiledFormation {
     pub key: String,
     /// The engine formation, its slots on base monster ids.
     pub def: FormationDef,
-    /// Which base ids fight as a pack monster, and as which (local key).
+    /// Which base ids fight as a pack monster, and as which (local key),
+    /// across every wave.
     pub variants: BTreeMap<u16, String>,
+    /// The waves after the first ([`crate::battle_waves`]); empty for a
+    /// single-wave formation.
+    pub waves: Vec<CompiledWave>,
+}
+
+impl CompiledFormation {
+    /// The formation with every wave's monsters in its slots, the first
+    /// wave's first: what the catalog swap plans over, and what the
+    /// victory spoils of a fought-out wave run sum.
+    pub fn all_waves_def(&self) -> FormationDef {
+        let mut def = self.def.clone();
+        def.slots.extend(
+            self.waves
+                .iter()
+                .flat_map(|w| w.monsters.iter().map(|&id| FormationSlot::new(id))),
+        );
+        def
+    }
 }
 
 /// One compiled encounter override.
@@ -115,23 +136,45 @@ impl CompiledBattle {
             .collect();
         for (i, (key, f)) in section.formations.iter().enumerate() {
             let id = EXPANSION_FORMATION_BASE + i as u16;
-            let mut slots = Vec::with_capacity(f.monsters.len());
             let mut variants = BTreeMap::new();
-            for r in &f.monsters {
-                let base = match r {
-                    MonsterRef::Pack(k) => {
-                        let k = local_key(pack_id, k).unwrap_or(k);
-                        let DiscRef::Monster { id } = section.monsters[k].base else {
-                            unreachable!("checked by problems()")
-                        };
-                        variants.insert(id, k.to_string());
-                        id
+            let mut base_of = |r: &MonsterRef| match r {
+                MonsterRef::Pack(k) => {
+                    let k = local_key(pack_id, k).unwrap_or(k);
+                    let DiscRef::Monster { id } = section.monsters[k].base else {
+                        unreachable!("checked by problems()")
+                    };
+                    variants.insert(id, k.to_string());
+                    id
+                }
+                MonsterRef::Disc(DiscRef::Monster { id }) => *id,
+                MonsterRef::Disc(_) => unreachable!("checked by problems()"),
+            };
+            let slots: Vec<FormationSlot> = f
+                .monsters
+                .iter()
+                .map(|r| FormationSlot::new(base_of(r)))
+                .collect();
+            let waves = f
+                .waves
+                .iter()
+                .map(|w| {
+                    let monsters: Vec<u16> = w.monsters.iter().map(&mut base_of).collect();
+                    let refill = w.arrival == fmt::WaveArrival::Refill;
+                    CompiledWave {
+                        count: if refill {
+                            w.count.unwrap_or(monsters.len() as u16)
+                        } else {
+                            monsters.len() as u16
+                        },
+                        max_standing: w
+                            .max_standing
+                            .filter(|_| refill)
+                            .unwrap_or(fmt::MAX_FORMATION_SLOTS as u8),
+                        arrival: w.arrival,
+                        monsters,
                     }
-                    MonsterRef::Disc(DiscRef::Monster { id }) => *id,
-                    MonsterRef::Disc(_) => unreachable!("checked by problems()"),
-                };
-                slots.push(FormationSlot::new(base));
-            }
+                })
+                .collect();
             let label = if f.label.is_empty() {
                 key.clone()
             } else {
@@ -144,6 +187,7 @@ impl CompiledBattle {
                     .with_label(label)
                     .with_header_flags(u8::from(scripted)),
                 variants,
+                waves,
             });
         }
         for e in &section.encounters {
@@ -215,7 +259,7 @@ impl CompiledBattle {
         let mut ids: BTreeSet<u16> = self
             .formations
             .iter()
-            .flat_map(|f| f.def.slots.iter().map(|s| s.monster_id))
+            .flat_map(|f| f.all_waves_def().slots.into_iter().map(|s| s.monster_id))
             .collect();
         ids.extend(self.monsters.values().filter_map(|m| match m.base {
             DiscRef::Monster { id } => Some(id),
@@ -439,6 +483,13 @@ pub struct BattleRuntime {
     pub cleared_bosses: BTreeSet<String>,
     /// The pack-owned encounter counter: `(scene, steps left)`.
     pub step_counter: Option<(String, u16)>,
+    /// The waves still to come in the current fight, when its formation
+    /// has more than one ([`crate::battle_waves`]).
+    pub waves: Option<crate::battle_waves::WaveRun>,
+    /// Actor slots a wave seated a new monster in since the hosts last
+    /// looked: their battle meshes need binding
+    /// (`World::take_expansion_reseated_monsters`).
+    pub reseated: Vec<usize>,
 }
 
 #[cfg(test)]
@@ -516,6 +567,60 @@ reward_items = [{ item = { kind = "item", id = 5 }, count = 2 }]
         assert_eq!(king.reward_items, [(5, 2)]);
         assert_eq!(c.base_monster_ids(), [12, 73]);
         assert!(c.formation(12).is_none());
+    }
+
+    #[test]
+    fn waves_compile_onto_base_ids_and_join_the_swap() {
+        let mut s = section();
+        let waves: fmt::FormationDef = toml::from_str(
+            r#"
+monsters = [{ kind = "monster", id = 12 }]
+
+[[waves]]
+monsters = ["ashen", { kind = "monster", id = 12 }]
+
+[[waves]]
+monsters = [{ kind = "monster", id = 40 }]
+arrival = "refill"
+count = 3
+max_standing = 2
+"#,
+        )
+        .unwrap();
+        s.formations.insert("c_gauntlet".into(), waves);
+        let c = CompiledBattle::compile("rebirth", &s).unwrap();
+        let id = c.formation_id("c_gauntlet").unwrap();
+        let f = c.formation(id).unwrap();
+        // The engine formation is the first wave alone.
+        assert_eq!(f.def.slots.len(), 1);
+        assert_eq!(f.waves.len(), 2);
+        assert_eq!(f.waves[0].monsters, [73, 12]);
+        assert_eq!((f.waves[0].count, f.waves[0].max_standing), (2, 4));
+        assert_eq!(
+            (
+                f.waves[1].arrival,
+                f.waves[1].count,
+                f.waves[1].max_standing
+            ),
+            (fmt::WaveArrival::Refill, 3, 2)
+        );
+        // A variant met only in a later wave still swaps.
+        assert_eq!(f.variants.get(&73).map(String::as_str), Some("ashen"));
+        let all = f.all_waves_def();
+        let ids: Vec<u16> = all.slots.iter().map(|s| s.monster_id).collect();
+        assert_eq!(ids, [12, 73, 12, 40]);
+        assert_eq!(all.formation_id, id);
+        let plan = plan_battle(&c, &all, |i| Some(record_backed(i)), 1000, false);
+        assert_eq!(plan.defs.len(), 1);
+        assert_eq!(plan.defs[0].name, "Ashen Caruban");
+        assert!(c.base_monster_ids().contains(&40));
+        // Formations without waves compile with none.
+        assert!(
+            c.formation(c.formation_id("a_pair").unwrap())
+                .unwrap()
+                .waves
+                .is_empty()
+        );
     }
 
     #[test]

@@ -211,6 +211,16 @@ pub trait BattleActionHost {
     /// no-op.
     fn recompute_battle_order(&mut self) {}
 
+    /// A port-only hold on the monster-wipe victory: the end-of-action wipe
+    /// scan found no monster standing, and the host may seat further
+    /// monsters into the battle (an expansion pack's next wave) before the
+    /// scan decides. `true` means it seated some; the scan then counts the
+    /// monster side again. Retail has no such step - the default seats
+    /// nothing and the wipe ends the battle as it always does.
+    fn reinforce_monster_wipe(&mut self) -> bool {
+        false
+    }
+
     /// First monster id of the battle formation (`DAT_8007BD0C[0]`). The
     /// monster-wipe victory arm special-cases ids `0xB3` / `0xB4` (retail
     /// `0x801E6728..0x801E676C`): those formations force the victory-pose

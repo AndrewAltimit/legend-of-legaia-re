@@ -46,6 +46,12 @@ use crate::refs::DiscRef;
 /// limit; a fifth monster would share the summon seat.
 pub const MAX_FORMATION_SLOTS: usize = 4;
 
+/// Waves one formation may list after its first.
+pub const MAX_WAVES: usize = 16;
+
+/// Arrivals one refill wave may send ([`WaveDef::count`]).
+pub const MAX_WAVE_ARRIVALS: u16 = 64;
+
 /// The `battle.toml` section.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -164,18 +170,66 @@ pub enum MonsterRef {
     Disc(DiscRef),
 }
 
-/// A formation: up to [`MAX_FORMATION_SLOTS`] monsters fought at once.
+/// A formation: up to [`MAX_FORMATION_SLOTS`] monsters fought at once, and
+/// optionally further [`waves`](Self::waves) that take the freed monster
+/// seats in the same battle.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormationDef {
     /// Banner label.
     #[serde(default)]
     pub label: String,
+    /// The first wave: the monsters the battle opens on.
     pub monsters: Vec<MonsterRef>,
     /// A scripted fight, as retail's boss rows are: no escape, the boss
     /// battle intro, the alternate seat layout and the scripted stat boost.
     #[serde(default)]
     pub scripted: bool,
+    /// The waves after the first, in order (`[[formations.<key>.waves]]`).
+    /// The battle ends in victory once the last of them is down.
+    #[serde(default)]
+    pub waves: Vec<WaveDef>,
+}
+
+/// When a wave's monsters take their seats.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WaveArrival {
+    /// All at once, when every monster standing is down.
+    #[default]
+    Wipe,
+    /// One at a time into a freed monster seat, at the start of a round,
+    /// while fewer than [`WaveDef::max_standing`] monsters stand.
+    Refill,
+}
+
+/// One wave after a formation's first.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaveDef {
+    /// The wave's monsters. A `wipe` wave seats them together (at most
+    /// [`MAX_FORMATION_SLOTS`]); a `refill` wave sends them one by one, in
+    /// order, cycling through the list for [`Self::count`] arrivals.
+    pub monsters: Vec<MonsterRef>,
+    #[serde(default)]
+    pub arrival: WaveArrival,
+    /// `refill` only: arrivals in all (default: one per listed monster), at
+    /// most [`MAX_WAVE_ARRIVALS`].
+    #[serde(default)]
+    pub count: Option<u16>,
+    /// `refill` only: no arrival while this many monsters stand (default
+    /// [`MAX_FORMATION_SLOTS`]).
+    #[serde(default)]
+    pub max_standing: Option<u8>,
+}
+
+impl FormationDef {
+    /// Every monster slot across every wave, the first wave's first.
+    pub fn all_monsters(&self) -> impl Iterator<Item = &MonsterRef> {
+        self.monsters
+            .iter()
+            .chain(self.waves.iter().flat_map(|w| w.monsters.iter()))
+    }
 }
 
 /// One weighted entry of an encounter override.
@@ -313,11 +367,62 @@ impl BattleSection {
                     f.monsters.len()
                 ));
             }
+            if f.waves.len() > MAX_WAVES {
+                out.push(format!(
+                    "formation `{key}`: {} waves, the limit is {MAX_WAVES}",
+                    f.waves.len()
+                ));
+            }
+            for (i, w) in f.waves.iter().enumerate() {
+                let n = i + 2;
+                if w.monsters.is_empty() {
+                    out.push(format!("formation `{key}`: wave {n} has no monsters"));
+                }
+                match w.arrival {
+                    WaveArrival::Wipe => {
+                        if w.monsters.len() > MAX_FORMATION_SLOTS {
+                            out.push(format!(
+                                "formation `{key}`: wave {n} seats {} monsters at once, the \
+                                 limit is {MAX_FORMATION_SLOTS}",
+                                w.monsters.len()
+                            ));
+                        }
+                        if w.count.is_some() || w.max_standing.is_some() {
+                            out.push(format!(
+                                "formation `{key}`: wave {n}: count and max_standing need \
+                                 arrival = \"refill\""
+                            ));
+                        }
+                    }
+                    WaveArrival::Refill => {
+                        if w.count.is_some_and(|c| c == 0 || c > MAX_WAVE_ARRIVALS) {
+                            out.push(format!(
+                                "formation `{key}`: wave {n}: count must be 1..={MAX_WAVE_ARRIVALS}"
+                            ));
+                        }
+                        if w.count.is_none() && w.monsters.len() > usize::from(MAX_WAVE_ARRIVALS) {
+                            out.push(format!(
+                                "formation `{key}`: wave {n}: more than {MAX_WAVE_ARRIVALS} \
+                                 arrivals"
+                            ));
+                        }
+                        if w.max_standing
+                            .is_some_and(|m| m == 0 || usize::from(m) > MAX_FORMATION_SLOTS)
+                        {
+                            out.push(format!(
+                                "formation `{key}`: wave {n}: max_standing must be \
+                                 1..={MAX_FORMATION_SLOTS}"
+                            ));
+                        }
+                    }
+                }
+            }
             // Pack monsters fight under their base monster's id (that id is
-            // what keys the disc mesh and animation), so one formation can
-            // hold one version of each base monster.
+            // what keys the disc mesh and animation), so one formation - all
+            // of its waves together, since one catalog swap covers the whole
+            // battle - can hold one version of each base monster.
             let mut bases: BTreeMap<u16, Option<&str>> = BTreeMap::new();
-            for r in &f.monsters {
+            for r in f.all_monsters() {
                 let (base, variant) = match r {
                     MonsterRef::Pack(k) => match monster(k) {
                         Some(m) => match m.base {
@@ -423,6 +528,13 @@ impl crate::validate::SectionRules for BattleSection {
                     cx.disc_ref(&format!("formations.{key}.monsters[{i}]"), d);
                 }
             }
+            for (w, wave) in f.waves.iter().enumerate() {
+                for (i, r) in wave.monsters.iter().enumerate() {
+                    if let MonsterRef::Disc(d) = r {
+                        cx.disc_ref(&format!("formations.{key}.waves[{w}].monsters[{i}]"), d);
+                    }
+                }
+            }
         }
         for (key, b) in &self.bosses {
             if let Some(m) = &b.music {
@@ -505,6 +617,67 @@ once = true
             p.iter()
                 .any(|l| l.contains("boss `king`: unknown formation"))
         );
+    }
+
+    const WAVES: &str = r#"
+[monsters.ashen]
+base = { kind = "monster", id = 73 }
+hp = 30000
+
+[formations.gauntlet]
+monsters = ["ashen", { kind = "monster", id = 12 }]
+
+[[formations.gauntlet.waves]]
+monsters = [{ kind = "monster", id = 12 }, { kind = "monster", id = 12 }, "ashen"]
+
+[[formations.gauntlet.waves]]
+monsters = [{ kind = "monster", id = 40 }, "ashen"]
+arrival = "refill"
+count = 6
+max_standing = 2
+"#;
+
+    #[test]
+    fn waves_parse_in_order_with_their_arrival() {
+        let s: BattleSection = toml::from_str(WAVES).unwrap();
+        let f = &s.formations["gauntlet"];
+        assert_eq!(f.waves.len(), 2);
+        assert_eq!(f.waves[0].arrival, WaveArrival::Wipe);
+        assert_eq!(f.waves[0].monsters.len(), 3);
+        let r = &f.waves[1];
+        assert_eq!(
+            (r.arrival, r.count, r.max_standing),
+            (WaveArrival::Refill, Some(6), Some(2))
+        );
+        assert_eq!(f.all_monsters().count(), 7);
+        assert_eq!(s.problems("rebirth"), Vec::<String>::new());
+        // A formation without waves is unchanged by the field.
+        let plain: BattleSection = toml::from_str(SAMPLE).unwrap();
+        assert!(plain.formations["court"].waves.is_empty());
+    }
+
+    #[test]
+    fn wave_problems_name_each_defect() {
+        let mut s: BattleSection = toml::from_str(WAVES).unwrap();
+        // A second Caruban variant, seated in a later wave.
+        let mut pale = s.monsters["ashen"].clone();
+        pale.hp = None;
+        s.monsters.insert("pale".into(), pale);
+        let f = s.formations.get_mut("gauntlet").unwrap();
+        f.waves[0].monsters.push(MonsterRef::Pack("pale".into()));
+        f.waves[0].monsters.push(MonsterRef::Pack("ashen".into()));
+        f.waves[0].count = Some(3);
+        f.waves[1].max_standing = Some(5);
+        f.waves[1].count = Some(0);
+        f.waves.push(WaveDef::default());
+        let p = s.problems("rebirth");
+        let has = |needle: &str| p.iter().any(|l| l.contains(needle));
+        assert!(has("two different versions of retail monster 73"), "{p:?}");
+        assert!(has("wave 2 seats 5 monsters at once"), "{p:?}");
+        assert!(has("wave 2: count and max_standing need"), "{p:?}");
+        assert!(has("wave 3: count must be"), "{p:?}");
+        assert!(has("wave 3: max_standing must be"), "{p:?}");
+        assert!(has("wave 4 has no monsters"), "{p:?}");
     }
 
     #[test]

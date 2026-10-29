@@ -590,70 +590,7 @@ impl World {
             }
             self.actors[mslot].battle_monster_id = Some(fslot.monster_id);
             self.actors[mslot].battle_element = None;
-            let stat_permille = self.toggles.enemy_stat_permille;
-            if let Some(def) = self
-                .tables
-                .monster_catalog
-                .get(fslot.monster_id)
-                .map(|d| scale_monster_def(d, stat_permille))
-            {
-                // The installed stat block for THIS fight's class. The catalog
-                // is built at scene entry, before any formation is chosen, so
-                // it carries the scripted profile; a random encounter installs
-                // the other one (x7/4 defence, unboosted ATK) and that is
-                // every rollable fight in the game.
-                //
-                // `[AGL, ATK, UDF, LDF, INT, SPD]`.
-                let bs = def.installed_stats(scripted);
-                let (agl, attack, udf, ldf, intel, speed) =
-                    (bs[0], bs[1], bs[2], bs[3], bs[4], bs[5]);
-                let a = &mut self.actors[mslot];
-                a.battle.hp = def.hp;
-                a.battle.max_hp = def.hp;
-                a.battle.mp = def.mp;
-                a.battle.liveness = 1;
-                a.battle.action_category = 3;
-                // Live + base action gauge (actor `+0x154` / `+0x156`). The
-                // round boundary restores the live one from the base each
-                // round (`FUN_801D88CC` loop A); the swing-budget loop spends
-                // it.
-                a.battle.agl_base = agl;
-                a.battle.agl = agl;
-                if let Some(s) = self.battle.attack.get_mut(mslot) {
-                    *s = attack;
-                }
-                // Both defence facets, not one collapsed scalar. Retail's melee
-                // kernel picks UDF (`+0x15C`) or LDF (`+0x160`) by the swing's
-                // command parity (`FUN_801EC3E4` at `0x801ECE14`), and the same
-                // pair feeds the art-strike and summon-roll defenders. Seeding
-                // only `max(udf, ldf)` made every enemy defend with its better
-                // half against every swing and left the kernel's parity branch
-                // dead for the whole monster band.
-                if let Some(s) = self.battle.defense_split.get_mut(mslot) {
-                    *s = Some((udf, ldf));
-                }
-                if let Some(s) = self.battle.defense.get_mut(mslot) {
-                    // Kept as the scalar fallback (and the Defense-buff target);
-                    // the split above is what the physical path reads.
-                    *s = udf.max(ldf);
-                }
-                if let Some(s) = self.battle.speed.get_mut(mslot) {
-                    *s = speed;
-                }
-                // INT into the `+0x168` halfword, whole: `FUN_80054CB0`
-                // stores the boosted record `+0x18` with `sh`
-                // (`0x8005520C`, `0x8005530C`), and every reader
-                // (`FUN_801DD0AC`, both damage wrappers, selector 9 of
-                // `FUN_800402F4`) loads it with `lhu`. A byte clamp here
-                // understated every late boss's magic attack and magic
-                // defence - Songi's 324 read as 255.
-                if let Some(s) = self.battle.accuracy.get_mut(mslot) {
-                    *s = intel;
-                }
-                if let Some(s) = self.battle.evasion.get_mut(mslot) {
-                    *s = intel;
-                }
-            }
+            self.seed_monster_seat_stats(mslot, fslot.monster_id, scripted);
         }
         // Retail's record -> actor copy writes each stat into BOTH halfwords
         // of its pair, so every base half opens the fight equal to its working
@@ -734,6 +671,82 @@ impl World {
         // (`World::begin_battle_round`).
         self.battle.round_flow = legaia_engine_battle_loop::round_flow::RoundFlow::default();
         self.begin_battle_round();
+    }
+
+    /// Seat monster `monster_id`'s catalog stats on actor slot `mslot` for a
+    /// fight of class `scripted`: HP / MP, the action gauge and the installed
+    /// stat block. A monster the catalog does not hold keeps the slot as it
+    /// is. The battle's own entry runs it per formation slot; an expansion
+    /// pack's later waves run it per arriving monster.
+    pub(in crate::world) fn seed_monster_seat_stats(
+        &mut self,
+        mslot: usize,
+        monster_id: u16,
+        scripted: bool,
+    ) {
+        let stat_permille = self.toggles.enemy_stat_permille;
+        if let Some(def) = self
+            .tables
+            .monster_catalog
+            .get(monster_id)
+            .map(|d| scale_monster_def(d, stat_permille))
+        {
+            // The installed stat block for THIS fight's class. The catalog
+            // is built at scene entry, before any formation is chosen, so
+            // it carries the scripted profile; a random encounter installs
+            // the other one (x7/4 defence, unboosted ATK) and that is
+            // every rollable fight in the game.
+            //
+            // `[AGL, ATK, UDF, LDF, INT, SPD]`.
+            let bs = def.installed_stats(scripted);
+            let (agl, attack, udf, ldf, intel, speed) = (bs[0], bs[1], bs[2], bs[3], bs[4], bs[5]);
+            let a = &mut self.actors[mslot];
+            a.battle.hp = def.hp;
+            a.battle.max_hp = def.hp;
+            a.battle.mp = def.mp;
+            a.battle.liveness = 1;
+            a.battle.action_category = 3;
+            // Live + base action gauge (actor `+0x154` / `+0x156`). The
+            // round boundary restores the live one from the base each
+            // round (`FUN_801D88CC` loop A); the swing-budget loop spends
+            // it.
+            a.battle.agl_base = agl;
+            a.battle.agl = agl;
+            if let Some(s) = self.battle.attack.get_mut(mslot) {
+                *s = attack;
+            }
+            // Both defence facets, not one collapsed scalar. Retail's melee
+            // kernel picks UDF (`+0x15C`) or LDF (`+0x160`) by the swing's
+            // command parity (`FUN_801EC3E4` at `0x801ECE14`), and the same
+            // pair feeds the art-strike and summon-roll defenders. Seeding
+            // only `max(udf, ldf)` made every enemy defend with its better
+            // half against every swing and left the kernel's parity branch
+            // dead for the whole monster band.
+            if let Some(s) = self.battle.defense_split.get_mut(mslot) {
+                *s = Some((udf, ldf));
+            }
+            if let Some(s) = self.battle.defense.get_mut(mslot) {
+                // Kept as the scalar fallback (and the Defense-buff target);
+                // the split above is what the physical path reads.
+                *s = udf.max(ldf);
+            }
+            if let Some(s) = self.battle.speed.get_mut(mslot) {
+                *s = speed;
+            }
+            // INT into the `+0x168` halfword, whole: `FUN_80054CB0`
+            // stores the boosted record `+0x18` with `sh`
+            // (`0x8005520C`, `0x8005530C`), and every reader
+            // (`FUN_801DD0AC`, both damage wrappers, selector 9 of
+            // `FUN_800402F4`) loads it with `lhu`. A byte clamp here
+            // understated every late boss's magic attack and magic
+            // defence - Songi's 324 read as 255.
+            if let Some(s) = self.battle.accuracy.get_mut(mslot) {
+                *s = intel;
+            }
+            if let Some(s) = self.battle.evasion.get_mut(mslot) {
+                *s = intel;
+            }
+        }
     }
 
     /// Configure the actor at `slot` as the field player and reset the

@@ -16,7 +16,9 @@ use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
 use legaia_engine_battle::monster_catalog::FormationDef;
 use legaia_engine_battle_loop::battle_state::BattleRewards;
 use legaia_engine_expansion::battle::{self as xb, BattleRuntime, CompiledBattle};
+use legaia_engine_expansion::battle_waves::{Moment, WaveRun};
 use legaia_engine_expansion::progression::{self as xp, ProgressionRuntime};
+use legaia_engine_mode::mode::SceneMode;
 use legaia_expansion_format::ExpansionPack;
 
 use super::World;
@@ -218,10 +220,19 @@ impl World {
             ),
             _ => (1000, false),
         };
+        // A formation with later waves swaps every wave's monsters at once:
+        // one swap covers the whole battle.
+        let waved = c
+            .formation(formation.formation_id)
+            .filter(|f| !f.waves.is_empty());
+        let planned = waved.map_or_else(|| formation.clone(), |f| f.all_waves_def());
+        self.expansion.battle.waves =
+            waved.map(|f| WaveRun::new(f.waves.clone(), formation.slots.len()));
+        self.expansion.battle.reseated.clear();
         let catalog = &self.tables.monster_catalog;
-        let plan = xb::plan_battle(&c, formation, |id| catalog.get(id).cloned(), scale, rewards);
+        let plan = xb::plan_battle(&c, &planned, |id| catalog.get(id).cloned(), scale, rewards);
         if pack_formation {
-            for slot in &formation.slots {
+            for slot in &planned.slots {
                 if catalog.get(slot.monster_id).is_none() {
                     log::error!(
                         "expansion: formation {} seats monster {} with no catalog entry - the \
@@ -267,6 +278,8 @@ impl World {
     /// [`Self::abandon_live_battle`].
     pub(in crate::world) fn expansion_end_battle(&mut self) {
         self.expansion_restore_catalog();
+        self.expansion.battle.waves = None;
+        self.expansion.battle.reseated.clear();
         self.expansion.battle.active_boss = None;
         self.expansion.battle.battle_bgm = None;
     }
@@ -451,4 +464,169 @@ impl World {
                 .is_some_and(|s| s.trigger_with(roll)),
         )
     }
+
+    /// Seat what an expansion fight's wave run brings at `moment`
+    /// ([`legaia_engine_expansion::battle_waves`]): the next wave once the
+    /// monster side is down, or a refill wave's arrivals into freed seats as
+    /// a round opens. `false`, changing nothing, when the fight has no waves
+    /// still to come or nothing arrives now - always so without a pack.
+    ///
+    /// Each arrival takes its monster seat through the battle entry's own
+    /// seat step ([`Self::seed_monster_seat_stats`]) and joins the fight's
+    /// formation, so the one victory pays every wave's spoils together.
+    pub(in crate::world) fn expansion_seat_wave(&mut self, moment: Moment) -> bool {
+        use legaia_expansion_format::battle::MAX_FORMATION_SLOTS;
+        if self.mode != SceneMode::Battle || self.battle.victory.is_some() {
+            return false;
+        }
+        let pc = usize::from(self.party.party_count.clamp(1, 3));
+        let standing: Vec<bool> = (0..MAX_FORMATION_SLOTS)
+            .map(|k| {
+                let s = (pc + k) as u8;
+                self.actors
+                    .get(pc + k)
+                    .is_some_and(|a| a.active && a.battle_monster_id.is_some())
+                    && !self.actor_effectively_defeated(s)
+                    && self.raw_status_word(s) & 0x4 == 0
+            })
+            .collect();
+        let Some(run) = self.expansion.battle.waves.as_mut() else {
+            return false;
+        };
+        let arrivals = run.arrivals(moment, &standing);
+        if arrivals.is_empty() {
+            return false;
+        }
+        let total_waves = run.total_waves();
+        let scripted = self.battle.scripted_fight;
+        if let Some(layout) = arrivals.layout {
+            // The block's seats are read off the stage seat table for the new
+            // count; a monster still standing moves to its new seat.
+            for k in 0..usize::from(layout) {
+                let seat = legaia_engine_battle::battle_seats::monster_seat(layout, k, scripted);
+                if let Some(a) = self.actors.get_mut(pc + k) {
+                    a.move_state.world_x = seat.x;
+                    a.move_state.world_y = seat.y;
+                    a.move_state.world_z = seat.z;
+                    if a.battle.seat.is_some() {
+                        a.battle.seat = Some((seat.x, seat.z));
+                    }
+                }
+            }
+        }
+        let layout = self
+            .expansion
+            .battle
+            .waves
+            .as_ref()
+            .map_or(1, |r| r.layout());
+        for &(k, id) in &arrivals.seats {
+            let slot = pc + k;
+            if slot >= self.actors.len() {
+                continue;
+            }
+            let seat = legaia_engine_battle::battle_seats::monster_seat(layout, k, scripted);
+            self.seat_wave_monster(slot, k, id, seat, scripted);
+            if let Some(f) = self.battle.active_formation.as_mut() {
+                f.slots
+                    .push(legaia_engine_battle::monster_catalog::FormationSlot::new(
+                        id,
+                    ));
+            }
+        }
+        if let Some(&n) = arrivals.waves_begun.last() {
+            let text = format!("Wave {n} / {total_waves}");
+            log::info!(
+                "expansion: {text} - {} monster(s) seated",
+                arrivals.seats.len()
+            );
+            self.battle.message_banner = Some(
+                legaia_engine_battle_loop::message_banner::BattleMessageBanner {
+                    element: legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+                    text,
+                    hold: WAVE_BANNER_HOLD,
+                },
+            );
+        }
+        true
+    }
+
+    /// Put arriving monster `id` on actor slot `slot` (monster seat `k`) at
+    /// `seat`: a fresh battle actor, its catalog stats, and the per-seat
+    /// battle state a fight's entry starts clear.
+    fn seat_wave_monster(
+        &mut self,
+        slot: usize,
+        k: usize,
+        id: u16,
+        seat: legaia_engine_battle::battle_seats::Seat,
+        scripted: bool,
+    ) {
+        let a = &mut self.actors[slot];
+        let same_body = a.battle_monster_id == Some(id) && a.tmd_binding.is_some();
+        a.active = true;
+        a.battle = Default::default();
+        a.battle.liveness = 1;
+        a.battle.facing_angle = 0x800;
+        a.move_state.world_x = seat.x;
+        a.move_state.world_y = seat.y;
+        a.move_state.world_z = seat.z;
+        // The clip set, idle and morphs are the scene host's to install for
+        // a seat that has none, as at the battle's own entry; a different
+        // monster also needs its mesh bound by the play host.
+        a.battle_action_clips = None;
+        a.battle_clip_morphs = None;
+        a.battle_four_slot_beats = None;
+        a.battle_animation = None;
+        a.battle_staged_anim = None;
+        a.battle_pose = None;
+        a.battle_reaction = None;
+        a.battle_reaction_entry = None;
+        a.battle_reaction_next = None;
+        a.battle_effect_script = None;
+        a.battle_effect_cursor = 0;
+        a.battle_anim_cue_cursor = 0;
+        a.battle_pose_history.clear();
+        a.battle_element = None;
+        a.battle_monster_id = Some(id);
+        if !same_body {
+            a.tmd_binding = None;
+            a.battle_tex_slot = None;
+        }
+        self.expansion.battle.reseated.push(slot);
+        for v in [
+            &mut self.battle.speed[slot],
+            &mut self.battle.accuracy[slot],
+            &mut self.battle.evasion[slot],
+        ] {
+            *v = 0;
+        }
+        self.battle.defense_split[slot] = None;
+        self.seed_monster_seat_stats(slot, id, scripted);
+        let b = &mut self.battle;
+        b.attack_base[slot] = b.attack[slot];
+        b.defense_base[slot] = b.defense_split[slot];
+        b.speed_base[slot] = b.speed[slot];
+        b.accuracy_base[slot] = b.accuracy[slot];
+        b.status_effects.drop_slot(slot as u8);
+        b.monster_ai_state.dat[k] = 0;
+        b.monster_ai_state.dat[k + 4] = 0;
+        let steal = &mut b.steal;
+        if steal.resolved.get(k).copied().unwrap_or(false) {
+            steal.resolved[k] = false;
+            steal.stolen[k] = 0;
+            steal.took[k] = 0;
+        }
+    }
+
+    /// Actor slots an expansion wave seated a new monster on since the last
+    /// call: a play host binds each one's battle mesh, as it does for the
+    /// battle's opening monsters at entry. Empty without a pack.
+    pub fn take_expansion_reseated_monsters(&mut self) -> Vec<usize> {
+        std::mem::take(&mut self.expansion.battle.reseated)
+    }
 }
+
+/// How long the "Wave N" banner stands, in frames: the timed message's own
+/// hold ([`legaia_engine_battle_loop::message_banner::COUNTER_MESSAGE_HOLD`]).
+const WAVE_BANNER_HOLD: i32 = legaia_engine_battle_loop::message_banner::COUNTER_MESSAGE_HOLD;

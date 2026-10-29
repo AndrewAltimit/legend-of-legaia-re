@@ -194,6 +194,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             a.battle.seat = Some((x, z));
         }
     }
+    /// An expansion fight's next wave takes the monster seats before the
+    /// wipe ends the battle (`World::expansion_seat_wave`); never without a
+    /// pack.
+    fn reinforce_monster_wipe(&mut self) -> bool {
+        self.world
+            .expansion_seat_wave(legaia_engine_expansion::battle_waves::Moment::Wipe)
+    }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle.end = Some(cause);
         self.world
