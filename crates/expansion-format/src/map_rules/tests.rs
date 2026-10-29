@@ -207,3 +207,14 @@ fn the_resolver_checks_npcs_mesh_indices_and_exit_scenes() {
         assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
     }
 }
+
+#[test]
+fn a_dealer_npc_and_trigger_name_a_real_dealer() {
+    let map = format!(
+        "{MAP}\n[[npcs]]\nid = \"dealer\"\nmodel = {{ kind = \"npc\", scene = \"town01\", index = 2 }}\ntile = [1, 2]\nshop = \"nowhere\"\n\n[[triggers]]\nrect = [3, 2, 3, 2]\nevent = {{ kind = \"card_dealer\" }}\n"
+    );
+    let e = errors(&validate(&pack(&map)));
+    for want in ["shop \"nowhere\"", "card dealer \"\""] {
+        assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
+    }
+}
