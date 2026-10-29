@@ -54,7 +54,12 @@ A quest with neither `giver` nor `auto_start` starts only from a script (`World:
 | `story_flags` | Each listed retail system flag is set. |
 | `story_flags_clear` | Each listed retail system flag is clear. |
 | `flags` | Each listed pack flag is set. |
+| `flags_clear` | Each listed pack flag is clear. |
+| `bosses` | Each listed once-only `battle.toml` boss (`once = true`) has been beaten. |
+| `bosses_unbeaten` | Each listed once-only boss has not been beaten yet. |
 | `min_level` | The present party's highest level is at least this. |
+
+The same table gates a map's entrances, exits, triggers and NPC lines (`requires`, [`expansion-pack-maps.md`](expansion-pack-maps.md#gates)); `QuestRuntime::prerequisites_hold` answers every one of them. The boss rows read the battle runtime's cleared-boss list, which holds only once-only bosses: a repeatable boss is never "beaten" for a gate.
 
 The system flags are the field VM's flag bank (ops `0x50` / `0x60` / `0x70`, `World::system_flag_test`), the one place the story records how far the player has come, so a story point is named by the flag its scene script raises there.
 
@@ -157,7 +162,7 @@ Each line of `text` is one dialog-box row and a blank line starts a new page. Ro
 
 Text is the translation pipeline's markup: printable ASCII as itself, `{xx}` for any byte, `{op:arg}` for a two-byte token (`{c1:00}` is party member 0's name, `{cf:31}` a colour change), with typographic quotes, dashes and the ellipsis folded onto their ASCII glyphs. `dialog::encode_markup` is the dialog-segment subset of `legaia_translate::markup::encode`: the same grammar and the same bytes, without the patcher stack. Bytes `0x00..=0x1F` are refused as a token's opcode, since they would end the segment; the symbol aliases (`{btn:x}`) are not part of the subset.
 
-A line may end on a menu of two to four `choices`. Each choice has a `label`, an optional `reply` (rows and pages as `text`), pack flags it raises (`set_flags`) and clears (`clear_flags`), a `next` line shown once the talk ends, and a fight (`battle`, a formation id, or `boss`) started once the talk and any chained lines are done.
+A line may end on a menu of two to four `choices`. Each choice has a `label`, an optional `reply` (rows and pages as `text`), pack flags it raises (`set_flags`) and clears (`clear_flags`), a `next` line shown once the talk ends, a fight (`battle`, a formation id, or `boss`) started once the talk and any chained lines are done, a `challenge` armed when the option is picked (so it applies to the option's own fight, or to the next fight against its formation), and a `mode` (a `modes.toml` instance id) entered once the talk is done, through the fight queue.
 
 ### Dialogue on the inline runner
 
@@ -184,7 +189,8 @@ Both sections implement `validate::SectionRules` ([`expansion-pack.md`](expansio
 |---|---|
 | A prerequisite quest, line, formation or boss that is not defined | error |
 | A line that does not compile (no text, a menu outside 2..=4 options, text with no glyph) | error |
-| A quest or choice naming both a battle and a boss | error |
+| A quest naming both a battle and a boss; a choice naming more than one of a battle, a boss and a mode | error |
+| A choice's challenge or mode, or a reward card, that the pack does not define | error |
 | A quest requiring itself; `reach_level` outside 1..=99; a turn limit or enemy scale of 0; `solo` past slot 3 | error |
 | An item or monster id out of range | error |
 | A quest with no giver and no `auto_start`; repeat settings on a one-shot quest; a count of 0; a row over 36 characters | warning |

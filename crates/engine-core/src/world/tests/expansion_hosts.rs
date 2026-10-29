@@ -169,27 +169,49 @@ fn a_retail_npc_talk_and_a_mode_win_reach_the_quests_and_toast() {
     );
 }
 
+/// The Rebirth journal follows the pack's own content: every challenge and
+/// map listed, the auto-start quest opening on its level, and its talk
+/// opening the quest that names it as a prerequisite. Derived from the pack
+/// files, so the content can grow without the test pinning its shape.
 #[test]
 fn the_rebirth_journal_lists_its_chain_and_challenge() {
+    let pack = rebirth();
     let mut w = field_world(30);
-    w.activate_expansion(rebirth()).expect("Rebirth activates");
+    w.activate_expansion(pack.clone())
+        .expect("Rebirth activates");
     let empty = w.expansion_journal().expect("a pack is active");
-    assert_eq!(empty.pack_name, "Legend of Legaia: Rebirth");
+    assert_eq!(empty.pack_name, pack.manifest.name);
     assert!(empty.quests.is_empty(), "no quest has started");
-    assert_eq!(empty.challenges.len(), 1);
-    assert_eq!(empty.challenges[0].title, "Bare Hands");
-    assert_eq!(empty.challenges[0].best, None);
-    assert!(empty.maps.iter().any(|m| m.map_id == "rebirth_tower_1f"));
+    let titles: Vec<&str> = empty.challenges.iter().map(|c| c.title.as_str()).collect();
+    let want: Vec<&str> = pack
+        .quests
+        .challenges
+        .iter()
+        .map(|c| c.title.as_str())
+        .collect();
+    assert_eq!(titles, want);
+    assert!(empty.challenges.iter().all(|c| c.best.is_none()));
+    for id in pack.maps.keys() {
+        assert!(empty.maps.iter().any(|m| m.map_id == *id), "map {id}");
+    }
 
-    // Level 30: the rumour starts on its own.
+    // The first auto-start quest the party's level opens, and its talk.
+    let first = pack
+        .quests
+        .quests
+        .iter()
+        .find(|q| q.auto_start && q.prerequisites.min_level.is_some_and(|l| l <= 30))
+        .expect("an auto-start quest at level 30");
+    let legaia_expansion_format::quest::Goal::Talk { npc } = &first.objectives[0].goal else {
+        panic!("the opening quest starts with a talk");
+    };
     w.expansion_notify(QuestEvent::Refresh);
     let j = w.expansion_journal().unwrap();
-    assert_eq!(j.quests[0].title, "A Tower Wakes");
+    assert_eq!(j.quests[0].title, first.title);
     assert_eq!(j.quests[0].status, QuestStatus::Active);
-    assert_eq!(
-        j.quests[0].objectives[0].text,
-        "Find the guide who has seen the tower"
-    );
+    if let Some(text) = &first.objectives[0].text {
+        assert_eq!(&j.quests[0].objectives[0].text, text);
+    }
     assert_eq!(
         (
             j.quests[0].objectives[0].progress,
@@ -197,8 +219,14 @@ fn the_rebirth_journal_lists_its_chain_and_challenge() {
         ),
         (0, 1)
     );
-    // Talking to the guide completes it and opens the trial.
-    w.expansion_talked("tower_guide");
+    // Talking completes it and opens the quest given there next.
+    w.expansion_talked(npc);
+    let next = pack
+        .quests
+        .quests
+        .iter()
+        .find(|q| q.prerequisites.quests == [first.id.clone()] && q.giver.as_deref() == Some(npc))
+        .expect("a quest follows the opener from the same giver");
     let j = w.expansion_journal().unwrap();
     let titles: Vec<(&str, QuestStatus)> = j
         .quests
@@ -208,16 +236,19 @@ fn the_rebirth_journal_lists_its_chain_and_challenge() {
     assert_eq!(
         titles,
         [
-            ("The Rebirth Tower", QuestStatus::Active),
-            ("A Tower Wakes", QuestStatus::Completed),
+            (next.title.as_str(), QuestStatus::Active),
+            (first.title.as_str(), QuestStatus::Completed),
         ]
     );
-    assert_eq!(j.quests[0].rewards, "10000 G");
-    assert_eq!(j.quests[0].objectives.len(), 3);
+    assert_eq!(j.quests[0].objectives.len(), next.objectives.len());
     let toasts = drain_toasts(&mut w);
-    assert!(toasts.contains(&"Quest started: A Tower Wakes".to_string()));
-    assert!(toasts.contains(&"Quest complete: A Tower Wakes".to_string()));
-    assert!(toasts.contains(&"Quest started: The Rebirth Tower".to_string()));
+    for t in [
+        format!("Quest started: {}", first.title),
+        format!("Quest complete: {}", first.title),
+        format!("Quest started: {}", next.title),
+    ] {
+        assert!(toasts.contains(&t), "{t} in {toasts:?}");
+    }
 }
 
 #[test]
@@ -278,4 +309,85 @@ fn the_journal_cards_page_opens_the_card_menu_once_the_field_runs() {
     w.tick();
     assert!(w.card_screen_open(), "the card menu opened over the field");
     assert!(!w.expansion.open_cards);
+}
+
+/// A pack with one challenge on one formation, for the map events.
+fn challenge_pack() -> std::sync::Arc<ExpansionPack> {
+    let mut files = legaia_expansion_format::PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"id = \"ev\"\nname = \"Events\"\nversion = \"0.1.0\"\n".to_vec(),
+    );
+    files.insert(
+        "battle.toml".into(),
+        b"[monsters.wolf]\nbase = { kind = \"monster\", id = 9 }\n\n[formations.pair]\nmonsters = [\"wolf\"]\n".to_vec(),
+    );
+    files.insert(
+        "quests.toml".into(),
+        b"[[challenges]]\nid = \"sprint\"\ntitle = \"Sprint\"\nformation = \"pair\"\nrules = { turn_limit = 5 }\n\n[[challenges]]\nid = \"solo\"\ntitle = \"Solo\"\nrules = { solo = 2 }\n".to_vec(),
+    );
+    std::sync::Arc::new(ExpansionPack::from_files(&files).expect("parses"))
+}
+
+#[test]
+fn a_rest_point_restores_the_party_charges_and_opens_the_save_screen() {
+    let mut w = field_world(10);
+    let mut hms = w.party.roster.members[0].hp_mp_sp();
+    (hms.hp_max, hms.hp_cur, hms.mp_max, hms.mp_cur) = (500, 12, 40, 3);
+    w.party.roster.members[0].set_hp_mp_sp(hms);
+    // No pack: a rest point is not a thing.
+    assert!(!w.expansion_rest(0, true));
+    w.activate_expansion(challenge_pack()).unwrap();
+    w.party.money = 50;
+    assert!(!w.expansion_rest(100, false), "a short purse refuses");
+    assert_eq!(w.party.roster.members[0].hp_mp_sp().hp_cur, 12);
+    assert_eq!(drain_toasts(&mut w), ["Resting here costs 100 G."]);
+    assert!(w.expansion_rest(30, true));
+    let hms = w.party.roster.members[0].hp_mp_sp();
+    assert_eq!((hms.hp_cur, hms.mp_cur), (500, 40));
+    assert_eq!(w.party.money, 20);
+    assert_eq!(drain_toasts(&mut w), ["Rested for 30 G."]);
+    assert!(
+        w.scripted_menu_open_pending(),
+        "the save prompt is a save point's menu press"
+    );
+    assert_eq!(w.menu_entry_context_kind(), Some(1));
+}
+
+#[test]
+fn a_challenge_event_arms_and_starts_its_fight_or_says_why_not() {
+    let mut w = field_world(10);
+    w.activate_expansion(challenge_pack()).unwrap();
+    assert!(
+        !w.expansion_take_challenge("solo", false),
+        "slot 2 is absent"
+    );
+    assert_eq!(
+        drain_toasts(&mut w),
+        ["Challenge refused: the party breaks its solo rule"]
+    );
+    // Armed, and its formation's fight started through the forced
+    // encounter path.
+    assert!(w.expansion_take_challenge("sprint", true));
+    assert_eq!(
+        w.expansion.quests.challenge.as_ref().map(|c| c.id.as_str()),
+        Some("sprint")
+    );
+    assert_eq!(drain_toasts(&mut w), ["Challenge ready: Sprint"]);
+}
+
+#[test]
+fn a_prerequisite_gate_reads_the_packs_flags() {
+    use legaia_expansion_format::quest::Prerequisites;
+    let mut w = field_world(10);
+    let gate = Prerequisites {
+        flags_clear: vec!["beaten".into()],
+        ..Default::default()
+    };
+    assert!(w.expansion_prerequisites_hold(&Prerequisites::default()));
+    assert!(!w.expansion_prerequisites_hold(&gate), "no pack: shut");
+    w.activate_expansion(challenge_pack()).unwrap();
+    assert!(w.expansion_prerequisites_hold(&gate));
+    w.expansion_notify(QuestEvent::FlagSet("beaten".into()));
+    assert!(!w.expansion_prerequisites_hold(&gate));
 }

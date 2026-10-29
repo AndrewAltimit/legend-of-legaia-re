@@ -187,6 +187,9 @@ patrol = [[9, 8], [9, 6]]                       # optional loop of tiles
 walk_clip = 4                                   # optional clip a patrol leg plays
 line = "tower_guide_hello"                      # a dialog.toml line
 shop = "tower_dealer"                           # optional: a cards.toml dealer
+requires = { quests = ["tower_rumour"] }        # optional: silent until it holds
+line_after = "tower_guide_thanks"               # optional: said once `after` holds
+after = { bosses = ["cinder_warden"] }
 ```
 
 An NPC is not an asset: a retail NPC is one record of its scene's MAN actor
@@ -221,6 +224,9 @@ Talking to an NPC runs its `line` through the pack dialogue runner
 NPC's own. An NPC with a `shop` (a `cards.toml` `[[dealers]]` id) opens that
 dealer's counter instead (`World::open_card_dealer`, the `card_dealer`
 trigger's path), and says its `line` only when the counter cannot open.
+While its `requires` gate is shut the NPC says nothing and opens no shop
+(the talk still counts as `Talked(id)`); once its `after` gate holds it says
+`line_after` in place of `line` (`ActiveMap::talk_gated`).
 
 ## Visible walls
 
@@ -258,7 +264,10 @@ the sections it names, with or without a disc:
 | The map has a spawn; spawn, exit, trigger, encounter and prop ids are unique in the map | error |
 | NPC ids are unique across the pack | error |
 | A trigger's `battle` / `boss` / `dialog` / `start_quest` / `card_dealer` names a defined formation, boss, line, quest, dealer | error |
-| An NPC's `line` and `shop` name a defined line and dealer | error |
+| A trigger's `challenge` / `mode` names a defined challenge and mode instance; `start = true` on a challenge with no formation | error |
+| An NPC's `line`, `line_after` and `shop`, and an exit's `locked_line`, name a defined line and dealer | error |
+| A gate's quests and bosses are defined; no empty pack flag id; `min_level` in `1..=99` | error |
+| A `line_after` with no `after` gate; a `locked_line` on an exit with no `requires` | warning |
 | An encounter zone's `table` is a `battle.toml` `[[encounters]]` `scene` | error |
 | ... whose table has no `steps` (it can never roll on a map) | warning |
 | A `talk` trigger's NPC id that no quest gives from or talks to | warning |
@@ -286,6 +295,10 @@ fires nothing, and the spawn tile does not fire on arrival.
 - `to = { kind = "map", map = "...", spawn = "..." }` enters another map of the
   same pack at once.
 
+An exit with a `requires` gate leads nowhere while the gate is shut, and
+says its optional `locked_line` (a `dialog.toml` line) on each step onto it
+instead.
+
 ### Triggers
 
 A trigger's `event` names content of another pack section, and the scene host
@@ -301,11 +314,41 @@ hands it to that section's runtime the tick it fires:
 | `{ kind = "set_flag", flag = X }` | raises pack flag `X` |
 | `{ kind = "counter", counter = C, add = 1 }` | adds to pack counter `C` |
 | `{ kind = "card_dealer", dealer = D }` | opens the `cards.toml` dealer `D`'s counter (`World::open_card_dealer`; empty = the first dealer) |
+| `{ kind = "challenge", challenge = C, start = false }` | arms the `quests.toml` challenge `C` (`World::expansion_take_challenge`); `start = true` also starts the fight against its formation. A refusal (a party rule already broken) shows as a toast |
+| `{ kind = "mode", mode = M }` | enters the `modes.toml` instance `M` (`World::enter_pack_mode`) |
+| `{ kind = "rest", cost = 0, save = false }` | a rest point (below) |
 
 `once = true` fires a trigger once **ever**: firing raises the pack flag
 `map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),
 which saves with the pack's progress, and a trigger whose flag is up stays
 quiet on every later visit. Quests can read the flag like any other.
+
+A trigger with a `requires` gate fires only while it holds; a shut trigger
+fires nothing and spends no `once`, so it fires on the first entry after it
+opens.
+
+### Rest points
+
+`kind = "rest"` restores every roster member's HP and MP to full
+(`World::revive_party_full`, the game-over Retry's restore) for `cost` gold.
+A purse short of `cost` refuses with a toast and changes nothing. With
+`save = true` the save screen follows: the rest arms the menu press a
+retail save point's op `0x49` sub-op `1` arms (`World::record_op49_park`),
+which each host answers by opening the pause menu on the card screen, as it
+does for a save point in a retail scene. `World::expansion_rest` holds the
+rule.
+
+### Gates
+
+Exits, triggers and NPCs take a `requires` table of the quest prerequisite
+shape ([`expansion-pack-quests.md`](expansion-pack-quests.md#prerequisites)):
+quests done, pack flags set (`flags`) or clear (`flags_clear`), once-only
+bosses beaten (`bosses`) or still standing (`bosses_unbeaten`), retail story
+flags, a party level. An empty table is always open. A boss's challenge line
+that a won fight should not repeat is the usual use: gate the offer on
+`bosses_unbeaten`, and say a second line from a trigger on the same tiles
+gated on `bosses`. The scene host answers each gate through
+`World::expansion_prerequisites_hold` as the player steps (`ActiveMap::step_gated`).
 
 ### Encounter zones
 
@@ -349,7 +392,7 @@ requires = { min_level = 30 }
 | `scene` | The retail scene (`DiscRef::Scene`). |
 | `rect` | Inclusive `[x0, z0, x1, z1]` in the scene's `128 x 128` field grid, `0..=127` per axis. |
 | `spawn` | The spawn of this map the player arrives at; the first when empty. |
-| `requires` | The quest prerequisite shape: `story_flags`, `story_flags_clear`, `flags`, `quests`, `min_level`. Empty is always open. |
+| `requires` | The quest prerequisite shape ([gates](#gates)). Empty is always open. |
 
 Coordinates here are **retail field-grid tiles**, not map-local ones: tile
 `x` covers world `x * 128 .. x * 128 + 127`, the `world >> 7` quantisation the

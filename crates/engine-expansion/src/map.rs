@@ -22,6 +22,7 @@ use std::sync::Arc;
 use legaia_expansion_format::map::{
     ExitTarget, FloorTop, MapDef, MapEvent, NpcDef, TileGrid, npc_slot, once_flag, rect_contains,
 };
+use legaia_expansion_format::quest::Prerequisites;
 
 /// A trigger zone the player stepped into.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,9 +131,21 @@ impl ActiveMap {
     }
 
     /// One field tick with the player on map-local `tile` (`None` when off
-    /// the map's rectangle). Returns the exit the player just stepped onto,
-    /// if any; trigger events queue for [`Self::take_events`].
+    /// the map's rectangle), every gate open. Returns the exit the player
+    /// just stepped onto, if any; trigger events queue for
+    /// [`Self::take_events`].
     pub fn step(&mut self, tile: Option<(u16, u16)>) -> Option<ExitTarget> {
+        self.step_gated(tile, |_| true)
+    }
+
+    /// [`Self::step`] with each exit's and trigger's `requires` answered by
+    /// `open`. A shut trigger fires nothing and spends no `once`; a shut
+    /// exit leads nowhere and says its `locked_line` instead.
+    pub fn step_gated(
+        &mut self,
+        tile: Option<(u16, u16)>,
+        open: impl Fn(&Prerequisites) -> bool,
+    ) -> Option<ExitTarget> {
         if tile == self.last_tile {
             return None;
         }
@@ -145,19 +158,35 @@ impl ActiveMap {
             if !rect_contains(&t.rect, c, r) || was_in(&t.rect) {
                 continue;
             }
-            if t.once && !self.fired.insert(i) {
+            if t.once && self.fired.contains(&i) {
                 continue;
+            }
+            if !t.requires.is_empty() && !open(&t.requires) {
+                continue;
+            }
+            if t.once {
+                self.fired.insert(i);
             }
             self.events.push(FiredTrigger {
                 event: t.event.clone(),
                 once_flag: t.once.then(|| once_flag(&self.map_id, t, i)),
             });
         }
-        self.def
+        let exit = self
+            .def
             .exits
             .iter()
-            .find(|e| rect_contains(&e.rect, c, r) && !was_in(&e.rect))
-            .map(|e| e.to.clone())
+            .find(|e| rect_contains(&e.rect, c, r) && !was_in(&e.rect))?;
+        if !exit.requires.is_empty() && !open(&exit.requires) {
+            if let Some(line) = &exit.locked_line {
+                self.events.push(FiredTrigger {
+                    event: MapEvent::Dialog { line: line.clone() },
+                    once_flag: None,
+                });
+            }
+            return None;
+        }
+        Some(exit.to.clone())
     }
 
     /// The pack encounter table of the zone the player stood in at the last
@@ -196,13 +225,30 @@ impl ActiveMap {
         self.npcs().find(|&(s, _)| s == slot).map(|(_, d)| d)
     }
 
-    /// The player talked to the NPC in `slot`: what it says and does.
+    /// The player talked to the NPC in `slot`: what it says and does, every
+    /// gate open.
     pub fn talk(&self, slot: u8) -> Option<NpcTalk> {
+        self.talk_gated(slot, |_| true)
+    }
+
+    /// [`Self::talk`] with the NPC's `requires` and `after` answered by
+    /// `open`: shut, it says nothing and opens no shop; past `after`, it says
+    /// `line_after`.
+    pub fn talk_gated(&self, slot: u8, open: impl Fn(&Prerequisites) -> bool) -> Option<NpcTalk> {
         let npc = self.npc_at_slot(slot)?;
+        let gated = !npc.requires.is_empty() && !open(&npc.requires);
+        let after = !npc.line_after.is_empty() && !npc.after.is_empty() && open(&npc.after);
+        let line = if gated {
+            None
+        } else if after {
+            Some(npc.line_after.clone())
+        } else {
+            (!npc.line.is_empty()).then(|| npc.line.clone())
+        };
         Some(NpcTalk {
             npc: npc.id.clone(),
-            line: (!npc.line.is_empty()).then(|| npc.line.clone()),
-            shop: npc.shop.clone(),
+            line,
+            shop: npc.shop.clone().filter(|_| !gated),
         })
     }
 
@@ -391,6 +437,104 @@ top = 64
         let t = m.talk(2).unwrap();
         assert_eq!(t.line, None);
         assert_eq!(t.shop.as_deref(), Some("cards"));
+    }
+
+    const GATED_MAP: &str = r######"
+[tiles]
+rows = ["......"]
+[tiles.legend]
+"." = {}
+
+[[exits]]
+rect = [5, 0, 5, 0]
+to = { kind = "map", map = "up" }
+requires = { flags = ["key"] }
+locked_line = "sealed"
+
+[[triggers]]
+id = "offer"
+rect = [2, 0, 2, 0]
+event = { kind = "boss", boss = "king" }
+once = true
+requires = { flags_clear = ["king_beaten"] }
+
+[[npcs]]
+id = "herald"
+tile = [3, 0]
+line = "challenge"
+line_after = "bowed"
+after = { flags = ["king_beaten"] }
+
+[[npcs]]
+id = "keeper"
+tile = [4, 0]
+line = "welcome"
+shop = "cards"
+requires = { quests = ["intro"] }
+"######;
+
+    fn gated_map() -> ActiveMap {
+        let def: MapDef = toml::from_str(GATED_MAP).unwrap();
+        let grid = def.tile_grid().unwrap();
+        ActiveMap::new("g", Arc::new(def), Arc::new(grid), (0, 0), |_| false)
+    }
+
+    /// `open` as a set of raised pack flags; a quest gate is shut.
+    fn flags(set: &'static [&'static str]) -> impl Fn(&Prerequisites) -> bool {
+        move |p| {
+            p.quests.is_empty()
+                && p.flags.iter().all(|f| set.contains(&f.as_str()))
+                && p.flags_clear.iter().all(|f| !set.contains(&f.as_str()))
+        }
+    }
+
+    #[test]
+    fn a_shut_exit_says_its_locked_line_and_an_open_one_leads_on() {
+        let mut m = gated_map();
+        assert_eq!(m.step_gated(Some((5, 0)), flags(&[])), None);
+        assert_eq!(
+            m.take_events(),
+            [FiredTrigger {
+                event: MapEvent::Dialog {
+                    line: "sealed".into()
+                },
+                once_flag: None
+            }]
+        );
+        m.step_gated(Some((4, 0)), flags(&[]));
+        assert!(matches!(
+            m.step_gated(Some((5, 0)), flags(&["key"])),
+            Some(ExitTarget::Map { .. })
+        ));
+        assert!(m.take_events().is_empty());
+    }
+
+    #[test]
+    fn a_shut_trigger_fires_nothing_and_keeps_its_once() {
+        let mut m = gated_map();
+        m.step_gated(Some((2, 0)), flags(&["king_beaten"]));
+        assert!(m.take_events().is_empty(), "shut: no offer");
+        m.step_gated(Some((1, 0)), flags(&[]));
+        m.step_gated(Some((2, 0)), flags(&[]));
+        let fired = m.take_events();
+        assert_eq!(fired.len(), 1, "open: the once still fires");
+        assert_eq!(fired[0].once_flag.as_deref(), Some("map.g.offer"));
+        m.step_gated(Some((1, 0)), flags(&[]));
+        m.step_gated(Some((2, 0)), flags(&[]));
+        assert!(m.take_events().is_empty(), "once spent");
+    }
+
+    #[test]
+    fn an_npc_line_follows_its_gates() {
+        let m = gated_map();
+        let herald = |open| m.talk_gated(1, flags(open)).unwrap().line;
+        assert_eq!(herald(&[]).as_deref(), Some("challenge"));
+        assert_eq!(herald(&["king_beaten"]).as_deref(), Some("bowed"));
+        let keeper = m.talk_gated(2, flags(&[])).unwrap();
+        assert_eq!((keeper.line, keeper.shop), (None, None), "shut: silent");
+        let keeper = m.talk(2).unwrap();
+        assert_eq!(keeper.line.as_deref(), Some("welcome"));
+        assert_eq!(keeper.shop.as_deref(), Some("cards"));
     }
 
     #[test]

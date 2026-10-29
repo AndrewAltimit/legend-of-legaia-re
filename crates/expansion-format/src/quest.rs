@@ -97,8 +97,9 @@ fn yes() -> bool {
     true
 }
 
-/// A quest's start conditions. Every listed condition must hold.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+/// A quest's start conditions. Every listed condition must hold. The same
+/// shape gates a map's entrances, exits, triggers and NPC lines.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prerequisites {
     /// Quests that must have been completed at least once.
@@ -111,8 +112,45 @@ pub struct Prerequisites {
     pub story_flags_clear: Vec<u16>,
     /// Pack flags that must be set.
     pub flags: Vec<String>,
+    /// Pack flags that must be clear.
+    pub flags_clear: Vec<String>,
+    /// Once-only `battle.toml` bosses (`once = true`) that must have been
+    /// beaten.
+    pub bosses: Vec<String>,
+    /// Once-only bosses not yet beaten - the gate that retires a boss's
+    /// challenge once it is won.
+    pub bosses_unbeaten: Vec<String>,
     /// The highest party level must be at least this.
     pub min_level: Option<u8>,
+}
+
+impl Prerequisites {
+    /// Whether nothing is required: the gate is always open.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Validate the references of a gate at `at`: the quests it names, and
+    /// no empty pack flag ids.
+    pub(crate) fn check(&self, cx: &mut crate::validate::Checker<'_>, at: &str) {
+        for q in &self.quests {
+            cx.reference("quest", q, &format!("{at}.quests"));
+        }
+        for b in &self.bosses {
+            cx.reference("boss", b, &format!("{at}.bosses"));
+        }
+        for b in &self.bosses_unbeaten {
+            cx.reference("boss", b, &format!("{at}.bosses_unbeaten"));
+        }
+        for f in self.flags.iter().chain(&self.flags_clear) {
+            if f.trim().is_empty() {
+                cx.error(at, "an empty pack flag id");
+            }
+        }
+        if self.min_level.is_some_and(|l| !(1..=99).contains(&l)) {
+            cx.error(&format!("{at}.min_level"), "a level is 1..=99");
+        }
+    }
 }
 
 /// One objective: a goal plus an optional journal line.
@@ -317,6 +355,14 @@ impl Rewards {
                 cx.error(&format!("{at}.set_flags"), "an empty pack flag id");
             }
         }
+        for (i, c) in self.cards.iter().enumerate() {
+            if cx.pack().cards.card(c).is_none() {
+                cx.error(
+                    &format!("{at}.cards[{i}]"),
+                    format!("no card {c:?} in cards.toml"),
+                );
+            }
+        }
     }
 }
 
@@ -515,6 +561,37 @@ mod tests {
         assert_eq!(q.prerequisites.story_flags, vec![0x142]);
         assert_eq!(q.rewards.items[0].count, 2);
         assert!(q.repeat.repeatable);
+    }
+
+    #[test]
+    fn a_reward_card_must_be_in_cards_toml() {
+        let quests: QuestSection = toml::from_str(
+            "[[quests]]\nid = \"a\"\ntitle = \"A\"\nauto_start = true\nrewards = { cards = [\"ghost\", \"real\"] }\n",
+        )
+        .unwrap();
+        let cards = toml::from_str(
+            "[[cards]]\nid = \"real\"\nname = \"Real\"\nrarity = \"common\"\nsides = [1, 1, 1, 1]\n",
+        )
+        .unwrap();
+        let pack = crate::ExpansionPack {
+            manifest: crate::manifest::PackManifest::new("t", "T", "0.1.0"),
+            quests,
+            cards,
+            ..Default::default()
+        };
+        let errors: Vec<String> = crate::validate::validate(&pack)
+            .iter()
+            .filter(|i| i.severity == crate::validate::Severity::Error)
+            .map(ToString::to_string)
+            .collect();
+        assert!(
+            errors.iter().any(|e| e.contains("no card \"ghost\"")),
+            "{errors:#?}"
+        );
+        assert!(
+            !errors.iter().any(|e| e.contains("\"real\"")),
+            "{errors:#?}"
+        );
     }
 
     #[test]

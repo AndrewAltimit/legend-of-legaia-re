@@ -55,7 +55,12 @@ impl World {
     /// report the interaction. Returns whether `slot` was a pack NPC (the
     /// retail interaction then does not run).
     pub(in crate::world) fn expansion_npc_interact(&mut self, interact_id: u8, slot: u8) -> bool {
-        let Some(talk) = self.expansion.map.as_ref().and_then(|m| m.talk(slot)) else {
+        let Some(talk) = self
+            .expansion
+            .map
+            .as_ref()
+            .and_then(|m| m.talk_gated(slot, |p| self.expansion_prerequisites_hold(p)))
+        else {
             return false;
         };
         // A dealer NPC opens its counter; its line is the fallback.

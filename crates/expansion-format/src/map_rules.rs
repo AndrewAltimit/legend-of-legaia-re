@@ -101,9 +101,7 @@ fn check_entrances(m: &MapDef, cx: &mut Checker<'_>) {
                 },
             );
         }
-        for q in &e.requires.quests {
-            cx.reference("quest", q, &format!("{at}.requires.quests"));
-        }
+        e.requires.check(cx, &format!("{at}.requires"));
     }
 }
 
@@ -212,6 +210,16 @@ fn check_exits(m: &MapDef, cx: &mut Checker<'_>) {
     check_ids(cx, "exits", m.exits.iter().map(|e| e.id.as_str()));
     let own = map_id(cx);
     for (i, e) in m.exits.iter().enumerate() {
+        e.requires.check(cx, &format!("exits[{i}].requires"));
+        if let Some(l) = &e.locked_line {
+            cx.reference("line", l, &format!("exits[{i}].locked_line"));
+            if e.requires.is_empty() {
+                cx.warning(
+                    &format!("exits[{i}].locked_line"),
+                    "the exit has no `requires`, so it is never shut",
+                );
+            }
+        }
         let at = format!("exits[{i}].to");
         match &e.to {
             ExitTarget::Retail {
@@ -263,6 +271,7 @@ fn check_exits(m: &MapDef, cx: &mut Checker<'_>) {
 fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
     check_ids(cx, "triggers", m.triggers.iter().map(|t| t.id.as_str()));
     for (i, t) in m.triggers.iter().enumerate() {
+        t.requires.check(cx, &format!("triggers[{i}].requires"));
         let at = format!("triggers[{i}].event");
         match &t.event {
             MapEvent::Battle { formation } => {
@@ -300,6 +309,31 @@ fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
                     cx.error(&at, "the event names no flag or counter");
                 }
             }
+            MapEvent::Challenge { challenge, start } => {
+                cx.reference("challenge", challenge, &format!("{at}.challenge"));
+                let names_formation = cx
+                    .pack()
+                    .quests
+                    .challenges
+                    .iter()
+                    .find(|c| c.id == *challenge)
+                    .is_none_or(|c| c.formation.is_some());
+                if *start && !names_formation {
+                    cx.error(
+                        &format!("{at}.start"),
+                        format!("challenge `{challenge}` names no formation to start"),
+                    );
+                }
+            }
+            MapEvent::Mode { mode } => {
+                if !cx.pack().modes.has_instance(mode) {
+                    cx.error(
+                        &format!("{at}.mode"),
+                        format!("no modes.toml instance {mode:?}"),
+                    );
+                }
+            }
+            MapEvent::Rest { .. } => {}
         }
     }
 }
@@ -454,6 +488,17 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
         }
         if !n.line.is_empty() {
             cx.reference("line", &n.line, &format!("{at}.line"));
+        }
+        n.requires.check(cx, &format!("{at}.requires"));
+        n.after.check(cx, &format!("{at}.after"));
+        if !n.line_after.is_empty() {
+            cx.reference("line", &n.line_after, &format!("{at}.line_after"));
+            if n.after.is_empty() {
+                cx.warning(
+                    &format!("{at}.line_after"),
+                    "the NPC has no `after` gate, so `line_after` is never said",
+                );
+            }
         }
         if let Some(shop) = &n.shop
             && !cx.pack().cards.dealers.iter().any(|d| d.id == *shop)

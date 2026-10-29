@@ -21,7 +21,7 @@
  * "Tiers are corner heights").
  */
 
-import { h, field, grid, freshId } from './expansion-workbench-forms.js';
+import { h, field, grid, freshId, gateBox } from './expansion-workbench-forms.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
@@ -831,6 +831,8 @@ function renderSelection(ctx, mctx, side, map) {
     } else {
       box.append(grid(mctx, to, [{ k: 'map', t: 'sel', opts: Object.keys(ctx.pack.maps), label: 'Map' }, { k: 'spawn', label: 'Spawn', ph: 'first' }], `${p}.to`));
     }
+    box.append(grid(mctx, o, [{ k: 'locked_line', t: 'oref', kind: 'line', label: 'Said while shut', hint: 'a sealed stair saying why' }], p));
+    box.append(gateBox(mctx, o, 'requires', p, 'Open when'));
   } else if (sel.type === 'triggers') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'once', t: 'bool', label: 'Once per visit' }], p));
     const ev = o.event;
@@ -843,17 +845,23 @@ function renderSelection(ctx, mctx, side, map) {
       set_flag: [{ k: 'flag', label: 'Pack flag' }],
       counter: [{ k: 'counter', label: 'Pack counter' }, { k: 'add', t: 'int', label: 'Add' }],
       card_dealer: [{ k: 'dealer', label: 'Card dealer', hint: 'a cards.toml dealer id; empty = the first' }],
+      challenge: [{ k: 'challenge', t: 'ref', kind: 'challenge', label: 'Challenge' }, { k: 'start', t: 'bool', label: 'Start its battle' }],
+      mode: [{ k: 'mode', t: 'ref', kind: 'mode', label: 'Mode instance' }],
+      rest: [{ k: 'cost', t: 'int', label: 'Gold cost' }, { k: 'save', t: 'bool', label: 'Then offer a save' }],
     };
     const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, k.replace('_', ' '))));
     kind.addEventListener('change', () => {
       const k = kind.value;
       const first = (kd) => ctx.ids(kd)[0] || '';
       o.event = { kind: k };
-      for (const f of EVENTS[k]) o.event[f.k] = f.t === 'ref' ? first(f.kind) : f.t === 'int' ? 1 : (k === 'talk' ? first('npc') : '');
+      for (const f of EVENTS[k]) {
+        o.event[f.k] = f.t === 'ref' ? first(f.kind) : f.t === 'bool' ? false : f.t === 'int' ? (f.k === 'cost' ? 0 : 1) : (k === 'talk' ? first('npc') : '');
+      }
       ctx.changed(true);
     });
     box.append(h('label', { class: 'xw-field', 'data-path': `${p}.event` }, h('span', {}, 'Raises'), kind));
     box.append(grid(mctx, ev, EVENTS[ev.kind] || [], `${p}.event`));
+    box.append(gateBox(mctx, o, 'requires', p, 'Fires when'));
   } else if (sel.type === 'encounters') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'table', label: 'Encounter table' }], p));
   } else if (sel.type === 'props') {
@@ -881,7 +889,10 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'walk_clip', t: 'oint', label: 'Walk clip', hint: 'played on patrol legs' },
       { k: 'line', t: 'oref', kind: 'line', label: 'Says (dialog line)' },
       { k: 'shop', t: 'otext', label: 'Card dealer', hint: 'a cards.toml dealer id; talking opens its counter' },
+      { k: 'line_after', t: 'oref', kind: 'line', label: 'Says instead, once "after" holds' },
     ], p));
+    box.append(gateBox(mctx, o, 'requires', p, 'Talks when'));
+    box.append(gateBox(mctx, o, 'after', p, 'After (switches to the second line)'));
     const pat = h('input', { type: 'text', value: (o.patrol || []).map((t) => t.join(',')).join(' '), placeholder: 'c,r c,r ...', spellcheck: 'false', 'aria-label': 'Patrol waypoints' });
     pat.addEventListener('change', () => {
       o.patrol = pat.value.trim().split(/\s+/).filter(Boolean).map((t) => t.split(',').map((x) => parseInt(x, 10) || 0).slice(0, 2)).filter((t) => t.length === 2);

@@ -359,6 +359,26 @@ export function splitEd(ctx, parent, owner, key, path, o) {
   parent.append(wrap);
 }
 
+// The quest prerequisite shape: a quest's start test, and the `requires`
+// gate of a map's entrances, exits, triggers and NPCs.
+export const GATE_FIELDS = [
+  { k: 'quests', t: 'refs', kind: 'quest', label: 'Quests done', wide: true },
+  { k: 'min_level', t: 'oint', label: 'Party level at least' },
+  { k: 'flags', t: 'csv', label: 'Pack flags set' },
+  { k: 'flags_clear', t: 'csv', label: 'Pack flags clear' },
+  { k: 'bosses', t: 'refs', kind: 'boss', label: 'Once-only bosses beaten', wide: true },
+  { k: 'bosses_unbeaten', t: 'refs', kind: 'boss', label: 'Once-only bosses not beaten', wide: true },
+  { k: 'story_flags', t: 'csvint', label: 'Retail story flags set' },
+  { k: 'story_flags_clear', t: 'csvint', label: 'Retail story flags clear' },
+];
+
+// A boxed gate editor over `owner[key]`, created on first use.
+export function gateBox(ctx, owner, key, path, title) {
+  const gate = owner[key] || (owner[key] = {});
+  const gp = joinPath(path, key);
+  return h('div', { class: 'xw-box', 'data-path': gp }, h('div', { class: 'xw-box-head' }, title), grid(ctx, gate, GATE_FIELDS, gp));
+}
+
 export function freshId(prefix, taken) {
   const base = prefix.replace(/[^a-z0-9_]/g, '_') || 'item';
   for (let n = 1; ; n++) {
@@ -696,15 +716,7 @@ export function renderQuests(ctx, el) {
         { k: 'start_battle', t: 'oref', kind: 'formation', label: 'Start battle' },
         { k: 'start_boss', t: 'oref', kind: 'boss', label: 'Start boss' },
       ], p));
-      const pre = it.prerequisites || (it.prerequisites = {});
-      const pp = joinPath(p, 'prerequisites');
-      box.append(h('div', { class: 'xw-box', 'data-path': pp }, h('div', { class: 'xw-box-head' }, 'Prerequisites'), grid(ctx, pre, [
-        { k: 'quests', t: 'refs', kind: 'quest', label: 'Quests done', wide: true },
-        { k: 'min_level', t: 'oint', label: 'Party level at least' },
-        { k: 'flags', t: 'csv', label: 'Pack flags set' },
-        { k: 'story_flags', t: 'csvint', label: 'Retail story flags set' },
-        { k: 'story_flags_clear', t: 'csvint', label: 'Retail story flags clear' },
-      ], pp)));
+      box.append(gateBox(ctx, it, 'prerequisites', p, 'Prerequisites'));
       listEd(ctx, box, it, 'objectives', p, {
         title: 'Objectives',
         add: 'Objective',
@@ -825,6 +837,8 @@ export function renderDialog(ctx, el) {
           { k: 'clear_flags', t: 'csv', label: 'Clear pack flags' },
           { k: 'battle', t: 'oref', kind: 'formation', label: 'Then battle' },
           { k: 'boss', t: 'oref', kind: 'boss', label: 'Then boss' },
+          { k: 'challenge', t: 'oref', kind: 'challenge', label: 'Arm challenge' },
+          { k: 'mode', t: 'oref', kind: 'mode', label: 'Then mode' },
         ], p2)),
       });
     },

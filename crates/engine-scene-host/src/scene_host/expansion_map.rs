@@ -253,8 +253,9 @@ impl SceneHost {
     }
 
     /// Hand a fired trigger to its runtime: a battle or boss to the pack's
-    /// fight path, a line to the pack dialogue runner, the rest to the quest
-    /// tracker. A `once` trigger's flag goes up whether or not its content
+    /// fight path, a line to the pack dialogue runner, a challenge to the
+    /// challenge arm, a mode to the mode seat, a rest point to the party
+    /// restore, the rest to the quest tracker. A `once` trigger's flag goes up whether or not its content
     /// resolved, so a broken reference does not fire on every visit.
     fn run_map_trigger(&mut self, trigger: FiredTrigger) {
         let w = &mut self.world;
@@ -290,6 +291,19 @@ impl SceneHost {
                     log::warn!("expansion: map trigger card dealer `{dealer}` did not open");
                 }
             }
+            MapEvent::Challenge { challenge, start } => {
+                if !w.expansion_take_challenge(challenge, *start) {
+                    log::info!("expansion: map trigger challenge `{challenge}` did not arm");
+                }
+            }
+            MapEvent::Mode { mode } => {
+                if let Err(e) = w.enter_pack_mode(mode) {
+                    log::warn!("expansion: map trigger mode `{mode}`: {e:?}");
+                }
+            }
+            MapEvent::Rest { cost, save } => {
+                w.expansion_rest(*cost, *save);
+            }
         }
         if let Some(flag) = trigger.once_flag {
             self.world.expansion_notify(QuestEvent::FlagSet(flag));
@@ -317,11 +331,12 @@ impl SceneHost {
             i32::from(player.move_state.world_x),
             i32::from(player.move_state.world_z),
         );
-        let Some(active) = self.world.expansion.map.as_mut() else {
+        let Some(mut active) = self.world.expansion.map.take() else {
             return Ok(None);
         };
         let tile = active.tile_at_world(x, z);
-        let exit = active.step(tile);
+        let exit = active.step_gated(tile, |p| self.world.expansion_prerequisites_hold(p));
+        self.world.expansion.map = Some(active);
         self.world.step_expansion_npc_patrols();
         let Some(active) = self.world.expansion.map.as_mut() else {
             return Ok(None);

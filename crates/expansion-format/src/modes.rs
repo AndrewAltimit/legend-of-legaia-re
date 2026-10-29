@@ -58,6 +58,18 @@ pub struct ModeSection {
     pub prop_hunt: Vec<PropHuntArena>,
 }
 
+impl ModeSection {
+    /// Whether some instance of any mode has id `id`: what a map's `mode`
+    /// event, a dialogue choice's `mode` and a card reward name.
+    pub fn has_instance(&self, id: &str) -> bool {
+        self.poker.iter().any(|m| m.id == id)
+            || self.card_duels.iter().any(|m| m.id == id)
+            || self.golf.iter().any(|m| m.id == id)
+            || self.races.iter().any(|m| m.id == id)
+            || self.prop_hunt.iter().any(|m| m.id == id)
+    }
+}
+
 /// AI seat strength.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

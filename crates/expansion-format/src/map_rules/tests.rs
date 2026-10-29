@@ -218,3 +218,43 @@ fn a_dealer_npc_and_trigger_name_a_real_dealer() {
         assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
     }
 }
+
+#[test]
+fn gates_challenges_modes_and_rest_points_name_real_content() {
+    let map = format!(
+        r#"{MAP}
+[[triggers]]
+rect = [1, 2, 1, 2]
+event = {{ kind = "challenge", challenge = "nope", start = true }}
+requires = {{ quests = ["ghost"], flags_clear = [" "] }}
+
+[[triggers]]
+rect = [3, 1, 3, 1]
+event = {{ kind = "mode", mode = "no-table" }}
+
+[[triggers]]
+rect = [1, 1, 1, 1]
+event = {{ kind = "rest", cost = 100, save = true }}
+"#
+    )
+    .replace(
+        "facing = 4 }\n",
+        "facing = 4 }\nrequires = { flags = [\"key\"] }\nlocked_line = \"sealed\"\n",
+    )
+    .replace(
+        "tile = [2, 2]\nline = \"hello\"\n",
+        "tile = [2, 2]\nline = \"hello\"\nline_after = \"bye\"\nafter = { quests = [\"errand\"] }\n",
+    );
+    let e = errors(&validate(&pack(&map)));
+    for want in [
+        "challenge \"nope\"",
+        "quest \"ghost\"",
+        "an empty pack flag id",
+        "no modes.toml instance \"no-table\"",
+        "line \"sealed\"",
+        "line \"bye\"",
+    ] {
+        assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
+    }
+    assert!(!e.iter().any(|m| m.contains("errand")), "{e:#?}");
+}

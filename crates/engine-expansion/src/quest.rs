@@ -88,6 +88,11 @@ pub trait QuestWorld {
         let _ = id;
         None
     }
+    /// Whether the pack's once-only boss `id` has been beaten.
+    fn boss_cleared(&self, id: &str) -> bool {
+        let _ = id;
+        false
+    }
     /// The highest level in the present party.
     fn party_level(&self) -> u8 {
         self.party().iter().map(|&(_, l)| l).max().unwrap_or(0)
@@ -164,13 +169,16 @@ pub enum Grant {
     Fight(PackFight),
 }
 
-/// A pack fight a quest or a dialogue choice starts.
+/// What a quest or a dialogue choice starts once the talk ends: a pack
+/// fight, or a pack mode instance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PackFight {
     /// A `battle.toml` formation, by id.
     Formation(String),
     /// A `battle.toml` boss, by id.
     Boss(String),
+    /// A `modes.toml` instance, by id.
+    Mode(String),
 }
 
 /// Where a quest stands. A quest with no entry has never started.
@@ -528,8 +536,9 @@ impl QuestRuntime {
 
     /// Whether every condition of `p` holds: the quests it names completed
     /// at least once, its retail story flags set (or clear), its pack flags
-    /// set and the party level reached. A quest's start test, and the gate
-    /// a map entrance opens on.
+    /// set (or clear), its once-only bosses beaten (or not) and the party
+    /// level reached. A quest's start test, and the gate a map entrance,
+    /// exit, trigger or NPC line opens on.
     pub fn prerequisites_hold(
         &self,
         section: &QuestSection,
@@ -546,6 +555,9 @@ impl QuestRuntime {
         }) && p.story_flags.iter().all(|&f| world.story_flag(f))
             && p.story_flags_clear.iter().all(|&f| !world.story_flag(f))
             && p.flags.iter().all(|f| self.progress.flags.is_set(f))
+            && p.flags_clear.iter().all(|f| !self.progress.flags.is_set(f))
+            && p.bosses.iter().all(|b| world.boss_cleared(b))
+            && p.bosses_unbeaten.iter().all(|b| !world.boss_cleared(b))
             && p.min_level.is_none_or(|l| world.party_level() >= l)
     }
 

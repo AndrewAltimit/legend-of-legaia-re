@@ -69,6 +69,12 @@ pub struct DialogChoice {
     pub battle: Option<String>,
     /// A `battle.toml` boss to fight once the talk ends.
     pub boss: Option<String>,
+    /// A `quests.toml` challenge to arm when the option is picked: it then
+    /// applies to the option's `battle` / `boss`, or to the next fight
+    /// against the challenge's formation.
+    pub challenge: Option<String>,
+    /// A `modes.toml` instance to enter once the talk ends.
+    pub mode: Option<String>,
 }
 
 /// Fewest options a menu takes.
@@ -354,8 +360,20 @@ impl crate::validate::SectionRules for DialogSection {
                 if let Some(b) = &c.boss {
                     cx.reference("boss", b, &format!("{at}.boss"));
                 }
-                if c.battle.is_some() && c.boss.is_some() {
-                    cx.error(&at, "a choice starts a battle or a boss, not both");
+                if let Some(ch) = &c.challenge {
+                    cx.reference("challenge", ch, &format!("{at}.challenge"));
+                }
+                if let Some(m) = &c.mode
+                    && !cx.pack().modes.has_instance(m)
+                {
+                    cx.error(
+                        &format!("{at}.mode"),
+                        format!("no modes.toml instance {m:?}"),
+                    );
+                }
+                let starts = [c.battle.is_some(), c.boss.is_some(), c.mode.is_some()];
+                if starts.iter().filter(|&&b| b).count() > 1 {
+                    cx.error(&at, "a choice starts one of a battle, a boss or a mode");
                 }
                 for f in c.set_flags.iter().chain(&c.clear_flags) {
                     if f.trim().is_empty() {

@@ -93,6 +93,54 @@ impl World {
         hit
     }
 
+    /// Whether the gate `p` holds now (an entrance's, a map exit's, a
+    /// trigger's or an NPC's `requires`). Open with no pack only when `p`
+    /// is empty.
+    pub fn expansion_prerequisites_hold(
+        &self,
+        p: &legaia_expansion_format::quest::Prerequisites,
+    ) -> bool {
+        if p.is_empty() {
+            return true;
+        }
+        let Some(pack) = self.expansion.pack.as_ref() else {
+            return false;
+        };
+        self.expansion
+            .quests
+            .prerequisites_hold(&pack.quests, p, &WorldQuestView(self))
+    }
+
+    /// A pack map's rest point (`kind = "rest"`): every roster member's HP
+    /// and MP to full for `cost` gold ([`Self::revive_party_full`]), then
+    /// with `save` the save screen, opened as a retail save point opens it
+    /// (an op-`0x49` sub-op `1` menu press, [`Self::record_op49_park`],
+    /// which a host answers by opening the pause menu on the card screen).
+    /// A purse short of `cost` refuses with a toast and changes nothing.
+    /// `false` with no pack or when refused.
+    pub fn expansion_rest(&mut self, cost: u32, save: bool) -> bool {
+        if !self.expansion.is_active() {
+            return false;
+        }
+        if i64::from(self.party.money) < i64::from(cost) {
+            self.expansion
+                .toasts
+                .push(format!("Resting here costs {cost} G."));
+            return false;
+        }
+        self.party.money -= cost as i32;
+        self.revive_party_full();
+        self.expansion.toasts.push(if cost == 0 {
+            "The party is rested.".to_string()
+        } else {
+            format!("Rested for {cost} G.")
+        });
+        if save {
+            self.record_op49_park(1);
+        }
+        true
+    }
+
     /// Ask the scene host to enter pack map `map_id` at `spawn` on its next
     /// tick (the pause menu's Travel page). `false`, changing nothing, with
     /// no pack or no such map.

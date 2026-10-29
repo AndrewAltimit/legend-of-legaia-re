@@ -64,6 +64,10 @@ impl QuestWorld for WorldQuestView<'_> {
         self.0.expansion_formation_id(id)
     }
 
+    fn boss_cleared(&self, id: &str) -> bool {
+        self.0.expansion_boss_cleared(id)
+    }
+
     /// The compiled battle table's formation id for the pack boss.
     fn pack_boss_formation_id(&self, id: &str) -> Option<u16> {
         self.0
@@ -121,6 +125,41 @@ impl World {
         self.expansion.quests = rt;
         self.toast_expansion_notices(seen);
         armed
+    }
+
+    /// Arm challenge `id` (a map's `challenge` event, a dialogue choice's
+    /// `challenge`) and, with `start`, start the fight against the
+    /// formation it names. A refusal shows as a toast. `false` when the
+    /// challenge did not arm or its fight did not start.
+    pub fn expansion_take_challenge(&mut self, id: &str, start: bool) -> bool {
+        use legaia_expansion_format::quest::FormationRef;
+        if let Err(r) = self.expansion_arm_challenge(id) {
+            let why = match r {
+                ArmRefusal::Unknown => "no such challenge",
+                ArmRefusal::UnknownFormation => "its battle is missing",
+                ArmRefusal::Solo => "the party breaks its solo rule",
+                ArmRefusal::LevelCap => "a member is over its level cap",
+            };
+            log::info!("expansion: challenge `{id}` refused: {why}");
+            self.expansion
+                .toasts
+                .push(format!("Challenge refused: {why}"));
+            return false;
+        }
+        if !start {
+            return true;
+        }
+        let formation = self
+            .expansion
+            .pack
+            .as_ref()
+            .and_then(|p| p.quests.challenge(id))
+            .and_then(|c| c.formation.clone());
+        match formation {
+            Some(FormationRef::Pack(f)) => self.start_expansion_battle(&f),
+            Some(FormationRef::Id(f)) => self.force_encounter(f),
+            None => true,
+        }
     }
 
     /// The expansion block a save carries: the active pack's progress, else
@@ -310,6 +349,10 @@ impl World {
             let started = match &fight {
                 PackFight::Formation(f) => self.start_expansion_battle(f),
                 PackFight::Boss(b) => self.start_expansion_boss(b),
+                PackFight::Mode(m) => self
+                    .enter_pack_mode(m)
+                    .map_err(|e| log::warn!("expansion: mode `{m}`: {e:?}"))
+                    .is_ok(),
             };
             if !started {
                 log::warn!("expansion: {fight:?} did not start");
@@ -355,6 +398,17 @@ impl World {
         }
         if let Some(next) = &choice.next {
             self.expansion.quests.dialog.queued.insert(0, next.clone());
+        }
+        // Armed before the option's fight queues, so the challenge applies
+        // to it.
+        if let Some(c) = &choice.challenge {
+            self.expansion_take_challenge(c, false);
+        }
+        if let Some(m) = &choice.mode {
+            self.expansion
+                .quests
+                .fights
+                .push(PackFight::Mode(m.clone()));
         }
         if let Some(f) = &choice.battle {
             self.expansion

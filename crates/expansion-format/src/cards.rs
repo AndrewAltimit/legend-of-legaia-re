@@ -315,13 +315,7 @@ impl crate::validate::SectionRules for CardSection {
                 }
                 RewardSource::Boss { id } => cx.reference("boss", id, &format!("{at}.source")),
                 RewardSource::Mode { id } => {
-                    let m = &cx.pack().modes;
-                    let known = m.poker.iter().any(|x| x.id == *id)
-                        || m.card_duels.iter().any(|x| x.id == *id)
-                        || m.golf.iter().any(|x| x.id == *id)
-                        || m.races.iter().any(|x| x.id == *id)
-                        || m.prop_hunt.iter().any(|x| x.id == *id);
-                    if !known {
+                    if !cx.pack().modes.has_instance(id) {
                         cx.error(&format!("{at}.source"), format!("no mode instance {id:?}"));
                     }
                 }

@@ -377,6 +377,16 @@ pub struct NpcDef {
     /// The `dialog.toml` line the NPC says when talked to. Empty says
     /// nothing (a quest giver whose quest lines do the talking).
     pub line: String,
+    /// What must hold for the NPC to say anything or open its `shop`: the
+    /// quest prerequisite shape. Unmet, the NPC stands silent (the talk
+    /// still counts as `Talked(id)`). Empty is always open.
+    pub requires: crate::quest::Prerequisites,
+    /// The line said instead of [`Self::line`] once [`Self::after`] holds:
+    /// a boss's challenge that a won fight should not repeat. Empty keeps
+    /// `line`.
+    pub line_after: String,
+    /// When [`Self::line_after`] replaces [`Self::line`]. Empty never does.
+    pub after: crate::quest::Prerequisites,
     /// The card dealer the NPC runs (a `cards.toml` `[[dealers]]` id):
     /// talking to it opens that dealer's counter, as a `card_dealer`
     /// trigger does. Its `line` is said only when the counter cannot open.
@@ -455,6 +465,14 @@ pub struct ExitDef {
     /// The tiles that take the exit when the player steps onto them.
     pub rect: TileRect,
     pub to: ExitTarget,
+    /// What must hold for the exit to lead anywhere: the quest prerequisite
+    /// shape. A shut exit is a floor tile. Empty is always open.
+    #[serde(default)]
+    pub requires: crate::quest::Prerequisites,
+    /// The `dialog.toml` line said on stepping onto the exit while it is
+    /// shut (a sealed stair saying why). Optional.
+    #[serde(default)]
+    pub locked_line: Option<String>,
 }
 
 /// Where an exit leads.
@@ -545,6 +563,11 @@ pub struct TriggerZone {
     /// the zone quiet on every later visit.
     #[serde(default)]
     pub once: bool,
+    /// What must hold for the zone to fire: the quest prerequisite shape.
+    /// A shut zone fires nothing and spends no `once`; it fires on the
+    /// first entry after it opens. Empty is always open.
+    #[serde(default)]
+    pub requires: crate::quest::Prerequisites,
 }
 
 /// The pack flag a `once` trigger raises when it fires: `map.<map>.<id>`,
@@ -584,6 +607,24 @@ pub enum MapEvent {
     CardDealer {
         #[serde(default)]
         dealer: String,
+    },
+    /// Arm a `quests.toml` challenge for its next battle; with `start`, also
+    /// start the battle against the formation the challenge names.
+    Challenge {
+        challenge: String,
+        #[serde(default)]
+        start: bool,
+    },
+    /// Enter a `modes.toml` instance (a poker table, a duel, a course).
+    Mode { mode: String },
+    /// A rest point: every party member's HP and MP to full for `cost` gold
+    /// (refused, with a notice, when the purse is short), then with `save`
+    /// the save screen, as a retail save point opens it.
+    Rest {
+        #[serde(default)]
+        cost: u32,
+        #[serde(default)]
+        save: bool,
     },
 }
 
