@@ -18,8 +18,8 @@ and semi-transparency has its own switch. The hosts run PSX mode on the
 - **The GTE's register limits.** Ahead of the snap, a corner whose
   eye-space X / Y or depth passes the GTE's `IR` / `SZ` saturation moves
   where `RTPS` wrote it (`gte_saturate_clip`, from
-  `camera_frame::gte_saturation`'s `H` and `sz_per_w`); one inside them is
-  untouched
+  `camera_frame::gte_saturation`'s `H` and `sz_per_w`, on the field and in
+  battle); one inside them is untouched
   ([renderer](renderer.md#the-gtes-register-limits)).
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x`/`y` are
   truncated onto the 320 x 240 stage's pixel grid (rows top-down), whatever

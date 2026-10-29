@@ -361,6 +361,7 @@ fn push_fx_models(
     world: &legaia_engine_core::world::World,
     lists: &legaia_engine_world_views::effect_draws::FxModelDraws,
     outer: &[f32; 16],
+    cam: Option<&[f32; 16]>,
 ) {
     for em in &lists.effect_models {
         frame.models.push(FxModelDraw {
@@ -374,6 +375,20 @@ fn push_fx_models(
             continue;
         }
         let model = mat4_mul(outer, &p.model);
+        // A single-sided battle part keeps retail's front faces only, as the
+        // native pass uploads it (`effect_draws::retail_front_faces`): baked,
+        // rest mesh or not. `cam` times the part matrix is the draw's MVP.
+        if p.single_sided
+            && let Some(cam) = cam
+            && let Some(mut m) = world.part_draw_vram_mesh(&p.draw)
+        {
+            legaia_engine_world_views::effect_draws::retail_front_faces(
+                &mut m,
+                &mat4_mul(cam, &p.model),
+            );
+            bake_mesh(frame, &model, &m);
+            continue;
+        }
         if !p.draw.draws_rest_mesh()
             && let Some(m) = world.part_draw_vram_mesh(&p.draw)
         {
@@ -473,7 +488,7 @@ impl LegaiaRuntime {
             legaia_render_kernels::gte::PartCameraPose::from_battle(&self.battle_cam_pose());
         let lists = effect_model_draws(world, Some(&part_cam), |i| self.battle_draw_plan(i));
         let outer = mat4_scale(s);
-        push_fx_models(&mut frame, world, &lists, &outer);
+        push_fx_models(&mut frame, world, &lists, &outer, Some(&cam));
         for n in lists.kind4.iter().chain(&lists.shadows) {
             let model = mat4_mul(&outer, &n.model);
             // A single-sided node keeps retail's front faces only, as the
@@ -545,7 +560,8 @@ impl LegaiaRuntime {
             .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
         let lists = effect_model_draws(world, part_cam.as_ref(), |_| None);
         let outer = WORLD_FLIP;
-        push_fx_models(&mut frame, world, &lists, &outer);
+        // The field pass culls back faces itself: no part is single-sided here.
+        push_fx_models(&mut frame, world, &lists, &outer, None);
         // Field move-VM stager parts resolve against the SCENE's TMD pack
         // (`model_sel` relative to the spawn base = pack slot), not the
         // effect library - the page holds that pack as its env meshes.

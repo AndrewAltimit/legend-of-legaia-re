@@ -316,7 +316,8 @@ in vec3 a_prim_c3;
 
 int primSz(mat4 m, vec3 c, float szPerW) {
   float w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
-  return clamp(int(floor(w * szPerW)), 0, 0xFFFF);
+  // SZ_FLOAT_SLACK: a corner a float's error under an integer floors to it.
+  return clamp(int(floor(w * szPerW + 0.015625)), 0, 0xFFFF);
 }
 
 vec2 primSxy(mat4 m, vec3 c) {

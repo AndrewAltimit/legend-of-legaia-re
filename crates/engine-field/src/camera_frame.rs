@@ -393,11 +393,26 @@ pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)>
 /// divided by it, so a field corner's GTE units are [`CUTSCENE_WORLD_SCALE`]
 /// times its clip `w`. `noaru_field_card_walk` measures it: its ice-floor
 /// bowl's far rim lands where `SZ` saturates at `6 * w = 0xFFFF`, under the
-/// frame's own `H` (`field_h`, `_DAT_8007B6F4`). Field only, and only under
-/// a retail camera.
+/// frame's own `H` (`field_h`, `_DAT_8007B6F4`).
+///
+/// In battle the host composes the 4x world scale onto the draws, so a
+/// corner's clip `w` is already its `SZ` (`sz_per_w = 1`), under the battle
+/// camera's [`BATTLE_GTE_H`]. There the limit that shows is the divide's:
+/// a camera-locked part close to the eye (`2 * SZ <= H`) lands at twice its
+/// eye-space offset, not `H / SZ` times it. PROT 0922's arm-12 glow
+/// (`0x801F939C`, Puera) is a ring locked at `SZ = 64` whose inner edge an
+/// unclamped divide puts past the screen's edge; under the cap it frames
+/// the screen as the yellow edge glow retail shows through arms 13..19.
+/// Field and battle, only under a retail camera.
 pub fn gte_saturation(mode: SceneMode, retail_camera: bool, field_h: f32) -> Option<(f32, f32)> {
-    (retail_camera && mode == SceneMode::Field && field_h > 0.0)
-        .then_some((CUTSCENE_WORLD_SCALE, field_h))
+    if !retail_camera {
+        return None;
+    }
+    match mode {
+        SceneMode::Field if field_h > 0.0 => Some((CUTSCENE_WORLD_SCALE, field_h)),
+        SceneMode::Battle => Some((1.0, BATTLE_GTE_H)),
+        _ => None,
+    }
 }
 
 /// The matrix for a resolved frame, Y-up render frame. `None` for

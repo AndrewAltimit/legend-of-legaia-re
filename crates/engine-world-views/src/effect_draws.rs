@@ -160,6 +160,14 @@ pub struct FxPartModel {
     pub draw: SummonPartDraw,
     /// Column-major model matrix in the draw frame.
     pub model: [f32; 16],
+    /// The part's mesh keeps retail's `NCLIP` winding rejection: the model
+    /// draw (`0x8001B160`) hands the prim dispatcher the part's own colour
+    /// word, so a word without `0x08000000` draws front faces only. Set in
+    /// the battle pass, which draws both sides; a host resolves the mesh and
+    /// drops its back faces with [`retail_front_faces`]. PROT 0922's crystals
+    /// (`0x801F989C`, word `0xC1000000`, additive) are one: both-sided, each
+    /// added its far wall over its near one and drew white, not pink.
+    pub single_sided: bool,
 }
 
 /// A node that carries its own per-frame mesh (a draw-kind-4 ribbon or
@@ -275,6 +283,7 @@ pub fn effect_model_draws(
             .chain(world.active_move_fx_part_draws())
             .map(|draw| FxPartModel {
                 model: node(draw.flags_52, draw.world_pos, draw.rot),
+                single_sided: battle && !draw.colour.double_sided,
                 draw,
             })
             .collect();
@@ -317,6 +326,8 @@ pub fn effect_model_draws(
                     &place,
                     &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
                 ),
+                // The field pass culls back faces itself (`nclip_cull_mode`).
+                single_sided: false,
                 draw: fp,
             }
         })

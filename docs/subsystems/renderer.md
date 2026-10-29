@@ -2258,6 +2258,7 @@ The port arms the rejection through one kernel both hosts read,
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
 | Battle **draw-kind-4 nodes** (default-arm and sprite-arm meshes) and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake) |
+| Battle **mesh parts** (summon and move-FX parts drawing an effect-library mesh) | the same, per part (`FxPartModel::single_sided`): the native pass culls the resolved mesh before upload, the play page bakes it culled |
 
 A move-VM part is the one field draw whose word can carry the bit. The
 field FX parts (`World::active_field_fx_part_draws`) hand it on as
@@ -2269,6 +2270,12 @@ field pass's cull.
 A draw-kind-4 node is built by its emitter and then falls into the ordinary
 model draw (`0x8001B160`), so its packets reach the dispatcher with the node's
 own colour word too, and a word without `0x08000000` keeps the winding test.
+So does a mesh part, which is that model draw: Puera's twenty-three crystals
+(PROT 0922 record `0x801F989C`, effect-library mesh `0x19`, word
+`0xC1000000`, additive) are gouraud triangles in `(0xFF, 0x9F, 0x9F)` to
+`(0xFF, 0x60, 0x60)` over the grey `(112, 112, 112)` texel of the `(960, 496)`
+patch. Drawn both-sided, each crystal added its far wall over its near one
+and saturated white; with the back faces dropped it is pink, as retail's.
 Neo Star Slash's arm-5 caster cylinder (PROT 0960 record `0x801F8D44`, word
 `0xC1000000`, a textured radius-`0x800` wall) is one: drawn both-sided its far
 wall added a second orange layer over the whole arm-6 frame, and the
@@ -2365,6 +2372,15 @@ field and battle only, never under the debug orbit. The native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
 
+Each corner's depth floors to an integer within `1/64` of a unit
+(`prim_near_reject::SZ_FLOAT_SLACK`, the same constant in the WGSL and GLSL).
+Retail's `SZ` is an integer the GTE computes from integer inputs; the port's
+is a float composed through the camera's matrices and carries a few
+thousandths of error. Puera's arm-12 glow ring is locked in view space at
+`SZ = 64`, its mean `OTZ` in battle exactly the floor `0x10`: floored
+without the slack, a corner that came out at `63.999` dropped the whole ring
+on about one frame in ten, and the glow flickered.
+
 ### The GPU polygon-size limit
 
 The prim leaves hand the GPU the GTE's `SXY` with no clip of their own, and
@@ -2429,15 +2445,27 @@ projection puts them, the off-screen corners nearer, and under `H = 608` with `S
 w` every corner lands within the engine's own pose error (`3` px). An
 unclamped projection mapped the floor's texture across the wrong quads.
 
+In battle the limit that shows is the divide's. The battle camera's `H` is
+`256`, so a corner nearer the eye than `SZ = 128` lands at twice its
+eye-space offset rather than `H / SZ` times it. Puera's edge glow is built on
+that: PROT 0922's arm 12 seats record `0x801F939C`, a camera-locked
+(`+0x52 = 0x780`) additive ring at `+0x14 = (0, 0, 16)`, black at its inner
+radius `0xD0`, pale yellow (`0x80FFFF`) at its outer `0x160`, squashed by its
+in-plane scales `0x140` / `0x100`. At `SZ = 64` an unclamped projection puts
+the inner edge past the screen's edge and the ring draws nothing visible;
+under the cap the inner edge is an ellipse about `130 x 104` pixels and the
+ring frames the screen as the yellow glow arms 13..19 hold.
+
 The port applies the limits in the mesh vertex stage under PSX mode only
 (`Renderer::set_psx_mode`): `prim_near_reject::gte_saturated_clip` on the
 CPU, `gte_saturate_clip` in the WGSL and `gteSaturateClip` in the play page's
 GLSL, ahead of the vertex snap, from one per-frame word
-(`camera_frame::gte_saturation`: field only, `sz_per_w = 6` and the frame's
-`H`, staged by `Renderer::set_gte_saturation` and the play page's
-`setGteSat`). A corner inside every limit passes through untouched, and `w`
-is kept, since the textures interpolate affinely in screen space either way;
-clean rendering is unchanged.
+(`camera_frame::gte_saturation`: on the field `sz_per_w = 6` and the frame's
+`H`, in battle `sz_per_w = 1` and `H = 256`, staged by
+`Renderer::set_gte_saturation` and the play page's `setGteSat`). A corner
+inside every limit passes through untouched, and `w` is kept, since the
+textures interpolate affinely in screen space either way; clean rendering is
+unchanged.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 

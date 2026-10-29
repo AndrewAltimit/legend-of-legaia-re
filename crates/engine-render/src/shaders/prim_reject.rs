@@ -31,7 +31,8 @@ fn effect_clipped(p: vec3<f32>) -> bool {
 pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 fn prim_sz(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32) -> i32 {
     let w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
-    return clamp(i32(floor(w * sz_per_w)), 0, 0xFFFF);
+    // `SZ_FLOAT_SLACK`: a corner a float's error under an integer floors to it.
+    return clamp(i32(floor(w * sz_per_w + 0.015625)), 0, 0xFFFF);
 }
 
 fn prim_near_rejected(

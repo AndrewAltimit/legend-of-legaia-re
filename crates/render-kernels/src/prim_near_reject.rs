@@ -43,13 +43,23 @@ pub const PRIM_REF_FLOATS: usize = 13;
 /// the shaders read as "never reject".
 pub type PrimRef = [f32; PRIM_REF_FLOATS];
 
-/// The GTE's `SZ` for a view depth: floored to an integer and saturated to
-/// `0..=0xFFFF`.
+/// How far under an integer a port depth may fall and still floor to it
+/// ([`screen_z`]). Retail's `SZ` is an integer the GTE computes from integer
+/// inputs; the port's is a float composed through the camera's matrices, a
+/// few thousandths off. A corner retail puts exactly on the cut - PROT
+/// 0922's arm-12 glow ring, locked in view space at `SZ = 64`, whose mean
+/// `OTZ` in battle is the floor `0x10` itself - otherwise floors to `63` on
+/// some frames and the whole ring drops out. The shaders carry the same
+/// constant (`PRIM_NEAR_WGSL`, the play page's `primSz`).
+pub const SZ_FLOAT_SLACK: f32 = 1.0 / 64.0;
+
+/// The GTE's `SZ` for a view depth: floored to an integer (within
+/// [`SZ_FLOAT_SLACK`]) and saturated to `0..=0xFFFF`.
 pub fn screen_z(view_depth: f32) -> i32 {
     if view_depth.is_nan() {
         return 0;
     }
-    (view_depth.floor() as i64).clamp(0, 0xFFFF) as i32
+    ((view_depth + SZ_FLOAT_SLACK).floor() as i64).clamp(0, 0xFFFF) as i32
 }
 
 /// `AVSZ3` / `AVSZ4` over the corners' `SZ`, with the dispatcher's

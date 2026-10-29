@@ -157,7 +157,7 @@
       <text class="dg-sub dg-start" x="470" y="220">X or Y stops growing: the corner</text>
       <text class="dg-sub dg-start" x="470" y="236">lands nearer the screen centre</text>
     </svg>
-    <figcaption>Every limit an <code>RTPS</code> corner passes through. On the field <code>SZ</code> saturates at an eye depth of about 10&#8201;900 port units; under PSX mode the port applies the same clamps ahead of the vertex snap, from one per-frame word (<code>camera_frame::gte_saturation</code>).</figcaption>
+    <figcaption>Every limit an <code>RTPS</code> corner passes through. On the field <code>SZ</code> saturates at an eye depth of about 10&#8201;900 port units; in battle the divide cap is what shows, on a camera-locked part close to the eye (Puera's edge glow). Under PSX mode the port applies the same clamps on both passes ahead of the vertex snap, from one per-frame word (<code>camera_frame::gte_saturation</code>).</figcaption>
   </figure>
   <h3 id="facing-cells">Camera-facing decoration cells</h3>
   <p>About a third of the field maps carry decoration cells whose record flags (<code>+0x12 &amp; 0x380</code>) drop camera pitch, yaw or roll from the cell's matrix: the candle glows in <code>rugi</code> stay square to the lens, the Voz forest trees (<code>vell</code>, <code>vozz</code>) and the billboards of <code>deene</code> and <code>retona</code> turn with the view. The field decoration pass <code>FUN_801F7088</code> builds that matrix per cell; drawn under the full camera instead, the glows lie flat as ellipses. Both play hosts rebuild a flagged cell every frame through one kernel (<code>gte::decoration_cell_basis</code>).</p>
@@ -227,7 +227,7 @@
     </tbody>
   </table>
   </div>
-  <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do, and so does a battle effect mesh (a procedural ring, disc or sprite quad) whose colour word lacks the double-sided bit; the world map, the battle stage and the other minigame venues draw both sides. The debug orbit camera is exempt from the near cuts.</p>
+  <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do, and so does a battle effect mesh (a procedural ring, disc or sprite quad, or a summon part's library mesh) whose colour word lacks the double-sided bit; the world map, the battle stage and the other minigame venues draw both sides. The debug orbit camera is exempt from the near cuts.</p>
   <h3 id="on-screen-probes">Two &ldquo;is it on screen&rdquo; tests that are not the same test</h3>
   <p>Retail has two GTE-backed visibility probes, and they are not interchangeable. The field one projects a box around an actor and accepts any corner inside a real rectangle. The battle one tests only the box's <em>horizontal span</em> against the screen band - it reads no Y at all, so a body a full screen above the viewport still counts as visible. The battle probe also has no reference of any kind anywhere on the disc, so nothing consults its verdict; the port's lack of a cull there is parity.</p>
 </section>
