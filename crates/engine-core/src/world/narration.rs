@@ -35,6 +35,13 @@ impl World {
     /// the current scene without re-walking the [`legaia_engine_scene_host::scene_host::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+        // An active expansion pack's enter-scene objectives.
+        if self.expansion.is_active() {
+            let scene = self.active_scene_label.clone();
+            self.expansion_notify(legaia_engine_expansion::quest::QuestEvent::SceneEntered(
+                scene,
+            ));
+        }
     }
 
     /// Display name for a party slot - the name-entry result if one was

@@ -180,6 +180,9 @@ pub struct QuestRuntime {
     pub notices: Vec<QuestNotice>,
     /// Grants for the `World`, oldest first.
     pub grants: Vec<Grant>,
+    /// Trading-card ids the `World` received from [`Grant::Card`], oldest
+    /// first, for the card collection to take.
+    pub card_inbox: Vec<String>,
 }
 
 /// One objective's progress target.
@@ -319,6 +322,7 @@ impl QuestRuntime {
     pub fn load_block(&mut self, pack: Option<&ExpansionPack>, block: Option<&[u8]>) {
         self.notices.clear();
         self.grants.clear();
+        self.card_inbox.clear();
         self.challenge = None;
         self.dialog = DialogRuntime::default();
         let decoded = block.and_then(ExpansionProgress::decode);

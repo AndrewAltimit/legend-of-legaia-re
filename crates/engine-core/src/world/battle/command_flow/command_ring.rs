@@ -268,6 +268,17 @@ impl World {
                 // REF: FUN_801D0748 (states 0x28 / 0x78 into 0x3C / 0x46 / 0x50)
                 self.battle.sync_battle_flow(None);
             }
+            Some(Resolution::OpenSpellMenu) if !self.expansion_magic_allowed() => {
+                // An armed expansion challenge's `no_magic` rule refuses the
+                // chip the way the special word below does: the ring stays
+                // up. Always open with no pack.
+                self.open_battle_command(session.actor);
+            }
+            Some(Resolution::OpenItemMenu) if !self.expansion_item_use_allowed() => {
+                // An armed expansion challenge's `no_items` rule: the ring
+                // stays up. Always open with no pack.
+                self.open_battle_command(session.actor);
+            }
             Some(Resolution::OpenSpellMenu) if self.battle.raseru_forbidden() => {
                 // The special word forbids the Ra-Seru chip: retail's arm
                 // returns without committing (`0x801D1448..0x801D1454`), so

@@ -184,6 +184,7 @@ pub use effects::{
 };
 mod encounters;
 mod expansion;
+mod expansion_quests;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;

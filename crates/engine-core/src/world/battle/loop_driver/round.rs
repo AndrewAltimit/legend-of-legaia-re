@@ -244,6 +244,8 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
+        // An armed expansion challenge's turn limit counts rounds.
+        self.expansion_round_begun();
         self.battle.sweep_battle_intro_names();
         self.battle.commit_log_launch = None;
         // Retail's Begin moves the flow to `0xFE`, whose arm restarts the

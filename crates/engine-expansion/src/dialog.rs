@@ -97,6 +97,9 @@ pub fn compile_line(line: &DialogLine) -> Result<Vec<u8>, DialogError> {
 #[derive(Debug, Clone, Default)]
 pub struct DialogRuntime {
     pub pending: Option<PendingLine>,
+    /// Lines waiting for the dialogue channel to free up, oldest first (a
+    /// quest's start line raised by the talk that started it).
+    pub queued: Vec<String>,
 }
 
 /// A pack line the `World` started.

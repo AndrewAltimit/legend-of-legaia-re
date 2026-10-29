@@ -50,6 +50,9 @@ impl World {
         // (`MoveVmGlobals::strip_frame`).
         self.move_vm.begin_strip_tick();
         let outcome = self.tick_modes();
+        // An active expansion pack's per-tick step (pack-line resolve, quest
+        // state re-test); the identity with none.
+        self.tick_expansion();
         // The battle camera observes the frame this tick produced, in every
         // mode (outside battle it drops its state) - once, here, for every
         // host (`crate::battle_cam_inputs`).

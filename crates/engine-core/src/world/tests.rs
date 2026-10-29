@@ -332,6 +332,7 @@ mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;
 mod expansion_battle;
+mod expansion_quests;
 mod fatal_decision;
 mod field_events;
 mod field_grid;

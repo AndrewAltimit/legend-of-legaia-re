@@ -182,6 +182,9 @@ impl World {
         if !dome_leg {
             self.battle.escape_timer.field_return_penalty();
         }
+        // An active expansion pack's battle objectives and challenge read
+        // the outcome while the formation is still seated.
+        self.expansion_battle_ended();
         self.battle.active_formation = None;
         self.battle.end = None;
         // Drop the battle seat anchors - the next battle's setup re-seats
