@@ -391,6 +391,50 @@ impl BattleSection {
     }
 }
 
+impl crate::validate::SectionRules for BattleSection {
+    fn declare(&self, cx: &mut crate::validate::Checker<'_>) {
+        for key in self.monsters.keys() {
+            cx.declare("monster", key, &format!("monsters.{key}"));
+        }
+        for key in self.formations.keys() {
+            cx.declare("formation", key, &format!("formations.{key}"));
+        }
+        for key in self.bosses.keys() {
+            cx.declare("boss", key, &format!("bosses.{key}"));
+        }
+    }
+
+    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        let pack_id = cx.pack().manifest.id.clone();
+        for p in self.problems(&pack_id) {
+            cx.error("", p);
+        }
+        for (key, m) in &self.monsters {
+            cx.disc_ref(&format!("monsters.{key}.base"), &m.base);
+            for (what, chance) in [("drop", &m.drop), ("steal", &m.steal)] {
+                if let Some(c) = chance {
+                    cx.disc_ref(&format!("monsters.{key}.{what}.item"), &c.item);
+                }
+            }
+        }
+        for (key, f) in &self.formations {
+            for (i, r) in f.monsters.iter().enumerate() {
+                if let MonsterRef::Disc(d) = r {
+                    cx.disc_ref(&format!("formations.{key}.monsters[{i}]"), d);
+                }
+            }
+        }
+        for (key, b) in &self.bosses {
+            if let Some(m) = &b.music {
+                cx.disc_ref(&format!("bosses.{key}.music"), m);
+            }
+            for (i, r) in b.reward_items.iter().enumerate() {
+                cx.disc_ref(&format!("bosses.{key}.reward_items[{i}]"), &r.item);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

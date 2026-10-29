@@ -208,6 +208,19 @@ impl ProgressionSection {
     }
 }
 
+impl crate::validate::SectionRules for ProgressionSection {
+    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        for p in self.problems() {
+            cx.error("", p);
+        }
+        for (i, r) in self.level_rewards.iter().enumerate() {
+            for (k, item) in r.items.iter().enumerate() {
+                cx.disc_ref(&format!("level_rewards[{i}].items[{k}]"), &item.item);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

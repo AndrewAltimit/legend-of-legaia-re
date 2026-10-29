@@ -65,6 +65,10 @@ pub struct DialogChoice {
     pub clear_flags: Vec<String>,
     /// A line to show once this one ends.
     pub next: Option<String>,
+    /// A `battle.toml` formation to fight once the talk ends.
+    pub battle: Option<String>,
+    /// A `battle.toml` boss to fight once the talk ends.
+    pub boss: Option<String>,
 }
 
 /// Fewest options a menu takes.
@@ -222,9 +226,171 @@ pub fn encode_markup(markup: &str) -> Result<Vec<u8>, Vec<MarkupIssue>> {
     }
 }
 
+/// Why a line does not compile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DialogError {
+    /// No line with that id.
+    Unknown(String),
+    /// The line, or a choice's reply, has no text where text is required.
+    Empty,
+    /// A menu with fewer than two or more than four options.
+    ChoiceCount(usize),
+    /// Text that has no bytes in a dialog segment: `(where, issues)`.
+    Markup(String, Vec<MarkupIssue>),
+}
+
+impl fmt::Display for DialogError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unknown(id) => write!(f, "no line {id:?}"),
+            Self::Empty => write!(f, "no text"),
+            Self::ChoiceCount(n) => {
+                write!(
+                    f,
+                    "{n} choices; a menu takes {MIN_CHOICES} to {MAX_CHOICES}"
+                )
+            }
+            Self::Markup(at, issues) => {
+                write!(f, "{at}: ")?;
+                for (i, issue) in issues.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "; ")?;
+                    }
+                    write!(f, "{issue}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+fn push_row(out: &mut Vec<u8>, row: &str, at: &str) -> Result<(), DialogError> {
+    let bytes = encode_markup(row).map_err(|e| DialogError::Markup(at.to_string(), e))?;
+    out.push(0x1F);
+    out.extend_from_slice(&bytes);
+    out.push(0x00);
+    Ok(())
+}
+
+fn push_text(out: &mut Vec<u8>, text: &str, at: &str) -> Result<bool, DialogError> {
+    let pages = pages(text);
+    for (i, page) in pages.iter().enumerate() {
+        if i > 0 {
+            out.push(0x24);
+        }
+        for row in page {
+            push_row(out, row, at)?;
+        }
+    }
+    Ok(!pages.is_empty())
+}
+
+/// Compile `line` to the inline interaction-script bytes the field VM's
+/// dialogue runner reads for an NPC talk, so a pack line types, pages and
+/// opens its menu through the same pager as a retail one:
+///
+/// ```text
+/// page    = row+                       row = 0x1F <encoded markup> 0x00
+/// text    = page (0x24 page)*          0x24: next page, same box
+/// line    = text 0x21                  no menu: the talk ends
+///         | text <open> j0..jN-1 label*N branch*N
+///   open  = 0x27 / 0x28 / 0x29         two / three / four options
+///   jK    = i16 LE, relative to jK's own offset, to branch K
+///   label = 0x1F <encoded label> 0x00  immediate-labels form
+///   branch= [text] 0x21                the option's reply, then the end
+/// ```
+pub fn compile_line(line: &DialogLine) -> Result<Vec<u8>, DialogError> {
+    let mut out = Vec::new();
+    if !push_text(&mut out, &line.text, "text")? {
+        return Err(DialogError::Empty);
+    }
+    if line.choices.is_empty() {
+        out.push(0x21);
+        return Ok(out);
+    }
+    let n = line.choices.len();
+    if !(MIN_CHOICES..=MAX_CHOICES).contains(&n) {
+        return Err(DialogError::ChoiceCount(n));
+    }
+    out.push(0x25 + n as u8); // 0x27 / 0x28 / 0x29
+    let table = out.len();
+    out.resize(table + n * 2, 0);
+    for (k, c) in line.choices.iter().enumerate() {
+        push_row(&mut out, &c.label, &format!("choices[{k}].label"))?;
+    }
+    for (k, c) in line.choices.iter().enumerate() {
+        let entry = table + k * 2;
+        let rel = i16::try_from(out.len() - entry).map_err(|_| DialogError::Empty)?;
+        out[entry..entry + 2].copy_from_slice(&rel.to_le_bytes());
+        if let Some(reply) = &c.reply {
+            push_text(&mut out, reply, &format!("choices[{k}].reply"))?;
+        }
+        out.push(0x21);
+    }
+    Ok(out)
+}
+
+impl crate::validate::SectionRules for DialogSection {
+    fn declare(&self, cx: &mut crate::validate::Checker<'_>) {
+        for id in self.lines.keys() {
+            cx.declare("line", id, &format!("lines.{id}"));
+        }
+    }
+
+    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        for (id, line) in &self.lines {
+            let at = format!("lines.{id}");
+            if let Err(e) = compile_line(line) {
+                cx.error(&at, e.to_string());
+            }
+            for (k, c) in line.choices.iter().enumerate() {
+                let at = format!("{at}.choices[{k}]");
+                if let Some(next) = &c.next {
+                    cx.reference("line", next, &format!("{at}.next"));
+                }
+                if let Some(f) = &c.battle {
+                    cx.reference("formation", f, &format!("{at}.battle"));
+                }
+                if let Some(b) = &c.boss {
+                    cx.reference("boss", b, &format!("{at}.boss"));
+                }
+                if c.battle.is_some() && c.boss.is_some() {
+                    cx.error(&at, "a choice starts a battle or a boss, not both");
+                }
+                for f in c.set_flags.iter().chain(&c.clear_flags) {
+                    if f.trim().is_empty() {
+                        cx.error(&at, "an empty pack flag id");
+                    }
+                }
+            }
+            for row in pages(&line.text).iter().flatten() {
+                if row.chars().count() > ROW_WARN_CHARS {
+                    cx.warning(
+                        &format!("{at}.text"),
+                        format!(
+                            "row {row:?} is over {ROW_WARN_CHARS} characters; dialog boxes do not wrap"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Row length past which the validator warns: roughly what fits the
+/// standard dialog box at the proportional font's average advance.
+pub const ROW_WARN_CHARS: usize = 36;
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn line(text: &str) -> DialogLine {
+        DialogLine {
+            text: text.into(),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn lines_and_choices_parse() {
@@ -276,5 +442,76 @@ mod tests {
     #[test]
     fn a_token_on_a_one_byte_op_is_refused() {
         assert!(encode_markup("{41:42}").is_err());
+    }
+
+    #[test]
+    fn a_plain_line_is_rows_pages_and_an_end() {
+        let b = compile_line(&line("ab\ncd\n\nef")).unwrap();
+        assert_eq!(
+            b,
+            [
+                &[0x1F, b'a', b'b', 0x00, 0x1F, b'c', b'd', 0x00, 0x24][..],
+                &[0x1F, b'e', b'f', 0x00, 0x21]
+            ]
+            .concat()
+        );
+    }
+
+    #[test]
+    fn a_menu_jumps_each_option_to_its_branch() {
+        let mut l = line("Go?");
+        l.choices = vec![
+            DialogChoice {
+                label: "Yes".into(),
+                reply: Some("OK".into()),
+                ..Default::default()
+            },
+            DialogChoice {
+                label: "No".into(),
+                ..Default::default()
+            },
+        ];
+        let b = compile_line(&l).unwrap();
+        // prompt
+        assert_eq!(&b[..6], &[0x1F, b'G', b'o', b'?', 0x00, 0x27]);
+        let table = 6;
+        let target = |k: usize| {
+            let e = table + k * 2;
+            (e as isize + i16::from_le_bytes([b[e], b[e + 1]]) as isize) as usize
+        };
+        // labels follow the table
+        assert_eq!(&b[10..15], &[0x1F, b'Y', b'e', b's', 0x00]);
+        assert_eq!(&b[15..19], &[0x1F, b'N', b'o', 0x00]);
+        assert_eq!(
+            &b[target(0)..target(0) + 5],
+            &[0x1F, b'O', b'K', 0x00, 0x21]
+        );
+        assert_eq!(b[target(1)], 0x21);
+        assert_eq!(target(1), b.len() - 1);
+    }
+
+    #[test]
+    fn the_open_byte_follows_the_option_count() {
+        for (n, open) in [(2, 0x27), (3, 0x28), (4, 0x29)] {
+            let mut l = line("?");
+            l.choices = vec![DialogChoice::default(); n];
+            l.choices.iter_mut().for_each(|c| c.label = "x".into());
+            assert_eq!(compile_line(&l).unwrap()[3], open);
+        }
+        let mut l = line("?");
+        l.choices = vec![DialogChoice::default(); 5];
+        assert_eq!(compile_line(&l), Err(DialogError::ChoiceCount(5)));
+    }
+
+    #[test]
+    fn bad_text_is_reported_where_it_is() {
+        assert_eq!(compile_line(&line("\n\n")), Err(DialogError::Empty));
+        match compile_line(&line("caf\u{00E9}")) {
+            Err(DialogError::Markup(at, issues)) => {
+                assert_eq!(at, "text");
+                assert_eq!(issues.len(), 1);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 }

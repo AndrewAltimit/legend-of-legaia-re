@@ -82,6 +82,15 @@ pub struct QuestDef {
     pub start_dialog: Option<String>,
     /// Dialogue line shown when the quest completes.
     pub complete_dialog: Option<String>,
+    /// Dialogue line shown when the player talks to the giver while the quest
+    /// is active (a reminder, or the offer again).
+    pub active_dialog: Option<String>,
+    /// A `battle.toml` formation fought when the quest starts (after its
+    /// start line).
+    pub start_battle: Option<String>,
+    /// A `battle.toml` boss fought when the quest starts (after its start
+    /// line).
+    pub start_boss: Option<String>,
 }
 
 fn yes() -> bool {
@@ -139,12 +148,14 @@ pub enum Goal {
         #[serde(default = "one")]
         count: u32,
     },
-    /// Win a boss battle: one whose formation record carries a non-zero
-    /// header byte (retail's scripted / boss rows), optionally a specific
-    /// one.
+    /// Win a boss battle: the `battle.toml` boss `boss`, or the formation
+    /// `formation`, or with neither any battle whose formation record
+    /// carries a non-zero header byte (retail's scripted / boss rows).
     WinBoss {
         #[serde(default)]
         formation: Option<FormationRef>,
+        #[serde(default)]
+        boss: Option<String>,
     },
     /// Enter the scene `scene` (a CDNAME scene name, or a pack map id).
     EnterScene { scene: String },
@@ -292,6 +303,160 @@ pub struct ScoreRule {
     pub level_bonus: u32,
 }
 
+impl Rewards {
+    fn check(&self, cx: &mut crate::validate::Checker<'_>, at: &str) {
+        for (i, r) in self.items.iter().enumerate() {
+            let field = format!("{at}.items[{i}]");
+            cx.disc_ref(&field, &crate::refs::DiscRef::Item { id: r.item });
+            if r.count == 0 {
+                cx.warning(&field, "count 0 grants nothing");
+            }
+        }
+        for f in &self.set_flags {
+            if f.trim().is_empty() {
+                cx.error(&format!("{at}.set_flags"), "an empty pack flag id");
+            }
+        }
+    }
+}
+
+fn reference_formation(cx: &mut crate::validate::Checker<'_>, r: &FormationRef, at: &str) {
+    if let FormationRef::Pack(name) = r {
+        cx.reference("formation", name, at);
+    }
+}
+
+impl crate::validate::SectionRules for QuestSection {
+    fn declare(&self, cx: &mut crate::validate::Checker<'_>) {
+        for (i, q) in self.quests.iter().enumerate() {
+            cx.declare("quest", &q.id, &format!("quests[{i}].id"));
+        }
+        for (i, c) in self.challenges.iter().enumerate() {
+            cx.declare("challenge", &c.id, &format!("challenges[{i}].id"));
+        }
+    }
+
+    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        for (i, q) in self.quests.iter().enumerate() {
+            let at = format!("quests[{i}]");
+            if q.title.trim().is_empty() {
+                cx.warning(&at, format!("quest {:?} has no title", q.id));
+            }
+            for p in &q.prerequisites.quests {
+                if *p == q.id {
+                    cx.error(
+                        &format!("{at}.prerequisites"),
+                        "a quest cannot require itself",
+                    );
+                }
+                cx.reference("quest", p, &format!("{at}.prerequisites.quests"));
+            }
+            for (key, line) in [
+                ("start_dialog", &q.start_dialog),
+                ("complete_dialog", &q.complete_dialog),
+                ("active_dialog", &q.active_dialog),
+            ] {
+                if let Some(l) = line {
+                    cx.reference("line", l, &format!("{at}.{key}"));
+                }
+            }
+            if let Some(f) = &q.start_battle {
+                cx.reference("formation", f, &format!("{at}.start_battle"));
+            }
+            if let Some(b) = &q.start_boss {
+                cx.reference("boss", b, &format!("{at}.start_boss"));
+            }
+            if q.start_battle.is_some() && q.start_boss.is_some() {
+                cx.error(&at, "a quest starts a battle or a boss, not both");
+            }
+            for (k, o) in q.objectives.iter().enumerate() {
+                let field = format!("{at}.objectives[{k}]");
+                match &o.goal {
+                    Goal::DefeatFormation { formation, count } => {
+                        reference_formation(cx, formation, &field);
+                        zero_count(cx, *count, &field);
+                    }
+                    Goal::DefeatMonster { monster, count } => {
+                        cx.disc_ref(&field, &crate::refs::DiscRef::Monster { id: *monster });
+                        zero_count(cx, *count, &field);
+                    }
+                    Goal::WinBattles { count } | Goal::WinMode { count, .. } => {
+                        zero_count(cx, *count, &field);
+                    }
+                    Goal::WinBoss { formation, boss } => {
+                        if let Some(f) = formation {
+                            reference_formation(cx, f, &field);
+                        }
+                        if let Some(b) = boss {
+                            cx.reference("boss", b, &field);
+                        }
+                        if formation.is_some() && boss.is_some() {
+                            cx.error(&field, "name the boss or the formation, not both");
+                        }
+                    }
+                    Goal::CollectItem { item, count, .. } => {
+                        cx.disc_ref(&field, &crate::refs::DiscRef::Item { id: *item });
+                        zero_count(cx, *count, &field);
+                    }
+                    Goal::ReachLevel { level } if !(1..=99).contains(level) => {
+                        cx.error(&field, format!("level {level} is not 1..=99"));
+                    }
+                    _ => {}
+                }
+            }
+            if q.giver.is_none() && !q.auto_start {
+                cx.warning(
+                    &at,
+                    format!(
+                        "quest {:?} has no giver and no auto_start; only a script starts it",
+                        q.id
+                    ),
+                );
+            }
+            if !q.repeat.repeatable
+                && (q.repeat.cooldown_seconds > 0 || q.repeat.max_completions.is_some())
+            {
+                cx.warning(
+                    &format!("{at}.repeat"),
+                    "cooldown and cap apply only to a repeatable quest",
+                );
+            }
+            q.rewards.check(cx, &format!("{at}.rewards"));
+        }
+        for (i, c) in self.challenges.iter().enumerate() {
+            let at = format!("challenges[{i}]");
+            if let Some(f) = &c.formation {
+                reference_formation(cx, f, &format!("{at}.formation"));
+            }
+            if c.rules.turn_limit == Some(0) {
+                cx.error(
+                    &format!("{at}.rules.turn_limit"),
+                    "a turn limit of 0 cannot be met",
+                );
+            }
+            if c.rules.solo.is_some_and(|s| s > 3) {
+                cx.error(
+                    &format!("{at}.rules.solo"),
+                    "solo names a roster slot 0..=3",
+                );
+            }
+            if c.rules.enemy_scale_permille == Some(0) {
+                cx.error(
+                    &format!("{at}.rules.enemy_scale_permille"),
+                    "a scale of 0 removes the enemies' stats",
+                );
+            }
+            c.rewards.check(cx, &format!("{at}.rewards"));
+        }
+    }
+}
+
+fn zero_count(cx: &mut crate::validate::Checker<'_>, count: u32, at: &str) {
+    if count == 0 {
+        cx.warning(at, "count 0 is met at once");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,7 +508,8 @@ mod tests {
         assert_eq!(
             q.objectives[3].goal,
             Goal::WinBoss {
-                formation: Some(FormationRef::Pack("sovereign".into()))
+                formation: Some(FormationRef::Pack("sovereign".into())),
+                boss: None,
             }
         );
         assert_eq!(q.prerequisites.story_flags, vec![0x142]);
@@ -378,5 +544,102 @@ mod tests {
     fn an_unknown_goal_kind_is_an_error() {
         let text = "[[quests]]\nid = \"a\"\nobjectives = [{ kind = \"fly\" }]\n";
         assert!(toml::from_str::<QuestSection>(text).is_err());
+    }
+
+    fn pack_with(quests: &str, dialog: &str, battle: &str) -> crate::ExpansionPack {
+        let mut files = crate::PackFiles::new();
+        files.insert(
+            "pack.toml".into(),
+            b"id = \"t\"\nname = \"T\"\nversion = \"1.0.0\"\ndescription = \"d\"\nauthors = [\"a\"]\nlicense = \"MIT\"\n".to_vec(),
+        );
+        files.insert("quests.toml".into(), quests.as_bytes().to_vec());
+        files.insert("dialog.toml".into(), dialog.as_bytes().to_vec());
+        files.insert("battle.toml".into(), battle.as_bytes().to_vec());
+        crate::ExpansionPack::from_files(&files).unwrap()
+    }
+
+    fn errors(pack: &crate::ExpansionPack) -> Vec<String> {
+        crate::validate::validate(pack)
+            .into_iter()
+            .filter(|i| i.severity == crate::validate::Severity::Error)
+            .map(|i| format!("{} [{}]: {}", i.path, i.field, i.message))
+            .collect()
+    }
+
+    const BATTLE: &str = r#"
+[formations.ogres]
+monsters = [{ kind = "monster", id = 12 }]
+[bosses.king]
+formation = "ogres"
+"#;
+
+    #[test]
+    fn a_well_formed_quest_and_line_validate_clean() {
+        let p = pack_with(
+            r#"
+            [[quests]]
+            id = "q"
+            title = "Q"
+            giver = "npc"
+            start_dialog = "hello"
+            start_boss = "king"
+            objectives = [
+                { kind = "defeat_formation", formation = "ogres" },
+                { kind = "win_boss", boss = "king" },
+            ]
+            [[challenges]]
+            id = "c"
+            formation = "ogres"
+            "#,
+            r#"
+            [lines.hello]
+            text = "Hi."
+            choices = [{ label = "Fight", battle = "ogres", next = "bye" }, { label = "No" }]
+            [lines.bye]
+            text = "Bye."
+            "#,
+            BATTLE,
+        );
+        assert!(errors(&p).is_empty(), "{:?}", errors(&p));
+    }
+
+    #[test]
+    fn dangling_references_and_bad_text_are_errors() {
+        let p = pack_with(
+            r#"
+            [[quests]]
+            id = "q"
+            auto_start = true
+            prerequisites = { quests = ["missing"] }
+            complete_dialog = "nope"
+            objectives = [
+                { kind = "defeat_formation", formation = "ghosts" },
+                { kind = "win_boss", boss = "queen" },
+                { kind = "reach_level", level = 120 },
+            ]
+            [[quests]]
+            id = "q"
+            auto_start = true
+            "#,
+            r#"
+            [lines.hello]
+            text = "caf\u00e9"
+            choices = [{ label = "a", next = "gone" }]
+            "#,
+            BATTLE,
+        );
+        let e = errors(&p);
+        for needle in [
+            "quest \"missing\"",
+            "line \"nope\"",
+            "formation \"ghosts\"",
+            "boss \"queen\"",
+            "level 120",
+            "already defined",
+            "line \"gone\"",
+            "no glyph",
+        ] {
+            assert!(e.iter().any(|m| m.contains(needle)), "{needle}: {e:#?}");
+        }
     }
 }
