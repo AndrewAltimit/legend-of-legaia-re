@@ -4,14 +4,12 @@
 use legaia_engine_modes::active::ActiveMode;
 use legaia_engine_modes::cards::duel::{CELLS, DuelPhase, DuelView, HAND};
 
-use super::cards::{DUEL_H, DUEL_W, duel_card, element_color};
+use super::cards::{DUEL_H, DUEL_W, ROW_H, ROW_W, duel_card, element_color, hand_row};
 use super::{Canvas, STAGE_W, footer, ink, pen};
 
 const CELL: i32 = DUEL_W + 2;
 const GRID_X: i32 = (STAGE_W - 3 * CELL) / 2;
 const GRID_Y: i32 = 20;
-/// Vertical step between stacked hand cards.
-const HAND_STEP: i32 = 30;
 
 pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[String]) {
     // The grid.
@@ -49,34 +47,33 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
         }
     }
 
-    // The hands: the player's down the left, the opponent's down the right.
+    // The hands: the player's down the left, the opponent's down the right,
+    // one row per card still in hand.
     for seat in 0..2 {
-        let x = if seat == 0 { 6 } else { STAGE_W - 6 - DUEL_W };
+        let x = if seat == 0 { 2 } else { STAGE_W - 2 - ROW_W };
         let (turn, held) = match v.phase {
             DuelPhase::PickCard { seat: s } => (s == seat, None),
             DuelPhase::PickCell { seat: s, card } => (s == seat, Some(card)),
             _ => (false, None),
         };
         let selected = held.or(turn.then_some(v.hand_cursor[seat]));
-        let mut top = None;
+        let mut row = 0;
         for i in 0..HAND {
             if v.used[seat][i] {
                 continue;
             }
-            let y = GRID_Y + i as i32 * HAND_STEP;
-            if Some(i) == selected {
-                top = Some((i, y));
-                continue;
-            }
+            let y = GRID_Y + row * (ROW_H + 3);
+            row += 1;
             let card = &v.hands[seat][i];
-            duel_card(c, card, mode.card_name(&card.id), seat, x, y);
-        }
-        // The selected card draws last, nudged toward the grid.
-        if let Some((i, y)) = top {
-            let card = &v.hands[seat][i];
-            let nudge = if seat == 0 { 8 } else { -8 };
-            duel_card(c, card, mode.card_name(&card.id), seat, x + nudge, y);
-            c.outline(x + nudge - 1, y - 1, DUEL_W + 2, DUEL_H + 2, ink::HIGHLIGHT);
+            hand_row(
+                c,
+                card,
+                mode.card_name(&card.id),
+                seat,
+                x,
+                y,
+                Some(i) == selected,
+            );
         }
     }
 

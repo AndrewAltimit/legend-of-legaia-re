@@ -96,7 +96,9 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[Strin
         GolfPhase::Rolling { seat } => Some(seat),
         _ => None,
     };
-    for (seat, b) in v.balls.iter().enumerate() {
+    // The player's ball last, so a shared tee shows it on top.
+    let order = (1..v.balls.len()).chain(std::iter::once(0));
+    for (seat, b) in order.filter_map(|s| v.balls.get(s).map(|b| (s, b))) {
         if b.done {
             continue;
         }

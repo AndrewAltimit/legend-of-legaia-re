@@ -175,6 +175,39 @@ pub fn duel_card(c: &mut Canvas, card: &DuelCard, name: &str, owner: usize, x: i
     c.text(side_label(left), x + 7, y + 10, pen::WHITE);
     c.text_right(side_label(right), x + DUEL_W - 6, y + 10, pen::WHITE);
     // The name on the strip below the art; long names are cut to fit.
-    let short: String = name.chars().take(8).collect();
+    let short: String = name.chars().take(7).collect();
     c.text_centre(short, cx, y + DUEL_H - 15, pen::WHITE);
+}
+
+/// A hand row's size: hands list as rows rather than stacked cards, since a
+/// label in the text layer would show through any panel drawn over it.
+pub const ROW_W: i32 = 74;
+pub const ROW_H: i32 = 38;
+
+/// One hand card as a row: name, the four sides as `top-right-bottom-left`,
+/// the element strip and the rarity mark. `lit` frames the selected card.
+pub fn hand_row(
+    c: &mut Canvas,
+    card: &DuelCard,
+    name: &str,
+    owner: usize,
+    x: i32,
+    y: i32,
+    lit: bool,
+) {
+    let edge = if lit {
+        super::ink::HIGHLIGHT
+    } else {
+        [16, 16, 24, 255]
+    };
+    c.panel(x, y, ROW_W, ROW_H, owner_color(owner), edge);
+    if lit {
+        c.outline(x + 1, y + 1, ROW_W - 2, ROW_H - 2, super::ink::HIGHLIGHT);
+    }
+    c.rect(x + 3, y + 3, 3, ROW_H - 6, element_color(card.element));
+    c.dot(x + ROW_W - 6, y + 6, 2, rarity_color(card.rarity));
+    let short: String = name.chars().take(9).collect();
+    c.text(short, x + 9, y + 2, pen::WHITE);
+    let [t, r, b, l] = card.sides.map(side_label);
+    c.text(format!("{t}-{r}-{b}-{l}"), x + 9, y + 19, pen::GOLD);
 }
