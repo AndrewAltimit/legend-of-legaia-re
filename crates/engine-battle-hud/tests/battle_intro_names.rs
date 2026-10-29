@@ -40,10 +40,10 @@ fn the_hold_is_ninety_frames_then_the_labels_go() {
     world.arm_battle_intro_names();
     assert_eq!(world.battle.intro_names_frames, 0x5A);
     for _ in 0..0x59 {
-        world.step_battle_intro_names();
+        world.battle.step_battle_intro_names();
     }
     assert_eq!(world.battle.intro_names_frames, 1);
-    world.step_battle_intro_names();
+    world.battle.step_battle_intro_names();
     assert_eq!(world.battle.intro_names_frames, 0);
 }
 
@@ -138,9 +138,9 @@ fn the_names_wait_out_the_entry_sweep() {
     cam.start_entry_sweep();
     world.battle.camera = Some(cam);
     world.arm_battle_intro_names();
-    assert!(world.battle_entry_sweeping());
+    assert!(world.battle.battle_entry_sweeping());
     for _ in 0..10 {
-        world.step_battle_intro_names();
+        world.battle.step_battle_intro_names();
     }
     assert_eq!(
         world.battle.intro_names_frames, 0x5A,

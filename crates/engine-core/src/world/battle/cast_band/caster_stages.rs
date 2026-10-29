@@ -132,7 +132,7 @@ impl World {
             }
             if run.phase != arm || !run.busy {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
-                    self.flush_module_part_pool();
+                    self.casting.flush_module_part_pool();
                 }
                 if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
                     self.casting.module_pass_counter = 0;

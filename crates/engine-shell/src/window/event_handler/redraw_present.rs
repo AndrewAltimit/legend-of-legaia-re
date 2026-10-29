@@ -284,6 +284,8 @@ struct CastSeqRecorder {
     meta: std::io::BufWriter<std::fs::File>,
     /// `cam.csv`: the live camera pose per tick.
     cam: std::io::BufWriter<std::fs::File>,
+    /// `body.csv`: the acting seat's clip, cursor and live pair per tick.
+    body: std::io::BufWriter<std::fs::File>,
     /// Only a cast by this acting seat starts the recording
     /// (`LEGAIA_DIAG_CAST_SEQ_SEAT`); any seat when unset.
     seat: Option<u8>,
@@ -339,8 +341,11 @@ impl PlayWindowApp {
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
+            let mut body = std::io::BufWriter::new(std::fs::File::create(dir.join("body.csv")).ok()?);
+            let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
             Some(std::sync::Mutex::new(CastSeqRecorder {
                 cam,
+                body,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
                 tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
                 max: num("LEGAIA_DIAG_CAST_SEQ_MAX", 2000),
@@ -475,7 +480,7 @@ impl PlayWindowApp {
                 let h = |o: usize| st.actor_u16(o) as i16;
                 let _ = writeln!(
                     f,
-                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{}",
+                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{}",
                     part.model_sel,
                     u8::from(part.finished),
                     st.field_74,
@@ -491,6 +496,22 @@ impl PlayWindowApp {
                     st.world_x,
                     st.world_y,
                     st.world_z,
+                    st.move_substate,
+                    st.field_72,
+                    st.field_52,
+                    st.actor_u16(0x9C) as i16,
+                    st.actor_u16(0xA8),
+                    st.actor_u16(0xAC),
+                    st.actor_u16(0xB0),
+                    st.actor_u16(0xB2),
+                    legaia_engine_effects::effect_default_arm::default_arm_vram_mesh(st)
+                        .map_or(0, |m| m.positions.len()),
+                    part.tag.unwrap_or(0),
+                    st.flags,
+                    st.render_24,
+                    st.render_26,
+                    st.render_28,
+                    st.field_7a,
                 );
             }
         }
@@ -512,9 +533,31 @@ impl PlayWindowApp {
                 p.focus[2] as i32,
             );
         }
+        // The acting seat's clip each tick (`body.csv`), the engine half of
+        // the retail probe's file of the same name: `+0x1D9`, `+0x1DA`, the
+        // cursor in sixteenths of a keyframe and the live pair.
+        if let Some(a) = w.actors.get(usize::from(w.battle_ctx.active_actor)) {
+            let p = a.battle_animation.as_ref();
+            let _ = writeln!(
+                rec.body,
+                "{tick},{st},{acting},{},{},{},{},{},{}",
+                a.battle.current_anim,
+                a.battle.queued_anim,
+                p.map_or(-1, |p| i32::from(p.is_looping())),
+                p.map_or(-1, |p| i32::from(p.cursor_sixteenths())),
+                a.move_state.world_x,
+                a.move_state.world_z,
+            );
+        }
+        // A `--screenshot` child exits on its capture tick without reaching
+        // the recorder's own end: keep the files whole on every tick.
+        let _ = rec.meta.flush();
+        let _ = rec.cam.flush();
+        let _ = rec.body.flush();
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();
             let _ = rec.cam.flush();
+            let _ = rec.body.flush();
             println!(
                 "[ok] cast sequence: {} frames in {} (ticks {start}..={tick})",
                 rec.shots,
@@ -556,8 +599,26 @@ impl PlayWindowApp {
             .checked_sub(sc.display_lag)
             .filter(|&t| t >= since)
         {
+            // A magic-band shot the camera armed after the retake's tick
+            // framed none of the frames before it: the retake draws the
+            // framing it replaced, so it borrows no target off the gate's.
+            let w = &self.session.host.world;
+            let shot_after = w
+                .battle
+                .camera
+                .as_ref()
+                .and_then(|c| c.spell_shot_armed_at())
+                .is_some_and(|at| at > w.clock.display_frames - (self.tick_no - want));
+            if sc.retake_shot_only && !shot_after {
+                return;
+            }
             eprintln!("display lag: retake at tick {want} (state since {since})");
-            let _ = std::fs::write(path.with_extension("retake"), retake_note(sc, want));
+            let note = if shot_after {
+                want.to_string()
+            } else {
+                retake_note(sc, want)
+            };
+            let _ = std::fs::write(path.with_extension("retake"), note);
         }
     }
 }

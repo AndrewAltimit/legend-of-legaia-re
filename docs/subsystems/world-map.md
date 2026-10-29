@@ -45,9 +45,9 @@ VRAM; **OT** = the GPU ordering table.
 Both play hosts (native `play-window` and the browser play page) walk the
 overworld, enter and leave towns, roll encounters, and draw ground, landmarks,
 sky, water shimmer and the distance cue through shared kernels, and L1 opens
-the map display with its place labels. Two things are not there: the map
-display's player pointer (a move-VM effect the module spawns), and retail's
-top-view *debug* camera - the port's debug top view uses a synthetic framing.
+the map display with its place labels and the player's pointer. Retail's
+top-view *debug* camera is not there - the port's debug top view uses a
+synthetic framing.
 
 ## Contents
 
@@ -379,13 +379,47 @@ their boxes and the compass letters are `engine-ui::map_label_*`, which each
 host calls from its text and chrome passes. Disc pin:
 `crates/engine-screens/tests/map_display_disc.rs`.
 
-Not ported: the player's **map pointer**. Mode `1` spawns it through
-`FUN_80021B04` at the player's position with the move-VM program at
-`0x801CF6E8`, whose first halfword it patches with
-`0x8007BB38 - 0x8007BA6C` (the value its `pointer %d` debug print shows), and
-the tail calls the actor's handler every frame. `MapDisplay::pointer_alive`
-carries its lifetime; nothing draws it. The retail visible tile window is not
-applied either - the port draws the kingdom whole.
+#### The player's map pointer
+
+Mode `1` seats the pointer through
+`FUN_80021B04(player + 0x14, player + 0x24, 0x801CF6E8, 0x1000)`
+(`0x801CE968..0x801CE9B4`): the leader's position and render banks, the spawn
+record in the module image, unit scale. Before the call it overwrites the
+record's `model_sel` with `0x8007BB38 - 0x8007BA6C`
+(`0x801CE978..0x801CE990`, also the value of its `pointer %d` debug print):
+the global TMD id the scene load issued last, less the base the seater adds
+back. In every library kingdom state `0x8007BA6C` is `0`, `0x8007BB38` is
+`44` on `map01` and `60` on `map03`, and `DAT_8007C018[0x8007BB38]` is the
+**last TMD of the kingdom bundle's pack** - a 14-vertex, all-untextured mesh
+the three kingdom bundles carry byte for byte. The pointer is that mesh.
+
+The record's program:
+
+| Words | Op | Effect |
+|---|---|---|
+| `000C FF89 0000 0000 0000 0001` | `0x0C` | colour word `0xC9000000`, level `1`: ABE, ABR `1` (additive), double-sided |
+| `0004 0000 0020 0000` | `0x04` | `+0x82 = 0x100`: a steady turn |
+| `0018 4000` / `0009 000F` / `0019` | loop | wait `15`, forever |
+
+The tick's tail calls the part's handler every frame
+(`lw a0,-0x878(v0)` / `jalr` at `0x801CEC2C..0x801CEC44`) - mode `0x0D` runs
+no actor-list walk, so nothing else moves it - and mode `4` raises its halt
+bit (`ori v0,v0,0x8` at `0x801CEBB8`).
+
+In the port the scene host reads the record off PROT 0981 on a kingdom map
+(`map_display::pointer_record`, `World::install_map_pointer_source`), and
+`World::tick_map_display` seats it when `MapDisplay::pointer_alive` rises,
+ticks it after the display's own tick, and drops it at mode `4`. It draws as a
+field part (`World::map_pointer_part_draws`, chained into
+`active_field_fx_part_draws`), which both play hosts draw on the overworld too:
+the render dispatcher's case-5 arm (`0x8001B1A8` in `FUN_8001ADA4`) reads no
+overworld bit. Its mesh is all `F*` / `G*` packets, so it draws through the
+field part pass's colour half. Disc pins:
+`engine-scene-host/tests/map_display_pointer_disc.rs` and the page's
+`web-play/tests/map_display_pointer_page.rs`.
+
+The retail visible tile window is not applied - the port draws the kingdom
+whole.
 
 ### `FUN_801EAD98` - world map debug menu renderer (7280 bytes)
 

@@ -25,12 +25,17 @@ runtime ([`engine-menu-runtime`](../engine-menu-runtime/README.md)).
 - **The `World` half of scene flow.** New Game seeding (`new_game`), the
   live-loop arming (`live_loop`), the player-rig source
   (`World::player_rig_source`) and the constants the scene host and the tick
-  share (`world::EFFECT_MODEL_LIBRARY_BASE`, `world::BGM_SUB_OP_ENGINE_STOP`).
+  share (`world::BGM_SUB_OP_ENGINE_STOP`).
   `SceneHost`, which owns the `World` and the `ProtIndex` and enters and
   ticks scenes, is `engine-scene-host`.
 - **The stateful side of battle and minigames.** The round loop, the
-  command flow, the battle HUD state (the glides and banners `BattleState`
-  carries) and the minigame sessions' entry points. The minigame venues and
+  command flow, the action SM's host, the cast band and the minigame
+  sessions' entry points - every battle step that reaches past the battle
+  state into the actor table, the party, the disc tables or the RNG. The
+  battle state itself (`BattleState`, `CastFxState`) and the steps that read
+  or write it alone are
+  [`engine-battle-loop`](../engine-battle-loop/README.md), below this crate.
+  The minigame venues and
   surfaces they drive, and the minigame seat itself (`MinigameState`), are
   `engine-minigame-scenes`. What the battle screen reads back off that state
   is [`engine-battle-hud`](../engine-battle-hud/README.md), above this
@@ -58,6 +63,7 @@ lives in the kernel crate for its area, where it can be unit-tested alone:
 | Area | Kernel crate |
 |---|---|
 | Battle arithmetic, monster AI, catalogs, encounters, level-up | [`engine-battle`](../engine-battle/README.md), [`engine-battle-vm`](../engine-battle-vm/README.md) |
+| The battle loop's state and the steps over it alone (stat block, tutorial flow, HUD glides, cast stagers, clip ladder) | [`engine-battle-loop`](../engine-battle-loop/README.md) |
 | Field actor programs, camera, regions, world map | [`engine-field`](../engine-field/README.md) |
 | The shared GTE camera, its tweens and shake | [`engine-camera`](../engine-camera/README.md) |
 | Slot-B cast / summon module bodies | [`engine-cast`](../engine-cast/README.md) |
@@ -94,7 +100,7 @@ engine-menu-runtime                           the pause menu over World
 engine-scene-host                             SceneHost, resume, live preview
 engine-world-views, engine-battle-hud         reads of World
 engine-core                                   World, the tick, battle loop
-engine-minigame-scenes                        minigame venues + surfaces
+engine-battle-loop, engine-minigame-scenes    battle state + steps; minigame venues
 engine-scene, engine-* kernels, render-kernels   World-free rules + scene loading
 format crates                                 typed disc data
 ```

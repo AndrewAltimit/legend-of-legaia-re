@@ -243,7 +243,7 @@ pub struct ScreenshotConfig {
     pub battle_summon_focus: Option<[f32; 2]>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
-    /// (`World::land_battle_hud_glides`). Set by the retail-compare image
+    /// (`BattleState::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
     /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
@@ -252,6 +252,13 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_MENU_GLIDE_LEFT=<frames>`: a round-prompt capture whose
+    /// far framing (case 9) was still walking, with the frames of its arm
+    /// the displayed frame had left; the captured frame stands the engine's
+    /// own arm as far along
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_frames_left`]).
+    /// Set by the retail-compare image channel.
+    pub seat_menu_glide_left: Option<f32>,
     /// `LEGAIA_SEAT_POPUP_AGE=<engine slot>:<age>`: the newest damage
     /// numeral's age as the retail capture's displayed frame drew it; the
     /// captured frame ages the engine's newest popup on that slot to it.
@@ -274,7 +281,7 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`: the arts entry's Triangle
     /// list open on the retail capture's page with its window's slide
     /// counter; the captured frame seats the engine's entry on them
-    /// (`World::seat_arts_list`). Set by the retail-compare image channel.
+    /// (`BattleState::seat_arts_list`). Set by the retail-compare image channel.
     pub seat_arts_list: Option<(u8, u8)>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context
@@ -345,6 +352,18 @@ pub struct ScreenshotConfig {
     /// (`World::install_sprite_arm_snapshot`); taken once.
     pub seat_sprite_arms:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
+    /// `LEGAIA_SEAT_TURNING_PARTS`: the render banks of a retail state's
+    /// turning ambient parts as its displayed frame drew them, written over
+    /// the engine's on the frame the capture is taken
+    /// (`World::seat_ambient_part_banks`); taken once.
+    pub seat_turning_parts:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::AmbientBankSeed>>>,
+    /// `LEGAIA_SEAT_BALLOON`: the text balloon a retail state's displayed
+    /// frame drew (the place-name banner a door leaves up, which a card
+    /// load never raises), or none, written over the field's on the frame
+    /// the capture is taken; taken once.
+    pub seat_balloon:
+        std::cell::Cell<Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>>>,
     /// `LEGAIA_SEAT_FADE_LEAD=<vsyncs>`: on the frame the capture is taken,
     /// step every live screen fade that many vsyncs on
     /// (`World::lead_screen_fades`), for a capture whose displayed fade
@@ -379,6 +398,11 @@ pub struct ScreenshotConfig {
     /// gates where the displayed frame measures closer
     /// (`RetailBattle::display_retake` in `legaia-parity`).
     pub display_lag: u64,
+    /// `LEGAIA_CAPTURE_RETAKE_SHOT=1`: retake only when the battle camera
+    /// armed the magic band's shot it stands on after the retake's tick, so
+    /// the gate's frame shows a different shot than the display did
+    /// (`RetailBattle::retake_on_shot_only` in `legaia-parity`).
+    pub retake_shot_only: bool,
     /// The first tick of the drive's current run in its action state.
     pub state_since: std::cell::Cell<Option<u64>>,
     /// The framing the battle camera's law armed on the gate tick, kept for
@@ -403,8 +427,8 @@ pub struct ScreenshotConfig {
     pub battle_reseat: Option<u8>,
     /// `LEGAIA_BATTLE_APPROACH_YAW` (`CaptureApproach::to_env`): the
     /// re-seated attacker's walk onto its target starts where retail's did
-    /// (`legaia_engine_core::world::BattleState::capture_approach_yaw`).
-    pub battle_approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
+    /// (`legaia_engine_battle_loop::battle_state::BattleState::capture_approach_yaw`).
+    pub battle_approach_yaw: Option<legaia_engine_battle_loop::battle_state::CaptureApproach>,
     /// `LEGAIA_BATTLE_BACKDROP_CUE=<weight>`: the backdrop pair's depth-cue
     /// weight a capture-band capture holds, stood on at the captured phase.
     pub battle_backdrop_cue: Option<u16>,
@@ -780,6 +804,9 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_menu_glide_left: std::env::var("LEGAIA_SEAT_MENU_GLIDE_LEFT")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             seat_popup_cells: std::env::var("LEGAIA_SEAT_POPUP_CELLS")
                 .map(|v| {
                     v.split(',')
@@ -819,6 +846,16 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::sprite_arms_from_env(&v)),
+            ),
+            seat_balloon: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_BALLOON")
+                    .ok()
+                    .and_then(|v| legaia_engine_capture::field_seeds::balloon_from_env(&v)),
+            ),
+            seat_turning_parts: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_TURNING_PARTS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::turning_parts_from_env(&v)),
             ),
             seat_clear: std::env::var("LEGAIA_SEAT_CLEAR").ok().and_then(|v| {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
@@ -871,13 +908,17 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
+            retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
+                .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),
             battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             battle_approach_yaw: std::env::var("LEGAIA_BATTLE_APPROACH_YAW")
                 .ok()
-                .and_then(|v| legaia_engine_core::world::CaptureApproach::from_env(&v)),
+                .and_then(|v| {
+                    legaia_engine_battle_loop::battle_state::CaptureApproach::from_env(&v)
+                }),
             battle_backdrop_cue: std::env::var("LEGAIA_BATTLE_BACKDROP_CUE")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

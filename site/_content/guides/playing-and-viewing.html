@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; playing + viewing</div>
   <h1>Playing and viewing</h1>
-  <p class="lede">The project's engine is a from-scratch rewrite of the game that reads your own disc: point <code>legaia-engine</code> at the image and it boots Rim Elm, plays the music, runs the NPC scripts, rolls encounters and fights battles. <code>asset-viewer</code> is its museum-mode sibling for browsing one texture, mesh or sound bank at a time. Both ship in the release archive; commands use the bare <code>./tool</code> form (source builds live at <code>target/release/</code>).</p>
+  <p class="lede">The project's engine is a from-scratch rewrite of the game that reads your own disc: point <code>legaia-engine</code> at the image and it boots Rim Elm, plays the music, runs the NPC scripts, rolls encounters and fights battles. <code>asset-viewer</code> is its museum-mode sibling for browsing one texture, mesh or sound bank at a time. Both ship in the release archive's <code>command-line-tools</code> folder; commands use the bare <code>./tool</code> form, run from a terminal in that folder (source builds live at <code>target/release/</code>).</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -15,13 +15,13 @@
     <li><b>Browse + read</b><span><code>asset-viewer</code>, <code>asset field-disasm</code>, the browser build.</span></li>
   </ol>
   <h3>Where the data comes from</h3>
-  <p>Every subcommand accepts the disc directly via <code>--disc</code> - no extraction step required to play. Without <code>--disc</code>, tools read an <code>extracted/</code> tree (<code>--extracted-root</code>, default <code>extracted</code>, resolved against the current directory) produced by <code>legaia-extract</code> (<a href="getting-started.html">getting started</a>).</p>
+  <p>Every subcommand that reads game data accepts the disc directly via <code>--disc</code> - no extraction step required to play. Without <code>--disc</code>, tools read an <code>extracted/</code> tree (<code>--extracted-root</code>, default <code>extracted</code>, resolved against the current directory) produced by <code>legaia-extract</code> (<a href="getting-started.html">getting started</a>).</p>
 </section>
 
 <section class="doc-section" id="launcher">
   <h2>0 &middot; The launcher</h2>
   <p class="hint">New to the release archive? <a href="desktop-apps.html">Desktop apps</a> covers the download, the first start past SmartScreen or Gatekeeper, the controls and the toggles, with screenshots; this page is the full reference.</p>
-  <p>Started with <strong>no subcommand</strong> - a double-click, a desktop shortcut, the macOS app - <code>legaia-engine</code> opens its launcher instead of printing help:</p>
+  <p>Started with <strong>no subcommand</strong> - the archive's <code>Legend of Legaia</code> program (<code>.exe</code> on Windows, <code>.app</code> on macOS), a desktop shortcut, a double-click - <code>legaia-engine</code> opens its launcher instead of printing help:</p>
   <div class="cli"><code>./legaia-engine</code></div>
   <figure class="screenshot">
     <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar - Display (fullscreen, window size, camera distance, PlayStation pixel look), Enhancements (enhanced lighting, time of day, lamp shadows, bloom, ground fog, see-through walls, living ground pulse) and Play (free-angle movement, smarter monsters, reduce flashing)" loading="lazy">
@@ -35,6 +35,7 @@
   </ol>
   <p>The check reads a few sectors through the same reader the game boots from; it is not the SHA-256 fingerprint <code>disc-extract verify</code> computes. A PAL or Japanese disc is refused with the executable it boots. A randomized or translated USA disc is accepted, since it still boots the USA executable.</p>
   <p>Arrow keys move between every control, <kbd>Tab</kbd> jumps between the buttons and the options, <kbd>Left</kbd> / <kbd>Right</kbd> change an option, <kbd>Enter</kbd> presses, <kbd>Esc</kbd> quits; the mouse hovers and clicks (right-click steps an option back). <kbd>Delete</kbd> or a middle-click puts the focused option back on its default; a changed option carries a small gold dot, and the help box names its default. The help box under the buttons explains whatever is focused.</p>
+  <p>A value is drawn <strong>green</strong> when the original game does not have it - an enhancement, a fix or a tweak in effect - and dim when it is the original&rsquo;s, whatever the value&rsquo;s words: <em>PlayStation pixel look: Off</em> reads green, because the original&rsquo;s picture is the PlayStation&rsquo;s own, and <em>Smarter monsters: Off</em> reads dim. The help box names the original&rsquo;s value under a row that departs from it (<em>Not as in the original game (Off).</em>). The window, time-of-day and volume rows have no original counterpart and keep their plain colours; the original values are the ones <em>Original game only</em> plays with.</p>
   <h3 id="launcher-options">Options</h3>
   <p>The list is grouped and scrolls when it is longer than the panel: the selected row stays in view, a bar on the right edge shows where you are, and the mouse wheel, <kbd>Page Up</kbd> / <kbd>Page Down</kbd> and <kbd>Home</kbd> / <kbd>End</kbd> move through it.</p>
   <table>
@@ -87,7 +88,7 @@
   <details class="disclosure">
     <summary>Platform notes: Windows console, Linux file dialog, Wayland</summary>
     <div class="disclosure-body">
-      <p><strong>Windows.</strong> Double-click <code>Legend of Legaia.exe</code>: it starts <code>legaia-engine.exe</code> with no console window. <code>legaia-engine.exe</code> is a console program so its subcommands behave normally in a terminal; double-clicked directly, it closes the console it was given (a brief flash) unless <code>LEGAIA_KEEP_CONSOLE</code> is set, and run from a command prompt it keeps printing its log there.</p>
+      <p><strong>Windows.</strong> Double-click <code>Legend of Legaia.exe</code>: it starts <code>command-line-tools\legaia-engine.exe</code> with no console window. <code>legaia-engine.exe</code> is a console program so its subcommands behave normally in a terminal; double-clicked directly, it closes the console it was given (a brief flash) unless <code>LEGAIA_KEEP_CONSOLE</code> is set, and run from a command prompt it keeps printing its log there.</p>
       <p><strong>Linux.</strong> The file dialog goes through the desktop's file-chooser portal; where no portal runs, drag-and-drop and the typed path still work.</p>
       <p><strong>Wayland.</strong> The launcher window opens through XWayland, because the windowing library has no Wayland drag-and-drop; the compositor carries a drag from a Wayland file manager across. Without XWayland (<code>DISPLAY</code> unset), or with <code>LEGAIA_LAUNCHER_WAYLAND=1</code>, the window is native Wayland and only the file dialog and the typed path take a disc. The game itself always opens on the desktop's default backend.</p>
     </div>
@@ -133,7 +134,7 @@
       <tr><td><kbd>F3</kbd></td><td>Wide debug orbit camera instead of the field camera</td><td>off</td></tr>
     </tbody>
   </table>
-  <p>In the native window each press shows the toggle's new state at the bottom left for a moment (<em>Ground fog: off</em>); holding a key toggles once, not repeatedly. A key that only acts while you walk around (<kbd>F3</kbd>, <kbd>T</kbd>, <kbd>R</kbd>) says so when pressed on the title screen or in a menu. <kbd>F12</kbd> (or <kbd>?</kbd>) opens a panel listing every toggle key with its current state, <kbd>F11</kbd> fullscreen among them, the key each pad button is on (Cross, Circle, Start, ...) and the mouse's camera controls; press it again to close it.</p>
+  <p>In the native window each press shows the toggle's new state at the bottom left for a moment (<em>Ground fog: off</em>); holding a key toggles once, not repeatedly. A key that only acts while you walk around (<kbd>F3</kbd>, <kbd>T</kbd>, <kbd>R</kbd>) says so when pressed on the title screen or in a menu. <kbd>F12</kbd> (or <kbd>?</kbd>) opens a panel listing every toggle key with its current state, <kbd>F11</kbd> fullscreen among them, the key each pad button is on (Cross, Circle, Start, ...) and the mouse's camera controls; press it again to close it. A state the original game does not have is drawn green (<em>Enhanced lighting: on</em>), with the same marking and the same original values as the launcher&rsquo;s option list.</p>
   <p>The browser play page answers the same keys with the canvas focused. Its presentation toggles sit in one <strong>Visual enhancements</strong> panel under the canvas: each row names its key, says in a line what it does and whether it is a port enhancement or part of the PS1's own drawing, and the panel carries the Retail-faithful switch and a <strong>Reset to defaults</strong> button.</p>
   <p><code>--retail</code> starts a session with every enhancement off and the remembered engine-only options (camera distance, movement mode, the photosensitivity guard) at their retail values, writing nothing back to the options file - the one switch for a retail-faithful run. It also pins the engine's own deviations to retail: the ledge-hop landing guard, smart monsters, overworld markers and the saved-chain Arts list go off and the battle kernels run retail's. The browser play page's <strong>Retail-faithful</strong> switch applies the same pin.</p>
   <p class="hint">Window toggles and pad bindings cannot collide: a window key is handled <em>before</em> the pad lookup, so one parked on a bindable key would delete that button from the keyboard. Every toggle therefore lives on an F-key or a letter outside the bindable vocabulary (the key table above plus <kbd>C</kbd>, <kbd>V</kbd>, <kbd>D</kbd>, <kbd>E</kbd>).</p>
@@ -314,7 +315,7 @@
     </tbody>
   </table>
   </div>
-  <p>Started with no view named (a double-click), <code>asset-viewer</code> opens the archive browser on the <code>extracted/PROT.DAT</code> in the current folder or beside the program; with none there it says how to make one and points at <code>legaia-studio</code>. The browser takes entry names from the <code>CDNAME.TXT</code> beside <code>PROT.DAT</code> unless <code>--cdname</code> names another.</p>
+  <p>Started with no view named (a double-click), <code>asset-viewer</code> opens the archive browser on the <code>extracted/PROT.DAT</code> in the current folder or beside the program; with none there it says how to make one and points at <code>legaia-explorer</code>. The browser takes entry names from the <code>CDNAME.TXT</code> beside <code>PROT.DAT</code> unless <code>--cdname</code> names another.</p>
   <p>The scene name is a positional argument here, not a <code>--scene</code> flag (<code>field</code>, <code>world</code> and <code>dialog</code> all take their subject that way).</p>
   <p>In the PROT browser: <kbd>N</kbd> / <kbd>P</kbd> (or the arrows) = next/prev entry, <kbd>PgDn</kbd> / <kbd>PgUp</kbd> = jump 10, <kbd>Home</kbd> / <kbd>End</kbd> = first/last, typing a number and pressing <kbd>Enter</kbd> jumps to that PROT index (the window title shows what is typed; <kbd>Esc</kbd> cancels it), <kbd>Esc</kbd> = quit; each entry's format is auto-detected and the first viewable sub-asset is shown. <code>tmd</code> and <code>stage</code> pointed at a directory walk every file with the same keys, a typed number naming the 1-based position their titles show. The <code>tim</code> subcommand also takes <code>extracted/PROT.DAT</code> itself with <code>--offset</code>/<code>--clut</code> for the system-UI textures that live outside any TOC entry.</p>
   <div class="see-also">

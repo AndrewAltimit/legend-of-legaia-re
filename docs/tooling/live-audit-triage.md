@@ -377,7 +377,7 @@ The reason each row carries, in short form. The source tag is authoritative.
   dispatcher routes a paired parallel load.
 - **`battle_stage_overlay_entry`** - the engine carries no per-formation stage
   id, so nothing produces the `_DAT_8007B64A` value this maps. The one battle
-  that pages a stage overlay is primed through `World::prime_battle_tutorial`.
+  that pages a stage overlay is primed through `BattleState::prime_battle_tutorial`.
 - **`arm` (`EmitterGate`)** - its retail caller sources parameters from the
   world-map trigger globals, which the world-map controller does not implement.
 - **`category_check`** (wired) - the item-category favor score behind retail's
@@ -1149,7 +1149,7 @@ the fields by category, so the player sees the wrong rows today.
 The live target picker is `TargetPickerSession::step_within_row` over
 `is_valid` / `first_valid_in`, and the live turn advance is
 `World::next_living_combatant`; the ailment half of retail's `+0x16E & 0xF84`
-predicate is answered separately and typed by `World::actor_blocked_from_acting`.
+predicate is answered separately and typed by `BattleState::actor_blocked_from_acting`.
 So `first_selectable_target` (`801DBA04`) and `next_selectable_actor`
 (`801DB81C`) have both halves of their predicate already live, in two places.
 They stay `DISCLOSE` rather than `REPLACE` on one point: retail's AI-companion

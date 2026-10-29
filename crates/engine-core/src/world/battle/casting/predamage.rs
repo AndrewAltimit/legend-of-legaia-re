@@ -15,8 +15,8 @@ impl World {
     /// Stat bridge (all read live off the actor arrays, faithful to the retail
     /// fields the kernel reads): attacker/target AGL = `battle_accuracy`
     /// (`+0x168`, the AGL-derived stat); HP = `battle.hp` (`+0x14c`); the two
-    /// defender defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
-    /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`].
+    /// defender defense terms (`+0x15c`/`+0x160`) = the [`legaia_engine_battle_loop::battle_state::BattleState::defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`legaia_engine_battle_loop::battle_state::BattleState::defense`].
     /// Element affinity comes from [`Self::enemy_affinity_pct`] when the
     /// affinity tables are installed (`matrix[enemy_element][party_element]`,
     /// `FUN_801dd864`), else 100 (neutral); status-weaken (`+0x16e`) and the
@@ -137,7 +137,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             // The bypass casts are routed away above; every move that reaches
             // the shared kernel passes `param_5 = 0`.
             bypass_party_resist: false,
@@ -175,7 +175,7 @@ impl World {
     /// slot element, so only the *defender's* resist stage is dropped.
     ///
     /// Stat bridge is the sibling paths' ([`Self::summon_roll_defender`] for
-    /// the defender, [`crate::world::BattleState::attack`] for the attacker's `+0x158`).
+    /// the defender, [`legaia_engine_battle_loop::battle_state::BattleState::attack`] for the attacker's `+0x158`).
     /// `power` is the move-power table's `+0` scalar; retail's module bakes
     /// the per-hit constant into the call site instead, so the magnitude is
     /// the engine's own seed even though the arithmetic is the wrapper's.
@@ -235,7 +235,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist: ATK_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
@@ -313,7 +313,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist: INT_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
@@ -422,7 +422,7 @@ impl World {
             attacker_element: summon_element,
             defender_resist: DefenderResist::default(),
             defender_guarding: false,
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist: false,
             summon_power_pct,
             floor_rand: 0,

@@ -29,6 +29,23 @@ impl FieldHostImpl<'_> {
             1 | 9 | 4 | 0xA => self.world.audio.bgm_script_paused = false,
             _ => {}
         }
+        // Sound-flag bit 2 up - raised by sub-op 6 and not yet cleared by the
+        // field init (`0x801D7348`), or the init's install slice still open
+        // over it: the poller copies the requested index onto the loaded one
+        // and loads nothing (`0x80024518` -> `0x80024560`). The word takes
+        // the id, the slot keeps what it holds, and no commit is owed (the
+        // load never runs, so a sub-op 9's bit 0 never meets a settle).
+        if matches!(sub_op, 1 | 9)
+            && (self.world.audio.keep_audio_across_field_init || self.world.audio.bgm_entry_latch)
+        {
+            self.world.audio.bgm_script_paused = false;
+            self.world.audio.current_bgm = Some(text_id);
+            self.world.pending_field_events.push(FieldEvent::Bgm {
+                text_id,
+                sub_op: crate::world::BGM_SUB_OP_ENGINE_LATCH,
+            });
+            return;
+        }
         if sub_op == 1 || sub_op == 9 {
             self.world.audio.current_bgm = Some(text_id);
             // Sub-op 9 also raises the script-owned start bit 0 of
@@ -42,6 +59,10 @@ impl FieldHostImpl<'_> {
             // the poller installs the incoming track and clears bit 0
             // (`0x8002472C`).
             self.world.audio.start_pending_commit = false;
+        } else if sub_op == 6 {
+            // Sub-6 raises sound-flag bit 2 (`0x801E01D8`): the next field
+            // init keeps the audio ([`World::release_field_init_voices`]).
+            self.world.audio.keep_audio_across_field_init = true;
         } else if sub_op == 7 {
             // Sub-7 stores the next fight's battle sound set `_DAT_8007B880`
             // and makes no sequencer call: `lbu v1,0x1(s6)` tests the

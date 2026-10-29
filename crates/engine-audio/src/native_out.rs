@@ -27,6 +27,16 @@ impl Sample for u16 {
         ((s as i32) + 32_768) as u16
     }
 }
+impl Sample for f64 {
+    fn from_i16(s: i16) -> f64 {
+        s as f64 / i16::MAX as f64
+    }
+}
+impl Sample for i32 {
+    fn from_i16(s: i16) -> i32 {
+        (s as i32) << 16
+    }
+}
 
 /// Audio output handle. Owns the cpal stream + a thread-shared SPU model.
 pub struct AudioOut {
@@ -40,8 +50,9 @@ pub struct AudioOut {
 }
 
 impl AudioOut {
-    /// Open the default audio output device. Picks an f32/i16/u16 format
-    /// supported by the device, defaulting to whatever the device prefers.
+    /// Open the default audio output device in the format it prefers:
+    /// f32, f64, i16, i32 or u16 (cpal's default config ranks f32 first, then
+    /// f64, then the integer widths).
     pub fn new() -> Result<Self> {
         let host = cpal::default_host();
         let device = host
@@ -50,26 +61,37 @@ impl AudioOut {
         let config = device
             .default_output_config()
             .context("query default output config")?;
-        let device_rate = config.sample_rate().0;
+        let device_rate = config.sample_rate();
         let channels = config.channels();
         let state = Arc::new(Mutex::new(StreamResampler::new(device_rate)));
 
-        let stream = match config.sample_format() {
+        let format = config.sample_format();
+        let config: cpal::StreamConfig = config.into();
+        let stream = match format {
             cpal::SampleFormat::F32 => {
-                Self::build_stream::<f32>(&device, &config.into(), state.clone(), channels)?
+                Self::build_stream::<f32>(&device, config, state.clone(), channels)?
+            }
+            cpal::SampleFormat::F64 => {
+                Self::build_stream::<f64>(&device, config, state.clone(), channels)?
             }
             cpal::SampleFormat::I16 => {
-                Self::build_stream::<i16>(&device, &config.into(), state.clone(), channels)?
+                Self::build_stream::<i16>(&device, config, state.clone(), channels)?
+            }
+            cpal::SampleFormat::I32 => {
+                Self::build_stream::<i32>(&device, config, state.clone(), channels)?
             }
             cpal::SampleFormat::U16 => {
-                Self::build_stream::<u16>(&device, &config.into(), state.clone(), channels)?
+                Self::build_stream::<u16>(&device, config, state.clone(), channels)?
             }
             other => return Err(anyhow!("unsupported sample format {:?}", other)),
         };
         stream.play().context("start audio stream")?;
         log::info!(
             "audio: device='{}' rate={} channels={}",
-            device.name().unwrap_or_default(),
+            device
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_default(),
             device_rate,
             channels
         );
@@ -96,7 +118,7 @@ impl AudioOut {
 
     fn build_stream<S>(
         device: &cpal::Device,
-        config: &cpal::StreamConfig,
+        config: cpal::StreamConfig,
         state: Arc<Mutex<StreamResampler>>,
         channels: u16,
     ) -> Result<cpal::Stream>

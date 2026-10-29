@@ -23,8 +23,9 @@
 # a GitHub-hosted macOS runner (free for this public repo), where both slices
 # link natively and `lipo` fuses them into one universal binary per tool.
 #
-# Every archive carries every binary, GUI ones included, plus README-PLAY.txt
-# (start `legaia-engine` with no arguments; it asks for the user's own disc).
+# Every archive carries every binary. Its top folder holds only the game
+# ("Legend of Legaia") and Legaia Explorer plus README-PLAY.txt; every
+# command-line program, legaia-engine included, is in command-line-tools/.
 # The x86_64 Linux GUI binaries link cpal -> alsa-sys against a hand-unpacked
 # amd64 ALSA sysroot (setup-cross-toolchain.sh). docs/tooling/releases.md
 # covers the reasoning and the runner provisioning.
@@ -82,7 +83,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -107,7 +108,7 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -146,7 +147,7 @@ jobs:
           done
 
       - name: Upload archives
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist-cross
           path: |
@@ -165,7 +166,7 @@ jobs:
     timeout-minutes: 180
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -197,7 +198,7 @@ jobs:
             "${{ steps.version.outputs.version }}" universal-apple-darwin target/dist
 
       - name: Upload archive
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist-macos
           path: |
@@ -216,7 +217,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Download archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: dist-*
           path: dist
@@ -256,7 +257,7 @@ jobs:
               echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
             done
             echo ""
-            echo 'Every archive carries every workspace binary; README-PLAY.txt says how to start the game.'
+            echo 'Every archive carries every workspace binary: the game and Legaia Explorer at the top, the rest in command-line-tools/; README-PLAY.txt says how to start the game.'
             echo 'See docs/tooling/releases.md.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -276,7 +277,7 @@ jobs:
         # Tag pushes always publish. workflow_dispatch publishes only when
         # explicitly asked, so the dispatch path is a safe dry run by default.
         if: github.event_name == 'push' || inputs.publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_TAG }}

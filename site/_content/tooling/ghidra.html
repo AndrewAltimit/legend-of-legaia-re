@@ -8,7 +8,7 @@
   <h2>At a glance</h2>
   <dl class="kv">
     <dt>Where</dt><dd><code>docker-compose.yml</code> service <code>ghidra</code>; scripts in <code>ghidra/scripts/</code>; dumps in <code>ghidra/scripts/funcs/&lt;addr&gt;.txt</code> (gitignored - Sony-derived)</dd>
-    <dt>Image</dt><dd><code>blacktop/ghidra:latest</code> (Ghidra 12.x, OpenJDK 21) wrapped by <code>docker/ghidra.Dockerfile</code> so output files come back owned by you</dd>
+    <dt>Image</dt><dd><code>blacktop/ghidra:12.0.4</code>, pinned by digest (Ghidra 12.0.4, OpenJDK 21), wrapped by <code>docker/ghidra.Dockerfile</code> so output files come back owned by you</dd>
     <dt>Input</dt><dd><code>extracted/SCUS_942.54</code> and overlay images - run <a href="extraction.html">extraction</a> first; the container mounts <code>extracted/</code> read-only</dd>
     <dt>Scripts</dt><dd>Jython 2.7, ASCII-only, each opening with <code># @runtime Jython</code> and <code># @category Legaia</code></dd>
     <dt>Limit</dt><dd>Most game logic lives in RAM overlays, not the executable - a function with zero static callers is not dead. See <a href="overlay-capture.html">overlay capture</a> and the <a href="static-overlay-pipeline.html">static overlay pipeline</a></dd>

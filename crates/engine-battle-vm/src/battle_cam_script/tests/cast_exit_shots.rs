@@ -467,3 +467,72 @@ fn a_module_shot_lands_its_yaw_across_the_wrap_under_a_drift() {
     }
     assert_eq!(cam.pose.yaw.rem_euclid(4096.0), 17.0);
 }
+
+/// The magic band's shot remembers the step that first framed its case:
+/// a re-arm of the same case keeps that frame, a hand-off to another case
+/// restarts it, and leaving the band drops it. A frame older than it was
+/// drawn by the framing before the shot (the retail-compare retake reads
+/// this).
+#[test]
+fn the_spell_shot_remembers_the_step_that_armed_its_case() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x2A);
+    cam.advance_to(2);
+    assert_eq!(cam.spell_shot_armed_at(), None);
+    cam.observe_action_state(0x2B);
+    let call = |case| SpellCamInputs {
+        case,
+        frame_step: 2,
+        ..SpellCamInputs::default()
+    };
+    cam.spell_cam = Some(call(7));
+    cam.advance_to(4);
+    assert_eq!(cam.spell_shot_armed_at(), Some(4));
+    cam.spell_cam = Some(call(7));
+    cam.advance_to(6);
+    assert_eq!(cam.spell_shot_armed_at(), Some(4));
+    cam.spell_cam = Some(call(8));
+    cam.advance_to(8);
+    assert_eq!(cam.spell_shot_armed_at(), Some(8));
+    cam.observe_action_state(0x50);
+    assert_eq!(cam.spell_shot_armed_at(), None);
+}
+
+/// Case `0xE` turns the yaw a step past the live one each pass, so its
+/// endpoint is no fixed angle: aligned to a retail instant on the same
+/// pitch and eye, the live yaw is taken as retail's clock reading.
+#[test]
+fn a_turning_spell_shot_aligns_its_yaw_as_a_clock() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x2B);
+    cam.spell_cam = Some(SpellCamInputs {
+        case: 0x0E,
+        frame_step: 2,
+        depth_raw: 0x800,
+        ..SpellCamInputs::default()
+    });
+    cam.advance_to(2);
+    let target = cam.glide_target();
+    let mut retail = target;
+    retail.yaw = (target.yaw + 195.0).rem_euclid(4096.0);
+    let mask = cam.align_glide_origin_to(retail, retail, target);
+    assert_ne!(mask & 2, 0);
+    assert_eq!(cam.pose.yaw, retail.yaw);
+    // A non-turning shot keeps a yaw whose endpoint disagrees.
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x2B);
+    cam.spell_cam = Some(SpellCamInputs {
+        case: 0x07,
+        frame_step: 2,
+        depth_raw: 0x800,
+        ..SpellCamInputs::default()
+    });
+    cam.advance_to(2);
+    let target = cam.glide_target();
+    let mut retail = target;
+    retail.yaw = (target.yaw + 195.0).rem_euclid(4096.0);
+    assert_eq!(cam.align_glide_origin_to(retail, retail, target) & 2, 0);
+}

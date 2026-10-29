@@ -104,8 +104,8 @@ fn fight(inp: &Inputs, steal_bit: bool) -> Outcome {
     w.actors[0].battle.hp = 400;
     w.actors[0].battle.max_hp = 400;
     w.actors[0].battle.liveness = 1;
-    w.set_battle_attack(0, 120);
-    w.set_battle_defense(0, 40);
+    w.battle.set_battle_attack(0, 120);
+    w.battle.set_battle_defense(0, 40);
     w.set_steal_table(StealTable::from_entries(entries));
     w.battle.ui_strings.merge_scus(&inp.scus);
     w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables::from_scus(&inp.scus));

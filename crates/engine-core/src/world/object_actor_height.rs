@@ -189,6 +189,17 @@ impl World {
         let record = self.field_vm.executing_object;
         let key = match target {
             Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
+            // An object's record naming its own id (`CC <own> 81 ..`):
+            // `FUN_8003C83C` finds the executing actor itself. `FUN_8003A55C`
+            // allocates the object's actor before it runs the bind-time
+            // prologue, so the self-reference resolves there too - while the
+            // port's channel table does not hold the channel until its
+            // prologue has run. `rayman`'s sinking set pieces (`P0[5]`,
+            // `P0[6]`, `P0[8]`, `P0[9]`) black themselves out this way once
+            // their collapse flag is up.
+            Some(t) if record == Some(u16::from(t)) => {
+                return self.set_object_tint(ctx, u16::from(t), colour, blend, ticks);
+            }
             Some(t) => {
                 let view = self.channel_view();
                 let Some(ci) = legaia_engine_field::field_channels::resolve_target(view, t) else {
@@ -423,6 +434,23 @@ mod tests {
         w.field_vm.executing_object = Some(19);
         w.set_actor_tint(&mut ctx, None, false, 0, 0x1000, 0);
         assert_eq!((ctx.field_74, ctx.field_78), (0, 0x1000));
+    }
+
+    /// `rayman` `P0[5]`'s prologue runs `CC 05 81 00 00 00 FF 0F 00 00` on
+    /// its own actor while the object's channel is still being pre-run, so
+    /// no channel table holds it yet: the self-reference still lands, on the
+    /// executing context, as retail's resolver finds the running actor.
+    #[test]
+    fn a_self_prefixed_tint_lands_during_the_bind_prologue() {
+        let mut w = World::default();
+        let mut ctx = legaia_engine_vm::field::FieldCtx {
+            script_id: 5,
+            ..Default::default()
+        };
+        w.field_vm.executing_object = Some(5);
+        w.set_actor_tint(&mut ctx, Some(5), false, 0, 0x0FFF, 0);
+        assert_eq!((ctx.field_74, ctx.field_78), (0, 0x0FFF));
+        assert!(w.field_vm.actor_tints.is_empty());
     }
 
     fn channel(

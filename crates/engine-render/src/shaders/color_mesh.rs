@@ -76,7 +76,10 @@ fn vs_main(
     out.clip_pos = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
     // The PSX vertex snap, after the bend, as the VRAM mesh takes it: the
     // GTE hands an untextured prim integer screen coordinates too.
+    // The GTE's register limits first: a corner past them is where retail's
+    // packet put it, not where an unclamped projection would.
     if u.psx_params.z >= 0.5 {
+        out.clip_pos = gte_saturate_clip(out.clip_pos);
         out.clip_pos = psx_snap_clip(out.clip_pos, PSX_STAGE_W, PSX_STAGE_H);
     }
     if u.psx_params.z >= 1.5 {

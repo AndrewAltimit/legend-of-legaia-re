@@ -377,18 +377,18 @@ const BARRA_PULL: i32 = P << 7;
 /// | 3 | word | TR `(·, 0x400, 0xFFFF)`, yaw `0x800`, pitch `0`; the creature seated on the origin |
 /// | 4 | TR z `-= p << 7` while at or above `0x801` | TR `(·, 0x400, 0xFFFF)`, yaw `0`, pitch `0x60` |
 /// | 5 | the same to `0xC01` | TR `(·, 0x800, 0x2000)`, yaw `0x700`, pitch `-0x40`; a white fade in after `0xC0`; clip `1`; word `= 0` |
-/// | 6 | word `+= p / 8` until `0x100` | pitch `-= p / 8` / TR z `-= 12 p` to `0xA0`, then TR z `+= 32 p` / pitch `+= p / 2`; yaw `= word + 0x700` (`+ 0xF00` from `0x51`); on its pass a cut, the fade out, word `= scalar << 8` |
+/// | 6 | word `+= p / 8` until `0x100` | pitch `-= p / 8` / TR z `-= 12 p` to `0xA0`, then TR z `+= 32 p` / pitch `+= p / 2`; yaw `= word + 0x700` (`+ 0xF00` from `0x51`); clip `2` after clip `1`; on its pass a cut, the fade out, word `= scalar << 8` |
 /// | 7 | word, TR y `-= p` a pass | the spell name; `+= scalar * 180` |
 /// | 8 | word | a cut; the attack name; word `= 0` |
 /// | 9 | word `+= p / 8` until `0x81` | word `= scalar << 5` |
 /// | 0xA | word | `+= scalar << 6` |
-/// | 0xB | word | a cut on `(0, 0, 0)`; `+= scalar << 8` |
-/// | 0xC | word, TR z `+= 3 p` a pass | TR `(0x1000, 0x1000, 0x42D3)`, yaw `0x8C4`, pitch `0xFE0`; clip `2`; word `= 0` |
-/// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`); word `+= p / 8` a pass | the hit |
+/// | 0xB | word | a cut on the creature (`z = -2 drop`); `+= scalar << 8` |
+/// | 0xC | word, TR z `+= 3 p` a pass | TR `(0x1000, 0x1000, 0x42D3)`, yaw `0x8C4`, pitch `0xFE0`; clip `3`, cut in; word `= 0` |
+/// | 0xD | the victim's fall (`+0x36 += 16 p` from `-0x2000`); word `+= p / 8` a pass | clip `4` after clip `3`; the hit |
 /// | 0xE | word `+= p / 8` until `0x56`, on from arm 0xD's | word `= scalar << 7` |
 /// | 0xF | word, then the victim settled | every pass a cut on the victim at a third of the depth, TR z easing from half the depth; the caption cleared; `0xFF` |
 ///
-/// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the seat swaps, the victim and creature arcs, part spawns and the epilogue's ctx bytes not carried)
+/// PORT: FUN_801F6A30, overlay_summon_barra_0917_801f6a30 (PROT 0917; the whole phase chain's gates, camera writes and stores, captions, creature seat and clips - the seat swaps and the victim and creature arcs are the engine's `World::apply_barra_writes`; part spawns and the epilogue's ctx bytes not carried)
 pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let v = seats.victim;
     let store = |pitch: i32, yaw: i32, tr: [i32; 3]| {
@@ -446,10 +446,19 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return store(0x60, 0, [0, 0x400, 0xFFFF]);
             }
             st.countdown.0 = 0;
+            // `+0x1DC` and `+0x1DA` both bumped (`0x801F703C..0x801F7058`):
+            // clip 1, cut in at once.
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             store(-0x40, 0x700, [0, 0x800, 0x2000])
         }
         6 => {
+            // Every pass, held or not (`lbu v0,0x1d9(s4)` / `bne v0,t5` /
+            // `sb v0,0x1da(s4)` at `0x801F70E4..0x801F70F4`): with clip 1
+            // playing, clip 2 waits for its natural end (no `+0x1DC` bump).
+            if st.creature_clip == Some(1) {
+                st.creature_stage = Some(2);
+            }
             st.countdown.0 += P / 8;
             let cd = st.countdown.0;
             if cd < 0x100 {
@@ -508,7 +517,16 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return ArmDirection::HOLD;
             }
             st.countdown.0 += S << 8;
-            cut([-4, 0x900], [0, 0x2000, 0x800], [0; 3], 1)
+            // The focus trio's `z` is the drop word doubled (`lh v0,-0x6ca2`
+            // / `sllv` / `sh v0,0x34(sp)` at `0x801F7918..0x801F7930`): the
+            // creature arm 9's pass left at `z = -2 drop`, which with the
+            // victim at `z = -drop` is the victim's `-2 z`.
+            cut(
+                [-4, 0x900],
+                [0, 0x2000, 0x800],
+                [0, 0, -2 * i32::from(v.z)],
+                1,
+            )
         }
         0xC => {
             let d = Some(drift(0, 0, 0, 0, 3 * P));
@@ -516,12 +534,20 @@ pub fn barra_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 return held(d);
             }
             st.countdown.0 = 0;
-            st.creature_stage = Some(2);
+            // `+0x1DA` and `+0x1DC` both bumped (`0x801F7B68..0x801F7B94`):
+            // arm 6's clip 2 becomes 3, cut in at once.
+            st.creature_stage = Some(3);
+            st.creature_restage = true;
             // The victim and the creature hang at `+0x36 = -0x2000`.
             st.ramp = -0x2000;
             store(0xFE0, 0x8C4, [0x1000, 0x1000, 0x42D3])
         }
         BARRA_HIT_ARM => {
+            // Every pass (`0x801F7C48..0x801F7C5C`): with clip 3 playing,
+            // clip 4 waits for its natural end.
+            if st.creature_clip == Some(3) {
+                st.creature_stage = Some(4);
+            }
             st.ramp += 16 * P;
             // The arm also steps the word by `p / 8` every pass (the
             // creature's arc, `0x801F7CB0..0x801F7CE0`), and arm 0xE climbs

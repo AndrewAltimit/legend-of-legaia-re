@@ -121,6 +121,12 @@ That job is disc-independent by construction - every gate in it reads the
 repo's own sources, docs and site fragments - so it stays green on a runner
 that has no `extracted/`.
 
+One gate in that job runs in CI only, the reverse of the exemption below:
+`cargo deny check advisories` reads `Cargo.lock` against the RustSec
+database, which it fetches over the network, and a new advisory is news about
+the world rather than about the commit being made. It and its `deny.toml` are
+described in [`dependency-policy.md`](dependency-policy.md).
+
 ### The one class of gate allowed to be hook-only
 
 "Every gate runs in both places" is the rule, not a description of the whole
@@ -1379,7 +1385,7 @@ startup race:
 | Launcher | Where | On a second startup death |
 |---|---|---|
 | `native_minigame_ladder`, the retail-compare image channel | `legaia_parity::window_child::output_retrying_startup_race`, reading the child's stderr | returns the failure; a `[retry]` line names the first |
-| Legaia Studio's Play button | `legaia_studio::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
+| Legaia Explorer's Play button | `legaia_explorer::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
 
 A `SIGSEGV` after the line is a different crash and is never relaunched.
 
@@ -1505,7 +1511,7 @@ reverse-engineering questions, so they are not on
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
-| absent on both | The map display's player pointer ([`world-map.md`](../subsystems/world-map.md#the-map-display---prot-0981)), the Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
+| absent on both | The Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The minigames page has no `World`

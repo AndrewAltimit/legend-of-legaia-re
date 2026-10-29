@@ -276,7 +276,7 @@ pub fn streak_quads_scheduled(
 /// `seat` is in the same world frame the host's `mvp` expects (the page
 /// scales it by its placement factor inside the MVP, as it does the
 /// move-FX launch point). Engine source:
-/// `legaia_engine_core::world::BattleState::clip_ribbon`.
+/// `legaia_engine_battle_loop::battle_state::BattleState::clip_ribbon`.
 pub fn clip_ribbon_quads(
     seat: [f32; 3],
     trail_id: u8,
@@ -308,8 +308,8 @@ mod tests {
     /// A plain perspective * look-at facing -Z from `+z`, the shape the
     /// battle camera has.
     fn cam() -> Mat4 {
-        Mat4::perspective_rh(1.0, 4.0 / 3.0, 1.0, 10_000.0)
-            * Mat4::look_at_rh(
+        glam::camera::rh::proj::directx::perspective(1.0, 4.0 / 3.0, 1.0, 10_000.0)
+            * glam::camera::rh::view::look_at_mat4(
                 Vec3::new(0.0, 0.0, 1000.0),
                 Vec3::ZERO,
                 Vec3::new(0.0, 1.0, 0.0),

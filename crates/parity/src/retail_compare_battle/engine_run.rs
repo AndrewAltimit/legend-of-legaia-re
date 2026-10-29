@@ -75,12 +75,13 @@ pub struct EngineBattle {
     /// Per engine slot, how far the replay moved a combatant the seed
     /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
     /// a driven action that reached its phase ([`RetailBattle::undrift`]).
-    pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    pub ground_drift:
+        [Option<[i32; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
     /// Per engine slot, how far (sixteenths of a keyframe) a replayed cast's
     /// idle loop advanced between the dispatch and the capture's phase -
     /// `None` for a slot that left its idle loop on the way
     /// ([`RetailBattle::with_inflight_idle`]).
-    pub idle_advance: [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    pub idle_advance: [Option<u32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
     /// The camera's phase, glide target and origin-alignment mask set
     /// against the capture's tween endpoints - a diagnostic the `camera`
     /// detail carries under `LEGAIA_RC_CAM_TRACE`.
@@ -104,7 +105,7 @@ pub fn ground_residual(
     let want = captured.seeded_ground();
     let from = seeded.seeded_ground();
     let mut sum = None;
-    for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+    for slot in 0..legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS {
         let (Some([wx, wz]), Some([fx, fz]), Some([dx, dz])) =
             (want[slot], from[slot], run.ground_drift[slot])
         else {
@@ -510,7 +511,7 @@ pub fn run_engine_battle(
         }
     }
     let mut phase_tick = None;
-    let mut idle_advance = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    let mut idle_advance = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
     let mut driven = None;
     // A driven capture plays rounds the retail history did not (a Spirit
     // here, a strike there), so its combatant, bag, flag and track channels
@@ -534,7 +535,7 @@ pub fn run_engine_battle(
             // A sparring capture past the intro timer (`0x14`) holds the
             // side-band's caption and the close-up it selects; the engine
             // raises it on the round start its open holds back until the
-            // enemy names have gone (`World::sparring_open_held`).
+            // enemy names have gone (`BattleState::sparring_open_held`).
             if matches!(battle.flow, 0x0C | 0x14) {
                 for _ in 0..SPARRING_OPEN_TICKS {
                     if !session.host.world.battle.sparring_round_pending {
@@ -777,7 +778,7 @@ pub fn run_engine_battle(
     // How far the drive moved each placed combatant: a capture of a running
     // action stands its combatants where the action had already moved them,
     // and the drive replays the action from there.
-    let mut ground_drift = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    let mut ground_drift = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
     if matches!(driven, Some(Some(_))) {
         let world = &session.host.world;
         for (slot, d) in ground_drift.iter_mut().enumerate() {
@@ -807,11 +808,33 @@ pub fn run_engine_battle(
             legaia_engine_capture::ground_snap::strike_heading_target(world, t, battle.cam_tween.1)
         });
         let mask = match (world.battle.camera.as_mut(), target) {
+            // A capture-band module's own shot still walking, whose
+            // endpoints are retail's where the glide's are not: the image
+            // child's routing (`redraw_prep`, `align_module_shot`).
+            // Otherwise the glide's origin.
             (Some(cam), Some(target)) => {
-                cam.align_glide_origin_to(battle.cam_tween.0, battle.cam_tween.1, target)
+                let (live, end) = battle.cam_tween;
+                let mut glide = cam.clone();
+                let by_glide = glide.align_glide_origin_to(live, end, target);
+                let mut shot = cam.clone();
+                let by_shot = shot.align_module_shot(live, end);
+                if by_shot.count_ones() > by_glide.count_ones() {
+                    *cam = shot;
+                    by_shot
+                } else {
+                    *cam = glide;
+                    by_glide
+                }
             }
             _ => 0,
         };
+        // A capture-class shot armed past a walk-in the replay skipped
+        // (`RetailBattle::walk_in_shot_aligned`).
+        if battle.walk_in_shot_aligned()
+            && let Some(cam) = world.battle.camera.as_mut()
+        {
+            cam.align_module_shot(battle.cam_tween.0, battle.cam_tween.1);
+        }
         if let Some(t) = cam_trace.as_mut() {
             t.push_str(&format!(" | aligned {mask:#010b}"));
             if let Some(target) = target {
@@ -882,14 +905,14 @@ pub fn run_engine_battle(
 /// reaction, a one-shot - is dropped for the span.
 #[derive(Default)]
 struct IdleClock {
-    last: [Option<(u16, u32)>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
-    sum: [u32; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
-    lost: [bool; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    last: [Option<(u16, u32)>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+    sum: [u32; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+    lost: [bool; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
 }
 
 impl IdleClock {
     fn sample(&mut self, w: &legaia_engine_core::world::World) {
-        for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+        for slot in 0..legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS {
             if self.lost[slot] {
                 continue;
             }
@@ -910,8 +933,10 @@ impl IdleClock {
         }
     }
 
-    fn advance(&self) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    fn advance(
+        &self,
+    ) -> [Option<u32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         for (slot, o) in out.iter_mut().enumerate() {
             if !self.lost[slot] && self.last[slot].is_some() {
                 *o = Some(self.sum[slot]);

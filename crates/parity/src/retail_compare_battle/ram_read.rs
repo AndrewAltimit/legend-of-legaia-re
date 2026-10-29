@@ -8,6 +8,9 @@ pub(super) const NEXT_ACTOR: u32 = 0x274;
 /// The magic-capture fade (`ctx[+0x07] = 0x6F`): audio duck and a CD wait,
 /// with no framing call of its own (`docs/subsystems/battle-action.md`).
 const CAPTURE_FADE_STATE: u8 = 0x6F;
+/// The capture band's module state, which runs the slot-B tick and arms no
+/// framing of its own.
+const CAPTURE_MODULE_STATE: u8 = 0x70;
 
 pub(super) fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
@@ -533,7 +536,7 @@ fn length_restarted_inside_lag(ram: &[u8], node: u32, lag: i32) -> bool {
     now >= 0 && per_vsync > 0 && now - per_vsync * lag < 0
 }
 
-pub(super) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
+pub(crate) fn displayed_part_halfword(ram: &[u8], node: u32, off: u16, lag: i32) -> u16 {
     let h = |o: u32| i32::from(game_anchors::u16_at(ram, node + o) as i16);
     let now = h(u32::from(off));
     let mode = h(0x5A);
@@ -829,7 +832,17 @@ impl RetailBattle {
                 // that increment further out each, not the re-arm's widening
                 // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
                 // walk, `.971`; `4883` on the table's, `.996`).
-                if action_state == CAPTURE_FADE_STATE {
+                // `0x70` arms none either (`0x801E50C8..0x801E50E8`: the
+                // module tick, then `0x71`), so once the module's arm 0 has
+                // built its own shot (`ctx[+0x279]` past `0`) and that shot
+                // is still walking, the table the RAM holds is the one the
+                // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0:
+                // `image` `.849` on the re-arm's walk, `.886` on the
+                // table's). Before arm 0 the table is `0x6F`'s.
+                let module_shot = action_state == CAPTURE_MODULE_STATE
+                    && game_anchors::u8_at(ram, ctx + 0x279) > 0
+                    && module_shot_walking(ram, ctx);
+                if action_state == CAPTURE_FADE_STATE || module_shot {
                     displayed_module_cam_live(ram, ctx, &steps)
                 } else {
                     displayed_cam_live_steps(
@@ -847,6 +860,11 @@ impl RetailBattle {
                 &display_pass_steps(ram)[..usize::from(DISPLAY_LAG_PASSES).min(2)],
             ),
             cam_landed: camera_landed(ram, ctx),
+            menu_glide_left: displayed_menu_glide_left(
+                ram,
+                ctx,
+                pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
@@ -927,7 +945,7 @@ impl RetailBattle {
             combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
             resident_shiny_seru: false,
-            inflight_idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+            inflight_idle: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
             // Only where the close-up's three-frame tween lands inside a pass
             // (`SUMMON_CAST_TWEEN_FRAMES`): on a shorter step the focus is
             // still walking toward the pair when the pass draws, a

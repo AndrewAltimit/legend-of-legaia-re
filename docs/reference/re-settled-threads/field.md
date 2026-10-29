@@ -652,7 +652,8 @@ The `801db81c..801dbf9c` cluster is the field *camera* system, not movement.
   [script-vm.md](../../subsystems/script-vm.md) § yield family).
 - Walk-touch: `placement_walk_touch_event` classifies `0x3E` door warps and cross-context
   player-channel `0x23` teleports; `World::check_field_walk_touch` posts once per ±80-box contact
-  through `trigger_field_interact` and applies the effect.
+  through `trigger_field_interact`. A `.MAP` object bind's contact resumes the object's record
+  through the prop runner; only a partition-1 placement's contact applies the decoded effect.
 - Not modelled one-to-one: the full `FUN_801d5b5c` post-kernel state (engaged flag, facing
   save / restore, touch counters), per-actor field-VM channel execution for yield-paced patrol scripts
   (the engine loops the decoded waypoints), the exact retail NPC glide speed, and prop scripts beyond

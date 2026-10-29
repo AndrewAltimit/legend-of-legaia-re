@@ -282,7 +282,7 @@ impl World {
                 .module_fades
                 .retain_mut(|f| f.step_vsyncs(pass_vsyncs) || f.holds_at_end());
             self.step_battle_entry_fade(pass_vsyncs);
-            self.step_cast_hook_fades(pass_vsyncs);
+            self.casting.step_cast_hook_fades(pass_vsyncs);
         }
         // Step the scripted global multiply tint (op `0x4C 0x12`). A ramp
         // that lands on a non-neutral target HOLDS there (a screen faded to

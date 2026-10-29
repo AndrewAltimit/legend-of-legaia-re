@@ -18,7 +18,7 @@
 //! timer expires, and sweeps the labels on that same pass (`jal 0x800355F0`
 //! at `0x801D0E7C` / `0x801D0EB4`), so no action ever runs under them. A
 //! round the port hands to the action SM first sweeps them
-//! ([`World::sweep_battle_intro_names`]).
+//! ([`BattleState::sweep_battle_intro_names`]).
 //!
 //! REF: FUN_801D0748 (flow states `0x0A` / `0x0B`), FUN_801D9D3C
 
@@ -49,43 +49,5 @@ impl World {
         } else {
             INTRO_HOLD_FRAMES
         };
-    }
-
-    /// Sweep the intro labels on a round's hand-off to the action SM.
-    /// Retail reaches the execute arm `0xFE` only through `0x0B`'s expiry,
-    /// which sweeps every text actor (`0x801D0E58..0x801D0EB8`), so an
-    /// action never runs under the names; the port opens its round prompt
-    /// under them and sweeps them here instead.
-    ///
-    /// REF: FUN_801D0748 (flow state `0x0B`), FUN_800355F0
-    pub(in crate::world) fn sweep_battle_intro_names(&mut self) {
-        self.battle.intro_names_frames = 0;
-    }
-
-    /// Whether the battle camera's entry sweep still owns the opening
-    /// (`BattleCamera::start_entry_sweep`). Retail's frame driver
-    /// `FUN_80046A20` calls the battle tick `FUN_801D0748` - whose flow
-    /// states `0x0A` / `0x0B` compose and drain these labels - only once its
-    /// entry counter `gp+0x330` reads `0xFF` (`beq a0,v0,0x80047014` at
-    /// `0x80046EF8`, `jal 0x801D0748` at `0x80047014`), so the names come up
-    /// after the sweep, never under it.
-    pub fn battle_entry_sweeping(&self) -> bool {
-        self.battle
-            .camera
-            .as_ref()
-            .is_some_and(|c| c.entry_sweep_counter().is_some())
-    }
-
-    /// One tick of the intro timer: `ctx[+0x6D6] -= 0x1F800393` per battle
-    /// pass, expiring at or below zero (`0x801D0E3C..0x801D0E58`) - one a
-    /// vsync tick ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]).
-    /// The timer holds while the entry sweep runs
-    /// ([`Self::battle_entry_sweeping`]).
-    pub(in crate::world) fn step_battle_intro_names(&mut self) {
-        if self.battle_entry_sweeping() {
-            return;
-        }
-        let step = u16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
-        self.battle.intro_names_frames = self.battle.intro_names_frames.saturating_sub(step);
     }
 }

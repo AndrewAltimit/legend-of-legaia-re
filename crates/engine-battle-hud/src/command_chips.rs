@@ -49,13 +49,13 @@ pub fn battle_command_chips(
         return None;
     }
     // No prompt under the battle-entry sweep ([`crate::battle_hud_phase`]).
-    if world.battle_entry_sweeping() {
+    if world.battle.battle_entry_sweeping() {
         return None;
     }
     if world.dialog.current.is_some() || world.dialog.inline.is_some() {
         return None;
     }
-    if world.arts_input_active()
+    if world.battle.arts_input_active()
         || world.battle.arts_menu.is_some()
         || world.battle.spell_menu.is_some()
         || world.battle.item_menu.is_some()
@@ -198,9 +198,9 @@ use legaia_engine_battle_vm::battle_commit_log::{CommitLogRow, CommitLogTarget};
 /// arm order (records `0x0C` / `0x0E`), not read off a commit arm.
 pub fn battle_commit_log(world: &legaia_engine_core::world::World) -> Vec<CommitLogRow> {
     use legaia_engine_battle::target_picker::CursorRow;
+    use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
     use legaia_engine_battle_menus::battle_input::CommandPhase;
     use legaia_engine_battle_vm::battle_commit_log as log;
-    use legaia_engine_core::battle_round::{PendingPartyAction, RoundPhase};
     use legaia_ui_formats::battle_ui_strings::BattleUiLabel;
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.round_flow.phase != RoundPhase::Command
@@ -322,7 +322,7 @@ pub fn battle_combo_style(world: &legaia_engine_core::world::World) -> Option<Co
     if battle_hud_phase(world) != BattleHudPhase::Action
         || world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
         // A counterattack's strikes run under the monster's seeded HUD,
-        // which opened no cluster ([`legaia_engine_core::world::BattleState::counter_hud`]).
+        // which opened no cluster ([`legaia_engine_battle_loop::battle_state::BattleState::counter_hud`]).
         || world.battle.counter_hud.is_some()
     {
         return None;

@@ -104,9 +104,8 @@ impl PropAnimBank {
     /// `rikuroa` P0[2], the Genesis Tree, has no clip, and examining it after
     /// Caruban is what spawns the P2[53] revival. Its stand-in clip never
     /// draws: both hosts pose only `anim_id != 0` placements. An unposed
-    /// touch-class object stays with the walk-touch dispatch
-    /// (`FieldPropState::walk_touch`), which resolves its
-    /// record's arm against the live flags at contact time.
+    /// touch-class object (a door marker) is banked the same way, so its
+    /// contact resumes its record from the parked cursor.
     ///
     /// `clip` resolves an anim id to `(frame_count, scaled_step, step_div)`
     /// from the scene's ANM bundle (record `anim_id - 1`); a prop whose clip
@@ -156,26 +155,16 @@ impl PropAnimBank {
                 continue;
             };
             let (program, parked_pc) = decode_prop_program_with(record, pc0, flags.as_deref_mut());
-            // An unposed bind whose record moves the player (a door marker)
-            // is the walk-touch dispatch's, which resolves its record against
-            // the live flags. Any other clip-less bind still owns its touch:
-            // retail's static-class contact posts the touch whatever the
-            // actor draws (`FUN_801D5B5C`), and the record runs from its
-            // parked cursor. `chitei2`'s lift-cage doors (partition-0 records
-            // 6..11, a bare `31 00`) stand solid until the touch runs that
-            // `31 00`; without a bank entry they never opened, and the lift
-            // platform's way west to the deroa door stayed shut.
-            if bind.anim_id == 0
-                && program.spawn_cflags & 0x4002_0000 == 0
-                && legaia_engine_field::man_field_scripts::p0_record_walk_touch_event(
-                    man_file,
-                    man,
-                    bind.record as usize,
-                )
-                .is_some()
-            {
-                continue;
-            }
+            // A clip-less bind owns its touch like a posed one: retail's
+            // static-class contact posts the touch whatever the actor draws
+            // (`FUN_801D5B5C` raises the actor's `+0x10 |= 0x100`, which is
+            // what lets the dialog SM `FUN_80039B7C` run its context), and
+            // the record runs from its parked cursor. That covers the door
+            // markers too - a `town01` house doorway is a fade, the record's
+            // own `A3 F8` teleport, a time-of-day tint and a park, not a bare
+            // reposition - and `chitei2`'s lift-cage doors (partition-0
+            // records 6..11, a bare `31 00`), which stand solid until the
+            // touch runs that `31 00`.
             let mut anim = PropAnim::spawned(bind.anim_id, frames, scaled, div);
             for c in &program.spawn {
                 c.apply(&mut anim);

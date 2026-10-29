@@ -1,0 +1,144 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; gameplay tweaks</div>
+  <h1>Gameplay tweaks: patcher features in the engine</h1>
+  <p class="lede">The <a href="../tooling/randomizer.html">disc patcher</a> proves a change against the original game, on a console or an emulator. A change that is a fix or a gameplay option rather than new disc content is expected to graduate into an engine switch, so a player of the port gets it without patching a disc. This page sorts every patcher feature into one of three classes and lists the switches the engine carries.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Carrier</dt><dd><code>legaia_engine_session::session_switches::GameplayTweaks</code>, carried whole by both play hosts</dd>
+    <dt>Native window</dt><dd>At launch: the launcher&rsquo;s <em>Gameplay tweaks</em> and <em>Battle tuning</em> rows, or the <code>play-window</code> flags</dd>
+    <dt>Browser play page</dt><dd>At any time: its <em>Gameplay tweaks</em> and <em>Battle tuning</em> panels</dd>
+    <dt>Lands on</dt><dd><code>WorldToggles</code>, through <code>SessionSwitches::apply</code>; retail-faithful mode holds every switch at retail&rsquo;s value (<code>WorldToggles::pin_retail</code>)</dd>
+    <dt>Stacks with a patched disc</dt><dd>Yes: the engine&rsquo;s EXP rate multiplies a disc already patched with <code>--exp-scale</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="two-ways" data-doc="two-ways-a-patcher-feature-reaches-the-engine">
+  <h2>Two ways a patcher feature reaches the engine</h2>
+  <p>The engine reads its game data from whatever disc it is given, and it never executes the game&rsquo;s MIPS code. That splits the patcher in two.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A patcher feature is either a data edit or a code hook. A data edit is bytes in PROT.DAT or SCUS_942.54; the engine parses those bytes, so a patched disc plays patched in the port too: class c, patcher only. A code hook is MIPS spliced into the executable or an overlay, which the engine never runs. Either the defect the hook repairs lives in a structure the port does not have, class a, avoided by construction; or the port implements the behaviour itself, class b, an engine switch carried in GameplayTweaks, applied to WorldToggles, and pinned to retail in retail-faithful mode.">
+      <defs><marker id="gt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="20" y="137" width="150" height="56" rx="5"/>
+      <text class="dg-label" x="95" y="161">Patcher feature</text><text class="dg-sub" x="95" y="179">proved on retail</text>
+      <rect class="dg-node" x="220" y="40" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="64">Data edit</text><text class="dg-sub" x="315" y="82">bytes in PROT.DAT / SCUS</text>
+      <rect class="dg-node" x="220" y="234" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="315" y="258">Code hook</text><text class="dg-sub" x="315" y="276">MIPS the engine never runs</text>
+      <path class="dg-edge" d="M170 155 L196 155 L196 68 L218 68" marker-end="url(#gt-arrow)"/>
+      <path class="dg-edge" d="M170 175 L196 175 L196 262 L218 262" marker-end="url(#gt-arrow)"/>
+      <rect class="dg-node-ok" x="460" y="40" width="400" height="56" rx="5"/>
+      <text class="dg-label" x="660" y="64">(c) Patcher only</text><text class="dg-sub" x="660" y="82">a patched disc plays patched in the port</text>
+      <path class="dg-edge" d="M410 68 L458 68" marker-end="url(#gt-arrow)"/>
+      <rect class="dg-node" x="460" y="150" width="400" height="56" rx="5"/>
+      <text class="dg-label" x="660" y="174">(a) Avoided by construction</text><text class="dg-sub" x="660" y="192">the defect lives in a structure the port does not have</text>
+      <rect class="dg-node-accent" x="460" y="234" width="400" height="76" rx="5"/>
+      <text class="dg-label" x="660" y="258">(b) Engine switch</text><text class="dg-sub" x="660" y="276">GameplayTweaks &#8594; WorldToggles</text>
+      <text class="dg-sub" x="660" y="296">pinned to retail in retail-faithful mode</text>
+      <path class="dg-edge" d="M410 262 L436 262 L436 178 L458 178" marker-end="url(#gt-arrow)"/>
+      <path class="dg-edge" d="M410 272 L458 272" marker-end="url(#gt-arrow)"/>
+    </svg>
+    <figcaption>One hook is the exception to "the engine never reads a hook": Seru trading, whose offer configuration block the engine parses out of a patched <code>SCUS_942.54</code> (<code>World::install_seru_trade_config</code>).</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li><strong>Data edits reach the engine on their own.</strong> A randomized drop table, a re-priced shop, a rescaled monster record or a re-routed door is bytes the engine parses at boot or scene entry.</li>
+    <li><strong>Code hooks do not.</strong> The engine runs its own Rust ports of the routines a hook patches, so a hook&rsquo;s behaviour exists in the port only when the port implements it.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="classification" data-doc="classification">
+  <h2>Classification</h2>
+  <p>Every patcher feature falls in exactly one class. Class (b) is either <strong>carried</strong> (a switch below) or <strong>open</strong> (ranked at the <a href="#open">end</a>).</p>
+  <table>
+    <thead><tr><th>Patcher feature</th><th>Class</th><th>Engine side</th></tr></thead>
+    <tbody>
+      <tr><td><code>--approach-softlock-fix</code></td><td><span class="status-badge sb-confirmed">(a)</span></td><td>The approach drive does not depend on a live clip, so the state-<code>0x19</code> park cannot form (<a href="battle-action-exit-gates.html">exit gates</a>).</td></tr>
+      <tr><td><code>--conkram-freeze-fix</code></td><td><span class="status-badge sb-confirmed">(a)</span></td><td>Move-VM op <code>0x3C</code>&rsquo;s keyframe pose is sized from its count, not a heap block: there is no failed allocation to copy through.</td></tr>
+      <tr><td>Charm softlock fix (ships with <code>--enemy-ally</code>)</td><td><span class="status-badge sb-confirmed">(a)</span></td><td>The victory arm keeps the acting slot only when it is a living party slot; the patch mirrors that invariant.</td></tr>
+      <tr><td>Arts name fix (ships with <code>--super-arts-pack</code>)</td><td><span class="status-badge sb-confirmed">(a)</span></td><td>The banner is centred on the name the port draws, measured each time, so there is no stale width to keep.</td></tr>
+      <tr><td><code>--shiny-seru</code>, <code>--flee-exp</code>, <code>--exp-scale</code>, <code>--fortress-encounter-fix</code>, <code>--jewel-fix</code>, <code>--equipment-drops</code>, <code>--spirit-ap</code>, <code>--damage-ap</code>, <code>--seru-catch-rate</code>, <code>--enemy-attack-count</code></td><td><span class="status-badge sb-works">(b) carried</span></td><td>One <code>WorldToggles</code> field each (<a href="#switches">below</a>).</td></tr>
+      <tr><td>(no patcher flag) state-<code>0x51</code> HP-readout park</td><td><span class="status-badge sb-works">(b) carried</span></td><td><code>WorldToggles::hp_readout_guard</code>; the patcher has no fix for this park.</td></tr>
+      <tr><td><code>--enemy-stat-scale</code></td><td><span class="status-badge sb-mostly">(b) carried, uniform</span></td><td><code>WorldToggles::enemy_stat_permille</code>; the per-stat and <code>regular:</code> / <code>boss:</code> forms are open.</td></tr>
+      <tr><td><code>--enemy-hp-bar</code>, <code>--enemy-ally</code>, <code>--seru-trade</code>, <code>--show-super-arts</code>, <code>--oscillating-ap</code></td><td><span class="status-badge sb-planned">(b) open</span></td><td>Each needs engine work (<a href="#open">ranked below</a>).</td></tr>
+      <tr><td><code>--drops</code>, <code>--chests</code>, <code>--steals</code>, <code>--shops</code>, <code>--casino</code>, <code>--encounters</code></td><td>(c)</td><td>Disc tables the engine parses.</td></tr>
+      <tr><td><code>--doors</code>, house and map doors, <code>--rename-location</code></td><td>(c)</td><td>Scene MAN and place-name data.</td></tr>
+      <tr><td>Monster, move, element, spell, equipment and arts record edits</td><td>(c)</td><td>Randomized or hand-set records the engine reads.</td></tr>
+      <tr><td>Prices, starting bag, level and warps; unused enemies and items; custom items</td><td>(c)</td><td>Script literals, the new-game template and content the disc carries or gains.</td></tr>
+      <tr><td><code>--super-arts-pack</code>, <code>--delilas-challenge</code>, <code>--delilas-party</code>; texture, model and translation packs</td><td>(c)</td><td>Content mods and asset replacement.</td></tr>
+    </tbody>
+  </table>
+  <p>The full per-flag table is in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/gameplay-tweaks.md#classification" target="_blank" rel="noopener"><code>docs/subsystems/gameplay-tweaks.md</code></a>.</p>
+</section>
+
+<section class="doc-section" id="switches" data-doc="the-carried-switches">
+  <h2>The carried switches</h2>
+  <table>
+    <thead><tr><th>Switch</th><th><code>play-window</code> flag</th><th>Default</th><th>Retail mode</th></tr></thead>
+    <tbody>
+      <tr><td>Shiny Seru</td><td><code>--no-shiny-seru</code></td><td>on</td><td>off</td></tr>
+      <tr><td>Run-away EXP</td><td><code>--flee-exp</code></td><td>off</td><td>off</td></tr>
+      <tr><td>EXP rate</td><td><code>--exp-rate MULT</code> (<code>0.1..=5</code>)</td><td>1x</td><td>1x</td></tr>
+      <tr><td>Fortress battles fix</td><td><code>--no-fortress-encounter-fix</code></td><td>on</td><td>off</td></tr>
+      <tr><td>Boss casts respect jewels</td><td><code>--jewel-fix</code></td><td>off</td><td>off</td></tr>
+      <tr><td>Battle freeze guard</td><td><code>--no-hp-readout-guard</code></td><td>on</td><td>off</td></tr>
+      <tr><td>Bonus equipment drops</td><td><code>--equipment-drops</code></td><td>off</td><td>off</td></tr>
+      <tr><td>Save anywhere</td><td><code>--save-anywhere</code></td><td>off</td><td>off</td></tr>
+      <tr><td>Enemy strength</td><td><code>--enemy-stat-scale MULT</code> (<code>0.1..=5</code>)</td><td>1x</td><td>1x</td></tr>
+      <tr><td>Enemy attack count</td><td><code>--enemy-attack-count MULT</code> (<code>0.1..=5</code>)</td><td>1x</td><td>1x</td></tr>
+      <tr><td>Spirit AP</td><td><code>--spirit-ap AP</code> (<code>-100..=100</code>)</td><td>32</td><td>32</td></tr>
+      <tr><td>AP from damage</td><td><code>--damage-ap AP</code> (<code>-200..=200</code>)</td><td>100</td><td>100</td></tr>
+      <tr><td>Seru catch rate</td><td><code>--seru-catch-rate PCT</code></td><td>each Seru&rsquo;s own</td><td>each Seru&rsquo;s own</td></tr>
+    </tbody>
+  </table>
+  <p>A launcher or page slider cycles a fixed step list that starts at retail; the flags take any value in range. The two fixes default on because a game the defect never touched plays identically with them: the Fortress fix changes nothing on a save without the stale flag, and the readout guard is an identity while retail&rsquo;s readout invariant holds. The balance changes default to retail.</p>
+  <dl class="kv">
+    <dt>Shiny Seru</dt><dd>At each formation battle entry the engine rolls 2%: one capturable monster gets +35% HP / ATK / DEF / SPD, and capturing it marks the learned spell shiny (+35% damage). Off skips the roll <em>and its <code>rand()</code> draw</em>, which retail never takes, so every later battle-entry roll stays on retail&rsquo;s position in the stream.</dd>
+    <dt>Run-away EXP</dt><dd>Any successful escape (Run, an item or a spell) banks 5% of the fled formation&rsquo;s EXP into each member&rsquo;s total, as the hook banks it: no level-up runs until the next won battle.</dd>
+    <dt>EXP rate</dt><dd>Each monster record&rsquo;s base EXP is scaled before the victory sum with the patcher&rsquo;s arithmetic (round half up, zero stays zero, otherwise <code>1..=65535</code>); retail&rsquo;s 3/4 scale and the per-member split run on the scaled sum.</dd>
+    <dt>Fortress battles fix</dt><dd>The encounter condition walk reads system flag <code>0x15</code> as clear in <code>deroa</code> and <code>chitei2</code>, falling past the Floating Castle&rsquo;s copied "no battles" group (<a href="../writeups/glitches/field-oddities.html">field oddities</a>). The patch rewrites the table; the engine leaves it alone.</dd>
+    <dt>Boss casts respect jewels</dt><dd>Seven capture-class boss casts roll through the resist-respecting wrapper <code>FUN_801DD4B0</code> instead of the bypass <code>FUN_801DD6B4</code>. That swaps the whole roll, not only the resist flag - the two wrappers read different attacker and defender terms (<a href="battle-formulas.html">battle formulas</a>).</dd>
+    <dt>Battle freeze guard</dt><dd>Before each frame of the HP-readout ramp, a party slot whose readout differs from live HP with nothing pending gets the difference re-seeded, so state <code>0x51</code>&rsquo;s settle check opens (<a href="battle-action-exit-gates.html">exit gates</a>).</dd>
+    <dt>Bonus equipment drops</dt><dd>Once per won battle, a 5% roll puts one equipment id straight into the bag, from the same pool the patcher embeds.</dd>
+    <dt>Save anywhere</dt><dd>The pause menu&rsquo;s Save row works in every scene, not only where the scene header raises the save-allow bit. A port enhancement with no patcher counterpart.</dd>
+  </dl>
+  <h3 id="battle-tuning">Battle tuning</h3>
+  <p>Each slider is one scale at the reader the patcher&rsquo;s edit changes, with the patcher&rsquo;s arithmetic. The patch scales the stored record; the engine scales at the reader, so a fight sees the same numbers but nothing on disc or in a save moves. Tetsu, the unwinnable sparring partner, is pinned against both enemy sliders, as the patcher pins him.</p>
+  <table>
+    <thead><tr><th>Slider</th><th>What it scales</th></tr></thead>
+    <tbody>
+      <tr><td>Enemy strength</td><td>HP, MP, ATK, UDF, LDF, INT and SPD of the monster record before the loader&rsquo;s boost; AGL, EXP, gold and drops untouched</td></tr>
+      <tr><td>Enemy attack count</td><td>Each attack entry&rsquo;s AGL price, held to <code>1..=min(AGL, 0xFE)</code> so an attacker keeps one strike</td></tr>
+      <tr><td>Spirit AP</td><td>The <code>0x20</code> a Spirit turn grants; negative subtracts with a floor at zero</td></tr>
+      <tr><td>AP from damage</td><td>The hit charge <code>over * scale / max_hp</code>; <code>100</code> calls the retail kernel</td></tr>
+      <tr><td>Seru catch rate</td><td>One flat percent in place of the record&rsquo;s own chance, capturable records only</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="verification" data-doc="verification">
+  <h2>Verification</h2>
+  <p>Each switch has a disc-free test that it changes behaviour when on and that its retail value is the unmodified path, across <code>engine-core</code>, <code>engine-battle-vm</code>, <code>engine-session</code>, <code>engine-shell</code> and <code>web-play</code>; the bonus-drop pool is pinned against the patcher&rsquo;s by a disc-gated test. Tier 3 of the host-drift gate requires both hosts&rsquo; switch sites to pass the <code>tweaks</code> field, and the host frame trace digests the tweaks, so a switch thrown on one host only shows as a divergence.</p>
+</section>
+
+<section class="doc-section" id="open" data-doc="open">
+  <h2>Open</h2>
+  <p>Ranked by how much of the engine each needs:</p>
+  <ol class="steps">
+    <li><b>Split stat scale</b><span><code>--enemy-stat-scale</code>&rsquo;s per-stat and <code>regular:</code> / <code>boss:</code> forms, over the patcher&rsquo;s monster classes.</span></li>
+    <li><b>Seru trading without a patched disc</b><span>An engine-built offer configuration in place of the one parsed from the executable.</span></li>
+    <li><b>Enemy HP bars</b><span>A battle-HUD draw over each living monster, on both hosts.</span></li>
+    <li><b>Super Arts on the move list, oscillating AP</b><span>Battle-menu row sources.</span></li>
+    <li><b>Enemy ally (charm)</b><span>A monster acting on the party&rsquo;s side through the round scheduler, with the victory fixup already in place.</span></li>
+  </ol>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <ul class="bullets">
+    <li><a href="../tooling/randomizer.html">Randomizer and patcher</a> - every patcher flag.</li>
+    <li><a href="engine.html">Engine reimplementation</a> - the fidelity-versus-enhancement model and every toggle&rsquo;s default.</li>
+    <li><a href="../guides/playing-and-viewing.html#launcher-options">Playing: launcher options</a> - where the rows sit.</li>
+  </ul>
+</section>

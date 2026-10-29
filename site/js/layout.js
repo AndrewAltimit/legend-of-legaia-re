@@ -188,6 +188,7 @@ const NAV = [
       { href: 'subsystems/audio-internals.html', text: 'Audio: internals', key: 'subsystems/audio-internals', indent: true },
       { heading: 'The port' },
       { href: 'subsystems/engine.html', text: 'Engine reimplementation', key: 'subsystems/engine' },
+      { href: 'subsystems/gameplay-tweaks.html', text: 'Gameplay tweaks', key: 'subsystems/gameplay-tweaks' },
       { href: 'subsystems/renderer-port.html', text: 'Port renderer (wgpu)', key: 'subsystems/renderer-port' },
       { href: 'subsystems/browser-host.html', text: 'Browser host', key: 'subsystems/browser-host' },
       { href: 'subsystems/vr-mode.html', text: 'VR mode (WebXR)', key: 'subsystems/vr-mode' },

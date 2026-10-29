@@ -20,10 +20,13 @@ impl Renderer {
     /// * `Texture(t)` - letterboxed quad (Phase 1 TIM viewer).
     /// * `Mesh { mesh, mvp }` - depth-tested 3D mesh draw (Phase 1 TMD viewer).
     pub fn render(&self, target: RenderTarget<'_>) -> Result<()> {
-        let frame = self
-            .surface
-            .get_current_texture()
-            .context("get current swapchain texture")?;
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            // A hidden or minimised window: nothing to present this frame.
+            wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
+            other => anyhow::bail!("get current swapchain texture: {other:?}"),
+        };
         // Viewed as UNORM even when the surface itself is sRGB: the shaders
         // write PSX framebuffer bytes, which must reach the display unencoded
         // (see `choose_surface_format`).
@@ -44,7 +47,7 @@ impl Renderer {
             }
             None => self.encode_frame(target, &view)?,
         }
-        frame.present();
+        self.queue.present(frame);
         crate::profile::mark("present");
         Ok(())
     }
@@ -262,6 +265,7 @@ impl Renderer {
                 })],
                 depth_stencil_attachment: depth_attachment,
                 occlusion_query_set: None,
+                multiview_mask: None,
                 timestamp_writes: None,
             });
             // The stage rect the 3D pass and the screen-primitive overlay are
@@ -552,6 +556,7 @@ impl Renderer {
                                 },
                             ),
                             occlusion_query_set: None,
+                            multiview_mask: None,
                             timestamp_writes: None,
                         });
                         set_scene_vp(&mut rp);

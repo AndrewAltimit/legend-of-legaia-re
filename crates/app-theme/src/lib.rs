@@ -1,5 +1,5 @@
 //! The Legaia look of the desktop programs: one palette, in a dark and a
-//! light variant, and the spacing values, shared by `legaia-studio`, the
+//! light variant, and the spacing values, shared by `legaia-explorer`, the
 //! game's launcher (`legaia-engine` with no subcommand) and the play
 //! window's own chrome (the key hint, the toggle notices, the `F12` panel).
 //!
@@ -8,8 +8,13 @@
 //! accent and the primary button. The light palette carries the same hues on
 //! a white ground, with the accent darkened until it reads on white.
 //!
-//! [`game_exit`] is the wording the launcher and Studio share for a game
+//! [`game_exit`] is the wording the launcher and Explorer share for a game
 //! that stopped with an error.
+//!
+//! [`icons`] carries the two programs' icons (`icons/`, drawn by
+//! `icons/make_icons.py`), and [`win_icon`] embeds one into a Windows
+//! executable from a build script. [`release_layout`] is where the release
+//! archive puts the engine, for the two programs that start it.
 //!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
 //! colour (`egui::Color32::from_rgb`, a `[f32; 4]` for the launcher's
@@ -21,6 +26,9 @@
 extern crate std;
 
 pub mod game_exit;
+pub mod icons;
+pub mod release_layout;
+pub mod win_icon;
 
 /// An sRGB colour, 8 bits per channel, opaque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,10 +86,13 @@ fn pow_2_4(x: f32) -> f32 {
 /// Every colour role the desktop programs draw with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
-    /// The deepest surface: the launcher's body, Studio's text fields and
+    /// The deepest surface: the launcher's body, Explorer's text fields and
     /// viewports.
     pub ground: Rgb,
-    /// Panels and bands (Studio's side and top panels, the launcher's
+    /// The backdrop behind a preview (Explorer's 3D view): a mid tone, so a
+    /// mesh the disc bakes near black and a bright one both stand off it.
+    pub stage: Rgb,
+    /// Panels and bands (Explorer's side and top panels, the launcher's
     /// header band).
     pub band: Rgb,
     /// Cards and windows over a band.
@@ -135,6 +146,7 @@ pub struct Palette {
 /// The dark palette: the launcher's.
 pub const DARK: Palette = Palette {
     ground: Rgb(14, 15, 24),
+    stage: Rgb(46, 50, 74),
     band: Rgb(22, 24, 38),
     card: Rgb(28, 31, 46),
     stripe: Rgb(28, 31, 46),
@@ -164,6 +176,7 @@ pub const DARK: Palette = Palette {
 /// on it.
 pub const LIGHT: Palette = Palette {
     ground: Rgb(255, 255, 255),
+    stage: Rgb(196, 200, 214),
     band: Rgb(244, 244, 248),
     card: Rgb(250, 250, 252),
     stripe: Rgb(234, 235, 242),
@@ -219,6 +232,10 @@ pub mod chrome {
     pub const KEY: Rgb = DARK.info;
     /// Body text of the help panel.
     pub const TEXT: Rgb = DARK.ink;
+    /// A setting's state the original game does not have (an enhancement
+    /// in effect), in the help panel; the launcher draws such a value in
+    /// the same green.
+    pub const CHANGED: Rgb = DARK.good;
 }
 
 #[cfg(test)]

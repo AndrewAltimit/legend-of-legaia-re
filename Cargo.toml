@@ -51,6 +51,7 @@ members = [
     "crates/engine-dialog",
     "crates/engine-menus",
     "crates/engine-battle-menus",
+    "crates/engine-battle-loop",
     "crates/engine-title",
     "crates/engine-mode",
     "crates/engine-export",
@@ -79,7 +80,7 @@ members = [
     "crates/parity",
     "crates/engine-shell",
     "crates/asset-viewer",
-    "crates/studio",
+    "crates/explorer",
     "crates/web-minigames",
     "crates/web-patcher",
     "crates/web-play",
@@ -98,38 +99,42 @@ anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
 console_error_panic_hook = "0.1"
-cpal = "0.15"
-dirs = "6"
-# The desktop GUI toolkit for legaia-studio. Glow (OpenGL) backend only: no
-# egui release builds against the workspace's wgpu 26 (0.32 pins wgpu 25,
-# 0.33 pins wgpu 27), so the glow backend is what keeps a second wgpu out of
-# the tree. Its winit is the workspace's 0.30.
-eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
+cpal = "0.18"
+dirs = "7"
+# The desktop GUI toolkit for legaia-explorer. Glow (OpenGL) backend only:
+# Explorer draws nothing but egui's own meshes (its model view is a CPU
+# rasteriser), so it links no wgpu at all. eframe 0.36's wgpu backend would
+# be the workspace's wgpu 30, but glow keeps wgpu out of Explorer's build.
+# Its winit is the workspace's 0.30.
+eframe = { version = "0.36", default-features = false, features = ["glow", "default_fonts", "wayland", "x11"] }
 encoding_rs = "0.8"
 env_logger = "0.11"
 flate2 = "1"
 gilrs = "0.11"
-glam = { version = "0.30", features = ["bytemuck"] }
+glam = { version = "0.34", features = ["bytemuck"] }
 js-sys = "0.3"
 libc = "0.2"
 log = "0.4"
-png = "0.17"
+png = "0.18"
 pollster = "0.4"
 rayon = "1"
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
-sha2 = "0.10"
+# The maintained fork of serde_yaml 0.9 (same libyaml parser, same API):
+# serde_yaml itself is archived and its unsafe-libyaml backend is
+# unmaintained (RUSTSEC-2024-0449).
+serde_norway = "0.9"
+sha2 = "0.11"
 tempfile = "3"
-toml = { version = "0.8", default-features = false, features = ["parse"] }
+toml = { version = "1", default-features = false, features = ["std", "serde", "parse"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
-# The naga version wgpu 26 resolves to; named directly only by the
+# The naga version wgpu 30 resolves to; named directly only by the
 # shading-law parity test, which also needs its GLSL front end.
-naga = { version = "26.0.0", default-features = false }
-wgpu = "26"
+naga = { version = "30.0.1", default-features = false }
+wgpu = "30"
 winit = "0.30"
 
 # Workspace crates. Those carrying a command-line binary are listed with
@@ -170,6 +175,7 @@ legaia-engine-dev-menu = { path = "crates/engine-dev-menu" }
 legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
 legaia-engine-battle-menus = { path = "crates/engine-battle-menus" }
+legaia-engine-battle-loop = { path = "crates/engine-battle-loop" }
 legaia-engine-title = { path = "crates/engine-title" }
 legaia-engine-system = { path = "crates/engine-system" }
 legaia-engine-fishing = { path = "crates/engine-fishing" }

@@ -86,14 +86,22 @@ impl World {
     /// Per-part mesh draws across all live field move-VM effects (the visual
     /// parts). The non-visual nodes (`0x4001` sound emitter) never appear here -
     /// see [`Self::active_field_fx_render_nodes`]. The scene's ambient tree's
-    /// mesh-bearing parts ([`Self::ambient_mesh_part_draws`]) follow: the
+    /// mesh-bearing parts ([`Self::ambient_mesh_part_draws`]) follow, then
+    /// the map display's pointer ([`Self::map_pointer_part_draws`]): the
     /// same case-5 model draw, the same pack-slot index.
+    ///
+    /// Empty during a battle: the field's actor pool is off retail's lists
+    /// there ([`Self::field_pool_drawn`]).
     pub fn active_field_fx_part_draws(&self) -> Vec<legaia_engine_effects::summon::SummonPartDraw> {
+        if !self.field_pool_drawn() {
+            return Vec::new();
+        }
         self.props
             .active_fx
             .iter()
             .flat_map(|s| s.part_draws())
             .chain(self.ambient_mesh_part_draws())
+            .chain(self.map_pointer_part_draws())
             .collect()
     }
 

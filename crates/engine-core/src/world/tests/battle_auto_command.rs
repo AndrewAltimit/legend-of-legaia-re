@@ -70,7 +70,7 @@ fn an_arts_commit_parks_the_arrows_and_the_next_attack_replays_them() {
     w.actors[0].battle.params = [0u8; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
     w.dispatch_pending_party_action(
         0,
-        crate::battle_round::PendingPartyAction::Attack { target: 1 },
+        legaia_engine_battle_loop::round_flow::PendingPartyAction::Attack { target: 1 },
     );
     // No art catalog: the builder turns the arrows into plain swings.
     assert_eq!(&w.actors[0].battle.params[..4], &SWINGS);
@@ -160,7 +160,7 @@ fn a_member_that_never_confirmed_a_string_takes_the_swing_roll() {
     let mut w = auto_world();
     w.dispatch_pending_party_action(
         0,
-        crate::battle_round::PendingPartyAction::Attack { target: 1 },
+        legaia_engine_battle_loop::round_flow::PendingPartyAction::Attack { target: 1 },
     );
     // The no-input attack arm writes rolled swing commands, which the parked
     // string never contains (its bytes are art constants).

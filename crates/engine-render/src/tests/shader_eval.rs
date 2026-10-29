@@ -727,6 +727,8 @@ fn literal(l: &Literal) -> Val {
         Literal::I32(x) => Val::I(vec![x]),
         Literal::AbstractInt(x) | Literal::I64(x) => Val::I(vec![x as i32]),
         Literal::U64(x) => Val::U(vec![x as u32]),
+        Literal::U16(x) => Val::U(vec![u32::from(x)]),
+        Literal::I16(x) => Val::I(vec![i32::from(x)]),
         Literal::Bool(b) => Val::B(vec![b]),
         Literal::F16(x) => Val::F(vec![f32::from(x)]),
     }

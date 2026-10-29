@@ -45,7 +45,7 @@ fn seru_cast_world() -> World {
     world.actors[0].move_state.world_x = 82;
     world.actors[0].move_state.world_z = -542;
     world.actors[0].battle.facing_angle = 0xFD9;
-    world.set_battle_magic(0, 100);
+    world.battle.set_battle_magic(0, 100);
     world.actors[1].active = true;
     world.actors[1].battle.max_hp = 300;
     world.actors[1].battle.hp = 300;

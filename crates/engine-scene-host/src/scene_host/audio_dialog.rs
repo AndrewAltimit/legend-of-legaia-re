@@ -262,6 +262,21 @@ impl SceneHost {
             match ev {
                 legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op } => {
                     match sub_op {
+                        // A start under sound-flag bit 2: the poller latches
+                        // the request onto the loaded index and loads nothing,
+                        // so the slot keeps sounding what it held.
+                        super::BGM_SUB_OP_ENGINE_LATCH => {
+                            self.bgm_track_word = Some(text_id);
+                            self.pending_bgm_swap = None;
+                            self.bgm_latched = Some(text_id);
+                            acted += 1;
+                        }
+                        // A start of the id the poller latched: requested and
+                        // loaded index agree (`0x80024584`), nothing moves.
+                        1 | 9 if self.bgm_latched == Some(text_id) => {
+                            self.bgm_track_word = Some(text_id);
+                            self.pending_bgm_swap = None;
+                        }
                         // 1 = start; 9 = select behind the commit (see the
                         // doc comment above).
                         1 | 9 => {
@@ -271,6 +286,14 @@ impl SceneHost {
                             // A later request replaces a held one (the poller
                             // re-reads the word on every call).
                             self.pending_bgm_swap = None;
+                            // Past a latch the slot still holds the earlier
+                            // track; the poller's teardown (`0x80024648..`)
+                            // releases it and the load starts this one afresh,
+                            // even where the two are the same score. A sub-op
+                            // 9 defers that teardown to its commit.
+                            if self.bgm_latched.take().is_some() && sub_op == 1 {
+                                director.stop();
+                            }
                             // Every track brings its own VAB. A scene-local id
                             // loads retail's fallback track, not a scene bank
                             // (`SCENE_LOCAL_BGM_FALLBACK_ID`); the id itself is
@@ -283,6 +306,8 @@ impl SceneHost {
                                     self.pending_bgm_swap = Some((text_id, entry));
                                 } else {
                                     director.start_owned_vab(text_id, &entry);
+                                    self.bgm_ending_source = u32::from(text_id)
+                                        == legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID;
                                 }
                                 acted += 1;
                             }
@@ -300,7 +325,20 @@ impl SceneHost {
                             acted += 1;
                         }
                         super::BGM_SUB_OP_ENGINE_STOP => {
+                            self.bgm_latched = None;
+                            self.bgm_ending_source = false;
                             director.stop();
+                            acted += 1;
+                        }
+                        // The field init's close of the field-BGM source: it
+                        // releases the occupant unless that is the ending
+                        // theme, which sounds from source 10 and outlives
+                        // every vignette's init.
+                        super::BGM_SUB_OP_ENGINE_FIELD_CLOSE => {
+                            self.bgm_latched = None;
+                            if !self.bgm_ending_source {
+                                director.stop();
+                            }
                             acted += 1;
                         }
                         8 => {
@@ -329,6 +367,7 @@ impl SceneHost {
                                 Some((id, entry)) => {
                                     director.stop();
                                     director.start_owned_vab(id, &entry);
+                                    self.bgm_ending_source = false;
                                     started_this_drain = true;
                                 }
                                 None => director.unhalt_pause(),
@@ -355,6 +394,7 @@ impl SceneHost {
             && !started_this_drain
         {
             director.start_owned_vab(id, &entry);
+            self.bgm_ending_source = false;
             acted += 1;
         }
         // Restore non-BGM (and unhandled-BGM) events so engine layers that

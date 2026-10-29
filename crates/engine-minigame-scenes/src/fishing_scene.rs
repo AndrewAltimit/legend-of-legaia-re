@@ -261,7 +261,12 @@ fn bake_env(
     ranked.extend(terrain.iter().copied());
     ranked.extend(placements.iter().copied());
     let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
-    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+    // Ranked in retail's emission order (placements ahead of terrain), the
+    // order equal-area ties resolve by; `ranked` keeps its own draw order.
+    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(
+        &legaia_engine_scene::coplanar_draws::emission_order(&terrain, &placements),
+        &planes,
+    );
 
     let mut out = empty_mesh();
     let mut flat_out = Vec::new();

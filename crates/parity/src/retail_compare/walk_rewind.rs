@@ -18,6 +18,15 @@
 //! target and stands the player one more walk step back. Both are
 //! **inference**: the staging target is the newest pass's, and the walk step
 //! is assumed constant over the two passes. Neither is recorded in RAM.
+//!
+//! The player is rewound whether or not the camera is still easing. A
+//! follow camera already on its staging pose (`dohaty_field_card_walk`,
+//! `jou_field_card_walk`: a yaw-`0` block whose target does not turn) keeps
+//! its live angles and eye, but its focus is the player, so the frame on
+//! screen still stands two walk steps behind the RAM: `dohaty`'s retail
+//! frame sits `13` px left of a frame seated on the RAM's player, and the
+//! state's own newest ordering table, rasterised (`ot-raster.py`), sits on
+//! the RAM's pose.
 
 use super::*;
 use legaia_engine_field::camera_zone::{CameraTarget, CameraZoneConfig, ComposeInputs, compose};
@@ -84,9 +93,8 @@ pub struct WalkHistory {
     pub half_eye_y: bool,
 }
 
-/// The [`WalkHistory`] of a capture whose player moved on its last pass under
-/// a follow camera still easing; `None` otherwise (a stationary player, an
-/// ease that snaps, or a camera already on its target).
+/// The [`WalkHistory`] of a capture whose player moved on its last pass;
+/// `None` for a player who stood still on it.
 pub(super) fn walk_history(ram: &[u8], camera: &CameraObs) -> Option<WalkHistory> {
     let p = game_anchors::player_ptr(ram)?;
     let at = |o: u32| [rd16(ram, p + o), rd16(ram, p + o + 2), rd16(ram, p + o + 4)];
@@ -96,9 +104,6 @@ pub(super) fn walk_history(ram: &[u8], camera: &CameraObs) -> Option<WalkHistory
     }
     let code = legaia_engine_field::camera_zone::EASE_SHIFT_TABLE
         [usize::from(game_anchors::u8_at(ram, EASE_SHIFT_BYTE) >> 4)];
-    if code == 0 {
-        return None;
-    }
     let st = FOLLOW_STAGING;
     let staging = CameraTarget {
         pitch: rd16(ram, st + 0x02),
@@ -115,10 +120,6 @@ pub(super) fn walk_history(ram: &[u8], camera: &CameraObs) -> Option<WalkHistory
         i32::from(camera.yaw),
         i32::from(camera.h),
     ];
-    let target_angles = [staging.pitch, staging.yaw, staging.h].map(i32::from);
-    if angles == target_angles && camera.eye == staging.eye.map(i32::from) {
-        return None;
-    }
     Some(WalkHistory {
         cur,
         prev,
@@ -169,7 +170,11 @@ impl WalkHistory {
             .unwrap_or(self.staging);
         let code = self.code;
         let back = |live: [i32; 3], t: CameraTarget, eye: bool| -> [i32; 3] {
-            if eye {
+            // A snap (code `0`) leaves no ease step to undo: the live pose is
+            // the newest target, the nearest the RAM holds to the older one.
+            if code == 0 {
+                live
+            } else if eye {
                 [0, 1, 2].map(|i| ease_step_back(live[i], i32::from(t.eye[i]), code))
             } else {
                 let tt = [t.pitch, t.yaw, t.h];
@@ -204,6 +209,46 @@ mod tests {
         // Two-shift codes invert the same way.
         let prev = ease_step_back(500, 900, 0x44);
         assert_eq!(ease_step(prev, 900, 0x44), 500);
+    }
+
+    fn history(code: u8, on_target: bool) -> WalkHistory {
+        let staging = CameraTarget {
+            pitch: 744,
+            yaw: 0,
+            eye: [-87, 555, 11200],
+            h: 512,
+        };
+        WalkHistory {
+            cur: [9106, 0, 6958],
+            prev: [9130, 0, 6958],
+            code,
+            staging,
+            angles: if on_target {
+                [744, 0, 512]
+            } else {
+                [744, 40, 512]
+            },
+            eye: [-87, 555, 11200],
+            block: None,
+            half_eye_y: false,
+        }
+    }
+
+    #[test]
+    fn a_camera_on_its_target_still_rewinds_the_walk() {
+        // `dohaty_field_card_walk`'s pair: `-24` X a pass, the camera on its
+        // staging pose.
+        let r = history(3, true).rewind(None);
+        assert_eq!(r.seat, [9154, 6958]);
+        assert_eq!(r.angles, [744, 0, 512]);
+        assert_eq!(r.eye, [-87, 555, 11200]);
+    }
+
+    #[test]
+    fn a_snapping_ease_keeps_the_live_camera() {
+        let r = history(0, false).rewind(None);
+        assert_eq!(r.seat, [9154, 6958]);
+        assert_eq!(r.angles, [744, 40, 512]);
     }
 
     #[test]

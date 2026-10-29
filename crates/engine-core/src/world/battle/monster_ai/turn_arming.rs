@@ -11,7 +11,7 @@ impl World {
         match self.pick_monster_action(slot) {
             // A silenced/petrified caster can't cast - fall back to a physical
             // strike (mirrors the affordability fallback below).
-            MonsterAction::Cast { .. } if self.actor_blocked_from_magic(slot) => {
+            MonsterAction::Cast { .. } if self.battle.actor_blocked_from_magic(slot) => {
                 self.arm_monster_physical(slot);
             }
             MonsterAction::Cast {

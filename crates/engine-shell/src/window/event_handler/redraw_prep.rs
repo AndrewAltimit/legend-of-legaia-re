@@ -61,6 +61,17 @@ impl PlayWindowApp {
             if due && let Some(arms) = sc.seat_sprite_arms.take() {
                 self.session.host.world.install_sprite_arm_snapshot(&arms);
             }
+            // ... and the turning ambient parts' banks as the displayed frame
+            // drew them: their angle is time since the entry
+            // (`LEGAIA_SEAT_TURNING_PARTS`).
+            if due && let Some(parts) = sc.seat_turning_parts.take() {
+                self.session.host.world.seat_ambient_part_banks(&parts);
+            }
+            // ... and the text balloon the displayed frame drew, or none
+            // (`LEGAIA_SEAT_BALLOON`).
+            if due && let Some(b) = sc.seat_balloon.take() {
+                self.session.host.world.cutscene.text_balloon = b;
+            }
             // ... and a captured cast's parts where retail's passes had put
             // them (`LEGAIA_SEAT_CAST_PARTS`).
             if due
@@ -110,8 +121,17 @@ impl PlayWindowApp {
                     &sc.seat_battle_clips,
                 );
             }
+            // A round prompt caught with its far framing still walking
+            // stands the engine's arm as many frames short of its end
+            // (`LEGAIA_SEAT_MENU_GLIDE_LEFT`).
+            if due
+                && let Some(left) = sc.seat_menu_glide_left
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.align_menu_glide_frames_left(left);
+            }
             if due && sc.seat_hud_glides_landed {
-                self.session.host.world.land_battle_hud_glides();
+                self.session.host.world.battle.land_battle_hud_glides();
             }
             if due {
                 for g in &sc.seat_hud_glides {
@@ -151,7 +171,7 @@ impl PlayWindowApp {
                 sc.popup_age_seated.set(true);
             }
             if due && let Some((page, slide)) = sc.seat_arts_list {
-                self.session.host.world.seat_arts_list(page, slide);
+                self.session.host.world.battle.seat_arts_list(page, slide);
             }
             if due && let Some((width, plate)) = sc.seat_spirit_gauge {
                 let ctx = &mut self.session.host.world.battle_ctx;
@@ -351,11 +371,28 @@ impl PlayWindowApp {
             let world = &mut self.session.host.world;
             let mask = match (world.battle.camera.as_mut(), target) {
                 (Some(cam), Some(target)) => {
-                    let live = match displayed {
+                    let shown = match displayed {
                         Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,
                         _ => live,
                     };
-                    cam.align_glide_origin_to(live, end, target)
+                    // A capture-band module's own shot still walking (`0x70`
+                    // arms no framing; a slot-B arm built the table once)
+                    // whose endpoints are retail's where the glide's are
+                    // not: its walk takes retail's pose on the shot's
+                    // increments, as a summon module's does
+                    // (`BattleCamera::align_module_shot`). Otherwise the
+                    // glide's origin.
+                    let mut glide = cam.clone();
+                    let by_glide = glide.align_glide_origin_to(shown, end, target);
+                    let mut shot = cam.clone();
+                    let by_shot = shot.align_module_shot(live, end);
+                    if by_shot.count_ones() > by_glide.count_ones() {
+                        *cam = shot;
+                        by_shot
+                    } else {
+                        *cam = glide;
+                        by_glide
+                    }
                 }
                 _ => 0,
             };

@@ -2258,6 +2258,7 @@ The port arms the rejection through one kernel both hosts read,
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
 | Battle **draw-kind-4 nodes** (default-arm and sprite-arm meshes) and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake) |
+| Battle **mesh parts** (summon and move-FX parts drawing an effect-library mesh) | the same, per part (`FxPartModel::single_sided`): the native pass culls the resolved mesh before upload, the play page bakes it culled |
 
 A move-VM part is the one field draw whose word can carry the bit. The
 field FX parts (`World::active_field_fx_part_draws`) hand it on as
@@ -2269,6 +2270,12 @@ field pass's cull.
 A draw-kind-4 node is built by its emitter and then falls into the ordinary
 model draw (`0x8001B160`), so its packets reach the dispatcher with the node's
 own colour word too, and a word without `0x08000000` keeps the winding test.
+So does a mesh part, which is that model draw: Puera's twenty-three crystals
+(PROT 0922 record `0x801F989C`, effect-library mesh `0x19`, word
+`0xC1000000`, additive) are gouraud triangles in `(0xFF, 0x9F, 0x9F)` to
+`(0xFF, 0x60, 0x60)` over the grey `(112, 112, 112)` texel of the `(960, 496)`
+patch. Drawn both-sided, each crystal added its far wall over its near one
+and saturated white; with the back faces dropped it is pink, as retail's.
 Neo Star Slash's arm-5 caster cylinder (PROT 0960 record `0x801F8D44`, word
 `0xC1000000`, a textured radius-`0x800` wall) is one: drawn both-sided its far
 wall added a second orange layer over the whole arm-6 frame, and the
@@ -2336,7 +2343,20 @@ dispatcher loads that floor into `t4` per group (`lhu t4,0x6A(t2)` at
 The scene init writes the floor as `0x10` (`FUN_8001D424` at `0x8001D4E8`,
 `FUN_8001DCF8` at `0x8001DD5C`); the catalogued PCSX-Redux states hold
 `s = 3` on the field and `s = 2` in battle. So a field primitive whose mean
-depth is under 128, or a battle one under 64, is not drawn. `SZ` saturates at
+`SZ` is under 128, or a battle one under 64, is not drawn. Both hosts run
+the field cut on the port's eye depth (`sz_per_w = 1`), and that is a
+calibration rather than the GTE's scale. The field camera folds a 6x world
+scale into its rotation ([the field view matrix](#the-field-view-matrix-where-tr-comes-from)),
+so a field `SZ` is six times the port's `w` ([the register limits](#the-gtes-register-limits)
+measure it), and a cut at `SZ = 6 * w` would drop only what sits within about
+`21` units of the eye. `rikuroa_field_card_walk` is the counter-weight: its
+capture leaves out a near wall quad (corners `(31, 194)`, `(-285, 487)`,
+`(11, 44)`, `(-293, -26)`, mean `w` near `100`) whose packet the display
+list holds, which the `w`-unit cut drops and a `6 * w` cut keeps (`.985`
+against `.959`). The packet's second half spans `513` rows and its first `443`,
+so a size limit that drops the whole quad when one half exceeds it, where the
+port drops it only when both halves do, is the other reading; which rule
+drops it is open. `SZ` saturates at
 `0`, so a corner behind the eye pulls the mean toward zero rather than below
 it. Worked case: the evolved-Cort approach in `jouine` parks the camera
 against a root-wall body that a per-pixel clip would stretch across the
@@ -2351,6 +2371,15 @@ the clip volume. `camera_frame::prim_near_cut` picks the shift per pass -
 field and battle only, never under the debug orbit. The native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
+
+Each corner's depth floors to an integer within `1/64` of a unit
+(`prim_near_reject::SZ_FLOAT_SLACK`, the same constant in the WGSL and GLSL).
+Retail's `SZ` is an integer the GTE computes from integer inputs; the port's
+is a float composed through the camera's matrices and carries a few
+thousandths of error. Puera's arm-12 glow ring is locked in view space at
+`SZ = 64`, its mean `OTZ` in battle exactly the floor `0x10`: floored
+without the slack, a corner that came out at `63.999` dropped the whole ring
+on about one frame in ten, and the glow flickered.
 
 ### The GPU polygon-size limit
 
@@ -2394,6 +2423,49 @@ of the Caruban fight (`rikuroa_pre_caruban`, monster HP poked to 1,
 `scripts/pcsx-redux/autorun_film.lua`) shows two such frames on the console;
 the port's flat dark-blue frames on the same sweep are that, not a stray
 primitive.
+
+### The GTE's register limits
+
+`RTPS` / `RTPT` write a corner's screen position from saturated registers:
+`IR1` / `IR2` (the eye-space X / Y in GTE units) clamp to `-0x8000..=0x7FFF`,
+`SZ` to `0..=0xFFFF`, the divide's quotient at `0x1FFFF` (`H / SZ` at most
+`2`) and `SX` / `SY` to `-0x400..=0x3FF`. The prim leaves link whatever the
+FIFO holds (`FUN_80044DC8`'s `swc2` of `SXY0..2`), so a corner past a limit
+is drawn where the clamp put it. On the field the 6x camera scale brings the
+limits within reach of ordinary geometry: `SZ` saturates at an eye depth of
+about `10 900` port units and `IR` at a screen offset of `0x7FFF * H / SZ`.
+
+`noaru`'s ice floor is the case that shows. The bowl the ambient part keeps
+on the focus ([move-vm-overlay-ext](move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07))
+is `20 000` units across, and `noaru_field_card_walk`'s display list holds it
+as six `POLY_FT4`s whose corners no single projection of the mesh reproduces
+(a fitted pinhole camera leaves `33` px of residual). The far rim's corners
+sit `6 * w / 0xFFFF` times as far from the centre as the unclamped
+projection puts them, the off-screen corners nearer, and under `H = 608` with `SZ = 6 *
+w` every corner lands within the engine's own pose error (`3` px). An
+unclamped projection mapped the floor's texture across the wrong quads.
+
+In battle the limit that shows is the divide's. The battle camera's `H` is
+`256`, so a corner nearer the eye than `SZ = 128` lands at twice its
+eye-space offset rather than `H / SZ` times it. Puera's edge glow is built on
+that: PROT 0922's arm 12 seats record `0x801F939C`, a camera-locked
+(`+0x52 = 0x780`) additive ring at `+0x14 = (0, 0, 16)`, black at its inner
+radius `0xD0`, pale yellow (`0x80FFFF`) at its outer `0x160`, squashed by its
+in-plane scales `0x140` / `0x100`. At `SZ = 64` an unclamped projection puts
+the inner edge past the screen's edge and the ring draws nothing visible;
+under the cap the inner edge is an ellipse about `130 x 104` pixels and the
+ring frames the screen as the yellow glow arms 13..19 hold.
+
+The port applies the limits in the mesh vertex stage under PSX mode only
+(`Renderer::set_psx_mode`): `prim_near_reject::gte_saturated_clip` on the
+CPU, `gte_saturate_clip` in the WGSL and `gteSaturateClip` in the play page's
+GLSL, ahead of the vertex snap, from one per-frame word
+(`camera_frame::gte_saturation`: on the field `sz_per_w = 6` and the frame's
+`H`, in battle `sz_per_w = 1` and `H = 256`, staged by
+`Renderer::set_gte_saturation` and the play page's `setGteSat`). A corner
+inside every limit passes through untouched, and `w` is kept, since the
+textures interpolate affinely in screen space either way; clean rendering is
+unchanged.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -2466,7 +2538,17 @@ across a scene's resolved `EnvDraw` list (terrain + placed layers) and
 returns a per-draw world offset: the largest surface in a cluster stays put,
 and each overlapping smaller / later draw lifts `DRAW_NUDGE` per rank toward
 the surface's visible side - the "small decal wins" outcome of mean-Z
-bucketing. A lift never points down: a plane visible from below (a fallen
+bucketing. Equal planes rank by emission order: they share a bucket, a bucket
+draws last-linked first, so the draw emitted first lifts. The hosts hand the
+kernel the placed objects ahead of the terrain cells
+(`coplanar_draws::emission_order`), because the field frame body
+`FUN_80016444` runs the actor render passes (`FUN_8001D140`,
+`0x800166A4..0x80016738`) before the decoration pass (`FUN_8001D058` at
+`0x80016784`). `koin1`'s prize-counter banner, a placed additive sign on its
+terrain cell's brick panel, is that tie: retail's display list holds the
+banner's packets at lower addresses than the panel's and draws them after
+the panel, and ranked terrain-first the panel lifted over the banner and hid
+it. A lift never points down: a plane visible from below (a fallen
 log's underside) moves up, because a downward lift can sink it past the
 ground heightfield's `GROUND_SINK` (`vell`'s log). All three hosts that
 assemble field scenes apply the same map - the native play-window in its
@@ -2647,10 +2729,11 @@ Two things are routinely mis-stated about this table:
   one value, `snap`, which drives the vertex snap and is shared as the dither
   enable.
 
-### `set_psx_mode` - vertex snap + dither
+### `set_psx_mode` - GTE limits, vertex snap + dither
 
-`Renderer::set_psx_mode(true)` enables the two strict-PS1 rasterisation
-artefacts that are off by default:
+`Renderer::set_psx_mode(true)` enables the strict-PS1 rasterisation
+artefacts that are off by default: the GTE's register limits
+([above](#the-gtes-register-limits)) and the two below.
 
 - **Sub-pixel vertex snap ("vertex jitter").** Clip-space `x` / `y` are
   snapped to integer pixel positions in the vertex shader (NDC to pixel grid

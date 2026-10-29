@@ -158,6 +158,16 @@ pub struct SpriteArmSeed {
     pub pose: Vec<[u8; 8]>,
 }
 
+/// A turning ambient part's render banks `+0x24..+0x28` as a capture's
+/// displayed frame drew them ([`World::seat_ambient_part_banks`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AmbientBankSeed {
+    /// The part's record offset inside the stager bundle (`+0x48` less
+    /// `_DAT_8007B8D0`), the key [`AmbientPart::record_off`] carries.
+    pub record_off: u32,
+    pub rot: [i16; 3],
+}
+
 /// Seat a keyframe-pose node so its mode-6 pack reproduces `entries`: each
 /// part's current and target keyframes both hold the packed values, so the
 /// blend at any cursor packs them back byte for byte.
@@ -282,6 +292,35 @@ impl World {
             if *k > used.get(&p.record_off).copied().unwrap_or(0) {
                 p.finished = true;
             }
+        }
+    }
+
+    /// Seat the render banks of the live ambient parts that turn on a
+    /// retail state's own ([`AmbientBankSeed`]), record by record, in list
+    /// order. A part with a bank rate `+0x80..+0x84` turns by it every pass
+    /// from its spawn, so the angle it stands at is time since the scene
+    /// entry - `noaru`'s ice-floor bowl turns `-1` a vsync about Y - which a
+    /// seed that settles on its own clock does not reproduce. Only the banks
+    /// are written; the program, its waits and the rates stay the engine's.
+    /// The image child of the retail comparison calls this on the frame it
+    /// captures. A no-op for an empty snapshot.
+    pub fn seat_ambient_part_banks(&mut self, seeds: &[AmbientBankSeed]) {
+        let mut used: std::collections::HashMap<usize, usize> = Default::default();
+        for seed in seeds {
+            let off = seed.record_off as usize;
+            let n = used.entry(off).or_insert(0);
+            let Some(part) = self
+                .ambient
+                .fx
+                .iter_mut()
+                .filter(|p| !p.finished && p.record_off == off)
+                .nth(*n)
+            else {
+                continue;
+            };
+            *n += 1;
+            let st = &mut part.state;
+            [st.render_24, st.render_26, st.render_28] = seed.rot;
         }
     }
 
@@ -569,6 +608,16 @@ impl World {
     /// by then it has already stopped ticking and rendering, and the only
     /// difference is how long its slot stays occupied.
     ///
+    /// The free also silences a positional sound emitter. For a part whose
+    /// tick word is `FUN_80021DF4` and whose `+0x5A` is `5`, the teardown
+    /// calls `FUN_800250D4(+0xAC, +0xB0)` (`0x80025278..0x80025290`), keying
+    /// off the cue's voices whatever the part's key-on latch says. The
+    /// emitter arm itself only releases when the camera focus leaves its box
+    /// or the side-band request goes unsettled, so a halted emitter is
+    /// silenced here or nowhere: `rayman`'s collapse beats (`P2[7]`,
+    /// `P2[19]`) seat a rumble emitter (cue `0x3E`, voices 16..17) that loops
+    /// while system flag `0x5A0` or `0x5A1` is up and halts when both clear.
+    ///
     /// Without this a scene whose tree spawns on an infinite loop grows a
     /// part per tick forever, because every child halts on its own first run
     /// and nothing ever removes it - which is what drove the corpus into the
@@ -580,7 +629,7 @@ impl World {
     /// write retail performed).
     ///
     /// PORT: FUN_8002519C (the halt arm of the per-frame actor-list walk)
-    /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC
+    /// REF: FUN_800204A4, FUN_80020454, FUN_800203EC, FUN_800250D4
     fn retire_finished_ambient_parts(&mut self) {
         if !self
             .ambient
@@ -591,10 +640,14 @@ impl World {
             return;
         }
         let mut retired_rects: Vec<(u16, u16, u16, u16)> = Vec::new();
+        let emitter_ops = &mut self.audio.sfx_emitter_ops;
         self.ambient.fx.retain(|p| {
             if p.finished && p.scroll_fx.is_empty() {
                 if let Some(fx) = p.cell_fx {
                     retired_rects.push(fx.rect);
+                }
+                if let Some(op) = legaia_engine_vm::sfx_emitter::emitter_free(&p.state) {
+                    emitter_ops.push(op);
                 }
                 false
             } else {

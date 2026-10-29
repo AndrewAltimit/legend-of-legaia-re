@@ -89,6 +89,7 @@ impl BattleCamera {
             last_action_state: 0,
             acting_body: None,
             spell_cam: None,
+            spell_shot: None,
             last_active_commits: None,
             last_active_installs: None,
             clip_age: 0,
@@ -102,6 +103,7 @@ impl BattleCamera {
             escape_shot: false,
             cursor: None,
             entry_sweep: None,
+            menu_glide_from: None,
         }
     }
 
@@ -213,6 +215,9 @@ impl BattleCamera {
         }
         self.last_action_state = state;
         self.steps_in_state = 0;
+        if !SPELL_CAM_STATES.contains(&state) {
+            self.spell_shot = None;
+        }
         self.release_module_shot(state);
         // The magic exit's camera write, on the pass that leaves `0x2E` for
         // `0x50` (`0x801E4958..0x801E497C`): a pitch at or above `0x191`
@@ -586,6 +591,51 @@ impl BattleCamera {
         true
     }
 
+    /// Stand the far framing `left` display frames short of its end, on the
+    /// case-9 arm the camera last set out on: each component at its origin
+    /// moved `inc * walked` toward the framing and clamped there, with
+    /// `inc = ceil(|gap| / 0xE)` - `FUN_801D829C`'s per-frame increment
+    /// (`0x801D8438..0x801D847C`), which `FUN_8002149C` adds once a frame and
+    /// clamps on the endpoint. Yaw is left to the idle orbit
+    /// ([`Self::align_orbit_yaw`]). A glide toward the framing is re-armed
+    /// from the new pose. Returns `false` outside [`BattleCamPhase::Menu`] or
+    /// before any case-9 arm.
+    ///
+    /// The engine's own arm sets out from its own origin; this places it on
+    /// retail's clock - how many frames of the arm retail's displayed frame
+    /// had left - which a capture read off retail's step table. The capture
+    /// harness's handle, the far-framing twin of [`Self::align_glide_origin`].
+    /// Nothing in play calls it.
+    ///
+    /// REF: FUN_801D829C, FUN_8002149C
+    pub fn align_menu_glide_frames_left(&mut self, left: f32) -> bool {
+        let Some((origin, frames)) = self.menu_glide_from else {
+            return false;
+        };
+        if self.phase != BattleCamPhase::Menu {
+            return false;
+        }
+        let target = self.menu_pose();
+        let walked = (frames as f32 - left.max(0.0)).clamp(0.0, frames as f32);
+        let walk = |from: f32, to: f32| {
+            let gap = to - from;
+            let inc = (gap.abs() / frames as f32).ceil();
+            from + (inc * walked).min(gap.abs()).copysign(gap)
+        };
+        self.pose.pitch = walk(origin.pitch, target.pitch);
+        for k in 0..3 {
+            self.pose.tr[k] = walk(origin.tr[k], target.tr[k]);
+            self.pose.focus[k] = walk(origin.focus[k], target.focus[k]);
+        }
+        self.glides.clear();
+        let steps = self.frames_to_steps(left.max(0.0).ceil() as u32);
+        let mut from = self.pose;
+        let g = Glide::linear(&mut from, target, menu_raw_z(self.formation), steps, false);
+        self.pose = from;
+        self.glides.push_back(g);
+        true
+    }
+
     /// Whether the glide in flight heads for retail's framing on every
     /// component: its endpoint agrees with `end` (retail's tween-table
     /// endpoints) within [`Self::align_glide_origin`]'s per-component
@@ -663,7 +713,15 @@ impl BattleCamera {
             self.pose.pitch = nearest(self.pose.pitch, live.pitch);
             mask |= 1;
         }
-        let yaw_exact = ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE;
+        // A turning magic-band shot aims the yaw a step past the live one
+        // every pass, so its endpoint is the live yaw's own clock: with the
+        // shot's pitch on retail's, the live yaw is phase-aligned the way
+        // the idle orbit's is ([`Self::align_orbit_yaw`]).
+        let turning = self
+            .spell_shot
+            .is_some_and(|(case, _)| SPELL_CAM_TURNING_CASES.contains(&case))
+            && ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE;
+        let yaw_exact = turning || ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE;
         if yaw_exact {
             self.pose.yaw = nearest(self.pose.yaw, live.yaw);
             mask |= 2;
@@ -818,13 +876,14 @@ impl BattleCamera {
     }
 
     /// [`Self::close_up_accum`] as it runs without the natural-end
-    /// re-commits of a looping clip: zeroed by the action's start and by
-    /// each clip the active actor installs, advanced `8` a display frame
+    /// re-commits of a looping clip: zeroed by each clip the active actor
+    /// installs (a new action does not zero it, as it does not zero the
+    /// accumulator), advanced `8` a display frame
     /// beside the accumulator. Port-only - retail's accumulator restarts on
     /// those re-commits too, so this is an upper bound on it while the
     /// engine plays retail's clip, and it keeps counting through a loop the
     /// engine plays where retail held another (the retail comparison
-    /// corpus dates its action phases by it).
+    /// corpus dates its capture-band holds by it).
     pub fn clip_age(&self) -> u32 {
         self.clip_age
     }
@@ -902,6 +961,7 @@ impl BattleCamera {
         ));
         self.pose = from;
         self.phase = BattleCamPhase::Menu;
+        self.menu_glide_from = Some((from, MENU_GLIDE_FRAMES));
     }
 
     /// Observe the live battle phase; a change arms the measured glide.
@@ -917,12 +977,13 @@ impl BattleCamera {
         match phase {
             BattleCamPhase::Action => {
                 // A new action: retail's `FUN_8004E13C` re-rolls the per-art
-                // track column (`ctx[+0x26D] = rand() % 2`) and the ramps
-                // restart from zero, so the swing frames from one of the
-                // table's two columns.
+                // track column (`ctx[+0x26D] = rand() % 2`), so the swing
+                // frames from one of the table's two columns. The ramps and
+                // the accumulator restart only on the acting actor's clip
+                // commit (`observe_active_commits` / `observe_active_installs`),
+                // which retail's seed does not make.
                 let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
-                self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(
@@ -990,6 +1051,7 @@ impl BattleCamera {
                     self.steps_of(SWING_RETURN_STEPS),
                     false,
                 ));
+                self.menu_glide_from = Some((from, MENU_GLIDE_FRAMES));
             }
             BattleCamPhase::Menu => {
                 if self.phase == BattleCamPhase::Dialogue {
@@ -1432,6 +1494,9 @@ impl BattleCamera {
                     si.live_yaw = self.pose.yaw;
                     si.frame_step = self.frame_step;
                     if let Some(shot) = spell_cam_case(&si).shot {
+                        if self.spell_shot.is_none_or(|(case, _)| case != si.case) {
+                            self.spell_shot = Some((si.case, self.last_frames));
+                        }
                         let mut from = self.pose;
                         let steps = self.frames_to_steps(shot.frames);
                         let g = Glide::linear(&mut from, shot.pose, shot.raw_z, steps, true);

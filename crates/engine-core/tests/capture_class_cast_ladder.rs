@@ -161,7 +161,7 @@ fn battle_world(
         w.actors[i].battle.max_hp = 4000;
         w.actors[i].battle.mp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.actors[CASTER as usize].battle_monster_id = Some(monster_id);
     w.mode = SceneMode::Battle;

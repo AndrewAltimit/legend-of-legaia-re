@@ -248,6 +248,13 @@ Typical uses:
   `0` to fade it in, or washes it red at a low blend.
 - `chitei2`'s hologram panels (partition-0 records 19..27) black themselves
   out in their spawn prologue once flag `0x4C5` (the generator destroyed) is up.
+- `rayman`'s sinking set pieces (`P0[5]` / `P0[8]` behind `0x1EB`, `P0[6]` /
+  `P0[9]` behind `0x1FC`) run `CC <own id> 81 00 00 00 FF 0F 00 00` in their
+  spawn section after parking at `+0x8E = -768`, so on every visit after the
+  collapse, and in the frozen `rayman2`, they stand sunk and black. The op
+  names the object's own id while its bind-time prologue runs; the actor
+  exists by then (`FUN_8003A55C` allocates it first), so the resolver finds
+  it.
 - The kingdom MANs' partition-0 records tint the overworld landmarks they bind
   (map02's records 2.. go black at `0x800` or `0x1000` depending on a story
   flag; a retail map02 state holds records 2..28 at `0x800`).
@@ -298,6 +305,17 @@ turn (the halted-target refusal). Cutscene records issue over a thousand of
 these on NPCs and as many again on the Noa / Gala placements - "Noa turns to
 Vahn" is `CC <noa> 85 <budget> F8`. The port arms the leg as
 `CutsceneTimeline::npc_faces`.
+
+A placement's own spawn section can aim the cross-context form at itself.
+`kor3` `P1[11]` (flat 20) runs `CC 14 85 00 00 13` and `P1[6]` (flat 15)
+`CC 0F 85 00 00 10` in the load-frame slice: each halts its own context,
+and the walk kernel's first visit snaps it toward the placement beside it
+and drops the `0x400`. `kor3_field_route_walk` holds flat 20 at `0x52E` and
+flat 15 at `0xAD2` (the raw `+0x26` of flat 20 reads `0x152E`: the leg adds
+its arc unwrapped). The port arms the leg from the pre-run
+(`World::pre_run_field_channel_prologues`) whether the target byte names
+another context or the executing one, and the landing clears the channel's
+halt (`World::tick_field_npc_face_legs`).
 
 Aimed at the player (`CC F8 85|8E|8F <lo> <hi> <id>`) the arm also raises the
 caller's own `0x400` (`0x801E21B4..0x801E21CC`), and the leg's terminal frame
@@ -973,6 +991,13 @@ every NPC arm and raises the clip cue on the cross-context arm; the
 pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
 port's cue skips a re-request of the clip already playing
 (`World::carry_npc_run_anim`), where retail's `+0x5E = -2` restarts it.
+The run's byte is the actor's one `+0x5C`, which the scripted motion VM
+`FUN_80038158` also writes from its own ops, so the port stores it into that
+VM's requested move as well (`World::script_npc_move`, with the `A2` ExecMove
+write): otherwise the ambient tick re-requests the VM's older move and takes
+the clip back. `rikuroa`'s post-Caruban beat seats Noa with
+`CC 10 51 44 4A 00 18`, and the capture's `+0x5C` reads `0x18` over a tail
+stream standing on move `8`.
 
 #### Sub-2 is TAKE_ITEM, not a menu poll
 

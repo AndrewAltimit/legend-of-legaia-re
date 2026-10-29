@@ -355,7 +355,14 @@ pub const BATTLE_GTE_H: f32 = 256.0;
 /// `0x1F80037E = 0x10` (`sub s1,s2,t4` / `bltz s1` at `0x80043870` in
 /// `FUN_80043768`); see `legaia_render_kernels::prim_near_reject`. The field and
 /// battle cameras both put the GTE eye depth in clip `w`, so `sz_per_w` is
-/// `1`. The kingdom overworld composes a world scale onto its camera and
+/// `1`. That is the cut's calibration, not the field GTE's scale: the field
+/// camera folds a 6x world scale into its rotation, so a field `SZ` is six
+/// times the port's `w` ([`gte_saturation`]), and the cut is left in `w`
+/// units because `rikuroa_field_card_walk`'s capture drops a near quad of
+/// mean `w` near `100` that a cut at `SZ = 6 * w` keeps (the open question
+/// is recorded in `docs/subsystems/renderer.md`).
+///
+/// The kingdom overworld composes a world scale onto its camera and
 /// draws through the overlay's own replacement handlers, so it stays off, as
 /// do the minigame venues; `retail_camera = false` (the debug orbit) frames
 /// from a vantage retail never had and draws everything.
@@ -370,6 +377,40 @@ pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)>
     match mode {
         SceneMode::Field => Some((1.0, FIELD_OT_SHIFT)),
         SceneMode::Battle => Some((1.0, BATTLE_OT_SHIFT)),
+        _ => None,
+    }
+}
+
+/// The GTE's register limits for this frame's scene pass, as `(sz_per_w,
+/// h)` for `Renderer::set_gte_saturation` (the play page's `u_gte_sat`), or
+/// `None` when the pass does not apply them.
+///
+/// `RTPS` writes a corner's screen position from saturated registers -
+/// `IR1` / `IR2` at `0x7FFF`, `SZ` at `0xFFFF`
+/// (`legaia_render_kernels::prim_near_reject::gte_saturated_clip`) - and the
+/// field camera folds a 6x world scale into its rotation (base matrix
+/// `_DAT_8007BF10 = 24576 * I`) where the port draws at 1x with the eye trio
+/// divided by it, so a field corner's GTE units are [`CUTSCENE_WORLD_SCALE`]
+/// times its clip `w`. `noaru_field_card_walk` measures it: its ice-floor
+/// bowl's far rim lands where `SZ` saturates at `6 * w = 0xFFFF`, under the
+/// frame's own `H` (`field_h`, `_DAT_8007B6F4`).
+///
+/// In battle the host composes the 4x world scale onto the draws, so a
+/// corner's clip `w` is already its `SZ` (`sz_per_w = 1`), under the battle
+/// camera's [`BATTLE_GTE_H`]. There the limit that shows is the divide's:
+/// a camera-locked part close to the eye (`2 * SZ <= H`) lands at twice its
+/// eye-space offset, not `H / SZ` times it. PROT 0922's arm-12 glow
+/// (`0x801F939C`, Puera) is a ring locked at `SZ = 64` whose inner edge an
+/// unclamped divide puts past the screen's edge; under the cap it frames
+/// the screen as the yellow edge glow retail shows through arms 13..19.
+/// Field and battle, only under a retail camera.
+pub fn gte_saturation(mode: SceneMode, retail_camera: bool, field_h: f32) -> Option<(f32, f32)> {
+    if !retail_camera {
+        return None;
+    }
+    match mode {
+        SceneMode::Field if field_h > 0.0 => Some((CUTSCENE_WORLD_SCALE, field_h)),
+        SceneMode::Battle => Some((1.0, BATTLE_GTE_H)),
         _ => None,
     }
 }

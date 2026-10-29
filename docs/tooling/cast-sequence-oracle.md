@@ -63,8 +63,12 @@ Flags worth knowing:
 `LEGAIA_DIAG_CAST_PARTS=1` beside the engine recorder (`--engine-env`) adds
 `parts.csv`: every live part of the cast's scene graph each tick - record
 `model_sel`, halted, colour word `+0x74`, level `+0x78`, `+0x9E`, the packed
-colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA` and
-the position - the engine half of a part-by-part comparison. It is how Neo
+colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA`, the
+position, then the draw kind `+0x56`, scale `+0x72`, `+0x52`, the count
+`+0x9C`, the UV words `+0xA8` / `+0xAC`, tpage `+0xB0`, CLUT `+0xB2`, the
+default-arm mesh's vertex count, the spawn record's address, the flag word
+`+0x10`, the angle trio `+0x24..+0x28` and `+0x7A` - the engine half of a
+part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
@@ -116,7 +120,11 @@ already cropped and box-filtered to the compared `320 x 224`
 (`Frame::from_engine_capture`, the corpus's alignment). Its `meta.csv` uses
 retail seat numbers: the engine packs the party ahead of the monsters, and the
 recorder maps them back. Beside it, `cam.csv` holds the live camera pose per
-tick (pitch, yaw, TR trio), the engine half of the retail side's file.
+tick (pitch, yaw, TR trio), the engine half of the retail side's file, and
+`body.csv` the acting seat's clip `+0x1D9`, staged byte `+0x1DA`, whether the
+clip loops, its cursor in sixteenths of a keyframe and the live pair: the
+engine half of the retail `body.csv`, which a clip that ends early or late
+is read off.
 
 ## The pairing rule
 

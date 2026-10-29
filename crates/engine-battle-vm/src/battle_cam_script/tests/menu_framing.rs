@@ -449,3 +449,37 @@ fn the_cursor_shot_glides_in_and_hands_back_to_the_far_framing() {
     let p = slot.as_ref().unwrap().pose();
     assert_eq!(p.pitch, 32.0, "back on the far framing's pitch");
 }
+
+/// A case-9 arm stood part way along: each component at its origin moved
+/// `ceil(|gap| / 0xE)` a frame for the frames walked, clamped on the
+/// framing, and the yaw left to the orbit. No arm yet, or outside the far
+/// framing, aligns nothing.
+#[test]
+fn a_far_framing_arm_stands_its_frames_left_short() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    assert!(!cam.align_menu_glide_frames_left(9.0), "no case-9 arm yet");
+    let close = BattleCamPose {
+        pitch: 0.0,
+        yaw: 4078.0,
+        tr: [0.0, 1536.0, 2867.0],
+        focus: [0.0; 3],
+    };
+    cam.hand_back_from(close);
+    let end = cam.menu_pose();
+    let yaw = cam.framing_pose().yaw;
+    assert!(cam.align_menu_glide_frames_left(9.0));
+    let p = cam.framing_pose();
+    let inc_z = ((end.tr[2] - close.tr[2]) / 14.0).ceil();
+    assert_eq!(p.tr[2], close.tr[2] + 5.0 * inc_z);
+    assert_eq!(
+        p.tr[1],
+        close.tr[1] - 5.0 * ((close.tr[1] - end.tr[1]) / 14.0).ceil()
+    );
+    assert_eq!(p.pitch, 5.0 * (end.pitch / 14.0).ceil());
+    assert_eq!(p.yaw, yaw, "the orbit owns the yaw");
+    // Past the arm's length the pose is the origin; none left, the framing.
+    assert!(cam.align_menu_glide_frames_left(20.0));
+    assert_eq!(cam.framing_pose().tr, close.tr);
+    assert!(cam.align_menu_glide_frames_left(0.0));
+    assert_eq!(cam.framing_pose().tr[2], end.tr[2]);
+}

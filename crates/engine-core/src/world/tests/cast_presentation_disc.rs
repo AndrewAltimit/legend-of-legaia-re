@@ -44,6 +44,7 @@ fn band_world() -> Option<World> {
 /// B `(0xBF, 0xBF, 0xFF)`) and starts the alpha ramp; arm 6 ramps it one per
 /// tick up to its `0x80` cap (`sltiu v0, 0x81` / `li v0, 0x80` at
 /// `0x801F7384..0x801F7390`), and the dispatchers' tail draws the bands.
+/// Arm 8 ramps it down only over the last `scalar << 7` of its countdown.
 #[test]
 fn kemaro_ramps_its_colour_wash_to_the_cap() {
     let Some(mut w) = band_world() else {
@@ -70,7 +71,18 @@ fn kemaro_ramps_its_colour_wash_to_the_cap() {
     };
     assert_eq!(q.gouraud.unwrap()[0], [31, 31, 128, 255]);
     assert!(!q.semi_transparent);
-    // Arm 8 ramps it back down and clears it.
+    // Arm 8 holds it while its countdown `0x801F92E4` is above
+    // `scalar << 7` (the guard at `0x801F75C4..0x801F75D0`) ...
+    w.casting.module_pres.word_in = Some((0x801F_92E4, 8 * 0x1C0));
+    for _ in 0..300 {
+        w.fire_cast_presentation(918, None, None, 8, 8, false);
+    }
+    assert_eq!(
+        w.casting.module_pres.wash.alpha, 0x80,
+        "held over the arm's head"
+    );
+    // ... and ramps it back down and clears it from there on.
+    w.casting.module_pres.word_in = Some((0x801F_92E4, 8 << 7));
     for _ in 0..300 {
         w.fire_cast_presentation(918, None, None, 8, 8, false);
     }
@@ -99,7 +111,7 @@ fn gizam_parks_its_held_fade_and_kills_it_next_arm() {
     assert_eq!(w.screen_fade_draws().len(), 1, "both hosts draw it");
     // Held: it survives its ramp while the module is resident.
     for _ in 0..0x140 {
-        w.step_cast_hook_fades(1);
+        w.casting.step_cast_hook_fades(1);
     }
     assert_eq!(w.casting.module_pres.fades.len(), 1);
     w.fire_cast_presentation(906, None, None, 13, 13, false);

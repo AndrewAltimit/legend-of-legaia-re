@@ -688,7 +688,7 @@ fn every_ported_cast_module_body_is_entered_through_its_own_seam() {
                     .expect("a queued-call stager row carries a probe");
                 let phase = queued_call_phase(entry);
                 w.casting.module_phase = phase;
-                w.queue_cast_stager_call(0);
+                w.casting.queue_cast_stager_call(0);
                 let run = w
                     .run_cast_module_code(id, phase)
                     .expect("the queued-call module pages");

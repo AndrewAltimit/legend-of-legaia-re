@@ -47,8 +47,8 @@ fn armed_world(battles_off: bool, encounters_off: bool) -> World {
         w.actors[i].battle.hp = 900;
         w.actors[i].battle.max_hp = 900;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 24);
-        w.set_battle_defense(i as u8, 16);
+        w.battle.set_battle_attack(i as u8, 24);
+        w.battle.set_battle_defense(i as u8, 16);
     }
     w.set_formation_table(table, cat);
     w.toggles.retail_options.vibration_battles = u8::from(battles_off);

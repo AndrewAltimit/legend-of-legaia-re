@@ -11,7 +11,7 @@
 //!
 //! The replay plays the action from its prompt on its own stream, whose
 //! damage rolls are not retail's. Seeded with the ring and the total
-//! ([`legaia_engine_core::world::BattleState::forced_melee_hits`] /
+//! ([`legaia_engine_battle_loop::battle_state::BattleState::forced_melee_hits`] /
 //! `forced_melee_total`), each replayed party swing on the victim takes the
 //! push it replays when the ring still holds it, and the hit that lands the
 //! total takes whatever brings the string to retail's total.

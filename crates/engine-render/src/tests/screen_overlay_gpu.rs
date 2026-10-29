@@ -31,14 +31,15 @@ pub(super) fn headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
 }
 
 fn open_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends: wgpu::Backends::PRIMARY,
-        ..Default::default()
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
     });
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::LowPower,
         compatible_surface: None,
         force_fallback_adapter: false,
+        apply_limit_buckets: false,
     }))
     .ok()?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -47,6 +48,7 @@ fn open_headless_device() -> Option<(wgpu::Device, wgpu::Queue)> {
         required_limits: wgpu::Limits::downlevel_defaults(),
         memory_hints: wgpu::MemoryHints::default(),
         trace: wgpu::Trace::Off,
+        experimental_features: wgpu::ExperimentalFeatures::disabled(),
     }))
     .ok()?;
     Some((device, queue))
@@ -241,8 +243,8 @@ pub(super) fn build_harness_with(
     });
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("test overlay layout"),
-        bind_group_layouts: &[&vram_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&vram_bgl)],
+        immediate_size: 0,
     });
     let attrs = vram_attributes();
     let vlayout = wgpu::VertexBufferLayout {
@@ -252,8 +254,8 @@ pub(super) fn build_harness_with(
     };
     let depth = wgpu::DepthStencilState {
         format: wgpu::TextureFormat::Depth32Float,
-        depth_write_enabled: false,
-        depth_compare: wgpu::CompareFunction::LessEqual,
+        depth_write_enabled: Some(false),
+        depth_compare: Some(wgpu::CompareFunction::LessEqual),
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     };
@@ -264,7 +266,7 @@ pub(super) fn build_harness_with(
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: std::slice::from_ref(&vlayout),
+                buffers: &[Some(vlayout.clone())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -284,7 +286,7 @@ pub(super) fn build_harness_with(
             },
             depth_stencil: Some(depth.clone()),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     };
@@ -458,6 +460,7 @@ pub(super) fn render_frame_rgba(h: &Harness, prims: &[ScreenPrim], clear: [f64; 
                 stencil_ops: None,
             }),
             occlusion_query_set: None,
+            multiview_mask: None,
             timestamp_writes: None,
         });
         let c = crate::psx_blend::MODE0_BLEND_CONSTANT;
@@ -521,9 +524,9 @@ pub(super) fn render_frame_rgba(h: &Harness, prims: &[ScreenPrim], clear: [f64; 
     buf.slice(..).map_async(wgpu::MapMode::Read, move |r| {
         let _ = tx.send(r);
     });
-    h.device.poll(wgpu::PollType::wait()).unwrap();
+    h.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
     rx.recv().unwrap().unwrap();
-    let data = buf.slice(..).get_mapped_range();
+    let data = buf.slice(..).get_mapped_range().expect("mapped readback");
     // Drop the row padding so the result is a tight RGBA8 frame.
     let mut frame = Vec::with_capacity((tw * th * 4) as usize);
     for row in 0..th as usize {

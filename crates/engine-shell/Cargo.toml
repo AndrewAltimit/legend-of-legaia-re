@@ -17,6 +17,7 @@ name = "legaia-launch"
 path = "src/bin/legaia-launch.rs"
 
 [dependencies]
+legaia-engine-battle-loop.workspace = true
 legaia-app-theme.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-battle-menus.workspace = true
@@ -112,6 +113,11 @@ oracles = ["dep:legaia-parity"]
 # quietly instead of panicking on a broken pipe.
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
+
+# build.rs embeds the program's icon into its Windows executable
+# (`legaia_app_theme::win_icon`; a no-op for every other target).
+[build-dependencies]
+legaia-app-theme.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

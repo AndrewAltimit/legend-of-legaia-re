@@ -60,9 +60,31 @@ fn reset_sigpipe() {
     }
 }
 
+/// The game icon (`legaia_app_theme::icons::GAME_PNG`) on every window this
+/// process opens: the launcher, the play window, the minigames window.
+fn set_window_icon() {
+    let decoded = (|| -> Result<(Vec<u8>, u32, u32)> {
+        let mut reader = png::Decoder::new(std::io::Cursor::new(legaia_app_theme::icons::GAME_PNG))
+            .read_info()?;
+        let mut buf = vec![0; reader.output_buffer_size().unwrap_or(0)];
+        let info = reader.next_frame(&mut buf)?;
+        anyhow::ensure!(
+            info.color_type == png::ColorType::Rgba && info.bit_depth == png::BitDepth::Eight,
+            "not 8-bit RGBA"
+        );
+        buf.truncate(info.buffer_size());
+        Ok((buf, info.width, info.height))
+    })();
+    match decoded {
+        Ok((rgba, w, h)) => legaia_engine_render::window::set_app_icon(rgba, w, h),
+        Err(e) => log::warn!("window icon: {e:#}"),
+    }
+}
+
 fn main() -> Result<()> {
     reset_sigpipe();
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    set_window_icon();
     #[cfg(not(feature = "oracles"))]
     if let Some(name) = std::env::args()
         .nth(1)

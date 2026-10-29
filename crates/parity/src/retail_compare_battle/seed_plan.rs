@@ -17,7 +17,7 @@ pub enum SeedPlan {
     /// is driven there through its pad path.
     Menu { flow: BattleFlowState, seat: u8 },
     /// A party cast in the summon band: replayed through
-    /// [`legaia_engine_core::world::InflightCastSeed`] and gated on
+    /// [`legaia_engine_battle_loop::battle_state::InflightCastSeed`] and gated on
     /// [`PhaseGate`].
     Cast,
     /// Any other action in flight (flow `0xFF`): the round is played out
@@ -79,7 +79,7 @@ impl RetailBattle {
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
-        let default = legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP;
+        let default = legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)
@@ -184,16 +184,23 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                     };
                     let phase = game_anchors::u8_at(ram, ctx + 0x279);
                     // A body that gates on no module word (PROT 0962's
-                    // charge bodies wait on the caster's cursor, Neo Star
-                    // Slash and Doomsday carry their countdown in the
-                    // director) still places the capture by its phase.
-                    Some(
-                        legaia_engine_cast::cast_module_camera::capture_countdown_va(action)
-                            .map_or(
-                                (phase, legaia_engine_capture::battle_drive::PHASE_ONLY),
-                                |va| (phase, game_anchors::u32_at(ram, va) as i32),
-                            ),
-                    )
+                    // charge bodies wait on the caster's cursor) still
+                    // places the capture by its phase. Neo Star Slash and
+                    // Doomsday gate on module words their directors carry,
+                    // so a capture one arm in places by how far the word
+                    // has run down: on the arm's first pass the engine's
+                    // camera has not yet walked the shot retail's had.
+                    use legaia_engine_cast::cast_module_camera as cmc;
+                    Some(cmc::capture_countdown_va(action).map_or(
+                        (phase, legaia_engine_capture::battle_drive::PHASE_ONLY),
+                        |va| {
+                            let word = game_anchors::u32_at(ram, va) as i32;
+                            (
+                                phase,
+                                word.saturating_mul(cmc::capture_countdown_units(action)),
+                            )
+                        },
+                    ))
                 })
                 .flatten();
             // The yaw counter is a clock only while the action SM drifts it

@@ -256,7 +256,7 @@ impl World {
                 );
             }
             // A retail-compare seed of a monster cast's landed hit
-            // ([`crate::world::BattleState::forced_melee_hits`]): the cast on
+            // ([`legaia_engine_battle_loop::battle_state::BattleState::forced_melee_hits`]): the cast on
             // the ring's front slot takes the amount the capture's ring
             // pushed instead of the replay's own roll (which still drew).
             if caster >= self.party.party_count

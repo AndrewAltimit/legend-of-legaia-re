@@ -79,6 +79,29 @@ impl World {
         }
     }
 
+    /// A field-script write of NPC `slot`'s anim slot `+0x5C` - the `4C 51`
+    /// run's byte `+4` (`0x801E1A8C`) or a cross-context `A2` ExecMove
+    /// (`FUN_80024E08`) - raised as the clip cue and stored into the
+    /// slot's scripted-motion VM, whose [`requested_move`] is its copy of
+    /// the same word. Retail has one `+0x5C`: the scripted VM `FUN_80038158`
+    /// overwrites it only when one of its own ops writes it, and
+    /// `FUN_800204F8` binds whatever it holds. Without the store the
+    /// ambient pass re-requested the VM's stale copy on its next tick and
+    /// took the clip back: `rikuroa`'s post-Caruban beat seats Noa with
+    /// `CC 10 51 44 4A 00 18`, retail's `+0x5C` reads `0x18`, and the port
+    /// had her back on her tail stream's move `8`.
+    ///
+    /// [`requested_move`]: legaia_engine_motion_vm::ambient_motion::AmbientMotion::requested_move
+    /// REF: FUN_800204F8, FUN_80038158
+    pub(crate) fn script_npc_move(&mut self, slot: u8, move_id: u8) {
+        if move_id == 0 {
+            return;
+        }
+        if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
+            chan.vm.requested_move = Some(move_id);
+        }
+    }
+
     /// Step every in-flight field-NPC walk leg one frame through the ported
     /// motion VM, writing each NPC's new position back into
     /// [`crate::world::FieldNpcState::positions`] - so the moving NPC's

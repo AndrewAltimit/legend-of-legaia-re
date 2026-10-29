@@ -45,8 +45,8 @@ fn world_against(table: FormationTable, catalog: MonsterCatalog, atk: u16, row: 
         w.actors[i].battle.hp = 180;
         w.actors[i].battle.max_hp = 180;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, atk);
-        w.set_battle_defense(i as u8, 16);
+        w.battle.set_battle_attack(i as u8, atk);
+        w.battle.set_battle_defense(i as u8, 16);
     }
     w.set_formation_table(table, catalog);
     w.mode = SceneMode::Field;

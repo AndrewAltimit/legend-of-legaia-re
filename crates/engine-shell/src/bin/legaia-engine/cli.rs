@@ -9,11 +9,11 @@ use std::path::PathBuf;
     name = "legaia-engine",
     version,
     about = "From-scratch engine port of Legend of Legaia. Bring your own disc: every \
-             subcommand reads a Legend of Legaia (USA) .bin via --disc, or an \
+             subcommand that reads game data takes a Legend of Legaia (USA) .bin via --disc, or an \
              extracted/ tree produced by legaia-extract.",
     long_about = "From-scratch engine port of Legend of Legaia.\n\n\
-        Bring your own disc: every subcommand reads a Legend of Legaia (USA) \
-        `.bin` disc image via `--disc <PATH>`, or an `extracted/` tree produced \
+        Bring your own disc: every subcommand that reads game data takes a \
+        Legend of Legaia (USA) `.bin` disc image via `--disc <PATH>`, or an `extracted/` tree produced \
         by `legaia-extract` (the `--extracted-root` default `extracted` resolves \
         against the current directory).\n\n\
         Start here:\n  \

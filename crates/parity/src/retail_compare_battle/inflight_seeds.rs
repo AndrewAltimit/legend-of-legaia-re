@@ -7,7 +7,9 @@ use super::*;
 impl RetailBattle {
     /// The in-flight cast this capture holds, when the engine can replay it:
     /// a party seat running the summon band (`0x32..=0x36`) on a spell id.
-    pub fn inflight_cast(&self) -> Option<legaia_engine_core::world::InflightCastSeed> {
+    pub fn inflight_cast(
+        &self,
+    ) -> Option<legaia_engine_battle_loop::battle_state::InflightCastSeed> {
         // The summon band itself, or the Done band a cast hands on to
         // (`0x37` / `0x38` then `0x50..=0x52`) while the caster still holds
         // the frame with its category `2` queued.
@@ -19,21 +21,23 @@ impl RetailBattle {
             && self.active_actor < self.party_count
             && self.queued_action
                 >= legaia_engine_battle_vm::battle_action::SPELL_TRIGGER_SUMMON_MIN_ID)
-            .then(|| legaia_engine_core::world::InflightCastSeed {
-                caster: self.active_actor,
-                spell_id: self.queued_action,
-                target: self.target_code,
-                ground: self.engine_ground(),
-                idle: self.inflight_idle,
-            })
+            .then(
+                || legaia_engine_battle_loop::battle_state::InflightCastSeed {
+                    caster: self.active_actor,
+                    spell_id: self.queued_action,
+                    target: self.target_code,
+                    ground: self.engine_ground(),
+                    idle: self.inflight_idle,
+                },
+            )
     }
 
     /// [`Self::ground`] re-keyed to engine battle slots: the party keeps its
     /// seats, monster pool slot `3 + m` is engine slot `party_count + m`.
     pub fn engine_ground(
         &self,
-    ) -> [Option<[i16; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    ) -> [Option<[i16; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         let pc = usize::from(self.party_count);
         for (s, o) in out.iter_mut().enumerate().take(pc) {
             *o = self.ground.get(s).copied().flatten();
@@ -97,9 +101,9 @@ impl RetailBattle {
     /// and leaving that seat home measured worse over the corpus.
     pub fn seeded_ground(
         &self,
-    ) -> [Option<[i16; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
+    ) -> [Option<[i16; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
         if self.seed_plan() == SeedPlan::Opening {
-            return [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+            return [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         }
         self.engine_ground()
     }
@@ -154,7 +158,7 @@ impl RetailBattle {
     /// threshold, and both were pushed `16` units apart).
     pub fn with_inflight_idle(
         &self,
-        advance: &[Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+        advance: &[Option<u32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
     ) -> Option<Self> {
         self.inflight_cast()?;
         let pc = usize::from(self.party_count.clamp(1, 3));
@@ -213,7 +217,7 @@ impl RetailBattle {
     /// lands nearer retail's ground.
     pub fn undrift(
         &self,
-        drift: &[Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+        drift: &[Option<[i32; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
         acting_rule: UndriftActing,
     ) -> Option<Self> {
         // Past the end signal the sequencer poses the winners, and a win
@@ -259,8 +263,10 @@ impl RetailBattle {
     }
 
     /// [`Self::status`] re-keyed to engine battle slots.
-    pub fn engine_status(&self) -> [Option<u16>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    pub fn engine_status(
+        &self,
+    ) -> [Option<u16>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         let pc = usize::from(self.party_count);
         for (s, o) in out.iter_mut().enumerate() {
             let pool = if s < pc { s } else { 3 + (s - pc) };
@@ -291,8 +297,10 @@ impl RetailBattle {
     /// the party's turns on purpose (the Spirit commits that keep a caster
     /// standing), and with the party sat out the three parked-Gaza frames
     /// measured worse (`image` `.718` to `.551` on the first).
-    pub fn engine_spent_keys(&self) -> [bool; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [false; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    pub fn engine_spent_keys(
+        &self,
+    ) -> [bool; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [false; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         let SeedPlan::Action { seat, .. } = self.seed_plan() else {
             return out;
         };
@@ -349,8 +357,8 @@ impl RetailBattle {
     /// [`Self::defeat_lanes`] re-keyed to engine battle slots.
     pub fn engine_defeat_lanes(
         &self,
-    ) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    ) -> [Option<u32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         let pc = usize::from(self.party_count);
         for (s, o) in out.iter_mut().enumerate() {
             let pool = if s < pc { s } else { 3 + (s - pc) };
@@ -384,8 +392,10 @@ impl RetailBattle {
     ///   live pair plus the facing-rotated pose centroid, so the attacker
     ///   stops a walk step sooner or later, and the post-strike framing aims
     ///   at the pair (`player_steal_skeleton_pre`: the skeleton at `0x900`).
-    pub fn seeded_facing(&self) -> [Option<u16>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    pub fn seeded_facing(
+        &self,
+    ) -> [Option<u16>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         let end = self.span_gate.is_end();
         let mut spent = self.engine_spent_keys();
         if self.target_code < 8

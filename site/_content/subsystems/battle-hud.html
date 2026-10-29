@@ -179,6 +179,7 @@
     <li><strong>The breadcrumb trail.</strong> From the command ring on, the round prompt&rsquo;s <em>Begin</em> chip glides to the top-left as a gold tab, the plaque rests beside it, and choosing a ring arm glides that arm&rsquo;s chip on as a third tab - <em>Attack</em>, the member&rsquo;s Ra-Seru name for magic, or <em>Item</em>.</li>
     <li><strong>The ring&rsquo;s magic arm is a name.</strong> Its chip reads the member&rsquo;s Ra-Seru when the party battle-actor init found Ra-Seru equipment on the record, and a lone <code>-</code> otherwise. An unavailable command still gets its chip; a <em>forbidden</em> one wears a red cross-out mark instead.</li>
     <li><strong>The selection cue is the plate, not a tint.</strong> Every chip draws at neutral grey. Only under the Battle Command option&rsquo;s cross-button setting does the highlighted arm switch frame style, to the carved-gold run; on the default directional setting all chips stay blue.</li>
+    <li><strong><em>Begin</em> draws over <em>Run</em>.</strong> Each chip is a text actor that queues its plate, then its label, and the later chip walks first in the ordering table: while the round prompt&rsquo;s pair is still folded together, <em>Begin</em>&rsquo;s plate covers the left of <em>Run</em>&rsquo;s, label and all. Apart, the two never overlap. The port draws the plates last chip first and cuts each label where an earlier chip&rsquo;s plate lies over it.</li>
   </ul>
 </section>
 

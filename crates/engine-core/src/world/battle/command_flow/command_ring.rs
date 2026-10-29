@@ -8,7 +8,7 @@ impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
     /// queued action / target is filled in by [`Self::tick_battle_command`]
-    /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
+    /// once the player confirms. No-op unless [`legaia_engine_battle_loop::battle_state::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
         use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_battle_menus::battle_input::BattleCommandSession;
@@ -25,7 +25,7 @@ impl World {
         // ring is never the first thing a round shows.
         //
         // A session built on the ring and rewritten by the next tick's
-        // [`World::arm_round_open_prompt`] is one frame of the wrong surface:
+        // [`BattleState::arm_round_open_prompt`] is one frame of the wrong surface:
         // a host that draws between ticks draws the ring, and any observer
         // that reads the session on the frame it opens - which is the frame
         // `battle_command` becomes `Some` - reads the ring and concludes the
@@ -46,10 +46,10 @@ impl World {
         // clears the launch before it reopens the ring, so the next member's
         // ring finds none here.
         if self.battle.commit_log_launch.is_some() {
-            self.launch_commit_log(true);
+            self.battle.launch_commit_log(true);
         }
         if round_open {
-            self.start_round_prompt_glide();
+            self.battle.start_round_prompt_glide();
         }
         self.battle.command = Some(if round_open {
             BattleCommandSession::new_round_open(actor, actor, self.battle.no_escape)
@@ -57,7 +57,7 @@ impl World {
             BattleCommandSession::new(actor, actor)
         });
         if self.battle.flow == Flow::Idle {
-            self.set_battle_flow(Flow::TurnPrompt);
+            self.battle.set_battle_flow(Flow::TurnPrompt);
         }
     }
 
@@ -67,8 +67,8 @@ impl World {
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
     pub(in crate::world) fn tick_battle_command(&mut self) {
-        use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         use legaia_engine_battle_menus::battle_input::{
             BattleCommandInput, CommandPhase, Resolution,
         };
@@ -93,7 +93,7 @@ impl World {
             == legaia_engine_system::option_values::BattleCommandOpt::CrossButton
             && session.walk_highlight(&mut ev)
         {
-            self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Cursor);
+            self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Cursor);
         }
         // The ring's two status refusals (`ring_arm_refused`): a press on
         // a refused arm is dropped with the buzz cue, and the ring stays up.
@@ -114,7 +114,7 @@ impl World {
             }
             if refused {
                 // `FUN_8004FCC8(0x23)` through the shared tail `0x801D2968`.
-                self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Back);
+                self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Back);
             }
         }
         let was_round_prompt = matches!(session.phase, CommandPhase::RoundPrompt { .. });
@@ -127,9 +127,9 @@ impl World {
         let refused_magic =
             matches!(session.phase, CommandPhase::OpenSpellMenu) && self.battle.raseru_forbidden();
         let cue = if refused_magic {
-            Some(super::ui_cues::BattleUiCue::Back)
+            Some(legaia_engine_battle_loop::ui_cues::BattleUiCue::Back)
         } else {
-            super::ui_cues::command_phase_cue(&phase_before, &session.phase)
+            legaia_engine_battle_loop::ui_cues::command_phase_cue(&phase_before, &session.phase)
         };
         if let Some(cue) = cue {
             self.push_battle_ui_cue(cue);
@@ -147,7 +147,8 @@ impl World {
         self.launch_commit_log_for(&phase_before, &session.phase);
         // ...and the attack-mode pick is the per-fighter Auto flag
         // (`ctx[+0x266 + seat]`, `super::super::auto_combo`).
-        self.note_auto_attack_pick(&phase_before, &session.phase);
+        self.battle
+            .note_auto_attack_pick(&phase_before, &session.phase);
         // `Begin` with nobody able to act: retail's round-prompt confirm arm
         // finds `FUN_801DBA04` equal to the party count and stores the commit
         // confirm `0x6E` directly (`0x801D10A0`, step `0x27`) instead of
@@ -163,7 +164,7 @@ impl World {
         // and glide in, and the ring reads no pad until they land.
         // REF: FUN_801D0748 (state 0x1E confirm arm)
         if was_round_prompt && matches!(session.phase, CommandPhase::Menu { .. }) {
-            self.start_ring_open_glide();
+            self.battle.start_ring_open_glide();
         }
         // Target-cursor tint: retail stamps the four monster slots bright /
         // dimmed while the cursor is walking them and clears the tint the
@@ -186,7 +187,7 @@ impl World {
             // (`90`) refuses an Attack outside the attack lessons and an
             // Auto attack in the hyper-arts drill, and the attack-mode
             // prompt (`120`) refuses Attack in the Items / Spirit lessons.
-            if self.sync_battle_flow(Some(&session.phase)) {
+            if self.battle.sync_battle_flow(Some(&session.phase)) {
                 self.open_battle_command(session.actor);
                 return;
             }
@@ -198,14 +199,14 @@ impl World {
             let rejected = match res {
                 // Attack is the only command that reaches Confirmed with a
                 // target in the engine; it commits category 3.
-                Resolution::Confirmed { .. } => self.battle_tutorial_commit(3),
-                Resolution::SpiritGuard => self.battle_tutorial_commit(4),
-                Resolution::OpenItemMenu => self.set_battle_flow(Flow::ItemWindow),
-                Resolution::OpenArtsMenu => self.set_battle_flow(Flow::ArtsCommandEntry),
-                Resolution::OpenSpellMenu => self.set_battle_flow(Flow::MagicWindow),
+                Resolution::Confirmed { .. } => self.battle.battle_tutorial_commit(3),
+                Resolution::SpiritGuard => self.battle.battle_tutorial_commit(4),
+                Resolution::OpenItemMenu => self.battle.set_battle_flow(Flow::ItemWindow),
+                Resolution::OpenArtsMenu => self.battle.set_battle_flow(Flow::ArtsCommandEntry),
+                Resolution::OpenSpellMenu => self.battle.set_battle_flow(Flow::MagicWindow),
                 // Retail's state-50 handler rejects Run unconditionally for the
                 // whole sparring fight.
-                Resolution::RunAway => self.set_battle_flow(Flow::EscapePrompt),
+                Resolution::RunAway => self.battle.set_battle_flow(Flow::EscapePrompt),
                 Resolution::Aborted
                 | Resolution::StepBack
                 | Resolution::BeginRound
@@ -265,7 +266,7 @@ impl World {
                 // (the `0x28` row of `battle.md`'s flow table). Without it the byte reads the surface the player
                 // left (`0x78` / `0x28`) for as long as the window is up.
                 // REF: FUN_801D0748 (states 0x28 / 0x78 into 0x3C / 0x46 / 0x50)
-                self.sync_battle_flow(None);
+                self.battle.sync_battle_flow(None);
             }
             Some(Resolution::OpenSpellMenu) if self.battle.raseru_forbidden() => {
                 // The special word forbids the Ra-Seru chip: retail's arm
@@ -282,7 +283,7 @@ impl World {
                 match self.build_battle_spell_session(session.actor) {
                     Some(menu) => {
                         self.battle.spell_menu = Some(menu);
-                        self.sync_battle_flow(None);
+                        self.battle.sync_battle_flow(None);
                     }
                     // No caster record / no catalog - don't strand the SM;
                     // reopen the command menu so the player can pick again.
@@ -298,7 +299,7 @@ impl World {
                 self.battle_ctx.active_actor = session.actor;
                 self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
                 self.battle.item_menu = Some(self.build_battle_item_session());
-                self.sync_battle_flow(None);
+                self.battle.sync_battle_flow(None);
             }
             Some(Resolution::SpiritGuard) => {
                 // Player picked Spirit: the guard stance (retail's pending
@@ -364,7 +365,7 @@ impl World {
     /// falls straight through to recovery, which is a strike-less turn - no
     /// weapon swing staged, no equipment clip committed, no effect script
     /// installed, and therefore no move-power record for the weapon-trail
-    /// pass to project from ([`crate::world::CastFxState::move_fx_streak`], whose `action` key is
+    /// pass to project from ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::move_fx_streak`], whose `action` key is
     /// this stream's first byte).
     ///
     /// The bytes come from [`vm::battle_action::basic_attack_queue`], the port

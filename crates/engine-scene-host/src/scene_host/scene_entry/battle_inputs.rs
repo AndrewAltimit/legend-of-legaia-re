@@ -106,7 +106,7 @@ impl SceneHost {
                 legaia_engine_battle::battle_tutorial::OVERLAY_967_PROT_INDEX
             );
         }
-        self.world.set_battle_tutorial_script(script);
+        self.world.battle.set_battle_tutorial_script(script);
     }
 
     /// Install the name-entry screen's prompts from the field overlay's
@@ -279,7 +279,7 @@ impl SceneHost {
         self.refresh_battle_auto_combo_inputs();
     }
 
-    /// Refresh [`legaia_engine_core::world::BattleState::swing_costs`] from the player
+    /// Refresh `legaia_engine_battle_loop::battle_state::BattleState::swing_costs` from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and
     /// read each swing record's `+0x74` AP cost
@@ -376,6 +376,29 @@ impl SceneHost {
                     .set_actor_battle_clip_morphs(slot, Arc::new(table));
             }
         }
+        // Where the battle heap puts each block, from the seated party, the
+        // formation's ids and the blocks' sizes - which decides what a
+        // four-slot event list reads (`FUN_800542C8` allocation order).
+        let bases = if pending.is_empty() {
+            Default::default()
+        } else {
+            let ids: Vec<u16> = self
+                .world
+                .actors
+                .iter()
+                .filter_map(|a| a.battle_monster_id)
+                .collect();
+            legaia_actor_formats::monster_archive::monster_block_bases(
+                usize::from(self.world.party.party_count),
+                &ids,
+                |id| {
+                    legaia_actor_formats::monster_archive::decode_block(&archive, id)
+                        .ok()
+                        .flatten()
+                        .and_then(|b| legaia_actor_formats::monster_archive::block_heap_bytes(&b))
+                },
+            )
+        };
         for (slot, id) in pending {
             if let Ok(Some(clips)) =
                 legaia_actor_formats::monster_archive::animations_by_entry(&archive, id)
@@ -383,6 +406,15 @@ impl SceneHost {
             {
                 self.world
                     .set_actor_battle_action_clips(slot, Arc::new(clips));
+                if let Some(&base) = bases.get(&id)
+                    && let Ok(Some(block)) =
+                        legaia_actor_formats::monster_archive::decode_block(&archive, id)
+                {
+                    let beats =
+                        legaia_actor_formats::monster_archive::four_slot_beats(&block, base);
+                    self.world
+                        .set_actor_battle_four_slot_beats(slot, Arc::new(beats));
+                }
             }
             // ...and its idle loop, the clip the loader seats the monster
             // on. The play hosts installed it from their render build
@@ -409,7 +441,7 @@ impl SceneHost {
     }
 
     /// Build and install the party's battle forms for the fight in progress,
-    /// once per [`legaia_engine_core::world::BattleState::entry_serial`]: each member's
+    /// once per `legaia_engine_battle_loop::battle_state::BattleState::entry_serial`: each member's
     /// idle and action clips (the swings the hit events are paced by), art
     /// bank and art records (what the arts input tokenizes) - see
     /// [`legaia_engine_core::battle_party_form::install_party_battle_forms`].
@@ -454,7 +486,7 @@ impl SceneHost {
     }
 
     /// Refresh the **Auto** attack's disc inputs
-    /// ([`legaia_engine_core::world::AutoComboState`]): per roster character, the four
+    /// (`legaia_engine_battle_loop::auto_combo::AutoComboState`): per roster character, the four
     /// direction commands' leading entry bytes (the pool arm's weight input)
     /// and the raw art-animation bank records (the insertion tail's walk),
     /// plus the four status-guard masks in the battle overlay

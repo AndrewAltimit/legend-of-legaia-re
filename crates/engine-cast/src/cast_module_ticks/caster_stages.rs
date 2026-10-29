@@ -236,13 +236,16 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         arms: None,
     },
     // PROT 0960 `0xA6` (`0x801F69D8`, Neo Star Slash): `li v0,0xa;
-    // sb v0,0x1da(s4)` at `0x801F6B98`.
+    // sb v0,0x1da(s4)` at `0x801F6B98`, in arm 1 (`0x801F6B48`) behind its
+    // countdown gate (`bgtz v1,0x801F74B0` at `0x801F6B8C`): Gaza holds
+    // idle through the arm (`gaza2_card_neo_star_slash_mid_cast`, clip `0`
+    // with the word at `96`).
     CasterStageRow {
         prot_entry: 960,
         action_ids: &[0xA6],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[1]),
     },
     // PROT 0961 `0xA1` / `0xB4`: first monster `0xB5` stages `6`
     // (`0x801F6D58`), anything else `8` (`0x801F6DE8`) - both in arm 1
@@ -280,13 +283,18 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: false,
         arms: None,
     },
-    // PROT 0965 Doomsday `0xB6`: `7` at `0x801F6B30`.
+    // PROT 0965 Doomsday `0xB6`: `7` at `0x801F6B30`, in arm 0
+    // (`0x801F6B0C`, no gate) with the `+0x1DC` bump (`0x801F6B28..0x801F6B38`):
+    // the body runs on to arm 1 on the next pass while clip `7` plays out
+    // (a retail capture holds arm 1 from the pass after the commit, the clip
+    // at cursor `0`). Staged at the head of the band, the module waited the
+    // whole clip on arm 0.
     CasterStageRow {
         prot_entry: 965,
         action_ids: &[0xB6],
         rule: CasterClipRule::Fixed(&[0x07]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0966 Evil Seru Magic has no row: its body's port stages the
     // caster itself (`li v0,0x6; sb v0,0x1da(s2)` at `0x801F6DE4`, arm 1;

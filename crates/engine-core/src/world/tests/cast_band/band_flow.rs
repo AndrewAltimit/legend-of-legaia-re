@@ -198,7 +198,7 @@ fn a_monster_cast_runs_the_magic_band_and_folds_on_leaving_the_wait() {
     world.actors[1].battle.mp = 10;
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(5);
-    world.set_battle_magic(1, 40);
+    world.battle.set_battle_magic(1, 40);
     world.rng_state = BANDIT_BOSS_FLAME_SEED;
 
     world.take_monster_turn(1);

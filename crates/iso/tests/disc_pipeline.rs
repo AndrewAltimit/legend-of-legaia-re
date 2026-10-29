@@ -113,7 +113,11 @@ fn pipeline_against_real_disc() {
 
         let mut hasher = Sha256::new();
         hasher.update(&buf);
-        let got_hash = format!("{:x}", hasher.finalize());
+        let got_hash = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         assert_eq!(
             got_hash, *want_hash,
             "{}: SHA-256 mismatch. Expected {}, got {}",
@@ -133,5 +137,9 @@ fn sha256_file(path: &PathBuf) -> std::io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>())
 }

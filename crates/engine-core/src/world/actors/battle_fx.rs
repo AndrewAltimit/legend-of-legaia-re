@@ -28,7 +28,7 @@ impl World {
     /// is the installed [`legaia_engine_battle::move_power::MovePowerCatalog`]'s id-index
     /// map when present.
     ///
-    /// The terminator's context writes land in [`crate::world::CastFxState::move_fx_streak`] -
+    /// The terminator's context writes land in [`legaia_engine_battle_loop::cast_fx_state::CastFxState::move_fx_streak`] -
     /// the `ctx[+0x1014]` / `+0x6C6` / `+0x1144` block the afterimage streak
     /// projects from ([`legaia_engine_effects::action_effect_script::MoveFxStreak`]).
     // REF: FUN_80047430 (the retail caller this substitutes for)
@@ -1315,7 +1315,7 @@ impl World {
     /// `*(actor[+0x22C]) + 0x58`, the render node's size: the record size
     /// class `<< 5` on a monster seat ([`legaia_engine_battle::monster_catalog`]),
     /// the creature record's on the summon seat
-    /// ([`crate::world::CastFxState::summon_body_radius`]), and
+    /// ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::summon_body_radius`]), and
     /// [`PARTY_BODY_RADIUS`] otherwise.
     pub(in crate::world) fn battle_node_radius(&self, i: usize) -> i16 {
         if self.casting.summon_actor_slot == Some(i as u8)

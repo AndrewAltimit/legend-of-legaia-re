@@ -230,12 +230,11 @@ fn bake_env(
     );
     let (terrain, _) = field_env::resolve_env_draws(&env_tmds, &terrain_records, floor_lut);
 
-    // Coplanar ranking across both layers, terrain first then placements -
-    // the same order the play page and the native window feed the kernel, so
-    // the venue lifts the same member of each coplanar pair they do.
-    let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
-    ranked.extend(terrain.iter().copied());
-    ranked.extend(placements.iter().copied());
+    // Coplanar ranking across both layers in retail's emission order
+    // (placements, then terrain) - the same order the play page and the
+    // native window feed the kernel, so the venue lifts the same member of
+    // each coplanar pair they do.
+    let ranked = legaia_engine_scene::coplanar_draws::emission_order(&terrain, &placements);
     let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
     let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
 

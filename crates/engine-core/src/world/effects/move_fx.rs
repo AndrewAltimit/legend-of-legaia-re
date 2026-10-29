@@ -12,7 +12,7 @@ impl World {
     /// `+0x02 flags`, `+0x04` bytecode) staged by the shared `FUN_80021B04`
     /// machinery. This parses those records out of the retained battle-action
     /// overlay (PROT 0898) and spawns them as a [`legaia_engine_effects::summon::SummonScene`]
-    /// with model base `crate::world::EFFECT_MODEL_LIBRARY_BASE` (the engine's
+    /// with model base `legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE` (the engine's
     /// fixed-library analogue of the retail `gp[0x754] = party_count + 2`; see
     /// that constant's docs), so each mesh part resolves to
     /// `global_tmd_pool[model_sel + 3]` - the PROT 0871 effect-model library,
@@ -93,7 +93,7 @@ impl World {
                         Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
                             &parts,
                             &overlay,
-                            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                             origin,
                         ));
                     // Surface the move's presentation fields for the
@@ -131,7 +131,7 @@ impl World {
     /// The per-effect **CLUT source x** the same arm reads (`0x801F6418[id]`,
     /// `0x801df0ec..0x801df134`) is not staged here but at the queue's drain:
     /// `World::drain_battle_effect_spawns` pushes it onto
-    /// [`crate::world::BattleState::clut_stages`] under the retail gate (plain code below
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::clut_stages`] under the retail gate (plain code below
     /// `0x32`, non-zero map byte), so callers routing an effect-script spawn
     /// through this get the palette swap without a second copy. It is a 16x1
     /// `MoveImage` onto `(224, 476)`, not a sound cue - see
@@ -229,7 +229,7 @@ impl World {
         let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &overlay,
-            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         );
         // Each part keeps its record's address in the resident battle
@@ -288,7 +288,7 @@ impl World {
     /// Seat one battle-overlay record by its address, as `FUN_80050ED4`
     /// does for a literal record pointer: the record's parts at `origin`,
     /// turned by `rot` and scaled by `scale` (`+0x72`), as their own scene
-    /// in [`crate::world::CastFxState::active_action_fx`]. Returns whether it
+    /// in [`legaia_engine_battle_loop::cast_fx_state::CastFxState::active_action_fx`]. Returns whether it
     /// seated.
     pub fn spawn_battle_record_posed(
         &mut self,
@@ -327,7 +327,7 @@ impl World {
         let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &overlay,
-            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         );
         // Tagged with the record's address like a table-form part, so a
@@ -343,8 +343,8 @@ impl World {
     }
 
     /// Seat what the effect spawner and move-VM op `0x17` queued this step
-    /// ([`crate::world::CastFxState::pending_burst_triggers`] /
-    /// [`crate::world::CastFxState::pending_bursts`]) into the effect-script
+    /// ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_burst_triggers`] /
+    /// [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_bursts`]) into the effect-script
     /// scene list.
     ///
     /// A trigger is the one-part program `FUN_801DFDF0` seats ahead of effect
@@ -389,7 +389,7 @@ impl World {
             let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &overlay,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                 pos,
             );
             scene.push_parts(
@@ -449,7 +449,7 @@ impl World {
             let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &overlay,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                 b.pos,
             );
             for req in requests {
@@ -648,7 +648,7 @@ impl World {
 
     /// Per-part render draws for the active move-FX scene's mesh-bearing parts
     /// plus the live effect-script table-form scenes
-    /// ([`crate::world::CastFxState::active_action_fx`]) - one render seam so hosts that already
+    /// ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::active_action_fx`]) - one render seam so hosts that already
     /// draw move FX draw the effect-script spawns too. Empty when nothing is
     /// playing. Each draw's `model_index` indexes [`Self::global_tmd_pool`]
     /// (the PROT 0871 effect-model library).
@@ -745,7 +745,7 @@ impl World {
     }
 
     /// Drain a pending non-summon move-FX spawn request (the host calls
-    /// [`Self::spawn_move_fx`] with it). See [`crate::world::CastFxState::pending_move_fx_spawn`].
+    /// [`Self::spawn_move_fx`] with it). See [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_move_fx_spawn`].
     pub fn take_pending_move_fx_spawn(&mut self) -> Option<(u8, [i16; 3])> {
         self.casting.pending_move_fx_spawn.take()
     }

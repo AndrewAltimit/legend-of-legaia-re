@@ -34,7 +34,7 @@ game loads from it into RAM at runtime.
 
 ## Developer attribution
 
-- **Prokion** (also styled "Procyon" - appears in Japanese as ぷろきおん) is the primary studio.
+- **Prokion** (also styled "Procyon" - appears in Japanese as ぷろきおん) is the primary explorer.
 - **Contrail** is co-credited.
 - Publisher: SCEI (JP), SCEA (US), SCEE (EU).
 

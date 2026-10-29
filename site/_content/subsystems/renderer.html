@@ -12,7 +12,7 @@
     <dt>Lighting</dt><dd>Baked colour per polygon, through one GTE depth-cue op. The exception is the <strong>light-source rows</strong> (group flags <code>0x10..=0x17</code>), which the GTE shades from a scene light.</dd>
     <dt>Screen</dt><dd>320&times;224 drawn, 228 lines displayed; projection centre <code>OFX 160, OFY 114</code> - dead centre of the display window.</dd>
     <dt>Depth</dt><dd>No depth buffer. Primitives go into ordering-table buckets by depth and are painted far to near.</dd>
-    <dt>Port defaults</dt><dd><strong>Shading defaults to retail</strong> (baked colour plus the light-source rows); <strong>rasterisation defaults to clean</strong> (vertex snap and dither are opt-in). Affine UVs are always on.</dd>
+    <dt>Port defaults</dt><dd><strong>Shading defaults to retail</strong> (baked colour plus the light-source rows); <strong>rasterisation defaults to clean</strong> (the GTE register limits, vertex snap and dither are opt-in). Affine UVs are always on.</dd>
     <dt>In the port</dt><dd><code>legaia-tmd</code> (prim walk, mesh build), <code>engine-render</code> (wgpu, native), <code>site/js/webgl-shaders.js</code> (browser), shared kernels in <code>engine-core</code> / <code>engine-ui</code>.</dd>
   </dl>
 </section>
@@ -115,7 +115,7 @@
     <thead><tr><th>Case</th><th>Retail outcome</th><th>Port policy</th></tr></thead>
     <tbody>
       <tr><td>Decal on a base surface</td><td>The decal's mean depth is local, the base's averages deeper - the decal lands in a nearer bucket</td><td>A small depth lift so the retail winner stays the winner</td></tr>
-      <tr><td>Same bucket</td><td>Head insertion: the earliest-emitted primitive draws last, on top</td><td>Equal keys draw later-submitted-first</td></tr>
+      <tr><td>Same bucket</td><td>Head insertion: the earliest-emitted primitive draws last, on top. The field emits its placed objects before its map cells, so a sign placed on a wall cell paints over it</td><td>Equal keys draw later-submitted-first; equal coplanar draws rank placed objects ahead of map cells</td></tr>
       <tr><td>Double-sided pair</td><td><code>NCLIP</code> rasterises only the camera-facing copy</td><td>Pairs are marked at mesh build; only the facing copy draws</td></tr>
       <tr><td>Far-bucket floor cell</td><td>Painted under everything else in the frame</td><td>Drawn first, under every other primitive</td></tr>
     </tbody>
@@ -124,7 +124,41 @@
   <h3 id="no-culling">No distance culling</h3>
   <p>The port adds no frustum cull, draw distance or level of detail of its own; a field scene's draw list is resolved once at load. What it removes is what retail removes. Retail's field render library never draws the whole map: it walks only the map cells inside the camera's visible tile window, clipped to the walk region, and culls placed actors against the same view. Both hosts reproduce that crop while the camera holds retail's own framing; under the port's wider default camera, the zoom and tilt knobs or the debug orbit, the map is drawn whole, because the window was sized for retail's frustum and would open black edges. The per-primitive rejects (back faces, a near-plane test) apply everywhere.</p>
   <h3 id="gpu-span-limit">The GPU polygon-size limit</h3>
-  <p>One more per-primitive reject is the GPU's, not the game's. The prim leaves hand the GPU the GTE's screen coordinates with no clip of their own, and the GPU skips any polygon whose corners lie more than 1023 pixels apart horizontally or 511 vertically. A corner just in front of the eye, or behind it, projects far off screen, so in battle this removes the primitives of a body whose limbs reach past the camera - a summon close-up that seats a monster between the eye and the caster - where a per-pixel clip would paint them as long shards. Both hosts run the same span test in the vertex stage beside the near reject (<code>prim_near_reject::gpu_span_rejected</code>), armed in battle only; a split quad is dropped only when both halves exceed the limit.</p>
+  <p>One more per-primitive reject is the GPU's, not the game's. The prim leaves hand the GPU the GTE's screen coordinates with no clip of their own, and the GPU skips any polygon whose corners lie more than 1023 pixels apart horizontally or 511 vertically. A corner just in front of the eye, or behind it, projects far off screen, so in battle this removes the primitives of a body whose limbs reach past the camera - a summon close-up that seats a monster between the eye and the caster - where a per-pixel clip would paint them as long shards. Both hosts run the same span test in the vertex stage beside the near reject (<code>prim_near_reject::gpu_span_rejected</code>), armed in battle and on the field; a split quad is dropped only when both halves exceed the limit.</p>
+  <h3 id="gte-limits">The GTE's register limits</h3>
+  <p>The screen corners themselves come out of saturated registers: the GTE clamps a corner's eye-space X and Y to 16 bits and its depth <code>SZ</code> to 0..65535 before it divides, and the primitive leaves draw whatever it wrote. The field camera folds a 6x world scale into its rotation, which brings those limits within reach of ordinary geometry. The ice floor in Noa's cavern (<code>noaru</code>) is a bowl twenty thousand units across: its far rim saturates <code>SZ</code> and lands further out than a plain projection puts it, its off-screen corners saturate X or Y and land further in, and the floor's texture is laid across the six screen-sized quads those corners make. Under PSX mode both hosts apply the same limits in the vertex stage before the vertex snap; a corner inside them is untouched, and clean rendering is unchanged. The near reject still runs on the port's own depth: a cut at the GTE's sixfold depth would draw a near tunnel wall in <code>rikuroa</code> that the reference capture leaves out, and whether retail drops it there or the GPU's size limit does is open.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One corner through RTPS, left to right. The eye-space X and Y land in IR1 and IR2, clamped to minus 0x8000 through 0x7FFF; the depth lands in SZ, clamped to 0 through 0xFFFF. The divide H over SZ has its quotient clamped at 0x1FFFF, at most 2. The screen position SX, SY is clamped to minus 0x400 through 0x3FF. The primitive leaf links whatever the FIFO holds. On the field the 6x camera scale puts SZ saturation at an eye depth of about 10,900 port units, so a far corner lands further out than a plain projection puts it, and an IR clamp pulls an off-screen corner further in.">
+      <defs><marker id="gte-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="16" y="40" width="140" height="64" rx="5"/>
+      <text class="dg-label" x="86" y="66">Eye space</text><text class="dg-sub" x="86" y="84">x6 on the field</text>
+      <rect class="dg-node-warn" x="186" y="20" width="160" height="48" rx="5"/>
+      <text class="dg-label" x="266" y="40">IR1 / IR2 (X, Y)</text><text class="dg-sub" x="266" y="57">-0x8000 ..= 0x7FFF</text>
+      <rect class="dg-node-warn" x="186" y="78" width="160" height="48" rx="5"/>
+      <text class="dg-label" x="266" y="98">SZ (depth)</text><text class="dg-sub" x="266" y="115">0 ..= 0xFFFF</text>
+      <rect class="dg-node-warn" x="376" y="40" width="150" height="64" rx="5"/>
+      <text class="dg-label" x="451" y="66">H / SZ</text><text class="dg-sub" x="451" y="84">quotient &#8804; 2</text>
+      <rect class="dg-node-warn" x="556" y="40" width="150" height="64" rx="5"/>
+      <text class="dg-label" x="631" y="66">SX / SY</text><text class="dg-sub" x="631" y="84">-0x400 ..= 0x3FF</text>
+      <rect class="dg-node-ok" x="736" y="40" width="128" height="64" rx="5"/>
+      <text class="dg-label" x="800" y="66">Prim leaf</text><text class="dg-sub" x="800" y="84">draws it as is</text>
+      <path class="dg-edge" d="M156 62 L184 46" marker-end="url(#gte-arrow)"/>
+      <path class="dg-edge" d="M156 82 L184 100" marker-end="url(#gte-arrow)"/>
+      <path class="dg-edge" d="M346 46 L374 62" marker-end="url(#gte-arrow)"/>
+      <path class="dg-edge" d="M346 100 L374 82" marker-end="url(#gte-arrow)"/>
+      <path class="dg-edge" d="M526 72 L554 72" marker-end="url(#gte-arrow)"/>
+      <path class="dg-edge" d="M706 72 L734 72" marker-end="url(#gte-arrow)"/>
+      <rect class="dg-group" x="16" y="150" width="848" height="96" rx="6"/>
+      <text class="dg-sub dg-start" x="30" y="172">what a clamp does to a corner</text>
+      <text class="dg-label dg-start" x="30" y="198">SZ saturates (far rim)</text>
+      <text class="dg-sub dg-start" x="30" y="220">depth stops growing: the corner</text>
+      <text class="dg-sub dg-start" x="30" y="236">lands 6w / 0xFFFF times further out</text>
+      <text class="dg-label dg-start" x="470" y="198">IR saturates (off screen)</text>
+      <text class="dg-sub dg-start" x="470" y="220">X or Y stops growing: the corner</text>
+      <text class="dg-sub dg-start" x="470" y="236">lands nearer the screen centre</text>
+    </svg>
+    <figcaption>Every limit an <code>RTPS</code> corner passes through. On the field <code>SZ</code> saturates at an eye depth of about 10&#8201;900 port units; in battle the divide cap is what shows, on a camera-locked part close to the eye (Puera's edge glow). Under PSX mode the port applies the same clamps on both passes ahead of the vertex snap, from one per-frame word (<code>camera_frame::gte_saturation</code>).</figcaption>
+  </figure>
   <h3 id="facing-cells">Camera-facing decoration cells</h3>
   <p>About a third of the field maps carry decoration cells whose record flags (<code>+0x12 &amp; 0x380</code>) drop camera pitch, yaw or roll from the cell's matrix: the candle glows in <code>rugi</code> stay square to the lens, the Voz forest trees (<code>vell</code>, <code>vozz</code>) and the billboards of <code>deene</code> and <code>retona</code> turn with the view. The field decoration pass <code>FUN_801F7088</code> builds that matrix per cell; drawn under the full camera instead, the glows lie flat as ellipses. Both play hosts rebuild a flagged cell every frame through one kernel (<code>gte::decoration_cell_basis</code>).</p>
 </section>
@@ -193,7 +227,7 @@
     </tbody>
   </table>
   </div>
-  <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do, and so does a battle effect mesh (a procedural ring, disc or sprite quad) whose colour word lacks the double-sided bit; the world map, the battle stage and the other minigame venues draw both sides. The debug orbit camera is exempt from the near cuts.</p>
+  <p>Which passes cull back faces is itself a table: the field, the dance hall and battle <em>bodies</em> do, and so does a battle effect mesh (a procedural ring, disc or sprite quad, or a summon part's library mesh) whose colour word lacks the double-sided bit; the world map, the battle stage and the other minigame venues draw both sides. The debug orbit camera is exempt from the near cuts.</p>
   <h3 id="on-screen-probes">Two &ldquo;is it on screen&rdquo; tests that are not the same test</h3>
   <p>Retail has two GTE-backed visibility probes, and they are not interchangeable. The field one projects a box around an actor and accepts any corner inside a real rectangle. The battle one tests only the box's <em>horizontal span</em> against the screen band - it reads no Y at all, so a body a full screen above the viewport still counts as visible. The battle probe also has no reference of any kind anywhere on the disc, so nothing consults its verdict; the port's lack of a cull there is parity.</p>
 </section>
@@ -236,7 +270,7 @@
   <table class="data-table">
     <thead><tr><th>Knob</th><th>Default</th><th>Retail is</th><th>What it gates</th></tr></thead>
     <tbody>
-      <tr><td><code>set_psx_mode</code> (<code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>sub-pixel vertex snap and 4&times;4 ordered 15-bit dither, nothing else</td></tr>
+      <tr><td><code>set_psx_mode</code> (<code>LEGAIA_PSX_RENDER=1</code>)</td><td>off</td><td>on</td><td>the GTE register limits, sub-pixel vertex snap and 4&times;4 ordered 15-bit dither, nothing else</td></tr>
       <tr><td><code>set_semi_blend</code></td><td>on</td><td>on</td><td>semi-transparency; off draws water and glows solid</td></tr>
       <tr><td>Affine UVs</td><td>always</td><td>always</td><td>a static shader qualifier, not a switch</td></tr>
       <tr><td>Enhanced lighting (<code>I</code>)</td><td>on in both play hosts</td><td>off</td><td>time-of-day mood, lamp lights at glowing props, emissive primitives, halos</td></tr>

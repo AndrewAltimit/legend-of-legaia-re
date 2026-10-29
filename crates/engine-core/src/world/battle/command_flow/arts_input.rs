@@ -58,35 +58,6 @@ impl World {
         }
     }
 
-    /// Open the retail-model **Arts command input** for `actor`: seed the
-    /// AP pool from the acting character's AGL (retail `ctx+0x6DC` <-
-    /// actor `+0x154`; [`legaia_engine_battle::arts_command_input::DEFAULT_POOL`] without
-    /// stats), the four per-direction press costs (Left = the arm command
-    /// `0x0C`, carrying the per-(character, weapon) `+0x74` byte from
-    /// [`Self::battle_arm_costs`]; the others at the favored base), and the
-    /// Triangle arts-list page count from the caster's loaded art catalog.
-    ///
-    /// PORT: FUN_801D0748 (state 0x50 arm)
-    /// REF: FUN_801D388C
-    /// `true` while a party member owns the pad in the retail-model Arts
-    /// command input. Retail parks the party **status plate off-screen**
-    /// for the whole session (its draws move to `y = 230`, below the
-    /// 228-line display window - `docs/subsystems/minigame-muscle-dome.md`
-    /// § Arts command input), so a host's battle-HUD strip reads this and
-    /// emits nothing while it holds.
-    pub fn arts_input_active(&self) -> bool {
-        self.battle.arts_input.is_some()
-    }
-
-    /// The actor-table index of the party member entering commands, or
-    /// `None` when no session is open. The party surface has two mutually
-    /// exclusive forms - roster panels, and a full-width bar for the actor
-    /// that owns the pad - so a host needs the *which*, not just the
-    /// *whether*.
-    pub fn arts_input_actor(&self) -> Option<u8> {
-        self.battle.arts_input.as_ref().map(|s| s.actor)
-    }
-
     /// Renderer-agnostic view of the open Arts command input, or `None`
     /// when no session is up. Both hosts build the pinned chrome from
     /// this and nothing else.
@@ -206,26 +177,9 @@ impl World {
         })
     }
 
-    /// Stand the open arts entry's Triangle list on `page` with its window's
-    /// slide counter at `slide` - a retail capture's list as its RAM holds
-    /// it (`_DAT_8007B458 / 5`, `0x801F4E0A`). A no-op without an entry, or
-    /// for a page the character's learned count does not reach.
-    pub fn seat_arts_list(&mut self, page: u8, slide: u8) {
-        use legaia_engine_battle::arts_command_input::ARTS_LIST_SLIDE_MAX;
-        let Some(s) = self.battle.arts_input.as_mut() else {
-            return;
-        };
-        if page >= s.list_pages {
-            return;
-        }
-        s.list_page = Some(page);
-        s.list_row_page = page;
-        s.list_slide = slide.min(ARTS_LIST_SLIDE_MAX);
-    }
-
     /// The Triangle arts list's window while it is on screen: `(actor, row
     /// page, slide)` off the open entry, else off the window an ended entry
-    /// left sliding out ([`crate::world::BattleState::arts_list_window`]).
+    /// left sliding out ([`legaia_engine_battle_loop::battle_state::BattleState::arts_list_window`]).
     /// `None` at slide `0`. On a dome leg it is the dome entry's window
     /// (actor `0`, the player's fighter), and only once the host has named
     /// whose learned list it pages over
@@ -257,17 +211,6 @@ impl World {
             page,
             slide,
         ))
-    }
-
-    /// Step the window an ended entry left on screen one command-flow frame
-    /// ([`legaia_engine_battle::arts_command_input::ArtsListWindow::step`]).
-    pub(in crate::world) fn step_arts_list_window(&mut self) {
-        let step = self.battle.anim_pass_vsyncs;
-        if let Some(w) = self.battle.arts_list_window.as_mut()
-            && !w.step(step)
-        {
-            self.battle.arts_list_window = None;
-        }
     }
 
     /// The rows the Triangle arts list's window shows, in row order, or
@@ -319,21 +262,6 @@ impl World {
             })
             .collect();
         Some(rows)
-    }
-
-    /// Where the Spirit turn's AP bar and AP plate sit relative to their rest
-    /// seats while their raise glide runs ([`crate::world::BattleState::spirit_gauge_glide`]):
-    /// `(bar dy, plate dx)` in stage pixels, `(0, 0)` once landed. The bar
-    /// rises from `y = 234` onto `192` and the plate slides from `x = 328`
-    /// onto `208` (placement records `0x0F` / `0x52`, walked by
-    /// `FUN_801D9BBC`).
-    pub fn spirit_gauge_glide_offsets(&self) -> (i32, i32) {
-        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-        let g = self.battle.spirit_gauge_glide.as_ref();
-        (
-            LogLaunch::seat_dy(g, 234, 192),
-            LogLaunch::seat_dy(g, 328, 208),
-        )
     }
 
     /// The `+0x16E` status word of the member the command ring is open for,
@@ -485,7 +413,7 @@ impl World {
             if refused {
                 // `FUN_8004FCC8(ROT_REFUSED_CUE)` (`0x801D1EA0..0x801D1F78`):
                 // the dispatcher stores `id - 1` on the ring.
-                self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Back);
+                self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Back);
             }
         }
         let was_entering = matches!(
@@ -503,7 +431,11 @@ impl World {
         session.step_list_slide(self.battle.anim_pass_vsyncs);
         // Whatever ends the entry this frame leaves its window on screen.
         let left = legaia_engine_battle::arts_command_input::ArtsListWindow::left_by(&session);
-        if let Some(cue) = super::ui_cues::arts_phase_cue(&phase_before, &session.phase, ev.cross) {
+        if let Some(cue) = legaia_engine_battle_loop::ui_cues::arts_phase_cue(
+            &phase_before,
+            &session.phase,
+            ev.cross,
+        ) {
             self.push_battle_ui_cue(cue);
         }
         // The `0x5A` cursor the entry's confirm opened starts on the
@@ -526,7 +458,7 @@ impl World {
             use legaia_engine_battle::arts_command_input::ArtsInputPhase as P;
             use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
             let rejected = match &session.phase {
-                P::Entering if !was_entering => self.set_battle_flow(Flow::ArtsCommandEntry),
+                P::Entering if !was_entering => self.battle.set_battle_flow(Flow::ArtsCommandEntry),
                 P::Review | P::Targeting { .. } | P::Confirmed { .. } if was_entering => {
                     let mut buf = [0u8; 5];
                     for (dst, &b) in buf.iter_mut().zip(session.committed_string()) {
@@ -538,12 +470,13 @@ impl World {
                         // The `Command` chip cleared the Auto flag.
                         tut.inputs.auto_attack = false;
                     }
-                    self.set_battle_flow(Flow::TargetSelect)
+                    self.battle.set_battle_flow(Flow::TargetSelect)
                 }
                 _ => false,
             };
             let rejected = rejected
-                || (matches!(session.phase, P::Confirmed { .. }) && self.battle_tutorial_commit(3));
+                || (matches!(session.phase, P::Confirmed { .. })
+                    && self.battle.battle_tutorial_commit(3));
             if rejected {
                 let actor = session.actor;
                 self.battle.arts_list_window = left;

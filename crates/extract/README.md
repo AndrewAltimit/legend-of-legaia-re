@@ -43,7 +43,7 @@ together with a SHA-256 check on the input. The wiring is the crate's
 library (`legaia_extract::run`, reporting through a `Reporter` that can also
 cancel between units of work); the `legaia-extract` binary is a clap front
 end over it, behind the default `cli` feature, and
-[`legaia-studio`](../studio/README.md) drives the same pipeline from its
+[`legaia-explorer`](../explorer/README.md) drives the same pipeline from its
 Extract tab.
 
 ## Usage

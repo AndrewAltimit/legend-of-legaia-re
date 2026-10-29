@@ -493,6 +493,45 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
     (None, OptionRow::Retail),
 ];
 
+/// The options and launch switches the original game plays with: the
+/// options under `OptionsState::pin_retail`, the switches at
+/// `WorldToggles::pin_retail`'s values. [`OptionRow::original_value`] and
+/// [`hotkey_original_state`] both read this one pair.
+fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSettings) {
+    let mut opts = legaia_engine_menus::options::OptionsState::default();
+    opts.pin_retail();
+    let mut s = LauncherSettings::default();
+    let w = &mut s.switches;
+    // The original's picture is the PlayStation's own.
+    w.psx_render = true;
+    w.no_entry_pulse = true;
+    w.smart_monsters = false;
+    w.arts_saved_list = false;
+    w.no_shiny_seru = true;
+    w.flee_exp = false;
+    w.exp_rate_permille = None;
+    w.no_fortress_encounter_fix = true;
+    w.jewel_fix = false;
+    w.no_hp_readout_guard = true;
+    w.spirit_ap = None;
+    w.damage_ap = None;
+    w.seru_catch_pct = None;
+    w.enemy_attack_permille = None;
+    w.enemy_stat_permille = None;
+    w.equipment_drops = false;
+    w.save_anywhere = false;
+    (opts, s)
+}
+
+/// The original game's state of a play-window hotkey, in the words the
+/// hotkey panel shows (`options_hotkey_state`): `Some("off")` for the
+/// see-through walls, `None` for a key whose row has no original
+/// counterpart ([`OptionRow::original_value`]) or no row at all.
+pub fn hotkey_original_state(hotkey: legaia_engine_session::hotkeys::HostHotkey) -> Option<String> {
+    OptionRow::for_hotkey(hotkey)?.original_value()?;
+    legaia_engine_session::hotkeys::options_hotkey_state(&original_state().0, hotkey)
+}
+
 const TIMES_OF_DAY: [&str; 4] = ["auto", "day", "dusk", "night"];
 
 /// `OptionsState::window_scale`'s range
@@ -579,7 +618,7 @@ impl OptionRow {
             Self::Bloom => "Bright lights and lit windows glow softly. In game: F10.",
             Self::PsxRender => {
                 "The PlayStation's own 320x240 picture, magnified, with its wobbling \
-                 vertices and colour dithering. Off draws clean edges at the window's size."
+                 vertices and dithering. Off draws clean edges."
             }
             Self::CameraDistance => {
                 "How far the field camera sits behind your character. Retail is the \
@@ -771,6 +810,61 @@ impl OptionRow {
             Self::RetailObjectWindow => on_off(opts.retail_static_window),
             Self::Retail => on_off(s.switches.retail),
         }
+    }
+
+    /// The row's value in the original game, as [`Self::value`] shows it:
+    /// the options under `OptionsState::pin_retail` and the launch switches
+    /// under `WorldToggles::pin_retail`'s values. `None` for a row the
+    /// original has no counterpart for (the window, the volumes, the
+    /// enhanced lighting's time of day, the *Original game only* switch
+    /// itself).
+    pub fn original_value(self) -> Option<String> {
+        match self {
+            Self::Fullscreen
+            | Self::WindowSize
+            | Self::TimeOfDay
+            | Self::MasterVolume
+            | Self::MusicVolume
+            | Self::SfxVolume
+            | Self::MonoDownmix
+            | Self::Retail => None,
+            _ => {
+                let (opts, s) = original_state();
+                Some(self.value(&opts, &s))
+            }
+        }
+    }
+
+    /// The row a play-window hotkey toggles (`F4` See-through walls, `I`
+    /// Enhanced lighting, ...), so the hotkey panel reads the same
+    /// original value the launcher shows.
+    pub fn for_hotkey(hotkey: legaia_engine_session::hotkeys::HostHotkey) -> Option<OptionRow> {
+        use legaia_engine_session::hotkeys::HostHotkey as H;
+        Some(match hotkey {
+            H::OcclusionFade => Self::SeeThroughWalls,
+            H::TimeOfDay => Self::TimeOfDay,
+            H::VolumetricFog => Self::GroundFog,
+            H::EnhancedLighting => Self::EnhancedLighting,
+            H::LightShadows => Self::LampShadows,
+            H::CameraDistance => Self::CameraDistance,
+            H::PreciseMovement => Self::PreciseMovement,
+            H::Bloom => Self::Bloom,
+            H::DiagRows | H::AudioMute | H::DebugCamera | H::CheatMaxAp | H::CheatEncounters => {
+                return None;
+            }
+        })
+    }
+
+    /// Whether the row shows a value the original game does not have (an
+    /// enhancement, a fix or a tweak switched on). `false` for a row with
+    /// no original counterpart.
+    pub fn departs_from_original(
+        self,
+        opts: &legaia_engine_menus::options::OptionsState,
+        s: &LauncherSettings,
+    ) -> bool {
+        self.original_value()
+            .is_some_and(|o| o != self.value(opts, s))
     }
 
     /// The row's value on a first start: the game's own option default, or
@@ -1001,6 +1095,81 @@ mod tests {
             bin: p.to_path_buf(),
             executable: USA_EXECUTABLE.into(),
         }
+    }
+
+    /// The hotkey panel's original states are the launcher rows': one
+    /// value, in the panel's words.
+    #[test]
+    fn hotkey_original_states_match_their_rows() {
+        use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
+        let mut marked = 0;
+        for (hk, _) in HOST_HOTKEYS {
+            match (
+                OptionRow::for_hotkey(hk).and_then(OptionRow::original_value),
+                hotkey_original_state(hk),
+            ) {
+                (Some(row), Some(key)) => {
+                    assert!(row.eq_ignore_ascii_case(&key), "{hk:?}: {row} vs {key}");
+                    marked += 1;
+                }
+                (None, None) => {}
+                other => panic!("{hk:?}: {other:?}"),
+            }
+        }
+        assert_eq!(
+            hotkey_original_state(HostHotkey::OcclusionFade).as_deref(),
+            Some("off")
+        );
+        assert_eq!(hotkey_original_state(HostHotkey::TimeOfDay), None);
+        assert_eq!(hotkey_original_state(HostHotkey::AudioMute), None);
+        assert!(marked >= 6);
+    }
+
+    /// Every row with an original counterpart reads as the original under
+    /// the retail pins both halves use (`OptionsState::pin_retail`, the
+    /// `--retail` tweaks), so the launcher's "original" marking agrees
+    /// with what *Original game only* plays.
+    #[test]
+    fn original_values_are_the_retail_pins() {
+        use legaia_engine_menus::options::OptionsState;
+        let mut o = OptionsState::default();
+        o.pin_retail();
+        assert!(o.retail_deviations().is_empty());
+        let t = legaia_engine_session::session_switches::GameplayTweaks::retail();
+        for (_, row) in OPTION_ROWS {
+            let Some(orig) = row.original_value() else {
+                continue;
+            };
+            if row.is_game_option() {
+                assert_eq!(
+                    orig,
+                    row.value(&o, &LauncherSettings::default()),
+                    "{}",
+                    row.label()
+                );
+            }
+        }
+        // The tweak rows' original is the tweak set `--retail` installs.
+        let shown = |row: OptionRow| row.original_value().unwrap();
+        assert_eq!(shown(OptionRow::ShinySeru), on_off(t.shiny_seru));
+        assert_eq!(shown(OptionRow::FleeExp), on_off(t.flee_exp));
+        assert_eq!(
+            shown(OptionRow::FortressFix),
+            on_off(t.fortress_encounter_fix)
+        );
+        assert_eq!(shown(OptionRow::JewelFix), on_off(t.jewel_fix));
+        assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
+        assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
+        assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
+        assert_eq!(shown(OptionRow::PsxRender), "On");
+        assert_eq!(shown(OptionRow::EnhancedLighting), "Off");
+        assert_eq!(shown(OptionRow::RetailTileCrop), "On");
+        // The shipped defaults keep the enhancements on: those rows read
+        // as departing from the original on a first start.
+        let (d, s) = (OptionsState::default(), LauncherSettings::default());
+        assert!(OptionRow::EnhancedLighting.departs_from_original(&d, &s));
+        assert!(!OptionRow::SmartMonsters.departs_from_original(&d, &s));
+        assert!(!OptionRow::WindowSize.departs_from_original(&d, &s));
     }
 
     #[test]

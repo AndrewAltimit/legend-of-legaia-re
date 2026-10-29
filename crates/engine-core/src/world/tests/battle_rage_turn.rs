@@ -152,7 +152,7 @@ fn a_rage_seats_dead_target_is_redirected() {
 /// engine still holds for a Rage seat is dropped, not played.
 #[test]
 fn the_delegated_fill_wins_over_a_held_commit() {
-    use crate::battle_round::PendingPartyAction;
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     let mut w = rage_battle(&[0], &[7, 11, 10, 6]);
     w.rng_state = 5;
     w.run_round_state_zero();
@@ -168,7 +168,7 @@ fn the_delegated_fill_wins_over_a_held_commit() {
 /// special-trigger flag `0x801F696C` (`0x801EED88`).
 #[test]
 fn every_party_dispatch_clears_the_special_trigger_flag() {
-    use crate::battle_round::PendingPartyAction;
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     let mut w = rage_battle(&[], &[]);
     w.battle.round_flow.pending[1] = Some(PendingPartyAction::Spirit);
     w.battle_ctx.super_trigger = true;

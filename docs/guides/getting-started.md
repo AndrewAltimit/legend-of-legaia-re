@@ -1,17 +1,25 @@
 # Getting started with the release tools
 
 This guide is for someone who downloaded a release archive from the project's
-GitHub Releases page: a directory of prebuilt binaries (the command-line
-tools, the engine and Legaia Studio), the two license files,
-`THIRD-PARTY-LICENSES.txt`, `README-PLAY.txt` and a short `README.txt` (on
-macOS also `Legend of Legaia.app` and `Legaia Studio.app`). No Rust toolchain,
-no source checkout.
+GitHub Releases page. No Rust toolchain, no source checkout. The archive's
+folder holds only what you double-click, plus the text files:
+
+| In the archive folder | What it is |
+|---|---|
+| `Legend of Legaia` (`.exe` on Windows, `.app` on macOS) | The game |
+| `Legaia Explorer` (`.exe` on Windows, `.app` on macOS) | The asset browser and extractor |
+| `README-PLAY.txt` | How to start both, the controls |
+| `LICENSE`, `LICENSE-MIT`, `THIRD-PARTY-LICENSES.txt` | The licenses |
+| `command-line-tools/` | Every command-line program - the engine `legaia-engine`, `legaia-extract`, `legaia-patcher`, the format tools - and a `README.txt` listing them |
+
+The two programs at the top start the game from `command-line-tools/`, so
+keep the folder beside them.
 
 Pick your path:
 
 | You want to | Do this |
 |---|---|
-| **Play the game** | Start `legaia-engine` with no arguments - double-click it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once and remembers it; the launcher also sets the display options, then *Play* opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
+| **Play the game** | Double-click `Legend of Legaia` (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS); it starts `command-line-tools/legaia-engine` with no arguments. It asks for your disc image once and remembers it; the launcher also sets the display options, then *Play* opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
 | **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser. |
 | **Get the assets out** | Follow sections 1-3 below, then [extracting-assets.md](extracting-assets.md). |
 | **Randomize, mod or translate** | Sections 1-2 below, then [modding-and-translation.md](modding-and-translation.md) or [translating.md](translating.md). |
@@ -26,10 +34,10 @@ on a disc image *you* supply - a raw Mode 2/2352 `.bin` dump of your own
 anywhere a disc image is: the referenced `BINARY` track is resolved
 automatically.
 
-Commands below use the bare `./tool` form, as run from inside the unpacked
-archive directory. If you build from source instead, the same binaries land in
-`target/release/` (`cargo build --release`), so substitute
-`./target/release/tool`.
+Commands below use the bare `./tool` form, as run from a terminal inside the
+archive's `command-line-tools` folder. If you build from source instead, the
+same binaries land in `target/release/` (`cargo build --release`), so
+substitute `./target/release/tool`.
 
 ## 1. Download and verify the archive
 
@@ -48,7 +56,7 @@ Verify and unpack:
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
 tar -xzf legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
-cd legaia-tools-<version>-x86_64-unknown-linux-gnu
+cd legaia-tools-<version>-x86_64-unknown-linux-gnu/command-line-tools
 ./legaia-extract --version
 ```
 
@@ -124,6 +132,9 @@ tree or the disc image directly.
 
 ## 4. The tools at a glance
 
+Every program below sits in the archive's `command-line-tools` folder except
+Legaia Explorer, which is the archive's `Legaia Explorer` program.
+
 Pipeline and per-format extractors:
 
 | Binary | What it's for |
@@ -146,7 +157,7 @@ Game-data, playing, and modding:
 | Binary | What it's for |
 |---|---|
 | `legaia-engine` | The from-scratch engine: play scenes, FMVs, record/replay, export scenes to `.glb` - straight from your disc. |
-| `legaia-studio` | Desktop app (no terminal): open the disc, browse it by scene, preview and export textures, models, audio, dialog and movies, run the full extraction. |
+| `Legaia Explorer` (`legaia-explorer` in a source build) | Desktop app (no terminal): open the disc, browse it by scene, preview and export textures, models, audio, dialog and movies, run the full extraction. |
 | `asset-viewer` | Windowed browser for textures, meshes, audio banks, and scene demos. |
 | `legaia-patcher` | Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches. |
 | `save-tool` | PSX memory-card / save inspector: character records, save-block diffs. |

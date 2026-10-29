@@ -70,7 +70,7 @@ impl World {
         // has no fold - `FUN_801E09F8` spawns the lists from this flight
         // whatever the order - so a cast whose terminator runs first emits
         // here, and the fold, finding the flight holds the lists, stages
-        // nothing ([`crate::world::CastFxState::homing_holds_lists`]).
+        // nothing ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::homing_holds_lists`]).
         let fold_took = std::mem::take(&mut self.casting.homing_takes_lists);
         let fold_pending = !fold_took && self.cast_fold_pending(caster);
         self.casting.homing.emits = fold_took || fold_pending;

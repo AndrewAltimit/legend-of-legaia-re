@@ -1,5 +1,5 @@
 //! The field-side seeds a capture carries - a scene's placed-object clips,
-//! ambient walkers, morph envelopes, fog pool, sprite arms, CLUT-cell
+//! ambient walkers, morph envelopes, fog pool, sprite arms, turning parts, CLUT-cell
 //! cyclers, scroller rects, panel widget and camera block - as records with
 //! the environment form the image child reads them back from.
 
@@ -312,6 +312,65 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
             })
         })
         .collect()
+}
+
+/// `retail_turning_parts` as `LEGAIA_SEAT_TURNING_PARTS`:
+/// `record:r24:r26:r28` per part, `;`-joined, decimal.
+pub fn turning_parts_env(s: &[legaia_engine_core::world::ambient::AmbientBankSeed]) -> String {
+    s.iter()
+        .map(|p| format!("{}:{}:{}:{}", p.record_off, p.rot[0], p.rot[1], p.rot[2]))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`turning_parts_env`]; malformed entries are dropped.
+pub fn turning_parts_from_env(v: &str) -> Vec<legaia_engine_core::world::ambient::AmbientBankSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            Some(legaia_engine_core::world::ambient::AmbientBankSeed {
+                record_off: f.next()?.parse().ok()?,
+                rot: [
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                ],
+            })
+        })
+        .collect()
+}
+
+/// `retail_balloon` as `LEGAIA_SEAT_BALLOON`: `timer:total:link:text`, the
+/// text in hex; `none` for a frame that drew no balloon.
+pub fn balloon_env(b: Option<&legaia_engine_dialog::text_balloon::TextBalloon>) -> String {
+    let Some(b) = b else {
+        return "none".into();
+    };
+    let text: String = b.text.iter().map(|c| format!("{c:02x}")).collect();
+    format!("{}:{}:{}:{text}", b.timer, b.total, u8::from(b.parent_link))
+}
+
+/// Parse [`balloon_env`]: `Some(None)` for `none`, `None` when malformed.
+pub fn balloon_from_env(
+    v: &str,
+) -> Option<Option<legaia_engine_dialog::text_balloon::TextBalloon>> {
+    let v = v.trim();
+    if v == "none" {
+        return Some(None);
+    }
+    let mut f = v.split(':');
+    let timer: i16 = f.next()?.parse().ok()?;
+    let total: i16 = f.next()?.parse().ok()?;
+    let link = f.next()? == "1";
+    let hex = f.next()?;
+    let text = (0..hex.len() / 2)
+        .map(|i| u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok())
+        .collect::<Option<Vec<u8>>>()?;
+    let mut b = legaia_engine_dialog::text_balloon::TextBalloon::spawn(&text);
+    b.timer = timer;
+    b.total = total;
+    b.parent_link = link;
+    Some(Some(b))
 }
 
 /// `retail_cell_fx` as `LEGAIA_SEAT_CLUT_FX`: `x,y,w,h,h,s,v,mode,white`

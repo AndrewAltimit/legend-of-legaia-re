@@ -532,3 +532,35 @@ fn install_part_snapshot_reseats_parts_by_record() {
         .count();
     assert_eq!(live, 3, "a seed past the live count clones a live part");
 }
+
+/// The colour pipeline's half of a part's render state: an additive,
+/// semi-transparent colour word (the map display pointer's `0xC9000000`)
+/// reaches every untextured vertex's blend word packed as the textured TSB
+/// is, and the render scale scales the positions.
+#[test]
+fn colour_render_state_packs_the_blend_word_and_scale() {
+    let draw = SummonPartDraw {
+        model_index: 0,
+        world_pos: [0.0; 3],
+        rot: [0.0; 3],
+        flags_52: 0,
+        morph: PartMorph::default(),
+        scale: 0x2000,
+        colour: legaia_render_kernels::sprite_arm::ColourWord::from_words(0xC900_0000, 1),
+        shatter: 0,
+    };
+    let mut mesh = legaia_tmd::mesh::ColorMesh {
+        positions: vec![[1.0, 2.0, 3.0]; 3],
+        colors: vec![[0x40, 0x80, 0xC0]; 3],
+        indices: vec![0, 1, 2],
+        blend: Vec::new(),
+    };
+    assert!(!draw.draws_rest_mesh());
+    draw.apply_render_state_color(&mut mesh);
+    let want = legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT | (1 << 5);
+    assert_eq!(mesh.blend, vec![want; 3]);
+    assert_eq!(mesh.positions[0], [2.0, 4.0, 6.0]);
+    // IR0 1 of 0x1000 toward black: the DPCS step's arithmetic shift
+    // floors `-c >> 12` to -1, one step down per channel.
+    assert_eq!(mesh.colors[0], [0x3F, 0x7F, 0xBF]);
+}

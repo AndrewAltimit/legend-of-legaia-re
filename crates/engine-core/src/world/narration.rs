@@ -6,6 +6,10 @@ use legaia_engine_mode::mode::SceneMode;
 
 mod dialogue_drive;
 
+/// The system flag the MAN installer raises on every scene load
+/// ([`World::man_load_entry_flags`]): byte `0x80085758`, bit `0x01`.
+pub const MAN_LOAD_FLAG: u16 = 7;
+
 /// One frame's grade staging ([`World::frame_grade`]): what each play host
 /// hands its renderer's colour-grade, palette-grade and depth-cue setters.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -477,6 +481,29 @@ impl World {
     // REF: FUN_8003BDE0
     pub fn p2_gate_flag_set(&self, flag: u16) -> bool {
         self.system_flag_test(flag)
+    }
+
+    /// The system-flag write that opens every scene load: the MAN installer
+    /// raises flag [`MAN_LOAD_FLAG`] before it reads a byte of the MAN
+    /// (`lbu v0,0x1618(v1)` / `ori v0,v0,0x1` / `sb v0,0x1618(v1)` at
+    /// `0x8003AEEC..0x8003AEF8`, `v1 = 0x80084140`, so byte `0x80085758`
+    /// bit `0x01` - flag `7` under the `0x80 >> (idx & 7)` law). No shipped
+    /// script clears it, so from the first scene of a New Game on it is
+    /// always up.
+    ///
+    /// What it gates is the developer leftovers: partition-2 records whose
+    /// C1 list names flag `7` ([`Self::p2_record_gates_pass`]), which retail
+    /// therefore never spawns - `town01` / `town0c`'s `サウンド外` /
+    /// `サウンド内` walk-on records (a bare "Greetings." box) among them.
+    ///
+    /// The loader's next writes (flag `0x16` cleared, then raised again when
+    /// the boot latch `DAT_8007B71C` is up, `0x8003AEFC..0x8003AF28`) are not
+    /// modelled: the boot latch is not carried, and only the first scene
+    /// load after boot sees it set.
+    ///
+    /// PORT: FUN_8003AEB0 (`0x8003AEEC..0x8003AEF8`)
+    pub fn man_load_entry_flags(&mut self) {
+        self.system_flag_set(MAN_LOAD_FLAG);
     }
 
     /// Evaluate a partition-2 record's C1 / C2 story-flag gates: C1 blocks

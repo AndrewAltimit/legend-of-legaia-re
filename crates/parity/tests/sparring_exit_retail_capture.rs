@@ -108,7 +108,7 @@ fn primed_world(flag_bytes: Option<[u8; 4]>) -> World {
     w.mode = SceneMode::Field;
     w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
-    w.prime_battle_tutorial(synthetic_script());
+    w.battle.prime_battle_tutorial(synthetic_script());
     w
 }
 

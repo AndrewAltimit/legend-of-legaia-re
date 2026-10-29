@@ -121,7 +121,8 @@ impl World {
             .battle
             .flag_bits
             .has(ActorFlags::ADVANCE_DONE);
-        if staged_behind && event_commit_due(&src.event_frames, src.event_lock, frame) {
+        let four_slot = Self::committed_four_slot_beat(&self.actors[i]);
+        if staged_behind && event_commit_due(&src.event_frames, four_slot, src.event_lock, frame) {
             // The cut takes the entry's `+0x0E` displacement pro-rated by
             // how far the clip got - no HP test on this path, unlike the
             // natural end (`+0x228` taken as clear, as there).
@@ -626,7 +627,7 @@ impl World {
         if attacker < self.party.party_count {
             self.battle.party_melee_pushes = self.battle.party_melee_pushes.wrapping_add(1);
         }
-        let defense = self.physical_defense_of(target, power_byte);
+        let defense = self.battle.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
         let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false)
@@ -700,7 +701,7 @@ impl World {
                     attacker_element,
                     defender_resist,
                     defender_guarding: false,
-                    enemy_defender_halve: self.mystic_shield_up(),
+                    enemy_defender_halve: self.battle.mystic_shield_up(),
                     bypass_party_resist: false,
                     summon_power_pct: 100,
                     floor_rand,
@@ -717,7 +718,7 @@ impl World {
         // target's absorbed hit still charges its gauge.
         self.accrue_spirit_gauge(target, dmg);
         // A petrified target (Stone) absorbs the hit - no HP loss.
-        let petrified = self.actor_is_petrified(target);
+        let petrified = self.battle.actor_is_petrified(target);
         let dmg = if petrified { 0 } else { dmg };
         // The kernel's on-hit strip: a target that is not Stone loses the
         // wakes-when-hit family `0x0F80` of its status word on every hit
@@ -826,7 +827,7 @@ impl World {
     /// PORT: FUN_801EC3E4 (`0x801EEC34..0x801EECBC`, the defender's reaction
     /// commit and turn)
     pub(super) fn commit_melee_reaction(&mut self, target_i: usize, attacker_i: usize, entry: u8) {
-        if entry == 0 || self.actor_is_petrified(target_i as u8) {
+        if entry == 0 || self.battle.actor_is_petrified(target_i as u8) {
             return;
         }
         self.commit_battle_reaction_entry(target_i, entry);
@@ -883,7 +884,7 @@ impl World {
     /// PORT: FUN_801EC3E4 (`0x801EDE18..0x801EDEBC`, `0x801EE1C0..0x801EE3B8`,
     /// the reaction pick)
     /// The retail-compare seed's amount for a party swing on `target`
-    /// ([`crate::world::BattleState::forced_melee_hits`] /
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::forced_melee_hits`] /
     /// `forced_melee_total`), or `rolled` when no seed covers it.
     fn forced_melee_amount(&mut self, target: u8, clip: u8, rolled: u16, kill_check: bool) -> u16 {
         // The newest pushes are the capture clip's own: a hit from another
@@ -1014,7 +1015,7 @@ impl World {
     /// ([`Self::melee_rumble`]).
     ///
     /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are
-    /// [`crate::world::BattleState::attack_ramp`] / `guard_ramp`
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::attack_ramp`] / `guard_ramp`
     /// ([`Self::track_block_approach_terms`]); the damage roll that follows
     /// a hit reads the same pair before the kernel zeroes it.
     /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
@@ -1120,8 +1121,9 @@ impl World {
     /// `+0x11..+0x13` ([`vm::battle_action::event_commit_gate_frame`]). So
     /// it is up only before the playing clip's first listed beat, and down
     /// for a clip whose list starts at `0` (every block clip) - not "a
-    /// reaction is playing". A four-slot list (address-dependent in retail)
-    /// reads as down.
+    /// reaction is playing". A four-slot list reads the beat its load
+    /// address picks ([`Self::committed_four_slot_beat`]), down when that is
+    /// unresolved.
     // REF: FUN_80047430, FUN_80050E00
     pub(in crate::world) fn juggle_window_open(a: &crate::world::Actor) -> bool {
         let (Some(player), Some(head)) =
@@ -1133,8 +1135,11 @@ impl World {
             return false;
         };
         let list = [list[0], list[1], list[2], list[3]];
-        legaia_engine_battle_vm::battle_action::event_commit_gate_frame(&list)
-            .is_some_and(|gate| player.current_frame() < i16::from(gate))
+        legaia_engine_battle_vm::battle_action::event_commit_gate_frame(
+            &list,
+            Self::committed_four_slot_beat(a),
+        )
+        .is_some_and(|gate| player.current_frame() < i16::from(gate))
     }
 
     /// Keep the block roll's two approach terms in step with the action SM.
@@ -1142,7 +1147,7 @@ impl World {
     /// (`0x801E3068..0x801E30C8`), and every pass state `0x19` spends
     /// walking adds the frame step to `ctx[+0x6D4]` (`0x801E35DC..
     /// 0x801E35EC`, the stall arm) - one a vsync tick
-    /// ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]), so the term
+    /// ([`super::BATTLE_PASS_STEP_PER_TICK`]), so the term
     /// counts the walk's vsyncs whatever the cadence.
     pub(in crate::world) fn track_block_approach_terms(
         &mut self,
@@ -1171,7 +1176,7 @@ impl World {
         } else if pre_state == ActionState::AttackShortStep.as_byte()
             && !matches!(out, StepOutcome::Transition { .. })
         {
-            let step = i16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
+            let step = i16::from(super::BATTLE_PASS_STEP_PER_TICK);
             self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
         }
     }
@@ -1240,7 +1245,9 @@ impl World {
             .is_some_and(|a| a.battle.action_category == 5)
             || matches!(
                 self.battle.round_flow.pending.get(usize::from(target)),
-                Some(Some(crate::battle_round::PendingPartyAction::Run))
+                Some(Some(
+                    legaia_engine_battle_loop::round_flow::PendingPartyAction::Run
+                ))
             );
         fleeing
             && (0..usize::from(party_count))

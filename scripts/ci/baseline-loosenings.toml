@@ -371,3 +371,33 @@ reason = "Bisected to c16abd435, which re-seats a driven action capture at its o
 changes = [
   ["states/battle_gaza2_park_0x19_summon_melee/image", 0.997, 0.983],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to e2d87ea31: under the PCSX-Redux texel rule a fragment on its triangle's top edge now moves PSX_ROW_EDGE_MARGIN inside it (psx_row_inset) instead of truncating onto the texel row above the primitive's UVs, which drew the battle grid's green row lines and bright seams on field walls. On every listed state the changed pixels sit closer to retail (frame MAE equal or lower: rugi 7.0 -> 6.8, koru 27.48 -> 27.47, Gimard 20.71 -> 20.66) and the score moves by one or two 8x8 blocks whose mean error was already at the 24 tolerance (23.3 -> 24.2 and alike) or, on rugi's floor emblem, by a row phase in its glyph texture. Instrument-only rule; the console rule is unchanged."
+changes = [
+  ["states/battle_tunnelb_mush_mush_strike/image", 0.99, 0.989],
+  ["states/battle_tunnelb_warman_strike/image", 0.801, 0.8],
+  ["states/koru_pre_blade_breath/image", 0.669, 0.667],
+  ["states/koru_pre_gigaton_press/image", 0.669, 0.667],
+  ["states/koru_pre_thunder_needle/image", 0.669, 0.667],
+  ["states/minigame_muscle_dome_retail_tornado_flame/image", 0.988, 0.987],
+  ["states/rugi_field_card_boot/image", 0.99, 0.989],
+  ["states/battle_gaza2_park_0x19/image", 0.996, 0.995],
+  ["states/delilas_gi_move_input_hand_gap/image", 0.988, 0.987],
+  ["states/shiny_refactor_gimard_levelup/image", 0.846, 0.845],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 100f25818: equal-area coplanar draws now rank the placed-object layer ahead of terrain cells, as retail's field frame body FUN_80016444 runs the actor passes (FUN_8001D140) before the decoration pass (FUN_8001D058); koin1_field_route_walk 0.938 -> 0.987. On kor's walkway the railing lattice's coplanar pairs swap over 5148 pixels: frame MAE 15.731 -> 15.720, four blocks lost and two won, a net one-thousandth."
+changes = [
+  ["states/kor_field_route_walk/image", 0.863, 0.862],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 87b01887d (1.000 at its parent): a 0x70 capture past arm 0 whose module table still walks on its angles or focus now walks its displayed frame back on the table's own increments, and the seed keeps whichever of the glide-origin and module-shot aligns moves more components onto retail's. That put the Koru 0962 charge shots back on .789 / .790 / .822 after the first module-shot align had dropped them to .579; Zeto's arm 2 rides a 0x100-frame pan, and on the table's walk its displayed frame stands a few pixels of pan off the one the old glide-origin align happened to land. Instrument work; camera stays 1.000."
+changes = [
+  ["states/zeto_call_wave_mid_cast/image", 0.998, 0.996],
+]

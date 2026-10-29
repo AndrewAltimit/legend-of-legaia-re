@@ -32,7 +32,7 @@ fn rage_party_world() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
         let m = &mut w.party.roster.members[i];
         let mut bits = m.ability_bits();
         bits[4..8].copy_from_slice(&0x2000u32.to_le_bytes());

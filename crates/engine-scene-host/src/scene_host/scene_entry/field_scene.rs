@@ -231,6 +231,9 @@ impl SceneHost {
         // Ambient move-VM effect parts (jou's flesh cyclers / lightning) are
         // per-scene; the auto-spawn below re-seeds the new scene's tree.
         self.world.ambient.fx.clear();
+        // The field init keys off the cue voices, emitters included, so a
+        // looping emitter of the scene left behind falls silent.
+        self.world.release_field_init_voices();
         self.world.ambient.vsync_accum = 0;
         self.world.ambient.pending_game_ticks = 0;
         self.world.ambient.cell_captures.clear();

@@ -4,8 +4,8 @@
 //! `docs/subsystems/battle-formulas.md#the-special-battle-words-readers`).
 
 use super::*;
-use crate::battle_round::{PendingPartyAction, RoundPhase};
 use legaia_engine_battle::victory::VictoryPhase;
+use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
 use legaia_engine_battle_vm::status_effects::StatusKind;
 use legaia_engine_mode::mode::SceneMode;
 
@@ -110,7 +110,7 @@ fn a_special_battle_opens_no_result_window() {
         }
         let seq = world.battle.victory.expect("sequence armed");
         assert!(matches!(seq.phase, VictoryPhase::Results { .. }));
-        (seq.window_opened, world.battle_spoils_window_up())
+        (seq.window_opened, world.battle.battle_spoils_window_up())
     };
     assert_eq!(run(0), (true, false), "window up (no rewards staged)");
     assert_eq!(run(0x200), (false, false));

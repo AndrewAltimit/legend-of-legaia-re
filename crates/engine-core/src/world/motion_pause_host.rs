@@ -190,6 +190,29 @@ mod tests {
         }
     }
 
+    /// A field-script `+0x5C` write (the `4C 51` run's move byte, an `A2`
+    /// ExecMove) is the same word the scripted VM's requested move copies:
+    /// the next ambient tick must not take the clip back to the VM's stale
+    /// request. `rikuroa`'s post-Caruban seat of Noa, `CC 10 51 44 4A 00
+    /// 18`, over a tail stream standing on move `8`.
+    #[test]
+    fn a_script_move_write_holds_against_the_ambient_tick() {
+        let mut w = World::new();
+        w.npcs.animate = true;
+        let mut c = channel(3, [0x08, 0x08], WAIT.to_vec());
+        c.vm.requested_move = Some(0x08);
+        w.npcs.ambient.insert(3, c);
+        w.npcs.clip_current.insert(3, 0x08);
+        w.carry_npc_run_anim(3, 0x18);
+        w.script_npc_move(3, 0x18);
+        w.tick_field_npc_ambient();
+        assert_eq!(w.npcs.anim_cues.get(&3).map(|c| c.1), Some(0x18));
+        let _ = w.drain_field_anim_cues(None, None, |_| None);
+        w.tick_field_npc_ambient();
+        assert!(w.npcs.anim_cues.is_empty(), "no request back to move 8");
+        assert_eq!(w.npcs.clip_current.get(&3), Some(&0x18));
+    }
+
     /// With the liveliness off no walk is published, and no clip either.
     #[test]
     fn no_clip_requests_with_the_liveliness_off() {

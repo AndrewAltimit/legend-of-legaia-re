@@ -142,10 +142,10 @@ impl World {
     /// the character's base attack / UDF / LDF and the modifiers of the items
     /// in its equipment slots ([`legaia_engine_battle::battle_stats::compute_battle_stats_default`]
     /// against [`crate::world::DiscTables::equipment_table`]), then writes
-    /// [`crate::world::BattleState::attack`] (= the attack **without** the equipment sum,
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::attack`] (= the attack **without** the equipment sum,
     /// which retail folds per command at swing time - see
-    /// [`crate::world::BattleState::equip_atk`]) and
-    /// [`crate::world::BattleState::defense_split`] (= resolved UDF / LDF). Slots with a
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::equip_atk`]) and
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::defense_split`] (= resolved UDF / LDF). Slots with a
     /// zeroed roster record are left untouched, so synthetic battles that set
     /// `battle_attack` directly keep their values.
     ///
@@ -314,7 +314,8 @@ impl World {
             if let Some(s) = self.battle.speed.get_mut(slot) {
                 *s = stats.spd;
             }
-            self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
+            self.battle
+                .set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
             // Seed the AP gauge base from the captured level. Base only - the
             // round-start `reset_party_ap` refills `current_ap` to it, and Fury
             // Boost still extends from / reverts to this base. Re-seeding

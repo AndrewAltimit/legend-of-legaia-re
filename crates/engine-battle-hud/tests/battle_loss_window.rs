@@ -3,7 +3,7 @@
 //! replaces.
 //!
 //! These read the battle HUD's result-window projections; the window gate the
-//! simulation keeps (`World::battle_spoils_window_up`) is pinned in
+//! simulation keeps (`BattleState::battle_spoils_window_up`) is pinned in
 //! engine-core's `world::tests::battle_special_word`.
 
 use legaia_engine_battle_hud::{battle_defeat_banner, battle_spoils_banner};

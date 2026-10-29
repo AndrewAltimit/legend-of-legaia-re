@@ -281,7 +281,7 @@ pub fn battle_enemy_target_rows(
 /// ([`legaia_engine_battle::target_picker::layout_enemy_menu_rows`]) and spawns each as a
 /// text actor with the message banner's class-0 frame; the labels live until
 /// the `0x0B` expiry sweeps every text actor, which is the
-/// [`legaia_engine_core::world::BattleState::intro_names_frames`] timer. The pair returned
+/// [`legaia_engine_battle_loop::battle_state::BattleState::intro_names_frames`] timer. The pair returned
 /// is `(label, pen x)`; the drawer takes the pen y from
 /// [`legaia_engine_battle::target_picker::MENU_ROW_Y`]'s value, `48`.
 ///
@@ -297,7 +297,7 @@ pub fn battle_intro_names(
     }
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.intro_names_frames == 0
-        || world.battle_entry_sweeping()
+        || world.battle.battle_entry_sweeping()
     {
         return Vec::new();
     }

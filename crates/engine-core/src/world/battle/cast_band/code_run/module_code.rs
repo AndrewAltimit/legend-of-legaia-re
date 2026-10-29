@@ -68,7 +68,7 @@ impl World {
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
-            922 => self.run_puera_stager_calls(&mut ctx),
+            922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(),
             // PROT 0923's stager is reached through its parts' op-`0x20`
             // calls, never off the phase: its arm 0 (the stage byte `3`) runs
@@ -85,7 +85,7 @@ impl World {
                     // grey flash fade.
                     if call_arm == 1 {
                         for slot in ticks::GILIUM_STAGER_HALTS {
-                            self.kill_parked_module_part(
+                            self.casting.kill_parked_module_part(
                                 legaia_overlay_images::cast_presentation::HandleSlot::Abs(slot),
                             );
                         }
@@ -100,12 +100,12 @@ impl World {
                         self.presentation.module_fades.extend(fade);
                     }
                     for s in &ticks::gilium_stager_spawns(call_arm, caller) {
-                        self.seat_stager_spawn(entry, s);
+                        self.casting.seat_stager_spawn(entry, s);
                         // Arm 0 parks the bowl's handle where the module's
                         // halt loops find it, beside the tick body's own
                         // parked parts.
                         if s.record == ticks::GILIUM_BOWL_RECORD {
-                            self.park_module_part(
+                            self.casting.park_module_part(
                                 legaia_overlay_images::cast_presentation::HandleSlot::Abs(
                                     ticks::GILIUM_BOWL_HANDLE,
                                 ),
@@ -150,13 +150,23 @@ impl World {
         } else {
             legaia_engine_cast::cast_module_camera::module_profile(entry)
         };
-        // The module countdown this pass opens on (PROT 0922's seat writes
-        // read it).
+        // The module countdown this pass opens on (PROT 0917's and 0922's
+        // seat writes read it).
         let countdown_before = self.casting.module_cam.countdown.0;
         // PROT 0916's arm-0 kill roll, drawn once per cast ahead of its
         // director.
         if entry == legaia_engine_cast::cast_module_camera::ALURU_ENTRY {
             self.draw_aluru_verdict(caster_slot, victim_slot, spell_id);
+        }
+        // PROT 0917's arm `0xF` re-runs the target-size framing `FUN_801F0348`
+        // at the head of every pass (`jal` at `0x801F805C`), ahead of the
+        // shot that reads `ctx[+0x6D0]` (`0x801F8094`, `0x801F8104`): the
+        // victim on the ground is framed off its own size, not the depth
+        // whatever ran before left.
+        if entry == 917 && ctx.phase == 0xF {
+            let d = self.cast_target_frame_depth(caster_slot);
+            self.battle.camera_frame_height = d;
+            self.battle_ctx.camera_frame_height = d;
         }
         let direction = if has_trampoline {
             None
@@ -218,6 +228,11 @@ impl World {
             && let Some(d) = direction
         {
             self.apply_kemaro_writes(ctx.phase, !d.hold, victim_slot);
+        }
+        if entry == 917
+            && let Some(d) = direction
+        {
+            self.apply_barra_writes(ctx.phase, !d.hold, countdown_before, victim_slot);
         }
         if entry == 922
             && let Some(d) = direction
@@ -788,7 +803,7 @@ impl World {
                     let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
                     self.write_cast_view(first, &seat);
                     self.write_cast_arm_ext_state(first, &ext);
-                    if shield_arm && !self.mystic_shield_up() {
+                    if shield_arm && !self.battle.mystic_shield_up() {
                         // `_DAT_8007BD84 = FUN_80021B04(..)` - the shield's
                         // sphere, seated with its texture scroller.
                         self.raise_mystic_shield();
@@ -1324,33 +1339,20 @@ impl World {
         // `0x801F75A0`) and, while the victim still stands, scales it by
         // `3/2` toward zero (`0x801F75A8..0x801F75DC`). Arm 12's case-8 calls
         // frame off that depth: a victim the breath killed at the `0x0C00`
-        // floor, a living one a half again further out.
-        if entry == 903 && ctx.phase != phase_entry {
-            let depth = match phase_entry {
-                10 => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
-                11 => {
-                    let target = self
-                        .actors
-                        .get(usize::from(caster_slot))
-                        .map_or(8, |a| a.battle.active_target);
-                    let size_of = |slot: u8| {
-                        self.actors
-                            .get(usize::from(slot))
-                            .and_then(|a| a.battle_monster_id)
-                            .and_then(|id| self.tables.monster_catalog.get(id))
-                            .map_or(0, |d| d.size_class)
-                    };
-                    let h = legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
-                        caster_slot,
-                        target,
-                        self.party.party_count,
-                        size_of,
-                    );
+        // floor, a living one a half again further out. PROT 0913 (Nova)
+        // runs the same framing on arm 13's pass (`jal` at `0x801F7B6C`,
+        // unscaled): arms 14 / 15 frame the victim at `d` and `(d/2, -d/2)`
+        // and arm 16 lifts it `sin * d >> 14`, all off that depth.
+        if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
+            let depth = match (entry, phase_entry) {
+                (903, 10) => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
+                (903, 11) | (913, 0x0D) => {
+                    let h = self.cast_target_frame_depth(caster_slot);
                     let alive = self
                         .actors
                         .get(usize::from(victim_slot))
                         .is_some_and(|a| a.battle.hp != 0);
-                    Some(if alive {
+                    Some(if alive && entry == 903 {
                         ((i32::from(h) * 3) / 2) as i16
                     } else {
                         h
@@ -1550,7 +1552,8 @@ impl World {
         // it at `4` on its exit, arm 9 ramps the colour towards red a step
         // a vsync and pins it on its exit, and `0xFF` clears the budget.
         if entry == legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY {
-            self.slippery_rain_words(phase_in, ctx.phase != phase_in);
+            self.casting
+                .slippery_rain_words(phase_in, ctx.phase != phase_in);
         }
         // The arm passed: its re-arm of the countdown word.
         if let Some(a) = arm_countdown
@@ -1572,7 +1575,8 @@ impl World {
         if entry == 911 {
             self.orb_arm_writes(phase_in, ctx.phase);
         }
-        self.late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
+        self.casting
+            .late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
         if entry == 928
             && let Some(v) = legaia_engine_cast::cast_module_camera::palma_stage_byte(
                 phase_in,
@@ -1617,7 +1621,11 @@ impl World {
             self.refresh_party_ability_bits();
         }
         // The arm's calls into the shared presentation helpers (fades,
-        // washes, CLUT copies), decoded off the module image.
+        // washes, CLUT copies), decoded off the module image. A guarded site
+        // reads the countdown word as this pass opened on it.
+        self.casting.module_pres.word_in =
+            legaia_engine_cast::cast_module_camera::summon_holds::countdown_word(entry)
+                .map(|va| (va, countdown_before));
         self.fire_cast_presentation(
             entry,
             if has_trampoline { body } else { None },
@@ -1644,6 +1652,31 @@ impl World {
     ///
     /// PORT: FUN_801F6A00 (arm 8: flee staging + round tail; the record-side
     /// HP / MP write-back is the battle teardown's)
+    /// The target-size framing `FUN_801F0348` for a cast by `caster_slot`:
+    /// the `ctx[+0x6D0]` depth its target's (or, for a monster caster, its
+    /// own) size class gives.
+    ///
+    /// REF: FUN_801F0348
+    fn cast_target_frame_depth(&self, caster_slot: u8) -> i16 {
+        let target = self
+            .actors
+            .get(usize::from(caster_slot))
+            .map_or(8, |a| a.battle.active_target);
+        let size_of = |slot: u8| {
+            self.actors
+                .get(usize::from(slot))
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| self.tables.monster_catalog.get(id))
+                .map_or(0, |d| d.size_class)
+        };
+        legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
+            caster_slot,
+            target,
+            self.party.party_count,
+            size_of,
+        )
+    }
+
     fn spikefish_outcome(
         &mut self,
         ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,

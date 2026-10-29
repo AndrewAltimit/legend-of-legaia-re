@@ -490,7 +490,7 @@ impl World {
     ///
     /// Nothing reverts it: retail rebuilds the actor's stats at the next
     /// battle's setup, as [`Self::seed_party_battle_stats`] does here. A
-    /// zero-delta [`crate::world::BattleBuff`] entry per stat records that the
+    /// zero-delta [`legaia_engine_battle_loop::battle_state::BattleBuff`] entry per stat records that the
     /// ramp is on for the battle (readers ask the buff list), and reverts
     /// nothing at battle end. Returns
     /// [`legaia_engine_menus::items::ItemOutcome::NoEffect`] when no table is
@@ -563,12 +563,14 @@ impl World {
                 .iter()
                 .any(|b| b.slot == target_slot && b.stat == buff_stat)
             {
-                self.battle.buffs.push(crate::world::BattleBuff {
-                    slot: target_slot,
-                    stat: buff_stat,
-                    applied_delta: 0,
-                    turns: u8::MAX,
-                });
+                self.battle
+                    .buffs
+                    .push(legaia_engine_battle_loop::battle_state::BattleBuff {
+                        slot: target_slot,
+                        stat: buff_stat,
+                        applied_delta: 0,
+                        turns: u8::MAX,
+                    });
             }
             count = count.saturating_add(1);
         }

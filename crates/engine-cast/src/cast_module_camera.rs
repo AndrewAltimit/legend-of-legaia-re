@@ -963,6 +963,7 @@ mod gola_mushura_barra;
 mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
+mod kiss_of_death;
 mod megaton_press;
 mod meta_terra_ozma;
 mod nighto;
@@ -1000,6 +1001,7 @@ pub use gola_mushura_barra::*;
 pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
+pub use kiss_of_death::{KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN, kiss_of_death_camera};
 pub use megaton_press::{
     MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
 };

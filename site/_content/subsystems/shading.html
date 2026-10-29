@@ -121,7 +121,7 @@
 
 <section class="doc-section" id="port">
   <h2>In the port</h2>
-  <p>The renderer's two halves point opposite ways. <strong>Shading defaults to retail</strong>: the baked colour word, the depth cue and the light-source rows, with no synthetic light on any game path (the play hosts layer the optional enhanced lighting over it). <strong>Rasterisation defaults to clean</strong>: vertex snap and the 15-bit dither are behind <code>set_psx_mode</code>. Affine UVs are not gated - they are always on, because they are the faithful behaviour.</p>
+  <p>The renderer's two halves point opposite ways. <strong>Shading defaults to retail</strong>: the baked colour word, the depth cue and the light-source rows, with no synthetic light on any game path (the play hosts layer the optional enhanced lighting over it). <strong>Rasterisation defaults to clean</strong>: the GTE register limits, vertex snap and the 15-bit dither are behind <code>set_psx_mode</code>. Affine UVs are not gated - they are always on, because they are the faithful behaviour.</p>
   <dl class="kv">
     <dt>Palette maps</dt><dd><code>legaia_ui_formats::tim_palette_context</code> (which cell draws which texel; what the boot VRAM holds)</dd>
     <dt>VRAM + palette decode</dt><dd><code>engine-render</code> (1024&times;512 R16Uint texture, decode in the fragment shader)</dd>

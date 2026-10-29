@@ -37,8 +37,8 @@ fn world_in_battle() -> World {
         w.actors[i].battle.hp = 200;
         w.actors[i].battle.max_hp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 10);
-        w.set_battle_defense(i as u8, 20);
+        w.battle.set_battle_attack(i as u8, 10);
+        w.battle.set_battle_defense(i as u8, 20);
     }
     let mut cat = MonsterCatalog::new();
     let mut def = MonsterDef::new(7, "Post", 5000, 5);
@@ -65,9 +65,9 @@ fn world_in_battle() -> World {
 /// Press `button` for one frame, release for one.
 fn press(w: &mut World, button: PadButton) {
     // The menu SM reads no pad while the prompt's glide is in flight
-    // (`World::battle_command_pad_held`): wait it out, as a player does.
+    // (`BattleState::battle_command_pad_held`): wait it out, as a player does.
     for _ in 0..64 {
-        if !w.battle_command_pad_held() {
+        if !w.battle.battle_command_pad_held() {
             break;
         }
         w.set_pad(0);

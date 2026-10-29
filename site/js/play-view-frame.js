@@ -897,6 +897,13 @@
         try { p = rt.play_render_prim_near(!this.debugCamera); } catch (_) { p = null; }
         this.renderer.setPrimNear(p);
       }
+      /* The GTE's register limits (camera_frame::gte_saturation), applied
+       * by the vertex stage under PSX mode only. */
+      if (this.renderer.setGteSat && typeof rt.play_render_gte_sat === 'function') {
+        let g = null;
+        try { g = rt.play_render_gte_sat(!this.debugCamera); } catch (_) { g = null; }
+        this.renderer.setGteSat(g);
+      }
     }
 
     /* The clear colour is part of what a frame looks like, not a renderer

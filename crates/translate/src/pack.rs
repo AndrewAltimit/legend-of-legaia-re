@@ -227,7 +227,8 @@ impl LanguagePack {
 
     /// Parse + format-check a pack from YAML text.
     pub fn from_yaml(text: &str) -> Result<Self> {
-        let pack: LanguagePack = serde_yaml::from_str(text).context("parse language-pack YAML")?;
+        let pack: LanguagePack =
+            serde_norway::from_str(text).context("parse language-pack YAML")?;
         if pack.format != PACK_FORMAT {
             bail!(
                 "unsupported pack format {:?} (this tool reads {PACK_FORMAT:?})",
@@ -237,13 +238,13 @@ impl LanguagePack {
         Ok(pack)
     }
 
-    /// Serialize to YAML. Hand-rolled emitter rather than `serde_yaml`
+    /// Serialize to YAML. Hand-rolled emitter rather than `serde_norway`
     /// because every string scalar must be **quoted**: game text like `Yes`,
     /// `No`, `On` or `1000G` would otherwise be re-read as booleans/numbers
     /// by the YAML 1.1 parsers (PyYAML et al.) translators commonly script
-    /// with, corrupting the pack on their side. `serde_yaml` offers no
-    /// force-quote switch; single-quoted style round-trips through every
-    /// YAML 1.1/1.2 implementation.
+    /// with, corrupting the pack on their side. `serde_norway` (like the
+    /// `serde_yaml` it forks) offers no force-quote switch; single-quoted
+    /// style round-trips through every YAML 1.1/1.2 implementation.
     pub fn to_yaml(&self) -> Result<String> {
         fn q(s: &str) -> String {
             // YAML single-quoted scalar: only `'` needs escaping (doubled).
@@ -462,7 +463,7 @@ mod tests {
     fn format_gate() {
         let mut p = sample();
         p.format = "bogus".into();
-        let y = serde_yaml::to_string(&p).unwrap();
+        let y = serde_norway::to_string(&p).unwrap();
         assert!(LanguagePack::from_yaml(&y).is_err());
     }
 

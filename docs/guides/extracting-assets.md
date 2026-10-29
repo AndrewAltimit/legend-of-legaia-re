@@ -1,17 +1,20 @@
 # Extracting assets: step-by-step scenarios
 
-## Without a terminal: Legaia Studio
+## Without a terminal: Legaia Explorer
 
-The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
-`Legaia Studio.app` on macOS) does the common cases with buttons:
+The release archive's `Legaia Explorer` (`Legaia Explorer.exe` on Windows,
+`Legaia Explorer.app` on macOS, `legaia-explorer` in a source build) does the
+common cases with buttons:
 
 1. **Open** your disc image - the `.bin` of a Mode2/2352 dump, or its `.cue` -
-   with *Open disc image...*, by typing its path, or by dropping it on the
-   window. A folder `legaia-extract` already wrote opens too. The app checks
-   the image before loading and reopens it next time. *Recent* in the top bar
-   (and the start screen, when nothing is open) lists the last eight discs and
-   folders you opened; *x* takes one off the list, and one that has been moved
-   or deleted drops off by itself.
+   with *Open disc image...* (Ctrl+O), by typing its path (Ctrl+L), or by
+   dropping it on the window. A folder `legaia-extract` already wrote opens
+   too. The app checks the image before loading and reopens it next time.
+   With something open, the *Open* menu in the top bar holds all of these:
+   *Disc image...*, *Extracted folder...*, *Type a path...* and the recent
+   list. The recent list (also on the start screen, when nothing is open)
+   holds the last eight discs and folders you opened; *x* takes one off the
+   list, and one that has been moved or deleted drops off by itself.
 2. **Browse** the archive on the left: entries grouped under their CDNAME
    names and the place each scene is (`town01 - Rim Elm`), each entry with
    its category and size. The search (Ctrl+F) matches every word you type
@@ -45,7 +48,8 @@ The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
    so they need the disc image rather than an extracted folder.
 
 8. **Play**: the button in the top bar starts the game (`legaia-engine`,
-   which ships in the same folder) on the open disc, at the title screen.
+   from the archive's `command-line-tools` folder) on the open disc, at the
+   title screen.
    Saves, key bindings and options are the same ones the game uses when you
    start it directly, and the disc is remembered for the game too: starting
    it later by double-clicking goes straight to the title screen instead of
@@ -63,7 +67,7 @@ The window remembers its size and the view you left it on. *About* (F1) shows
 the version and where the third-party license notices
 (`THIRD-PARTY-LICENSES.txt`) sit. The app ships no game data and uploads
 nothing; it reads the disc you choose and writes only where you tell it.
-Details: [`crates/studio`](../../crates/studio/README.md); a walkthrough with
+Details: [`crates/explorer`](../../crates/explorer/README.md); a walkthrough with
 screenshots is the project site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html).
 
 ## On the command line
@@ -75,15 +79,15 @@ Every scenario below assumes the one-shot pipeline has run
 ./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-Commands use the bare `./tool` form from a release archive; source builds live
-at `target/release/`. Paths like `extracted/...` resolve against the current
+Commands use the bare `./tool` form, run from a terminal in the release
+archive's `command-line-tools` folder; source builds live at `target/release/`. Paths like `extracted/...` resolve against the current
 directory - run from the same place each time.
 
 ## Textures → PNG
 
 The bulk texture path is a two-command chain: sweep every PROT entry for TIM
 images (raw and inside LZS compression), then convert the hits.
-`legaia-extract --all-textures` (or the Studio's *Export all textures* box)
+`legaia-extract --all-textures` (or the Explorer's *Export all textures* box)
 runs both as one step and writes the same tree.
 
 ```bash

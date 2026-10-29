@@ -123,7 +123,7 @@ fn panels_still_open(s: u8) -> bool {
 /// arm 9's pass (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`, then
 /// `ctx[+0x18] = 6`, `0x801F7E64..0x801F7ED4`) puts them up under the heal,
 /// and the Done hold closes them like the others
-/// ([`legaia_engine_core::world::BattleState::module_panels_glide`]).
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]).
 pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
@@ -272,7 +272,7 @@ pub fn encounter_banner_label(world: &legaia_engine_core::world::World) -> Strin
 ///
 /// 1. the **battle message banner** - screen element `0x59` (a Seru absorbed
 ///    on a killing blow) or `0x65` (a Seru spell's magic level went up), live
-///    from its raise to its unload ([`legaia_engine_core::world::BattleMessageBanner`]).
+///    from its raise to its unload ([`legaia_engine_battle_loop::message_banner::BattleMessageBanner`]).
 ///    Battle mode only: the Done band retires it, and a line a battle left
 ///    standing must not follow the party back into the field;
 /// 2. the post-battle **level-up** line;

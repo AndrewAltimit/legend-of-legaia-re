@@ -182,8 +182,8 @@ pub(super) fn build_shadow_pass(
     });
     let shadow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia shadow pipeline layout"),
-        bind_group_layouts: &[&shadow_uniforms_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&shadow_uniforms_bgl)],
+        immediate_size: 0,
     });
     // Depth-only pipelines: position attribute only, over each mesh
     // path's native vertex stride. Rasterizer depth bias keeps the
@@ -196,7 +196,7 @@ pub(super) fn build_shadow_pass(
             vertex: wgpu::VertexState {
                 module: &shadow_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: stride,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &[wgpu::VertexAttribute {
@@ -204,7 +204,7 @@ pub(super) fn build_shadow_pass(
                         shader_location: 0,
                         format: wgpu::VertexFormat::Float32x3,
                     }],
-                }],
+                })],
                 compilation_options: Default::default(),
             },
             fragment: None,
@@ -215,8 +215,8 @@ pub(super) fn build_shadow_pass(
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState {
                     constant: 2,
@@ -225,7 +225,7 @@ pub(super) fn build_shadow_pass(
                 },
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     };
@@ -274,8 +274,8 @@ pub(super) fn build_glow_sprites(
     );
     let glow_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia glow pipeline layout"),
-        bind_group_layouts: &[&glow_uniforms_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&glow_uniforms_bgl)],
+        immediate_size: 0,
     });
     let additive = wgpu::BlendComponent {
         src_factor: wgpu::BlendFactor::One,
@@ -288,7 +288,7 @@ pub(super) fn build_glow_sprites(
         vertex: wgpu::VertexState {
             module: &glow_shader,
             entry_point: Some("vs_main"),
-            buffers: &[wgpu::VertexBufferLayout {
+            buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: GLOW_VERTEX_STRIDE,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &[
@@ -308,7 +308,7 @@ pub(super) fn build_glow_sprites(
                         format: wgpu::VertexFormat::Float32x4,
                     },
                 ],
-            }],
+            })],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -331,13 +331,13 @@ pub(super) fn build_glow_sprites(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: false,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     GlowParts {

@@ -243,6 +243,10 @@ pub(super) struct SceneLightsUniform {
     /// [`legaia_render_kernels::prim_near_reject::shader_params`]. All-zero (the
     /// `Zeroable` default) never rejects.
     pub(super) prim_near: [f32; 4],
+    /// The GTE's register limits the mesh vertex stages apply under PSX
+    /// mode: [`legaia_render_kernels::prim_near_reject::gte_saturation_params`].
+    /// All-zero (the `Zeroable` default) leaves every corner unclamped.
+    pub(super) gte_sat: [f32; 4],
     pub(super) lights:
         [ScenePointLightUniform; legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS],
 }

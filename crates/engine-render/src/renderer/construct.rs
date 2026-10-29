@@ -96,14 +96,14 @@ impl Renderer {
     /// an `Arc<Window>` so the Surface can outlive the borrow.
     pub fn new<W>(window: Arc<W>, width: u32, height: u32) -> Result<Self>
     where
-        W: wgpu::WindowHandle + 'static,
+        W: wgpu::WindowHandle + wgpu::rwh::HasDisplayHandle + 'static,
     {
         pollster::block_on(Self::new_async(window, width, height))
     }
 
     async fn new_async<W>(window: Arc<W>, width: u32, height: u32) -> Result<Self>
     where
-        W: wgpu::WindowHandle + 'static,
+        W: wgpu::WindowHandle + wgpu::rwh::HasDisplayHandle + 'static,
     {
         let surface::SurfaceParts {
             surface,
@@ -247,6 +247,7 @@ impl Renderer {
             overworld_curve: std::cell::Cell::new(0.0),
             overworld_curve_bias: std::cell::Cell::new(0.0),
             prim_near: std::cell::Cell::new([0.0; 4]),
+            gte_sat: std::cell::Cell::new([0.0; 4]),
             // Semi-transparency (ABE) blending on by default: retail's GPU
             // always blends ABE prims, so field water / glass / effects should
             // composite in the clean render, not just under LEGAIA_PSX_RENDER.

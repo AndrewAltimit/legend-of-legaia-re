@@ -32,7 +32,7 @@ ENGINE_LAYER_EXTRA = {
     "render-kernels",
     "parity",
     "asset-viewer",
-    "studio",
+    "explorer",
     "web-minigames",
     "web-play",
     "web-viewer",

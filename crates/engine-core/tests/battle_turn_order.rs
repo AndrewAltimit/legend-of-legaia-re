@@ -29,7 +29,7 @@ fn battle_with(monster: MonsterDef, party_spd: u16) -> World {
         w.actors[i].battle.hp = 200;
         w.actors[i].battle.max_hp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 40);
+        w.battle.set_battle_attack(i as u8, 40);
         w.battle.speed[i] = party_spd;
     }
     let mut catalog = MonsterCatalog::new();

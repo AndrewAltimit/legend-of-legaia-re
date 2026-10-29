@@ -156,7 +156,7 @@
     </tbody>
   </table>
   </div>
-  <p>Cue tables: <code>legaia_art::arts_voice</code>. The CD contract shows up as two timing behaviours a port has to keep: the shout trails the animation by roughly 150 ms, and back-to-back requests queue rather than cut each other off.</p>
+  <p>Cue tables: <code>legaia_art::arts_voice</code>. The CD contract shows up as two timing behaviours a port has to keep: the shout trails its clip install by roughly 150 ms, and a new request while a clip is sounding replaces it - there is one drive, and the shout site does not wait for it to be free.</p>
 </section>
 
 <section class="doc-section" id="xa">
@@ -251,9 +251,44 @@ pitch = PITCH[(n % 12) * 16 + fine]  shifted by  (n / 12 - 5)</code></pre>
   <ul class="bullets">
     <li><strong>Two id ranges, two banks.</strong> A ring id below <code>0x200</code> goes through the static table and the bank its category names. An id at or above <code>0x200</code> indexes the scene's own descriptor record and the side-band bank that record names - slot 3 in a town.</li>
     <li><strong>The field bank is only there in the field.</strong> Most static field cues are category 6, the field bank, which shares its SPU region with the battle bank in slot 2. A category-6 cue therefore keys in the field and is silent in battle, where retail's slot 6 is closed. The port refills that region per mode the same way.</li>
-    <li><strong>Placed sounds follow the camera.</strong> A town's river or waterwheel is not a ring cue but a placed emitter part with a box around it: each tick its volume is written straight to its voices, scaled by how deep inside the box the camera focus sits, and it is released when the focus leaves. The port runs the same arm on the same parts; every sounding cue voice in the save-state library, emitters included, matches register for register.</li>
+    <li><strong>Placed sounds follow the camera.</strong> A town's river or waterwheel is not a ring cue but a placed emitter part with a box around it: each tick its volume is written straight to its voices, scaled by how deep inside the box the camera focus sits, and it is released when the focus leaves, or when the part's script halts and the actor walk frees it - which is how a scripted loop such as Octam's collapse rumble ends. Every field scene load also silences the cue voices, so a loop cannot follow the player through a door. The port runs the same arm on the same parts; every sounding cue voice in the save-state library, emitters included, matches register for register.</li>
     <li><strong>Every scripted id on the disc resolves</strong> to a row of its own scene's bank, bar one that points one row past its table and keys nothing in retail either.</li>
   </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The life of a positional sound emitter. A stager record with model_sel 0x4001 seats a part whose type is 5, and move-VM op 0x34 sets its cue, first voice, levels and box. While the camera focus is outside the box the part is silent. The first tick inside the box keys the cue's voices; every later tick writes the volume straight to the voices, scaled by how deep inside the box the focus sits. Three things release the voices: the focus leaving the box or the side-band request going unsettled, which the arm itself releases; the part's script halting, after which the actor walk frees the part one walk later and the free releases the cue; and a field scene init, which zeroes and keys off voices 0x10 to 0x17 unless op 0x35 sub-op 6 or the warp-entry word asked to keep them.">
+      <defs><marker id="sfx-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="16" y="30" width="170" height="64" rx="5"/>
+      <text class="dg-label" x="101" y="56">Seated part</text><text class="dg-sub" x="101" y="74">stager 0x4001, op 0x34</text>
+      <rect class="dg-node" x="226" y="30" width="170" height="64" rx="5"/>
+      <text class="dg-label" x="311" y="56">Silent</text><text class="dg-sub" x="311" y="74">focus outside the box</text>
+      <rect class="dg-node-accent" x="496" y="30" width="200" height="64" rx="5"/>
+      <text class="dg-label" x="596" y="56">Sounding</text><text class="dg-sub" x="596" y="74">volume = depth in box</text>
+      <path class="dg-edge" d="M186 62 L224 62" marker-end="url(#sfx-arrow)"/>
+      <path class="dg-edge" d="M396 52 L494 52" marker-end="url(#sfx-arrow)"/>
+      <text class="dg-edge-label" x="445" y="44">key on</text>
+      <path class="dg-edge-dim" d="M494 74 L398 74" marker-end="url(#sfx-arrow)"/>
+      <text class="dg-edge-label" x="445" y="90">release</text>
+      <rect class="dg-group" x="16" y="130" width="848" height="156" rx="6"/>
+      <text class="dg-sub dg-start" x="30" y="150">what keys the voices off</text>
+      <rect class="dg-node-warn" x="30" y="164" width="260" height="104" rx="5"/>
+      <text class="dg-label" x="160" y="190">The arm</text>
+      <text class="dg-sub" x="160" y="212">focus leaves the box, or the</text>
+      <text class="dg-sub" x="160" y="230">side-band request goes unsettled</text>
+      <text class="dg-sub" x="160" y="252">FUN_800250D4</text>
+      <rect class="dg-node-warn" x="310" y="164" width="260" height="104" rx="5"/>
+      <text class="dg-label" x="440" y="190">The part is freed</text>
+      <text class="dg-sub" x="440" y="212">its script halts; the actor walk</text>
+      <text class="dg-sub" x="440" y="230">frees it one walk later</text>
+      <text class="dg-sub" x="440" y="252">FUN_8002519C &#8594; FUN_800250D4</text>
+      <rect class="dg-node-warn" x="590" y="164" width="260" height="104" rx="5"/>
+      <text class="dg-label" x="720" y="190">The next field init</text>
+      <text class="dg-sub" x="720" y="212">voices 0x10..0x17 zeroed, keyed off</text>
+      <text class="dg-sub" x="720" y="230">unless op 0x35 sub-op 6 kept them</text>
+      <text class="dg-sub" x="720" y="252">FUN_801D6704</text>
+      <path class="dg-edge-dim" d="M596 94 L596 128" marker-end="url(#sfx-arrow)"/>
+    </svg>
+    <figcaption>The arm has no halt case: a part whose script halts stops ticking with its voices still keyed, and only the free releases them. That is how Octam&rsquo;s collapse rumble ends with its beat; the field init is why an emitter still looping at a door does not follow the player into the next scene.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="state-sweep">

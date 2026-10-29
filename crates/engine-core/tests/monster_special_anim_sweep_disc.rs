@@ -271,8 +271,8 @@ fn setup(
         w.actors[i].battle.hp = 9999;
         w.actors[i].battle.max_hp = 9999;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 1);
-        w.set_battle_defense(i as u8, 20);
+        w.battle.set_battle_attack(i as u8, 1);
+        w.battle.set_battle_defense(i as u8, 20);
     }
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(1, vec![FormationSlot::new(id)]));

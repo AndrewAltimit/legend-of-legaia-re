@@ -65,7 +65,7 @@ mod inflight_seeds;
 mod popup_cells;
 mod spirit_gauge;
 pub use inflight_seeds::UndriftActing;
-mod ram_read;
+pub(crate) mod ram_read;
 mod scoring;
 mod seed_plan;
 mod summon_fade;
@@ -439,6 +439,10 @@ pub struct RetailBattle {
     /// Whether every tweened component of retail's camera reads its
     /// endpoint ([`camera_landed`]).
     pub cam_landed: bool,
+    /// A round-prompt capture whose far framing (case 9) was still walking:
+    /// the display frames of its arm the displayed frame had left
+    /// ([`displayed_menu_glide_left`]).
+    pub menu_glide_left: Option<f32>,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
@@ -583,10 +587,11 @@ pub struct RetailBattle {
     /// behind the RAM's cursor (`framing_body`). `None` outside the band.
     pub summon_focus: Option<[i16; 2]>,
     /// The idle-loop cursor each engine battle slot takes at an in-flight
-    /// cast's dispatch ([`legaia_engine_core::world::InflightCastSeed::idle`]):
+    /// cast's dispatch ([`legaia_engine_battle_loop::battle_state::InflightCastSeed::idle`]):
     /// empty on the RAM read, filled from a first replay's measured advance
     /// ([`Self::with_inflight_idle`]).
-    pub inflight_idle: [Option<i32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    pub inflight_idle:
+        [Option<i32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
     /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
     /// the attack band's facing recompute stores it every frame of a
     /// swing and nothing turns the actor back, so a member stands facing

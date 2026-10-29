@@ -60,7 +60,7 @@ pub enum BattleDrive {
     /// capture's own seat Spirit when that is what it had committed) until
     /// the action SM holds `state` on `seat`. A monster seat that was
     /// casting (`category == 2`) casts the capture's spell `queued` on its
-    /// next turn ([`legaia_engine_core::world::BattleState::forced_monster_cast`]);
+    /// next turn ([`legaia_engine_battle_loop::battle_state::BattleState::forced_monster_cast`]);
     /// the party commits Spirit throughout, so the caster is still standing
     /// when that turn comes (Zeto's captures sit in a party able to kill him
     /// in two swings).
@@ -369,6 +369,26 @@ pub(crate) fn capture_ramp_left(world: &legaia_engine_core::world::World, height
 /// whenever the engine plays retail's clip - the gates read it with `>=` -
 /// and it keeps placing a phase whose engine clip loops where retail's did
 /// not (a parked Gaza on idle against the engine's Gaza still walking).
+/// The active actor's close-up accumulator, retail's `ctx[+0x87C]`
+/// ([`BattleCamera::close_up_accum`](legaia_engine_battle_vm::battle_cam_script::BattleCamera::close_up_accum)),
+/// zeroed by every clip commit of the acting seat, a same-id one included
+/// (`FUN_8004AD80`, `0x8004BF74`). An [`SpanGate::Age`] action phase waits on
+/// it: the capture's own word is this one, and a commit the engine counts
+/// as a re-commit still restarts it. The Spirit band stages its clip at
+/// `0x46` (`+0x1DA = +0x1E7`); when that id is the one already committed,
+/// the commit installs nothing new, so the clip age ran on from before the
+/// action while retail's accumulator restarted (`delilas_gi_spirit_*`:
+/// the gate met 22 to 42 ticks early). The capture band keeps the clip age
+/// ([`capture_accum_done`]): a monster's capture-class cast commits nothing
+/// on its way into `0x6E`, so both words run from its idle loop there.
+pub fn active_close_up_accum(world: &legaia_engine_core::world::World) -> u32 {
+    world
+        .battle
+        .camera
+        .as_ref()
+        .map_or(u32::MAX, |c| c.close_up_accum())
+}
+
 pub fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
     world
         .battle
@@ -396,6 +416,39 @@ pub(crate) fn capture_accum_done(
 ) -> bool {
     let want = accum.saturating_sub(capture_ramp_left(world, height) / 2);
     active_clip_age(world) >= u32::from(want)
+}
+
+/// The yaw counter's rung at the seed pass (`li v0,0x800` /
+/// `sh v0,0x4(s7)` at `0x801E2CEC..0x801E2CF8`): every capture-band cast
+/// counts from it.
+const SEED_YAW_RUNG: i32 = 0x800;
+
+/// Whether a capture-band capture's accumulator `accum` (`ctx[+0x87C]`)
+/// started before the action's seed pass, so it cannot place the `0x6E`
+/// hold.
+///
+/// Only a clip commit zeroes the accumulator (`FUN_8004AD80`,
+/// `sw zero,0x87c` at `0x8004BF74`; the per-art latch at `0x801D7FF8` is an
+/// Attack-band arm), and a monster's capture-class cast commits none on its
+/// way into the band: the seed pass calls `FUN_801EFE44` and the framing,
+/// neither of which stages a clip, and the cast begin's capture route
+/// (`0x801E4480..0x801E44FC`) goes straight to `0x6E`. Its accumulator
+/// therefore counts from the caster's last idle commit or wrap, wherever
+/// that fell. The yaw counter does count from the seed: `0x800` there, then
+/// at least one unit a display frame (`max(1, 4 * step / 3)` a pass of
+/// `step` frames, `0x801E29E4`), while the accumulator gains exactly `8` a
+/// frame (`8 * step` a framing call, `0x801D5900..0x801D5920`). An
+/// accumulator that has run more frames than the counter has units since
+/// the seed therefore began before it, and says where the caster's idle
+/// loop stood rather than how long the band has run
+/// (`battle_korb2_mage_void_accessories_mid_cast`: accumulator `384`, `48`
+/// frames, against a counter `0x820`, `32` units past the seed). The
+/// counter alone places such a capture.
+pub(crate) fn accum_predates_seed(accum: u16, yaw: Option<u16>) -> bool {
+    yaw.is_some_and(|y| {
+        let run = i32::from(y) - SEED_YAW_RUNG;
+        run >= 0 && i32::from(accum) / 8 > run
+    })
 }
 
 /// The engine's yaw counter `counter` with its drift since the last outright
@@ -994,7 +1047,7 @@ impl BattleDrive {
                 // A sparring capture past the intro timer also holds the
                 // side-band's caption, which the engine raises on the round
                 // start the open was holding back
-                // (`World::sparring_open_held`).
+                // (`BattleState::sparring_open_held`).
                 let ok = (!swept
                     || world.battle.intro_names_frames == 0
                         && !world.battle.sparring_round_pending)
@@ -1102,7 +1155,7 @@ impl BattleDrive {
                             (if steer.walk_clock {
                                 walk_clock_due(world, steer.yaw)
                             } else {
-                                active_clip_age(world) >= u32::from(accum)
+                                active_close_up_accum(world) >= u32::from(accum)
                             }) && steer.clip.is_none_or(|k| {
                                 world.battle_current_anim(usize::from(engine_seat(seat, pc))) == k
                             }) && steer.cursor.is_none_or(|u| {
@@ -1167,7 +1220,7 @@ impl BattleDrive {
         // a phase costs the ticks it always did. Once the phase is reached
         // its own glide is the capture's to seat, and runs untouched.
         if !self.reached(world) {
-            world.release_command_pad_hold();
+            world.battle.release_command_pad_hold();
         }
         let Self::Action {
             seat,
@@ -1347,6 +1400,9 @@ impl BattleDrive {
                 world.stretch_battle_frame((step + off / per_vsync) as u8);
             }
         }
+        // Whether retail's accumulator was already running before the seed
+        // pass, read before the band adjustment below.
+        let accum_stale = accum_predates_seed(accum, yaw);
         // A `0x70` capture read its yaw counter some ticks into the band:
         // the `0x6E` hold stands that far short of it.
         let yaw = match arm {
@@ -1361,7 +1417,8 @@ impl BattleDrive {
         };
         world.audio.sound_bank_ready = !(ours
             && state == 0x6E
-            && !(capture_accum_done(world, height, accum) && capture_yaw_done(world, height, yaw)));
+            && !((accum_stale || capture_accum_done(world, height, accum))
+                && capture_yaw_done(world, height, yaw)));
         // `0x6F` ramps the depth before it polls (`0x801E4FFC..0x801E5014`,
         // then `FUN_8003F2B8(1)`), so the pass that leaves the state has
         // ramped too: retail's depth on entering `0x70` is the exit pass's.

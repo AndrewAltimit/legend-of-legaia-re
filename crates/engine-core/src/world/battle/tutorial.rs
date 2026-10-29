@@ -14,7 +14,7 @@
 //!    loop - the port of retail's `ctx[+0x6B2]` guard, which makes
 //!    `FUN_801D0748` return before it looks at the flow state at all.
 //! 2. Otherwise the command flow runs, and each time it *changes* the flow
-//!    state [`World::set_battle_flow`] clears the one-shot latch and dispatches
+//!    state [`BattleState::set_battle_flow`] clears the one-shot latch and dispatches
 //!    the hook, queueing whatever boxes the `(state, lesson)` cross-product
 //!    yields.
 //! 3. A hook that takes the rewind exit reopens the command menu instead of
@@ -22,25 +22,9 @@
 
 use super::*;
 
-use legaia_engine_battle::battle_tutorial::{BattleTutorial, BattleTutorialScript, TutorialLesson};
-use legaia_engine_battle_menus::battle_flow::{
-    ActiveTutorialBox, BattleFlowState, TUTORIAL_BOX_AUTO_FRAMES,
-};
+use legaia_engine_battle_menus::battle_flow::ActiveTutorialBox;
 
 impl World {
-    /// Install the disc-read prompt corpus. Text only - this does **not** arm
-    /// anything, because in retail nothing about having the strings decides
-    /// whether the tutorial runs.
-    ///
-    /// Hosts call this once the PROT index is open (the engine does it at
-    /// scene entry via `SceneHost::ensure_battle_tutorial_script`), and the
-    /// arming then comes from the disc's own condition - see
-    /// [`Self::take_battle_tutorial_arm`]. A world with no script still arms
-    /// normally; it just resolves no box text and so shows nothing.
-    pub fn set_battle_tutorial_script(&mut self, script: BattleTutorialScript) {
-        self.battle.tutorial_script = script;
-    }
-
     /// Retail's own sparring-tutorial condition, consumed at battle entry.
     ///
     /// Tests [`legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG`] in the system-flag
@@ -76,86 +60,10 @@ impl World {
 
     /// Whether the next [`World::enter_battle`] is the sparring tutorial: the
     /// disc's one-shot arm flag is up (not consumed - the entry consumes it)
-    /// or a host forced it with [`Self::prime_battle_tutorial`].
+    /// or a host forced it with [`BattleState::prime_battle_tutorial`].
     pub fn sparring_fight_pending(&self) -> bool {
         self.battle.tutorial_pending
             || self.system_flag_test(legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG)
-    }
-
-    /// Force the sparring tutorial onto the next [`World::enter_battle`],
-    /// regardless of the disc condition, and install `script`.
-    ///
-    /// This is a **debug affordance**, not the port of anything: it exists so
-    /// a host can reach the prompt machine in one run without playing to the
-    /// Tetsu spar. The faithful path is [`Self::take_battle_tutorial_arm`],
-    /// which needs nothing from the host.
-    pub fn prime_battle_tutorial(&mut self, script: BattleTutorialScript) {
-        self.battle.tutorial_script = script;
-        self.battle.tutorial_pending = true;
-    }
-
-    /// Arm the sparring tutorial right now, using the already-primed script.
-    /// Called by [`World::enter_battle`] when a tutorial battle was primed;
-    /// hosts and tests can call it directly.
-    pub fn arm_battle_tutorial(&mut self) {
-        self.battle.tutorial = Some(BattleTutorial::new());
-        self.battle.stage_id = legaia_engine_battle::battle_tutorial::TUTORIAL_STAGE_ID;
-        self.battle.tutorial_pending = false;
-        self.battle.tutorial_boxes.clear();
-        self.battle.tutorial_standing = None;
-        self.battle.flow = BattleFlowState::Idle;
-    }
-
-    /// `true` while a tutorial box is on screen. The battle loop parks on this
-    /// (retail `ctx[+0x6B2]`).
-    pub fn battle_tutorial_box_up(&self) -> bool {
-        !self.battle.tutorial_boxes.is_empty()
-    }
-
-    /// The box currently on screen, if any: the queue's head, or with the
-    /// queue empty the standing prompt
-    /// ([`crate::world::BattleState::tutorial_standing`]). Hosts park the
-    /// HUD surfaces a box covers on it.
-    pub fn battle_tutorial_box(&self) -> Option<&ActiveTutorialBox> {
-        self.battle
-            .tutorial_boxes
-            .front()
-            .or(self.battle.tutorial_standing.as_ref())
-    }
-
-    /// Every box on screen this frame: the **front group** of the queue.
-    ///
-    /// One retail hook dispatch registers all of its boxes at once - the
-    /// lesson intro at the top and its explainer at the bottom share the
-    /// frame at `Begin | Run` - and each is its own text actor, so a host
-    /// draws the whole group, not the queue's head. A later dispatch's boxes
-    /// wait behind the group until it has been dismissed.
-    ///
-    /// The standing prompt draws under them: it is the key-`1` actor, and a
-    /// queued self-dismissing box is the registration that replaces it, so
-    /// it is yielded only while the front group brings none of its own.
-    pub fn battle_tutorial_boxes_on_screen(&self) -> impl Iterator<Item = &ActiveTutorialBox> + '_ {
-        let group = self.battle.tutorial_boxes.front().map(|b| b.group);
-        let front = move |b: &&ActiveTutorialBox| Some(b.group) == group;
-        let replaced = self
-            .battle
-            .tutorial_boxes
-            .iter()
-            .take_while(front)
-            .any(|b| b.stands);
-        self.battle
-            .tutorial_standing
-            .iter()
-            .filter(move |_| !replaced)
-            .chain(self.battle.tutorial_boxes.iter().take_while(front))
-    }
-
-    /// The next free dispatch group id for the box queue.
-    pub(in crate::world) fn next_battle_tutorial_group(&self) -> u32 {
-        self.battle
-            .tutorial_boxes
-            .back()
-            .map_or(0, |b| b.group.wrapping_add(1))
     }
 
     /// Replay the one-shot system-flag arm the record that enters formation
@@ -231,16 +139,11 @@ impl World {
         }
     }
 
-    /// The lesson the sparring fight is currently teaching, when armed.
-    pub fn battle_tutorial_lesson(&self) -> Option<TutorialLesson> {
-        self.battle.tutorial.as_ref().map(BattleTutorial::lesson)
-    }
-
     /// Age the box queue one frame. Returns `true` when a box is (still) up and
     /// the battle loop must park.
     ///
     /// The whole front group ages together (one dispatch's boxes are on
-    /// screen at once - [`Self::battle_tutorial_boxes_on_screen`]). Inside
+    /// screen at once - [`BattleState::battle_tutorial_boxes_on_screen`]). Inside
     /// it, a waiting box (styles `2..=7`) dismisses on Cross; a non-waiting
     /// box (`0`, `1`, `8`, `9`) counts itself down, and Cross skips it early
     /// so the player is never made to sit through a burst of them. The
@@ -312,135 +215,5 @@ impl World {
             }
         }
         true
-    }
-
-    /// Move the command flow to `next`, dispatching the tutorial hook on a
-    /// change. Returns `true` when the hook took the rewind exit, i.e. the
-    /// caller must bounce the player back to the command menu instead of
-    /// letting the action through.
-    ///
-    /// The latch clear on entry is retail `0x801F71E8`; the dispatch is
-    /// `FUN_801F6B70`.
-    pub(in crate::world) fn set_battle_flow(&mut self, next: BattleFlowState) -> bool {
-        if self.battle.flow == next {
-            return false;
-        }
-        self.battle.flow = next;
-        let Some(tut) = self.battle.tutorial.as_mut() else {
-            return false;
-        };
-        // Entering a state re-arms the one-shot latch (retail 0x801F71E8), so
-        // this state's hook gets exactly one dispatch.
-        tut.enter_flow_state();
-        // Note there is deliberately no `box_up` suppression here. Retail needs
-        // one because `FUN_801D0748` keeps being called while a box is on
-        // screen; the engine parks the whole battle tick instead
-        // (`live_battle_tick`), so the only calls that reach this with a box
-        // queued are the synchronous walks through consecutive states a single
-        // resolution passes through - which must queue their boxes in order,
-        // not drop the later ones.
-        self.dispatch_battle_tutorial(next)
-    }
-
-    /// The completion tail on a frame with no flow edge (the side-band's
-    /// per-frame hook call): queue the sign-off box it emits.
-    pub(in crate::world) fn run_sparring_completion_tail(&mut self) {
-        let Some(mut tut) = self.battle.tutorial.take() else {
-            return;
-        };
-        let mut tick = legaia_engine_battle::battle_tutorial::TutorialTick::default();
-        tut.completion_tail(&mut tick);
-        self.battle.tutorial = Some(tut);
-        self.queue_tutorial_boxes(&tick.emission);
-    }
-
-    /// Queue one dispatch's boxes as one on-screen group.
-    fn queue_tutorial_boxes(
-        &mut self,
-        emission: &legaia_engine_battle::battle_tutorial::TutorialEmission,
-    ) {
-        let group = self.next_battle_tutorial_group();
-        for b in &emission.boxes {
-            let Some(text) = self.battle.tutorial_script.text(b.message) else {
-                // No disc text for this VA - skip it rather than showing a
-                // placeholder. A host booted without a disc shows no boxes.
-                continue;
-            };
-            let waits_for_input = b.placement().is_some_and(|p| p.waits_for_input);
-            self.battle.tutorial_boxes.push_back(ActiveTutorialBox {
-                stands: !waits_for_input,
-                text: text.to_string(),
-                style: b.style,
-                waits_for_input,
-                frames_remaining: TUTORIAL_BOX_AUTO_FRAMES,
-                group,
-                any_press_dismisses: false,
-                placed: None,
-            });
-        }
-    }
-
-    /// Run one hook dispatch for `state` and queue the resulting boxes.
-    fn dispatch_battle_tutorial(&mut self, state: BattleFlowState) -> bool {
-        let Some(mut tut) = self.battle.tutorial.take() else {
-            return false;
-        };
-        let tick = tut.tick(state.raw());
-        let rewind = tick.emission.rewind;
-        // One dispatch = one group: its boxes share the frame.
-        self.queue_tutorial_boxes(&tick.emission);
-        // The completion tail (`tick.battle_over`) wrote ctx[0x06] = 0xC8 /
-        // ctx[0x07] = 0xFF and armed the `ctx[+0x6B4]` countdown. The machine
-        // stays armed: its per-frame countdown (the side-band's phase-2 hook,
-        // `World::tick_battle_sideband`) is what ends the fight, and the
-        // closed command flow never raises another hook state.
-        self.battle.tutorial = Some(tut);
-        rewind
-    }
-
-    /// Recompute the flow state from `phase` plus the live submenus, and
-    /// dispatch the hook on a change. `phase` is passed in rather than read off
-    /// [`crate::world::BattleState::command`] because the command flow drives its session
-    /// detached from the World for the frame.
-    pub(in crate::world) fn sync_battle_flow(
-        &mut self,
-        phase: Option<&legaia_engine_battle_menus::battle_input::CommandPhase>,
-    ) -> bool {
-        use legaia_engine_battle_menus::battle_flow::{BattleMenuKind, flow_state_for};
-
-        let menu = if self.battle.item_menu.is_some() {
-            BattleMenuKind::Item
-        } else if self.battle.spell_menu.is_some() {
-            BattleMenuKind::Magic
-        } else if self.battle.arts_menu.is_some() || self.battle.arts_input.is_some() {
-            BattleMenuKind::Arts
-        } else {
-            BattleMenuKind::None
-        };
-        let next = flow_state_for(phase, menu);
-        self.set_battle_flow(next)
-    }
-
-    /// Run the commit hook (flow state `110`) for a resolution that commits
-    /// `category` (the retail `actor[+0x1DE]` byte). Returns `true` when the
-    /// tutorial rejected it, so the caller must reopen the command menu.
-    ///
-    /// On acceptance the lesson is marked due to advance; the bump lands at the
-    /// next turn start so this validator kept the lesson it validated against.
-    pub(in crate::world) fn battle_tutorial_commit(&mut self, category: u8) -> bool {
-        if self.battle.tutorial.is_none() {
-            return false;
-        }
-        if let Some(tut) = self.battle.tutorial.as_mut() {
-            tut.inputs.action_category = category;
-        }
-        let rewind = self.set_battle_flow(BattleFlowState::CommitBegin);
-        if !rewind && let Some(tut) = self.battle.tutorial.as_mut() {
-            let expected = tut.lesson().expected_action_category();
-            if expected == Some(category) {
-                tut.pending_advance = true;
-            }
-        }
-        rewind
     }
 }

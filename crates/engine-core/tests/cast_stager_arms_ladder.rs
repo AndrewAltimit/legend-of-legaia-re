@@ -36,7 +36,9 @@ use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_mon
 use legaia_engine_battle::spells::{
     SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget,
 };
-use legaia_engine_core::world::{Actor, INFLIGHT_GROUND_SLOTS, InflightCastSeed, World};
+use legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS;
+use legaia_engine_battle_loop::battle_state::InflightCastSeed;
+use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
 use legaia_overlay_images::cast_effect_pool::{
@@ -142,7 +144,7 @@ fn build_world(disc: &Disc, ids: &[u8]) -> World {
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.install_menu_text(&disc.scus);

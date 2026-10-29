@@ -16,6 +16,23 @@ use legaia_engine_mode::mode::SceneMode;
 /// BGM slot).
 pub const BGM_SUB_OP_ENGINE_STOP: u8 = 0xFF;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises for a sub-op `1` / `9`
+/// start the swap poller latches without loading: sound-flag bit 2 is up
+/// (op-`0x35` sub-op `6`, "music not change"), so `FUN_800243F0` copies the
+/// requested index onto the loaded-index barrier (`0x80024518..0x8002456C`:
+/// `_DAT_8007BA9C = _DAT_8007BAB8`) and never reaches its load. The track
+/// word takes the id; the slot keeps sounding what it held. Like
+/// [`BGM_SUB_OP_ENGINE_STOP`], not a retail op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_LATCH: u8 = 0xFE;
+
+/// The `FieldEvent::Bgm` sub-op the **engine** raises for the field init's
+/// close of the field-BGM source: with sound-flag bit 2 clear,
+/// `FUN_801D6704` detaches and closes `0x8007052C` (`0x801D7154..0x801D7170`)
+/// when that source is open (`_DAT_80070534`, tested with bit 2 at
+/// `0x801D6A84`). The ending theme sounds from source 10 (`0x800705BC`), not
+/// that one, so the close leaves it alone. Not a retail op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_FIELD_CLOSE: u8 = 0xFD;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 pub struct AudioState {
     /// "Sound bank ready" gate.
@@ -23,7 +40,7 @@ pub struct AudioState {
     /// Per-strike battle sound cues surfaced this frame for the host to play
     /// through its SFX bank (the art-record `HitCue` sound cues that
     /// [`crate::world::World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome -
-    /// previously dropped). Cosmetic, like [`crate::world::BattleState::hit_fx`]: no gameplay
+    /// previously dropped). Cosmetic, like [`legaia_engine_battle_loop::battle_state::BattleState::hit_fx`]: no gameplay
     /// state depends on them. Drained via [`crate::world::World::drain_battle_sfx_cues`];
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,
@@ -172,6 +189,20 @@ pub struct AudioState {
     /// after the pause (the browser page's gesture-gated one) can bring the
     /// track up paused rather than sounding ([`Self::bgm_script_paused`]).
     pub(crate) bgm_script_paused: bool,
+    /// Bit 2 of the sound flags `_DAT_8007B750`: keep the audio across the
+    /// next field init. Op-`0x35` sub-op `6` raises it (`0x801E01D8`); the
+    /// field init `FUN_801D6704` tests it before its key-off of voices
+    /// `0x10..0x17` (`0x801D6B88`) and clears it (`0x801D7348`).
+    pub(crate) keep_audio_across_field_init: bool,
+    /// The field init's script-install slice is open with bit 2 still up.
+    /// `FUN_801D6704` runs the MAN install `FUN_8003AEB0`, whose
+    /// `FUN_8003AB2C` runs the scene script's first frame slice, then drives
+    /// the swap poller to completion (`0x801D72D4..0x801D7320`) and only then
+    /// clears bit 2 (`0x801D7348`). So the entry script's head start is
+    /// latched, not loaded, when the door raised bit 2. Raised by
+    /// [`crate::world::World::release_field_init_voices`] when it consumes
+    /// bit 2; ended by the first system-script slice after the entry.
+    pub(crate) bgm_entry_latch: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
@@ -292,6 +323,8 @@ impl AudioState {
             pending_sound_release: false,
             start_pending_commit: false,
             bgm_script_paused: false,
+            keep_audio_across_field_init: false,
+            bgm_entry_latch: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
             field_duck_pct: None,

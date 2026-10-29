@@ -236,7 +236,7 @@ fn seed_party_battle_stats_skips_zeroed_roster() {
     // A synthetic battle sets battle_attack directly then loads a zeroed
     // roster; seeding must not clobber the manual value.
     let mut world = World::new();
-    world.set_battle_attack(0, 60);
+    world.battle.set_battle_attack(0, 60);
     world.load_party(legaia_save::Party::zeroed(3));
     world.seed_party_battle_stats();
     assert_eq!(world.battle.attack[0], 60, "zeroed roster leaves it intact");
@@ -276,7 +276,7 @@ fn seed_party_battle_stats_scales_ap_base_with_level() {
     );
 
     // The round-start reset picks up the seeded base as the per-turn budget.
-    world.reset_party_ap();
+    world.battle.reset_party_ap();
     assert_eq!(world.battle.ap_gauges[1].current_ap, 6);
     assert_eq!(world.battle.ap_gauges[2].current_ap, 10);
 }
@@ -422,7 +422,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.max_hp = 400;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 80);
+    world.battle.set_battle_attack(0, 80);
     // town01's Tetsu row: formation index 4 = lone monster id 0x4F.
     world.tables.formation_table.insert(FormationDef::new(
         RIM_ELM_TRAINING_FORMATION_ID,

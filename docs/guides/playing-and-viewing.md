@@ -3,8 +3,9 @@
 `legaia-engine` is the port: point it at your disc and you are playing Legend
 of Legaia - title screen, New Game or a save, towns, the world map, battles,
 menus, minigames, cutscenes. `asset-viewer` is its museum-mode sibling for
-browsing individual assets. Both ship in the release archive; commands use the
-bare `./tool` form (source builds live at `target/release/`).
+browsing individual assets. Both ship in the release archive's
+`command-line-tools` folder; commands use the bare `./tool` form, run from a
+terminal in that folder (source builds live at `target/release/`).
 
 There are two ways to play, and they run the same engine:
 
@@ -24,8 +25,8 @@ On this page:
   [script disassembly](#9-read-the-games-scripts),
   [the browser build](#10-run-the-browser-version-locally).
 
-Every subcommand accepts the disc directly via `--disc` - no extraction step
-required to play. Without `--disc`, tools read an `extracted/` tree
+Every subcommand that reads game data accepts the disc directly via `--disc` -
+no extraction step required to play. Without `--disc`, tools read an `extracted/` tree
 (`--extracted-root`, default `extracted`, resolved against the current
 directory) produced by `legaia-extract`
 ([getting-started.md](getting-started.md)).
@@ -36,8 +37,9 @@ The project site's [desktop apps guide](https://andrewaltimit.github.io/legend-o
 first start past SmartScreen or Gatekeeper, the controls and the toggles with
 screenshots; this page is the full reference.
 
-Started with **no subcommand** - a double-click, a desktop shortcut, the macOS
-app - `legaia-engine` opens its launcher instead of printing help:
+Started with **no subcommand** - the archive's `Legend of Legaia` program
+(`.exe` on Windows, `.app` on macOS), a desktop shortcut, a double-click -
+`legaia-engine` opens its launcher instead of printing help:
 
 ```bash
 ./legaia-engine
@@ -144,6 +146,17 @@ A row moved off its first-start value carries a small gold dot before its
 value, and the help box under the buttons names the default (*Default: Off
 (Delete)*), so a changed setting is visible without opening a file.
 
+A value is drawn green when the original game does not have it (an
+enhancement, a fix or a tweak in effect) and dim when it is the original's,
+whatever the value's words: *PlayStation pixel look: Off* reads green,
+because the original's picture is the PlayStation's own, and *Smarter
+monsters: Off* reads dim. The help box names the original's value under a
+row that departs from it (*Not as in the original game (Off).*), and a
+changed row's default note carries it too (*Default: On (Delete). Original:
+Off.*). The window,
+time-of-day and volume rows have no original counterpart and keep their plain
+colours; the original values are the ones *Original game only* plays with.
+
 The rows stored in `legaia-options.toml` are the game's own options: the
 launcher writes the same file the in-game keys change, so a toggle made in
 either place is the one the other shows. The `launcher.toml` rows are launch
@@ -180,8 +193,8 @@ the pad. Run from a terminal, the game's output still prints there too.
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
 
-On Windows, double-click `Legend of Legaia.exe`: it starts `legaia-engine.exe`
-with no console window. `legaia-engine.exe` is a console program so its
+On Windows, double-click `Legend of Legaia.exe`: it starts
+`command-line-tools\legaia-engine.exe` with no console window. `legaia-engine.exe` is a console program so its
 subcommands behave normally in a terminal; double-clicked directly, it closes
 the console it was given (a brief flash) unless `LEGAIA_KEEP_CONSOLE` is set,
 and run from a command prompt it keeps printing its log there.
@@ -266,7 +279,10 @@ around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state
 (`F11` fullscreen among them), under it the key each pad button is on (Cross,
 Circle, Start, ...), read from the live Key Config table, and the mouse's
-camera controls; press it again to close it. A player's window says so for its first few
+camera controls; press it again to close it. A state the original game does
+not have is drawn green (*Enhanced lighting: on*), the same marking and the
+same original values as the launcher's option list; a toggle's notice line
+stays hidden while the panel is up. A player's window says so for its first few
 seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
 `--screenshot` capture leaves that line, the toggle notices and the quit
 prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
@@ -604,7 +620,7 @@ The scene name is a positional argument here, not a `--scene` flag (`field`,
 `world` and `dialog` all take their subject that way). Started with no view
 named (a double-click), `asset-viewer` opens the archive browser on the
 `extracted/PROT.DAT` in the current folder or beside the program; with none
-there it says how to make one and points at `legaia-studio`. The browser takes
+there it says how to make one and points at `legaia-explorer`. The browser takes
 entry names from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` names
 another.
 

@@ -160,7 +160,9 @@ pub fn bgm_bank_id(bgm_id: u16) -> u16 {
     }
 }
 
-use legaia_engine_core::world::BGM_SUB_OP_ENGINE_STOP;
+use legaia_engine_core::world::{
+    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
+};
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
 /// audio yet.
@@ -222,7 +224,7 @@ pub struct SceneHost {
     cast_effect_pool_loaded: bool,
     /// The fight in progress's party battle forms, built and installed on
     /// the actors by [`SceneHost::ensure_battle_party_forms`] once per
-    /// [`legaia_engine_core::world::BattleState::entry_serial`]; kept for the renderers
+    /// `legaia_engine_battle_loop::battle_state::BattleState::entry_serial`; kept for the renderers
     /// until the battle ends. `None` outside battle.
     battle_party_forms: Option<legaia_engine_battle::battle_party_form::BattlePartyForms>,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
@@ -330,6 +332,19 @@ pub struct SceneHost {
     /// one only on the sub-op `0xA` release-ack or once the MAN loader ends
     /// the window ([`SceneHost::route_bgm_events`]).
     pub(crate) pending_bgm_swap: Option<(u16, std::sync::Arc<Vec<u8>>)>,
+    /// A start the swap poller latched without loading
+    /// ([`legaia_engine_core::world::BGM_SUB_OP_ENGINE_LATCH`]): retail's
+    /// loaded-index barrier `_DAT_8007BA9C` names this id while the slot
+    /// still sounds the track it held. A later start of the same id is no
+    /// change (`0x80024584`: requested equals loaded); any other id tears
+    /// the slot down and loads afresh. `None` once a real load or a stop
+    /// replaces the occupant.
+    pub(crate) bgm_latched: Option<u16>,
+    /// The director's occupant is the ending theme
+    /// ([`legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID`]),
+    /// which retail installs on sound source 10 (`0x800705BC`), not the
+    /// field-BGM source a field init closes.
+    pub(crate) bgm_ending_source: bool,
 }
 
 mod audio_dialog;
@@ -352,7 +367,7 @@ pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,
 };
-pub use scene_entry::{FmvHandoffOutcome, PickerSeat};
+pub use scene_entry::{DoorTaken, FmvHandoffOutcome, PickerSeat};
 
 #[cfg(test)]
 mod tests;

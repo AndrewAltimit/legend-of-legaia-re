@@ -15,7 +15,7 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
     let caster = 3u8;
     world.battle_ctx.active_actor = caster;
     world.actors[caster as usize].battle_monster_id = Some(180);
-    world.set_battle_attack(caster, 300);
+    world.battle.set_battle_attack(caster, 300);
     for i in 0..3 {
         world.actors[i].battle.hp = 5000;
         world.actors[i].battle.max_hp = 5000;
@@ -32,7 +32,7 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
         });
     }
     assert_eq!(world.cast_module_for(0xAD), Some(966));
-    world.casting.pending_cast = Some(crate::world::PendingCast {
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
         caster,
         spell_id: 0xAD,
         targets: vec![0, 1, 2],
@@ -110,7 +110,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
             world.battle_ctx.active_actor = CASTER;
             world.actors[CASTER as usize].battle_monster_id = Some(180);
             world.actors[CASTER as usize].battle.active_target = 0;
-            world.set_battle_attack(CASTER, 300);
+            world.battle.set_battle_attack(CASTER, 300);
             for i in 0..8 {
                 world.actors[i].battle.hp = 9000;
                 world.actors[i].battle.max_hp = 9000;
@@ -128,7 +128,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
             }
             world.arm_capture_cast_module(id);
             world.casting.module_phase = start_arm;
-            world.casting.pending_cast = Some(crate::world::PendingCast {
+            world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
                 caster: CASTER,
                 spell_id: id,
                 targets: vec![0],

@@ -4143,7 +4143,7 @@ details.about-data > .about-body > h3:first-child { margin-top: 0.6rem; }
 :is(figure.diagram, figure.pipeline) .dg-label.dg-start,
 :is(figure.diagram, figure.pipeline) .dg-sub.dg-start { text-anchor: start; }
 
-/* figure.screenshot - a captured image of an app (Legaia Studio, the native
+/* figure.screenshot - a captured image of an app (Legaia Explorer, the native
    window) with a caption. The frame and caption take their colours from the
    site tokens; the image itself is a picture of the app and is not themed.
    .shot-pair lays two screenshots side by side and stacks them on a phone. */

@@ -449,6 +449,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (this.locCurveBias) gl.uniform1f(this.locCurveBias, this.overworldCurveBias || 0);
     /* Retail's per-primitive near reject (off unless the play page staged it). */
     if (this.locPrimNear) gl.uniform4fv(this.locPrimNear, this.primNear);
+    /* The GTE's register limits (off unless the play page staged them). */
+    if (this.locGteSat) gl.uniform4fv(this.locGteSat, this.gteSat);
     /* Prologue grade + depth cue (identity / off unless the play page
      * staged them this frame). */
     this._applyGradeCue();

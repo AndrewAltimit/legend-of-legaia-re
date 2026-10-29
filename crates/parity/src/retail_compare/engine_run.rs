@@ -104,7 +104,7 @@ pub fn run_engine_with(
     retail: &RetailObs,
     order: SeedOrder,
 ) -> Result<EngineObs> {
-    seed_and_settle(extracted, retail, order, None)
+    seed_and_settle(extracted, retail, order, None, None)
 }
 
 /// [`run_engine`] with the audio director attached (over a device-less
@@ -117,8 +117,95 @@ pub fn run_engine_listening(
     retail: &RetailObs,
 ) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
     let mut audio = crate::audio_sweep::EngineAudio::default();
-    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, Some(&mut audio))?;
+    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, None, Some(&mut audio))?;
     Ok((obs, audio))
+}
+
+/// [`run_engine_listening`] for a state reached through a door
+/// ([`legaia_ram_image::scenarios::ScenarioArrival`]): the card load lands
+/// in the door's scene instead, the door is taken
+/// ([`legaia_engine_scene_host::scene_host::SceneHost::take_door_to`]) and
+/// the session ticks until the captured scene is entered, so whatever the
+/// door does to the audio (sub-op 6 keeping the music it brought) is the
+/// engine's own door logic rather than seeded history. The settle window
+/// then runs as for any other seed.
+pub fn run_engine_listening_through_door(
+    extracted: &Path,
+    retail: &RetailObs,
+    door: &legaia_ram_image::scenarios::ScenarioArrival,
+) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
+    let mut audio = crate::audio_sweep::EngineAudio::default();
+    let obs = seed_and_settle(
+        extracted,
+        retail,
+        SeedOrder::Resume,
+        Some(door),
+        Some(&mut audio),
+    )?;
+    Ok((obs, audio))
+}
+
+/// Ticks a door replay may take to land in the captured scene: a walk-on
+/// door's fade and load, or a cutscene record run to its scene change.
+const DOOR_REPLAY_DEADLINE: u64 = 3_000;
+
+/// Land the card load in the door's scene, take the door into
+/// `retail.scene` and tick until the session holds it.
+fn seed_through_door(
+    session: &mut NativeSession,
+    save: legaia_save::SaveFile,
+    door: &legaia_ram_image::scenarios::ScenarioArrival,
+    retail: &RetailObs,
+    opts: &FieldLiveOpts,
+    director: &mut RecordingDirector,
+    mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
+) -> Result<()> {
+    use legaia_engine_system::input::PadButton;
+    let _landing = session.resume_save(save, &door.from, opts);
+    let here = session.host.scene.as_ref().map(|s| s.name.clone());
+    anyhow::ensure!(
+        here.as_deref() == Some(door.from.as_str()),
+        "door replay: the card load landed in {here:?}, not {}",
+        door.from
+    );
+    // The source scene's own entry runs first, as it did before the walk.
+    for _ in 0..SETTLE_TICKS {
+        session.tick()?;
+        session.field_vram_tick();
+        route_bgm(session, director)?;
+        if let Some(audio) = listen.as_deref_mut() {
+            crate::audio_sweep::listen_frame(session, audio);
+        }
+    }
+    let taken = session
+        .host
+        .take_door_to(&retail.scene, door.door.map(usize::from))?;
+    log::info!("door replay {} -> {}: {taken:?}", door.from, retail.scene);
+    for t in 0..DOOR_REPLAY_DEADLINE {
+        // A door record that talks waits on the pad: page it on.
+        let pad = if session.host.world.dialogue_owns_input() && t % 2 == 0 {
+            PadButton::Cross.mask()
+        } else {
+            0
+        };
+        session.host.world.input.set_pad(pad);
+        session.tick()?;
+        session.field_vram_tick();
+        route_bgm(session, director)?;
+        if let Some(audio) = listen.as_deref_mut() {
+            crate::audio_sweep::listen_frame(session, audio);
+        }
+        if session.host.scene.as_ref().map(|s| s.name.as_str()) == Some(retail.scene.as_str()) {
+            session.host.world.input.set_pad(0);
+            return Ok(());
+        }
+    }
+    session.host.world.input.set_pad(0);
+    anyhow::bail!(
+        "door replay: {} never reached {} in {DOOR_REPLAY_DEADLINE} ticks (taken {taken:?})",
+        door.from,
+        retail.scene
+    )
 }
 
 /// Hand the tick's op-`0x35` events to the session's own director when it
@@ -136,6 +223,7 @@ fn seed_and_settle(
     extracted: &Path,
     retail: &RetailObs,
     order: SeedOrder,
+    door: Option<&legaia_ram_image::scenarios::ScenarioArrival>,
     mut listen: Option<&mut crate::audio_sweep::EngineAudio>,
 ) -> Result<EngineObs> {
     let cfg = BootConfig {
@@ -158,14 +246,26 @@ fn seed_and_settle(
     // could not be reached headlessly while the child reached it.
     session.host.world.toggles.use_vm_dialogue = true;
     let opts = FieldLiveOpts::default();
+    let mut director = RecordingDirector::default();
     let save = retail
         .seed_save()
         .context("retail state has no liftable save window")?;
     match order {
         // The engine's own card-load path: flags, landing, whole save.
-        SeedOrder::Resume => {
-            let _landing = session.resume_save(save, &retail.scene, &opts);
-        }
+        SeedOrder::Resume => match door {
+            None => {
+                let _landing = session.resume_save(save, &retail.scene, &opts);
+            }
+            Some(door) => seed_through_door(
+                &mut session,
+                save,
+                door,
+                retail,
+                &opts,
+                &mut director,
+                listen.as_deref_mut(),
+            )?,
+        },
         SeedOrder::FlagsFirst => {
             session.host.world.load_full(save.clone());
             session.enter_scene_live(&retail.scene, &opts)?;
@@ -174,7 +274,6 @@ fn seed_and_settle(
     }
     // Retail's measured frame step is load history (`World::seed_frame_step`).
     session.host.world.seed_frame_step(retail.frame_step());
-    let mut director = RecordingDirector::default();
     // The entry itself may already have queued a start.
     route_bgm(&mut session, &mut director)?;
     // A non-zero arrival facing is a door's (the card load the seed takes

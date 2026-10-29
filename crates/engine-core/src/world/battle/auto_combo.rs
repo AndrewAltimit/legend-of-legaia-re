@@ -16,10 +16,10 @@
 //! what the review screen shows; the round runs the rebuilt one.
 //!
 //! The engine keeps the same order: the command flow records the flag
-//! ([`World::note_auto_attack_pick`]), [`World::begin_round_execution`] runs
+//! ([`BattleState::note_auto_attack_pick`]), [`World::begin_round_execution`] runs
 //! the pool arm for every flagged Attack commit and parks the result, and the
 //! member's dispatch plays the parked queue instead of re-seeding
-//! ([`World::take_auto_attack_queue`]). The RNG draws happen at the round's
+//! ([`BattleState::take_auto_attack_queue`]). The RNG draws happen at the round's
 //! start in seat order, as retail's do.
 //!
 //! The delegated arm of the same routine (record `+0xF8 & 0x2000`) stays
@@ -30,86 +30,11 @@
 
 use super::*;
 
-/// Per-roster-character inputs the pool arm and its tail read off the disc.
-#[derive(Debug, Clone, Default)]
-pub struct AutoComboInputs {
-    /// The first four bytes of each direction command's action entry
-    /// (`DAT_801C9360[slot][0xC + i]`, `i` = Left / Right / Down / Up) - the
-    /// weight ladder's input. `None` until a disc read fills it, in which case
-    /// every command takes the default weight.
-    pub command_heads: Option<[[u8; 4]; 4]>,
-    /// The art-animation bank's raw `0xD0`-stride records (record[0]
-    /// `+0x58`), which the tail walks.
-    pub art_records: Vec<[u8; 0xD0]>,
-    /// The bank's count byte (`lbu v0,0x0(v0)` at `0x801F0B84`).
-    pub art_count: u8,
-}
-
-/// The Auto attack's state across one battle.
-#[derive(Debug, Clone, Default)]
-pub struct AutoComboState {
-    /// Disc inputs per roster character (Vahn / Noa / Gala).
-    pub inputs: [AutoComboInputs; 3],
-    /// The four direction commands' status-guard masks,
-    /// `*(i16 *)(0x801F672C + i * 2)` in PROT 0898. `None` without a disc,
-    /// which guards nothing.
-    pub guards: Option<[u16; 4]>,
-    /// `ctx[+0x266 + seat]` - the per-fighter Auto flag.
-    pub flags: [bool; 3],
-    /// The pick the command session made this frame, before it commits.
-    pub pending: bool,
-    /// The queue the round-start pool arm built per seat, played by the
-    /// seat's dispatch.
-    pub queues: [Option<Vec<u8>>; 3],
-}
-
 impl World {
-    /// Record the Auto / Command pick a command-session frame implies, from
-    /// the phase before and after it.
-    pub(in crate::world) fn note_auto_attack_pick(
-        &mut self,
-        before: &legaia_engine_battle_menus::battle_input::CommandPhase,
-        after: &legaia_engine_battle_menus::battle_input::CommandPhase,
-    ) {
-        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase as P};
-        let attack_target = matches!(
-            after,
-            P::Targeting {
-                command: BattleCommand::Attack,
-                ..
-            } | P::Confirmed {
-                command: BattleCommand::Attack,
-                ..
-            }
-        );
-        match before {
-            // The prompt's `Auto` chip (`0x801D17D0`) or `Command`
-            // (`0x801D1760`).
-            P::AttackMode { .. } if attack_target => self.battle.auto_combo.pending = true,
-            P::AttackMode { .. } if matches!(after, P::OpenArtsMenu) => {
-                self.battle.auto_combo.pending = false
-            }
-            // The ring's Attack arm under the `Automatic` / `Command`
-            // options skips the prompt; the option word is the flag
-            // (`0x801D164C`).
-            P::Menu { .. } if attack_target => self.battle.auto_combo.pending = true,
-            P::Menu { .. } => self.battle.auto_combo.pending = false,
-            _ => {}
-        }
-    }
-
-    /// Commit the pending pick as `actor`'s flag - the Attack confirm.
-    pub(in crate::world) fn commit_auto_attack_flag(&mut self, actor: u8, auto: bool) {
-        if let Some(f) = self.battle.auto_combo.flags.get_mut(usize::from(actor)) {
-            *f = auto;
-        }
-        self.battle.auto_combo.pending = false;
-    }
-
     /// Run the pool arm for every flagged Attack commit at the round's start
     /// and park each queue for the seat's dispatch.
     pub(in crate::world) fn run_auto_attack_pool_arms(&mut self) {
-        use crate::battle_round::PendingPartyAction;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         let party = self.party.party_count.clamp(1, 3);
         self.battle.auto_combo.queues = Default::default();
         for seat in 0..party {
@@ -132,15 +57,6 @@ impl World {
                 *q = Some(queue);
             }
         }
-    }
-
-    /// The parked Auto queue for `actor`, if the round's start built one.
-    pub(in crate::world) fn take_auto_attack_queue(&mut self, actor: u8) -> Option<Vec<u8>> {
-        self.battle
-            .auto_combo
-            .queues
-            .get_mut(usize::from(actor))
-            .and_then(Option::take)
     }
 
     /// The pool arm and the tail for one seat: the queue bytes, direction

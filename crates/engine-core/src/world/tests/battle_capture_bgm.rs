@@ -275,11 +275,11 @@ fn battle_arts_synthetic_chain_runs_through_art_power_path_and_cycles_turn() {
     world.actors[0].battle.max_hp = 200;
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 40);
+    world.battle.set_battle_attack(0, 40);
     world.actors[1].battle.max_hp = 500;
     world.actors[1].battle.hp = 500;
     world.actors[1].battle.liveness = 1;
-    world.set_battle_defense(1, 10);
+    world.battle.set_battle_defense(1, 10);
     // One saved chain, 3 directional commands (Left, Right, Down) -> 3 hits.
     // No art record staged, so the row uses the synthetic ×12 profile.
     world
@@ -397,12 +397,12 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     world.battle.player_driven = true;
     world.mode = SceneMode::Battle;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 64);
+    world.battle.set_battle_attack(0, 64);
     world.actors[1].battle.max_hp = 4000;
     world.actors[1].battle.hp = 4000;
     world.actors[1].battle.liveness = 1;
     // UDF / LDF split so the record's per-strike target picks the right half.
-    world.set_battle_defense_split(1, Some((10, 40)));
+    world.battle.set_battle_defense_split(1, Some((10, 40)));
 
     // Stage a Vahn art: two damage strikes (UDF ×28, LDF ×28) that burns. A
     // normal-art constant (`0x1F+`): the queue-builder tokenizes only those

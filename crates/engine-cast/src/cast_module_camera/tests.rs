@@ -1319,3 +1319,42 @@ fn viguro_arm_twelve_draws_sixteen_streaks_every_pass() {
     assert_eq!(d.ribbons.map(|r| r.count), Some(16));
     assert!(d.hold);
 }
+
+/// Neo Star Slash's and Doomsday's words place a capture inside an arm:
+/// PROT 0960's is in the director's own unit, PROT 0965's counts vsyncs and
+/// is scaled into it (`gaza2_card_neo_star_slash_mid_cast` reads `96` on
+/// arm 1, `cort_evolved_card_doomsday_mid_cast` `16`).
+#[test]
+fn neo_star_slash_and_doomsday_name_their_countdown_words() {
+    assert_eq!(capture_countdown_va(0xA6), Some(NEO_STAR_SLASH_COUNTDOWN));
+    assert_eq!(capture_countdown_units(0xA6), 1);
+    assert_eq!(capture_countdown_va(0xB6), Some(DOOMSDAY_COUNTDOWN));
+    assert_eq!(capture_countdown_units(0xB6), SPEED_SCALAR);
+    assert_eq!(capture_countdown_units(0xAC), 1);
+}
+
+#[test]
+fn barra_stages_its_clips_one_after_another() {
+    // Arm 6 queues clip 2 bare on every pass while clip 1 plays
+    // (`0x801F70E4..0x801F70F4`).
+    let mut st = ModuleCamState {
+        creature_clip: Some(1),
+        ..Default::default()
+    };
+    assert!(barra_direct(&mut st, 6, seats()).hold);
+    assert_eq!(st.creature_stage, Some(2));
+    assert!(!st.creature_restage);
+    // Arm 0xC's pass bumps both bytes: clip 3, cut in.
+    let mut st = ModuleCamState::default();
+    assert!(!barra_direct(&mut st, 0xC, seats()).hold);
+    assert_eq!(st.creature_stage, Some(3));
+    assert!(st.creature_restage);
+    // Arm 0xD queues clip 4 behind clip 3.
+    let mut st = ModuleCamState {
+        creature_clip: Some(3),
+        ramp: -0x2000,
+        ..Default::default()
+    };
+    assert!(barra_direct(&mut st, 0xD, seats()).hold);
+    assert_eq!(st.creature_stage, Some(4));
+}

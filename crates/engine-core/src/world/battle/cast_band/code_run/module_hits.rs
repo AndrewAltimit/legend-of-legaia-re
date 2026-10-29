@@ -251,7 +251,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist,
             summon_power_pct: 100,
             floor_rand: 0,

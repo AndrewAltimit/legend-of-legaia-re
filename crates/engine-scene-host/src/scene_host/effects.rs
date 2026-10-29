@@ -42,7 +42,7 @@ pub const ETMD_TAIL_FIRE_MODEL_INDEX: usize = 4;
 /// audio. See `docs/formats/effect.md`.
 const PROT_EFFECT_MODEL_LIBRARY_ENTRY: u32 = 871;
 
-use legaia_engine_core::world::EFFECT_MODEL_LIBRARY_BASE;
+use legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE;
 
 /// Number of TMDs in the PROT 0871 effect-model library (`word[0]`).
 pub(crate) const EFFECT_MODEL_LIBRARY_COUNT: usize = 30;

@@ -77,7 +77,7 @@ fn the_queued_swing_byte_resolves_a_move_power_record() {
         w.actors[i].battle.hp = 30_000;
         w.actors[i].battle.max_hp = 30_000;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 120);
+        w.battle.set_battle_attack(i as u8, 120);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.player_actor_slot = Some(0);

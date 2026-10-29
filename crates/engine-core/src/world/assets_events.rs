@@ -272,7 +272,7 @@ impl World {
     /// state beyond the SFX queue below. Returns them in walk order.
     ///
     /// Draining also queues each table-form spawn's **per-effect CLUT stage**
-    /// onto [`crate::world::BattleState::clut_stages`], mirroring retail's table arm: only
+    /// onto [`legaia_engine_battle_loop::battle_state::BattleState::clut_stages`], mirroring retail's table arm: only
     /// a plain code below
     /// [`legaia_engine_effects::action_effect_script::TABLE_CLUT_GATE`] consults the
     /// `0x801F6418` map, and only a non-zero byte performs the copy. The map
@@ -380,7 +380,7 @@ impl World {
                 }
                 // A petrified target (Stone) can't be damaged - the strike is
                 // fully absorbed (and so doesn't wake a Sleep/Numb either).
-                let petrified = self.actor_is_petrified(*target_slot);
+                let petrified = self.battle.actor_is_petrified(*target_slot);
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage
                         && !petrified

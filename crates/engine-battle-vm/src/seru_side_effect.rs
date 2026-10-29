@@ -74,7 +74,7 @@
 //!   `agl` / `agl_base`, and current MP).
 //!
 //! The base halfwords the compare needs are real state now: retail's record
-//! copy writes both halves of every pair, which `World::sync_battle_stat_bases`
+//! copy writes both halves of every pair, which `BattleState::sync_battle_stat_bases`
 //! reproduces at battle entry, and nothing but a debuff writes a base half
 //! afterwards. The enemy stat seed picks its boost profile from the same
 //! scripted flag (`MonsterDef::installed_stats`), so a random encounter's

@@ -211,6 +211,9 @@ pub struct Renderer {
     /// Retail's per-primitive near reject, staged into the scene-lights
     /// block's `prim_near` word (see [`Renderer::set_prim_near_reject`]).
     pub(super) prim_near: std::cell::Cell<[f32; 4]>,
+    /// The scene-lights block's `gte_sat` word (see
+    /// [`Renderer::set_gte_saturation`]).
+    pub(super) gte_sat: std::cell::Cell<[f32; 4]>,
     /// PSX semi-transparency (ABE) blending, staged into `MeshUniforms.flags[1]`.
     /// When `true` (the default), a semi-transparent prim's blended fragments
     /// are deferred out of the opaque pass and re-drawn by the per-ABR-mode
@@ -851,6 +854,17 @@ impl Renderer {
             .set(legaia_render_kernels::prim_near_reject::shader_params(
                 cut, span_h,
             ));
+    }
+
+    /// The GTE's register limits under PSX mode
+    /// ([`legaia_render_kernels::prim_near_reject::gte_saturated_clip`]):
+    /// `Some((sz_per_w, h))` moves a corner whose eye-space X / Y or depth
+    /// passes the GTE's `IR` / `SZ` saturation to where `RTPS` wrote it;
+    /// `None` (the default) leaves every corner where it projects. Read only
+    /// while PSX mode is on.
+    pub fn set_gte_saturation(&self, gte: Option<(f32, f32)>) {
+        self.gte_sat
+            .set(legaia_render_kernels::prim_near_reject::gte_saturation_params(gte));
     }
 
     /// Read the current colour grade `(gold_r, gold_g, gold_b, strength)`.

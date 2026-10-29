@@ -29,7 +29,7 @@ pub const fn volume_level_gain(level: u8) -> u16 {
 
 /// The desktop hosts' default master volume, percent of the full mixer
 /// output ([`AudioSink::set_master_volume`]): the native play window, the
-/// game launcher and Legaia Studio start here unless the user's saved setting
+/// game launcher and Legaia Explorer start here unless the user's saved setting
 /// says otherwise. The full mix at 100% was far too loud through a desktop
 /// output; the parity oracles never apply a master volume and stay at unity.
 pub const DESKTOP_MASTER_VOLUME_DEFAULT: u8 = 25;

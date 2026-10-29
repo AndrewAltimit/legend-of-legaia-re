@@ -93,8 +93,8 @@ fn art_strike_applier_pushes_apply_art_strike_event() {
     use legaia_engine_battle_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
 
     let mut world = World::new();
-    world.set_battle_attack(0, 64);
-    world.set_battle_defense(3, 10);
+    world.battle.set_battle_attack(0, 64);
+    world.battle.set_battle_defense(3, 10);
     let info = ArtStrikeInfo {
         strike_index: 0,
         anim_byte: 0x10,
@@ -146,8 +146,8 @@ fn art_strike_split_defense_picks_udf_or_ldf() {
     use legaia_engine_battle_vm::battle_action::{ArtStrikeInfo, BattleActionHost};
 
     let mut world = World::new();
-    world.set_battle_attack(0, 64);
-    world.set_battle_defense_split(3, Some((5, 50)));
+    world.battle.set_battle_attack(0, 64);
+    world.battle.set_battle_defense_split(3, Some((5, 50)));
 
     let mk = |power: PowerByte| ArtStrikeInfo {
         strike_index: 0,
@@ -197,8 +197,8 @@ fn fold_battle_event_apply_art_strike_subtracts_hp_and_records_status() {
         world.actors[slot].battle.hp = 200;
         world.actors[slot].battle.max_hp = 200;
     }
-    world.set_battle_attack(0, 64);
-    world.set_battle_defense(3, 5);
+    world.battle.set_battle_attack(0, 64);
+    world.battle.set_battle_defense(3, 5);
 
     let info = ArtStrikeInfo {
         strike_index: 0,
@@ -472,7 +472,7 @@ fn use_item_attack_boost_raises_persistent_record_and_live_stat() {
     party.members[0].set_live_stats(ls);
     let mut world = World::new();
     world.load_party(party);
-    world.set_battle_attack(0, 20);
+    world.battle.set_battle_attack(0, 20);
     world.set_item_catalog(full_test_catalog());
     // Power Tonic (0x0E): Attack +1.
     let outcome = world.use_item(0x0E, 0);
@@ -500,7 +500,7 @@ fn use_item_stat_boost_caps_at_cap_constant() {
     party.members[0].set_live_stats(ls);
     let mut world = World::new();
     world.load_party(party);
-    world.set_battle_attack(0, 99);
+    world.battle.set_battle_attack(0, 99);
     // A custom big-boost item to exercise the cap.
     let mut cat = legaia_engine_menus::items::ItemCatalog::new();
     cat.insert(legaia_engine_menus::items::ItemEntry {
@@ -654,8 +654,8 @@ fn fold_battle_event_clamps_to_zero_hp() {
     world.actors[3].active = true;
     world.actors[3].battle.hp = 30;
     world.actors[3].battle.max_hp = 30;
-    world.set_battle_attack(0, 64);
-    world.set_battle_defense(3, 0);
+    world.battle.set_battle_attack(0, 64);
+    world.battle.set_battle_defense(3, 0);
 
     let info = ArtStrikeInfo {
         strike_index: 0,
@@ -692,8 +692,8 @@ fn fold_battle_event_pushes_status_into_tracker() {
     world.actors[3].active = true;
     world.actors[3].battle.hp = 100;
     world.actors[3].battle.max_hp = 100;
-    world.set_battle_attack(0, 64);
-    world.set_battle_defense(3, 10);
+    world.battle.set_battle_attack(0, 64);
+    world.battle.set_battle_defense(3, 10);
     let info = ArtStrikeInfo {
         strike_index: 0,
         anim_byte: 0x10,
@@ -733,7 +733,7 @@ fn reset_party_ap_refills_all_three_gauges() {
     for g in world.battle.ap_gauges.iter_mut() {
         g.try_spend(3);
     }
-    world.reset_party_ap();
+    world.battle.reset_party_ap();
     for g in world.battle.ap_gauges.iter() {
         assert_eq!(g.current_ap, g.base_ap);
         assert!(!g.spirit_charged);

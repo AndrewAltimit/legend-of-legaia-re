@@ -54,6 +54,13 @@ pub const SPELL_CAM_FRAME_STEP: u8 = 2;
 /// child is live.
 pub const SPELL_CAM_PROJECTILE_CASE: u8 = 8;
 
+/// The cases whose yaw is a clock rather than an endpoint: each pass aims
+/// the live yaw a fixed step on (`live_yaw -/+ step * 8 / 16 / 4 / 16`,
+/// cases `3`, `5`, `0xE`, `0x10`), so where the camera stands on them is
+/// how long the shot has turned from wherever the framing before it left
+/// the yaw.
+pub const SPELL_CAM_TURNING_CASES: [u8; 4] = [0x03, 0x05, 0x0E, 0x10];
+
 /// What the case's target byte `actor[+0x1DD]` resolves to.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum SpellCamTarget {

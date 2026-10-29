@@ -45,8 +45,8 @@ pub(super) fn build_flat_mesh(
     );
     let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia mesh pipeline layout"),
-        bind_group_layouts: &[&mesh_uniforms_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&mesh_uniforms_bgl)],
+        immediate_size: 0,
     });
     // Vertex layout: 3 floats position. Normals are computed in the shader
     // from screen-space derivatives - no per-vertex normal needed, which
@@ -67,7 +67,7 @@ pub(super) fn build_flat_mesh(
         vertex: wgpu::VertexState {
             module: &mesh_shader,
             entry_point: Some("vs_main"),
-            buffers: &[vertex_layout],
+            buffers: &[Some(vertex_layout)],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -87,13 +87,13 @@ pub(super) fn build_flat_mesh(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     FlatMeshParts {
@@ -120,8 +120,8 @@ pub(super) fn build_textured_mesh(
     });
     let textured_mesh_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia textured mesh pipeline layout"),
-        bind_group_layouts: &[mesh_uniforms_bgl, bind_group_layout],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(mesh_uniforms_bgl), Some(bind_group_layout)],
+        immediate_size: 0,
     });
     let textured_vertex_layout = wgpu::VertexBufferLayout {
         // 3 floats position + 2 floats UV = 20 bytes.
@@ -146,7 +146,7 @@ pub(super) fn build_textured_mesh(
         vertex: wgpu::VertexState {
             module: &textured_mesh_shader,
             entry_point: Some("vs_main"),
-            buffers: &[textured_vertex_layout],
+            buffers: &[Some(textured_vertex_layout)],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -166,13 +166,13 @@ pub(super) fn build_textured_mesh(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }
@@ -287,8 +287,8 @@ pub(super) fn build_vram_mesh(
     });
     let vram_mesh_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia vram mesh pipeline layout"),
-        bind_group_layouts: &[mesh_uniforms_bgl, &vram_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(mesh_uniforms_bgl), Some(&vram_bgl)],
+        immediate_size: 0,
     });
     let vram_mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("legaia vram mesh pipeline"),
@@ -296,7 +296,7 @@ pub(super) fn build_vram_mesh(
         vertex: wgpu::VertexState {
             module: &vram_mesh_shader,
             entry_point: Some("vs_main"),
-            buffers: std::slice::from_ref(vertex_layout),
+            buffers: &[Some(vertex_layout.clone())],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -316,13 +316,13 @@ pub(super) fn build_vram_mesh(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     VramMeshParts {
@@ -354,8 +354,8 @@ pub(super) fn build_wireframe(
     });
     let lines_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia lines pipeline layout"),
-        bind_group_layouts: &[mesh_uniforms_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(mesh_uniforms_bgl)],
+        immediate_size: 0,
     });
     let lines_vertex_layout = wgpu::VertexBufferLayout {
         array_stride: 16,
@@ -379,7 +379,7 @@ pub(super) fn build_wireframe(
         vertex: wgpu::VertexState {
             module: &lines_shader,
             entry_point: Some("vs_main"),
-            buffers: &[lines_vertex_layout],
+            buffers: &[Some(lines_vertex_layout)],
             compilation_options: Default::default(),
         },
         fragment: Some(wgpu::FragmentState {
@@ -398,13 +398,13 @@ pub(super) fn build_wireframe(
         },
         depth_stencil: Some(wgpu::DepthStencilState {
             format: DEPTH_FORMAT,
-            depth_write_enabled: true,
-            depth_compare: wgpu::CompareFunction::Greater,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Greater),
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),
         }),
         multisample: wgpu::MultisampleState::default(),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     });
     LinesParts {

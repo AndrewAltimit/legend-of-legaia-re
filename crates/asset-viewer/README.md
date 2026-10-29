@@ -29,7 +29,7 @@ asset-viewer world <SCENE> [--max-actors N]     # engine-core World composite de
 With no subcommand (a double-click in a file manager) the viewer runs `prot`
 on `extracted/PROT.DAT` in the current folder, else `PROT.DAT` there, else
 `extracted/PROT.DAT` beside the binary; with none of them it prints how to
-make one (and that `legaia-studio` browses a disc image directly), waiting for
+make one (and that `legaia-explorer` browses a disc image directly), waiting for
 Enter on Windows so the console does not close on the message. `prot` names
 its entries from the `CDNAME.TXT` beside `PROT.DAT` unless `--cdname` is
 given. A failure prints one `asset-viewer: <what>: <cause>` line, and a

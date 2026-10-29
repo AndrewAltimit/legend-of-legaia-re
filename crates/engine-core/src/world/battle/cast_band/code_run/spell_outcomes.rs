@@ -5,7 +5,7 @@ use super::*;
 
 impl World {
     /// PROT 0907 (Nighto)'s kill / confuse / resist verdict for the resident
-    /// cast - drawn once and held on [`crate::world::CastFxState::module_nighto_outcome`].
+    /// cast - drawn once and held on [`legaia_engine_battle_loop::cast_fx_state::CastFxState::module_nighto_outcome`].
     ///
     /// Retail's arm 0 draws both rolls off the SCUS RNG `FUN_80056798` and
     /// parks them in the module's own words, so the outcome is settled the

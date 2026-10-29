@@ -547,6 +547,15 @@ mode `0`, so each spawns at seat A and glides to seat B over sixteen vsyncs.
 The two chips unfold from the cluster centre and the panels rise from under
 the screen.
 
+**`Begin` is drawn over `Run`.** Each chip is a text actor that queues its
+plate and then its label, and the later chip walks first in the ordering
+table: `gaza2_card_first_menu`'s table, taken with the pair still folded
+together, holds `Run`'s plate pieces and glyphs ahead of `Begin`'s, so
+`Begin`'s plate covers the left of `Run`'s, label and all. Apart, the two
+never overlap. The port draws the plates last chip first and cuts each label
+where an earlier chip's plate lies over it
+(`engine-ui::battle_command_ui::chip_plate_rect`).
+
 **No D-pad glyph until it lands.** The menu SM runs the glide stepper ahead of
 its state switch and leaves without dispatching while the stepper reports a
 glide in flight (`jal 0x801D9BBC` at `0x801D0B2C`, `bne s0,zero` at
@@ -580,7 +589,7 @@ both with mode `0` on the seed pass (`jal 0x801D8DE8` at `0x801E2FD4` and
 `0x801E2FE0`). The bar rises `y = 234 -> 192` and the plate slides
 `x = 328 -> 208` over the same sixteen vsyncs as the actor plaque raised
 beside them. The port runs both on one glide
-(`BattleState::spirit_gauge_glide`, `World::spirit_gauge_glide_offsets`),
+(`BattleState::spirit_gauge_glide`, `BattleState::spirit_gauge_glide_offsets`),
 which the arts-entry chrome builder offsets the Spirit view by.
 
 #### A retired record keeps its last `elapsed`
@@ -636,7 +645,7 @@ clearing `ctx[+0x6B2]` before it dispatches.
 Port: `BattleState::round_prompt_glide` and `ring_open_glide`, started where
 the round prompt opens (`World::open_battle_command`, `arm_round_open_prompt`)
 and where `Begin` takes the ring (`World::tick_battle_command`), and stepped
-with the action plates by `World::step_action_plate_glides`, which also keeps
+with the action plates by `BattleState::step_action_plate_glides`, which also keeps
 the stepper's return. `World::battle_command_glide_gate` is the pre-dispatch
 block, ahead of every command surface in the battle tick, and
 `World::take_command_pad_buffer` hands the round prompt and the ring the
@@ -1249,7 +1258,7 @@ when `ctx[+0x290]` reads `1` - straight to the execute arm `0xFE`, and sweeps
 the text actors on that pass (`jal 0x800355F0` at `0x801D0E7C` /
 `0x801D0EB4`), so no action ever runs under the names. A round the port hands
 to the action SM with the timer still running sweeps them there
-(`World::sweep_battle_intro_names`, from `begin_round_execution`).
+(`BattleState::sweep_battle_intro_names`, from `begin_round_execution`).
 
 <a id="the-battle-item-window-0x3c---packet-pinned"></a>
 ## The battle item window (`0x3C`)

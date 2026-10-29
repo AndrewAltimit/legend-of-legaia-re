@@ -557,6 +557,13 @@ impl PlayWindowApp {
                 self.session.camera.globals.0[9] as f32,
             ),
         );
+        // The GTE's register limits (`camera_frame::gte_saturation`), read
+        // by the mesh vertex stages under PSX mode only.
+        r.set_gte_saturation(legaia_engine_field::camera_frame::gte_saturation(
+            self.session.host.world.mode,
+            retail_camera,
+            self.session.camera.globals.0[9] as f32,
+        ));
         if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
             r.set_semi_blend(false);
         }

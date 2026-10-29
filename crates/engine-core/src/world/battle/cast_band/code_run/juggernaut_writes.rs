@@ -104,7 +104,7 @@ impl World {
         // The flush runs ahead of the arm's own spawns, which the band seats
         // after the module's pass.
         if legaia_engine_cast::cast_module_camera::juggernaut_flushes_pool(phase) {
-            self.juggernaut_pool_flush();
+            self.casting.juggernaut_pool_flush();
         }
         match phase {
             0 => {
@@ -240,7 +240,7 @@ impl World {
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         for (arm, caller) in calls {
             for s in ticks::juggernaut_stager_spawns(arm, caller) {
-                self.seat_stager_spawn(927, &s);
+                self.casting.seat_stager_spawn(927, &s);
             }
             if let Some(t) = ticks::juggernaut_stager_fade(arm) {
                 let mut fade = None;
@@ -284,20 +284,5 @@ impl World {
         let tail = module.bytes.get(off..)?;
         let end = tail.iter().position(|&b| b == 0)?;
         std::str::from_utf8(&tail[..end]).ok().map(str::to_string)
-    }
-
-    /// PROT 0927's pool flush on arms 26 and 27 (`jal 0x80050E74`): every
-    /// part it seated through the pool wrapper `FUN_80050ED4` - its own
-    /// arms' and its stager's - halts; the two records it seats through
-    /// `FUN_80021B04` run on.
-    pub(in crate::world::battle::cast_band) fn juggernaut_pool_flush(&mut self) {
-        use legaia_engine_cast::cast_module_camera::JUGGERNAUT_UNPOOLED;
-        if let Some(scene) = self.casting.active_summon.as_mut() {
-            for part in &mut scene.parts {
-                if part.tag.is_some_and(|t| !JUGGERNAUT_UNPOOLED.contains(&t)) {
-                    part.finished = true;
-                }
-            }
-        }
     }
 }

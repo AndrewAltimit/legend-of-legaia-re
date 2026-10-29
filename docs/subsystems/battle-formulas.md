@@ -403,6 +403,19 @@ else:                                                Juggle = 1     // 0x801ECA7
 window ticks = 32 * beat / (speed * rate)         = 4 * beat / rate at speed 8
 ```
 
+The window counts anim passes, not vsyncs. The tick advances the cursor
+`(step * speed * rate) >> 1` a pass (`0x80047730..0x80047764`, `step` =
+`DAT_1F800393`, the vsyncs since the last pass), and the commit zeroes it
+(`sh zero,0x68(s5)` at `0x8004B068`), so nothing carries from the clip a hit
+cuts. Measured in vsyncs, the byte drops on the first pass boundary at or
+past `32 * beat / (speed * rate)`, so a pass longer than the battle's usual
+step overshoots by up to `step - 1` vsyncs: the one captured flinch that
+ran long (a tag-3 `f10/2`, 22 vsyncs against 20) is consistent with that
+overshoot, since arts input and cast close-ups run at step `3`
+([battle-stage-camera.md](battle-stage-camera.md)). The
+four-slot list's beat is the byte its load address picks
+([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)).
+
 | Input | Source |
 |---|---|
 | `record` | the action entry the actor is playing (`node+0x4C`) |
@@ -1040,7 +1053,7 @@ state carry it:
 
 - **Base halfwords.** `BattleState::attack_base` / `defense_base` /
   `speed_base` / `accuracy_base` (plus the actor's `agl_base`) are the second
-  `sh` of every pair. `World::sync_battle_stat_bases` writes them at battle
+  `sh` of every pair. `BattleState::sync_battle_stat_bases` writes them at battle
   entry and nothing but a debuff writes one afterwards.
 - **Scripted flag.** `BattleState::scripted_fight`, derived at battle entry
   from the formation's `record[+0]` header byte, ORed with a `no_escape` a host
@@ -1451,7 +1464,7 @@ plus the all-stats Honey / Miracle Water) adds a flat increment to the
 parser `legaia_game_tables::item_effect::stat_item_effect` /
 `ItemEffectTable::stat_effect`.
 
-**Port.** `buff_ramp`. `World::apply_battle_buff` routes a positive-magnitude
+**Port.** `buff_ramp`. `BattleState::apply_battle_buff` routes a positive-magnitude
 `Buff` outcome through `ramp_buff_scalar`, which ramps the live per-slot scalar
 (`battle.attack` / `battle.magic` / `battle.defense`) by +20% and records the
 exact `u16` delta for revert on expiry; a refresh reverts the old delta first.
@@ -1821,7 +1834,7 @@ monsters cannot flee.
   actor's roster id minus one into `ctx+0xAA` when the party has two or more
   members); a wipe opens the loss window `FUN_801D8DE8(0x42, 0)`
   (`0x8004F8F0..0x8004F904`). A non-zero word skips both. Port
-  `VictorySequence::window_opened`, gating `World::battle_spoils_window_up` and
+  `VictorySequence::window_opened`, gating `BattleState::battle_spoils_window_up` and
   `engine-battle-hud::battle_defeat_banner`. The two elements index the screen-element
   placement table and their records are byte-identical
   ([battle-round-loop.md](battle-round-loop.md#the-loss-window-is-the-result-windows-twin)).
@@ -2026,10 +2039,13 @@ Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_dam
 
 ## What's still open
 
-The page's live hunts are indexed on
-[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering):
-the two [juggle-window](#the-juggle-window---what-makes-a-monster-juggleable)
-residuals.
+No live hunt is indexed for this page on
+[open-rev-eng-threads.md](../reference/open-rev-eng-threads.md#battle--rendering).
+The [juggle window](#the-juggle-window---what-makes-a-monster-juggleable)'s
+two former residuals are settled: the four-slot read is fixed by the fight's
+heap placement ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)),
+and the overrun is the pass quantisation described in that section
+([settled](../reference/re-settled-threads/battle.md)).
 The ability bitfield at record `+0xF4` / `+0xF8` is fully catalogued as the
 64 passive indices of [accessory-passive-table.md](../formats/accessory-passive-table.md#the-64-passive-indices)
 ([settled](../reference/re-settled-threads/battle.md)).

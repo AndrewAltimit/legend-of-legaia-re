@@ -1354,7 +1354,7 @@ a learned-list hit and a tier floor accept a record, whose arrows land as
 Ported as `engine-battle-vm::battle_arts_auto_combo`; the auto-fill arm raises the
 flag through `battle_action::dispatch`, and the pool arm plus its tail
 (`insert_arts`) run from `engine-core`'s `world/battle/auto_combo.rs`: the
-command ring records the Auto pick (`World::note_auto_attack_pick`),
+command ring records the Auto pick (`BattleState::note_auto_attack_pick`),
 `World::begin_round_execution` builds the queue once per round in seat order,
 and the member's dispatch plays the parked queue.
 `see ghidra/scripts/funcs/overlay_battle_action_801f0450.txt`.

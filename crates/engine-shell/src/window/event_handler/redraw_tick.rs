@@ -464,6 +464,14 @@ impl PlayWindowApp {
                     self.tick_no,
                 );
                 sc.battle_drive_clock.set(clock);
+                // A monster's cast stands on the capture's ground from its
+                // first pass, so its effects spawn where retail's did
+                // (`ground_snap::hold_cast_caster`).
+                legaia_engine_capture::ground_snap::hold_cast_caster(
+                    &mut self.session.host.world,
+                    &drive,
+                    &sc.battle_ground_snap,
+                );
                 pad
             }
             _ => field_pad,

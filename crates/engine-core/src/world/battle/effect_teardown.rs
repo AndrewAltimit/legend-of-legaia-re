@@ -115,7 +115,7 @@ impl World {
     /// Drop every battle-scoped effect: the port's stand-in for the actor
     /// pool reset retail's per-stage init `FUN_8001E1B4` performs on every
     /// mode switch (`0x8001E324..0x8001E364`), plus the battle overlay's own
-    /// image words the cast band keeps in [`crate::world::CastFxState`].
+    /// image words the cast band keeps in [`legaia_engine_battle_loop::cast_fx_state::CastFxState`].
     ///
     /// Keeps the one non-battle member of `CastFxState`: the installed
     /// cast-effect **data** pool (PROT 0903..0966, loaded once per host).
@@ -124,7 +124,7 @@ impl World {
     pub fn teardown_battle_effects(&mut self) {
         self.effect_pool = vm::effect_vm::Pool::new();
         let data_pool = self.casting.effect_pool.take();
-        self.casting = crate::world::CastFxState::new();
+        self.casting = legaia_engine_battle_loop::cast_fx_state::CastFxState::new();
         self.casting.effect_pool = data_pool;
         self.battle.clip_ribbon = None;
         self.battle.cast_ribbons = None;

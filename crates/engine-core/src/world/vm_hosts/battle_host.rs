@@ -435,7 +435,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///   `0x801F4E63 + id` picks out of the 8-byte records at `0x801F4EDC`,
     ///   copied pair by pair from `+0x1E0` and closed with `0xFF`
     ///   (`0x801DBFAC..0x801DC060`), read off the disc into
-    ///   [`crate::world::BattleState::spell_anim_pairs`]. With pairs staged the
+    ///   [`legaia_engine_battle_loop::battle_state::BattleState::spell_anim_pairs`]. With pairs staged the
     ///   band walks them and the cast folds at its exit; an empty list (or no
     ///   disc read) leaves the terminator at `params[1]`, the band goes
     ///   straight to its cleanup, and the owed outcome folds here.
@@ -763,7 +763,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         {
             attack = attack.saturating_add(fold);
         }
-        let defense = self.world.resolve_battle_defense(info.target_slot, &info);
+        let defense = self
+            .world
+            .battle
+            .resolve_battle_defense(info.target_slot, &info);
         let outcome = legaia_engine_battle::art_strike::apply_art_strike(attack, defense, &info);
         // Seed the target's HP-bar ramp the way every other damage entry
         // point does (`World::apply_battle_hp_delta`). The HP itself is
@@ -774,7 +777,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // hit and owes the bar nothing, matching the fold's own guard.
         if let Some(dmg) = outcome.damage
             && dmg > 0
-            && !self.world.actor_is_petrified(info.target_slot)
+            && !self.world.battle.actor_is_petrified(info.target_slot)
         {
             let petrified_free = i32::from(dmg);
             if let Some(t) = self.world.actors.get_mut(info.target_slot as usize) {

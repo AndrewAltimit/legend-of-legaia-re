@@ -3,10 +3,10 @@
 //! ([`legaia_engine_battle::battle_sideband`]) takes.
 //!
 //! Retail treats the byte as last-writer-wins across five writers, each
-//! ported at its own seat and writing [`crate::world::BattleState::stage_id`]:
+//! ported at its own seat and writing [`legaia_engine_battle_loop::battle_state::BattleState::stage_id`]:
 //!
 //! * the entity SM's battle-entry tail (`0` default / `1` tutorial,
-//!   `FUN_801DA51C`) - `World::enter_battle` / `World::arm_battle_tutorial`;
+//!   `FUN_801DA51C`) - `World::enter_battle` / `BattleState::arm_battle_tutorial`;
 //! * the battle initializer's per-formation override (`2` for formation
 //!   monster `0xB5`, `FUN_80055B6C`) - `World::enter_battle_from_formation`;
 //! * the arrival module's hand-back (`0`, PROT 0968 phase 6) -

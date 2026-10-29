@@ -116,6 +116,8 @@ MIRRORS = [
      "site/_content/tooling/pal-localizations.html"),
     ("docs/tooling/randomizer-delilas.md",
      "site/_content/tooling/randomizer-delilas.html"),
+    ("docs/subsystems/gameplay-tweaks.md",
+     "site/_content/subsystems/gameplay-tweaks.html"),
     ("docs/subsystems/script-vm-menuctrl.md",
      "site/_content/subsystems/script-vm-menuctrl.html"),
     ("docs/subsystems/field-locomotion.md",

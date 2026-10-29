@@ -34,6 +34,7 @@ mod npc_run_clip_bind_disc;
 mod picker_party_disc;
 mod player_one_shot_clip_disc;
 mod player_tilt_live_disc;
+mod rayman_collapse_audio_disc;
 mod restore_field_bgm_disc;
 mod resume_landing;
 mod save_gate_field_menu;

@@ -174,7 +174,7 @@ impl Renderer {
         // is still writing; the screenshot harness also re-reads until two
         // readbacks agree.
         self.device
-            .poll(wgpu::PollType::wait())
+            .poll(wgpu::PollType::wait_indefinitely())
             .context("poll device for the captured frame")?;
 
         // copy_texture_to_buffer requires bytes_per_row aligned to 256.
@@ -221,13 +221,16 @@ impl Renderer {
             let _ = tx.send(r);
         });
         self.device
-            .poll(wgpu::PollType::wait())
+            .poll(wgpu::PollType::wait_indefinitely())
             .context("poll device for capture readback")?;
         rx.recv()
             .context("capture readback channel closed")?
             .context("map capture readback buffer")?;
 
-        let data = buf.slice(..).get_mapped_range();
+        let data = buf
+            .slice(..)
+            .get_mapped_range()
+            .context("view the mapped capture readback")?;
         // Swizzle BGRA->RGBA when the surface uses a Bgra format (typical on
         // desktop swapchains); Rgba formats pass through unchanged.
         let bgra = matches!(

@@ -3,7 +3,7 @@
 //! member (`World::roll_counterattack` / `World::begin_counterattack`).
 
 use super::*;
-use crate::battle_round::PendingPartyAction;
+use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_battle_vm::battle_action::BattleActionHost;
 use legaia_engine_mode::mode::SceneMode;
 
@@ -72,15 +72,17 @@ fn a_member_without_a_committed_attack_does_not_counter() {
 fn the_timed_message_unloads_when_its_hold_runs_out() {
     let mut world = World::new();
     world.mode = SceneMode::Battle;
-    world.battle.message_banner = Some(crate::world::BattleMessageBanner {
-        element: crate::world::TIMED_MESSAGE_ELEMENT,
-        text: "line".into(),
-        hold: 3,
-    });
+    world.battle.message_banner = Some(
+        legaia_engine_battle_loop::message_banner::BattleMessageBanner {
+            element: legaia_engine_battle_loop::message_banner::TIMED_MESSAGE_ELEMENT,
+            text: "line".into(),
+            hold: 3,
+        },
+    );
     world.clock.frame_step = 1;
-    world.tick_timed_message();
-    world.tick_timed_message();
+    world.battle.tick_timed_message();
+    world.battle.tick_timed_message();
     assert!(world.battle.message_banner.is_some());
-    world.tick_timed_message();
+    world.battle.tick_timed_message();
     assert!(world.battle.message_banner.is_none());
 }

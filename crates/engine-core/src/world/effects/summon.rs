@@ -90,7 +90,7 @@ impl World {
     /// The part tick's channel scale, `DAT_1F800393 * DAT_1F80037D`: the live
     /// frame step (`MoveVmGlobals::ramp_ratio`, the `DAT_1F800393` stand-in)
     /// times the rate byte's boot value.
-    pub(super) fn effect_channel_delta(&self) -> u16 {
+    pub(in crate::world) fn effect_channel_delta(&self) -> u16 {
         u16::from(self.move_vm.ramp_ratio.max(1))
             * legaia_engine_effects::summon::RETAIL_CHANNEL_DELTA
     }
@@ -110,7 +110,7 @@ impl World {
     /// Take the pending production summon-spawn request, if a player Seru-magic
     /// cast set one this step. Returns `(spell_id, origin)`; the host maps
     /// `spell_id` to the overlay PROT entry (extraction `903 + (spell_id - 0x81)`), loads
-    /// it, and calls [`Self::spawn_summon`]. See [`crate::world::CastFxState::pending_summon_spawn`].
+    /// it, and calls [`Self::spawn_summon`]. See [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn`].
     pub fn take_pending_summon_spawn(&mut self) -> Option<(u8, [i16; 3])> {
         self.casting.pending_summon_spawn.take()
     }

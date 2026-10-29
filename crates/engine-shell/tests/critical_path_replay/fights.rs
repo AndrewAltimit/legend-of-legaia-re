@@ -181,7 +181,7 @@ impl FightPolicy {
 ///
 /// The first version of this held the pad neutral for the whole battle. That
 /// is not "no fighting model", it is a specific one: with
-/// [`legaia_engine_core::world::BattleState::player_driven`] off the live loop auto-commits
+/// [`legaia_engine_battle_loop::battle_state::BattleState::player_driven`] off the live loop auto-commits
 /// `arm_party_physical` for every party turn - a two-swing basic attack at the
 /// first living monster, retail's own AI-party queue
 /// (`FUN_801EED1C`'s `(&DAT_8007BD10)[slot] == 4` arm) - and nothing else. No
@@ -190,7 +190,7 @@ impl FightPolicy {
 /// fighter is incompetent", which is exactly what the wipe on the
 /// `map01 -> suimon` leg had been reporting.
 ///
-/// So the fighter drives [`legaia_engine_core::world::BattleState::command`] - the same
+/// So the fighter drives [`legaia_engine_battle_loop::battle_state::BattleState::command`] - the same
 /// [`crate::battle_input::BattleCommandSession`] the windowed host binds its
 /// keyboard to - with **pad presses only** ([`FightPolicy::pad_for`]). No
 /// engine API is called to pick a command, choose a target or use an item;

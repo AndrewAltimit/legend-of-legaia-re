@@ -65,7 +65,7 @@ impl World {
     /// The `0x6E` Reselect's empty arm passes case `0x28` instead
     /// (`0x801D30D0..0x801D30DC`) and does not.
     fn step_member_cursor_back(&mut self, from: u8, prompt_actor: u8, ring_cancel: bool) {
-        use crate::battle_round::PendingPartyAction;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_battle_vm::battle_cursor_pose::{
             ActorCursor, CursorActor, CursorStep, step_actor_cursor,
@@ -92,7 +92,7 @@ impl World {
             if ring_cancel {
                 self.normalize_battle_formation();
             }
-            self.set_battle_flow(Flow::TurnPrompt);
+            self.battle.set_battle_flow(Flow::TurnPrompt);
             self.open_battle_command(prompt_actor);
             return;
         }
@@ -114,7 +114,7 @@ impl World {
             *g = false;
         }
         self.battle.round_flow.cursor = prev;
-        self.set_battle_flow(Flow::CategoryMenu);
+        self.battle.set_battle_flow(Flow::CategoryMenu);
         self.open_battle_command(prev);
     }
 }

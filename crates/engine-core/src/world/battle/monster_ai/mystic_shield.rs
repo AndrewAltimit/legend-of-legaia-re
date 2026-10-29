@@ -33,15 +33,6 @@ const SCUS_FILE_BIAS: u32 = 0x8000_F800;
 const SHIELD_SCALE: u16 = 0x1000;
 
 impl World {
-    /// Whether Cort's **Mystic Shield** is up - retail's `_DAT_8007BD84`,
-    /// the effect handle PROT 0940's `0xAC` arm 4 stores (`0x801F7678`) and
-    /// the engine mirrors as [`legaia_engine_battle::monster_ai::MonsterAiState::flag_bd84`].
-    /// While it is non-null the damage finisher halves every hit on an enemy
-    /// defender (`FUN_801DDB30`, `0x801DDB98..0x801DDBC8`).
-    pub(in crate::world) fn mystic_shield_up(&self) -> bool {
-        self.battle.monster_ai_state.flag_bd84 != 0
-    }
-
     /// The parts of the SCUS-resident move-VM record at `va`, parsed off the
     /// disc's executable ([`crate::world::DiscTables::scus`]).
     pub(in crate::world) fn scus_record_parts(
@@ -94,7 +85,7 @@ impl World {
                     let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                         &parts,
                         &bytes,
-                        crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                        legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                         pos,
                     );
                     s.pose_parts(rot, SHIELD_SCALE);
@@ -143,7 +134,7 @@ impl World {
     /// PORT: FUN_8004CE2C (the Mystic Shield arm, `0x8004D534..0x8004D674`)
     pub(in crate::world) fn tick_mystic_shield(&mut self) {
         const CORT_FIRST_FORM: u16 = 0xB4;
-        if !self.mystic_shield_up() {
+        if !self.battle.mystic_shield_up() {
             return;
         }
         let seat = self.party.party_count as usize;
@@ -206,7 +197,7 @@ impl World {
             let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &parts,
                 &bytes,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                 pos,
             );
             s.pose_parts(rot, SHIELD_SCALE);
@@ -244,7 +235,7 @@ impl World {
     /// boss-stage arrival's hand-back does:
     /// `FUN_80021B04(seat + 0x34, seat + 0x44, record, 0x1000)`
     /// (`0x801F7170..0x801F7198` in PROT 0968). The trees land in
-    /// [`crate::world::CastFxState::stage_fx`]; a disc-free battle (no
+    /// [`legaia_engine_battle_loop::cast_fx_state::CastFxState::stage_fx`]; a disc-free battle (no
     /// executable to read the records from) seats nothing.
     ///
     /// REF: FUN_80021B04 (the part spawner, ported by `SummonScene::spawn_parts`)
@@ -261,7 +252,7 @@ impl World {
                 let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                     &parts,
                     &bytes,
-                    crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                    legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                     pos,
                 );
                 s.pose_parts(rot, SHIELD_SCALE);

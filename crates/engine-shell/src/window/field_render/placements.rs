@@ -254,7 +254,10 @@ impl PlayWindowApp {
         res: &SceneResources,
     ) -> std::collections::HashMap<legaia_engine_scene::field_env::EnvDraw, [f32; 3]> {
         use legaia_engine_scene::coplanar_draws;
-        let draws = self.static_env_draws(res);
+        // Ranked in retail's emission order (placed objects ahead of the
+        // terrain cells), the order equal-area ties resolve by.
+        let (terrain, placements, _) = self.static_env_layers(res);
+        let draws = coplanar_draws::emission_order(&terrain, &placements);
         if draws.is_empty() {
             return Default::default();
         }

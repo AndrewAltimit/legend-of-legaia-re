@@ -35,8 +35,8 @@ pub(super) fn build_screen_overlay(
     let screen_overlay_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("legaia screen overlay pipeline layout"),
-            bind_group_layouts: &[vram_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(vram_bgl)],
+            immediate_size: 0,
         });
     // pos(Float32x2)@0 + uv(Float32x2)@8 + cba_tsb(Uint32x2)@16 +
     // color(Float32x4)@24 + flags(Uint32)@40 + depth(Float32)@44 = 48
@@ -85,7 +85,7 @@ pub(super) fn build_screen_overlay(
             vertex: wgpu::VertexState {
                 module: &screen_overlay_shader,
                 entry_point: Some("vs_main"),
-                buffers: std::slice::from_ref(&screen_overlay_vertex_layout),
+                buffers: &[Some(screen_overlay_vertex_layout.clone())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -105,13 +105,13 @@ pub(super) fn build_screen_overlay(
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     };

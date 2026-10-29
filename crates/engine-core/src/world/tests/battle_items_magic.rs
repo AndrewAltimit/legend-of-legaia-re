@@ -151,7 +151,7 @@ fn battle_item_escape_returns_to_field() {
         "the exit hold keeps the battle scene up"
     );
     assert!(
-        world.battle_end_sequence_active(),
+        world.battle.battle_end_sequence_active(),
         "the escape arm is armed"
     );
     assert!(world.battle.item_menu.is_none(), "battle menus cleared");
@@ -198,7 +198,7 @@ fn battle_magic_cast_damages_monster_spends_mp_and_cycles_turn() {
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.mp = 50;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_magic(0, 100);
+    world.battle.set_battle_magic(0, 100);
     world.actors[1].battle.max_hp = 300;
     world.actors[1].battle.hp = 300;
     world.actors[1].battle.liveness = 1;
@@ -270,7 +270,7 @@ fn silenced_caster_cannot_open_the_magic_submenu() {
     world.set_spell_catalog(SpellCatalog::vanilla());
     world.actors[0].battle.mp = 50;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_magic(0, 100);
+    world.battle.set_battle_magic(0, 100);
     // A learned offensive spell, so the submenu would build absent any status.
     let mut party = legaia_save::Party::zeroed(1);
     let mut list = party.members[0].spell_list();
@@ -316,7 +316,7 @@ fn battle_magic_cast_applies_mp_half_ability_bit() {
     world.actors[0].battle.hp = 200;
     world.actors[0].battle.mp = 50;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_magic(0, 100);
+    world.battle.set_battle_magic(0, 100);
     world.actors[1].battle.max_hp = 300;
     world.actors[1].battle.hp = 300;
     world.actors[1].battle.liveness = 1;
@@ -515,7 +515,7 @@ fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
     use legaia_engine_battle::spells::{BuffStat, SpellOutcome};
 
     let mut world = World::default();
-    world.set_battle_attack(0, 50);
+    world.battle.set_battle_attack(0, 50);
 
     // Power Up: retail stat-up is the x6/5 ramp (50 -> 60), not a flat +20.
     world.fold_spell_outcome(SpellOutcome::Buff {
@@ -545,9 +545,9 @@ fn battle_magic_buff_raises_scalar_refreshes_and_expires() {
     assert_eq!(world.battle.buffs.len(), 1);
 
     // Ages one turn per the buffed actor's turn; expires on the 2nd.
-    world.tick_battle_buffs_on_turn(0);
+    world.battle.tick_battle_buffs_on_turn(0);
     assert_eq!(world.battle.attack[0], 60);
-    world.tick_battle_buffs_on_turn(0);
+    world.battle.tick_battle_buffs_on_turn(0);
     assert_eq!(
         world.battle.attack[0], 50,
         "expiry reverts the ramp delta exactly"
@@ -562,7 +562,7 @@ fn battle_magic_buff_ramp_is_multiplicative_not_additive() {
     let mut world = World::default();
     // At a 200 scalar the retail x6/5 ramp (->240) diverges from a flat +20
     // (->220): proves the live buff is multiplicative, not additive.
-    world.set_battle_magic(1, 200);
+    world.battle.set_battle_magic(1, 200);
     world.fold_spell_outcome(SpellOutcome::Buff {
         target: 1,
         stat: BuffStat::MagicAttack,
@@ -570,11 +570,11 @@ fn battle_magic_buff_ramp_is_multiplicative_not_additive() {
         turns: 1,
     });
     assert_eq!(world.battle.magic[1], 240, "x6/5 ramp, not flat +20");
-    world.tick_battle_buffs_on_turn(1);
+    world.battle.tick_battle_buffs_on_turn(1);
     assert_eq!(world.battle.magic[1], 200, "ramp delta reverts exactly");
 
     // The ramp clamps at 0xFFFF (buff_ramp ceiling) without overflow.
-    world.set_battle_attack(2, 60_000);
+    world.battle.set_battle_attack(2, 60_000);
     world.fold_spell_outcome(SpellOutcome::Buff {
         target: 2,
         stat: BuffStat::Attack,
@@ -582,7 +582,7 @@ fn battle_magic_buff_ramp_is_multiplicative_not_additive() {
         turns: 1,
     });
     assert_eq!(world.battle.attack[2], 0xFFFF, "ramp clamps at u16 max");
-    world.tick_battle_buffs_on_turn(2);
+    world.battle.tick_battle_buffs_on_turn(2);
     assert_eq!(
         world.battle.attack[2], 60_000,
         "clamped delta still reverts"
@@ -596,7 +596,7 @@ fn battle_magic_debuff_saturates_at_zero_and_reverts_exactly() {
     let mut world = World::default();
     // Power Down on an enemy with a small attack: -25 saturates the u16
     // scalar at 0, and the recorded delta is the actual change (-10).
-    world.set_battle_attack(3, 10);
+    world.battle.set_battle_attack(3, 10);
     world.fold_spell_outcome(SpellOutcome::Buff {
         target: 3,
         stat: BuffStat::Attack,
@@ -606,7 +606,7 @@ fn battle_magic_debuff_saturates_at_zero_and_reverts_exactly() {
     assert_eq!(world.battle.attack[3], 0, "debuff saturates at zero");
 
     // One tick expires it; the exact -10 delta is reverted back to 10.
-    world.tick_battle_buffs_on_turn(3);
+    world.battle.tick_battle_buffs_on_turn(3);
     assert_eq!(world.battle.attack[3], 10);
     assert!(world.battle.buffs.is_empty());
 }
@@ -726,7 +726,7 @@ fn battle_magic_escape_returns_to_field() {
         "the exit hold keeps the battle scene up"
     );
     assert!(
-        world.battle_end_sequence_active(),
+        world.battle.battle_end_sequence_active(),
         "the escape arm is armed"
     );
     assert!(

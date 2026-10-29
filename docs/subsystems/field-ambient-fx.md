@@ -231,6 +231,16 @@ pre-battle actor live (33 free against 44 before the trigger). The park of the
 block into VRAM (`FUN_80016230`) and the `0x7B0C`-byte copy back are read from
 the decompiled C only.
 
+The other side of the same branch is the way **into** a battle: the reseed
+runs, every list sentinel points at itself, and no field part - ambient tree
+or stager - is on a list the battle's draw walks. The port keeps its field
+parts across the fight, since the return brings them back, and stops drawing
+them while the mode is a battle (`World::field_pool_drawn`, read by
+`World::active_effect_kind4_draws` and `World::active_field_fx_part_draws`,
+the lists both hosts draw). Drawn there, `map01`'s mist sheets sat at their
+overworld coordinates in the battle frame and stacked into a white bar on the
+horizon under Kemaro's low camera.
+
 So the channel resolver `FUN_8003C83C` (and the inline copy of it in
 `FUN_8003A9D4`) does not index this block by channel either: `0xF8` reads
 `+0x1C`, `0xFB` walks the `+0x04` list for the node whose tick word is the
@@ -544,6 +554,17 @@ Two worked examples on this side:
 - **Rim Elm's Genesis tree** - placement `P1[50]` in `town01`, clip-less,
   holds sub-entries `3..=6` at peak until the tree revives, so the withered
   tree is drawn over an authored mesh that is the revived one.
+- **jouind's flesh walls** - placed objects `9..=12`, whose bind prologues
+  arm `4B 01 ..` and then drop `+0x10` bit 12 again (`32 0C`, `2C 0C`,
+  `2B 0A`, `2C 0D`), so the bind leaves the walls standing. The entry
+  script `P1[0]` re-raises the bit on each from the system context
+  (`B1 <id> 0C` with `AC` / `AB` beside it) while flag `0x4C0` is set and
+  `0x4C1` clear, and the held envelope primes the lane to `0x1000`: the walls
+  lie collapsed. The draw substitutes the morph only under that bit
+  (`FUN_8001ADA4` tests `+0x10 & 0x1000` before `jal 0x8001C604` at
+  `0x8001B43C`). `jouind_field_card_boot` holds all four at `0x08009881`; the
+  engine lands the system context's `B1` / `B2` on a placed object's context
+  as on a placement's (`World::step_field_cross_context_cflag`).
 
 #### town0e's installer is a placed actor, not an effect actor
 

@@ -37,9 +37,14 @@ pub const SHADOW_NEAR_MIN: f32 = 24.0;
 /// depth range. Fragments outside the cone sample as unshadowed.
 pub fn light_view_proj(light: &ScenePointLight) -> Mat4 {
     let pos = Vec3::from(light.pos);
-    let view = Mat4::look_at_rh(pos, pos + Vec3::Y, Vec3::Z);
+    let view = glam::camera::rh::view::look_at_mat4(pos, pos + Vec3::Y, Vec3::Z);
     let near = (light.radius * SHADOW_NEAR_FRAC).max(SHADOW_NEAR_MIN);
-    let proj = Mat4::perspective_rh(SHADOW_FOV, 1.0, near, light.radius.max(near * 2.0));
+    let proj = glam::camera::rh::proj::directx::perspective(
+        SHADOW_FOV,
+        1.0,
+        near,
+        light.radius.max(near * 2.0),
+    );
     proj * view
 }
 

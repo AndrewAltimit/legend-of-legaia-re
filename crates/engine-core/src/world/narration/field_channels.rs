@@ -477,8 +477,10 @@ impl World {
                 };
                 // A face-at acquire on a placement - the record's own actor
                 // (`4C 85 <lo> <hi> <bind>`, `rikuroa`'s Noa turning toward
-                // the placement she was seated beside) or another one
-                // (`CC <id> 85 ..`): the target's walk kernel runs the leg.
+                // the placement she was seated beside) or one named by the
+                // cross-context form (`CC <id> 85 ..`), the record's own id
+                // included - `kor3` `P1[11]` runs `CC 14 85 00 00 13` on
+                // itself: the target's walk kernel runs the leg.
                 // It is armed here and stepped from the next field tick,
                 // once the seats this pre-run writes have surfaced; the op
                 // itself still runs below, so the pre-run's control flow -
@@ -491,7 +493,7 @@ impl World {
                     )
                     .or_else(|| {
                         legaia_engine_field::inline_dialogue::TalkFaceRamp::from_npc_acquire(bc, pc)
-                            .filter(|_| target.is_some())
+                            .filter(|_| target.is_some() || self_target)
                             .map(|(_, r)| r)
                     })
                 {

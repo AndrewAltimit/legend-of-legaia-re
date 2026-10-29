@@ -199,19 +199,19 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
 mod tests;
 
 /// Arm the re-seat of a driven action capture
-/// ([`legaia_engine_core::world::BattleState::capture_reseat`]): each time
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::capture_reseat`]): each time
 /// engine slot `seat`'s action seeds, every combatant whose seed places
 /// ground stands back on it. Both the headless seed and the image child
 /// call it beside [`apply_bar_seeds`].
 ///
 /// `approach_yaw` is a monster-melee capture's arrival
-/// ([`legaia_engine_core::world::BattleState::capture_approach_yaw`]): the
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::capture_approach_yaw`]): the
 /// attacker's walk onto its target then starts where retail's did.
 pub fn arm_capture_reseat(
     world: &mut legaia_engine_core::world::World,
     seat: u8,
     seeds: &[BarSeed],
-    approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
+    approach_yaw: Option<legaia_engine_battle_loop::battle_state::CaptureApproach>,
 ) {
     let ground: Vec<(u8, i16, i16)> = seeds
         .iter()

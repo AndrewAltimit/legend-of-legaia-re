@@ -548,7 +548,7 @@ pub const TEXT_ESCAPE_LEAD: u8 = 0xC0;
 /// the port measures in. `legaia_engine_battle::battle_tutorial::TutorialPrompts`
 /// folds `0x7C` to `'\n'` while it decodes and
 /// `legaia_engine_ui::battle_tutorial_box` counts and lays out with
-/// `str::lines()`, live on both hosts (`World::battle_tutorial_box` reaches
+/// `str::lines()`, live on both hosts (`BattleState::battle_tutorial_box` reaches
 /// the native window's HUD pass and the browser play page's battle draws). So
 /// the measurement retail takes over raw bytes is already produced, over a
 /// `String`, by code a player's frame runs.

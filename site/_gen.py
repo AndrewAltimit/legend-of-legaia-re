@@ -84,7 +84,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
     "tooling/translation-workbench": "Legend of Legaia Translation Workbench - Edit a Language Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
-    "guides/desktop-apps": "Legaia Studio and the Native Legend of Legaia Port - Download and Run",
+    "guides/desktop-apps": "Legaia Explorer and the Native Legend of Legaia Port - Download and Run",
 }
 
 # Hand-written meta descriptions for the same landing pages. Everything else
@@ -189,7 +189,7 @@ DESCRIPTIONS: dict[str, str] = {
         "that teleport you inside, and the scene's music on loop."
     ),
     "guides/desktop-apps": (
-        "Download Legaia Studio and the native Legend of Legaia port for "
+        "Download Legaia Explorer and the native Legend of Legaia port for "
         "Windows, macOS or Linux: first start past SmartScreen and Gatekeeper, "
         "browsing and exporting your disc's textures, models, music and movies, "
         "and playing with keyboard or gamepad from your own disc image."
@@ -592,7 +592,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/getting-started.html", "Getting started (release tools)", "guides/getting-started",     "guides/getting-started.html"),
     ("guides/extracting-assets.html","Extracting assets",             "guides/extracting-assets",   "guides/extracting-assets.html"),
     ("guides/playing-and-viewing.html","Playing and viewing",         "guides/playing-and-viewing", "guides/playing-and-viewing.html"),
-    ("guides/desktop-apps.html",   "Desktop apps: Legaia Studio and the native port", "guides/desktop-apps", "guides/desktop-apps.html"),
+    ("guides/desktop-apps.html",   "Desktop apps: Legaia Explorer and the native port", "guides/desktop-apps", "guides/desktop-apps.html"),
     ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
     ("guides/translating.html",    "Translating the game",           "guides/translating",         "guides/translating.html"),
     ("guides/vrchat-world.html",   "Importing a world into VRChat",  "guides/vrchat-world",        "guides/vrchat-world.html"),
@@ -674,6 +674,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/cutscene.html",   "Cutscene (STR mode)",           "subsystems/cutscene",        "subsystems/cutscene.html"),
     ("subsystems/cutscene-internals.html","Cutscene: internals",     "subsystems/cutscene-internals","subsystems/cutscene-internals.html"),
     ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
+    ("subsystems/gameplay-tweaks.html","Gameplay tweaks",           "subsystems/gameplay-tweaks", "subsystems/gameplay-tweaks.html"),
     ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
     # Per-format pages (mirrored from docs/formats/)
     ("formats/disc.html",          "PSX disc geometry",             "formats/disc",               "formats/disc.html"),

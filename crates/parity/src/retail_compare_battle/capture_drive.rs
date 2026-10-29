@@ -114,23 +114,79 @@ impl RetailBattle {
     /// * a party seat's [`SpanGate::Age`] and any [`SpanGate::CaptureFade`]
     ///   take it - every such frame rose (`battle_vahn_tri_somersault_super`
     ///   `0.716` to `0.824`, `nivora_duel_mid_blazing_slash` to `0.996`);
+    /// * a monster's [`SpanGate::Age`] in the magic band takes it only where
+    ///   the gate's frame is another shot than the display showed
+    ///   ([`Self::retake_on_shot_only`]);
     /// * a [`SpanGate::Landed`] capture keeps the RAM's frame: retail sat
     ///   parked on the CD wait with its glide long landed, while the
     ///   engine's gate is the tick its own glide lands, so the frames before
     ///   it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`);
-    /// * a monster's [`SpanGate::Age`] keeps it: Tail Fire's rays run on the
-    ///   engine's own clock and both `battle_gimard_tail_fire_*` frames fell;
-    /// * a [`SpanGate::DoneHold`] keeps it (`noa_levelup_fight_pre` fell).
+    /// * a [`SpanGate::DoneHold`] keeps it (`noa_levelup_fight_pre` fell);
+    /// * a capture past a walk-in the replay skips
+    ///   ([`Self::walk_in_shot_aligned`]) keeps the gate's frame: the replay
+    ///   runs that walk's arms in a tick or two, so the lag back from its
+    ///   gate lands on `0x70`'s first tick, ahead of the shot retail's
+    ///   display shows walking, and the shot is aligned onto the displayed
+    ///   frame's pose instead (`koru_blade_breath_mid_cast`).
     pub fn display_retake(&self) -> bool {
         self.display_lag > 0
             && match self.seed_plan() {
                 SeedPlan::Action { seat, .. } => match self.span_gate {
-                    SpanGate::Age { .. } => seat < 3,
-                    SpanGate::CaptureFade { .. } => true,
+                    SpanGate::Age { .. } => seat < 3 || self.retake_on_shot_only(),
+                    SpanGate::CaptureFade { .. } => !self.walk_in_shot_aligned(),
                     _ => false,
                 },
                 _ => false,
             }
+    }
+
+    /// A monster's magic-band capture ([`SpanGate::Age`] on a monster seat,
+    /// category `2`, state `0x2A..=0x2E`): the cast-effect driver's shot
+    /// first frames the camera on the first `0x2B` pass (`jal 0x801DC0A0` at
+    /// `0x801E4834`; `0x29`'s own call is overridden by the case 6 its pass
+    /// ends on, `0x801E474C`), so a capture two passes into `0x2B` holds the
+    /// shot while its display shows the case-6 framing before it
+    /// (`battle_rugi_barra_windcutter_mid_cast` `0.538` to `0.864`). The
+    /// image child retakes only when its own camera armed the shot after
+    /// the retake's tick (`LEGAIA_CAPTURE_RETAKE_SHOT`), and only on a shot
+    /// retail's camera already stands on (live pose at the tween table's
+    /// endpoints): a one-frame shot lands on its arming pass and keeps
+    /// nothing of the framing before it, so the replay's own case 6 is the
+    /// only reading of the displayed frame. A shot still walking holds
+    /// retail's live pose, which the gate's frame is aligned to: the group
+    /// breaths, whose case 9 eases in over six frames, read lower on the
+    /// replay's case 6 (`battle_chitei2_kemaro_lv2_lava_breath_mid_cast`
+    /// `0.941` to `0.735`, `battle_rugi_slippery_poisonous_breath_mid_cast`
+    /// `0.966` to `0.932`). Elsewhere a monster's
+    /// gate keeps the RAM's frame: retaken on every monster `Age` gate the
+    /// strikes split both ways (`battle_jouind_gilium_lv3_strike` `0.850` to
+    /// `0.953`, `battle_vozz_gizam_strike` `0.964` to `0.921`) and Tail
+    /// Fire's rays, which run on the engine's own clock, fell
+    /// (`battle_gimard_tail_fire_b` `0.978` to `0.970`).
+    pub fn retake_on_shot_only(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 2
+            && legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES
+                .contains(&self.action_state)
+            && self.cam_tween.0 == self.cam_tween.1
+    }
+
+    /// The display lag in the image child's own ticks: two of its passes,
+    /// for the shot retake ([`Self::retake_on_shot_only`]). A pad drive runs
+    /// the engine's default battle frame step unless the drive seeds
+    /// retail's ([`Self::frame_step_seed`]), so where retail ran another
+    /// step its [`Self::display_lag`] (two of retail's passes, in vsyncs) is
+    /// not two of the child's passes: Barra's Windcutter ran step `3`, and
+    /// six ticks back from the gate is the child's `0x29` exit pass, a pass
+    /// before the frame retail's display held.
+    pub fn drive_display_lag(&self) -> u16 {
+        let step = self.frame_step_seed().map_or(
+            legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
+            |s| s.0,
+        );
+        DISPLAY_LAG_PASSES * u16::from(step.max(1))
     }
 
     /// Whether the image child's camera is aligned to the pose the
@@ -209,14 +265,42 @@ impl RetailBattle {
     /// Elsewhere the module's own clocks place its shot: aligned on PROT
     /// 0930's side-band wait, `horn_summon_mid_cast` read `.976` against
     /// `.988`.
+    ///
+    /// The same holds for a capture-class shot armed past a walk-in the
+    /// replay does not run ([`Self::walk_in_shot_aligned`]).
     pub fn module_cam_aligned(&self) -> bool {
         let entry = u32::from(self.queued_action).wrapping_sub(0x81) + 903;
-        matches!(self.seed_plan(), SeedPlan::Cast)
+        (matches!(self.seed_plan(), SeedPlan::Cast)
             && (0x81..=0xA0).contains(&self.queued_action)
             && matches!(self.action_state, 0x35 | 0x36)
             && legaia_engine_cast::cast_module_camera::creature_poll_arm(entry)
                 == Some(self.module_phase)
+            && !self.cam_landed)
+            || self.walk_in_shot_aligned()
+    }
+
+    /// A `0x70` capture of a body whose walk-in frames the caster through
+    /// case 6 every pass (PROT 0962's charge bodies,
+    /// `cast_module_camera::capture_approach_follows`), saved past the walk
+    /// with its arm-2 shot still walking. The arming routine takes the
+    /// shortest arc from the live camera (`FUN_80021248`), so the shot sets
+    /// out from wherever the walk-in's framing had swung: in a retail film
+    /// of the walk (`koru_pre_thunder_needle`, `36` vsyncs of arm 1 from
+    /// Koru's seat) the half-turned case-6 framing lands on yaw `2168` and
+    /// the shot leaves from there. The replay stands the caster on the
+    /// capture's walked ground, already in reach, so its arms 0..2 run in
+    /// one tick and the shot leaves from the unturned yaw instead; the
+    /// shot's own table places it (`koru_blade_breath_mid_cast`, two frames
+    /// into the arm-2 shot).
+    pub fn walk_in_shot_aligned(&self) -> bool {
+        self.action_state == 0x70
+            && self.module_phase >= 2
             && !self.cam_landed
+            && (0xA2..=0xA4).contains(&self.queued_action)
+            && legaia_engine_cast::cast_module_camera::capture_approach_follows(
+                962,
+                legaia_engine_cast::cast_module_ticks::capture_tick_body(962, self.queued_action),
+            )
     }
 
     /// Every captured combatant's live pair and heading by engine slot - the
@@ -549,7 +633,9 @@ impl RetailBattle {
     /// the engine slot of the capture's target `+0x1DD` - only a walk onto
     /// that body is the captured one - and both bodies' captured live pairs
     /// (not the seeds', which [`Self::undrift`] moves).
-    pub fn capture_approach_yaw(&self) -> Option<legaia_engine_core::world::CaptureApproach> {
+    pub fn capture_approach_yaw(
+        &self,
+    ) -> Option<legaia_engine_battle_loop::battle_state::CaptureApproach> {
         let SeedPlan::Action { seat, state } = self.seed_plan() else {
             return None;
         };
@@ -594,12 +680,14 @@ impl RetailBattle {
         self.walk_yaw_base
             .checked_sub(passes * inc)
             .filter(|&y| y > 0x200)
-            .map(|arrive| legaia_engine_core::world::CaptureApproach {
-                arrive,
-                target,
-                strike,
-                target_ground,
-            })
+            .map(
+                |arrive| legaia_engine_battle_loop::battle_state::CaptureApproach {
+                    arrive,
+                    target,
+                    strike,
+                    target_ground,
+                },
+            )
     }
 
     /// The backdrop pair's depth-cue weight a capture-band capture

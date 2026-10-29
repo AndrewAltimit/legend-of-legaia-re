@@ -68,6 +68,16 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **A four-slot event list's beat is decided by the disc, and is rarely
+  `0`.** The read index is the low byte of the entry's RAM address, and the
+  battle heap places each monster block by a fixed law: ids load upward
+  (`0x800543EC..0x800549F0`), each block is carved from the top of the free
+  node, and the first ends at `0x800B9A50` with one member seated. Demon
+  Fly's attack reads `209`, longer than its clip; the port had read `0` for
+  every fight. The juggle window's measured overrun is the pass grid, not a
+  cursor carry - the commit zeroes the cursor at `0x8004B068`
+  ([settled](re-settled-threads/battle.md),
+  [falsified](re-do-not-re-walk.md#battle--arts--level-up)).
 - **The commit's "counter / guard window" is a sound-cue skip.** The anim
   commit's read of the juggle byte at `0x8004AFD4` seeds the cue-track
   cursor `+0x1F6` at `1` for a flinch (or block) re-staged inside its own
@@ -181,7 +191,6 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 | Thread | Status | What would close it |
 |---|---|---|
-| What is left of the juggle window? | partial (the per-frame law is pinned; the four-slot read is narrowed) | Two residuals ([battle-formulas.md](../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)): a four-slot list reads `entry[0x23 + 4k]` with `k` set by the monster block's heap address: both measured fights read `0` (the port's value); a `0xFF` slot would hold the window open ([monster-animation.md](../formats/monster-animation.md#event-frame-list-entry-0x100x13)); the measured window runs 1-2 ticks past `32 * beat / (speed * rate)` because the cursor's sub-frame carry at the commit is unmodelled. A capture of the commit's carry closes the second. |
 | Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
 

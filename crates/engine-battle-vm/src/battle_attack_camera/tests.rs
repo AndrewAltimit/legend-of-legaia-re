@@ -327,22 +327,27 @@ fn the_latch_reset_fires_once_per_threshold_crossing() {
     assert_eq!((ctx.ramp, ctx.latch, ctx.accum), (0, 2, 0), "clears accum");
 }
 
-/// The cursor is a coin flip, so `begin_action` seeds `0` or `1` and
-/// wipes the ramps the previous action left behind.
+/// The cursor is a coin flip, so `begin_action` seeds `0` or `1`; the
+/// ramps the previous action left behind stay for the next clip commit.
 #[test]
-fn begin_action_rolls_the_cursor_and_clears_the_ramps() {
+fn begin_action_rolls_the_cursor_and_leaves_the_ramps() {
+    // `FUN_8004E13C` stores `ctx[+0x26D]` alone (`0x8004E2DC`); the ramp,
+    // accumulator and latch are the clip commit's to zero (`0x8004BF50..`).
     let mut ctx = AttackCamCtx {
         ramp: 200,
         accum: 9999,
         latch: 2,
         phase_cursor: 1,
-        death_ramp: 0,
+        death_ramp: 7,
     };
     ctx.begin_action(false);
-    assert_eq!(ctx, AttackCamCtx::default());
+    assert_eq!(ctx.phase_cursor, 0);
+    assert_eq!(
+        (ctx.ramp, ctx.accum, ctx.latch, ctx.death_ramp),
+        (200, 9999, 2, 7)
+    );
     ctx.begin_action(true);
     assert_eq!(ctx.phase_cursor, 1);
-    assert_eq!((ctx.ramp, ctx.accum, ctx.latch), (0, 0, 0));
 }
 
 /// The outer gate is the CALL SITE's, not the routine's - both halves.

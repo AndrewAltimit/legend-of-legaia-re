@@ -15,7 +15,7 @@ impl World {
         &self,
         caster: u8,
     ) -> Option<legaia_engine_battle::battle_magic::BattleSpellSession> {
-        if self.actor_blocked_from_magic(caster) {
+        if self.battle.actor_blocked_from_magic(caster) {
             return None;
         }
         // `caster` is the battle ordinal; the spell list belongs to the
@@ -86,7 +86,11 @@ impl World {
         };
         let phase_before = menu.phase.clone();
         menu.input(ev, &self.tables.spell_catalog, party, monsters);
-        if let Some(cue) = super::ui_cues::spell_phase_cue(&phase_before, &menu.phase, ev.cross) {
+        if let Some(cue) = legaia_engine_battle_loop::ui_cues::spell_phase_cue(
+            &phase_before,
+            &menu.phase,
+            ev.cross,
+        ) {
             self.push_battle_ui_cue(cue);
         }
 
@@ -104,7 +108,7 @@ impl World {
                 }
                 self.commit_party_command(
                     caster,
-                    crate::battle_round::PendingPartyAction::Spell {
+                    legaia_engine_battle_loop::round_flow::PendingPartyAction::Spell {
                         spell_id,
                         target_row,
                         target_slot,
@@ -247,7 +251,9 @@ impl World {
         // targets the completed use applied to (one for a single-target item,
         // every healed ally for an all-party item).
         let events = menu.drain_events();
-        if let Some(cue) = super::ui_cues::item_events_cue(&state_before, &events) {
+        if let Some(cue) =
+            legaia_engine_battle_loop::ui_cues::item_events_cue(&state_before, &events)
+        {
             self.push_battle_ui_cue(cue);
         }
         let used_slots = menu.used_slots.clone();
@@ -272,7 +278,7 @@ impl World {
             // REF: FUN_801F6B70 (state 110, `0x801F7088..0x801F7190`)
             if item_before.is_some()
                 && self.battle.tutorial.is_some()
-                && self.battle_tutorial_commit(
+                && self.battle.battle_tutorial_commit(
                     legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte(),
                 )
             {
@@ -292,15 +298,17 @@ impl World {
                     self.stamp_commit_clip(actor, CAST_COMMIT_CLIP);
                     self.commit_party_command(
                         actor,
-                        crate::battle_round::PendingPartyAction::Item {
+                        legaia_engine_battle_loop::round_flow::PendingPartyAction::Item {
                             item_id,
                             used_slots,
                         },
                     );
                 }
                 // No item id resolved (defensive) - the member stands by.
-                None => self
-                    .commit_party_command(actor, crate::battle_round::PendingPartyAction::StandBy),
+                None => self.commit_party_command(
+                    actor,
+                    legaia_engine_battle_loop::round_flow::PendingPartyAction::StandBy,
+                ),
             }
             return;
         }

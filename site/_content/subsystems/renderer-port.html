@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; port renderer</div>
   <h1>The port&rsquo;s wgpu renderer</h1>
-  <p class="lede">How the Rust port draws a frame: which PlayStation rasterisation traits are always on, the two that are opt-in, how per-texel semi-transparency becomes two passes, the enhancement passes that leave the faithful render bit-identical when off, and the screen-space overlay that stands in for retail&rsquo;s ordering table. Retail&rsquo;s own renderer is on <a href="renderer.html">renderer</a>; how a pixel gets its colour is on <a href="shading.html">shading</a>.</p>
+  <p class="lede">How the Rust port draws a frame: which PlayStation rasterisation traits are always on, the three that are opt-in, how per-texel semi-transparency becomes two passes, the enhancement passes that leave the faithful render bit-identical when off, and the screen-space overlay that stands in for retail&rsquo;s ordering table. Retail&rsquo;s own renderer is on <a href="renderer.html">renderer</a>; how a pixel gets its colour is on <a href="shading.html">shading</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -10,7 +10,7 @@
     <dt>Crate</dt><dd><code>legaia-engine-render</code>: winit + wgpu, a software VRAM page sampled in the fragment shader</dd>
     <dt>Shared kernels</dt><dd><code>legaia-render-kernels</code> - wgpu-free GTE maths, screen primitives, VRAM capture, emitters - linked by the browser host too</dd>
     <dt>Always on</dt><dd>Affine UVs, flat per-primitive texture page and palette, PSX texture modulation, semi-transparency</dd>
-    <dt>Opt-in</dt><dd><code>Renderer::set_psx_mode</code> gates vertex snap and 15-bit dither only</dd>
+    <dt>Opt-in</dt><dd><code>Renderer::set_psx_mode</code> gates the GTE&rsquo;s register limits, vertex snap and 15-bit dither only</dd>
     <dt>Enhancements</dt><dd>Enhanced lighting, light shadows, camera-occlusion fade, volumetric fog, bloom - each off <em>is</em> retail</dd>
     <dt>Draw lists</dt><dd>Battle HUD, menus and text come from <code>engine-ui</code>, shared with the <a href="browser-host.html">browser host</a></dd>
   </dl>
@@ -63,7 +63,7 @@
       <path class="dg-edge-dim" d="M560 195 L540 195 L540 126 L96 126 L96 98" marker-end="url(#rp-arrow)"/>
       <rect class="dg-node" x="560" y="234" width="300" height="44" rx="4"/>
       <text class="dg-label" x="710" y="253">PSX mode (opt-in)</text>
-      <text class="dg-sub" x="710" y="269">vertex snap + 15-bit dither only</text>
+      <text class="dg-sub" x="710" y="269">GTE limits, vertex snap, 15-bit dither</text>
     </svg>
     <figcaption>Retail draws 3D primitives and screen-space packets through one ordering table; the port splits them into a scene pass and an overlay pass and joins them in one compositing target. The capture path is the direction the console gets for free: on a PlayStation the framebuffer <em>is</em> VRAM, so a primitive can sample pixels drawn moments earlier.</figcaption>
   </figure>
@@ -79,7 +79,8 @@
       <tr><td>Flat texture page + palette per primitive</td><td>unconditional</td><td>each triangle samples one page and one palette</td></tr>
       <tr><td>Texture modulation</td><td>unconditional</td><td><code>texel * colour / 128</code> with the baked colour word - the game&rsquo;s whole lighting on most paths</td></tr>
       <tr><td>Semi-transparency</td><td><code>set_semi_blend</code>, on by default</td><td>the four blend equations, per texel</td></tr>
-      <tr><td>Sub-pixel vertex snap</td><td>PSX mode</td><td>the per-vertex shimmer on slow geometry</td></tr>
+      <tr><td>GTE register limits</td><td>PSX mode</td><td>a corner whose eye-space X / Y or depth passes the GTE&rsquo;s 16-bit <code>IR</code> / <code>SZ</code> saturation lands where <code>RTPS</code> wrote it, not where a plain projection puts it (<a href="renderer.html#gte-limits">renderer</a>)</td></tr>
+      <tr><td>Sub-pixel vertex snap</td><td>PSX mode</td><td>the per-vertex shimmer on slow geometry; corners truncate onto the 320&times;240 grid and each scanline takes its texels at the row itself</td></tr>
       <tr><td>15-bit ordered dither</td><td>PSX mode</td><td>the cross-hatched gradients of a 5-bit-per-channel framebuffer</td></tr>
     </tbody>
   </table>

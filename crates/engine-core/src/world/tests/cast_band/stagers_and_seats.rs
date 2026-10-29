@@ -73,7 +73,7 @@ fn the_juggernaut_sweep_spares_the_party_and_never_kills() {
         world.actors[i].battle.hp = 40;
         world.actors[i].battle_monster_id = Some(1);
     }
-    world.set_battle_attack(0, 400);
+    world.battle.set_battle_attack(0, 400);
     let run = world
         .run_cast_module_aoe(0x99, 0)
         .expect("PROT 0927 has a never-kill damage shape");
@@ -116,7 +116,7 @@ fn a_lone_members_juggernaut_sweeps_the_engine_monster_row() {
     for i in 6..12 {
         world.actors[i].active = false;
     }
-    world.set_battle_attack(0, 400);
+    world.battle.set_battle_attack(0, 400);
     assert_eq!(world.cast_module_ctx().monster_count, 5);
     let run = world.run_cast_module_aoe(0x99, 0).expect("PROT 0927");
     let mut seats: Vec<u8> = run.aoe_hits.iter().map(|h| h.seat).collect();

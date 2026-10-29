@@ -45,9 +45,9 @@ fn player_driven_battle() -> World {
 /// `just_pressed`, so a held mask is one event.
 fn tap(world: &mut World, button: PadButton) {
     // The menu SM reads no pad while the prompt's glide is in flight
-    // (`World::battle_command_pad_held`): wait it out, as a player does.
+    // (`BattleState::battle_command_pad_held`): wait it out, as a player does.
     for _ in 0..64 {
-        if !world.battle_command_pad_held() {
+        if !world.battle.battle_command_pad_held() {
             break;
         }
         world.set_pad(0);
@@ -170,6 +170,7 @@ fn an_ambush_announces_itself_and_costs_the_party_the_round() {
     // The screen says so - one self-dismissing box, holding retail's longer
     // advantage-case intro timer.
     let banner = world
+        .battle
         .battle_tutorial_box()
         .expect("an ambush must put a banner up");
     assert!(!banner.text.trim().is_empty());
@@ -202,7 +203,7 @@ fn a_preemptive_strike_announces_itself_and_costs_the_monsters_the_round() {
     world.seed_battle_initiative();
     world.raise_battle_open_banner();
 
-    assert!(world.battle_tutorial_box().is_some());
+    assert!(world.battle.battle_tutorial_box().is_some());
     for slot in 3..5 {
         assert_eq!(world.actors[slot].battle.init_key, 0);
     }
@@ -217,7 +218,7 @@ fn an_ordinary_formation_raises_no_banner() {
     world.enter_battle(3, 2);
     world.set_battle_formation(FormationAdvantage::None);
     world.raise_battle_open_banner();
-    assert!(world.battle_tutorial_box().is_none());
+    assert!(world.battle.battle_tutorial_box().is_none());
     assert_eq!(
         FormationBanner::for_formation(FormationAdvantage::None, 3),
         None

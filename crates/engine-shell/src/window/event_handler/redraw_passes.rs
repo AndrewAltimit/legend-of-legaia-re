@@ -686,9 +686,10 @@ impl PlayWindowApp {
         Vec<(UploadedVramMesh, Mat4)>,
         Vec<(UploadedVramMesh, Mat4)>,
         Vec<(UploadedVramMesh, Mat4, bool)>,
+        Vec<(UploadedColorMesh, Mat4, bool)>,
     ) {
         if self.boot_ui.is_active() {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         }
         let world = &self.session.host.world;
         let lists =
@@ -730,11 +731,17 @@ impl PlayWindowApp {
             .parts
             .iter()
             .filter_map(|p| {
-                let vmesh = world.part_draw_vram_mesh(&p.draw)?;
-                Some((
-                    upload(&vmesh, "summon/move-FX part")?,
-                    Mat4::from_cols_array(&p.model),
-                ))
+                let mut vmesh = world.part_draw_vram_mesh(&p.draw)?;
+                let model = Mat4::from_cols_array(&p.model);
+                // A single-sided part keeps retail's front faces only, as
+                // the draw-kind-4 nodes below do.
+                if p.single_sided {
+                    legaia_engine_world_views::effect_draws::retail_front_faces(
+                        &mut vmesh,
+                        &(fx_cam * model).to_cols_array(),
+                    );
+                }
+                Some((upload(&vmesh, "summon/move-FX part")?, model))
             })
             .collect();
         for (n, what) in lists
@@ -781,7 +788,46 @@ impl PlayWindowApp {
                 ))
             })
             .collect();
-        (effect_model_draws, part_draws, field_fx_draws)
+        // The same parts' untextured prims, on the colour pipeline: the
+        // render dispatcher writes every packet kind, and a mesh that is
+        // all `F*` / `G*` (the map display's pointer) has nothing on the
+        // textured half at all.
+        let field_fx_color_draws = lists
+            .field_parts
+            .iter()
+            .filter_map(|fp| {
+                let (tmd, raw) = self.field_stager_tmds.get(fp.draw.model_index)?;
+                let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(tmd, raw);
+                if cmesh.is_empty() {
+                    return None;
+                }
+                if !fp.draw.draws_rest_mesh() {
+                    fp.draw.apply_render_state_color(&mut cmesh);
+                }
+                match r.upload_color_mesh_blended(
+                    &cmesh.positions,
+                    &cmesh.colors,
+                    &cmesh.indices,
+                    &cmesh.blend,
+                ) {
+                    Ok(m) => Some((
+                        m,
+                        Mat4::from_cols_array(&fp.model),
+                        fp.draw.colour.double_sided,
+                    )),
+                    Err(e) => {
+                        log::warn!("field-FX part colour mesh upload: {e:#}");
+                        None
+                    }
+                }
+            })
+            .collect();
+        (
+            effect_model_draws,
+            part_draws,
+            field_fx_draws,
+            field_fx_color_draws,
+        )
     }
 
     /// This frame's field fog sheets (`legaia_engine_field::fog_particles`):

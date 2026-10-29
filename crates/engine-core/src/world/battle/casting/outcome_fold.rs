@@ -7,9 +7,9 @@ impl World {
     /// state and surface a HUD popup. Damage subtracts HP (and downs the
     /// target at zero); heals / revives add HP (capped); cures clear the
     /// target's status; buffs adjust a per-slot scalar with a turn timer
-    /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
+    /// ([`BattleState::apply_battle_buff`]); capture rolls vs the monster's weakened
     /// state ([`Self::resolve_capture`]); escape flags a return to the field
-    /// ([`crate::world::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
     pub(in crate::world) fn fold_spell_outcome(
         &mut self,
         outcome: legaia_engine_battle::spells::SpellOutcome,
@@ -26,7 +26,7 @@ impl World {
                 // A petrified target (Stone) absorbs the hit - no HP loss, like
                 // the basic-attack path; Stone is invulnerable at every damage
                 // entry point.
-                let applied = if self.actor_is_petrified(target) {
+                let applied = if self.battle.actor_is_petrified(target) {
                     0
                 } else {
                     amount
@@ -103,7 +103,8 @@ impl World {
                 magnitude,
                 turns,
             } => {
-                self.apply_battle_buff(target, stat, magnitude, turns);
+                self.battle
+                    .apply_battle_buff(target, stat, magnitude, turns);
             }
             O::CaptureRoll { target, hit_pct } => {
                 self.resolve_capture(target, hit_pct);

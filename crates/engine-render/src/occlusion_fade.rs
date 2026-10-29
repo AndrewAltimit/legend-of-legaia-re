@@ -438,10 +438,10 @@ mod tests {
     /// arithmetic against itself.
     #[test]
     fn view_proj_scale_y_recovers_the_projection() {
-        use glam::{Mat4, Vec3};
+        use glam::Vec3;
         let fov = 60f32.to_radians();
         let want = 1.0 / (fov / 2.0).tan();
-        let proj = Mat4::perspective_rh(fov, 4.0 / 3.0, 1.0, 10_000.0);
+        let proj = glam::camera::rh::proj::directx::perspective(fov, 4.0 / 3.0, 1.0, 10_000.0);
         let views = [
             (Vec3::new(0.0, 0.0, 900.0), Vec3::Y),
             (Vec3::new(600.0, 700.0, -300.0), Vec3::Y),
@@ -451,22 +451,31 @@ mod tests {
             ),
         ];
         for (eye, up) in views {
-            let vp = proj * Mat4::look_at_rh(eye, Vec3::ZERO, up);
+            let vp = proj * glam::camera::rh::view::look_at_mat4(eye, Vec3::ZERO, up);
             let got = view_proj_scale_y(&vp.to_cols_array());
             assert!((got - want).abs() < 1e-4, "eye {eye:?}: {got} != {want}");
         }
         // A different FOV must read back differently - otherwise the test
         // above would pass on a function that returned a constant.
-        let narrow = Mat4::perspective_rh(0.9, 4.0 / 3.0, 1.0, 10_000.0)
-            * Mat4::look_at_rh(Vec3::new(0.0, 500.0, 900.0), Vec3::ZERO, Vec3::Y);
+        let narrow = glam::camera::rh::proj::directx::perspective(0.9, 4.0 / 3.0, 1.0, 10_000.0)
+            * glam::camera::rh::view::look_at_mat4(
+                Vec3::new(0.0, 500.0, 900.0),
+                Vec3::ZERO,
+                Vec3::Y,
+            );
         let narrow_scale = view_proj_scale_y(&narrow.to_cols_array());
         assert!((narrow_scale - 1.0 / (0.45f32).tan()).abs() < 1e-4);
         assert!(narrow_scale > want, "a narrower FOV must scale up");
 
         // The browser mirrors screen X on top of the projection
         // (`P[0] = -P[0]`); the recovery reads only the second row.
-        let mut m = (proj * Mat4::look_at_rh(Vec3::new(0.0, 500.0, 900.0), Vec3::ZERO, Vec3::Y))
-            .to_cols_array();
+        let mut m = (proj
+            * glam::camera::rh::view::look_at_mat4(
+                Vec3::new(0.0, 500.0, 900.0),
+                Vec3::ZERO,
+                Vec3::Y,
+            ))
+        .to_cols_array();
         m[0] = -m[0];
         assert!((view_proj_scale_y(&m) - want).abs() < 1e-4);
     }
@@ -603,10 +612,15 @@ mod tests {
     }
 
     fn rig(eye: glam::Vec3) -> Rig {
-        use glam::{Mat4, Vec3};
+        use glam::Vec3;
         let centre = Vec3::new(0.0, BODY_HALF, 0.0);
-        let proj = Mat4::perspective_rh(60f32.to_radians(), RIG_W / RIG_H, 1.0, 20_000.0);
-        let vp = proj * Mat4::look_at_rh(eye, centre, Vec3::Y);
+        let proj = glam::camera::rh::proj::directx::perspective(
+            60f32.to_radians(),
+            RIG_W / RIG_H,
+            1.0,
+            20_000.0,
+        );
+        let vp = proj * glam::camera::rh::view::look_at_mat4(eye, centre, Vec3::Y);
         let (focus_px, focus_z) = project(vp, centre);
         let (feet_px, _) = project(vp, Vec3::ZERO);
         let radius = radius_px(focus_z, view_proj_scale_y(&vp.to_cols_array()), RIG_H);

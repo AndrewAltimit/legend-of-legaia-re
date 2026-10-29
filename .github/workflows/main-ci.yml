@@ -78,11 +78,13 @@ jobs:
   gates:
     name: Repo Gates
     runs-on: self-hosted
-    timeout-minutes: 10
+    # The gates take seconds; the headroom is for a cold cargo-deny install
+    # (the dependency-advisories step), which builds it once per runner.
+    timeout-minutes: 25
     if: github.event_name != 'pull_request' || github.event.action != 'labeled'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 1
           clean: true
@@ -158,6 +160,20 @@ jobs:
       # in either direction fails.
       - name: Crate layering
         run: python3 scripts/ci/check-crate-layering.py
+
+      # Cargo.lock against the RustSec advisory database, configured by
+      # deny.toml (docs/tooling/dependency-policy.md). cargo-deny is built
+      # from crates.io at an exact version with its own lockfile; the install
+      # runs only when the runner's copy is missing or a different version,
+      # so a warm runner spends seconds here and a cold one one build.
+      - name: Dependency advisories
+        env:
+          CARGO_DENY_VERSION: 0.20.2
+        run: |
+          if [ "$(cargo deny --version 2>/dev/null)" != "cargo-deny $CARGO_DENY_VERSION" ]; then
+            cargo install cargo-deny --version "$CARGO_DENY_VERSION" --locked
+          fi
+          cargo deny check advisories
 
       # The site's crate map, the README's crate diagrams and its layer list
       # are generated from the manifests; a stale copy fails.
@@ -266,7 +282,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.action != 'labeled'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 1
           clean: true
@@ -305,7 +321,7 @@ jobs:
     if: github.event_name != 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           clean: true
@@ -363,7 +379,7 @@ jobs:
       LEGAIA_DISC_BIN: ${{ vars.LEGAIA_DISC_BIN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           clean: true
@@ -400,7 +416,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 1
 
@@ -413,8 +429,10 @@ jobs:
 
       - name: Install wasm-pack
         run: |
+          # Exact version from crates.io, built from the lockfile it ships
+          # with - not the unpinned `curl | sh` installer.
           if ! command -v wasm-pack >/dev/null 2>&1; then
-            curl -fsSL https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+            cargo install wasm-pack --version 0.14.0 --locked
           fi
           wasm-pack --version
 
@@ -428,13 +446,13 @@ jobs:
         run: python3 site/_gen.py
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: site/
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
 
   # -- CI Summary -------------------------------------------------------------
   notify:

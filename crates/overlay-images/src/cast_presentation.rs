@@ -297,6 +297,49 @@ pub struct PresentationSite {
     pub arm: u8,
     pub timing: SiteTiming,
     pub call: PresentationCall,
+    /// A test of one of the module's own words the site sits behind
+    /// ([`site_guard`]), when the arm runs it only on part of its passes.
+    pub guard: Option<WordGuard>,
+}
+
+/// A conditional branch on one absolute word of the module against a literal
+/// that the site sits on the fall-through side of: the site runs only on the
+/// passes where `word` passes `test`. PROT 0918's arm 8 ramps its colour
+/// wash down only once its countdown `0x801F92E4` is at or under
+/// `scalar << 7` (`slt v0, v0, v1` / `bne v0, zero, 0x801F76AC` at
+/// `0x801F75CC..0x801F75D0`), the last eighth of the arm's `scalar * 0x1C0`;
+/// fired on every held pass, the wash was gone a few frames into an arm
+/// retail draws it through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WordGuard {
+    /// VA of the word (`lw` off a `lui` base).
+    pub word: u32,
+    pub test: WordTest,
+}
+
+/// The comparison a [`WordGuard`] makes, on the signed word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WordTest {
+    /// `word <= k`.
+    AtMost(i32),
+    /// `word > k`.
+    Above(i32),
+    /// `word < k`.
+    Below(i32),
+    /// `word >= k`.
+    AtLeast(i32),
+}
+
+impl WordGuard {
+    /// Whether a word holding `value` lets the site run.
+    pub fn admits(self, value: i32) -> bool {
+        match self.test {
+            WordTest::AtMost(k) => value <= k,
+            WordTest::Above(k) => value > k,
+            WordTest::Below(k) => value < k,
+            WordTest::AtLeast(k) => value >= k,
+        }
+    }
 }
 
 /// A helper site the decoder found but could not place on a phase arm (a
@@ -1076,6 +1119,13 @@ enum V {
     SlotPtr(HandleSlot),
     /// That actor's flag word `+0x10`, possibly with bits or-ed in.
     ActorFlags(HandleSlot, u32),
+    /// `slt` of an absolute word against a literal: `(word > k)` when
+    /// `word_gt`, else `(word < k)`.
+    WordCmp {
+        word: u32,
+        k: i32,
+        word_gt: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -1281,6 +1331,16 @@ impl Tracker {
                     } else {
                         u32::from(a < b)
                     }),
+                    (V::C(a), V::SlotPtr(HandleSlot::Abs(w))) if i.funct() == 0x2A => V::WordCmp {
+                        word: w,
+                        k: a as i32,
+                        word_gt: true,
+                    },
+                    (V::SlotPtr(HandleSlot::Abs(w)), V::C(b)) if i.funct() == 0x2A => V::WordCmp {
+                        word: w,
+                        k: b as i32,
+                        word_gt: false,
+                    },
                     (V::CtxRel(f, _) | V::CtxTaint(f), _)
                     | (_, V::CtxRel(f, _) | V::CtxTaint(f)) => V::CtxTaint(f),
                     _ => V::Unk,
@@ -1837,6 +1897,7 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                     arm: phase,
                     timing,
                     call,
+                    guard: None,
                 });
             }
             // The sites that run left unresolved, again from the arm's own
@@ -1855,6 +1916,7 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                         arm: phase,
                         timing,
                         call,
+                        guard: None,
                     });
                 }
             }
@@ -1888,6 +1950,7 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                             arm,
                             timing,
                             call,
+                            guard: None,
                         });
                     }
                 }
@@ -1928,8 +1991,77 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             *exit = site_exit_phase(&img, &phase_alias_regs(&img, f), site.va);
         }
     }
+    // A site behind a test of one of the module's own words.
+    for site in &mut out.sites {
+        if let Some(f) = fns
+            .iter()
+            .find(|f| (img.base + f.start as u32..img.base + f.end as u32).contains(&site.va))
+        {
+            site.guard = site_guard(&img, img.base + f.start as u32, site.va);
+        }
+    }
     out.sites.sort_by_key(|s| (s.body, s.arm, s.va));
     out
+}
+
+/// How far back from a site [`site_guard`] looks for the branch it sits
+/// behind, and how far back from that branch it folds the compare.
+const GUARD_BRANCH_WINDOW: u32 = 64;
+const GUARD_FOLD_WINDOW: u32 = 16;
+
+/// The [`WordGuard`] the site at `va` sits behind, if any: the nearest
+/// word-compare branch before it (`bne` / `beq` against `$zero`) whose
+/// forward target lies past the site, so that the site runs on the branch's
+/// fall-through only, and whose register folds to a signed compare of an
+/// absolute word against a literal. The compare is folded with a fresh
+/// tracker over the straight-line run that ends at the branch (from the last
+/// control transfer, at most [`GUARD_FOLD_WINDOW`] instructions back).
+fn site_guard(img: &Image, fn_lo: u32, va: u32) -> Option<WordGuard> {
+    let lo = va.saturating_sub(4 * GUARD_BRANCH_WINDOW).max(fn_lo);
+    let mut b = va.checked_sub(8)?;
+    while b >= lo {
+        let i = img.ins(b)?;
+        let ctrl = i.is_branch() && matches!(i.op(), 0x04 | 0x05) && i.rt() == 0;
+        if ctrl && i.branch_target() > va {
+            let start = {
+                let mut s = b;
+                let floor = b.saturating_sub(4 * GUARD_FOLD_WINDOW).max(fn_lo);
+                while s > floor {
+                    let p = img.ins(s - 4)?;
+                    let q = img.ins(s.saturating_sub(8)).filter(|_| s >= floor + 8);
+                    let transfer = |x: &Ins| {
+                        x.is_branch() || x.is_j() || x.is_jal() || x.is_jr() || x.is_jalr()
+                    };
+                    // Stop past a control transfer and its delay slot.
+                    if transfer(&p) || q.is_some_and(|q| transfer(&q)) {
+                        break;
+                    }
+                    s -= 4;
+                }
+                s
+            };
+            let mut t = Tracker::new();
+            let mut at = start;
+            while at < b {
+                t.exec(&img.ins(at)?);
+                at += 4;
+            }
+            if let V::WordCmp { word, k, word_gt } = t.r[i.rs()] {
+                // `bne` skips the site when the compare holds; `beq` when
+                // it fails.
+                let holds_on_fallthrough = i.op() == 0x04;
+                let test = match (word_gt, holds_on_fallthrough) {
+                    (true, true) => WordTest::Above(k),
+                    (true, false) => WordTest::AtMost(k),
+                    (false, true) => WordTest::Below(k),
+                    (false, false) => WordTest::AtLeast(k),
+                };
+                return Some(WordGuard { word, test });
+            }
+        }
+        b = b.checked_sub(4)?;
+    }
+    None
 }
 
 /// The phase the straight-line run after the call at `va` stores, if it

@@ -498,7 +498,7 @@ A modification that wants the penalty to travel with the sword must add an `0xBA
 
 The entered sequence resolves through the `legaia-art` matcher family. An exact Miracle string replaces the whole queue, a recognised sequence ending on a Super combination replaces the tail, and otherwise each named art contributes its record's strikes with unmatched directions staying plain swings.
 
-Costs come from the equipped set at scene entry ([above](#reading-it)) into `World::battle.swing_costs`; the pool seeds from the actor's AGL. Sessions live at `World::battle.arts_input`. `World::arts_input_active()` is what a host's party status strip reads to park itself, since retail moves the status plate off-screen for the whole session.
+Costs come from the equipped set at scene entry ([above](#reading-it)) into `World::battle.swing_costs`; the pool seeds from the actor's AGL. Sessions live at `World::battle.arts_input`. `BattleState::arts_input_active()` is what a host's party status strip reads to park itself, since retail moves the status plate off-screen for the whole session.
 
 <a id="what-still-diverges"></a>
 

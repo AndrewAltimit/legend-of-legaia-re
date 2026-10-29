@@ -583,6 +583,16 @@ pub struct Actor {
     pub battle_clip_morphs:
         Option<std::sync::Arc<Vec<Option<legaia_actor_formats::monster_archive::ClipMorph>>>>,
 
+    /// The beat each action entry's **four-slot** event list reads in this
+    /// fight, index-aligned with `battle_action_clips` (`None` for an entry
+    /// whose list is not four-slot). Retail reads it at
+    /// `entry[0x10 + ((entry + 0x13) & 0xFF)]`, an address the battle heap
+    /// fixes from the seated party, the formation and the block sizes
+    /// ([`legaia_actor_formats::monster_archive::four_slot_beats`]).
+    /// Installed with the action clips; `None` for an actor that is not a
+    /// monster.
+    pub battle_four_slot_beats: Option<std::sync::Arc<Vec<Option<u8>>>>,
+
     /// Pose id the current `battle_animation` was selected for, in the pose-id
     /// space the battle-action SM emits (`6` idle / `7` ready / `8` recover /
     /// `9` defeat). Lets a repeated request for the same pose keep the playing
@@ -805,26 +815,6 @@ impl Actor {
     }
 }
 
-/// One active stat buff / debuff produced by a battle Magic cast.
-///
-/// The applied delta is the exact change written into the per-slot scalar
-/// ([`crate::world::BattleState::attack`] / [`crate::world::BattleState::defense`] / [`crate::world::BattleState::magic`]),
-/// so `World::finish_battle` (or natural expiry) can revert it precisely.
-/// Stats with no live-loop scalar (Accuracy / Evasion / Speed) are tracked
-/// with a zero delta so the timer still expires cleanly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BattleBuff {
-    /// Actor-table slot the buff applies to.
-    pub slot: u8,
-    /// Buffed stat.
-    pub stat: legaia_engine_battle::spells::BuffStat,
-    /// Signed delta actually written into the per-slot scalar (`0` for stats
-    /// that have no live-loop scalar).
-    pub applied_delta: i16,
-    /// Turns remaining before the buff expires.
-    pub turns: u8,
-}
-
 /// One monster's chosen action for its turn, produced by the action picker
 /// [`World::pick_monster_action`] (the port of `FUN_801E9FD4`'s decision core).
 ///
@@ -849,34 +839,6 @@ pub struct FieldReturnState {
     pub actors: Vec<Actor>,
     pub player_actor_slot: Option<u8>,
     pub party_count: u8,
-}
-
-/// Aggregated post-battle rewards returned by [`World::apply_battle_loot`].
-///
-/// Engines surface this as the post-battle banner ("got X XP, Y gold, level
-/// up!"). The XP / gold totals reflect what was actually credited (monster
-/// ids missing from the catalog don't contribute), `level_ups` carries the
-/// per-character results from [`World::apply_battle_xp`], and `drops`
-/// carries the item ids the loot roll surfaced from each fallen monster.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct BattleRewards {
-    /// The battle's summed monster EXP, before retail's 3/4 scale.
-    pub xp: u32,
-    /// The EXP each living member is credited - the summed EXP scaled by 3/4
-    /// and ceiling-divided among the living members
-    /// ([`legaia_engine_battle_vm::battle_formulas::victory_exp_per_member`]), `0`
-    /// in a no-reward fight. This is the figure the result window prints:
-    /// `FUN_8004E568` stores the share `s6` into `gp+0xA04` (`0x8004F684`)
-    /// and hands that word to the number draw `FUN_8003563C`, so a party of
-    /// three reads a third of three quarters of the pool.
-    pub xp_share: u32,
-    pub gold: u32,
-    pub level_ups: Vec<LevelUpResult>,
-    /// Item drops the post-battle loot roll surfaced: at most one entry, the
-    /// item retail's victory drop roll offers
-    /// ([`legaia_engine_battle_vm::battle_formulas::victory_drop_roll`]), and none
-    /// when the bag already holds 99 of it.
-    pub drops: Vec<u8>,
 }
 
 #[cfg(test)]

@@ -16,9 +16,9 @@ impl World {
     pub(in crate::world) fn dispatch_pending_party_action(
         &mut self,
         actor: u8,
-        action: crate::battle_round::PendingPartyAction,
+        action: legaia_engine_battle_loop::round_flow::PendingPartyAction,
     ) {
-        use crate::battle_round::PendingPartyAction as Pending;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction as Pending;
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle_ctx.active_actor = actor;
         match action {
@@ -47,7 +47,7 @@ impl World {
                 // `FUN_801F0450` rebuilt this seat's queue from the direction
                 // commands and the learned arts (`super::super::auto_combo`), and
                 // that is what the round plays.
-                if let Some(queue) = self.take_auto_attack_queue(actor) {
+                if let Some(queue) = self.battle.take_auto_attack_queue(actor) {
                     if let Some(a) = self.actors.get_mut(actor as usize) {
                         a.battle.params =
                             [0; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];

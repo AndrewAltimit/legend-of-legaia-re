@@ -40,7 +40,7 @@ impl Display {
 }
 
 /// Camera + animation state for the TMD viewer: the orbit pose of the
-/// static site's mesh viewers and Legaia Studio (eye slightly above the
+/// static site's mesh viewers and Legaia Explorer (eye slightly above the
 /// model, looking down, three-quarter front), turning slowly about the
 /// model's vertical axis.
 pub(crate) struct MeshView {
@@ -53,7 +53,7 @@ pub(crate) struct MeshView {
     started_at: Instant,
 }
 
-/// Vertical field of view, radians - the site viewers' and Studio's.
+/// Vertical field of view, radians - the site viewers' and Explorer's.
 const MESH_FOV_Y: f32 = 1.1;
 /// Eye elevation above the model, radians (positive looks down).
 const MESH_PITCH: f32 = 0.2;
@@ -101,10 +101,11 @@ impl MeshView {
         let model = Mat4::from_scale(flip);
         let eye = self.eye_psx(secs) * flip;
         let center = self.center * flip;
-        let view = Mat4::look_at_rh(eye, center, Vec3::Y);
+        let view = glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Y);
         let near = (self.distance * 0.05).max(0.1);
         let far = self.distance * 4.0 + 100.0;
-        let proj = Mat4::perspective_rh(MESH_FOV_Y, aspect.max(0.01), near, far);
+        let proj =
+            glam::camera::rh::proj::directx::perspective(MESH_FOV_Y, aspect.max(0.01), near, far);
         proj * view * model
     }
 }

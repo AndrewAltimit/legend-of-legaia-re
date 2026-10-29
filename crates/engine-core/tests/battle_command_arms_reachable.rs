@@ -40,7 +40,7 @@ fn build_world() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 90);
+        w.battle.set_battle_attack(i as u8, 90);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
@@ -165,7 +165,7 @@ fn pick_command(w: &mut World, want: legaia_engine_battle_menus::battle_input::B
 /// arm rather than printing a bare `false`.
 fn open_surfaces(w: &World) -> Vec<&'static str> {
     let mut out = Vec::new();
-    if w.arts_input_active() {
+    if w.battle.arts_input_active() {
         out.push("arts_input");
     }
     if w.battle.arts_menu.is_some() {

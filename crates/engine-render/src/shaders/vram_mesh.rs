@@ -232,7 +232,10 @@ fn vs_main(
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
+    // PSX mode: the GTE's register limits (a corner past `IR = 0x7FFF` or
+    // `SZ = 0xFFFF` lands where retail's packet put it), then the snap.
     if u.psx_params.z >= 0.5 {
+        clip = gte_saturate_clip(clip);
         clip = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
     }
     if u.psx_params.z >= 1.5 {
@@ -433,7 +436,25 @@ fn psx_texel_uv(
     let margin = PSX_ROW_EDGE_MARGIN;
     let probe = cols + margin;
     let reach = psx_row_reach(bary, bary_dx * probe) * probe;
-    return uv + uv_dx * clamp(reach - margin, 0.0, cols);
+    let rows = psx_row_inset(bary, bary_dy, margin);
+    return uv + uv_dx * clamp(reach - margin, 0.0, cols) + uv_dy * rows;
+}
+
+// How far down (in rows) a fragment on its triangle's top edge moves to sit
+// `margin` rows inside it. The row point of a fragment on a top edge is the
+// edge itself, whose `V` is the edge's own corner value; the host's float
+// interpolation lands a hair either side of it, and truncating the outside
+// value takes the texel row above the primitive's UVs. Zero for every
+// fragment already `margin` inside, and for a vertex with no corner record
+// (`bary_dy` all zero).
+fn psx_row_inset(bary: vec4<f32>, bary_dy: vec4<f32>, margin: f32) -> f32 {
+    var d = 0.0;
+    for (var i = 0; i < 4; i = i + 1) {
+        if bary_dy[i] > 0.0 {
+            d = max(d, margin - bary[i] / bary_dy[i]);
+        }
+    }
+    return min(d, 2.0 * margin);
 }
 
 @fragment

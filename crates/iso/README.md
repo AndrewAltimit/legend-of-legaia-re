@@ -28,7 +28,7 @@ strips that wrapper and exposes a clean ISO9660 view.
   `.iso`, a `.chd`, an EBOOT `.pbp`, an ECM image, an archive, a patch file,
   or a `.cue` whose `.bin` is missing (naming the one `.bin` beside it, the
   renamed-file case). `diagnose_bytes` works on a head buffer (no `std::fs`);
-  `diagnose_path` follows a `.cue` first. The launcher and Studio show it in
+  `diagnose_path` follows a `.cue` first. The launcher and Explorer show it in
   place of the reader's terminal message.
 - `region` - product-code heuristics for identifying which retail build
   (USA / JP / EU / debug) you're holding.

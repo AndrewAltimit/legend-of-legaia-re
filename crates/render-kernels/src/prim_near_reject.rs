@@ -43,13 +43,23 @@ pub const PRIM_REF_FLOATS: usize = 13;
 /// the shaders read as "never reject".
 pub type PrimRef = [f32; PRIM_REF_FLOATS];
 
-/// The GTE's `SZ` for a view depth: floored to an integer and saturated to
-/// `0..=0xFFFF`.
+/// How far under an integer a port depth may fall and still floor to it
+/// ([`screen_z`]). Retail's `SZ` is an integer the GTE computes from integer
+/// inputs; the port's is a float composed through the camera's matrices, a
+/// few thousandths off. A corner retail puts exactly on the cut - PROT
+/// 0922's arm-12 glow ring, locked in view space at `SZ = 64`, whose mean
+/// `OTZ` in battle is the floor `0x10` itself - otherwise floors to `63` on
+/// some frames and the whole ring drops out. The shaders carry the same
+/// constant (`PRIM_NEAR_WGSL`, the play page's `primSz`).
+pub const SZ_FLOAT_SLACK: f32 = 1.0 / 64.0;
+
+/// The GTE's `SZ` for a view depth: floored to an integer (within
+/// [`SZ_FLOAT_SLACK`]) and saturated to `0..=0xFFFF`.
 pub fn screen_z(view_depth: f32) -> i32 {
     if view_depth.is_nan() {
         return 0;
     }
-    (view_depth.floor() as i64).clamp(0, 0xFFFF) as i32
+    ((view_depth + SZ_FLOAT_SLACK).floor() as i64).clamp(0, 0xFFFF) as i32
 }
 
 /// `AVSZ3` / `AVSZ4` over the corners' `SZ`, with the dispatcher's
@@ -113,6 +123,69 @@ pub fn gte_screen_offset(clip: [f32; 4], sz_per_w: f32, h: f32, half: [f32; 2]) 
         let off = clip[i] * half[i] * sz_per_w / d;
         (off + half[i]).clamp(-1024.0, 1023.0) - half[i]
     })
+}
+
+/// The per-frame parameters of the GTE's register limits
+/// ([`gte_saturated_clip`]) both hosts' vertex stages read under PSX mode:
+/// `[sz_per_w, h, 0, 0]`, all zero for `None` (off).
+pub fn gte_saturation_params(gte: Option<(f32, f32)>) -> [f32; 4] {
+    match gte {
+        Some((sz_per_w, h)) if sz_per_w > 0.0 && h > 0.0 => [sz_per_w, h, 0.0, 0.0],
+        _ => [0.0; 4],
+    }
+}
+
+/// One vertex's clip position as retail's `RTPS` places it, with the GTE's
+/// register limits applied: `IR1` / `IR2` saturate to `-0x8000..=0x7FFF`,
+/// `SZ` to `0..=0xFFFF`, the divide's quotient at `0x1FFFF` (`H / SZ` capped
+/// at `2`) and `SX` / `SY` to `-0x400..=0x3FF`. `clip` is the vertex under a
+/// [`legaia_engine_camera::psx_camera::psx_projection`] matrix (clip `x` =
+/// `H * Ex / 160`, clip `y` = `-H * Ey / 120 + bias * w`, `w` = `Ez`), and
+/// `sz_per_w` converts its eye space into GTE units: the field folds a 6x
+/// world scale into its camera rotation (base matrix `_DAT_8007BF10 = 24576
+/// * I`), so a field corner's `IR` is six times its eye-space offset.
+///
+/// A corner inside every limit comes back unchanged. One outside them moves
+/// to where the GTE wrote it: `noaru`'s ice-floor bowl, `20 000` world units
+/// across round the camera focus, reaches `SZ = 0xFFFF` on its far rim and
+/// `IR = 0x7FFF` on its off-screen corners, so retail's packets hold the far
+/// rim pushed outward (`6 * w / 0xFFFF`) and the off-screen corners pulled
+/// in, which an unclamped projection draws `25` pixels off on average.
+///
+/// The rasteriser keeps `w`: retail's screen coordinates are affine across a
+/// polygon, and the port interpolates its texture affinely in screen space
+/// too, so only the corners' screen positions matter.
+///
+/// `None` when nothing saturates (or the corner is at or behind the eye,
+/// which the near reject and the span limit own).
+// REF: FUN_80044DC8
+pub fn gte_saturated_clip(clip: [f32; 4], sz_per_w: f32, h: f32) -> Option<[f32; 4]> {
+    let w = clip[3];
+    if w <= 0.0 || sz_per_w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let bias = legaia_engine_camera::projection::GTE_OFY_NDC_BIAS;
+    // GTE units: `IR1 = S * Ex`, `IR2 = S * Ey` (Y down), `SZ = S * Ez`.
+    let ir_x = clip[0] * 160.0 * sz_per_w / h;
+    let ir_y = -(clip[1] - bias * w) * 120.0 * sz_per_w / h;
+    let sz = w * sz_per_w;
+    let ir_xc = ir_x.clamp(-32768.0, 32767.0);
+    let ir_yc = ir_y.clamp(-32768.0, 32767.0);
+    let szc = sz.min(65535.0);
+    let d = szc.max(h * 0.5);
+    let ofy = 120.0 - bias * 120.0;
+    let (sx_raw, sy_raw) = (160.0 + h * ir_xc / d, ofy + h * ir_yc / d);
+    let sx = sx_raw.clamp(-1024.0, 1023.0);
+    let sy = sy_raw.clamp(-1024.0, 1023.0);
+    if ir_xc == ir_x && ir_yc == ir_y && d == sz && sx == sx_raw && sy == sy_raw {
+        return None;
+    }
+    Some([
+        (sx - 160.0) / 160.0 * w,
+        (120.0 - sy) / 120.0 * w,
+        clip[2],
+        w,
+    ])
 }
 
 /// Whether the GPU skips a triangle with these clip-space corners
@@ -203,6 +276,51 @@ pub fn prim_corner_refs(positions: &[[f32; 3]], indices: &[u32]) -> Vec<PrimRef>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A field corner under `H = 608` (the `noaru` camera), eye offset
+    /// `(x, y)` (Y down) and depth `z`, all in the engine's 1x eye units.
+    fn field_clip(x: f32, y: f32, z: f32) -> [f32; 4] {
+        let h = 608.0;
+        let bias = legaia_engine_camera::projection::GTE_OFY_NDC_BIAS;
+        [h / 160.0 * x, -h / 120.0 * -y + bias * z, 0.5, z]
+    }
+
+    #[test]
+    fn an_unsaturated_corner_is_left_alone() {
+        assert_eq!(
+            gte_saturated_clip(field_clip(100.0, -50.0, 3000.0), 6.0, 608.0),
+            None
+        );
+    }
+
+    /// `noaru_field_card_walk`'s bowl rim: the far corners pass `SZ =
+    /// 0xFFFF` (`6 * w > 65535`) and land further out, the off-screen ones
+    /// reach `IR = 0x7FFF` and land further in - the retail packets' corners
+    /// to within the engine's own pose error.
+    #[test]
+    fn the_noaru_bowl_saturates_like_its_packets() {
+        let h = 608.0;
+        let px = |c: [f32; 4]| {
+            (
+                (c[0] / c[3] * 0.5 + 0.5) * 320.0,
+                (0.5 - c[1] / c[3] * 0.5) * 240.0,
+            )
+        };
+        // From screen pixel + depth back to a clip corner.
+        let corner =
+            |sx: f32, sy: f32, w: f32| [(sx - 160.0) / 160.0 * w, (120.0 - sy) / 120.0 * w, 0.5, w];
+        // Far rim: SZ saturates, the corner moves away from the centre.
+        let far = gte_saturated_clip(corner(166.0, 306.0, 12347.0), 6.0, h).unwrap();
+        let (x, y) = px(far);
+        assert!(
+            (x - 166.8).abs() < 1.0 && (y - 330.2).abs() < 1.5,
+            "{x} {y}"
+        );
+        // Off-screen right: IR1 saturates, the corner moves in (retail 468).
+        let side = gte_saturated_clip(corner(524.1, 133.0, 10728.2), 6.0, h).unwrap();
+        let (x, _) = px(side);
+        assert!((x - 470.0).abs() < 2.0, "{x}");
+    }
 
     /// A battle-frame clip corner at eye offset `(x, y)` and depth `z`
     /// under `H = 256` on the 320 x 240 screen.

@@ -65,7 +65,7 @@ Open the [play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.ht
 
 ### Play natively
 
-Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and start the engine with no arguments (double-click `Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). The launcher opens: choose your disc image once (it is checked and remembered), set the display options, and press Play for the title screen.
+Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and double-click **Legend of Legaia** in the unpacked folder (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). The launcher opens: choose your disc image once (it is checked and remembered), set the display options, and press Play for the title screen.
 
 | Platform | Archive |
 |---|---|
@@ -78,14 +78,14 @@ Download the archive for your platform from the [Releases page](https://github.c
 sha256sum -c SHA256SUMS --ignore-missing       # optional: verify the download
 tar -xzf legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
 cd legaia-tools-<version>-x86_64-unknown-linux-gnu
-./legaia-engine                                # launcher, then the title screen
+./"Legend of Legaia"                            # launcher, then the title screen
 ```
 
-Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
+The archive's top folder holds only the two programs to double-click - the game and Legaia Explorer - plus `README-PLAY.txt` and the licenses; every command-line program, the engine `legaia-engine` among them, is in its `command-line-tools/` folder. `README-PLAY.txt` covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
 
-Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Studio and the native port, with screenshots.
+Every archive also carries **Legaia Explorer**, a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/explorer`](crates/explorer/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Explorer and the native port, with screenshots.
 
-![Legaia Studio previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-studio.jpg)
+![Legaia Explorer previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-explorer.jpg)
 
 ### Build from source
 
@@ -97,7 +97,7 @@ cargo build --release          # every binary lands in target/release/
 
 ### The commands worth knowing
 
-Paths below are for a source build; from a release archive drop the `target/release/` prefix.
+Paths below are for a source build; from a release archive run them in its `command-line-tools` folder, without the `target/release/` prefix.
 
 ```bash
 DISC="/path/to/Legend of Legaia (USA).bin"     # a .cue works anywhere a .bin does
@@ -199,7 +199,7 @@ Top of the stack first. Every crate name links its README.
 
 - **Hosts and front ends.** The programs people run. Each one is a thin shell over the crates below. \
   [`engine-shell`](crates/engine-shell/README.md), [`web-viewer`](crates/web-viewer/README.md), [`web-play`](crates/web-play/README.md), [`web-minigames`](crates/web-minigames/README.md), [`web-patcher`](crates/web-patcher/README.md),
-  [`asset-viewer`](crates/asset-viewer/README.md), [`studio`](crates/studio/README.md), [`patcher`](crates/patcher/README.md), [`extract`](crates/extract/README.md), [`asset`](crates/asset/README.md)
+  [`asset-viewer`](crates/asset-viewer/README.md), [`explorer`](crates/explorer/README.md), [`patcher`](crates/patcher/README.md), [`extract`](crates/extract/README.md), [`asset`](crates/asset/README.md)
 - **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside. \
   [`engine-session`](crates/engine-session/README.md), [`engine-screens`](crates/engine-screens/README.md), [`engine-render`](crates/engine-render/README.md), [`engine-audio`](crates/engine-audio/README.md), [`engine-export`](crates/engine-export/README.md),
   [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md)
@@ -209,7 +209,7 @@ Top of the stack first. Every crate name links its README.
 - **Simulation.** engine-core owns World and its tick, and implements each VM's Host trait. Everything below it names no World. \
   [`engine-core`](crates/engine-core/README.md)
 - **World-free kernels.** The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank. \
-  Rank 6: [`engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) \
+  Rank 6: [`engine-battle-loop`](crates/engine-battle-loop/README.md), [`engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) \
   Rank 5: [`engine-battle-menus`](crates/engine-battle-menus/README.md), [`engine-menus`](crates/engine-menus/README.md) \
   Rank 4: [`engine-fishing`](crates/engine-fishing/README.md), [`engine-minigames`](crates/engine-minigames/README.md), [`engine-scene`](crates/engine-scene/README.md) \
   Rank 3: [`engine-battle`](crates/engine-battle/README.md), [`engine-cast`](crates/engine-cast/README.md), [`engine-effects`](crates/engine-effects/README.md), [`engine-field`](crates/engine-field/README.md), [`engine-ui`](crates/engine-ui/README.md) \

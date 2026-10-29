@@ -160,6 +160,14 @@ pub struct FxPartModel {
     pub draw: SummonPartDraw,
     /// Column-major model matrix in the draw frame.
     pub model: [f32; 16],
+    /// The part's mesh keeps retail's `NCLIP` winding rejection: the model
+    /// draw (`0x8001B160`) hands the prim dispatcher the part's own colour
+    /// word, so a word without `0x08000000` draws front faces only. Set in
+    /// the battle pass, which draws both sides; a host resolves the mesh and
+    /// drops its back faces with [`retail_front_faces`]. PROT 0922's crystals
+    /// (`0x801F989C`, word `0xC1000000`, additive) are one: both-sided, each
+    /// added its far wall over its near one and drew white, not pink.
+    pub single_sided: bool,
 }
 
 /// A node that carries its own per-frame mesh (a draw-kind-4 ribbon or
@@ -233,7 +241,7 @@ pub struct FxModelDraws {
     /// mesh-bearing ambient parts, `draw.model_index` a scene-pack slot
     /// (`DAT_8007C018[5 + slot]`). The host applies the part's render state
     /// (`SummonPartDraw::apply_render_state`) unless it draws its rest mesh.
-    /// None on the overworld.
+    /// On the overworld too: the map display's pointer is one.
     pub field_parts: Vec<FxPartModel>,
 }
 
@@ -275,6 +283,7 @@ pub fn effect_model_draws(
             .chain(world.active_move_fx_part_draws())
             .map(|draw| FxPartModel {
                 model: node(draw.flags_52, draw.world_pos, draw.rot),
+                single_sided: battle && !draw.colour.double_sided,
                 draw,
             })
             .collect();
@@ -302,26 +311,27 @@ pub fn effect_model_draws(
             mesh: rb.mesh,
         })
         .collect();
-    if !overworld {
-        // Field frame: the models compose on the raw retail frame, so the
-        // camera-relative prefix takes no flip.
-        out.field_parts = world
-            .active_field_fx_part_draws()
-            .into_iter()
-            .map(|fp| {
-                let place =
-                    camera_relative_model_prefix(fp.flags_52, fp.world_pos, part_cam, false)
-                        .unwrap_or_else(|| mat4_translation(fp.world_pos));
-                FxPartModel {
-                    model: mat4_mul(
-                        &place,
-                        &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
-                    ),
-                    draw: fp,
-                }
-            })
-            .collect();
-    }
+    // Field frame: the models compose on the raw retail frame, so the
+    // camera-relative prefix takes no flip. The overworld draws these too:
+    // the render dispatcher's case-5 model arm (`FUN_8001ADA4`) makes no mode
+    // test, and the map display's pointer is one.
+    out.field_parts = world
+        .active_field_fx_part_draws()
+        .into_iter()
+        .map(|fp| {
+            let place = camera_relative_model_prefix(fp.flags_52, fp.world_pos, part_cam, false)
+                .unwrap_or_else(|| mat4_translation(fp.world_pos));
+            FxPartModel {
+                model: mat4_mul(
+                    &place,
+                    &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
+                ),
+                // The field pass culls back faces itself (`nclip_cull_mode`).
+                single_sided: false,
+                draw: fp,
+            }
+        })
+        .collect();
     out
 }
 

@@ -19,9 +19,10 @@
 //! Flare (arm 7) brings the words back down: the next writer does.
 //!
 //! The table is read off each module image's disassembly. One writer is not
-//! carried: Puera's arm 20 (`0x801F8664`) stores `FF / FF / 0x10 / 0x10` once
-//! per falling part as each of its 23 parts' `+0x16` lands, a per-part model
-//! the port does not run. PROT 0924's `0x801F7F68` block is a byte copy of
+//! in it: Puera's arm 20 (`0x801F8664`) stores `FF / FF / 0x10 / 0x10` once
+//! per falling part as each of its 23 parts' `+0x16` lands, which the
+//! engine raises from the fall itself (`World::apply_puera_writes`, over
+//! `cast_module_camera::puera_crystal_fall`). PROT 0924's `0x801F7F68` block is a byte copy of
 //! PROT 0923's arm-14 block in its inherited tail, reached by no 0924
 //! dispatch, and is not a writer.
 

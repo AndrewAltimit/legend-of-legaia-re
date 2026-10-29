@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs>
+<clipPath id="tile"><rect x="64" y="64" width="896" height="896" rx="200"/></clipPath>
+<linearGradient id="g0" gradientUnits="userSpaceOnUse" x1="0" y1="64" x2="0" y2="960"><stop offset="0" stop-color="#1d2b53"/><stop offset="1" stop-color="#2a6f73"/></linearGradient>
+</defs>
+<rect x="64" y="64" width="896" height="896" rx="200" fill="url(#g0)"/>
+<circle cx="512" cy="400" r="330" fill="#ffd68c" fill-opacity="0.102" clip-path="url(#tile)"/>
+<circle cx="512" cy="400" r="250" fill="#ffd68c" fill-opacity="0.133" clip-path="url(#tile)"/>
+<ellipse cx="512" cy="930" rx="470" ry="150" fill="#14203a" clip-path="url(#tile)"/>
+<polygon points="452.0,840.0 480.0,760.0 494.0,560.0 530.0,560.0 544.0,760.0 572.0,840.0" fill="#7a4e24"/>
+<circle cx="370" cy="462" r="130" fill="#c8902f"/>
+<circle cx="654" cy="462" r="130" fill="#c8902f"/>
+<circle cx="512" cy="400" r="190" fill="#c8902f"/>
+<circle cx="370" cy="448" r="126" fill="#f2c14e"/>
+<circle cx="654" cy="448" r="126" fill="#f2c14e"/>
+<circle cx="512" cy="382" r="186" fill="#f2c14e"/>
+<circle cx="432" cy="312" r="118" fill="#f2c14e"/>
+<circle cx="592" cy="312" r="118" fill="#f2c14e"/>
+<circle cx="470" cy="270" r="52" fill="#ffecaa" fill-opacity="0.471"/>
+<ellipse cx="310" cy="712" rx="250" ry="34" fill="#e1eefa" fill-opacity="0.431" clip-path="url(#tile)"/>
+<ellipse cx="720" cy="770" rx="270" ry="32" fill="#e1eefa" fill-opacity="0.392" clip-path="url(#tile)"/>
+<ellipse cx="470" cy="840" rx="330" ry="34" fill="#e1eefa" fill-opacity="0.471" clip-path="url(#tile)"/>
+</svg>

@@ -235,6 +235,64 @@ fn solid_field_npcs_block_at_retail_actor_standoff() {
 }
 
 #[test]
+fn a_placement_blocks_until_its_script_raises_bit_0_or_1() {
+    // `FUN_801CF754` admits every partition-1 actor whose `+0x10 & 3` is
+    // clear, talker or not, and boxes it on the moving arm (`FUN_8003A1E4`
+    // spawns every placement with `0x20000`). `rayman`'s planks run `31 00`
+    // while their bridge stands and `32 00` once it has fallen.
+    let press = |flags: u32| {
+        let mut world = World::new();
+        world.install_field_player(0);
+        world.npcs.solid = true;
+        world
+            .field_vm
+            .channels
+            .push(legaia_engine_field::field_channels::FieldChannel {
+                placement_index: 70,
+                ctx: legaia_engine_vm::field::FieldCtx {
+                    script_id: 83,
+                    world_x: 2000,
+                    world_z: 2526,
+                    flags,
+                    ..Default::default()
+                },
+                record_offset: 0,
+                pc: 0,
+                done: false,
+                object_bind: false,
+            });
+        world.actors[0].move_state.world_x = 1800;
+        world.actors[0].move_state.world_z = 2526;
+        for _ in 0..100 {
+            world.advance_with_collision(0, 0x2000, 8);
+        }
+        world.actors[0].move_state.world_x
+    };
+    assert_eq!(press(0x2022_0000), 2000 - 102, "bits 0/1 clear: solid");
+    assert!(press(0x2022_0001) > 2000, "`31 00`: walked through");
+    assert!(press(0x2022_0002) > 2000, "`31 01`: walked through");
+    // A placement parked on the off-map hide box is nowhere near a probe.
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+    let mut world = World::new();
+    world
+        .field_vm
+        .channels
+        .push(legaia_engine_field::field_channels::FieldChannel {
+            placement_index: 70,
+            ctx: legaia_engine_vm::field::FieldCtx {
+                world_x: hide as u16,
+                world_z: hide as u16,
+                ..Default::default()
+            },
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        });
+    assert_eq!(world.field_moving_actor_centres().count(), 0);
+}
+
+#[test]
 fn solid_field_props_block_at_retail_static_standoff() {
     // The STATIC-entity arm of the same probe (retail result bit `4`): a
     // placed prop blocks with the wider ±80 box (`FIELD_PROP_BOX_HALF`)

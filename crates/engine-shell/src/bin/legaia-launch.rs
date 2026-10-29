@@ -1,34 +1,30 @@
-//! The Windows double-click entry: a GUI-subsystem stub that starts the
-//! `legaia-engine` executable sitting next to it with no console window.
+//! The double-click entry: the release archive's `Legend of Legaia.exe`
+//! (Windows) and `Legend of Legaia` (Linux), a stub that starts the
+//! `legaia-engine` executable from the archive's `command-line-tools` folder
+//! (`legaia_app_theme::release_layout::find_engine`; beside the stub in a
+//! `cargo build`).
 //!
-//! `legaia-engine.exe` is a console program so its many CLI subcommands keep
-//! ordinary terminal behaviour (the shell waits for it, pipes and exit codes
-//! work, output lands before the next prompt). A console program started
-//! from Explorer gets a console window of its own, though, so the release
-//! archive also ships this stub as `Legend of Legaia.exe`: being a
-//! `windows`-subsystem program it never gets a console, and it starts the
-//! engine with `CREATE_NO_WINDOW`, so neither does the engine nor the game
-//! process the launcher spawns (that one inherits the hidden console).
+//! It exists so the archive's top folder holds only what a player opens,
+//! with the engine and every other command-line program one folder down.
+//! On Windows it also hides the console: `legaia-engine.exe` is a console
+//! program so its many CLI subcommands keep ordinary terminal behaviour (the
+//! shell waits for it, pipes and exit codes work, output lands before the
+//! next prompt), and a console program started from File Explorer gets a
+//! console window of its own. Being a `windows`-subsystem program this stub
+//! never gets one, and it starts the engine with `CREATE_NO_WINDOW`, so
+//! neither does the engine nor the game process the launcher spawns (that
+//! one inherits the hidden console). On Unix it replaces itself with the
+//! engine (`exec`), so a terminal sees the engine's own output and exit.
 //!
 //! Arguments are passed through, and the engine's exit status is returned.
-//! On other platforms there is no console to hide; the stub just runs the
-//! engine. docs/tooling/releases.md records why this is a separate stub and
-//! not `windows_subsystem` on the engine itself.
+//! docs/tooling/releases.md records why this is a separate stub and not
+//! `windows_subsystem` on the engine itself.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
-#[cfg(windows)]
-const ENGINE: &str = "legaia-engine.exe";
-#[cfg(not(windows))]
-const ENGINE: &str = "legaia-engine";
-
-fn engine_path() -> Option<PathBuf> {
-    let me = std::env::current_exe().ok()?;
-    Some(me.parent()?.join(ENGINE))
-}
+use legaia_app_theme::release_layout::{TOOLS_DIR, engine_file_name, find_engine};
 
 #[cfg(windows)]
 fn configure(cmd: &mut Command) {
@@ -73,32 +69,49 @@ fn report(msg: &str) {
     eprintln!("{msg}");
 }
 
-fn main() -> ExitCode {
-    let Some(engine) = engine_path() else {
-        report("Cannot locate this program's own folder.");
-        return ExitCode::FAILURE;
-    };
-    let mut cmd = Command::new(&engine);
-    cmd.args(std::env::args_os().skip(1));
-    configure(&mut cmd);
+/// Run the engine as this process (Unix): `exec` only returns on failure.
+#[cfg(unix)]
+fn run(mut cmd: Command, engine: &std::path::Path) -> ExitCode {
+    use std::os::unix::process::CommandExt;
+    let e = cmd.exec();
+    report(&format!("Cannot start {}: {e}", engine.display()));
+    ExitCode::FAILURE
+}
+
+/// Run the engine as a child and hand back its exit status.
+#[cfg(not(unix))]
+fn run(mut cmd: Command, engine: &std::path::Path) -> ExitCode {
     match cmd.status() {
         Ok(status) => match status.code() {
             Some(0) => ExitCode::SUCCESS,
             Some(c) => {
                 report(&format!(
                     "The engine stopped with an error (exit status {c}).\n\n\
-                     Run {ENGINE} from a command prompt to see its log."
+                     Run {} from a command prompt to see its log.",
+                    engine.display()
                 ));
                 ExitCode::from(u8::try_from(c).unwrap_or(1))
             }
             None => ExitCode::FAILURE,
         },
         Err(e) => {
-            report(&format!(
-                "Cannot start {}: {e}\n\nKeep this program in the same folder as {ENGINE}.",
-                engine.display()
-            ));
+            report(&format!("Cannot start {}: {e}", engine.display()));
             ExitCode::FAILURE
         }
     }
+}
+
+fn main() -> ExitCode {
+    let Some(engine) = std::env::current_exe().ok().and_then(|me| find_engine(&me)) else {
+        report(&format!(
+            "Cannot find {}.\n\nIt ships in the {TOOLS_DIR} folder of the release; \
+             keep that folder beside this program.",
+            engine_file_name()
+        ));
+        return ExitCode::FAILURE;
+    };
+    let mut cmd = Command::new(&engine);
+    cmd.args(std::env::args_os().skip(1));
+    configure(&mut cmd);
+    run(cmd, &engine)
 }

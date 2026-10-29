@@ -14,17 +14,17 @@
   </ol>
   <div class="notice">
     <div class="notice-title">Just want to play?</div>
-    <p>Start <code>legaia-engine</code> with no arguments - or double-click <code>Legend of Legaia.exe</code> on Windows, <code>Legend of Legaia.app</code> on macOS. Its launcher asks for your disc image once, remembers it, sets the display options, and <em>Play</em> opens the title screen; see <a href="playing-and-viewing.html#launcher">the launcher</a>. The rest of this page is about the extraction tools.</p>
+    <p>Double-click <code>Legend of Legaia</code> in the unpacked folder (<code>Legend of Legaia.exe</code> on Windows, <code>Legend of Legaia.app</code> on macOS); it starts the engine, <code>command-line-tools/legaia-engine</code>, with no arguments. Its launcher asks for your disc image once, remembers it, sets the display options, and <em>Play</em> opens the title screen; see <a href="playing-and-viewing.html#launcher">the launcher</a>. The rest of this page is about the extraction tools.</p>
   </div>
   <div class="notice">
     <div class="notice-title">Rather use buttons than a terminal?</div>
-    <p>The same archive carries <strong>Legaia Studio</strong>, a desktop app that browses, previews, exports and extracts the disc with no commands at all. <a href="desktop-apps.html">Desktop apps</a> walks through downloading, the first start on Windows, macOS and Linux, Studio itself and the native port, with screenshots.</p>
+    <p>The same archive carries <strong>Legaia Explorer</strong>, a desktop app that browses, previews, exports and extracts the disc with no commands at all. <a href="desktop-apps.html">Desktop apps</a> walks through downloading, the first start on Windows, macOS and Linux, Explorer itself and the native port, with screenshots.</p>
   </div>
   <div class="notice">
     <div class="notice-title">Bring your own disc</div>
     <p>One rule shapes everything here: <strong>the project ships no Sony-owned bytes.</strong> The archive contains only the project's own compiled tools. Every tool operates on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of your own <em>Legend of Legaia</em> (USA) disc, <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is: the referenced <code>BINARY</code> track is resolved automatically.</p>
   </div>
-  <p class="hint">Commands on this page use the bare <code>./tool</code> form, as run from inside the unpacked archive directory. If you build from source instead, the same binaries land in <code>target/release/</code> (<code>cargo build --release</code>), so substitute <code>./target/release/tool</code>.</p>
+  <p class="hint">Commands on this page use the bare <code>./tool</code> form, as run from a terminal in the unpacked archive's <code>command-line-tools</code> folder. If you build from source instead, the same binaries land in <code>target/release/</code> (<code>cargo build --release</code>), so substitute <code>./target/release/tool</code>.</p>
 </section>
 
 <section class="doc-section" id="download-verify">
@@ -36,11 +36,11 @@
     <li><code>legaia-tools-&lt;version&gt;-x86_64-pc-windows-gnu.zip</code> (Windows)</li>
     <li><code>legaia-tools-&lt;version&gt;-universal-apple-darwin.tar.gz</code> (macOS 11+, Apple silicon and Intel in one binary)</li>
   </ul>
-  <p>Every archive carries every binary plus the two license files, <code>THIRD-PARTY-LICENSES.txt</code>, <code>README-PLAY.txt</code> (how to start the game) and a short <code>README.txt</code>; the macOS archive adds <code>Legend of Legaia.app</code> and <code>Legaia Studio.app</code>.</p>
+  <p>Every archive unpacks into one folder. Its top level holds only what you double-click - <code>Legend of Legaia</code> and <code>Legaia Explorer</code> (<code>.exe</code> on Windows, <code>.app</code> on macOS) - plus <code>README-PLAY.txt</code> (how to start them), the two license files and <code>THIRD-PARTY-LICENSES.txt</code>. Every command-line program, the engine <code>legaia-engine</code> among them, is in its <code>command-line-tools</code> folder, with a <code>README.txt</code> listing them. Keep that folder beside the two programs: they start the game from it.</p>
   <p>Verify and unpack:</p>
   <ol class="steps">
     <li><b>Check the download</b><span><code>sha256sum -c SHA256SUMS --ignore-missing</code> (on a Mac: <code>shasum -a 256 -c SHA256SUMS --ignore-missing</code>)</span></li>
-    <li><b>Unpack</b><span><code>tar -xzf legaia-tools-&lt;version&gt;-&lt;target&gt;.tar.gz</code>, then <code>cd</code> into the directory it creates</span></li>
+    <li><b>Unpack</b><span><code>tar -xzf legaia-tools-&lt;version&gt;-&lt;target&gt;.tar.gz</code>, then <code>cd</code> into the <code>command-line-tools</code> folder of the directory it creates</span></li>
     <li><b>Smoke test</b><span><code>./legaia-extract --version</code></span></li>
   </ol>
   <p>Every binary answers <code>--version</code> and <code>--help</code>; subcommand help (<code>./asset monster-archive --help</code>) states where each input comes from.</p>
@@ -165,7 +165,7 @@
     <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
     <tbody>
       <tr><td><code>legaia-engine</code></td><td>The from-scratch engine: plays the game - field, battles, menus, minigames, movies, saves - straight from your disc, plus record / replay.</td></tr>
-      <tr><td><code>legaia-studio</code></td><td>Desktop app: open your disc, browse and search the archive, preview and export textures, models, audio, text, characters and movies, or extract the whole disc - all with buttons (<a href="desktop-apps.html#studio">guide</a>).</td></tr>
+      <tr><td><code>legaia-explorer</code></td><td>Desktop app: open your disc, browse and search the archive, preview and export textures, models, audio, text, characters and movies, or extract the whole disc - all with buttons (<a href="desktop-apps.html#explorer">guide</a>).</td></tr>
       <tr><td><code>asset-viewer</code></td><td>Windowed browser for textures, meshes, audio banks, and scene demos.</td></tr>
       <tr><td><code>legaia-patcher</code></td><td>Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches.</td></tr>
       <tr><td><code>save-tool</code></td><td>PSX memory-card / save inspector: character records, save-block diffs.</td></tr>

@@ -1341,3 +1341,79 @@ fn the_native_psx_texel_is_the_rounded_uv_on_both_hosts() {
         assert_eq!(g.floats(), &want[..], "page");
     }
 }
+
+/// PSX mode on the native target under PCSX-Redux's texel rule
+/// (`psx_params.z = 3`, `PsxTexelRule::PcsxRedux`): a fragment on its
+/// triangle's top edge samples the edge's own `V`, never the texel row above
+/// it. The host's interpolation lands a hair outside the corner value there;
+/// truncated, that read the row above the battle ground tile's `(192..=255)²`
+/// window - VRAM zeros, CLUT index 0, a pure-green line along every grid row.
+/// A fragment inside its triangle keeps its row.
+#[test]
+fn the_pcsx_redux_texel_row_stays_on_a_top_edge() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let mut nm = Machine::new(&native, no_fetch());
+    nm.set_uniform("psx_params", Val::f(&[STAGE_W, STAGE_H, 3.0, 1.0]));
+    // A grid quad's upper triangle: corners 0 / 1 on the top edge
+    // (`V = 0xC0`), corner 2 below it; `V` steps 2.5 texels a row.
+    let bdy = [-0.02f32, -0.02, 0.04, 0.0];
+    let uv_dy = [0.0f32, 2.5];
+    let sample = |nm: &mut Machine<'_>, uv: [f32; 2], b: [f32; 4]| -> [f32; 2] {
+        let f = nm.function("psx_texel_uv");
+        let n = nm
+            .call(
+                f,
+                vec![
+                    Val::f(&uv),
+                    Val::f(&[0.0, 0.0]),
+                    Val::f(&uv_dy),
+                    Val::f(&b),
+                    Val::f(&[0.0; 4]),
+                    Val::f(&bdy),
+                ],
+            )
+            .ok()
+            .flatten()
+            .expect("native sample");
+        let v = n.floats();
+        [v[0], v[1]]
+    };
+    // On the edge, the float interpolation a hair outside it.
+    let edge = sample(
+        &mut nm,
+        [200.0, 191.9995],
+        [0.5, 0.5000002, -0.0000002, 0.0],
+    );
+    assert_eq!(
+        edge[1].trunc(),
+        192.0,
+        "top-edge fragment reads row {}",
+        edge[1]
+    );
+    assert_eq!(edge[0], 200.0, "no column move");
+    // Inside the triangle: the row is the interpolated one.
+    let inner = sample(&mut nm, [200.0, 194.5], [0.4, 0.4, 0.2, 0.0]);
+    assert_eq!(inner, [200.0, 194.5]);
+    // A vertex with no corner record (weights all ones, no row step) never
+    // moves.
+    let mut m2 = Machine::new(&native, no_fetch());
+    m2.set_uniform("psx_params", Val::f(&[STAGE_W, STAGE_H, 3.0, 1.0]));
+    let f = m2.function("psx_texel_uv");
+    let n = m2
+        .call(
+            f,
+            vec![
+                Val::f(&[10.0, 191.9995]),
+                Val::f(&[0.0, 0.0]),
+                Val::f(&uv_dy),
+                Val::f(&[1.0; 4]),
+                Val::f(&[0.0; 4]),
+                Val::f(&[0.0; 4]),
+            ],
+        )
+        .ok()
+        .flatten()
+        .expect("native sample");
+    assert_eq!(n.floats(), &[10.0, 191.9995][..]);
+}

@@ -37,7 +37,7 @@ pub(super) fn item_restore(
 /// each standing member's maximum HP, short of what Orb (~700 on a 1900-HP
 /// member) and Spoon (~1150) restore.
 pub(super) fn projected_hp(w: &legaia_engine_core::world::World) -> Vec<u32> {
-    use legaia_engine_core::battle_round::PendingPartyAction;
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     let n = w.party.party_count.clamp(1, 3) as usize;
     let mut hp: Vec<u32> = (0..n).map(|i| u32::from(w.actors[i].battle.hp)).collect();
     for (actor, p) in w.battle.round_flow.pending.iter().enumerate().take(n) {
@@ -104,7 +104,7 @@ pub(super) fn wanted_item(
         .filter(|p| {
             matches!(
                 p,
-                Some(legaia_engine_core::battle_round::PendingPartyAction::Item { .. })
+                Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Item { .. })
             )
         })
         .count();
@@ -122,8 +122,9 @@ pub(super) fn wanted_item(
     let mut covered: Vec<usize> = Vec::new();
     if committed == 1 && aoe > 0 && raw.iter().any(|&h| h > 0 && h <= aoe + aoe / 8) {
         for (actor, p) in w.battle.round_flow.pending.iter().enumerate().take(n) {
-            let Some(legaia_engine_core::battle_round::PendingPartyAction::Item {
-                item_id, ..
+            let Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Item {
+                item_id,
+                ..
             }) = p
             else {
                 continue;

@@ -57,7 +57,7 @@ fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
 fn a_capture_charge_branch_folds_nothing() {
     let mut world = seru_cast_world();
     let before: Vec<u16> = world.actors.iter().map(|a| a.battle.hp).collect();
-    world.casting.pending_cast = Some(crate::world::PendingCast {
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
         caster: 1,
         spell_id: 0x81,
         targets: vec![0],

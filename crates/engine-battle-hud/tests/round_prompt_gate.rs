@@ -29,7 +29,7 @@ fn prompt_world() -> World {
         world.actors[i].battle.max_hp = 100;
     }
     world.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
-    world.start_round_prompt_glide();
+    world.battle.start_round_prompt_glide();
     world
 }
 
@@ -78,7 +78,10 @@ fn the_first_live_pass_is_the_one_after_the_landing() {
     // Pass 16 lands the glide and still exits: no glyph, no dispatch.
     tick(&mut world, 0);
     assert_eq!(elapsed(&world), 16);
-    assert_eq!(world.battle.widget_glide_return, World::GLIDE_BLOCKING_FLAG);
+    assert_eq!(
+        world.battle.widget_glide_return,
+        legaia_engine_battle_loop::battle_state::BattleState::GLIDE_BLOCKING_FLAG
+    );
     assert!(!battle_chip_dpad_visible(&world));
     assert!(on_prompt(&world));
     // Pass 17 dispatches the state.

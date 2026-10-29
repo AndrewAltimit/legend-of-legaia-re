@@ -2247,6 +2247,7 @@ expected_game_mode = 3
 expected_active_scene = "town01"
 description = "S2 of the trace-driven playthrough: Rim Elm (town01) reached by chaining forward from the S1 checkpoint on a staged, unpatched image (autorun_chain_fast.lua under --fast, CROSS every 20 vsyncs through opdeene -> opstati -> opurud -> map01 -> town01, ~10200 vsyncs, 40-vsync settle). Player (12352, 2368), as in the patched-image capture it replaces (71937100...). Retail SCUS at every patcher site. The start anchor for S3."
 topics = ["playthrough", "trace-coverage", "S2", "rim-elm", "town01", "segment-chaining", "pcsx-redux"]
+arrival = { from = "opurud", door = 9 }
 
 [[scenarios]]
 slot = 255
@@ -3853,6 +3854,7 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "koin6"
 topics = ["field", "koin6", "scene coverage", "route walk"]
+arrival = { from = "kor4", door = 13 }
 
 [[scenarios]]
 label = "koin4_field_route_walk"
@@ -3862,6 +3864,7 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "koin4"
 topics = ["field", "koin4", "scene coverage", "shop", "route walk"]
+arrival = { from = "kor4", door = 9 }
 
 [[scenarios]]
 label = "kor_field_route_walk"
@@ -3898,6 +3901,7 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "retockin"
 topics = ["field", "retockin", "scene coverage", "route walk"]
+arrival = { from = "retock", door = 18 }
 
 [[scenarios]]
 label = "deroa_field_route_walk"

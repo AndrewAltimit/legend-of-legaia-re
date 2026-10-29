@@ -265,7 +265,7 @@ impl World {
     ///
     /// The map-gated scripted ambush arm (monster ids `0x3D..=0x3F` on maps
     /// `0x0C` / `0x15`) reads the loaded scene's define
-    /// ([`crate::world::BattleState::map_id`]); the unconditional
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::map_id`]); the unconditional
     /// `monster_id == 0xA7` arm needs none.
     ///
     /// PORT: FUN_80051D84 (the caller side; arithmetic in
@@ -397,7 +397,7 @@ impl World {
             .ui_strings
             .get(banner.disc_label())
             .map(str::to_string);
-        let group = self.next_battle_tutorial_group();
+        let group = self.battle.next_battle_tutorial_group();
         self.battle.tutorial_boxes.push_back(
             legaia_engine_battle_menus::battle_flow::ActiveTutorialBox {
                 text: banner.line(&leader, template.as_deref()),
@@ -449,7 +449,7 @@ impl World {
     ///
     /// PORT: FUN_801DABA4
     pub(in crate::world) fn next_combatant_by_initiative(&mut self) -> Option<u8> {
-        use crate::battle_round::PendingPartyAction;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         // The dead-slot sweep.
         for i in 0..BATTLE_SLOTS {
             let Some(a) = self.actors.get_mut(i) else {

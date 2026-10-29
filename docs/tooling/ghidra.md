@@ -45,7 +45,7 @@ Settings travel into the container with `exec -e NAME=value` (for example `DUMP_
 
 ## Toolchain
 
-- **Ghidra 12.x** in `blacktop/ghidra:latest`. Bundles OpenJDK 21 and stock Ghidra at `/ghidra`.
+- **Ghidra 12.0.4** in `blacktop/ghidra`, pinned by digest in `docker/ghidra.Dockerfile`. Bundles OpenJDK 21 and stock Ghidra at `/ghidra`.
 - **Jython 2.7** (bundled with Ghidra) for analysis scripts. Scripts must be **ASCII-only** - Jython 2 chokes on Unicode in source unless an encoding declaration is added.
 - **PCSX-Redux** for runtime tracing. See [overlay capture](overlay-capture.md).
 

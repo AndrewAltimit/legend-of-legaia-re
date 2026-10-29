@@ -59,14 +59,71 @@ cross-compiles - including the x86_64 Linux one.
 
 | Target | Toolchain | Contents |
 |---|---|---|
-| `aarch64-unknown-linux-gnu` | Native | Every workspace binary |
-| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe`; `legaia-studio.exe` is a GUI-subsystem program |
-| `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA / libudev sysroot, glibc pinned to 2.28 | Every workspace binary |
-| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` and `Legaia Studio.app` |
+| `aarch64-unknown-linux-gnu` | Native | `Legend of Legaia`, `Legaia Explorer`, every command-line binary |
+| `x86_64-pc-windows-gnu` | mingw-w64 cross | `Legend of Legaia.exe`, `Legaia Explorer.exe` (both GUI-subsystem), every command-line binary |
+| `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA / libudev sysroot, glibc pinned to 2.28 | As `aarch64-unknown-linux-gnu` |
+| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | `Legend of Legaia.app`, `Legaia Explorer.app`, every command-line binary |
 
 The per-target binary list is declared explicitly in `release-build.sh`, and
 the script fails if an expected binary is missing from the build output, so a
 target can never quietly drop one.
+
+## Archive layout
+
+The top folder of an archive holds only what a user should open: the game and
+Legaia Explorer, `README-PLAY.txt` and the license files. Every command-line
+program sits in `command-line-tools/` below it, so a download makes plain
+what is meant to be double-clicked:
+
+```
+legaia-tools-<version>-<target>/
+    Legend of Legaia            (.exe on Windows, .app on macOS)
+    Legaia Explorer             (.exe on Windows, .app on macOS)
+    README-PLAY.txt
+    LICENSE  LICENSE-MIT  THIRD-PARTY-LICENSES.txt
+    command-line-tools/
+        README.txt              every tool, one line each
+        legaia-engine           the engine: launcher, play-window, every subcommand
+        asset-viewer
+        legaia-extract  legaia-patcher  asset  tim  tmd  vab  ...
+```
+
+`Legend of Legaia` on Linux and Windows is the `legaia-launch` stub
+(`crates/engine-shell/src/bin/legaia-launch.rs`): it starts
+`command-line-tools/legaia-engine` with the same arguments - on Linux by
+`exec`, so a terminal sees the engine's own output and exit status; on
+Windows as a GUI-subsystem child ([below](#windows-the-console-window)). The
+engine stays in the tools folder because it is also the archive's largest
+command-line program; one copy serves both uses. `Legaia Explorer` is the
+`legaia-explorer` binary under a readable name. On macOS both are `.app`
+bundles and no bare GUI binary sits at the top.
+
+The stub and Explorer's *Play* button find the engine through
+`legaia_app_theme::release_layout::find_engine`: in each of the four folders
+above the program, the engine in that folder (a `cargo build` puts every
+binary side by side), in its `command-line-tools/`, then inside a `Legend of
+Legaia.app` there. Explorer inside `Legaia Explorer.app/Contents/MacOS/`
+reaches the archive folder three levels up. The release smoke-runs the staged
+`Legend of Legaia --version` on the native row, which exercises that lookup.
+
+## Icons
+
+The game and Legaia Explorer carry their own icons, original artwork in
+[`crates/app-theme/icons/`](../../crates/app-theme/README.md#icons-and-where-the-release-puts-the-programs)
+(no game asset is drawn from). `make_icons.py` there draws them and writes the
+SVG, PNG, `.ico` and `.icns`; the outputs are committed, so a release build
+never runs it.
+
+| Where | How |
+|---|---|
+| Windows executables | `build.rs` in `engine-shell` and `explorer` calls `legaia_app_theme::win_icon::embed_in_bins`, which compiles a one-icon resource with `x86_64-w64-mingw32-windres` (part of mingw-w64, already a provisioning requirement) and links it into `Legend of Legaia.exe`, `legaia-engine.exe` and `Legaia Explorer.exe`. Other targets skip it; no crate dependency is added. |
+| macOS bundles | `make_app` copies the `.icns` into `Contents/Resources/` and names it in `CFBundleIconFile`. |
+| Window icons | The engine (`legaia_engine_render::window::set_app_icon`, from the PNG) and Explorer (`ViewportBuilder::with_icon`) set it at runtime: the title bar and task switcher on Windows and X11. macOS shows the bundle's icon and Wayland the desktop entry's, so neither takes a window icon. |
+
+`release-build.sh` reads the `.rsrc` section of the three Windows executables
+and fails unless each carries an icon group (`RT_GROUP_ICON`), so a build host
+without a resource compiler, which only warns at build time, cannot ship
+iconless programs.
 
 ### macOS
 
@@ -79,11 +136,11 @@ triple; it is the release's name for "both macOS slices in one file".
 like any other target. The deployment target is macOS 11, the arm64 floor.
 cpal's macOS backend is CoreAudio, so there is no ALSA question here.
 
-The archive additionally carries `Legend of Legaia.app`, a minimal bundle
-(an `Info.plist` and a copy of `legaia-engine`) so a Finder user double-clicks
-an app. Started without arguments the engine runs its launcher, which needs no
-terminal. `Legaia Studio.app` wraps `legaia-studio` the same way; one
-`make_app` helper in the script builds, lints and signs both. `CFBundleVersion` takes the version with any prerelease suffix cut
+The archive's top folder carries `Legend of Legaia.app`, a minimal bundle
+(an `Info.plist`, the icon and a copy of `legaia-engine`) so a Finder user
+double-clicks an app. Started without arguments the engine runs its launcher,
+which needs no terminal. `Legaia Explorer.app` wraps `legaia-explorer` the
+same way; one `make_app` helper in the script builds, lints and signs both. `CFBundleVersion` takes the version with any prerelease suffix cut
 (macOS wants dot-separated integers there); `CFBundleShortVersionString` keeps
 the full string. The script lints the `Info.plist` with `plutil` and verifies
 the seal with `codesign --verify --deep --strict` after signing, so a malformed
@@ -102,9 +159,10 @@ normalising flags do not exist on BSD tar), and checksums fall back to
 
 `legaia-engine.exe` is a **console** program, and a console program started
 from Explorer gets a console window of its own. The Windows archive therefore
-also carries `Legend of Legaia.exe` - the `legaia-launch` binary renamed at
-staging - a `windows`-subsystem stub that starts `legaia-engine.exe` beside it
-with `CREATE_NO_WINDOW` and returns its exit status. Being a GUI program, the
+carries `Legend of Legaia.exe` at its top level - the `legaia-launch` binary
+renamed at staging - a `windows`-subsystem stub that starts
+`command-line-tools\legaia-engine.exe` with `CREATE_NO_WINDOW` and returns its
+exit status. Being a GUI program, the
 stub never gets a console, and the engine (and the game process its launcher
 spawns, which inherits the engine's hidden console) never shows one. A failure
 to start the engine, or a non-zero exit, is reported in a message box, since
@@ -128,12 +186,12 @@ terminal, the console is shared and stays.
 `release-build.sh` reads the PE optional header of the staged files and fails
 unless the stub is subsystem 2 (Windows GUI) and the engine subsystem 3
 (console), so a build change cannot quietly bring the console back or take the
-terminal away. The same check holds `legaia-studio.exe` at subsystem 2 (see
-below).
+terminal away. The same check holds `Legaia Explorer.exe` at subsystem 2 (see
+below), and the [icon check](#icons) runs over the same three files.
 
-### Legaia Studio
+### Legaia Explorer
 
-`legaia-studio` ([`crates/studio`](../../crates/studio/README.md)) is the
+`legaia-explorer` ([`crates/explorer`](../../crates/explorer/README.md)) is the
 desktop asset browser and extractor, the archive's entry point for a user who
 does not want a terminal. It ships on every target and differs from the other
 GUI binaries in three ways the pipeline accounts for:
@@ -143,17 +201,18 @@ GUI binaries in three ways the pipeline accounts for:
   `windows`-subsystem program itself (`#![cfg_attr(windows,
   windows_subsystem = "windows")]`) and needs no launcher stub. Its
   `--version` prints only when a console is attached.
-- **OpenGL, not wgpu.** It draws through `eframe` on the glow backend, because
-  no egui release builds against the workspace's wgpu 26. On Linux it opens
+- **OpenGL, not wgpu.** It draws through `eframe` on the glow backend: it
+  draws only egui's own meshes, so it links no wgpu at all. On Linux it opens
   libGL / libEGL and X11 / Wayland at runtime (dlopen), so the cross builds
   need nothing beyond the ALSA sysroot the engine already uses; on Windows it
   imports only system DLLs (`opengl32.dll` among them).
-- **Its own bundle on macOS.** `Legaia Studio.app` sits beside `Legend of
+- **Its own bundle on macOS.** `Legaia Explorer.app` sits beside `Legend of
   Legaia.app`; Gatekeeper's first-launch confirmation applies to it the same
-  way.
+  way. On Linux and Windows it ships as `Legaia Explorer` / `Legaia
+  Explorer.exe`, at the top level rather than in `command-line-tools/`.
 
 `README-PLAY.txt` carries a "browse and extract" section that points at it,
-and the release smoke-runs `legaia-studio --version` next to the engine's.
+and the release smoke-runs `legaia-explorer --version` next to the engine's.
 
 ### Why Windows is `-gnu` rather than `-msvc`
 
@@ -247,21 +306,22 @@ SHA256SUMS
 
 Every archive contains a single top-level
 `legaia-tools-<version>-<target>/` directory - extracting one never scatters
-files across the working directory. Inside it: the binaries, `LICENSE` and
-`LICENSE-MIT` (the project is `MIT OR Unlicense`), and three generated text
-files:
+files across the working directory. Inside it, laid out as
+[above](#archive-layout): the programs, `LICENSE` and `LICENSE-MIT` (the
+project is `MIT OR Unlicense`), and three generated text files:
 
-- `README-PLAY.txt` - the file a player needs: start `legaia-engine` (or the
-  macOS app) with no arguments, pick your own Legend of Legaia (USA) disc
-  image once in the launcher, set its display options, and press Play. It
+- `README-PLAY.txt` (top level) - the file a player needs: which two programs
+  to open and that `command-line-tools/` is not needed to play; start
+  `Legend of Legaia`, pick your own Legend of Legaia (USA) disc image once in
+  the launcher, set its display options, and press Play. It
   restates that no game data is included and where
   settings and saves live, and lists the keyboard controls (every pad
   button, the Escape-twice quit) and the display toggles. The launcher itself is described in
   [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
-  It also points asset users at Legaia Studio and the extraction guide.
-- `README.txt` - the target, every binary present with a one-line role, and
-  the same bring-your-own-disc rule.
-- `THIRD-PARTY-LICENSES.txt` - the license texts and notices of every crate
+  It also points asset users at Legaia Explorer and the extraction guide.
+- `command-line-tools/README.txt` - the target, every command-line program
+  with a one-line role, and the same bring-your-own-disc rule.
+- `THIRD-PARTY-LICENSES.txt` (top level) - the license texts and notices of every crate
   the binaries link (see below).
 
 ### Third-party notices
@@ -293,7 +353,8 @@ The script exits non-zero when a linked crate declares no license or an id
 has no text anywhere, which fails the release. It needs only `cargo` and the
 Python 3 standard library.
 
-A build smoke-runs `legaia-engine --version` and `legaia-studio --version`
+A build smoke-runs `legaia-engine --version`, the game entry's `--version`
+(the stub on Linux, the bundle's binary on macOS) and Explorer's `--version`
 from the staged archive whenever the build host can execute it (the native Linux row and the
 universal macOS row), so a binary that cannot start fails the release rather
 than a user.

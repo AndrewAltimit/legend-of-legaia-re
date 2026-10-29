@@ -1065,6 +1065,27 @@ opening has played) - and **C2 requires ALL listed flags set**. Engine mirror:
 [`World::p2_record_gates_pass`](../../crates/engine-core/src/world/narration.rs) over
 [`man_field_scripts::partition2_record_gates`](../../crates/engine-field/src/man_field_scripts/partitions.rs).
 
+#### Flag 7: the records retail never spawns
+
+The MAN installer `FUN_8003AEB0` opens every scene load by raising system flag `7`, before it
+reads the MAN (`lbu v0,0x1618(v1)` / `ori v0,v0,0x1` / `sb v0,0x1618(v1)` at
+`0x8003AEEC..0x8003AEF8`, `v1 = 0x80084140`: byte `0x80085758`, bit `0x01`). No shipped script
+clears it - the disc-wide field-VM walk finds only `0x7x` tests and `0x5x` sets of it - so from
+the first scene of a New Game on it is always up: the `s1_newgame_field` capture (`opdeene`) and
+every later retail state read it set.
+
+A C1 list naming flag `7` therefore shuts its record for good. Over a hundred partition-2 records
+across the disc carry one, and they are developer leftovers: `town01` / `town0c`'s
+`サウンド外` / `サウンド内` ("sound outside / inside") are a bare `Greetings.` box on walk-on tiles
+south of the Genesis Tree clearing, and the `izumi` / `vozz` / `conc` / `rikuroa` / `geremi`
+records named `Ｐ`, `Ｑ`, `Ｒ`... are camera and seat test points. An engine that skips the
+loader's write runs all of them. Engine:
+[`World::man_load_entry_flags`](../../crates/engine-core/src/world/narration.rs), called from
+`SceneHost::load_scene` and again after a card load re-applies the save's flag bank; disc test
+[`man_load_flag7_dev_records_disc.rs`](../../crates/engine-scene-host/tests/man_load_flag7_dev_records_disc.rs).
+The loader's next writes (flag `0x16` cleared, then raised under the boot latch `DAT_8007B71C`)
+are not modelled.
+
 ### The `opdeene` timeline record
 
 `opdeene`'s timeline record (partition 2, record 18; record start at MAN offset `0xA47`) is a

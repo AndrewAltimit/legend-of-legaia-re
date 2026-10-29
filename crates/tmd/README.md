@@ -79,7 +79,7 @@ would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 `mesh::dark_baked_share` / `mesh::tmd_dark_baked_share` measure how much of
 a mesh's surface (by triangle area) carries near-black colour words. Retail
 scales every texel by that word, so such a mesh draws black however its
-textures resolve; the desktop tools (Studio's model tab, the asset viewer's
+textures resolve; the desktop tools (Explorer's model tab, the asset viewer's
 `tmd` title) read one number and say the darkness is the disc's once it
 reaches `MOSTLY_DARK_SHARE`.
 

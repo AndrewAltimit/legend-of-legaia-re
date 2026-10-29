@@ -4,7 +4,7 @@
 use super::*;
 
 /// Number of stat-bearing battle slots (party + monsters). Indexes
-/// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::defense`] / [`crate::world::BattleState::speed`]
+/// [`legaia_engine_battle_loop::battle_state::BattleState::attack`] / [`legaia_engine_battle_loop::battle_state::BattleState::defense`] / [`legaia_engine_battle_loop::battle_state::BattleState::speed`]
 /// and bounds the turn-order initiative scan.
 pub(crate) const BATTLE_SLOTS: usize = 8;
 

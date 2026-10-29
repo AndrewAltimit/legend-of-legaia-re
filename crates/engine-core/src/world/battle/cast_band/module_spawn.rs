@@ -1,7 +1,6 @@
 //! Seating a cast module's actors and effects: the summon actor seat, the cast
 //! effect pool, module lookup, and the module FX and arm spawns.
 
-use super::module_seat_arm;
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
@@ -144,8 +143,9 @@ impl World {
         }
         // An engine walk stand-in ends where the module seated the creature:
         // a module that seats it never walks it there.
-        if entry.is_some_and(|e| module_seat_arm::seat_arm_write(e).is_some())
-            && let Some(a) = self.actors.get(slot)
+        if entry.is_some_and(|e| {
+            legaia_engine_battle_loop::module_seat_arm::seat_arm_write(e).is_some()
+        }) && let Some(a) = self.actors.get(slot)
         {
             let at = [
                 a.move_state.world_x,
@@ -165,14 +165,14 @@ impl World {
     /// row (`module_seat_arm::seat_arm_write`).
     pub(in crate::world) fn module_seats_on_caster(&self, spell_id: u8) -> bool {
         self.cast_module_for(spell_id).is_some_and(|e| {
-            module_seat_arm::seat_arm_write(e).is_some()
+            legaia_engine_battle_loop::module_seat_arm::seat_arm_write(e).is_some()
                 || legaia_engine_cast::cast_module_camera::module_profile(e)
                     .is_some_and(|p| p.paces_band())
         })
     }
 
     /// The seat half of a summon spawn request for a host that draws
-    /// nothing: take [`crate::world::CastFxState::pending_summon_spawn`] and
+    /// nothing: take [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn`] and
     /// seat an unrendered creature at the hosts' slot (`8 + party_count`),
     /// through the same [`Self::seat_summon_actor`] the play hosts call
     /// after binding the mesh.
@@ -205,7 +205,7 @@ impl World {
     /// Install the cast-effect pool - the DATA half of the slot-B cast-module
     /// band (PROT 0903..0966), parsed off the disc by the scene host (which
     /// holds the PROT index; `World` is index-agnostic, the same split
-    /// [`crate::world::CastFxState::pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn)
+    /// [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn`](legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn)
     /// uses). Idempotent; a host that never calls it leaves every cast staging
     /// no module records, which is the disc-free behaviour.
     pub fn install_cast_effect_pool(
@@ -319,7 +319,7 @@ impl World {
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &module.bytes,
-            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
         true
@@ -380,7 +380,7 @@ impl World {
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
             &rest,
             &module.bytes,
-            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
     }
@@ -543,7 +543,7 @@ impl World {
                 legaia_engine_effects::summon::SummonScene::spawn_parts(
                     &[],
                     &bytes,
-                    crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                    legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                     pos,
                 )
             });

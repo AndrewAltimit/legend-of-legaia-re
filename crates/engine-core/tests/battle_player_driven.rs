@@ -3,7 +3,7 @@
 //! auto-resolving.
 //!
 //! Companion to `live_loop_tick.rs` (which exercises the auto-resolve spine).
-//! Here [`crate::world::BattleState::player_driven`] is set, so:
+//! Here [`legaia_engine_battle_loop::battle_state::BattleState::player_driven`] is set, so:
 //!
 //!   1. Walking still rolls a step-driven encounter and flips Field -> Battle.
 //!   2. On entering battle the action SM PARKS - a command session opens and
@@ -37,7 +37,7 @@ fn build_player_driven_world() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 

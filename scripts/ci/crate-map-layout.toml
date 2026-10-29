@@ -39,7 +39,7 @@ id = "hosts"
 title = "Hosts and front ends"
 blurb = "The programs people run. Each one is a thin shell over the crates below."
 track = "engine"
-crates = ["engine-shell", "web-viewer", "web-play", "web-minigames", "web-patcher", "asset-viewer", "studio", "patcher", "extract", "asset"]
+crates = ["engine-shell", "web-viewer", "web-play", "web-minigames", "web-patcher", "asset-viewer", "explorer", "patcher", "extract", "asset"]
 
 [[bands]]
 id = "top"
@@ -107,7 +107,7 @@ crates = [
 patcher = { track = "patcher" }
 extract = { track = "preservation" }
 asset = { track = "preservation" }
-studio = { track = "preservation" }
+explorer = { track = "preservation" }
 parity = { track = "tooling" }
 engine-capture = { track = "tooling" }
 ram-image = { track = "tooling" }

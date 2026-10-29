@@ -227,13 +227,32 @@ impl World {
         out
     }
 
+    /// Whether the field scene's actor-pool parts - its ambient tree and its
+    /// move-VM stagers - are in retail's live actor lists this frame: not
+    /// during a battle.
+    ///
+    /// The mode initialiser `FUN_8001DCF8` runs the per-stage init
+    /// `FUN_8001E1B4` (`jal` at `0x8001E020`) on every mode switch, and on
+    /// the way into a battle it re-seeds the actor free stack (`jal
+    /// 0x800203EC` at `0x8001E324`) and re-pops the seven list sentinels
+    /// (`0x8001E32C..0x8001E364`), each left pointing at itself: no field
+    /// part is on a list the battle's draw walks. Only the return to the
+    /// field skips the re-seed (`bne` at `0x8001E308` on resume word
+    /// `0x8007B8B8 == 2`, `beq` at `0x8001E31C` on next mode `2`) and brings
+    /// the parked pool back whole, which is why the port keeps the parts
+    /// through the battle and only stops drawing them.
+    pub fn field_pool_drawn(&self) -> bool {
+        self.mode != legaia_engine_mode::mode::SceneMode::Battle
+    }
+
     /// This frame's draw-kind-4 geometry - every live node whose model is
     /// its emitter's per-frame output, each composed like a mesh part: the
     /// ribbons ([`Self::active_effect_ribbons`], battle only), the `0x4000`
     /// sprite-arm quads ([`legaia_engine_effects::effect_sprite_arm`]) and the default arm's
     /// procedural rings / discs / crowns ([`legaia_engine_effects::effect_default_arm`]) of
-    /// the summon, move-FX, effect-script and field ambient parts. This is
-    /// the list both hosts' FX passes draw.
+    /// the summon, move-FX, effect-script and field ambient parts (the last
+    /// not in a battle, [`Self::field_pool_drawn`]). This is the list both
+    /// hosts' FX passes draw.
     pub fn active_effect_kind4_draws(
         &self,
     ) -> Vec<legaia_engine_effects::effect_ribbon::RibbonDraw> {
@@ -250,8 +269,10 @@ impl World {
             out.extend(scene.sprite_arm_draws());
             out.extend(scene.default_arm_draws());
         }
-        out.extend(self.ambient_sprite_arm_draws());
-        out.extend(self.ambient_default_arm_draws());
+        if self.field_pool_drawn() {
+            out.extend(self.ambient_sprite_arm_draws());
+            out.extend(self.ambient_default_arm_draws());
+        }
         // The fishing venue's ambient ripples: default-arm rings too.
         out.extend(self.minigames.fishing_venue.ripple_draws());
         out

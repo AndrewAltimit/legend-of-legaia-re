@@ -301,6 +301,18 @@ turns as the player walks. The constant walk step and the floor under the
 player being its footing are inference; the headless `camera` channel keeps
 scoring the compose against the RAM.
 
+The walk is rewound whether or not the camera is still easing. A follow
+camera already on its staging pose keeps its live angles and eye, but its
+focus is the player, so the frame on screen still stands two walk steps
+behind the RAM. `dohaty_field_card_walk` (`-24` X a pass, the camera on its
+yaw-`0` target) shows the scene `13` px left of a frame seated on the RAM's
+player; the state's two framebuffers and its newest ordering table, rasterised
+with `ot-raster.py`, stand `0`, `6` and `13` px apart, one pass each. Seated
+two steps back it reads `.994` (from `.725`), and `jou_field_card_walk` `.993`
+(from `.894`). A capture whose player stood still on its last pass
+(`+0x14/+0x18` equal to `+0x1C/+0x20`) is not rewound even with the pad held,
+since nothing in the RAM says how far the pass before it walked.
+
 The snap composes from the state's own camera parameter block
 (`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
 takes it as `LEGAIA_SEAT_CAMERA_BLOCK`) rather than from a tile re-query.
@@ -520,6 +532,45 @@ engine verdict:
   and for a keyframe-pose node (`+0x5A == 6`, `map01`'s ridge bank) the
   packed clip entries of its `+0x4C` block, seated as both keyframes of every
   part so the mode-6 tail packs them back unchanged.
+
+  A mesh-bearing ambient part that turns is a clock of the same kind. The
+  part tick adds its bank rates `+0x80..+0x84` to the render banks every
+  pass, so the angle it stands at is time since the scene entry. `noaru`'s
+  ice-floor bowl (stager record 40, rate `-8`, `-1` a vsync about Y) reads
+  `+0x26 = -241` in `noaru_field_card_walk`, where the image child's own
+  settle had turned it half as far, and the floor's texture swung round the
+  focus under the pillars (`image` `.629`). Every live part with a non-zero
+  rate outside render modes `3` / `5` and the sprite-arm sheets
+  (`retail_turning_parts`) goes to the child as `LEGAIA_SEAT_TURNING_PARTS`
+  with its banks taken back the display lag (the battle half's
+  `displayed_part_halfword`), and its banks are written over the engine's
+  part of the same record on the capture frame
+  (`World::seat_ambient_part_banks`). The program and its rates stay the
+  engine's. Its texture page and CLUT rows are byte-identical to retail's,
+  and the rest was the bowl's six screen-sized `POLY_FT4`s (corners up to
+  `216` px off screen), whose corners are where the GTE's saturated `IR` and
+  `SZ` put them, not a pinhole projection
+  ([renderer](../subsystems/renderer.md#the-gtes-register-limits)). With the
+  limits applied under PSX mode `noaru_field_card_walk` reads `.907`
+  (`.822` before).
+
+  So is the text balloon (`4C E1`, and the place-name banner the MAN
+  loader seats through the same handler `FUN_801DA7F0`). A capture under
+  two seconds after a door still shows the banner; a card load never raises
+  it (the loader's flag `2` is already clear in the save), so the image
+  child of `kor3_field_route_walk` drew no `Sol Broadway`. The corpus reads
+  the balloon the displayed frame drew (`retail_balloon`): the live node's
+  timer `+0x54` taken back three handler increments (the two passes and the
+  displayed pass's own: the handler draws with the timer before it adds the
+  frame step), or, when the newest balloon was still in its one-pass startup
+  there, the predecessor its first pass killed. The owner has unlinked that
+  node by the capture, so it is found by its handler word in the actor pool,
+  and taken only when exactly one killed node of the same script bank has a
+  timer short of its total: `kor4_field_route_walk` holds `Elevator 7F` at
+  `5` and shows the killed `Sol Dayschool` at `75`. It goes to the child as
+  `LEGAIA_SEAT_BALLOON` (`none` for a frame that drew none) and replaces the
+  field's balloon on the capture frame. `kor3_field_route_walk` rose from
+  `.917` to `.954` and `kor4_field_route_walk` from `.918` to `.955`.
 
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
@@ -1169,7 +1220,7 @@ engine's plates still mid-rise while retail's had long since landed
 
 - **All landed.** When every retail record has landed, the image child lands the
   engine's at the capture (`LEGAIA_SEAT_HUD_GLIDES_LANDED`,
-  `World::land_battle_hud_glides`).
+  `BattleState::land_battle_hud_glides`).
 - **Still in flight.** A record in flight seats its widget instead
   (`LEGAIA_SEAT_HUD_GLIDES`, `World::seat_battle_hud_glide`, the cluster's age
   on the host's HUD). Its target seat (`+0x04` / `+0x06`) names the widget:
@@ -1230,7 +1281,7 @@ its slide (eight on screen), which leaves it off the right edge.
 An arts-entry capture with the Triangle list open (menu flow `0x50`, list bits
 `0x801F4E09 & 0x81 == 0x81`) seats the engine's entry on retail's page
 (`_DAT_8007B458 / 5`) and slide counter (`0x801F4E0A`):
-`LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`, `World::seat_arts_list`. The drive
+`LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`, `BattleState::seat_arts_list`. The drive
 reaches the entry but presses no Triangle, so without the seat the frame shows
 the list closed. The `arts_list_*` states were played forward from the
 `arts_bar_*` ones on the retail disc by
@@ -1944,9 +1995,15 @@ opens with the names still up, which the recorded replays pace off), so an
 ordinary fight holds its prompt already at the flip and an opening capture of
 one reads `phase` `0`. The sparring fight's opening the tutorial holds back;
 the evolved Cort's the arrival module holds (flow `0x0C`). `gaza2_card_battle_init`
-is the one ordinary fight caught under its sweep, and its frame shows the
-engine's round prompt and party plaques over a field retail has not opened
-yet.
+is the one ordinary fight caught under its sweep. Its frame matches: the
+engine holds every surface of the round open while the sweep runs (the prompt
+and its unfold, `BattleState::arm_round_open_prompt`; the pad,
+`BattleState::battle_command_pad_held`). Its `phase` still reads `0`, because the
+port runs round one's start (`World::begin_battle_round`, flow `0x14`'s sweep,
+seeder and `0x1E` store) at the flip, so its flow word already reads the
+prompt where retail's battle tick has not run and holds `0x00`. Moving that
+start behind the sweep moves the opening's draws and the replays paced off
+it, so the channel stands as a known opening-order difference.
 
 **The entry sweep.** An opening capture's `camera` reads the
 [battle-entry sweep](../subsystems/battle.md#the-battle-entry-sweep) the SCUS
@@ -1972,6 +2029,24 @@ since retail's battle tick opens no prompt under it, while the engine's prompt
 opens at the flip. So the seed waits the engine's sweep out before it counts
 the first prompt, the in-flight cast seed dispatches only once it is over, and
 the image child's pad drive holds until then.
+
+**A round prompt's camera can still be on its far framing's arm.** The
+prompt's first frames walk the case-9 table the round's opening armed, from
+the close-up the entry sweep (or the arrival module) left: the menu SM leaves
+before its state arm, which is what re-arms case 9, while the chips unfold
+([battle-hud](../subsystems/battle-hud.md#the-round-prompt-opens-on-a-glide)).
+That table is linear - `FUN_801D829C` gives each component `ceil(|gap| /
+0xE)` a frame, once - so `gap / inc` on any component still short of its
+endpoint is the frames it had left. `gaza2_card_first_menu` reads TR z `6750`
+on `7800` at `353` a frame (three frames left) and `cort_evolved_card_first_menu`
+TR z `7294` at `255` (two); the displayed frame is the display lag earlier
+(`RetailBattle::menu_glide_left`). The engine's own arm stands as far along on
+the captured frame (`LEGAIA_SEAT_MENU_GLIDE_LEFT`,
+`BattleCamera::align_menu_glide_frames_left`), its yaw left to the orbit. On
+the fixed settle tick the engine's arm had landed long before, framing the
+whole formation where retail's frame is still behind the leader's back:
+`gaza2_card_first_menu` `0.634` to `0.921`, `cort_evolved_card_first_menu`
+`0.338` to `0.930`.
 
 **The arrival's columns date a prompt capture.** A round-prompt capture of the
 evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns
@@ -2139,16 +2214,35 @@ inside its state by retail's own clocks (`SpanGate`):
 | `0x70` under a directed module | module arm + countdown, or the arm alone (`PHASE_ONLY`) for a body that gates on no module word | `ctx[+0x279]`, [`capture_countdown_va`](../subsystems/cast-module.md#a-capture-class-module-owns-the-camera-in-0x70) |
 
 **A directed body with no module word.** PROT 0962's charge bodies wait on
-the caster's cursor, and Neo Star Slash and Doomsday carry their countdown in
-the director, so `capture_countdown_va` names no word for them. Their `0x70`
-captures are still held to the capture's arm
+the caster's cursor, so `capture_countdown_va` names no word for them. Their
+`0x70` captures are still held to the capture's arm
 (`battle_drive::PHASE_ONLY`), for a body the engine directs only; without it
 the replay was filmed on the band's first tick. `koru_blade_breath_mid_cast`
-sits in arm 3, and the gate took its `camera` from `.763` to `.862`, Neo Star
-Slash's from `.757` to `.780` and Doomsday's from `.718` to `.734`. The Koru
-image stays where it was: the capture's seat is the end of Koru's walk-in,
-so the replay's arms 0 and 1 pass at once, and the frame the display lag
-takes back is the band's opening shot rather than retail's arm-1 glide.
+sits in arm 3, and the gate took its `camera` from `.763` to `.862`.
+
+**A shot armed past a skipped walk-in.** Those bodies' arms 0 and 1 walk Koru
+into reach and frame him through case 6 on every pass; a retail film of the
+walk (`koru_pre_thunder_needle`, 36 vsyncs of arm 1) swings that framing onto
+yaw `2168`, and arm 2's shot sets out from there. A `0x70` capture stands
+Koru on the walked ground, already in reach, so the replay's arms 0 to 2 pass
+in a tick or two and its shot would leave from the unturned framing. For
+such a capture (`RetailBattle::walk_in_shot_aligned`: a charge body, arm 2 or
+later, retail's shot still walking) both channels align the shot onto
+retail's pose (`BattleCamera::align_module_shot`; the image child onto the
+displayed frame's, walked back along the shot's own table) and the image
+child keeps the gate's tick: a display-lag retake would land on `0x70`'s
+first tick, ahead of the shot. The three Koru mid-casts read `camera`
+`1.000` (`.862`) and `image` `.822` / `.790` / `.789` (`.719` each).
+
+Neo Star Slash and Doomsday do gate on module words, which their directors
+carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
+delta` a pass, the director's own unit) and PROT 0965's `0x801F8370`, which
+counts vsyncs and is scaled into it (`capture_countdown_units`). Held to the
+arm alone, both captures were filmed on arm 1's first tick, before the
+engine's camera had walked arm 0's shot, where retail's word (`96`, `16`)
+places the frame most of the way through it: `camera` `.780` to `1.000` for
+`gaza2_card_neo_star_slash_mid_cast` and `.734` to `.965` for
+`cort_evolved_card_doomsday_mid_cast`.
 
 **How far into the state (`SpanGate::Age`).** The acting actor's clip commit
 zeroes `ctx[+0x87C]` and every framing call adds `8 * frame_step`. The drive
@@ -2226,6 +2320,44 @@ frames further into the wait than the accumulator shows, a fifth of a turn of
 yaw. Held so, the engine lands where every such capture is framed - pitch `0`,
 `TR y = 0x500`, focus on the caster's seat.
 
+The accumulator can also be older than the action. Only a clip commit zeroes
+it (`FUN_8004AD80`, `sw zero,0x87c` at `0x8004BF74`), and a monster's
+capture-class cast commits none on its way into the band: the seed pass calls
+`FUN_801EFE44` and the framing, neither of which stages a clip, and the cast
+begin's capture route stores `0x6E` at once. Its accumulator then counts from
+the caster's last idle commit or wrap, wherever the idle loop stood when the
+action began. The counter does count from the seed's `0x800`, and gains at
+least a unit a display frame where the accumulator gains exactly `8`, so a
+capture whose accumulator has run more frames than its counter has units
+since the seed is one of these (`accum_predates_seed`), and the counter alone
+places its hold. `battle_korb2_mage_void_accessories_mid_cast` reads
+accumulator `384` (`48` frames) against counter `0x820` (`32` units): gated
+on both, the engine held `0x6E` until its own clip age, which leaves the
+idle loop's natural-end wraps out, reached retail's reading of it; its counter ran `18` to `24` units
+past retail's, and its camera had landed where retail's is still turning
+(yaw `1117` against `1257`). The landed camera put the second monster
+between the eye and the caster, drawn as the near-camera ghost
+([`FUN_8004DC68`](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68),
+mode `3`): a large dark translucent body behind the caster. Retail ghosts
+the same slot on that frame (`+0x8 = 0x83000000`), out of its shot.
+
+A `0x70` capture inside a module arm's own shot (a director's `FUN_801D829C`
+call, built once: `0x70` arms no framing) is aligned as a summon module's is
+(`BattleCamera::align_module_shot`), on both the headless seed and the image
+child, when that aligns more of the pose than the glide-origin align, which
+compares a chase glide's endpoint and misses a module shot's. Its displayed
+frame then walks the RAM's table back on the table's own increments, as a
+`0x6F` capture's does, once retail's module has left arm 0 (`ctx[+0x279]`
+past `0`) and the table still walks on its angles or focus
+(`module_shot_walking`; a drift moves TR alone, so a table home on those has
+finished). Walked back on the re-arm's share instead, the Koru captures
+(PROT 0962) stood the displayed pose `64` yaw units round of the frame on
+screen (`image` `.789` to `.579`).
+`battle_map01_lippian_kiss_of_death_mid_cast` (PROT 0955 arm 1, the arm-0
+shot one pass in) reads camera `.916` to `1.000`, image `.704` to `.886`;
+`zeto_call_wave_mid_cast` (PROT 0946 arm 2, on arm 1's `0x100`-frame pan)
+reads `.998` to `.996` on the table's walk.
+
 The band has a third clock the hold does not reach: the backdrop pair's
 depth-cue weight, the stage's darkening. `FUN_80050120` ramps the records'
 `+0x78` by `step << 6` a pass while `ctx[+0x243]` is up, and the cast begin's
@@ -2263,8 +2395,8 @@ than the replay's `2`.
 
 The engine's side of the accumulator test is its clip age
 (`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
-re-commits left out, as the action gates read it
-([above](#placing-the-phase)). A caster that idles through the band restarts
+re-commits left out ([above](#placing-the-phase) for the action
+gates, which read the accumulator). A caster that idles through the band restarts
 the accumulator at every wrap of its idle, on the engine's own clock, so read
 raw the engine's could wrap just as its yaw counter came due:
 `zora_glare_petrify_pre`'s `0x6E` waited out a whole idle cycle and reached the
@@ -2347,6 +2479,26 @@ an orbit clock. `evil_medallion_rage_battle` is one.
 
 #### Open cases
 
+- **The Guardian's Windhash clip.** `battle_tower_guardian_windhash_mid_cast`
+  holds the queue `34 0B 0E FF`: Windhash on archive entry `0x0B`. The
+  Guardian's magic slots read `+0x21 = 0x57`, `+0x22 = 0x34`, and its
+  tag-`0x23` entries are `0x0A` and `0x0B`, so the generic walk
+  (`0x801EA4A4..0x801EA548`) pairs Windhash with `0x0A` and V-Windhash with
+  `0x0B` - which `battle_tower_guardian_v_windhash_mid_cast` confirms
+  (`57 0B 07 FF`) - and the per-monster arm for id `0x11` is the default
+  (`0x801EBDAC`). The engine stages `0x0A`, whose hit lands on Noa on the
+  first `0x2B` pass, where retail's frame still shows her unhurt. Both
+  captures are one fight: V-Windhash on round 1 (the Guardian's MP `120` to
+  `40`), Windhash on round 2 (`40` to `20`). A PCSX-Redux run from the
+  V-Windhash state watched the Guardian's next pick (its rolls ended on a
+  strike, not retail's Windhash) walk to entry `0x0B` for V-Windhash
+  (`k = 1`), fail its MP test (`40 < 80`, `0x801EA520`) and restart at
+  `0x801EA058`, twice; every `+0x1E0` store in the battle overlay
+  (`0x801EA540`, the heal arm's `s2 - 1` at `0x801EA6C8`, `0x801EBE74`,
+  the queue builder `FUN_801EED1C`) is accounted for, and none pairs `0x34`
+  with `0x0B` on this record. What staged it is open; the next step is the
+  same probe with its breakpoints armed only from round 2, since the
+  interpreter core faults within some hundred vsyncs on most runs.
 - **Zeto's waves.** The forced cast is armed but never consumed inside the
   budget - the monster pick that would take it is not reached on Zeto's seat -
   so `0x70` is not reached. Why is open.
@@ -2518,6 +2670,13 @@ the yaw (`BattleCamera::align_orbit_yaw`): the headless seed sets its orbit to
 retail's yaw before it samples `camera`, and the image child gets the yaw as
 `LEGAIA_BATTLE_ORBIT_YAW` and holds its orbit there. It is the camera twin of
 the field HUD countdown hold.
+
+**The turning spell shots.** A monster's cast on one of the cast-effect
+driver's turning cases (`3`, `5`, `0xE`, `0x10`) aims the yaw a fixed step past
+the live one every pass, so its endpoint is the same clock: where the yaw
+stands is how far the shot has turned from wherever case 6 left it, which the
+replay's own earlier rounds decide. With the shot's pitch on retail's, the
+alignment takes retail's live yaw (`BattleCamera::align_glide_origin_to`).
 
 **Guests.** A party whose present list names a seat the save window's roster
 does not seat (a guest combatant) reads as a short engine party in
@@ -3144,14 +3303,16 @@ run in the drive's state; when the gate holds and that run already held `lag`
 ticks back, it names the earlier tick beside its frame (`<shot>.retake`), and
 the parent runs the child again with `LEGAIA_DIAG_CAPTURE_TICK` set to it.
 The child is tick-locked, so the re-run walks the same frames. A party seat's
-clip-age gate and every capture-band hold take it; the rest keep the gate's
+clip-age gate and every capture-band hold take it, and a monster's
+magic-band clip age takes it where the gate shows another shot
+([below](#a-shot-armed-after-the-displayed-frame)); the rest keep the gate's
 own frame:
 
 | Gate | Why it keeps the RAM's frame |
 |---|---|
 | under `lag` ticks into its state | the displayed frame belongs to the state before, which the drive reaches on its own clock; taken back across the entry the `super_queue_*` captures fell from `0.654` to `0.327` |
+| a monster's clip age, the same shot | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); retaken, both `battle_gimard_tail_fire_*` frames fell, and the monster strikes split both ways (`battle_jouind_gilium_lv3_strike` `.850` to `.953`, `battle_vozz_gizam_strike` `.964` to `.921`) |
 | `Landed` | retail sat on the CD wait with its glide long landed, and the engine's gate is the tick its own glide lands: the frames before it are mid-glide (`evil_medallion_rage_battle` `0.913` to `0.395`) |
-| a monster's clip age | Tail Fire's hit rays run on the engine's own clock ([above](#the-frames-either-side-of-a-gated-capture)); both `battle_gimard_tail_fire_*` frames fell |
 | `DoneHold` | the Done band's captures part on where the replay left the bodies (`noa_levelup_fight_pre` fell) |
 
 The retake is counted in the child's ticks, and with the child in step with
@@ -3277,6 +3438,53 @@ arm. The `super_queue_replace_*` captures are that pass: yaw `3205` walking to
 table the eye stood at depth `1965`, closer than any pose the seed's ease
 passed through; one pass back it stands at `2457`, and the frames read `.656`
 to `.744`.
+
+#### A caster held on its ground through the cast
+
+A monster's magic cast spawns its effects from its clip's effect script at
+the caster's live pair, rotated by its heading, and nothing in the magic band
+moves a monster caster. The image child therefore stands the acting monster
+on the capture's ground from cast begin `0x28` through the pre-cast wait
+`0x29` (`ground_snap::hold_cast_caster`), not only at the captured phase: the
+replay's earlier rounds can leave it elsewhere, and its effects then spawn off
+retail's (`battle_retona_viguro_lv2_thunder_break_mid_cast` seeded Thunder
+Break's two masters from `(-509, 1099)` against retail's caster at
+`(-434, 874)`). Only the capture's own caster is held, and only on a
+capture of a monster's magic cast: the snap is that capture's ground, and
+held through every monster cast of the replayed fight it moved a strike
+capture's fight off the headless seed's, so the strike never reached its
+phase (`battle_rugi_barra_strike`). `battle_rugi_slippery_poisonous_breath_mid_cast`
+read `.966` to `.982`.
+
+#### A shot armed after the displayed frame
+
+The magic band's shot arms on the first `0x2B` pass
+([battle-action](../subsystems/battle-action.md#the-cast-effect-drivers-camera-script)),
+so a monster's cast captured two passes into `0x2B` displays the case-6
+framing the shot replaced, and the gate's case 7 or `0xE` is a different
+framing, not a later reading of the same one. The child's first run checks
+when its camera armed the shot it stands on
+(`BattleCamera::spell_shot_armed_at`). On a monster's magic-band clip age
+(`RetailBattle::retake_on_shot_only`, `LEGAIA_CAPTURE_RETAKE_SHOT`) it
+retakes only when that shot was armed after the retake's tick and retail's
+camera already stands on it (its live pose at the tween table's endpoints).
+A one-frame shot lands on its arming pass and keeps nothing of the framing
+before it, so the replay's own case 6 is the only reading of the displayed
+frame; a shot still easing in holds retail's live pose, which the gate's
+frame is aligned to, and the group breaths' six-frame case 9 read lower on
+the replay's case 6 (`battle_chitei2_kemaro_lv2_lava_breath_mid_cast` `.941`
+to `.735`). Anywhere a
+shot armed after the retake's tick leaves the gate's target out of the note,
+so the retake draws the engine's own case 6. The lag of that retake is two of
+the child's own passes (`RetailBattle::drive_display_lag`): a pad drive runs
+the engine's default battle frame step unless the drive seeds retail's, and
+six ticks back from a step-`3` capture's gate is the child's `0x29` exit
+pass, which the state rule refuses.
+`battle_rugi_barra_windcutter_mid_cast` read `.538` on the gate's frame
+(Barra in close-up) and `.864` on the retake (Barra behind Vahn with the whole
+party in view, as on retail's screen);
+`battle_retona_viguro_lv2_thunder_break_mid_cast` `.552` to `.637`,
+`battle_tower_guardian_windhash_mid_cast` `.567` to `.611`.
 
 ## Divergence shapes
 
@@ -4581,12 +4789,15 @@ every pass, so it moves with the phase of both clips):
   so the drive also waits for the victim's defeat-fade lane (`+0x04`,
   `0xF0` here - 34 vsyncs of fade) and, since the caption is the steal
   roll's outcome, for the caption on a stream whose kill rolled it. The
-  death commit itself lands where retail's does. The drive's ages are the
-  camera's **clip age** (`BattleCamera::clip_age`): the accumulator with
-  those loop re-commits left out, which keeps placing a phase whose
-  engine clip loops where retail's held another clip - the parked Gaza of
-  `battle_gaza2_park_0x19_target_vahn` sits on its 45-frame idle (wrapped
-  69 vsyncs before the save, `552` exactly) while the engine's still walks.
+  death commit itself lands where retail's does. An action drive's age is
+  the camera's close-up accumulator itself (`BattleCamera::close_up_accum`,
+  `ctx[+0x87C]`), which every commit of the acting seat zeroes, a same-id
+  re-commit included (`0x8004BF74`): the Spirit band stages its clip at
+  `0x46`, and on the Delilas Spirit captures that clip is the id already
+  committed, so a clock that skipped re-commits ran on from before the
+  action and met the gate 22 to 42 ticks early. The capture band's hold
+  keeps the **clip age** (`BattleCamera::clip_age`, the accumulator with
+  the loop re-commits left out), below.
 - **A drive's stream is a search result, not a measurement.** The phase of
   `battle_gaza2_park_0x19_target_vahn` is Gaza's swing on Vahn, and the
   monster's pick of Vahn is a draw: the seed search keeps the first

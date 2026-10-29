@@ -35,28 +35,6 @@ impl World {
         )
     }
 
-    /// The defence half a melee command reads on `slot`: UDF (`+0x15C`) when
-    /// `(command - 0x0C) % 10 < 5`, LDF (`+0x160`) otherwise
-    /// ([`legaia_engine_battle_vm::battle_formulas::physical_defense_is_udf`], `FUN_801EC3E4` at
-    /// `0x801ECE14`).
-    ///
-    /// Both party slots ([`Self::seed_party_battle_stats`]) and monster slots
-    /// (battle entry, from the catalog's UDF / LDF pair) carry a real split.
-    /// A slot with none configured - a synthetic battle that wrote only
-    /// [`crate::world::BattleState::defense`] - falls back to that scalar, so both halves
-    /// answer the same value and the parity pick is a no-op for it.
-    pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
-        let idx = slot as usize;
-        if let Some(Some((udf, ldf))) = self.battle.defense_split.get(idx) {
-            return if legaia_engine_battle_vm::battle_formulas::physical_defense_is_udf(command) {
-                *udf
-            } else {
-                *ldf
-            };
-        }
-        self.battle.defense.get(idx).copied().unwrap_or(0)
-    }
-
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
     /// formula (the routine battle-action state `0x64` calls, the writer of
     /// the `_DAT_8007726C` outcome pointer). Party score = per-slot
@@ -74,7 +52,7 @@ impl World {
     /// scripted no-flee battle is caught anyway.
     ///
     /// The scripted no-escape flag (`ctx+0x287`) is the engine's
-    /// [`crate::world::BattleState::no_escape`], set from the formation row's
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::no_escape`], set from the formation row's
     /// header byte at battle entry. The forced flee is bit `0x100` of the
     /// special-battle word ([`World::special_battle_word`]): retail tests it
     /// once per living party member (`0x801E7978` / `andi 0x100` / the
@@ -222,7 +200,7 @@ impl World {
     /// `FUN_801EC0DC` with the monster's pool slot).
     ///
     /// Side scores fold live HP/max-HP off the actors and live ATK off the
-    /// [`crate::world::BattleState::attack`] sidecar (retail reads actor `+0x158`); the
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::attack`] sidecar (retail reads actor `+0x158`); the
     /// party's No Escape / Chicken Guard bit folds from each living member's
     /// second ability word exactly as [`Self::roll_battle_escape`] folds its
     /// escape accessories. The fleeing monster's INT (`+0x168`) comes from the
@@ -355,195 +333,9 @@ impl World {
     pub fn spirit_gauge_full(&self, slot: u8) -> bool {
         self.spirit_gauge(slot) >= 100
     }
-
-    /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
-    /// straight into the matching per-slot battle scalar so it changes damage
-    /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
-    /// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::magic`] / [`crate::world::BattleState::defense`]
-    /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy).
-    ///
-    /// **Stat-up buffs (`magnitude > 0`) use the retail multiplicative ramp.**
-    /// Retail's stat-up selectors (1..7) raise the live stat by ×6/5 (clamped to
-    /// `0xFFFF`) - [`vm::battle_formulas::buff_ramp`], pinned from the SM dump -
-    /// not by a flat additive delta. So a positive buff ramps the scalar by +20%
-    /// of its *current* value (the per-spell `magnitude` value is now only a
-    /// sign hint for the pinned scalar stats). **Debuffs (`magnitude <= 0`) stay
-    /// additive**: retail's debuff scaling is not yet pinned, so the engine keeps
-    /// the saturating additive model rather than fabricate a factor.
-    ///
-    /// The recorded `applied_delta` is the exact `u16` change either way (for
-    /// precise undo on expiry). Accuracy / Evasion / Speed have no live-loop
-    /// scalar; the buff is tracked with a zero delta so the turn timer still
-    /// runs. Re-casting the same `(slot, stat)` refreshes: the old delta is
-    /// reverted first (so the ramp re-applies from the base, no compounding on
-    /// refresh).
-    pub(in crate::world) fn apply_battle_buff(
-        &mut self,
-        slot: u8,
-        stat: legaia_engine_battle::spells::BuffStat,
-        magnitude: i16,
-        turns: u8,
-    ) {
-        // Refresh: revert + drop any existing buff on this (slot, stat).
-        if let Some(pos) = self
-            .battle
-            .buffs
-            .iter()
-            .position(|b| b.slot == slot && b.stat == stat)
-        {
-            let old = self.battle.buffs.remove(pos);
-            self.add_to_buff_scalar(old.slot, old.stat, -old.applied_delta);
-        }
-        if turns == 0 {
-            return;
-        }
-        let applied_delta = if magnitude > 0 {
-            // Retail stat-up: ×6/5 ramp of the current scalar (pinned).
-            self.ramp_buff_scalar(slot, stat)
-        } else {
-            // Debuff: additive (retail factor unpinned), saturating at 0.
-            self.add_to_buff_scalar(slot, stat, magnitude)
-        };
-        self.battle.buffs.push(BattleBuff {
-            slot,
-            stat,
-            applied_delta,
-            turns,
-        });
-    }
-
-    /// Apply the retail `×6/5` stat-up ramp ([`vm::battle_formulas::buff_ramp`])
-    /// to the per-slot scalar backing `stat`, returning the exact `u16` change.
-    /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) return `0`.
-    ///
-    /// A Defense ramp is taken from the slot's **UDF half** when it carries a
-    /// [`crate::world::BattleState::defense_split`] - see [`Self::move_defense_split`] for why
-    /// the scalar alone is the wrong basis.
-    fn ramp_buff_scalar(&mut self, slot: u8, stat: legaia_engine_battle::spells::BuffStat) -> i16 {
-        use legaia_engine_battle::spells::BuffStat;
-        if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense)
-            && let Some(Some((udf, _))) = self.battle.defense_split.get(slot as usize).copied()
-        {
-            let delta = (i32::from(legaia_engine_battle_vm::battle_formulas::buff_ramp(udf))
-                - i32::from(udf)) as i16;
-            return self.add_to_buff_scalar(slot, stat, delta);
-        }
-        let scalar = match stat {
-            BuffStat::Attack => self.battle.attack.get_mut(slot as usize),
-            BuffStat::MagicAttack => self.battle.magic.get_mut(slot as usize),
-            BuffStat::Defense | BuffStat::MagicDefense => {
-                self.battle.defense.get_mut(slot as usize)
-            }
-            BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
-        };
-        let Some(scalar) = scalar else { return 0 };
-        let before = *scalar;
-        let after = legaia_engine_battle_vm::battle_formulas::buff_ramp(before);
-        *scalar = after;
-        (after as i32 - before as i32) as i16
-    }
-
-    /// Add `delta` to the per-slot scalar backing `stat` and return the exact
-    /// change made (after `u16` saturation). Stats with no live-loop scalar
-    /// return `0`. A Defense change also moves both halves of the slot's
-    /// defence split ([`Self::move_defense_split`]).
-    pub(super) fn add_to_buff_scalar(
-        &mut self,
-        slot: u8,
-        stat: legaia_engine_battle::spells::BuffStat,
-        delta: i16,
-    ) -> i16 {
-        use legaia_engine_battle::spells::BuffStat;
-        if matches!(stat, BuffStat::Defense | BuffStat::MagicDefense) {
-            self.move_defense_split(slot, delta);
-        }
-        let scalar = match stat {
-            BuffStat::Attack => self.battle.attack.get_mut(slot as usize),
-            BuffStat::MagicAttack => self.battle.magic.get_mut(slot as usize),
-            BuffStat::Defense | BuffStat::MagicDefense => {
-                self.battle.defense.get_mut(slot as usize)
-            }
-            BuffStat::Accuracy | BuffStat::Evasion | BuffStat::Speed => None,
-        };
-        let Some(scalar) = scalar else { return 0 };
-        let before = *scalar as i32;
-        let after = (before + delta as i32).clamp(0, u16::MAX as i32);
-        *scalar = after as u16;
-        (after - before) as i16
-    }
-
-    /// Move both halves of `slot`'s defence split by `delta`, saturating at
-    /// zero. No-op for a slot with no split.
-    ///
-    /// The physical path reads the split, not the [`crate::world::BattleState::defense`]
-    /// scalar ([`Self::physical_defense_of`]), so a Defense buff that touched
-    /// only the scalar changed nothing a swing could see. That was already true
-    /// for every party slot - [`Self::seed_party_battle_stats`] writes the split
-    /// and never the scalar, so the scalar sat at `0` and the `×6/5` ramp of `0`
-    /// is `0` - and seeding the monster band's split would have extended the
-    /// same inertness to enemies. Retail's "Defense Up" raises `defense_high`
-    /// and `defense_low` together, which is what moving both halves models.
-    ///
-    /// **Bounded divergence:** retail ramps each facet by its own `×6/5`; the
-    /// engine applies one delta, taken from the UDF half, to both. The stored
-    /// `applied_delta` stays a single exactly-reversible number, so a buff that
-    /// expires restores the pair it found.
-    fn move_defense_split(&mut self, slot: u8, delta: i16) {
-        if let Some(Some((udf, ldf))) = self.battle.defense_split.get_mut(slot as usize) {
-            let shift = |v: &mut u16| {
-                *v = (i32::from(*v) + i32::from(delta)).clamp(0, i32::from(u16::MAX)) as u16;
-            };
-            shift(udf);
-            shift(ldf);
-        }
-    }
-
-    /// Tick the buffs on `slot` at the start of its turn: decrement each, and
-    /// revert + drop those that reach zero.
-    pub(in crate::world) fn tick_battle_buffs_on_turn(&mut self, slot: u8) {
-        let mut expired: Vec<BattleBuff> = Vec::new();
-        self.battle.buffs.retain_mut(|b| {
-            if b.slot != slot {
-                return true;
-            }
-            b.turns = b.turns.saturating_sub(1);
-            if b.turns == 0 {
-                expired.push(*b);
-                false
-            } else {
-                true
-            }
-        });
-        for b in expired {
-            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
-        }
-    }
 }
 
 impl World {
-    /// Copy every working stat halfword into its **base** twin, for every
-    /// seat - retail's record -> actor copy writing both `sh`s of each pair
-    /// (`FUN_80054CB0` for a monster, `FUN_80053CB8` for a party member).
-    ///
-    /// Called once at battle entry, after both sides' stats are seeded. From
-    /// there the base halves are frozen: nothing in a fight writes one except
-    /// a Seru side-effect debuff, which is exactly why the stager can use
-    /// "base != record" as its "something already moved this stat" gate
-    /// ([`Self::enemy_stat_compare`]).
-    ///
-    /// REF: FUN_80054CB0 (the `sh` pairs at `0x80055160..0x8005530C`; the
-    /// routine is ported at
-    /// [`legaia_engine_battle::monster_catalog::monster_def_from_record`] and its arithmetic
-    /// at [`legaia_engine_battle::monster_catalog::MonsterDef::installed_stats`])
-    pub(in crate::world) fn sync_battle_stat_bases(&mut self) {
-        for slot in 0..self.battle.attack.len() {
-            self.battle.attack_base[slot] = self.battle.attack[slot];
-            self.battle.defense_base[slot] = self.battle.defense_split[slot];
-            self.battle.speed_base[slot] = self.battle.speed[slot];
-            self.battle.accuracy_base[slot] = self.battle.accuracy[slot];
-        }
-    }
-
     /// The `(base halfword, raw record field)` pairs the Seru side-effect
     /// stager compares for an enemy seat.
     ///
@@ -626,7 +418,7 @@ impl World {
     ///   [`Self::caster_magic_power_byte`]. Below `3` nothing stages and
     ///   **no draw is taken**.
     /// - **summon element**: the summon creature's record `+0x1D`.
-    /// - **scripted**: [`crate::world::BattleState::scripted_fight`].
+    /// - **scripted**: [`legaia_engine_battle_loop::battle_state::BattleState::scripted_fight`].
     /// - **affinity**: `matrix[summon element][first living enemy element]`,
     ///   the scripted roll's bypass.
     /// - **target**: the cast's first enemy seat's compare pairs, or

@@ -145,6 +145,7 @@
 <section class="doc-section" id="port">
   <h2>In the port</h2>
   <p>Walker tables decode in <code>scene-formats::clut_walk</code> and animate in <code>engine-scene::clut_walk_anim</code>. The tree is <code>engine-core::world::ambient</code>, installed by the scene-entry pre-run that executes each op <code>0x34</code> sub-3 once; its render tails are <code>engine-field::clut_cell_fx</code> and <code>engine-field::vram_scroll</code>. Fog is <code>engine-field::fog_particles</code> and <code>ambient_emitter</code>. The separate volumetric ground fog is an enhancement and never touches this pool.</p>
+  <p>Entering a battle re-seeds retail&rsquo;s actor pool, so no field part is on a list the battle draws; the return to the field brings the parked pool back whole. The port keeps the parts through the fight and draws none of them while the mode is a battle (<code>World::field_pool_drawn</code>), on both hosts. Drawn there, <code>map01</code>&rsquo;s mist sheets stacked into a white bar on the horizon of a low summon camera.</p>
 </section>
 
 <section class="doc-section" id="see-also">

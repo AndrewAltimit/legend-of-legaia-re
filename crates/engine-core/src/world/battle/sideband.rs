@@ -86,8 +86,8 @@ impl World {
     /// `0x80046D60`, ahead of both battle state machines)
     pub(in crate::world) fn tick_battle_sideband(&mut self) -> bool {
         // The sparring fight's round start, once the battle open lets the
-        // flow reach `0x14` ([`Self::sparring_open_held`]).
-        if self.battle.sparring_round_pending && !self.sparring_open_held() {
+        // flow reach `0x14` ([`BattleState::sparring_open_held`]).
+        if self.battle.sparring_round_pending && !self.battle.sparring_open_held() {
             self.battle.sparring_round_pending = false;
             self.begin_battle_round();
         }
@@ -100,7 +100,7 @@ impl World {
         // the sweep's own camera, the boss still hidden). The engine's
         // loader is synchronous, so without this hold the module would walk
         // the camera from the first battle frame.
-        if self.battle.stage_id == sb::STAGE_ARRIVAL && self.battle_entry_sweeping() {
+        if self.battle.stage_id == sb::STAGE_ARRIVAL && self.battle.battle_entry_sweeping() {
             return true;
         }
         let inputs = self.battle_sideband_inputs(None);
@@ -115,20 +115,7 @@ impl World {
                 self.battle.stage_id,
                 sb::STAGE_ARRIVAL | sb::STAGE_FORM_TRANSITION
             )
-            || self.sparring_closing()
-    }
-
-    /// The sparring fight past its completion tail: the prompt machine's
-    /// countdown (phase `2`, `ctx[+0x6B4] != 0` with the flow closed at
-    /// `ctx[+0x06] = 0xC8`) or the teardown staging (phase `3`) owns the
-    /// frame. Retail runs neither battle state machine through it: the flow
-    /// byte `0xC8` is no `FUN_801D0748` case and the hook holds it
-    /// (`ctx[+0x6B0] = 1`), and the action SM only runs off the command
-    /// flow's `0xFF` (`0x80047024..0x8004702C`).
-    fn sparring_closing(&self) -> bool {
-        self.battle.stage_id == sb::STAGE_SPARRING
-            && (self.battle.sideband.phase >= 3
-                || self.battle.tutorial.as_ref().is_some_and(|t| t.finished))
+            || self.battle.sparring_closing()
     }
 
     /// The frame driver's battle exit gate for the sparring fight
@@ -163,7 +150,7 @@ impl World {
     }
 
     /// Phase 2's per-frame hook call (`jal 0x801F6B70` at `0x80056418`) - the
-    /// half the flow-edge dispatch (`World::set_battle_flow`) cannot carry:
+    /// half the flow-edge dispatch (`BattleState::set_battle_flow`) cannot carry:
     /// the `ctx[+0x6B4]` countdown section, which runs on every hook frame.
     ///
     /// Only the completion tail arms the countdown in the engine
@@ -183,7 +170,7 @@ impl World {
             .as_ref()
             .is_some_and(|t| t.lesson == 4 && !t.finished)
         {
-            self.run_sparring_completion_tail();
+            self.battle.run_sparring_completion_tail();
         }
         if self
             .battle
@@ -195,7 +182,7 @@ impl World {
         }
         // `ctx[+0x6B2]` and `_DAT_8007B874` as the hook reads them, before
         // anything this frame consumes them.
-        let box_up = self.battle_tutorial_box_up();
+        let box_up = self.battle.battle_tutorial_box_up();
         let pad_edge = self.input.pad() & !self.input.pad_prev() != 0;
         // The battle loop is parked behind the side-band from here on, so
         // the sign-off box is aged here (Cross skips it; it is non-waiting
@@ -238,31 +225,6 @@ impl World {
         }
     }
 
-    /// Whether the battle open still stands between the sparring fight and
-    /// its first `0x14`. The side-band arms its caption on the flow byte
-    /// reading `0x14` (`FUN_80056208` phase `0`), and retail's flow gets
-    /// there only through the whole open: the frame driver runs the battle
-    /// tick `FUN_801D0748` once its entry counter `gp+0x330` reads `0xFF`
-    /// (`beq a0,v0,0x80047014` at `0x80046EF8`) - after the camera's entry
-    /// sweep - and the tick then walks `0x00 -> 0x0A`, composes the enemy
-    /// names and holds `0x0B` for the intro timer `ctx[+0x6D6]`
-    /// (`0x801D0DE0..0x801D0E58`) before it stores `0x14`. So Tetsu's line
-    /// comes up after the sweep and after his name label has gone, never
-    /// under either: `s5_tetsu_battle` (flow `0x00`, counter `0xAF`) shows
-    /// the bare arena, `v0_1_battle_start_tetsu` (flow `0x14`) the caption
-    /// over the close-up.
-    ///
-    /// The port opens every other fight's round at the flip
-    /// ([`super::intro_names`]); the spar is held to retail's order because
-    /// its caption and the close-up it selects are what the open shows.
-    ///
-    /// REF: FUN_80046A20, FUN_801D0748, FUN_80056208
-    pub fn sparring_open_held(&self) -> bool {
-        self.battle.stage_id == sb::STAGE_SPARRING
-            && self.battle.sideband.phase == 0
-            && (self.battle_entry_sweeping() || self.battle.intro_names_frames > 0)
-    }
-
     /// The side-band's say over a round start (`FUN_801D0748` state `0x14`):
     /// `true` when the round has to wait. The sparring caption holds it
     /// (`ctx[+0x6B0]`, tested at `0x801D0BDC`), and under the arrival the
@@ -270,7 +232,7 @@ impl World {
     pub(in crate::world) fn battle_sideband_holds_round(&mut self) -> bool {
         match self.battle.stage_id {
             sb::STAGE_SPARRING if self.battle.sideband.phase == 0 => {
-                if self.sparring_open_held() {
+                if self.battle.sparring_open_held() {
                     self.battle.sparring_round_pending = true;
                     return true;
                 }
@@ -287,7 +249,7 @@ impl World {
     fn apply_battle_sideband(&mut self, effects: &[Fx]) {
         for e in effects {
             match e {
-                Fx::IntroCaption => self.raise_sparring_caption(),
+                Fx::IntroCaption => self.battle.raise_sparring_caption(),
                 // The aim at the first monster seat (`FUN_801D829C` with
                 // `TR (0, 0x500, 0x400)`) is the phase-scripted camera's
                 // Dialogue close-up, which the caption's hold selects
@@ -295,7 +257,7 @@ impl World {
                 Fx::IntroCameraAim => {}
                 Fx::DrainFloatingElements => self.drain_sparring_caption(),
                 // The prompt machine's dispatch runs on every flow edge
-                // (`World::set_battle_flow`; its one-shot latch makes that the
+                // (`BattleState::set_battle_flow`; its one-shot latch makes that the
                 // same as retail's per-frame call). Its countdown section is
                 // per frame, and runs here.
                 Fx::SparringHook => self.run_sparring_hook_frame(),
@@ -522,11 +484,13 @@ impl World {
                 dst_y,
             } => {
                 let i = |v: u16| v as i16;
-                self.battle.vram_moves.push(crate::world::ScriptVramMove {
-                    src: (i(x), i(y)),
-                    size: (i(w), i(h)),
-                    dst: (i(dst_x), i(dst_y)),
-                });
+                self.battle.vram_moves.push(
+                    legaia_engine_field::script_vram_move::ScriptVramMove {
+                        src: (i(x), i(y)),
+                        size: (i(w), i(h)),
+                        dst: (i(dst_x), i(dst_y)),
+                    },
+                );
             }
             // Not staged (every record is a meshless `model_sel = -1` part)
             // and the HUD handle list is derived per frame, so its hard reset
@@ -612,7 +576,7 @@ impl World {
             let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &bytes,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                 pos,
             );
             s.retail_wait_drain = true;
@@ -623,47 +587,6 @@ impl World {
         for p in &mut scene.parts[first..] {
             p.tag.get_or_insert(record);
         }
-    }
-
-    /// Queue the sparring caption - `IntroCaption`'s host half: the caption
-    /// string `0x80078CB4` behind HUD element `0x5A`, carried on the tutorial
-    /// box queue (both hosts draw it framed and text-measured) at the retail
-    /// frame's placement, the emitter's style `9` corner. The side-band's own
-    /// timer dismisses it, so the box never ages itself out.
-    ///
-    /// A world with no caption text (no disc) skips the hold outright rather
-    /// than showing an empty window.
-    fn raise_sparring_caption(&mut self) {
-        use legaia_engine_battle::battle_tutorial::{
-            SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE,
-        };
-        use legaia_engine_battle_menus::battle_flow::ActiveTutorialBox;
-        let Some(text) = self
-            .battle
-            .ui_strings
-            .get(legaia_ui_formats::battle_ui_strings::BattleUiLabel::SparringIntro)
-            // The SCUS string carries the text engine's `'|'` hard break; the
-            // box queue holds newlines (`ActiveTutorialBox::text`), and its
-            // line count sizes the rect - left as `'|'` the two-line caption
-            // registered a one-line box, 14 px short and 14 px low.
-            .map(|s| s.replace('|', "\n"))
-        else {
-            self.battle.sideband.phase = 2;
-            self.battle.sideband.hold = 0;
-            return;
-        };
-        let group = self.next_battle_tutorial_group();
-        self.battle.tutorial_boxes.push_back(ActiveTutorialBox {
-            text,
-            style: SPARRING_CAPTION_STYLE,
-            waits_for_input: false,
-            frames_remaining: SPARRING_CAPTION_FRAMES,
-            group,
-            any_press_dismisses: true,
-            // HUD element `0x5A`'s own placement record, not a measured box.
-            placed: Some(SPARRING_CAPTION_RECT),
-            stands: false,
-        });
     }
 
     /// `DrainFloatingElements` (`FUN_800355F0`) at the caption's expiry:

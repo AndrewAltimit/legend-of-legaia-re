@@ -56,7 +56,7 @@ fn battle_awaiting_command() -> World {
         w.actors[i].battle.hp = 30_000;
         w.actors[i].battle.max_hp = 30_000;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 120);
+        w.battle.set_battle_attack(i as u8, 120);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
@@ -381,8 +381,8 @@ fn an_unseeded_actor_still_resolves_a_single_strike() {
         a.max_hp = 30_000;
         a.liveness = 1;
     }
-    w.set_battle_attack(1, 120);
-    w.set_battle_defense(0, 10);
+    w.battle.set_battle_attack(1, 120);
+    w.battle.set_battle_defense(0, 10);
     w.toggles.live_gameplay_loop = true;
     // Arm the monster's physical strike directly, leaving its stream empty.
     w.battle_ctx.active_actor = 1;

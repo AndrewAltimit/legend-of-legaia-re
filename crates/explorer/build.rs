@@ -1,0 +1,6 @@
+//! The Windows executable carries the Explorer icon
+//! (`legaia_app_theme::win_icon`); other targets build nothing here.
+
+fn main() {
+    legaia_app_theme::win_icon::embed_in_bins(legaia_app_theme::icons::EXPLORER_ICO);
+}

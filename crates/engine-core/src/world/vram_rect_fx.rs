@@ -9,7 +9,7 @@
 //! so a resolved call reached nothing.
 //!
 //! This module is that seat, built the same way the sibling `4C 60`
-//! `MoveImage` family is ([`crate::world::ScriptVramMove`]): the hook
+//! `MoveImage` family is ([`legaia_engine_field::script_vram_move::ScriptVramMove`]): the hook
 //! *queues*, and a host drains the queue against its own
 //! [`legaia_tim::Vram`] on the frame it redraws. Keeping `World` free of a
 //! renderer is why the two halves are split; both hosts already call the

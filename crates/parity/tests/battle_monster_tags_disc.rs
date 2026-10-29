@@ -63,8 +63,8 @@ fn world_vs(
         w.actors[i].battle.hp = party_hp;
         w.actors[i].battle.max_hp = party_hp;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
-        w.set_battle_defense(i as u8, 30);
+        w.battle.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_defense(i as u8, 30);
     }
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(1, vec![FormationSlot::new(id)]));

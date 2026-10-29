@@ -81,10 +81,10 @@ impl World {
 
     /// Whether `slot` committed a physical attack this round: retail writes
     /// the category `+0x1DE = 3` at the command commit, the port keeps the
-    /// command on [`crate::battle_round::RoundFlow::pending`] until its
+    /// command on [`legaia_engine_battle_loop::round_flow::RoundFlow::pending`] until its
     /// dispatch. A plain strike and an arts string are both category `3`.
     pub(in crate::world) fn committed_attack(&self, slot: u8) -> bool {
-        use crate::battle_round::PendingPartyAction as P;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction as P;
         matches!(
             self.battle.round_flow.pending.get(usize::from(slot)),
             Some(Some(P::Attack { .. } | P::Art { .. }))

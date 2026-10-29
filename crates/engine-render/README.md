@@ -60,7 +60,7 @@ correctly in one draw, instead of needing per-page sub-meshes.
 ## Stack
 
 - `winit` 0.30 - windowing.
-- `wgpu` 26 - GPU API.
+- `wgpu` 30 - GPU API.
 - `glam` 0.30 - math.
 - `legaia-tim` for `Vram`.
 

@@ -57,8 +57,8 @@ pub(super) fn build_text_overlay(
     });
     let text_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("legaia text pipeline layout"),
-        bind_group_layouts: &[&text_atlas_bgl],
-        push_constant_ranges: &[],
+        bind_group_layouts: &[Some(&text_atlas_bgl)],
+        immediate_size: 0,
     });
     let text_vertex_layout = wgpu::VertexBufferLayout {
         array_stride: 32,
@@ -91,7 +91,7 @@ pub(super) fn build_text_overlay(
             vertex: wgpu::VertexState {
                 module: &text_shader,
                 entry_point: Some("vs_main"),
-                buffers: std::slice::from_ref(&text_vertex_layout),
+                buffers: &[Some(text_vertex_layout.clone())],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -117,13 +117,13 @@ pub(super) fn build_text_overlay(
             // keeps it a pure overlay pass.
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         })
     };

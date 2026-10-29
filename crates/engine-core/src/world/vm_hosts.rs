@@ -160,15 +160,14 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
         if self.world.mode != SceneMode::Battle {
             return;
         }
-        self.world
-            .casting
-            .pending_bursts
-            .push(crate::world::PendingBurst {
+        self.world.casting.pending_bursts.push(
+            legaia_engine_battle_loop::cast_fx_state::PendingBurst {
                 mode: arg as u16 as u32,
                 pos: [state.world_x, state.world_y, state.world_z],
                 rot: [state.render_24, state.render_26, state.render_28],
                 scale: state.field_72,
-            });
+            },
+        );
     }
 
     /// Op `0x20` - `(*gp[0x714])(actor, op[1], op[2])`: the resident cast

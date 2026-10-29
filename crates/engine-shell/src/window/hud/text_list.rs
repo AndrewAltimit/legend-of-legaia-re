@@ -8,11 +8,12 @@
 use super::*;
 use legaia_app_theme::{chrome, spacing};
 
-/// The window chrome's colours, from the palette the launcher and Studio
+/// The window chrome's colours, from the palette the launcher and Explorer
 /// share (`legaia_app_theme::chrome`).
 const HEADING: [f32; 4] = chrome::HEADING.to_f32();
 const KEY: [f32; 4] = chrome::KEY.to_f32();
 const TEXT: [f32; 4] = chrome::TEXT.to_f32();
+const CHANGED: [f32; 4] = chrome::CHANGED.to_f32();
 
 impl PlayWindowApp {
     /// One line of this window's own text at a pen on the shared 320x240
@@ -54,7 +55,10 @@ impl PlayWindowApp {
         {
             rows.push(("Press Esc again to quit", HEADING));
         }
+        // The notice hides behind the help panel's plate while the panel
+        // is up (the panel shows every state anyway).
         if timed
+            && !self.hotkey_help
             && let Some((text, at)) = &self.notice
             && at.elapsed() <= NOTICE_DURATION
         {
@@ -104,18 +108,29 @@ impl PlayWindowApp {
     /// out by [`help_panel_layout`]. Stage pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
         use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
+        // Each row's state, and whether it is one the original game does
+        // not have (the launcher's original values, shared through
+        // `hotkey_original_state`): that state is drawn green.
+        let mut states: Vec<Option<(usize, bool)>> = Vec::new();
         let mut entries: Vec<(&str, String)> = HOST_HOTKEYS
             .iter()
             .map(|&(hk, _)| {
                 let line = if hk == HostHotkey::CheatMaxAp {
+                    states.push(None);
                     hk.label().to_string()
                 } else {
-                    format!("{}: {}", hk.label(), self.hotkey_state(hk))
+                    let state = self.hotkey_state(hk);
+                    let departs = crate::launcher::hotkey_original_state(hk)
+                        .is_some_and(|o| !o.eq_ignore_ascii_case(&state));
+                    let head = format!("{}: ", hk.label());
+                    states.push(Some((head.len(), departs)));
+                    format!("{head}{state}")
                 };
                 (hk.key_label(), line)
             })
             .collect();
         entries.push(fullscreen_entry(self.win.is_fullscreen()));
+        states.push(None);
         let pad = pad_key_rows(&self.mapping);
         let l = help_panel_layout(&self.font, &entries, &pad);
         let mut out = Vec::new();
@@ -137,10 +152,19 @@ impl PlayWindowApp {
         put("F12", (l.x0 + l.col_w, y), KEY);
         put(HELP_SELF, (l.x0 + l.col_w + l.key_w, y), TEXT);
         y += l.line_h + 2;
-        for ((k, line), &(col, row)) in entries.iter().zip(&l.cells) {
+        for (((k, line), &(col, row)), state) in entries.iter().zip(&l.cells).zip(&states) {
             let at = (l.x0 + col * l.col_w, y + row as i32 * l.line_h);
             put(k, at, KEY);
-            put(line, (at.0 + l.key_w, at.1), TEXT);
+            let x = at.0 + l.key_w;
+            match state {
+                Some((head, true)) => {
+                    let (h, v) = line.split_at(*head);
+                    put(h, (x, at.1), TEXT);
+                    let hx = self.font.layout_ascii(h).advance_x as i32;
+                    put(v, (x + hx, at.1), CHANGED);
+                }
+                _ => put(line, (x, at.1), TEXT),
+            }
         }
         y += l.rows as i32 * l.line_h + 2;
         // The pad buttons' keys: what Cross / Circle / Start are on this
@@ -156,7 +180,8 @@ impl PlayWindowApp {
             y += l.line_h;
         }
         put(HELP_MOUSE, (l.x0, y + 2), TEXT);
-        put(HELP_FOOTER, (l.x0, y + 2 + l.line_h), HEADING);
+        put(HELP_LEGEND, (l.x0, y + 2 + l.line_h), CHANGED);
+        put(HELP_FOOTER, (l.x0, y + 2 + 2 * l.line_h), HEADING);
         out
     }
 
@@ -759,6 +784,8 @@ const HELP_FOOTER: &str = "Rebind pad keys: Options > Key Config";
 /// The mouse's camera controls (`window/camera.rs`): drag orbits and tilts,
 /// the wheel zooms, a double-click puts the retail framing back.
 const HELP_MOUSE: &str = "Mouse: drag turns, wheel zooms, double-click resets";
+/// The help panel's key to its green states.
+const HELP_LEGEND: &str = "Green: not as in the original game";
 
 /// The fullscreen key's help row. Window chrome outside the shared
 /// [`HOST_HOTKEYS`](legaia_engine_session::hotkeys::HOST_HOTKEYS) table:
@@ -892,8 +919,9 @@ fn help_panel_layout_with(
         let body = (left_w + right_w)
             .max(width(HELP_FOOTER))
             .max(width(HELP_MOUSE))
+            .max(width(HELP_LEGEND))
             .max(pad_w);
-        let height = (rows as i32 + 4 + pad.len() as i32) * line_h + 12;
+        let height = (rows as i32 + 5 + pad.len() as i32) * line_h + 12;
         (left_w, body, rows, height)
     };
     let even = n.div_ceil(2);

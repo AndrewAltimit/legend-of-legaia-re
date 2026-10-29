@@ -232,7 +232,7 @@ fn mdec_decode_str_cli_writes_header_sized_coherent_frames() {
     for p in &pngs {
         let dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(p).unwrap()));
         let mut reader = dec.read_info().unwrap();
-        let mut buf = vec![0u8; reader.output_buffer_size()];
+        let mut buf = vec![0u8; reader.output_buffer_size().unwrap()];
         let info = reader.next_frame(&mut buf).unwrap();
         assert_eq!(
             (info.width, info.height),

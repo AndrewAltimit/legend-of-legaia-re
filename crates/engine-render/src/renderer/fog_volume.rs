@@ -458,8 +458,8 @@ impl FogVolumePass {
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("fog volume layout"),
-            bind_group_layouts: &[&bgl, &depth_bgl],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bgl), Some(&depth_bgl)],
+            immediate_size: 0,
         });
         let attrs = [wgpu::VertexAttribute {
             offset: 0,
@@ -472,11 +472,11 @@ impl FogVolumePass {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[wgpu::VertexBufferLayout {
+                buffers: &[Some(wgpu::VertexBufferLayout {
                     array_stride: 16,
                     step_mode: wgpu::VertexStepMode::Vertex,
                     attributes: &attrs,
-                }],
+                })],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -510,13 +510,13 @@ impl FogVolumePass {
             // of them and never hide one another.
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let n = ((mesh_dim + 1) * (mesh_dim + 1)) as usize;
@@ -792,6 +792,7 @@ impl Renderer {
                 stencil_ops: None,
             }),
             occlusion_query_set: None,
+            multiview_mask: None,
             timestamp_writes: None,
         });
         if let Some((x, y, w, h)) = scene_vp {
@@ -859,8 +860,10 @@ mod depth_mapping_tests {
 
     #[test]
     fn inverts_a_reversed_perspective() {
-        let proj = reverse_z(Mat4::perspective_rh(1.0, 1.3, 8.0, 50_000.0));
-        let view = Mat4::look_at_rh(
+        let proj = reverse_z(glam::camera::rh::proj::directx::perspective(
+            1.0, 1.3, 8.0, 50_000.0,
+        ));
+        let view = glam::camera::rh::view::look_at_mat4(
             glam::Vec3::new(100.0, -400.0, 900.0),
             glam::Vec3::ZERO,
             glam::Vec3::Y,

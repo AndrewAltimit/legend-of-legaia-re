@@ -188,6 +188,11 @@ pub fn resume_card_load(
         host.card_load_enter(scene, &save, save_scene)
     });
     host.card_load_world().load_full(save);
+    // Retail restores the save's flag bank first and runs the MAN loader
+    // over it, so the loader's flag 7 is up whatever the save carried. The
+    // landing here runs before the save is re-applied: raise it again.
+    // REF: FUN_8003AEB0 (`0x8003AEEC..0x8003AEF8`)
+    host.card_load_world().man_load_entry_flags();
     host.card_load_hydrated();
     landing
 }
@@ -299,6 +304,13 @@ mod tests {
             assert_ne!(money, 4321, "nor the gold");
             assert_eq!(host.world.party.roster.members.len(), 4);
             assert_eq!(host.world.party.money, 4321);
+            // The save carries no flag 7 (the source world never loaded a
+            // scene); the MAN loader's raise lands over it all the same.
+            assert!(
+                host.world
+                    .system_flag_test(legaia_engine_core::world::MAN_LOAD_FLAG),
+                "the loader's flag 7 survives the save applied over the landing"
+            );
             assert!(host.hydrated);
         }
     }
