@@ -276,6 +276,11 @@ impl Policy {
                 0..=4 => self.random_dir(),
                 5..=6 => b(PadButton::Cross),
                 7..=8 => b(PadButton::Circle),
+                // With a pack active, Select on the root list opens the
+                // Journal: half the Triangle presses go to it. The retail
+                // menu has no Select arm, and a run without a pack draws
+                // nothing extra, so its stream is unchanged.
+                _ if w.expansion.pack.is_some() && self.rng.chance(50) => b(PadButton::Select),
                 _ => b(PadButton::Triangle),
             };
             return self.tap(want);
@@ -367,7 +372,17 @@ impl Policy {
                     };
                     return self.tap(want);
                 }
-                self.field_pad(frame)
+                let pad = self.field_pad(frame);
+                // Action movement: walking presses jump now and then (a
+                // short hold, so both the hop and the held-jump rise play).
+                // Draws nothing, so a run without it is unchanged.
+                if w.toggles.action_movement
+                    && matches!(self.seg, Segment::Walk { .. })
+                    && frame % 37 < 6
+                {
+                    return pad | legaia_engine_core::world::ACTION_JUMP_BUTTON.mask();
+                }
+                pad
             }
             // Minigames, cutscenes, the title: every face button and held
             // directions, and now and then Start - the minigames' escape

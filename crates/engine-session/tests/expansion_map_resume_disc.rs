@@ -53,14 +53,19 @@ fn a_save_on_a_pack_map_resumes_on_the_map_where_it_was_made() {
     };
     let resume = session.current_resume();
     let save = session.host.world.save_full();
+    let previous_scene = session.host.world.party.previous_scene.clone();
 
     // Walk away into a retail scene, then load the save.
     session
         .enter_field_live("town01", &opts)
         .expect("enter town01");
     assert!(session.host.active_expansion_map().is_none());
-    let _ = session.resume_save(save, &resume.scene, &opts);
+    let _ = session.resume_save(save.clone(), &resume.scene, &opts);
     assert_eq!(session.host.active_expansion_map(), Some(MAP_ID));
     let ms = &session.host.world.actors[0].move_state;
     assert_eq!((ms.world_x, ms.world_z), at);
+    // The map re-entry is a scene change from its base scene; the save's own
+    // previous scene is what stands after the load (a soak `+rt` finding).
+    assert_eq!(session.host.world.party.previous_scene, previous_scene);
+    assert_eq!(session.host.world.save_full().ext_v2, save.ext_v2);
 }

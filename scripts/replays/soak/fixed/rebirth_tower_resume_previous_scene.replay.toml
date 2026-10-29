@@ -1,0 +1,15 @@
+# Soak-harness finding (pad input only - no disc bytes).
+# soak-scene = "xp:rebirth_tower_1f+rt"
+# soak-seed = 1
+# soak-signature = "save_roundtrip|tower|ext_v2.previous_scene"
+# detail: Some("town01") -> Some("tower") - the pack-map resume re-entered the map over its base scene and noted the base scene as the one left
+# soak-arming = "host"
+# reproduce: LEGAIA_SOAK_REPLAY=<this file> cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_replay -- --nocapture
+[meta]
+schema = "j-replay-v1"
+rng_seed = 4290192920
+frames = 600
+
+[[event]]
+frame = 0
+pad = 0

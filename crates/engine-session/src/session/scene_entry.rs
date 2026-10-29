@@ -408,14 +408,20 @@ impl<S: AudioSink> BootSession<S> {
         // A save made on a pack map carries the map in its expansion block:
         // the landing above stood the party in the map's base scene, and the
         // map goes back over it where the save was made.
+        // The map entry is a scene change, which notes the base scene as the
+        // one left; the save's own previous scene (hydrated above) stands.
         if let Some(loc) = self.host.world.expansion_saved_map_location().cloned() {
+            let previous_scene = self.host.world.party.previous_scene.clone();
             match self.enter_expansion_map_live_seated(
                 &loc.map_id,
                 "",
                 Some((loc.x, loc.z, loc.facing)),
                 opts,
             ) {
-                Ok(_) => log::info!("resume: back on pack map '{}'", loc.map_id),
+                Ok(_) => {
+                    self.host.world.party.previous_scene = previous_scene;
+                    log::info!("resume: back on pack map '{}'", loc.map_id);
+                }
                 Err(e) => log::warn!("resume: pack map '{}' did not enter ({e:#})", loc.map_id),
             }
         }

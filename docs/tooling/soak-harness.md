@@ -212,6 +212,44 @@ window's own boot-UI arm is checked through its headless frame path in
 `native_front_end.rs`, New Game and a Continue over a library card mounted
 in port 2 (`HeadlessPlayWindow::open_boot_ui`'s card).
 
+### Expansion runs
+
+A label `xp:<target>[+nopack][+am][+rt][+seat=<id>|+seat=picker][+cards]`
+soaks the expansion layer (`soak_harness/expansion_runs.rs`). The run
+activates the soak pack - `packs/rebirth`, or the pack directory or
+`.lxpack` that `LEGAIA_SOAK_PACK` names - through the hosts' one activation
+path (`SceneHost::activate_expansion_pack`), then enters `<target>`: one of
+the pack's maps (`BootSession::enter_expansion_map_live`, at its first
+spawn) or a retail scene played with the pack active. The suffixes are
+session switches applied before the first frame:
+
+| Suffix | Switch |
+|---|---|
+| `+nopack` | no pack (the mode seat offers the built-in practice set) |
+| `+am` | `WorldToggles::action_movement` on |
+| `+rt` | the save / load round trip of a retail `+rt` run, the pack's save block in the save |
+| `+seat=<id>` / `+seat=picker` | the mode seat on that instance, or on its picker |
+| `+cards` | the card menu |
+
+The policy adds two presses to an expansion run that a retail run never
+draws, so a retail run's stream is unchanged: with action movement on, a
+walk segment holds the jump button for six frames in every 37; with a pack
+active, half the pause menu's Triangle presses are Select, which opens the
+Journal on the root list. Under `SceneMode::Expansion` the progress digest
+reads the mode seat's stage and its session's `state_hash`, and the card
+screen.
+
+The run set is derived from the pack: each map plain, with `+am` and with
+`+rt`; `town01+am` (the Rim Elm entrance); the seat on each of the pack's
+mode instances and on each built-in one (`+nopack`); the picker; the card
+menu. `soak_expansion` runs it on a fixed budget (one seed, 1800 frames)
+and fails on any panic, tick error, hang or entry failure, and on any
+finding in a run that seats a mode or the card screen, which own the pad
+whole. `LEGAIA_SOAK_EXPANSION=1` makes it the long form: the
+`LEGAIA_SOAK_SEEDS` / `LEGAIA_SOAK_FRAMES` budget (`LEGAIA_SOAK_SCENES` may
+list `xp:` labels instead of the set), findings confirmed and written as
+replays, strict under `LEGAIA_SOAK_STRICT=1`.
+
 ### The scene set
 
 Every CDNAME label that resolves to a playable scene (a kingdom overworld, or
@@ -263,7 +301,7 @@ on one frame and neutral on the next.
 | `effect_residue` | on the first field or world-map frame after a battle exit or a scene load, `World::battle_effect_residue` names a battle effect still live (the `efect.dat` pool, a move-FX / effect-script / summon scene-graph, the streak block, a cast-band request) - retail resets the whole actor pool at both points ([`effect-vm.md`](../subsystems/effect-vm.md#battle-effects-die-with-the-battle)) |
 | `wipe_continue` | after a party wipe, the hold never resolves, leaves the world in Battle, or the Continue does not land in the saved scene or leaves the wipe raised. What the wipe leaves live past the resume is the `effect_residue` check's, on the next frame |
 | `timeline_cap` | the engine's anti-hang frame cap ended a script context (`CutsceneState::capped`); retail has no such cap, so the record was cut short - a wait that never cleared, or a retail-length wait the cap stands below. The location is the context and its PC / opcode |
-| `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, ...) |
+| `save_roundtrip` | in a `+rt` run, the save taken after a resume disagrees with the save it resumed; the location names the first differing field (`party[i]+offset`, `ext.money`, `ext_v2.field_position`, `ext_v2.previous_scene`, `ext_v2.expansion`, ...) |
 
 The **progress digest** hashes everything a player could see move: mode and
 scene, the player's position and heading, every script context's PC, the
@@ -367,6 +405,11 @@ finding recorded before it still replays the input that once raised it.
 # the fixed-budget gate: a few scenes + the five minigames, asserts no panic
 cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_smoke
 
+# the expansion runs: the fixed budget, then the long form
+cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_expansion
+LEGAIA_SOAK_EXPANSION=1 LEGAIA_SOAK_SEEDS=24 LEGAIA_SOAK_FRAMES=12000 \
+  cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_expansion -- --nocapture
+
 # a long soak (report-only unless LEGAIA_SOAK_STRICT=1)
 LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG=big \
   cargo test -p legaia-engine-shell --profile release-test --test integration soak_harness::soak_long -- --nocapture
@@ -393,6 +436,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
 | `LEGAIA_SOAK_RETAIL` | soak under the hosts' retail mode (`--retail`, the play page's retail mode): the options screen's engine knobs pinned (`OptionsState::pin_retail`) and every fidelity toggle pinned (`WorldToggles::pin_retail`), so `retail_deviations` is empty |
 | `LEGAIA_SOAK_BARE` | skip the hosts' faithful-play arming and soak a bare `BootSession` (simplified talk, candidate-centre walls, walk-through NPCs) |
+| `LEGAIA_SOAK_EXPANSION` / `LEGAIA_SOAK_PACK` | `soak_expansion`'s long form / the pack its runs activate (default `packs/rebirth`) |
 | `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a
@@ -506,6 +550,7 @@ regression.
 | `chitei2_cort_long_fight` | `chitei2@...:PRO-02`: a random-pad fight against Cort (50000 HP) outlasted the 18000-frame window and signed as a hang at whatever state the clock hit | harness: a fight still moving HP / MP against a monster side above the HP pool is long, not endless |
 | `edlast_credits_end_takes_a_held_confirm` | `edbylon@...:PRO-01`: the credits ended parked on their last loop for 1800 frames | not an engine defect: the loop polls a held Circle / Cross and the policy only tapped; the policy now holds a polled button, and the replay (holding Cross) pins that the engine leaves on it, into the `49 0C` soft reset |
 | `jou_level_up_bakes_accessory_into_base` | `jou@...:PRO-01`: Noa, wearing Max HP / MP +25%, levelled to base 2691 / 446 - her boosted live maxima plus the growth - and the live maxima no longer matched the aggregator's rebuild | a level-up grows the base window and the aggregator rebuilds the live maxima from it |
+| `rebirth_tower_resume_previous_scene` | `xp:rebirth_tower_1f+rt`: a save made on the pack map came back from its load naming the map's base scene (`tower`) as the previous scene instead of the scene the party came from | the resume re-enters the pack map over its base scene, which is a scene change; the save's own previous scene is restored after it (`BootSession::resume_save`) |
 | `jouina_terra_summon_hits_for_one` | `jouina@PRO-10` under a 7200-frame battle window: Noa's Terra summon hit each Bio Castle Freed for 1, and the fight outlasted the window | every player cast's summon body is its own `summon.dat` record (`FUN_80054CB0(record, 4)` from `FUN_801F19EC`); the big summons had no body and rolled the MP-scaled placeholder - see [summon-readef.md](../formats/summon-readef.md#the-stat-head-is-the-summon-body) |
 
 The field-side fixes are described with their retail evidence in
