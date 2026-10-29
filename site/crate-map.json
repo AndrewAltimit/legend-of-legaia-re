@@ -2993,6 +2993,7 @@
     "dialog",
     "manifest",
     "map",
+    "map_rules",
     "modes",
     "progression",
     "quest",
