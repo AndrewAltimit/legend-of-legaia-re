@@ -88,7 +88,7 @@ blurb = "The Legaia-specific layer over the parsers: containers, scenes, actors,
 track = "preservation"
 crates = [
     "container-formats", "scene-formats", "actor-formats", "minigame-formats",
-    "ui-formats", "game-tables", "overlay-images", "disc-audit",
+    "ui-formats", "game-tables", "overlay-images", "disc-audit", "expansion-format",
 ]
 
 [[bands]]
@@ -116,6 +116,7 @@ pcsx-redux = { track = "tooling" }
 gamedata = { track = "tooling" }
 cheats = { track = "tooling" }
 app-theme = { track = "tooling" }
+expansion-format = { track = "patcher" }
 
 # --- The three hosts on one engine ----------------------------------------
 

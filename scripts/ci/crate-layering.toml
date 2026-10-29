@@ -219,3 +219,11 @@ from = "engine-ui"
 to = "engine-battle-vm"
 items = ["battle_party_panel", "battle_commit_log", "panel_backread_loader", "battle_value_readout", "battle_action::FlashQuad"]
 reason = "the battle HUD model and the numeral readout the draw-list builders project are defined with the battle kernels that fill them: the action SM's flash ramp stamps the readout's glyph page and the commit log stages off the cursor pose, so the model cannot move below the action SM; the edge points down a rank"
+
+[crates.engine-expansion]
+role = "expansion-pack runtime kernels: monster and formation overrides, level curve, quests"
+deps = ["engine-battle", "engine-system"]
+
+[crates.engine-modes]
+role = "rules engines for the port's own game modes: poker, golf, racing, card battles, prop hunt"
+deps = ["engine-system"]

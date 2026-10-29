@@ -117,6 +117,7 @@
     {
      "label": "rank 4",
      "crates": [
+      "engine-expansion",
       "engine-fishing",
       "engine-minigames",
       "engine-scene"
@@ -145,6 +146,7 @@
       "engine-camera",
       "engine-dev-menu",
       "engine-mode",
+      "engine-modes",
       "engine-motion-vm",
       "engine-title"
      ]
@@ -197,7 +199,8 @@
       "ui-formats",
       "game-tables",
       "overlay-images",
-      "disc-audit"
+      "disc-audit",
+      "expansion-format"
      ]
     }
    ]
@@ -947,6 +950,7 @@
     "engine-capture",
     "engine-cheats",
     "engine-core",
+    "engine-expansion",
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigame-scenes",
@@ -1372,6 +1376,7 @@
     "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menus",
@@ -1382,6 +1387,7 @@
     "engine-scene",
     "engine-system",
     "engine-vm",
+    "expansion-format",
     "game-tables",
     "gamedata",
     "mes",
@@ -1556,6 +1562,27 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-effects/README.md"
+  },
+  "engine-expansion": {
+   "package": "legaia-engine-expansion",
+   "deps": [
+    "engine-battle",
+    "engine-system",
+    "expansion-format"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 4,
+   "role": "expansion-pack runtime kernels: monster and formation overrides, level curve, quests",
+   "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. <code>World::expansion</code> is its seat; inert with no pack.",
+   "dependents": [
+    "engine-core"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/README.md"
   },
   "engine-export": {
    "package": "legaia-engine-export",
@@ -2048,6 +2075,23 @@
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-mode/README.md"
+  },
+  "engine-modes": {
+   "package": "legaia-engine-modes",
+   "deps": [
+    "engine-system"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "rules engines for the port's own game modes: poker, golf, racing, card battles, prop hunt",
+   "scope": "Rules engines for the port's own game modes (poker, golf, racing, card battles, prop hunt): deterministic, <code>World</code>-free, lockstep-ready.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
   },
   "engine-motion-vm": {
    "package": "legaia-engine-motion-vm",
@@ -2586,6 +2630,7 @@
     "engine-core",
     "engine-dev-menu",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menu-runtime",
@@ -2593,6 +2638,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-motion-vm",
     "engine-save-state",
     "engine-scene",
@@ -2822,6 +2868,34 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-world-views/README.md"
+  },
+  "expansion-format": {
+   "package": "legaia-expansion-format",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "battle",
+    "bundle",
+    "cards",
+    "dialog",
+    "manifest",
+    "map",
+    "modes",
+    "progression",
+    "quest",
+    "refs",
+    "validate"
+   ],
+   "band": "families",
+   "track": "patcher",
+   "scope": "The expansion-pack format for the port: manifest, monsters and formations, level curve, quests, dialogue, trading cards, game modes, custom maps, the <code>.lxpack</code> bundle. Disc content by coordinate only - no Sony bytes.",
+   "dependents": [
+    "engine-core",
+    "engine-expansion"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },
   "explorer": {
    "package": "legaia-explorer",

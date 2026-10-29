@@ -2045,6 +2045,7 @@ dependencies = [
  "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menus",
@@ -2055,6 +2056,7 @@ dependencies = [
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-gamedata",
  "legaia-lzs",
@@ -2100,6 +2102,15 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-tim",
  "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-expansion"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-battle",
+ "legaia-engine-system",
+ "legaia-expansion-format",
 ]
 
 [[package]]
@@ -2263,6 +2274,13 @@ dependencies = [
  "legaia-engine-system",
  "legaia-game-tables",
  "legaia-minigame-formats",
+]
+
+[[package]]
+name = "legaia-engine-modes"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-system",
 ]
 
 [[package]]
@@ -2649,6 +2667,15 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
+]
+
+[[package]]
+name = "legaia-expansion-format"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
 ]
 
 [[package]]

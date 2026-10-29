@@ -62,6 +62,9 @@ members = [
     "crates/engine-menu-runtime",
     "crates/engine-battle-hud",
     "crates/engine-cheats",
+    "crates/engine-expansion",
+    "crates/engine-modes",
+    "crates/expansion-format",
     "crates/engine-world-views",
     "crates/engine-save-state",
     "crates/engine-scene-host",
@@ -163,6 +166,9 @@ legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-menu-runtime = { path = "crates/engine-menu-runtime" }
 legaia-engine-battle-hud = { path = "crates/engine-battle-hud" }
 legaia-engine-cheats = { path = "crates/engine-cheats" }
+legaia-engine-expansion = { path = "crates/engine-expansion" }
+legaia-engine-modes = { path = "crates/engine-modes" }
+legaia-expansion-format = { path = "crates/expansion-format" }
 legaia-engine-world-views = { path = "crates/engine-world-views" }
 legaia-engine-save-state = { path = "crates/engine-save-state" }
 legaia-engine-scene-host = { path = "crates/engine-scene-host" }

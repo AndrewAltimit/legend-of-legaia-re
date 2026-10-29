@@ -196,6 +196,9 @@ pub struct World {
 
     /// Minigame sessions (dance, fishing, slot machine, Baka Fighter, Muscle Dome) plus the casino coin / point-card wallet.
     pub minigames: MinigameState,
+    /// The active expansion pack and its runtime state; inert with no pack
+    /// loaded. See [`legaia_engine_expansion::ExpansionState`].
+    pub expansion: legaia_engine_expansion::ExpansionState,
 
     /// Seru capture + magic-learning state: the capture log and registry, this battle's captures, shiny rolls and magic level-ups.
     pub seru: SeruState,
@@ -419,6 +422,7 @@ impl World {
             world_map: WorldMapState::new(),
             board: TileBoardState::new(),
             minigames: MinigameState::new(),
+            expansion: legaia_engine_expansion::ExpansionState::default(),
             tables: DiscTables::new(),
             seru: SeruState::new(),
             clock: FrameClock::new(),
