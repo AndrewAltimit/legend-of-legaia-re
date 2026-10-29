@@ -369,6 +369,26 @@ pub(crate) fn capture_ramp_left(world: &legaia_engine_core::world::World, height
 /// whenever the engine plays retail's clip - the gates read it with `>=` -
 /// and it keeps placing a phase whose engine clip loops where retail's did
 /// not (a parked Gaza on idle against the engine's Gaza still walking).
+/// The active actor's close-up accumulator, retail's `ctx[+0x87C]`
+/// ([`BattleCamera::close_up_accum`](legaia_engine_battle_vm::battle_cam_script::BattleCamera::close_up_accum)),
+/// zeroed by every clip commit of the acting seat, a same-id one included
+/// (`FUN_8004AD80`, `0x8004BF74`). An [`SpanGate::Age`] action phase waits on
+/// it: the capture's own word is this one, and a commit the engine counts
+/// as a re-commit still restarts it. The Spirit band stages its clip at
+/// `0x46` (`+0x1DA = +0x1E7`); when that id is the one already committed,
+/// the commit installs nothing new, so the clip age ran on from before the
+/// action while retail's accumulator restarted (`delilas_gi_spirit_*`:
+/// the gate met 22 to 42 ticks early). The capture band keeps the clip age
+/// ([`capture_accum_done`]): a monster's capture-class cast commits nothing
+/// on its way into `0x6E`, so both words run from its idle loop there.
+pub fn active_close_up_accum(world: &legaia_engine_core::world::World) -> u32 {
+    world
+        .battle
+        .camera
+        .as_ref()
+        .map_or(u32::MAX, |c| c.close_up_accum())
+}
+
 pub fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
     world
         .battle
@@ -1135,7 +1155,7 @@ impl BattleDrive {
                             (if steer.walk_clock {
                                 walk_clock_due(world, steer.yaw)
                             } else {
-                                active_clip_age(world) >= u32::from(accum)
+                                active_close_up_accum(world) >= u32::from(accum)
                             }) && steer.clip.is_none_or(|k| {
                                 world.battle_current_anim(usize::from(engine_seat(seat, pc))) == k
                             }) && steer.cursor.is_none_or(|u| {

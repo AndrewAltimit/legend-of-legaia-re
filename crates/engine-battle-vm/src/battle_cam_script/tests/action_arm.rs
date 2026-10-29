@@ -685,26 +685,28 @@ fn an_active_clip_commit_rezeroes_the_camera_counters() {
 }
 
 /// A new action leaves retail's accumulator where the last clip commit left
-/// it (`FUN_8004E13C` stores `ctx[+0x26D]` alone, `0x8004E2DC`), while the
-/// port-only clip age dates the action from its start, which is what the
-/// retail comparison's action-phase gate reads (the Delilas Spirit-band
-/// captures land on retail's yaw only on that clock).
+/// it (`FUN_8004E13C` stores `ctx[+0x26D]` alone, `0x8004E2DC`), and the
+/// port-only clip age with it: a monster's capture-class cast commits no
+/// clip on its way into `0x6E`, so both run from the caster's idle loop
+/// (`nivora_duel_mid_blazing_slash`). A commit after the seed restarts the
+/// accumulator whether or not it installs a new id.
 #[test]
-fn a_new_action_keeps_the_accumulator_and_restarts_the_clip_age() {
+fn a_new_action_keeps_the_accumulator_and_the_clip_age() {
     let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
     cam.observe_active_commits(4);
     cam.observe_active_installs(4);
     for f in 1..=20u64 {
         cam.advance_to(f);
     }
-    let accum = cam.attack.ctx.accum;
-    assert!(accum > 0 && cam.clip_age() > 0);
+    let (accum, age) = (cam.attack.ctx.accum, cam.clip_age());
+    assert!(accum > 0 && age > 0);
     cam.set_phase(BattleCamPhase::Action);
-    assert_eq!(
-        cam.attack.ctx.accum, accum,
-        "the seed stores no accumulator"
-    );
-    assert_eq!(cam.clip_age(), 0, "the clip age starts with the action");
+    assert_eq!((cam.attack.ctx.accum, cam.clip_age()), (accum, age));
+    // A same-id re-commit (no install): the accumulator restarts, the age
+    // runs on.
+    cam.observe_active_commits(5);
+    assert_eq!(cam.attack.ctx.accum, 0);
+    assert_eq!(cam.clip_age(), age);
 }
 
 /// `battle_gaza2_park_0x19_summon_melee`: the in-fight case-6 arm on

@@ -876,13 +876,14 @@ impl BattleCamera {
     }
 
     /// [`Self::close_up_accum`] as it runs without the natural-end
-    /// re-commits of a looping clip: zeroed by the action's start and by
-    /// each clip the active actor installs, advanced `8` a display frame
+    /// re-commits of a looping clip: zeroed by each clip the active actor
+    /// installs (a new action does not zero it, as it does not zero the
+    /// accumulator), advanced `8` a display frame
     /// beside the accumulator. Port-only - retail's accumulator restarts on
     /// those re-commits too, so this is an upper bound on it while the
     /// engine plays retail's clip, and it keeps counting through a loop the
     /// engine plays where retail held another (the retail comparison
-    /// corpus dates its action phases by it).
+    /// corpus dates its capture-band holds by it).
     pub fn clip_age(&self) -> u32 {
         self.clip_age
     }
@@ -983,9 +984,6 @@ impl BattleCamera {
                 // which retail's seed does not make.
                 let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
-                // The port-only clip age dates the action from its start
-                // ([`Self::clip_age`]), whatever the accumulator carries.
-                self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(

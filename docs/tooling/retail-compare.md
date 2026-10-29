@@ -2395,8 +2395,8 @@ than the replay's `2`.
 
 The engine's side of the accumulator test is its clip age
 (`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
-re-commits left out, as the action gates read it
-([above](#placing-the-phase)). A caster that idles through the band restarts
+re-commits left out ([above](#placing-the-phase) for the action
+gates, which read the accumulator). A caster that idles through the band restarts
 the accumulator at every wrap of its idle, on the engine's own clock, so read
 raw the engine's could wrap just as its yaw counter came due:
 `zora_glare_petrify_pre`'s `0x6E` waited out a whole idle cycle and reached the
@@ -4789,12 +4789,15 @@ every pass, so it moves with the phase of both clips):
   so the drive also waits for the victim's defeat-fade lane (`+0x04`,
   `0xF0` here - 34 vsyncs of fade) and, since the caption is the steal
   roll's outcome, for the caption on a stream whose kill rolled it. The
-  death commit itself lands where retail's does. The drive's ages are the
-  camera's **clip age** (`BattleCamera::clip_age`): the accumulator with
-  those loop re-commits left out, which keeps placing a phase whose
-  engine clip loops where retail's held another clip - the parked Gaza of
-  `battle_gaza2_park_0x19_target_vahn` sits on its 45-frame idle (wrapped
-  69 vsyncs before the save, `552` exactly) while the engine's still walks.
+  death commit itself lands where retail's does. An action drive's age is
+  the camera's close-up accumulator itself (`BattleCamera::close_up_accum`,
+  `ctx[+0x87C]`), which every commit of the acting seat zeroes, a same-id
+  re-commit included (`0x8004BF74`): the Spirit band stages its clip at
+  `0x46`, and on the Delilas Spirit captures that clip is the id already
+  committed, so a clock that skipped re-commits ran on from before the
+  action and met the gate 22 to 42 ticks early. The capture band's hold
+  keeps the **clip age** (`BattleCamera::clip_age`, the accumulator with
+  the loop re-commits left out), below.
 - **A drive's stream is a search result, not a measurement.** The phase of
   `battle_gaza2_park_0x19_target_vahn` is Gaza's swing on Vahn, and the
   monster's pick of Vahn is a draw: the seed search keeps the first
