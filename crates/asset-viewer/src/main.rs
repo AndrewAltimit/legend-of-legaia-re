@@ -105,7 +105,7 @@ const NO_EXTRACTION: &str = "\
 asset-viewer shows the files legaia-extract writes; it does not read a disc
 image by itself, and no extracted/PROT.DAT was found beside it.
 
-  - To browse your disc with buttons, start legaia-studio instead.
+  - To browse your disc with buttons, start legaia-explorer instead.
   - To use this viewer, unpack the disc first:
         legaia-extract \"<your disc.bin>\" --out extracted
     then start asset-viewer from the folder holding \"extracted\" (it opens

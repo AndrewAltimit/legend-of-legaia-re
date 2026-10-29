@@ -97,7 +97,7 @@ pub fn good(ui: &egui::Ui) -> Color32 {
 mod tests {
     use super::*;
 
-    /// Weak text reads on every surface Studio draws it over, in both
+    /// Weak text reads on every surface Explorer draws it over, in both
     /// themes: the palette's hint floor (`legaia_app_theme`'s 3:1), which
     /// egui's own alpha-faded grey missed.
     #[test]

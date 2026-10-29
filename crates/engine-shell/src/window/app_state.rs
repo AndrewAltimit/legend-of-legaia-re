@@ -230,7 +230,7 @@ pub(in crate::window) fn escape_quits(
 pub(in crate::window) const STARTUP_HINT_DURATION: std::time::Duration =
     std::time::Duration::from_secs(12);
 
-/// The start-up key hint's line: a player who opens the window from Studio
+/// The start-up key hint's line: a player who opens the window from Explorer
 /// or a file manager is told nowhere else that `F12` lists the keys.
 pub(in crate::window) const STARTUP_HINT_TEXT: &str = "F12 or ? lists the keys - Esc twice quits";
 

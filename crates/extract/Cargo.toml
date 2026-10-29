@@ -16,7 +16,7 @@ required-features = ["cli"]
 [features]
 default = ["cli"]
 # The command-line binary and its argument parser. On by default so
-# `cargo build` still builds every binary; library dependents (legaia-studio)
+# `cargo build` still builds every binary; library dependents (legaia-explorer)
 # take this crate through [workspace.dependencies] with default features off.
 cli = ["dep:clap", "dep:libc"]
 

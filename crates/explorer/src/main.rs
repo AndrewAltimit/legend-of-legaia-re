@@ -1,29 +1,29 @@
-//! `legaia-studio`: the desktop asset browser / extractor.
+//! `legaia-explorer`: the desktop asset browser / extractor.
 //!
 //! A GUI program with no command-line contract, so on Windows it is a
 //! `windows`-subsystem binary: double-clicking it opens no console window.
 //! An optional first argument (what "Open with" passes) is a disc image or
-//! extracted folder to open; the `LEGAIA_STUDIO_*` variables documented on
-//! [`legaia_studio::app::Automation`] script a run for screenshots and tests.
+//! extracted folder to open; the `LEGAIA_EXPLORER_*` variables documented on
+//! [`legaia_explorer::app::Automation`] script a run for screenshots and tests.
 
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use legaia_studio::Studio;
-use legaia_studio::app::{App, Automation};
-use legaia_studio::placement;
-use legaia_studio::settings::Settings;
+use legaia_explorer::Explorer;
+use legaia_explorer::app::{App, Automation};
+use legaia_explorer::placement;
+use legaia_explorer::settings::Settings;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
 const HELP: &str = "\
-legaia-studio - browse, preview and extract the assets on your Legend of Legaia disc
+legaia-explorer - browse, preview and extract the assets on your Legend of Legaia disc
 
-Usage: legaia-studio [DISC.bin | DISC.cue | EXTRACTED_FOLDER]
+Usage: legaia-explorer [DISC.bin | DISC.cue | EXTRACTED_FOLDER]
 
 Starts the desktop app. The optional path is opened at start; otherwise the
 last disc or folder is reopened. No game data is included: the app reads only
@@ -35,7 +35,7 @@ fn main() -> eframe::Result {
     // a GUI-subsystem program, so they print only when a console is attached.
     match std::env::args().nth(1).as_deref() {
         Some("--version" | "-V") => {
-            println!("legaia-studio {}", env!("CARGO_PKG_VERSION"));
+            println!("legaia-explorer {}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         Some("--help" | "-h") => {
@@ -49,19 +49,19 @@ fn main() -> eframe::Result {
         .nth(1)
         .map(PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty() && !p.to_string_lossy().starts_with('-'))
-        .or_else(|| std::env::var_os("LEGAIA_STUDIO_OPEN").map(PathBuf::from));
-    let studio = Studio::new(Settings::default_path());
+        .or_else(|| std::env::var_os("LEGAIA_EXPLORER_OPEN").map(PathBuf::from));
+    let explorer = Explorer::new(Settings::default_path());
     let auto = Automation::from_env();
     // The size the window had when it last closed (the settings file).
-    let size = studio
+    let size = explorer
         .settings
         .window_size
         .filter(|[w, h]| w.is_finite() && h.is_finite())
         .map(|[w, h]| [w.max(720.0), h.max(480.0)])
         .unwrap_or([1280.0, 820.0]);
     let mut viewport = eframe::egui::ViewportBuilder::default()
-        .with_title("Legaia Studio")
-        .with_app_id("legaia-studio")
+        .with_title("Legaia Explorer")
+        .with_app_id("legaia-explorer")
         .with_inner_size(size)
         .with_min_inner_size([720.0, 480.0])
         .with_drag_and_drop(true);
@@ -76,8 +76,8 @@ fn main() -> eframe::Result {
     // reads them just before eframe creates the window, and the builder hook
     // (called during that creation) applies the result.
     let monitors: Arc<Mutex<Vec<placement::Monitor>>> = Arc::default();
-    let saved_pos = studio.settings.window_pos;
-    let zoom = legaia_studio::settings::sane_zoom(studio.settings.zoom);
+    let saved_pos = explorer.settings.window_pos;
+    let zoom = legaia_explorer::settings::sane_zoom(explorer.settings.zoom);
     let seen = monitors.clone();
     let options = eframe::NativeOptions {
         viewport,
@@ -95,9 +95,9 @@ fn main() -> eframe::Result {
         .build()
         .map_err(eframe::Error::WinitEventLoop)?;
     let app = eframe::create_native(
-        "Legaia Studio",
+        "Legaia Explorer",
         options,
-        Box::new(move |_cc| Ok(Box::new(App::new(studio, initial, auto)))),
+        Box::new(move |_cc| Ok(Box::new(App::new(explorer, initial, auto)))),
         &event_loop,
     );
     let mut probe = MonitorProbe { app, monitors };

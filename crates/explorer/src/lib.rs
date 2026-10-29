@@ -1,7 +1,7 @@
-//! Legaia Studio: a desktop asset browser and extractor over the user's own
+//! Legaia Explorer: a desktop asset browser and extractor over the user's own
 //! Legend of Legaia disc image.
 //!
-//! The crate splits into a UI-free model ([`Studio`] and the modules under
+//! The crate splits into a UI-free model ([`Explorer`] and the modules under
 //! it, exercised headlessly by the tests) and the egui front end ([`app`]).
 //! Every format is read through the existing library crates; the extraction
 //! tab runs the same `legaia_extract::run` pipeline the `legaia-extract`
@@ -89,7 +89,7 @@ fn group_blocks<'a>(names: impl Iterator<Item = &'a str>) -> Vec<Block> {
 }
 
 /// The UI-free application state.
-pub struct Studio {
+pub struct Explorer {
     pub settings: Settings,
     settings_path: Option<PathBuf>,
     pub library: Option<Arc<Library>>,
@@ -106,7 +106,7 @@ pub struct Studio {
     pub status: Option<String>,
 }
 
-impl Studio {
+impl Explorer {
     /// A fresh state with settings from `settings_path` (or defaults).
     pub fn new(settings_path: Option<PathBuf>) -> Self {
         let settings = settings_path

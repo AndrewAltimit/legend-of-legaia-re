@@ -1,7 +1,7 @@
 //! Remembered choices, stored as JSON in the per-user config folder
-//! (`~/.config/legaia-studio/settings.json` on Linux,
-//! `%APPDATA%\legaia-studio\` on Windows,
-//! `~/Library/Application Support/legaia-studio/` on macOS).
+//! (`~/.config/legaia-explorer/settings.json` on Linux,
+//! `%APPDATA%\legaia-explorer\` on Windows,
+//! `~/Library/Application Support/legaia-explorer/` on macOS).
 
 use std::path::{Path, PathBuf};
 
@@ -113,12 +113,21 @@ impl Settings {
     }
 
     /// The default settings file, or `None` when the platform has no config
-    /// folder.
+    /// folder. A settings file left by the app's earlier name
+    /// (`legaia-studio`) is copied across on first use, so a renamed
+    /// install keeps its recent list and preferences.
     pub fn default_path() -> Option<PathBuf> {
-        if let Some(p) = std::env::var_os("LEGAIA_STUDIO_SETTINGS") {
+        if let Some(p) = std::env::var_os("LEGAIA_EXPLORER_SETTINGS") {
             return Some(PathBuf::from(p));
         }
-        dirs::config_dir().map(|d| d.join("legaia-studio").join("settings.json"))
+        let config = dirs::config_dir()?;
+        let path = config.join("legaia-explorer").join("settings.json");
+        let legacy = config.join("legaia-studio").join("settings.json");
+        if !path.exists() && legacy.exists() {
+            let _ = std::fs::create_dir_all(config.join("legaia-explorer"));
+            let _ = std::fs::copy(&legacy, &path);
+        }
+        Some(path)
     }
 
     /// Load from `path`; a missing or unreadable file gives the defaults.
@@ -145,7 +154,7 @@ mod tests {
     #[test]
     fn round_trips_and_tolerates_missing_fields() {
         let dir =
-            std::env::temp_dir().join(format!("legaia-studio-settings-{}", std::process::id()));
+            std::env::temp_dir().join(format!("legaia-explorer-settings-{}", std::process::id()));
         let path = dir.join("settings.json");
         let s = Settings {
             last_source: Some(PathBuf::from("/x/disc.bin")),

@@ -60,9 +60,9 @@ cross-compiles - including the x86_64 Linux one.
 | Target | Toolchain | Contents |
 |---|---|---|
 | `aarch64-unknown-linux-gnu` | Native | Every workspace binary |
-| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe`; `legaia-studio.exe` is a GUI-subsystem program |
+| `x86_64-pc-windows-gnu` | mingw-w64 cross | Every workspace binary, plus `Legend of Legaia.exe`; `legaia-explorer.exe` is a GUI-subsystem program |
 | `x86_64-unknown-linux-gnu` | `cargo-zigbuild` cross + amd64 ALSA / libudev sysroot, glibc pinned to 2.28 | Every workspace binary |
-| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` and `Legaia Studio.app` |
+| `universal-apple-darwin` | Native on a macOS runner: `aarch64-apple-darwin` + `x86_64-apple-darwin`, fused by `lipo` | Every workspace binary, plus `Legend of Legaia.app` and `Legaia Explorer.app` |
 
 The per-target binary list is declared explicitly in `release-build.sh`, and
 the script fails if an expected binary is missing from the build output, so a
@@ -82,7 +82,7 @@ cpal's macOS backend is CoreAudio, so there is no ALSA question here.
 The archive additionally carries `Legend of Legaia.app`, a minimal bundle
 (an `Info.plist` and a copy of `legaia-engine`) so a Finder user double-clicks
 an app. Started without arguments the engine runs its launcher, which needs no
-terminal. `Legaia Studio.app` wraps `legaia-studio` the same way; one
+terminal. `Legaia Explorer.app` wraps `legaia-explorer` the same way; one
 `make_app` helper in the script builds, lints and signs both. `CFBundleVersion` takes the version with any prerelease suffix cut
 (macOS wants dot-separated integers there); `CFBundleShortVersionString` keeps
 the full string. The script lints the `Info.plist` with `plutil` and verifies
@@ -128,12 +128,12 @@ terminal, the console is shared and stays.
 `release-build.sh` reads the PE optional header of the staged files and fails
 unless the stub is subsystem 2 (Windows GUI) and the engine subsystem 3
 (console), so a build change cannot quietly bring the console back or take the
-terminal away. The same check holds `legaia-studio.exe` at subsystem 2 (see
+terminal away. The same check holds `legaia-explorer.exe` at subsystem 2 (see
 below).
 
-### Legaia Studio
+### Legaia Explorer
 
-`legaia-studio` ([`crates/studio`](../../crates/studio/README.md)) is the
+`legaia-explorer` ([`crates/explorer`](../../crates/explorer/README.md)) is the
 desktop asset browser and extractor, the archive's entry point for a user who
 does not want a terminal. It ships on every target and differs from the other
 GUI binaries in three ways the pipeline accounts for:
@@ -148,12 +148,12 @@ GUI binaries in three ways the pipeline accounts for:
   libGL / libEGL and X11 / Wayland at runtime (dlopen), so the cross builds
   need nothing beyond the ALSA sysroot the engine already uses; on Windows it
   imports only system DLLs (`opengl32.dll` among them).
-- **Its own bundle on macOS.** `Legaia Studio.app` sits beside `Legend of
+- **Its own bundle on macOS.** `Legaia Explorer.app` sits beside `Legend of
   Legaia.app`; Gatekeeper's first-launch confirmation applies to it the same
   way.
 
 `README-PLAY.txt` carries a "browse and extract" section that points at it,
-and the release smoke-runs `legaia-studio --version` next to the engine's.
+and the release smoke-runs `legaia-explorer --version` next to the engine's.
 
 ### Why Windows is `-gnu` rather than `-msvc`
 
@@ -258,7 +258,7 @@ files:
   settings and saves live, and lists the keyboard controls (every pad
   button, the Escape-twice quit) and the display toggles. The launcher itself is described in
   [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
-  It also points asset users at Legaia Studio and the extraction guide.
+  It also points asset users at Legaia Explorer and the extraction guide.
 - `README.txt` - the target, every binary present with a one-line role, and
   the same bring-your-own-disc rule.
 - `THIRD-PARTY-LICENSES.txt` - the license texts and notices of every crate
@@ -293,7 +293,7 @@ The script exits non-zero when a linked crate declares no license or an id
 has no text anywhere, which fails the release. It needs only `cargo` and the
 Python 3 standard library.
 
-A build smoke-runs `legaia-engine --version` and `legaia-studio --version`
+A build smoke-runs `legaia-engine --version` and `legaia-explorer --version`
 from the staged archive whenever the build host can execute it (the native Linux row and the
 universal macOS row), so a binary that cannot start fails the release rather
 than a user.

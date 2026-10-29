@@ -64,7 +64,7 @@ pub fn tmd_obj(a: &Analysis, t: &TmdRef, out: &Path) -> Result<()> {
     let mesh = legaia_tmd::mesh::tmd_to_mesh(&tmd, bytes);
     let mut s = String::new();
     s.push_str(&format!(
-        "# legaia-studio: PROT entry {} TMD @ {} 0x{:X}\n# raw PSX units, +Y down\n",
+        "# legaia-explorer: PROT entry {} TMD @ {} 0x{:X}\n# raw PSX units, +Y down\n",
         a.index,
         t.origin.describe(),
         t.offset

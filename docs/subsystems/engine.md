@@ -257,7 +257,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `web-minigames` | `engine-session` (one audio constant), `engine-minigame-scenes`, `engine-scene`, `engine-ui`, `engine-audio`, the minigame kernel crates + format-family and parser crates | The browser minigames page's runtime; no `engine-core`. |
 | `web-viewer` | `web-play`, `web-patcher`, `engine-world-views`, `engine-scene-host`, `engine-scene`, `engine-audio`, the kernel crates the viewer pages read + format-family and parser crates | The wasm bundle (`cdylib` over `web-play` and `web-patcher`) and the asset inspectors. |
 | `asset-viewer` | `engine-core`, `engine-scene`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
-| `app-theme` | - | The desktop programs' shared palette (dark and light) and spacing: Studio, the launcher, the play window's chrome. |
+| `app-theme` | - | The desktop programs' shared palette (dark and light) and spacing: Explorer, the launcher, the play window's chrome. |
 
 ### The layering gate
 

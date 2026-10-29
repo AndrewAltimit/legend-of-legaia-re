@@ -29,7 +29,7 @@ pub(crate) struct MediaState {
     /// Wall clock and frame the movie started from (no soundtrack case).
     since: Option<(Instant, usize)>,
     tex: Option<(usize, TextureHandle)>,
-    /// Scripted `LEGAIA_STUDIO_MEDIA` applied.
+    /// Scripted `LEGAIA_EXPLORER_MEDIA` applied.
     auto_done: bool,
 }
 
@@ -81,7 +81,7 @@ impl App {
     }
 
     pub(super) fn media_mode(&mut self, ui: &mut egui::Ui) {
-        let Some(lib) = self.studio.library.clone() else {
+        let Some(lib) = self.explorer.library.clone() else {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.label("Open a disc image first.");
             });
@@ -277,7 +277,7 @@ impl App {
                 self.report("WAV", res, &out);
             }
         } else if let Err(e) = self.player.play_stream(pcm, rate, ch, label) {
-            self.studio.error = Some(format!("{e:#}"));
+            self.explorer.error = Some(format!("{e:#}"));
         }
     }
 
@@ -344,7 +344,7 @@ impl App {
                     format!("{sel} soundtrack"),
                 )
             {
-                self.studio.error = Some(format!("{e:#}"));
+                self.explorer.error = Some(format!("{e:#}"));
             }
         }
         let st = &mut self.media;

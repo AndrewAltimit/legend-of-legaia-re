@@ -1385,7 +1385,7 @@ startup race:
 | Launcher | Where | On a second startup death |
 |---|---|---|
 | `native_minigame_ladder`, the retail-compare image channel | `legaia_parity::window_child::output_retrying_startup_race`, reading the child's stderr | returns the failure; a `[retry]` line names the first |
-| Legaia Studio's Play button | `legaia_studio::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
+| Legaia Explorer's Play button | `legaia_explorer::launch::Game::poll`, reading the game's log file | an error line saying the game crashed twice while opening its window and can be started again |
 
 A `SIGSEGV` after the line is a different crash and is never relaunched.
 

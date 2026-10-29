@@ -5,12 +5,12 @@
 use std::path::PathBuf;
 
 use legaia_disc_audit::categorize::Class;
-use legaia_studio::extract_job::{ExtractJob, Outcome};
-use legaia_studio::raster::{self, Camera, Model, Shading};
-use legaia_studio::{Studio, export};
+use legaia_explorer::extract_job::{ExtractJob, Outcome};
+use legaia_explorer::raster::{self, Camera, Model, Shading};
+use legaia_explorer::{Explorer, export};
 
 fn scratch(name: &str) -> PathBuf {
-    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("studio-{name}"));
+    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("explorer-{name}"));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -27,7 +27,7 @@ fn disc() -> Option<PathBuf> {
 #[test]
 fn state_builds_without_a_window() {
     let dir = scratch("state");
-    let mut s = Studio::new(Some(dir.join("settings.json")));
+    let mut s = Explorer::new(Some(dir.join("settings.json")));
     assert!(s.library.is_none() && s.blocks.is_empty() && s.selected.is_none());
     assert!(!s.poll());
     // A path that is not a disc is refused at once, with a message.
@@ -37,7 +37,7 @@ fn state_builds_without_a_window() {
     s.settings.skip_png = true;
     s.save_settings();
     assert!(
-        Studio::new(Some(dir.join("settings.json")))
+        Explorer::new(Some(dir.join("settings.json")))
             .settings
             .skip_png
     );
@@ -54,7 +54,7 @@ fn texture_coverage_separates_self_contained_meshes_from_scene_meshes() {
         return;
     };
     let out = scratch("coverage");
-    let mut s = Studio::new(Some(out.join("settings.json")));
+    let mut s = Explorer::new(Some(out.join("settings.json")));
     s.open_blocking(&bin).expect("load disc");
     let lib = s.library.clone().unwrap();
     let mut coverage = |index: u32| {
@@ -91,7 +91,7 @@ fn a_mesh_baked_black_on_the_disc_is_named_and_lit_shows_its_shape() {
         return;
     };
     let out = scratch("baked-dark");
-    let mut s = Studio::new(Some(out.join("settings.json")));
+    let mut s = Explorer::new(Some(out.join("settings.json")));
     s.open_blocking(&bin).expect("load disc");
     let lib = s.library.clone().unwrap();
     let mut probe = |index: u32| {
@@ -151,11 +151,11 @@ fn extraction_of_a_missing_image_fails_cleanly() {
 #[test]
 fn real_disc_lists_prot_entries_and_previews() {
     let Some(bin) = disc() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping studio disc smoke test");
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping explorer disc smoke test");
         return;
     };
     let out = scratch("disc");
-    let mut s = Studio::new(Some(out.join("settings.json")));
+    let mut s = Explorer::new(Some(out.join("settings.json")));
     s.open_blocking(&bin).expect("load disc");
     let lib = s.library.clone().unwrap();
     assert_eq!(lib.entries.len(), 1233, "PROT.DAT entry count");
@@ -256,7 +256,7 @@ fn real_disc_lists_prot_entries_and_previews() {
 #[test]
 fn real_disc_extraction_cancels() {
     let Some(bin) = disc() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping studio extraction-cancel test");
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping explorer extraction-cancel test");
         return;
     };
     let out = scratch("cancel");
@@ -274,18 +274,18 @@ fn real_disc_extraction_cancels() {
 #[test]
 fn real_disc_battle_actors_and_scene_textures() {
     let Some(bin) = disc() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping studio actor test");
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping explorer actor test");
         return;
     };
     let out = scratch("actors");
-    let mut s = Studio::new(Some(out.join("settings.json")));
+    let mut s = Explorer::new(Some(out.join("settings.json")));
     s.open_blocking(&bin).expect("load disc");
     let lib = s.library.clone().unwrap();
     let bg = [0u8, 0, 0, 0];
     let drawn = |rgba: &[u8]| rgba.as_chunks::<4>().0.iter().filter(|p| **p != bg).count();
 
     // Monsters: named rows, a textured, posed mesh with clips.
-    let rows = legaia_studio::actors::monster_rows(&lib).expect("monster rows");
+    let rows = legaia_explorer::actors::monster_rows(&lib).expect("monster rows");
     assert!(rows.len() > 100, "monster archive rows: {}", rows.len());
     // Names read as the font draws them: the `$N` variant suffix is the
     // level mark, and the element escape is a badge, not text.
@@ -295,7 +295,7 @@ fn real_disc_battle_actors_and_scene_textures() {
             .all(|r| !r.name.contains('$') && !r.name.contains('^'))
     );
     assert!(rows.iter().any(|r| r.badge == Some("Fire")));
-    let m = legaia_studio::actors::monster(&lib, rows[0].id).expect("first monster");
+    let m = legaia_explorer::actors::monster(&lib, rows[0].id).expect("first monster");
     assert!(!m.clips.is_empty(), "{} has clips", m.label);
     let img = raster::render(
         &m.model,
@@ -307,17 +307,17 @@ fn real_disc_battle_actors_and_scene_textures() {
     );
     assert!(drawn(&img) > 500, "{} drew textured pixels", m.label);
     let _ = legaia_tim::write_png(&out.join("monster.png"), 200, 200, &img);
-    let glb = legaia_studio::actors::monster_glb(&lib, rows[0].id).expect("monster glb");
+    let glb = legaia_explorer::actors::monster_glb(&lib, rows[0].id).expect("monster glb");
     assert_eq!(&glb[..4], b"glTF");
-    let glb = legaia_studio::actors::character_glb(&lib, 0, [0; 5]).expect("character glb");
+    let glb = legaia_explorer::actors::character_glb(&lib, 0, [0; 5]).expect("character glb");
     assert_eq!(&glb[..4], b"glTF");
 
     // Party: every character assembles with its default loadout.
-    let cats = legaia_studio::actors::character_catalogs(&lib).expect("catalogs");
+    let cats = legaia_explorer::actors::character_catalogs(&lib).expect("catalogs");
     assert_eq!(cats.len(), 4);
     for c in &cats {
         assert_eq!(c.sections.len(), 5, "{}: five equipment sections", c.name);
-        let a = legaia_studio::actors::character(&lib, c.cslot, [0; 5]).expect("assemble");
+        let a = legaia_explorer::actors::character(&lib, c.cslot, [0; 5]).expect("assemble");
         assert!(!a.clips.is_empty(), "{}: clip bank", c.name);
         // Vahn, Noa and Gala carry their Tactical Arts as named clips.
         let arts = a
@@ -345,7 +345,7 @@ fn real_disc_battle_actors_and_scene_textures() {
     let pos = lib.position_of(4).unwrap();
     let a = s.select_blocking(pos).unwrap();
     assert!(a.tims.is_empty() && !a.tmds.is_empty());
-    let sv = legaia_studio::scene_vram::build(&lib, 4, a.class).expect("scene vram");
+    let sv = legaia_explorer::scene_vram::build(&lib, 4, a.class).expect("scene vram");
     assert!(sv.tims > 0, "scene {} uploaded TIMs", sv.scene);
     // The play host's two layers: the field-character atlas and the
     // effect-texture pool.
@@ -382,11 +382,11 @@ fn real_disc_battle_actors_and_scene_textures() {
 #[test]
 fn real_disc_search_and_streamed_media() {
     let Some(bin) = disc() else {
-        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping studio media test");
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping explorer media test");
         return;
     };
     let out = scratch("media");
-    let mut s = Studio::new(Some(out.join("settings.json")));
+    let mut s = Explorer::new(Some(out.join("settings.json")));
     s.open_blocking(&bin).expect("load disc");
     let lib = s.library.clone().unwrap();
 
@@ -400,7 +400,7 @@ fn real_disc_search_and_streamed_media() {
     // A scene's display name finds its block: "rim elm" is town01.
     let town = lib.position_of(5).unwrap();
     let town_block = lib.label(5).unwrap().to_string();
-    assert_eq!(legaia_studio::place_name(&town_block), Some("Rim Elm"));
+    assert_eq!(legaia_explorer::place_name(&town_block), Some("Rim Elm"));
     assert!(s.entry_matches(town, &town_block, "rim elm", None));
     assert!(!s.entry_matches(pos, &block, "rim elm", None));
 
@@ -409,14 +409,14 @@ fn real_disc_search_and_streamed_media() {
         .iso_files
         .iter()
         .find(|f| {
-            legaia_studio::media::kind_of(&f.path) == Some(legaia_studio::media::MediaKind::Xa)
+            legaia_explorer::media::kind_of(&f.path) == Some(legaia_explorer::media::MediaKind::Xa)
         })
         .expect("an XA file");
-    let chans = legaia_studio::media::xa_channels(&bin, xa).expect("demux");
+    let chans = legaia_explorer::media::xa_channels(&bin, xa).expect("demux");
     assert!(!chans.is_empty(), "{} has channels", xa.path);
-    let t = legaia_studio::media::decode_channel(&chans[0]).expect("decode");
+    let t = legaia_explorer::media::decode_channel(&chans[0]).expect("decode");
     assert!(t.duration_secs() > 1.0 && t.pcm.iter().any(|&s| s != 0));
-    legaia_studio::media::write_wav(&out.join("xa.wav"), &t.pcm, t.channels, t.sample_rate)
+    legaia_explorer::media::write_wav(&out.join("xa.wav"), &t.pcm, t.channels, t.sample_rate)
         .expect("wav");
 
     // STR: the smallest movie assembles frames that decode, at 15 fps, with
@@ -425,11 +425,11 @@ fn real_disc_search_and_streamed_media() {
         .iso_files
         .iter()
         .filter(|f| {
-            legaia_studio::media::kind_of(&f.path) == Some(legaia_studio::media::MediaKind::Str)
+            legaia_explorer::media::kind_of(&f.path) == Some(legaia_explorer::media::MediaKind::Str)
         })
         .min_by_key(|f| f.size)
         .expect("a movie");
-    let m = legaia_studio::media::str_movie(&bin, mv).expect("demux movie");
+    let m = legaia_explorer::media::str_movie(&bin, mv).expect("demux movie");
     assert!(
         m.frames.len() > 30,
         "{}: {} frames",
@@ -455,7 +455,7 @@ fn equipment_names_per_build() {
         eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping equipment-name test");
         return;
     };
-    let usa = legaia_studio::Library::open(&bin).expect("load USA disc");
+    let usa = legaia_explorer::Library::open(&bin).expect("load USA disc");
     let scus = usa.executable().expect("SCUS");
     assert_eq!(
         ItemNameTable::from_exe(&scus, "SCUS_942.54"),
@@ -469,8 +469,8 @@ fn equipment_names_per_build() {
         return;
     };
     // The same options go unnamed on both builds (the table's empty slots).
-    let unnamed = |lib: &legaia_studio::Library| -> Vec<String> {
-        legaia_studio::actors::character_catalogs(lib)
+    let unnamed = |lib: &legaia_explorer::Library| -> Vec<String> {
+        legaia_explorer::actors::character_catalogs(lib)
             .expect("catalogs")
             .iter()
             .flat_map(|c| c.sections.iter().flat_map(|(_, ids)| ids.iter()))
@@ -478,7 +478,7 @@ fn equipment_names_per_build() {
             .map(|(_, n)| n.clone())
             .collect()
     };
-    let lib = legaia_studio::Library::open(&pal).expect("load PAL disc");
+    let lib = legaia_explorer::Library::open(&pal).expect("load PAL disc");
     assert_eq!(
         unnamed(&lib),
         unnamed(&usa),

@@ -4,7 +4,7 @@
 //!
 //! [`run`] drives every step in order and reports through a [`Reporter`],
 //! which is how both front ends see the same pipeline: the `legaia-extract`
-//! command line prints the messages, and `legaia-studio` turns them into a
+//! command line prints the messages, and `legaia-explorer` turns them into a
 //! progress bar and a log pane and can cancel between (and inside) steps.
 //!
 //! Each step is a thin loop over the per-format library crates; no format is

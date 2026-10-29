@@ -5,7 +5,7 @@
 //! extract`, `prot-extract extract`, `asset scan-stream`/`extract`, and
 //! `tim convert-dir` in sequence, but with one CLI and one output tree.
 //! The pipeline itself is the crate's library (`legaia_extract::run`), which
-//! `legaia-studio` drives too; this file is only the argument parser and a
+//! `legaia-explorer` drives too; this file is only the argument parser and a
 //! printing [`legaia_extract::Reporter`].
 
 use std::path::PathBuf;

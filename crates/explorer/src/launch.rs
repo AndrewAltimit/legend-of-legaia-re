@@ -3,7 +3,7 @@
 //! file manager.
 //!
 //! The game is a separate program shipped in the same release folder
-//! (`docs/tooling/releases.md`), so Studio starts it as a child process
+//! (`docs/tooling/releases.md`), so Explorer starts it as a child process
 //! rather than linking the engine. The child gets the same argument list the
 //! engine's own first-run launcher boots (`play-window --disc <bin>
 //! --boot-ui`, `legaia_engine_shell::launcher::play_args`) and runs in the
@@ -23,13 +23,13 @@ pub fn engine_file_name() -> String {
     format!("legaia-engine{}", std::env::consts::EXE_SUFFIX)
 }
 
-/// The engine binary shipped beside `studio_exe`: in the same folder (the
-/// release archive, a `target/<profile>` build), or - when Studio runs from
-/// inside the macOS `Legaia Studio.app/Contents/MacOS/` - in the archive
+/// The engine binary shipped beside `explorer_exe`: in the same folder (the
+/// release archive, a `target/<profile>` build), or - when Explorer runs from
+/// inside the macOS `Legaia Explorer.app/Contents/MacOS/` - in the archive
 /// folder three levels up.
-pub fn find_engine(studio_exe: &Path) -> Option<PathBuf> {
+pub fn find_engine(explorer_exe: &Path) -> Option<PathBuf> {
     let name = engine_file_name();
-    studio_exe
+    explorer_exe
         .ancestors()
         .skip(1)
         .take(4)
@@ -104,8 +104,8 @@ pub fn launch_switches(settings: &Path) -> Vec<std::ffi::OsString> {
         .collect()
 }
 
-/// The log file a Studio-started game writes into.
-pub const GAME_LOG: &str = "legaia-studio-game.log";
+/// The log file a Explorer-started game writes into.
+pub const GAME_LOG: &str = "legaia-explorer-game.log";
 
 /// The disc the game can boot from the open source, or why it cannot - a
 /// sentence for the Play button's hover text.
@@ -136,7 +136,7 @@ pub fn play_args(bin: &Path) -> Vec<std::ffi::OsString> {
     ]
 }
 
-/// A game Studio started.
+/// A game Explorer started.
 pub struct Game {
     child: Child,
     /// Where its log goes, when a log file could be created.
@@ -150,10 +150,10 @@ pub struct Game {
 
 /// The line `play-window` logs once its event loop exists
 /// (`legaia_engine_capture::EVENT_LOOP_OPEN_MARKER`, repeated here
-/// because Studio does not link the capture crate). A game that dies of
+/// because Explorer does not link the capture crate). A game that dies of
 /// `SIGSEGV` before writing it died inside `winit`'s `EventLoop::new`, in
 /// libXi's first-use race against XInput2 raw events: pointer motion on the
-/// display at the wrong moment (`docs/tooling/host-drift.md`). Studio starts
+/// display at the wrong moment (`docs/tooling/host-drift.md`). Explorer starts
 /// such a game once more.
 pub const EVENT_LOOP_OPEN_MARKER: &str = "play-window: event loop open";
 
@@ -215,7 +215,7 @@ impl Game {
             use std::io::Write;
             let _ = writeln!(
                 f,
-                "[studio] the game died of SIGSEGV before its window opened \
+                "[explorer] the game died of SIGSEGV before its window opened \
                  (libXi startup race); starting it once more"
             );
         }
@@ -324,21 +324,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_the_engine_beside_studio_or_above_the_app_bundle() {
+    fn finds_the_engine_beside_explorer_or_above_the_app_bundle() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let engine = root.join(engine_file_name());
-        assert_eq!(find_engine(&root.join("legaia-studio")), None);
+        assert_eq!(find_engine(&root.join("legaia-explorer")), None);
         std::fs::write(&engine, b"").unwrap();
         assert_eq!(
-            find_engine(&root.join("legaia-studio")),
+            find_engine(&root.join("legaia-explorer")),
             Some(engine.clone())
         );
         let bundled = root
-            .join("Legaia Studio.app")
+            .join("Legaia Explorer.app")
             .join("Contents")
             .join("MacOS")
-            .join("legaia-studio");
+            .join("legaia-explorer");
         assert_eq!(find_engine(&bundled), Some(engine));
     }
 
@@ -424,7 +424,7 @@ mod tests {
         assert!(err.contains(STARTUP_RACE_FAILURE), "{err}");
         let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
         assert_eq!(text.matches("launched").count(), 2, "{text}");
-        assert!(text.contains("[studio]"), "{text}");
+        assert!(text.contains("[explorer]"), "{text}");
 
         write_engine(&format!("echo '{EVENT_LOOP_OPEN_MARKER}'\nkill -SEGV $$\n"));
         let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();

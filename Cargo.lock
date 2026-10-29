@@ -2652,6 +2652,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-explorer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "eframe",
+ "env_logger",
+ "legaia-actor-formats",
+ "legaia-app-theme",
+ "legaia-art",
+ "legaia-container-formats",
+ "legaia-disc-audit",
+ "legaia-engine-audio",
+ "legaia-engine-scene",
+ "legaia-extract",
+ "legaia-font",
+ "legaia-game-tables",
+ "legaia-gamedata",
+ "legaia-iso",
+ "legaia-lzs",
+ "legaia-mdec",
+ "legaia-mes",
+ "legaia-prot",
+ "legaia-scene-formats",
+ "legaia-seq",
+ "legaia-tim",
+ "legaia-tmd",
+ "legaia-translate",
+ "legaia-vab",
+ "legaia-xa",
+ "log",
+ "rayon",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+ "winit",
+]
+
+[[package]]
 name = "legaia-extract"
 version = "0.1.0"
 dependencies = [
@@ -3022,47 +3063,6 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "legaia-studio"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dirs",
- "eframe",
- "env_logger",
- "legaia-actor-formats",
- "legaia-app-theme",
- "legaia-art",
- "legaia-container-formats",
- "legaia-disc-audit",
- "legaia-engine-audio",
- "legaia-engine-scene",
- "legaia-extract",
- "legaia-font",
- "legaia-game-tables",
- "legaia-gamedata",
- "legaia-iso",
- "legaia-lzs",
- "legaia-mdec",
- "legaia-mes",
- "legaia-prot",
- "legaia-scene-formats",
- "legaia-seq",
- "legaia-tim",
- "legaia-tmd",
- "legaia-translate",
- "legaia-vab",
- "legaia-xa",
- "log",
- "rayon",
- "rfd",
- "serde",
- "serde_json",
- "tempfile",
- "toml",
- "winit",
 ]
 
 [[package]]

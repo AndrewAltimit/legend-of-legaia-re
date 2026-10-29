@@ -214,7 +214,7 @@ fn prefer_x11_for_drop(wayland: bool, x11: bool, keep_wayland: bool) -> bool {
 
 // --- Palette -----------------------------------------------------------
 //
-// The shared dark palette (`legaia_app_theme`), which Studio's dark theme
+// The shared dark palette (`legaia_app_theme`), which Explorer's dark theme
 // draws in too.
 
 use legaia_app_theme::DARK as P;
@@ -1073,7 +1073,7 @@ impl LauncherApp {
             c.text(panel.x + 10, y, &b, INK);
             let w = c.width(&k);
             // Key names take the key ink the play window's F12 panel and
-            // Studio's shortcut list use (`chrome::KEY`); gold is for
+            // Explorer's shortcut list use (`chrome::KEY`); gold is for
             // headings and values here.
             c.text(panel.x + panel.w - 10 - w, y, &k, KEY);
             y += ROW_PITCH;

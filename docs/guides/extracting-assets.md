@@ -1,9 +1,9 @@
 # Extracting assets: step-by-step scenarios
 
-## Without a terminal: Legaia Studio
+## Without a terminal: Legaia Explorer
 
-The release archive's `legaia-studio` (`legaia-studio.exe` on Windows,
-`Legaia Studio.app` on macOS) does the common cases with buttons:
+The release archive's `legaia-explorer` (`legaia-explorer.exe` on Windows,
+`Legaia Explorer.app` on macOS) does the common cases with buttons:
 
 1. **Open** your disc image - the `.bin` of a Mode2/2352 dump, or its `.cue` -
    with *Open disc image...* (Ctrl+O), by typing its path (Ctrl+L), or by
@@ -65,7 +65,7 @@ The window remembers its size and the view you left it on. *About* (F1) shows
 the version and where the third-party license notices
 (`THIRD-PARTY-LICENSES.txt`) sit. The app ships no game data and uploads
 nothing; it reads the disc you choose and writes only where you tell it.
-Details: [`crates/studio`](../../crates/studio/README.md); a walkthrough with
+Details: [`crates/explorer`](../../crates/explorer/README.md); a walkthrough with
 screenshots is the project site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html).
 
 ## On the command line
@@ -85,7 +85,7 @@ directory - run from the same place each time.
 
 The bulk texture path is a two-command chain: sweep every PROT entry for TIM
 images (raw and inside LZS compression), then convert the hits.
-`legaia-extract --all-textures` (or the Studio's *Export all textures* box)
+`legaia-extract --all-textures` (or the Explorer's *Export all textures* box)
 runs both as one step and writes the same tree.
 
 ```bash

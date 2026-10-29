@@ -6,7 +6,7 @@
 //! `set_equipped_character` can hand every art over as one more labelled clip
 //! and the `.glb` export bakes them alongside the actions and swings.
 //!
-//! The decode and the naming are shared with Legaia Studio:
+//! The decode and the naming are shared with Legaia Explorer:
 //! `legaia_actor_formats`' `loadout::decode_art_clips` resolves each curated
 //! art to its bank record and chain with `legaia_art::clip_ladder` (mirrored
 //! 1:1 by `tests/arts_view_real.rs` for the arts page's JS). This module

@@ -83,9 +83,9 @@ cd legaia-tools-<version>-x86_64-unknown-linux-gnu
 
 Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
 
-Every archive also carries **Legaia Studio** (`legaia-studio`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/studio`](crates/studio/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Studio and the native port, with screenshots.
+Every archive also carries **Legaia Explorer** (`legaia-explorer`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/explorer`](crates/explorer/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Explorer and the native port, with screenshots.
 
-![Legaia Studio previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-studio.jpg)
+![Legaia Explorer previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-explorer.jpg)
 
 ### Build from source
 
@@ -199,7 +199,7 @@ Top of the stack first. Every crate name links its README.
 
 - **Hosts and front ends.** The programs people run. Each one is a thin shell over the crates below. \
   [`engine-shell`](crates/engine-shell/README.md), [`web-viewer`](crates/web-viewer/README.md), [`web-play`](crates/web-play/README.md), [`web-minigames`](crates/web-minigames/README.md), [`web-patcher`](crates/web-patcher/README.md),
-  [`asset-viewer`](crates/asset-viewer/README.md), [`studio`](crates/studio/README.md), [`patcher`](crates/patcher/README.md), [`extract`](crates/extract/README.md), [`asset`](crates/asset/README.md)
+  [`asset-viewer`](crates/asset-viewer/README.md), [`explorer`](crates/explorer/README.md), [`patcher`](crates/patcher/README.md), [`extract`](crates/extract/README.md), [`asset`](crates/asset/README.md)
 - **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside. \
   [`engine-session`](crates/engine-session/README.md), [`engine-screens`](crates/engine-screens/README.md), [`engine-render`](crates/engine-render/README.md), [`engine-audio`](crates/engine-audio/README.md), [`engine-export`](crates/engine-export/README.md),
   [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md)

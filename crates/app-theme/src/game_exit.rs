@@ -1,6 +1,6 @@
 //! How a game process ended, in the words the desktop programs show a
 //! player. The game launcher (`legaia-engine` with no subcommand) and Legaia
-//! Studio both start the game as a child process and report a failed exit
+//! Explorer both start the game as a child process and report a failed exit
 //! through this module, so the two say the same thing: [`exit_headline`]
 //! for how the process ended, [`failure_detail`] for the reason its log
 //! gives (a panic's message, the root of the `Error:` chain the engine exits

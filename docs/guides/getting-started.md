@@ -2,9 +2,9 @@
 
 This guide is for someone who downloaded a release archive from the project's
 GitHub Releases page: a directory of prebuilt binaries (the command-line
-tools, the engine and Legaia Studio), the two license files,
+tools, the engine and Legaia Explorer), the two license files,
 `THIRD-PARTY-LICENSES.txt`, `README-PLAY.txt` and a short `README.txt` (on
-macOS also `Legend of Legaia.app` and `Legaia Studio.app`). No Rust toolchain,
+macOS also `Legend of Legaia.app` and `Legaia Explorer.app`). No Rust toolchain,
 no source checkout.
 
 Pick your path:
@@ -146,7 +146,7 @@ Game-data, playing, and modding:
 | Binary | What it's for |
 |---|---|
 | `legaia-engine` | The from-scratch engine: play scenes, FMVs, record/replay, export scenes to `.glb` - straight from your disc. |
-| `legaia-studio` | Desktop app (no terminal): open the disc, browse it by scene, preview and export textures, models, audio, dialog and movies, run the full extraction. |
+| `legaia-explorer` | Desktop app (no terminal): open the disc, browse it by scene, preview and export textures, models, audio, dialog and movies, run the full extraction. |
 | `asset-viewer` | Windowed browser for textures, meshes, audio banks, and scene demos. |
 | `legaia-patcher` | Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches. |
 | `save-tool` | PSX memory-card / save inspector: character records, save-block diffs. |

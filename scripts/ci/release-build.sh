@@ -21,7 +21,7 @@
 # both licenses, THIRD-PARTY-LICENSES.txt (the notices of every crate the
 # binaries link, see third-party-licenses.py), a generated README-PLAY.txt (how to start the game) and
 # README.txt (every tool), and on macOS a "Legend of Legaia.app" wrapper
-# around legaia-engine plus a "Legaia Studio.app" around legaia-studio.
+# around legaia-engine plus a "Legaia Explorer.app" around legaia-explorer.
 #
 # Runs on Linux (the self-hosted runner) and on macOS (a GitHub-hosted
 # runner, for universal-apple-darwin). Kept to bash 3.2 + BSD userland on
@@ -59,7 +59,7 @@ CLI_BINS=(
     gamedata-tool legaia-extract legaia-patcher lzs-decode mdec mdt
     mednafen-state mes prot-extract save-tool seq tim tmd vab xa
 )
-GUI_BINS=(legaia-engine asset-viewer legaia-studio)
+GUI_BINS=(legaia-engine asset-viewer legaia-explorer)
 
 # Oldest glibc the cross-built x86_64 Linux binaries must run against.
 # 2.28 == Debian 10 / RHEL 8 / Ubuntu 18.10 and newer.
@@ -195,7 +195,7 @@ done
 # the ordinary terminal contract), so a double-click on it opens a console
 # window. The double-click entry is the GUI-subsystem stub legaia-launch,
 # shipped under the name a player looks for; it starts legaia-engine.exe with
-# no console. legaia-studio.exe has no command-line contract, so it is a GUI
+# no console. legaia-explorer.exe has no command-line contract, so it is a GUI
 # program itself. Assert the subsystems from the PE header (2 = Windows GUI,
 # 3 = console) so a build change cannot quietly bring a console back.
 if [[ "$TARGET" == *-windows-* ]]; then
@@ -213,13 +213,13 @@ PY
     if command -v python3 >/dev/null 2>&1; then
         gui="$(pe_subsystem "$STAGE/Legend of Legaia.exe")"
         cli="$(pe_subsystem "$STAGE/legaia-engine.exe")"
-        studio="$(pe_subsystem "$STAGE/legaia-studio.exe")"
-        if [[ "$gui" != 2 || "$cli" != 3 || "$studio" != 2 ]]; then
-            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3), studio=%s (want 2)\n' \
-                "$gui" "$cli" "$studio" >&2
+        explorer="$(pe_subsystem "$STAGE/legaia-explorer.exe")"
+        if [[ "$gui" != 2 || "$cli" != 3 || "$explorer" != 2 ]]; then
+            printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3), explorer=%s (want 2)\n' \
+                "$gui" "$cli" "$explorer" >&2
             exit 1
         fi
-        log "PE subsystems hold: Legend of Legaia.exe + legaia-studio.exe = GUI, legaia-engine.exe = console"
+        log "PE subsystems hold: Legend of Legaia.exe + legaia-explorer.exe = GUI, legaia-engine.exe = console"
     fi
 fi
 
@@ -245,13 +245,13 @@ fi
 HOST_TRIPLE="$(rustc -vV | awk '/^host: /{print $2}')"
 if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
     log "smoke: $("$STAGE/legaia-engine${BIN_EXT}" --version)"
-    log "smoke: $("$STAGE/legaia-studio${BIN_EXT}" --version)"
+    log "smoke: $("$STAGE/legaia-explorer${BIN_EXT}" --version)"
 fi
 
 # macOS: a minimal .app around each GUI program, so Finder users double-click
 # an app rather than a terminal binary. Started without arguments, the engine
 # runs its launcher (asks for the disc once, then boots the game) and
-# legaia-studio opens its browser window.
+# legaia-explorer opens its browser window.
 #
 #   make_app <bundle name> <executable> <bundle id suffix>
 make_app() {
@@ -293,7 +293,7 @@ PLIST
 
 if [[ "$TARGET" == *-apple-darwin ]]; then
     make_app "Legend of Legaia" legaia-engine legaia-engine
-    make_app "Legaia Studio" legaia-studio legaia-studio
+    make_app "Legaia Explorer" legaia-explorer legaia-explorer
 fi
 
 cp LICENSE "$STAGE/LICENSE"
@@ -378,14 +378,14 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf '\nTO BROWSE AND EXTRACT THE GAME'"'"'S ASSETS\n\n'
     case "$TARGET" in
         *-windows-*)
-            printf '    Double-click legaia-studio.exe.\n\n' ;;
+            printf '    Double-click legaia-explorer.exe.\n\n' ;;
         *-apple-darwin)
-            printf '    Double-click "Legaia Studio.app" (or run ./legaia-studio); the\n'
+            printf '    Double-click "Legaia Explorer.app" (or run ./legaia-explorer); the\n'
             printf '    first-open steps above apply to it too.\n\n' ;;
         *)
-            printf '    Run ./legaia-studio (or double-click it in your file manager).\n\n' ;;
+            printf '    Run ./legaia-explorer (or double-click it in your file manager).\n\n' ;;
     esac
-    printf 'Legaia Studio opens the same disc image and lets you browse every\n'
+    printf 'Legaia Explorer opens the same disc image and lets you browse every\n'
     printf 'archive entry, preview textures, 3D models, sound banks, music and\n'
     printf 'dialog text, export them (PNG, OBJ / glTF, WAV), or unpack the whole\n'
     printf 'disc into a folder of your choice. Its Play button starts the game\n'
@@ -408,7 +408,7 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'They ship NO game data. Every tool here reads a disc image that\n'
     printf 'you supply yourself; none is included or redistributed.\n\n'
     printf 'To PLAY, see README-PLAY.txt: start legaia-engine with no arguments.\n\n'
-    printf 'To browse and extract assets without a terminal, start legaia-studio.\n'
+    printf 'To browse and extract assets without a terminal, start legaia-explorer.\n'
     printf 'On the command line, legaia-extract drives the whole disc pipeline:\n\n'
     printf '    ./legaia-extract "/path/to/your/disc.bin" --out extracted\n\n'
     printf 'The tools in this archive (%d), one line each:\n\n' "${#BINS[@]}"
@@ -434,7 +434,7 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     if [[ "$TARGET" == *-windows-* ]]; then
         printf '    Legend of Legaia.exe  double-click entry: legaia-engine without a console\n'
     fi
-    printf '    legaia-studio   desktop app: browse, preview and export assets, extract the disc\n'
+    printf '    legaia-explorer   desktop app: browse, preview and export assets, extract the disc\n'
     printf '    asset-viewer    windowed viewer over legaia-extract output (textures, meshes,\n'
     printf '                    audio, scenes); with no arguments it browses ./extracted\n'
     printf 'Mod + translate\n'
@@ -457,9 +457,9 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'in THIRD-PARTY-LICENSES.txt.\n'
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
-        printf 'legaia-engine, asset-viewer and legaia-studio need ALSA\n'
+        printf 'legaia-engine, asset-viewer and legaia-explorer need ALSA\n'
         printf '(libasound.so.2) at runtime; every mainstream desktop Linux already\n'
-        printf 'ships it. legaia-studio also needs OpenGL (libGL / libEGL).\n'
+        printf 'ships it. legaia-explorer also needs OpenGL (libGL / libEGL).\n'
     fi
 } > "$STAGE/README.txt"
 

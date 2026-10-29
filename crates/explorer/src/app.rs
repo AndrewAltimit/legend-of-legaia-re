@@ -1,4 +1,4 @@
-//! The egui front end over [`Studio`].
+//! The egui front end over [`Explorer`].
 
 mod actors_ui;
 mod media_ui;
@@ -16,7 +16,7 @@ use crate::extract_job::{ExtractJob, OutDir as ExtractOutDir, Outcome};
 use crate::player::Player;
 use crate::raster::{Model, Shading};
 use crate::scene_vram::SceneVram;
-use crate::{Source, Studio, export};
+use crate::{Explorer, Source, export};
 use viewport::Viewport;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +30,7 @@ pub enum Mode {
 impl Mode {
     const ALL: [Mode; 4] = [Mode::Browse, Mode::Actors, Mode::Media, Mode::Extract];
 
-    /// The settings / `LEGAIA_STUDIO_TAB` spelling.
+    /// The settings / `LEGAIA_EXPLORER_TAB` spelling.
     fn key(self) -> &'static str {
         match self {
             Mode::Browse => "browse",
@@ -78,7 +78,7 @@ impl Tab {
         }
     }
 
-    /// The settings / `LEGAIA_STUDIO_TAB` spelling.
+    /// The settings / `LEGAIA_EXPLORER_TAB` spelling.
     fn key(self) -> &'static str {
         match self {
             Tab::Overview => "overview",
@@ -102,32 +102,32 @@ impl Tab {
 /// a screenshot without anyone at the keyboard.
 #[derive(Debug, Default, Clone)]
 pub struct Automation {
-    /// `LEGAIA_STUDIO_SELECT`: PROT index to select once loaded.
+    /// `LEGAIA_EXPLORER_SELECT`: PROT index to select once loaded.
     pub select: Option<u32>,
-    /// `LEGAIA_STUDIO_TMD`: which TMD of the selected entry the 3D model
+    /// `LEGAIA_EXPLORER_TMD`: which TMD of the selected entry the 3D model
     /// tab shows (the `TMD #` picker), instead of the first.
     pub tmd: Option<usize>,
-    /// `LEGAIA_STUDIO_TAB`: preview tab (`textures`, `model`, `audio`, ...)
+    /// `LEGAIA_EXPLORER_TAB`: preview tab (`textures`, `model`, `audio`, ...)
     /// or `extract`.
     pub tab: Option<String>,
-    /// `LEGAIA_STUDIO_EXTRACT_TO`: start an extraction into this folder.
+    /// `LEGAIA_EXPLORER_EXTRACT_TO`: start an extraction into this folder.
     pub extract_to: Option<PathBuf>,
-    /// `LEGAIA_STUDIO_SCREENSHOT`: save a PNG of the window once the
+    /// `LEGAIA_EXPLORER_SCREENSHOT`: save a PNG of the window once the
     /// scripted state has settled (after the extraction, when one runs),
     /// then quit.
     pub screenshot: Option<PathBuf>,
-    /// `LEGAIA_STUDIO_EXPORT_DIR`: export without a save dialog, into this
+    /// `LEGAIA_EXPLORER_EXPORT_DIR`: export without a save dialog, into this
     /// folder.
     pub export_dir: Option<PathBuf>,
-    /// `LEGAIA_STUDIO_ACTOR`: open the Actors view on `monster:<id>`,
+    /// `LEGAIA_EXPLORER_ACTOR`: open the Actors view on `monster:<id>`,
     /// `char:<slot>` (0 Vahn .. 3 Terra), optionally `@<clip>:<frame>`.
     pub actor: Option<String>,
-    /// `LEGAIA_STUDIO_MEDIA`: open the Movies & voice view on this ISO path
+    /// `LEGAIA_EXPLORER_MEDIA`: open the Movies & voice view on this ISO path
     /// (`MOV/MV1.STR`), optionally `@<frame>`.
     pub media: Option<String>,
-    /// `LEGAIA_STUDIO_SEARCH`: start with this text in the archive search.
+    /// `LEGAIA_EXPLORER_SEARCH`: start with this text in the archive search.
     pub search: Option<String>,
-    /// `LEGAIA_STUDIO_PLAY`: press Play once the disc has loaded.
+    /// `LEGAIA_EXPLORER_PLAY`: press Play once the disc has loaded.
     pub play: bool,
 }
 
@@ -135,20 +135,20 @@ impl Automation {
     pub fn from_env() -> Self {
         let path = |k: &str| std::env::var_os(k).map(PathBuf::from);
         Self {
-            select: std::env::var("LEGAIA_STUDIO_SELECT")
+            select: std::env::var("LEGAIA_EXPLORER_SELECT")
                 .ok()
                 .and_then(|s| s.trim().parse().ok()),
-            tmd: std::env::var("LEGAIA_STUDIO_TMD")
+            tmd: std::env::var("LEGAIA_EXPLORER_TMD")
                 .ok()
                 .and_then(|s| s.trim().parse().ok()),
-            tab: std::env::var("LEGAIA_STUDIO_TAB").ok(),
-            extract_to: path("LEGAIA_STUDIO_EXTRACT_TO"),
-            screenshot: path("LEGAIA_STUDIO_SCREENSHOT"),
-            export_dir: path("LEGAIA_STUDIO_EXPORT_DIR"),
-            actor: std::env::var("LEGAIA_STUDIO_ACTOR").ok(),
-            media: std::env::var("LEGAIA_STUDIO_MEDIA").ok(),
-            search: std::env::var("LEGAIA_STUDIO_SEARCH").ok(),
-            play: std::env::var_os("LEGAIA_STUDIO_PLAY").is_some_and(|v| !v.is_empty()),
+            tab: std::env::var("LEGAIA_EXPLORER_TAB").ok(),
+            extract_to: path("LEGAIA_EXPLORER_EXTRACT_TO"),
+            screenshot: path("LEGAIA_EXPLORER_SCREENSHOT"),
+            export_dir: path("LEGAIA_EXPLORER_EXPORT_DIR"),
+            actor: std::env::var("LEGAIA_EXPLORER_ACTOR").ok(),
+            media: std::env::var("LEGAIA_EXPLORER_MEDIA").ok(),
+            search: std::env::var("LEGAIA_EXPLORER_SEARCH").ok(),
+            play: std::env::var_os("LEGAIA_EXPLORER_PLAY").is_some_and(|v| !v.is_empty()),
         }
     }
 }
@@ -214,7 +214,7 @@ enum SceneSlot {
 }
 
 pub struct App {
-    pub studio: Studio,
+    pub explorer: Explorer,
     mode: Mode,
     tab: Tab,
     about_open: bool,
@@ -278,24 +278,24 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(studio: Studio, initial: Option<PathBuf>, auto: Automation) -> Self {
-        let mut studio = studio;
+    pub fn new(explorer: Explorer, initial: Option<PathBuf>, auto: Automation) -> Self {
+        let mut explorer = explorer;
         let mut player = Player::default();
-        player.set_volume(studio.settings.volume_percent());
+        player.set_volume(explorer.settings.volume_percent());
         // Recent entries whose disc or folder has gone are dropped at start.
-        if studio.settings.prune_recent() {
-            studio.save_settings();
+        if explorer.settings.prune_recent() {
+            explorer.save_settings();
         }
         // The disc or folder opened last, when it is still there. When it
         // has gone (moved, renamed, an unplugged drive) say so: the recent
         // list has just dropped it, and the start page alone would read as
         // a first run.
-        let last = studio.settings.last_source.clone();
+        let last = explorer.settings.last_source.clone();
         let open = initial.or_else(|| last.clone().filter(|p| p.exists()));
         if open.is_none()
             && let Some(gone) = last.filter(|p| !p.exists())
         {
-            studio.error = Some(format!(
+            explorer.error = Some(format!(
                 "The disc opened last is no longer at {} - open it from where it is now.",
                 gone.display()
             ));
@@ -305,29 +305,29 @@ impl App {
             .map(|p| p.display().to_string())
             .unwrap_or_default();
         if let Some(p) = &open {
-            studio.open(p);
+            explorer.open(p);
         }
-        let out_text = studio
+        let out_text = explorer
             .settings
             .last_out_dir
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_default();
         // The view and tab open when the app last closed.
-        let mode = studio
+        let mode = explorer
             .settings
             .mode
             .as_deref()
             .and_then(Mode::parse)
             .unwrap_or(Mode::Browse);
-        let tab = studio
+        let tab = explorer
             .settings
             .tab
             .as_deref()
             .and_then(Tab::parse)
             .unwrap_or(Tab::Overview);
         let mut app = Self {
-            studio,
+            explorer,
             mode,
             tab,
             about_open: false,
@@ -401,11 +401,11 @@ impl App {
         self.model = None;
         self.tim_tex = None;
         self.tim_err = None;
-        self.studio.open(p);
+        self.explorer.open(p);
     }
 
     fn select(&mut self, pos: usize) {
-        if self.studio.selected != Some(pos) {
+        if self.explorer.selected != Some(pos) {
             self.tim_sel = 0;
             self.clut = 0;
             self.tmd_sel = 0;
@@ -414,7 +414,7 @@ impl App {
             self.tim_err = None;
             self.model = None;
         }
-        self.studio.select(pos);
+        self.explorer.select(pos);
     }
 
     /// Where an export goes: the scripted folder, else a save dialog.
@@ -426,13 +426,13 @@ impl App {
         let mut d = rfd::FileDialog::new()
             .set_file_name(default_name)
             .add_filter(ext.to_uppercase(), &[ext]);
-        if let Some(dir) = &self.studio.settings.last_export_dir {
+        if let Some(dir) = &self.explorer.settings.last_export_dir {
             d = d.set_directory(dir);
         }
         let picked = d.save_file();
         if let Some(p) = &picked {
-            self.studio.settings.last_export_dir = p.parent().map(Path::to_path_buf);
-            self.studio.save_settings();
+            self.explorer.settings.last_export_dir = p.parent().map(Path::to_path_buf);
+            self.explorer.save_settings();
         }
         picked
     }
@@ -440,15 +440,15 @@ impl App {
     fn report(&mut self, what: &str, res: anyhow::Result<()>, path: &Path) {
         match res {
             Ok(()) => {
-                self.studio.status = Some(format!("{what} written to {}", path.display()));
-                self.studio.error = None;
+                self.explorer.status = Some(format!("{what} written to {}", path.display()));
+                self.explorer.error = None;
                 self.last_written = if path.is_dir() {
                     Some(path.to_path_buf())
                 } else {
                     path.parent().map(Path::to_path_buf)
                 };
             }
-            Err(e) => self.studio.error = Some(format!("{what} export failed: {e:#}")),
+            Err(e) => self.explorer.error = Some(format!("{what} export failed: {e:#}")),
         }
     }
 
@@ -458,17 +458,22 @@ impl App {
         if self.entry_restored {
             return;
         }
-        let Some(lib) = self.studio.library.clone() else {
+        let Some(lib) = self.explorer.library.clone() else {
             // Nothing loading means the start-up source is absent or failed:
             // a disc opened later starts with nothing selected.
-            self.entry_restored = self.studio.loading().is_none();
+            self.entry_restored = self.explorer.loading().is_none();
             return;
         };
         self.entry_restored = true;
-        if self.auto.select.is_some() || self.studio.selected.is_some() {
+        if self.auto.select.is_some() || self.explorer.selected.is_some() {
             return;
         }
-        if let Some(pos) = self.studio.settings.entry.and_then(|i| lib.position_of(i)) {
+        if let Some(pos) = self
+            .explorer
+            .settings
+            .entry
+            .and_then(|i| lib.position_of(i))
+        {
             self.select(pos);
             self.reveal = Some(pos);
         }
@@ -476,7 +481,7 @@ impl App {
 
     fn run_automation(&mut self, ctx: &egui::Context) {
         if !self.auto_selected
-            && let (Some(idx), Some(lib)) = (self.auto.select, self.studio.library.clone())
+            && let (Some(idx), Some(lib)) = (self.auto.select, self.explorer.library.clone())
         {
             self.auto_selected = true;
             if let Some(pos) = lib.position_of(idx) {
@@ -489,13 +494,13 @@ impl App {
         }
         if !self.auto_extract_started
             && let Some(dir) = self.auto.extract_to.clone()
-            && self.studio.library.is_some()
+            && self.explorer.library.is_some()
         {
             self.auto_extract_started = true;
             self.out_text = dir.display().to_string();
             self.start_extract();
         }
-        if self.auto.play && self.studio.library.is_some() && self.studio.loading().is_none() {
+        if self.auto.play && self.explorer.library.is_some() && self.explorer.loading().is_none() {
             self.auto.play = false;
             self.start_game();
         }
@@ -506,15 +511,15 @@ impl App {
         // given, no last disc) that is the first frame: the welcome screen
         // is the state to capture. The selection and extraction steps only
         // wait when there is a library for them to act on.
-        let loaded = self.studio.loading().is_none();
-        let has_lib = self.studio.library.is_some();
-        let analysed = self.auto.select.is_none() || !has_lib || self.studio.analysis.is_some();
+        let loaded = self.explorer.loading().is_none();
+        let has_lib = self.explorer.library.is_some();
+        let analysed = self.auto.select.is_none() || !has_lib || self.explorer.analysis.is_some();
         let extracted = self.auto.extract_to.is_none()
             || !has_lib
             || self.job.as_ref().is_some_and(|j| j.outcome().is_some());
         let idle =
-            loaded && analysed && extracted && !self.studio.is_analyzing() && !self.media.busy();
-        if !idle && self.studio.error.is_none() {
+            loaded && analysed && extracted && !self.explorer.is_analyzing() && !self.media.busy();
+        if !idle && self.explorer.error.is_none() {
             self.settle_since = None;
             ctx.request_repaint();
             return;
@@ -547,22 +552,22 @@ impl App {
     }
 
     fn start_extract(&mut self) {
-        let Some(lib) = &self.studio.library else {
-            self.studio.error = Some("Open a disc image first.".into());
+        let Some(lib) = &self.explorer.library else {
+            self.explorer.error = Some("Open a disc image first.".into());
             return;
         };
         let Source::Disc(bin) = &lib.source else {
-            self.studio.error = Some(
+            self.explorer.error = Some(
                 "Extraction reads a disc image; the open source is an extracted folder.".into(),
             );
             return;
         };
         let out = PathBuf::from(self.out_text.trim());
         if self.out_text.trim().is_empty() {
-            self.studio.error = Some("Choose an output folder.".into());
+            self.explorer.error = Some("Choose an output folder.".into());
             return;
         }
-        let s = &mut self.studio.settings;
+        let s = &mut self.explorer.settings;
         s.last_out_dir = Some(out.clone());
         let options = legaia_extract::Options {
             bin: bin.clone(),
@@ -575,8 +580,8 @@ impl App {
             all_textures: s.all_textures,
             verbose: false,
         };
-        self.studio.save_settings();
-        self.studio.error = None;
+        self.explorer.save_settings();
+        self.explorer.error = None;
         self.job = Some(ExtractJob::start(options));
     }
 
@@ -609,7 +614,7 @@ impl App {
 
     /// The folder holding the source opened last, if it still exists.
     fn last_dir(&self) -> Option<PathBuf> {
-        self.studio
+        self.explorer
             .settings
             .last_source
             .as_deref()
@@ -654,7 +659,7 @@ impl App {
             // stays one row down to the minimum width.
             if ui.available_width() >= TITLE_ROOM_W {
                 ui.label(
-                    RichText::new("Legaia Studio")
+                    RichText::new("Legaia Explorer")
                         .heading()
                         .color(crate::theme::accent(ui)),
                 );
@@ -698,7 +703,7 @@ impl App {
                     ui.close();
                 }
                 ui.separator();
-                if self.studio.settings.recent.is_empty() {
+                if self.explorer.settings.recent.is_empty() {
                     ui.label(RichText::new("Discs and folders you open are listed here.").weak());
                 } else {
                     ui.label(RichText::new("Recent").strong());
@@ -743,7 +748,7 @@ impl App {
                 }
             }
         });
-        let show_path = self.path_row || self.studio.library.is_none();
+        let show_path = self.path_row || self.explorer.library.is_none();
         if show_path {
             ui.horizontal(|ui| {
                 ui.label("Path:");
@@ -766,10 +771,10 @@ impl App {
             });
         }
         ui.horizontal_wrapped(|ui| {
-            if let Some(p) = self.studio.loading() {
+            if let Some(p) = self.explorer.loading() {
                 ui.spinner();
                 ui.label(format!("Loading {} ...", p.display()));
-            } else if let Some(lib) = &self.studio.library {
+            } else if let Some(lib) = &self.explorer.library {
                 let kind = match lib.source {
                     Source::Disc(_) => "disc image",
                     Source::Extracted(_) => "extracted folder",
@@ -801,13 +806,13 @@ impl App {
                     ui.label(RichText::new("- Play needs the USA disc").color(crate::theme::warn(ui)))
                         .on_hover_text(why);
                 }
-                let n = self.studio.classified();
+                let n = self.explorer.classified();
                 if n < lib.entries.len() {
                     ui.spinner();
                     ui.label(format!("classifying {n}/{}", lib.entries.len()));
                 }
             } else {
-                ui.label("No disc open. Legaia Studio reads your own Legend of Legaia disc image; no game data is included.");
+                ui.label("No disc open. Legaia Explorer reads your own Legend of Legaia disc image; no game data is included.");
             }
         });
         let mut dismiss = false;
@@ -816,14 +821,14 @@ impl App {
         // restarts while the pointer is on it); an error stays until it is
         // dismissed, and can be copied for a bug report.
         let now = std::time::Instant::now();
-        match &self.studio.status {
+        match &self.explorer.status {
             Some(s) if self.status_seen.as_ref().is_none_or(|(seen, _)| seen != s) => {
                 self.status_seen = Some((s.clone(), now));
             }
             None => self.status_seen = None,
             _ => {}
         }
-        if let Some(e) = &self.studio.error {
+        if let Some(e) = &self.explorer.error {
             // A banner that wraps, with its buttons first so a long message
             // (a path, a log tail) can never push them off the window.
             let red = ui.visuals().error_fg_color;
@@ -852,7 +857,7 @@ impl App {
                         });
                     });
                 });
-        } else if let Some(s) = &self.studio.status {
+        } else if let Some(s) = &self.explorer.status {
             let green = crate::theme::good(ui);
             let row = ui.horizontal(|ui| {
                 ui.colored_label(green, s);
@@ -879,8 +884,8 @@ impl App {
             }
         }
         if dismiss {
-            self.studio.error = None;
-            self.studio.status = None;
+            self.explorer.error = None;
+            self.explorer.status = None;
             self.status_seen = None;
         }
         if let Some(dir) = show {
@@ -892,12 +897,12 @@ impl App {
     /// button; the one clicked to open, if any. Entries whose path has gone
     /// since start-up are dropped as the list is drawn.
     fn recent_list(&mut self, ui: &mut egui::Ui) -> Option<PathBuf> {
-        if self.studio.settings.prune_recent() {
-            self.studio.save_settings();
+        if self.explorer.settings.prune_recent() {
+            self.explorer.save_settings();
         }
         let mut open = None;
         let mut forget = None;
-        for p in &self.studio.settings.recent {
+        for p in &self.explorer.settings.recent {
             let kind = if p.is_dir() { "folder" } else { "disc" };
             let name = p
                 .file_name()
@@ -912,10 +917,10 @@ impl App {
                     forget = Some(p.clone());
                 }
                 let current = self
-                    .studio
+                    .explorer
                     .library
                     .as_ref()
-                    .is_some_and(|_| self.studio.settings.last_source.as_ref() == Some(p));
+                    .is_some_and(|_| self.explorer.settings.last_source.as_ref() == Some(p));
                 let text = format!("{name}  ({kind})");
                 if ui
                     .add(egui::Button::selectable(current, text))
@@ -930,14 +935,14 @@ impl App {
             });
         }
         if let Some(p) = forget {
-            self.studio.settings.forget_recent(&p);
-            self.studio.save_settings();
+            self.explorer.settings.forget_recent(&p);
+            self.explorer.save_settings();
         }
-        if !self.studio.settings.recent.is_empty() {
+        if !self.explorer.settings.recent.is_empty() {
             ui.separator();
             if ui.button("Clear list").clicked() {
-                self.studio.settings.recent.clear();
-                self.studio.save_settings();
+                self.explorer.settings.recent.clear();
+                self.explorer.save_settings();
             }
         }
         open
@@ -946,14 +951,14 @@ impl App {
     /// The View menu: theme and UI zoom, both remembered.
     fn view_menu(&mut self, ui: &mut egui::Ui) {
         ui.label(RichText::new("Theme").strong());
-        let mut theme = self.studio.settings.theme;
+        let mut theme = self.explorer.settings.theme;
         for t in crate::settings::Theme::ALL {
             ui.radio_value(&mut theme, t, t.name());
         }
-        if theme != self.studio.settings.theme {
-            self.studio.settings.theme = theme;
+        if theme != self.explorer.settings.theme {
+            self.explorer.settings.theme = theme;
             ui.ctx().set_theme(theme_preference(theme));
-            self.studio.save_settings();
+            self.explorer.save_settings();
         }
         ui.separator();
         ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
@@ -966,10 +971,10 @@ impl App {
             .on_hover_text("Sample, music and movie previews; 100% is the full mixer output");
         if resp.changed() {
             self.player.set_volume(vol);
-            self.studio.settings.volume = Some(vol);
+            self.explorer.settings.volume = Some(vol);
         }
         if (resp.changed() && !resp.dragged()) || resp.drag_stopped() {
-            self.studio.save_settings();
+            self.explorer.save_settings();
         }
     }
 
@@ -977,7 +982,7 @@ impl App {
     /// settings in step with zoom changes (the keyboard shortcuts egui
     /// handles itself, and the View menu).
     fn sync_appearance(&mut self, ctx: &egui::Context) {
-        let s = &mut self.studio.settings;
+        let s = &mut self.explorer.settings;
         if !self.appearance_applied {
             self.appearance_applied = true;
             crate::theme::install(ctx);
@@ -988,14 +993,14 @@ impl App {
         let z = ctx.zoom_factor();
         if (z - crate::settings::sane_zoom(s.zoom)).abs() > 1e-3 {
             s.zoom = (z.is_finite() && (z - 1.0).abs() > 1e-3).then_some(z);
-            self.studio.save_settings();
+            self.explorer.save_settings();
         }
     }
 
     /// Open `dir` in the file manager, reporting a failure on the error line.
     fn show_folder(&mut self, dir: &Path) {
         if let Err(e) = crate::launch::open_folder(dir) {
-            self.studio.error = Some(format!(
+            self.explorer.error = Some(format!(
                 "Could not open a file manager on {}: {e}",
                 dir.display()
             ));
@@ -1007,14 +1012,14 @@ impl App {
     /// says why it is unavailable otherwise.
     fn play_button(&mut self, ui: &mut egui::Ui) {
         let running = self.game.is_some();
-        let disc = match &self.studio.library {
+        let disc = match &self.explorer.library {
             Some(lib) => crate::launch::playable_disc(lib),
             None => Err("Open your Legend of Legaia (USA) disc image first.".to_string()),
         };
         let blocked = match (&self.engine, &disc) {
             _ if running => Some("The game is running.".to_string()),
             (None, _) => Some(format!(
-                "{} was not found beside legaia-studio. It ships in the same \
+                "{} was not found beside legaia-explorer. It ships in the same \
                  release folder; keep the two programs together.",
                 crate::launch::engine_file_name()
             )),
@@ -1042,9 +1047,9 @@ impl App {
         }
     }
 
-    /// Start the game on the open disc (the Play button, `LEGAIA_STUDIO_PLAY`).
+    /// Start the game on the open disc (the Play button, `LEGAIA_EXPLORER_PLAY`).
     fn start_game(&mut self) {
-        let disc = match &self.studio.library {
+        let disc = match &self.explorer.library {
             Some(lib) => crate::launch::playable_disc(lib),
             None => return,
         };
@@ -1065,15 +1070,15 @@ impl App {
                 crate::launch::engine_data_dir().as_deref(),
             ) {
                 Ok(g) => {
-                    self.studio.status = Some(format!("Started the game on {}", bin.display()));
-                    self.studio.error = None;
+                    self.explorer.status = Some(format!("Started the game on {}", bin.display()));
+                    self.explorer.error = None;
                     self.last_written = None;
                     self.game = Some(g);
                     // Remember the disc for the game itself, so starting it
                     // directly later does not ask for it again. The path as
                     // chosen (a `.cue` stays a `.cue`), like its own picker.
                     let chosen = self
-                        .studio
+                        .explorer
                         .settings
                         .last_source
                         .clone()
@@ -1085,7 +1090,7 @@ impl App {
                         log::warn!("not recording the disc for the game: {e:#}");
                     }
                 }
-                Err(e) => self.studio.error = Some(format!("Could not start the game: {e:#}")),
+                Err(e) => self.explorer.error = Some(format!("Could not start the game: {e:#}")),
             }
         }
     }
@@ -1099,7 +1104,7 @@ impl App {
         let log = game.log.clone();
         self.game = None;
         match res {
-            Ok(()) => self.studio.status = Some("The game has closed.".into()),
+            Ok(()) => self.explorer.status = Some("The game has closed.".into()),
             Err(headline) => {
                 // The launcher's words for the same failure: how it ended,
                 // then the reason its log gives, if it gives one.
@@ -1114,13 +1119,13 @@ impl App {
                     }
                     msg.push_str(&format!("\nFull log: {}", log.display()));
                 }
-                self.studio.error = Some(msg);
+                self.explorer.error = Some(msg);
             }
         }
     }
 
     fn browser(&mut self, ui: &mut egui::Ui) {
-        let Some(lib) = self.studio.library.clone() else {
+        let Some(lib) = self.explorer.library.clone() else {
             ui.label("Open a disc image to browse its PROT.DAT archive.");
             return;
         };
@@ -1157,7 +1162,7 @@ impl App {
             }
         });
         let mut classes: Vec<&'static str> = (0..lib.entries.len())
-            .filter_map(|p| self.studio.class_of(p).map(|c| c.name()))
+            .filter_map(|p| self.explorer.class_of(p).map(|c| c.name()))
             .collect();
         classes.sort_unstable();
         classes.dedup();
@@ -1173,7 +1178,7 @@ impl App {
         let filtering = !filter.is_empty() || self.class_filter.is_some();
         // The rows the search shows, per block, in disc order.
         let shown: Vec<(usize, Vec<usize>)> = self
-            .studio
+            .explorer
             .blocks
             .iter()
             .enumerate()
@@ -1183,7 +1188,7 @@ impl App {
                     .iter()
                     .copied()
                     .filter(|&pos| {
-                        self.studio.entry_matches(
+                        self.explorer.entry_matches(
                             pos,
                             &block.name,
                             &filter,
@@ -1234,7 +1239,7 @@ impl App {
             .show(ui, |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                 for (b, rows) in shown {
-                    let block = &self.studio.blocks[b];
+                    let block = &self.explorer.blocks[b];
                     let first = lib.entries[rows[0]].index;
                     let open = filtering.then_some(true).or_else(|| {
                         self.reveal
@@ -1258,15 +1263,18 @@ impl App {
                         .show(ui, |ui| {
                             for pos in rows {
                                 let e = &lib.entries[pos];
-                                let class =
-                                    self.studio.class_of(pos).map(|c| c.name()).unwrap_or("...");
+                                let class = self
+                                    .explorer
+                                    .class_of(pos)
+                                    .map(|c| c.name())
+                                    .unwrap_or("...");
                                 let text = format!(
                                     "{:04}  {:>8}  {}",
                                     e.index,
                                     human_size(e.size_bytes),
                                     class
                                 );
-                                let sel = self.studio.selected == Some(pos);
+                                let sel = self.explorer.selected == Some(pos);
                                 let resp =
                                     ui.selectable_label(sel, RichText::new(text).monospace());
                                 if self.reveal == Some(pos) {
@@ -1311,7 +1319,7 @@ impl App {
         let typing = ui.egui_wants_keyboard_input();
         if !typing && !visible.is_empty() {
             let cur = self
-                .studio
+                .explorer
                 .selected
                 .and_then(|s| visible.iter().position(|&p| p == s));
             let last = visible.len() - 1;
@@ -1350,11 +1358,11 @@ impl App {
     }
 
     fn preview(&mut self, ui: &mut egui::Ui) {
-        let Some(lib) = self.studio.library.clone() else {
+        let Some(lib) = self.explorer.library.clone() else {
             self.start_page(ui);
             return;
         };
-        let Some(pos) = self.studio.selected else {
+        let Some(pos) = self.explorer.selected else {
             ui.add_space(12.0);
             ui.label(
                 RichText::new("Pick an entry on the left to preview it")
@@ -1374,7 +1382,7 @@ impl App {
             }
             return;
         };
-        let Some(a) = self.studio.analysis.clone().filter(|a| a.pos == pos) else {
+        let Some(a) = self.explorer.analysis.clone().filter(|a| a.pos == pos) else {
             ui.horizontal(|ui| {
                 ui.spinner();
                 ui.label("Reading entry...");
@@ -1600,7 +1608,7 @@ impl App {
                             n += 1;
                         }
                     }
-                    self.studio.status = Some(format!("{n} PNGs written to {}", dir.display()));
+                    self.explorer.status = Some(format!("{n} PNGs written to {}", dir.display()));
                 }
             }
         });
@@ -1943,10 +1951,10 @@ impl App {
                         let dir = first.parent().map(Path::to_path_buf).unwrap_or_default();
                         match export::vab_all_wavs(a, &a.vabs[self.vab_sel], &dir, &stem) {
                             Ok(n) => {
-                                self.studio.status =
+                                self.explorer.status =
                                     Some(format!("{n} WAVs written to {}", dir.display()))
                             }
-                            Err(e) => self.studio.error = Some(format!("{e:#}")),
+                            Err(e) => self.explorer.error = Some(format!("{e:#}")),
                         }
                     }
                 }
@@ -1970,7 +1978,7 @@ impl App {
                         && let Some(v) = vab
                         && let Err(e) = self.player.play_seq(a, v, &s, self.seq_loop)
                     {
-                        self.studio.error = Some(format!("{e:#}"));
+                        self.explorer.error = Some(format!("{e:#}"));
                     }
                     if ui.button("Save .seq...").clicked() {
                         let name = format!("{}_{:X}.seq", lib.stem(a.index), s.offset);
@@ -2003,10 +2011,10 @@ impl App {
                                         legaia_engine_audio::vab_bind::VAB_SAMPLE_RATE,
                                         format!("sample {i}"),
                                     ) {
-                                        self.studio.error = Some(format!("{e:#}"));
+                                        self.explorer.error = Some(format!("{e:#}"));
                                     }
                                 }
-                                Err(e) => self.studio.error = Some(format!("{e:#}")),
+                                Err(e) => self.explorer.error = Some(format!("{e:#}")),
                             }
                         }
                         if ui.small_button("WAV...").clicked() {
@@ -2126,7 +2134,7 @@ impl App {
         );
         ui.add_space(6.0);
         let running = self.job.as_ref().is_some_and(|j| j.outcome().is_none());
-        let disc = match self.studio.library.as_ref().map(|l| &l.source) {
+        let disc = match self.explorer.library.as_ref().map(|l| &l.source) {
             Some(Source::Disc(p)) => Some(p.clone()),
             _ => None,
         };
@@ -2202,7 +2210,7 @@ impl App {
                 }
                 ui.label("Options");
                 ui.vertical(|ui| {
-                    let s = &mut self.studio.settings;
+                    let s = &mut self.explorer.settings;
                     ui.add_enabled_ui(!running, |ui| {
                         ui.checkbox(
                             &mut s.skip_verify,
@@ -2386,21 +2394,21 @@ impl App {
         let took = crate::extract_job::human_duration(job.elapsed());
         match outcome {
             Outcome::Done(_) => {
-                self.studio.status = Some(format!(
+                self.explorer.status = Some(format!(
                     "Extraction finished in {took}: written to {}",
                     out.display()
                 ));
                 self.last_written = Some(out);
             }
             Outcome::Cancelled => {
-                self.studio.status = Some(format!(
+                self.explorer.status = Some(format!(
                     "Extraction cancelled; the files written so far are in {}",
                     out.display()
                 ));
                 self.last_written = out.is_dir().then_some(out);
             }
             Outcome::Failed(e) => {
-                self.studio.error = Some(format!("Extraction failed: {e}"));
+                self.explorer.error = Some(format!("Extraction failed: {e}"));
             }
         }
     }
@@ -2412,14 +2420,14 @@ impl eframe::App for App {
     /// are polled, and their ends announced, here.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.sync_appearance(ctx);
-        if self.studio.poll() {
+        if self.explorer.poll() {
             ctx.request_repaint();
         }
-        if self.studio.loading().is_some() || self.studio.is_analyzing() {
+        if self.explorer.loading().is_some() || self.explorer.is_analyzing() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
-        if let Some(lib) = &self.studio.library
-            && self.studio.classified() < lib.entries.len()
+        if let Some(lib) = &self.explorer.library
+            && self.explorer.classified() < lib.entries.len()
         {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
@@ -2476,7 +2484,7 @@ impl eframe::App for App {
             // every view that needs a disc to show anything (a view restored
             // from the last session used to open on a bare "open a disc
             // first" line with no way to do it).
-            Mode::Browse | Mode::Actors | Mode::Media if self.studio.library.is_none() => {
+            Mode::Browse | Mode::Actors | Mode::Media if self.explorer.library.is_none() => {
                 egui::CentralPanel::default().show(ui, |ui| self.start_page(ui));
             }
             Mode::Browse => {
@@ -2499,10 +2507,10 @@ impl eframe::App for App {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.player.stop();
-        let s = &mut self.studio.settings;
+        let s = &mut self.explorer.settings;
         s.mode = Some(self.mode.key().to_string());
         s.tab = Some(self.tab.key().to_string());
-        if let (Some(lib), Some(pos)) = (&self.studio.library, self.studio.selected) {
+        if let (Some(lib), Some(pos)) = (&self.explorer.library, self.explorer.selected) {
             s.entry = lib.entries.get(pos).map(|e| e.index);
         }
         if let Some(size) = self.window_size {
@@ -2511,7 +2519,7 @@ impl eframe::App for App {
         if let Some(pos) = self.window_pos {
             s.window_pos = Some(pos);
         }
-        self.studio.save_settings();
+        self.explorer.save_settings();
         if let Some(job) = &mut self.job {
             job.cancel();
             job.join();
@@ -2534,13 +2542,13 @@ fn third_party_licenses() -> Option<PathBuf> {
 impl App {
     fn about_window(&mut self, ctx: &egui::Context) {
         let mut open = self.about_open;
-        egui::Window::new("About Legaia Studio")
+        egui::Window::new("About Legaia Explorer")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                ui.heading(format!("Legaia Studio {}", env!("CARGO_PKG_VERSION")));
+                ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
                 ui.label(
                     "Browse, preview and extract the assets on your own Legend of Legaia disc.",
                 );
@@ -2638,7 +2646,7 @@ impl App {
                     ui.vertical(|ui| {
                         ui.set_max_width(COLUMN);
                         ui.add_space(28.0);
-                        ui.label(RichText::new("Legaia Studio").size(30.0).color(accent));
+                        ui.label(RichText::new("Legaia Explorer").size(30.0).color(accent));
                         ui.label(
                             RichText::new(
                                 "Browse, preview and extract everything on your own \
@@ -2676,14 +2684,14 @@ impl App {
                             )
                             .weak(),
                         );
-                        if let Some(p) = self.studio.loading() {
+                        if let Some(p) = self.explorer.loading() {
                             ui.add_space(10.0);
                             ui.horizontal(|ui| {
                                 ui.spinner();
                                 ui.label(format!("Opening {} ...", p.display()));
                             });
                         }
-                        if !self.studio.settings.recent.is_empty() {
+                        if !self.explorer.settings.recent.is_empty() {
                             ui.add_space(20.0);
                             ui.label(RichText::new("Open again").strong().size(15.0));
                             egui::Frame::new()

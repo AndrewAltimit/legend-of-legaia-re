@@ -1,7 +1,7 @@
-# legaia-studio
+# legaia-explorer
 
 Desktop GUI for browsing, previewing and extracting the assets on a Legend of
-Legaia disc. One binary: `legaia-studio`. It is the native counterpart of the
+Legaia disc. One binary: `legaia-explorer`. It is the native counterpart of the
 static site's disc browser and viewer pages, for users who do not want a
 terminal: everything the `legaia-extract` / `asset` / `tim` / `vab` command
 lines do for a single asset is a button here.
@@ -14,7 +14,7 @@ runtime, and writes only into folders the user chooses.
 | Area | What the user gets |
 |---|---|
 | Open | The start page (nothing open yet): the two ways in as large buttons, the recent list, what each view does. A native file dialog (opened in the last disc's folder; or a typed path, or a file dropped on the window) for a `.bin` / `.cue` disc image or a `legaia-extract` output folder. The image is validated (Mode2/2352, ISO9660, `PROT.DAT` present) before loading, and a file that is not a raw dump is named for what it is (`legaia_iso::sniff`); the last choice is reopened on the next start, and a last disc that has moved is named on the error line. Every view that needs a disc shows the start page until one is open. The top bar's *Open* menu holds every way in ([below](#the-top-bar)). |
-| Browse | The `PROT.DAT` entries grouped under the CDNAME block each belongs to on the disc (the retail block: the filename labels start every block two entries late) and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the retail block, the place name, the filename label, the category or the index (`Studio::entry_matches`), plus a category filter, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. The next start reopens the selected entry. |
+| Browse | The `PROT.DAT` entries grouped under the CDNAME block each belongs to on the disc (the retail block: the filename labels start every block two entries late) and the scene's display name (`place_name`, from `legaia_gamedata`'s scene table), each with its category (`legaia_disc_audit::categorize`, classified in the background) and size; a search whose every term must match the retail block, the place name, the filename label, the category or the index (`Explorer::entry_matches`), plus a category filter, with a match count and a hint when nothing matches; arrow / Page / Home / End keys walk the visible rows; the disc's ISO9660 files with a save button. A preview tab the entry has nothing for shows its Overview. The next start reopens the selected entry. |
 | Overview | PROT index, the filename label and the retail CDNAME block (the two differ by the +2 index shift, [`cdname.md`](../../docs/formats/cdname.md)), location in `PROT.DAT`, size, the sub-assets found (only the kinds present), the DATA_FIELD chunk list, raw `.BIN` export. A value wider than the panel ends in an ellipsis and shows whole on hover. |
 | Textures | Every TIM in the entry, raw or inside an LZS section (`tim_scan`), with a CLUT slider and zoom; PNG export of one or all. A 4 / 8 bpp TIM with no CLUT in its file (its palette is another upload's VRAM cell) shows its indices as a grey ramp. |
 | 3D model | Every TMD (`tmd_scan`, `scene_tmd_stream`) in an orbit view (drag, scroll, double-click to reset; the triangle count and the hint are drawn inside the view, on the theme's `stage` backdrop) with retail shading (`texel * colour / 128`) or untextured under a viewer light, picked from one compact toolbar row that holds at the minimum window width. Textures come from the entry's own TIMs or from its **scene** (see below); the view opens on the entry only when its TIMs hold every CLUT and texel the textured prims read (`Model::texture_coverage`), else on the scene; OBJ and textured `.glb` export from the *Export* menu. |
@@ -23,7 +23,7 @@ runtime, and writes only into folders the user chooses.
 | Hex | A virtualised hex / ASCII dump of the whole entry. |
 | Characters & monsters | The four party members assembled from their player files (PROT 863..866) with a per-section equipment picker named from the build's own executable (`ItemNameTable::from_exe`: the USA table or the French, German or Italian one, accents kept), and the monster archive (PROT 867) listed by name as the font draws it, with its element badge; every battle animation clip, and for Vahn, Noa and Gala every Tactical Art by name, plays or steps frame by frame; animated `.glb` export. |
 | Movies & voice | The STR movies (`MOV/*.STR`): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock (a movie resumed from a paused frame resumes its soundtrack at that frame's sample), PNG frame export; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export. Disc images only. |
-| Play | Starts `legaia-engine` (found beside this binary, or beside the macOS `.app`) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings are shared with a game started directly (`launch`). Its output goes to `legaia-studio-game.log` there; a failed exit puts the log's last lines on the error line. `F5` presses it; the launcher's switches ride along (below). A start also writes the disc into the engine's `launcher.toml` (`record_disc_for_engine`: the `disc` key only, other keys kept), so the game started directly boots it without its picker. Disabled with the reason on hover for an extracted folder, another region's disc, or a missing engine. |
+| Play | Starts `legaia-engine` (found beside this binary, or beside the macOS `.app`) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings are shared with a game started directly (`launch`). Its output goes to `legaia-explorer-game.log` there; a failed exit puts the log's last lines on the error line. `F5` presses it; the launcher's switches ride along (below). A start also writes the disc into the engine's `launcher.toml` (`record_disc_for_engine`: the `disc` key only, other keys kept), so the game started directly boots it without its picker. Disabled with the reason on hover for an extracted folder, another region's disc, or a missing engine. |
 | Status line | A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error is a wrapping banner that stays, with *Copy* and *Dismiss* ahead of the text so a long path never pushes them off the window. |
 | View | Light, dark or follow-system theme, and the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0); both remembered. Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels and the title gold for the selection and the primary buttons. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the binary, or beside the macOS `.app`), the keyboard shortcuts. |
@@ -62,7 +62,7 @@ finished or cancelled run with *Show folder*, a failure on the error banner
 
 ## How it is built
 
-- **Toolkit:** `eframe` / `egui` on the **glow** (OpenGL) backend. Studio
+- **Toolkit:** `eframe` / `egui` on the **glow** (OpenGL) backend. Explorer
   draws only egui's own meshes (the model view is a CPU rasteriser, below),
   so the glow backend keeps `wgpu` out of its build entirely; `eframe`'s
   winit is the workspace's 0.30. `App::logic` polls the background work
@@ -124,7 +124,7 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   disc; *Play* passes them too (`launch::launch_switches`), so a game started
   from either program looks the same. The enhancement options live in the
   game's `legaia-options.toml`, which both starts read.
-- **UI-free model.** `Studio` (loading, selection, background classification
+- **UI-free model.** `Explorer` (loading, selection, background classification
   and analysis), `ExtractJob`, `media` and the exporters have no egui
   dependency, so `tests/smoke.rs` drives them headlessly.
 
@@ -134,13 +134,13 @@ it has no command-line contract beyond an optional path to open.
 ## Running
 
 ```bash
-cargo run -p legaia-studio --release
-legaia-studio "/path/to/Legend of Legaia (USA).bin"     # open at start
+cargo run -p legaia-explorer --release
+legaia-explorer "/path/to/Legend of Legaia (USA).bin"     # open at start
 ```
 
 Settings (last disc, the recent list, output and export folders, extract
 options, window size and position, the view and preview tab last open,
-theme and zoom) live in `legaia-studio/settings.json` under the per-user
+theme and zoom) live in `legaia-explorer/settings.json` under the per-user
 config folder. The window position is restored only when its title bar
 would land on a monitor that is still connected (`placement`, checked
 against the monitors the windowing system reports as the event loop
@@ -159,18 +159,18 @@ These environment variables drive a run without a person at the keyboard
 
 | Variable | Effect |
 |---|---|
-| `LEGAIA_STUDIO_OPEN` | Disc image or folder to open (same as the first argument). |
-| `LEGAIA_STUDIO_SELECT` | PROT index to select once loaded. |
-| `LEGAIA_STUDIO_TMD` | Show this TMD of the selected entry in the 3D model tab (the `TMD #` picker) instead of the first. |
-| `LEGAIA_STUDIO_TAB` | A preview tab (`overview`, `textures`, `model`, `audio`, `text`, `hex`), a view (`browse`, `actors`, `media`, `extract`), or `about` for the About box. |
-| `LEGAIA_STUDIO_SEARCH` | Start with this text in the archive search. |
-| `LEGAIA_STUDIO_MEDIA` | Open *Movies & voice* on an ISO path (`MOV/MV1.STR`, `XA/XA14.XA`), a movie optionally at `@<frame>`. |
-| `LEGAIA_STUDIO_EXTRACT_TO` | Start an extraction into this folder. |
-| `LEGAIA_STUDIO_SCREENSHOT` | Save a PNG of the window once settled (after the extraction, if one runs), then quit. With nothing to open it captures the start screen. |
-| `LEGAIA_STUDIO_EXPORT_DIR` | Export buttons write here instead of opening a save dialog. |
-| `LEGAIA_STUDIO_ACTOR` | Open *Characters & monsters* on `char:<slot>` (0 Vahn .. 3 Terra) or `monster:<id>`, optionally posed `@<clip>:<frame>`. |
-| `LEGAIA_STUDIO_PLAY` | Press *Play* once the disc has loaded. |
-| `LEGAIA_STUDIO_SETTINGS` | Settings file to use instead of the per-user one. |
+| `LEGAIA_EXPLORER_OPEN` | Disc image or folder to open (same as the first argument). |
+| `LEGAIA_EXPLORER_SELECT` | PROT index to select once loaded. |
+| `LEGAIA_EXPLORER_TMD` | Show this TMD of the selected entry in the 3D model tab (the `TMD #` picker) instead of the first. |
+| `LEGAIA_EXPLORER_TAB` | A preview tab (`overview`, `textures`, `model`, `audio`, `text`, `hex`), a view (`browse`, `actors`, `media`, `extract`), or `about` for the About box. |
+| `LEGAIA_EXPLORER_SEARCH` | Start with this text in the archive search. |
+| `LEGAIA_EXPLORER_MEDIA` | Open *Movies & voice* on an ISO path (`MOV/MV1.STR`, `XA/XA14.XA`), a movie optionally at `@<frame>`. |
+| `LEGAIA_EXPLORER_EXTRACT_TO` | Start an extraction into this folder. |
+| `LEGAIA_EXPLORER_SCREENSHOT` | Save a PNG of the window once settled (after the extraction, if one runs), then quit. With nothing to open it captures the start screen. |
+| `LEGAIA_EXPLORER_EXPORT_DIR` | Export buttons write here instead of opening a save dialog. |
+| `LEGAIA_EXPLORER_ACTOR` | Open *Characters & monsters* on `char:<slot>` (0 Vahn .. 3 Terra) or `monster:<id>`, optionally posed `@<clip>:<frame>`. |
+| `LEGAIA_EXPLORER_PLAY` | Press *Play* once the disc has loaded. |
+| `LEGAIA_EXPLORER_SETTINGS` | Settings file to use instead of the per-user one. |
 
 The screenshot reads the window's own framebuffer, so on a shared desktop run
 it on a private X server (`Xvfb :97 &`, then `DISPLAY=:97`).
@@ -178,8 +178,8 @@ it on a private X server (`Xvfb :97 &`, then `DISPLAY=:97`).
 ## Tests
 
 ```bash
-cargo test -p legaia-studio                        # headless state + extract job
-LEGAIA_DISC_BIN=/path/to/disc.bin cargo test -p legaia-studio
+cargo test -p legaia-explorer                        # headless state + extract job
+LEGAIA_DISC_BIN=/path/to/disc.bin cargo test -p legaia-explorer
 ```
 
 The disc-gated tests skip and pass without `LEGAIA_DISC_BIN`. One loads the

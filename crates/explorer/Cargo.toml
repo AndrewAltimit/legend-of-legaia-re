@@ -1,16 +1,16 @@
 [package]
-name = "legaia-studio"
+name = "legaia-explorer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Desktop GUI for browsing, previewing and extracting Legend of Legaia disc assets"
 
 [lib]
-name = "legaia_studio"
+name = "legaia_explorer"
 path = "src/lib.rs"
 
 [[bin]]
-name = "legaia-studio"
+name = "legaia-explorer"
 path = "src/main.rs"
 
 [dependencies]

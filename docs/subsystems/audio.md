@@ -1886,7 +1886,7 @@ scales the finished frame - voices, reverb and XA alike - after the downmix,
 `0..=100` percent of the mixer output. An output that never sets it renders at
 unity, bit-identical, which is the level every parity oracle measures. The
 native play window applies the options file's `master_volume` (default
-`25`, `DESKTOP_MASTER_VOLUME_DEFAULT`); Legaia Studio and the asset viewer
+`25`, `DESKTOP_MASTER_VOLUME_DEFAULT`); Legaia Explorer and the asset viewer
 start their previews at the same default. The browser outputs do not use it:
 `WebAudioOut` carries the site trim `WEB_MASTER_TRIM` on its gain node, and the
 play page halves its slider value on top (`PLAY_PAGE_GAIN_SCALE`).

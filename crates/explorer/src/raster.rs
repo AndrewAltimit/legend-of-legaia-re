@@ -1,7 +1,7 @@
 //! A small CPU rasteriser for the TMD preview: orbit camera, z-buffer,
 //! textured triangles sampled straight out of a PSX VRAM image.
 //!
-//! Studio runs on egui's OpenGL backend, so it cannot reuse the wgpu
+//! Explorer runs on egui's OpenGL backend, so it cannot reuse the wgpu
 //! renderer; a preview at panel resolution is cheap enough on the CPU. The
 //! mesh comes from `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid`, and the
 //! texel lookup is the page / CLUT addressing the site viewer's shader (and

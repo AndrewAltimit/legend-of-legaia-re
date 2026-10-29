@@ -7,7 +7,7 @@ so every consumer converts a token into its own colour type.
 
 | Consumer | What it takes |
 |---|---|
-| `legaia-studio` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
+| `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
 | The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | The dark palette, as `[f32; 4]` for its software canvas; `game_exit` for its help box after a failed game. |
 | The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel, `chrome::CHANGED` for a panel state the original game does not have, and the chrome inset and line gap. |
 
@@ -17,7 +17,7 @@ Colours are 8-bit sRGB (`Rgb`); `Rgb::to_f32` gives the normalised,
 still-sRGB-encoded `[r, g, b, 1.0]` a texture-modulating draw expects. Each
 `Palette` names roles, not hues: `ground` / `band` / `card` / `stripe` for
 surfaces from deepest up, `stage` for the mid-tone backdrop behind a preview
-(Studio's 3D view: a near-black mesh and a bright one both stand off it), `raised` / `hover` / `pressed` / `open` for a
+(Explorer's 3D view: a near-black mesh and a bright one both stand off it), `raised` / `hover` / `pressed` / `open` for a
 button's states, `rule` for separators and `outline` for a control's edge,
 `ink` / `ink_dim` / `ink_faint` for text, `accent` (the gold of the game's
 title lettering) with `accent_fill` / `on_accent` for the one primary button a
@@ -25,7 +25,7 @@ screen has, and `good` / `warn` / `error` / `info` for status lines.
 
 `DARK` is the launcher's palette, each of its original float colours rounded
 to the nearest 8-bit step. `LIGHT` carries the same hues on white, with the
-accent darkened until it reads there. Studio's light theme applies only the
+accent darkened until it reads there. Explorer's light theme applies only the
 surface, accent, selection, error and outline roles over egui's own light
 widgets; in both themes a control at rest carries the `outline` edge, without
 which an unticked check box all but vanishes into the panel, and weak text
@@ -33,14 +33,14 @@ which an unticked check box all but vanishes into the panel, and weak text
 alpha-faded grey fell under the 3:1 hint floor.
 
 Key names are `info` (`chrome::KEY`) in all three programs: the launcher's
-Controls panel, Studio's shortcut list and the play window's `F12` panel.
+Controls panel, Explorer's shortcut list and the play window's `F12` panel.
 
 The play window's chrome is always dark: it sits on a scrim over whatever the
 game draws.
 
 ## How a failed game is reported
 
-`game_exit` is the wording the launcher and Studio share when the game they
+`game_exit` is the wording the launcher and Explorer share when the game they
 started stops with an error: `exit_headline` says how the process ended
 (the exit code, the signal it died of on Unix, or the exception code a
 Windows crash leaves), and `failure_detail` gives the reason the game's log

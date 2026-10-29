@@ -1,5 +1,5 @@
 //! The Legaia look of the desktop programs: one palette, in a dark and a
-//! light variant, and the spacing values, shared by `legaia-studio`, the
+//! light variant, and the spacing values, shared by `legaia-explorer`, the
 //! game's launcher (`legaia-engine` with no subcommand) and the play
 //! window's own chrome (the key hint, the toggle notices, the `F12` panel).
 //!
@@ -8,7 +8,7 @@
 //! accent and the primary button. The light palette carries the same hues on
 //! a white ground, with the accent darkened until it reads on white.
 //!
-//! [`game_exit`] is the wording the launcher and Studio share for a game
+//! [`game_exit`] is the wording the launcher and Explorer share for a game
 //! that stopped with an error.
 //!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
@@ -78,13 +78,13 @@ fn pow_2_4(x: f32) -> f32 {
 /// Every colour role the desktop programs draw with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
-    /// The deepest surface: the launcher's body, Studio's text fields and
+    /// The deepest surface: the launcher's body, Explorer's text fields and
     /// viewports.
     pub ground: Rgb,
-    /// The backdrop behind a preview (Studio's 3D view): a mid tone, so a
+    /// The backdrop behind a preview (Explorer's 3D view): a mid tone, so a
     /// mesh the disc bakes near black and a bright one both stand off it.
     pub stage: Rgb,
-    /// Panels and bands (Studio's side and top panels, the launcher's
+    /// Panels and bands (Explorer's side and top panels, the launcher's
     /// header band).
     pub band: Rgb,
     /// Cards and windows over a band.

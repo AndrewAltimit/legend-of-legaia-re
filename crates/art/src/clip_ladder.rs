@@ -22,7 +22,7 @@
 //! and plain curated rows ([`CuratedArt`]), so it depends on neither the
 //! archive decoder nor the curated tables; `legaia_actor_formats`'
 //! `loadout::decode_art_clips` runs it on the disc bank, and the site's
-//! characters page and Legaia Studio both call that.
+//! characters page and Legaia Explorer both call that.
 
 /// What the ladder reads off one art-bank record.
 pub trait BankRecord {

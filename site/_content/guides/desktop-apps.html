@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; desktop apps</div>
-  <h1>Desktop apps: Legaia Studio and the native port</h1>
-  <p class="lede">Every release ships two programs you can start with a double-click: <strong>Legaia Studio</strong>, a desktop app for browsing, previewing and exporting everything on your <em>Legend of Legaia</em> disc, and <strong>the native port</strong>, the game itself running on the project's from-scratch engine. Both come in one download, both read the disc image you already own, and neither needs a terminal. This page covers downloading them, the first start on each operating system, and how to use each one.</p>
+  <h1>Desktop apps: Legaia Explorer and the native port</h1>
+  <p class="lede">Every release ships two programs you can start with a double-click: <strong>Legaia Explorer</strong>, a desktop app for browsing, previewing and exporting everything on your <em>Legend of Legaia</em> disc, and <strong>the native port</strong>, the game itself running on the project's from-scratch engine. Both come in one download, both read the disc image you already own, and neither needs a terminal. This page covers downloading them, the first start on each operating system, and how to use each one.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -9,7 +9,7 @@
   <ol class="steps">
     <li><b>Download</b><span>One archive for your system from the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/releases" target="_blank" rel="noopener">Releases page</a>.</span></li>
     <li><b>Unpack</b><span>Extract the archive to a folder of its own; keep the files together.</span></li>
-    <li><b>Start</b><span><em>Legaia Studio</em> to explore the disc, <em>Legend of Legaia</em> to play.</span></li>
+    <li><b>Start</b><span><em>Legaia Explorer</em> to explore the disc, <em>Legend of Legaia</em> to play.</span></li>
     <li><b>Pick your disc once</b><span>Your USA <code>.bin</code> (or <code>.cue</code>). Both programs remember it.</span></li>
   </ol>
   <div class="notice">
@@ -36,12 +36,12 @@
 
 <section class="doc-section" id="unpack">
   <h2>2 &middot; Unpack and start for the first time</h2>
-  <p>Each archive unpacks into a single folder named after it. Keep everything in that folder together: the game's launcher and Studio's <em>Play</em> button both look for <code>legaia-engine</code> right beside them.</p>
+  <p>Each archive unpacks into a single folder named after it. Keep everything in that folder together: the game's launcher and Explorer's <em>Play</em> button both look for <code>legaia-engine</code> right beside them.</p>
 
   <h3 id="windows">Windows</h3>
   <ol>
     <li>Right-click the <code>.zip</code> and choose <em>Extract All...</em>. Do not run the programs from inside the zip window - Windows then unpacks one file at a time, and the game's launcher cannot find the engine beside it.</li>
-    <li>In the extracted folder, double-click <code>legaia-studio.exe</code> for Studio, or <code>Legend of Legaia.exe</code> to play.</li>
+    <li>In the extracted folder, double-click <code>legaia-explorer.exe</code> for Explorer, or <code>Legend of Legaia.exe</code> to play.</li>
   </ol>
   <div class="callout callout-warn">
     <p class="callout-title">"Windows protected your PC"</p>
@@ -52,46 +52,46 @@
   <h3 id="macos">macOS</h3>
   <ol>
     <li>Double-click the <code>.tar.gz</code> in Finder to unpack it.</li>
-    <li>In the folder, open <code>Legaia Studio.app</code> for Studio, or <code>Legend of Legaia.app</code> to play.</li>
+    <li>In the folder, open <code>Legaia Explorer.app</code> for Explorer, or <code>Legend of Legaia.app</code> to play.</li>
   </ol>
   <div class="callout callout-warn">
     <p class="callout-title">"Apple could not verify..." (Gatekeeper)</p>
     <p>The two apps are signed ad hoc but not notarised by Apple, so the first open is refused. Right-click (or Control-click) the app and choose <em>Open</em>, then <em>Open</em> again; on recent macOS versions, try to open it once, then go to <em>System Settings &gt; Privacy &amp; Security</em> and click <em>Open Anyway</em>. Each app asks once. If macOS instead says the app "is damaged", clear the download quarantine flag from a Terminal in that folder:</p>
-    <div class="cli"><code>xattr -dr com.apple.quarantine "Legend of Legaia.app" "Legaia Studio.app"</code></div>
+    <div class="cli"><code>xattr -dr com.apple.quarantine "Legend of Legaia.app" "Legaia Explorer.app"</code></div>
   </div>
 
   <h3 id="linux">Linux</h3>
   <div class="cli"><code>tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz</code></div>
-  <p>Then start <code>./legaia-studio</code> or <code>./legaia-engine</code> from the new folder, or double-click either in your file manager. The game needs ALSA (<code>libasound.so.2</code>) for sound and udev for gamepads, and Studio needs OpenGL; every mainstream desktop distribution already has all three.</p>
+  <p>Then start <code>./legaia-explorer</code> or <code>./legaia-engine</code> from the new folder, or double-click either in your file manager. The game needs ALSA (<code>libasound.so.2</code>) for sound and udev for gamepads, and Explorer needs OpenGL; every mainstream desktop distribution already has all three.</p>
 </section>
 
-<section class="doc-section" id="studio">
-  <h2>3 &middot; Legaia Studio</h2>
-  <p>Studio is the friendly front end to the project's asset tools: everything the command-line extractors do for a single texture, model, sound or line of dialog is a button here, and the whole-disc extraction is a tab with a progress bar.</p>
+<section class="doc-section" id="explorer">
+  <h2>3 &middot; Legaia Explorer</h2>
+  <p>Explorer is the friendly front end to the project's asset tools: everything the command-line extractors do for a single texture, model, sound or line of dialog is a button here, and the whole-disc extraction is a tab with a progress bar.</p>
 
-  <h3 id="studio-open">Open your disc</h3>
+  <h3 id="explorer-open">Open your disc</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-welcome.jpg" width="1280" height="500" alt="Legaia Studio's start page: the title, a gold Open disc image button beside Open extracted folder, and a list of what each view does" loading="lazy">
+    <img src="../img/desktop/explorer-welcome.jpg" width="1280" height="500" alt="Legaia Explorer's start page: the title, a gold Open disc image button beside Open extracted folder, and a list of what each view does" loading="lazy">
     <figcaption>The start page. Once you have opened something, an <em>Open again</em> list holds the last eight discs and folders; click one to reopen it. The same list sits at the foot of the top bar's <em>Open</em> menu.</figcaption>
   </figure>
-  <p>Click the gold <em>Open disc image...</em> button (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drop the <code>.bin</code> or <code>.cue</code> onto the window, or type its path (<kbd>Ctrl</kbd>+<kbd>L</kbd>). A folder that <code>legaia-extract</code> already wrote opens too, with <em>Open extracted folder...</em>. With a disc open, the top bar keeps every way in under one <em>Open</em> menu: <em>Disc image...</em>, <em>Extracted folder...</em>, <em>Type a path...</em> and the recent list. Studio checks the image before loading it and reopens the last one at the next start; if the file is not a disc image, a red banner says what it is instead (a 2048-byte <code>.iso</code>, a <code>.chd</code>, an archive, a <code>.cue</code> naming a <code>.bin</code> that is not there) and what to choose, with <em>Copy</em> for a bug report. The <em>x</em> beside a recent entry takes it off the list, and an entry whose file has been moved or deleted drops off by itself.</p>
+  <p>Click the gold <em>Open disc image...</em> button (<kbd>Ctrl</kbd>+<kbd>O</kbd>), drop the <code>.bin</code> or <code>.cue</code> onto the window, or type its path (<kbd>Ctrl</kbd>+<kbd>L</kbd>). A folder that <code>legaia-extract</code> already wrote opens too, with <em>Open extracted folder...</em>. With a disc open, the top bar keeps every way in under one <em>Open</em> menu: <em>Disc image...</em>, <em>Extracted folder...</em>, <em>Type a path...</em> and the recent list. Explorer checks the image before loading it and reopens the last one at the next start; if the file is not a disc image, a red banner says what it is instead (a 2048-byte <code>.iso</code>, a <code>.chd</code>, an archive, a <code>.cue</code> naming a <code>.bin</code> that is not there) and what to choose, with <em>Copy</em> for a bug report. The <em>x</em> beside a recent entry takes it off the list, and an entry whose file has been moved or deleted drops off by itself.</p>
 
-  <h3 id="studio-browse">Browse and search the archive</h3>
+  <h3 id="explorer-browse">Browse and search the archive</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-browse.jpg" width="1280" height="800" alt="The Browse view filtered by the search rim elm: the archive tree lists the Rim Elm scene blocks with their entries, categories and sizes, and the selected entry's Overview on the right" loading="lazy">
+    <img src="../img/desktop/explorer-browse.jpg" width="1280" height="800" alt="The Browse view filtered by the search rim elm: the archive tree lists the Rim Elm scene blocks with their entries, categories and sizes, and the selected entry's Overview on the right" loading="lazy">
     <figcaption>Every word of the search must match: <code>rim elm</code> keeps just the Rim Elm scenes, <code>town tmd</code> the town meshes.</figcaption>
   </figure>
   <p>The left panel is the game's main archive (<code>PROT.DAT</code>), grouped by the name each block carries on the disc and by the place a scene is (<code>town01 - Rim Elm</code>). Each entry shows what kind of data it holds and its size. The search (<kbd>Ctrl</kbd>+<kbd>F</kbd>, <kbd>Esc</kbd> or its <em>x</em> clears it) matches the block name, the place name, the kind of data and the entry number, and says how many entries match; the category menu narrows the list further, <em>Show all</em> drops both, and the arrow keys, <kbd>Page Up</kbd> / <kbd>Page Down</kbd>, <kbd>Home</kbd> and <kbd>End</kbd> walk it. <em>Disc files</em> at the bottom lists the disc's own file system, each file with a save button.</p>
 
-  <h3 id="studio-preview">Preview and export</h3>
+  <h3 id="explorer-preview">Preview and export</h3>
   <p>The tabs above the preview show what the selected entry holds:</p>
   <div class="shot-pair">
     <figure class="screenshot">
-      <img src="../img/desktop/studio-textures.jpg" width="836" height="600" alt="The Textures tab listing a Rim Elm entry's 96 textures, one page of ground textures drawn large, the palette slider, zoom and PNG export buttons" loading="lazy">
+      <img src="../img/desktop/explorer-textures.jpg" width="836" height="600" alt="The Textures tab listing a Rim Elm entry's 96 textures, one page of ground textures drawn large, the palette slider, zoom and PNG export buttons" loading="lazy">
       <figcaption><em>Textures</em>: every image in the entry, with a palette (CLUT) slider.</figcaption>
     </figure>
     <figure class="screenshot">
-      <img src="../img/desktop/studio-model.jpg" width="836" height="600" alt="The 3D model tab showing a textured Rim Elm tree, drawn with the textures its scene loads" loading="lazy">
+      <img src="../img/desktop/explorer-model.jpg" width="836" height="600" alt="The 3D model tab showing a textured Rim Elm tree, drawn with the textures its scene loads" loading="lazy">
       <figcaption><em>3D model</em>: drag to orbit, scroll to zoom; <em>scene</em> textures a mesh the way the game does.</figcaption>
     </figure>
   </div>
@@ -104,27 +104,27 @@
   </ul>
   <p>After an export, <em>Show folder</em> on the status line opens the folder it went to.</p>
 
-  <h3 id="studio-actors">Characters &amp; monsters</h3>
+  <h3 id="explorer-actors">Characters &amp; monsters</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-actors.jpg" width="1280" height="800" alt="The Characters &amp; monsters view: the party and monster lists on the left, Vahn in battle form partway through his Pyro Pummel art on the right, with the equipment pickers, the clip picker and the frame slider" loading="lazy">
+    <img src="../img/desktop/explorer-actors.jpg" width="1280" height="800" alt="The Characters &amp; monsters view: the party and monster lists on the left, Vahn in battle form partway through his Pyro Pummel art on the right, with the equipment pickers, the clip picker and the frame slider" loading="lazy">
     <figcaption>The party in battle form with any equipment, and every monster by name with its element; every battle animation plays or steps frame by frame.</figcaption>
   </figure>
   <p>Pick a party member to see the battle model built from the equipment you choose, or a monster from the list (<code>Gimard Lv2</code>, with its element badge). Every battle animation plays at game speed or steps a frame at a time; for Vahn, Noa and Gala the list includes every Tactical Art by name. <em>Export glTF</em> writes the animated model.</p>
 
-  <h3 id="studio-media">Movies &amp; voice</h3>
+  <h3 id="explorer-media">Movies &amp; voice</h3>
   <p>The disc's movies play with their soundtrack, or step frame by frame with PNG export of any frame. The streamed CD-XA audio (voices, some music) is listed file by file and channel by channel, each playable and exportable as WAV. These read raw CD sectors, so they need the disc image rather than an extracted folder.</p>
 
-  <h3 id="studio-extract">Extract the whole disc</h3>
+  <h3 id="explorer-extract">Extract the whole disc</h3>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-extract.jpg" width="1280" height="800" alt="The Extract tab after a finished run: output folder, skip options, a full progress bar, the step-by-step log and an Open output folder button" loading="lazy">
+    <img src="../img/desktop/explorer-extract.jpg" width="1280" height="800" alt="The Extract tab after a finished run: output folder, skip options, a full progress bar, the step-by-step log and an Open output folder button" loading="lazy">
     <figcaption>The <em>Extract</em> tab writes exactly what the <code>legaia-extract</code> command line produces.</figcaption>
   </figure>
-  <p>Choose an output folder (Studio proposes one beside the disc image), tick any steps to skip, and start; a note under the folder warns when it already holds files. The tab shows the step, the time so far and, once a step has a steady rate, about how long it has left; the log can be cut down to its warnings, the run can be cancelled, and <em>Open output folder</em> is there whenever the folder exists. The run goes on while you browse, and its end (or its error) shows on the status line of whatever view is open. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
+  <p>Choose an output folder (Explorer proposes one beside the disc image), tick any steps to skip, and start; a note under the folder warns when it already holds files. The tab shows the step, the time so far and, once a step has a steady rate, about how long it has left; the log can be cut down to its warnings, the run can be cancelled, and <em>Open output folder</em> is there whenever the folder exists. The run goes on while you browse, and its end (or its error) shows on the status line of whatever view is open. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
 
-  <h3 id="studio-play">Play, and the rest of the window</h3>
-  <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. The display options you set in the game's launcher (below) apply to a game started from Studio too. Play needs the USA disc image and <code>legaia-engine</code> in the same folder; when it is greyed out, hover it to see why (on another region's disc the disc line also says <em>Play needs the USA disc</em>). If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
+  <h3 id="explorer-play">Play, and the rest of the window</h3>
+  <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. The display options you set in the game's launcher (below) apply to a game started from Explorer too. Play needs the USA disc image and <code>legaia-engine</code> in the same folder; when it is greyed out, hover it to see why (on another region's disc the disc line also says <em>Play needs the USA disc</em>). If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
   <figure class="screenshot">
-    <img src="../img/desktop/studio-light.jpg" width="1280" height="800" alt="Legaia Studio in its light theme, showing the monster Drake Ghost textured in the Characters &amp; monsters view" loading="lazy">
+    <img src="../img/desktop/explorer-light.jpg" width="1280" height="800" alt="Legaia Explorer in its light theme, showing the monster Drake Ghost textured in the Characters &amp; monsters view" loading="lazy">
     <figcaption>The light theme, from the <em>View</em> menu.</figcaption>
   </figure>
   <ul class="bullets">
@@ -133,7 +133,7 @@
     <li><strong>View</strong> - a light or dark theme, or follow the desktop; and the zoom of the whole window, also on <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd>. Both are remembered.</li>
     <li><strong>About</strong> (<kbd>F1</kbd>) - the version, the keyboard shortcuts, and where the third-party license notices sit.</li>
   </ul>
-  <p>Studio remembers its window size, the view you left it on, the recent list and its folders in <code>legaia-studio/settings.json</code> under your configuration folder (<code>~/.config</code> on Linux, <code>%APPDATA%</code> on Windows, <code>~/Library/Application Support</code> on macOS).</p>
+  <p>Explorer remembers its window size, the view you left it on, the recent list and its folders in <code>legaia-explorer/settings.json</code> under your configuration folder (<code>~/.config</code> on Linux, <code>%APPDATA%</code> on Windows, <code>~/Library/Application Support</code> on macOS).</p>
 </section>
 
 <section class="doc-section" id="port">
@@ -147,7 +147,7 @@
   <h3 id="port-start">Three ways to start it</h3>
   <ul class="bullets">
     <li><strong>Double-click</strong> <code>Legend of Legaia.exe</code> (Windows), <code>Legend of Legaia.app</code> (macOS) or <code>legaia-engine</code> (Linux). The <a href="#port-launcher">launcher</a> opens: pick your disc once, set the display options if you like, and press <em>Play</em>.</li>
-    <li><strong>From Legaia Studio</strong> - <a href="#studio-play"><em>Play</em></a> starts it on the disc Studio has open, and remembers that disc for the double-click start.</li>
+    <li><strong>From Legaia Explorer</strong> - <a href="#explorer-play"><em>Play</em></a> starts it on the disc Explorer has open, and remembers that disc for the double-click start.</li>
     <li><strong>From a terminal</strong> - every option is a flag:
       <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin" --boot-ui</code></div>
       <code>--boot-ui</code> opens on the title screen; without it the game drops you straight into Rim Elm. <code>./legaia-engine play-window --help</code> lists the rest, and <a href="playing-and-viewing.html#play-window">Playing and viewing</a> explains them.</li>
@@ -210,7 +210,7 @@
   <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin" --boot-ui --retail</code></div>
 
   <h3 id="port-saves">Where saves and settings live</h3>
-  <p>Started by double-click or from Studio, the game keeps its files in your per-user folders, so they are the same however you start it:</p>
+  <p>Started by double-click or from Explorer, the game keeps its files in your per-user folders, so they are the same however you start it:</p>
   <table>
     <thead><tr><th>System</th><th>Disc choice (<code>launcher.toml</code>)</th><th>Saves, options, key bindings</th></tr></thead>
     <tbody>

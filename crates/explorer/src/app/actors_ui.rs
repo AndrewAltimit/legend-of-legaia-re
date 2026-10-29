@@ -69,7 +69,7 @@ impl App {
     }
 
     pub(super) fn actors_mode(&mut self, ui: &mut egui::Ui) {
-        let Some(lib) = self.studio.library.clone() else {
+        let Some(lib) = self.explorer.library.clone() else {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.label("Open a disc image first.");
             });

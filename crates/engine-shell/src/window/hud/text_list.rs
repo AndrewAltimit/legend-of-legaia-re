@@ -8,7 +8,7 @@
 use super::*;
 use legaia_app_theme::{chrome, spacing};
 
-/// The window chrome's colours, from the palette the launcher and Studio
+/// The window chrome's colours, from the palette the launcher and Explorer
 /// share (`legaia_app_theme::chrome`).
 const HEADING: [f32; 4] = chrome::HEADING.to_f32();
 const KEY: [f32; 4] = chrome::KEY.to_f32();
