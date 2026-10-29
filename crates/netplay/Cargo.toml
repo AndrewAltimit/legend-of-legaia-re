@@ -1,0 +1,48 @@
+[package]
+name = "legaia-netplay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_netplay"
+path = "src/lib.rs"
+
+[[bin]]
+name = "legaia-relay"
+path = "src/bin/legaia-relay.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The relay's command-line binary and its argument parser. On by default so
+# `cargo build` builds the binary; library dependents (the play hosts) take
+# this crate through [workspace.dependencies] with default features off.
+cli = ["dep:clap"]
+# The browser WebSocket transport (`transport::web`). Its dependencies are
+# declared for wasm32 only, so the feature is inert on a native build.
+web = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]
+
+[dependencies]
+clap = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+workspace = true
+optional = true
+features = [
+    "BinaryType",
+    "CloseEvent",
+    "Event",
+    "MessageEvent",
+    "WebSocket",
+]
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

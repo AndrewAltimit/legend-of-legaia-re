@@ -2883,6 +2883,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-netplay"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "legaia-overlay-images"
 version = "0.1.0"
 dependencies = [
