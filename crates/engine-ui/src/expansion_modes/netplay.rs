@@ -96,9 +96,14 @@ pub fn net_hunt_strings(h: &NetHuntHud<'_>) -> Vec<String> {
     compose_hunt(h).labels.into_iter().map(|l| l.text).collect()
 }
 
+/// Top of the corner panels drawn over the field (the hunt HUD, the roaming
+/// room panel): below the field party HUD's three plates across the top of
+/// the stage, which a toast or a level-up raises over the same corner.
+pub const NET_PANEL_TOP: i32 = 56;
+
 fn compose_hunt(h: &NetHuntHud<'_>) -> Canvas {
     let mut c = Canvas::default();
-    let (x, y, w) = (STAGE_W - 150, 18, 146);
+    let (x, y, w) = (STAGE_W - 150, NET_PANEL_TOP, 146);
     let lines = 4 + i32::from(h.last.is_some());
     c.panel(x, y, w, lines * 12 + 6, [10, 14, 24, 200], ink::HIGHLIGHT);
     c.text(
@@ -275,7 +280,7 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
 fn compose_panel(p: &NetPanel<'_>) -> Canvas {
     let mut c = Canvas::default();
     let lines = p.players.len() + p.chat.len() + usize::from(p.notice.is_some()) + 1;
-    let (w, x, y) = (128, STAGE_W - 132, 20);
+    let (w, x, y) = (128, STAGE_W - 132, NET_PANEL_TOP);
     let h = lines as i32 * 12 + 6;
     c.panel(x, y, w, h, [10, 14, 24, 200], ink::PANEL_EDGE);
     c.text(p.title, x + 4, y + 1, pen::GOLD);

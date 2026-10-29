@@ -270,3 +270,29 @@ fn readiness_reads_cleared_the_moment_a_session_ends() {
         assert!(!p.net.is_ready());
     }
 }
+
+/// A host whose own world is not on a free field (here, in a battle) cannot
+/// start a game: the guests would get the table while the host's screen
+/// kept the other. Back on the field the same start goes through.
+#[test]
+fn a_host_off_the_free_field_cannot_start_a_game() {
+    use legaia_engine_mode::mode::SceneMode;
+    let mut room = Room::open(2, lan(), 1);
+    room.peers[0].world.mode = SceneMode::Battle;
+    let entry = room.peers[0]
+        .net
+        .game_entries(&room.peers[0].world)
+        .into_iter()
+        .find(|e| e.id == "builtin-poker")
+        .expect("a built-in instance");
+    let host = &mut room.peers[0];
+    host.net.request_start(&host.world, &entry);
+    for _ in 0..60 {
+        room.step();
+    }
+    assert!(room.peers[1].mode().is_none(), "no table for the guest");
+    assert!(room.peers[0].net.notice.is_some(), "the host is told why");
+    room.peers[0].world.mode = SceneMode::Field;
+    room.start("builtin-poker");
+    assert!(room.peers[1].mode().is_some());
+}

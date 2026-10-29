@@ -1059,7 +1059,16 @@ impl NetPlay {
     }
 
     /// Ask the room to start mode `entry` (host only; the relay checks).
+    /// Refused, with a notice, while the host's own world is not on a free
+    /// field (a card screen, a mode, a dialogue or a battle holds it): the
+    /// guests would get the table while the host's screen kept the other.
     pub fn request_start(&mut self, world: &World, entry: &ModeEntry) {
+        if !Self::world_free_to_start(world) {
+            let why = "Close what is open first, then start".to_string();
+            self.notice = Some(why.clone());
+            self.note(why);
+            return;
+        }
         let seed = world.frame.rotate_left(29) ^ u64::from(world.rng_state) ^ 0x4C47_4E50;
         self.send(Message::Start(StartGame {
             seed,
@@ -1074,6 +1083,15 @@ impl NetPlay {
             },
             seats: Vec::new(),
         }));
+    }
+
+    /// Whether `world` stands on a free field a networked mode can take
+    /// over: field or world map, no card screen or mode seat, no dialogue.
+    pub fn world_free_to_start(world: &World) -> bool {
+        use legaia_engine_mode::mode::SceneMode;
+        matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
+            && !world.card_screen_open()
+            && !world.dialogue_owns_input()
     }
 
     /// Mark this player ready (or not) to start.
