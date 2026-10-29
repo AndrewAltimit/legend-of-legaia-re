@@ -1579,11 +1579,11 @@
     "battle",
     "dialog",
     "flags",
+    "map",
     "progression",
     "quest",
     "quest_challenge",
-    "quest_save",
-    "map"
+    "quest_save"
    ],
    "band": "kernels",
    "track": "engine",

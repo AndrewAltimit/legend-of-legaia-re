@@ -509,7 +509,7 @@ pub struct DebugSeeds {
 /// The `--expansion` / `--map` / `--spawn` operands.
 #[derive(Debug, Clone)]
 pub struct ExpansionLaunch {
-    /// The pack directory.
+    /// The pack: a directory or an `.lxpack` bundle.
     pub pack: std::path::PathBuf,
     pub map: String,
     /// Empty for the map's first spawn.
@@ -517,17 +517,11 @@ pub struct ExpansionLaunch {
 }
 
 impl ExpansionLaunch {
-    /// Read the pack. A directory parses through
-    /// `ExpansionPack::from_dir`.
-    // TODO(expansion): read a `.lxpack` bundle once the bundle reader lands.
+    /// Read the pack, a directory or an `.lxpack` bundle
+    /// (`legaia_expansion_format::read_files`).
     pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
-        if !self.pack.is_dir() {
-            anyhow::bail!(
-                "--expansion {}: only a pack directory is read; .lxpack bundles are not yet",
-                self.pack.display()
-            );
-        }
-        legaia_expansion_format::ExpansionPack::from_dir(&self.pack)
+        legaia_expansion_format::read_files(&self.pack)
+            .and_then(|files| legaia_expansion_format::ExpansionPack::from_files(&files))
             .with_context(|| format!("--expansion {}", self.pack.display()))
     }
 }

@@ -75,6 +75,16 @@ formations = [
     { formation = "forge_guard", weight = 1 },
 ]
 
+# The Tower of Rebirth's first floor rolls these in its outer ring - the
+# encounter zone of maps/rebirth_tower_1f.toml that names table `tower_1f`.
+[[encounters]]
+scene = "tower_1f"
+steps = [12, 24]
+formations = [
+    { formation = "ogre_pack", weight = 2 },
+    { formation = "forge_guard", weight = 1 },
+]
+
 [bosses.hollow_sovereign]
 formation = "hollow_throne"
 music = { kind = "bgm", id = 30 }

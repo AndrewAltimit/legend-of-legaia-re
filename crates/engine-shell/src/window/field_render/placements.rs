@@ -446,11 +446,19 @@ impl PlayWindowApp {
         // Render scale: a bind record's prologue can leave the actor's
         // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
         // quarter), and retail's case-5 draw folds it into the model matrix.
-        let scales = legaia_engine_scene::field_env::placed_render_scales(
+        let mut scales = legaia_engine_scene::field_env::placed_render_scales(
             &env_draws,
             binds,
             &self.session.host.world.object_render_scales(),
         );
+        // An expansion-pack map's props carry their own scale.
+        if let Some(o) = scene.overrides.as_ref() {
+            for (d, s) in env_draws.iter().zip(scales.iter_mut()) {
+                if let Some(f) = o.prop_scale(d.anchor) {
+                    *s = f;
+                }
+            }
+        }
         let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         if diag {
             for d in &dropped {

@@ -131,13 +131,16 @@ mesh = { object = 7 }                       # base geometry pack mesh 7
 tile = [2, 2]
 offset = [0, 0, 0]                          # world units from the tile centre, y up
 rotation = [0.0, 45.0, 0.0]                 # degrees; y is the yaw
+scale = 0.75                                # uniform; 1 when left out
 solid = true                                # close the prop's tile
 ```
 
 `mesh` is either `{ object = N }` or `{ tmd = { kind = "tmd", prot = P, index = N } }`.
 A TMD coordinate resolves only when `P` is the PROT entry holding the base
 scene's geometry pack (its scene-asset bundle); anything else is refused at
-entry. Props carry no collision box of their own: `solid` closes the tile.
+entry. `scale` folds into the prop's model matrix after its rotation, where a
+retail placed object's render scale lands. Props carry no collision box of
+their own: `solid` closes the tile.
 
 ## Exits, triggers and encounter zones
 
@@ -145,20 +148,65 @@ Zones fire on **entry** - stepping onto a tile of the rectangle from outside it
 - the way a retail walk-on trigger fires on a tile crossing. Standing still
 fires nothing, and the spawn tile does not fire on arrival.
 
-- An exit `to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [28, 91], facing = 4 }`
+### Exits
+
+- `to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [28, 91], facing = 4 }`
   raises the named scene change a door's op `0x3F` raises, so it parks behind
   the streaming hold and arrives on that field-grid tile facing that compass
   sector. With no `tile` the player lands where the scene's own doors land them.
-- An exit `to = { kind = "map", map = "...", spawn = "..." }` enters another map
-  of the same pack at once.
-- A trigger's `event` is `{ kind = "battle", formation = ... }`,
-  `{ kind = "dialog", line = ... }` or `{ kind = "quest", event = ... }`;
-  `once = true` fires it once per visit. The map runtime queues the event on
-  `World::expansion.map` (`ActiveMap::take_events`) for the battle, dialog and
-  quest runtimes.
-- An encounter zone names a pack encounter table. The map rolls **no** retail
-  encounters; `ActiveMap::encounter_table` reports the zone the player stands
-  in, for the battle runtime's roll.
+- `to = { kind = "map", map = "...", spawn = "..." }` enters another map of the
+  same pack at once.
+
+### Triggers
+
+A trigger's `event` names content of another pack section, and the scene host
+hands it to that section's runtime the tick it fires:
+
+| `event` | Runs |
+|---|---|
+| `{ kind = "battle", formation = F }` | `World::start_expansion_battle(F)` - a `battle.toml` formation |
+| `{ kind = "boss", boss = B }` | `World::start_expansion_boss(B)` - a `battle.toml` boss |
+| `{ kind = "dialog", line = L }` | `World::expansion_say(L)` - a `dialog.toml` line |
+| `{ kind = "talk", npc = N }` | `World::expansion_talked(N)` - a quest's talk objective |
+| `{ kind = "start_quest", quest = Q }` | `World::expansion_start_quest(Q)` |
+| `{ kind = "set_flag", flag = X }` | raises pack flag `X` |
+| `{ kind = "counter", counter = C, add = 1 }` | adds to pack counter `C` |
+
+`once = true` fires a trigger once **ever**: firing raises the pack flag
+`map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),
+which saves with the pack's progress, and a trigger whose flag is up stays
+quiet on every later visit. Quests can read the flag like any other.
+
+### Encounter zones
+
+A zone's `table` names a `battle.toml` `[[encounters]]` entry by its `scene`
+key - a free string, so a pack map's tables sit beside the retail scenes'
+overrides:
+
+```toml
+# battle.toml
+[[encounters]]
+scene = "tower_1f"
+steps = [12, 24]
+formations = [{ formation = "ogre_pack", weight = 2 }, { formation = "forge_guard", weight = 1 }]
+```
+
+On a map, the pack's encounter lookup keys on the table of the zone under the
+player instead of the scene label, so the pack's own step counter and formation
+pick - the same roll a retail scene override uses - run while the player walks
+inside a zone. Outside every zone the map rolls nothing; it never rolls the
+base scene's retail encounters. A table needs `steps` to roll on a map: with
+no retail rate to borrow, a rate-less entry has nothing to fight on.
+
+## Saving on a map
+
+A save made on a map writes the map id, the player's world position and
+facing at the tail of the pack's expansion block (`LXP1`, after the challenge
+records); a save made off every map writes no tail, so its block is the one it
+was before. The save's resume scene is the base scene, so a Load lands there
+first; `NativeSession::resume_save` then re-enters the map with the player
+seated where the save was made. Without the pack active the save lands in the
+base scene.
 
 ## Running a map
 
@@ -167,22 +215,20 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --expansion packs/rebirth --map rebirth_tower_1f [--spawn dais]
 ```
 
-`--expansion` takes a pack directory. Any scene change - an exit, a battle
-return to a retail scene, a scene picker - leaves the map and drops its layer.
+`--expansion` takes a pack directory or an `.lxpack` bundle and activates it
+through `World::activate_expansion`; with `--resume-save` the save's own map
+(if any) is the landing instead of `--map`. Any scene change - an exit, a
+scene picker - leaves the map and drops its layer; a battle fought on the map
+returns to it. The map's `name` shows as the place-name banner on entry.
 
 ## Gaps
 
-- **Trigger and encounter consumers.** The map runtime queues trigger events
-  and reports the encounter table; nothing yet starts the battle, shows the
-  line or advances the quest, and no encounter rolls in a zone.
 - **Wall visuals.** A wall tile blocks but draws nothing; a visible wall is
   a prop or a `mesh` ground on the tile.
 - **Props from other scenes.** A prop mesh must come from the base scene's
   geometry pack; a TMD from another PROT entry (and the VRAM it samples) is not
   loaded.
-- **Prop scale.** `scale` is carried but props draw at scale 1.
-- **Place-name banner.** `name` is not shown; the banner reads MAN text.
-- **Saving on a map.** A save records the base scene's label, so a Load
-  lands in the retail base scene, not the map.
-- **`.lxpack` bundles.** The native host reads a pack directory only.
+- **Map references are not validated.** The pack validator does not yet check
+  a map's trigger, encounter and exit ids against the sections they name; a
+  broken one logs at run time.
 - **The browser host.** Only the native `play-window` enters pack maps.

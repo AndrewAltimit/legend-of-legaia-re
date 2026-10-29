@@ -152,11 +152,23 @@ impl<S: AudioSink> BootSession<S> {
         spawn: &str,
         opts: &FieldLiveOpts,
     ) -> Result<SceneMode> {
+        self.enter_expansion_map_live_seated(map_id, spawn, None, opts)
+    }
+
+    /// [`Self::enter_expansion_map_live`] with the player seated at world
+    /// `(x, z)` facing `facing` ([`SceneHost::enter_expansion_map_seated`]).
+    pub fn enter_expansion_map_live_seated(
+        &mut self,
+        map_id: &str,
+        spawn: &str,
+        seat: Option<(i16, i16, u16)>,
+        opts: &FieldLiveOpts,
+    ) -> Result<SceneMode> {
         use legaia_engine_mode::mode::GameMode;
         let _ = self
             .mode_seat
             .enter(GameMode::MainInit, &mut self.host.world);
-        self.host.enter_expansion_map(map_id, spawn)?;
+        self.host.enter_expansion_map_seated(map_id, spawn, seat)?;
         self.camera.reset_for_scene_entry();
         self.install_live_catalogs();
         if let Some(steal) = self.steal_table.clone() {
@@ -393,6 +405,20 @@ impl<S: AudioSink> BootSession<S> {
             landing.scene(),
             self.host.world.party.party_count
         );
+        // A save made on a pack map carries the map in its expansion block:
+        // the landing above stood the party in the map's base scene, and the
+        // map goes back over it where the save was made.
+        if let Some(loc) = self.host.world.expansion_saved_map_location().cloned() {
+            match self.enter_expansion_map_live_seated(
+                &loc.map_id,
+                "",
+                Some((loc.x, loc.z, loc.facing)),
+                opts,
+            ) {
+                Ok(_) => log::info!("resume: back on pack map '{}'", loc.map_id),
+                Err(e) => log::warn!("resume: pack map '{}' did not enter ({e:#})", loc.map_id),
+            }
+        }
         landing
     }
 

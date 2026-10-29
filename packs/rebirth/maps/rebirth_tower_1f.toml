@@ -52,18 +52,23 @@ id = "stair_down"
 rect = [7, 12, 7, 12]
 to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [28, 91], facing = 4 }
 
+# Stepping onto the dais wakes the floor's guardian - once, ever.
 [[triggers]]
 id = "dais_guardian"
 rect = [5, 4, 9, 8]
-event = { kind = "battle", formation = "tower_1f_guardian" }
+event = { kind = "battle", formation = "forge_guard" }
 once = true
 
+# The guide waits inside the entrance: this counts as talking to them for
+# the `tower_rumour` quest.
 [[triggers]]
-id = "entrance_note"
+id = "entrance_guide"
 rect = [6, 9, 8, 9]
-event = { kind = "dialog", line = "tower_1f_welcome" }
+event = { kind = "talk", npc = "tower_guide" }
 once = true
 
+# The far ring past the dais rolls the floor's encounter table
+# (`battle.toml`, `scene = "tower_1f"`).
 [[encounters]]
 id = "outer_ring"
 rect = [1, 1, 13, 3]
@@ -71,6 +76,7 @@ table = "tower_1f"
 
 [[props]]
 id = "pillar_nw"
+scale = 0.75
 mesh = { object = 7 }
 tile = [2, 2]
 rotation = [0.0, 45.0, 0.0]

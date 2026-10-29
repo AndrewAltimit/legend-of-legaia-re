@@ -1246,10 +1246,11 @@ pub(crate) enum Cmd {
         /// look at. The record runs against the launch's flags and seats.
         #[arg(long, value_name = "P:R")]
         play_record: Option<String>,
-        /// Load an expansion pack (a pack directory; the single-file
-        /// `.lxpack` bundle is not read yet) and boot straight into one of
-        /// its maps, named by `--map`, in place of the `--scene` entry.
-        #[arg(long, value_name = "DIR", requires = "map")]
+        /// Load an expansion pack (a pack directory or an `.lxpack` bundle)
+        /// and boot straight into one of its maps, named by `--map`, in
+        /// place of the `--scene` entry. With `--resume-save` the pack is
+        /// active for the load, and a save made on a pack map returns there.
+        #[arg(long, value_name = "PATH", requires = "map")]
         expansion: Option<PathBuf>,
         /// The pack map `--expansion` boots into (`maps/<id>.toml`).
         #[arg(long, value_name = "ID", requires = "expansion")]

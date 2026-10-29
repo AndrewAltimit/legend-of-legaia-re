@@ -12,19 +12,20 @@
 //!
 //! What a retail scene does through its MAN a pack map does through
 //! [`ActiveMap`] on `World::expansion.map`: the host feeds it the player's
-//! tile every tick, an exit it reports becomes a scene change, and its
-//! trigger events and encounter table wait there for the battle, dialog and
-//! quest runtimes.
+//! tile every tick, an exit it reports becomes a scene change, and each
+//! trigger it fires goes to the pack's battle, dialog or quest runtime. Its
+//! encounter zones key the pack's encounter roll on the world side
+//! (`World::expansion_encounter_key`).
 
 use super::*;
 
-use legaia_engine_expansion::map::ActiveMap;
+use legaia_engine_expansion::map::{ActiveMap, FiredTrigger};
+use legaia_engine_expansion::quest::QuestEvent;
 use legaia_engine_scene::expansion_map::{
-    BaseInputs, SceneOverride, build_field_map_image, floor_lut, tile_centre_world,
-    world_to_map_tile,
+    BaseInputs, SceneOverride, build_field_map_image, floor_lut, prop_scales, tile_centre_world,
 };
 use legaia_expansion_format::ExpansionPack;
-use legaia_expansion_format::map::ExitTarget;
+use legaia_expansion_format::map::{ExitTarget, MapEvent};
 use legaia_expansion_format::refs::DiscRef;
 
 /// The global BGM id of sound-test track `n`: the global pool is the
@@ -33,10 +34,18 @@ use legaia_expansion_format::refs::DiscRef;
 const GLOBAL_BGM_BASE: u16 = 2000;
 
 impl SceneHost {
-    /// Make `pack` the world's active expansion pack. Its maps can then be
-    /// entered with [`Self::enter_expansion_map`].
-    pub fn set_expansion_pack(&mut self, pack: Arc<ExpansionPack>) {
-        self.world.expansion.pack = Some(pack);
+    /// Make `pack` the world's active expansion pack through the one
+    /// activation path, [`legaia_engine_core::world::World::activate_expansion`]
+    /// (its battle tables, formations and XP curve go in with it). Its maps
+    /// can then be entered with [`Self::enter_expansion_map`]. Fails with the
+    /// pack's own problem list, leaving no pack active.
+    pub fn activate_expansion_pack(&mut self, pack: Arc<ExpansionPack>) -> Result<()> {
+        self.world.activate_expansion(pack).map_err(|problems| {
+            anyhow::anyhow!(
+                "the expansion pack does not activate: {}",
+                problems.join("; ")
+            )
+        })
     }
 
     /// The id of the pack map the player is in, if any.
@@ -51,6 +60,19 @@ impl SceneHost {
     /// the map or spawn is unknown, the tiles do not resolve, or the base
     /// scene does not load.
     pub fn enter_expansion_map(&mut self, map_id: &str, spawn: &str) -> Result<()> {
+        self.enter_expansion_map_seated(map_id, spawn, None)
+    }
+
+    /// [`Self::enter_expansion_map`] with the player seated at world
+    /// `(x, z)` facing the 12-bit angle `facing` instead of at the spawn -
+    /// a save made on the map resuming where it was made. The spawn's tile
+    /// still stands as the last tile seen, so no zone fires on the seat.
+    pub fn enter_expansion_map_seated(
+        &mut self,
+        map_id: &str,
+        spawn: &str,
+        seat: Option<(i16, i16, u16)>,
+    ) -> Result<()> {
         let pack = self
             .world
             .expansion
@@ -96,8 +118,15 @@ impl SceneHost {
             map_id: map_id.to_string(),
             field_map: image,
             floor_lut: floor_lut(def, base_lut),
+            prop_scales: prop_scales(def),
         };
-        let (sx, sz) = tile_centre_world(def, point.tile[0], point.tile[1]);
+        let (sx, sz) = match seat {
+            Some((x, z, _)) => (x, z),
+            None => tile_centre_world(def, point.tile[0], point.tile[1]),
+        };
+        let seat_tile = def
+            .tile_at_world(&grid, i32::from(sx), i32::from(sz))
+            .unwrap_or((point.tile[0], point.tile[1]));
         self.pending_scene_override = Some(Arc::new(overrides));
         self.set_entry_seat(sx, sz);
         self.world.arm_arrival_facing(point.facing);
@@ -125,7 +154,17 @@ impl SceneHost {
             player.move_state.world_y = y.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
         }
         self.world.face_player_sector(point.facing);
+        if let Some((_, _, facing)) = seat
+            && let Some(player) = self.world.actors.first_mut()
+        {
+            player.move_state.render_26 = (facing & 0x0FFF) as i16;
+        }
         self.world.recentre_field_window_on_player();
+        // The place-name banner: the loader's balloon, carrying the map's
+        // display name where a retail scene's MAN carries its own.
+        if let Some(banner) = crate::place_name_banner::man_load_banner(def.name.as_bytes(), true) {
+            self.world.cutscene.text_balloon = Some(banner);
+        }
         if let Some(DiscRef::Bgm { id }) = def.bgm {
             self.world.pending_field_events.push(
                 legaia_engine_field::field_events::FieldEvent::Bgm {
@@ -134,12 +173,20 @@ impl SceneHost {
                 },
             );
         }
-        self.world.expansion.map = Some(ActiveMap::new(
+        // The pack's saved flags answer which `once` triggers have fired.
+        self.world.expansion.quests.sync_pack(&pack);
+        let flags = &self.world.expansion.quests.progress.flags;
+        let active = ActiveMap::new(
             map_id,
             Arc::new(def.clone()),
             Arc::new(grid),
-            (point.tile[0], point.tile[1]),
-        ));
+            seat_tile,
+            |f| flags.is_set(f),
+        );
+        self.world.expansion.map = Some(active);
+        // Quests see the map as the scene entered.
+        self.world
+            .expansion_notify(QuestEvent::SceneEntered(map_id.to_string()));
         log::info!(
             "expansion: entered map '{map_id}' over '{base_name}' at spawn {:?} {:?}",
             point.id,
@@ -148,8 +195,47 @@ impl SceneHost {
         Ok(())
     }
 
+    /// Hand a fired trigger to its runtime: a battle or boss to the pack's
+    /// fight path, a line to the pack dialogue runner, the rest to the quest
+    /// tracker. A `once` trigger's flag goes up whether or not its content
+    /// resolved, so a broken reference does not fire on every visit.
+    fn run_map_trigger(&mut self, trigger: FiredTrigger) {
+        let w = &mut self.world;
+        match &trigger.event {
+            MapEvent::Battle { formation } => {
+                if !w.start_expansion_battle(formation) {
+                    log::warn!("expansion: map trigger battle `{formation}` did not start");
+                }
+            }
+            MapEvent::Boss { boss } => {
+                if !w.start_expansion_boss(boss) {
+                    log::warn!("expansion: map trigger boss `{boss}` did not start");
+                }
+            }
+            MapEvent::Dialog { line } => {
+                if let Err(e) = w.expansion_say(line) {
+                    log::warn!("expansion: map trigger line `{line}`: {e:?}");
+                }
+            }
+            MapEvent::Talk { npc } => w.expansion_talked(npc),
+            MapEvent::StartQuest { quest } => {
+                if !w.expansion_start_quest(quest) {
+                    log::info!("expansion: map trigger quest `{quest}` did not start");
+                }
+            }
+            MapEvent::SetFlag { flag } => w.expansion_notify(QuestEvent::FlagSet(flag.clone())),
+            MapEvent::Counter { counter, add } => w.expansion_notify(QuestEvent::CounterAdd {
+                counter: counter.clone(),
+                add: *add,
+            }),
+        }
+        if let Some(flag) = trigger.once_flag {
+            self.world.expansion_notify(QuestEvent::FlagSet(flag));
+        }
+    }
+
     /// One tick of the active pack map: feed the player's tile to the map
-    /// runtime and take the exit it reports. `None` when no map is active or
+    /// runtime, run the triggers it fired and take the exit it reports. `None` when no map is active or
     /// nothing left the map this tick.
     ///
     /// A retail exit with an arrival tile rides the named scene change
@@ -162,22 +248,27 @@ impl SceneHost {
         {
             return Ok(None);
         }
-        let Some(active) = self.world.expansion.map.as_mut() else {
-            return Ok(None);
-        };
         let Some(player) = self.world.actors.first() else {
             return Ok(None);
         };
-        let tile = world_to_map_tile(
-            &active.def,
-            &active.grid,
+        let (x, z) = (
             i32::from(player.move_state.world_x),
             i32::from(player.move_state.world_z),
         );
-        let Some(exit) = active.step(tile) else {
+        let Some(active) = self.world.expansion.map.as_mut() else {
             return Ok(None);
         };
-        log::info!("expansion: map '{}' exit -> {exit:?}", active.map_id);
+        let tile = active.tile_at_world(x, z);
+        let exit = active.step(tile);
+        let fired = active.take_events();
+        let map_id = active.map_id.clone();
+        for trigger in fired {
+            self.run_map_trigger(trigger);
+        }
+        let Some(exit) = exit else {
+            return Ok(None);
+        };
+        log::info!("expansion: map '{map_id}' exit -> {exit:?}");
         match exit {
             ExitTarget::Retail {
                 scene: DiscRef::Scene { name },

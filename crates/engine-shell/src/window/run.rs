@@ -225,6 +225,26 @@ fn enter_launch_scene(
     if let Some(defaults) = session.host.new_game_defaults.as_mut() {
         defaults.picker_party = true;
     }
+    // `--expansion`: the pack goes in through the one activation path before
+    // any entry, so a `--resume-save` below lands with the pack's progress
+    // (and a save made on one of its maps returns to that map). Without a
+    // save, `--map` is the launch scene: its base scene loads under it, so
+    // the render build draws it like any field scene.
+    if let Some(launch) = debug_seeds.expansion.as_ref() {
+        let pack = launch.load()?;
+        session
+            .host
+            .activate_expansion_pack(std::sync::Arc::new(pack))?;
+        if debug_seeds.resume_save.is_none() {
+            let mode =
+                session.enter_expansion_map_live(&launch.map, &launch.spawn, field_live_opts)?;
+            log::info!(
+                "play-window: entered expansion map '{}' (mode={mode:?})",
+                launch.map
+            );
+            return Ok(());
+        }
+    }
     // Which entry a scene takes is the scene's own property, decided by the
     // one engine predicate every host asks (`is_world_map_scene`) - the
     // browser play page's `enter_field` and the in-world door transition both
@@ -232,19 +252,6 @@ fn enter_launch_scene(
     // it `--scene map01` entered the overworld as a plain field scene here
     // unless `--world-map` was also passed. The flag still forces the
     // world-map entry for any other label.
-    // `--expansion` / `--map`: the pack map is the launch scene. Its base
-    // scene loads under it, so the render build below draws it like any
-    // field scene.
-    if let Some(launch) = debug_seeds.expansion.as_ref() {
-        let pack = launch.load()?;
-        session.host.set_expansion_pack(std::sync::Arc::new(pack));
-        let mode = session.enter_expansion_map_live(&launch.map, &launch.spawn, field_live_opts)?;
-        log::info!(
-            "play-window: entered expansion map '{}' (mode={mode:?})",
-            launch.map
-        );
-        return Ok(());
-    }
     let world_map = world_map || legaia_engine_scene::scene::is_world_map_scene(scene);
     // `--resume-save`: land an LGSF file through the card-load path instead
     // of the door entry below - the order the retail comparison corpus's
