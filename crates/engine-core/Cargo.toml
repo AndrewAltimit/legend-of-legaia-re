@@ -24,6 +24,7 @@ legaia-engine-camera.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true
 legaia-render-kernels.workspace = true
+legaia-engine-battle-loop.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-cast.workspace = true
 glam.workspace = true

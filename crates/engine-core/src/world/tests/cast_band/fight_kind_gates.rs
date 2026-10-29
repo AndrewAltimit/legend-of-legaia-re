@@ -36,7 +36,7 @@ fn dead_end_crisis_wipes_the_party_outside_the_cort_fight() {
     assert_eq!(world.cast_module_for(0xA1), Some(961));
     assert!(world.dead_end_crisis_wipes(0xA1));
     let rng_before = world.rng_state;
-    world.casting.pending_cast = Some(crate::world::PendingCast {
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
         caster: 3,
         spell_id: 0xA1,
         targets: vec![0, 1, 2],

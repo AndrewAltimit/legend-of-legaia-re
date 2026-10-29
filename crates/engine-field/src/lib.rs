@@ -81,6 +81,7 @@ pub mod register_ramp;
 pub mod save_screen_spawn;
 pub mod scene_transition_actor;
 pub mod scene_transition_sweep;
+pub mod script_vram_move;
 pub mod submode_hub_actors;
 pub mod travel_art_actor;
 pub mod vdf_pulse;

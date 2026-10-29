@@ -139,6 +139,21 @@ deps = [
     "engine-system",
 ]
 
+[crates.engine-battle-loop]
+role = "the battle loop's carried state: the battle session, the cast band, round flow, frame clock, banner"
+deps = [
+    "engine-battle",
+    "engine-battle-menus",
+    "engine-battle-vm",
+    "engine-cast",
+    "engine-effects",
+    "engine-field",
+    "engine-menus",
+    "engine-mode",
+    "engine-system",
+    "render-kernels",
+]
+
 [crates.engine-scene]
 role = "scene resolution and loading, environment draws, virtual filesystem"
 deps = [

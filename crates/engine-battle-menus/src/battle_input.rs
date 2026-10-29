@@ -3,7 +3,7 @@
 //! The live battle loop (`legaia_engine_core::world::World::live_battle_tick`) can run a
 //! battle two ways. By default it auto-resolves: every party turn commits a
 //! physical Attack with no player choice. When
-//! `legaia_engine_core::world::BattleState::player_driven` is set, each party turn pauses
+//! `legaia_engine_battle_loop::battle_state::BattleState::player_driven` is set, each party turn pauses
 //! the action state machine and runs a [`BattleCommandSession`] that reads the
 //! pad.
 //!
@@ -166,7 +166,7 @@ impl BattleCommand {
     ///
     /// [`Self::enabled`] answers "is the command wired at all"; this adds
     /// the per-battle outcome the retail flow has: in a scripted no-escape
-    /// battle (`legaia_engine_core::world::BattleState::no_escape`, `ctx[+0x287]`) a
+    /// battle (`legaia_engine_battle_loop::battle_state::BattleState::no_escape`, `ctx[+0x287]`) a
     /// **Run** cannot get away. It is not a gate on choosing it: the round
     /// prompt takes Run in every battle and the escape roll
     /// (`FUN_801E791C`, `ctx[+0x287]` read at `0x801E7B14`) is what refuses
@@ -375,7 +375,7 @@ pub struct BattleCommandSession {
     /// Party-row index (0..=2) of the acting member - the target picker uses
     /// it to skip-self on ally-targeting commands.
     pub party_slot: u8,
-    /// Scripted no-escape battle (`legaia_engine_core::world::BattleState::no_escape`),
+    /// Scripted no-escape battle (`legaia_engine_battle_loop::battle_state::BattleState::no_escape`),
     /// carried for the session's readers. The prompt itself never reads it:
     /// retail's flow SM `FUN_801D0748` takes Run in state `0x1E` and
     /// confirms it in `0x32` without touching `ctx[+0x287]`, and the escape

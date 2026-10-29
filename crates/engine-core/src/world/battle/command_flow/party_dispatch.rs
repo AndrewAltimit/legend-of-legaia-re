@@ -16,9 +16,9 @@ impl World {
     pub(in crate::world) fn dispatch_pending_party_action(
         &mut self,
         actor: u8,
-        action: crate::battle_round::PendingPartyAction,
+        action: legaia_engine_battle_loop::round_flow::PendingPartyAction,
     ) {
-        use crate::battle_round::PendingPartyAction as Pending;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction as Pending;
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle_ctx.active_actor = actor;
         match action {

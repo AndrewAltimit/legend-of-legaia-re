@@ -81,8 +81,10 @@ pub(super) const ART_KIND: u16 = 0x100;
 
 /// The [`DEALT`] kind of a committed action, `None` for one that deals no
 /// damage of the member's own.
-pub(super) fn dealt_kind(p: &legaia_engine_core::battle_round::PendingPartyAction) -> Option<u16> {
-    use legaia_engine_core::battle_round::PendingPartyAction;
+pub(super) fn dealt_kind(
+    p: &legaia_engine_battle_loop::round_flow::PendingPartyAction,
+) -> Option<u16> {
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     match p {
         PendingPartyAction::Spell { spell_id, .. } => Some(u16::from(*spell_id)),
         PendingPartyAction::Art { .. } | PendingPartyAction::Attack { .. } => Some(ART_KIND),
@@ -602,10 +604,10 @@ pub(super) fn bag_can_heal(w: &legaia_engine_core::world::World) -> bool {
 /// Is the pending action a party-wide heal spell?
 pub(super) fn is_party_heal_spell(
     w: &legaia_engine_core::world::World,
-    p: &Option<legaia_engine_core::battle_round::PendingPartyAction>,
+    p: &Option<legaia_engine_battle_loop::round_flow::PendingPartyAction>,
 ) -> bool {
     use legaia_engine_battle::spells::SpellEffect;
-    matches!(p, Some(legaia_engine_core::battle_round::PendingPartyAction::Spell { spell_id, .. })
+    matches!(p, Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Spell { spell_id, .. })
     if w.tables.spell_catalog.get(*spell_id).is_some_and(|d| {
         matches!(d.effect, SpellEffect::HealAll { .. })
     }))

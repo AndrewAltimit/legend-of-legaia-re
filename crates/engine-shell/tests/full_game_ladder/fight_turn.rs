@@ -811,7 +811,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         {
             if matches!(
                 p,
-                Some(legaia_engine_core::battle_round::PendingPartyAction::Spirit)
+                Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Spirit)
             ) {
                 guarded[i] = true;
             }

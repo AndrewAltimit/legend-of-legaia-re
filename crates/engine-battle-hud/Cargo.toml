@@ -11,6 +11,7 @@ name = "legaia_engine_battle_hud"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-battle-loop.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true

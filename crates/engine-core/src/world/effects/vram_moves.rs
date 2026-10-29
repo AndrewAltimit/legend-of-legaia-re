@@ -6,39 +6,6 @@ use legaia_engine_mode::mode::SceneMode;
 
 // --- scripted VRAM MoveImage stamps (field-VM 0x4C n6 sub-0x60) ------------
 
-/// One queued literal-operand VRAM rect copy - the field-VM op `4C 60`.
-///
-/// The 14-byte instruction `[4C, 60, src_x, src_y, w, h, dst_x, dst_y]`
-/// carries six little-endian u16s (read via the misaligned-u16 helper
-/// `FUN_8003CE9C`); the handler arm at `0x801E1B28..0x801E1B90` inside the
-/// field-VM dispatcher `FUN_801DE840` hands them straight to the libgpu
-/// `MoveImage` wrapper (`jal FUN_80058490` at `0x801E1B84`) - a `w x h`
-/// halfword VRAM-to-VRAM rect copy. Retail scripts use it for the one-shot
-/// face-frame stamps onto the player texture atlas (blink / mouth variants;
-/// see `docs/formats/character-mesh.md` "Runtime scroll-cell residue").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ScriptVramMove {
-    /// Source rect origin `(x, y)` in VRAM halfword coordinates.
-    pub src: (i16, i16),
-    /// Rect size `(w, h)` - halfwords x rows.
-    pub size: (i16, i16),
-    /// Destination rect origin `(x, y)`.
-    pub dst: (i16, i16),
-}
-
-impl ScriptVramMove {
-    /// Build from the six decoded operand words in instruction order
-    /// `[src_x, src_y, w, h, dst_x, dst_y]` - the payload the field VM hands
-    /// the `FieldScreenHost::vram_move_image` host hook.
-    pub fn from_words(words: [i16; 6]) -> Self {
-        Self {
-            src: (words[0], words[1]),
-            size: (words[2], words[3]),
-            dst: (words[4], words[5]),
-        }
-    }
-}
-
 impl World {
     /// Queue a field-VM `4C 60` VRAM `MoveImage` (the `vram_move_image`
     /// host hook). Applied against the host's software VRAM by
@@ -72,7 +39,7 @@ impl World {
     }
 
     /// Apply the battle `MoveImage`s a stage module queued
-    /// ([`crate::world::BattleState::vram_moves`]) to the host's battle VRAM,
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::vram_moves`]) to the host's battle VRAM,
     /// in order. Both hosts call it once per battle frame; returns `true`
     /// when any texel moved (the host re-uploads).
     pub fn apply_battle_vram_moves(&mut self, vram: &mut legaia_tim::Vram) -> bool {
@@ -94,7 +61,7 @@ impl World {
     }
 
     /// The mode-3 recolours the battle parts queued this frame
-    /// ([`crate::world::BattleState::cell_fx`]), in order: each rewrites its
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::cell_fx`]), in order: each rewrites its
     /// rect from the texels captured when the part first surfaced, through
     /// the `FUN_80019D50` HSV kernel, and lands the result where the retail
     /// `LoadImage` does. A part's first armed tick drops its rect's capture
@@ -146,7 +113,7 @@ impl World {
     /// (`0x80022CB8`), whatever list the part sits on, so a battle effect's
     /// scroller animates its rect exactly as a field ambient one does
     /// ([`legaia_engine_field::vram_scroll`]). The fired rotations queue on
-    /// [`crate::world::BattleState::vram_scrolls`] for the hosts' battle VRAM.
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::vram_scrolls`] for the hosts' battle VRAM.
     ///
     /// PORT: FUN_80021DF4 (the mode-4 arm, `0x80022CB8..0x80022EE0`, on the
     /// battle effect lists)

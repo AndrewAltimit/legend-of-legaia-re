@@ -40,7 +40,7 @@ pub struct AudioState {
     /// Per-strike battle sound cues surfaced this frame for the host to play
     /// through its SFX bank (the art-record `HitCue` sound cues that
     /// [`crate::world::World::fold_battle_event`] resolves from an `ApplyArtStrike` outcome -
-    /// previously dropped). Cosmetic, like [`crate::world::BattleState::hit_fx`]: no gameplay
+    /// previously dropped). Cosmetic, like [`legaia_engine_battle_loop::battle_state::BattleState::hit_fx`]: no gameplay
     /// state depends on them. Drained via [`crate::world::World::drain_battle_sfx_cues`];
     /// cleared on battle exit.
     pub battle_sfx_cues: Vec<BattleSfxCue>,

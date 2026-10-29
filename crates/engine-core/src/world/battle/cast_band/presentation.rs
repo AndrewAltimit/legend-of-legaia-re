@@ -101,47 +101,6 @@ const STAGE_BYTES_PORTED_BY_HAND: [u32; 22] = [
     961, 963, 965,
 ];
 
-/// One fade a module arm spawned through the hook: the fade actor, the call
-/// site that spawned it, and the slot the arm parked its pointer in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HookFade {
-    pub site: u32,
-    pub slot: Option<HandleSlot>,
-    pub state: legaia_engine_system::fade::FadeState,
-}
-
-/// The presentation hook's per-cast state.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct ModulePresentation {
-    /// The `(body, arm)` whose once-per-arm calls have fired.
-    pub(crate) entered: Option<(u32, u8)>,
-    /// The colour-wash block `ctx[+0x27A..]`.
-    pub wash: legaia_render_kernels::cast_colour_wash::CastColourWash,
-    /// The module's last tick ran the dispatchers' tail with the wash armed.
-    pub(crate) wash_live: bool,
-    /// The armed wash (`FUN_8004695C`) the module's last tick armed.
-    pub(crate) armed_wash: Option<u32>,
-    /// The fades the hook spawned, live until they land or an arm kills them
-    /// (`World::screen_fade_draws` composites them beside the band's).
-    pub fades: Vec<HookFade>,
-    /// Ticks the current arm has held (run without moving the phase).
-    pub(crate) arm_held: u32,
-    /// The band's flash-out no longer sits in `ctx[+0x102C]`: a module arm
-    /// killed it there or parked a fade of its own over it.
-    pub(crate) band_fade_unparked: bool,
-    /// Arms passed on their first tick although they can hold, this cast -
-    /// calls the hook skipped because the port does not pace them.
-    pub unpaced_arms: u32,
-    /// The handle slots an arm parked a seated part in, by the spawn record
-    /// it was seated off (`PresentationCall::PartStore`): a later kill of
-    /// the slot halts the parts of that record.
-    pub(crate) part_slots: Vec<(HandleSlot, u32)>,
-    /// The module word the engine carries, `(VA, value)`, as the tick that
-    /// just ran opened on it: what a site's
-    /// [`legaia_overlay_images::cast_presentation::WordGuard`] reads.
-    pub(crate) word_in: Option<(u32, i32)>,
-}
-
 impl World {
     /// Park a part a module seated outside its tick body (a stager arm's
     /// seat) in handle slot `slot`, as a tick-body `PartStore` would, so the
@@ -459,11 +418,13 @@ impl World {
                     if let ([Some(x), Some(y), Some(w), Some(h)], [Some(dx), Some(dy)]) =
                         (rect, dst)
                     {
-                        self.battle.vram_moves.push(crate::world::ScriptVramMove {
-                            src: (x, y),
-                            size: (w, h),
-                            dst: (dx, dy),
-                        });
+                        self.battle.vram_moves.push(
+                            legaia_engine_field::script_vram_move::ScriptVramMove {
+                                src: (x, y),
+                                size: (w, h),
+                                dst: (dx, dy),
+                            },
+                        );
                     }
                 }
                 // The stage byte `ctx[+0x278]` is state, not a draw: it
@@ -619,7 +580,7 @@ impl World {
     /// Raise the message bar (HUD element `0x5B`) with the line at `va` in
     /// module `entry`'s resident image, its name escapes spliced with the
     /// roster's names, under the acting seat. The bar spawns at seat A and
-    /// glides to seat B ([`crate::world::BattleState::message_bar_glide`]).
+    /// glides to seat B ([`legaia_engine_battle_loop::battle_state::BattleState::message_bar_glide`]).
     /// A line that is empty in the image is a buffer the module composes at
     /// run time, which this does not model; nothing is raised for it.
     ///

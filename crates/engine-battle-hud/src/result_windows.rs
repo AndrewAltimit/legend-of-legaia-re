@@ -16,7 +16,7 @@ use legaia_engine_core::world::World;
 /// resolved against the world's item catalog / roster.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BattleSpoilsBanner {
-    /// The per-member EXP share ([`BattleRewards::xp_share`](legaia_engine_core::world::BattleRewards::xp_share)) -
+    /// The per-member EXP share ([`BattleRewards::xp_share`](legaia_engine_battle_loop::battle_state::BattleRewards::xp_share)) -
     /// what retail's result window prints, not the pool.
     pub xp: u32,
     pub gold: u32,
@@ -38,7 +38,7 @@ pub struct BattleSpoilsBanner {
     /// is empty, else the lead's team (`FUN_801D84C0`'s two build arms).
     pub subject: legaia_engine_battle_vm::battle_party_panel::ResultSubject,
     /// `(level_up, report)` rows below rest - the windows' raise glide
-    /// ([`BattleState::result_windows_dy`](legaia_engine_core::world::BattleState::result_windows_dy)).
+    /// ([`BattleState::result_windows_dy`](legaia_engine_battle_loop::battle_state::BattleState::result_windows_dy)).
     pub slide: (i32, i32),
 }
 

@@ -104,7 +104,7 @@ impl World {
                 }
                 self.commit_party_command(
                     caster,
-                    crate::battle_round::PendingPartyAction::Spell {
+                    legaia_engine_battle_loop::round_flow::PendingPartyAction::Spell {
                         spell_id,
                         target_row,
                         target_slot,
@@ -292,15 +292,17 @@ impl World {
                     self.stamp_commit_clip(actor, CAST_COMMIT_CLIP);
                     self.commit_party_command(
                         actor,
-                        crate::battle_round::PendingPartyAction::Item {
+                        legaia_engine_battle_loop::round_flow::PendingPartyAction::Item {
                             item_id,
                             used_slots,
                         },
                     );
                 }
                 // No item id resolved (defensive) - the member stands by.
-                None => self
-                    .commit_party_command(actor, crate::battle_round::PendingPartyAction::StandBy),
+                None => self.commit_party_command(
+                    actor,
+                    legaia_engine_battle_loop::round_flow::PendingPartyAction::StandBy,
+                ),
             }
             return;
         }

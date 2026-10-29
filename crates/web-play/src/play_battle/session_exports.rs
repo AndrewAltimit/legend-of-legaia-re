@@ -231,13 +231,14 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        host.world.battle.inflight_seed = Some(legaia_engine_core::world::InflightCastSeed {
-            caster,
-            spell_id,
-            target,
-            ground: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
-            idle: [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
-        });
+        host.world.battle.inflight_seed =
+            Some(legaia_engine_battle_loop::battle_state::InflightCastSeed {
+                caster,
+                spell_id,
+                target,
+                ground: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+                idle: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+            });
         true
     }
 

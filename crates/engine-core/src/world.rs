@@ -46,7 +46,7 @@ use std::sync::Arc;
 use crate::move_buffer_host;
 use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_anm::{AnimPlayer, PoseFrame};
-use legaia_engine_battle::battle_events::{BattleEvent, BattleHitEvent, BattleHitFx, BattleSfxCue};
+use legaia_engine_battle::battle_events::{BattleEvent, BattleHitFx, BattleSfxCue};
 use legaia_engine_battle::levelup::{LevelUpBanner, LevelUpResult, LevelUpTracker};
 use legaia_engine_battle::tactical_arts::ArtLearnedBanner;
 use legaia_engine_battle_vm::battle_action::{
@@ -75,9 +75,7 @@ use vm_hosts::{
 mod ambient_fx_state;
 mod audio_residency;
 mod audio_state;
-mod battle_state;
 mod camera_hooks;
-mod cast_fx_state;
 mod config;
 mod cutscene_state;
 mod disc_tables;
@@ -101,10 +99,6 @@ pub use audio_state::{
     BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK,
     SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
-pub use battle_state::{
-    BattleState, CaptureApproach, ClipRibbon, INFLIGHT_GROUND_SLOTS, InflightCastSeed,
-};
-pub use cast_fx_state::{CastFxState, PendingBurst};
 pub use config::*;
 pub use cutscene_state::{CappedTimeline, CutsceneState};
 pub use disc_tables::DiscTables;
@@ -115,6 +109,19 @@ pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
 use legaia_engine_battle::encounter_state::EncounterState;
 use legaia_engine_battle::seru_state::SeruState;
+use legaia_engine_battle_loop::battle_state::{
+    BattleBuff, BattleRewards, BattleState, ClipRibbon, InflightCastSeed,
+};
+use legaia_engine_battle_loop::cast_band::{
+    CastModuleCodeRun, CasterStagePhase, CasterStageRun, PendingCast, SummonPhase, SummonStager,
+};
+use legaia_engine_battle_loop::cast_fx_state::CastFxState;
+use legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
+use legaia_engine_battle_loop::message_banner::{
+    ABSORB_BANNER_ELEMENT, BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,
+    MAGIC_LEVEL_BANNER_ELEMENT, TIMED_MESSAGE_ELEMENT,
+};
+use legaia_engine_battle_loop::module_presentation::HookFade;
 use legaia_engine_field::camera::CameraZoneRequest;
 use legaia_engine_field::camera_rig::CameraRig;
 use legaia_engine_field::dialog_state::{DialogRequest, DialogState, ThreeActorTalk};
@@ -123,6 +130,7 @@ use legaia_engine_field::field_script_actor_state::{
     FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
 };
 use legaia_engine_field::move_vm_globals::{FieldNpcMotion, MoveVmGlobals};
+use legaia_engine_field::script_vram_move::ScriptVramMove;
 use legaia_engine_field::world_map_entity_config::{WorldMapEncounterState, WorldMapEntityConfig};
 use legaia_engine_menus::party_state::PartyState;
 use legaia_engine_menus::shop_state::ShopState;
@@ -164,19 +172,15 @@ pub use rumble_state::WorldRumble;
 mod assets_events;
 mod battle;
 pub use battle::ARRIVAL_MODULE_PROT;
+pub use battle::CASTER_STAGE_TICK_LIMIT;
 pub use battle::{
-    ABSORB_BANNER_ELEMENT, BATTLE_BODY_NCLIP, BattleActorDrawPlan, BattleFrameClock,
-    BattleMessageBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA, DEFAULT_BATTLE_FRAME_STEP,
-    MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast, RoutedEffectSpawn,
-    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager, TIMED_MESSAGE_ELEMENT,
-    battle_shadow_offset,
+    BATTLE_BODY_NCLIP, BattleActorDrawPlan, PARTY_BODY_RADIUS, RoutedEffectSpawn,
+    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, battle_shadow_offset,
 };
-pub use battle::{AutoComboInputs, AutoComboState};
-pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
 mod effects;
 pub use effects::{
     ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES,
-    EFFECT_MODEL_LIBRARY_BASE, EffectChildSeed, MAX_DEBUG_EFFECTS, ScriptVramMove,
+    EFFECT_MODEL_LIBRARY_BASE, EffectChildSeed, MAX_DEBUG_EFFECTS,
 };
 mod encounters;
 pub use encounters::FieldBossStager;

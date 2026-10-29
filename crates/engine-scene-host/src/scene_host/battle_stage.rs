@@ -229,7 +229,7 @@ impl SceneHost {
     /// order: battle init's object edit (object 1 dropped unless
     /// [`Self::battle_stage_keeps_object_1`]) and, once the evolved-Cort
     /// arrival has handed back, its slot-0 rebind
-    /// ([`legaia_engine_core::world::BattleState::backdrop_rebound`]). The one kernel both
+    /// (`legaia_engine_battle_loop::battle_state::BattleState::backdrop_rebound`). The one kernel both
     /// hosts build the stage shell from; a host rebuilds its shell when the
     /// list changes mid-fight.
     ///

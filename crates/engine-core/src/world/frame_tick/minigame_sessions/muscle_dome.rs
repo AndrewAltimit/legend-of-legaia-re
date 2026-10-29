@@ -278,7 +278,7 @@ impl World {
 
     /// The special-battle word `_DAT_8007BAC0` as the battle's `!= 0` readers
     /// see it: the open arena leg's word ORed with the regular battle's half
-    /// ([`crate::world::BattleState::special_word`], whose `0x200` battle init
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::special_word`], whose `0x200` battle init
     /// and the formation roll raise for monster `0xAF` and the Rim Elm
     /// ambush). Retail has one word; the port keeps the two halves apart
     /// because the arena session owns its own.

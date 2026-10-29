@@ -270,23 +270,25 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             .split(',')
             .filter_map(|p| p.trim().parse().ok())
             .collect();
-        let mut ground = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let mut ground = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
             *g = tok.split_once(':').and_then(|(x, z)| {
                 Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
             });
         }
-        let mut idle = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+        let mut idle = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         for (c, tok) in idle.iter_mut().zip(idle_s.split(',')) {
             *c = tok.trim().parse::<i32>().ok();
         }
-        (v.len() == 3).then(|| legaia_engine_core::world::InflightCastSeed {
-            caster: v[0],
-            spell_id: v[1],
-            target: v[2],
-            ground,
-            idle,
-        })
+        (v.len() == 3).then(
+            || legaia_engine_battle_loop::battle_state::InflightCastSeed {
+                caster: v[0],
+                spell_id: v[1],
+                target: v[2],
+                ground,
+                idle,
+            },
+        )
     }) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
@@ -310,7 +312,7 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             let (head, ground_s) = s.split_once(';').unwrap_or((s.as_str(), ""));
             let mut it = head.split(',');
             let (a, b) = (it.next()?, it.next()?);
-            let mut ground = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+            let mut ground = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
             for (g, tok) in ground.iter_mut().zip(ground_s.split(',')) {
                 *g = tok.split_once(':').and_then(|(x, z)| {
                     Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])

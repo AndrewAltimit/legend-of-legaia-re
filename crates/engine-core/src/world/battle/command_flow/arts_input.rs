@@ -225,7 +225,7 @@ impl World {
 
     /// The Triangle arts list's window while it is on screen: `(actor, row
     /// page, slide)` off the open entry, else off the window an ended entry
-    /// left sliding out ([`crate::world::BattleState::arts_list_window`]).
+    /// left sliding out ([`legaia_engine_battle_loop::battle_state::BattleState::arts_list_window`]).
     /// `None` at slide `0`. On a dome leg it is the dome entry's window
     /// (actor `0`, the player's fighter), and only once the host has named
     /// whose learned list it pages over
@@ -322,7 +322,7 @@ impl World {
     }
 
     /// Where the Spirit turn's AP bar and AP plate sit relative to their rest
-    /// seats while their raise glide runs ([`crate::world::BattleState::spirit_gauge_glide`]):
+    /// seats while their raise glide runs ([`legaia_engine_battle_loop::battle_state::BattleState::spirit_gauge_glide`]):
     /// `(bar dy, plate dx)` in stage pixels, `(0, 0)` once landed. The bar
     /// rises from `y = 234` onto `192` and the plate slides from `x = 328`
     /// onto `208` (placement records `0x0F` / `0x52`, walked by

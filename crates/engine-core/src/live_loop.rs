@@ -29,7 +29,7 @@ pub struct LiveLoopOpts {
     /// "player-driven battles, no random encounters" configuration
     /// unexpressible: the implication silently re-armed the roll.
     pub live_loop: bool,
-    /// Make battles player-driven ([`crate::world::BattleState::player_driven`]): each
+    /// Make battles player-driven ([`legaia_engine_battle_loop::battle_state::BattleState::player_driven`]): each
     /// party turn opens the command menu instead of auto-attacking, and the
     /// Seru-learning registry a player-driven battle needs is installed.
     /// Orthogonal to `live_loop` - it decides how a battle is *played*, not

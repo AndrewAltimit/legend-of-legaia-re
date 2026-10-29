@@ -9,8 +9,10 @@
 //! `+0x14` / `+0x16`, the landed icon's `+0x72`, the `flags |= 8` retires)
 //! reach the same part.
 
-use super::cast_band::{BATTLE_TABLE_SLOTS, CastModuleCodeRun};
+use super::cast_band::BATTLE_TABLE_SLOTS;
+
 use super::*;
+use legaia_engine_battle_loop::cast_band::CastModuleCodeRun;
 use legaia_engine_cast::cast_fatal_decision as fd;
 
 /// The label of the backdrop part.

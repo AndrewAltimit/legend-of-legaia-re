@@ -12,7 +12,7 @@
 //! trait is in scope.
 
 use super::World;
-use crate::battle_round::PendingPartyAction;
+use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_battle_menus::battle_input::BattleCommandInput;
 use legaia_engine_battle_vm::battle_action::StepOutcome;
 

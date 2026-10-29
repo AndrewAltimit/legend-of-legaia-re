@@ -152,8 +152,8 @@ impl World {
     /// ([`Self::enemy_move_predamage`]) and the player summon roll
     /// ([`Self::player_summon_predamage`]). INT = `battle_accuracy` (the
     /// `+0x168` halfword); HP = `battle.hp` (`+0x14c`); the two
-    /// defense terms (`+0x15c`/`+0x160`) = the [`crate::world::BattleState::defense_split`]
-    /// (UDF, LDF) pair, falling back to the single [`crate::world::BattleState::defense`];
+    /// defense terms (`+0x15c`/`+0x160`) = the [`legaia_engine_battle_loop::battle_state::BattleState::defense_split`]
+    /// (UDF, LDF) pair, falling back to the single [`legaia_engine_battle_loop::battle_state::BattleState::defense`];
     /// the guard byte (`+0x1de`) reads `4` for a party member in the Spirit
     /// stance, which the scale stage `FUN_801dd864` doubles the defender roll
     /// on (`0x801DD8F4`) ahead of the finisher's own guard halve; status-weaken

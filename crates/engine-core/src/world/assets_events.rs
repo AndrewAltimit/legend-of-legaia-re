@@ -272,7 +272,7 @@ impl World {
     /// state beyond the SFX queue below. Returns them in walk order.
     ///
     /// Draining also queues each table-form spawn's **per-effect CLUT stage**
-    /// onto [`crate::world::BattleState::clut_stages`], mirroring retail's table arm: only
+    /// onto [`legaia_engine_battle_loop::battle_state::BattleState::clut_stages`], mirroring retail's table arm: only
     /// a plain code below
     /// [`legaia_engine_effects::action_effect_script::TABLE_CLUT_GATE`] consults the
     /// `0x801F6418` map, and only a non-zero byte performs the copy. The map

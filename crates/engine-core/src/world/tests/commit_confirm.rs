@@ -4,7 +4,7 @@
 //! through `World::tick_battle_command`, the seam both hosts tick.
 
 use super::*;
-use crate::battle_round::PendingPartyAction;
+use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
 use legaia_engine_mode::mode::SceneMode;
@@ -140,7 +140,7 @@ fn nobody_able_to_act_still_gets_the_prompt_then_the_confirm() {
 #[test]
 fn the_round_skip_count_bumps_for_a_combatant_that_died_holding_its_turn() {
     let mut world = party_world(1);
-    world.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+    world.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Execute;
     world.actors[1].battle.init_key = 5;
     world.actors[2].battle.init_key = 7;
     world.actors[2].battle.liveness = 0;

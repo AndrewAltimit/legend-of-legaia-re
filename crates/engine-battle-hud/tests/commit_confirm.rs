@@ -7,10 +7,10 @@
 //! read only the `World` stay in engine-core's `world::tests::commit_confirm`.
 
 use legaia_engine_battle_hud::battle_command_chips;
+use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_battle_menus::battle_flow::BattleFlowState;
 use legaia_engine_battle_menus::battle_input::CommandChipPhase;
 use legaia_engine_battle_menus::battle_input::{BattleCommandSession, CommandPhase};
-use legaia_engine_core::battle_round::PendingPartyAction;
 use legaia_engine_core::world::test_drivers::BattleTestDrivers;
 use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
@@ -95,7 +95,7 @@ fn the_commit_log_lists_every_member_the_cursor_walked_past() {
     use legaia_engine_battle_vm::battle_commit_log as log;
     use legaia_engine_battle_vm::battle_commit_log::CommitLogTarget;
     let mut world = party_world(3);
-    world.battle.round_flow.phase = legaia_engine_core::battle_round::RoundPhase::Command;
+    world.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Command;
     assert!(battle_commit_log(&world).is_empty());
     commit_spirit(&mut world, 0);
     let rows = battle_commit_log(&world);
@@ -130,7 +130,7 @@ fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
     let mut world = party_world(2);
     // One vsync a frame, so each step is one of the glide's sixteen.
     world.clock.frame_step = 1;
-    world.battle.round_flow.phase = legaia_engine_core::battle_round::RoundPhase::Command;
+    world.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Command;
     commit_spirit(&mut world, 0);
     let attack = BattleCommand::MENU
         .iter()

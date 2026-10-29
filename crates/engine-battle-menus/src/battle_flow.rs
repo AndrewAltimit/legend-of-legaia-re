@@ -217,7 +217,7 @@ pub struct ActiveTutorialBox {
     /// stands until the next key-`1` registration reuses it or the hook
     /// unregisters it, so when this box leaves the queue it becomes the
     /// world's standing prompt
-    /// (`legaia_engine_core::world::BattleState::tutorial_standing`). `false` for a
+    /// (`legaia_engine_battle_loop::battle_state::BattleState::tutorial_standing`). `false` for a
     /// waiting box (key `2`), the sparring caption and the battle-open
     /// banner, which are other actors.
     pub stands: bool,

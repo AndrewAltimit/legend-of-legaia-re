@@ -43,7 +43,7 @@ impl World {
     /// Both party slots ([`Self::seed_party_battle_stats`]) and monster slots
     /// (battle entry, from the catalog's UDF / LDF pair) carry a real split.
     /// A slot with none configured - a synthetic battle that wrote only
-    /// [`crate::world::BattleState::defense`] - falls back to that scalar, so both halves
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::defense`] - falls back to that scalar, so both halves
     /// answer the same value and the parity pick is a no-op for it.
     pub fn physical_defense_of(&self, slot: u8, command: u8) -> u16 {
         let idx = slot as usize;
@@ -74,7 +74,7 @@ impl World {
     /// scripted no-flee battle is caught anyway.
     ///
     /// The scripted no-escape flag (`ctx+0x287`) is the engine's
-    /// [`crate::world::BattleState::no_escape`], set from the formation row's
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::no_escape`], set from the formation row's
     /// header byte at battle entry. The forced flee is bit `0x100` of the
     /// special-battle word ([`World::special_battle_word`]): retail tests it
     /// once per living party member (`0x801E7978` / `andi 0x100` / the
@@ -222,7 +222,7 @@ impl World {
     /// `FUN_801EC0DC` with the monster's pool slot).
     ///
     /// Side scores fold live HP/max-HP off the actors and live ATK off the
-    /// [`crate::world::BattleState::attack`] sidecar (retail reads actor `+0x158`); the
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::attack`] sidecar (retail reads actor `+0x158`); the
     /// party's No Escape / Chicken Guard bit folds from each living member's
     /// second ability word exactly as [`Self::roll_battle_escape`] folds its
     /// escape accessories. The fleeing monster's INT (`+0x168`) comes from the
@@ -359,7 +359,7 @@ impl World {
     /// Apply (or refresh) a stat buff / debuff on `slot`. The delta is written
     /// straight into the matching per-slot battle scalar so it changes damage
     /// the same frame: `Attack`/`MagicAttack`/`Defense` map to
-    /// [`crate::world::BattleState::attack`] / [`crate::world::BattleState::magic`] / [`crate::world::BattleState::defense`]
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::attack`] / [`legaia_engine_battle_loop::battle_state::BattleState::magic`] / [`legaia_engine_battle_loop::battle_state::BattleState::defense`]
     /// (`MagicDefense` reuses `battle_defense`, the spell-defense proxy).
     ///
     /// **Stat-up buffs (`magnitude > 0`) use the retail multiplicative ramp.**
@@ -417,7 +417,7 @@ impl World {
     /// Stats with no live-loop scalar (Accuracy / Evasion / Speed) return `0`.
     ///
     /// A Defense ramp is taken from the slot's **UDF half** when it carries a
-    /// [`crate::world::BattleState::defense_split`] - see [`Self::move_defense_split`] for why
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::defense_split`] - see [`Self::move_defense_split`] for why
     /// the scalar alone is the wrong basis.
     fn ramp_buff_scalar(&mut self, slot: u8, stat: legaia_engine_battle::spells::BuffStat) -> i16 {
         use legaia_engine_battle::spells::BuffStat;
@@ -475,7 +475,7 @@ impl World {
     /// Move both halves of `slot`'s defence split by `delta`, saturating at
     /// zero. No-op for a slot with no split.
     ///
-    /// The physical path reads the split, not the [`crate::world::BattleState::defense`]
+    /// The physical path reads the split, not the [`legaia_engine_battle_loop::battle_state::BattleState::defense`]
     /// scalar ([`Self::physical_defense_of`]), so a Defense buff that touched
     /// only the scalar changed nothing a swing could see. That was already true
     /// for every party slot - [`Self::seed_party_battle_stats`] writes the split
@@ -626,7 +626,7 @@ impl World {
     ///   [`Self::caster_magic_power_byte`]. Below `3` nothing stages and
     ///   **no draw is taken**.
     /// - **summon element**: the summon creature's record `+0x1D`.
-    /// - **scripted**: [`crate::world::BattleState::scripted_fight`].
+    /// - **scripted**: [`legaia_engine_battle_loop::battle_state::BattleState::scripted_fight`].
     /// - **affinity**: `matrix[summon element][first living enemy element]`,
     ///   the scripted roll's bypass.
     /// - **target**: the cast's first enemy seat's compare pairs, or

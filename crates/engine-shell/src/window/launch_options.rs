@@ -427,8 +427,8 @@ pub struct ScreenshotConfig {
     pub battle_reseat: Option<u8>,
     /// `LEGAIA_BATTLE_APPROACH_YAW` (`CaptureApproach::to_env`): the
     /// re-seated attacker's walk onto its target starts where retail's did
-    /// (`legaia_engine_core::world::BattleState::capture_approach_yaw`).
-    pub battle_approach_yaw: Option<legaia_engine_core::world::CaptureApproach>,
+    /// (`legaia_engine_battle_loop::battle_state::BattleState::capture_approach_yaw`).
+    pub battle_approach_yaw: Option<legaia_engine_battle_loop::battle_state::CaptureApproach>,
     /// `LEGAIA_BATTLE_BACKDROP_CUE=<weight>`: the backdrop pair's depth-cue
     /// weight a capture-band capture holds, stood on at the captured phase.
     pub battle_backdrop_cue: Option<u16>,
@@ -916,7 +916,9 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok()),
             battle_approach_yaw: std::env::var("LEGAIA_BATTLE_APPROACH_YAW")
                 .ok()
-                .and_then(|v| legaia_engine_core::world::CaptureApproach::from_env(&v)),
+                .and_then(|v| {
+                    legaia_engine_battle_loop::battle_state::CaptureApproach::from_env(&v)
+                }),
             battle_backdrop_cue: std::env::var("LEGAIA_BATTLE_BACKDROP_CUE")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

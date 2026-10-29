@@ -316,7 +316,7 @@ pub struct World {
     /// loop can restore it on victory. The retail engine re-enters the field
     /// scene from scratch; the port's loop snapshots the actor table +
     /// player slot instead. `None` outside battle. Managed by the live loop;
-    /// hosts read [`Self::mode`] / [`crate::world::BattleState::active_formation`] instead.
+    /// hosts read [`Self::mode`] / [`legaia_engine_battle_loop::battle_state::BattleState::active_formation`] instead.
     pub field_return: Option<FieldReturnState>,
 
     /// Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.

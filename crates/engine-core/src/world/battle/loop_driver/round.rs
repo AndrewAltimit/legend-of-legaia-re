@@ -14,7 +14,7 @@ impl World {
     /// Turn cycling for the live loop - retail's round machine, keyed on the
     /// action SM idling at `EndOfAction`.
     ///
-    /// The round has two bands ([`crate::battle_round::RoundPhase`]) that
+    /// The round has two bands ([`legaia_engine_battle_loop::round_flow::RoundPhase`]) that
     /// never overlap. In the **command band** the flow SM owns the frame and
     /// this does nothing: the command tick walks the party through their
     /// rings and [`Self::begin_round_execution`] hands the round over once the
@@ -40,7 +40,7 @@ impl World {
     /// REF: FUN_801E295C (the `0x5A` re-pick and the `0xFF` round end at
     /// `0x801E67E8`)
     pub(in crate::world) fn cycle_battle_turn(&mut self) {
-        use crate::battle_round::RoundPhase;
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
         use legaia_engine_battle_vm::battle_action::ActionState;
         if self.battle_ctx.action_state != ActionState::EndOfAction.as_byte() {
             return;
@@ -153,7 +153,7 @@ impl World {
     /// PORT: FUN_801D0748 (state `0x14`, `0x801D0EC4..0x801D0F0C`; the `0x0B`
     /// back-attack arm at `0x801D0E68..0x801D0EB0`)
     pub(in crate::world) fn begin_battle_round(&mut self) {
-        use crate::battle_round::RoundPhase;
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
         use legaia_engine_battle_menus::battle_flow::BattleFlowState;
         // The side-band holds the round start back in two fights. The
         // sparring fight's opening caption: retail's side-band tick sees
@@ -239,7 +239,7 @@ impl World {
     ///
     /// PORT: FUN_801D0748 (state `0xFE`, `0x801D31E8..0x801D3224`)
     pub(in crate::world) fn begin_round_execution(&mut self) {
-        use crate::battle_round::RoundPhase;
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
         use legaia_engine_battle_menus::battle_flow::BattleFlowState;
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
@@ -270,12 +270,12 @@ impl World {
             .as_ref()
             .and_then(|f| f.slots.first())
             .map_or(0, |s| s.monster_id as u8);
-        let run_round = self
-            .battle
-            .round_flow
-            .pending
-            .iter()
-            .any(|p| matches!(p, Some(crate::battle_round::PendingPartyAction::Run)));
+        let run_round = self.battle.round_flow.pending.iter().any(|p| {
+            matches!(
+                p,
+                Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Run)
+            )
+        });
         self.battle.round_flow.leader_first =
             legaia_engine_battle_vm::battle_formulas::special_battle_run_forfeit(
                 self.special_battle_word(),
@@ -310,8 +310,8 @@ impl World {
     /// whatever the party size, where the engine seats monsters at
     /// `party_count`.
     pub(in crate::world) fn dispatch_inflight_seed(&mut self, seed: InflightCastSeed) {
-        use crate::battle_round::{PendingPartyAction, RoundPhase};
         use legaia_engine_battle::target_picker::CursorRow;
+        use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
         use legaia_engine_battle_vm::battle_cue_group::MONSTER_SLOT_FIRST;
         let (target_row, target_slot) = match seed.target {
             8 => (CursorRow::Ally, 0),
@@ -390,11 +390,11 @@ impl World {
     /// Hand monster seat `seat` the round's first turn from the command
     /// prompt, closing the pad-owned surfaces as
     /// [`Self::dispatch_inflight_seed`] does; its pick is the
-    /// [`BattleState::forced_monster_cast`](crate::world::BattleState::forced_monster_cast)
+    /// [`BattleState::forced_monster_cast`](legaia_engine_battle_loop::battle_state::BattleState::forced_monster_cast)
     /// seed. A debug seam: retail reaches a monster's turn only through the
     /// round's initiative order.
     pub(in crate::world) fn dispatch_forced_monster_turn(&mut self, seat: u8) {
-        use crate::battle_round::RoundPhase;
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
         self.battle.command = None;
         self.battle.spell_menu = None;
         self.battle.item_menu = None;
@@ -437,9 +437,9 @@ impl World {
     pub(in crate::world) fn commit_party_command(
         &mut self,
         actor: u8,
-        action: crate::battle_round::PendingPartyAction,
+        action: legaia_engine_battle_loop::round_flow::PendingPartyAction,
     ) {
-        use crate::battle_round::PendingPartyAction;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         let party_count = self.party.party_count.clamp(1, 3);
         let run = matches!(action, PendingPartyAction::Run);
         // The commit arms re-land the log at rest; a launch in flight ends.
@@ -593,9 +593,9 @@ impl World {
     /// REF: FUN_801DB124 (`vm::battle_action::redirect_dead_target`)
     pub(super) fn redirect_pending_off_dead_target(
         &mut self,
-        action: crate::battle_round::PendingPartyAction,
-    ) -> crate::battle_round::PendingPartyAction {
-        use crate::battle_round::PendingPartyAction as Pending;
+        action: legaia_engine_battle_loop::round_flow::PendingPartyAction,
+    ) -> legaia_engine_battle_loop::round_flow::PendingPartyAction {
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction as Pending;
         match action {
             Pending::Attack { target } => Pending::Attack {
                 target: self.redirect_dead_battle_target(target, 3, 0),

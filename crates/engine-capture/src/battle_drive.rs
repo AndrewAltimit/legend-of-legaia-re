@@ -60,7 +60,7 @@ pub enum BattleDrive {
     /// capture's own seat Spirit when that is what it had committed) until
     /// the action SM holds `state` on `seat`. A monster seat that was
     /// casting (`category == 2`) casts the capture's spell `queued` on its
-    /// next turn ([`legaia_engine_core::world::BattleState::forced_monster_cast`]);
+    /// next turn ([`legaia_engine_battle_loop::battle_state::BattleState::forced_monster_cast`]);
     /// the party commits Spirit throughout, so the caster is still standing
     /// when that turn comes (Zeto's captures sit in a party able to kill him
     /// in two swings).

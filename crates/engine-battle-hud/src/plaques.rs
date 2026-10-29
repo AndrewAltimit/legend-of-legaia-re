@@ -49,7 +49,7 @@ pub fn battle_readout_bar_slot(world: &legaia_engine_core::world::World) -> Opti
                 .and_then(|(attacker, _)| (attacker == 1).then_some(0))
         }
         // The counterattack swap keeps the bar the monster's seed raised for
-        // its target - the counterer ([`legaia_engine_core::world::BattleState::counter_hud`]).
+        // its target - the counterer ([`legaia_engine_battle_loop::battle_state::BattleState::counter_hud`]).
         BattleHudPhase::Action if world.battle.counter_hud.is_some() => {
             world.battle.counter_hud.filter(|s| *s < pc)
         }
@@ -252,7 +252,7 @@ pub(super) const MESSAGE_BAR_SEATS_Y: (i32, i32) = (234, 192);
 
 /// How far the message bar sits below its rest seat this frame - the raise
 /// glide `FUN_801D8DE8(0x5B, 0)` starts
-/// ([`legaia_engine_core::world::BattleState::message_bar_glide`]). `0` with
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::message_bar_glide`]). `0` with
 /// no bar up or once it has landed.
 pub fn battle_message_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
@@ -284,7 +284,7 @@ fn round_prompt_glide(
 }
 
 /// The ring's open glide while the ring is what the frame draws
-/// ([`legaia_engine_core::world::BattleState::ring_open_glide`]), still in flight.
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]), still in flight.
 pub(super) fn ring_open_glide(
     world: &legaia_engine_core::world::World,
 ) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
@@ -318,11 +318,11 @@ pub(super) const RING_AP_PLATE_SEATS_X: (i32, i32) = (328, 208);
 
 /// How far the roster panels sit below their rest row this frame: the rise
 /// sub-draw step 0 starts when a round's prompt opens
-/// ([`legaia_engine_core::world::BattleState::round_prompt_glide`]), and the sink step 1
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::round_prompt_glide`]), and the sink step 1
 /// runs as the ring opens (`06/1 4E/1 4F/1`: seat B back down to seat A,
-/// [`legaia_engine_core::world::BattleState::ring_open_glide`]), and the rise a cast
+/// [`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]), and the rise a cast
 /// module's own raise runs in an action
-/// ([`legaia_engine_core::world::BattleState::module_panels_glide`]). `0` once landed and
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]). `0` once landed and
 /// on every other surface that shows the panels.
 pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -> i32 {
     let (a, b) = ROSTER_PANEL_SEATS_Y;
@@ -418,7 +418,7 @@ pub(super) const TARGET_PLAQUE_SEATS_Y: (i32, i32) = (236, 194);
 /// shows no plaque, and one taken half a glide later shows it half in.
 /// On the command ring the plaque is a different record (`0x1A`, behind the
 /// `Begin` tab), which drops in from the same parked row as the ring opens
-/// ([`legaia_engine_core::world::BattleState::ring_open_glide`]); every later
+/// ([`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]); every later
 /// command-entry step snaps it and this is `0`.
 pub fn battle_action_plaque_dy(world: &legaia_engine_core::world::World) -> i32 {
     if let Some(g) = ring_open_glide(world) {
@@ -456,9 +456,9 @@ pub(super) const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
 
 /// How far the active-actor bar sits below its rest seat this frame - the
 /// raise glide record 7 runs when the action seed (or the item pre-arm)
-/// opens it ([`legaia_engine_core::world::BattleState::readout_bar_glide`]), and the same
+/// opens it ([`legaia_engine_battle_loop::battle_state::BattleState::readout_bar_glide`]), and the same
 /// rise as the ring opens (step 1's `07/0`,
-/// [`legaia_engine_core::world::BattleState::ring_open_glide`]). `0` on every other
+/// [`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]). `0` on every other
 /// command-entry step, which snaps the bar.
 pub fn battle_readout_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
     if let Some(g) = ring_open_glide(world) {
@@ -520,7 +520,7 @@ pub fn battle_target_plaque(
         return None;
     }
     // Past the Done band's teardown the plaque is its closing glide or
-    // nothing ([`legaia_engine_core::world::BattleState::action_hud_wiped`]):
+    // nothing ([`legaia_engine_battle_loop::battle_state::BattleState::action_hud_wiped`]):
     // `rim_elm_gimard_seru_capture_after`, held in `0x52` behind the capture
     // banner, shows none.
     if world.battle.action_hud_wiped

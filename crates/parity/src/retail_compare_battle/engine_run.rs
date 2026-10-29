@@ -75,12 +75,13 @@ pub struct EngineBattle {
     /// Per engine slot, how far the replay moved a combatant the seed
     /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
     /// a driven action that reached its phase ([`RetailBattle::undrift`]).
-    pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    pub ground_drift:
+        [Option<[i32; 2]>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
     /// Per engine slot, how far (sixteenths of a keyframe) a replayed cast's
     /// idle loop advanced between the dispatch and the capture's phase -
     /// `None` for a slot that left its idle loop on the way
     /// ([`RetailBattle::with_inflight_idle`]).
-    pub idle_advance: [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    pub idle_advance: [Option<u32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
     /// The camera's phase, glide target and origin-alignment mask set
     /// against the capture's tween endpoints - a diagnostic the `camera`
     /// detail carries under `LEGAIA_RC_CAM_TRACE`.
@@ -104,7 +105,7 @@ pub fn ground_residual(
     let want = captured.seeded_ground();
     let from = seeded.seeded_ground();
     let mut sum = None;
-    for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+    for slot in 0..legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS {
         let (Some([wx, wz]), Some([fx, fz]), Some([dx, dz])) =
             (want[slot], from[slot], run.ground_drift[slot])
         else {
@@ -510,7 +511,7 @@ pub fn run_engine_battle(
         }
     }
     let mut phase_tick = None;
-    let mut idle_advance = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    let mut idle_advance = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
     let mut driven = None;
     // A driven capture plays rounds the retail history did not (a Spirit
     // here, a strike there), so its combatant, bag, flag and track channels
@@ -777,7 +778,7 @@ pub fn run_engine_battle(
     // How far the drive moved each placed combatant: a capture of a running
     // action stands its combatants where the action had already moved them,
     // and the drive replays the action from there.
-    let mut ground_drift = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    let mut ground_drift = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
     if matches!(driven, Some(Some(_))) {
         let world = &session.host.world;
         for (slot, d) in ground_drift.iter_mut().enumerate() {
@@ -904,14 +905,14 @@ pub fn run_engine_battle(
 /// reaction, a one-shot - is dropped for the span.
 #[derive(Default)]
 struct IdleClock {
-    last: [Option<(u16, u32)>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
-    sum: [u32; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
-    lost: [bool; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    last: [Option<(u16, u32)>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+    sum: [u32; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
+    lost: [bool; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
 }
 
 impl IdleClock {
     fn sample(&mut self, w: &legaia_engine_core::world::World) {
-        for slot in 0..legaia_engine_core::world::INFLIGHT_GROUND_SLOTS {
+        for slot in 0..legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS {
             if self.lost[slot] {
                 continue;
             }
@@ -932,8 +933,10 @@ impl IdleClock {
         }
     }
 
-    fn advance(&self) -> [Option<u32>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS] {
-        let mut out = [None; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS];
+    fn advance(
+        &self,
+    ) -> [Option<u32>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
         for (slot, o) in out.iter_mut().enumerate() {
             if !self.lost[slot] && self.last[slot].is_some() {
                 *o = Some(self.sum[slot]);

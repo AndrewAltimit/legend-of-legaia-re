@@ -725,7 +725,7 @@ impl World {
         // for the round's first party command. Nobody - whoever won
         // initiative - acts before the last member commits
         // (`World::begin_battle_round`).
-        self.battle.round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.round_flow = legaia_engine_battle_loop::round_flow::RoundFlow::default();
         self.begin_battle_round();
     }
 

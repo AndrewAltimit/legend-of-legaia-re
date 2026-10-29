@@ -114,7 +114,7 @@ impl World {
 
     /// The box currently on screen, if any: the queue's head, or with the
     /// queue empty the standing prompt
-    /// ([`crate::world::BattleState::tutorial_standing`]). Hosts park the
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::tutorial_standing`]). Hosts park the
     /// HUD surfaces a box covers on it.
     pub fn battle_tutorial_box(&self) -> Option<&ActiveTutorialBox> {
         self.battle
@@ -400,7 +400,7 @@ impl World {
 
     /// Recompute the flow state from `phase` plus the live submenus, and
     /// dispatch the hook on a change. `phase` is passed in rather than read off
-    /// [`crate::world::BattleState::command`] because the command flow drives its session
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::command`] because the command flow drives its session
     /// detached from the World for the frame.
     pub(in crate::world) fn sync_battle_flow(
         &mut self,

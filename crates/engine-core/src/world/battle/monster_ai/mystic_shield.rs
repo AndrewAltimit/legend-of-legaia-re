@@ -244,7 +244,7 @@ impl World {
     /// boss-stage arrival's hand-back does:
     /// `FUN_80021B04(seat + 0x34, seat + 0x44, record, 0x1000)`
     /// (`0x801F7170..0x801F7198` in PROT 0968). The trees land in
-    /// [`crate::world::CastFxState::stage_fx`]; a disc-free battle (no
+    /// [`legaia_engine_battle_loop::cast_fx_state::CastFxState::stage_fx`]; a disc-free battle (no
     /// executable to read the records from) seats nothing.
     ///
     /// REF: FUN_80021B04 (the part spawner, ported by `SummonScene::spawn_parts`)

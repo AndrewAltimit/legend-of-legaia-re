@@ -107,7 +107,7 @@ impl World {
             target: self.retail_pool_slot(target_e),
             category,
             flow: match self.battle.round_flow.phase {
-                crate::battle_round::RoundPhase::Execute => 0xFF,
+                legaia_engine_battle_loop::round_flow::RoundPhase::Execute => 0xFF,
                 _ => match self.battle.flow.raw() {
                     0 => 0x14,
                     f => f,

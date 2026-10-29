@@ -69,7 +69,7 @@ pub struct AmbientFxState {
     /// [`crate::world::World::queue_script_vram_move`] (the `vram_move_image` host
     /// hook), drained against the host's software VRAM by
     /// [`crate::world::World::apply_script_vram_moves`], cleared on scene entry.
-    pub script_vram_moves: Vec<crate::world::ScriptVramMove>,
+    pub script_vram_moves: Vec<legaia_engine_field::script_vram_move::ScriptVramMove>,
     /// Queued field-VM `4C D4` / `4C D5` STP edits, `(x, y, set)`: each a
     /// 16x1 VRAM run read back, its mask bit set on every non-zero word
     /// (`D4`) or cleared on every word but `0x8000` (`D5`), and written

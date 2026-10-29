@@ -121,7 +121,7 @@ impl World {
     /// 9 pass, `FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)` for `i` below
     /// `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`). Each
     /// record spawns at seat A and glides to seat B
-    /// ([`crate::world::BattleState::module_panels_glide`]).
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]).
     pub(crate) fn raise_module_roster_panels(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         self.battle.module_panels_glide = Some(LogLaunch::new(false));
@@ -146,14 +146,14 @@ impl World {
     }
 
     /// Start the round prompt's open glide: sub-draw step 0 spawning its
-    /// five records at seat A ([`crate::world::BattleState::round_prompt_glide`]).
+    /// five records at seat A ([`legaia_engine_battle_loop::battle_state::BattleState::round_prompt_glide`]).
     pub(crate) fn start_round_prompt_glide(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         self.battle.round_prompt_glide = Some(LogLaunch::new(false));
     }
 
     /// Start the ring's open glide: sub-draw step 1 spawning its twelve
-    /// records ([`crate::world::BattleState::ring_open_glide`]).
+    /// records ([`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]).
     pub(crate) fn start_ring_open_glide(&mut self) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
         self.battle.ring_open_glide = Some(LogLaunch::new(false));

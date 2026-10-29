@@ -353,7 +353,7 @@ impl World {
     }
 
     /// Take the battle exit's camera re-seat latch
-    /// ([`crate::world::BattleState::field_camera_reseat`]): `true` once per
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::field_camera_reseat`]): `true` once per
     /// return to the field or the overworld, on the tick
     /// [`Self::finish_battle`] restored it.
     pub fn take_field_camera_reseat(&mut self) -> bool {

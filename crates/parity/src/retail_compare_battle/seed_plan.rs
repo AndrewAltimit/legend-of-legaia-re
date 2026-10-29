@@ -17,7 +17,7 @@ pub enum SeedPlan {
     /// is driven there through its pad path.
     Menu { flow: BattleFlowState, seat: u8 },
     /// A party cast in the summon band: replayed through
-    /// [`legaia_engine_core::world::InflightCastSeed`] and gated on
+    /// [`legaia_engine_battle_loop::battle_state::InflightCastSeed`] and gated on
     /// [`PhaseGate`].
     Cast,
     /// Any other action in flight (flow `0xFF`): the round is played out
@@ -79,7 +79,7 @@ impl RetailBattle {
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
-        let default = legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP;
+        let default = legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)

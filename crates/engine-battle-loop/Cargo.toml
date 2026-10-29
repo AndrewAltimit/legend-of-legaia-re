@@ -1,0 +1,24 @@
+[package]
+name = "legaia-engine-battle-loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_battle_loop"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-battle.workspace = true
+legaia-engine-battle-menus.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-engine-cast.workspace = true
+legaia-engine-effects.workspace = true
+legaia-engine-field.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-system.workspace = true
+legaia-render-kernels.workspace = true
+legaia-game-tables.workspace = true
+legaia-overlay-images.workspace = true
+legaia-ui-formats.workspace = true

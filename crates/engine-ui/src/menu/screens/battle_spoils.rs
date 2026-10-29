@@ -28,7 +28,7 @@ pub fn encounter_banner_draws_for(
     out
 }
 
-/// Plain-data projection of `legaia_engine_core::world::BattleRewards` for
+/// Plain-data projection of `legaia_engine_battle_loop::battle_state::BattleRewards` for
 /// [`battle_spoils_draws_for`]. The shell builds one of these after a victory;
 /// this crate stays free of an engine-core dependency.
 pub struct BattleSpoilsView<'a> {

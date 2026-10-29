@@ -9,7 +9,7 @@ impl World {
     /// target's status; buffs adjust a per-slot scalar with a turn timer
     /// ([`Self::apply_battle_buff`]); capture rolls vs the monster's weakened
     /// state ([`Self::resolve_capture`]); escape flags a return to the field
-    /// ([`crate::world::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
     pub(in crate::world) fn fold_spell_outcome(
         &mut self,
         outcome: legaia_engine_battle::spells::SpellOutcome,

@@ -305,7 +305,7 @@ impl World {
         self.battle.tutorial_boxes.clear();
         self.battle.tutorial_standing = None;
         self.battle.flow = legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle;
-        self.battle.round_flow = crate::battle_round::RoundFlow::default();
+        self.battle.round_flow = legaia_engine_battle_loop::round_flow::RoundFlow::default();
         self.battle.commit_log_launch = None;
         self.battle.intro_names_frames = 0;
         // The per-fighter Auto flags and parked queues are battle state; the

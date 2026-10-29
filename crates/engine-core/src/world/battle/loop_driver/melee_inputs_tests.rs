@@ -134,7 +134,7 @@ fn venom_and_toxic_scale_both_sides_of_a_swing() {
 
 #[test]
 fn safe_escape_triples_a_fleeing_members_guard() {
-    use crate::battle_round::PendingPartyAction;
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     let hit_on_member = |run: bool, safe_escape: bool| {
         let mut w = duel();
         w.load_party(legaia_save::Party::zeroed(1));

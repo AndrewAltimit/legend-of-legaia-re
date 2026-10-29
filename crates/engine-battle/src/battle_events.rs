@@ -28,7 +28,7 @@ pub enum BattleEvent {
     /// `BattleActionHost::camera_frame_height` - the per-action camera framing
     /// height / distance (`ctx+0x6D0`) the port of `FUN_801F0348` resolved from
     /// the acting actor's and target's monster size class. Mirrored on
-    /// `legaia_engine_core::world::BattleState::camera_frame_height`.
+    /// `legaia_engine_battle_loop::battle_state::BattleState::camera_frame_height`.
     CameraFrameHeight { height: i16 },
     /// `BattleActionHost::party_setup` - per-party-slot init hook
     /// (`FUN_801EED1C` in retail).

@@ -150,11 +150,13 @@ impl World {
         if let Some(r) = run.as_ref().filter(|_| stages_spawns) {
             if let Some(m) = r.vram_move {
                 let i = |v: u16| v as i16;
-                self.battle.vram_moves.push(crate::world::ScriptVramMove {
-                    src: (i(m.src.0), i(m.src.1)),
-                    size: (i(m.size.0), i(m.size.1)),
-                    dst: (i(m.dst.0), i(m.dst.1)),
-                });
+                self.battle.vram_moves.push(
+                    legaia_engine_field::script_vram_move::ScriptVramMove {
+                        src: (i(m.src.0), i(m.src.1)),
+                        size: (i(m.size.0), i(m.size.1)),
+                        dst: (i(m.dst.0), i(m.dst.1)),
+                    },
+                );
             }
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);

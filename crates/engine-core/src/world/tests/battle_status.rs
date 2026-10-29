@@ -162,7 +162,7 @@ fn confuse_leaves_a_party_strike_on_its_target() {
 /// committed before it was confused plays that commit on its own target.
 #[test]
 fn a_confused_party_member_passes_or_keeps_its_commit() {
-    use crate::battle_round::PendingPartyAction;
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     use legaia_engine_battle_vm::status_effects::StatusKind;
     let world = || {
         let mut world = World::new();

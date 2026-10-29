@@ -214,7 +214,7 @@ impl World {
     /// row's `record[+0]` is non-zero (`FUN_801DA51C` at
     /// `0x801DA5F8..0x801DA61C`), which is what makes the scripted / boss arm
     /// reachable at all. `scene_index` is `DAT_80084540`, the loaded scene's
-    /// raw CDNAME define ([`crate::world::BattleState::map_id`]) - not
+    /// raw CDNAME define ([`legaia_engine_battle_loop::battle_state::BattleState::map_id`]) - not
     /// `Scene::start`, which is two below it in the extraction frame. None of
     /// the three is a host choice, so both hosts and the transition length
     /// read them from here.
@@ -256,7 +256,7 @@ impl World {
     /// store is a slot-0 **overwrite** (no ring-counter bump), only the last
     /// `SetAudioCue` of the tick is pushed. The remaining effects (mesh
     /// assembly, the bundle read, the load waits) are recorded in
-    /// [`crate::world::BattleState::intro_effects`] for a host that owns those reads.
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::intro_effects`] for a host that owns those reads.
     ///
     /// The kernel's own load-wait response is reported idle: the engine has
     /// already resolved the formation by the time the session reaches

@@ -171,7 +171,7 @@ impl World {
 
     /// The trio the value readout anchors seat `slot`'s numeral on: the
     /// display trio the previous pass's draw stored
-    /// ([`crate::world::BattleState::readout_trios`]), the live one when no
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::readout_trios`]), the live one when no
     /// pass has taken it.
     pub fn battle_readout_trio(&self, slot: usize) -> Option<[f32; 3]> {
         self.battle
@@ -597,7 +597,7 @@ impl World {
     /// against the root term's `15`: a speed of `4` on the same law, subtracted.
     // PORT: FUN_80047430 (`0x80047C3C..0x80047D1C`, the in-range back-off)
     fn drive_in_range_backoff(&mut self, slot: usize, dt: u8) {
-        use crate::battle_round::RoundPhase;
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
         if self.battle.round_flow.phase != RoundPhase::Execute {
             return;
         }
@@ -771,7 +771,7 @@ impl World {
     /// `max(1, 4 * step / 3)` an SM pass of `step` vsyncs
     /// (`0x801E29E4..0x801E2A24`).
     ///
-    /// [`BattleState::capture_approach_yaw`]: crate::world::BattleState::capture_approach_yaw
+    /// [`BattleState::capture_approach_yaw`]: legaia_engine_battle_loop::battle_state::BattleState::capture_approach_yaw
     fn seat_capture_approach_start(&mut self, slot: usize) {
         if !self.battle.capture_approach_due {
             return;
@@ -1043,7 +1043,7 @@ mod tests {
             w.actors[1].battle.liveness = 1;
             w.battle_ctx.active_actor = 0;
             w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
-            w.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+            w.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Execute;
             w.tick_battle_locomotion(); // seed seats
             // Stand the attacker deep inside its reach, facing the target.
             let (tx, tz) = (
@@ -1170,7 +1170,7 @@ mod tests {
         w.actors[1].battle.liveness = 1;
         w.battle_ctx.active_actor = 0;
         w.battle_ctx.action_state = ActionState::AttackChain.as_byte();
-        w.battle.round_flow.phase = crate::battle_round::RoundPhase::Execute;
+        w.battle.round_flow.phase = legaia_engine_battle_loop::round_flow::RoundPhase::Execute;
         w.tick_battle_locomotion(); // seed seats
         let (tx, tz) = (
             w.actors[1].move_state.world_x,

@@ -13,7 +13,6 @@ mod vram_moves;
 pub use clut_fx::*;
 pub use effect_pool::*;
 pub(crate) use move_fx::*;
-pub use vram_moves::*;
 
 /// Base index in [`World::global_tmd_pool`] (= `DAT_8007C018`)
 /// where the PROT 0871 effect-model library registers. Its 30 models occupy

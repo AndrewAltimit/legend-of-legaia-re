@@ -51,6 +51,7 @@ members = [
     "crates/engine-dialog",
     "crates/engine-menus",
     "crates/engine-battle-menus",
+    "crates/engine-battle-loop",
     "crates/engine-title",
     "crates/engine-mode",
     "crates/engine-export",
@@ -174,6 +175,7 @@ legaia-engine-dev-menu = { path = "crates/engine-dev-menu" }
 legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
 legaia-engine-battle-menus = { path = "crates/engine-battle-menus" }
+legaia-engine-battle-loop = { path = "crates/engine-battle-loop" }
 legaia-engine-title = { path = "crates/engine-title" }
 legaia-engine-system = { path = "crates/engine-system" }
 legaia-engine-fishing = { path = "crates/engine-fishing" }

@@ -435,7 +435,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     ///   `0x801F4E63 + id` picks out of the 8-byte records at `0x801F4EDC`,
     ///   copied pair by pair from `+0x1E0` and closed with `0xFF`
     ///   (`0x801DBFAC..0x801DC060`), read off the disc into
-    ///   [`crate::world::BattleState::spell_anim_pairs`]. With pairs staged the
+    ///   [`legaia_engine_battle_loop::battle_state::BattleState::spell_anim_pairs`]. With pairs staged the
     ///   band walks them and the cast folds at its exit; an empty list (or no
     ///   disc read) leaves the terminator at `params[1]`, the band goes
     ///   straight to its cleanup, and the owed outcome folds here.

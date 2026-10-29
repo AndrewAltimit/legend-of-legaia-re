@@ -127,7 +127,7 @@ fn the_cort_arena_draws_the_flesh_shell_after_the_arrival() {
     host.world
         .battle
         .vram_moves
-        .push(legaia_engine_core::world::ScriptVramMove {
+        .push(legaia_engine_field::script_vram_move::ScriptVramMove {
             src: (x as i16, y as i16),
             size: (w as i16, h as i16),
             dst: (dst_x as i16, dst_y as i16),

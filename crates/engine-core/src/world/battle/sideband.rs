@@ -522,11 +522,13 @@ impl World {
                 dst_y,
             } => {
                 let i = |v: u16| v as i16;
-                self.battle.vram_moves.push(crate::world::ScriptVramMove {
-                    src: (i(x), i(y)),
-                    size: (i(w), i(h)),
-                    dst: (i(dst_x), i(dst_y)),
-                });
+                self.battle.vram_moves.push(
+                    legaia_engine_field::script_vram_move::ScriptVramMove {
+                        src: (i(x), i(y)),
+                        size: (i(w), i(h)),
+                        dst: (i(dst_x), i(dst_y)),
+                    },
+                );
             }
             // Not staged (every record is a meshless `model_sel = -1` part)
             // and the HUD handle list is derived per frame, so its hard reset

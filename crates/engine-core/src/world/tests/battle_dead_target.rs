@@ -6,7 +6,7 @@
 //! formation-21 stall.
 
 use super::*;
-use crate::battle_round::{PendingPartyAction, RoundPhase};
+use legaia_engine_battle_loop::round_flow::{PendingPartyAction, RoundPhase};
 use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_mode::mode::SceneMode;
 

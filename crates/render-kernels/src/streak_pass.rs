@@ -276,7 +276,7 @@ pub fn streak_quads_scheduled(
 /// `seat` is in the same world frame the host's `mvp` expects (the page
 /// scales it by its placement factor inside the MVP, as it does the
 /// move-FX launch point). Engine source:
-/// `legaia_engine_core::world::BattleState::clip_ribbon`.
+/// `legaia_engine_battle_loop::battle_state::BattleState::clip_ribbon`.
 pub fn clip_ribbon_quads(
     seat: [f32; 3],
     trail_id: u8,

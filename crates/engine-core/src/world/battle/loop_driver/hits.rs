@@ -884,7 +884,7 @@ impl World {
     /// PORT: FUN_801EC3E4 (`0x801EDE18..0x801EDEBC`, `0x801EE1C0..0x801EE3B8`,
     /// the reaction pick)
     /// The retail-compare seed's amount for a party swing on `target`
-    /// ([`crate::world::BattleState::forced_melee_hits`] /
+    /// ([`legaia_engine_battle_loop::battle_state::BattleState::forced_melee_hits`] /
     /// `forced_melee_total`), or `rolled` when no seed covers it.
     fn forced_melee_amount(&mut self, target: u8, clip: u8, rolled: u16, kill_check: bool) -> u16 {
         // The newest pushes are the capture clip's own: a hit from another
@@ -1015,7 +1015,7 @@ impl World {
     /// ([`Self::melee_rumble`]).
     ///
     /// The approach terms `ctx[+0x6D2]` / `+0x6D4` are
-    /// [`crate::world::BattleState::attack_ramp`] / `guard_ramp`
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::attack_ramp`] / `guard_ramp`
     /// ([`Self::track_block_approach_terms`]); the damage roll that follows
     /// a hit reads the same pair before the kernel zeroes it.
     /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
@@ -1245,7 +1245,9 @@ impl World {
             .is_some_and(|a| a.battle.action_category == 5)
             || matches!(
                 self.battle.round_flow.pending.get(usize::from(target)),
-                Some(Some(crate::battle_round::PendingPartyAction::Run))
+                Some(Some(
+                    legaia_engine_battle_loop::round_flow::PendingPartyAction::Run
+                ))
             );
         fleeing
             && (0..usize::from(party_count))

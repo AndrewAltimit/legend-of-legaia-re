@@ -279,7 +279,7 @@ impl SceneHost {
         self.refresh_battle_auto_combo_inputs();
     }
 
-    /// Refresh [`legaia_engine_core::world::BattleState::swing_costs`] from the player
+    /// Refresh `legaia_engine_battle_loop::battle_state::BattleState::swing_costs` from the player
     /// battle files: for each roster character (Vahn / Noa / Gala = PROT
     /// 863 / 864 / 865), splice that character's *equipped* sections and
     /// read each swing record's `+0x74` AP cost
@@ -441,7 +441,7 @@ impl SceneHost {
     }
 
     /// Build and install the party's battle forms for the fight in progress,
-    /// once per [`legaia_engine_core::world::BattleState::entry_serial`]: each member's
+    /// once per `legaia_engine_battle_loop::battle_state::BattleState::entry_serial`: each member's
     /// idle and action clips (the swings the hit events are paced by), art
     /// bank and art records (what the arts input tokenizes) - see
     /// [`legaia_engine_core::battle_party_form::install_party_battle_forms`].
@@ -486,7 +486,7 @@ impl SceneHost {
     }
 
     /// Refresh the **Auto** attack's disc inputs
-    /// ([`legaia_engine_core::world::AutoComboState`]): per roster character, the four
+    /// (`legaia_engine_battle_loop::auto_combo::AutoComboState`): per roster character, the four
     /// direction commands' leading entry bytes (the pool arm's weight input)
     /// and the raw art-animation bank records (the insertion tail's walk),
     /// plus the four status-guard masks in the battle overlay

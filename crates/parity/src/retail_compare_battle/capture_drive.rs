@@ -182,11 +182,10 @@ impl RetailBattle {
     /// six ticks back from the gate is the child's `0x29` exit pass, a pass
     /// before the frame retail's display held.
     pub fn drive_display_lag(&self) -> u16 {
-        let step = self
-            .frame_step_seed()
-            .map_or(legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP, |s| {
-                s.0
-            });
+        let step = self.frame_step_seed().map_or(
+            legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
+            |s| s.0,
+        );
         DISPLAY_LAG_PASSES * u16::from(step.max(1))
     }
 
@@ -634,7 +633,9 @@ impl RetailBattle {
     /// the engine slot of the capture's target `+0x1DD` - only a walk onto
     /// that body is the captured one - and both bodies' captured live pairs
     /// (not the seeds', which [`Self::undrift`] moves).
-    pub fn capture_approach_yaw(&self) -> Option<legaia_engine_core::world::CaptureApproach> {
+    pub fn capture_approach_yaw(
+        &self,
+    ) -> Option<legaia_engine_battle_loop::battle_state::CaptureApproach> {
         let SeedPlan::Action { seat, state } = self.seed_plan() else {
             return None;
         };
@@ -679,12 +680,14 @@ impl RetailBattle {
         self.walk_yaw_base
             .checked_sub(passes * inc)
             .filter(|&y| y > 0x200)
-            .map(|arrive| legaia_engine_core::world::CaptureApproach {
-                arrive,
-                target,
-                strike,
-                target_ground,
-            })
+            .map(
+                |arrive| legaia_engine_battle_loop::battle_state::CaptureApproach {
+                    arrive,
+                    target,
+                    strike,
+                    target_ground,
+                },
+            )
     }
 
     /// The backdrop pair's depth-cue weight a capture-band capture

@@ -155,7 +155,8 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let mut leveled: Vec<(u8, u8, u8)> = Vec::new();
     let mut casts = 0usize;
     let mut summon_requests = 0usize;
-    let mut seen_banner: Option<legaia_engine_core::world::BattleMessageBanner> = None;
+    let mut seen_banner: Option<legaia_engine_battle_loop::message_banner::BattleMessageBanner> =
+        None;
     for _ in 0..12 {
         if !wait_for_prompt(&mut w, &mut summon_requests) {
             panic!(
@@ -276,7 +277,7 @@ fn seru_cast_accrues_xp_and_crosses_its_level_threshold() {
     let banner = seen_banner.expect("the level-up raised the retail banner (element 0x65)");
     assert_eq!(
         banner.element,
-        legaia_engine_core::world::MAGIC_LEVEL_BANNER_ELEMENT
+        legaia_engine_battle_loop::message_banner::MAGIC_LEVEL_BANNER_ELEMENT
     );
     // The line opens with the name's element plate when the spell table
     // carries one (`^A Gimard...`), which the banner layout draws.

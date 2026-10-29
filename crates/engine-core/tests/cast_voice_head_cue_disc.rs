@@ -256,7 +256,7 @@ fn without_a_span_table_a_cast_raises_no_clip() {
 #[test]
 fn a_rounds_committed_spells_list_their_cast_voices_ahead() {
     use legaia_engine_battle::target_picker::CursorRow;
-    use legaia_engine_core::battle_round::PendingPartyAction;
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     let Some(dir) = extracted_dir() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;

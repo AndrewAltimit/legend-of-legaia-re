@@ -216,7 +216,7 @@ impl World {
         self.save_auto_command_string(caster);
         self.commit_party_command(
             caster,
-            crate::battle_round::PendingPartyAction::Art {
+            legaia_engine_battle_loop::round_flow::PendingPartyAction::Art {
                 sequence: sequence.to_vec(),
                 target_row,
                 target_slot,

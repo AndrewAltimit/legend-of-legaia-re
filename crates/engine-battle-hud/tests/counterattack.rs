@@ -5,8 +5,8 @@
 //! These are the cases that read the battle HUD's projections; the ones that
 //! read only the `World` stay in engine-core's `world::tests::counterattack`.
 
+use legaia_engine_battle_loop::round_flow::PendingPartyAction;
 use legaia_engine_battle_vm::battle_action::ActionState;
-use legaia_engine_core::battle_round::PendingPartyAction;
 use legaia_engine_core::world::*;
 use legaia_engine_mode::mode::SceneMode;
 

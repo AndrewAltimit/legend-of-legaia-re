@@ -8,7 +8,7 @@ impl World {
     /// Open the player-driven command menu for party member `actor` and park
     /// the action SM. The action context's `active_actor` is set now; the
     /// queued action / target is filled in by [`Self::tick_battle_command`]
-    /// once the player confirms. No-op unless [`crate::world::BattleState::player_driven`].
+    /// once the player confirms. No-op unless [`legaia_engine_battle_loop::battle_state::BattleState::player_driven`].
     pub(in crate::world) fn open_battle_command(&mut self, actor: u8) {
         use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
         use legaia_engine_battle_menus::battle_input::BattleCommandSession;
@@ -67,8 +67,8 @@ impl World {
     /// On an abort (no valid target) it falls back to the first living monster
     /// so the loop never deadlocks.
     pub(in crate::world) fn tick_battle_command(&mut self) {
-        use crate::battle_round::PendingPartyAction;
         use legaia_engine_battle::target_picker::CursorRow;
+        use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         use legaia_engine_battle_menus::battle_input::{
             BattleCommandInput, CommandPhase, Resolution,
         };
@@ -364,7 +364,7 @@ impl World {
     /// falls straight through to recovery, which is a strike-less turn - no
     /// weapon swing staged, no equipment clip committed, no effect script
     /// installed, and therefore no move-power record for the weapon-trail
-    /// pass to project from ([`crate::world::CastFxState::move_fx_streak`], whose `action` key is
+    /// pass to project from ([`legaia_engine_battle_loop::cast_fx_state::CastFxState::move_fx_streak`], whose `action` key is
     /// this stream's first byte).
     ///
     /// The bytes come from [`vm::battle_action::basic_attack_queue`], the port

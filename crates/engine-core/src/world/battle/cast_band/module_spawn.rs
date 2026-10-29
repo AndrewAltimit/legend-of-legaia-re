@@ -172,7 +172,7 @@ impl World {
     }
 
     /// The seat half of a summon spawn request for a host that draws
-    /// nothing: take [`crate::world::CastFxState::pending_summon_spawn`] and
+    /// nothing: take [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn`] and
     /// seat an unrendered creature at the hosts' slot (`8 + party_count`),
     /// through the same [`Self::seat_summon_actor`] the play hosts call
     /// after binding the mesh.
@@ -205,7 +205,7 @@ impl World {
     /// Install the cast-effect pool - the DATA half of the slot-B cast-module
     /// band (PROT 0903..0966), parsed off the disc by the scene host (which
     /// holds the PROT index; `World` is index-agnostic, the same split
-    /// [`crate::world::CastFxState::pending_summon_spawn`](crate::world::CastFxState::pending_summon_spawn)
+    /// [`legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn`](legaia_engine_battle_loop::cast_fx_state::CastFxState::pending_summon_spawn)
     /// uses). Idempotent; a host that never calls it leaves every cast staging
     /// no module records, which is the disc-free behaviour.
     pub fn install_cast_effect_pool(

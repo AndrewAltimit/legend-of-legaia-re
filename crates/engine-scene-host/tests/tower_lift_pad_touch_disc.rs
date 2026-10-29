@@ -51,7 +51,7 @@ fn extracted_dir() -> Option<PathBuf> {
 /// The lift's flicker: `4C 60` copies one of the two lit frames at
 /// `(576, 256)` / `(576, 288)` / `(576, 320)` onto the lift's texture at
 /// `(512, 448)`.
-fn is_flicker(m: &legaia_engine_core::world::ScriptVramMove) -> bool {
+fn is_flicker(m: &legaia_engine_field::script_vram_move::ScriptVramMove) -> bool {
     m.dst == (512, 448) && m.size == (16, 32) && m.src.0 == 576
 }
 

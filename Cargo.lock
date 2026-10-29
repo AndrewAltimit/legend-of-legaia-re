@@ -1897,6 +1897,7 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-engine-battle",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-cast",
@@ -1906,6 +1907,25 @@ dependencies = [
  "legaia-engine-system",
  "legaia-font",
  "legaia-save",
+ "legaia-ui-formats",
+]
+
+[[package]]
+name = "legaia-engine-battle-loop"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-battle",
+ "legaia-engine-battle-menus",
+ "legaia-engine-battle-vm",
+ "legaia-engine-cast",
+ "legaia-engine-effects",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-mode",
+ "legaia-engine-system",
+ "legaia-game-tables",
+ "legaia-overlay-images",
+ "legaia-render-kernels",
  "legaia-ui-formats",
 ]
 
@@ -1958,6 +1978,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-art",
  "legaia-engine-battle",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -2015,6 +2036,7 @@ dependencies = [
  "legaia-art",
  "legaia-container-formats",
  "legaia-engine-battle",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -2482,6 +2504,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -2810,6 +2833,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -3211,6 +3235,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",

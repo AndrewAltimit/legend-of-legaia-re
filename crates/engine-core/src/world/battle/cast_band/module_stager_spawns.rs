@@ -260,10 +260,9 @@ impl World {
                     }
                 }
             }
-            self.casting
-                .module_pres
-                .fades
-                .push(super::presentation::HookFade { site, slot, state });
+            self.casting.module_pres.fades.push(
+                legaia_engine_battle_loop::module_presentation::HookFade { site, slot, state },
+            );
         }
     }
 

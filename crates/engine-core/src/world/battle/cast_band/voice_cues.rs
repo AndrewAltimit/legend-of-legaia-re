@@ -179,9 +179,10 @@ impl World {
             .pending
             .iter()
             .filter_map(|p| match p {
-                Some(crate::battle_round::PendingPartyAction::Spell { spell_id, .. }) => {
-                    Some(*spell_id)
-                }
+                Some(legaia_engine_battle_loop::round_flow::PendingPartyAction::Spell {
+                    spell_id,
+                    ..
+                }) => Some(*spell_id),
                 _ => None,
             })
             .collect();

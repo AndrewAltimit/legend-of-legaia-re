@@ -121,7 +121,10 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
     {
         let mut host = BattleHostImpl { world: &mut world };
         host.learn_absorbed_seru(0, 1);
-        host.ui_element(crate::world::ABSORB_BANNER_ELEMENT, 0);
+        host.ui_element(
+            legaia_engine_battle_loop::message_banner::ABSORB_BANNER_ELEMENT,
+            0,
+        );
     }
     assert_eq!(
         world
@@ -134,7 +137,10 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
     // An unload of a different element leaves it standing.
     BattleHostImpl { world: &mut world }.ui_element(0x51, 1);
     assert!(world.battle.message_banner.is_some());
-    BattleHostImpl { world: &mut world }.ui_element(crate::world::ABSORB_BANNER_ELEMENT, 1);
+    BattleHostImpl { world: &mut world }.ui_element(
+        legaia_engine_battle_loop::message_banner::ABSORB_BANNER_ELEMENT,
+        1,
+    );
     assert!(world.battle.message_banner.is_none());
 }
 

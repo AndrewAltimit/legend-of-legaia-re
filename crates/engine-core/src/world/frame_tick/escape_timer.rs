@@ -72,7 +72,7 @@ impl World {
     /// the timer) and for the below-threshold flag under `_DAT_800845BC`,
     /// then decomposes the remaining count into MM:SS.ff and picks the
     /// readout ink from it. The decomposition and ink are therefore products
-    /// of the tick, not of a renderer - [`crate::world::BattleState::escape_timer_hud`] caches
+    /// of the tick, not of a renderer - [`legaia_engine_battle_loop::battle_state::BattleState::escape_timer_hud`] caches
     /// this frame's.
     ///
     /// The delta is one retail frame per call (the caller gates on

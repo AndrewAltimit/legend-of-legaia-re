@@ -13,6 +13,7 @@ name = "legaia_parity"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-battle-loop.workspace = true
 legaia-engine-camera.workspace = true
 legaia-bytes.workspace = true
 legaia-engine-battle.workspace = true
