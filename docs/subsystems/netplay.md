@@ -123,7 +123,8 @@ started room admits no one.
 the relay clears everyone's readiness, sends the notice (stamped with the
 sender) and the lobby, and admits joiners again. The lobby is not idle
 time: shared-world roaming runs there, so the relay carries guests'
-`Action`s to the host and the host's `Snapshot`s to the room in the lobby
+`Action`s to the host and the host's `Snapshot`s and `Event`s (card
+trades) to the room in the lobby
 as well as in a host-authoritative session.
 
 When the host leaves the lobby, the earliest-joined remaining member becomes

@@ -46,8 +46,7 @@ fn with_overlay<R>(
     match overlay(net) {
         Overlay::None => none,
         Overlay::Screen => {
-            let entries = world.pack_mode_entries();
-            let rows = net.menu_rows(&entries);
+            let rows = net.menu_rows(world);
             screen(&NetScreen {
                 title: &title,
                 address: net.address.as_deref(),

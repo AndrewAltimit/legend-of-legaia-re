@@ -266,6 +266,8 @@ pub mod action_tag {
     pub const AVATAR: u8 = 0x01;
     /// A guest's pad word (host-authoritative mode); body = `u16 LE`.
     pub const PAD: u8 = 0x02;
+    /// A card-trade message; body = [`crate::trade::TradeEnvelope`].
+    pub const TRADE: u8 = 0x03;
 }
 
 /// A pad-word action payload.

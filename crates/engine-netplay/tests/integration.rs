@@ -8,3 +8,4 @@ mod harness;
 mod modes;
 mod roaming;
 mod sockets;
+mod trades;

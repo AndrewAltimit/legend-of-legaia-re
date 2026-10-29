@@ -156,3 +156,24 @@ impl Room {
         );
     }
 }
+
+/// Give `world` a pack whose card book is the built-in one, and these cards.
+pub fn give_cards(world: &mut World, cards: &[(&str, u32)]) {
+    let mut pack = legaia_expansion_format::ExpansionPack::default();
+    pack.manifest.id = "cardtest".into();
+    pack.cards = legaia_engine_modes::active::builtin_sections().1.clone();
+    pack.manifest.name = "Card test".into();
+    pack.manifest.version = "1.0.0".into();
+    world
+        .activate_expansion(std::sync::Arc::new(pack))
+        .expect("a pack of only cards activates");
+    let c = &mut world.expansion.quests.progress.cards.collection;
+    for (id, n) in cards {
+        c.add(id, *n);
+    }
+}
+
+/// `world`'s count of card `id`.
+pub fn card_count(world: &World, id: &str) -> u32 {
+    world.expansion.quests.progress.cards.collection.count(id)
+}

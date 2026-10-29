@@ -15,6 +15,7 @@
 //!   browser play page alike;
 //! - [`screens`] - the room screen and roaming panel off a controller, as
 //!   `legaia_engine_ui` draw lists;
+//! - [`trade`] - card trades between two players, settled by the host;
 //! - [`avatar_pose`] - the pose a remote avatar is drawn in.
 //!
 //! See `docs/subsystems/netplay.md` ("In the hosts") for the flow and its
@@ -25,4 +26,5 @@ pub mod mode_net;
 pub mod roam;
 pub mod room;
 pub mod screens;
+pub mod trade;
 pub mod view_stream;

@@ -544,7 +544,11 @@ impl RelayCore {
                     self.send(host, Message::StateRequest { from: id });
                 }
             }
-            Message::Event { .. } if is_host && matches!(room.phase, Phase::Authoritative) => {
+            // The host's events reach the room in the lobby too: room-level
+            // host-authoritative traffic (card trades) runs there.
+            Message::Event { .. }
+                if is_host && (in_lobby || matches!(room.phase, Phase::Authoritative)) =>
+            {
                 self.broadcast(code, Some(id), &msg);
             }
             Message::Snapshot { .. }

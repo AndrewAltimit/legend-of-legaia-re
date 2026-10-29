@@ -34,7 +34,10 @@ use legaia_netplay::transport::Transport;
 
 use crate::mode_net::{ModeSim, NetMode, model_for};
 use crate::roam::{NO_SCENE, Roam};
+use crate::trade::{TradeDesk, TradeEnvelope, TradeHost, describe};
 use crate::view_stream::{ViewGuest, ViewHost};
+use legaia_engine_modes::cards::TradeOffer;
+use legaia_engine_modes::cards::trade::{TradeMsg, TradeSide};
 
 /// Pad seats a hosted room offers.
 pub const ROOM_SEATS: u8 = 4;
@@ -143,6 +146,14 @@ enum Row {
     QuickChat,
     Leave,
     Close,
+    /// Card trades (with a card economy): the partner, the card given, the
+    /// card asked for, the offer; an open offer's accept / decline.
+    TradeWith,
+    Give,
+    For,
+    Offer,
+    Accept,
+    Decline,
 }
 
 /// One player's netplay controller.
@@ -172,6 +183,14 @@ pub struct NetPlay {
     /// A chat line being typed.
     pub draft: Option<String>,
     last_pad: u16,
+    /// Card trades: the host's tables (while hosting) and this player's
+    /// desk.
+    trade_host: TradeHost,
+    pub trades: TradeDesk,
+    event_seq: u32,
+    trade_partner: usize,
+    trade_give: usize,
+    trade_take: usize,
     /// The connection is gone; the host should drop the controller.
     pub closed: bool,
     /// The scene id this frame (for drawing remote avatars).
@@ -200,6 +219,12 @@ impl NetPlay {
             quick_pick: 0,
             draft: None,
             last_pad: 0,
+            trade_host: TradeHost::default(),
+            trades: TradeDesk::default(),
+            event_seq: 0,
+            trade_partner: 0,
+            trade_give: 0,
+            trade_take: 0,
             closed: false,
             scene: NO_SCENE,
         }
@@ -416,6 +441,14 @@ impl NetPlay {
                 return;
             }
         }
+        if let Some(me) = self.me
+            && let Some(env) = self.trades.report(world, me)
+        {
+            self.trade_send(world, env);
+        }
+        for line in std::mem::take(&mut self.trades.notes) {
+            self.note(line);
+        }
         let mut outbox = Vec::new();
         let mut desync = None;
         match &mut self.phase {
@@ -574,6 +607,16 @@ impl NetPlay {
                 let name = self.name_of(player);
                 self.note(format!("{name} left"));
                 self.roam.forget(player);
+                self.trade_host.forget(player);
+                self.trades.holdings.remove(&player);
+                if self
+                    .trades
+                    .open
+                    .as_ref()
+                    .is_some_and(|t| t.proposer == player || t.partner == player)
+                {
+                    self.trades.open = None;
+                }
                 let dropped = match &mut self.phase {
                     Phase::ViewHost(vh) => vh.drop_player(player),
                     _ => None,
@@ -620,6 +663,20 @@ impl NetPlay {
                 }
             }
             Message::Snapshot { tick, avatars } => self.roam.receive_snapshot(tick, &avatars),
+            Message::Action { from, payload }
+                if payload.first() == Some(&crate::mode_net::action_tag::TRADE) =>
+            {
+                if self.is_host()
+                    && let Some(env) = TradeEnvelope::decode(&payload)
+                {
+                    self.trade_host_handle(world, from, env);
+                }
+            }
+            Message::Event { payload, .. } => {
+                if let (Some(me), Some(env)) = (self.me, TradeEnvelope::decode(&payload)) {
+                    self.trades.receive(world, me, &env);
+                }
+            }
             Message::Action { from, payload } => match &mut self.phase {
                 Phase::Lobby => {
                     self.roam.receive_report(from, &payload);
@@ -744,20 +801,150 @@ impl NetPlay {
 
     // --- the room screen ---
 
-    fn rows(&self) -> Vec<Row> {
+    fn rows(&self, world: &World) -> Vec<Row> {
         let mut rows = Vec::new();
         if self.is_host() {
             rows.extend([Row::Game, Row::Start]);
         } else {
             rows.push(Row::Ready);
         }
-        rows.extend([Row::Emote, Row::QuickChat, Row::Leave, Row::Close]);
+        rows.extend([Row::Emote, Row::QuickChat]);
+        if world.cards_available() {
+            match (&self.trades.open, self.me) {
+                (Some(t), Some(me)) if t.partner == me => rows.extend([Row::Accept, Row::Decline]),
+                (Some(_), _) => rows.push(Row::Decline),
+                _ => rows.extend([Row::TradeWith, Row::Give, Row::For, Row::Offer]),
+            }
+        }
+        rows.extend([Row::Leave, Row::Close]);
         rows
     }
 
-    fn screen_input(&mut self, world: &World, pressed: u16) {
+    // --- card trades ---
+
+    /// Route one trade message: through the host's tables when hosting
+    /// (broadcasting the verdicts and taking them locally), else to the
+    /// host as an action.
+    fn trade_send(&mut self, world: &mut World, env: TradeEnvelope) {
+        let Some(me) = self.me else {
+            return;
+        };
+        if self.is_host() {
+            self.trade_host_handle(world, me, env);
+        } else {
+            self.send(crate::trade::action(&env));
+        }
+    }
+
+    /// The host's handling of `env` from `from`: run the table, broadcast
+    /// each verdict, and take it locally.
+    fn trade_host_handle(&mut self, world: &mut World, from: PlayerId, env: TradeEnvelope) {
+        let me = self.me.unwrap_or_default();
+        for out in self.trade_host.handle(from, env) {
+            self.event_seq += 1;
+            let payload = out.encode();
+            self.send(Message::Event {
+                seq: self.event_seq,
+                seat: 0,
+                payload,
+                hash_after: 0,
+            });
+            self.trades.receive(world, me, &out);
+        }
+    }
+
+    /// Offer `offer` to `partner` (this player gives `offer.give`).
+    pub fn offer_trade(&mut self, world: &mut World, partner: PlayerId, offer: TradeOffer) {
+        let Some(me) = self.me else {
+            return;
+        };
+        self.trade_send(
+            world,
+            TradeEnvelope {
+                proposer: me,
+                partner,
+                msg: TradeMsg::Offer { revision: 0, offer },
+            },
+        );
+    }
+
+    /// Accept the open offer.
+    pub fn confirm_trade(&mut self, world: &mut World) {
+        let Some(t) = self.trades.open.clone() else {
+            return;
+        };
+        self.trade_send(
+            world,
+            TradeEnvelope {
+                proposer: t.proposer,
+                partner: t.partner,
+                msg: TradeMsg::Confirm {
+                    revision: t.revision,
+                },
+            },
+        );
+    }
+
+    /// Walk away from the open offer.
+    pub fn cancel_trade(&mut self, world: &mut World) {
+        let Some(t) = self.trades.open.clone() else {
+            return;
+        };
+        self.trade_send(
+            world,
+            TradeEnvelope {
+                proposer: t.proposer,
+                partner: t.partner,
+                msg: TradeMsg::Cancel,
+            },
+        );
+    }
+
+    /// A player's last reported holdings.
+    pub fn holdings_of(&self, player: PlayerId) -> &[(String, u32)] {
+        self.trades.holdings.get(&player).map_or(&[], Vec::as_slice)
+    }
+
+    /// The other players whose holdings the room has relayed.
+    fn trade_partners(&self) -> Vec<PlayerId> {
+        let Some(l) = &self.lobby else {
+            return Vec::new();
+        };
+        l.players
+            .iter()
+            .map(|p| p.id)
+            .filter(|&id| Some(id) != self.me && self.trades.holdings.contains_key(&id))
+            .collect()
+    }
+
+    fn trade_partner_id(&self) -> Option<PlayerId> {
+        let partners = self.trade_partners();
+        partners
+            .get(self.trade_partner.min(partners.len().saturating_sub(1)))
+            .copied()
+    }
+
+    /// The offer the trade rows spell out: one of the picked card for one
+    /// of the partner's.
+    fn picked_offer(&self) -> Option<(PlayerId, TradeOffer)> {
+        let me = self.me?;
+        let partner = self.trade_partner_id()?;
+        let mine = self.holdings_of(me);
+        let theirs = self.holdings_of(partner);
+        let give = mine.get(self.trade_give.min(mine.len().saturating_sub(1)))?;
+        let take = theirs.get(self.trade_take.min(theirs.len().saturating_sub(1)))?;
+        Some((
+            partner,
+            TradeOffer {
+                give: vec![(give.0.clone(), 1)],
+                take: vec![(take.0.clone(), 1)],
+            },
+        ))
+    }
+
+    fn screen_input(&mut self, world: &mut World, pressed: u16) {
         let hit = |b: PadButton| pressed & b.mask() != 0;
-        let rows = self.rows();
+        let rows = self.rows(world);
         self.cursor = self.cursor.min(rows.len() - 1);
         if hit(PadButton::Circle) || hit(PadButton::Triangle) {
             self.toggle_screen();
@@ -782,6 +969,19 @@ impl NetPlay {
             Row::Game => self.game_pick = cycle(self.game_pick, entries.len()),
             Row::Emote => self.emote_pick = cycle(self.emote_pick, EMOTES.len()),
             Row::QuickChat => self.quick_pick = cycle(self.quick_pick, QUICK_CHAT.len()),
+            Row::TradeWith => {
+                self.trade_partner = cycle(self.trade_partner, self.trade_partners().len())
+            }
+            Row::Give => {
+                let n = self.me.map_or(0, |me| self.holdings_of(me).len());
+                self.trade_give = cycle(self.trade_give, n);
+            }
+            Row::For => {
+                let n = self
+                    .trade_partner_id()
+                    .map_or(0, |p| self.holdings_of(p).len());
+                self.trade_take = cycle(self.trade_take, n);
+            }
             _ => {}
         }
         if !hit(PadButton::Cross) {
@@ -805,6 +1005,13 @@ impl NetPlay {
                 self.closed = true;
             }
             Row::Close => self.toggle_screen(),
+            Row::TradeWith | Row::Give | Row::For | Row::Offer => {
+                if let Some((partner, offer)) = self.picked_offer() {
+                    self.offer_trade(world, partner, offer);
+                }
+            }
+            Row::Accept => self.confirm_trade(world),
+            Row::Decline => self.cancel_trade(world),
         }
     }
 
@@ -831,8 +1038,9 @@ impl NetPlay {
     /// list).
     pub fn menu_rows(
         &self,
-        entries: &[ModeEntry],
+        world: &World,
     ) -> Vec<legaia_engine_ui::expansion_modes::netplay::NetMenuRow> {
+        let entries = &world.pack_mode_entries()[..];
         use legaia_engine_ui::expansion_modes::netplay::NetMenuRow;
         let everyone_ready = self.lobby.as_ref().is_some_and(|l| {
             l.players
@@ -844,7 +1052,9 @@ impl NetPlay {
             value,
             enabled,
         };
-        self.rows()
+        let offer = self.picked_offer();
+        let me = self.me.unwrap_or_default();
+        self.rows(world)
             .into_iter()
             .map(|r| match r {
                 Row::Ready => row(
@@ -868,6 +1078,39 @@ impl NetPlay {
                 Row::QuickChat => row("Say", Some(QUICK_CHAT[self.quick_pick].into()), true),
                 Row::Leave => row("Leave room", None, true),
                 Row::Close => row("Close", None, true),
+                Row::TradeWith => row(
+                    "Trade with",
+                    self.trade_partner_id().map(|p| self.name_of(p)),
+                    self.trade_partner_id().is_some(),
+                ),
+                Row::Give => row(
+                    "Give",
+                    offer.as_ref().map(|(_, o)| o.give[0].0.clone()),
+                    offer.is_some(),
+                ),
+                Row::For => row(
+                    "For",
+                    offer.as_ref().map(|(_, o)| o.take[0].0.clone()),
+                    offer.is_some(),
+                ),
+                Row::Offer => row("Offer trade", None, offer.is_some()),
+                Row::Accept => row(
+                    "Accept",
+                    self.trades
+                        .open
+                        .as_ref()
+                        .map(|t| describe(&t.offer, TradeSide::Partner)),
+                    true,
+                ),
+                Row::Decline => row(
+                    if self.trades.open.as_ref().is_some_and(|t| t.proposer == me) {
+                        "Withdraw offer"
+                    } else {
+                        "Decline"
+                    },
+                    None,
+                    true,
+                ),
             })
             .collect()
     }

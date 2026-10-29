@@ -330,6 +330,20 @@ fn an_ended_session_returns_the_room_to_its_lobby() {
             .iter()
             .any(|m| matches!(m, Message::Snapshot { tick: 5, .. }))
     );
+    // The host's events reach the room in the lobby as well (trades).
+    net.clients[0].send(Message::Event {
+        seq: 1,
+        seat: 0,
+        payload: vec![9],
+        hash_after: 0,
+    });
+    net.step();
+    assert!(
+        net.clients[1]
+            .inbox
+            .iter()
+            .any(|m| matches!(m, Message::Event { seq: 1, .. }))
+    );
     net.clients[1].send(Message::SetReady(true));
     net.clients[2].send(Message::SetReady(true));
     net.step();
