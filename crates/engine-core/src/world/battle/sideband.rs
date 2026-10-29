@@ -576,7 +576,7 @@ impl World {
             let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &bytes,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                 pos,
             );
             s.retail_wait_drain = true;

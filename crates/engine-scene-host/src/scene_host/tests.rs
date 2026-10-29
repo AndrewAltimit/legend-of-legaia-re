@@ -1,5 +1,5 @@
 use super::*;
-use legaia_engine_core::world::EFFECT_MODEL_LIBRARY_BASE;
+use legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE;
 
 /// Disc-gated: the global TMD pool seeded from `etmd.dat` (PROT 0874
 /// section 0) holds the five effect models, and the slot named by

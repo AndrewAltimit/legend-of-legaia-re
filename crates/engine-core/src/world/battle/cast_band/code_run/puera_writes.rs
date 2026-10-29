@@ -10,28 +10,6 @@ const SHOWN_TINT: u32 = 0x2008_0200;
 const HIDDEN: u8 = 0xFF;
 
 impl World {
-    /// Queue one op-`0x20` call into the resident module's stager, as a
-    /// part's program makes it (`MoveVmHostImpl::ext_20`); the module's next
-    /// tick runs it. A test seam for the stagers only parts reach.
-    pub fn queue_cast_stager_call(&mut self, arm: u8) {
-        self.casting
-            .module_stager_calls
-            .push((arm, Default::default()));
-    }
-
-    /// Run the op-`0x20` calls PROT 0922's parts made since its last tick
-    /// through its stager `FUN_801F90E4`: arm 0 raises `ctx[+0x278] = 3`.
-    ///
-    /// REF: FUN_801F90E4
-    pub(in crate::world::battle::cast_band) fn run_puera_stager_calls(
-        &mut self,
-        ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
-    ) {
-        for (arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
-            legaia_engine_cast::cast_module_ticks::puera_stager(ctx, arm);
-        }
-    }
-
     /// Apply PROT 0922's arm `phase` writes for one pass of its director;
     /// `passed` is whether the arm's gate let it through, `before` the
     /// countdown the pass opened on.
@@ -171,20 +149,6 @@ impl World {
             _ => {}
         }
     }
-    /// The live parts of arm 18's ring, in the order arm 18 seated them
-    /// (the handle slots `0x801F9F90 + (0x16 + i) * 4`).
-    fn puera_ring_parts(
-        &mut self,
-    ) -> impl Iterator<Item = &mut legaia_engine_effects::summon::SummonPartRuntime> {
-        self.casting
-            .active_summon
-            .iter_mut()
-            .flat_map(|s| s.parts.iter_mut())
-            .filter(|p| {
-                !p.finished
-                    && p.tag == Some(legaia_engine_cast::cast_module_camera::PUERA_RING_RECORD)
-            })
-    }
 
     /// PROT 0922 arm 19's pass: arm 18's ring re-seated as the crystals,
     /// each on its ring point at its dealt height and turned by its draws
@@ -193,7 +157,7 @@ impl World {
     fn seat_puera_crystals(&mut self) {
         let seats =
             legaia_engine_cast::cast_module_camera::puera_crystal_seats(|| self.next_rand());
-        for (part, seat) in self.puera_ring_parts().zip(seats.iter()) {
+        for (part, seat) in self.casting.puera_ring_parts().zip(seats.iter()) {
             let st = &mut part.state;
             [st.world_x, st.world_y, st.world_z] = seat.pos;
             st.world_y_mirror = seat.pos[1];
@@ -208,7 +172,7 @@ impl World {
     fn fall_puera_crystals(&mut self) {
         let drop = legaia_engine_cast::cast_module_camera::SPEED_SCALAR << 7;
         let mut landed = false;
-        for part in self.puera_ring_parts() {
+        for part in self.casting.puera_ring_parts() {
             let st = &mut part.state;
             let (y, hit) =
                 legaia_engine_cast::cast_module_camera::puera_crystal_fall(st.world_y, drop);

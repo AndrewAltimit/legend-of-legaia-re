@@ -19,6 +19,8 @@ pub mod frame_clock;
 pub mod hud_glides;
 pub mod message_banner;
 pub mod module_presentation;
+pub mod module_stagers;
+pub mod orb_stager;
 pub mod round_flow;
 pub mod seat_stats;
 pub mod status_word;

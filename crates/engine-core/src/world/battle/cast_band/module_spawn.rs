@@ -319,7 +319,7 @@ impl World {
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &module.bytes,
-            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
         true
@@ -380,7 +380,7 @@ impl World {
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
             &rest,
             &module.bytes,
-            crate::world::EFFECT_MODEL_LIBRARY_BASE,
+            legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
     }
@@ -543,7 +543,7 @@ impl World {
                 legaia_engine_effects::summon::SummonScene::spawn_parts(
                     &[],
                     &bytes,
-                    crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                    legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                     pos,
                 )
             });

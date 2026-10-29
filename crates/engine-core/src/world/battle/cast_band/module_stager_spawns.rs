@@ -8,7 +8,7 @@
 
 use super::*;
 use legaia_engine_cast::cast_module_ticks::{
-    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, StagerSpawn,
+    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES,
     blade_breath_cell_stager_spawns, call_wave_stager_spawns, chaos_breath_cell_stager_spawns,
     dead_end_crisis_stager_spawns, doomsday_stager_spawns, freed_stager_spawns,
     gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns,
@@ -92,7 +92,7 @@ impl World {
         // The seats of the arms run inside their caller's step (PROT
         // 0925's), in call order.
         for s in std::mem::take(&mut self.casting.module_stager_seats) {
-            self.seat_stager_spawn(entry, &s);
+            self.casting.seat_stager_spawn(entry, &s);
         }
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         // A capture cell's stager runs only for the body whose arms seat
@@ -208,18 +208,19 @@ impl World {
             // arm 3 parked at `ctx[+0x102C]` and fades white out before its
             // seats (`0x801F8478..0x801F84D4`).
             if entry == 959 && arm == 2 {
-                self.flush_module_part_pool();
+                self.casting.flush_module_part_pool();
                 self.casting
                     .module_pres
                     .fades
                     .retain(|f| f.slot != Some(MEGATON_PRESS_FADE_SLOT));
-                self.push_megaton_press_fade(&MEGATON_PRESS_WHITE_OUT, 0x801F_84D4, None);
+                self.casting
+                    .push_megaton_press_fade(&MEGATON_PRESS_WHITE_OUT, 0x801F_84D4, None);
             }
             for s in &spawns {
-                self.seat_stager_spawn(entry, s);
+                self.casting.seat_stager_spawn(entry, s);
             }
             if entry == 959 && arm == 3 {
-                self.push_megaton_press_fade(
+                self.casting.push_megaton_press_fade(
                     &MEGATON_PRESS_HELD_WHITE,
                     0x801F_85E8,
                     Some(MEGATON_PRESS_FADE_SLOT),
@@ -237,162 +238,6 @@ impl World {
         site: u32,
         slot: Option<legaia_overlay_images::cast_presentation::HandleSlot>,
     ) {
-        self.push_megaton_press_fade(t, site, slot);
-    }
-
-    fn push_megaton_press_fade(
-        &mut self,
-        t: &legaia_engine_battle_vm::battle_action::SummonFadeTemplate,
-        site: u32,
-        slot: Option<legaia_overlay_images::cast_presentation::HandleSlot>,
-    ) {
-        let mut seat = None;
-        legaia_engine_system::fade::spawn_fade(
-            &mut seat,
-            &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
-            1,
-        );
-        if let Some(state) = seat {
-            if let Some(s) = slot {
-                for f in self.casting.module_pres.fades.iter_mut() {
-                    if f.slot == Some(s) {
-                        f.slot = None;
-                    }
-                }
-            }
-            self.casting.module_pres.fades.push(
-                legaia_engine_battle_loop::module_presentation::HookFade { site, slot, state },
-            );
-        }
-    }
-
-    /// The module-side writes of the stagers' words and handles, on every
-    /// tick of the arm that makes them (`passed`: the arm handed over).
-    ///
-    /// - PROT 0918's arm 4 lifts its stager's arm-0 part (the handle
-    ///   `0x801F92C4`) `6 * scalar * step` a battle frame up to `-0x800`,
-    ///   on every pass ahead of its countdown gate
-    ///   (`0x801F712C..0x801F718C`).
-    /// - PROT 0925's arm 7 halts every ring part its stager seated (the
-    ///   handle table `0x801F809C`) on the pass it hands over
-    ///   (`0x801F7210..0x801F7254`).
-    /// - PROT 0934's arms 0 and 10 zero the stager word `0x801FA410`
-    ///   (`0x801F6C3C`; `0x801F78F8`, on its pass).
-    ///
-    /// REF: FUN_801F6C70 (PROT 0918), FUN_801F6A00 (PROT 0925),
-    /// FUN_801F6A40 (PROT 0934)
-    pub(in crate::world::battle::cast_band) fn late_creature_stager_words(
-        &mut self,
-        entry: u32,
-        phase: u8,
-        passed: bool,
-    ) {
-        use legaia_engine_cast::cast_module_ticks as t;
-        match entry {
-            918 if phase == 4 => {
-                let lift = (t::KEMARO_LIFT_PER_SCALAR
-                    * legaia_engine_cast::cast_module_camera::SPEED_SCALAR)
-                    as i16;
-                if let Some(part) = self.casting.active_summon.as_mut().and_then(|sc| {
-                    sc.parts
-                        .iter_mut()
-                        .rev()
-                        .find(|p| p.tag == Some(t::KEMARO_LIFTED_RECORD))
-                }) {
-                    let y = part.state.world_y.wrapping_sub(lift);
-                    part.state.world_y = y.max(t::KEMARO_LIFT_CEILING);
-                }
-            }
-            925 if phase == t::SPIKEFISH_RING_ARM && passed => {
-                if let Some(sc) = self.casting.active_summon.as_mut() {
-                    for part in &mut sc.parts {
-                        if part
-                            .tag
-                            .is_some_and(|r| t::SPIKEFISH_RING_RECORDS.contains(&r))
-                        {
-                            part.finished = true;
-                        }
-                    }
-                }
-            }
-            934 if phase == 0 || (phase == 10 && passed) => self.casting.module_ozma_word = 0,
-            _ => {}
-        }
-    }
-
-    /// The part-pool flush `FUN_80050E74` a capture arm makes on its pass
-    /// ([`legaia_engine_cast::cast_module_camera::capture_arm_flushes_pool`]):
-    /// every part of the cast's running scene gets its halt bit. The
-    /// modules that call it seat every part through the pool wrapper
-    /// `FUN_80050ED4`.
-    ///
-    /// REF: FUN_80050E74
-    pub(in crate::world::battle) fn flush_module_part_pool(&mut self) {
-        if let Some(scene) = self.casting.active_summon.as_mut() {
-            for part in &mut scene.parts {
-                part.finished = true;
-            }
-        }
-    }
-
-    /// Seat one stager arm's `FUN_80021B04` call into the cast's running
-    /// scene: the record parsed against its image's whole record set, with
-    /// the arm's bytecode stores applied to the copy it is seated from, and
-    /// its stores into the seated part queued behind the part's seat run.
-    pub(in crate::world::battle::cast_band) fn seat_stager_spawn(
-        &mut self,
-        entry: u32,
-        spawn: &StagerSpawn,
-    ) {
-        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
-        let Some(module) = self
-            .casting
-            .effect_pool
-            .as_ref()
-            .and_then(|p| p.module(entry))
-        else {
-            return;
-        };
-        let Some(off) = spawn.record.checked_sub(LINK_BASE).map(|o| o as usize) else {
-            return;
-        };
-        let bytes: std::sync::Arc<[u8]> = if spawn.patches.is_empty() {
-            module.bytes.clone()
-        } else {
-            let mut b = module.bytes.to_vec();
-            for &(va, value) in &spawn.patches {
-                let Some(at) = va.checked_sub(LINK_BASE).map(|o| o as usize) else {
-                    continue;
-                };
-                if let Some(w) = b.get_mut(at..at + 2) {
-                    w.copy_from_slice(&value.to_le_bytes());
-                }
-            }
-            b.into()
-        };
-        let mut offs: Vec<usize> = module.parts.iter().map(|p| p.record_off).collect();
-        offs.push(off);
-        let picked: Vec<_> = legaia_overlay_images::summon_overlay::parse_records_at(&bytes, &offs)
-            .into_iter()
-            .filter(|p| p.record_off == off)
-            .collect();
-        if picked.is_empty() {
-            return;
-        }
-        let scene = self.casting.active_summon.get_or_insert_with(|| {
-            legaia_engine_effects::summon::SummonScene::spawn_parts(
-                &[],
-                &bytes,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
-                spawn.pos,
-            )
-        });
-        let first = scene.parts.len();
-        scene.push_parts_scaled(&picked, &bytes, spawn.pos, spawn.rot, spawn.scale);
-        for part in &mut scene.parts[first..] {
-            part.tag.get_or_insert(spawn.record);
-            part.seat_pokes.extend_from_slice(&spawn.pokes);
-            part.seat_halve_speed = spawn.halve_speed;
-        }
+        self.casting.push_megaton_press_fade(t, site, slot);
     }
 }

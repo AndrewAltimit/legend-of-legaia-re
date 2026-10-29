@@ -143,7 +143,7 @@ impl World {
                 // Arm 5's pass steps and lifts the creature in the pass that
                 // cuts to it, and the cut lands on the next tick here.
                 if pos.is_some_and(|b| b != scratch)
-                    && self.orb_defer_seat(phase_in, ctx.phase, &scratch)
+                    && self.casting.orb_defer_seat(phase_in, ctx.phase, &scratch)
                 {
                     return (step, Vec::new());
                 }

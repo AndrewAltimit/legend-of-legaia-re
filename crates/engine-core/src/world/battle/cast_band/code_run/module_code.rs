@@ -68,7 +68,7 @@ impl World {
             // calling parts (Nighto's rays and rings, Zenoir's floor rings,
             // rays and final blasts).
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
-            922 => self.run_puera_stager_calls(&mut ctx),
+            922 => self.casting.run_puera_stager_calls(&mut ctx),
             927 => self.run_juggernaut_stager_calls(),
             // PROT 0923's stager is reached through its parts' op-`0x20`
             // calls, never off the phase: its arm 0 (the stage byte `3`) runs
@@ -85,7 +85,7 @@ impl World {
                     // grey flash fade.
                     if call_arm == 1 {
                         for slot in ticks::GILIUM_STAGER_HALTS {
-                            self.kill_parked_module_part(
+                            self.casting.kill_parked_module_part(
                                 legaia_overlay_images::cast_presentation::HandleSlot::Abs(slot),
                             );
                         }
@@ -100,12 +100,12 @@ impl World {
                         self.presentation.module_fades.extend(fade);
                     }
                     for s in &ticks::gilium_stager_spawns(call_arm, caller) {
-                        self.seat_stager_spawn(entry, s);
+                        self.casting.seat_stager_spawn(entry, s);
                         // Arm 0 parks the bowl's handle where the module's
                         // halt loops find it, beside the tick body's own
                         // parked parts.
                         if s.record == ticks::GILIUM_BOWL_RECORD {
-                            self.park_module_part(
+                            self.casting.park_module_part(
                                 legaia_overlay_images::cast_presentation::HandleSlot::Abs(
                                     ticks::GILIUM_BOWL_HANDLE,
                                 ),
@@ -1552,7 +1552,8 @@ impl World {
         // it at `4` on its exit, arm 9 ramps the colour towards red a step
         // a vsync and pins it on its exit, and `0xFF` clears the budget.
         if entry == legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY {
-            self.slippery_rain_words(phase_in, ctx.phase != phase_in);
+            self.casting
+                .slippery_rain_words(phase_in, ctx.phase != phase_in);
         }
         // The arm passed: its re-arm of the countdown word.
         if let Some(a) = arm_countdown
@@ -1574,7 +1575,8 @@ impl World {
         if entry == 911 {
             self.orb_arm_writes(phase_in, ctx.phase);
         }
-        self.late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
+        self.casting
+            .late_creature_stager_words(entry, phase_in, ctx.phase != phase_in);
         if entry == 928
             && let Some(v) = legaia_engine_cast::cast_module_camera::palma_stage_byte(
                 phase_in,

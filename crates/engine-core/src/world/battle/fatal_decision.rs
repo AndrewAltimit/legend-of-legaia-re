@@ -15,13 +15,6 @@ use super::*;
 use legaia_engine_battle_loop::cast_band::CastModuleCodeRun;
 use legaia_engine_cast::cast_fatal_decision as fd;
 
-/// The label of the backdrop part.
-const TAG_BACKDROP: u32 = 0x0954_0000;
-/// The label of wheel icon `i` is this plus `i`.
-const TAG_ICON: u32 = 0x0954_0100;
-/// The label of the three landing parts.
-const TAG_LANDING: u32 = 0x0954_0200;
-
 /// The message-bar element the stop prompt and the steal / gold messages use
 /// (`FUN_801D8DE8(0x5B, ..)`).
 const MESSAGE_BAR_ELEMENT: u8 = 0x5B;
@@ -133,34 +126,9 @@ impl World {
         }
     }
 
-    /// A string out of PROT 0954's image, as the display string the HUD
-    /// lays out: printable ASCII as itself, any other byte (the `0xCE`
-    /// button escape) parked at `U+E000 + byte` so the font gets the byte
-    /// back.
-    fn fatal_decision_text(&self, va: u32) -> Option<String> {
-        let module = self
-            .casting
-            .effect_pool
-            .as_ref()?
-            .module(fd::FATAL_DECISION_ENTRY)?;
-        let bytes = fd::module_string(&module.bytes, va)?;
-        Some(
-            bytes
-                .iter()
-                .map(|&b| {
-                    if (0x20..=0x7E).contains(&b) {
-                        char::from(b)
-                    } else {
-                        char::from_u32(0xE000 + u32::from(b)).unwrap_or('?')
-                    }
-                })
-                .collect(),
-        )
-    }
-
     #[cfg(test)]
     pub(in crate::world) fn fatal_decision_text_for_test(&self, va: u32) -> Option<String> {
-        self.fatal_decision_text(va)
+        self.casting.fatal_decision_text(va)
     }
 
     /// Put `text` in the message bar under the acting seat.
@@ -218,9 +186,9 @@ impl World {
             }
         }
         if !p.spawns.is_empty() {
-            self.seat_fatal_records(&p.spawns);
+            self.casting.seat_fatal_records(&p.spawns);
         }
-        self.drive_fatal_parts(p);
+        self.casting.drive_fatal_parts(p);
         if p.flash {
             legaia_engine_system::fade::spawn_fade(
                 &mut self.presentation.fade,
@@ -237,105 +205,17 @@ impl World {
         }
         match p.prompt {
             Some(true) => {
-                let text = self.fatal_decision_text(fd::PROMPT_TEXT);
+                let text = self.casting.fatal_decision_text(fd::PROMPT_TEXT);
                 self.raise_fatal_message(text);
             }
             Some(false) => self.battle.steal_caption = None,
             None => {}
         }
         if let Some(o) = p.banner {
-            self.casting.fatal_banner = self.fatal_decision_text(o.name_va());
+            self.casting.fatal_banner = self.casting.fatal_decision_text(o.name_va());
         }
         if p.react {
             self.fatal_victim_reacts(victim);
-        }
-    }
-
-    /// Seat the records one pass spawned, each at the origin with no
-    /// rotation (every one is camera-relative), labelled for the arms that
-    /// write into it later.
-    fn seat_fatal_records(&mut self, spawns: &[fd::FatalSpawn]) {
-        const LINK_BASE: u32 = legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
-        let Some(module) = self
-            .casting
-            .effect_pool
-            .as_ref()
-            .and_then(|p| p.module(fd::FATAL_DECISION_ENTRY))
-            .cloned()
-        else {
-            return;
-        };
-        let mut landing = 0;
-        for spawn in spawns {
-            let Some(off) = spawn.record.checked_sub(LINK_BASE).map(|o| o as usize) else {
-                continue;
-            };
-            let mut offs: Vec<usize> = module.parts.iter().map(|p| p.record_off).collect();
-            offs.push(off);
-            let picked: Vec<_> =
-                legaia_overlay_images::summon_overlay::parse_records_at(&module.bytes, &offs)
-                    .into_iter()
-                    .filter(|p| p.record_off == off)
-                    .collect();
-            if picked.is_empty() {
-                continue;
-            }
-            let tag = match spawn.wheel_slot {
-                Some(i) => TAG_ICON + i as u32,
-                None if spawn.record == fd::OPEN_RECORD => TAG_BACKDROP,
-                None => {
-                    landing += 1;
-                    TAG_LANDING + landing
-                }
-            };
-            let scene = self.casting.active_summon.get_or_insert_with(|| {
-                legaia_engine_effects::summon::SummonScene::spawn_parts(
-                    &[],
-                    &module.bytes,
-                    crate::world::EFFECT_MODEL_LIBRARY_BASE,
-                    [0; 3],
-                )
-            });
-            let first = scene.parts.len();
-            scene.push_parts(&picked, &module.bytes, [0; 3], [0; 3]);
-            for part in &mut scene.parts[first..] {
-                part.tag = Some(tag);
-                part.state.field_72 = spawn.scale;
-            }
-        }
-    }
-
-    /// The writes the arms make into parts already spawned: the icons'
-    /// placement and the landed icon's growth, and the two retires.
-    fn drive_fatal_parts(&mut self, p: &fd::FatalDecisionPass) {
-        let Some(scene) = self.casting.active_summon.as_mut() else {
-            return;
-        };
-        for part in &mut scene.parts {
-            let Some(tag) = part.tag else {
-                continue;
-            };
-            if tag == TAG_BACKDROP && p.retire_backdrop {
-                part.finished = true;
-            }
-            let Some(i) = tag.checked_sub(TAG_ICON).filter(|&i| i < 8) else {
-                continue;
-            };
-            let i = i as usize;
-            if p.retire_wheel {
-                part.finished = true;
-                continue;
-            }
-            if let Some([x, y]) = p.place[i] {
-                part.state.world_x = x;
-                part.state.world_y = y;
-            }
-            if let Some((g, d)) = p.grow
-                && g == i
-            {
-                part.state.field_72 = part.state.field_72.wrapping_add(d as u16);
-                part.state.world_y = part.state.world_y.wrapping_add(d);
-            }
         }
     }
 
@@ -383,7 +263,7 @@ impl World {
                 // `0x801F8330`: the gold word `0x8008459C` loses a tenth, and
                 // the message bar says so.
                 self.party.money = fd::gold_tithe(self.party.money);
-                let text = self.fatal_decision_text(fd::GOLD_TEXT);
+                let text = self.casting.fatal_decision_text(fd::GOLD_TEXT);
                 self.raise_fatal_message(text);
                 self.battle_ctx.message_id = MESSAGE_BAR_ELEMENT;
                 return true;
@@ -528,6 +408,7 @@ impl World {
                     .or_else(|| self.tables.item_catalog.get(id).map(|e| e.name.to_string()))
                     .unwrap_or_default();
                 let suffix = self
+                    .casting
                     .fatal_decision_text(fd::STOLEN_SUFFIX_TEXT)
                     .unwrap_or_default();
                 let _ = self.take_one_from_bag(id);
@@ -535,7 +416,7 @@ impl World {
                 true
             }
             None => {
-                let text = self.fatal_decision_text(fd::NO_EFFECT_TEXT);
+                let text = self.casting.fatal_decision_text(fd::NO_EFFECT_TEXT);
                 self.raise_fatal_message(text);
                 false
             }

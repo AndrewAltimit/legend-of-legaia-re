@@ -85,7 +85,7 @@ impl World {
                     let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                         &parts,
                         &bytes,
-                        crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                        legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                         pos,
                     );
                     s.pose_parts(rot, SHIELD_SCALE);
@@ -197,7 +197,7 @@ impl World {
             let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &parts,
                 &bytes,
-                crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                 pos,
             );
             s.pose_parts(rot, SHIELD_SCALE);
@@ -252,7 +252,7 @@ impl World {
                 let mut s = legaia_engine_effects::summon::SummonScene::spawn_parts(
                     &parts,
                     &bytes,
-                    crate::world::EFFECT_MODEL_LIBRARY_BASE,
+                    legaia_engine_effects::summon::EFFECT_MODEL_LIBRARY_BASE,
                     pos,
                 );
                 s.pose_parts(rot, SHIELD_SCALE);

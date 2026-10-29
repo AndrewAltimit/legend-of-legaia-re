@@ -179,8 +179,8 @@ pub use battle::{
 };
 mod effects;
 pub use effects::{
-    ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES,
-    EFFECT_MODEL_LIBRARY_BASE, EffectChildSeed, MAX_DEBUG_EFFECTS,
+    ClutBlendFx, ClutCellFx, ClutCellFxPhase, DEBUG_EFFECT_LIFETIME_FRAMES, EffectChildSeed,
+    MAX_DEBUG_EFFECTS,
 };
 mod encounters;
 pub use encounters::FieldBossStager;
