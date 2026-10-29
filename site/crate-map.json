@@ -1577,7 +1577,12 @@
    "lib": true,
    "modules": [
     "battle",
-    "progression"
+    "progression",
+    "dialog",
+    "flags",
+    "quest",
+    "quest_challenge",
+    "quest_save"
    ],
    "band": "kernels",
    "track": "engine",
@@ -2189,8 +2194,10 @@
    ],
    "dev_deps": [
     "engine-battle-vm",
+    "engine-expansion",
     "engine-field",
     "engine-world-views",
+    "expansion-format",
     "prot",
     "scene-formats"
    ],
