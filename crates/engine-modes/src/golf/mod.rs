@@ -21,6 +21,7 @@ use legaia_engine_system::pad::PadButton;
 use serde::{Deserialize, Serialize};
 
 use crate::fixed::{Vec2, angle_delta};
+use crate::map_frame::MapFrame;
 use crate::session::{
     AiTier, ModeResults, ModeRng, ModeSession, PadEdges, PadWord, SeatKind, StateHasher,
 };
@@ -39,6 +40,9 @@ pub const HOLE_OVER_FRAMES: u32 = 90;
 pub struct GolfConfig {
     pub seats: Vec<SeatKind>,
     pub holes: Vec<Course>,
+    /// Per hole, where it lies on its pack map (`None` for a tile-string
+    /// hole). Presentation only: the rules never read it.
+    pub frames: Vec<Option<MapFrame>>,
     pub ai_think_frames: u32,
     pub seed: u64,
 }
@@ -58,14 +62,53 @@ impl GolfConfig {
         if holes.is_empty() {
             return Err(CourseError::Empty);
         }
+        let frames = vec![None; holes.len()];
+        Ok(Self::with_holes(holes, frames, ai, seed))
+    }
+
+    /// Build from a pack course played on its map ([`Course::from_map`]):
+    /// `maps` is the pack's map set.
+    pub fn from_map_course(
+        c: &legaia_expansion_format::modes::GolfCourse,
+        maps: &std::collections::BTreeMap<String, legaia_expansion_format::map::MapDef>,
+        ai: &[AiTier],
+        seed: u64,
+    ) -> Result<Self, CourseError> {
+        let id = c.map.as_deref().unwrap_or_default();
+        let def = maps
+            .get(id)
+            .ok_or_else(|| CourseError::NoMap(id.to_string()))?;
+        let grid = def
+            .tile_grid()
+            .map_err(|e| CourseError::MapTiles(e.to_string()))?;
+        let mut holes = Vec::with_capacity(c.holes.len());
+        let mut frames = Vec::with_capacity(c.holes.len());
+        for h in &c.holes {
+            let (course, frame) = Course::from_map(c, h, def, &grid, id)?;
+            holes.push(course);
+            frames.push(Some(frame));
+        }
+        if holes.is_empty() {
+            return Err(CourseError::Empty);
+        }
+        Ok(Self::with_holes(holes, frames, ai, seed))
+    }
+
+    fn with_holes(
+        holes: Vec<Course>,
+        frames: Vec<Option<MapFrame>>,
+        ai: &[AiTier],
+        seed: u64,
+    ) -> Self {
         let mut seats = vec![SeatKind::Human];
         seats.extend(ai.iter().map(|&t| SeatKind::Ai(t)));
-        Ok(Self {
+        Self {
             seats,
             holes,
+            frames,
             ai_think_frames: 30,
             seed,
-        })
+        }
     }
 }
 
@@ -183,6 +226,11 @@ impl GolfSession {
 
     pub fn course(&self) -> &Course {
         &self.cfg.holes[self.hole]
+    }
+
+    /// Where the hole in play lies on its pack map, if it is a map hole.
+    pub fn frame(&self) -> Option<&MapFrame> {
+        self.cfg.frames.get(self.hole).and_then(Option::as_ref)
     }
 
     /// Total strokes per seat over the holes played.

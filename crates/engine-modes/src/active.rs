@@ -15,12 +15,14 @@
 use std::collections::BTreeMap;
 
 use legaia_expansion_format::cards::{CardSection, RewardSource};
+use legaia_expansion_format::map::MapDef;
 use legaia_expansion_format::modes::ModeSection;
 
 use crate::cards::CardBook;
 use crate::cards::duel::{DuelConfig, DuelEvent, DuelSession, DuelView};
 use crate::golf::course::Course;
 use crate::golf::{GolfConfig, GolfEvent, GolfSession, GolfView};
+use crate::map_frame::MapFrame;
 use crate::poker::{Action, PokerConfig, PokerEvent, PokerSession, PokerView};
 use crate::prop_hunt::{Arena, HuntEvent, HuntView, PropHuntConfig, PropHuntSession};
 use crate::racing::{RaceConfig, RaceEvent, RaceSession, RaceView, Track};
@@ -83,6 +85,16 @@ pub fn entries(section: &ModeSection) -> Vec<ModeEntry> {
         push(&a.id, &a.name, ModeKind::PropHunt);
     }
     out
+}
+
+/// The pack map instance `id` is played on and the spawn it is entered at,
+/// when it names one (a golf course or a race with `map = "<id>"`).
+pub fn instance_map(section: &ModeSection, id: &str) -> Option<(String, String)> {
+    if let Some(c) = section.golf.iter().find(|c| c.id == id) {
+        return c.map.clone().map(|m| (m, c.spawn.clone()));
+    }
+    let r = section.races.iter().find(|r| r.id == id)?;
+    r.map.clone().map(|m| (m, r.spawn.clone()))
 }
 
 const BUILTIN_MODES: &str = include_str!("../builtin/modes.toml");
@@ -174,6 +186,8 @@ pub struct ActiveMode {
     /// The hosting peer's results, once its session ended.
     remote_results: Option<ModeResults>,
     book: CardBook,
+    /// A race's placement on its pack map (golf keeps one per hole).
+    race_frame: Option<MapFrame>,
 }
 
 /// A view of whichever session is running. A per-frame snapshot, built
@@ -207,7 +221,22 @@ impl ActiveMode {
         seed: u64,
         opts: &BuildOptions,
     ) -> Result<Self, BuildError> {
+        Self::build_with_maps(modes, cards, &BTreeMap::new(), id, seed, opts)
+    }
+
+    /// [`Self::build`] with the pack's maps, which a golf course or a race
+    /// played on a map ([`instance_map`]) is laid out from. Without its map
+    /// such an instance is refused.
+    pub fn build_with_maps(
+        modes: &ModeSection,
+        cards: &CardSection,
+        maps: &BTreeMap<String, MapDef>,
+        id: &str,
+        seed: u64,
+        opts: &BuildOptions,
+    ) -> Result<Self, BuildError> {
         let book = CardBook::new(cards.clone());
+        let mut race_frame = None;
         let invalid = |e: &dyn std::fmt::Debug| BuildError::Invalid(format!("{id}: {e:?}"));
         let (name, runner) = if let Some(t) = modes.poker.iter().find(|t| t.id == id) {
             let cfg = PokerConfig::from_table(t, seed);
@@ -220,10 +249,25 @@ impl ActiveMode {
             let cfg = DuelConfig::from_duel(d, &book, &deck, seed).map_err(|e| invalid(&e))?;
             (&d.name, ModeRunner::Duel(Box::new(DuelSession::new(cfg))))
         } else if let Some(c) = modes.golf.iter().find(|c| c.id == id) {
-            let cfg = GolfConfig::from_course(c, &opts.golf_ai, seed).map_err(|e| invalid(&e))?;
+            let cfg = match &c.map {
+                Some(_) => GolfConfig::from_map_course(c, maps, &opts.golf_ai, seed),
+                None => GolfConfig::from_course(c, &opts.golf_ai, seed),
+            }
+            .map_err(|e| invalid(&e))?;
             (&c.name, ModeRunner::Golf(Box::new(GolfSession::new(cfg))))
         } else if let Some(r) = modes.races.iter().find(|r| r.id == id) {
-            let cfg = RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?;
+            let cfg = match &r.map {
+                Some(map) => {
+                    let def = maps.get(map).ok_or_else(|| {
+                        BuildError::Invalid(format!("{id}: the pack has no map `{map}`"))
+                    })?;
+                    let (cfg, frame) =
+                        RaceConfig::from_map(r, def, map, seed).map_err(|e| invalid(&e))?;
+                    race_frame = Some(frame);
+                    cfg
+                }
+                None => RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?,
+            };
             (&r.name, ModeRunner::Race(Box::new(RaceSession::new(cfg))))
         } else if let Some(a) = modes.prop_hunt.iter().find(|a| a.id == id) {
             let cfg = PropHuntConfig::from_arena(a, seed).map_err(|e| invalid(&e))?;
@@ -248,7 +292,19 @@ impl ActiveMode {
             remote_view: None,
             remote_results: None,
             book,
+            race_frame,
         })
+    }
+
+    /// Where the session is played on its pack map: the golf hole in play,
+    /// or the race track. `None` for an instance with no map, which a host
+    /// draws as its top-down screen.
+    pub fn map_frame(&self) -> Option<&MapFrame> {
+        match &self.runner {
+            ModeRunner::Golf(s) => s.frame(),
+            ModeRunner::Race(_) => self.race_frame.as_ref(),
+            _ => None,
+        }
     }
 
     pub fn kind(&self) -> ModeKind {

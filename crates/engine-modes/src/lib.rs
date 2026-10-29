@@ -15,6 +15,7 @@ pub mod active;
 pub mod cards;
 pub mod fixed;
 pub mod golf;
+pub mod map_frame;
 pub mod poker;
 pub mod prop_hunt;
 pub mod racing;

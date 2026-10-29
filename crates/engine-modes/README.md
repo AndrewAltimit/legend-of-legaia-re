@@ -18,6 +18,7 @@ Rules, the session contract and the lockstep rationale are in
 | `cards` | Card book, collection, boosters, reward rolls, selling and trades; `cards::duel` is the Grid Duel card game, `cards::economy` the player's card progress and shop operations, `cards::screen` the binder / booster / dealer / deck screen state machine, `cards::trade` the authority-run trade table and its wire messages. |
 | `golf` | Mini-golf: tile courses and ball physics (`course`), stroke and turn session. |
 | `racing` | Checkpoint racing on a closed centerline track. |
+| `map_frame` | `MapFrame`: where a golf hole or race track laid on a pack map sits on the field (origin and world units per mode unit). |
 | `prop_hunt` | Prop-hunt round rules over a minimal 2D arena. |
 | `active` | `ActiveMode`, any one session behind one surface (build by instance id, tick, view, settle with the mode reward rules), the instance list and the built-in practice set (`builtin/`). |
 

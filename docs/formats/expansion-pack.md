@@ -156,7 +156,20 @@ The validator rejects a repeated or empty id, a side outside `1..=10`, a booster
 
 ### modes.toml
 
-Reserved; schema not yet defined.
+Instances of the port's own game modes: `[[poker]]` tables, `[[card_duels]]` opponents, `[[golf]]` courses, `[[races]]` tracks and `[[prop_hunt]]` arenas, each with an `id` and a display `name`. The rules each runs and the keys that tune them are in [`expansion-modes.md`](../subsystems/expansion-modes.md); a mode `id` is what a `cards.toml` reward source of kind `mode` names.
+
+A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
+
+| Key | On | Meaning |
+|---|---|---|
+| `map` | `[[golf]]`, `[[races]]` | The `maps/<id>.toml` stem the instance is played on |
+| `spawn` | `[[golf]]`, `[[races]]` | The map spawn the host enters at; the map's first when empty |
+| `surfaces` | `[[golf]]` | Map legend character -> `fairway`, `rough`, `sand`, `water`, `wall` or `out` |
+| `tee`, `cup` | `[[golf.holes]]` | Map tiles `[column, row]` of the tee and the cup; both required on a map course |
+| `area` | `[[golf.holes]]` | Inclusive map-tile rectangle `[col0, row0, col1, row1]` the hole plays in; the whole map when left out |
+| `waypoints` | `[[races]]` | The centerline as map tiles, in driving order, closing back on the first; replaces `points` |
+
+A map hole needs no `rows`: its walls, void and heights are the map's tiles. A legend character missing from `surfaces` plays as the surface its style's `label` names (rough; sand or bunker; water or pond; lava, chasm or pit as out of bounds), else as fairway. A map race's `half_width` is in race units, two field world units each. Sample: the `links` test pack, `crates/engine-modes/tests/fixtures/links/`.
 
 ### maps/&lt;id&gt;.toml
 

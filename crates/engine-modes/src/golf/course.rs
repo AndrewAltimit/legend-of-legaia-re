@@ -16,10 +16,12 @@
 //! A ball that ends a sub-step on water or out of bounds is a hazard: the
 //! shot is replayed from where it was struck with a penalty stroke.
 
-use legaia_expansion_format::modes::GolfHole;
+use legaia_expansion_format::map::{MapDef, TileGrid};
+use legaia_expansion_format::modes::{GolfCourse, GolfHole, GolfSurface};
 use serde::{Deserialize, Serialize};
 
 use crate::fixed::{FX_ONE, Fx, Vec2, isqrt};
+use crate::map_frame::{GOLF_UNIT, MAP_TILE, MapFrame};
 
 /// Tile edge in world units.
 pub const TILE: i32 = 32;
@@ -86,10 +88,23 @@ pub struct Tile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CourseError {
     Empty,
-    BadTile { row: usize, col: usize, ch: char },
+    BadTile {
+        row: usize,
+        col: usize,
+        ch: char,
+    },
     NeedOneTee(usize),
     NeedOneCup(usize),
     HeightShape,
+    /// The course names a map the pack does not carry.
+    NoMap(String),
+    /// The map's tile layer does not resolve.
+    MapTiles(String),
+    /// A map hole names no tee or no cup.
+    NeedTeeAndCup,
+    /// A map hole's tee, cup or area falls off the map, or the tee or cup
+    /// is not open floor inside the area.
+    OffArea,
 }
 
 /// A parsed hole.
@@ -218,6 +233,145 @@ impl Course {
         })
     }
 
+    /// Lay hole `h` of `course` out on its pack map `def` (tiles resolved as
+    /// `grid`), and the frame that places the hole's mode units on the
+    /// field.
+    ///
+    /// The hole is the map's tile grid inside [`GolfHole::area`] (the whole
+    /// map without one), one golf tile per map tile at [`GOLF_UNIT`] world
+    /// units a mode unit: a tile with any wall quarter is a wall, a void
+    /// tile is out of bounds, and everything outside the area is out of
+    /// bounds too. An open tile plays as its legend character's surface
+    /// ([`map_surface`]). Heights are the rank of each tier's floor height
+    /// among the tiers the hole uses, doubled so a one-tier step still makes
+    /// a gradient on the tiles either side of it (the central difference
+    /// halves it). The tee and the cup sit on their map tiles' centres.
+    pub fn from_map(
+        course: &GolfCourse,
+        h: &GolfHole,
+        def: &MapDef,
+        grid: &TileGrid,
+        map_id: &str,
+    ) -> Result<(Self, MapFrame), CourseError> {
+        let (Some(tee), Some(cup)) = (h.tee, h.cup) else {
+            return Err(CourseError::NeedTeeAndCup);
+        };
+        let [c0, r0, c1, r1] = h.area.unwrap_or([
+            0,
+            0,
+            grid.width.saturating_sub(1) as u16,
+            grid.height.saturating_sub(1) as u16,
+        ]);
+        let (c0, r0, c1, r1) = (
+            usize::from(c0),
+            usize::from(r0),
+            usize::from(c1),
+            usize::from(r1),
+        );
+        if c1 < c0 || r1 < r0 || c1 >= grid.width || r1 >= grid.height {
+            return Err(CourseError::OffArea);
+        }
+        let inside = |t: [u16; 2]| {
+            let (c, r) = (usize::from(t[0]), usize::from(t[1]));
+            (c0..=c1).contains(&c)
+                && (r0..=r1).contains(&r)
+                && grid.get(c, r).is_some_and(|t| !t.void && t.walls == 0)
+        };
+        if !inside(tee) || !inside(cup) {
+            return Err(CourseError::OffArea);
+        }
+        // Tier -> height step: the rank of the tier's floor height among
+        // the tiers the area uses (the tier index itself when the map
+        // takes the base scene's ladder, which is not known here).
+        let ladder = def.floor_ladder();
+        let tier_height = |tier: u8| match ladder {
+            Some(l) => i32::from(l[usize::from(tier) & 0xF]),
+            None => i32::from(tier),
+        };
+        let mut levels: Vec<i32> = Vec::new();
+        for r in r0..=r1 {
+            for c in c0..=c1 {
+                if let Some(t) = grid.get(c, r).filter(|t| !t.void) {
+                    levels.push(tier_height(t.tier));
+                }
+            }
+        }
+        levels.sort_unstable();
+        levels.dedup();
+        let rank = |tier: u8| {
+            let h = tier_height(tier);
+            let r = levels.iter().position(|&l| l == h).unwrap_or(0);
+            (r * 2).min(255) as u8
+        };
+        let (width, height) = (c1 - c0 + 1, r1 - r0 + 1);
+        let mut tiles = Vec::with_capacity(width * height);
+        for r in r0..=r1 {
+            for c in c0..=c1 {
+                let t = grid
+                    .get(c, r)
+                    .copied()
+                    .unwrap_or(legaia_expansion_format::map::Tile {
+                        walls: 0xF,
+                        tier: 0,
+                        void: true,
+                    });
+                let surface = if t.void {
+                    Surface::OutOfBounds
+                } else if t.walls != 0 {
+                    Surface::Wall
+                } else {
+                    let ch = grid.char_at(c, r).unwrap_or(' ');
+                    match map_surface(course, def, ch) {
+                        GolfSurface::Fairway => Surface::Fairway,
+                        GolfSurface::Rough => Surface::Rough,
+                        GolfSurface::Sand => Surface::Sand,
+                        GolfSurface::Water => Surface::Water,
+                        GolfSurface::Wall => Surface::Wall,
+                        GolfSurface::Out => Surface::OutOfBounds,
+                    }
+                };
+                tiles.push(Tile {
+                    surface,
+                    slope: (0, 0),
+                    height: if t.void { 0 } else { rank(t.tier) },
+                });
+            }
+        }
+        let centre = |t: [u16; 2]| {
+            Vec2::new(
+                ((i32::from(t[0]) - c0 as i32) * TILE + TILE / 2) * FX_ONE,
+                ((i32::from(t[1]) - r0 as i32) * TILE + TILE / 2) * FX_ONE,
+            )
+        };
+        let par = h.par.max(1);
+        let max_strokes = if h.max_strokes == 0 {
+            par.saturating_add(5)
+        } else {
+            h.max_strokes
+        };
+        let origin = [
+            (i32::from(def.tiles.origin[0]) + c0 as i32) * MAP_TILE,
+            (i32::from(def.tiles.origin[1]) + r0 as i32) * MAP_TILE,
+        ];
+        Ok((
+            Self {
+                width,
+                height,
+                tiles,
+                tee: centre(tee),
+                cup: centre(cup),
+                par,
+                max_strokes,
+            },
+            MapFrame {
+                map_id: map_id.to_string(),
+                spawn: course.spawn.clone(),
+                origin,
+                unit: GOLF_UNIT,
+            },
+        ))
+    }
+
     /// The tile under a world position (out of bounds off the grid).
     pub fn tile_at(&self, p: Vec2) -> Tile {
         let tx = p.x.div_euclid(TILE * FX_ONE);
@@ -342,6 +496,37 @@ impl Course {
     /// Straight-line distance to the cup in world units.
     pub fn distance_to_cup(&self, p: Vec2) -> i64 {
         isqrt((p - self.cup).len_sq() as u64) as i64 / FX_ONE as i64
+    }
+}
+
+/// What map legend character `ch` plays as on `course`: its
+/// [`GolfCourse::surfaces`] entry, else a surface its style's label names
+/// (rough, sand or bunker, water, pond, lava or chasm as out of bounds),
+/// else fairway.
+pub fn map_surface(course: &GolfCourse, def: &MapDef, ch: char) -> GolfSurface {
+    let mut buf = [0u8; 4];
+    if let Some(s) = course.surfaces.get(&*ch.encode_utf8(&mut buf)) {
+        return *s;
+    }
+    let label = def
+        .style(ch)
+        .map(|s| s.label.to_ascii_lowercase())
+        .unwrap_or_default();
+    let has = |w: &str| {
+        label
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .any(|t| t == w)
+    };
+    if has("rough") {
+        GolfSurface::Rough
+    } else if has("sand") || has("bunker") {
+        GolfSurface::Sand
+    } else if has("water") || has("pond") {
+        GolfSurface::Water
+    } else if has("lava") || has("chasm") || has("pit") {
+        GolfSurface::Out
+    } else {
+        GolfSurface::Fairway
     }
 }
 

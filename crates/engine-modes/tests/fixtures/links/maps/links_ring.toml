@@ -1,0 +1,29 @@
+# A walled ring over the retail `tower`: a three-tile corridor round an
+# inner block, the race track of `links-race`.
+name = "Tower Ring"
+base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
+
+[tiles]
+origin = [16, 16]
+rows = [
+  "##################",
+  "#................#",
+  "#................#",
+  "#................#",
+  "#...##########...#",
+  "#...##########...#",
+  "#...##########...#",
+  "#...##########...#",
+  "#................#",
+  "#................#",
+  "#................#",
+  "##################",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
+"." = { label = "track", ground = { kind = "base_cell", cell = [8, 11] } }
+
+[[spawns]]
+id = "start"
+tile = [2, 2]

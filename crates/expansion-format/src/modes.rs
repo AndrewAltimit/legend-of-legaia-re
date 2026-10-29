@@ -23,6 +23,25 @@
 //! Golf hole tile legend (one character per tile): `.` fairway, `,` rough,
 //! `s` sand, `w` water, `#` wall, space out of bounds, `T` tee (fairway),
 //! `O` cup (fairway), and `^` `v` `<` `>` fairway sloping downhill that way.
+//!
+//! A course or a track may instead name a pack map (`map = "<id>"`): the
+//! game is then played in the 3D field scene the map builds. A golf hole on
+//! a map takes its walls and heights from the map's tiles and its surfaces
+//! from [`GolfCourse::surfaces`]; a race on a map takes its centerline from
+//! [`RaceTrack::waypoints`], in map tiles.
+//!
+//! ```toml
+//! [[golf]]
+//! id = "tower-links"
+//! map = "tower_green"
+//! surfaces = { "," = "rough", "s" = "sand", "w" = "water" }
+//! [[golf.holes]]
+//! par = 3
+//! tee = [2, 2]
+//! cup = [9, 5]
+//! ```
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -129,10 +148,34 @@ pub struct GolfCourse {
     pub name: String,
     /// The scene or pack map the host stages the course in.
     pub location: Option<DiscRef>,
+    /// A pack map (`maps/<id>.toml`) the course is played on, in 3D. Every
+    /// hole then takes its layout from the map's tiles ([`GolfHole::tee`],
+    /// [`GolfHole::cup`], [`GolfHole::area`]) instead of `rows`.
+    pub map: Option<String>,
+    /// The spawn the map is entered at (its first when empty).
+    pub spawn: String,
+    /// Map legend character -> the surface its tiles play as. A character
+    /// not listed falls back on its style's `label` (one naming rough,
+    /// sand, bunker, water, pond or lava plays as that), else fairway.
+    pub surfaces: BTreeMap<String, GolfSurface>,
     pub holes: Vec<GolfHole>,
 }
 
-/// One hole as a tile grid.
+/// What a map tile plays as on a golf hole.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GolfSurface {
+    #[default]
+    Fairway,
+    Rough,
+    Sand,
+    Water,
+    Wall,
+    /// Out of bounds: a penalty stroke, like water.
+    Out,
+}
+
+/// One hole as a tile grid, or as a region of the course's map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GolfHole {
@@ -144,6 +187,14 @@ pub struct GolfHole {
     pub heights: Vec<String>,
     /// Strokes before a player picks up; `0` = `par + 5`.
     pub max_strokes: u8,
+    /// On a map course: the tee's map tile `[column, row]`.
+    pub tee: Option<[u16; 2]>,
+    /// On a map course: the cup's map tile.
+    pub cup: Option<[u16; 2]>,
+    /// On a map course: the inclusive map-tile rectangle
+    /// `[col0, row0, col1, row1]` the hole plays in; the whole map when
+    /// left out. Everything outside it is out of bounds.
+    pub area: Option<[u16; 4]>,
 }
 
 impl Default for GolfHole {
@@ -153,6 +204,9 @@ impl Default for GolfHole {
             rows: Vec::new(),
             heights: Vec::new(),
             max_strokes: 0,
+            tee: None,
+            cup: None,
+            area: None,
         }
     }
 }
@@ -164,11 +218,20 @@ pub struct RaceTrack {
     pub id: String,
     pub name: String,
     pub location: Option<DiscRef>,
+    /// A pack map the race runs on, in 3D; the centerline is then
+    /// [`Self::waypoints`].
+    pub map: Option<String>,
+    /// The spawn the map is entered at (its first when empty).
+    pub spawn: String,
     pub laps: u8,
     /// Centerline points in world units, in driving order; the last joins
     /// the first. Each is a checkpoint.
     pub points: Vec<[i32; 2]>,
-    /// Half the track width in world units.
+    /// On a map race: the centerline as map tiles `[column, row]` (each
+    /// tile's centre), in driving order, closing back on the first.
+    pub waypoints: Vec<[u16; 2]>,
+    /// Half the track width in world units (in race units on a map race,
+    /// where one unit is two field world units).
     pub half_width: u32,
     /// Segment indices (`points[i] -> points[i+1]`) carrying a boost pad.
     pub boost_segments: Vec<u16>,
@@ -182,8 +245,11 @@ impl Default for RaceTrack {
             id: String::new(),
             name: String::new(),
             location: None,
+            map: None,
+            spawn: String::new(),
             laps: 3,
             points: Vec::new(),
+            waypoints: Vec::new(),
             half_width: 64,
             boost_segments: Vec::new(),
             racers: 4,
@@ -294,5 +360,34 @@ props = [{ id = "barrel", radius = 32 }]
         assert_eq!(s.races[0].laps, 3);
         assert_eq!(s.prop_hunt[0].props[0].radius, 32);
         assert_eq!(s.prop_hunt[0].hunter_health, 100);
+    }
+
+    #[test]
+    fn parses_map_courses_and_tracks() {
+        let text = r#"
+[[golf]]
+id = "green"
+map = "tower_green"
+surfaces = { "," = "rough", "~" = "water" }
+[[golf.holes]]
+par = 3
+tee = [2, 2]
+cup = [9, 5]
+area = [1, 1, 10, 6]
+
+[[races]]
+id = "ring"
+map = "tower_ring"
+waypoints = [[2, 2], [12, 2], [12, 10], [2, 10]]
+"#;
+        let s: ModeSection = toml::from_str(text).unwrap();
+        let g = &s.golf[0];
+        assert_eq!(g.map.as_deref(), Some("tower_green"));
+        assert_eq!(g.surfaces.get("~"), Some(&GolfSurface::Water));
+        assert_eq!(g.holes[0].cup, Some([9, 5]));
+        assert_eq!(g.holes[0].area, Some([1, 1, 10, 6]));
+        assert!(g.holes[0].rows.is_empty());
+        assert_eq!(s.races[0].waypoints.len(), 4);
+        assert_eq!(s.races[0].map.as_deref(), Some("tower_ring"));
     }
 }

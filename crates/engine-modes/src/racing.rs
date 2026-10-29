@@ -65,6 +65,10 @@ pub enum TrackError {
     TooFewPoints,
     DegenerateSegment(usize),
     NarrowTrack,
+    /// The track names a map the pack does not carry.
+    NoMap(String),
+    /// A waypoint falls off the map.
+    OffMap(usize),
 }
 
 fn closest_on_segment(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
@@ -122,6 +126,47 @@ impl Track {
         )
     }
 
+    /// Build a pack track laid on its map: the centerline is the
+    /// [`RaceTrack::waypoints`](legaia_expansion_format::modes::RaceTrack::waypoints)
+    /// tile centres, in mode units of the returned frame (mode `(0, 0)` at
+    /// the map's tile `[0, 0]` corner, [`crate::map_frame::RACE_UNIT`] world
+    /// units a mode unit).
+    pub fn from_map(
+        t: &legaia_expansion_format::modes::RaceTrack,
+        def: &legaia_expansion_format::map::MapDef,
+        map_id: &str,
+    ) -> Result<(Self, crate::map_frame::MapFrame), TrackError> {
+        use crate::map_frame::{MAP_TILE, MapFrame, RACE_UNIT};
+        let (w, h) = def
+            .tile_grid()
+            .map(|g| (g.width, g.height))
+            .map_err(|_| TrackError::NoMap(map_id.to_string()))?;
+        let mut points = Vec::with_capacity(t.waypoints.len());
+        for (i, wp) in t.waypoints.iter().enumerate() {
+            if usize::from(wp[0]) >= w || usize::from(wp[1]) >= h {
+                return Err(TrackError::OffMap(i));
+            }
+            let centre = |c: u16| (i32::from(c) * MAP_TILE + MAP_TILE / 2) / RACE_UNIT * FX_ONE;
+            points.push(Vec2::new(centre(wp[0]), centre(wp[1])));
+        }
+        let track = Self::new(
+            points,
+            (t.half_width as i32).saturating_mul(FX_ONE),
+            t.boost_segments.iter().map(|&s| s as usize).collect(),
+            t.laps,
+        )?;
+        let frame = MapFrame {
+            map_id: map_id.to_string(),
+            spawn: t.spawn.clone(),
+            origin: [
+                i32::from(def.tiles.origin[0]) * MAP_TILE,
+                i32::from(def.tiles.origin[1]) * MAP_TILE,
+            ],
+            unit: RACE_UNIT,
+        };
+        Ok((track, frame))
+    }
+
     fn seg(&self, i: usize) -> (Vec2, Vec2) {
         let n = self.points.len();
         (self.points[i % n], self.points[(i + 1) % n])
@@ -168,16 +213,32 @@ impl RaceConfig {
         t: &legaia_expansion_format::modes::RaceTrack,
         seed: u64,
     ) -> Result<Self, TrackError> {
+        Ok(Self::with_track(t, Track::from_def(t)?, seed))
+    }
+
+    /// [`Self::from_def`] for a track laid on its pack map
+    /// ([`Track::from_map`]), with the frame that places it on the field.
+    pub fn from_map(
+        t: &legaia_expansion_format::modes::RaceTrack,
+        def: &legaia_expansion_format::map::MapDef,
+        map_id: &str,
+        seed: u64,
+    ) -> Result<(Self, crate::map_frame::MapFrame), TrackError> {
+        let (track, frame) = Track::from_map(t, def, map_id)?;
+        Ok((Self::with_track(t, track, seed), frame))
+    }
+
+    fn with_track(t: &legaia_expansion_format::modes::RaceTrack, track: Track, seed: u64) -> Self {
         let n = (t.racers as usize).clamp(1, crate::session::MAX_SEATS);
         let mut seats = vec![SeatKind::Human];
         seats.extend(std::iter::repeat_n(SeatKind::Ai(t.ai_tier.into()), n - 1));
-        Ok(Self {
+        Self {
             seats,
-            track: Track::from_def(t)?,
+            track,
             finish_grace: 30 * 60,
             time_limit: t.laps.max(1) as u32 * 3 * 60 * 60,
             seed,
-        })
+        }
     }
 }
 
