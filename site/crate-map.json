@@ -1583,6 +1583,7 @@
    "lib": true,
    "modules": [
     "battle",
+    "battle_waves",
     "dialog",
     "flags",
     "map",

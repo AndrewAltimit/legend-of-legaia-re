@@ -79,7 +79,7 @@ count = 6
 max_standing = 3
 ```
 
-`monsters` is the first wave, the monsters the battle opens on. Each `[[formations.<key>.waves]]` table after it is one more wave, in order. The battle never returns to the field between waves: a wave's monsters take the monster seats of the fight in progress, a "Wave N / M" banner stands for two seconds as a wave begins, and when the last wave is down the ordinary victory runs once.
+`monsters` is the first wave, the monsters the battle opens on. Each `[[formations.<key>.waves]]` table after it is one more wave, in order. The battle never returns to the field between waves: a wave's monsters take the monster seats of the fight in progress, a "Wave N / M" banner stands for the battle timed message's hold (about two seconds) as a wave begins, and when the last wave is down the ordinary victory runs once.
 
 | Field | Effect |
 |---|---|
