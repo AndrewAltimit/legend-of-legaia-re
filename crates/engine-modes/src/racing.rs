@@ -293,6 +293,11 @@ impl RaceSession {
         &self.racers
     }
 
+    /// The track being raced.
+    pub fn track(&self) -> &Track {
+        &self.cfg.track
+    }
+
     /// Progress key: laps, checkpoints, then closeness to the next one.
     fn progress(&self, seat: usize) -> (u8, usize, i64) {
         let r = &self.racers[seat];

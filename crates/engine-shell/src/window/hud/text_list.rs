@@ -571,6 +571,19 @@ impl PlayWindowApp {
         if self.slot_gpu.is_some() {
             out.extend(self.slot_rules_text_draws(w, h));
         }
+        // The expansion mode seat's labels (picker, table, board, course,
+        // results), from the composition the browser play page draws too
+        // (`legaia_engine_screens::expansion_modes`); its panels ride the
+        // screen-prim pass under this layer.
+        let mut pack_mode = legaia_engine_screens::expansion_modes::pack_mode_stage_texts(
+            &self.session.host.world,
+            &self.font,
+        );
+        if !pack_mode.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_ui::scale_stage_text_draws(&mut pack_mode, stage_origin, stage_scale);
+            out.extend(pack_mode);
+        }
         // Baka Fighter minigame HUD. The HP / round-wins readout and the
         // input prompt are the title bar's caption; what draws here is the
         // game's own chrome.

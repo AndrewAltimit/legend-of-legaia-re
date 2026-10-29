@@ -504,6 +504,11 @@ pub struct DebugSeeds {
     /// `--expansion DIR --map ID [--spawn ID]`: an expansion-pack map
     /// entered in place of the `--scene` door entry.
     pub expansion: Option<ExpansionLaunch>,
+    // --- expansion game modes (`--mode`) ---
+    /// `--mode <INSTANCE>`: an expansion mode instance entered once the
+    /// scene is entered (`picker` opens the mode picker instead).
+    pub pack_mode: Option<String>,
+    // --- end expansion game modes ---
 }
 
 /// The `--expansion` / `--map` / `--spawn` operands.
@@ -634,6 +639,13 @@ impl DebugSeeds {
         };
         Ok(self)
     }
+    // --- expansion game modes (`--mode`) ---
+    /// Attach the `--mode <INSTANCE>` operand.
+    pub fn with_pack_mode(mut self, instance: Option<String>) -> Self {
+        self.pack_mode = instance;
+        self
+    }
+    // --- end expansion game modes ---
 
     /// Attach the `--cheat-*` operands.
     pub fn with_cheats(mut self, cheats: PlayCheats) -> Self {

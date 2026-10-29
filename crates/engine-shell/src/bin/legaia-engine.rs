@@ -442,6 +442,7 @@ fn main() -> Result<()> {
             expansion,
             map,
             spawn,
+            pack_mode,
             resume_save,
             cheat_level,
             cheat_gold,
@@ -541,6 +542,7 @@ fn main() -> Result<()> {
             window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?
                 .with_play_record(play_record.as_deref())?
                 .with_expansion(expansion, map, spawn)?
+                .with_pack_mode(pack_mode)
                 .with_cheats(window::PlayCheats {
                     level: cheat_level,
                     gold: cheat_gold,

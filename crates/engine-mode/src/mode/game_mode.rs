@@ -70,6 +70,13 @@ pub enum SceneMode {
     /// VM and effect pool run, like `Title`. The hosting session preserves
     /// the suspended scene state and restores its mode on close.
     Menu,
+    /// An expansion game mode (poker, Grid Duel, golf, racing, prop hunt)
+    /// or its instance picker owns the frame - the mode seat on
+    /// `World::expansion` (`legaia_engine_expansion::modes::ModeSeat`).
+    /// Field / battle dispatch is suspended and the interrupted mode
+    /// restored on exit. **Not a retail mode**: retail has no such content,
+    /// and the mode word has no value for it.
+    Expansion,
 }
 
 impl SceneMode {
@@ -88,6 +95,7 @@ impl SceneMode {
             Self::BakaFighter => "BakaFighter",
             Self::MuscleDome => "MuscleDome",
             Self::Menu => "Menu",
+            Self::Expansion => "Expansion",
         }
     }
 }
@@ -375,6 +383,8 @@ impl GameMode {
     /// `None` for [`SceneMode::Title`]. The port uses that variant for "no
     /// scene loaded" - boot, an unhosted world, the gap between scenes - which
     /// is a state the retail mode word has no single answer for, not a mode.
+    /// `None` for [`SceneMode::Expansion`] too: the port's own game modes
+    /// have no retail counterpart at all.
     pub fn for_scene_mode(mode: SceneMode) -> Option<GameMode> {
         Some(match mode {
             SceneMode::Field => GameMode::MainMode,
@@ -387,7 +397,7 @@ impl GameMode {
             | SceneMode::SlotMachine
             | SceneMode::BakaFighter
             | SceneMode::MuscleDome => GameMode::OtherMode,
-            SceneMode::Title => return None,
+            SceneMode::Title | SceneMode::Expansion => return None,
         })
     }
 }

@@ -16,6 +16,10 @@ nothing. This crate is the projection between them for:
 - the **fallback panel** when no gold-shop screen is up - the seru-trade offer
   list / confirm, the inn prompt and resting caption, the `[label]` stand-in -
   with its gold frame sized off the panel's own rows;
+- the **expansion game modes** (`expansion_modes`): the world's mode seat
+  projected into `engine-ui::expansion_modes` - its panels as the whole
+  under-text prim list while it owns the frame (`screen_layers`), its labels
+  as stage texts each host's text layer appends;
 - the **level-up / Seru-capture banners** (framed outside battle with the
   chrome, loose pens without);
 - the **fishing HUD banner step** (`fishing_banner_frame`): the pond session's

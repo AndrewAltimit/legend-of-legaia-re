@@ -117,6 +117,36 @@ pub(super) fn install_debug_play_record(
     );
 }
 
+// --- expansion game modes (`--mode`) ---
+/// `--mode <INSTANCE>`: enter an expansion game mode (or, for `picker`, open
+/// the mode picker) over the entered scene. Leaving it returns to the scene.
+pub(super) fn enter_debug_pack_mode(session: &mut NativeSession, seeds: &super::super::DebugSeeds) {
+    let Some(id) = seeds.pack_mode.as_deref() else {
+        return;
+    };
+    let world = &mut session.host.world;
+    if id == "picker" {
+        world.open_pack_mode_picker();
+        log::info!("play-window: --mode picker: the mode picker is open");
+        return;
+    }
+    match world.enter_pack_mode(id) {
+        Ok(()) => log::info!("play-window: --mode {id}: entered"),
+        Err(e) => {
+            let known: Vec<String> = world
+                .pack_mode_entries()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
+            log::warn!(
+                "play-window: --mode {id}: {e} (known: {})",
+                known.join(", ")
+            );
+        }
+    }
+}
+// --- end expansion game modes ---
+
 /// A `--battle` operand: a scene MAN formation-row index, "the first row
 /// the scene registered that carries monsters", or a formation cell no row
 /// carries (`cell:[s:]id,...`, hex ids, `s:` = scripted), registered as a

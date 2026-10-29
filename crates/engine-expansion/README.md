@@ -16,5 +16,7 @@ battle-spoils steps. With no pack loaded every kernel is the identity.
 | `flags` | The pack's own flags and counters. |
 | `dialog` | Pack lines compiled for the field VM's inline dialogue runner. |
 | `quest_save` | The save's expansion block. |
+| `map` | The active pack map: zones, exits, trigger events, once flags, the save location. |
+| `modes` | `PackModeSeat`, the game-mode seat (instance picker, the running `ActiveMode`, the quit prompt, the results card) and the pending card rewards. |
 
 Format and engine wiring: [`expansion-pack-battle.md`](../../docs/formats/expansion-pack-battle.md), [`expansion-pack-quests.md`](../../docs/formats/expansion-pack-quests.md).

@@ -2053,6 +2053,7 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-motion-vm",
  "legaia-engine-scene",
  "legaia-engine-system",
@@ -2110,6 +2111,8 @@ name = "legaia-engine-expansion"
 version = "0.1.0"
 dependencies = [
  "legaia-engine-battle",
+ "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-system",
  "legaia-expansion-format",
  "toml",
@@ -2446,6 +2449,7 @@ dependencies = [
  "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menu-runtime",
@@ -2629,6 +2633,8 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-field",
+ "legaia-engine-modes",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-mednafen",

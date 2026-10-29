@@ -1385,6 +1385,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-motion-vm",
     "engine-scene",
     "engine-system",
@@ -1569,6 +1570,8 @@
    "package": "legaia-engine-expansion",
    "deps": [
     "engine-battle",
+    "engine-mode",
+    "engine-modes",
     "engine-system",
     "expansion-format"
    ],
@@ -1580,6 +1583,7 @@
     "dialog",
     "flags",
     "map",
+    "modes",
     "progression",
     "quest",
     "quest_challenge",
@@ -1588,11 +1592,12 @@
    "band": "kernels",
    "track": "engine",
    "rank": 4,
-   "role": "expansion-pack runtime kernels: monster and formation overrides, level curve, quests",
+   "role": "expansion-pack runtime kernels: monster and formation overrides, level curve, quests, the mode seat",
    "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. <code>World::expansion</code> is its seat; inert with no pack.",
    "dependents": [
     "engine-core",
     "engine-scene-host",
+    "engine-screens",
     "engine-session"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/README.md"
@@ -2075,6 +2080,7 @@
     "engine-battle-loop",
     "engine-capture",
     "engine-core",
+    "engine-expansion",
     "engine-field",
     "engine-minigame-scenes",
     "engine-save-state",
@@ -2099,6 +2105,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "active",
     "cards",
     "fixed",
     "golf",
@@ -2112,7 +2119,11 @@
    "rank": 1,
    "role": "rules engines for the port's own game modes: poker, golf, racing, card battles, prop hunt",
    "scope": "Rules engines for the port's own game modes (poker, golf, racing, card battles, prop hunt): deterministic, <code>World</code>-free, lockstep-ready.",
-   "dependents": [],
+   "dependents": [
+    "engine-core",
+    "engine-expansion",
+    "engine-ui"
+   ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
   },
   "engine-motion-vm": {
@@ -2393,6 +2404,7 @@
     "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menu-runtime",
@@ -2422,6 +2434,7 @@
     "battle_fx",
     "battle_value_readout",
     "dev_menu",
+    "expansion_modes",
     "field_frame",
     "field_messages",
     "field_occlusion",
@@ -2722,6 +2735,8 @@
    "package": "legaia-engine-ui",
    "deps": [
     "engine-battle-vm",
+    "engine-modes",
+    "expansion-format",
     "font",
     "game-tables",
     "minigame-formats",
@@ -2750,6 +2765,7 @@
     "boot_logos",
     "cast_theeder",
     "dance",
+    "expansion_modes",
     "field_party_hud",
     "fishing",
     "menu",
@@ -2930,7 +2946,8 @@
     "engine-scene",
     "engine-scene-host",
     "engine-session",
-    "engine-shell"
+    "engine-shell",
+    "engine-ui"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },
@@ -4471,6 +4488,7 @@
     "play_minigame_slots",
     "play_minigames",
     "play_name_entry",
+    "play_pack_modes",
     "play_rumble",
     "play_sfx",
     "play_shop",

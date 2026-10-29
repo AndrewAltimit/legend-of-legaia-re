@@ -15,6 +15,9 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | Modes | `poker`, `cards` + `cards::duel`, `golf`, `racing`, `prop_hunt` |
 | Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]` in `modes.toml`; `[[cards]]`, `[[boosters]]`, `[[rewards]]` in `cards.toml` |
 | Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
+| Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
+| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion` |
+| Screens | `legaia_engine_ui::expansion_modes`, projected by `legaia_engine_screens::expansion_modes` |
 | Tests | per-module rule tests; `crates/engine-modes/tests/` determinism, random-pad soak and Rebirth conversion |
 
 ## The session contract
@@ -106,9 +109,61 @@ The round ends when every hider is found (hunters win), every hunter is out, or 
 
 AI hiders stand beside a decoy of their own prop (the expert picks the prop with the most decoys), and novices fidget and taunt. AI hunters inspect unchecked props nearest first; regulars and experts prefer a prop they saw move.
 
+## Hosts
+
+Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition.
+
+### The seat
+
+`active::ActiveMode` is any one of the five sessions behind a common surface: build an instance by id from a mode section and a card section, tick it, read its view, settle it. `PackModeSeat` (in `engine-expansion`) holds one `ActiveMode` at a time, or the instance picker, or a finished session's results, and the mode the world returns to. `World::open_pack_mode_picker` and `World::enter_pack_mode(id)` seat it and switch the world to `SceneMode::Expansion`; the mode tick then runs `World::tick_pack_mode` in place of field and battle dispatch, feeding seat 0 the frame's pad word. `World::exit_pack_mode` closes it from outside (a session still in play is forfeited).
+
+The instances are the active pack's `modes.toml` (with its `cards.toml` as the duel's card book) when the pack defines any mode, else the built-in practice set. A duel deals the player the first five cards of the card section until a collection supplies a deck; a golf round seats one regular AI beside the player.
+
+`SceneMode::Expansion` is not a retail mode: `GameMode::for_scene_mode` answers `None` for it, as for `Title`, and nothing reaches it without a host entering the seat, so a world that never does plays exactly as before.
+
+### Rewards
+
+When a session finishes, the seat settles it: the session's own rewards, plus, when the player placed first, every `cards.toml` reward rule whose source is that mode's id. Seat 0's grants land at once - a currency change in the party gold purse or the casino coin bank (clamped to `0..=9,999,999`), boosters and cards in `ExpansionState::pending_card_rewards` for the card economy to collect. Quitting through the quit prompt grants nothing, a lost poker stack included.
+
+### Entry
+
+| Host | Entry |
+|---|---|
+| Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
+| Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
+
+### Controls
+
+Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). The picker takes Up / Down and Cross, and Circle or Start backs out; the results card leaves on Cross.
+
+| Mode | Controls |
+|---|---|
+| Poker | Left / Right: Fold, Check-Call, Raise, All-in. Up / Down: raise size in big blinds. Cross: act, or skip the showdown |
+| Grid Duel | Left / Right: hand card. Cross: lift it, then D-pad to a cell and Cross to place. Circle: put it back |
+| Golf | Left / Right: aim (hold Square for fine steps). Cross: start the power meter, Cross again to strike. Circle: back to aiming |
+| Racing | Cross: accelerate. Square: brake. Left / Right: steer. R1: boost |
+| Prop hunt | Choose: Left / Right and Cross. Then the D-pad moves; a hunter inspects with Cross, a hider taunts with Triangle |
+
+### Screens
+
+`legaia_engine_ui::expansion_modes` builds every screen in the 320x240 stage as flat panels plus dialog-font labels; `mode_screen_prims` and `mode_screen_texts` keep the two halves of one composition, and no panel's geometry depends on a label's measured width. `legaia_engine_screens::expansion_modes` projects the seat into it: while the seat owns the frame, `screen_layers::compose_screen_prims` returns its panels as the whole under-text list (only the pause wipe may cover it), and each host's text layer appends `pack_mode_stage_texts`, scaled with the rest of its stage group.
+
+| Screen | Shows |
+|---|---|
+| Picker | Every instance with its mode kind, the cursor row, the last entry error |
+| Poker | Opponent plates along the far rail (chips or state, dealer button, card backs, street bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu with the raise size, the event log |
+| Grid Duel | The 3x3 grid with elemental cells, both hands down the sides (the selected card lifted), the score and turn line. A card shows its four side strengths, element strip, name, and a placeholder frame where the monster portrait goes |
+| Golf | The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard |
+| Racing | A top-down track map with boost segments and the start line, every racer with its heading, and the lap / place / speed / boost / order panel. A functional view |
+| Prop hunt | A top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts. A functional view |
+| Results | Placements with each mode's score, and what was won |
+
 ## Tests
 
 - **Rules.** Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.
 - **Determinism.** `tests/determinism.rs` runs each mode from the Rebirth pack twice with the same seed and the same scripted pad stream and asserts identical `state_hash` sequences and results, then asserts a different seed diverges so the hash cannot be vacuous.
 - **Soak.** `tests/soak.rs` drives every mode with random pads over many seeds (all-human poker tables included) and asserts no panic, termination within a frame bound, chip conservation, a full duel grid, a complete golf scorecard within the stroke cap, and no avatar inside a wall.
 - **Pack.** `tests/rebirth_pack.rs` parses the Rebirth `cards.toml` / `modes.toml` and converts every instance into a session config.
+- **Seat.** `engine-modes` `active` builds every built-in instance and rolls a won mode's reward rules; `engine-expansion` `modes` drives the picker, the quit prompt and the results card.
+- **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
+- **Screens.** `engine-ui` `expansion_modes::tests` checks each screen's key labels and that every panel lies on the stage.

@@ -385,6 +385,14 @@ impl LegaiaRuntime {
         // pixels ([`crate::play_minigames`]). Empty outside one.
         let (minigame_sprites, minigame_texts) =
             self.minigame_overlay_draws(font, surface_w, surface_h);
+        // The expansion mode seat's labels, stage space - the composition the
+        // native window's text layer draws (`engine-screens::expansion_modes`);
+        // its panels ride the screen-prim pass under this canvas.
+        let pack_mode_texts = self
+            .scene_host
+            .host()
+            .map(|h| legaia_engine_screens::expansion_modes::pack_mode_stage_texts(&h.world, font))
+            .unwrap_or_default();
         if screens.sprites.is_empty()
             && windows.is_empty()
             && banners.is_empty()
@@ -394,6 +402,7 @@ impl LegaiaRuntime {
             && field_hud_texts.is_empty()
             && minigame_sprites.is_empty()
             && minigame_texts.is_empty()
+            && pack_mode_texts.is_empty()
         {
             return CLOSED.to_string();
         }
@@ -427,6 +436,7 @@ impl LegaiaRuntime {
         // text pass below.
         let (arts_sprites, arts_texts) = self.arts_input_stage_draws(font, chrome, origin, scale);
         sprites.extend(arts_sprites);
+        texts.extend(pack_mode_texts);
         ui::scale_stage_text_draws(&mut texts, origin, scale);
         texts.extend(arts_texts);
         // Battle draws stay in surface pixels: the shared HUD's measured

@@ -13,6 +13,7 @@ pub mod battle;
 pub mod dialog;
 pub mod flags;
 pub mod map;
+pub mod modes;
 pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
@@ -36,6 +37,11 @@ pub struct ExpansionState {
     pub quests: quest::QuestRuntime,
     /// The pack map the player is in, if any.
     pub map: Option<map::ActiveMap>,
+    /// The game-mode seat while a mode screen owns the frame
+    /// (`SceneMode::Expansion`).
+    pub mode_seat: Option<Box<modes::PackModeSeat>>,
+    /// Card grants won in modes, waiting for the card economy.
+    pub pending_card_rewards: Vec<modes::PendingCardReward>,
 }
 
 impl ExpansionState {

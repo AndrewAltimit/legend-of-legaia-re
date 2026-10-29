@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod active;
 pub mod cards;
 pub mod fixed;
 pub mod golf;

@@ -19,11 +19,14 @@ Rules, the session contract and the lockstep rationale are in
 | `golf` | Mini-golf: tile courses and ball physics (`course`), stroke and turn session. |
 | `racing` | Checkpoint racing on a closed centerline track. |
 | `prop_hunt` | Prop-hunt round rules over a minimal 2D arena. |
+| `active` | `ActiveMode`, any one session behind one surface (build by instance id, tick, view, settle with the mode reward rules), the instance list and the built-in practice set (`builtin/`). |
 
 Every mode builds its config from the matching expansion-pack instance
 (`PokerConfig::from_table`, `DuelConfig::from_duel`,
 `GolfConfig::from_course`, `RaceConfig::from_def`,
 `PropHuntConfig::from_arena`), parsed by `legaia-expansion-format`.
 
-No host draws these modes yet; each exposes a read-only `view()` snapshot
-for one to draw from.
+Both play hosts run them through the mode seat on the `World`
+(`legaia-engine-expansion`'s `modes`) and draw them with
+`legaia-engine-ui`'s `expansion_modes` screens; see the Hosts section of
+the subsystem page.

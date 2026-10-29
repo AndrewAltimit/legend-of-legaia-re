@@ -13,7 +13,33 @@ impl PlayWindowApp {
             || self.key_slot_machine(code, state)
             || self.key_muscle_dome(code, state)
             || self.key_baka_fighter(code, state)
+            || self.key_pack_modes(code, state)
     }
+
+    // --- expansion game modes ---
+    /// `` ` `` (backquote): open the expansion game-mode picker over the
+    /// running scene - the active pack's modes, or the built-in practice set
+    /// without a pack. Pressed again inside it, leave (a session still in
+    /// play is forfeited). The modes read the pad; their controls are in
+    /// `docs/subsystems/expansion-modes.md`.
+    fn key_pack_modes(&mut self, code: KeyCode, state: ElementState) -> bool {
+        if code != KeyCode::Backquote || state != ElementState::Pressed || self.boot_ui.is_active()
+        {
+            return false;
+        }
+        let world = &mut self.session.host.world;
+        if world.mode == SceneMode::Expansion {
+            world.exit_pack_mode();
+            log::info!("modes: left the mode seat");
+        } else if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
+            world.open_pack_mode_picker();
+            log::info!("modes: picker open - Up/Down choose, Cross play, Circle back");
+        } else {
+            return false;
+        }
+        true
+    }
+    // --- end expansion game modes ---
 
     /// `K`: toggle the Noa dance (rhythm) minigame. Arms the mode-24 door
     /// warp to the hall (PROT 0980 loads on the drain, the floor read off the

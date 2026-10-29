@@ -911,6 +911,13 @@ impl World {
             // battle dispatch is suspended; the hosting session drives the
             // menu state machine and restores the suspended mode on close.
             SceneMode::Menu => None,
+            // An expansion game mode or its picker owns the frame
+            // (`World::tick_pack_mode`); field / battle dispatch is
+            // suspended like the minigames'.
+            SceneMode::Expansion => {
+                self.tick_pack_mode();
+                None
+            }
             SceneMode::Title => None,
         }
     }

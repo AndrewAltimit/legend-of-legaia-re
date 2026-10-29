@@ -64,6 +64,7 @@ pub mod boot_logos;
 pub mod cast_theeder;
 pub mod dance;
 mod dialog_reading_box;
+pub mod expansion_modes;
 pub mod field_party_hud;
 pub mod fishing;
 mod incense_notice_box;

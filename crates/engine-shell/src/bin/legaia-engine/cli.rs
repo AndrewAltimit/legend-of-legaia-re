@@ -1259,6 +1259,16 @@ pub(crate) enum Cmd {
         /// when omitted.
         #[arg(long, value_name = "ID", requires = "map")]
         spawn: Option<String>,
+        // --- expansion game modes (`--mode`) ---
+        /// Enter an expansion game mode once the scene is entered: an
+        /// instance id from the active pack's `modes.toml`, or from the
+        /// built-in practice set without a pack (`builtin-poker`,
+        /// `builtin-duel`, `builtin-golf`, `builtin-race`,
+        /// `builtin-prop-hunt`). `picker` opens the mode picker instead.
+        /// The same seat the backquote key opens in play.
+        #[arg(long = "mode", value_name = "INSTANCE")]
+        pack_mode: Option<String>,
+        // --- end expansion game modes ---
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does

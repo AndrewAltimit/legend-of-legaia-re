@@ -701,6 +701,14 @@ div.play-vis-head { cursor: default; }
                 <option value="6">Dance</option>
               </select>
             </label>
+            <label title="The port's own game modes - poker, Grid Duel, golf, racing, prop hunt - from the loaded expansion pack, or the built-in practice set without one (the native backquote key and --mode flag). Start inside a mode asks to leave.">
+              Game mode
+              <select id="play-pack-mode">
+                <option value="">enter...</option>
+                <option value="picker">Mode picker</option>
+                <option value="exit">Leave the mode</option>
+              </select>
+            </label>
             <button id="play-force-battle" type="button"
                     title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
             <label title="Battle BGM id: 0 keeps the field track playing through the fight, blank restores the shipped default (2026). The native --battle-bgm flag.">
@@ -3029,6 +3037,46 @@ div.play-vis-head { cursor: default; }
     try { ok = fishing ? !!rt.play_fishing_start() : !!rt.play_mg_debug_warp(sub); } catch (e) { ok = false; }
     saveMsg(ok ? (fishing ? 'Fishing started.' : 'Minigame door armed.')
                : 'Load a scene before entering a minigame.', !ok);
+    canvas.focus();
+  });
+  /* Expansion game modes: the engine's mode seat (World::enter_pack_mode),
+   * drawn by the engine's own screen like the native window's backquote
+   * picker. The list is the loaded pack's instances, or the built-in
+   * practice set, refreshed each time the select is opened. */
+  const packModeEl = document.getElementById('play-pack-mode');
+  const refreshPackModes = () => {
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.play_pack_modes_json !== 'function') return;
+    let list = [];
+    try { list = JSON.parse(rt.play_pack_modes_json()).modes || []; } catch (e) { list = []; }
+    while (packModeEl.options.length > 3) packModeEl.remove(3);
+    for (const m of list) {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.name + ' (' + m.kind + ')';
+      packModeEl.appendChild(opt);
+    }
+  };
+  packModeEl.addEventListener('focus', refreshPackModes);
+  packModeEl.addEventListener('pointerdown', refreshPackModes);
+  packModeEl.addEventListener('change', () => {
+    const id = packModeEl.value;
+    packModeEl.value = '';
+    const rt = window.__playRuntime;
+    if (!rt || !id || typeof rt.play_pack_mode_enter !== 'function') return;
+    if (id === 'exit') {
+      try { rt.play_pack_mode_exit(); } catch (e) { /* older bundle */ }
+      saveMsg('Left the game mode.', false);
+      canvas.focus();
+      return;
+    }
+    let err = '';
+    try {
+      err = id === 'picker'
+        ? (rt.play_pack_mode_picker() ? '' : 'Modes open from the field or the overworld.')
+        : rt.play_pack_mode_enter(id);
+    } catch (e) { err = 'This page build has no game modes yet.'; }
+    saveMsg(err || 'Game mode started. Start asks to leave.', !!err);
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;

@@ -172,6 +172,16 @@ pub fn compose_screen_prims(
         world_map_sky,
     } = host;
 
+    // An expansion mode screen owns the whole frame: its panels are the
+    // under-text list, and only the pause wipe may cover it.
+    if world.mode == legaia_engine_mode::mode::SceneMode::Expansion {
+        let mut over = Vec::new();
+        if let Some(level) = pause_wipe {
+            over.push(level_fade(level));
+        }
+        return (crate::expansion_modes::pack_mode_prims(world), over);
+    }
+
     // The overworld sky band leads the under-text list: retail links it into
     // the farthest bucket of the table (`FUN_801F73E4`, the first call of
     // the terrain sweep), so the party HUD draws over it. Over the text it

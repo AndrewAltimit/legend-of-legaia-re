@@ -186,6 +186,7 @@ mod encounters;
 mod expansion;
 mod expansion_map;
 mod expansion_quests;
+mod expansion_modes;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;

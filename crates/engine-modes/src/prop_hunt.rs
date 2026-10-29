@@ -357,6 +357,16 @@ impl PropHuntSession {
         &self.avatars
     }
 
+    /// The arena's bounds and blockers.
+    pub fn arena(&self) -> &Arena {
+        &self.cfg.arena
+    }
+
+    /// Each prop kind's radius in world units, by prop index.
+    pub fn prop_radii(&self) -> Vec<i32> {
+        self.cfg.props.iter().map(|p| p.radius).collect()
+    }
+
     fn hunters_for(&self, round: u8) -> Vec<usize> {
         let n = self.cfg.seats.len();
         (0..self.cfg.hunters)
