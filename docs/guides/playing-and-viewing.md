@@ -120,6 +120,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | off |
+| Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
 | Play | Reduce flashing | `legaia-options.toml` | - | on |

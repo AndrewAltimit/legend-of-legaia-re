@@ -65,6 +65,7 @@ Each switch is one field of `legaia_engine_session::session_switches::GameplayTw
 | Battle freeze guard | `--no-hp-readout-guard` | on | off |
 | Bonus equipment drops | `--equipment-drops` | off | off |
 | Save anywhere | `--save-anywhere` | off | off |
+| Action movement | `--action-movement` | off | off |
 | Enemy strength | `--enemy-stat-scale MULT` (`0.1..=5`) | `1x` | `1x` |
 | Enemy attack count | `--enemy-attack-count MULT` (`0.1..=5`) | `1x` | `1x` |
 | Spirit AP | `--spirit-ap AP` (`-100..=100`) | `32` | `32` |
@@ -113,6 +114,10 @@ Once per won battle, right after the normal drop grant, the engine rolls `rand()
 
 Retail's pause menu offers Save only where the scene's MAN header raises the save-allow bit (`_DAT_8007B6A8`, the three kingdom world maps); a save point reaches the save screen through its own script. On, the gate the menu samples at open (`BootSession::open_field_menu`) is the scene's bit OR the switch, so the Save row works in every scene the menu opens in. The scene's bit itself (`PartyState::scene_save_allowed`) is untouched, because the follow camera and the world-map locomotion read it too. The switch has no patcher counterpart; it is a port enhancement.
 
+### Action movement
+
+The platformer field controller (`legaia_engine_field::action_movement`) in place of the retail walk and its settle: jump, double jump, dash and momentum ([field-locomotion](field-locomotion.md#action-movement-enhancement)). Like the save-anywhere switch it has no patcher counterpart; it rides `GameplayTweaks` because that is the one value both hosts carry whole. The launcher lists it under *Play*, beside free-angle movement.
+
 ### Battle tuning
 
 Each slider is one scale at the reader the patcher's data or code edit changes, with the patcher's arithmetic:
@@ -141,6 +146,7 @@ Each switch has a disc-free test that it changes behaviour when on and that its 
 | `retail_masks_every_tweak`, `tweak_defaults_are_the_engine_defaults_and_rates_cycle` (`session_switches`); `save_anywhere_lifts_the_scene_gate_and_retail_holds_it_off` (disc-gated, `tests/save_gate_field_menu.rs`) | `engine-session` |
 | `gameplay_tweak_rows_ride_the_args` (`launcher`), `no_subcommand_parses_and_play_args_reach_play_window` (`launcher_window`) | `engine-shell` |
 | `gameplay_tweaks_start_at_the_engine_defaults`, `the_page_sliders_offer_the_engine_steps` (`play_toggles`) | `web-play` |
+| `switched_off_the_walk_is_the_retail_walk`, `switched_on_the_stream_takes_the_action_model` (`tests/field_action_movement.rs`) | `engine-core` |
 
 Tier 3 of the [host-drift gate](../tooling/host-drift.md) requires both hosts' switch sites to pass the `tweaks` field, and the host frame trace digests the tweaks, so a switch thrown on one host only shows as a divergence.
 
