@@ -24,13 +24,13 @@ impl World {
 
     /// Put a party member at zero HP on its downed kneel - entry `8`, which
     /// re-commits itself at every natural end
-    /// ([`crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]) - when
+    /// ([`legaia_engine_battle_loop::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]) - when
     /// it is not there already. A seat that lands a member's HP at zero
     /// skips the knockdown chain (`4 -> 7 -> 8`) that leads there, and a
     /// capture of a downed member holds `+0x1D9 = +0x1DA = 8`. Returns
     /// whether the member kneels. A no-op for a monster or a living member.
     pub fn seat_downed_kneel(&mut self, slot: usize) -> bool {
-        use crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY;
+        use legaia_engine_battle_loop::clip_ladder::PARTY_DOWNED_LOOP_ENTRY;
         let Some(a) = self.actors.get(slot) else {
             return false;
         };
@@ -103,10 +103,10 @@ impl World {
     pub fn seat_battle_clip_cursor(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
         // A party member the capture holds downed plays entry `8`, the kneel
         // that re-commits itself at every natural end
-        // ([`crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]).
+        // ([`legaia_engine_battle_loop::clip_ladder::PARTY_DOWNED_LOOP_ENTRY`]).
         // A seat lands its HP at zero without the fall that led there, so
         // the body would stand on its idle: put it on the kneel first.
-        let downed = clip == crate::world::battle::clip_ladder::PARTY_DOWNED_LOOP_ENTRY
+        let downed = clip == legaia_engine_battle_loop::clip_ladder::PARTY_DOWNED_LOOP_ENTRY
             && self
                 .actors
                 .get(slot)
@@ -487,7 +487,7 @@ impl World {
                         .as_ref()
                         .and_then(|s| s.get(0x56..0x58))
                         .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
-                    crate::world::battle::clip_ladder::recommit_cue_cursor(
+                    legaia_engine_battle_loop::clip_ladder::recommit_cue_cursor(
                         map,
                         entry,
                         entry,

@@ -245,7 +245,8 @@ impl World {
             .and_then(|p| p.seat_arm);
         let seat_entry = run.as_ref().map(|r| r.prot_entry);
         if let Some((arm, spell, at)) = self.casting.summon_seat_owed
-            && (super::module_seat_arm::seat_due(seat_entry, arm, module_phase) || run.is_none())
+            && (legaia_engine_battle_loop::module_seat_arm::seat_due(seat_entry, arm, module_phase)
+                || run.is_none())
         {
             self.casting.summon_seat_owed = None;
             self.casting.pending_summon_spawn = Some((spell, at));
@@ -255,9 +256,13 @@ impl World {
                 // Phase 0: seat the creature (retail: the stager's
                 // `FUN_801F19EC` installs the streamed record as slot 7) -
                 // here, unless the module seats it in a later arm.
-                match seat_arm
-                    .filter(|&a| !super::module_seat_arm::seat_due(seat_entry, a, module_phase))
-                {
+                match seat_arm.filter(|&a| {
+                    !legaia_engine_battle_loop::module_seat_arm::seat_due(
+                        seat_entry,
+                        a,
+                        module_phase,
+                    )
+                }) {
                     Some(arm) => {
                         self.casting.summon_seat_owed = Some((arm, st.spell_id, st.spawn));
                     }

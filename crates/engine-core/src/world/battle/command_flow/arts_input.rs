@@ -413,7 +413,7 @@ impl World {
             if refused {
                 // `FUN_8004FCC8(ROT_REFUSED_CUE)` (`0x801D1EA0..0x801D1F78`):
                 // the dispatcher stores `id - 1` on the ring.
-                self.push_battle_ui_cue(super::ui_cues::BattleUiCue::Back);
+                self.push_battle_ui_cue(legaia_engine_battle_loop::ui_cues::BattleUiCue::Back);
             }
         }
         let was_entering = matches!(
@@ -431,7 +431,11 @@ impl World {
         session.step_list_slide(self.battle.anim_pass_vsyncs);
         // Whatever ends the entry this frame leaves its window on screen.
         let left = legaia_engine_battle::arts_command_input::ArtsListWindow::left_by(&session);
-        if let Some(cue) = super::ui_cues::arts_phase_cue(&phase_before, &session.phase, ev.cross) {
+        if let Some(cue) = legaia_engine_battle_loop::ui_cues::arts_phase_cue(
+            &phase_before,
+            &session.phase,
+            ev.cross,
+        ) {
             self.push_battle_ui_cue(cue);
         }
         // The `0x5A` cursor the entry's confirm opened starts on the

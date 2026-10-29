@@ -1,7 +1,6 @@
 //! Seating a cast module's actors and effects: the summon actor seat, the cast
 //! effect pool, module lookup, and the module FX and arm spawns.
 
-use super::module_seat_arm;
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
@@ -144,8 +143,9 @@ impl World {
         }
         // An engine walk stand-in ends where the module seated the creature:
         // a module that seats it never walks it there.
-        if entry.is_some_and(|e| module_seat_arm::seat_arm_write(e).is_some())
-            && let Some(a) = self.actors.get(slot)
+        if entry.is_some_and(|e| {
+            legaia_engine_battle_loop::module_seat_arm::seat_arm_write(e).is_some()
+        }) && let Some(a) = self.actors.get(slot)
         {
             let at = [
                 a.move_state.world_x,
@@ -165,7 +165,7 @@ impl World {
     /// row (`module_seat_arm::seat_arm_write`).
     pub(in crate::world) fn module_seats_on_caster(&self, spell_id: u8) -> bool {
         self.cast_module_for(spell_id).is_some_and(|e| {
-            module_seat_arm::seat_arm_write(e).is_some()
+            legaia_engine_battle_loop::module_seat_arm::seat_arm_write(e).is_some()
                 || legaia_engine_cast::cast_module_camera::module_profile(e)
                     .is_some_and(|p| p.paces_band())
         })

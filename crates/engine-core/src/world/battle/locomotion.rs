@@ -561,7 +561,7 @@ impl World {
                 a.battle.active_target,
                 a.battle
                     .flag_bits
-                    .has(super::clip_ladder::ANIM_FLAG_ROOT_LATCH),
+                    .has(legaia_engine_battle_loop::clip_ladder::ANIM_FLAG_ROOT_LATCH),
             )
         };
         if latched {

@@ -5,7 +5,7 @@ use super::*;
 
 impl World {
     /// The battle frame the current tick falls in
-    /// ([`BattleFrameClock::frame_of`] at `display_frames`).
+    /// ([`BattleFrameClock::frame_of`](legaia_engine_battle_loop::frame_clock::BattleFrameClock::frame_of) at `display_frames`).
     pub fn battle_frame_id(&self) -> u64 {
         self.battle.frame_clock.frame_of(self.clock.display_frames)
     }
@@ -119,7 +119,7 @@ impl World {
     /// after the four-slot loop that every path of falls through to
     /// `0x80046D10`) and overwrites `v0` at `0x80046D34` without reading it.
     /// A pass is one battle frame, so the engine, which ticks once a vsync,
-    /// draws on the first tick of each [`BattleFrameClock`] frame. The
+    /// draws on the first tick of each [`BattleFrameClock`](legaia_engine_battle_loop::frame_clock::BattleFrameClock) frame. The
     /// call sits ahead of the side-band pass (`jal 0x80056208` at
     /// `0x80046D60`) and both state machines, and nothing on the pass gates
     /// it: the Begin prompt, a dialogue box and the results sequencer all
@@ -146,7 +146,7 @@ impl World {
     /// region kept is the one that turns - nilboa's horizon mist ribbon
     /// drifts round the arena at one unit a frame. A pass is one battle
     /// frame, so the engine winds on the first tick of each
-    /// [`BattleFrameClock`] frame. The store sits right after the pass's
+    /// [`BattleFrameClock`](legaia_engine_battle_loop::frame_clock::BattleFrameClock) frame. The store sits right after the pass's
     /// discarded `rand()` draw and nothing gates it but the byte.
     ///
     /// The angle has two references on the whole disc, this writer and the
@@ -195,7 +195,7 @@ impl World {
     /// frame-end pass `FUN_80016B6C` paces that loop with `VSync(step)`
     /// (`jal 0x8005FB84` at `0x800171C0`, `a0` the frame step byte
     /// `0x1F800392`). The engine ticks once a vsync, so the pass runs on the
-    /// first tick of each [`BattleFrameClock`] frame and its timers drain by
+    /// first tick of each [`BattleFrameClock`](legaia_engine_battle_loop::frame_clock::BattleFrameClock) frame and its timers drain by
     /// the step ([`Self::battle_frame_step`], the SM's `frame_dt`).
     pub(in crate::world) fn battle_sm_pass_due(&mut self) -> bool {
         if !self.toggles.battle_sm_frame_cadence {
@@ -231,7 +231,7 @@ impl World {
     /// (`lbu v1,0x393(v1)` at `0x80047734`, the `>> 2` twin at
     /// `0x80047700`). On retail's cadence the engine therefore runs the
     /// anim family (the cursor advance, its root-motion drive and its
-    /// hit-event walk) on the first tick of each [`BattleFrameClock`] frame,
+    /// hit-event walk) on the first tick of each [`BattleFrameClock`](legaia_engine_battle_loop::frame_clock::BattleFrameClock) frame,
     /// once per vsync the frame spans, and holds every actor still on the
     /// ticks between: a pose, a hit and an effect record land on the frame
     /// the pass ran, never between two. On the per-vsync cadence it is `1`.
@@ -254,7 +254,7 @@ impl World {
     /// channel integration by `DAT_1F800393 * DAT_1F80037D`
     /// (`0x80021E40..0x80021E4C`) and the envelope tail `FUN_80020740` by
     /// `DAT_1F800393`. On retail's cadence in battle that is the first tick
-    /// of each [`BattleFrameClock`] frame, with the frame step, and `0` on
+    /// of each [`BattleFrameClock`](legaia_engine_battle_loop::frame_clock::BattleFrameClock) frame, with the frame step, and `0` on
     /// the ticks between; elsewhere it is `1`.
     pub(in crate::world) fn action_fx_pass_vsyncs(&mut self) -> u8 {
         if self.mode != legaia_engine_mode::mode::SceneMode::Battle
@@ -511,7 +511,7 @@ impl World {
     ///
     /// The per-pass kernels ([`Self::tick_summon`], [`Self::tick_move_fx`],
     /// the action SM on retail's cadence, the battle camera) run once per
-    /// [`BattleFrameClock`] frame and treat every later call inside the same
+    /// [`BattleFrameClock`](legaia_engine_battle_loop::frame_clock::BattleFrameClock) frame and treat every later call inside the same
     /// frame as "between passes", so a test that drives them in a loop must
     /// open a new frame per step or it ticks them once and never again.
     /// From a tick that opens a frame this is the frame step; from one inside

@@ -86,7 +86,11 @@ impl World {
         };
         let phase_before = menu.phase.clone();
         menu.input(ev, &self.tables.spell_catalog, party, monsters);
-        if let Some(cue) = super::ui_cues::spell_phase_cue(&phase_before, &menu.phase, ev.cross) {
+        if let Some(cue) = legaia_engine_battle_loop::ui_cues::spell_phase_cue(
+            &phase_before,
+            &menu.phase,
+            ev.cross,
+        ) {
             self.push_battle_ui_cue(cue);
         }
 
@@ -247,7 +251,9 @@ impl World {
         // targets the completed use applied to (one for a single-target item,
         // every healed ally for an all-party item).
         let events = menu.drain_events();
-        if let Some(cue) = super::ui_cues::item_events_cue(&state_before, &events) {
+        if let Some(cue) =
+            legaia_engine_battle_loop::ui_cues::item_events_cue(&state_before, &events)
+        {
             self.push_battle_ui_cue(cue);
         }
         let used_slots = menu.used_slots.clone();
