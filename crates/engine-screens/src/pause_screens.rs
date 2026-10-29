@@ -302,7 +302,7 @@ pub fn journal_draws(
     let (empty, footer) = match session.page {
         JournalPage::Quests => (
             "No quest has started yet.",
-            "Left/Right: page   Up/Down: select   Circle: back",
+            "Left/Right: page   Circle: back",
         ),
         JournalPage::Challenges => (
             "This pack has no challenges.",

@@ -1,6 +1,6 @@
 //! Disc-gated: the Rebirth pack's way in from the retail game. The
 //! `rim_elm_mist_stair` entrance (`maps/rebirth_tower_1f.toml`) stands in
-//! Rim Elm's `town01`, in the room the tower's stair lands in: stepping onto
+//! Rim Elm's `town01`, behind the woodpile by the south gate: stepping onto
 //! it enters the tower map once the party has reached level 30, the arrival
 //! back from the tower does not bounce into it, and the pause menu's Travel
 //! request enters the map from anywhere.
@@ -56,7 +56,7 @@ fn the_rim_elm_entrance_opens_at_level_30_and_enters_the_tower() {
     };
     host.enter_field_scene("town01", 0).expect("enter Rim Elm");
     // The entrance tiles are open floor the room's walk reaches.
-    for (x, z) in [(35, 92), (36, 93)] {
+    for (x, z) in [(17, 43), (18, 43)] {
         let (wx, wz) = (x * 128 + 64, z * 128 + 64);
         assert!(
             !host.world.field_tile_is_wall(wx, wz),
@@ -67,31 +67,31 @@ fn the_rim_elm_entrance_opens_at_level_30_and_enters_the_tower() {
     // Below level 30 the entrance is shut.
     set_level(&mut host, 29);
     assert!(matches!(
-        step_onto(&mut host, 34, 92),
+        step_onto(&mut host, 16, 43),
         SceneTickEvent::Stepped
     ));
     assert!(matches!(
-        step_onto(&mut host, 35, 92),
+        step_onto(&mut host, 17, 43),
         SceneTickEvent::Stepped
     ));
     assert!(host.active_expansion_map().is_none());
     // At level 30, stepping off and back on enters the tower.
     set_level(&mut host, 30);
     assert!(matches!(
-        step_onto(&mut host, 34, 92),
+        step_onto(&mut host, 16, 43),
         SceneTickEvent::Stepped
     ));
-    match step_onto(&mut host, 35, 92) {
+    match step_onto(&mut host, 17, 43) {
         SceneTickEvent::SceneEntered { name } => assert_eq!(name, "tower"),
         other => panic!("expected the tower map, got {other:?}"),
     }
     assert_eq!(host.active_expansion_map(), Some(MAP_ID));
 
-    // The tower's stair lands on (28, 91), outside the entrance: a few free
+    // The tower's stair lands on (20, 44), outside the entrance: a few free
     // ticks there stay in Rim Elm.
     host.enter_field_scene("town01", 0)
         .expect("back to Rim Elm");
-    host.world.seat_player_at_tile(28, 91);
+    host.world.seat_player_at_tile(20, 44);
     for _ in 0..4 {
         assert!(matches!(
             host.tick().expect("tick"),

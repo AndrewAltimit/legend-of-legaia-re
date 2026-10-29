@@ -151,7 +151,7 @@ fires nothing, and the spawn tile does not fire on arrival.
 
 ### Exits
 
-- `to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [28, 91], facing = 4 }`
+- `to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [20, 44], facing = 4 }`
   raises the named scene change a door's op `0x3F` raises, so it parks behind
   the streaming hold and arrives on that field-grid tile facing that compass
   sector. With no `tile` the player lands where the scene's own doors land them.
@@ -210,7 +210,7 @@ onto it. It lives on the map it leads into.
 [[entrances]]
 id = "rim_elm_mist_stair"
 scene = { kind = "scene", name = "town01" }
-rect = [35, 92, 36, 93]
+rect = [17, 43, 18, 43]
 spawn = "entrance"
 requires = { min_level = 30 }
 ```

@@ -751,8 +751,8 @@ With a pack loaded:
   the pack's progress to write back on the next save.
 - **Entrances** lead from the retail game into the pack's maps: a tile in a
   retail scene that enters a map when stepped on, often only once a story
-  point, quest or party level is reached. Rebirth's opens in Rim Elm, in the
-  room the tower's stair lands in, for a party of level 30 or more.
+  point, quest or party level is reached. Rebirth's opens in Rim Elm, behind the
+  woodpile by the south gate, for a party of level 30 or more.
 - **Journal**: Select on the pause menu opens it (the hint under the menu
   says so). *Quests* lists the started quests, active first, with each
   objective's progress and the reward; *Challenges* lists the challenges with

@@ -196,15 +196,22 @@ pub fn journal_draws_for(
 /// sub-window frame.
 pub const JOURNAL_PEN: (i32, i32) = (24, 22);
 
-/// Draws for the one quest toast on screen: a single line centred along
-/// the stage's top edge, under the place-name banner's row.
+/// The quest toast's stage row: clear of the party HUD's three plates.
+pub const QUEST_TOAST_Y: i32 = 58;
+
+/// Draws for the one quest toast on screen: a single line centred across
+/// the stage, under the field party HUD's plates.
 pub fn quest_toast_draws_for(font: &legaia_font::Font, text: &str) -> Vec<TextDraw> {
     const STAGE_W: i32 = 320;
     let layout = font.layout_ascii(text);
     let x = ((STAGE_W - layout.advance_x as i32) / 2).max(4);
-    let shadow = text_draws_for(&layout, (x + 1, 25), [0.0, 0.0, 0.0, 0.85]);
+    let shadow = text_draws_for(&layout, (x + 1, QUEST_TOAST_Y + 1), [0.0, 0.0, 0.0, 0.85]);
     let mut out = shadow;
-    out.extend(text_draws_for(&layout, (x, 24), [1.0, 0.9, 0.45, 1.0]));
+    out.extend(text_draws_for(
+        &layout,
+        (x, QUEST_TOAST_Y),
+        [1.0, 0.9, 0.45, 1.0],
+    ));
     out
 }
 

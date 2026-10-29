@@ -154,7 +154,7 @@ fn the_tower_floor_enters_walks_blocks_and_exits_to_rim_elm() {
     // Arrived on the exit's tile in Rim Elm, on the retail field layer.
     let (x, z) = player_xz(&host);
     eprintln!("[{MAP_ID}] stair exit landed in town01 at ({x}, {z})");
-    assert_eq!((x >> 7, z >> 7), (28, 91));
+    assert_eq!((x >> 7, z >> 7), (20, 44));
     assert!(
         host.scene
             .as_ref()
