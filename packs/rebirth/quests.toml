@@ -1,0 +1,45 @@
+# Legend of Legaia: Rebirth - quests and challenges.
+#
+# The opening of the tower chain. Objectives name what happens in play: a
+# pack NPC talked to, battles won, a party level reached. Pack flags
+# (`tower_*`) are the pack's own and never touch a retail story flag.
+# Format: docs/formats/expansion-pack-quests.md.
+
+# --- The Rebirth Tower -------------------------------------------------------
+
+[[quests]]
+id = "tower_rumour"
+title = "A Tower Wakes"
+description = "Travellers speak of a tower that rose from the mist. Someone who has seen it is waiting to talk."
+auto_start = true
+prerequisites = { min_level = 30 }
+objectives = [
+    { kind = "talk", npc = "tower_guide", text = "Find the guide who has seen the tower" },
+]
+complete_dialog = "guide_intro"
+rewards = { set_flags = ["tower_heard"] }
+
+[[quests]]
+id = "tower_trial"
+title = "The Rebirth Tower"
+description = "The guide will open the tower to a party that proves itself in battle and grows strong enough to survive it."
+giver = "tower_guide"
+prerequisites = { quests = ["tower_rumour"] }
+start_dialog = "guide_trial"
+objectives = [
+    { kind = "win_battles", count = 3, text = "Win three battles" },
+    { kind = "reach_level", level = 40, text = "Reach level 40" },
+    { kind = "talk", npc = "tower_guide", text = "Return to the guide" },
+]
+complete_dialog = "guide_done"
+rewards = { gold = 10000, set_flags = ["tower_open"] }
+
+# --- Challenges --------------------------------------------------------------
+
+[[challenges]]
+id = "bare_hands"
+title = "Bare Hands"
+description = "Win your next battle in ten rounds or fewer, with no items and no Ra-Seru magic."
+rules = { turn_limit = 10, no_items = true, no_magic = true }
+score = { base = 1000, turn_bonus = 100 }
+rewards = { gold = 2000, counters = [{ counter = "challenges_cleared" }] }

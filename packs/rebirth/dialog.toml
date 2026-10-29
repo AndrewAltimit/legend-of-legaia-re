@@ -1,0 +1,36 @@
+# Legend of Legaia: Rebirth - dialogue.
+#
+# Each line of `text` is one row of the dialog box; a blank line starts a
+# new page. Rows are short: retail boxes do not wrap.
+# Format: docs/formats/expansion-pack-quests.md.
+
+[lines.guide_intro]
+speaker = "Tower Guide"
+text = """
+You have the look of someone who
+has walked a long road.
+
+A tower rose from the mist where
+nothing stood before. It calls to
+the strong.
+
+Will you hear what it asks?"""
+choices = [
+    { label = "Tell me.", set_flags = ["tower_listened"] },
+    { label = "Who are you?", reply = "Only one who watches the mist.\nListen, then.", set_flags = ["guide_asked"] },
+]
+
+[lines.guide_trial]
+speaker = "Tower Guide"
+text = """
+Win three battles, and grow until
+you stand at level 40.
+
+Then come back to me, and the
+tower will open its doors."""
+
+[lines.guide_done]
+speaker = "Tower Guide"
+text = """
+You are ready. The tower is open.
+May the Seru walk beside you."""

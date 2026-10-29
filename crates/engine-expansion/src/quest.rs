@@ -19,7 +19,7 @@
 use std::collections::BTreeMap;
 
 use legaia_expansion_format::ExpansionPack;
-use legaia_expansion_format::quest::{Goal, QuestDef, QuestSection, Rewards};
+use legaia_expansion_format::quest::{FormationRef, Goal, QuestDef, QuestSection, Rewards};
 
 use crate::dialog::DialogRuntime;
 use crate::quest_challenge::ActiveChallenge;
@@ -74,6 +74,12 @@ pub trait QuestWorld {
     fn item_count(&self, item: u8) -> u32;
     /// The save's play clock, in seconds.
     fn play_seconds(&self) -> u32;
+    /// The runtime formation id the pack's `battle.toml` formation `id`
+    /// compiled to; `None` when there is none.
+    fn pack_formation_id(&self, id: &str) -> Option<u16> {
+        let _ = id;
+        None
+    }
     /// The highest level in the present party.
     fn party_level(&self) -> u8 {
         self.party().iter().map(|&(_, l)| l).max().unwrap_or(0)
@@ -197,8 +203,21 @@ pub fn goal_target(goal: &Goal) -> u32 {
     }
 }
 
+/// The runtime formation id `r` names, if it resolves.
+pub fn resolve_formation(r: &FormationRef, world: &dyn QuestWorld) -> Option<u16> {
+    match r {
+        FormationRef::Id(id) => Some(*id),
+        FormationRef::Pack(name) => world.pack_formation_id(name),
+    }
+}
+
 /// Count `event` toward `goal`. Returns whether `progress` moved.
-fn apply_event(goal: &Goal, progress: &mut u32, event: &QuestEvent) -> bool {
+fn apply_event(
+    goal: &Goal,
+    progress: &mut u32,
+    event: &QuestEvent,
+    world: &dyn QuestWorld,
+) -> bool {
     let hit = match (goal, event) {
         (
             Goal::DefeatFormation { formation, .. },
@@ -207,7 +226,7 @@ fn apply_event(goal: &Goal, progress: &mut u32, event: &QuestEvent) -> bool {
                 formation_id,
                 ..
             },
-        ) => formation == formation_id,
+        ) => resolve_formation(formation, world) == Some(*formation_id),
         (
             Goal::DefeatMonster { monster, .. },
             QuestEvent::BattleEnded {
@@ -231,7 +250,12 @@ fn apply_event(goal: &Goal, progress: &mut u32, event: &QuestEvent) -> bool {
                 boss,
                 ..
             },
-        ) => *boss && formation.is_none_or(|f| f == *formation_id),
+        ) => {
+            *boss
+                && formation
+                    .as_ref()
+                    .is_none_or(|f| resolve_formation(f, world) == Some(*formation_id))
+        }
         (Goal::EnterScene { scene }, QuestEvent::SceneEntered(s)) => scene == s,
         (Goal::Talk { npc }, QuestEvent::Talked(n)) => npc == n,
         (Goal::WinMode { mode, .. }, QuestEvent::ModeWon(m)) => mode == m,
@@ -485,7 +509,7 @@ impl QuestRuntime {
             let p = &mut state.objectives[i];
             let mut moved = false;
             if let Some(e) = event {
-                moved |= apply_event(&obj.goal, p, e);
+                moved |= apply_event(&obj.goal, p, e, world);
             }
             moved |= refresh_goal(&obj.goal, p, world, &self.progress.flags);
             if moved {
@@ -647,6 +671,7 @@ pub struct JournalObjective<'a> {
 #[derive(Debug, Clone, Default)]
 pub struct StaticQuestWorld {
     pub story_flags: Vec<u16>,
+    pub pack_formations: BTreeMap<String, u16>,
     pub party: Vec<(u8, u8)>,
     pub items: BTreeMap<u8, u32>,
     pub play_seconds: u32,
@@ -664,6 +689,9 @@ impl QuestWorld for StaticQuestWorld {
     }
     fn play_seconds(&self) -> u32 {
         self.play_seconds
+    }
+    fn pack_formation_id(&self, id: &str) -> Option<u16> {
+        self.pack_formations.get(id).copied()
     }
 }
 

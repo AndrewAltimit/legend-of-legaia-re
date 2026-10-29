@@ -46,6 +46,8 @@ impl ActiveChallenge {
 pub enum ArmRefusal {
     /// The pack has no challenge with that id.
     Unknown,
+    /// The challenge names a pack formation that has no runtime id.
+    UnknownFormation,
     /// The party breaks the solo rule.
     Solo,
     /// A party member is above the level cap.
@@ -112,9 +114,15 @@ impl QuestRuntime {
         if let Some(r) = party_obeys(&def.rules, &world.party()) {
             return Err(r);
         }
+        let formation = match &def.formation {
+            None => None,
+            Some(r) => Some(
+                crate::quest::resolve_formation(r, world).ok_or(ArmRefusal::UnknownFormation)?,
+            ),
+        };
         self.challenge = Some(ActiveChallenge {
             id: def.id.clone(),
-            formation: def.formation,
+            formation,
             rules: def.rules.clone(),
             rounds: 0,
         });
@@ -236,7 +244,7 @@ mod tests {
         p.manifest.id = "t".into();
         p.quests.challenges.push(ChallengeDef {
             id: "c".into(),
-            formation: Some(7),
+            formation: Some(legaia_expansion_format::quest::FormationRef::Id(7)),
             rules: ChallengeRules {
                 turn_limit: Some(5),
                 no_items: true,
@@ -369,6 +377,24 @@ mod tests {
             rt.arm_challenge(&solo, &world(1), "c"),
             Err(ArmRefusal::Solo)
         );
+    }
+
+    #[test]
+    fn a_pack_formation_resolves_at_arm_time() {
+        let mut named = pack();
+        named.quests.challenges[0].formation = Some(
+            legaia_expansion_format::quest::FormationRef::Pack("ogres".into()),
+        );
+        let mut rt = QuestRuntime::default();
+        assert_eq!(
+            rt.arm_challenge(&named, &world(1), "c"),
+            Err(ArmRefusal::UnknownFormation)
+        );
+        let mut w = world(1);
+        w.pack_formations.insert("ogres".into(), 0xE001);
+        rt.arm_challenge(&named, &w, "c").unwrap();
+        assert!(!rt.item_use_allowed(Some(0xE001)));
+        assert!(rt.item_use_allowed(Some(7)));
     }
 
     #[test]

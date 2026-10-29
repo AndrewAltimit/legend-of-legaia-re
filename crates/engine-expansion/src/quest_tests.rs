@@ -465,3 +465,85 @@ fn rewards_from_code_built_defs_match_toml() {
     rt.handle(&p, &world(5), QuestEvent::Refresh);
     assert_eq!(rt.take_grants(), vec![Grant::Item { item: 1, count: 1 }]);
 }
+
+#[test]
+fn a_pack_formation_resolves_through_the_world() {
+    let p = pack(
+        r#"
+        [[quests]]
+        id = "q"
+        auto_start = true
+        ordered = false
+        objectives = [
+            { kind = "defeat_formation", formation = "ogres" },
+            { kind = "win_boss", formation = "sovereign" },
+        ]
+        "#,
+    );
+    let mut rt = QuestRuntime::default();
+    let mut w = world(1);
+    rt.handle(&p, &w, won(0xE000, &[], false));
+    assert_eq!(
+        rt.quest("q").unwrap().objectives,
+        vec![0, 0],
+        "an unresolved pack formation matches nothing"
+    );
+    w.pack_formations.insert("ogres".into(), 0xE000);
+    w.pack_formations.insert("sovereign".into(), 0xE002);
+    rt.handle(&p, &w, won(0xE000, &[], false));
+    rt.handle(&p, &w, won(0xE001, &[], true));
+    assert_eq!(rt.quest("q").unwrap().objectives, vec![1, 0]);
+    rt.handle(&p, &w, won(0xE002, &[], true));
+    assert_eq!(rt.quest("q").unwrap().status, QuestStatus::Completed);
+}
+
+/// The Rebirth pack's quest chain parses, every line it names compiles, and
+/// the chain plays through on the events it waits for.
+#[test]
+fn the_rebirth_tower_chain_plays_through() {
+    let mut files = legaia_expansion_format::PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"id = \"rebirth\"\nname = \"Rebirth\"\nversion = \"0.1.0\"\n".to_vec(),
+    );
+    files.insert(
+        "quests.toml".into(),
+        include_bytes!("../../../packs/rebirth/quests.toml").to_vec(),
+    );
+    files.insert(
+        "dialog.toml".into(),
+        include_bytes!("../../../packs/rebirth/dialog.toml").to_vec(),
+    );
+    let p = ExpansionPack::from_files(&files).expect("rebirth parses");
+    for (id, line) in &p.dialog.lines {
+        crate::dialog::compile_line(line).unwrap_or_else(|e| panic!("{id}: {e:?}"));
+    }
+    for q in &p.quests.quests {
+        for l in q.start_dialog.iter().chain(&q.complete_dialog) {
+            assert!(p.dialog.lines.contains_key(l), "{}: line {l} missing", q.id);
+        }
+    }
+
+    let mut rt = QuestRuntime::default();
+    rt.handle(&p, &world(29), QuestEvent::Refresh);
+    assert!(rt.quest("tower_rumour").is_none(), "level 29 is too low");
+    let mut w = world(30);
+    rt.handle(&p, &w, QuestEvent::Refresh);
+    assert!(started(&rt, "tower_rumour"));
+    rt.handle(&p, &w, talked("tower_guide"));
+    assert!(completed(&rt, "tower_rumour") && started(&rt, "tower_trial"));
+    for _ in 0..3 {
+        rt.handle(&p, &w, won(1, &[], false));
+    }
+    rt.handle(&p, &w, talked("tower_guide"));
+    assert!(!completed(&rt, "tower_trial"), "level 40 not reached");
+    w.party = vec![(0, 40)];
+    rt.handle(&p, &w, QuestEvent::Refresh);
+    rt.handle(&p, &w, talked("tower_guide"));
+    assert!(completed(&rt, "tower_trial"));
+    assert!(rt.progress.flags.is_set("tower_open"));
+    assert!(rt.take_grants().contains(&Grant::Gold(10000)));
+
+    rt.arm_challenge(&p, &w, "bare_hands").unwrap();
+    assert!(!rt.item_use_allowed(Some(1)) && !rt.magic_allowed(Some(1)));
+}

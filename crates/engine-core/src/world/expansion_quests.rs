@@ -58,6 +58,15 @@ impl QuestWorld for WorldQuestView<'_> {
     fn play_seconds(&self) -> u32 {
         self.0.clock.play_time_seconds
     }
+
+    // INTEGRATION: a pack's `battle.toml` formations get runtime ids when the
+    // battle section compiles (`legaia_engine_expansion::battle`); this view
+    // resolves a quest's or challenge's named formation once that compiled
+    // table is seated on the World. Until then only numeric formation ids
+    // match, and a named one matches nothing.
+    fn pack_formation_id(&self, _id: &str) -> Option<u16> {
+        None
+    }
 }
 
 impl World {

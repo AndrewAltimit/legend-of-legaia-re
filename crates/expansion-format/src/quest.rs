@@ -121,10 +121,9 @@ pub struct ObjectiveDef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Goal {
-    /// Win `count` battles against the formation `formation` (the runtime
-    /// formation id, `FormationDef::formation_id`).
+    /// Win `count` battles against the formation `formation`.
     DefeatFormation {
-        formation: u16,
+        formation: FormationRef,
         #[serde(default = "one")]
         count: u32,
     },
@@ -145,7 +144,7 @@ pub enum Goal {
     /// one.
     WinBoss {
         #[serde(default)]
-        formation: Option<u16>,
+        formation: Option<FormationRef>,
     },
     /// Enter the scene `scene` (a CDNAME scene name, or a pack map id).
     EnterScene { scene: String },
@@ -176,6 +175,16 @@ pub enum Goal {
 
 fn one() -> u32 {
     1
+}
+
+/// A formation: a runtime formation id (`FormationDef::formation_id`, the
+/// id space retail encounters use), or the id of a formation the pack's
+/// `battle.toml` defines.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum FormationRef {
+    Id(u16),
+    Pack(String),
 }
 
 /// What completing a quest (or clearing a challenge) grants.
@@ -243,7 +252,7 @@ pub struct ChallengeDef {
     pub description: String,
     /// The formation the challenge is fought against; `None` = the next
     /// battle after it is armed, whatever it is.
-    pub formation: Option<u16>,
+    pub formation: Option<FormationRef>,
     /// The rules.
     pub rules: ChallengeRules,
     /// How the clear is scored.
@@ -300,7 +309,7 @@ mod tests {
                 { kind = "defeat_formation", formation = 12, count = 3 },
                 { kind = "defeat_monster", monster = 0x2A },
                 { kind = "win_battles", count = 2, text = "Win two fights" },
-                { kind = "win_boss" },
+                { kind = "win_boss", formation = "sovereign" },
                 { kind = "enter_scene", scene = "town01" },
                 { kind = "reach_level", level = 40 },
                 { kind = "collect_item", item = 0x10, count = 3, hand_in = true },
@@ -319,7 +328,7 @@ mod tests {
         assert_eq!(
             q.objectives[0].goal,
             Goal::DefeatFormation {
-                formation: 12,
+                formation: FormationRef::Id(12),
                 count: 3
             }
         );
@@ -331,6 +340,12 @@ mod tests {
             }
         );
         assert_eq!(q.objectives[2].text.as_deref(), Some("Win two fights"));
+        assert_eq!(
+            q.objectives[3].goal,
+            Goal::WinBoss {
+                formation: Some(FormationRef::Pack("sovereign".into()))
+            }
+        );
         assert_eq!(q.prerequisites.story_flags, vec![0x142]);
         assert_eq!(q.rewards.items[0].count, 2);
         assert!(q.repeat.repeatable);
