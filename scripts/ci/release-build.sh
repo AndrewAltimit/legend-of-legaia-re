@@ -17,11 +17,22 @@
 #     legaia-tools-<version>-<target>.zip      (Windows targets)
 #
 # The archive holds a single top-level legaia-tools-<version>-<target>/
-# directory so it never explodes over the user's cwd. Inside: the binaries,
-# both licenses, THIRD-PARTY-LICENSES.txt (the notices of every crate the
-# binaries link, see third-party-licenses.py), a generated README-PLAY.txt (how to start the game) and
-# README.txt (every tool), and on macOS a "Legend of Legaia.app" wrapper
-# around legaia-engine plus a "Legaia Explorer.app" around legaia-explorer.
+# directory so it never explodes over the user's cwd. Its top level holds
+# only what a player opens - the game and Legaia Explorer - plus
+# README-PLAY.txt (how to start them), both licenses and
+# THIRD-PARTY-LICENSES.txt (the notices of every crate the binaries link,
+# see third-party-licenses.py):
+#
+#     Linux     "Legend of Legaia" (the legaia-launch stub), "Legaia Explorer"
+#     Windows   "Legend of Legaia.exe" (the stub), "Legaia Explorer.exe"
+#     macOS     "Legend of Legaia.app", "Legaia Explorer.app"
+#
+# Every command-line program - legaia-engine itself, asset-viewer and the
+# format tools - sits in command-line-tools/ with its own README.txt. The
+# stub and Explorer's Play button find legaia-engine there
+# (legaia_app_theme::release_layout). The Windows executables carry their
+# icons as resources (legaia_app_theme::win_icon; checked below) and the
+# macOS bundles theirs as .icns, both from crates/app-theme/icons/.
 #
 # Runs on Linux (the self-hosted runner) and on macOS (a GitHub-hosted
 # runner, for universal-apple-darwin). Kept to bash 3.2 + BSD userland on
@@ -60,6 +71,13 @@ CLI_BINS=(
     mednafen-state mes prot-extract save-tool seq tim tmd vab xa
 )
 GUI_BINS=(legaia-engine asset-viewer legaia-explorer)
+# The double-click entry for the game on Linux and Windows (staged as
+# "Legend of Legaia"); macOS opens the .app bundle instead.
+STUB_BIN=legaia-launch
+
+# Where every command-line program goes, and the icon sources.
+TOOLS_DIR="command-line-tools"
+ICONS="crates/app-theme/icons"
 
 # Oldest glibc the cross-built x86_64 Linux binaries must run against.
 # 2.28 == Debian 10 / RHEL 8 / Ubuntu 18.10 and newer.
@@ -67,20 +85,19 @@ GLIBC_PIN="2.28"
 
 case "$TARGET" in
     aarch64-unknown-linux-gnu)
-        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}")
+        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}" "$STUB_BIN")
         BIN_EXT=""
         ARCHIVE_KIND="tar.gz"
         BUILD_MODE="workspace"
         ;;
     x86_64-pc-windows-gnu)
-        # legaia-launch is staged as "Legend of Legaia.exe" (see below).
-        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}" legaia-launch)
+        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}" "$STUB_BIN")
         BIN_EXT=".exe"
         ARCHIVE_KIND="zip"
         BUILD_MODE="workspace"
         ;;
     x86_64-unknown-linux-gnu)
-        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}")
+        BINS=("${CLI_BINS[@]}" "${GUI_BINS[@]}" "$STUB_BIN")
         BIN_EXT=""
         ARCHIVE_KIND="tar.gz"
         BUILD_MODE="zigbuild"
@@ -177,10 +194,11 @@ esac
 # --- Stage -----------------------------------------------------------------
 STAGE_NAME="legaia-tools-${VERSION}-${TARGET}"
 STAGE="${OUTDIR}/${STAGE_NAME}"
+TOOLS="${STAGE}/${TOOLS_DIR}"
 BUILT="target/${TARGET}/release"
 
 rm -rf "$STAGE"
-mkdir -p "$STAGE"
+mkdir -p "$TOOLS"
 
 for b in "${BINS[@]}"; do
     src="${BUILT}/${b}${BIN_EXT}"
@@ -188,38 +206,85 @@ for b in "${BINS[@]}"; do
         printf '[release-build] ERROR: expected binary missing: %s\n' "$src" >&2
         exit 1
     fi
-    cp "$src" "$STAGE/"
+done
+
+# The top level: what a player opens. Linux and Windows get the stub under
+# the game's name and Explorer under its own; macOS gets both as .app
+# bundles (make_app below), so no bare GUI binary sits at its top level.
+GAME_ENTRY="Legend of Legaia${BIN_EXT}"
+EXPLORER_ENTRY="Legaia Explorer${BIN_EXT}"
+case "$TARGET" in
+    *-apple-darwin) ;;
+    *)
+        cp "${BUILT}/${STUB_BIN}${BIN_EXT}" "$STAGE/$GAME_ENTRY"
+        cp "${BUILT}/legaia-explorer${BIN_EXT}" "$STAGE/$EXPLORER_ENTRY"
+        ;;
+esac
+
+# Everything else: command-line-tools/.
+for b in "${BINS[@]}"; do
+    case "$b" in
+        "$STUB_BIN" | legaia-explorer) continue ;;
+    esac
+    cp "${BUILT}/${b}${BIN_EXT}" "$TOOLS/"
 done
 
 # Windows: legaia-engine.exe is a console program (its CLI subcommands need
 # the ordinary terminal contract), so a double-click on it opens a console
 # window. The double-click entry is the GUI-subsystem stub legaia-launch,
-# shipped under the name a player looks for; it starts legaia-engine.exe with
-# no console. legaia-explorer.exe has no command-line contract, so it is a GUI
-# program itself. Assert the subsystems from the PE header (2 = Windows GUI,
-# 3 = console) so a build change cannot quietly bring a console back.
+# shipped under the name a player looks for; it starts
+# command-line-tools\legaia-engine.exe with no console. Legaia Explorer has
+# no command-line contract, so it is a GUI program itself. Assert the
+# subsystems from the PE header (2 = Windows GUI, 3 = console) so a build
+# change cannot quietly bring a console back, and assert each of the three
+# carries an icon group resource (RT_GROUP_ICON, type 14) so a build without
+# a resource compiler cannot quietly ship iconless programs.
 if [[ "$TARGET" == *-windows-* ]]; then
-    mv "$STAGE/legaia-launch.exe" "$STAGE/Legend of Legaia.exe"
-    pe_subsystem() {
+    pe_info() {
         python3 - "$1" <<'PY'
 import struct, sys
 b = open(sys.argv[1], "rb").read()
 pe = struct.unpack_from("<I", b, 0x3C)[0]
 assert b[pe:pe + 4] == b"PE\0\0", "not a PE image"
-# COFF header is 20 bytes; Subsystem sits at +68 in the optional header.
-print(struct.unpack_from("<H", b, pe + 4 + 20 + 68)[0])
+nsec = struct.unpack_from("<H", b, pe + 6)[0]
+opt_size = struct.unpack_from("<H", b, pe + 20)[0]
+opt = pe + 24
+# Subsystem sits at +68 in the optional header (PE32 and PE32+ alike).
+subsystem = struct.unpack_from("<H", b, opt + 68)[0]
+# Data directory 2 is the resource table; the directories start at +96
+# (PE32) or +112 (PE32+).
+dirs = opt + (112 if struct.unpack_from("<H", b, opt)[0] == 0x20B else 96)
+rsrc_rva = struct.unpack_from("<I", b, dirs + 2 * 8)[0]
+icon = 0
+for i in range(nsec):
+    s = opt + opt_size + 40 * i
+    vsize, va, raw_size, raw_ptr = struct.unpack_from("<IIII", b, s + 8)
+    if rsrc_rva and va <= rsrc_rva < va + max(vsize, raw_size):
+        root = raw_ptr + (rsrc_rva - va)
+        named, ids = struct.unpack_from("<HH", b, root + 12)
+        types = [struct.unpack_from("<I", b, root + 16 + 8 * j)[0]
+                 for j in range(named + ids)]
+        icon = int(14 in types)
+print(subsystem, icon)
 PY
     }
     if command -v python3 >/dev/null 2>&1; then
-        gui="$(pe_subsystem "$STAGE/Legend of Legaia.exe")"
-        cli="$(pe_subsystem "$STAGE/legaia-engine.exe")"
-        explorer="$(pe_subsystem "$STAGE/legaia-explorer.exe")"
+        read -r gui gui_icon < <(pe_info "$STAGE/$GAME_ENTRY")
+        read -r cli cli_icon < <(pe_info "$TOOLS/legaia-engine.exe")
+        read -r explorer explorer_icon < <(pe_info "$STAGE/$EXPLORER_ENTRY")
         if [[ "$gui" != 2 || "$cli" != 3 || "$explorer" != 2 ]]; then
             printf '[release-build] ERROR: PE subsystems wrong: launcher=%s (want 2), engine=%s (want 3), explorer=%s (want 2)\n' \
                 "$gui" "$cli" "$explorer" >&2
             exit 1
         fi
-        log "PE subsystems hold: Legend of Legaia.exe + legaia-explorer.exe = GUI, legaia-engine.exe = console"
+        log "PE subsystems hold: $GAME_ENTRY + $EXPLORER_ENTRY = GUI, legaia-engine.exe = console"
+        if [[ "$gui_icon" != 1 || "$cli_icon" != 1 || "$explorer_icon" != 1 ]]; then
+            printf '[release-build] ERROR: icon resource missing: launcher=%s engine=%s explorer=%s (1 = present)\n' \
+                "$gui_icon" "$cli_icon" "$explorer_icon" >&2
+            printf '[release-build] the build needs a resource compiler (x86_64-w64-mingw32-windres, from mingw-w64)\n' >&2
+            exit 1
+        fi
+        log "icons embedded: $GAME_ENTRY, $EXPLORER_ENTRY, legaia-engine.exe"
     fi
 fi
 
@@ -227,7 +292,7 @@ fi
 # link is exactly the kind of change that could quietly break it. Verify the
 # real symbol table rather than trusting the target suffix.
 if [[ "$BUILD_MODE" == "zigbuild" ]] && command -v objdump >/dev/null 2>&1; then
-    max_glibc="$(objdump -T "$STAGE"/* 2>/dev/null \
+    max_glibc="$(find "$STAGE" -type f -perm -u+x -exec objdump -T {} + 2>/dev/null \
         | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)"
     want="GLIBC_${GLIBC_PIN}"
     highest="$(printf '%s\n%s\n' "$max_glibc" "$want" | sort -V | tail -1)"
@@ -239,26 +304,21 @@ if [[ "$BUILD_MODE" == "zigbuild" ]] && command -v objdump >/dev/null 2>&1; then
     log "glibc pin holds: highest requirement is ${max_glibc:-none} (pin $want)"
 fi
 
-# Smoke-run the game binary when this host can execute it (the native
-# Linux row, and the universal macOS row on its runner). A binary that
-# cannot start - a missing dylib, a bad lipo - fails here, not on a user.
-HOST_TRIPLE="$(rustc -vV | awk '/^host: /{print $2}')"
-if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
-    log "smoke: $("$STAGE/legaia-engine${BIN_EXT}" --version)"
-    log "smoke: $("$STAGE/legaia-explorer${BIN_EXT}" --version)"
-fi
-
 # macOS: a minimal .app around each GUI program, so Finder users double-click
 # an app rather than a terminal binary. Started without arguments, the engine
 # runs its launcher (asks for the disc once, then boots the game) and
-# legaia-explorer opens its browser window.
+# legaia-explorer opens its browser window. Each bundle carries its icon
+# (Contents/Resources/<icon>.icns, named by CFBundleIconFile).
 #
-#   make_app <bundle name> <executable> <bundle id suffix>
+#   make_app <bundle name> <executable path> <bundle id suffix> <icon name>
 make_app() {
-    local name="$1" exe="$2" id="$3"
+    local name="$1" src="$2" id="$3" icon="$4"
+    local exe
+    exe="$(basename "$src")"
     local app="$STAGE/${name}.app"
-    mkdir -p "$app/Contents/MacOS"
-    cp "$STAGE/$exe" "$app/Contents/MacOS/$exe"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    cp "$src" "$app/Contents/MacOS/$exe"
+    cp "$ICONS/${icon}.icns" "$app/Contents/Resources/${icon}.icns"
     # CFBundleVersion must be dot-separated integers; a prerelease tag's
     # suffix (0.2.0-rc1) stays in the display string only.
     local bundle_version="${VERSION%%-*}"
@@ -272,6 +332,7 @@ make_app() {
     <key>CFBundleDisplayName</key><string>${name}</string>
     <key>CFBundleIdentifier</key><string>io.github.andrewaltimit.${id}</string>
     <key>CFBundleExecutable</key><string>${exe}</string>
+    <key>CFBundleIconFile</key><string>${icon}</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${bundle_version}</string>
@@ -292,8 +353,25 @@ PLIST
 }
 
 if [[ "$TARGET" == *-apple-darwin ]]; then
-    make_app "Legend of Legaia" legaia-engine legaia-engine
-    make_app "Legaia Explorer" legaia-explorer legaia-explorer
+    make_app "Legend of Legaia" "$TOOLS/legaia-engine" legaia-engine legend-of-legaia
+    make_app "Legaia Explorer" "${BUILT}/legaia-explorer" legaia-explorer legaia-explorer
+    GAME_RUN="$STAGE/Legend of Legaia.app/Contents/MacOS/legaia-engine"
+    EXPLORER_RUN="$STAGE/Legaia Explorer.app/Contents/MacOS/legaia-explorer"
+else
+    GAME_RUN="$STAGE/$GAME_ENTRY"
+    EXPLORER_RUN="$STAGE/$EXPLORER_ENTRY"
+fi
+
+# Smoke-run the shipped entry points when this host can execute them (the
+# native Linux row, and the universal macOS row on its runner). A binary that
+# cannot start - a missing dylib, a bad lipo - fails here, not on a user. On
+# Linux the game entry is the stub, so this also proves it finds
+# command-line-tools/legaia-engine.
+HOST_TRIPLE="$(rustc -vV | awk '/^host: /{print $2}')"
+if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
+    log "smoke: $("$TOOLS/legaia-engine${BIN_EXT}" --version)"
+    log "smoke: $("$GAME_RUN" --version) (via ${GAME_RUN#"$STAGE"/})"
+    log "smoke: $("$EXPLORER_RUN" --version)"
 fi
 
 cp LICENSE "$STAGE/LICENSE"
@@ -317,22 +395,42 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'Legend of Legaia - engine port\n'
     printf '==============================\n\n'
     printf 'Version: %s (%s)\n\n' "$VERSION" "$TARGET"
+    printf 'WHAT TO OPEN\n\n'
+    printf 'This folder holds two programs to double-click:\n\n'
+    case "$TARGET" in
+        *-windows-*)
+            printf '    Legend of Legaia.exe    play the game\n'
+            printf '    Legaia Explorer.exe     browse and extract the game'"'"'s assets\n\n' ;;
+        *-apple-darwin)
+            printf '    Legend of Legaia.app    play the game\n'
+            printf '    Legaia Explorer.app     browse and extract the game'"'"'s assets\n\n' ;;
+        *)
+            printf '    Legend of Legaia        play the game\n'
+            printf '    Legaia Explorer         browse and extract the game'"'"'s assets\n\n' ;;
+    esac
+    printf 'The %s folder holds the command-line programs: the\n' "$TOOLS_DIR"
+    printf 'game engine itself, plus modding and reverse-engineering tools for use\n'
+    printf 'in a terminal. You do not need to open it to play. Keep it next to the\n'
+    printf 'two programs above: they start the game from it.\n\n'
     printf 'TO PLAY\n\n'
     case "$TARGET" in
         *-windows-*)
             printf '    Double-click "Legend of Legaia.exe".\n\n'
-            printf '    It starts legaia-engine.exe without a console window. Keep the\n'
-            printf '    two files in the same folder. legaia-engine.exe is the same game\n'
-            printf '    plus every command-line option; run it from a command prompt to\n'
-            printf '    see its log.\n\n' ;;
+            printf '    It starts %s\\legaia-engine.exe without a console\n' "$TOOLS_DIR"
+            printf '    window. legaia-engine.exe is the same game plus every command-line\n'
+            printf '    option; run it from a command prompt to see its log.\n\n' ;;
         *-apple-darwin)
-            printf '    Double-click "Legend of Legaia.app" (or run ./legaia-engine).\n\n'
+            printf '    Double-click "Legend of Legaia.app" (or, in a terminal, run\n'
+            printf '    %s/legaia-engine).\n\n' "$TOOLS_DIR"
             printf '    The app is not notarised by Apple. The first time, right-click it\n'
             printf '    and choose Open, or allow it under System Settings > Privacy &\n'
             printf '    Security > "Open Anyway". If macOS says the app is damaged, run:\n'
             printf '        xattr -dr com.apple.quarantine "Legend of Legaia.app"\n\n' ;;
         *)
-            printf '    Run ./legaia-engine (or double-click it in your file manager).\n\n' ;;
+            printf '    Double-click "Legend of Legaia" in your file manager (or run\n'
+            printf '    ./"Legend of Legaia" in a terminal). It starts\n'
+            printf '    %s/legaia-engine, the game engine, which you can also\n' "$TOOLS_DIR"
+            printf '    run directly: it is the same game plus every command-line option.\n\n' ;;
     esac
     printf 'The launcher opens. The first time, click "Choose disc..." and pick\n'
     printf 'YOUR Legend of Legaia (USA) disc image: the .bin file of a Mode2/2352\n'
@@ -372,18 +470,18 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'Each toggle shows its new state at the bottom left for a moment.\n\n'
     printf 'Mouse: drag to turn the camera, wheel to zoom, double-click to reset.\n'
     printf 'Every play option is on the command line:\n'
-    printf '    legaia-engine play-window --help\n\n'
+    printf '    %s/legaia-engine play-window --help\n\n' "$TOOLS_DIR"
     printf 'Guide: https://github.com/%s/blob/main/docs/guides/playing-and-viewing.md\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf '\nTO BROWSE AND EXTRACT THE GAME'"'"'S ASSETS\n\n'
     case "$TARGET" in
         *-windows-*)
-            printf '    Double-click legaia-explorer.exe.\n\n' ;;
+            printf '    Double-click "Legaia Explorer.exe".\n\n' ;;
         *-apple-darwin)
-            printf '    Double-click "Legaia Explorer.app" (or run ./legaia-explorer); the\n'
-            printf '    first-open steps above apply to it too.\n\n' ;;
+            printf '    Double-click "Legaia Explorer.app"; the first-open steps above\n'
+            printf '    apply to it too.\n\n' ;;
         *)
-            printf '    Run ./legaia-explorer (or double-click it in your file manager).\n\n' ;;
+            printf '    Double-click "Legaia Explorer" (or run ./"Legaia Explorer").\n\n' ;;
     esac
     printf 'Legaia Explorer opens the same disc image and lets you browse every\n'
     printf 'archive entry, preview textures, 3D models, sound banks, music and\n'
@@ -395,8 +493,15 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf '\nBoth apps, with screenshots:\n'
     printf 'https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html\n'
-    printf '\nThe other binaries in this folder are modding and reverse-engineering\n'
-    printf 'tools; README.txt lists them.\n'
+    printf '\nThe command-line tools in %s are listed in its README.txt.\n' "$TOOLS_DIR"
+    printf '\nLicensed MIT OR Unlicense - see LICENSE and LICENSE-MIT. The programs\n'
+    printf 'link third-party crates; their licenses and notices are in\n'
+    printf 'THIRD-PARTY-LICENSES.txt.\n'
+    if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
+        printf '\nRequires glibc %s or newer. The game and Legaia Explorer need ALSA\n' "$GLIBC_PIN"
+        printf '(libasound.so.2) at runtime, which every mainstream desktop Linux\n'
+        printf 'already ships; Legaia Explorer also needs OpenGL (libGL / libEGL).\n'
+    fi
 } > "$STAGE/README-PLAY.txt"
 
 {
@@ -404,14 +509,15 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf '========================================\n\n'
     printf 'Version: %s\n' "$VERSION"
     printf 'Target:  %s\n\n' "$TARGET"
-    printf 'These are the reverse-engineering and engine binaries only.\n'
-    printf 'They ship NO game data. Every tool here reads a disc image that\n'
-    printf 'you supply yourself; none is included or redistributed.\n\n'
-    printf 'To PLAY, see README-PLAY.txt: start legaia-engine with no arguments.\n\n'
-    printf 'To browse and extract assets without a terminal, start legaia-explorer.\n'
-    printf 'On the command line, legaia-extract drives the whole disc pipeline:\n\n'
+    printf 'This folder holds the command-line programs: the game engine and the\n'
+    printf 'modding and reverse-engineering tools. They ship NO game data. Every\n'
+    printf 'tool here reads a disc image that you supply yourself; none is\n'
+    printf 'included or redistributed.\n\n'
+    printf 'To PLAY or to browse assets without a terminal, use the programs one\n'
+    printf 'folder up (see ../README-PLAY.txt). Here, legaia-extract drives the\n'
+    printf 'whole disc pipeline from a terminal opened in this folder:\n\n'
     printf '    ./legaia-extract "/path/to/your/disc.bin" --out extracted\n\n'
-    printf 'The tools in this archive (%d), one line each:\n\n' "${#BINS[@]}"
+    printf 'The tools in this folder, one line each:\n\n'
     printf 'Extract + convert\n'
     printf '    legaia-extract  full disc pipeline: files, textures, audio, font\n'
     printf '    disc-extract    disc image -> ISO9660 files; "verify" checks your dump\n'
@@ -430,38 +536,34 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf '    art             Tactical Arts data inspector\n'
     printf '    font-extract    dialog font -> glyph atlas + widths\n'
     printf 'Play + view\n'
-    printf '    legaia-engine   the from-scratch engine: play-window, play-str, record/replay\n'
-    if [[ "$TARGET" == *-windows-* ]]; then
-        printf '    Legend of Legaia.exe  double-click entry: legaia-engine without a console\n'
-    fi
-    printf '    legaia-explorer   desktop app: browse, preview and export assets, extract the disc\n'
+    printf '    legaia-engine   the from-scratch engine: with no arguments the game'"'"'s\n'
+    printf '                    launcher; play-window, play-str, record/replay, ...\n'
     printf '    asset-viewer    windowed viewer over legaia-extract output (textures, meshes,\n'
     printf '                    audio, scenes); with no arguments it browses ./extracted\n'
     printf 'Mod + translate\n'
-    printf '    legaia-patcher    disc patcher: randomizer, "translate" language packs, manual edits\n'
+    printf '    legaia-patcher  disc patcher: randomizer, "translate" language packs, manual edits\n'
     printf '    save-tool       memory-card and save-file inspector\n'
     printf '    gamedata-tool   curated game-data lookups (arts, items, enemies, shops)\n'
     printf '    cheat-tool      cheat-database inspector (databases built in)\n'
     printf 'Reverse engineering\n'
     printf '    asset           asset formats; "asset field-disasm" walks field-VM bytecode\n'
     printf '    mednafen-state  emulator save-state analysis\n\n'
-    printf 'Every binary supports --help and --version.\n\n'
+    printf 'Every program supports --help and --version.\n\n'
     printf 'Guides:          https://github.com/%s/tree/main/docs/guides\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
     printf 'Docs and source: https://github.com/%s\n\n' \
         "${GITHUB_REPOSITORY:-AndrewAltimit/legend-of-legaia-re}"
-    printf 'Verify this archive against the SHA256SUMS file on the release page:\n'
+    printf 'Verify the archive against the SHA256SUMS file on the release page:\n'
     printf '    sha256sum -c SHA256SUMS --ignore-missing\n\n'
-    printf 'Licensed MIT OR Unlicense - see LICENSE and LICENSE-MIT.\n'
-    printf 'The binaries link third-party crates; their licenses and notices are\n'
-    printf 'in THIRD-PARTY-LICENSES.txt.\n'
+    printf 'Licensed MIT OR Unlicense - see ../LICENSE and ../LICENSE-MIT.\n'
+    printf 'The programs link third-party crates; their licenses and notices are\n'
+    printf 'in ../THIRD-PARTY-LICENSES.txt.\n'
     if [[ "$TARGET" == "x86_64-unknown-linux-gnu" ]]; then
         printf '\nRequires glibc %s or newer.\n' "$GLIBC_PIN"
-        printf 'legaia-engine, asset-viewer and legaia-explorer need ALSA\n'
-        printf '(libasound.so.2) at runtime; every mainstream desktop Linux already\n'
-        printf 'ships it. legaia-explorer also needs OpenGL (libGL / libEGL).\n'
+        printf 'legaia-engine and asset-viewer need ALSA (libasound.so.2) at\n'
+        printf 'runtime; every mainstream desktop Linux already ships it.\n'
     fi
-} > "$STAGE/README.txt"
+} > "$TOOLS/README.txt"
 
 # --- Archive ---------------------------------------------------------------
 cd "$OUTDIR"

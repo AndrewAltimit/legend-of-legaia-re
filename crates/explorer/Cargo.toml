@@ -49,5 +49,10 @@ legaia-translate.workspace = true
 legaia-vab.workspace = true
 legaia-xa.workspace = true
 
+# build.rs embeds the program's icon into its Windows executable
+# (`legaia_app_theme::win_icon`; a no-op for every other target).
+[build-dependencies]
+legaia-app-theme.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true

@@ -65,6 +65,12 @@ fn main() -> eframe::Result {
         .with_inner_size(size)
         .with_min_inner_size([720.0, 480.0])
         .with_drag_and_drop(true);
+    // The title bar / task switcher icon (Windows, X11); macOS shows the app
+    // bundle's, Wayland the desktop entry's.
+    match eframe::icon_data::from_png_bytes(legaia_app_theme::icons::EXPLORER_PNG) {
+        Ok(icon) => viewport = viewport.with_icon(icon),
+        Err(e) => log::warn!("window icon: {e}"),
+    }
     if auto.screenshot.is_some() {
         // A scripted screenshot reads the window's own pixels back; on a
         // shared desktop another window on top would end up in the capture.

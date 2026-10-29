@@ -31,23 +31,23 @@
       <tr><td>Linux on ARM (aarch64)</td><td><code>legaia-tools-&lt;version&gt;-aarch64-unknown-linux-gnu.tar.gz</code></td></tr>
     </tbody>
   </table>
-  <p>Every archive holds both apps, the command-line tools, the licenses, and two short text files: <code>README-PLAY.txt</code> (how to start the game, the controls) and <code>README.txt</code> (every program in the folder). To check a download was not damaged, fetch <code>SHA256SUMS</code> from the same release and run <code>sha256sum -c SHA256SUMS --ignore-missing</code> (<code>shasum -a 256 -c ...</code> on a Mac).</p>
+  <p>Every archive unpacks into one folder whose top level holds just what you double-click - <em>Legend of Legaia</em> to play and <em>Legaia Explorer</em> for the assets - plus <code>README-PLAY.txt</code> (how to start both, the controls) and the licenses. Every command-line program, the game engine <code>legaia-engine</code> among them, sits one level down in <code>command-line-tools</code>, with a <code>README.txt</code> listing them; you never need to open that folder to play. To check a download was not damaged, fetch <code>SHA256SUMS</code> from the same release and run <code>sha256sum -c SHA256SUMS --ignore-missing</code> (<code>shasum -a 256 -c ...</code> on a Mac).</p>
 </section>
 
 <section class="doc-section" id="unpack">
   <h2>2 &middot; Unpack and start for the first time</h2>
-  <p>Each archive unpacks into a single folder named after it. Keep everything in that folder together: the game's launcher and Explorer's <em>Play</em> button both look for <code>legaia-engine</code> right beside them.</p>
+  <p>Each archive unpacks into a single folder named after it. Keep everything in that folder together: <em>Legend of Legaia</em> and Explorer's <em>Play</em> button both start the game from the <code>command-line-tools</code> folder beside them.</p>
 
   <h3 id="windows">Windows</h3>
   <ol>
-    <li>Right-click the <code>.zip</code> and choose <em>Extract All...</em>. Do not run the programs from inside the zip window - Windows then unpacks one file at a time, and the game's launcher cannot find the engine beside it.</li>
-    <li>In the extracted folder, double-click <code>legaia-explorer.exe</code> for Explorer, or <code>Legend of Legaia.exe</code> to play.</li>
+    <li>Right-click the <code>.zip</code> and choose <em>Extract All...</em>. Do not run the programs from inside the zip window - Windows then unpacks one file at a time, and the game's launcher cannot find the engine.</li>
+    <li>In the extracted folder, double-click <code>Legaia Explorer.exe</code> for Explorer, or <code>Legend of Legaia.exe</code> to play.</li>
   </ol>
   <div class="callout callout-warn">
     <p class="callout-title">"Windows protected your PC"</p>
     <p>The programs are not code-signed, so Microsoft Defender SmartScreen may stop the first start of a program it has not seen before. Click <em>More info</em>, then <em>Run anyway</em>. It asks once per program.</p>
   </div>
-  <p><code>Legend of Legaia.exe</code> is a small starter that runs <code>legaia-engine.exe</code> without a console window; <code>legaia-engine.exe</code> itself is the same game plus every command-line option, and is the one to run from a command prompt.</p>
+  <p><code>Legend of Legaia.exe</code> is a small starter that runs <code>command-line-tools\legaia-engine.exe</code> without a console window; <code>legaia-engine.exe</code> itself is the same game plus every command-line option, and is the one to run from a command prompt.</p>
 
   <h3 id="macos">macOS</h3>
   <ol>
@@ -62,7 +62,7 @@
 
   <h3 id="linux">Linux</h3>
   <div class="cli"><code>tar -xzf legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu.tar.gz</code></div>
-  <p>Then start <code>./legaia-explorer</code> or <code>./legaia-engine</code> from the new folder, or double-click either in your file manager. The game needs ALSA (<code>libasound.so.2</code>) for sound and udev for gamepads, and Explorer needs OpenGL; every mainstream desktop distribution already has all three.</p>
+  <p>Then double-click <code>Legaia Explorer</code> or <code>Legend of Legaia</code> in your file manager, or start either from a terminal in the new folder (<code>./"Legend of Legaia"</code>); the second runs <code>command-line-tools/legaia-engine</code>. The game needs ALSA (<code>libasound.so.2</code>) for sound and udev for gamepads, and Explorer needs OpenGL; every mainstream desktop distribution already has all three.</p>
 </section>
 
 <section class="doc-section" id="explorer">
@@ -122,7 +122,7 @@
   <p>Choose an output folder (Explorer proposes one beside the disc image), tick any steps to skip, and start; a note under the folder warns when it already holds files. The tab shows the step, the time so far and, once a step has a steady rate, about how long it has left; the log can be cut down to its warnings, the run can be cancelled, and <em>Open output folder</em> is there whenever the folder exists. The run goes on while you browse, and its end (or its error) shows on the status line of whatever view is open. Tick <em>Export all textures as PNG</em> to also get every texture on the disc as a PNG. What the folder holds is described in <a href="getting-started.html#one-shot-extract">Getting started</a>.</p>
 
   <h3 id="explorer-play">Play, and the rest of the window</h3>
-  <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. The display options you set in the game's launcher (below) apply to a game started from Explorer too. Play needs the USA disc image and <code>legaia-engine</code> in the same folder; when it is greyed out, hover it to see why (on another region's disc the disc line also says <em>Play needs the USA disc</em>). If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
+  <p><strong>Play</strong> - the gold button in the top bar, or <kbd>F5</kbd> - starts the game on the open disc, at the title screen. Saves, key bindings and options are the same ones the game uses when you start it directly, and the disc is remembered for the game too: starting <em>Legend of Legaia</em> later finds it ready. The display options you set in the game's launcher (below) apply to a game started from Explorer too. Play needs the USA disc image and the <code>command-line-tools</code> folder beside Explorer; when it is greyed out, hover it to see why (on another region's disc the disc line also says <em>Play needs the USA disc</em>). If the game stops with an error, the status line shows the end of its log and where the full log is.</p>
   <figure class="screenshot">
     <img src="../img/desktop/explorer-light.jpg" width="1280" height="800" alt="Legaia Explorer in its light theme, showing the monster Drake Ghost textured in the Characters &amp; monsters view" loading="lazy">
     <figcaption>The light theme, from the <em>View</em> menu.</figcaption>
@@ -146,9 +146,9 @@
 
   <h3 id="port-start">Three ways to start it</h3>
   <ul class="bullets">
-    <li><strong>Double-click</strong> <code>Legend of Legaia.exe</code> (Windows), <code>Legend of Legaia.app</code> (macOS) or <code>legaia-engine</code> (Linux). The <a href="#port-launcher">launcher</a> opens: pick your disc once, set the display options if you like, and press <em>Play</em>.</li>
+    <li><strong>Double-click</strong> <code>Legend of Legaia.exe</code> (Windows), <code>Legend of Legaia.app</code> (macOS) or <code>Legend of Legaia</code> (Linux). The <a href="#port-launcher">launcher</a> opens: pick your disc once, set the display options if you like, and press <em>Play</em>.</li>
     <li><strong>From Legaia Explorer</strong> - <a href="#explorer-play"><em>Play</em></a> starts it on the disc Explorer has open, and remembers that disc for the double-click start.</li>
-    <li><strong>From a terminal</strong> - every option is a flag:
+    <li><strong>From a terminal</strong> in the <code>command-line-tools</code> folder - every option is a flag:
       <div class="cli"><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin" --boot-ui</code></div>
       <code>--boot-ui</code> opens on the title screen; without it the game drops you straight into Rim Elm. <code>./legaia-engine play-window --help</code> lists the rest, and <a href="playing-and-viewing.html#play-window">Playing and viewing</a> explains them.</li>
   </ul>

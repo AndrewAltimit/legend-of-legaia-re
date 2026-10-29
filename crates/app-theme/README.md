@@ -2,14 +2,34 @@
 
 The look the desktop programs share: one palette, in a dark and a light
 variant, and the spacing values; and the words both programs that start the
-game use when it fails (`game_exit`). No dependencies and no toolkit types,
-so every consumer converts a token into its own colour type.
+game use when it fails (`game_exit`); the two programs' icons and where the
+release archive puts them ([below](#icons-and-where-the-release-puts-the-programs)).
+No dependencies and no toolkit types, so every consumer converts a token into
+its own colour type.
 
 | Consumer | What it takes |
 |---|---|
 | `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
 | The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | The dark palette, as `[f32; 4]` for its software canvas; `game_exit` for its help box after a failed game. |
 | The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel, `chrome::CHANGED` for a panel state the original game does not have, and the chrome inset and line gap. |
+
+## Icons, and where the release puts the programs
+
+`icons/` holds the two programs' icons - the game (a golden tree under a
+night sky, mist across its roots) and Legaia Explorer (a disc under a
+magnifying glass) - as original artwork, no game asset drawn from or traced.
+`icons/make_icons.py` (Python + Pillow) is their source: it draws each icon
+from a short list of flat shapes and writes the SVG, the 256 px PNG, the
+`.ico` and the `.icns`, all committed, so no build runs it.
+
+| Module | What it carries |
+|---|---|
+| `icons` | The PNGs as bytes (`GAME_PNG`, `EXPLORER_PNG`) for the window icons, and the `.ico` paths for build scripts. |
+| `win_icon` | `embed_in_bins`, for a build script: compiles a one-icon resource with the toolchain's resource compiler (`<arch>-w64-mingw32-windres`, `windres`, `llvm-windres`, `rc.exe`, or `$LEGAIA_WINDRES`) and links it into the package's binaries, on a Windows target only. |
+| `release_layout` | `find_engine`: the release archive keeps every command-line program in `command-line-tools/` below the two double-click programs, and this finds `legaia-engine` there, beside the program (a `cargo build`), or inside `Legend of Legaia.app`. The `legaia-launch` stub and Explorer's Play button both use it. |
+
+`win_icon` and `release_layout` need `std` (processes, paths); the palette
+does not. None of the three adds a dependency.
 
 ## The palette
 
@@ -62,3 +82,6 @@ reason: what a crash leaves is the chatter before it. The module needs `std`
   float values.
 - `game_exit`: the error-chain, panic and crash-log readings, and the
   signal / exit-code headlines.
+- The window-icon PNGs are 256 px RGBA and each `.ico` holds a 256 px image;
+  the resource script and the windres pick; `find_engine` across the release
+  folder, a build folder and a macOS bundle.

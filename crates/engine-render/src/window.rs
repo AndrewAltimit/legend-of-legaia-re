@@ -32,14 +32,32 @@
 //! }
 //! ```
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use glam::{Mat4, Vec3};
 use winit::event_loop::ActiveEventLoop;
-use winit::window::{Window, WindowAttributes};
+use winit::window::{Icon, Window, WindowAttributes};
 
 use crate::Renderer;
+
+/// The icon every [`EngineWindow`] opens with: straight RGBA, width, height.
+static APP_ICON: OnceLock<(Vec<u8>, u32, u32)> = OnceLock::new();
+
+/// Give every window this process opens from now on the icon `rgba`
+/// (`width * height` straight-alpha RGBA pixels). The first call wins.
+/// Shown in the title bar and the task switcher on Windows and X11; macOS
+/// takes the app bundle's icon instead, and Wayland the desktop entry's.
+pub fn set_app_icon(rgba: Vec<u8>, width: u32, height: u32) {
+    let _ = APP_ICON.set((rgba, width, height));
+}
+
+fn app_icon() -> Option<Icon> {
+    let (rgba, w, h) = APP_ICON.get()?;
+    Icon::from_rgba(rgba.clone(), *w, *h)
+        .map_err(|e| log::warn!("window icon: {e}"))
+        .ok()
+}
 
 /// Common windowed-app state: window handle, renderer, and timing.
 ///
@@ -92,6 +110,7 @@ impl EngineWindow {
         let (w, h) = setup.logical_size;
         let attrs = WindowAttributes::default()
             .with_title(title)
+            .with_window_icon(app_icon())
             .with_inner_size(winit::dpi::LogicalSize::new(w, h))
             .with_fullscreen(
                 setup

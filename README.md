@@ -65,7 +65,7 @@ Open the [play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.ht
 
 ### Play natively
 
-Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and start the engine with no arguments (double-click `Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). The launcher opens: choose your disc image once (it is checked and remembered), set the display options, and press Play for the title screen.
+Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and double-click **Legend of Legaia** in the unpacked folder (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). The launcher opens: choose your disc image once (it is checked and remembered), set the display options, and press Play for the title screen.
 
 | Platform | Archive |
 |---|---|
@@ -78,12 +78,12 @@ Download the archive for your platform from the [Releases page](https://github.c
 sha256sum -c SHA256SUMS --ignore-missing       # optional: verify the download
 tar -xzf legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
 cd legaia-tools-<version>-x86_64-unknown-linux-gnu
-./legaia-engine                                # launcher, then the title screen
+./"Legend of Legaia"                            # launcher, then the title screen
 ```
 
-Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
+The archive's top folder holds only the two programs to double-click - the game and Legaia Explorer - plus `README-PLAY.txt` and the licenses; every command-line program, the engine `legaia-engine` among them, is in its `command-line-tools/` folder. `README-PLAY.txt` covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
 
-Every archive also carries **Legaia Explorer** (`legaia-explorer`), a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/explorer`](crates/explorer/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Explorer and the native port, with screenshots.
+Every archive also carries **Legaia Explorer**, a desktop app for the asset side: open your disc image, browse the archive by scene, preview textures, models, characters, monsters, audio, dialog and movies, and export them, or run the full extraction with a progress bar ([`crates/explorer`](crates/explorer/README.md)). The site's [desktop apps guide](https://andrewaltimit.github.io/legend-of-legaia-re/guides/desktop-apps.html) walks through downloading, the first start on each system, Explorer and the native port, with screenshots.
 
 ![Legaia Explorer previewing Gimard Lv3's textured battle model beside the monster list](site/assets/legaia-explorer.jpg)
 
@@ -97,7 +97,7 @@ cargo build --release          # every binary lands in target/release/
 
 ### The commands worth knowing
 
-Paths below are for a source build; from a release archive drop the `target/release/` prefix.
+Paths below are for a source build; from a release archive run them in its `command-line-tools` folder, without the `target/release/` prefix.
 
 ```bash
 DISC="/path/to/Legend of Legaia (USA).bin"     # a .cue works anywhere a .bin does

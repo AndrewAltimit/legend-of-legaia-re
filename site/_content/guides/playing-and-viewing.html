@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; playing + viewing</div>
   <h1>Playing and viewing</h1>
-  <p class="lede">The project's engine is a from-scratch rewrite of the game that reads your own disc: point <code>legaia-engine</code> at the image and it boots Rim Elm, plays the music, runs the NPC scripts, rolls encounters and fights battles. <code>asset-viewer</code> is its museum-mode sibling for browsing one texture, mesh or sound bank at a time. Both ship in the release archive; commands use the bare <code>./tool</code> form (source builds live at <code>target/release/</code>).</p>
+  <p class="lede">The project's engine is a from-scratch rewrite of the game that reads your own disc: point <code>legaia-engine</code> at the image and it boots Rim Elm, plays the music, runs the NPC scripts, rolls encounters and fights battles. <code>asset-viewer</code> is its museum-mode sibling for browsing one texture, mesh or sound bank at a time. Both ship in the release archive's <code>command-line-tools</code> folder; commands use the bare <code>./tool</code> form, run from a terminal in that folder (source builds live at <code>target/release/</code>).</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -21,7 +21,7 @@
 <section class="doc-section" id="launcher">
   <h2>0 &middot; The launcher</h2>
   <p class="hint">New to the release archive? <a href="desktop-apps.html">Desktop apps</a> covers the download, the first start past SmartScreen or Gatekeeper, the controls and the toggles, with screenshots; this page is the full reference.</p>
-  <p>Started with <strong>no subcommand</strong> - a double-click, a desktop shortcut, the macOS app - <code>legaia-engine</code> opens its launcher instead of printing help:</p>
+  <p>Started with <strong>no subcommand</strong> - the archive's <code>Legend of Legaia</code> program (<code>.exe</code> on Windows, <code>.app</code> on macOS), a desktop shortcut, a double-click - <code>legaia-engine</code> opens its launcher instead of printing help:</p>
   <div class="cli"><code>./legaia-engine</code></div>
   <figure class="screenshot">
     <img src="../img/desktop/port-launcher.jpg" width="960" height="720" alt="The launcher: a disc card saying Legend of Legaia (USA) is ready, the Play, Change disc, Controls, Open saves folder and Quit buttons with a help box, and the grouped option list with its scroll bar - Display (fullscreen, window size, camera distance, PlayStation pixel look), Enhancements (enhanced lighting, time of day, lamp shadows, bloom, ground fog, see-through walls, living ground pulse) and Play (free-angle movement, smarter monsters, reduce flashing)" loading="lazy">
@@ -88,7 +88,7 @@
   <details class="disclosure">
     <summary>Platform notes: Windows console, Linux file dialog, Wayland</summary>
     <div class="disclosure-body">
-      <p><strong>Windows.</strong> Double-click <code>Legend of Legaia.exe</code>: it starts <code>legaia-engine.exe</code> with no console window. <code>legaia-engine.exe</code> is a console program so its subcommands behave normally in a terminal; double-clicked directly, it closes the console it was given (a brief flash) unless <code>LEGAIA_KEEP_CONSOLE</code> is set, and run from a command prompt it keeps printing its log there.</p>
+      <p><strong>Windows.</strong> Double-click <code>Legend of Legaia.exe</code>: it starts <code>command-line-tools\legaia-engine.exe</code> with no console window. <code>legaia-engine.exe</code> is a console program so its subcommands behave normally in a terminal; double-clicked directly, it closes the console it was given (a brief flash) unless <code>LEGAIA_KEEP_CONSOLE</code> is set, and run from a command prompt it keeps printing its log there.</p>
       <p><strong>Linux.</strong> The file dialog goes through the desktop's file-chooser portal; where no portal runs, drag-and-drop and the typed path still work.</p>
       <p><strong>Wayland.</strong> The launcher window opens through XWayland, because the windowing library has no Wayland drag-and-drop; the compositor carries a drag from a Wayland file manager across. Without XWayland (<code>DISPLAY</code> unset), or with <code>LEGAIA_LAUNCHER_WAYLAND=1</code>, the window is native Wayland and only the file dialog and the typed path take a disc. The game itself always opens on the desktop's default backend.</p>
     </div>

@@ -1019,9 +1019,10 @@ impl App {
         let blocked = match (&self.engine, &disc) {
             _ if running => Some("The game is running.".to_string()),
             (None, _) => Some(format!(
-                "{} was not found beside legaia-explorer. It ships in the same \
-                 release folder; keep the two programs together.",
-                crate::launch::engine_file_name()
+                "{} was not found. It ships in the release folder's {} \
+                 folder; keep that folder beside Legaia Explorer.",
+                crate::launch::engine_file_name(),
+                legaia_app_theme::release_layout::TOOLS_DIR
             )),
             (_, Err(why)) => Some(why.clone()),
             _ => None,
@@ -2528,8 +2529,8 @@ impl eframe::App for App {
 }
 
 /// `THIRD-PARTY-LICENSES.txt` where the release archives put it
-/// (`docs/tooling/releases.md`): beside the binary, or beside the macOS
-/// `.app` bundle the binary sits three folders inside.
+/// (`docs/tooling/releases.md`): beside the program, or beside the macOS
+/// `.app` bundle the program sits three folders inside.
 fn third_party_licenses() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     exe.ancestors()

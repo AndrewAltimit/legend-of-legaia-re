@@ -3,8 +3,9 @@
 `legaia-engine` is the port: point it at your disc and you are playing Legend
 of Legaia - title screen, New Game or a save, towns, the world map, battles,
 menus, minigames, cutscenes. `asset-viewer` is its museum-mode sibling for
-browsing individual assets. Both ship in the release archive; commands use the
-bare `./tool` form (source builds live at `target/release/`).
+browsing individual assets. Both ship in the release archive's
+`command-line-tools` folder; commands use the bare `./tool` form, run from a
+terminal in that folder (source builds live at `target/release/`).
 
 There are two ways to play, and they run the same engine:
 
@@ -36,8 +37,9 @@ The project site's [desktop apps guide](https://andrewaltimit.github.io/legend-o
 first start past SmartScreen or Gatekeeper, the controls and the toggles with
 screenshots; this page is the full reference.
 
-Started with **no subcommand** - a double-click, a desktop shortcut, the macOS
-app - `legaia-engine` opens its launcher instead of printing help:
+Started with **no subcommand** - the archive's `Legend of Legaia` program
+(`.exe` on Windows, `.app` on macOS), a desktop shortcut, a double-click -
+`legaia-engine` opens its launcher instead of printing help:
 
 ```bash
 ./legaia-engine
@@ -191,8 +193,8 @@ the pad. Run from a terminal, the game's output still prints there too.
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
 
-On Windows, double-click `Legend of Legaia.exe`: it starts `legaia-engine.exe`
-with no console window. `legaia-engine.exe` is a console program so its
+On Windows, double-click `Legend of Legaia.exe`: it starts
+`command-line-tools\legaia-engine.exe` with no console window. `legaia-engine.exe` is a console program so its
 subcommands behave normally in a terminal; double-clicked directly, it closes
 the console it was given (a brief flash) unless `LEGAIA_KEEP_CONSOLE` is set,
 and run from a command prompt it keeps printing its log there.

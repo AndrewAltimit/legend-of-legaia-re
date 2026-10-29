@@ -6,7 +6,7 @@
 
 <section class="doc-section" id="explorer">
   <h2>Without a terminal: Legaia Explorer</h2>
-  <p>The release archive's <code>legaia-explorer</code> (<code>legaia-explorer.exe</code> on Windows, <code>Legaia Explorer.app</code> on macOS) does the common cases of this page with buttons: open your disc image, browse and search the archive by place name, preview textures, 3D models, audio and dialog, export PNG, OBJ, textured <code>.glb</code> or WAV, view the party and every monster with their animations, play the movies and voice audio, and run the whole-disc extraction from its <em>Extract</em> tab - which writes exactly what the <code>legaia-extract</code> command below produces. Its <em>Play</em> button starts the game on the disc it has open.</p>
+  <p>The release archive's <code>Legaia Explorer</code> (<code>Legaia Explorer.exe</code> on Windows, <code>Legaia Explorer.app</code> on macOS, <code>legaia-explorer</code> in a source build) does the common cases of this page with buttons: open your disc image, browse and search the archive by place name, preview textures, 3D models, audio and dialog, export PNG, OBJ, textured <code>.glb</code> or WAV, view the party and every monster with their animations, play the movies and voice audio, and run the whole-disc extraction from its <em>Extract</em> tab - which writes exactly what the <code>legaia-extract</code> command below produces. Its <em>Play</em> button starts the game on the disc it has open.</p>
   <p><a href="desktop-apps.html#explorer">Desktop apps: Legaia Explorer</a> walks through it with screenshots, including the download and the first start on each system. Explorer ships no game data and uploads nothing: it reads the disc you choose and writes only where you tell it. The rest of this page is the command-line route, one scenario per asset type.</p>
 </section>
 
@@ -16,7 +16,7 @@
   <table>
     <thead><tr><th>I want...</th><th>Tool</th><th>Scenario</th></tr></thead>
     <tbody>
-      <tr><td>Browse, preview and export with buttons</td><td><code>legaia-explorer</code></td><td><a href="#explorer">Legaia Explorer</a></td></tr>
+      <tr><td>Browse, preview and export with buttons</td><td><code>Legaia Explorer</code></td><td><a href="#explorer">Legaia Explorer</a></td></tr>
       <tr><td>Textures as PNG</td><td><code>asset tim-scan</code> + <code>tim convert-dir</code></td><td><a href="#textures">Textures</a></td></tr>
       <tr><td>Field / battle meshes as OBJ</td><td><code>asset tmd-scan</code> + <code>tmd dump-obj</code></td><td><a href="#models">3D models</a></td></tr>
       <tr><td>A monster with its animations, in Blender</td><td><code>asset monster-archive --glb</code></td><td><a href="#monsters-gltf">Monsters</a></td></tr>
@@ -34,7 +34,7 @@
   <h3>Prerequisite</h3>
   <p>Every scenario below assumes the one-shot pipeline has run (<a href="getting-started.html">getting started</a>):</p>
   <div class="cli"><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></div>
-  <p class="hint">Commands use the bare <code>./tool</code> form from a release archive; source builds live at <code>target/release/</code>. Paths like <code>extracted/...</code> resolve against the current directory - run from the same place each time.</p>
+  <p class="hint">Commands use the bare <code>./tool</code> form, run from a terminal in the release archive's <code>command-line-tools</code> folder; source builds live at <code>target/release/</code>. Paths like <code>extracted/...</code> resolve against the current directory - run from the same place each time.</p>
 </section>
 
 <section class="doc-section" id="textures">

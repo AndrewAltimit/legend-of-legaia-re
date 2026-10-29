@@ -2,8 +2,9 @@
 
 ## Without a terminal: Legaia Explorer
 
-The release archive's `legaia-explorer` (`legaia-explorer.exe` on Windows,
-`Legaia Explorer.app` on macOS) does the common cases with buttons:
+The release archive's `Legaia Explorer` (`Legaia Explorer.exe` on Windows,
+`Legaia Explorer.app` on macOS, `legaia-explorer` in a source build) does the
+common cases with buttons:
 
 1. **Open** your disc image - the `.bin` of a Mode2/2352 dump, or its `.cue` -
    with *Open disc image...* (Ctrl+O), by typing its path (Ctrl+L), or by
@@ -47,7 +48,8 @@ The release archive's `legaia-explorer` (`legaia-explorer.exe` on Windows,
    so they need the disc image rather than an extracted folder.
 
 8. **Play**: the button in the top bar starts the game (`legaia-engine`,
-   which ships in the same folder) on the open disc, at the title screen.
+   from the archive's `command-line-tools` folder) on the open disc, at the
+   title screen.
    Saves, key bindings and options are the same ones the game uses when you
    start it directly, and the disc is remembered for the game too: starting
    it later by double-clicking goes straight to the title screen instead of
@@ -77,8 +79,8 @@ Every scenario below assumes the one-shot pipeline has run
 ./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-Commands use the bare `./tool` form from a release archive; source builds live
-at `target/release/`. Paths like `extracted/...` resolve against the current
+Commands use the bare `./tool` form, run from a terminal in the release
+archive's `command-line-tools` folder; source builds live at `target/release/`. Paths like `extracted/...` resolve against the current
 directory - run from the same place each time.
 
 ## Textures → PNG

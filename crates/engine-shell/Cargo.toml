@@ -114,6 +114,11 @@ oracles = ["dep:legaia-parity"]
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# build.rs embeds the program's icon into its Windows executable
+# (`legaia_app_theme::win_icon`; a no-op for every other target).
+[build-dependencies]
+legaia-app-theme.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /

@@ -193,11 +193,18 @@ with the headless subcommands. The binary is split into modules under
   Wayland drag-and-drop); on Windows a double-clicked engine frees the console
   Explorer gave it.
 
-A second binary, `legaia-launch` (`src/bin/legaia-launch.rs`), is the Windows
-double-click entry: a `windows`-subsystem stub that starts `legaia-engine`
-beside it with no console window. The Windows release archive ships it as
-`Legend of Legaia.exe`; [`releases.md`](../../docs/tooling/releases.md#windows-the-console-window)
+A second binary, `legaia-launch` (`src/bin/legaia-launch.rs`), is the
+double-click entry the release archive ships as `Legend of Legaia` (Linux)
+and `Legend of Legaia.exe` (Windows): a stub that starts `legaia-engine` from
+the archive's `command-line-tools/` folder (or beside it, in a `cargo
+build`), so the archive's top folder holds only what a player opens. On
+Windows it is a `windows`-subsystem program and starts the engine with no
+console window; [`releases.md`](../../docs/tooling/releases.md#windows-the-console-window)
 says why it is a stub rather than a subsystem switch on the engine.
+
+`build.rs` embeds the game icon into both Windows executables
+(`legaia_app_theme::win_icon`), and `legaia-engine` gives every window it
+opens the same icon (`legaia_engine_render::window::set_app_icon`).
 
 ## Tests
 

@@ -347,6 +347,9 @@
    "lib": true,
    "modules": [
     "game_exit",
+    "icons",
+    "release_layout",
+    "win_icon",
     "spacing",
     "chrome"
    ],

@@ -20,21 +20,16 @@ use crate::library::{Library, Source, USA_EXE};
 
 /// The engine binary's file name on this platform.
 pub fn engine_file_name() -> String {
-    format!("legaia-engine{}", std::env::consts::EXE_SUFFIX)
+    legaia_app_theme::release_layout::engine_file_name()
 }
 
-/// The engine binary shipped beside `explorer_exe`: in the same folder (the
-/// release archive, a `target/<profile>` build), or - when Explorer runs from
-/// inside the macOS `Legaia Explorer.app/Contents/MacOS/` - in the archive
-/// folder three levels up.
+/// The engine binary that belongs with `explorer_exe`
+/// (`legaia_app_theme::release_layout::find_engine`): in the release
+/// archive's `command-line-tools` folder beside Explorer, or above the macOS
+/// `Legaia Explorer.app/Contents/MacOS/` - or, in a `target/<profile>`
+/// build, in the same folder.
 pub fn find_engine(explorer_exe: &Path) -> Option<PathBuf> {
-    let name = engine_file_name();
-    explorer_exe
-        .ancestors()
-        .skip(1)
-        .take(4)
-        .map(|d| d.join(&name))
-        .find(|p| p.is_file())
+    legaia_app_theme::release_layout::find_engine(explorer_exe)
 }
 
 /// The per-user folder the game keeps its saves, key bindings and options
@@ -324,14 +319,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finds_the_engine_beside_explorer_or_above_the_app_bundle() {
+    fn finds_the_engine_in_the_release_layout_or_a_build_folder() {
+        use legaia_app_theme::release_layout::TOOLS_DIR;
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let engine = root.join(engine_file_name());
-        assert_eq!(find_engine(&root.join("legaia-explorer")), None);
+        assert_eq!(find_engine(&root.join("Legaia Explorer")), None);
+        // The release archive: the engine in the command-line folder.
+        let tools = root.join(TOOLS_DIR);
+        std::fs::create_dir(&tools).unwrap();
+        let engine = tools.join(engine_file_name());
         std::fs::write(&engine, b"").unwrap();
         assert_eq!(
-            find_engine(&root.join("legaia-explorer")),
+            find_engine(&root.join("Legaia Explorer")),
             Some(engine.clone())
         );
         let bundled = root
@@ -340,6 +339,10 @@ mod tests {
             .join("MacOS")
             .join("legaia-explorer");
         assert_eq!(find_engine(&bundled), Some(engine));
+        // A cargo build: every binary side by side.
+        let beside = root.join(engine_file_name());
+        std::fs::write(&beside, b"").unwrap();
+        assert_eq!(find_engine(&root.join("legaia-explorer")), Some(beside));
     }
 
     #[test]

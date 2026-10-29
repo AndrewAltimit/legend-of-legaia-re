@@ -11,6 +11,11 @@
 //! [`game_exit`] is the wording the launcher and Explorer share for a game
 //! that stopped with an error.
 //!
+//! [`icons`] carries the two programs' icons (`icons/`, drawn by
+//! `icons/make_icons.py`), and [`win_icon`] embeds one into a Windows
+//! executable from a build script. [`release_layout`] is where the release
+//! archive puts the engine, for the two programs that start it.
+//!
 //! No dependencies: each consumer converts a [`Rgb`] into its toolkit's
 //! colour (`egui::Color32::from_rgb`, a `[f32; 4]` for the launcher's
 //! software canvas and the play window's text layer).
@@ -21,6 +26,9 @@
 extern crate std;
 
 pub mod game_exit;
+pub mod icons;
+pub mod release_layout;
+pub mod win_icon;
 
 /// An sRGB colour, 8 bits per channel, opaque.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -23,8 +23,9 @@
 # a GitHub-hosted macOS runner (free for this public repo), where both slices
 # link natively and `lipo` fuses them into one universal binary per tool.
 #
-# Every archive carries every binary, GUI ones included, plus README-PLAY.txt
-# (start `legaia-engine` with no arguments; it asks for the user's own disc).
+# Every archive carries every binary. Its top folder holds only the game
+# ("Legend of Legaia") and Legaia Explorer plus README-PLAY.txt; every
+# command-line program, legaia-engine included, is in command-line-tools/.
 # The x86_64 Linux GUI binaries link cpal -> alsa-sys against a hand-unpacked
 # amd64 ALSA sysroot (setup-cross-toolchain.sh). docs/tooling/releases.md
 # covers the reasoning and the runner provisioning.
@@ -256,7 +257,7 @@ jobs:
               echo "| \`$(basename "$f")\` | $(du -h "$f" | cut -f1) |"
             done
             echo ""
-            echo 'Every archive carries every workspace binary; README-PLAY.txt says how to start the game.'
+            echo 'Every archive carries every workspace binary: the game and Legaia Explorer at the top, the rest in command-line-tools/; README-PLAY.txt says how to start the game.'
             echo 'See docs/tooling/releases.md.'
           } >> "$GITHUB_STEP_SUMMARY"
 
