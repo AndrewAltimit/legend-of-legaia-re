@@ -983,6 +983,9 @@ impl BattleCamera {
                 // which retail's seed does not make.
                 let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
+                // The port-only clip age dates the action from its start
+                // ([`Self::clip_age`]), whatever the accumulator carries.
+                self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(

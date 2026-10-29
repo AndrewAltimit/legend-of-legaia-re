@@ -684,6 +684,29 @@ fn an_active_clip_commit_rezeroes_the_camera_counters() {
     );
 }
 
+/// A new action leaves retail's accumulator where the last clip commit left
+/// it (`FUN_8004E13C` stores `ctx[+0x26D]` alone, `0x8004E2DC`), while the
+/// port-only clip age dates the action from its start, which is what the
+/// retail comparison's action-phase gate reads (the Delilas Spirit-band
+/// captures land on retail's yaw only on that clock).
+#[test]
+fn a_new_action_keeps_the_accumulator_and_restarts_the_clip_age() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_active_commits(4);
+    cam.observe_active_installs(4);
+    for f in 1..=20u64 {
+        cam.advance_to(f);
+    }
+    let accum = cam.attack.ctx.accum;
+    assert!(accum > 0 && cam.clip_age() > 0);
+    cam.set_phase(BattleCamPhase::Action);
+    assert_eq!(
+        cam.attack.ctx.accum, accum,
+        "the seed stores no accumulator"
+    );
+    assert_eq!(cam.clip_age(), 0, "the clip age starts with the action");
+}
+
 /// `battle_gaza2_park_0x19_summon_melee`: the in-fight case-6 arm on
 /// retail's own inputs reproduces the step table's targets exactly. Gaza
 /// (seat 3) sits at `(-785, 39)` facing `1056`, `ctx[+0x6DA] = 2476`,
