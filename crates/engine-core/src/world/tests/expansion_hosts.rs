@@ -266,3 +266,16 @@ fn a_save_naming_a_pack_that_is_not_loaded_says_so_and_keeps_its_block() {
     assert_eq!(w.expansion_dormant_pack_id(), None);
     assert_eq!(w.expansion_toast(), None);
 }
+
+#[test]
+fn the_journal_cards_page_opens_the_card_menu_once_the_field_runs() {
+    let mut w = field_world(1);
+    w.activate_expansion(rebirth()).expect("Rebirth activates");
+    let j = w.expansion_journal().unwrap();
+    assert!(j.has_cards, "Rebirth defines trading cards");
+    // The Journal's Cards pick leaves the request; the field tick opens it.
+    w.expansion.open_cards = true;
+    w.tick();
+    assert!(w.card_screen_open(), "the card menu opened over the field");
+    assert!(!w.expansion.open_cards);
+}

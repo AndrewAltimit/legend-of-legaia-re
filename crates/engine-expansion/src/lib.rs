@@ -56,6 +56,9 @@ pub struct ExpansionState {
     /// A map the pause menu's Travel page picked, `(map id, spawn)`, for the
     /// scene host to enter on its next tick.
     pub travel: Option<(String, String)>,
+    /// The Journal's Cards page asked for the card menu, opened once the
+    /// pause menu has closed and the player walks again.
+    pub open_cards: bool,
     /// Quest toasts for the hosts to show ([`toast::ToastQueue`]).
     pub toasts: toast::ToastQueue,
 }

@@ -23,8 +23,12 @@ pub fn banner_stage_draws(inputs: &ScreenInputs<'_>) -> Vec<TextDraw> {
     let world = inputs.world;
     let font = inputs.font;
     let mut out = Vec::new();
-    // An expansion pack's quest toast rides above whatever banner is up.
-    if let Some(text) = world.expansion_toast() {
+    // An expansion pack's quest toast rides above whatever banner is up
+    // (not over the card screen, which owns the frame).
+    if let Some(text) = world
+        .expansion_toast()
+        .filter(|_| !world.card_screen_open())
+    {
         out.extend(ui::quest_toast_draws_for(font, text));
     }
     if inputs.chrome.is_some()

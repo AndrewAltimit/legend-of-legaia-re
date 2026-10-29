@@ -132,7 +132,8 @@ pub fn field_menu_root_draws(
         }),
     );
     if world.expansion.is_active() {
-        out.texts.extend(journal_hint_draws(ctx));
+        out.texts
+            .extend(journal_hint_draws(ctx, world.cards_available()));
     }
     if let Some(message) = refusal {
         out.extend(save_refusal_draws(ctx, message));
@@ -244,6 +245,20 @@ pub fn journal_draws(
                 reward: String::new(),
             })
             .collect(),
+        JournalPage::Cards => (view.has_cards)
+            .then(|| Row {
+                title: "Card menu".into(),
+                tag: format!("{} owned", view.cards_owned),
+                done: false,
+                detail: format!(
+                    "Binder, boosters, sell and deck. {} new, {} booster(s) unopened.",
+                    view.cards_unseen, view.boosters
+                ),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .into_iter()
+            .collect(),
         JournalPage::Travel => view
             .maps
             .iter()
@@ -293,6 +308,10 @@ pub fn journal_draws(
             "This pack has no challenges.",
             "Cross: arm for the next battle   Circle: back",
         ),
+        JournalPage::Cards => (
+            "This pack has no trading cards.",
+            "Cross: open the card menu   Circle: back",
+        ),
         JournalPage::Travel => (
             "This pack has no maps.",
             "Cross: travel there   Circle: back",
@@ -305,7 +324,7 @@ pub fn journal_draws(
             .iter()
             .position(|p| *p == session.page)
             .unwrap_or(0),
-        card_inbox: view.card_inbox,
+        cards_unseen: view.cards_unseen,
         rows: &row_views,
         cursor: session.cursor,
         empty,
@@ -316,10 +335,16 @@ pub fn journal_draws(
 }
 
 /// The root list's hint line while an expansion pack is active: Select
-/// opens the Journal. Stage pixels, under the money / play-time box.
-pub fn journal_hint_draws(ctx: &PauseMenuCtx<'_>) -> Vec<ui::TextDraw> {
+/// opens the Journal (whose Cards page opens the card menu when the pack has
+/// cards). Stage pixels, under the money / play-time box.
+pub fn journal_hint_draws(ctx: &PauseMenuCtx<'_>, cards: bool) -> Vec<ui::TextDraw> {
+    let hint = if cards {
+        "SELECT: Journal / Cards"
+    } else {
+        "SELECT: Journal"
+    };
     let mut texts = ui::text_draws_for(
-        &ctx.font.layout_ascii("SELECT: Journal"),
+        &ctx.font.layout_ascii(hint),
         JOURNAL_HINT_PEN,
         [0.8, 0.8, 0.8, 1.0],
     );

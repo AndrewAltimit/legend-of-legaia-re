@@ -756,9 +756,10 @@ With a pack loaded:
 - **Journal**: Select on the pause menu opens it (the hint under the menu
   says so). *Quests* lists the started quests, active first, with each
   objective's progress and the reward; *Challenges* lists the challenges with
-  their best scores, and Cross arms one for the next battle; *Travel* enters
+  their best scores, and Cross arms one for the next battle; *Cards* shows the
+  trading-card collection and opens the card menu; *Travel* enters
   any of the pack's maps directly, which is the way in for testing. The pack's
-  name and version head the screen, with the count of trading cards waiting.
+  name and version head the screen, with the count of new cards.
 - **Toasts**: a line at the top of the screen says when a quest starts, an
   objective moves ("The Rebirth Tower: 2/3") and a quest completes.
 

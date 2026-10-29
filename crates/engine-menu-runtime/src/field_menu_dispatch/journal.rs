@@ -1,5 +1,6 @@
 //! The expansion pack's Journal on the pause menu: Select on the root list
-//! opens it while a pack is active ([`journal_on_select`], [`open_journal`]), and its outcome (a Travel pick, a
+//! opens it while a pack is active ([`journal_on_select`], [`open_journal`]),
+//! its Cards page opens the card menu (`World::open_card_menu`), and its outcome (a Travel pick, a
 //! challenge armed) folds into the world when it closes.
 
 use super::*;
@@ -53,6 +54,10 @@ pub fn apply_journal_outcome(session: &JournalSession, world: &mut World) -> boo
                     .push(format!("Challenge not armed: {why}"));
             }
             false
+        }
+        Some(JournalOutcome::OpenCards) => {
+            world.expansion.open_cards = world.cards_available();
+            world.expansion.open_cards
         }
         Some(JournalOutcome::Closed) | None => false,
     }

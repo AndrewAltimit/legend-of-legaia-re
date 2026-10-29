@@ -288,6 +288,17 @@ impl World {
                 log::warn!("expansion line {next}: {e:?}");
             }
         }
+        // The Journal's Cards page: the card menu opens over the field once
+        // the pause menu has closed.
+        if self.expansion.open_cards
+            && !self.dialogue_owns_input()
+            && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
+        {
+            self.expansion.open_cards = false;
+            if !self.open_card_menu() {
+                log::warn!("expansion: the card menu did not open");
+            }
+        }
         // A queued fight starts once its lines are done and the player walks.
         if !self.expansion.quests.fights.is_empty()
             && self.expansion.quests.dialog.pending.is_none()

@@ -30,8 +30,8 @@ pub struct JournalDrawArgs<'a> {
     pub tabs: &'a [&'a str],
     /// The selected tab.
     pub tab: usize,
-    /// Trading cards waiting in the inbox (shown when non-zero).
-    pub card_inbox: usize,
+    /// Owned trading cards the binder has not shown (shown when non-zero).
+    pub cards_unseen: usize,
     pub rows: &'a [JournalRowView<'a>],
     pub cursor: usize,
     /// What an empty page says.
@@ -52,7 +52,7 @@ const JOURNAL_WIDTH: i32 = 272;
 ///
 /// ```text
 /// JOURNAL - Legend of Legaia: Rebirth 0.1.0
-/// Quests  Challenges  Travel          Cards waiting: 1
+/// Quests  Challenges  Cards  Travel     New cards: 1
 /// > The Rebirth Tower                           Active
 ///     The guide will open the tower to a party that
 ///     proves itself in battle and grows strong ...
@@ -96,8 +96,8 @@ pub fn journal_draws_for(
         put(t, x, tabs_y, if i == args.tab { gold } else { dim });
         x += width(t) + 12;
     }
-    if args.card_inbox > 0 {
-        let s = format!("Cards waiting: {}", args.card_inbox);
+    if args.cards_unseen > 0 {
+        let s = format!("New cards: {}", args.cards_unseen);
         put(&s, pen.0 + JOURNAL_WIDTH - width(&s), tabs_y, white);
     }
 
@@ -232,9 +232,9 @@ mod tests {
             .collect();
         let args = JournalDrawArgs {
             heading: "JOURNAL",
-            tabs: &["Quests", "Challenges", "Travel"],
+            tabs: &["Quests", "Challenges", "Cards", "Travel"],
             tab: 0,
-            card_inbox: 2,
+            cards_unseen: 2,
             rows: &rows,
             cursor: 19,
             empty: "Nothing yet",

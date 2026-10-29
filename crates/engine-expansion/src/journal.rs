@@ -3,8 +3,8 @@
 //!
 //! [`journal_view`] projects the pack and its [`QuestRuntime`] into plain
 //! rows - quests (active first, then completed) with their objectives and
-//! rewards, challenges with their best scores, the card inbox and the pack's
-//! maps - and [`JournalSession`] is the cursor over them. Both are
+//! rewards, challenges with their best scores, the trading-card collection
+//! and the pack's maps - and [`JournalSession`] is the cursor over them. Both are
 //! `World`-free; the menu dispatcher seats the session as a pause-menu
 //! sub-screen and the draw layer takes the rows as text.
 //!
@@ -77,8 +77,14 @@ pub struct JournalView {
     /// order.
     pub quests: Vec<QuestRow>,
     pub challenges: Vec<ChallengeRow>,
-    /// Trading cards received and not yet taken into a collection.
-    pub card_inbox: usize,
+    /// The pack defines trading cards (the Cards page opens the card menu).
+    pub has_cards: bool,
+    /// Distinct cards in the collection.
+    pub cards_owned: usize,
+    /// Owned cards the binder has not shown yet.
+    pub cards_unseen: usize,
+    /// Unopened boosters.
+    pub boosters: u32,
     /// The pack's maps, in id order.
     pub maps: Vec<TravelRow>,
 }
@@ -89,6 +95,7 @@ impl JournalView {
         match page {
             JournalPage::Quests => self.quests.len(),
             JournalPage::Challenges => self.challenges.len(),
+            JournalPage::Cards => usize::from(self.has_cards),
             JournalPage::Travel => self.maps.len(),
         }
     }
@@ -142,7 +149,10 @@ pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime) -> JournalView {
         pack_authors: pack.manifest.authors.join(", "),
         quests,
         challenges,
-        card_inbox: rt.card_inbox.len(),
+        has_cards: !pack.cards.cards.is_empty(),
+        cards_owned: rt.progress.cards.collection.binder().len(),
+        cards_unseen: rt.progress.cards.unseen(),
+        boosters: rt.progress.cards.total_boosters(),
         maps: pack
             .maps
             .iter()
@@ -240,18 +250,22 @@ pub enum JournalPage {
     #[default]
     Quests,
     Challenges,
+    /// The trading-card collection; Cross opens the card menu (binder,
+    /// boosters, sell, deck).
+    Cards,
     /// Enter one of the pack's maps directly - the testing fallback for a
     /// map whose entrance is out of reach.
     Travel,
 }
 
 impl JournalPage {
-    pub const ALL: [Self; 3] = [Self::Quests, Self::Challenges, Self::Travel];
+    pub const ALL: [Self; 4] = [Self::Quests, Self::Challenges, Self::Cards, Self::Travel];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::Quests => "Quests",
             Self::Challenges => "Challenges",
+            Self::Cards => "Cards",
             Self::Travel => "Travel",
         }
     }
@@ -266,6 +280,9 @@ pub enum JournalOutcome {
     Travel { map_id: String },
     /// Cross on a challenge: arm it for its next battle.
     ArmChallenge { challenge: String },
+    /// Cross on the Cards page: open the card menu (the pause menu closes
+    /// first).
+    OpenCards,
 }
 
 /// The Journal's cursor.
@@ -326,6 +343,7 @@ impl JournalSession {
                             challenge: c.id.clone(),
                         })
                 }
+                JournalPage::Cards => view.has_cards.then_some(JournalOutcome::OpenCards),
                 JournalPage::Quests => None,
             };
         }
@@ -406,7 +424,6 @@ title = "Chal"
                 clears: 2,
             },
         );
-        rt.card_inbox.push("x".into());
         let v = journal_view(&p, &rt);
         assert_eq!(v.pack_authors, "A, B");
         let ids: Vec<_> = v.quests.iter().map(|q| q.id.as_str()).collect();
@@ -416,7 +433,8 @@ title = "Chal"
         assert_eq!(v.quests[1].objectives[1].text, "See the old man");
         assert_eq!(v.quests[1].rewards, "100 G, 2 items");
         assert_eq!(v.challenges[0].best, Some(900));
-        assert_eq!(v.card_inbox, 1);
+        assert!(!v.has_cards);
+        assert_eq!(v.cards_unseen, 0);
     }
 
     #[test]
@@ -429,6 +447,10 @@ title = "Chal"
         let mut s = JournalSession::new();
         s.tick(&v, PadButton::Right.mask());
         assert_eq!(s.page, JournalPage::Challenges);
+        s.tick(&v, PadButton::Right.mask());
+        assert_eq!(s.page, JournalPage::Cards);
+        s.tick(&v, PadButton::Cross.mask());
+        assert!(!s.is_done(), "no cards in the pack: nothing to open");
         s.tick(&v, PadButton::Right.mask());
         assert_eq!(s.page, JournalPage::Travel);
         s.tick(&v, PadButton::Cross.mask());

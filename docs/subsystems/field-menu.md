@@ -2172,8 +2172,8 @@ under the hand (`FieldMenuSession::suspend_at_cursor`) and resumes there.
 
 | Piece | Owner |
 |---|---|
-| Content: quests (active first, then completed) with objectives, progress and rewards; challenges with best scores; the card inbox; the pack's maps | `legaia_engine_expansion::journal::journal_view`, read through `World::expansion_journal` |
-| Cursor: three pages (Left / Right or L1 / R1), rows (Up / Down), Cross, Circle | `journal::JournalSession` |
+| Content: quests (active first, then completed) with objectives, progress and rewards; challenges with best scores; the card collection (owned, new, boosters); the pack's maps | `legaia_engine_expansion::journal::journal_view`, read through `World::expansion_journal` |
+| Cursor: four pages - Quests, Challenges, Cards, Travel (Left / Right or L1 / R1) - rows (Up / Down), Cross, Circle | `journal::JournalSession` |
 | Open and fold | `field_menu_dispatch::journal_on_select` + `open_journal`; `FieldMenuSubsession::Journal`; `apply_journal_outcome` from `finish_subsession` |
 | Draw | `engine-screens::pause_screens::journal_draws` over `engine-ui::journal_draws_for`, in the generic sub-window frame |
 
@@ -2183,7 +2183,10 @@ before `tick_root_list`, and draw through `field_menu_sub_draws`, so the
 Journal is one screen on both play hosts.
 
 Only the selected row expands: its description (two lines), each objective
-with `progress/target` (green once done), and the reward. A Cross on a
+with `progress/target` (green once done), and the reward. A Cross on the **Cards** page (a pack with trading cards; the root hint reads
+`SELECT: Journal / Cards`) closes the menu and opens the card menu - binder,
+boosters, sell, deck (`World::open_card_menu`) - on the first free field
+tick after it. A Cross on a
 **Challenges** row arms that challenge for its next battle
 (`World::expansion_arm_challenge`; a refusal comes back as a toast). A Cross
 on a **Travel** row closes the menu and asks the scene host for the map
