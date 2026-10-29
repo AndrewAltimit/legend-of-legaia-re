@@ -89,6 +89,7 @@ mod effect_world_real_efect;
 mod escape_timer_world;
 mod expansion_modes_world;
 mod fatal_decision_icon_page_disc;
+mod field_action_movement;
 mod field_actor_clone_burst_disc;
 mod field_actor_clone_op4c14;
 mod field_actor_spawn_materialize_e2e;

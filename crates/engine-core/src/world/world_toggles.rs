@@ -248,6 +248,16 @@ pub struct WorldToggles {
     /// `cort_evolved_card_battle_init`: yaw `0` under the entry sweep). Off
     /// under [`Self::pin_retail`].
     pub battle_entry_off_axis: bool,
+    /// Action movement (enhancement, **off** by default): the field player
+    /// runs on the platformer controller of
+    /// [`legaia_engine_field::action_movement`] (momentum, sprint, jump and
+    /// double jump, dash, coyote time, gravity onto the scene's floor
+    /// levels) in place of the retail walk and its settle, whenever the walk
+    /// would have run: every pad lock still holds. Jump is
+    /// [`crate::world::ACTION_JUMP_BUTTON`], dash
+    /// [`crate::world::ACTION_DASH_BUTTON`]. Off under [`Self::pin_retail`];
+    /// off, the walk is untouched.
+    pub action_movement: bool,
     /// The options screen's nine config words as the host last pushed them
     /// (`crate::options::apply_to_world`) or a save last loaded them. The
     /// rows the simulation reads have their own mirrors here and on
@@ -382,6 +392,7 @@ impl WorldToggles {
             bonus_drop: false,
             save_anywhere: false,
             battle_entry_off_axis: true,
+            action_movement: false,
             retail_options: legaia_save::card::RetailOptions::default(),
             loaded_options: None,
         }
@@ -424,6 +435,7 @@ impl WorldToggles {
         self.bonus_drop = false;
         self.save_anywhere = false;
         self.battle_entry_off_axis = false;
+        self.action_movement = false;
     }
 
     /// The fidelity toggles currently off their retail value, by field name.
@@ -502,6 +514,9 @@ impl WorldToggles {
         if self.battle_entry_off_axis {
             out.push("battle_entry_off_axis");
         }
+        if self.action_movement {
+            out.push("action_movement");
+        }
         out
     }
 }
@@ -557,7 +572,8 @@ mod fidelity_tests {
         t.enemy_stat_permille = 1500;
         t.bonus_drop = true;
         t.save_anywhere = true;
-        assert_eq!(t.retail_deviations().len(), 24);
+        t.action_movement = true;
+        assert_eq!(t.retail_deviations().len(), 25);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

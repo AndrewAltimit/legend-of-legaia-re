@@ -195,6 +195,7 @@ pub(crate) mod field_xa;
 pub use field_xa::{scene_minigame_door_xa_prestage, scene_xa_prestage};
 mod field_loop;
 mod field_movement;
+pub use field_movement::{ACTION_DASH_BUTTON, ACTION_JUMP_BUTTON};
 pub mod field_npc_cull;
 mod field_npc_height;
 mod field_warp;
