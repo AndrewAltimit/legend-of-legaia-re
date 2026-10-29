@@ -247,7 +247,7 @@ impl Quarter {
 impl Walls {
     /// The unwritten default: no walls, no `walls` key.
     pub fn is_open(&self) -> bool {
-        matches!(self, Self::Open)
+        matches!(self, Self::Named(WallsNamed::None))
     }
 
     /// The 4-bit wall mask ([`Quarter::bit`] order).
