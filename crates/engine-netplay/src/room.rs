@@ -242,6 +242,12 @@ impl NetPlay {
         }
     }
 
+    /// Whether the room screen (or a chat line being typed) holds the pad:
+    /// the world should see none.
+    pub fn owns_pad(&self) -> bool {
+        (self.screen_open || self.draft.is_some()) && !self.in_mode()
+    }
+
     /// Whether a networked mode is in play.
     pub fn in_mode(&self) -> bool {
         matches!(
@@ -406,7 +412,7 @@ impl NetPlay {
                 self.send(Message::EndSession {
                     by: self.me.unwrap_or_default(),
                 });
-                self.phase = Phase::Lobby;
+                self.session_over();
                 return;
             }
         }
@@ -513,7 +519,21 @@ impl NetPlay {
                 by: self.me.unwrap_or_default(),
             });
         }
+        self.session_over();
+    }
+
+    /// Back to the lobby after a session. The relay clears every member's
+    /// readiness when a session ends; the local copy of the lobby is cleared
+    /// now too, so a Start pressed before the relay's lobby arrives reads the
+    /// cleared flags rather than the ones from before the game.
+    fn session_over(&mut self) {
         self.phase = Phase::Lobby;
+        self.ready = false;
+        if let Some(l) = self.lobby.as_mut() {
+            for p in &mut l.players {
+                p.ready = false;
+            }
+        }
     }
 
     fn handle(&mut self, world: &mut World, m: Message) {
@@ -596,7 +616,7 @@ impl NetPlay {
                         self.note(format!("{name} ended the game"));
                         self.leave_mode(world, false);
                     }
-                    self.phase = Phase::Lobby;
+                    self.session_over();
                 }
             }
             Message::Snapshot { tick, avatars } => self.roam.receive_snapshot(tick, &avatars),

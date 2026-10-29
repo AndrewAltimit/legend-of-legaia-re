@@ -53,4 +53,10 @@ SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
         "passive_hud_text_draws",
         # --- end lane B ---
     ),
+    # The multiplayer room screen and roaming panel off the room controller
+    # (`legaia_engine_netplay::screens`), which both play hosts draw.
+    REPO / "crates" / "engine-netplay" / "src": (
+        "net_overlay_prims",
+        "net_overlay_stage_texts",
+    ),
 }

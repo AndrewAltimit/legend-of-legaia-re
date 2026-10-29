@@ -78,6 +78,12 @@ impl LegaiaRuntime {
                 .scene_host
                 .session_mut()
                 .map_or(TickOwner::Field(false), |s| s.claim_tick(claims, edge));
+            // The multiplayer room's frame, every tick whoever owns it (the
+            // native window's twin): only the field's tick hands it the pad.
+            let net_owns_pad = self.step_netplay(match owner {
+                TickOwner::Field(false) => pad,
+                _ => 0,
+            });
             match owner {
                 // A host-held screen: the pause menu once it owns the frame
                 // (one menu step per tick, with the SFX scheduler stepping
@@ -157,7 +163,8 @@ impl LegaiaRuntime {
                 }
                 TickOwner::Field(neutral) => {
                     // The room frame first: its screen may hold the pad.
-                    let pad = self.step_netplay(if neutral { 0 } else { pad });
+                    let pad = if neutral { 0 } else { pad };
+                    let pad = if net_owns_pad { 0 } else { pad };
                     self.set_pad(pad);
                 }
             }

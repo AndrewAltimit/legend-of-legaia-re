@@ -721,7 +721,17 @@ div.play-vis-head { cursor: default; }
               <button id="play-net-join" type="button">Join</button>
               <button id="play-net-screen" type="button" title="The room screen: ready, emotes, quick chat, leave (Tab).">Room</button>
               <button id="play-net-leave" type="button">Leave</button>
-              <label>Chat <input type="text" id="play-net-chat" size="24" maxlength="256"></label>
+              <label>Emote
+                <select id="play-net-emote">
+                  <option value="">send...</option>
+                  <option value="0">Wave</option>
+                  <option value="1">Cheer</option>
+                  <option value="2">Bow</option>
+                  <option value="3">Dance</option>
+                  <option value="4">Laugh</option>
+                </select>
+              </label>
+              <form id="play-net-chat-form"><label>Chat <input type="text" id="play-net-chat" size="24" maxlength="256"></label></form>
             </details>
             <button id="play-force-battle" type="button"
                     title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
@@ -3285,12 +3295,21 @@ div.play-vis-head { cursor: default; }
       saveMsg('Left the room.', false);
       canvas.focus();
     });
-    $('play-net-chat').addEventListener('keydown', (e) => {
-      e.stopPropagation();
-      if (e.key !== 'Enter') return;
+    /* Emotes are chat lines ("* Noa waves"), the room screen's Emote row. */
+    $('play-net-emote').addEventListener('change', (e) => {
       const rt = rtNet();
-      if (rt) rt.play_net_say(e.target.value);
+      if (rt && e.target.value !== '') rt.play_net_emote(Number(e.target.value));
       e.target.value = '';
+      canvas.focus();
+    });
+    /* Typing a chat line must not drive the pad; Enter submits the form. */
+    $('play-net-chat').addEventListener('keydown', (e) => e.stopPropagation());
+    $('play-net-chat-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = $('play-net-chat');
+      const rt = rtNet();
+      if (rt) rt.play_net_say(input.value);
+      input.value = '';
     });
     window.addEventListener('keydown', (e) => {
       if (e.code !== 'Tab' || e.target !== canvas) return;

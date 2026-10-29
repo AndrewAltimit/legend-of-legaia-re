@@ -242,3 +242,31 @@ fn leaving_a_lockstep_game_hands_the_seat_to_the_ai() {
     let b = room.peers[1].net.mode_frame();
     assert!(a.is_some() && b.is_some());
 }
+
+#[test]
+fn readiness_reads_cleared_the_moment_a_session_ends() {
+    let mut room = Room::open(2, lan(), 6);
+    room.start("builtin-golf");
+    // The host leaves through the quit prompt (Start, then Cross) and its
+    // results card (Cross). On the frame it is back in the lobby - before
+    // the relay's lobby broadcast can reach it - its copy of the lobby
+    // already reads nobody ready, so a Start pressed then is refused by the
+    // screen, not by the relay.
+    let mut checked = false;
+    for pad in [PadButton::Start as u16, 0, CROSS, 0, CROSS, 0, 0, 0] {
+        room.step_with(&mut |p, _| if p == 0 { pad } else { 0 });
+        let host = &room.peers[0].net;
+        if host.in_lobby() && !checked {
+            checked = true;
+            let l = host.lobby.as_ref().unwrap();
+            assert!(l.players.iter().all(|x| !x.ready), "{:?}", l.players);
+        }
+    }
+    assert!(checked, "the host left the game");
+    assert!(room.run_until(60, |r| r.peers.iter().all(|p| p.net.in_lobby())));
+    for p in &room.peers {
+        let l = p.net.lobby.as_ref().unwrap();
+        assert!(l.players.iter().all(|x| !x.ready), "{:?}", l.players);
+        assert!(!p.net.is_ready());
+    }
+}

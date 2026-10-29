@@ -200,6 +200,14 @@ impl PlayWindowApp {
             pause_menu_ready: true,
         };
         let owner = self.session.claim_tick(claims, pressed_edge);
+        // The multiplayer room's frame runs every tick whoever owns it, so
+        // the connection is pumped and a lockstep game keeps its peers fed
+        // under a menu; only the field's tick hands it the pad (and takes
+        // back the pad, none while the room screen is up).
+        let net_owns_pad = self.step_netplay(match owner {
+            TickOwner::Field(false) => self.pad,
+            _ => 0,
+        });
         match owner {
             TickOwner::HostScreen => {
                 let _ = self.tick_boot_ui();
@@ -274,7 +282,7 @@ impl PlayWindowApp {
         let field_pad = self.step_simple_dialog_picker(field_pad);
         let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
-        let field_pad = self.step_netplay(field_pad);
+        let field_pad = if net_owns_pad { 0 } else { field_pad };
         self.session.host.world.set_pad(field_pad);
         if field_suspended {
             // A shop / prize exchange: the field is frozen, tail included -

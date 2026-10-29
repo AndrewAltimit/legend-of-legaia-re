@@ -105,20 +105,21 @@ pub(in crate::window) fn start_netplay(
 }
 
 impl PlayWindowApp {
-    /// This tick's room frame, before the world's: the pad the world should
-    /// see back (none while the room screen holds it).
-    pub(in crate::window) fn step_netplay(&mut self, pad: u16) -> u16 {
+    /// This tick's room frame, before the world's, on `pad` (zero on a tick
+    /// the field does not own). `true` when the room screen holds the pad
+    /// and the field should see none.
+    pub(in crate::window) fn step_netplay(&mut self, pad: u16) -> bool {
         let Some(nh) = self.netplay.as_mut() else {
-            return pad;
+            return false;
         };
-        let pad = nh.net.frame_host(&mut self.session.host, pad);
+        nh.net.frame_host(&mut self.session.host, pad);
         if !nh.logged_room
             && let Some(code) = nh.net.room
         {
             nh.logged_room = true;
             log::info!("netplay: room {code}");
         }
-        pad
+        nh.net.owns_pad()
     }
 
     /// `Tab`: open or close the room screen (and, online, the backquote

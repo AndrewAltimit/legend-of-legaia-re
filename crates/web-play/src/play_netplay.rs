@@ -16,13 +16,15 @@ use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::*;
 
 impl LegaiaRuntime {
-    /// This tick's room frame, before the world's: the pad the world should
-    /// see (none while the room screen holds it).
-    pub(crate) fn step_netplay(&mut self, pad: u16) -> u16 {
+    /// This tick's room frame, before the world's, on `pad` (zero on a tick
+    /// the field does not own). `true` when the room screen holds the pad
+    /// and the field should see none.
+    pub(crate) fn step_netplay(&mut self, pad: u16) -> bool {
         let (Some(net), Some(host)) = (self.netplay.as_mut(), self.scene_host.host_mut()) else {
-            return pad;
+            return false;
         };
-        net.frame_host(host, pad)
+        net.frame_host(host, pad);
+        net.owns_pad()
     }
 
     /// The room screen / roaming panel's prims, in stage pixels.
