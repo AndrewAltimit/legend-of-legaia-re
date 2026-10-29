@@ -343,7 +343,7 @@ fn slot(
     }
     art(c, v, card, x + 4, y + 4, ART_W, ART_H);
     c.rect(x + 4, y + 4 + ART_H, ART_W, 2, element_color(card.element));
-    c.text(short(&card.name, 11), x + 4, y + 55, pen::WHITE);
+    c.text(short(&card.name, 9), x + 4, y + 55, pen::WHITE);
     let [t, r, b, l] = card.sides.map(side_label);
     c.text(format!("{t}-{r}-{b}-{l}"), x + 4, y + 70, pen::GOLD);
     c.text_right(format!("x{}", e.count), x + SLOT_W - 4, y + 70, pen::WHITE);
@@ -563,7 +563,7 @@ fn reveal(
         };
         c.panel(x, y, w, h, ink::PANEL, rarity_color(card.rarity));
         art(c, v, card, x + 3, y + 3, w - 6, 44);
-        c.text(short(&card.name, 9), x + 3, y + 50, pen::WHITE);
+        c.text(short(&card.name, 7), x + 3, y + 50, pen::WHITE);
         c.text(rarity_label(card.rarity), x + 3, y + 64, pen::DIM);
         if fresh.get(i).copied().unwrap_or(false) {
             c.rect(x + w - 25, y + 4, 22, 12, [190, 40, 40, 255]);

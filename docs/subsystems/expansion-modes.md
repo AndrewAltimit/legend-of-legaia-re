@@ -94,7 +94,7 @@ The wire form is `TradeMsg` (holdings, offer, confirm, cancel, settled, refused)
 | Sell | Owned cards with what the dealer pays; Cross sells one copy |
 | Deck builder | Owned cards with copies in the deck, and the deck's five slots; Cross adds, Square removes the last, Triangle fills with the strongest, Circle keeps a full deck |
 
-Circle backs out a stage and Start leaves from any; the header shows the purse and the set completion. `legaia_engine_ui::expansion_modes::card_screen_prims` / `card_screen_texts` draw every stage, and `legaia_engine_screens::expansion_modes` routes them through the same `pack_mode_prims` / `pack_mode_stage_texts` calls as the mode screens, so both hosts draw them with no code of their own. The toasts ride `pack_mode_stage_texts` in every mode: over play at the top of the stage (a battle drop shows over the results), above the footer inside an expansion screen.
+Circle backs out a stage and Start leaves from any; the header shows the purse and the set completion. `legaia_engine_ui::expansion_modes::card_screen_prims` / `card_screen_texts` draw every stage, and `legaia_engine_screens::expansion_modes` routes them through the same `pack_mode_prims` / `pack_mode_stage_texts` calls as the mode screens, so both hosts draw them with no code of their own. The toasts ride `pack_mode_stage_texts` in every mode: over play at the top of the stage (a battle drop shows over the results), above the footer inside a mode screen; the card screen marks new cards with its own NEW tags and shows none.
 
 ### Portraits
 

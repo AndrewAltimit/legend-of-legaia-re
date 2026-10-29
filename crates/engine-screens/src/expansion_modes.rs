@@ -101,14 +101,15 @@ pub fn pack_mode_prims(world: &World) -> Vec<ScreenPrim> {
 }
 
 /// The seat's labels in **stage** pixels (the host scales them with its
-/// stage group), then the card toasts ("Got card: X") - those in any mode,
-/// so a battle drop shows over the results. Empty while neither is up.
+/// stage group), then the card toasts ("Got card: X") - those in any mode
+/// but the card screen's own, so a battle drop shows over the results. Empty while neither is up.
 pub fn pack_mode_stage_texts(world: &World, font: &legaia_font::Font) -> Vec<TextDraw> {
     let mut out = with_card_screen(world, |v| card_screen_texts(font, v))
         .or_else(|| pack_mode_screen(world).map(|s| mode_screen_texts(font, &s)))
         .unwrap_or_default();
+    // The card screen marks new cards itself; its toasts wait out unseen.
     let toasts = world.expansion.cards.toast_lines();
-    if !toasts.is_empty() {
+    if !toasts.is_empty() && !world.card_screen_open() {
         out.extend(card_toast_texts(
             font,
             &toasts,
