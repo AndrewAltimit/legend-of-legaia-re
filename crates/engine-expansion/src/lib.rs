@@ -11,6 +11,11 @@
 
 pub mod battle;
 pub mod progression;
+pub mod dialog;
+pub mod flags;
+pub mod quest;
+pub mod quest_challenge;
+pub mod quest_save;
 
 use std::sync::Arc;
 
@@ -25,6 +30,9 @@ pub struct ExpansionState {
     pub battle: battle::BattleRuntime,
     /// The pack's progression state.
     pub progression: progression::ProgressionRuntime,
+    /// Quest, challenge, pack-flag and pack-dialogue state
+    /// ([`quest::QuestRuntime`]); what the save's expansion block carries.
+    pub quests: quest::QuestRuntime,
 }
 
 impl ExpansionState {
