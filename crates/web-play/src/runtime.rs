@@ -237,6 +237,8 @@ pub struct LegaiaRuntime {
     /// world's live layers and the shop / pause fades by
     /// [`crate::play_battle`]'s `rebuild_screen_geom`.
     pub(crate) screen_prims_base: legaia_engine_screens::screen_layers::HostScreenPrims,
+    /// The multiplayer room the page joined ([`crate::play_netplay`]).
+    pub(crate) netplay: Option<legaia_engine_netplay::room::NetPlay>,
     /// The camera-occlusion fade's strength ramp
     /// (`engine-scene::field_occlusion::FadeRamp`), stepped once per drawn
     /// field frame by [`Self::play_occlusion_fade`] - the native window's
@@ -496,6 +498,7 @@ impl LegaiaRuntime {
             screen_over_run_start: 0,
             screen_backdrop_run_end: 0,
             screen_prims_base: Default::default(),
+            netplay: None,
             occl_fade: Default::default(),
             field_party_hud: Default::default(),
             field_party_hud_scene: None,

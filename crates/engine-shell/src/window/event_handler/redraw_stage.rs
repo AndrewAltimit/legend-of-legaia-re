@@ -50,6 +50,9 @@ pub(super) struct PosedFrame {
     /// 07` deformation is running (`World::field_npc_shatter`), keyed by
     /// placement slot; drawn in place of the posed or rest halves.
     pub npc_shattered: std::collections::HashMap<u8, NpcPosedHalves>,
+    /// The other netplay players in this scene: posed leader meshes and
+    /// their model matrices.
+    pub remote_avatars: Vec<(UploadedVramMesh, Option<UploadedColorMesh>, Mat4)>,
 }
 
 impl PlayWindowApp {
@@ -316,6 +319,8 @@ impl PlayWindowApp {
         let (posed_prop_baked_v, posed_prop_baked_c, posed_prop_live_v, posed_prop_live_c) =
             self.posed_prop_frame_draws(r);
         legaia_engine_render::profile::mark("pose:prop");
+        // The other netplay players in this scene (`window::netplay`).
+        let remote_avatars = self.build_remote_avatar_draws(r);
         // VDF vertex morphs: upload this frame's rebuilt morph meshes;
         // the draw loops below substitute them for the static uploads
         // (`field_morph_live` - the `FUN_8001C604` render substitution).
@@ -386,6 +391,7 @@ impl PlayWindowApp {
             posed_prop_live_c,
             npc_frames,
             npc_shattered,
+            remote_avatars,
         }
     }
 

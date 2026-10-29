@@ -444,6 +444,10 @@ fn main() -> Result<()> {
             map,
             spawn,
             pack_mode,
+            host,
+            join,
+            room,
+            name,
             resume_save,
             cheat_level,
             cheat_gold,
@@ -545,6 +549,12 @@ fn main() -> Result<()> {
                 .with_play_record(play_record.as_deref())?
                 .with_expansion(expansion, map, spawn)?
                 .with_pack_mode(pack_mode)
+                .with_netplay(window::NetLaunch {
+                    host,
+                    join,
+                    room,
+                    name,
+                })
                 .with_cheats(window::PlayCheats {
                     level: cheat_level,
                     gold: cheat_gold,

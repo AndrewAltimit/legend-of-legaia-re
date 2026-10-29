@@ -393,6 +393,9 @@ impl LegaiaRuntime {
             .host()
             .map(|h| legaia_engine_screens::expansion_modes::pack_mode_stage_texts(&h.world, font))
             .unwrap_or_default();
+        // The multiplayer room screen / roaming panel's labels, stage space.
+        let mut pack_mode_texts = pack_mode_texts;
+        pack_mode_texts.extend(self.netplay_stage_texts(font));
         if screens.sprites.is_empty()
             && windows.is_empty()
             && banners.is_empty()

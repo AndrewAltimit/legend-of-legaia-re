@@ -672,5 +672,6 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     // The spell / seru display names off the boot SCUS, for the shop's Trade
     // row: read once here, as the browser play page reads them at disc load.
     app.ensure_seru_names();
+    app.netplay = super::netplay::start_netplay(&debug_seeds.netplay, &app.session.host.world)?;
     Ok(app)
 }

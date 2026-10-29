@@ -346,6 +346,35 @@
         draws.push(playerDraw);
       }
 
+      /* Netplay: the other players walking this scene, each a copy of the
+       * lead's rig posed at the avatar's reported clip frame
+       * (`play_net_avatars` / `play_net_avatar_positions`, the native
+       * window's remote-avatar draws). Mesh ids PLAYER_MESH_ID+1..+16. */
+      if (this.player && typeof rt.play_net_avatars === 'function') {
+        const av = rt.play_net_avatars();
+        if (!this.netAvatarMeshes) this.netAvatarMeshes = new Set();
+        for (let i = 0; i * 4 < av.length && i < 16; i++) {
+          const id = PLAYER_MESH_ID + 1 + i;
+          const posed = rt.play_net_avatar_positions(i);
+          if (!posed.length) continue;
+          if (!this.netAvatarMeshes.has(id)) {
+            const flat = rt.player_mesh_flat_rgba();
+            this.renderer.uploadSceneMesh(id, posed, rt.player_mesh_uvs(),
+              rt.player_mesh_cba_tsb(), rt.player_mesh_indices(), flat.length ? flat : null);
+            this.netAvatarMeshes.add(id);
+          } else {
+            this.renderer.updateSceneMeshPositions(id, posed);
+          }
+          draws.push({
+            meshId: id,
+            x: av[i * 4], y: -av[i * 4 + 1], z: av[i * 4 + 2],
+            rotY: -(av[i * 4 + 3] + 2048) * A2R,
+            scale: 1.0,
+            noOccl: true,
+          });
+        }
+      }
+
       /* Animated environment props: advance each to the engine's live prop-bank
        * cursor. The windmill's sails spin continuously; a house door swings on
        * contact. A prop resting on frame 0 is left as its uploaded rest pose,

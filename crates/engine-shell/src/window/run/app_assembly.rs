@@ -133,6 +133,7 @@ impl PlayWindowApp {
             fishing_gpu: None,
             slot_cabinet_assets: None,
             slot_gpu: None,
+            netplay: None,
             slot_marquee_clock: Default::default(),
             slot_dots: Vec::new(),
             dance_venue_gpu: None,

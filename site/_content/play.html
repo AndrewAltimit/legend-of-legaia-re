@@ -713,6 +713,16 @@ div.play-vis-head { cursor: default; }
                 <option value="exit">Leave the mode</option>
               </select>
             </label>
+            <details class="play-netplay" id="play-netplay">
+              <summary title="Join a multiplayer room hosted by a native play window (--host) or a legaia-relay server. A browser cannot host. Inside the room: Tab opens the room screen.">Online</summary>
+              <label>Relay <input type="text" id="play-net-url" size="22" placeholder="ws://192.168.1.4:7462/"></label>
+              <label>Room <input type="text" id="play-net-room" size="7" maxlength="6" placeholder="K7QX2M"></label>
+              <label>Name <input type="text" id="play-net-name" size="10" maxlength="24" placeholder="Player"></label>
+              <button id="play-net-join" type="button">Join</button>
+              <button id="play-net-screen" type="button" title="The room screen: ready, emotes, quick chat, leave (Tab).">Room</button>
+              <button id="play-net-leave" type="button">Leave</button>
+              <label>Chat <input type="text" id="play-net-chat" size="24" maxlength="256"></label>
+            </details>
             <button id="play-force-battle" type="button"
                     title="Arm a fight from this scene's own encounter table right now (the native --battle first).">Start a battle here</button>
             <label title="Battle BGM id: 0 keeps the field track playing through the fight, blank restores the shipped default (2026). The native --battle-bgm flag.">
@@ -3088,6 +3098,58 @@ div.play-vis-head { cursor: default; }
     canvas.focus();
   });
   window.__playApplyBattleTools = applyBattleTools;
+
+  /* Netplay: join a room over a WebSocket (legaia_engine_netplay::room,
+   * the controller the native window drives). The room screen and the
+   * avatars are the engine's draws; this only collects the address, the
+   * code and chat lines. */
+  {
+    const $ = (id) => document.getElementById(id);
+    const rtNet = () => {
+      const rt = window.__playRuntime;
+      return rt && typeof rt.play_net_join === 'function' ? rt : null;
+    };
+    try {
+      const saved = JSON.parse(localStorage.getItem('legaia-play-net') || '{}');
+      if (saved.url) $('play-net-url').value = saved.url;
+      if (saved.name) $('play-net-name').value = saved.name;
+    } catch (e) { /* storage blocked */ }
+    $('play-net-join').addEventListener('click', () => {
+      const rt = rtNet();
+      if (!rt) { saveMsg('This page build has no multiplayer yet.', true); return; }
+      const url = $('play-net-url').value.trim();
+      const name = $('play-net-name').value.trim();
+      try { localStorage.setItem('legaia-play-net', JSON.stringify({ url, name })); } catch (e) { /* storage blocked */ }
+      const err = rt.play_net_join(url, $('play-net-room').value.trim(), name);
+      saveMsg(err || 'Joining the room...', !!err);
+      canvas.focus();
+    });
+    $('play-net-screen').addEventListener('click', () => {
+      const rt = rtNet();
+      if (rt) rt.play_net_toggle_screen();
+      canvas.focus();
+    });
+    $('play-net-leave').addEventListener('click', () => {
+      const rt = rtNet();
+      if (rt) rt.play_net_leave();
+      saveMsg('Left the room.', false);
+      canvas.focus();
+    });
+    $('play-net-chat').addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key !== 'Enter') return;
+      const rt = rtNet();
+      if (rt) rt.play_net_say(e.target.value);
+      e.target.value = '';
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'Tab' || e.target !== canvas) return;
+      const rt = rtNet();
+      if (!rt || !JSON.parse(rt.play_net_state_json()).joined) return;
+      e.preventDefault();
+      rt.play_net_toggle_screen();
+    });
+  }
 
   /* Cheats - every control is a row of the engine's one cheat list
    * (legaia_engine_cheats::cheats::PlayerCheat, applied by rt.cheat_apply -

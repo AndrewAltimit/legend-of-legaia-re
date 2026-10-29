@@ -119,7 +119,7 @@ impl LegaiaRuntime {
             .scene_host
             .session()
             .and_then(|s| s.pause_wipe().fade_level());
-        let (under, over) = match self.scene_host.host() {
+        let (mut under, over) = match self.scene_host.host() {
             Some(h) => legaia_engine_screens::screen_layers::compose_screen_prims(
                 &h.world,
                 &self.menu,
@@ -128,6 +128,9 @@ impl LegaiaRuntime {
             ),
             None => (Vec::new(), Vec::new()),
         };
+        // The multiplayer room screen / roaming panel, as the native window
+        // appends it.
+        under.extend(self.netplay_prims());
         let count = under.len() + over.len();
         if count == 0 {
             self.battle_intro_geom = None;

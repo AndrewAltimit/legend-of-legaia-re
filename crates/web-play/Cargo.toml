@@ -39,6 +39,8 @@ legaia-engine-mode.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-screens.workspace = true
+legaia-engine-netplay.workspace = true
+legaia-netplay = { workspace = true, features = ["web"] }
 legaia-engine-session.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-ui.workspace = true

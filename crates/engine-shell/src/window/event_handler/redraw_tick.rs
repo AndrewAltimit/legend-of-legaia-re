@@ -274,6 +274,7 @@ impl PlayWindowApp {
         let field_pad = self.step_simple_dialog_picker(field_pad);
         let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
+        let field_pad = self.step_netplay(field_pad);
         self.session.host.world.set_pad(field_pad);
         if field_suspended {
             // A shop / prize exchange: the field is frozen, tail included -

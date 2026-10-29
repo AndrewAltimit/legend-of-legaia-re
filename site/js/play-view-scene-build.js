@@ -274,6 +274,9 @@
     _uploadPlayer() {
       const rt = this.rt;
       this.player = null;
+      /* The netplay avatars are copies of this rig: a new rig re-uploads
+       * them on next sight (play-view-frame.js). */
+      this.netAvatarMeshes = new Set();
       if (!rt.player_has_mesh()) return;
       const base = rt.player_mesh_positions();
       const idx = rt.player_mesh_indices();

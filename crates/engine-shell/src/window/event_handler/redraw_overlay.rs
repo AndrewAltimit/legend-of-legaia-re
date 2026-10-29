@@ -448,12 +448,15 @@ impl PlayWindowApp {
             world_map_markers: self.world_map_marker_prims(),
             world_map_sky: self.world_map_sky_prims(),
         };
-        let (under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
+        let (mut under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
             &self.session.host.world,
             &self.menu_runtime,
             self.session.pause_wipe().fade_level(),
             host,
         );
+        // The multiplayer room screen / roaming panel, over everything else
+        // under the text.
+        under.extend(self.netplay_prims());
         (over, under)
     }
 }

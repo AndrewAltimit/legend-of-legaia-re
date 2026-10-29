@@ -584,6 +584,14 @@ impl PlayWindowApp {
             legaia_engine_ui::scale_stage_text_draws(&mut pack_mode, stage_origin, stage_scale);
             out.extend(pack_mode);
         }
+        // The multiplayer room screen / roaming panel's labels
+        // (`legaia_engine_netplay::screens`), as on the browser page.
+        let mut net = self.netplay_stage_texts();
+        if !net.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_ui::scale_stage_text_draws(&mut net, stage_origin, stage_scale);
+            out.extend(net);
+        }
         // Baka Fighter minigame HUD. The HP / round-wins readout and the
         // input prompt are the title bar's caption; what draws here is the
         // game's own chrome.

@@ -527,5 +527,22 @@ impl<'m> DrawCtx<'_, 'm> {
                 });
             }
         }
+        // The other netplay players walking this scene.
+        if !in_battle {
+            for (mesh, color, model) in &store.posed.remote_avatars {
+                draws.push(SceneDraw {
+                    mesh,
+                    mvp: actor_cam * *model,
+                    cue: player_tint_cue,
+                });
+                if let Some(c) = color {
+                    color_draws.push(ColorSceneDraw {
+                        mesh: c,
+                        mvp: actor_cam * *model,
+                        cue: player_tint_cue,
+                    });
+                }
+            }
+        }
     }
 }

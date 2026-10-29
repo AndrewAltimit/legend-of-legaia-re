@@ -158,7 +158,7 @@ pub(crate) struct NpcClip {
 /// retail per-object assembly `FUN_8004998C`), applied in place so an animated
 /// actor re-poses without rebuilding its geometry.
 /// REF: FUN_8004998C
-fn pose_into(
+pub(crate) fn pose_into(
     out: &mut Vec<f32>,
     base: &[[f32; 3]],
     object_ids: &[u32],

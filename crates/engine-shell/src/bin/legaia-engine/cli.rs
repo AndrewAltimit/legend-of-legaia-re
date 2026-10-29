@@ -1276,6 +1276,23 @@ pub(crate) enum Cmd {
         #[arg(long = "mode", value_name = "INSTANCE")]
         pack_mode: Option<String>,
         // --- end expansion game modes ---
+        // --- netplay (`--host` / `--join`) ---
+        /// Host a multiplayer room: run a relay on PORT (default 7462, all
+        /// interfaces) and create a room on it. The room screen (Tab) shows
+        /// the room code and the LAN address others join with.
+        #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "7462", conflicts_with = "join")]
+        host: Option<u16>,
+        /// Join a multiplayer room on the relay at ADDR (`host:port`, a
+        /// hosting play window or `legaia-relay`). Needs `--room`.
+        #[arg(long, value_name = "ADDR", requires = "room")]
+        join: Option<String>,
+        /// The room code to join (six letters and digits).
+        #[arg(long, value_name = "CODE", requires = "join")]
+        room: Option<String>,
+        /// The name other players see.
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+        // --- end netplay ---
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does
@@ -1756,5 +1773,36 @@ mod locomotion_flag_tests {
         assert!(parse(&["--expansion", "packs/rebirth"]).is_err());
         assert!(parse(&["--map", "m"]).is_err());
         assert!(parse(&["--spawn", "s"]).is_err());
+    }
+
+    /// `--host` takes an optional port; `--join` needs `--room`, and the
+    /// two do not go together.
+    #[test]
+    fn netplay_flags_parse() {
+        let parse = |args: &[&str]| {
+            let mut argv = vec!["legaia-engine", "play-window"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv)
+        };
+        let host = |args: &[&str]| match parse(args).expect("parses").cmd.expect("subcommand") {
+            Cmd::PlayWindow { host, .. } => host,
+            other => panic!("parsed {other:?}"),
+        };
+        assert_eq!(host(&["--host"]), Some(7462));
+        assert_eq!(host(&["--host", "9000"]), Some(9000));
+        assert_eq!(host(&[]), None);
+        assert!(
+            parse(&[
+                "--join",
+                "127.0.0.1:7462",
+                "--room",
+                "ABCDEF",
+                "--name",
+                "Noa"
+            ])
+            .is_ok()
+        );
+        assert!(parse(&["--join", "127.0.0.1:7462"]).is_err());
+        assert!(parse(&["--host", "--join", "x:1", "--room", "ABCDEF"]).is_err());
     }
 }

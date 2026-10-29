@@ -156,7 +156,9 @@ impl LegaiaRuntime {
                     continue;
                 }
                 TickOwner::Field(neutral) => {
-                    self.set_pad(if neutral { 0 } else { pad });
+                    // The room frame first: its screen may hold the pad.
+                    let pad = self.step_netplay(if neutral { 0 } else { pad });
+                    self.set_pad(pad);
                 }
             }
             // The field's tick; an open inn prompt (which does not suspend

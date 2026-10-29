@@ -722,6 +722,8 @@ pub(super) struct PlayWindowApp {
         Option<Option<std::sync::Arc<legaia_engine_ui::slot_cabinet::SlotCabinetAssets>>>,
     /// The machine's VRAM on the GPU while it is on screen.
     pub(super) slot_gpu: Option<UploadedVram>,
+    /// The multiplayer room this window is in (`--host` / `--join`).
+    pub(super) netplay: Option<super::netplay::NetHost>,
     /// The marquee's legend / blink counters.
     pub(super) slot_marquee_clock: legaia_engine_ui::slot_cabinet::SlotMarqueeClock,
     /// This frame's composed dot buffer.

@@ -509,6 +509,8 @@ pub struct DebugSeeds {
     /// scene is entered (`picker` opens the mode picker instead).
     pub pack_mode: Option<String>,
     // --- end expansion game modes ---
+    /// `--host` / `--join` / `--room` / `--name`: a multiplayer room to open.
+    pub netplay: super::NetLaunch,
 }
 
 /// The `--expansion` / `--map` / `--spawn` operands.
@@ -643,6 +645,12 @@ impl DebugSeeds {
     /// Attach the `--mode <INSTANCE>` operand.
     pub fn with_pack_mode(mut self, instance: Option<String>) -> Self {
         self.pack_mode = instance;
+        self
+    }
+
+    /// Attach the `--host` / `--join` operands.
+    pub fn with_netplay(mut self, netplay: super::NetLaunch) -> Self {
+        self.netplay = netplay;
         self
     }
     // --- end expansion game modes ---
@@ -1074,6 +1082,8 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         // The hotkey help panel (`help_key`): `F12`, or the `?` key.
         "F12" => KeyCode::F12,
         "/" | "?" | "SLASH" => KeyCode::Slash,
+        // The multiplayer room screen (`window::netplay`).
+        "TAB" => KeyCode::Tab,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
