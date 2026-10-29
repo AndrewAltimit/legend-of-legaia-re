@@ -1,0 +1,38 @@
+# Legend of Legaia: Rebirth - progression.
+#
+# Retail's curve to level 99 asks for 9.6 million XP, 7.6 million of it
+# past level 60. Rebirth keeps the retail steps through level 59, then cuts
+# each step to about a third, so 60 to 99 costs about 2.4 million; with half
+# again on every fight's EXP, around a hundred battles against the endgame
+# monsters in battle.toml cover it. The pack's own fights grow with the
+# party past level 50, and so do their rewards.
+# Format: docs/formats/expansion-pack-battle.md.
+
+xp_mul = 1.5
+gold_mul = 1.25
+
+[xp_curve]
+kind = "banded"
+bands = [
+    { from_level = 60, mul = 0.35 },
+    { from_level = 80, mul = 0.3 },
+]
+
+[enemy_scaling]
+from_level = 50
+per_level = 0.02
+max_mul = 1.8
+scope = "pack"
+rewards = true
+
+[[level_rewards]]
+level = 60
+items = [{ item = { kind = "item", id = 121 }, count = 3 }]
+
+[[level_rewards]]
+level = 80
+items = [{ item = { kind = "item", id = 125 }, count = 3 }]
+
+[[level_rewards]]
+level = 99
+items = [{ item = { kind = "item", id = 237 } }]

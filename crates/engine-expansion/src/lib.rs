@@ -9,6 +9,9 @@
 
 #![forbid(unsafe_code)]
 
+pub mod battle;
+pub mod progression;
+
 use std::sync::Arc;
 
 use legaia_expansion_format::ExpansionPack;
@@ -18,6 +21,10 @@ use legaia_expansion_format::ExpansionPack;
 pub struct ExpansionState {
     /// The active pack, if any.
     pub pack: Option<Arc<ExpansionPack>>,
+    /// The pack's compiled battle tables and per-fight state.
+    pub battle: battle::BattleRuntime,
+    /// The pack's progression state.
+    pub progression: progression::ProgressionRuntime,
 }
 
 impl ExpansionState {

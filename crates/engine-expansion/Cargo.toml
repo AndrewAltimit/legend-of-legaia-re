@@ -12,3 +12,6 @@ path = "src/lib.rs"
 legaia-expansion-format.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-system.workspace = true
+
+[dev-dependencies]
+toml.workspace = true

@@ -1,0 +1,83 @@
+# Legend of Legaia: Rebirth - battles.
+#
+# Every monster here is a retail monster with new numbers: `base` names the
+# retail record (its 1-based monster-archive id), and the engine reads that
+# monster's mesh, animation and attacks off the player's own disc. Stats are
+# record values; a bare number sets one, `{ mul = x }` scales the base's.
+# Format: docs/formats/expansion-pack-battle.md.
+
+# --- Endgame field monsters --------------------------------------------------
+
+[monsters.ironhide_ogre]
+base = { kind = "monster", id = 109 }
+name = "Ironhide Ogre"
+hp = { mul = 3.5 }
+attack = { mul = 1.6 }
+defence = { mul = 1.5 }
+speed = { mul = 1.2 }
+exp = { mul = 6.0 }
+gold = { mul = 2.0 }
+drop = { item = { kind = "item", id = 121 }, chance_pct = 25 }
+
+[monsters.ember_lizard]
+base = { kind = "monster", id = 124 }
+name = "Ember Lizard"
+hp = { mul = 3.0 }
+attack = { mul = 1.4 }
+intelligence = { mul = 1.5 }
+exp = { mul = 6.0 }
+gold = { mul = 2.0 }
+element = 1
+
+[monsters.runed_golem]
+base = { kind = "monster", id = 130 }
+name = "Runed Golem"
+hp = { mul = 4.0 }
+attack = { mul = 1.5 }
+defence = { mul = 1.8 }
+exp = { mul = 7.0 }
+gold = { mul = 2.0 }
+steal = { item = { kind = "item", id = 125 }, chance_pct = 20 }
+
+# --- Superboss ---------------------------------------------------------------
+
+[monsters.hollow_sovereign]
+base = { kind = "monster", id = 138 }
+name = "Hollow Sovereign"
+hp = 65000
+mp = 3000
+attack = { mul = 1.9 }
+defence = { mul = 1.6 }
+speed = { mul = 1.4 }
+intelligence = { mul = 1.6 }
+exp = 65000
+gold = 60000
+drop = { item = { kind = "item", id = 237 }, chance_pct = 100 }
+
+[formations.ogre_pack]
+label = "Ironhide Ogres"
+monsters = ["ironhide_ogre", "ironhide_ogre", "ironhide_ogre"]
+
+[formations.forge_guard]
+label = "Forge Guard"
+monsters = ["runed_golem", "ember_lizard", "ember_lizard", "ironhide_ogre"]
+
+[formations.hollow_throne]
+label = "Hollow Throne"
+monsters = ["hollow_sovereign", "runed_golem", "runed_golem"]
+
+# Jette's Fortress keeps its own fights and mixes the pack's in.
+[[encounters]]
+scene = "chitei2"
+retail_weight = 3
+formations = [
+    { formation = "ogre_pack", weight = 2 },
+    { formation = "forge_guard", weight = 1 },
+]
+
+[bosses.hollow_sovereign]
+formation = "hollow_throne"
+music = { kind = "bgm", id = 30 }
+reward_items = [{ item = { kind = "item", id = 233 }, count = 1 }]
+reward_gold = 50000
+once = true
