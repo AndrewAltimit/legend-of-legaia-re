@@ -103,6 +103,7 @@
     {
      "label": "rank 6",
      "crates": [
+      "engine-battle-loop",
       "engine-minigame-scenes"
      ]
     },
@@ -392,6 +393,7 @@
     "delilas-party",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-capture",
@@ -937,6 +939,7 @@
    "scope": "The battle kernels that never touch <code>World</code>: monster AI, spoils, AP gauge, stats, catalogs, encounters, level-up, Seru learning, arts tracking, the sparring-tutorial prompt machine, per-frame animation passes.",
    "dependents": [
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-capture",
     "engine-cheats",
@@ -962,6 +965,7 @@
    "deps": [
     "art",
     "engine-battle",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-cast",
@@ -990,6 +994,64 @@
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-hud/README.md"
+  },
+  "engine-battle-loop": {
+   "package": "legaia-engine-battle-loop",
+   "deps": [
+    "art",
+    "engine-battle",
+    "engine-battle-menus",
+    "engine-battle-vm",
+    "engine-cast",
+    "engine-effects",
+    "engine-field",
+    "engine-menus",
+    "engine-mode",
+    "engine-system",
+    "game-tables",
+    "overlay-images",
+    "render-kernels",
+    "ui-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "auto_combo",
+    "barra_flight",
+    "battle_state",
+    "cast_band",
+    "cast_fx_state",
+    "cast_seat_map",
+    "clip_ladder",
+    "frame_clock",
+    "hud_glides",
+    "message_banner",
+    "module_presentation",
+    "module_seat_arm",
+    "module_stagers",
+    "nova_motion",
+    "orb_stager",
+    "round_flow",
+    "seat_stats",
+    "status_word",
+    "tutorial_flow",
+    "ui_cues"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 6,
+   "role": "the battle loop's state and the steps over it alone: battle session, cast band, round flow, frame clock",
+   "scope": "The battle loop's state below <code>World</code>: <code>BattleState</code>, <code>CastFxState</code>, round flow, frame clock, and the steps that read or write that state alone (stat block, tutorial flow, HUD glides, clip ladder, module stagers). Steps that reach the rest of <code>World</code> stay in <code>engine-core</code>.",
+   "dependents": [
+    "engine-battle-hud",
+    "engine-capture",
+    "engine-core",
+    "engine-shell",
+    "parity",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-battle-loop/README.md"
   },
   "engine-battle-menus": {
    "package": "legaia-engine-battle-menus",
@@ -1022,6 +1084,7 @@
    "scope": "The <code>World</code>-free battle side of the menu front end, beside <code>engine-menus</code>: battle command input, the command-flow byte (<code>FUN_801D0748</code>), the open banner, the timed fight, the Muscle Dome match session.",
    "dependents": [
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-capture",
     "engine-core",
     "engine-minigame-scenes",
@@ -1103,6 +1166,7 @@
     "asset-viewer",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-capture",
     "engine-cast",
@@ -1175,6 +1239,7 @@
    "deps": [
     "art",
     "engine-battle",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
@@ -1251,6 +1316,7 @@
    "scope": "The slot-B cast / summon modules (PROT 0903..0966): tick bodies, each module's own camera and countdown, the cast-arm kernels. <code>World</code>-free, one rank above <code>engine-battle-vm</code>, which never names it.",
    "dependents": [
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-capture",
     "engine-core",
     "parity"
@@ -1295,6 +1361,7 @@
     "anm",
     "art",
     "engine-battle",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
@@ -1473,6 +1540,7 @@
    "role": "World-free effect kernels",
    "scope": "The <code>World</code>-free effect kernels: action effect scripts, ribbon and render-mode-4 emitters, summon scene-graph driver, PROT-0900 screen effects, object effects.",
    "dependents": [
+    "engine-battle-loop",
     "engine-capture",
     "engine-core",
     "engine-minigame-scenes",
@@ -1603,6 +1671,7 @@
     "save_screen_spawn",
     "scene_transition_actor",
     "scene_transition_sweep",
+    "script_vram_move",
     "submode_hub_actors",
     "travel_art_actor",
     "vdf_pulse",
@@ -1625,6 +1694,7 @@
    "scope": "The <code>World</code>-free field kernels: actor programs and per-actor field-overlay bodies, region queries and the shared minigame floor (<code>minigame_floor</code>, <code>dance_marker</code>), follow-camera parameters and eases, player clip playback, op-<code>0x49</code> submode and its hub actors, panel windows, world-map controller + entity SM (<code>FUN_801DA51C</code>), inline-dialogue / cutscene-timeline context state, CLUT effects, the fog particle pool, MAN field-script decoders, field camera (<code>CameraWorld</code>) and the host frame-step rules (<code>frame_step</code>).",
    "dependents": [
     "asset-viewer",
+    "engine-battle-loop",
     "engine-capture",
     "engine-core",
     "engine-export",
@@ -1802,6 +1872,7 @@
    "scope": "The <code>World</code>-free menu front end: item / equipment catalogs, inventory-use and spell-menu sessions, list-row model, window-widget host, memory-card flow, inn, item bag + equip session, save / status / pause / shop screens, the options state + screen session. The dialog layer is <code>engine-dialog</code>, the title front end <code>engine-title</code>, the battle command picker <code>engine-battle-menus</code>.",
    "dependents": [
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-cheats",
     "engine-core",
     "engine-menu-runtime",
@@ -1958,6 +2029,7 @@
    "dependents": [
     "asset-viewer",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-capture",
     "engine-core",
     "engine-field",
@@ -2384,6 +2456,7 @@
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
@@ -2500,6 +2573,7 @@
     "asset-viewer",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
@@ -2873,6 +2947,7 @@
     "delilas-party",
     "disc-audit",
     "engine-battle",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-cast",
@@ -3203,6 +3278,7 @@
    "dependents": [
     "asset",
     "disc-audit",
+    "engine-battle-loop",
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
@@ -3231,6 +3307,7 @@
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
@@ -3585,6 +3662,7 @@
    "scope": "The wgpu-free render kernels both hosts share: GTE math, <code>screen_prim</code> + its CPU rasteriser, <code>vram_capture</code>, the effect emitters, the battle-intro model + emitter, enhanced <code>scene_lighting</code>.",
    "dependents": [
     "engine-battle",
+    "engine-battle-loop",
     "engine-cast",
     "engine-core",
     "engine-effects",
@@ -4023,6 +4101,7 @@
     "disc-audit",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-core",
     "engine-menu-runtime",
@@ -4173,6 +4252,7 @@
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",

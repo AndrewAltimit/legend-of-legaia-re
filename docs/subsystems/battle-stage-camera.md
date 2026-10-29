@@ -867,9 +867,9 @@ close-up, any other fight re-arms case 9.
 
 Port: `BattleCamera::start_entry_sweep`, armed on a fight's first camera frame
 (`BattleCamInputs::entry_sweep`). The port's round open waits for it as
-retail's flow does: while `World::battle_entry_sweeping` reads true the round
-prompt does not arm (`World::arm_round_open_prompt`), no press reaches a command
-surface (`World::battle_command_pad_held`) and the HUD projectors report no
+retail's flow does: while `BattleState::battle_entry_sweeping` reads true the round
+prompt does not arm (`BattleState::arm_round_open_prompt`), no press reaches a command
+surface (`BattleState::battle_command_pad_held`) and the HUD projectors report no
 handle (`battle_hud_phase` is `Idle`, `battle_command_chips` is `None`), so
 `Begin | Run` and its status windows open, and unfold, after the sweep and the
 [entry fade](#the-battle-entry-fade) it overlaps. Opening them earlier drew the
@@ -879,13 +879,13 @@ enemy-name intro keeps retail's order. Its
 labels and their `ctx[+0x6D6]` hold belong to the battle tick's flow `0x0A` /
 `0x0B`, which the frame driver reaches only past the sweep (`0x80046EF8` /
 `0x80047014`), so the port neither shows nor drains them until the sweep is
-over (`World::battle_entry_sweeping`).
+over (`BattleState::battle_entry_sweeping`).
 
 The sparring fight keeps the whole of retail's order. The side-band arms
 Tetsu's caption on the flow reading `0x14`, which retail reaches only past
 the sweep and the name hold, so the port holds that fight's first round
 start - and the battle loop with it - until both are done
-(`World::sparring_open_held`): `s5_tetsu_battle`, caught under the sweep at
+(`BattleState::sparring_open_held`): `s5_tetsu_battle`, caught under the sweep at
 flow `0x00`, shows the bare arena, and `v0_1_battle_start_tetsu`, at `0x14`,
 the caption over the close-up.
 

@@ -1053,7 +1053,7 @@ state carry it:
 
 - **Base halfwords.** `BattleState::attack_base` / `defense_base` /
   `speed_base` / `accuracy_base` (plus the actor's `agl_base`) are the second
-  `sh` of every pair. `World::sync_battle_stat_bases` writes them at battle
+  `sh` of every pair. `BattleState::sync_battle_stat_bases` writes them at battle
   entry and nothing but a debuff writes one afterwards.
 - **Scripted flag.** `BattleState::scripted_fight`, derived at battle entry
   from the formation's `record[+0]` header byte, ORed with a `no_escape` a host
@@ -1464,7 +1464,7 @@ plus the all-stats Honey / Miracle Water) adds a flat increment to the
 parser `legaia_game_tables::item_effect::stat_item_effect` /
 `ItemEffectTable::stat_effect`.
 
-**Port.** `buff_ramp`. `World::apply_battle_buff` routes a positive-magnitude
+**Port.** `buff_ramp`. `BattleState::apply_battle_buff` routes a positive-magnitude
 `Buff` outcome through `ramp_buff_scalar`, which ramps the live per-slot scalar
 (`battle.attack` / `battle.magic` / `battle.defense`) by +20% and records the
 exact `u16` delta for revert on expiry; a refresh reverts the old delta first.
@@ -1834,7 +1834,7 @@ monsters cannot flee.
   actor's roster id minus one into `ctx+0xAA` when the party has two or more
   members); a wipe opens the loss window `FUN_801D8DE8(0x42, 0)`
   (`0x8004F8F0..0x8004F904`). A non-zero word skips both. Port
-  `VictorySequence::window_opened`, gating `World::battle_spoils_window_up` and
+  `VictorySequence::window_opened`, gating `BattleState::battle_spoils_window_up` and
   `engine-battle-hud::battle_defeat_banner`. The two elements index the screen-element
   placement table and their records are byte-identical
   ([battle-round-loop.md](battle-round-loop.md#the-loss-window-is-the-result-windows-twin)).

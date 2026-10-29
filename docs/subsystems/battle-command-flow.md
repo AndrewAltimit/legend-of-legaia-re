@@ -566,7 +566,7 @@ A sweep reaches the action SM as retail's target-group code, not a sentinel: the
 seating for each; `engine-battle-menus::battle_open` composes the banner and
 `World::raise_battle_open_banner` queues it onto the shared battle message box
 (retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
-`World::arm_round_open_prompt`, keyed on the flow byte parking at
+`BattleState::arm_round_open_prompt`, keyed on the flow byte parking at
 `BattleFlowState::TurnPrompt` - which the round boundary and battle entry both
 set, and which a mid-round reopen does not. The ambush's lost round is already
 the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
@@ -655,7 +655,7 @@ rewind exit discards the action and reopens the command menu.
 **No host arms it.** `World::enter_battle` consumes the disc's own one-shot
 system-flag arm (above), so the native window and the browser play page both
 show the boxes in the fight retail shows them in, with no scene name, flag or
-environment variable in the condition. `World::prime_battle_tutorial` is a
+environment variable in the condition. `BattleState::prime_battle_tutorial` is a
 debug force, and `LEGAIA_BATTLE_TUTORIAL` (`0` suppress / `1` force / `now`
 force and enter a fight) is `play-window`'s hand-testing knob on top of it -
 neither is the port. Browser oracle:
@@ -861,7 +861,7 @@ not; but when the box leaves the queue it stays on screen as the standing
 prompt (`BattleState::tutorial_standing`) until the next self-dismissing
 emission replaces it, the flow-`0x5A` unregister frees it under a waiting
 box, or the teardown drains it. Both hosts draw it with the queue's front
-group (`World::battle_tutorial_boxes_on_screen`).
+group (`BattleState::battle_tutorial_boxes_on_screen`).
 
 Two further consequences fall out of the registrar read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
 free `+0x18` for (`0x80031A30..0x80031A44`, alongside kinds `< 2` and `0x11`),
@@ -882,7 +882,7 @@ own registered text actor, so a two-box hook - the lesson intro at the top
 and the directional explainer at the bottom at `Begin | Run` - puts both on
 screen at once. The engine's queue carries a dispatch **group** per box
 (`ActiveTutorialBox::group`); both hosts draw the whole front group
-(`World::battle_tutorial_boxes_on_screen`), a non-waiting member counts
+(`BattleState::battle_tutorial_boxes_on_screen`), a non-waiting member counts
 itself down inside it, and the waiting member holds the group until Cross.
 
 ### The opening caption - the SCUS side-band, not overlay 967
@@ -961,7 +961,7 @@ non-zero (`0x8004E5B8`), so no spoils are shown or credited, and MAIN INIT
 turns the survived bit into story flag 1.
 
 Engine port. Phase `2`'s hook is split: the dispatch runs on each flow edge
-(`World::set_battle_flow`; its one-shot latch makes an edge call and a
+(`BattleState::set_battle_flow`; its one-shot latch makes an edge call and a
 per-frame call equivalent), and the per-frame half - the completion tail and
 the countdown section (`BattleTutorial::completion_tail` /
 `BattleTutorial::tick_countdown`) - runs off the side-band's `SparringHook`
@@ -1218,6 +1218,6 @@ sweep the boss seat stays as the stage loader left it, blanked
 `cort_evolved_card_battle_init` (flow `0x00`, counter `0x97`) shows exactly
 that: the sweep's own camera, the bare flesh wall, the party's backs and no
 Cort. The engine's loader is synchronous, so its side-band pass holds the
-arrival while `World::battle_entry_sweeping` reads true; run from the first
+arrival while `BattleState::battle_entry_sweeping` reads true; run from the first
 battle frame, the module walked the camera and showed the boss under the
 sweep.

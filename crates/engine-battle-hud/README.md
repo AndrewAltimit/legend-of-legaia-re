@@ -42,17 +42,21 @@ engine-core                                     World, the tick, battle loop
 
 Nothing in `engine-core` names this crate, so a HUD change rebuilds only the
 crates above it. The two battle-screen facts the simulation needs for its own
-decisions stay in `engine-core` as `BattleState` methods: `raseru_forbidden`
-(the command ring refuses the Ra-Seru press) and `result_windows_dy` (the
-results banners carry the windows' raise glide). When the spoils window is
-up at all is `World::battle_spoils_window_up`, also engine-core's: the
-end-of-battle tests there pin it without composing the window. The glide arithmetic both
-sides share is `LogLaunch::seat_dy` in `engine-battle-vm`.
+decisions are `BattleState` methods in `engine-battle-loop`, below the
+simulation: `raseru_forbidden` (the command ring refuses the Ra-Seru press)
+and `result_windows_dy` (the results banners carry the windows' raise glide).
+When the spoils window is up at all is `BattleState::battle_spoils_window_up`,
+there too: the end-of-battle tests pin it without composing the window. The
+glide arithmetic both sides share is `LogLaunch::seat_dy` in
+`engine-battle-vm`.
 
 The battle-state fields the reads take are `pub` on `BattleState` for this
-reason. The glide and command steps the tests drive a frame at a time
-(`tick_battle_command`, `step_action_plate_glides`, ...) stay internal to
-`engine-core`; the tests reach them through
+reason. The glide steps that read and write the battle state alone
+(`step_action_plate_glides`, `step_commit_log_launch`, the round-prompt and
+ring-open glides) are public `BattleState` methods, and the tests step them as
+`world.battle.<step>()`. The steps that reach the rest of `World`
+(`tick_battle_command`, `live_battle_tick`, `note_action_plate_raise`, ...)
+stay internal to `engine-core`; the tests reach them through
 `engine-core::world::test_drivers::BattleTestDrivers`, which exists only
 under engine-core's `test-drivers` feature, enabled by this crate's
 `[dev-dependencies]` alone.

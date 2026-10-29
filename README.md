@@ -209,7 +209,7 @@ Top of the stack first. Every crate name links its README.
 - **Simulation.** engine-core owns World and its tick, and implements each VM's Host trait. Everything below it names no World. \
   [`engine-core`](crates/engine-core/README.md)
 - **World-free kernels.** The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank. \
-  Rank 6: [`engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) \
+  Rank 6: [`engine-battle-loop`](crates/engine-battle-loop/README.md), [`engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) \
   Rank 5: [`engine-battle-menus`](crates/engine-battle-menus/README.md), [`engine-menus`](crates/engine-menus/README.md) \
   Rank 4: [`engine-fishing`](crates/engine-fishing/README.md), [`engine-minigames`](crates/engine-minigames/README.md), [`engine-scene`](crates/engine-scene/README.md) \
   Rank 3: [`engine-battle`](crates/engine-battle/README.md), [`engine-cast`](crates/engine-cast/README.md), [`engine-effects`](crates/engine-effects/README.md), [`engine-field`](crates/engine-field/README.md), [`engine-ui`](crates/engine-ui/README.md) \

@@ -1,13 +1,15 @@
-//! The battle loop's carried state, minus `World`: the battle session
-//! ([`battle_state::BattleState`]), the cast band
+//! The battle loop's state and the steps that need nothing else, minus
+//! `World`: the battle session ([`battle_state::BattleState`]), the cast band
 //! ([`cast_fx_state::CastFxState`] and the records it holds), the round flow,
-//! the battle frame clock, the message banner and the Auto attack's state.
+//! the battle frame clock, and the methods and free kernels that read or
+//! write that state alone (the stat block, the tutorial flow, the HUD glides,
+//! the clip ladder, the module stagers).
 //!
-//! `engine-core`'s `World` holds these as `world.battle` / `world.casting`
-//! and its battle loop steps them; a method here reads or steps its own
-//! state alone. Doc comments name `engine-core` items in plain code spans,
-//! since rustdoc cannot resolve a link into a dependent crate. See the crate
-//! README for the module map and the split line.
+//! `engine-core`'s `World` holds the two states as `world.battle` /
+//! `world.casting`; a step that needs any other `World` field stays an
+//! `impl World` there. Doc comments name `engine-core` items in plain code
+//! spans, since rustdoc cannot resolve a link into a dependent crate. See the
+//! crate README for the module map and the split line.
 
 #![forbid(unsafe_code)]
 

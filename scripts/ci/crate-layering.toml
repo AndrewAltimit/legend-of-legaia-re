@@ -140,7 +140,7 @@ deps = [
 ]
 
 [crates.engine-battle-loop]
-role = "the battle loop's carried state: the battle session, the cast band, round flow, frame clock, banner"
+role = "the battle loop's state and the steps over it alone: battle session, cast band, round flow, frame clock"
 deps = [
     "engine-battle",
     "engine-battle-menus",

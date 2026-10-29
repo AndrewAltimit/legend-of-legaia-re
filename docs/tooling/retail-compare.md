@@ -1220,7 +1220,7 @@ engine's plates still mid-rise while retail's had long since landed
 
 - **All landed.** When every retail record has landed, the image child lands the
   engine's at the capture (`LEGAIA_SEAT_HUD_GLIDES_LANDED`,
-  `World::land_battle_hud_glides`).
+  `BattleState::land_battle_hud_glides`).
 - **Still in flight.** A record in flight seats its widget instead
   (`LEGAIA_SEAT_HUD_GLIDES`, `World::seat_battle_hud_glide`, the cluster's age
   on the host's HUD). Its target seat (`+0x04` / `+0x06`) names the widget:
@@ -1281,7 +1281,7 @@ its slide (eight on screen), which leaves it off the right edge.
 An arts-entry capture with the Triangle list open (menu flow `0x50`, list bits
 `0x801F4E09 & 0x81 == 0x81`) seats the engine's entry on retail's page
 (`_DAT_8007B458 / 5`) and slide counter (`0x801F4E0A`):
-`LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`, `World::seat_arts_list`. The drive
+`LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`, `BattleState::seat_arts_list`. The drive
 reaches the entry but presses no Triangle, so without the seat the frame shows
 the list closed. The `arts_list_*` states were played forward from the
 `arts_bar_*` ones on the retail disc by
@@ -1997,8 +1997,8 @@ one reads `phase` `0`. The sparring fight's opening the tutorial holds back;
 the evolved Cort's the arrival module holds (flow `0x0C`). `gaza2_card_battle_init`
 is the one ordinary fight caught under its sweep. Its frame matches: the
 engine holds every surface of the round open while the sweep runs (the prompt
-and its unfold, `World::arm_round_open_prompt`; the pad,
-`World::battle_command_pad_held`). Its `phase` still reads `0`, because the
+and its unfold, `BattleState::arm_round_open_prompt`; the pad,
+`BattleState::battle_command_pad_held`). Its `phase` still reads `0`, because the
 port runs round one's start (`World::begin_battle_round`, flow `0x14`'s sweep,
 seeder and `0x1E` store) at the flip, so its flow word already reads the
 prompt where retail's battle tick has not run and holds `0x00`. Moving that
