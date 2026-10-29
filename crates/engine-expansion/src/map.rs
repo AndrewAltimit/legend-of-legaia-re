@@ -11,11 +11,37 @@
 //! crossing: standing still on an exit does nothing, and the spawn tile does
 //! not fire on the first tick ([`ActiveMap::new`] takes the spawn tile as the
 //! last one seen).
+//!
+//! A `once` trigger is once **ever**: [`ActiveMap::new`] skips the triggers
+//! whose [`once_flag`] the pack's saved flags already hold, and the runtime
+//! that takes a [`FiredTrigger`] raises its flag.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use legaia_expansion_format::map::{ExitTarget, MapDef, MapEvent, TileGrid, rect_contains};
+use legaia_expansion_format::map::{
+    ExitTarget, MapDef, MapEvent, TileGrid, once_flag, rect_contains,
+};
+
+/// A trigger zone the player stepped into.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FiredTrigger {
+    pub event: MapEvent,
+    /// The pack flag to raise for a `once` trigger ([`once_flag`]), so it
+    /// stays quiet on later visits.
+    pub once_flag: Option<String>,
+}
+
+/// Where a save made on a pack map resumes: the map and the player's world
+/// position and facing on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapLocation {
+    pub map_id: String,
+    pub x: i16,
+    pub z: i16,
+    /// The 12-bit facing angle.
+    pub facing: u16,
+}
 
 /// A pack map in play.
 #[derive(Debug, Clone)]
@@ -26,28 +52,54 @@ pub struct ActiveMap {
     pub grid: Arc<TileGrid>,
     /// The tile the last step saw the player on.
     last_tile: Option<(u16, u16)>,
-    /// Indices of the `once` triggers already fired this visit.
+    /// Indices of the `once` triggers already fired.
     fired: BTreeSet<usize>,
     /// The encounter zone the player is in.
     encounter: Option<usize>,
     /// Trigger events raised and not yet taken by their runtime.
-    events: Vec<MapEvent>,
+    events: Vec<FiredTrigger>,
 }
 
 impl ActiveMap {
-    /// A map entered with the player on map-local tile `spawn`.
-    pub fn new(map_id: &str, def: Arc<MapDef>, grid: Arc<TileGrid>, spawn: (u16, u16)) -> Self {
+    /// A map entered with the player on map-local tile `spawn`. `flag_set`
+    /// answers whether a pack flag is raised: a `once` trigger whose flag
+    /// is up has fired on an earlier visit and stays quiet.
+    pub fn new(
+        map_id: &str,
+        def: Arc<MapDef>,
+        grid: Arc<TileGrid>,
+        spawn: (u16, u16),
+        flag_set: impl Fn(&str) -> bool,
+    ) -> Self {
+        let fired = def
+            .triggers
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| t.once && flag_set(&once_flag(map_id, t, *i)))
+            .map(|(i, _)| i)
+            .collect();
         let mut m = Self {
             map_id: map_id.to_string(),
             def,
             grid,
             last_tile: Some(spawn),
-            fired: BTreeSet::new(),
+            fired,
             encounter: None,
             events: Vec::new(),
         };
         m.encounter = m.encounter_zone_at(spawn);
         m
+    }
+
+    /// The map-local tile under world `(x, z)` ([`MapDef::tile_at_world`]).
+    pub fn tile_at_world(&self, x: i32, z: i32) -> Option<(u16, u16)> {
+        self.def.tile_at_world(&self.grid, x, z)
+    }
+
+    /// The pack encounter table of the zone covering map-local `tile`.
+    pub fn encounter_table_at(&self, tile: (u16, u16)) -> Option<&str> {
+        self.encounter_zone_at(tile)
+            .map(|i| self.def.encounters[i].table.as_str())
     }
 
     fn encounter_zone_at(&self, (c, r): (u16, u16)) -> Option<usize> {
@@ -76,7 +128,10 @@ impl ActiveMap {
             if t.once && !self.fired.insert(i) {
                 continue;
             }
-            self.events.push(t.event.clone());
+            self.events.push(FiredTrigger {
+                event: t.event.clone(),
+                once_flag: t.once.then(|| once_flag(&self.map_id, t, i)),
+            });
         }
         self.def
             .exits
@@ -85,25 +140,24 @@ impl ActiveMap {
             .map(|e| e.to.clone())
     }
 
-    /// The pack encounter table of the zone the player stands in, `None`
-    /// outside every zone (where the map rolls no encounters).
-    ///
-    /// Integration point: the battle runtime's encounter roll reads this.
+    /// The pack encounter table of the zone the player stood in at the last
+    /// step, `None` outside every zone (where the map rolls no encounters).
+    /// The world's roll reads the zone under the player's live position
+    /// ([`Self::encounter_table_at`]).
     pub fn encounter_table(&self) -> Option<&str> {
         self.encounter
             .and_then(|i| self.def.encounters.get(i))
             .map(|z| z.table.as_str())
     }
 
-    /// Drain the trigger events raised since the last call.
-    ///
-    /// Integration point: the battle, dialog and quest runtimes take these.
-    pub fn take_events(&mut self) -> Vec<MapEvent> {
+    /// Drain the triggers fired since the last call. The scene host hands
+    /// each to its runtime (`SceneHost::step_expansion_map`).
+    pub fn take_events(&mut self) -> Vec<FiredTrigger> {
         std::mem::take(&mut self.events)
     }
 
-    /// The trigger events raised and not yet taken.
-    pub fn pending_events(&self) -> &[MapEvent] {
+    /// The triggers fired and not yet taken.
+    pub fn pending_events(&self) -> &[FiredTrigger] {
         &self.events
     }
 }
@@ -129,7 +183,7 @@ once = true
 
 [[triggers]]
 rect = [3, 1, 3, 1]
-event = { kind = "quest", event = "step" }
+event = { kind = "counter", counter = "step" }
 
 [[encounters]]
 rect = [0, 0, 1, 2]
@@ -139,7 +193,7 @@ table = "west"
     fn active(spawn: (u16, u16)) -> ActiveMap {
         let def: MapDef = toml::from_str(MAP).unwrap();
         let grid = def.tile_grid().unwrap();
-        ActiveMap::new("m", Arc::new(def), Arc::new(grid), spawn)
+        ActiveMap::new("m", Arc::new(def), Arc::new(grid), spawn, |_| false)
     }
 
     #[test]
@@ -164,20 +218,40 @@ table = "west"
         m.step(Some((2, 1)));
         m.step(Some((3, 1)));
         let ev = m.take_events();
+        let step = MapEvent::Counter {
+            counter: "step".into(),
+            add: 1,
+        };
         assert_eq!(
             ev,
             vec![
-                MapEvent::Dialog {
-                    line: "hello".into()
+                FiredTrigger {
+                    event: MapEvent::Dialog {
+                        line: "hello".into()
+                    },
+                    once_flag: Some("map.m.0".into()),
                 },
-                MapEvent::Quest {
-                    event: "step".into()
+                FiredTrigger {
+                    event: step.clone(),
+                    once_flag: None
                 },
-                MapEvent::Quest {
-                    event: "step".into()
+                FiredTrigger {
+                    event: step,
+                    once_flag: None
                 },
             ]
         );
+        assert!(m.take_events().is_empty());
+    }
+
+    #[test]
+    fn a_once_trigger_whose_flag_is_saved_stays_quiet() {
+        let def: MapDef = toml::from_str(MAP).unwrap();
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("m", Arc::new(def), Arc::new(grid), (0, 1), |f| {
+            f == "map.m.0"
+        });
+        m.step(Some((2, 1)));
         assert!(m.take_events().is_empty());
     }
 

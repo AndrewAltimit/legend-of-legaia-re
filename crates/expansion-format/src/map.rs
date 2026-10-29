@@ -190,7 +190,7 @@ pub struct TileStyle {
 /// The wall quarters of a tile. A tile is four `64 x 64` sub-cells; `tl` is
 /// the low-X / low-Z quarter (top-left in the painter's view), `br` the
 /// high-X / high-Z one.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Walls {
     /// `"none"` (open floor) or `"all"` (a solid tile).
@@ -198,10 +198,12 @@ pub enum Walls {
     /// An explicit set of quarters, e.g. `["tl", "tr"]` for a wall along the
     /// tile's top edge.
     Quarters(Vec<Quarter>),
-    /// The default: no walls.
-    #[default]
-    #[serde(skip)]
-    Open,
+}
+
+impl Default for Walls {
+    fn default() -> Self {
+        Self::Named(WallsNamed::None)
+    }
 }
 
 /// The two named wall sets.
@@ -245,7 +247,7 @@ impl Walls {
     pub fn mask(&self) -> u8 {
         match self {
             Self::Named(WallsNamed::All) => 0xF,
-            Self::Named(WallsNamed::None) | Self::Open => 0,
+            Self::Named(WallsNamed::None) => 0,
             Self::Quarters(q) => q.iter().fold(0, |m, q| m | q.bit()),
         }
     }
@@ -371,22 +373,50 @@ pub struct TriggerZone {
     pub id: String,
     pub rect: TileRect,
     pub event: MapEvent,
-    /// Fire only the first time the player enters (per map visit).
+    /// Fire only once, ever: the first entry raises the pack flag
+    /// [`once_flag`] (saved with the pack's progress), and a set flag keeps
+    /// the zone quiet on every later visit.
     #[serde(default)]
     pub once: bool,
 }
 
-/// What a trigger zone raises. The map runtime only carries the id; the
-/// battle, dialog and quest runtimes resolve it.
+/// The pack flag a `once` trigger raises when it fires: `map.<map>.<id>`,
+/// or `map.<map>.<index>` for a trigger with no id.
+pub fn once_flag(map_id: &str, trigger: &TriggerZone, index: usize) -> String {
+    if trigger.id.is_empty() {
+        format!("map.{map_id}.{index}")
+    } else {
+        format!("map.{map_id}.{}", trigger.id)
+    }
+}
+
+/// What a trigger zone raises. Each names content of another pack section
+/// by id; the battle, dialog and quest runtimes resolve it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum MapEvent {
-    /// Start a battle against a pack formation (`battle.toml`).
+    /// Start a battle against a pack formation (`battle.toml` `formations`).
     Battle { formation: String },
+    /// Start a pack boss fight (`battle.toml` `bosses`).
+    Boss { boss: String },
     /// Show a pack dialogue line (`dialog.toml`).
     Dialog { line: String },
-    /// Raise a quest event (`quests.toml`).
-    Quest { event: String },
+    /// Count as talking to the pack NPC `npc` (a quest's talk objective).
+    Talk { npc: String },
+    /// Start a pack quest (`quests.toml`).
+    StartQuest { quest: String },
+    /// Raise a pack flag.
+    SetFlag { flag: String },
+    /// Add `add` (default 1) to a pack counter.
+    Counter {
+        counter: String,
+        #[serde(default = "one_i64")]
+        add: i64,
+    },
+}
+
+fn one_i64() -> i64 {
+    1
 }
 
 /// A tile rectangle that rolls random encounters.
@@ -535,6 +565,19 @@ impl MapDef {
         self.tiles.legend.get(&*c.encode_utf8(&mut buf))
     }
 
+    /// The map-local tile under world `(x, z)`, `None` off the map's
+    /// rectangle. A tile is `128` world units; map tile `[0, 0]` is field
+    /// grid tile [`TileLayer::origin`].
+    pub fn tile_at_world(&self, grid: &TileGrid, x: i32, z: i32) -> Option<(u16, u16)> {
+        if x < 0 || z < 0 {
+            return None;
+        }
+        let col = (x >> 7) - i32::from(self.tiles.origin[0]);
+        let row = (z >> 7) - i32::from(self.tiles.origin[1]);
+        ((0..grid.width as i32).contains(&col) && (0..grid.height as i32).contains(&row))
+            .then_some((col as u16, row as u16))
+    }
+
     /// The spawn named `id`, or the first spawn when `id` is empty.
     pub fn spawn(&self, id: &str) -> Option<&SpawnPoint> {
         if id.is_empty() {
@@ -638,6 +681,10 @@ to = { kind = "map", map = "rebirth_tower_2f" }
 [[triggers]]
 rect = [1, 2, 2, 2]
 event = { kind = "battle", formation = "tower_guard" }
+
+[[triggers]]
+rect = [3, 1, 3, 1]
+event = { kind = "counter", counter = "steps" }
 once = true
 
 [[encounters]]
@@ -674,6 +721,14 @@ tile = [1, 2]
                 formation: "tower_guard".into()
             }
         );
+        assert_eq!(
+            m.triggers[1].event,
+            MapEvent::Counter {
+                counter: "steps".into(),
+                add: 1
+            }
+        );
+        assert_eq!(once_flag("m", &m.triggers[0], 0), "map.m.0");
         assert_eq!(m.encounters[0].table, "tower_1f");
         assert_eq!(m.props[0].mesh, PropMesh::Object { object: 7 });
         assert_eq!(

@@ -12,11 +12,11 @@
 pub mod battle;
 pub mod dialog;
 pub mod flags;
+pub mod map;
 pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
 pub mod quest_save;
-pub mod map;
 
 use std::sync::Arc;
 

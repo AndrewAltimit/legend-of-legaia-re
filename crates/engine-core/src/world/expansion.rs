@@ -346,14 +346,16 @@ impl World {
         }
     }
 
-    /// Whether the active pack overrides the active scene's encounters.
+    /// Whether the active pack overrides the active scene's encounters - on
+    /// a pack map, the encounter zone's table ([`Self::expansion_encounter_key`]).
     fn expansion_encounter(&self) -> Option<legaia_engine_expansion::battle::CompiledEncounter> {
+        let key = self.expansion_encounter_key()?;
         self.expansion
             .battle
             .compiled
             .as_ref()?
             .encounters
-            .get(&self.active_scene_label)
+            .get(&key)
             .cloned()
     }
 
@@ -414,7 +416,7 @@ impl World {
         if !idle || self.locomotion.walk_regen_window != 0 || self.encounter_roll_held() {
             return Some(false);
         }
-        let scene = self.active_scene_label.clone();
+        let scene = self.expansion_encounter_key().unwrap_or_default();
         let left = match self.expansion.battle.step_counter.take() {
             Some((s, n)) if s == scene => n,
             _ => {

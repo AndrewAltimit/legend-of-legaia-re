@@ -85,6 +85,33 @@ pub struct SceneOverride {
     /// up); the field entry negates it into the runtime ladder as it does a
     /// retail MAN's.
     pub floor_lut: [i16; FLOOR_TIERS],
+    /// Each scaled prop's uniform scale, keyed by the field-grid tile its
+    /// placement anchors on (the prop's own tile).
+    pub prop_scales: Vec<((u8, u8), f32)>,
+}
+
+impl SceneOverride {
+    /// The render scale of the placed draw anchored on `anchor`: a scaled
+    /// prop's, else `None` (the draw keeps whatever scale it had).
+    pub fn prop_scale(&self, anchor: (u8, u8)) -> Option<f32> {
+        self.prop_scales
+            .iter()
+            .find(|(a, _)| *a == anchor)
+            .map(|&(_, s)| s)
+    }
+}
+
+/// The `scale` of every prop that sets one, keyed by its field-grid tile -
+/// [`SceneOverride::prop_scales`].
+pub fn prop_scales(def: &MapDef) -> Vec<((u8, u8), f32)> {
+    def.props
+        .iter()
+        .filter_map(|p| {
+            let s = p.scale.filter(|s| s.is_finite() && *s > 0.0 && *s != 1.0)?;
+            let (c, r) = grid_tile(def, p.tile[0], p.tile[1]);
+            Some(((u8::try_from(c).ok()?, u8::try_from(r).ok()?), s))
+        })
+        .collect()
 }
 
 /// Where a map tile lands on the `128 x 128` field grid.
@@ -102,15 +129,10 @@ pub fn tile_centre_world(def: &MapDef, col: u16, row: u16) -> (i16, i16) {
     (centre(gc), centre(gr))
 }
 
-/// The map-local tile under world `(x, z)`, `None` off the map's rectangle.
+/// The map-local tile under world `(x, z)`, `None` off the map's rectangle
+/// ([`MapDef::tile_at_world`]).
 pub fn world_to_map_tile(def: &MapDef, grid: &TileGrid, x: i32, z: i32) -> Option<(u16, u16)> {
-    if x < 0 || z < 0 {
-        return None;
-    }
-    let col = (x >> 7) - i32::from(def.tiles.origin[0]);
-    let row = (z >> 7) - i32::from(def.tiles.origin[1]);
-    ((0..grid.width as i32).contains(&col) && (0..grid.height as i32).contains(&row))
-        .then_some((col as u16, row as u16))
+    def.tile_at_world(grid, x, z)
 }
 
 /// Inputs from the disc a map image may need: the base scene's own field map

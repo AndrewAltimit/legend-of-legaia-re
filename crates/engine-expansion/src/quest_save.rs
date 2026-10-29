@@ -15,7 +15,10 @@
 //! u16    flag count, then str each
 //! u16    counter count, then str id + i64 value each
 //! u16    challenge count, then str id + u32 best + u32 clears each
-//! [u16   cleared-boss count, then str each]   only when there is one
+//! [tail]  zero or more tagged optional records, each `u8 tag` + body:
+//!          1 = cleared bosses: u16 count, then str each (only when one is)
+//!          2 = map: str map id, i16 x, i16 z, u16 facing, only on a save
+//!              made on a pack map (`crate::map::MapLocation`)
 //! ```
 //!
 //! `str` is a `u16` byte length then UTF-8. Integers are little-endian.
@@ -48,6 +51,9 @@ pub struct ExpansionProgress {
     /// Once-only `battle.toml` bosses the party has beaten, by local key
     /// (the battle runtime's `cleared_bosses`, mirrored here for the save).
     pub cleared_bosses: BTreeSet<String>,
+    /// The pack map the save was made on. Written only when set, so a save
+    /// made off every map keeps the block it had.
+    pub map: Option<crate::map::MapLocation>,
 }
 
 impl ExpansionProgress {
@@ -95,13 +101,22 @@ impl ExpansionProgress {
             w.extend_from_slice(&c.best.to_le_bytes());
             w.extend_from_slice(&c.clears.to_le_bytes());
         }
-        // The optional tail: written only when there is a cleared boss, so a
-        // block without one is the block an older writer made.
+        // The optional tail records: each is written only when it carries
+        // something, so a block without them is the block an older writer
+        // made.
         if !self.cleared_bosses.is_empty() {
+            w.push(TAIL_CLEARED_BOSSES);
             put_len(&mut w, self.cleared_bosses.len());
             for b in self.cleared_bosses.iter().take(MAX_LEN) {
                 put_str(&mut w, b);
             }
+        }
+        if let Some(m) = &self.map {
+            w.push(TAIL_MAP);
+            put_str(&mut w, &m.map_id);
+            w.extend_from_slice(&m.x.to_le_bytes());
+            w.extend_from_slice(&m.z.to_le_bytes());
+            w.extend_from_slice(&m.facing.to_le_bytes());
         }
         w
     }
@@ -153,9 +168,22 @@ impl ExpansionProgress {
             let clears = r.u32()?;
             out.challenges.insert(id, ChallengeRecord { best, clears });
         }
-        if r.p < bytes.len() {
-            for _ in 0..r.u16()? {
-                out.cleared_bosses.insert(r.str()?);
+        while r.p < bytes.len() {
+            match r.u8()? {
+                TAIL_CLEARED_BOSSES => {
+                    for _ in 0..r.u16()? {
+                        out.cleared_bosses.insert(r.str()?);
+                    }
+                }
+                TAIL_MAP => {
+                    out.map = Some(crate::map::MapLocation {
+                        map_id: r.str()?,
+                        x: r.u16()? as i16,
+                        z: r.u16()? as i16,
+                        facing: r.u16()?,
+                    });
+                }
+                _ => return None,
             }
         }
         (r.p == bytes.len()).then_some(out)
@@ -179,6 +207,11 @@ fn put_str(w: &mut Vec<u8>, s: &str) {
     put_len(w, end);
     w.extend_from_slice(&s.as_bytes()[..end]);
 }
+
+/// Tail record tag: the cleared-boss list.
+const TAIL_CLEARED_BOSSES: u8 = 1;
+/// Tail record tag: the pack map the save was made on.
+const TAIL_MAP: u8 = 2;
 
 struct Reader<'a> {
     b: &'a [u8],
@@ -253,6 +286,26 @@ mod tests {
         let bytes = p.encode();
         assert_eq!(&bytes[..4], b"LXP1");
         assert_eq!(ExpansionProgress::decode(&bytes), Some(p));
+    }
+
+    #[test]
+    fn a_map_location_rides_after_the_challenges_and_only_when_set() {
+        let plain = sample().encode();
+        let mut p = sample();
+        p.map = Some(crate::map::MapLocation {
+            map_id: "rebirth_tower_1f".into(),
+            x: 2880,
+            z: -64,
+            facing: 0x800,
+        });
+        let bytes = p.encode();
+        assert_eq!(
+            &bytes[..plain.len()],
+            &plain[..],
+            "the block it extends is unchanged"
+        );
+        assert_eq!(ExpansionProgress::decode(&bytes), Some(p));
+        assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
     }
 
     #[test]

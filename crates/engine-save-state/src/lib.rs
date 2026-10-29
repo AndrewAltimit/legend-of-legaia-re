@@ -199,7 +199,12 @@ impl WorldSaveState for World {
                 previous_scene: self.party.previous_scene.clone(),
                 // The expansion pack's progress; `None` with no pack, so a
                 // save made without one is byte-identical to a pre-block file.
-                expansion: self.expansion_save_block(),
+                expansion: {
+                    // A save on a pack map carries where on the map it was
+                    // made (the block's map tail).
+                    self.expansion_record_map_location();
+                    self.expansion_save_block()
+                },
             },
         }
     }
