@@ -13,7 +13,7 @@ use legaia_engine_battle::battle_tutorial::BattleTutorialScript;
 /// base [`legaia_engine_battle::battle_tutorial::OVERLAY_967_BASE_VA`]), reads
 /// that entry through the host's PROT index, slices it to its as-loaded
 /// form and parses the strings. This is what a host calls to prime
-/// [`legaia_engine_core::world::World::prime_battle_tutorial`] with real text; the bytes
+/// [`BattleState::prime_battle_tutorial`] with real text; the bytes
 /// never leave the user's own disc.
 ///
 /// Returns an empty script (not an error) when the entry can't be read, so

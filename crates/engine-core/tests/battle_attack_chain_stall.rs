@@ -46,8 +46,8 @@ fn world_vs_caster() -> World {
         w.actors[i].battle.hp = 200;
         w.actors[i].battle.max_hp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 40);
-        w.set_battle_defense(i as u8, 12);
+        w.battle.set_battle_attack(i as u8, 40);
+        w.battle.set_battle_defense(i as u8, 12);
     }
 
     let mut cat = MonsterCatalog::new();

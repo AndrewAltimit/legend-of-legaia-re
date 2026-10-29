@@ -243,7 +243,7 @@ pub struct ScreenshotConfig {
     pub battle_summon_focus: Option<[f32; 2]>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
-    /// (`World::land_battle_hud_glides`). Set by the retail-compare image
+    /// (`BattleState::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
     /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
@@ -281,7 +281,7 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_SEAT_ARTS_LIST=<page>,<slide>`: the arts entry's Triangle
     /// list open on the retail capture's page with its window's slide
     /// counter; the captured frame seats the engine's entry on them
-    /// (`World::seat_arts_list`). Set by the retail-compare image channel.
+    /// (`BattleState::seat_arts_list`). Set by the retail-compare image channel.
     pub seat_arts_list: Option<(u8, u8)>,
     /// `LEGAIA_SCRIPT_GATE=<flat>:<head hex>:<pc>:<wait>`: the field twin of
     /// [`Self::phase_gate`] - capture the first frame the engine's context

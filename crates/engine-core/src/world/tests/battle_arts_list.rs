@@ -107,10 +107,10 @@ fn a_missing_id_keeps_its_row_and_names_splice_and_ap_halves() {
 #[test]
 fn a_seated_list_stands_on_the_captures_page() {
     let mut w = list_world(&[1, 2, 3, 4, 5, 6, 7], false);
-    w.seat_arts_list(1, 12);
+    w.battle.seat_arts_list(1, 12);
     let view = w.arts_input_view().unwrap();
     assert_eq!((view.list_page, view.list_slide), (Some(1), 12));
-    w.seat_arts_list(2, 12);
+    w.battle.seat_arts_list(2, 12);
     assert_eq!(
         w.arts_input_view().unwrap().list_page,
         Some(1),
@@ -142,10 +142,10 @@ fn an_ended_entry_leaves_its_list_sliding_out() {
     );
     assert_eq!(w.arts_list_rows().map(|r| r.len()), Some(2), "on page 1");
     for want in [8, 6, 4, 2] {
-        w.step_arts_list_window();
+        w.battle.step_arts_list_window();
         assert_eq!(w.arts_list_window().map(|l| l.2), Some(want));
     }
-    w.step_arts_list_window();
+    w.battle.step_arts_list_window();
     assert_eq!(w.arts_list_window(), None);
     assert_eq!(w.arts_list_rows(), None);
 }

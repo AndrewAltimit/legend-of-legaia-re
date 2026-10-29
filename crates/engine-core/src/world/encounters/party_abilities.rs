@@ -314,7 +314,8 @@ impl World {
             if let Some(s) = self.battle.speed.get_mut(slot) {
                 *s = stats.spd;
             }
-            self.set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
+            self.battle
+                .set_battle_defense_split(slot as u8, Some((stats.udf, stats.ldf)));
             // Seed the AP gauge base from the captured level. Base only - the
             // round-start `reset_party_ap` refills `current_ap` to it, and Fury
             // Boost still extends from / reverts to this base. Re-seeding

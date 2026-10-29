@@ -9,8 +9,8 @@ fn duel() -> World {
         w.actors[i].battle.hp = 500;
         w.actors[i].battle.max_hp = 500;
     }
-    w.set_battle_attack(0, 80);
-    w.set_battle_attack(1, 80);
+    w.battle.set_battle_attack(0, 80);
+    w.battle.set_battle_attack(1, 80);
     w.actors[0].battle.active_target = 1;
     w.actors[1].battle.active_target = 0;
     w
@@ -167,8 +167,8 @@ fn the_war_god_carry_keeps_the_flinch() {
 fn the_opening_hit_pays_the_approach_terms() {
     let hit = |atk: u16, guard_ramp: i16, attack_ramp: i16| {
         let mut w = duel();
-        w.set_battle_attack(0, atk);
-        w.set_battle_defense(1, 60);
+        w.battle.set_battle_attack(0, atk);
+        w.battle.set_battle_defense(1, 60);
         w.rng_state = 0x1234_5679;
         w.battle.guard_ramp = guard_ramp;
         w.battle.attack_ramp = attack_ramp;
@@ -489,7 +489,7 @@ fn the_juggle_window_gates_the_block() {
     let mut w = duel();
     w.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![None; 12]));
     w.battle.speed[0] = 999;
-    w.set_battle_attack(0, 999);
+    w.battle.set_battle_attack(0, 999);
     play_clip_with_beat(&mut w, 0, 6);
     w.actors[0].battle_reaction_entry = Some(2);
     assert!(World::juggle_window_open(&w.actors[0]), "frame 0 < beat 6");

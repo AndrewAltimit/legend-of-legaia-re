@@ -110,7 +110,7 @@ pub use field_vm_state::FieldVmState;
 use legaia_engine_battle::encounter_state::EncounterState;
 use legaia_engine_battle::seru_state::SeruState;
 use legaia_engine_battle_loop::battle_state::{
-    BattleBuff, BattleRewards, BattleState, ClipRibbon, InflightCastSeed,
+    BattleRewards, BattleState, ClipRibbon, InflightCastSeed,
 };
 use legaia_engine_battle_loop::cast_band::{
     CastModuleCodeRun, CasterStagePhase, CasterStageRun, PendingCast, SummonPhase, SummonStager,

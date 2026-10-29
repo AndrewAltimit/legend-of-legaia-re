@@ -283,7 +283,7 @@ impl World {
             // builder points at that buffer. The Done band's teardown unloads
             // it through `levelup_banner_element`, which retires the line.
             let spell_name = self.spell_banner_name(spell_id);
-            self.raise_magic_level_banner(
+            self.battle.raise_magic_level_banner(
                 legaia_engine_battle::magic_xp::magic_level_increased_message(&spell_name),
             );
         }

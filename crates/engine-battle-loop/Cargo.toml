@@ -9,6 +9,7 @@ name = "legaia_engine_battle_loop"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-art.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-menus.workspace = true
 legaia-engine-battle-vm.workspace = true

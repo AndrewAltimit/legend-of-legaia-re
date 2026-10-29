@@ -380,7 +380,7 @@ impl World {
                 }
                 // A petrified target (Stone) can't be damaged - the strike is
                 // fully absorbed (and so doesn't wake a Sleep/Numb either).
-                let petrified = self.actor_is_petrified(*target_slot);
+                let petrified = self.battle.actor_is_petrified(*target_slot);
                 if let Some(target) = self.actors.get_mut(*target_slot as usize) {
                     if let Some(dmg) = outcome.damage
                         && !petrified

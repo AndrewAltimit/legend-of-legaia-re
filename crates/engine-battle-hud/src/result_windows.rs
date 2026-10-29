@@ -3,7 +3,7 @@
 //! the world's rewards, roster and the executable's strings.
 //!
 //! When a window is up is the simulation's fact (the victory sequence's
-//! `window_opened`, `World::battle_spoils_window_up`); what it says - the
+//! `window_opened`, `BattleState::battle_spoils_window_up`); what it says - the
 //! drop and level-up lines, the leader's name, the defeat line - is composed
 //! here, and both hosts draw it through `engine-screens`.
 //!
@@ -76,8 +76,8 @@ pub fn battle_spoils_leader(world: &World) -> String {
 pub fn battle_spoils_banner(world: &World) -> Option<BattleSpoilsBanner> {
     // The gate (results frame through the exit, the aging window, no
     // special battle, no wipe - [`battle_defeat_banner`] answers that) is the
-    // simulation's: `World::battle_spoils_window_up`.
-    if !world.battle_spoils_window_up() {
+    // simulation's: `BattleState::battle_spoils_window_up`.
+    if !world.battle.battle_spoils_window_up() {
         return None;
     }
     let r = world.battle.last_rewards.as_ref()?;

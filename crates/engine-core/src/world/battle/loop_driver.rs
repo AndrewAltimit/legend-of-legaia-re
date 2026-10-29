@@ -296,7 +296,7 @@ impl World {
             // `0x801D0B2C`) - the result windows' raise among them.
             // REF: FUN_801D9BBC
             if let Some(g) = self.battle.result_windows_glide.as_mut() {
-                g.step(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
+                g.step(super::BATTLE_PASS_STEP_PER_TICK);
             }
             self.tick_battle_end_sequence();
             return None;
@@ -321,16 +321,16 @@ impl World {
         // the same flow transition - so arming behind the park would leave the
         // player staring at an instruction for a prompt that never appeared.
         // REF: FUN_801D0748 (states 0x14 / 0x1E)
-        self.arm_round_open_prompt();
+        self.battle.arm_round_open_prompt();
         // The commit log's launch glide runs every battle frame, whichever
         // surface owns the pad (`FUN_801D9BBC` is not gated on the flow).
-        self.step_commit_log_launch();
-        self.step_action_plate_glides();
-        self.step_battle_intro_names();
+        self.battle.step_commit_log_launch();
+        self.battle.step_action_plate_glides();
+        self.battle.step_battle_intro_names();
         // The arts-list driver `FUN_801D3444` runs at the top of every
         // command-flow frame (`0x801D0B24`, ahead of the box park): a list
         // window its entry left on screen keeps sliding out.
-        self.step_arts_list_window();
+        self.battle.step_arts_list_window();
 
         // A message box on screen parks the entire battle - retail's
         // `FUN_801D0748` returns before it reads the flow state when
@@ -345,7 +345,7 @@ impl World {
         }
         // The sparring fight's open: retail's flow sits in `0x0A` / `0x0B`
         // under the enemy names and reaches no round until they have gone
-        // (`World::sparring_open_held`), so nothing below runs either.
+        // (`BattleState::sparring_open_held`), so nothing below runs either.
         // REF: FUN_801D0748 (flow states `0x0A` / `0x0B`)
         if self.battle.sparring_round_pending {
             return None;
@@ -449,7 +449,8 @@ impl World {
         // Returning to Idle here is what lets the next turn's
         // `open_battle_command` raise the turn-start prompt again.
         if self.battle.tutorial.is_some() {
-            self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
+            self.battle
+                .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         }
 
         // `ctx.menu_open` is retail's side-band applier stage `ctx[+0x276]`:
@@ -914,44 +915,6 @@ impl World {
         self.first_living_opponent_of(attacker)
     }
 
-    /// Drive one monster's turn. Runs the action picker
-    /// ([`Self::pick_monster_action`], the port of `FUN_801E9FD4`'s generic
-    /// decision core) and either folds the chosen cast and parks the SM at
-    /// `EndOfAction` (a spell is the whole turn, like the player magic path) or
-    /// arms a physical strike for the action SM to run.
-    /// True if `slot` carries any status that blocks all actions (Sleep /
-    /// Stone / Faint), so it loses its turn. The blocking set is defined
-    /// by [`legaia_engine_battle_vm::status_effects::StatusKind::blocks_actions`]; the
-    /// battle turn loop ([`Self::advance_battle_mode`]) enforces it here.
-    pub(in crate::world) fn actor_blocked_from_acting(&self, slot: u8) -> bool {
-        self.battle
-            .status_effects
-            .statuses(slot)
-            .iter()
-            .any(|s| s.kind.blocks_actions())
-    }
-
-    /// True if `slot` carries any status that blocks magic (Curse /
-    /// Faint). A blocked caster falls back to a physical strike rather
-    /// than casting.
-    pub(in crate::world) fn actor_blocked_from_magic(&self, slot: u8) -> bool {
-        self.battle
-            .status_effects
-            .statuses(slot)
-            .iter()
-            .any(|s| s.kind.blocks_magic())
-    }
-
-    /// True if `slot` is petrified (Stone). A petrified actor can't be damaged
-    /// (the wiki: it is "no longer able to be damaged") and counts as defeated.
-    pub(crate) fn actor_is_petrified(&self, slot: u8) -> bool {
-        self.battle
-            .status_effects
-            .statuses(slot)
-            .iter()
-            .any(|s| s.kind == legaia_engine_battle_vm::status_effects::StatusKind::Stone)
-    }
-
     /// True if `slot` is out of the fight for wipe-detection purposes: either
     /// downed (`liveness == 0`, i.e. KO / Faint) or petrified (Stone counts as
     /// defeated even though the actor's `liveness` stays non-zero). A petrified
@@ -961,7 +924,7 @@ impl World {
         self.actors
             .get(slot as usize)
             .is_none_or(|a| a.battle.liveness == 0)
-            || self.actor_is_petrified(slot)
+            || self.battle.actor_is_petrified(slot)
     }
 
     /// The per-round status-`0x400` waker retail's action-SM state `0xFF`

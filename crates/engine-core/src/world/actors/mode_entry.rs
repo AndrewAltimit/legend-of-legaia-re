@@ -298,7 +298,7 @@ impl World {
         // battle-entry tail does - default 0, and raise it to the tutorial
         // stage only when the disc's one-shot arm flag is set, consuming the
         // flag. `battle_tutorial_pending` is the separate debug force
-        // (`World::prime_battle_tutorial`); both are evaluated so a forced
+        // (`BattleState::prime_battle_tutorial`); both are evaluated so a forced
         // fight still consumes an armed flag rather than leaving it to fire
         // again on the next battle.
         self.battle.tutorial = None;
@@ -335,7 +335,7 @@ impl World {
         self.battle.stage_id = 0;
         let armed_by_disc = self.take_battle_tutorial_arm();
         if self.battle.tutorial_pending || armed_by_disc {
-            self.arm_battle_tutorial();
+            self.battle.arm_battle_tutorial();
         }
         self.apply_battle_entry_flag_tail();
     }

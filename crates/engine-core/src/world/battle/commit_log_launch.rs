@@ -24,48 +24,10 @@
 
 use super::*;
 
-/// What one engine tick adds to a battle-pass counter that retail advances
-/// by the frame step: a tracked widget glide's `elapsed` byte, the intro
-/// names' hold, the timed message's hold.
-///
-/// `FUN_801D9BBC` adds the frame step `*(0x1F800393)` per battle pass
-/// (`lbu v1,0x393(v1)` / `addu v0,a0,v1` at `0x801D9C18..0x801D9C28`), and a
-/// pass spans that many vsyncs, so a glide's `total` counts vsyncs: the
-/// sixteen-frame raise lasts sixteen vsyncs at any cadence. The holds drain
-/// the same way (`ctx[+0x6D6] -= 0x1F800393`, `0x801D0E3C..0x801D0E58`;
-/// the `0x801F6964` hold in `FUN_80046A20`). The world ticks once per vsync
-/// (the action SM's own timers drain by `1` a tick), so the per-tick step is
-/// `1`. Stepping by the frame step on every tick ran each of them at twice
-/// retail's speed under the battle's step of `2`
-/// (`nivora_duel_mid_blazing_slash`: retail's plaque and bar are ten of
-/// sixteen into their raise, the engine's had landed).
-pub(in crate::world) const BATTLE_PASS_STEP_PER_TICK: u8 = 1;
-
 /// Placement record 7 - the active-actor readout bar.
 const READOUT_BAR_ELEMENT: u8 = 7;
 
 impl World {
-    /// Raise a launch in `inbound`'s direction.
-    pub(in crate::world) fn launch_commit_log(&mut self, inbound: bool) {
-        self.battle.commit_log_launch = Some(
-            legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(inbound),
-        );
-    }
-
-    /// One tick of the launch glide ([`BATTLE_PASS_STEP_PER_TICK`]). A
-    /// settled inbound launch retires - the log is back at rest; a settled
-    /// outbound one stays, which keeps the log hidden until the member
-    /// returns to the ring or commits.
-    pub(in crate::world) fn step_commit_log_launch(&mut self) {
-        let step = BATTLE_PASS_STEP_PER_TICK;
-        if let Some(l) = self.battle.commit_log_launch.as_mut() {
-            l.step(step);
-            if l.inbound && l.settled() {
-                self.battle.commit_log_launch = None;
-            }
-        }
-    }
-
     /// Note a HUD element raise for the two action plates that glide in:
     /// `FUN_801D8DE8(0x44 | 0x51, 0)` from the action seed's banner plan
     /// starts that plate's glide from seat A.
@@ -117,16 +79,6 @@ impl World {
         }
     }
 
-    /// A cast module raising the roster panels on mode `0`: PROT 0911's arm
-    /// 9 pass, `FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)` for `i` below
-    /// `ctx[+0] - 1`, then `ctx[+0x18] = 6` (`0x801F7E64..0x801F7ED4`). Each
-    /// record spawns at seat A and glides to seat B
-    /// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]).
-    pub(crate) fn raise_module_roster_panels(&mut self) {
-        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-        self.battle.module_panels_glide = Some(LogLaunch::new(false));
-    }
-
     /// Whether the action seed opens record 7 for its target: an Attack or a
     /// Magic action aimed at a party seat. The Magic arm's item-class branch
     /// (spell class `< 0x14` with id `< 0x65`, `0x801E2EEC..0x801E2EF8`)
@@ -143,65 +95,6 @@ impl World {
         let cat = actor.battle.action_category;
         (cat == ActionCategory::Attack.as_byte() || cat == ActionCategory::Magic.as_byte())
             && actor.battle.active_target < self.party.party_count
-    }
-
-    /// Start the round prompt's open glide: sub-draw step 0 spawning its
-    /// five records at seat A ([`legaia_engine_battle_loop::battle_state::BattleState::round_prompt_glide`]).
-    pub(crate) fn start_round_prompt_glide(&mut self) {
-        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-        self.battle.round_prompt_glide = Some(LogLaunch::new(false));
-    }
-
-    /// Start the ring's open glide: sub-draw step 1 spawning its twelve
-    /// records ([`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]).
-    pub(crate) fn start_ring_open_glide(&mut self) {
-        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
-        self.battle.ring_open_glide = Some(LogLaunch::new(false));
-    }
-
-    /// Land every HUD widget glide in flight on its rest seat, as
-    /// `FUN_801D9BBC` does once a glide's `elapsed` reaches its `total`. The
-    /// retail-compare capture seats this when the retail state's glides had
-    /// all landed; no game path calls it.
-    pub fn land_battle_hud_glides(&mut self) {
-        for g in [
-            self.battle.action_plaque_glide.as_mut(),
-            self.battle.target_plaque_glide.as_mut(),
-            self.battle.readout_bar_glide.as_mut(),
-            self.battle.message_bar_glide.as_mut(),
-            self.battle.spirit_gauge_glide.as_mut(),
-            self.battle.module_panels_glide.as_mut(),
-            self.battle.result_windows_glide.as_mut(),
-            self.battle.round_prompt_glide.as_mut(),
-            self.battle.ring_open_glide.as_mut(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            g.elapsed = g.total;
-        }
-        self.battle.widget_glide_return = 0;
-        self.battle.widget_glide_latch = 0;
-    }
-
-    /// Land the command surfaces' own glides - the round prompt's and the
-    /// ring's - and open the menu SM's gate, leaving the action plates
-    /// where they are. A capture drive calls it every tick it steers: it
-    /// walks the command flow to the phase a retail state froze, and the
-    /// ticks a player spends waiting out each glide are not part of that
-    /// state (the battle camera's prompt orbit runs on them). No game path
-    /// calls it.
-    pub fn release_command_pad_hold(&mut self) {
-        for g in [
-            self.battle.round_prompt_glide.as_mut(),
-            self.battle.ring_open_glide.as_mut(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            g.elapsed = g.total;
-        }
-        self.battle.widget_glide_latch = 0;
     }
 
     /// Seat the HUD widget glide whose retail record lands on `target` at
@@ -254,57 +147,6 @@ impl World {
         self.battle.widget_glide_return = ret;
         true
     }
-
-    /// One tick of the tracked widget glides, on the step the commit log's
-    /// launch takes ([`BATTLE_PASS_STEP_PER_TICK`]; `FUN_801D9BBC` walks
-    /// every tracked widget in one pass), and the pass's return value.
-    ///
-    /// The stepper returns `a3`: seeded from the first live record's flag
-    /// byte `+3` (`0x801D9C00..0x801D9C08`), then rewritten to
-    /// `total - elapsed + 1` by every record still in flight after its step
-    /// (`0x801D9D04..0x801D9D18`). A record that lands this pass leaves it
-    /// alone and retires (`sb zero,0(a1)` at `0x801D9D1C`), so the landing
-    /// pass still returns the flag and the pass after it returns `0`. The
-    /// flag is `ctx[+0x1B]` at spawn (`lbu a2,0xa(s1)` at `0x801D93C0`),
-    /// which the round reset seeds to [`Self::GLIDE_BLOCKING_FLAG`].
-    ///
-    /// PORT: FUN_801D9BBC (the return value)
-    pub(crate) fn step_action_plate_glides(&mut self) {
-        let step = BATTLE_PASS_STEP_PER_TICK;
-        let mut ret = 0u8;
-        for g in [
-            self.battle.action_plaque_glide.as_mut(),
-            self.battle.target_plaque_glide.as_mut(),
-            self.battle.readout_bar_glide.as_mut(),
-            self.battle.message_bar_glide.as_mut(),
-            self.battle.spirit_gauge_glide.as_mut(),
-            self.battle.module_panels_glide.as_mut(),
-            self.battle.round_prompt_glide.as_mut(),
-            self.battle.ring_open_glide.as_mut(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            // A landed record is retired: the stepper skips it.
-            if g.settled() {
-                continue;
-            }
-            if ret == 0 {
-                ret = Self::GLIDE_BLOCKING_FLAG;
-            }
-            g.step(step);
-            if !g.settled() {
-                ret = g.total - g.elapsed + 1;
-            }
-        }
-        self.battle.widget_glide_return = ret;
-    }
-
-    /// The flag byte a glide record carries: `ctx[+0x1B]`, `1` from the
-    /// round reset (`li v0,0x1` / `sb v0,0x1b(a0)` at
-    /// `0x801D88FC..0x801D8900`). The arts entry's own spawns clear it
-    /// around their `FUN_801D8DE8` call (`0x801D3D40`) and restore it.
-    pub(crate) const GLIDE_BLOCKING_FLAG: u8 = 1;
 
     /// A press is parked only while the stepper's return is under this
     /// (`sltiu v0,s0,0x6` at `0x801D0B3C` / `0x801D0B58`): the last passes
@@ -360,36 +202,6 @@ impl World {
             }
         }
         false
-    }
-
-    /// Whether the next battle tick's menu pass will leave without reading
-    /// the pad ([`Self::battle_command_glide_gate`]): a tracked glide is
-    /// still in flight, or a staged battle owes its latch pass. What a pad
-    /// script waits out before it presses on a freshly opened prompt.
-    pub fn battle_command_pad_held(&self) -> bool {
-        // No flow state runs under the battle-entry sweep: the frame driver
-        // calls the battle tick only once its entry counter parks
-        // (`FUN_80046A20`, `0x80046EF8`), so no press reaches a command
-        // surface there.
-        // REF: FUN_80046A20
-        if self.battle_entry_sweeping() {
-            return true;
-        }
-        [
-            self.battle.action_plaque_glide.as_ref(),
-            self.battle.target_plaque_glide.as_ref(),
-            self.battle.readout_bar_glide.as_ref(),
-            self.battle.message_bar_glide.as_ref(),
-            self.battle.spirit_gauge_glide.as_ref(),
-            self.battle.module_panels_glide.as_ref(),
-            self.battle.round_prompt_glide.as_ref(),
-            self.battle.ring_open_glide.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|g| !g.settled())
-            || (self.battle.stage_id != 0
-                && (self.battle.widget_glide_return != 0 || self.battle.widget_glide_latch != 0))
     }
 
     /// This tick's command pad edges.
@@ -459,9 +271,9 @@ impl World {
                 }
         ) && matches!(after, P::Menu { .. });
         if leaves_ring {
-            self.launch_commit_log(false);
+            self.battle.launch_commit_log(false);
         } else if returns_to_ring {
-            self.launch_commit_log(true);
+            self.battle.launch_commit_log(true);
         }
     }
 }

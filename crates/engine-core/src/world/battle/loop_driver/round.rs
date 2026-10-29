@@ -211,7 +211,7 @@ impl World {
         }
         self.battle.round_flow.phase = RoundPhase::Command;
         // `0x14 -> 0x1E`, unconditional.
-        self.set_battle_flow(BattleFlowState::TurnPrompt);
+        self.battle.set_battle_flow(BattleFlowState::TurnPrompt);
         if !self.battle.player_driven {
             // No pad drives the rings: every member strikes at its dispatch
             // (the auto-fight arm `FUN_801EED1C` seeds), so the round is
@@ -244,7 +244,7 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
-        self.sweep_battle_intro_names();
+        self.battle.sweep_battle_intro_names();
         self.battle.commit_log_launch = None;
         // Retail's Begin moves the flow to `0xFE`, whose arm restarts the
         // action SM at `0x00`, and `0x00` opens with `FUN_801F0450`: the pool
@@ -286,7 +286,7 @@ impl World {
             self.minigames.muscle_leg_ran = true;
         }
         self.battle.command = None;
-        self.set_battle_flow(BattleFlowState::Idle);
+        self.battle.set_battle_flow(BattleFlowState::Idle);
         // A round entered without its start (a host or test that opened a
         // command surface on a hand-built battle) has no keys yet; retail
         // never reaches `0xFE` without `0x14`'s seed, so seed here rather
@@ -328,8 +328,9 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
-        self.sweep_battle_intro_names();
-        self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
+        self.battle.sweep_battle_intro_names();
+        self.battle
+            .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at
         // `0x28`, before the summon band); credit the catalog price back so
         // the band's own debit lands on the captured figure.
@@ -401,8 +402,9 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
-        self.sweep_battle_intro_names();
-        self.set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
+        self.battle.sweep_battle_intro_names();
+        self.battle
+            .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         for (slot, at) in self.battle.forced_monster_ground.iter().enumerate() {
             if let (Some([x, z]), Some(a)) = (*at, self.actors.get_mut(slot)) {
                 a.move_state.world_x = x;
@@ -448,7 +450,7 @@ impl World {
         // every other commit leaves it clear (the ring clears it each frame).
         let auto =
             matches!(action, PendingPartyAction::Attack { .. }) && self.battle.auto_combo.pending;
-        self.commit_auto_attack_flag(actor, auto);
+        self.battle.commit_auto_attack_flag(actor, auto);
         if let Some(slot) = self.battle.round_flow.pending.get_mut(usize::from(actor)) {
             *slot = Some(action);
         }
@@ -487,7 +489,7 @@ impl World {
         }
         self.battle_ctx.active_actor = actor;
         self.battle.command = Some(BattleCommandSession::new_commit_confirm(actor, actor));
-        self.set_battle_flow(Flow::CommitBegin);
+        self.battle.set_battle_flow(Flow::CommitBegin);
     }
 
     /// Give `next` its turn in the execution band: age its buffs, then a
@@ -511,8 +513,8 @@ impl World {
         self.battle_ctx.counter_pending = 0;
         // Start-of-turn: age this actor's buffs / debuffs, reverting any
         // that expire this turn.
-        self.tick_battle_buffs_on_turn(next);
-        if self.actor_blocked_from_acting(next) {
+        self.battle.tick_battle_buffs_on_turn(next);
+        if self.battle.actor_blocked_from_acting(next) {
             // Sleep / Stone / Faint: the actor loses its turn. Its
             // initiative key was already consumed by the picker, so the
             // next advance moves on; advancing `active_actor` also moves
@@ -727,49 +729,6 @@ impl World {
             |_| cast_class,
         )
         .map_or(target, to_engine)
-    }
-
-    /// Backstop for a session that was already open when the flow byte moved
-    /// onto the round-open `Begin | Run` prompt.
-    ///
-    /// Retail's `0x14` arm sets `ctx[+0x06] = 0x1E` before any member picks,
-    /// and the ring (`0x28`) is only reached through it - so the prompt is a
-    /// property of the **round**, not of the turn. The port reads that off
-    /// [`legaia_engine_battle_menus::battle_flow::BattleFlowState::TurnPrompt`]: the round boundary
-    /// parks the flow there and battle entry leaves it at `Idle`, and
-    /// [`World::open_battle_command`] now builds the session **already on the
-    /// prompt** in both cases. What is left for this pass is the one ordering
-    /// it cannot cover - a session opened while the flow was elsewhere and
-    /// still open when the boundary parks it here. A session reopened
-    /// mid-round (a submenu backed out of) finds the flow on a window state
-    /// and is left alone, which is where retail's own cancel arms land.
-    ///
-    /// An **ambushed** party never reaches here on its lost round: the
-    /// `ctx[+0x290]` side lockout ([`World::reseed_initiative`]) zeroes every
-    /// party key, so no party turn opens - retail's `0x0B -> 0xFE` jump in the
-    /// port's own seating.
-    ///
-    /// REF: FUN_801D0748 (states 0x14 / 0x1E)
-    pub(super) fn arm_round_open_prompt(&mut self) {
-        use legaia_engine_battle_menus::battle_flow::BattleFlowState;
-        use legaia_engine_battle_menus::battle_input::CommandPhase;
-        if self.battle.flow != BattleFlowState::TurnPrompt {
-            return;
-        }
-        // State `0x14`'s `0x1E` write is the battle tick's, which the frame
-        // driver does not call under the battle-entry sweep (`0x80046EF8`):
-        // the prompt - and its unfold glide - opens once the sweep is over.
-        if self.battle_entry_sweeping() {
-            return;
-        }
-        let no_escape = self.battle.no_escape;
-        if let Some(session) = self.battle.command.as_mut()
-            && matches!(session.phase, CommandPhase::Menu { .. })
-        {
-            session.no_escape = no_escape;
-            session.phase = CommandPhase::RoundPrompt { cursor: 0 };
-            self.start_round_prompt_glide();
-        }
     }
 
     /// Apply one generic physical attack from the active attacker to its

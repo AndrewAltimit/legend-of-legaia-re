@@ -265,7 +265,7 @@ fn a_real_scene_rolls_an_encounter_and_the_battle_resolves() {
             // write leaving `hp != hp_display` pending is absorbing - the
             // SM's `0x51` bar-drain gate parks the battle on it).
             for slot in 0..world.party.party_count {
-                world.set_battle_attack(slot, 30_000);
+                world.battle.set_battle_attack(slot, 30_000);
             }
             for slot in 0..world.party.party_count as usize {
                 let a = &mut world.actors[slot].battle;

@@ -15,7 +15,7 @@ impl World {
         &self,
         caster: u8,
     ) -> Option<legaia_engine_battle::battle_magic::BattleSpellSession> {
-        if self.actor_blocked_from_magic(caster) {
+        if self.battle.actor_blocked_from_magic(caster) {
             return None;
         }
         // `caster` is the battle ordinal; the spell list belongs to the
@@ -272,7 +272,7 @@ impl World {
             // REF: FUN_801F6B70 (state 110, `0x801F7088..0x801F7190`)
             if item_before.is_some()
                 && self.battle.tutorial.is_some()
-                && self.battle_tutorial_commit(
+                && self.battle.battle_tutorial_commit(
                     legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte(),
                 )
             {

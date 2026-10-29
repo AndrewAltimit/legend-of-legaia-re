@@ -153,10 +153,10 @@ fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
         .commit_log_launch
         .expect("the prompt launches the log");
     assert!(!launch.inbound);
-    world.step_commit_log_launch();
+    world.battle.step_commit_log_launch();
     assert_eq!(battle_commit_log(&world)[0].slide_x, -20);
     for _ in 0..15 {
-        world.step_commit_log_launch();
+        world.battle.step_commit_log_launch();
     }
     assert!(
         battle_commit_log(&world).is_empty(),
@@ -171,7 +171,7 @@ fn the_commit_log_launches_off_screen_for_the_attack_prompt_and_back() {
     assert!(launch.inbound);
     assert_eq!(battle_commit_log(&world)[0].slide_x, -0x140);
     for _ in 0..16 {
-        world.step_commit_log_launch();
+        world.battle.step_commit_log_launch();
     }
     assert!(world.battle.commit_log_launch.is_none());
     assert_eq!(battle_commit_log(&world)[0].slide_x, 0);
@@ -198,13 +198,13 @@ fn the_seed_glides_the_readout_bar_in_over_sixteen_ticks() {
     assert_eq!(battle_readout_bar_dy(&world), 42, "spawned at seat A");
     assert_eq!(battle_action_plaque_dy(&world), -38);
     for _ in 0..10 {
-        world.step_action_plate_glides();
+        world.battle.step_action_plate_glides();
     }
     // Ten of sixteen: `234 - 42 * 10 / 16`, the row
     // `nivora_duel_mid_blazing_slash` holds its bar on.
     assert_eq!(battle_readout_bar_dy(&world), 42 - 42 * 10 / 16);
     for _ in 0..6 {
-        world.step_action_plate_glides();
+        world.battle.step_action_plate_glides();
     }
     assert_eq!(battle_readout_bar_dy(&world), 0, "landed");
 
@@ -232,9 +232,9 @@ fn landing_the_hud_glides_puts_every_plate_at_rest() {
     world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
     world.actors[1].battle.active_target = 0;
     world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
-    world.step_action_plate_glides();
+    world.battle.step_action_plate_glides();
     assert_ne!(battle_readout_bar_dy(&world), 0);
-    world.land_battle_hud_glides();
+    world.battle.land_battle_hud_glides();
     assert_eq!(battle_readout_bar_dy(&world), 0);
     assert_eq!(battle_action_plaque_dy(&world), 0);
 }
@@ -254,7 +254,7 @@ fn seating_a_hud_glide_matches_the_widget_by_its_target_seat() {
     world.actors[1].battle.action_category = ActionCategory::Magic.as_byte();
     world.actors[1].battle.active_target = 0;
     world.note_action_plate_raise(HUD_CASTER_BANNER, 0);
-    world.land_battle_hud_glides();
+    world.battle.land_battle_hud_glides();
     assert_eq!(battle_readout_bar_dy(&world), 0);
     assert!(world.seat_battle_hud_glide([16, 192], 6));
     assert_eq!(world.battle.readout_bar_glide.unwrap().elapsed, 6);

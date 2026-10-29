@@ -80,7 +80,7 @@ fn primed_world() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
 
@@ -104,7 +104,7 @@ fn primed_world() -> World {
     w.mode = SceneMode::Field;
     w.toggles.live_gameplay_loop = true;
     w.battle.player_driven = true;
-    w.prime_battle_tutorial(synthetic_script());
+    w.battle.prime_battle_tutorial(synthetic_script());
     w
 }
 
@@ -204,7 +204,7 @@ fn a_primed_sparring_fight_raises_prompts_and_every_box_places_by_the_emitter() 
         "entering battle arms the primed machine"
     );
     assert_eq!(
-        w.battle_tutorial_lesson(),
+        w.battle.battle_tutorial_lesson(),
         Some(TutorialLesson::Attacks),
         "the sparring fight opens on lesson 0"
     );
@@ -212,14 +212,14 @@ fn a_primed_sparring_fight_raises_prompts_and_every_box_places_by_the_emitter() 
     // Let the round prompt open; the turn-start hook (state 30) fires with it.
     let mut boxes = 0;
     for _ in 0..0x200 {
-        if w.battle_tutorial_box_up() {
+        if w.battle.battle_tutorial_box_up() {
             break;
         }
         w.set_pad(0);
         let _ = w.tick();
     }
     assert!(
-        w.battle_tutorial_box_up(),
+        w.battle.battle_tutorial_box_up(),
         "the turn-start hook never raised a prompt"
     );
     assert_eq!(
@@ -237,7 +237,7 @@ fn a_primed_sparring_fight_raises_prompts_and_every_box_places_by_the_emitter() 
         let _ = w.tick();
         w.set_pad(0);
         let _ = w.tick();
-        if w.battle_tutorial_box_up() {
+        if w.battle.battle_tutorial_box_up() {
             boxes += drain_boxes(&mut w);
         }
         if w.battle.tutorial.is_none() || w.mode != SceneMode::Battle {
@@ -257,13 +257,13 @@ fn a_box_on_screen_parks_the_pad_driven_battle_loop() {
     let mut w = primed_world();
     walk_into_battle(&mut w);
     for _ in 0..0x200 {
-        if w.battle_tutorial_box_up() {
+        if w.battle.battle_tutorial_box_up() {
             break;
         }
         w.set_pad(0);
         let _ = w.tick();
     }
-    assert!(w.battle_tutorial_box_up(), "no prompt raised");
+    assert!(w.battle.battle_tutorial_box_up(), "no prompt raised");
 
     // Retail's `ctx[+0x6B2]` guard: `FUN_801D0748` returns before it looks at
     // the flow state at all while a box is up, so nothing downstream may move.
@@ -279,7 +279,7 @@ fn a_box_on_screen_parks_the_pad_driven_battle_loop() {
     );
     assert_eq!(w.battle.flow, flow, "the command flow advanced under a box");
     assert!(
-        w.battle_tutorial_box_up(),
+        w.battle.battle_tutorial_box_up(),
         "a waiting box must not time out"
     );
 }

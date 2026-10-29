@@ -100,10 +100,10 @@ pub fn battle_hud_phase(world: &legaia_engine_core::world::World) -> BattleHudPh
     }
     // Under the battle-entry sweep the battle tick has not run, so no menu
     // SM step has spawned a handle (`FUN_80046A20`, `0x80046EF8`).
-    if world.battle_entry_sweeping() {
+    if world.battle.battle_entry_sweeping() {
         return BattleHudPhase::Idle;
     }
-    if world.arts_input_active()
+    if world.battle.arts_input_active()
         || world.battle.arts_menu.is_some()
         || world.battle.spell_menu.is_some()
         || world.battle.item_menu.is_some()
@@ -196,7 +196,7 @@ pub fn battle_command_surface(world: &legaia_engine_core::world::World) -> Optio
             DomeMenu::Magic => CommandSurface::SpellBrowse,
         });
     }
-    if world.arts_input_active() {
+    if world.battle.arts_input_active() {
         return Some(CommandSurface::ArtsInput);
     }
     if world.battle.arts_menu.is_some() {
@@ -244,7 +244,7 @@ pub(super) fn command_entry_actor(world: &legaia_engine_core::world::World) -> O
     if world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome {
         return world.minigames.muscle_dome.as_ref().map(|_| 0);
     }
-    if let Some(slot) = world.arts_input_actor() {
+    if let Some(slot) = world.battle.arts_input_actor() {
         return Some(slot);
     }
     if let Some(m) = world.battle.arts_menu.as_ref() {

@@ -42,7 +42,7 @@ fn world_before(formation_monster: u16) -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(

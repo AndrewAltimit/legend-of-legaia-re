@@ -803,7 +803,7 @@ impl World {
                     let step = arms::glare_divide_blind_tick(&mut ctx, &mut seat, &mut ext);
                     self.write_cast_view(first, &seat);
                     self.write_cast_arm_ext_state(first, &ext);
-                    if shield_arm && !self.mystic_shield_up() {
+                    if shield_arm && !self.battle.mystic_shield_up() {
                         // `_DAT_8007BD84 = FUN_80021B04(..)` - the shield's
                         // sphere, seated with its texture scroller.
                         self.raise_mystic_shield();

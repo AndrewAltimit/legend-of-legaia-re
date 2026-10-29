@@ -237,7 +237,7 @@ impl World {
         // The flight has already drawn the move's lists on its way; every
         // per-target fold finds them held, not just the first.
         self.casting.homing_holds_lists = Some(caster);
-        let stoned = self.actor_is_petrified(target);
+        let stoned = self.battle.actor_is_petrified(target);
         self.fold_cast(one);
         // The hit arm turns its victim to face the caster unless it stands
         // Stoned (`+0x16E & 4`, `0x801E19FC..0x801E1A08`):

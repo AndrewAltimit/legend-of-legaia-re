@@ -160,7 +160,7 @@ fn battle_party_wipe_signals_end_via_world() {
     // gate - before `finish_battle` folds the MAIN INIT game-over
     // (`world::battle::victory`).
     assert!(
-        world.battle_end_sequence_active(),
+        world.battle.battle_end_sequence_active(),
         "the annihilated arm is armed on the signal frame"
     );
     assert!(!world.game_over, "nothing resolves before the exit gate");

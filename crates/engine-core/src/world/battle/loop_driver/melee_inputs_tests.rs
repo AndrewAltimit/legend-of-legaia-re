@@ -17,8 +17,8 @@ fn duel() -> World {
         w.actors[i].battle.hp = 5000;
         w.actors[i].battle.max_hp = 5000;
     }
-    w.set_battle_attack(0, 200);
-    w.set_battle_attack(1, 200);
+    w.battle.set_battle_attack(0, 200);
+    w.battle.set_battle_attack(1, 200);
     w.actors[0].battle.active_target = 1;
     w.actors[1].battle.active_target = 0;
     w.tables
@@ -97,7 +97,7 @@ fn war_soul_lifts_an_art_hit_to_fourteen_tenths() {
         let mut w = duel();
         w.load_party(legaia_save::Party::zeroed(1));
         w.party.party_count = 1;
-        w.set_battle_attack(0, 200);
+        w.battle.set_battle_attack(0, 200);
         let rec = &mut w.party.roster.members[0];
         let mut bits = rec.ability_bits();
         if war_soul {
@@ -124,7 +124,7 @@ fn venom_and_toxic_scale_both_sides_of_a_swing() {
 
     let defended = |status: u16| {
         let mut w = duel();
-        w.set_battle_defense(1, 150);
+        w.battle.set_battle_defense(1, 150);
         w.actors[1].battle.field_flags |= status;
         swing(w, 0)
     };
@@ -140,7 +140,7 @@ fn safe_escape_triples_a_fleeing_members_guard() {
         w.load_party(legaia_save::Party::zeroed(1));
         w.party.party_count = 1;
         w.actors[0].battle.hp = 5000;
-        w.set_battle_defense(0, 30);
+        w.battle.set_battle_defense(0, 30);
         let rec = &mut w.party.roster.members[0];
         let mut bits = rec.ability_bits();
         if safe_escape {
@@ -173,7 +173,7 @@ fn monster_swing_on_member(element: u8, bits_f4: u32, bits_f8: u32) -> u32 {
     w.load_party(legaia_save::Party::zeroed(1));
     w.party.party_count = 1;
     w.actors[0].battle.hp = 5000;
-    w.set_battle_defense(0, 30);
+    w.battle.set_battle_defense(0, 30);
     w.actors[1].battle_element = Some(element);
     let rec = &mut w.party.roster.members[0];
     let mut bits = rec.ability_bits();
@@ -228,8 +228,8 @@ fn the_guard_ladder_runs_before_the_damage_cap() {
         w.load_party(legaia_save::Party::zeroed(1));
         w.party.party_count = 1;
         w.actors[0].battle.hp = 5000;
-        w.set_battle_defense(0, 0);
-        w.set_battle_attack(1, 60000);
+        w.battle.set_battle_defense(0, 0);
+        w.battle.set_battle_attack(1, 60000);
         w.actors[1].battle_element = Some(0);
         let rec = &mut w.party.roster.members[0];
         let mut bits = rec.ability_bits();

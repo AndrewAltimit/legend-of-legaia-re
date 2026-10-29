@@ -114,7 +114,7 @@ pub struct BattleState {
     /// load?" probe - the compare the Seru side-effect stager gates on
     /// ([`legaia_engine_battle_vm::seru_side_effect::StatCompare`],
     /// `FUN_801F3D3C`). Seeded working-equal by
-    /// `World::sync_battle_stat_bases` at battle entry, so a
+    /// [`BattleState::sync_battle_stat_bases`] at battle entry, so a
     /// slot that never took a debuff answers "unchanged".
     ///
     /// AGL's pair is not here: it is the actor's own `agl` / `agl_base`
@@ -396,7 +396,7 @@ pub struct BattleState {
     /// saved chains / picks a target (the action SM and [`crate::battle_state::BattleState::command`]
     /// are parked meanwhile); `None` otherwise. The World owns it because each
     /// row's power profile is resolved from [`legaia_engine_menus::party_state::PartyState::saved_chains`] +
-    /// `crate::world::DiscTables::art_records` by `Self::build_battle_arts_rows`. Hosts read it
+    /// `crate::world::DiscTables::art_records` by `World::build_battle_arts_rows`. Hosts read it
     /// to draw the arts overlay.
     pub arts_menu: Option<legaia_engine_battle::battle_arts::BattleArtsSession>,
     /// Active retail-model **Arts command input** - the per-press
@@ -549,7 +549,7 @@ pub struct BattleState {
     /// `(16, 234)` -> `(16, 192)`) and `0x52` (the AP plate, `(328, 172)` ->
     /// `(208, 172)`) with mode `0` on the same pass (`jal 0x801D8DE8` at
     /// `0x801E2FD4` / `0x801E2FE0`), so both walk one sixteen-vsync step
-    /// together (`World::spirit_gauge_glide_offsets`).
+    /// together ([`BattleState::spirit_gauge_glide_offsets`]).
     pub spirit_gauge_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The roster panels' raise glide when a cast module raises them
     /// itself: PROT 0911 (Orb) arm 9's pass calls `FUN_801D8DE8(6, 0)`, then
@@ -645,7 +645,7 @@ pub struct BattleState {
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
     /// The sparring fight's first round start is waiting on the battle open
-    /// (`World::sparring_open_held`): the side-band has not
+    /// ([`BattleState::sparring_open_held`]): the side-band has not
     /// yet seen the flow at `0x14`, so its caption is not up. Reset at
     /// battle entry.
     pub sparring_round_pending: bool,
@@ -783,7 +783,7 @@ pub struct BattleState {
     /// The sparring-tutorial prompt machine, armed only for the Tetsu
     /// tutorial fight (battle-stage id
     /// [`legaia_engine_battle::battle_tutorial::TUTORIAL_STAGE_ID`]) via
-    /// `World::arm_battle_tutorial`. `None` in every other battle - which is
+    /// [`BattleState::arm_battle_tutorial`]. `None` in every other battle - which is
     /// every battle but one, matching retail's stage-overlay dispatch.
     pub tutorial: Option<legaia_engine_battle::battle_tutorial::BattleTutorial>,
     /// Prompt text for [`crate::battle_state::BattleState::tutorial`], read off the user's own disc
@@ -810,7 +810,7 @@ pub struct BattleState {
     /// (`v0_1_battle_command_submenu`: the `[Begin]` arm's prompt over the
     /// category ring). It holds nothing: the battle loop parks on the queue
     /// alone. Hosts draw it with the queue's front group
-    /// (`World::battle_tutorial_boxes_on_screen`).
+    /// ([`BattleState::battle_tutorial_boxes_on_screen`]).
     pub tutorial_standing: Option<legaia_engine_battle_menus::battle_flow::ActiveTutorialBox>,
     /// The battle screen's chip / banner labels, read off the user's own disc
     /// ([`legaia_ui_formats::battle_ui_strings`]). Empty when the host had no disc
@@ -829,7 +829,7 @@ pub struct BattleState {
     pub spell_cam: Option<legaia_engine_battle_vm::battle_cam_script::SpellCamInputs>,
     /// The next `World::enter_battle` is the sparring fight and should arm
     /// [`crate::battle_state::BattleState::tutorial`]. Set by
-    /// `World::prime_battle_tutorial`; the engine's stand-in for retail's
+    /// [`BattleState::prime_battle_tutorial`]; the engine's stand-in for retail's
     /// per-formation battle-stage id.
     pub tutorial_pending: bool,
     /// The field party composition a battle entry set aside, restored when
@@ -909,12 +909,12 @@ pub struct BattleState {
     /// Frames left on the post-battle spoils panel. `World::finish_battle`
     /// arms it on a monster wipe (`World::SPOILS_BANNER_FRAMES`) and
     /// `World::tick` counts it down; the panel is up
-    /// (`World::battle_spoils_window_up`) while it is non-zero. Without this the
+    /// ([`BattleState::battle_spoils_window_up`]) while it is non-zero. Without this the
     /// XP / gold / drops in [`crate::battle_state::BattleState::last_rewards`] were applied with no
     /// on-screen acknowledgement at all.
     pub spoils_frames: u16,
     /// Scene mode to return to when the current battle finishes. Captured at
-    /// the transition into [`legaia_engine_mode::mode::SceneMode::Battle`]; `Self::finish_battle`
+    /// the transition into [`legaia_engine_mode::mode::SceneMode::Battle`]; `World::finish_battle`
     /// restores it (an overworld encounter returns to [`legaia_engine_mode::mode::SceneMode::WorldMap`],
     /// a field encounter to [`legaia_engine_mode::mode::SceneMode::Field`]). Defaults to
     /// [`legaia_engine_mode::mode::SceneMode::Field`].
@@ -1382,4 +1382,44 @@ pub struct BattleRewards {
     /// ([`legaia_engine_battle_vm::battle_formulas::victory_drop_roll`]), and none
     /// when the bag already holds 99 of it.
     pub drops: Vec<u8>,
+}
+
+impl BattleState {
+    /// The battle-end presentation is up: the scene is still in
+    /// [`SceneMode::Battle`] but the action SM no longer runs.
+    pub fn battle_end_sequence_active(&self) -> bool {
+        self.victory.is_some()
+    }
+
+    /// The result windows are on screen. Hosts hide the in-fight party
+    /// readout behind this (retail's results frame draws neither the card
+    /// nor the pill - `noa_levelup_banner`).
+    pub fn battle_result_screen_active(&self) -> bool {
+        self.victory.is_some_and(|v| v.results_shown())
+    }
+
+    /// Whether the post-battle spoils panel is up this frame: from the
+    /// results frame through the exit while the end-of-battle sequence runs
+    /// (retail's windows come down with the battle), and for the aging window
+    /// a direct `finish_battle` still arms - unless the battle opened no
+    /// result window or ended in a wipe, and only with rewards to show.
+    ///
+    /// A special battle opens no result window (`FUN_8004E568` skips
+    /// `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`), and
+    /// a wipe opens the loss window instead - `last_rewards` is never
+    /// cleared, so without the cause test a wipe after a win re-showed that
+    /// win's spoils over the loss. The panel's content is composed above the
+    /// simulation (`legaia_engine_battle_hud::battle_spoils_banner`).
+    pub fn battle_spoils_window_up(&self) -> bool {
+        if self.spoils_frames == 0 && !self.battle_result_screen_active() {
+            return false;
+        }
+        if self
+            .victory
+            .is_some_and(|v| !v.window_opened || v.cause != BattleEndCause::MonsterWipe)
+        {
+            return false;
+        }
+        self.last_rewards.is_some()
+    }
 }

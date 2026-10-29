@@ -101,8 +101,8 @@ fn fight(entry: &[u8], id: u16, tally: &mut Tally) -> Result<(), String> {
         w.actors[i].battle.hp = 9999;
         w.actors[i].battle.max_hp = 9999;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 1);
-        w.set_battle_defense(i as u8, 999);
+        w.battle.set_battle_attack(i as u8, 1);
+        w.battle.set_battle_defense(i as u8, 999);
     }
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(1, vec![FormationSlot::new(id)]));

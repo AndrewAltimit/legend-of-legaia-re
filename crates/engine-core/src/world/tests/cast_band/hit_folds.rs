@@ -15,7 +15,7 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
     let caster = 3u8;
     world.battle_ctx.active_actor = caster;
     world.actors[caster as usize].battle_monster_id = Some(180);
-    world.set_battle_attack(caster, 300);
+    world.battle.set_battle_attack(caster, 300);
     for i in 0..3 {
         world.actors[i].battle.hp = 5000;
         world.actors[i].battle.max_hp = 5000;
@@ -110,7 +110,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
             world.battle_ctx.active_actor = CASTER;
             world.actors[CASTER as usize].battle_monster_id = Some(180);
             world.actors[CASTER as usize].battle.active_target = 0;
-            world.set_battle_attack(CASTER, 300);
+            world.battle.set_battle_attack(CASTER, 300);
             for i in 0..8 {
                 world.actors[i].battle.hp = 9000;
                 world.actors[i].battle.max_hp = 9000;

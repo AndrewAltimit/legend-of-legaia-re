@@ -77,7 +77,7 @@ fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.max_hp = 400;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 80);
+    world.battle.set_battle_attack(0, 80);
 
     // Register every row's formation def (built from THESE MAN bytes), then force
     // the target row so the next field step rolls it deterministically.

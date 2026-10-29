@@ -59,7 +59,7 @@ fn element_affinity_scales_monster_special_attack_damage() {
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
         world.battle.accuracy[1] = 25;
-        world.set_battle_magic(1, 40);
+        world.battle.set_battle_magic(1, 40);
         world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
         // vanilla monster 5 has the default element 7 (neutral); the party
         // member at slot 0 is char id 1 -> element 3 in the synthetic table.
@@ -170,7 +170,7 @@ fn element_affinity_scales_player_summon_cast_by_creature_element() {
         world.actors[0].battle.hp = 400;
         world.actors[0].battle.mp = 40;
         world.actors[0].battle.liveness = 1;
-        world.set_battle_magic(0, 40);
+        world.battle.set_battle_magic(0, 40);
         world.battle.accuracy[0] = 200;
         // Target = enemy slot 1, identified to the catalog by monster id.
         world.actors[1].battle.max_hp = 4000;
@@ -251,7 +251,7 @@ fn player_summon_cast_matches_the_summon_kernel_composition() {
         world.actors[0].battle.hp = 400;
         world.actors[0].battle.mp = 40;
         world.actors[0].battle.liveness = 1;
-        world.set_battle_magic(0, 40);
+        world.battle.set_battle_magic(0, 40);
         world.battle.accuracy[0] = 25;
         world.actors[1].battle.max_hp = 4000;
         world.actors[1].battle.hp = 4000;

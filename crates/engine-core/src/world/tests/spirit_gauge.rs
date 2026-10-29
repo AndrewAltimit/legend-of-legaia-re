@@ -73,7 +73,7 @@ fn the_spirit_bar_and_plate_glide_in_on_their_raise() {
     for _ in 0..4000 {
         world.tick();
         if world.spirit_gauge_view().is_some() {
-            first = Some(world.spirit_gauge_glide_offsets());
+            first = Some(world.battle.spirit_gauge_glide_offsets());
             break;
         }
     }
@@ -86,10 +86,14 @@ fn the_spirit_bar_and_plate_glide_in_on_their_raise() {
     for _ in 0..16 {
         world.tick();
     }
-    assert_eq!(world.spirit_gauge_glide_offsets(), (0, 0), "both landed");
+    assert_eq!(
+        world.battle.spirit_gauge_glide_offsets(),
+        (0, 0),
+        "both landed"
+    );
     assert!(world.seat_battle_hud_glide([16, 192], 10));
     assert!(world.seat_battle_hud_glide([208, 172], 10));
-    assert_eq!(world.spirit_gauge_glide_offsets(), (16, 45));
-    world.land_battle_hud_glides();
-    assert_eq!(world.spirit_gauge_glide_offsets(), (0, 0));
+    assert_eq!(world.battle.spirit_gauge_glide_offsets(), (16, 45));
+    world.battle.land_battle_hud_glides();
+    assert_eq!(world.battle.spirit_gauge_glide_offsets(), (0, 0));
 }

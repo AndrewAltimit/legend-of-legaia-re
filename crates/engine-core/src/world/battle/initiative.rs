@@ -397,7 +397,7 @@ impl World {
             .ui_strings
             .get(banner.disc_label())
             .map(str::to_string);
-        let group = self.next_battle_tutorial_group();
+        let group = self.battle.next_battle_tutorial_group();
         self.battle.tutorial_boxes.push_back(
             legaia_engine_battle_menus::battle_flow::ActiveTutorialBox {
                 text: banner.line(&leader, template.as_deref()),

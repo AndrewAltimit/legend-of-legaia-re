@@ -60,7 +60,7 @@ fn spawn_enemy0_for_formation(decoded_man: &[u8], formation_id: u16) -> Option<u
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.max_hp = 400;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 80);
+    world.battle.set_battle_attack(0, 80);
     world.install_man_encounter(table, defs);
     world.install_man_formation(formation_id)?;
     world.on_field_step();

@@ -2,6 +2,8 @@
 //! and the queues it builds (`FUN_801F0450`'s pool arm; the arm itself is
 //! `engine-core`'s `World::begin_round_execution`).
 
+use crate::battle_state::BattleState;
+
 /// Per-roster-character inputs the pool arm and its tail read off the disc.
 #[derive(Debug, Clone, Default)]
 pub struct AutoComboInputs {
@@ -33,4 +35,56 @@ pub struct AutoComboState {
     /// The queue the round-start pool arm built per seat, played by the
     /// seat's dispatch.
     pub queues: [Option<Vec<u8>>; 3],
+}
+
+impl BattleState {
+    /// Record the Auto / Command pick a command-session frame implies, from
+    /// the phase before and after it.
+    pub fn note_auto_attack_pick(
+        &mut self,
+        before: &legaia_engine_battle_menus::battle_input::CommandPhase,
+        after: &legaia_engine_battle_menus::battle_input::CommandPhase,
+    ) {
+        use legaia_engine_battle_menus::battle_input::{BattleCommand, CommandPhase as P};
+        let attack_target = matches!(
+            after,
+            P::Targeting {
+                command: BattleCommand::Attack,
+                ..
+            } | P::Confirmed {
+                command: BattleCommand::Attack,
+                ..
+            }
+        );
+        match before {
+            // The prompt's `Auto` chip (`0x801D17D0`) or `Command`
+            // (`0x801D1760`).
+            P::AttackMode { .. } if attack_target => self.auto_combo.pending = true,
+            P::AttackMode { .. } if matches!(after, P::OpenArtsMenu) => {
+                self.auto_combo.pending = false
+            }
+            // The ring's Attack arm under the `Automatic` / `Command`
+            // options skips the prompt; the option word is the flag
+            // (`0x801D164C`).
+            P::Menu { .. } if attack_target => self.auto_combo.pending = true,
+            P::Menu { .. } => self.auto_combo.pending = false,
+            _ => {}
+        }
+    }
+
+    /// Commit the pending pick as `actor`'s flag - the Attack confirm.
+    pub fn commit_auto_attack_flag(&mut self, actor: u8, auto: bool) {
+        if let Some(f) = self.auto_combo.flags.get_mut(usize::from(actor)) {
+            *f = auto;
+        }
+        self.auto_combo.pending = false;
+    }
+
+    /// The parked Auto queue for `actor`, if the round's start built one.
+    pub fn take_auto_attack_queue(&mut self, actor: u8) -> Option<Vec<u8>> {
+        self.auto_combo
+            .queues
+            .get_mut(usize::from(actor))
+            .and_then(Option::take)
+    }
 }

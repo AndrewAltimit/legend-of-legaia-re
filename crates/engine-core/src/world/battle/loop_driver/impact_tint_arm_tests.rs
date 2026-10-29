@@ -28,8 +28,8 @@ fn duel_with_attacker_clip(attacker: usize, class: u8) -> World {
         w.actors[i].battle.hp = 500;
         w.actors[i].battle.max_hp = 500;
     }
-    w.set_battle_attack(0, 80);
-    w.set_battle_attack(1, 80);
+    w.battle.set_battle_attack(0, 80);
+    w.battle.set_battle_attack(1, 80);
     w.actors[0].battle.active_target = 1;
     w.actors[1].battle.active_target = 0;
     w.actors[attacker].battle_animation = MonsterAnimPlayer::new(&clip(class));

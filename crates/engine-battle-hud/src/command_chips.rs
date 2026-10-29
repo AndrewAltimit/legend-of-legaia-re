@@ -49,13 +49,13 @@ pub fn battle_command_chips(
         return None;
     }
     // No prompt under the battle-entry sweep ([`crate::battle_hud_phase`]).
-    if world.battle_entry_sweeping() {
+    if world.battle.battle_entry_sweeping() {
         return None;
     }
     if world.dialog.current.is_some() || world.dialog.inline.is_some() {
         return None;
     }
-    if world.arts_input_active()
+    if world.battle.arts_input_active()
         || world.battle.arts_menu.is_some()
         || world.battle.spell_menu.is_some()
         || world.battle.item_menu.is_some()

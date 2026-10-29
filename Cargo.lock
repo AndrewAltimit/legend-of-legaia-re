@@ -1914,6 +1914,7 @@ dependencies = [
 name = "legaia-engine-battle-loop"
 version = "0.1.0"
 dependencies = [
+ "legaia-art",
  "legaia-engine-battle",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",

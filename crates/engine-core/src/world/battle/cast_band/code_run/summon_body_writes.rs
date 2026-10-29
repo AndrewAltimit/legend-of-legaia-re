@@ -481,7 +481,7 @@ impl World {
                 self.battle.combo_cluster_held = true;
                 self.casting.module_mule_front += t / 2;
                 let front = self.casting.module_mule_front;
-                let shield = self.mystic_shield_up();
+                let shield = self.battle.mystic_shield_up();
                 for &(_, e) in &slots {
                     self.mule_wave_hit(e, front, shield, caster, spell_id);
                     let Some(a) = self.actors.get_mut(e) else {

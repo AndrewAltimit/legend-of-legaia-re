@@ -25,7 +25,7 @@ fn prompt_world() -> World {
         world.actors[i].battle.max_hp = 100;
     }
     world.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
-    world.start_round_prompt_glide();
+    world.battle.start_round_prompt_glide();
     world
 }
 
@@ -53,11 +53,15 @@ fn the_stepper_return_counts_down_then_reports_the_landing_pass() {
     let mut world = prompt_world();
     let mut seen = Vec::new();
     for _ in 0..18 {
-        world.step_action_plate_glides();
+        world.battle.step_action_plate_glides();
         seen.push(world.battle.widget_glide_return);
     }
     let mut want: Vec<u8> = (2..=16).rev().collect();
-    want.extend([World::GLIDE_BLOCKING_FLAG, 0, 0]);
+    want.extend([
+        legaia_engine_battle_loop::battle_state::BattleState::GLIDE_BLOCKING_FLAG,
+        0,
+        0,
+    ]);
     assert_eq!(seen, want);
 }
 
@@ -134,14 +138,14 @@ fn a_staged_battle_spends_one_more_pass() {
         let mut world = prompt_world();
         world.battle.stage_id = stage_id;
         for _ in 0..16 {
-            world.step_action_plate_glides();
+            world.battle.step_action_plate_glides();
             assert!(world.battle_command_glide_gate());
         }
         assert_eq!(elapsed(&world), 16);
-        world.step_action_plate_glides();
+        world.battle.step_action_plate_glides();
         assert_eq!(world.battle_command_glide_gate(), extra, "stage {stage_id}");
         assert_eq!(world.battle.widget_glide_latch, 0);
-        world.step_action_plate_glides();
+        world.battle.step_action_plate_glides();
         assert!(!world.battle_command_glide_gate());
     }
 }
@@ -157,7 +161,7 @@ fn the_ring_reads_no_pad_until_its_arms_land() {
     tick(&mut world, PadButton::Left.mask());
     assert!(!on_prompt(&world), "Begin taken");
     assert!(world.battle.ring_open_glide.is_some_and(|g| !g.settled()));
-    assert!(world.battle_command_pad_held());
+    assert!(world.battle.battle_command_pad_held());
     // Down is the ring's Spirit arm, a direct commit - once the ring is
     // live. Under the glide it is dropped.
     tick(&mut world, 0);

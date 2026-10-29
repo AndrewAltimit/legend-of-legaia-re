@@ -106,7 +106,7 @@ impl SceneHost {
                 legaia_engine_battle::battle_tutorial::OVERLAY_967_PROT_INDEX
             );
         }
-        self.world.set_battle_tutorial_script(script);
+        self.world.battle.set_battle_tutorial_script(script);
     }
 
     /// Install the name-entry screen's prompts from the field overlay's

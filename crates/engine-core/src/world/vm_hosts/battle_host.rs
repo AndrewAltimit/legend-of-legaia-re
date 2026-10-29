@@ -763,7 +763,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         {
             attack = attack.saturating_add(fold);
         }
-        let defense = self.world.resolve_battle_defense(info.target_slot, &info);
+        let defense = self
+            .world
+            .battle
+            .resolve_battle_defense(info.target_slot, &info);
         let outcome = legaia_engine_battle::art_strike::apply_art_strike(attack, defense, &info);
         // Seed the target's HP-bar ramp the way every other damage entry
         // point does (`World::apply_battle_hp_delta`). The HP itself is
@@ -774,7 +777,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         // hit and owes the bar nothing, matching the fold's own guard.
         if let Some(dmg) = outcome.damage
             && dmg > 0
-            && !self.world.actor_is_petrified(info.target_slot)
+            && !self.world.battle.actor_is_petrified(info.target_slot)
         {
             let petrified_free = i32::from(dmg);
             if let Some(t) = self.world.actors.get_mut(info.target_slot as usize) {

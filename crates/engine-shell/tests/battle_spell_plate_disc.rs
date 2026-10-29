@@ -43,7 +43,7 @@ fn disc_scus() -> Option<Vec<u8>> {
 
 fn press(w: &mut World, b: PadButton) {
     for _ in 0..64 {
-        if !w.battle_command_pad_held() {
+        if !w.battle.battle_command_pad_held() {
             break;
         }
         w.set_pad(0);

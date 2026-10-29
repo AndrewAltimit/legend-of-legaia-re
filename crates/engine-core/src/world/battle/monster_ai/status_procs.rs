@@ -407,7 +407,7 @@ impl World {
         if slot < self.party.party_count {
             return;
         }
-        if self.actor_is_confused(slot) {
+        if self.battle.actor_is_confused(slot) {
             self.resolve_monster_target(slot);
         }
     }
@@ -428,7 +428,7 @@ impl World {
         if caster < self.party.party_count {
             return;
         }
-        if !self.actor_is_confused(caster) || targets.is_empty() {
+        if !self.battle.actor_is_confused(caster) || targets.is_empty() {
             return;
         }
         // A self-only cast (e.g. a self-buff) isn't a side-flip target.
@@ -455,15 +455,6 @@ impl World {
         } else {
             *targets = living;
         }
-    }
-
-    /// True if `slot` carries the Confuse status.
-    pub(in crate::world) fn actor_is_confused(&self, slot: u8) -> bool {
-        self.battle
-            .status_effects
-            .statuses(slot)
-            .iter()
-            .any(|s| s.kind == legaia_engine_battle_vm::status_effects::StatusKind::Confuse)
     }
 }
 

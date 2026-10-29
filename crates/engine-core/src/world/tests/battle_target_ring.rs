@@ -44,9 +44,9 @@ fn seated_battle() -> World {
         w.actors[i].battle.hp = 400;
         w.actors[i].battle.liveness = 1;
     }
-    w.set_battle_attack(0, 40);
+    w.battle.set_battle_attack(0, 40);
     for m in 1..5u8 {
-        w.set_battle_defense(m, 10);
+        w.battle.set_battle_defense(m, 10);
     }
     w
 }

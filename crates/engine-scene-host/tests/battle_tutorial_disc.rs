@@ -198,7 +198,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     let mut world = World::new();
     world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
-    world.prime_battle_tutorial(script);
+    world.battle.prime_battle_tutorial(script);
     world.enter_battle(3, 2);
     for i in 0..5 {
         world.actors[i].battle.hp = 100;
@@ -210,13 +210,13 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     // turn and the tutorial puts its lesson-0 intro up.
     for _ in 0..600 {
         world.tick();
-        if world.battle_tutorial_box_up() {
+        if world.battle.battle_tutorial_box_up() {
             break;
         }
     }
     assert_eq!(world.battle.flow, BattleFlowState::TurnPrompt);
     assert_eq!(
-        world.battle_tutorial_box().map(|b| b.text.as_str()),
+        world.battle.battle_tutorial_box().map(|b| b.text.as_str()),
         Some(intro.as_str()),
         "the lesson-0 intro opens the fight"
     );
@@ -240,16 +240,16 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     }
     assert_eq!(world.battle.flow, BattleFlowState::CategoryMenu);
     assert_eq!(
-        world.battle_tutorial_box().map(|b| b.text.as_str()),
+        world.battle.battle_tutorial_box().map(|b| b.text.as_str()),
         Some(pick_attack.as_str()),
         "lesson 0 names [Attack] next"
     );
 
     // Running is refused for the whole sparring fight. The ring `Begin`
     // opened is still gliding in and the menu SM dispatches nothing under
-    // it (`World::battle_command_pad_held`): let it land first.
+    // it (`BattleState::battle_command_pad_held`): let it land first.
     for _ in 0..64 {
-        if !world.battle_command_pad_held() {
+        if !world.battle.battle_command_pad_held() {
             break;
         }
         world.input.set_pad(0);
@@ -266,7 +266,7 @@ fn a_live_battle_shows_the_real_prompts_in_order() {
     );
     world.tick();
     assert_eq!(
-        world.battle_tutorial_box().map(|b| b.text.as_str()),
+        world.battle.battle_tutorial_box().map(|b| b.text.as_str()),
         Some(no_running.as_str()),
         "Run is rejected"
     );

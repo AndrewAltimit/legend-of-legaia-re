@@ -627,7 +627,7 @@ impl World {
         if attacker < self.party.party_count {
             self.battle.party_melee_pushes = self.battle.party_melee_pushes.wrapping_add(1);
         }
-        let defense = self.physical_defense_of(target, power_byte);
+        let defense = self.battle.physical_defense_of(target, power_byte);
         // Spirit guard stance on the defender (a party slot that picked
         // Spirit and hasn't started its next turn).
         let target_guarding = self.battle.guarding.get(target_i).copied().unwrap_or(false)
@@ -701,7 +701,7 @@ impl World {
                     attacker_element,
                     defender_resist,
                     defender_guarding: false,
-                    enemy_defender_halve: self.mystic_shield_up(),
+                    enemy_defender_halve: self.battle.mystic_shield_up(),
                     bypass_party_resist: false,
                     summon_power_pct: 100,
                     floor_rand,
@@ -718,7 +718,7 @@ impl World {
         // target's absorbed hit still charges its gauge.
         self.accrue_spirit_gauge(target, dmg);
         // A petrified target (Stone) absorbs the hit - no HP loss.
-        let petrified = self.actor_is_petrified(target);
+        let petrified = self.battle.actor_is_petrified(target);
         let dmg = if petrified { 0 } else { dmg };
         // The kernel's on-hit strip: a target that is not Stone loses the
         // wakes-when-hit family `0x0F80` of its status word on every hit
@@ -827,7 +827,7 @@ impl World {
     /// PORT: FUN_801EC3E4 (`0x801EEC34..0x801EECBC`, the defender's reaction
     /// commit and turn)
     pub(super) fn commit_melee_reaction(&mut self, target_i: usize, attacker_i: usize, entry: u8) {
-        if entry == 0 || self.actor_is_petrified(target_i as u8) {
+        if entry == 0 || self.battle.actor_is_petrified(target_i as u8) {
             return;
         }
         self.commit_battle_reaction_entry(target_i, entry);
@@ -1147,7 +1147,7 @@ impl World {
     /// (`0x801E3068..0x801E30C8`), and every pass state `0x19` spends
     /// walking adds the frame step to `ctx[+0x6D4]` (`0x801E35DC..
     /// 0x801E35EC`, the stall arm) - one a vsync tick
-    /// ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]), so the term
+    /// ([`super::BATTLE_PASS_STEP_PER_TICK`]), so the term
     /// counts the walk's vsyncs whatever the cadence.
     pub(in crate::world) fn track_block_approach_terms(
         &mut self,
@@ -1176,7 +1176,7 @@ impl World {
         } else if pre_state == ActionState::AttackShortStep.as_byte()
             && !matches!(out, StepOutcome::Transition { .. })
         {
-            let step = i16::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
+            let step = i16::from(super::BATTLE_PASS_STEP_PER_TICK);
             self.battle.guard_ramp = self.battle.guard_ramp.wrapping_add(step);
         }
     }

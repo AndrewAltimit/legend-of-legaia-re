@@ -159,7 +159,7 @@ pub fn battle_tutorial_stage_rect(
     world: &World,
     font: &legaia_font::Font,
 ) -> Option<(i32, i32, i32, i32)> {
-    let tbox = world.battle_tutorial_box()?;
+    let tbox = world.battle.battle_tutorial_box()?;
     let width = legaia_engine_ui::battle_tutorial_text_width(font, &tbox.text);
     let (x, y, w, h) = tbox.rect(width)?;
     Some((x as i32, y as i32, w as i32, h as i32))
@@ -173,6 +173,7 @@ pub fn battle_tutorial_stage_boxes<'a>(
     font: &legaia_font::Font,
 ) -> Vec<TutorialStageBox<'a>> {
     world
+        .battle
         .battle_tutorial_boxes_on_screen()
         .filter_map(|tbox| {
             let width = legaia_engine_ui::battle_tutorial_text_width(font, &tbox.text);
@@ -227,7 +228,7 @@ pub fn battle_hud_frame_draws(
     // The result screen draws neither the party card nor the pill (retail
     // `noa_levelup_banner`: the two framed windows over the bare battle
     // scene) - the readout comes down with the last action.
-    if w.battle_result_screen_active() {
+    if w.battle.battle_result_screen_active() {
         return BattleHudDraws {
             text: Vec::new(),
             sprites: Vec::new(),
@@ -465,7 +466,7 @@ pub fn arts_input_chrome_draws(
     // A Spirit turn's bar and plate glide in on their raise; the entry
     // session's draw at rest.
     let (bar_dy, plate_dx) = if entry.is_none() {
-        world.spirit_gauge_glide_offsets()
+        world.battle.spirit_gauge_glide_offsets()
     } else {
         (0, 0)
     };

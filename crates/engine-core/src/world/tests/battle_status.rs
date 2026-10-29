@@ -71,31 +71,31 @@ fn status_block_helpers_classify_by_kind() {
         .battle
         .status_effects
         .apply_with_duration(1, StatusKind::Sleep, 5);
-    assert!(world.actor_blocked_from_acting(1));
-    assert!(!world.actor_blocked_from_magic(1));
+    assert!(world.battle.actor_blocked_from_acting(1));
+    assert!(!world.battle.actor_blocked_from_magic(1));
     // Numb is a full paralysis - blocks the whole turn (so magic is moot too).
     world
         .battle
         .status_effects
         .apply_with_duration(4, StatusKind::Numb, 5);
-    assert!(world.actor_blocked_from_acting(4));
+    assert!(world.battle.actor_blocked_from_acting(4));
     // Silence blocks magic only.
     world
         .battle
         .status_effects
         .apply_with_duration(2, StatusKind::Curse, 5);
-    assert!(!world.actor_blocked_from_acting(2));
-    assert!(world.actor_blocked_from_magic(2));
+    assert!(!world.battle.actor_blocked_from_acting(2));
+    assert!(world.battle.actor_blocked_from_magic(2));
     // Petrify blocks both.
     world
         .battle
         .status_effects
         .apply_with_duration(3, StatusKind::Faint, 5);
-    assert!(world.actor_blocked_from_acting(3));
-    assert!(world.actor_blocked_from_magic(3));
+    assert!(world.battle.actor_blocked_from_acting(3));
+    assert!(world.battle.actor_blocked_from_magic(3));
     // A clean actor is blocked from nothing.
-    assert!(!world.actor_blocked_from_acting(0));
-    assert!(!world.actor_blocked_from_magic(0));
+    assert!(!world.battle.actor_blocked_from_acting(0));
+    assert!(!world.battle.actor_blocked_from_magic(0));
 }
 
 #[test]
@@ -249,15 +249,18 @@ fn stone_counts_as_defeated_and_is_petrified() {
         .battle
         .status_effects
         .apply_with_duration(1, StatusKind::Stone, 255);
-    assert!(world.actor_is_petrified(1));
-    assert!(world.actor_blocked_from_acting(1), "Stone blocks the turn");
+    assert!(world.battle.actor_is_petrified(1));
+    assert!(
+        world.battle.actor_blocked_from_acting(1),
+        "Stone blocks the turn"
+    );
     assert!(
         world.actor_effectively_defeated(1),
         "Stone counts as defeated for wipe detection"
     );
     // A clean living actor is neither.
     world.actors[0].battle.liveness = 1;
-    assert!(!world.actor_is_petrified(0));
+    assert!(!world.battle.actor_is_petrified(0));
     assert!(!world.actor_effectively_defeated(0));
 }
 

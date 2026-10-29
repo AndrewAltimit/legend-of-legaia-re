@@ -37,7 +37,7 @@ fn world_in_a_battle() -> World {
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.mp = 40;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.load_party(legaia_save::Party::zeroed(3));
     // `load_party` overwrites the mirrors from the (zeroed) records; put the
@@ -236,7 +236,7 @@ fn a_victory_arms_the_spoils_panel() {
     let mut results_frame = None;
     for i in 0..20_000 {
         w.tick();
-        if w.battle_result_screen_active() {
+        if w.battle.battle_result_screen_active() {
             results_frame = Some(i);
             break;
         }
@@ -267,7 +267,7 @@ fn a_victory_arms_the_spoils_panel() {
         "the exit fade waits for the results hold"
     );
     assert!(
-        w.battle_spoils_window_up(),
+        w.battle.battle_spoils_window_up(),
         "the result screen carries the spoils panel"
     );
     let rewards = w.battle.last_rewards.as_ref().expect("the loot is banked");
@@ -291,7 +291,7 @@ fn a_victory_arms_the_spoils_panel() {
             break;
         }
         assert!(
-            w.battle_spoils_window_up(),
+            w.battle.battle_spoils_window_up(),
             "the panel stays up through the exit fade"
         );
         // While the phase halfword counts (`ctx[+0x6CE] >= 2`) the kind-2
@@ -324,7 +324,7 @@ fn a_victory_arms_the_spoils_panel() {
         "the fade actor dies with the battle: the teardown clears it"
     );
     assert!(
-        !w.battle_spoils_window_up(),
+        !w.battle.battle_spoils_window_up(),
         "the windows come down with the battle"
     );
 }

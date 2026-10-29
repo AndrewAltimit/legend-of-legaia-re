@@ -49,8 +49,8 @@ pub use actor_draw::{
     BATTLE_BODY_NCLIP, BattleActorDrawPlan, PARTY_BODY_RADIUS, battle_shadow_offset,
 };
 pub use cast_band::{CASTER_STAGE_TICK_LIMIT, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND};
-pub(in crate::world) use commit_log_launch::BATTLE_PASS_STEP_PER_TICK;
 pub use effect_route::RoutedEffectSpawn;
+pub(in crate::world) use legaia_engine_battle_loop::hud_glides::BATTLE_PASS_STEP_PER_TICK;
 pub use sideband::ARRIVAL_MODULE_PROT;
 
 /// The staged command id a generic physical swing runs as.

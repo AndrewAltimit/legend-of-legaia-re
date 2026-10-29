@@ -19,12 +19,12 @@ fn monsters_take_turns_and_can_wipe_the_party() {
     world.actors[0].battle.hp = 40;
     world.actors[0].battle.max_hp = 40;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 4);
+    world.battle.set_battle_attack(0, 4);
     // Lone monster: tanky + hits hard enough to kill the party member.
     world.actors[1].battle.hp = 500;
     world.actors[1].battle.max_hp = 500;
     world.actors[1].battle.liveness = 1;
-    world.set_battle_attack(1, 25);
+    world.battle.set_battle_attack(1, 25);
     // Arm the first turn (party member swings at the monster).
     world.battle_ctx.active_actor = 0;
     world.battle_ctx.queued_action = 3;
@@ -77,13 +77,13 @@ fn multi_monster_battle_all_monsters_act_and_party_can_win() {
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.max_hp = 400;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_attack(0, 30);
+    world.battle.set_battle_attack(0, 30);
     // Three monsters in slots 1..=3, each with modest HP + a light hit.
     for s in 1..=3 {
         world.actors[s].battle.hp = 40;
         world.actors[s].battle.max_hp = 40;
         world.actors[s].battle.liveness = 1;
-        world.set_battle_attack(s as u8, 3);
+        world.battle.set_battle_attack(s as u8, 3);
     }
     // Arm the party member's first swing.
     world.battle_ctx.active_actor = 0;

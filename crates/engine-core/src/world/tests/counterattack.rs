@@ -80,9 +80,9 @@ fn the_timed_message_unloads_when_its_hold_runs_out() {
         },
     );
     world.clock.frame_step = 1;
-    world.tick_timed_message();
-    world.tick_timed_message();
+    world.battle.tick_timed_message();
+    world.battle.tick_timed_message();
     assert!(world.battle.message_banner.is_some());
-    world.tick_timed_message();
+    world.battle.tick_timed_message();
     assert!(world.battle.message_banner.is_none());
 }

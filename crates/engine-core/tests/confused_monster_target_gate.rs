@@ -62,7 +62,7 @@ fn battle_world(seed: u32) -> World {
         w.actors[i].battle.hp = 400;
         w.actors[i].battle.max_hp = 400;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 40);
+        w.battle.set_battle_attack(i as u8, 40);
     }
     w.mode = SceneMode::Battle;
     w.toggles.live_gameplay_loop = true;

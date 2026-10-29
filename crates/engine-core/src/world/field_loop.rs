@@ -652,7 +652,7 @@ impl World {
         // of its pair, so every base half opens the fight equal to its working
         // half. That is what makes the base half a usable "has a debuff moved
         // this stat?" probe for the Seru side-effect stager.
-        self.sync_battle_stat_bases();
+        self.battle.sync_battle_stat_bases();
 
         // Roll for a rare shiny capturable enemy now that every monster slot
         // carries its stats + id (so capturability + the +35% boost see final

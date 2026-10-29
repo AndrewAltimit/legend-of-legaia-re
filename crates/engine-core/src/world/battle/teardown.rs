@@ -9,32 +9,6 @@ impl World {
     /// (~3 s at the 100 Hz sim clock).
     pub const SPOILS_BANNER_FRAMES: u16 = 300;
 
-    /// Whether the post-battle spoils panel is up this frame: from the
-    /// results frame through the exit while the end-of-battle sequence runs
-    /// (retail's windows come down with the battle), and for the aging window
-    /// a direct `finish_battle` still arms - unless the battle opened no
-    /// result window or ended in a wipe, and only with rewards to show.
-    ///
-    /// A special battle opens no result window (`FUN_8004E568` skips
-    /// `FUN_801D8DE8(0x41)` at `0x8004F614` while `_DAT_8007BAC0 != 0`), and
-    /// a wipe opens the loss window instead - `last_rewards` is never
-    /// cleared, so without the cause test a wipe after a win re-showed that
-    /// win's spoils over the loss. The panel's content is composed above the
-    /// simulation (`legaia_engine_battle_hud::battle_spoils_banner`).
-    pub fn battle_spoils_window_up(&self) -> bool {
-        if self.battle.spoils_frames == 0 && !self.battle_result_screen_active() {
-            return false;
-        }
-        if self
-            .battle
-            .victory
-            .is_some_and(|v| !v.window_opened || v.cause != BattleEndCause::MonsterWipe)
-        {
-            return false;
-        }
-        self.battle.last_rewards.is_some()
-    }
-
     /// A dialog line as display text: printable ASCII as itself, each
     /// `0xC1 k` name escape spliced with roster record `k`'s name (`0x63` =
     /// the party leader), every other `0xC0..=0xCF` escape dropped with its
@@ -251,7 +225,8 @@ impl World {
         // these).
         let buffs = std::mem::take(&mut self.battle.buffs);
         for b in buffs {
-            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+            self.battle
+                .add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
         }
         // Revert any Fury Boost AP-gauge extension (class-5 item) and clear the
         // per-slot flags, so the next battle starts from the base gauge.
@@ -434,7 +409,8 @@ impl World {
         self.casting.module_pres = Default::default();
         let buffs = std::mem::take(&mut self.battle.buffs);
         for b in buffs {
-            self.add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
+            self.battle
+                .add_to_buff_scalar(b.slot, b.stat, -b.applied_delta);
         }
         self.teardown_battle_effects();
         if let Some(active) = self.battle.battle_party_restore.take() {

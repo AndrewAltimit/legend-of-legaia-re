@@ -59,7 +59,7 @@ fn flame_caster_battle(impact: u8) -> World {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(5);
     world.battle.accuracy[1] = 25;
-    world.set_battle_magic(1, 40);
+    world.battle.set_battle_magic(1, 40);
     world.tables.move_power =
         MovePowerCatalog::from_overlay_0898(&overlay_flame_with_impact(impact));
     assert!(

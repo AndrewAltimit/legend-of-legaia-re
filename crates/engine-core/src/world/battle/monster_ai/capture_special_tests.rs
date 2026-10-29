@@ -62,11 +62,11 @@ fn cort_under_shield(monster_id: u16, hp: u16) -> World {
 fn the_mystic_shield_breaks_at_half_hp() {
     let mut world = cort_under_shield(0xB4, 25_001);
     world.tick_mystic_shield();
-    assert!(world.mystic_shield_up(), "above half HP it holds");
+    assert!(world.battle.mystic_shield_up(), "above half HP it holds");
 
     world.actors[3].battle.hp = 25_000;
     world.tick_mystic_shield();
-    assert!(!world.mystic_shield_up(), "at half HP it breaks");
+    assert!(!world.battle.mystic_shield_up(), "at half HP it breaks");
     let p = &world.actors[3].battle.params;
     assert_eq!(
         [
@@ -81,7 +81,7 @@ fn the_mystic_shield_breaks_at_half_hp() {
     let mut other = cort_under_shield(0xB5, 1);
     other.tick_mystic_shield();
     assert!(
-        other.mystic_shield_up(),
+        other.battle.mystic_shield_up(),
         "the arm is keyed on formation 0xB4"
     );
 }
@@ -94,10 +94,10 @@ fn a_blank_colour_word_skips_the_shield_break() {
     let mut world = cort_under_shield(0xB4, 1);
     world.actors[3].battle.render_color = 0;
     world.tick_mystic_shield();
-    assert!(world.mystic_shield_up());
+    assert!(world.battle.mystic_shield_up());
     world.actors[3].battle.render_color = 0x2008_0200;
     world.tick_mystic_shield();
-    assert!(!world.mystic_shield_up());
+    assert!(!world.battle.mystic_shield_up());
 }
 
 /// A synthetic `SCUS_942.54` image holding stand-ins for the three shield
@@ -138,7 +138,7 @@ fn the_mystic_shield_seats_poses_and_bursts() {
     world.tables.scus = Some(std::sync::Arc::from(scus_with_shield_records()));
     world.actors[3].battle.seat = Some((12, 900));
     world.raise_mystic_shield();
-    assert!(world.mystic_shield_up());
+    assert!(world.battle.mystic_shield_up());
     let fx = world
         .casting
         .mystic_shield_fx
@@ -166,7 +166,7 @@ fn the_mystic_shield_seats_poses_and_bursts() {
     world.actors[3].battle.render_color = 0x2008_0200;
     world.actors[3].battle.hp = 25_000;
     world.tick_mystic_shield();
-    assert!(!world.mystic_shield_up());
+    assert!(!world.battle.mystic_shield_up());
     assert!(sphere(&world).finished, "the sphere is retired");
     assert_eq!(
         world.casting.active_action_fx.len(),
@@ -182,7 +182,7 @@ fn a_disc_free_shield_raises_the_word_only() {
     let mut world = cort_under_shield(0xB4, 40_000);
     world.battle.monster_ai_state.flag_bd84 = 0;
     world.raise_mystic_shield();
-    assert!(world.mystic_shield_up());
+    assert!(world.battle.mystic_shield_up());
     assert!(world.casting.mystic_shield_fx.is_none());
 }
 

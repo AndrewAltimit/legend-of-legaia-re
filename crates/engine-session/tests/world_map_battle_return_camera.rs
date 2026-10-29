@@ -225,7 +225,7 @@ fn escaping_an_overworld_fight_reseats_the_camera_on_the_player() {
         legaia_engine_battle_vm::battle_formulas::FormationAdvantage::Preemptive,
     );
     for _ in 0..64 {
-        if !session.host.world.battle_command_pad_held() {
+        if !session.host.world.battle.battle_command_pad_held() {
             break;
         }
         idle(&mut session);

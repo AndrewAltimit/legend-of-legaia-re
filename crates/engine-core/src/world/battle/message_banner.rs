@@ -75,16 +75,6 @@ impl World {
         }
     }
 
-    /// Stage the magic-level line and raise element `0x65` - the port's seat
-    /// of `FUN_801F452C`'s compose followed by `FUN_801E70BC`'s raise.
-    pub(in crate::world) fn raise_magic_level_banner(&mut self, text: String) {
-        self.battle.message_banner = Some(BattleMessageBanner {
-            element: MAGIC_LEVEL_BANNER_ELEMENT,
-            text,
-            hold: 0,
-        });
-    }
-
     /// Raise the timed message: record `0x66`'s content word pointed at the
     /// battle-overlay string `va`, the hold `0x801F6964 = hold`, and the
     /// element raised. The text is read off the loaded PROT 0898 image (the
@@ -110,28 +100,6 @@ impl World {
         let s = bytes.get(..end)?;
         (!s.is_empty() && s.iter().all(|b| b.is_ascii() && !b.is_ascii_control()))
             .then(|| String::from_utf8_lossy(s).into_owned())
-    }
-
-    /// The battle frame driver's hold countdown for the timed message
-    /// (`FUN_80046A20`, `0x80047058..0x80047098`): run after the action-SM
-    /// step, `hold -= DAT_1F800393` while it is positive, and the element is
-    /// unloaded (`FUN_801D8DE8(0x66, 1)`) once it reaches `0`.
-    ///
-    /// PORT: FUN_80046A20 (`0x80047058..0x80047098`, the `0x801F6964` hold)
-    pub(in crate::world) fn tick_timed_message(&mut self) {
-        // Per battle pass by the frame step, so one a vsync tick
-        // ([`super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK`]).
-        let step = i32::from(super::commit_log_launch::BATTLE_PASS_STEP_PER_TICK);
-        let Some(b) = self.battle.message_banner.as_mut() else {
-            return;
-        };
-        if b.element != TIMED_MESSAGE_ELEMENT || b.hold <= 0 {
-            return;
-        }
-        b.hold -= step;
-        if b.hold <= 0 {
-            self.battle.message_banner = None;
-        }
     }
 
     /// The `0x59` line for the Seru staged in `ctx[+0x269]` (the engine's

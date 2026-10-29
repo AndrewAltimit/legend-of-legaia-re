@@ -117,7 +117,7 @@ fn astral_slash_lands_the_clip_melee_total_on_the_last_beat() {
         w.actors[i].battle.max_hp = 9000;
         w.actors[i].battle.mp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.actors[CASTER].battle_monster_id = Some(GAZA);
     w.set_actor_battle_action_clips(CASTER, std::sync::Arc::new(clips));

@@ -28,7 +28,7 @@ fn field_world() -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.load_party(legaia_save::Party::zeroed(3));
     let mut party = w.party.roster.clone();

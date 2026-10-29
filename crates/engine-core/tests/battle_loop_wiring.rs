@@ -33,7 +33,7 @@ fn battle_world(monsters: usize) -> World {
         w.actors[i].battle.hp = 200;
         w.actors[i].battle.max_hp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 10);
+        w.battle.set_battle_attack(i as u8, 10);
     }
     for i in 3..3 + monsters {
         w.actors[i].active = true;

@@ -72,7 +72,7 @@ fn live_three_monster_battle() -> World {
     for i in 0..PARTY as usize {
         world.actors[i].battle.max_hp = 9999;
         world.actors[i].battle.hp = 9999;
-        world.set_battle_attack(i as u8, 60);
+        world.battle.set_battle_attack(i as u8, 60);
     }
     let band = PARTY as usize;
     world.actors[band].battle.max_hp = 1;

@@ -63,7 +63,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
         "Glare petrified the party target"
     );
     // Stone counts as defeated / blocks the turn (the +0x16E & 0x404 gates).
-    assert!(w.actor_blocked_from_acting(0));
+    assert!(w.battle.actor_blocked_from_acting(0));
 
     // The render chain both hosts tick: sync_status folds the Stone bit into
     // the CLUT latch (retail actor[+0x220]); step() snapshots the pristine

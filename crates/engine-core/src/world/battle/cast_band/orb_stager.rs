@@ -154,7 +154,7 @@ impl World {
     ///   every part the module seated through `FUN_80050ED4` gets its halt
     ///   bit;
     /// - arm 9's pass raises the roster panels
-    ///   ([`World::raise_module_roster_panels`]) and half-cues the backdrop
+    ///   ([`BattleState::raise_module_roster_panels`]) and half-cues the backdrop
     ///   pair ([`ORB_HEAL_BACKDROP_CUE`]).
     ///
     /// REF: FUN_80050E74, FUN_801D8DE8
@@ -176,7 +176,7 @@ impl World {
             self.orb_pool_flush();
         }
         if passed && phase_in == ORB_PANEL_ARM {
-            self.raise_module_roster_panels();
+            self.battle.raise_module_roster_panels();
             // `li v0,0x800` / `sh v0,0x78(..)` into both backdrop records
             // (`ctx[+0x106C]` / `ctx[+0x1070]`, `0x801F7848..0x801F7860`):
             // the stage the heal stands on comes back half-cued, and the

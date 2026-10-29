@@ -183,10 +183,10 @@ fn extracted_dir() -> Option<PathBuf> {
 /// held - a driver that holds a direction enters one command, not four.
 fn tap(session: &mut NativeSession, button: PadButton) {
     // The menu SM reads no pad while a prompt's or the ring's glide is in
-    // flight (`World::battle_command_pad_held`): wait it out, as a player
+    // flight (`BattleState::battle_command_pad_held`): wait it out, as a player
     // does.
     for _ in 0..64 {
-        if !session.host.world.battle_command_pad_held() {
+        if !session.host.world.battle.battle_command_pad_held() {
             break;
         }
         session.host.world.set_pad(0);
@@ -238,7 +238,7 @@ fn monster_hp_total(session: &NativeSession) -> u32 {
 fn open_surfaces(session: &NativeSession) -> Vec<&'static str> {
     let w = &session.host.world;
     let mut out = Vec::new();
-    if w.arts_input_active() {
+    if w.battle.arts_input_active() {
         out.push("arts_input");
     }
     if w.battle.arts_menu.is_some() {
@@ -595,7 +595,7 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        if !session.host.world.arts_input_active() {
+        if !session.host.world.battle.arts_input_active() {
             return Err(format!(
                 "Attack->Command did not open the arts entry ({})",
                 surface_report(&session)
@@ -657,7 +657,7 @@ fn battle_depth_ladder() {
         // the commit raises the party's Begin | Reselect, which opens on
         // Begin - so Cross again plays the round out.
         for _ in 0..24 {
-            if !session.host.world.arts_input_active() {
+            if !session.host.world.battle.arts_input_active() {
                 break;
             }
             tap(&mut session, PadButton::Cross);

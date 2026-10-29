@@ -297,7 +297,7 @@ pub fn battle_intro_names(
     }
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.intro_names_frames == 0
-        || world.battle_entry_sweeping()
+        || world.battle.battle_entry_sweeping()
     {
         return Vec::new();
     }

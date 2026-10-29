@@ -29,7 +29,7 @@ fn live_battle_intro_labels_are_filled_class0_frames() {
         let labels = rt.scene_host.host().is_some_and(|h| {
             h.world.mode == SceneMode::Battle
                 && h.world.battle.intro_names_frames > 0
-                && !h.world.battle_entry_sweeping()
+                && !h.world.battle.battle_entry_sweeping()
         });
         if !labels {
             continue;
@@ -102,13 +102,13 @@ fn live_battle_overlay_carries_bars_and_enemy_target_strip() {
 
     // The prompt opens on a glide - the panels rise from under the screen
     // and the chips unfold - and the menu SM reads no pad until it lands
-    // (`World::battle_command_pad_held`). Sample the surface at rest.
+    // (`BattleState::battle_command_pad_held`). Sample the surface at rest.
     let settle = |rt: &mut LegaiaRuntime| {
         for _ in 0..64 {
             let held = rt
                 .scene_host
                 .host()
-                .is_some_and(|h| h.world.battle_command_pad_held());
+                .is_some_and(|h| h.world.battle.battle_command_pad_held());
             if !held {
                 break;
             }

@@ -11,7 +11,7 @@ fn dead_end_crisis_world(lead: u16) -> World {
     world.party.party_count = 3;
     world.battle_ctx.active_actor = 3;
     world.actors[3].battle_monster_id = Some(lead);
-    world.set_battle_attack(3, 300);
+    world.battle.set_battle_attack(3, 300);
     for i in 0..8 {
         world.actors[i].battle.hp = 9000;
         world.actors[i].battle.max_hp = 9000;

@@ -92,7 +92,7 @@ impl World {
             if ring_cancel {
                 self.normalize_battle_formation();
             }
-            self.set_battle_flow(Flow::TurnPrompt);
+            self.battle.set_battle_flow(Flow::TurnPrompt);
             self.open_battle_command(prompt_actor);
             return;
         }
@@ -114,7 +114,7 @@ impl World {
             *g = false;
         }
         self.battle.round_flow.cursor = prev;
-        self.set_battle_flow(Flow::CategoryMenu);
+        self.battle.set_battle_flow(Flow::CategoryMenu);
         self.open_battle_command(prev);
     }
 }

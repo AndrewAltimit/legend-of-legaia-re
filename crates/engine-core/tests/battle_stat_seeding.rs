@@ -120,7 +120,7 @@ fn battle_world(monsters: &[MonsterDef], slots: &[FormationSlot]) -> World {
         w.actors[i].battle.hp = 200;
         w.actors[i].battle.max_hp = 200;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 40);
+        w.battle.set_battle_attack(i as u8, 40);
     }
     let mut catalog = MonsterCatalog::new();
     for m in monsters {
@@ -167,8 +167,8 @@ fn a_monster_slot_carries_both_defence_facets() {
 
     // The parity pick must now resolve to genuinely different numbers. `0x0C`
     // is the arm command (a UDF-target swing); `0x11` lands in the LDF half.
-    let udf_side = w.physical_defense_of(mslot, 0x0C);
-    let ldf_side = w.physical_defense_of(mslot, 0x11);
+    let udf_side = w.battle.physical_defense_of(mslot, 0x0C);
+    let ldf_side = w.battle.physical_defense_of(mslot, 0x11);
     assert_eq!(udf_side, 90);
     assert_eq!(ldf_side, 10);
     assert_ne!(
@@ -188,7 +188,7 @@ fn battle_entry_clears_a_stale_monster_defence_split() {
     );
     // Stamp a bogus split on an unoccupied monster slot, then re-enter battle
     // with a formation whose id is absent from the catalog.
-    w.set_battle_defense_split(4, Some((999, 999)));
+    w.battle.set_battle_defense_split(4, Some((999, 999)));
     let mut table = FormationTable::new();
     table.insert(FormationDef::new(2, vec![FormationSlot::new(77)])); // id 77 not in catalog
     let catalog = w.tables.monster_catalog.clone();

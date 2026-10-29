@@ -143,7 +143,7 @@ fn the_round_prompt_opens_on_a_glide_from_seat_a() {
     assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
     assert!(battle_chip_dpad_visible(&w));
 
-    w.start_round_prompt_glide();
+    w.battle.start_round_prompt_glide();
     // Records 0 / 3: `x = 142` to `104` / `180`. Records 6 / 0x4E / 0x4F:
     // `y = 236` to `170`.
     assert_eq!(battle_chip_offsets(&w)[..2], [(38, 0), (-38, 0)]);
@@ -152,26 +152,26 @@ fn the_round_prompt_opens_on_a_glide_from_seat_a() {
 
     // Half way: `FUN_801D9BBC`'s linear step.
     for _ in 0..8 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     assert_eq!(battle_chip_offsets(&w)[..2], [(19, 0), (-19, 0)]);
     assert_eq!(battle_round_prompt_panels_dy(&w), 33);
     assert!(!battle_chip_dpad_visible(&w));
 
     for _ in 0..8 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
     assert_eq!(battle_round_prompt_panels_dy(&w), 0);
     // The landing pass still leaves ahead of the state's arm (the stepper
     // returns the record's flag); the glyph draws from the pass after.
     assert!(!battle_chip_dpad_visible(&w));
-    w.step_action_plate_glides();
+    w.battle.step_action_plate_glides();
     assert!(battle_chip_dpad_visible(&w));
 
     // The capture seat: a retail record landing on a chip's or a panel's
     // seat places the glide; the combo cluster's `(168, 168)` is not one.
-    w.start_round_prompt_glide();
+    w.battle.start_round_prompt_glide();
     assert!(!w.seat_battle_hud_glide([168, 168], 4));
     assert!(w.seat_battle_hud_glide([114, 168], 12));
     assert_eq!(battle_round_prompt_panels_dy(&w), 66 - 66 * 12 / 16);
@@ -196,7 +196,7 @@ fn the_ring_opens_on_a_glide_from_seat_a() {
     assert!(!battle_panels_visible(&w));
     assert!(battle_chip_dpad_visible(&w));
 
-    w.start_ring_open_glide();
+    w.battle.start_ring_open_glide();
     // Records 9 / 0x0A / 8 / 0x0B: `x = seat + 168`. Record 1: `(104, 88)`
     // to `(16, 14)`. Record 0x1A: `y = -24` to `14`. Record 7: `236` to
     // `194`. Record 0x52: `x = 328` to `208`. Records 6 / 0x4E / 0x4F on
@@ -215,7 +215,7 @@ fn the_ring_opens_on_a_glide_from_seat_a() {
 
     // Half way: `FUN_801D9BBC`'s linear step.
     for _ in 0..8 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     assert_eq!(battle_chip_offsets(&w), [(84, 0); 4]);
     assert_eq!(battle_begin_tab_offset(&w), (44, 37));
@@ -225,7 +225,7 @@ fn the_ring_opens_on_a_glide_from_seat_a() {
     assert_eq!(battle_round_prompt_panels_dy(&w), 33);
 
     for _ in 0..8 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     assert_eq!(battle_chip_offsets(&w), [(0, 0); 4]);
     assert_eq!(battle_begin_tab_offset(&w), (0, 0));
@@ -235,12 +235,12 @@ fn the_ring_opens_on_a_glide_from_seat_a() {
     assert!(!battle_panels_visible(&w), "parked under the screen");
     // The landing pass leaves ahead of the ring's arm: no glyph yet.
     assert!(!battle_chip_dpad_visible(&w));
-    w.step_action_plate_glides();
+    w.battle.step_action_plate_glides();
     assert!(battle_chip_dpad_visible(&w));
 
     // The capture seat: a retail record landing on an arm's, the plaque's
     // or the plate's seat places the glide.
-    w.start_ring_open_glide();
+    w.battle.start_ring_open_glide();
     assert!(w.seat_battle_hud_glide([204, 32], 4));
     assert_eq!(battle_chip_offsets(&w)[0], (168 - 168 * 4 / 16, 0));
     assert!(w.seat_battle_hud_glide([208, 172], 16));
@@ -576,7 +576,7 @@ fn the_done_teardown_slides_the_target_plaque_out_and_drops_it() {
     arm_action(&mut w, 0, ActionCategory::Attack.as_byte(), 3);
     w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
     w.note_action_plate_raise(HUD_TARGET_BANNER, 0);
-    w.land_battle_hud_glides();
+    w.battle.land_battle_hud_glides();
     assert!(battle_target_plaque(&w).is_some());
     assert_eq!(battle_target_plaque_dy(&w), 0);
 
@@ -588,12 +588,12 @@ fn the_done_teardown_slides_the_target_plaque_out_and_drops_it() {
     assert!(battle_target_plaque(&w).is_some(), "re-spawned, closing");
     assert_eq!(battle_target_plaque_dy(&w), 0);
     for _ in 0..8 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     // Record 0x51: `y = 194` back to `236`.
     assert_eq!(battle_target_plaque_dy(&w), 21);
     for _ in 0..8 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     assert!(battle_target_plaque(&w).is_none(), "landed off screen");
 
@@ -700,12 +700,12 @@ fn a_module_panel_raise_takes_the_bars_seat() {
     w.battle_ctx.action_state = 0x36;
     assert_eq!(battle_readout_bar_slot(&w), Some(0), "the seed's bar");
     assert!(!battle_panels_visible(&w));
-    w.raise_module_roster_panels();
+    w.battle.raise_module_roster_panels();
     assert!(battle_panels_visible(&w), "arm 9's raise");
     assert_eq!(battle_readout_bar_slot(&w), None, "the panel took the seat");
     assert_eq!(battle_round_prompt_panels_dy(&w), 236 - 170, "from seat A");
     for _ in 0..16 {
-        w.step_action_plate_glides();
+        w.battle.step_action_plate_glides();
     }
     assert_eq!(battle_round_prompt_panels_dy(&w), 0, "landed");
     w.battle_ctx.action_state = 0x51;

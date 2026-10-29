@@ -1027,7 +1027,7 @@ impl BattleDrive {
                 // A sparring capture past the intro timer also holds the
                 // side-band's caption, which the engine raises on the round
                 // start the open was holding back
-                // (`World::sparring_open_held`).
+                // (`BattleState::sparring_open_held`).
                 let ok = (!swept
                     || world.battle.intro_names_frames == 0
                         && !world.battle.sparring_round_pending)
@@ -1200,7 +1200,7 @@ impl BattleDrive {
         // a phase costs the ticks it always did. Once the phase is reached
         // its own glide is the capture's to seat, and runs untouched.
         if !self.reached(world) {
-            world.release_command_pad_hold();
+            world.battle.release_command_pad_hold();
         }
         let Self::Action {
             seat,

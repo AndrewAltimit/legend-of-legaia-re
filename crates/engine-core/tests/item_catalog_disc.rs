@@ -256,12 +256,12 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
 
     let mut world = World::new();
     world.set_item_effects(table); // seeds the Elixirs onto the catalog
-    world.set_battle_attack(0, 100);
-    world.set_battle_defense(0, 50);
+    world.battle.set_battle_attack(0, 100);
+    world.battle.set_battle_defense(0, 50);
     world.battle.speed[0] = 50;
     world.actors[0].battle.hp = 100;
     world.actors[1].battle.hp = 0;
-    world.set_battle_attack(1, 100);
+    world.battle.set_battle_attack(1, 100);
 
     // Power Elixir is battle-only and ramps ATK ×6/5: 100 -> 120.
     let pe = world

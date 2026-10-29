@@ -535,7 +535,7 @@ pub fn run_engine_battle(
             // A sparring capture past the intro timer (`0x14`) holds the
             // side-band's caption and the close-up it selects; the engine
             // raises it on the round start its open holds back until the
-            // enemy names have gone (`World::sparring_open_held`).
+            // enemy names have gone (`BattleState::sparring_open_held`).
             if matches!(battle.flow, 0x0C | 0x14) {
                 for _ in 0..SPARRING_OPEN_TICKS {
                     if !session.host.world.battle.sparring_round_pending {

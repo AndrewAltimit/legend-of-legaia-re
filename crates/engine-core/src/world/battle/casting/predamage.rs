@@ -137,7 +137,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             // The bypass casts are routed away above; every move that reaches
             // the shared kernel passes `param_5 = 0`.
             bypass_party_resist: false,
@@ -235,7 +235,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist: ATK_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
@@ -313,7 +313,7 @@ impl World {
                 .get(target as usize)
                 .copied()
                 .unwrap_or(false),
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist: INT_WRAPPER_BYPASSES_PARTY_RESIST,
             summon_power_pct: 100,
             floor_rand: 0,
@@ -422,7 +422,7 @@ impl World {
             attacker_element: summon_element,
             defender_resist: DefenderResist::default(),
             defender_guarding: false,
-            enemy_defender_halve: self.mystic_shield_up(),
+            enemy_defender_halve: self.battle.mystic_shield_up(),
             bypass_party_resist: false,
             summon_power_pct,
             floor_rand: 0,

@@ -71,7 +71,7 @@ fn the_cross_button_ring_steps_its_highlight_with_the_cursor_cue() {
 #[test]
 fn a_rejected_tutorial_pick_sounds_only_its_commit() {
     let mut world = ring_world();
-    world.arm_battle_tutorial();
+    world.battle.arm_battle_tutorial();
     world.battle.tutorial.as_mut().expect("armed").lesson = TutorialLesson::Attacks.raw();
     // The Item arm during the attack lesson: committed, then rewound.
     assert_eq!(

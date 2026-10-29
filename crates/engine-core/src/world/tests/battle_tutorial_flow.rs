@@ -40,7 +40,7 @@ fn tutorial_battle_world() -> World {
     let mut world = World::new();
     world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
-    world.prime_battle_tutorial(synthetic_script());
+    world.battle.prime_battle_tutorial(synthetic_script());
     world.enter_battle(3, 2);
     for i in 0..5 {
         world.actors[i].battle.hp = 100;
@@ -64,7 +64,7 @@ fn priming_arms_the_machine_at_battle_entry() {
     let world = tutorial_battle_world();
     assert!(world.battle.tutorial.is_some(), "tutorial armed");
     assert_eq!(
-        world.battle_tutorial_lesson(),
+        world.battle.battle_tutorial_lesson(),
         Some(TutorialLesson::Attacks)
     );
     assert_eq!(world.battle.flow, BattleFlowState::Idle);
@@ -86,7 +86,7 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
     use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
 
     let mut world = World::new();
-    world.set_battle_tutorial_script(synthetic_script());
+    world.battle.set_battle_tutorial_script(synthetic_script());
 
     // Baseline: the corpus alone arms nothing. Having the text is not the
     // condition, which is the confusion the old host gate encoded.
@@ -105,7 +105,7 @@ fn the_disc_arm_flag_runs_the_tutorial_for_exactly_one_battle() {
         "the disc arm must run the tutorial in the very next battle"
     );
     assert_eq!(
-        world.battle_tutorial_lesson(),
+        world.battle.battle_tutorial_lesson(),
         Some(TutorialLesson::Attacks)
     );
     assert!(
@@ -159,7 +159,7 @@ fn a_forced_tutorial_consumes_the_disc_arm_too() {
     use legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG;
 
     let mut world = World::new();
-    world.prime_battle_tutorial(synthetic_script());
+    world.battle.prime_battle_tutorial(synthetic_script());
     world.system_flag_set(TUTORIAL_ARM_FLAG);
     world.enter_battle(3, 2);
     assert!(world.battle.tutorial.is_some());
@@ -207,7 +207,7 @@ fn opening_a_turn_raises_the_turn_prompt_and_queues_the_lesson_intro() {
         queued(&world),
         vec![marker(msg::LESSON0_INTRO), marker(msg::HOWTO_DIRECTIONAL)]
     );
-    assert!(world.battle_tutorial_box_up());
+    assert!(world.battle.battle_tutorial_box_up());
 }
 
 /// Take `Begin` on the round prompt - retail's `0x1E -> 0x28` (the confirm arm
@@ -346,7 +346,10 @@ fn committing_the_taught_category_is_accepted_and_advances_the_lesson() {
     world.battle.tutorial_boxes.clear();
     world.battle.flow = BattleFlowState::Idle;
     world.open_battle_command(0);
-    assert_eq!(world.battle_tutorial_lesson(), Some(TutorialLesson::Items));
+    assert_eq!(
+        world.battle.battle_tutorial_lesson(),
+        Some(TutorialLesson::Items)
+    );
     assert_eq!(queued(&world), vec![marker(msg::LESSON1_INTRO)]);
 }
 
@@ -488,12 +491,12 @@ fn an_auto_attack_in_the_drill_lesson_rewinds() {
 fn a_box_on_screen_parks_the_battle_loop() {
     let mut world = tutorial_battle_world();
     world.open_battle_command(0);
-    assert!(world.battle_tutorial_box_up());
+    assert!(world.battle.battle_tutorial_box_up());
     let before = world.battle_ctx.action_state;
     // The live tick must not advance the action SM while a box waits.
     world.live_battle_tick();
     assert_eq!(world.battle_ctx.action_state, before);
-    assert!(world.battle_tutorial_box_up(), "box still waiting");
+    assert!(world.battle.battle_tutorial_box_up(), "box still waiting");
 }
 
 #[test]
@@ -740,11 +743,11 @@ fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
 fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
     let mut world = tutorial_battle_world();
     world.battle.intro_names_frames = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
-    assert!(world.sparring_open_held());
+    assert!(world.battle.sparring_open_held());
     world.begin_battle_round();
     assert!(world.battle.sparring_round_pending, "round start held");
     assert_eq!(world.battle.sideband.phase, 0, "caption not armed");
-    assert!(!world.battle_tutorial_box_up());
+    assert!(!world.battle.battle_tutorial_box_up());
     let state = world.battle_ctx.action_state;
     // The names drain one a tick; nothing else moves under them.
     for _ in 0..legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES {
@@ -754,7 +757,7 @@ fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
         assert_eq!(world.battle.flow, BattleFlowState::Idle, "no prompt yet");
     }
     assert_eq!(world.battle.intro_names_frames, 0);
-    assert!(!world.sparring_open_held());
+    assert!(!world.battle.sparring_open_held());
     // The next side-band pass sees the open done and starts the round: the
     // caption arm runs (with no caption text installed it passes straight
     // on to phase 2 and the first lesson's prompt).
@@ -771,7 +774,7 @@ fn an_ordinary_fight_is_not_held_by_its_enemy_names() {
     world.battle.player_driven = true;
     world.enter_battle(3, 2);
     world.battle.intro_names_frames = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
-    assert!(!world.sparring_open_held());
+    assert!(!world.battle.sparring_open_held());
     world.begin_battle_round();
     assert!(!world.battle.sparring_round_pending);
 }
@@ -793,7 +796,7 @@ fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
     );
     // While the intro is queued it is the registration itself.
     assert!(world.battle.tutorial_standing.is_none());
-    assert_eq!(world.battle_tutorial_boxes_on_screen().count(), 2);
+    assert_eq!(world.battle.battle_tutorial_boxes_on_screen().count(), 2);
 
     let frames = world.battle.tutorial_boxes[0].frames_remaining;
     for _ in 0..frames {
@@ -806,6 +809,7 @@ fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
         Some(&intro)
     );
     let on: Vec<_> = world
+        .battle
         .battle_tutorial_boxes_on_screen()
         .map(|b| b.text.clone())
         .collect();
@@ -815,19 +819,20 @@ fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
     // Acknowledge the explainer: nothing holds the loop, the prompt stands.
     world.input.set_pad(PadButton::Cross.mask());
     world.tick_battle_tutorial_boxes();
-    assert!(!world.battle_tutorial_box_up(), "the loop is free");
+    assert!(!world.battle.battle_tutorial_box_up(), "the loop is free");
     assert_eq!(
-        world.battle_tutorial_box().map(|b| &b.text),
+        world.battle.battle_tutorial_box().map(|b| &b.text),
         Some(&intro),
         "hosts still park the plaque seat under it"
     );
-    assert_eq!(world.battle_tutorial_boxes_on_screen().count(), 1);
+    assert_eq!(world.battle.battle_tutorial_boxes_on_screen().count(), 1);
 
     // `[Begin]` registers the category prompt: one key-1 actor, so the
     // intro is gone the moment the new one is up.
     take_begin(&mut world);
     assert_eq!(queued(&world), vec![marker(msg::PICK_ATTACK)]);
     let on: Vec<_> = world
+        .battle
         .battle_tutorial_boxes_on_screen()
         .map(|b| b.text.clone())
         .collect();
@@ -870,5 +875,5 @@ fn only_a_967_prompt_stands() {
     world.tick_battle_tutorial_boxes();
     assert!(world.battle.tutorial_boxes.is_empty());
     assert!(world.battle.tutorial_standing.is_none());
-    assert_eq!(world.battle_tutorial_boxes_on_screen().count(), 0);
+    assert_eq!(world.battle.battle_tutorial_boxes_on_screen().count(), 0);
 }

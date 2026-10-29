@@ -71,7 +71,7 @@ impl LegaiaRuntime {
         let prompts = world.battle.tutorial_script.len();
         let flag_armed =
             world.system_flag_test(legaia_engine_battle::battle_tutorial::TUTORIAL_ARM_FLAG);
-        let Some(lesson) = world.battle_tutorial_lesson() else {
+        let Some(lesson) = world.battle.battle_tutorial_lesson() else {
             return serde_json::json!({
                 "armed": false,
                 "prompts": prompts,
@@ -86,7 +86,7 @@ impl LegaiaRuntime {
             .menu_font
             .clone()
             .unwrap_or_else(legaia_font::Font::placeholder);
-        let tbox = world.battle_tutorial_box().map(|b| {
+        let tbox = world.battle.battle_tutorial_box().map(|b| {
             let width = ui::battle_tutorial_text_width(&font, &b.text);
             let rect = b.rect(width);
             serde_json::json!({

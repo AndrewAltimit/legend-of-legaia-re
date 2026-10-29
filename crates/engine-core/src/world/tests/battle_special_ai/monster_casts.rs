@@ -37,7 +37,7 @@ fn monster_ai_casts_a_castable_spell_under_fixed_rng() {
     world.actors[1].battle.mp = 10;
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(5);
-    world.set_battle_magic(1, 40);
+    world.battle.set_battle_magic(1, 40);
     // The action picker's first `rand % (1 + magic_count)` (magic count 2 ->
     // `% 3`) lands on 1, so it casts magic[0] = Flame (0x20).
     world.rng_state = BANDIT_BOSS_FLAME_SEED;
@@ -197,7 +197,7 @@ fn move_power_table_drives_monster_special_attack_damage() {
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
         world.battle.accuracy[1] = 25;
-        world.set_battle_magic(1, 40);
+        world.battle.set_battle_magic(1, 40);
         if install_table {
             world.tables.move_power =
                 MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
@@ -289,7 +289,7 @@ fn elemental_guard_accessory_halves_matching_monster_special() {
         world.actors[1].battle.liveness = 1;
         world.actors[1].battle_monster_id = Some(5);
         world.battle.accuracy[1] = 25;
-        world.set_battle_magic(1, 40);
+        world.battle.set_battle_magic(1, 40);
         world.tables.move_power = MovePowerCatalog::from_overlay_0898(&overlay_with_flame_power());
 
         let mut party = legaia_save::Party::zeroed(1);
@@ -447,7 +447,7 @@ fn a_monster_cast_never_targets_a_fallen_party_member() {
         world.actors[2].battle.mp = 10;
         world.actors[2].battle.liveness = 1;
         world.actors[2].battle_monster_id = Some(5);
-        world.set_battle_magic(2, 40);
+        world.battle.set_battle_magic(2, 40);
         world.rng_state = seed.wrapping_mul(0x9E37_79B9) | 1;
         world.take_monster_turn(2);
         let Some(cast) = world.casting.pending_cast.as_ref() else {

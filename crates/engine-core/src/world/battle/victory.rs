@@ -78,19 +78,6 @@ impl World {
     pub const VICTORY_EXIT_PHASE: u16 = VICTORY_EXIT_PHASE;
     pub const VICTORY_FADE_PHASE_SEED: u16 = VICTORY_FADE_PHASE_SEED;
 
-    /// The battle-end presentation is up: the scene is still in
-    /// [`SceneMode::Battle`](legaia_engine_mode::mode::SceneMode::Battle) but the action SM no longer runs.
-    pub fn battle_end_sequence_active(&self) -> bool {
-        self.battle.victory.is_some()
-    }
-
-    /// The result windows are on screen. Hosts hide the in-fight party
-    /// readout behind this (retail's results frame draws neither the card
-    /// nor the pill - `noa_levelup_banner`).
-    pub fn battle_result_screen_active(&self) -> bool {
-        self.battle.victory.is_some_and(|v| v.results_shown())
-    }
-
     /// Arm the end-of-battle presentation for the cause the action SM just
     /// raised. Replaces the immediate `finish_battle` at `BattleComplete`.
     ///

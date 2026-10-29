@@ -144,7 +144,7 @@ fn build_world(disc: &Disc, ids: &[u8]) -> World {
     w.load_party(legaia_save::Party::zeroed(3));
     for i in 0..3 {
         w.actors[i].active = true;
-        w.set_battle_attack(i as u8, 60);
+        w.battle.set_battle_attack(i as u8, 60);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     w.install_menu_text(&disc.scus);

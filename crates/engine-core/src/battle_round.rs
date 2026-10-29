@@ -71,7 +71,7 @@ impl BattleRound {
         modifiers: &StatusModifiers,
     ) -> Self {
         // 1. AP refresh (matches retail per-turn AP reset).
-        world.reset_party_ap();
+        world.battle.reset_party_ap();
 
         let mut round = BattleRound::default();
         // 2. Per-slot stat resolution.
@@ -91,8 +91,10 @@ impl BattleRound {
             round.action_blocked[i] = stats.action_blocked;
             round.magic_blocked[i] = stats.magic_blocked;
             // 3. Push attack / defense into world.
-            world.set_battle_attack(i as u8, stats.atk);
-            world.set_battle_defense_split(i as u8, Some((stats.udf, stats.ldf)));
+            world.battle.set_battle_attack(i as u8, stats.atk);
+            world
+                .battle
+                .set_battle_defense_split(i as u8, Some((stats.udf, stats.ldf)));
         }
         round
     }

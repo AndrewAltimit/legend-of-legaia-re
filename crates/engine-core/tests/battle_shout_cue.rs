@@ -71,7 +71,7 @@ fn build_world(with_record: bool) -> World {
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
         w.actors[i].battle.liveness = 1;
-        w.set_battle_attack(i as u8, 90);
+        w.battle.set_battle_attack(i as u8, 90);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     if with_record {
@@ -204,11 +204,11 @@ fn drive_arts_entry(
         } else {
             0
         };
-        let input_was_open = w.arts_input_active();
+        let input_was_open = w.battle.arts_input_active();
         w.set_pad(pad);
         press = !press;
         w.tick();
-        if input_was_open && !w.arts_input_active() {
+        if input_was_open && !w.battle.arts_input_active() {
             arts_turns += 1;
         }
         shouts.extend(w.drain_battle_shout_cues());

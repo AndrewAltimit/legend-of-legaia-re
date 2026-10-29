@@ -271,7 +271,7 @@ fn summon_xp_world(enemy_hp: u16, enemy_max_hp: u16) -> World {
     world.actors[0].battle.hp = 400;
     world.actors[0].battle.mp = 200;
     world.actors[0].battle.liveness = 1;
-    world.set_battle_magic(0, 40);
+    world.battle.set_battle_magic(0, 40);
     world.actors[1].battle.max_hp = enemy_max_hp;
     world.actors[1].battle.hp = enemy_hp;
     world.actors[1].battle.liveness = 1;

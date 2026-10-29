@@ -131,7 +131,7 @@ impl PlayWindowApp {
                 cam.align_menu_glide_frames_left(left);
             }
             if due && sc.seat_hud_glides_landed {
-                self.session.host.world.land_battle_hud_glides();
+                self.session.host.world.battle.land_battle_hud_glides();
             }
             if due {
                 for g in &sc.seat_hud_glides {
@@ -171,7 +171,7 @@ impl PlayWindowApp {
                 sc.popup_age_seated.set(true);
             }
             if due && let Some((page, slide)) = sc.seat_arts_list {
-                self.session.host.world.seat_arts_list(page, slide);
+                self.session.host.world.battle.seat_arts_list(page, slide);
             }
             if due && let Some((width, plate)) = sc.seat_spirit_gauge {
                 let ctx = &mut self.session.host.world.battle_ctx;

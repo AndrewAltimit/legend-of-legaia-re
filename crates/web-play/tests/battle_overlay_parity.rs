@@ -113,7 +113,7 @@ fn live_battle_overlay_draws_the_retail_party_surface_and_no_banner() {
         let sweeping = rt
             .scene_host
             .host()
-            .is_some_and(|h| h.world.battle_entry_sweeping());
+            .is_some_and(|h| h.world.battle.battle_entry_sweeping());
         if !sweeping {
             break;
         }
