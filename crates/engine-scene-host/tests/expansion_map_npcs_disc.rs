@@ -229,7 +229,7 @@ fn walls_draw_generated_boxes_and_a_crate_is_a_floor_top() {
     let scene = host.scene.as_ref().unwrap();
     let res = host.resources.as_ref().unwrap();
     let o = scene.overrides.as_ref().unwrap();
-    assert_eq!(o.wall_tmds.len(), 1, "one distinct wall box");
+    assert_eq!(o.added_tmds.len(), 1, "one distinct wall box");
 
     // The box joins the geometry pack after its own meshes, and the wall
     // cells' decoration records name it.

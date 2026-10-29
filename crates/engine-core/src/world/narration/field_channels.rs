@@ -203,6 +203,8 @@ impl World {
                 let d = [lx - i32::from(sx), dy, lz - i32::from(sz)];
                 (d != [0, 0, 0]).then_some((c.placement_index, d))
             })
+            // A pack map's animated props, under their own record keys.
+            .chain(self.expansion_prop_moves())
             .collect()
     }
 
@@ -286,6 +288,7 @@ impl World {
                     legaia_engine_scene::field_env::object_turn_matrix(seed, live),
                 ))
             })
+            .chain(self.expansion_prop_turns())
             .collect()
     }
 

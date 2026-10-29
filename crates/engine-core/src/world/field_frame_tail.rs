@@ -137,7 +137,9 @@ impl World {
         let ambient = self.step_ambient_fx(vram);
         let clut = self.step_clut_fx(vram);
         let seeded = self.apply_vram_rect_seed(vram);
-        moved | copied | ambient | clut | seeded
+        // A pack map's animated materials (no-op off a map).
+        let materials = self.step_expansion_materials(vram);
+        moved | copied | ambient | clut | seeded | materials
     }
 
     /// Whether a host advances its field-NPC clip players this tick.

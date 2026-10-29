@@ -552,6 +552,14 @@ impl SceneResources {
             vram.underlay(&boot);
         }
 
+        // A pack map's carried-in meshes sample texture copies written into
+        // VRAM the scene leaves free (`expansion_map::detail`): over the
+        // scene's own build, so every rebuild of the map's scene - a battle's
+        // return included - carries them.
+        if let Some(o) = scene.overrides.as_ref() {
+            crate::expansion_map::detail::apply_vram_patches(&mut vram, &o.vram_patches);
+        }
+
         Ok((
             Self {
                 vram,

@@ -61,6 +61,7 @@ impl SectionRules for MapDef {
         check_triggers(self, cx);
         check_encounters(self, cx);
         check_props(self, cx, base.as_deref());
+        crate::map_detail_rules::check_detail(self, cx, base.as_deref(), grid.as_ref());
         check_npcs(self, cx, base.as_deref(), grid.as_ref());
         check_entrances(self, cx);
         if let Some(bgm) = &self.bgm {
@@ -393,19 +394,10 @@ fn check_props(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>) {
                 ),
             );
         }
-        match &p.mesh {
-            PropMesh::Object { object } => {
-                if let Some(base) = base {
-                    cx.geometry_index(&format!("{at}.mesh"), base, *object);
-                }
-            }
-            PropMesh::Tmd { tmd } => {
-                if matches!(tmd, DiscRef::Tmd { .. }) {
-                    cx.disc_ref(&format!("{at}.mesh.tmd"), tmd);
-                } else {
-                    cx.error(&format!("{at}.mesh.tmd"), format!("{tmd} is not a tmd ref"));
-                }
-            }
+        check_mesh(cx, &format!("{at}.mesh"), &p.mesh, base);
+        check_animators(cx, &format!("{at}.animate"), &p.animate);
+        if let Some(l) = &p.light {
+            check_light(cx, &format!("{at}.light"), l.radius, l.flicker, l.period);
         }
         if let Some(s) = p.scale
             && !(s.is_finite() && s > 0.0)
@@ -432,6 +424,82 @@ fn check_props(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>) {
                 "a standable prop does not close its tile; `solid` is unread",
             );
         }
+    }
+}
+
+/// A mesh reference: a base-pack index, another scene's pack index, a PROT
+/// coordinate or a pack asset.
+pub(crate) fn check_mesh(cx: &mut Checker<'_>, at: &str, mesh: &PropMesh, base: Option<&str>) {
+    match mesh {
+        PropMesh::Object { object } => {
+            if let Some(base) = base {
+                cx.geometry_index(at, base, *object);
+            }
+        }
+        PropMesh::SceneObject { scene, object } => {
+            let r = DiscRef::Scene {
+                name: scene.clone(),
+            };
+            cx.disc_ref(&format!("{at}.scene"), &r);
+            cx.geometry_index(at, scene, *object);
+        }
+        PropMesh::Tmd { tmd } => {
+            if matches!(tmd, DiscRef::Tmd { .. }) {
+                cx.disc_ref(&format!("{at}.tmd"), tmd);
+            } else {
+                cx.error(&format!("{at}.tmd"), format!("{tmd} is not a tmd ref"));
+            }
+        }
+        PropMesh::Asset { asset, colors } => {
+            crate::map_detail_rules::check_model_asset(cx, at, asset, *colors);
+        }
+    }
+}
+
+/// Animator periods and ranges.
+pub(crate) fn check_animators(
+    cx: &mut Checker<'_>,
+    at: &str,
+    anims: &[crate::map_detail::Animator],
+) {
+    use crate::map_detail::Animator;
+    for (i, a) in anims.iter().enumerate() {
+        let at = format!("{at}[{i}]");
+        let p = a.period();
+        let spin = matches!(a, Animator::Spin { .. });
+        if p == 0 || (!spin && p < 0) {
+            cx.error(
+                &format!("{at}.period"),
+                format!("period {p} frames; it must be at least 1 (a spin may be negative)"),
+            );
+        }
+        if let Animator::Pulse { amount, .. } = a
+            && !(0.0..1.0).contains(amount)
+        {
+            cx.error(
+                &format!("{at}.amount"),
+                format!("pulse amount {amount} is outside 0..1"),
+            );
+        }
+    }
+}
+
+/// A light's reach, flicker depth and flicker period.
+pub(crate) fn check_light(cx: &mut Checker<'_>, at: &str, radius: u16, flicker: f32, period: i32) {
+    if radius == 0 {
+        cx.error(&format!("{at}.radius"), "a light needs a radius");
+    }
+    if !(0.0..=1.0).contains(&flicker) {
+        cx.error(
+            &format!("{at}.flicker"),
+            format!("flicker {flicker} is outside 0..=1"),
+        );
+    }
+    if flicker > 0.0 && period < 1 {
+        cx.error(
+            &format!("{at}.period"),
+            "a flickering light needs a period of at least 1",
+        );
     }
 }
 

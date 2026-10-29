@@ -64,6 +64,10 @@ pub struct ActiveMap {
     patrol_next: Vec<usize>,
     /// The standable props' tops ([`MapDef::floor_tops`]).
     floor_tops: Vec<FloorTop>,
+    /// Each animated material's pristine VRAM words, captured the first
+    /// frame it applies (`World::step_expansion_materials`), keyed by its
+    /// index in `def.materials`.
+    pub material_captures: std::collections::BTreeMap<usize, Vec<u16>>,
 }
 
 /// What talking to a pack NPC does ([`ActiveMap::talk`]).
@@ -105,6 +109,7 @@ impl ActiveMap {
             events: Vec::new(),
             patrol_next: Vec::new(),
             floor_tops: Vec::new(),
+            material_captures: Default::default(),
         };
         m.patrol_next = vec![0; m.def.npcs.len()];
         m.floor_tops = m.def.floor_tops();

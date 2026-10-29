@@ -124,8 +124,8 @@ pub fn field_geometry_pack(scene: &Scene) -> Option<(u32, usize)> {
         .max_by_key(|&(idx, n)| (n, std::cmp::Reverse(idx)))
 }
 
-/// The generated meshes a pack map adds to its base scene's geometry pack
-/// ([`crate::expansion_map::SceneOverride::wall_tmds`]), registered under
+/// The meshes a pack map adds to its base scene's geometry pack
+/// ([`crate::expansion_map::SceneOverride::added_tmds`]), registered under
 /// the pack's entry after the pack's own meshes.
 fn override_tmds(scene: &Scene) -> Vec<ResolvedTmd> {
     let Some(o) = scene.overrides.as_ref() else {
@@ -134,7 +134,7 @@ fn override_tmds(scene: &Scene) -> Vec<ResolvedTmd> {
     let Some(entry_idx) = o.geometry_entry else {
         return Vec::new();
     };
-    o.wall_tmds
+    o.added_tmds
         .iter()
         .filter_map(|raw| {
             let tmd = legaia_tmd::parse(raw).ok()?;

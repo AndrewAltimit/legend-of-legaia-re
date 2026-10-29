@@ -103,6 +103,19 @@ pub struct MapDef {
     pub bgm: Option<DiscRef>,
     /// Follow-camera framing.
     pub camera: CameraPreset,
+    /// Decorations placed one at a time ([`crate::map_detail::DecorDef`]):
+    /// any number a tile, no collision.
+    pub decor: Vec<crate::map_detail::DecorDef>,
+    /// Seeded decoration brushes ([`crate::map_detail::ScatterBrush`]).
+    pub scatter: Vec<crate::map_detail::ScatterBrush>,
+    /// Decorations repeated along wall edges ([`crate::map_detail::EdgeDecor`]).
+    pub edges: Vec<crate::map_detail::EdgeDecor>,
+    /// Enhanced lighting: mood and placed lamps ([`crate::map_detail::MapLighting`]).
+    pub lighting: crate::map_detail::MapLighting,
+    /// Animated materials ([`crate::map_detail::MaterialFx`]).
+    pub materials: Vec<crate::map_detail::MaterialFx>,
+    /// The retail field fog pool over the map ([`crate::map_detail::MapFog`]).
+    pub fog: crate::map_detail::MapFog,
 }
 
 /// The retail scene a map borrows from.
@@ -322,8 +335,8 @@ pub struct PropDef {
     pub offset: [i16; 3],
     /// Rotation `[x, y, z]` in degrees; `y` is the yaw.
     pub rotation: [f32; 3],
-    /// Uniform scale. Carried for the workbench; the engine draws props at
-    /// scale 1 (`docs/formats/expansion-pack-maps.md`, "Gaps").
+    /// Uniform scale; `1` when left out. It folds into the prop's model
+    /// matrix after its rotation.
     pub scale: Option<f32>,
     /// Whether the prop's tile is wall. A prop has no collision box of its
     /// own; a solid one closes its tile.
@@ -339,6 +352,12 @@ pub struct PropDef {
     /// tile centre plus [`Self::offset`]. `None` is the whole tile
     /// (`[128, 128]`).
     pub footprint: Option<[u16; 2]>,
+    /// Procedural animation of the prop's draw, composed in order
+    /// ([`crate::map_detail::Animator`]). Draw only: collision and a
+    /// standable top stay where the prop rests.
+    pub animate: Vec<crate::map_detail::Animator>,
+    /// A light the prop carries under enhanced lighting.
+    pub light: Option<crate::map_detail::PropLight>,
 }
 
 /// A field NPC a pack places on a map.
@@ -393,15 +412,31 @@ pub struct NpcDef {
     pub shop: Option<String>,
 }
 
-/// Where a prop's mesh comes from.
+/// Where a prop's (or a decoration's) mesh comes from.
+///
+/// A mesh from another scene than the base scene brings its textures: the
+/// engine copies the texture rectangles and palettes it samples out of that
+/// scene's VRAM into free VRAM of the map's, and points the mesh at the
+/// copies (`docs/formats/expansion-pack-maps.md`, "Meshes from other scenes").
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PropMesh {
+    /// `{ asset = "models/lamp.glb" }`: a glTF model the pack carries under
+    /// `assets/`, converted to the renderer's mesh and VRAM form when the
+    /// map loads. `colors` is the palette size its texture is quantised to:
+    /// `16` (4bpp) or `256` (8bpp, the default).
+    Asset {
+        asset: String,
+        #[serde(default)]
+        colors: Option<u16>,
+    },
+    /// `{ scene = "town01", object = N }`: the `N`th mesh of any field
+    /// scene's geometry pack.
+    SceneObject { scene: String, object: u16 },
     /// `{ object = N }`: the `N`th mesh of the base scene's geometry pack.
     Object { object: u16 },
-    /// `{ tmd = { kind = "tmd", prot = P, index = N } }`: a TMD by disc
-    /// coordinate. The engine resolves it only inside the base scene's
-    /// geometry pack.
+    /// `{ tmd = { kind = "tmd", prot = P, index = N } }`: mesh `N` of the
+    /// geometry pack held in PROT entry `P` (any field scene's).
     Tmd { tmd: DiscRef },
 }
 

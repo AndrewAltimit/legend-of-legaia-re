@@ -296,8 +296,17 @@ pub fn build_field_render(
         // the native shell runs (`follow_floor_placed_draws`).
         field_env::follow_floor_placed_draws(&mut placements, binds, floor_follow);
     }
-    let placement_scales =
+    let mut placement_scales =
         field_env::placed_render_scales(&placements, binds.as_ref(), render_scales);
+    // An expansion-pack map's props carry their own scale (the native
+    // window's `resolve_placement_draws` applies the same).
+    if let Some(o) = scene.overrides.as_ref() {
+        for (d, s) in placements.iter().zip(placement_scales.iter_mut()) {
+            if let Some(f) = o.prop_scale(d.anchor) {
+                *s = f;
+            }
+        }
+    }
     // The overworld resolves without binds (its landmarks draw unposed and
     // unscaled), but a landmark still has an actor a kingdom MAN can tint -
     // so its record comes off the binds all the same; the decorations that
@@ -312,7 +321,13 @@ pub fn build_field_render(
         r.resize(placements.len(), None);
         r
     } else {
-        field_env::placed_bind_records(&placements, binds.as_ref())
+        let mut r = field_env::placed_bind_records(&placements, binds.as_ref());
+        // An expansion-pack map's animated props draw under their own
+        // record keys (`World::object_draw_turn_matrices`).
+        if let Some(o) = scene.overrides.as_ref() {
+            o.fill_prop_records(placements.iter().map(|d| d.anchor), &mut r);
+        }
+        r
     };
     let window_keys = placements
         .iter()

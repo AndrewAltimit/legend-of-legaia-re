@@ -21,9 +21,10 @@ use super::*;
 
 use legaia_engine_expansion::map::{ActiveMap, FiredTrigger};
 use legaia_engine_expansion::quest::QuestEvent;
+use legaia_engine_scene::expansion_map::detail::{needs_library, resolve_mesh_library};
 use legaia_engine_scene::expansion_map::{
-    BaseInputs, SceneOverride, build_field_image, floor_lut, prop_scales, resolve_map_npcs,
-    tile_centre_world,
+    BaseInputs, SceneOverride, build_field_image, floor_lut, prop_records, prop_scales,
+    resolve_map_npcs, tile_centre_world,
 };
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
@@ -108,6 +109,22 @@ impl SceneHost {
         // The geometry pack as the field load registers it: where generated
         // wall boxes join it.
         let geometry = legaia_engine_scene::scene_resources::field_geometry_pack(&base);
+        // Meshes from other scenes, model assets and decorations resolve
+        // against the disc and the pack's assets before the image is built.
+        let library = if needs_library(def, geometry.map(|(e, _)| e)) {
+            Some(
+                resolve_mesh_library(
+                    &self.index,
+                    def,
+                    &pack.assets,
+                    &base,
+                    geometry.map(|(e, _)| e),
+                )
+                .with_context(|| format!("map '{map_id}' meshes"))?,
+            )
+        } else {
+            None
+        };
         let image = build_field_image(
             def,
             &grid,
@@ -115,10 +132,23 @@ impl SceneHost {
                 base_map: base_map.as_deref(),
                 geometry_entry,
                 geometry_len: geometry.map(|(_, n)| n),
+                library: library.as_ref(),
             },
         )
         .with_context(|| format!("map '{map_id}' field image"))?;
         drop(base);
+        if image.dropped_decorations > 0 {
+            log::warn!(
+                "expansion: map '{map_id}': {} decorations on placed props' tiles left out",
+                image.dropped_decorations
+            );
+        }
+        if image.decoration_chunk > 1 {
+            log::info!(
+                "expansion: map '{map_id}' bakes its decorations in {0} x {0} tile cells",
+                image.decoration_chunk
+            );
+        }
         let npcs = resolve_map_npcs(&self.index, def, &base_name)
             .with_context(|| format!("map '{map_id}' NPCs"))?;
         let overrides = SceneOverride {
@@ -127,8 +157,10 @@ impl SceneHost {
             floor_lut: floor_lut(def, base_lut),
             prop_scales: prop_scales(def),
             npcs,
-            wall_tmds: image.wall_tmds,
+            added_tmds: image.added_tmds,
             geometry_entry: geometry.map(|(e, _)| e),
+            vram_patches: library.map(|l| l.vram_patches).unwrap_or_default(),
+            prop_records: prop_records(def),
         };
         let (sx, sz) = match seat {
             Some((x, z, _)) => (x, z),
@@ -204,6 +236,8 @@ impl SceneHost {
             |f| flags.is_set(f),
         );
         self.world.expansion.map = Some(active);
+        // The map's fog pool and its gate (no-op without `[fog]`).
+        self.world.arm_expansion_fog();
         // Quests see the map as the scene entered.
         self.world
             .expansion_notify(QuestEvent::SceneEntered(map_id.to_string()));

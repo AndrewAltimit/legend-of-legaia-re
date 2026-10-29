@@ -57,6 +57,7 @@ fn image(def: &MapDef) -> Vec<u8> {
             base_map: None,
             geometry_entry: Some(99),
             geometry_len: Some(20),
+            library: None,
         },
     )
     .unwrap()
@@ -137,11 +138,13 @@ fn props_come_back_as_placements_at_their_tiles() {
 }
 
 #[test]
-fn a_tmd_outside_the_geometry_pack_is_refused() {
+fn a_tmd_outside_the_base_pack_needs_the_mesh_library() {
+    // With no base entry to match, the PROT coordinate is another scene's
+    // mesh: it resolves only through a loaded mesh library.
     let def = def();
     let grid = def.tile_grid().unwrap();
     let err = build_field_map_image(&def, &grid, BaseInputs::default()).unwrap_err();
-    assert!(err.to_string().contains("geometry pack"), "{err:#}");
+    assert!(err.to_string().contains("mesh library"), "{err:#}");
 }
 
 #[test]
@@ -235,10 +238,11 @@ fn wall_tiles_name_a_generated_box_past_the_geometry_pack() {
             base_map: None,
             geometry_entry: Some(99),
             geometry_len: Some(20),
+            library: None,
         },
     )
     .unwrap();
-    assert_eq!(out.wall_tmds.len(), 1, "one box for every wall tile");
+    assert_eq!(out.added_tmds.len(), 1, "one box for every wall tile");
     let tiles = legaia_scene_formats::field_objects::parse_terrain_tiles(&out.image);
     let walls = def
         .tiles
@@ -287,4 +291,151 @@ fn a_wall_box_is_a_textured_tmd_of_the_tile_footprint() {
             .all(|uv| (32..64).contains(&uv[0]) && (32..64).contains(&uv[1]))
     );
     assert!(wall_box_tmd(0, 28, 0, 0).is_err());
+}
+
+/// A base pack of small textured quads: mesh `i` is a 20-unit plate on
+/// texture page `i`.
+fn plate_pack(n: usize) -> Vec<Vec<u8>> {
+    use legaia_tmd::descriptor::PacketShape;
+    use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
+    (0..n)
+        .map(|i| {
+            encode(&[ModelObject {
+                vertices: vec![[-10, 0, -10], [10, 0, -10], [-10, 0, 10], [10, 0, 10]],
+                groups: vec![ModelGroup {
+                    shape: PacketShape::Ft4,
+                    semi_transparent: false,
+                    prims: vec![ModelPrim {
+                        vertices: vec![0, 1, 2, 3],
+                        uvs: vec![(0, 0), (31, 0), (0, 31), (31, 31)],
+                        cba: 0x7F00,
+                        tsb: i as u16 & 0xF,
+                        colors: vec![[128, 128, 128]],
+                    }],
+                }],
+                scale: LEGAIA_OBJECT_SCALE,
+            }])
+            .unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn decorations_bake_into_one_cell_mesh_a_tile() {
+    let mut def = def();
+    def.props.clear();
+    def.decor = vec![
+        legaia_expansion_format::map_detail::DecorDef {
+            mesh: PropMesh::Object { object: 3 },
+            tile: [1, 1],
+            offset: [30, 0, 0],
+            ..Default::default()
+        },
+        legaia_expansion_format::map_detail::DecorDef {
+            mesh: PropMesh::Object { object: 4 },
+            tile: [1, 1],
+            offset: [-30, 16, 0],
+            rotation: [0.0, 90.0, 0.0],
+            scale: Some(2.0),
+            ..Default::default()
+        },
+    ];
+    let grid = def.tile_grid().unwrap();
+    let pack = plate_pack(8);
+    let lib = MeshLibrary::from_base_pack(pack.clone(), &def);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(pack.len()),
+            library: Some(&lib),
+        },
+    )
+    .unwrap();
+    assert_eq!(out.decoration_chunk, 1);
+    assert_eq!(out.dropped_decorations, 0);
+    // The tile's cell names a decoration record whose mesh is the bake.
+    let (gc, gr) = grid_tile(&def, 1, 1);
+    let o = OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
+    let cell = u16::from_le_bytes([out.image[o], out.image[o + 1]]);
+    assert_ne!(cell & 0x2000, 0, "the decoration draw gate");
+    let rec = usize::from(cell & OBJECT_INDEX_MASK);
+    let r = &out.image[rec * OBJECT_RECORD_STRIDE..];
+    let mesh = usize::from(u16::from_le_bytes([r[0x10], r[0x11]]));
+    assert!(mesh >= pack.len(), "an added mesh");
+    let baked = &out.added_tmds[mesh - pack.len()];
+    let tmd = legaia_tmd::parse(baked).unwrap();
+    assert_eq!(tmd.objects.len(), 2, "both decorations");
+    // The second: scaled, turned and lifted 16 up (Y down).
+    let ys: Vec<i16> = tmd.objects[1].vertices.iter().map(|v| v.y).collect();
+    assert!(ys.iter().all(|&y| y == -16), "{ys:?}");
+    let xs: Vec<i16> = tmd.objects[1].vertices.iter().map(|v| v.x).collect();
+    assert_eq!(xs.iter().min(), Some(&-50));
+}
+
+#[test]
+fn a_decorated_wall_tile_keeps_its_box() {
+    let mut def = def();
+    def.props.clear();
+    def.tiles.legend.get_mut("#").unwrap().wall = Some(WallMesh::Box {
+        height: 96,
+        tpage: 12,
+        clut: 31808,
+        tile: 9,
+    });
+    def.decor = vec![legaia_expansion_format::map_detail::DecorDef {
+        mesh: PropMesh::Object { object: 1 },
+        tile: [0, 0],
+        offset: [0, 96, 0],
+        ..Default::default()
+    }];
+    let grid = def.tile_grid().unwrap();
+    let pack = plate_pack(4);
+    let lib = MeshLibrary::from_base_pack(pack.clone(), &def);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(pack.len()),
+            library: Some(&lib),
+        },
+    )
+    .unwrap();
+    // The box, plus one bake of box + plate.
+    assert_eq!(out.added_tmds.len(), 2);
+    let baked = legaia_tmd::parse(&out.added_tmds[1]).unwrap();
+    let boxed = legaia_tmd::parse(&out.added_tmds[0]).unwrap();
+    assert_eq!(baked.objects.len(), boxed.objects.len() + 1);
+}
+
+#[test]
+fn decorations_on_a_prop_tile_are_dropped() {
+    let mut def = def();
+    let tile = def.props[0].tile;
+    def.props.truncate(1);
+    def.props[0].mesh = PropMesh::Object { object: 2 };
+    def.decor = vec![legaia_expansion_format::map_detail::DecorDef {
+        mesh: PropMesh::Object { object: 1 },
+        tile,
+        ..Default::default()
+    }];
+    let grid = def.tile_grid().unwrap();
+    let pack = plate_pack(4);
+    let lib = MeshLibrary::from_base_pack(pack.clone(), &def);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(pack.len()),
+            library: Some(&lib),
+        },
+    )
+    .unwrap();
+    assert_eq!(out.dropped_decorations, 1);
 }
