@@ -183,6 +183,7 @@ pub use effects::{
     MAX_DEBUG_EFFECTS,
 };
 mod encounters;
+mod expansion;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;

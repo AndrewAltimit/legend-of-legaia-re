@@ -63,3 +63,4 @@ legaia-mdt.workspace = true
 legaia-mes.workspace = true
 legaia-seq.workspace = true
 legaia-vab.workspace = true
+legaia-expansion-format.workspace = true

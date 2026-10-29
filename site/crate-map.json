@@ -1574,7 +1574,10 @@
    "dev_deps": [],
    "bins": [],
    "lib": true,
-   "modules": [],
+   "modules": [
+    "battle",
+    "progression"
+   ],
    "band": "kernels",
    "track": "engine",
    "rank": 4,
@@ -2320,6 +2323,7 @@
     "disc-patch",
     "engine-battle-hud",
     "engine-camera",
+    "expansion-format",
     "font",
     "gamedata",
     "lzs",

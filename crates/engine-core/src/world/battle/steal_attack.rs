@@ -55,9 +55,10 @@ impl World {
             self.actors.get(i).is_some_and(|a| a.battle.hp != 0)
                 && record_bits(self, i).is_some_and(|b| word(b, 1) & bs::ITEMS_UP_BIT != 0)
         });
-        let entry = self.actors[slot]
-            .battle_monster_id
-            .and_then(|id| self.tables.steal_table.as_ref()?.entry(id));
+        let entry = self.actors[slot].battle_monster_id.and_then(|id| {
+            self.expansion_steal_override(id)
+                .or_else(|| self.tables.steal_table.as_ref()?.entry(id))
+        });
         let inputs = StealAttackInputs {
             acting_party,
             special_battle: self.special_battle_word() != 0,

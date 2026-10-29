@@ -32,6 +32,32 @@ impl SceneHost {
         }
     }
 
+    /// Merge the retail monsters an active expansion pack's fights seat from
+    /// the monster archive into the catalog, and load the battle inputs a
+    /// fight needs, so a pack fight resolves real stats in any scene - one
+    /// whose MAN carries no encounters too. Scene entry calls it after its
+    /// own merge; a host that activates a pack mid-scene calls it once
+    /// itself. A no-op with no pack.
+    pub fn merge_expansion_monsters(&mut self) {
+        let ids = self.world.expansion_base_monster_ids();
+        if ids.is_empty() {
+            return;
+        }
+        let Some(archive) = self.monster_archive_bytes() else {
+            return;
+        };
+        let cat =
+            legaia_engine_battle::monster_catalog::catalog_from_monster_archive(&archive, &ids);
+        for def in cat.by_id.into_values() {
+            self.world.tables.monster_catalog.insert(def);
+        }
+        self.world.install_expansion_formations();
+        self.ensure_move_power_table();
+        self.ensure_cast_effect_pool();
+        self.refresh_battle_swing_costs();
+        self.refresh_battle_auto_combo_inputs();
+    }
+
     /// Lazily load + cache the monster stat archive (PROT 867, extended
     /// footprint - the archive lives in the entry's trailing-gap sectors,
     /// not the small indexed payload, so `entry_bytes` would truncate it).

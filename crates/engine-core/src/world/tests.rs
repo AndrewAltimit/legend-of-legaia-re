@@ -331,6 +331,7 @@ mod counterattack;
 mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;
+mod expansion_battle;
 mod fatal_decision;
 mod field_events;
 mod field_grid;

@@ -2112,6 +2112,7 @@ dependencies = [
  "legaia-engine-battle",
  "legaia-engine-system",
  "legaia-expansion-format",
+ "toml",
 ]
 
 [[package]]
@@ -2401,6 +2402,7 @@ dependencies = [
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-engine-world-views",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",

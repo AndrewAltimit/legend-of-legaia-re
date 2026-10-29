@@ -147,6 +147,9 @@ impl World {
                 self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
             }
         }
+        // The spoils are paid: hand the scene's monsters back their catalog
+        // entries and drop any pack boss staging.
+        self.expansion_end_battle();
         self.battle.victory = None;
         // The fade actor dies with the battle scene: the held black of the
         // exit / escape template (`holds_at_end`) comes down here, never in
@@ -385,6 +388,7 @@ impl World {
         self.battle.victory = None;
         self.battle.end = None;
         self.battle.loot_applied = false;
+        self.expansion_end_battle();
         self.battle.spoils_frames = 0;
         self.battle.result_windows_glide = None;
         self.battle.inflight_seed = None;

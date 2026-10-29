@@ -186,16 +186,20 @@ impl World {
         let Some(configured) = self.audio.battle_bgm else {
             return;
         };
+        // A pack boss's own track wins over the sound-set pick.
+        let pack_track = self.expansion_battle_bgm();
         let alt = self
             .encounters
             .region_setup
             .and_then(|s| s.keep_backdrop_object_1)
             .unwrap_or(false);
-        let Some(battle) = legaia_engine_system::music_labels::battle_track_for_sound_set(
-            self.audio.battle_sound_set,
-            alt,
-            configured,
-        ) else {
+        let Some(battle) = pack_track.or_else(|| {
+            legaia_engine_system::music_labels::battle_track_for_sound_set(
+                self.audio.battle_sound_set,
+                alt,
+                configured,
+            )
+        }) else {
             return;
         };
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
@@ -367,6 +371,9 @@ impl World {
         &mut self,
         formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) {
+        // An expansion pack's monsters take their seats' catalog entries for
+        // the fight (identity with no pack).
+        self.expansion_prepare_battle(formation);
         // **The Tetsu spar is Vahn alone** - an engine rule, not a port.
         // Retail seats whoever is in the present-party list `DAT_8007BD10`
         // (`FUN_80052FA0` counts its non-zero ids into `ctx[+0]`,

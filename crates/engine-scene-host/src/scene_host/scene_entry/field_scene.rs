@@ -795,6 +795,9 @@ impl SceneHost {
                 self.refresh_battle_auto_combo_inputs();
             }
         }
+        // An expansion pack's fights seat their own retail monsters, which
+        // need not be this scene's.
+        self.merge_expansion_monsters();
         // Route the per-region random-encounter table from the same MAN so
         // field steps roll against the player's active region (per-region
         // rate + formation-range, `FUN_801D9E1C`) rather than the aggregated

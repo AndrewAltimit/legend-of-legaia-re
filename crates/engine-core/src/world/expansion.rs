@@ -1,0 +1,441 @@
+//! The `World` side of an expansion pack: activation, and the battle,
+//! encounter and spoils hooks the pack's `battle.toml` and
+//! `progression.toml` reach the game through.
+//!
+//! Every hook here is the identity while [`World::expansion`] holds no pack:
+//! each one reads [`legaia_engine_expansion::battle::BattleRuntime::compiled`]
+//! (or the pack itself) first and returns untouched without one, so a world
+//! with no pack plays exactly the retail game.
+//!
+//! The kernels these call are `World`-free and live in
+//! `legaia_engine_expansion::{battle, progression}`.
+
+use std::sync::Arc;
+
+use legaia_engine_battle::encounter::{EncounterPhase, EncounterRoll};
+use legaia_engine_battle::monster_catalog::FormationDef;
+use legaia_engine_battle_loop::battle_state::BattleRewards;
+use legaia_engine_expansion::battle::{self as xb, BattleRuntime, CompiledBattle};
+use legaia_engine_expansion::progression::{self as xp, ProgressionRuntime};
+use legaia_expansion_format::ExpansionPack;
+
+use super::World;
+
+impl World {
+    /// Activate `pack`: compile its battle tables, install its formations and
+    /// XP curve. Any pack already active is deactivated first. On an error
+    /// (the pack's own problem list) the world is left without a pack.
+    ///
+    /// Monsters the pack builds on are merged from the disc's monster archive
+    /// by the scene host at each scene entry
+    /// ([`Self::expansion_base_monster_ids`]); a pack activated mid-scene has
+    /// them from the next scene on, or once the host merges them itself.
+    pub fn activate_expansion(&mut self, pack: Arc<ExpansionPack>) -> Result<(), Vec<String>> {
+        self.deactivate_expansion();
+        let mut problems = pack.progression.problems();
+        let compiled = match CompiledBattle::compile(&pack.manifest.id, &pack.battle) {
+            Ok(c) => Some(c),
+            Err(p) => {
+                problems.extend(p);
+                None
+            }
+        };
+        if !problems.is_empty() {
+            return Err(problems);
+        }
+        let mut progression = ProgressionRuntime::new(&pack.progression);
+        if pack.progression.xp_curve != Default::default() {
+            let tracker = &mut self.party.level_up_tracker;
+            let table = xp::xp_table(&pack.progression.xp_curve, &tracker.xp_table);
+            progression.saved_xp_table = Some(std::mem::replace(&mut tracker.xp_table, table));
+        }
+        self.expansion.battle = BattleRuntime {
+            compiled: compiled.map(Arc::new),
+            ..Default::default()
+        };
+        self.expansion.progression = progression;
+        self.expansion.pack = Some(pack);
+        self.install_expansion_formations();
+        Ok(())
+    }
+
+    /// Drop the active pack and undo what activation installed: the XP
+    /// curve, the pack formations and any catalog swap a fight still holds.
+    pub fn deactivate_expansion(&mut self) {
+        if self.expansion.pack.is_none() {
+            return;
+        }
+        self.expansion_end_battle();
+        if let Some(c) = self.expansion.battle.compiled.as_ref() {
+            for f in &c.formations {
+                self.tables
+                    .formation_table
+                    .by_id
+                    .remove(&f.def.formation_id);
+            }
+        }
+        if let Some(table) = self.expansion.progression.saved_xp_table.take() {
+            self.party.level_up_tracker.xp_table = table;
+        }
+        self.expansion = Default::default();
+    }
+
+    /// The retail monster ids the active pack's fights can seat (empty with
+    /// no pack). The scene host merges these from the monster archive after
+    /// its own PROT 867 merge.
+    pub fn expansion_base_monster_ids(&self) -> Vec<u16> {
+        self.expansion
+            .battle
+            .compiled
+            .as_ref()
+            .map(|c| c.base_monster_ids())
+            .unwrap_or_default()
+    }
+
+    /// Register the pack's formations in the formation table. Idempotent;
+    /// called at activation and before every pack fight, since a scene's
+    /// MAN install replaces the table.
+    pub fn install_expansion_formations(&mut self) {
+        let Some(c) = self.expansion.battle.compiled.clone() else {
+            return;
+        };
+        for f in &c.formations {
+            self.tables.formation_table.insert(f.def.clone());
+        }
+    }
+
+    /// The engine formation id of pack formation `formation` (local or
+    /// qualified key).
+    pub fn expansion_formation_id(&self, formation: &str) -> Option<u16> {
+        self.expansion
+            .battle
+            .compiled
+            .as_ref()?
+            .formation_id(formation)
+    }
+
+    /// Start a fight on pack formation `formation` through the ordinary
+    /// encounter path (transition, battle music, [`Self::begin_encounter_battle`]),
+    /// as [`Self::force_encounter`] does. `false`, changing nothing, when no
+    /// pack is active or it has no such formation.
+    pub fn start_expansion_battle(&mut self, formation: &str) -> bool {
+        let Some(id) = self.expansion_formation_id(formation) else {
+            log::error!("expansion: no pack formation `{formation}`");
+            return false;
+        };
+        self.install_expansion_formations();
+        self.force_encounter(id)
+    }
+
+    /// Start the pack boss `boss`: its formation through
+    /// [`Self::start_expansion_battle`]'s path, with its battle track and its
+    /// victory reward armed. `false` when there is no such boss, or it is a
+    /// once-only boss the party has already beaten.
+    pub fn start_expansion_boss(&mut self, boss: &str) -> bool {
+        let Some(c) = self.expansion.battle.compiled.clone() else {
+            return false;
+        };
+        let Some(key) = legaia_expansion_format::battle::local_key(&c.pack_id, boss) else {
+            return false;
+        };
+        let Some(b) = c.bosses.get(key) else {
+            log::error!("expansion: no pack boss `{boss}`");
+            return false;
+        };
+        if b.once && self.expansion.battle.cleared_bosses.contains(key) {
+            log::info!("expansion: boss `{boss}` is already beaten");
+            return false;
+        }
+        self.install_expansion_formations();
+        if !self.force_encounter(b.formation_id) {
+            return false;
+        }
+        self.expansion.battle.active_boss = Some(key.to_string());
+        self.expansion.battle.battle_bgm = b.bgm;
+        true
+    }
+
+    /// Whether once-only boss `boss` has been beaten.
+    pub fn expansion_boss_cleared(&self, boss: &str) -> bool {
+        let Some(c) = self.expansion.battle.compiled.as_ref() else {
+            return false;
+        };
+        legaia_expansion_format::battle::local_key(&c.pack_id, boss)
+            .is_some_and(|k| self.expansion.battle.cleared_bosses.contains(k))
+    }
+
+    /// The battle track the next fight's music swap plays in place of the
+    /// configured one: the active boss's.
+    pub(in crate::world) fn expansion_battle_bgm(&self) -> Option<u16> {
+        self.expansion.battle.battle_bgm
+    }
+
+    /// The strongest present member's level: what enemy scaling reads.
+    fn expansion_party_level(&self) -> u8 {
+        (0..usize::from(self.party.party_count.clamp(1, 3)))
+            .filter_map(|m| {
+                self.party
+                    .level_up_tracker
+                    .level
+                    .get(self.party_roster_slot(m))
+                    .copied()
+            })
+            .max()
+            .unwrap_or(1)
+    }
+
+    /// Seat the pack's numbers for a fight on `formation`: swap each pack
+    /// monster (and, under enemy scaling, each scaled monster) into the
+    /// catalog under its base id, keeping the scene's entries to restore.
+    /// Runs at the top of [`Self::enter_battle_from_formation`], before any
+    /// stat is read.
+    pub(in crate::world) fn expansion_prepare_battle(&mut self, formation: &FormationDef) {
+        self.expansion_restore_catalog();
+        let Some(c) = self.expansion.battle.compiled.clone() else {
+            return;
+        };
+        let pack_formation = c.formation(formation.formation_id).is_some();
+        let (scale, rewards) = match self
+            .expansion
+            .pack
+            .as_ref()
+            .and_then(|p| p.progression.enemy_scaling.as_ref())
+        {
+            Some(s) if xp::scaling_applies(s, pack_formation) => (
+                xp::enemy_scaling_permille(s, self.expansion_party_level()),
+                s.rewards,
+            ),
+            _ => (1000, false),
+        };
+        let catalog = &self.tables.monster_catalog;
+        let plan = xb::plan_battle(&c, formation, |id| catalog.get(id).cloned(), scale, rewards);
+        if pack_formation {
+            for slot in &formation.slots {
+                if catalog.get(slot.monster_id).is_none() {
+                    log::error!(
+                        "expansion: formation {} seats monster {} with no catalog entry - the \
+                         host has not merged the pack's base monsters",
+                        formation.formation_id,
+                        slot.monster_id
+                    );
+                }
+            }
+        }
+        for def in plan.defs {
+            let id = def.id;
+            let old = self.tables.monster_catalog.by_id.insert(id, def);
+            self.expansion.battle.shadowed.push((id, old));
+        }
+        self.expansion.battle.steals = plan
+            .steals
+            .into_iter()
+            .map(|(id, chance, item)| (id, (chance, item)))
+            .collect();
+    }
+
+    /// Put back the catalog entries a fight's swap replaced.
+    fn expansion_restore_catalog(&mut self) {
+        for (id, old) in std::mem::take(&mut self.expansion.battle.shadowed)
+            .into_iter()
+            .rev()
+        {
+            match old {
+                Some(def) => {
+                    self.tables.monster_catalog.by_id.insert(id, def);
+                }
+                None => {
+                    self.tables.monster_catalog.by_id.remove(&id);
+                }
+            }
+        }
+        self.expansion.battle.steals.clear();
+    }
+
+    /// End-of-battle cleanup: restore the catalog and drop the boss staging.
+    /// Runs after the spoils, from [`Self::finish_battle`] and
+    /// [`Self::abandon_live_battle`].
+    pub(in crate::world) fn expansion_end_battle(&mut self) {
+        self.expansion_restore_catalog();
+        self.expansion.battle.active_boss = None;
+        self.expansion.battle.battle_bgm = None;
+    }
+
+    /// The steal entry a pack monster carries in place of the static table's.
+    pub(in crate::world) fn expansion_steal_override(
+        &self,
+        monster_id: u16,
+    ) -> Option<legaia_game_tables::steal_table::StealEntry> {
+        self.expansion
+            .battle
+            .steals
+            .get(&monster_id)
+            .map(
+                |&(chance_pct, item_id)| legaia_game_tables::steal_table::StealEntry {
+                    chance_pct,
+                    item_id,
+                },
+            )
+    }
+
+    /// Scale a victory's summed EXP and credited gold by the pack's
+    /// multipliers.
+    pub(in crate::world) fn expansion_scale_spoils(&self, xp_total: u32, gold: u32) -> (u32, u32) {
+        let p = &self.expansion.progression;
+        (
+            xb::scale_permille(xp_total, p.xp_permille, u32::MAX),
+            xb::scale_permille(gold, p.gold_permille, u32::MAX),
+        )
+    }
+
+    /// A won boss fight's own reward, on top of the formation's spoils.
+    pub(in crate::world) fn expansion_boss_victory(&mut self, rewards: &mut BattleRewards) {
+        let Some(key) = self.expansion.battle.active_boss.take() else {
+            return;
+        };
+        let Some(c) = self.expansion.battle.compiled.clone() else {
+            return;
+        };
+        let Some(b) = c.bosses.get(&key) else {
+            return;
+        };
+        // The boss staging survives a fight that never came; only pay the
+        // fight that seated the boss's own formation.
+        let fought = self
+            .battle
+            .active_formation
+            .as_ref()
+            .is_some_and(|f| f.formation_id == b.formation_id);
+        if !fought {
+            return;
+        }
+        for &(item, count) in &b.reward_items {
+            if self.party.inventory.add(item, count) {
+                rewards.drops.push(item);
+            }
+        }
+        if b.reward_gold > 0 {
+            let money = i64::from(self.party.money).saturating_add(i64::from(b.reward_gold));
+            self.party.money = money.min(i64::from(super::BATTLE_GOLD_CAP)) as i32;
+            rewards.gold = rewards.gold.saturating_add(b.reward_gold);
+        }
+        if b.once {
+            self.expansion.battle.cleared_bosses.insert(key);
+        }
+    }
+
+    /// Grant the pack's level-up rewards for roster slot `char_slot`
+    /// levelling `old -> new`.
+    pub(in crate::world) fn expansion_level_rewards(&mut self, char_slot: u8, old: u8, new: u8) {
+        let Some(pack) = self.expansion.pack.clone() else {
+            return;
+        };
+        for (item, count) in xp::level_rewards(&pack.progression.level_rewards, char_slot, old, new)
+        {
+            let _ = self.party.inventory.add(item, count);
+        }
+    }
+
+    /// Whether the active pack overrides the active scene's encounters.
+    fn expansion_encounter(&self) -> Option<legaia_engine_expansion::battle::CompiledEncounter> {
+        self.expansion
+            .battle
+            .compiled
+            .as_ref()?
+            .encounters
+            .get(&self.active_scene_label)
+            .cloned()
+    }
+
+    /// Whether the active pack swaps the formations retail's own rate rolls
+    /// in the active scene.
+    pub(in crate::world) fn expansion_substitutes_rolls(&self) -> bool {
+        self.expansion_encounter()
+            .is_some_and(|e| e.steps.is_none())
+    }
+
+    /// The formation a retail roll fights under the pack's override for the
+    /// active scene; `roll` itself with no override.
+    pub(in crate::world) fn expansion_substitute_roll(
+        &mut self,
+        roll: EncounterRoll,
+    ) -> EncounterRoll {
+        let Some(enc) = self.expansion_encounter().filter(|e| e.steps.is_none()) else {
+            return roll;
+        };
+        let rand = self.next_rand();
+        let Some(id) = xb::pick_formation(&enc, Some(roll.formation_id), rand) else {
+            return roll;
+        };
+        if id == roll.formation_id {
+            return roll;
+        }
+        self.install_expansion_formations();
+        log::info!(
+            "expansion: encounter in '{}' -> pack formation {id:#06X}",
+            self.active_scene_label
+        );
+        EncounterRoll {
+            formation_id: id,
+            row_index: usize::from(id),
+            roll_q8: roll.roll_q8,
+        }
+    }
+
+    /// One field step under a pack that owns the active scene's encounter
+    /// rate. `None` when it does not (retail's roll runs); otherwise whether
+    /// the step triggered a fight.
+    ///
+    /// The pack's counter replaces the scene's region and mean-rate rolls
+    /// outright, so a scene retail never fights in can hold encounters. The
+    /// session's transition / grace bracket, the Incense window and the
+    /// engaged hold still gate it.
+    pub(in crate::world) fn expansion_encounter_step(&mut self) -> Option<bool> {
+        let enc = self.expansion_encounter()?;
+        let steps = enc.steps?;
+        if self.encounters.session.is_none() {
+            self.install_encounter_bracket();
+        }
+        let idle = self
+            .encounters
+            .session
+            .as_ref()
+            .is_none_or(|s| matches!(s.phase(), EncounterPhase::Idle));
+        if !idle || self.locomotion.walk_regen_window != 0 || self.encounter_roll_held() {
+            return Some(false);
+        }
+        let scene = self.active_scene_label.clone();
+        let left = match self.expansion.battle.step_counter.take() {
+            Some((s, n)) if s == scene => n,
+            _ => {
+                let r = self.next_rand();
+                xb::draw_steps(steps, r)
+            }
+        };
+        let left = left.saturating_sub(1);
+        if left > 0 {
+            self.expansion.battle.step_counter = Some((scene, left));
+            return Some(false);
+        }
+        let r = self.next_rand();
+        let next = xb::draw_steps(steps, r);
+        self.expansion.battle.step_counter = Some((scene, next));
+        let r = self.next_rand();
+        let id = xb::pick_formation(&enc, None, r)?;
+        self.install_expansion_formations();
+        let roll = EncounterRoll {
+            formation_id: id,
+            row_index: usize::from(id),
+            roll_q8: 0,
+        };
+        log::info!(
+            "expansion: pack encounter in '{}' -> formation {id:#06X}",
+            self.active_scene_label
+        );
+        Some(
+            self.encounters
+                .session
+                .as_mut()
+                .is_some_and(|s| s.trigger_with(roll)),
+        )
+    }
+}

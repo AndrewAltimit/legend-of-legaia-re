@@ -87,6 +87,7 @@ impl World {
             let Some(result) = result else {
                 continue;
             };
+            self.expansion_level_rewards(char_id, result.old_level, result.new_level);
             if let Some(rec) = self.party.roster.members.get_mut(char_id as usize) {
                 LevelUpTracker::apply_to_record(&result, rec);
             }
@@ -267,6 +268,8 @@ impl World {
         if no_reward {
             xp_total = 0;
         }
+        // An expansion pack's EXP / gold multipliers (identity without one).
+        let (xp_total, gold_credited) = self.expansion_scale_spoils(xp_total, gold_credited);
 
         let alive = (0..usize::from(self.party.party_count))
             .filter(|&i| self.actors.get(i).is_some_and(|a| a.battle.hp > 0))
@@ -292,13 +295,16 @@ impl World {
         // approach dispatch ran it pre-battle) spawns `P2[50]` through the
         // gated record dispatch, and that record's own `51 42` script bytes
         // set the flag. See `SceneHost::tick`'s battle-return arm.
-        BattleRewards {
+        let mut rewards = BattleRewards {
             xp: xp_total,
             xp_share,
             gold: gold_credited,
             level_ups,
             drops,
-        }
+        };
+        // A pack boss's own victory reward.
+        self.expansion_boss_victory(&mut rewards);
+        rewards
     }
 
     /// The bonus equipment pool: every weapon, armour and accessory the
