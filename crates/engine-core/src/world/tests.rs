@@ -334,6 +334,7 @@ mod encounters;
 mod expansion_battle;
 mod expansion_cards;
 mod expansion_hosts;
+mod expansion_live_arm;
 mod expansion_quest_battles;
 mod expansion_quests;
 mod expansion_waves;

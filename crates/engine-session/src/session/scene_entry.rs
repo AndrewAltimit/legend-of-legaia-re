@@ -143,8 +143,9 @@ impl<S: AudioSink> BootSession<S> {
     /// enter leaves the world on whatever was running.
     ///
     /// The live loop arms on the base scene's label, but the map rolls no
-    /// retail encounters - the encounter seat is cleared after the arm, and
-    /// the map's zones name pack tables
+    /// retail encounters: the arm installs no fallback on a pack map
+    /// ([`legaia_engine_core::world::World::arm_live_loop`]), and the map's
+    /// zones name pack tables
     /// ([`legaia_engine_expansion::map::ActiveMap::encounter_table`]).
     pub fn enter_expansion_map_live(
         &mut self,
@@ -182,8 +183,6 @@ impl<S: AudioSink> BootSession<S> {
             .unwrap_or_default();
         let world = &mut self.host.world;
         world.arm_live_loop(&base, &opts.to_live_loop_opts());
-        world.encounters.session = None;
-        world.refresh_encounter_rollable();
         if let Some(distance) = self.host.world.expansion.map.as_ref().and_then(|m| {
             use legaia_engine_camera::camera_distance::CameraDistance;
             use legaia_expansion_format::map::CameraPreset;

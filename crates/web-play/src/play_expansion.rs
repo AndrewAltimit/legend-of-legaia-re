@@ -183,12 +183,10 @@ impl LegaiaRuntime {
         self.cutscene_glide.reset();
         let _ = self.seat_enter(legaia_engine_mode::mode::GameMode::MainInit);
         if self.live_battles {
+            // The map rolls no retail encounters (its zones name pack
+            // tables), and the arm keeps the pack's monsters and formations
+            // (`World::arm_live_loop`).
             self.arm_live_battles(&base);
-            // The map rolls no retail encounters: its zones name pack tables.
-            if let Some(host) = self.scene_host.host_mut() {
-                host.world.encounters.session = None;
-                host.world.refresh_encounter_rollable();
-            }
         }
         self.rebuild_render_state()
             .map_err(|_| "enter_expansion_map: the scene build failed".to_string())?;
@@ -272,6 +270,15 @@ mod tests {
             .expect("enter the pack map");
         let host = rt.scene_host.host().unwrap();
         assert_eq!(host.active_expansion_map(), Some("rebirth_tower_1f"));
+        // The page arms its live battles after the map's monster merge; the
+        // arm keeps the pack's monsters and rolls no retail encounters.
+        for id in host.world.expansion_base_monster_ids() {
+            assert!(
+                host.world.tables.monster_catalog.get(id).is_some(),
+                "monster {id} has no catalog entry"
+            );
+        }
+        assert!(host.world.encounters.session.is_none());
         let field = rt.field.as_ref().expect("the page built the scene");
         assert!(!field.placements.is_empty(), "the map's props draw");
         let info: serde_json::Value = serde_json::from_str(&rt.expansion_info_json()).unwrap();

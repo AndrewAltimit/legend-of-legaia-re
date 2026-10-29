@@ -69,3 +69,61 @@ fn a_save_on_a_pack_map_resumes_on_the_map_where_it_was_made() {
     assert_eq!(session.host.world.party.previous_scene, previous_scene);
     assert_eq!(session.host.world.save_full().ext_v2, save.ext_v2);
 }
+
+/// Every monster the pack's fights seat has a catalog entry and every pack
+/// formation is registered - the fight tables a pack battle resolves
+/// against.
+fn assert_pack_fight_tables(session: &NativeSession, at: &str) {
+    let world = &session.host.world;
+    let ids = world.expansion_base_monster_ids();
+    assert!(!ids.is_empty(), "{at}: the pack seats retail monsters");
+    for id in ids {
+        assert!(
+            world.tables.monster_catalog.get(id).is_some(),
+            "{at}: monster {id} has no catalog entry"
+        );
+    }
+    let compiled = world.expansion.battle.compiled.as_ref().expect("compiled");
+    for f in &compiled.formations {
+        assert!(
+            world
+                .tables
+                .formation_table
+                .by_id
+                .contains_key(&f.def.formation_id),
+            "{at}: pack formation {} is not registered",
+            f.def.formation_id
+        );
+    }
+    assert!(
+        world.encounters.session.is_none(),
+        "{at}: a pack map rolls no retail encounters"
+    );
+}
+
+/// The live arm runs after the map entry's monster merge; with the live
+/// loop on it must not swap the pack's monsters and formations for the
+/// synthetic stand-ins (the fights then seat nameless retail-stat monsters).
+/// Through the direct entry and the save resume, both of which arm.
+#[test]
+fn a_live_pack_map_keeps_the_packs_fight_tables() {
+    let Some(mut session) = open() else { return };
+    let opts = FieldLiveOpts {
+        live_loop: true,
+        player_battle: true,
+        ..FieldLiveOpts::default()
+    };
+    session
+        .enter_expansion_map_live(MAP_ID, "", &opts)
+        .expect("enter the pack map");
+    assert_pack_fight_tables(&session, "direct entry");
+
+    let resume = session.current_resume();
+    let save = session.host.world.save_full();
+    session
+        .enter_field_live("town01", &opts)
+        .expect("enter town01");
+    let _ = session.resume_save(save, &resume.scene, &opts);
+    assert_eq!(session.host.active_expansion_map(), Some(MAP_ID));
+    assert_pack_fight_tables(&session, "save resume");
+}
