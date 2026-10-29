@@ -498,6 +498,12 @@ pub struct BattleActor {
     /// forward axis. Zero on every body but the ones a cast module tips:
     /// PROT 0929 (Mule) rolls the monsters its arm-16 wave front has passed.
     pub render_roll: u16,
+    /// `+0x44` - the body's **pitch** (12-bit angle), the trio's first
+    /// angle: the draw's `Rx * Ry * Rz` puts it outermost, so a non-zero
+    /// word tips the turned body nose-up or nose-down. Zero on every body
+    /// but the ones a cast module turns: PROT 0917 (Barra) pitches its
+    /// creature through its circle and dive and the victim it carries.
+    pub render_pitch: u16,
     /// `+0x21B` - hit-count bound (script-defined; loop exits at
     /// `ctx.hit_counter >= hit_count_bound`).
     pub hit_count_bound: u8,
@@ -713,6 +719,11 @@ impl BattleActor {
     /// at the allocator's unity.
     pub fn render_scale_q12(&self) -> f32 {
         self.render_scale.map_or(1.0, |s| f32::from(s) / 4096.0)
+    }
+
+    /// [`Self::render_pitch`] in radians (`0` at rest).
+    pub fn render_pitch_radians(&self) -> f32 {
+        f32::from(self.render_pitch & 0xFFF) / 4096.0 * std::f32::consts::TAU
     }
 
     /// [`Self::render_roll`] in radians (`0` at rest).

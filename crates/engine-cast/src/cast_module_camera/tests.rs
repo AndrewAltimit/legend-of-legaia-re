@@ -1332,3 +1332,29 @@ fn neo_star_slash_and_doomsday_name_their_countdown_words() {
     assert_eq!(capture_countdown_units(0xB6), SPEED_SCALAR);
     assert_eq!(capture_countdown_units(0xAC), 1);
 }
+
+#[test]
+fn barra_stages_its_clips_one_after_another() {
+    // Arm 6 queues clip 2 bare on every pass while clip 1 plays
+    // (`0x801F70E4..0x801F70F4`).
+    let mut st = ModuleCamState {
+        creature_clip: Some(1),
+        ..Default::default()
+    };
+    assert!(barra_direct(&mut st, 6, seats()).hold);
+    assert_eq!(st.creature_stage, Some(2));
+    assert!(!st.creature_restage);
+    // Arm 0xC's pass bumps both bytes: clip 3, cut in.
+    let mut st = ModuleCamState::default();
+    assert!(!barra_direct(&mut st, 0xC, seats()).hold);
+    assert_eq!(st.creature_stage, Some(3));
+    assert!(st.creature_restage);
+    // Arm 0xD queues clip 4 behind clip 3.
+    let mut st = ModuleCamState {
+        creature_clip: Some(3),
+        ramp: -0x2000,
+        ..Default::default()
+    };
+    assert!(barra_direct(&mut st, 0xD, seats()).hold);
+    assert_eq!(st.creature_stage, Some(4));
+}

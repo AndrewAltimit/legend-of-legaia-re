@@ -2216,7 +2216,7 @@ Beside the directors an engine-side pass applies each arm's seat writes
 | PROT | Writes |
 |---|---|
 | 0918 | the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
-| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
+| 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; arm 18's ring re-seated as the crystals on arm 19's pass and dropped by arm 20 ([below](#puera-crystals)); `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
 | 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
 
 0927's clip stores of arms 19 and 24 are bare (`sb v0,0x1da(s3)` at
@@ -2233,9 +2233,28 @@ which is the black stage of Juggernaut's summoning.
 
 Not carried: Kemaro's arm-4 and Puera's arms-14 / 15 TR y shakes (absolute
 stores on alternate passes), Kemaro's arm-12 absolute pose store and the
-heights its arms 13..17 walk the arm-9 parts through, Puera's arm-19 `rand()`
-scatter, and 0927's second, kill-capable hit at arm 26: the band folds the
-cast once. The monsters' half render scale under 0927 (`+0x72 = 0x800` on
+heights its arms 13..17 walk the arm-9 parts through, and 0927's second,
+kill-capable hit at arm 26: the band folds the cast once.
+
+<a id="puera-crystals"></a>
+
+**Puera's glow and crystals.** The yellow glow at the screen's edge through
+arms 13..19 is arm 12's record `0x801F939C`, a camera-locked additive ring
+that only the GTE's divide cap brings on screen
+([renderer](renderer.md#the-gtes-register-limits)); arm 13's `0x801F93E8`,
+an additive polar-textured disc of radius `0x680` on the stage, is a
+separate part. Arm 18 seats twenty-three spikes (`0x801F989C`, effect-library
+mesh `0x19`) on a standing ring before the creature; arm 19's pass
+(`0x801F8318..0x801F85B8`) deals each a height from a shuffled table of
+`1..=23` (`rand() % 23`, redrawn while the slot is taken), puts it on a floor
+ring of radius `0x2000 / 7` at `y = -0x2000 - (k << 10)`, and turns it by
+three more draws (pitch and roll `rand() % 0x101 - 0x80`, yaw `rand() & 0xFFF`;
+two further draws per part are overwritten). Arm 20 drops them `(step *
+scalar) << 7` a pass, held or not, until each lands on `y = -0x100`, and
+each landing raises the pad's rumble. Ports:
+`cast_module_camera::puera_crystal_seats` / `puera_crystal_fall`, applied by
+`World::apply_puera_writes`. Arm 20's half-step drift lands on the pitch
+`0x8007B790` (`0x801F8704..0x801F871C`), not the yaw. The monsters' half render scale under 0927 (`+0x72 = 0x800` on
 arm 0, back to `0x1000` on arm 27) is carried (`BattleActor::render_scale`).
 
 ### Summon-creature directors
@@ -2309,6 +2328,31 @@ sweep's last pose instead, the pan set out a fifth of the way to the planet
 and arm 5's frames filled the screen with it. Two module words are modelled on the director's
 `ramp`: Barra's TR z pull and its victim's fall, and Mule's world-anchor Z
 `0x80089120`, which the port otherwise keeps no twin of (from `0`).
+
+<a id="barra-seat-writes"></a>
+
+**Barra's seats.** PROT 0917 carries its victim through the cast, and the
+engine applies those writes beside the director (`World::apply_barra_writes`;
+`s3` the victim, `s4` the creature, `w` the module word `0x801F934C`). Arm 4's
+pass saves the victim's pose and facing and stands it on the stage origin;
+arm 5's stores the drop word `0x801F935E = trunc(victim[+0x3E] * 4 / 3)` and
+shows the creature at `(0, drop - 0x1000, -0x2000)`. Arm 6 flies the creature
+on an arc (`sin((w << 11) / 160) - 0x1000` up, `(w << 14) / 160 - 0x2000`
+out) while `w <= 0xA0`, the victim on it from `0x51`, and its pass sets the
+victim `drop` under the creature. Arm 9 turns both round a circle,
+`z = 2 sin 8w`, `y = cos 8w - 0x1000`, the victim `drop` off it along the
+radius, both pitched `+0x44 = 8w`, and its pass leaves them at `y = -0x800`,
+pitched `0xC00` into the dive. Arm `0xB` lowers both `8 p` a pass and its
+pass tints both green (`+0x21C = 8`, the presentation tick's arm 8) and cuts
+onto the creature (focus `z = 2 drop`); arm `0xC`'s pass hangs both at
+`y = -0x2000` and takes the tint off. Arm `0xD` drops the victim `16 p` a
+pass to the ground and flies the creature on `y = trunc(15 sin 12w / 8) -
+0x2000`, `z = 0x1000 - 2 drop - cos 12w`, pitch `12w + 0xC00`, which arm
+`0xE` continues; arm `0xF` re-runs the target-size framing `FUN_801F0348`
+on every pass (`jal` at `0x801F805C`) before its shot reads `ctx[+0x6D0]`,
+draws the creature off, and on its pass puts the victim back on its saved
+seat and facing. The pitch is `BattleActor::render_pitch`, composed by both
+hosts as `Rx(-pitch)` outside the facing (the frame flip conjugates it).
 
 **Spawns.** Each module's `FUN_80021B04` / `FUN_80050ED4` calls are seated on
 the pass their arm makes them (`cast_module_camera::creature_arm_spawns`,

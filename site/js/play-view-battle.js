@@ -247,6 +247,16 @@
           rolls = rt.play_battle_actor_rolls();
         }
       } catch (e) { /* unrolled */ }
+      /* A body a cast module pitched (`+0x44`, Barra's dive) turns about X
+       * through its origin outside the facing: Rx(-pitch) in this frame, the
+       * native actor_model twin. Guarded against a cached WASM without the
+       * export. */
+      let pitches = null;
+      try {
+        if (typeof rt.play_battle_actor_pitches === 'function') {
+          pitches = rt.play_battle_actor_pitches();
+        }
+      } catch (e) { /* unpitched */ }
       let floorClips = null;
       try {
         if (typeof rt.play_battle_actor_floor_clips === 'function') {
@@ -375,6 +385,18 @@
           d.model = mulMat4(
             placementModelScaledY(d.x, d.y, d.z, d.rotY, d.scale),
             new Float32Array([cr, sr, 0, 0, -sr, cr, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
+        }
+        const pitch = (pitches && i < pitches.length) ? pitches[i] : 0;
+        if (pitch) {
+          /* glam's from_rotation_x(-pitch) about the placement point,
+           * outermost: T * Rx * T^-1 * model. */
+          const d = draws[draws.length - 1];
+          const base = d.model || placementModelScaledY(d.x, d.y, d.z, d.rotY, d.scale);
+          const c = Math.cos(-pitch), s = Math.sin(-pitch);
+          const ty = d.y - (c * d.y - s * d.z), tz = d.z - (s * d.y + c * d.z);
+          d.model = mulMat4(
+            new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, ty, tz, 1]),
+            base);
         }
         /* Arts after-image ghosts: the engine's ghost plan (rate-scheduled
          * pose-history depths + per-character colour with the per-ghost

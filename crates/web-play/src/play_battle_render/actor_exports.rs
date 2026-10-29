@@ -139,6 +139,26 @@ impl LegaiaRuntime {
             .collect()
     }
 
+    /// Per battle actor (mesh order, as [`Self::play_battle_actor_transforms`])
+    /// the body's pitch `+0x44` in radians (`BattleActor::render_pitch`), `0`
+    /// for every body a cast module has not turned. The page composes a
+    /// non-zero pitch as `Rx(-pitch)` about the body's origin, outside the
+    /// facing - the native window's `actor_model` twin.
+    pub fn play_battle_actor_pitches(&self) -> Vec<f32> {
+        let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        br.actors
+            .iter()
+            .map(|a| {
+                host.world
+                    .actors
+                    .get(a.actor_idx)
+                    .map_or(0.0, |actor| actor.battle.render_pitch_radians())
+            })
+            .collect()
+    }
+
     /// Battle actor `i`'s current pose: 6 `i32` per part
     /// (`[tx, ty, tz, rx, ry, rz]`, absolute PSX 4096-unit angles) - the
     /// live `pose_frame` the engine's battle-animation tick maintains, or

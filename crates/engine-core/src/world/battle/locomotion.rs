@@ -514,8 +514,9 @@ impl World {
     /// led retail's by a pass: `theeder_summon_mid_cast`). The render scale is the allocator's `0x1000` (no battle
     /// path the port models rewrites `+0x72`). The `+0x44` pitch arm
     /// (`0x8004A534..0x8004A5F8`), which only re-derives `z` when a battle
-    /// actor carries a pitch, is not taken - the port's battle actors carry
-    /// none. An actor with no pose (no clip player) takes a zero centroid,
+    /// actor carries a pitch, is not taken: the only pitched bodies are
+    /// PROT 0917's creature and victim (`BattleActor::render_pitch`), whose
+    /// pair no framing reads while they are turned. An actor with no pose (no clip player) takes a zero centroid,
     /// so its pair is its live pair.
     // PORT: FUN_8004998C (`0x8004A3DC..0x8004A5F8`, the body-pair store)
     /// [`Self::refresh_battle_body_pairs`] for a caller outside the world

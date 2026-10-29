@@ -540,6 +540,19 @@ impl PlayWindowApp {
             // nearest them. The browser page composes the same factor from
             // `play_battle_actor_rolls`.
             let model = Self::battle_body_model(pos, a.battle.facing_angle);
+            // A pitched body (`+0x44`, `BattleActor::render_pitch`) turns
+            // about the X axis through its origin outside the facing: the
+            // trio's first factor, which the frame flip `F` conjugates to
+            // `Rx(-pitch)` (`F Rx(a) F = Rx(-a)`). The browser page
+            // composes the same factor from `play_battle_actor_pitches`.
+            let model = if a.battle.render_pitch & 0xFFF != 0 {
+                let t = Mat4::from_translation(Vec3::from(
+                    legaia_engine_battle::battle_afterimage::placement_pos(pos.to_array()),
+                ));
+                t * Mat4::from_rotation_x(-a.battle.render_pitch_radians()) * t.inverse() * model
+            } else {
+                model
+            };
             let model = if a.battle.render_roll & 0xFFF != 0 {
                 model * Mat4::from_rotation_z(a.battle.render_roll_radians())
             } else {

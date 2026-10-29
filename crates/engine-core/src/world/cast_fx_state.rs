@@ -114,6 +114,9 @@ pub struct CastFxState {
     /// The monster poses PROT 0927's arm 0 saves (`0x801F9C9C` / `0x801F9CBC`)
     /// and arms 27 / 28 restore: `(engine slot, position, facing)`.
     pub(crate) module_saved_poses: Vec<(usize, [i16; 3], u16)>,
+    /// PROT 0917's drop word `0x801F935E`: `trunc(victim[+0x3E] * 4 / 3)`,
+    /// stored on arm 5's pass, the height the victim hangs off the creature.
+    pub(crate) module_barra_drop: i16,
     /// The `+0x42` the summon creature's render node carries while it draws
     /// clipped (`0` = the floor row, `+0x42 = 1`): PROT 0927 raises `2`, so
     /// its creature is clipped by object-effect row 1.
@@ -418,6 +421,7 @@ impl CastFxState {
             module_theeder: Default::default(),
             module_freed_turn: 0,
             module_saved_poses: Vec::new(),
+            module_barra_drop: 0,
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,

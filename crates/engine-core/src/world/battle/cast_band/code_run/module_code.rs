@@ -150,13 +150,23 @@ impl World {
         } else {
             legaia_engine_cast::cast_module_camera::module_profile(entry)
         };
-        // The module countdown this pass opens on (PROT 0922's seat writes
-        // read it).
+        // The module countdown this pass opens on (PROT 0917's and 0922's
+        // seat writes read it).
         let countdown_before = self.casting.module_cam.countdown.0;
         // PROT 0916's arm-0 kill roll, drawn once per cast ahead of its
         // director.
         if entry == legaia_engine_cast::cast_module_camera::ALURU_ENTRY {
             self.draw_aluru_verdict(caster_slot, victim_slot, spell_id);
+        }
+        // PROT 0917's arm `0xF` re-runs the target-size framing `FUN_801F0348`
+        // at the head of every pass (`jal` at `0x801F805C`), ahead of the
+        // shot that reads `ctx[+0x6D0]` (`0x801F8094`, `0x801F8104`): the
+        // victim on the ground is framed off its own size, not the depth
+        // whatever ran before left.
+        if entry == 917 && ctx.phase == 0xF {
+            let d = self.cast_target_frame_depth(caster_slot);
+            self.battle.camera_frame_height = d;
+            self.battle_ctx.camera_frame_height = d;
         }
         let direction = if has_trampoline {
             None
@@ -218,6 +228,11 @@ impl World {
             && let Some(d) = direction
         {
             self.apply_kemaro_writes(ctx.phase, !d.hold, victim_slot);
+        }
+        if entry == 917
+            && let Some(d) = direction
+        {
+            self.apply_barra_writes(ctx.phase, !d.hold, countdown_before, victim_slot);
         }
         if entry == 922
             && let Some(d) = direction
@@ -1332,23 +1347,7 @@ impl World {
             let depth = match (entry, phase_entry) {
                 (903, 10) => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
                 (903, 11) | (913, 0x0D) => {
-                    let target = self
-                        .actors
-                        .get(usize::from(caster_slot))
-                        .map_or(8, |a| a.battle.active_target);
-                    let size_of = |slot: u8| {
-                        self.actors
-                            .get(usize::from(slot))
-                            .and_then(|a| a.battle_monster_id)
-                            .and_then(|id| self.tables.monster_catalog.get(id))
-                            .map_or(0, |d| d.size_class)
-                    };
-                    let h = legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
-                        caster_slot,
-                        target,
-                        self.party.party_count,
-                        size_of,
-                    );
+                    let h = self.cast_target_frame_depth(caster_slot);
                     let alive = self
                         .actors
                         .get(usize::from(victim_slot))
@@ -1651,6 +1650,31 @@ impl World {
     ///
     /// PORT: FUN_801F6A00 (arm 8: flee staging + round tail; the record-side
     /// HP / MP write-back is the battle teardown's)
+    /// The target-size framing `FUN_801F0348` for a cast by `caster_slot`:
+    /// the `ctx[+0x6D0]` depth its target's (or, for a monster caster, its
+    /// own) size class gives.
+    ///
+    /// REF: FUN_801F0348
+    fn cast_target_frame_depth(&self, caster_slot: u8) -> i16 {
+        let target = self
+            .actors
+            .get(usize::from(caster_slot))
+            .map_or(8, |a| a.battle.active_target);
+        let size_of = |slot: u8| {
+            self.actors
+                .get(usize::from(slot))
+                .and_then(|a| a.battle_monster_id)
+                .and_then(|id| self.tables.monster_catalog.get(id))
+                .map_or(0, |d| d.size_class)
+        };
+        legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
+            caster_slot,
+            target,
+            self.party.party_count,
+            size_of,
+        )
+    }
+
     fn spikefish_outcome(
         &mut self,
         ctx: &mut legaia_engine_cast::cast_module_ticks::CastModuleCtx,
