@@ -37,6 +37,8 @@ mod world_mist;
 // references, so the bundle names it here: without this line its
 // `#[wasm_bindgen]` exports would drop out of the cdylib.
 extern crate legaia_web_patcher;
+// The same for the expansion workbench (`legaia-web-expansion`).
+extern crate legaia_web_expansion;
 
 use legaia_container_formats::tim_scan;
 use legaia_disc_audit::categorize::{Class, classify};

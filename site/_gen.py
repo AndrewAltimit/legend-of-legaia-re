@@ -23,6 +23,7 @@ Run from the repo root:
     python3 site/_gen.py
 """
 from __future__ import annotations
+import base64
 import hashlib
 import html
 import json
@@ -83,6 +84,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "magic": "Legend of Legaia Seru Magic & Summons - Every Cast in 3D",
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
     "tooling/translation-workbench": "Legend of Legaia Translation Workbench - Edit a Language Pack in the Browser",
+    "tooling/expansion-workbench": "Legend of Legaia Expansion Workbench - Build an Expansion Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
     "guides/desktop-apps": "Legaia Explorer and the Native Legend of Legaia Port - Download and Run",
 }
@@ -167,6 +169,12 @@ DESCRIPTIONS: dict[str, str] = {
         "how much room every name, label and scene has, and download a "
         "shareable pack. The disc never leaves your machine."
     ),
+    "tooling/expansion-workbench": (
+        "Build a Legend of Legaia expansion pack in your browser: new monsters, "
+        "bosses, quests, dialogue, trading cards, game modes and tile-painted "
+        "maps, validated against your own disc and exported as one shareable "
+        ".lxpack. The disc never leaves your machine."
+    ),
     "quickstart": (
         "Get started with the Legend of Legaia RE tools: extract every asset "
         "from your disc, view them interactively, and boot the engine port "
@@ -211,7 +219,7 @@ DESCRIPTIONS: dict[str, str] = {
 APP_PAGE_KEYS: set[str] = {
     "play", "viewer", "media", "minigames", "monsters", "characters",
     "npcs", "world-overview", "disc-map", "tooling/rom-patcher",
-    "tooling/translation-workbench",
+    "tooling/translation-workbench", "tooling/expansion-workbench",
 }
 
 
@@ -407,6 +415,7 @@ WIDE_PAGES: set[str] = {
     "reference/scene-names",
     "tooling/rom-patcher",
     "tooling/translation-workbench",
+    "tooling/expansion-workbench",
 }
 
 # Wide pages that are long-form prose with one wide exhibit. They keep the
@@ -761,6 +770,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/address-reference-scan.html","Address-reference scan","tooling/address-reference-scan","tooling/address-reference-scan.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("tooling/translation-workbench.html","Translation workbench",   "tooling/translation-workbench","tooling/translation-workbench.html"),
+    ("tooling/expansion-workbench.html","Expansion workbench",       "tooling/expansion-workbench","tooling/expansion-workbench.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
@@ -1904,6 +1914,34 @@ def write_gitignore(generated: list[str]) -> None:
     (ROOT / ".gitignore").write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
+# Example expansion packs the workbench offers, by directory under packs/.
+EXAMPLE_PACKS = ("rebirth",)
+
+
+def build_example_packs() -> list[str]:
+    """Write site/packs/<id>.json for each example pack: every file of the
+    pack tree, text as UTF-8 and anything else as base64, in path order."""
+    out_paths: list[str] = []
+    for pack_id in EXAMPLE_PACKS:
+        src = REPO_ROOT / "packs" / pack_id
+        if not src.is_dir():
+            continue
+        files = []
+        for f in sorted(p for p in src.rglob("*") if p.is_file()):
+            rel = f.relative_to(src).as_posix()
+            data = f.read_bytes()
+            try:
+                files.append({"path": rel, "text": data.decode("utf-8")})
+            except UnicodeDecodeError:
+                files.append({"path": rel, "base64": base64.b64encode(data).decode("ascii")})
+        out = ROOT / "packs" / f"{pack_id}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"id": pack_id, "files": files}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        out_paths.append(f"packs/{pack_id}.json")
+        print(f"  wrote packs/{pack_id}.json")
+    return out_paths
+
+
 def main() -> int:
     written = 0
     search_index: list[dict] = []
@@ -1966,6 +2004,11 @@ def main() -> int:
         written += 1
         generated.append(out_path)
         print(f"  wrote {out_path}")
+
+    # The expansion workbench's example pack: packs/<id>/ as one JSON
+    # document the page loads like a picked folder. The packs are the
+    # project's own content, not disc data.
+    generated.extend(build_example_packs())
 
     # Write search-index.json
     idx_path = ROOT / "search-index.json"

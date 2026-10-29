@@ -81,6 +81,7 @@
 /minigames.json
 /monsters.html
 /npcs.html
+/packs/rebirth.json
 /play.html
 /quickstart.html
 /reference/builds.html
@@ -162,6 +163,7 @@
 /tooling/byte-accounting.html
 /tooling/determinism-replay.html
 /tooling/disc-coverage.html
+/tooling/expansion-workbench.html
 /tooling/extraction.html
 /tooling/full-game-ladder.html
 /tooling/ghidra.html

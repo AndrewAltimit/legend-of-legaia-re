@@ -36,6 +36,7 @@
       "web-play",
       "web-minigames",
       "web-patcher",
+      "web-expansion",
       "asset-viewer",
       "explorer",
       "patcher",
@@ -311,6 +312,7 @@
     "render-kernels",
     "texture-replace",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -963,6 +965,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -1598,7 +1601,8 @@
     "engine-core",
     "engine-scene-host",
     "engine-screens",
-    "engine-session"
+    "engine-session",
+    "web-expansion"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/README.md"
   },
@@ -2310,6 +2314,7 @@
     "engine-world-views",
     "explorer",
     "parity",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -2947,7 +2952,8 @@
     "engine-scene-host",
     "engine-session",
     "engine-shell",
-    "engine-ui"
+    "engine-ui",
+    "web-expansion"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },
@@ -3073,6 +3079,7 @@
     "game-tables",
     "render-kernels",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -3157,6 +3164,7 @@
     "patcher",
     "texture-replace",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -3188,6 +3196,7 @@
     "engine-system",
     "explorer",
     "patcher",
+    "web-expansion",
     "web-minigames",
     "web-viewer"
    ],
@@ -3224,6 +3233,7 @@
     "extract",
     "patcher",
     "texture-replace",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -4007,6 +4017,7 @@
     "patcher",
     "render-kernels",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -4308,6 +4319,36 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/vab/README.md"
   },
+  "web-expansion": {
+   "package": "legaia-web-expansion",
+   "deps": [
+    "actor-formats",
+    "engine-battle",
+    "engine-expansion",
+    "engine-scene",
+    "expansion-format",
+    "font",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "scene-formats"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "catalog",
+    "session",
+    "wasm"
+   ],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "The site's expansion workbench as wasm exports: disc pickers and coordinate resolver, pack JSON in / validation / <code>.lxpack</code> out, the XP, dialogue and map previews over the engine's own kernels. An rlib in the engine layer.",
+   "dependents": [
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-expansion/README.md"
+  },
   "web-minigames": {
    "package": "legaia-web-minigames",
    "deps": [
@@ -4542,6 +4583,7 @@
     "tmd",
     "ui-formats",
     "vab",
+    "web-expansion",
     "web-patcher",
     "web-play",
     "xa"
@@ -4569,7 +4611,7 @@
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code> and <code>web-patcher</code>), and its own product: the asset inspectors (disc browser, viewers, <code>.glb</code> export).",
+   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code>, <code>web-patcher</code> and <code>web-expansion</code>), and its own product: the asset inspectors (disc browser, viewers, <code>.glb</code> export).",
    "dependents": [],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-viewer/README.md"
   },

@@ -3207,6 +3207,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-web-expansion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-actor-formats",
+ "legaia-engine-battle",
+ "legaia-engine-expansion",
+ "legaia-engine-scene",
+ "legaia-expansion-format",
+ "legaia-font",
+ "legaia-game-tables",
+ "legaia-gamedata",
+ "legaia-iso",
+ "legaia-scene-formats",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "legaia-web-minigames"
 version = "0.1.0"
 dependencies = [
@@ -3380,6 +3400,7 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "legaia-vab",
+ "legaia-web-expansion",
  "legaia-web-patcher",
  "legaia-web-play",
  "legaia-xa",

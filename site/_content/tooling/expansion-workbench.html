@@ -1,0 +1,200 @@
+<header class="page-header wb-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; Expansion workbench</div>
+  <h1>Expansion workbench</h1>
+  <p class="lede">Build an expansion pack for the port in the browser: new monsters and bosses, a level curve, quests, dialogue, trading cards, game modes and custom maps, checked against your own disc as you edit and exported as one shareable <code>.lxpack</code>. Everything runs in this tab as WebAssembly - the disc never leaves your machine and nothing is uploaded.</p>
+</header>
+
+<section class="doc-section" id="workbench">
+  <div class="wb xw">
+
+    <div class="wb-toolbar">
+      <label class="wb-tool">
+        <span class="wb-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
+        <input type="file" id="xw-file" accept=".bin,application/octet-stream">
+      </label>
+      <div class="wb-tool">
+        <span class="wb-label">Pack
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Start from the Rebirth example (the project's own flagship pack), from a <code>.lxpack</code> or a pack folder of your own, or from an empty pack.</p><p>A pack folder is the directory holding <code>pack.toml</code>; the browser reads every file in it.</p></span></span>
+        </span>
+        <div class="wb-inline">
+          <button type="button" id="xw-rebirth" class="wb-button wb-button-ghost">Rebirth example</button>
+          <label class="wb-button wb-button-ghost wb-file-button">Open .lxpack<input type="file" id="xw-bundle-file" accept=".lxpack,application/octet-stream" hidden></label>
+          <label class="wb-button wb-button-ghost wb-file-button">Open folder<input type="file" id="xw-dir-file" webkitdirectory multiple hidden></label>
+          <button type="button" id="xw-fresh" class="wb-button wb-button-ghost">Start fresh</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="wb-warn"><strong>A pack carries no game data.</strong> It names the disc's monsters, scenes, meshes and music by number, and every player supplies their own disc.
+      <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The names in the pickers (monsters, items, scenes) are read from the disc you load here and shown to you only. A picker writes the coordinate - <code>{ kind = "monster", id = 109 }</code> - never the name; a pack holds a name only where you type one.</p><p>Every export runs the validator's no-disc-bytes rule. Reference: <code>docs/formats/expansion-pack.md</code>.</p></span></span>
+    </div>
+
+    <div id="xw-resume" class="wb-resume" hidden></div>
+    <div id="xw-status" class="wb-status" role="status"></div>
+
+    <div id="xw-main" hidden>
+      <div class="wb-toolbar wb-toolbar-pack">
+        <div class="xw-packname"><strong id="xw-pack-title"></strong> <code id="xw-pack-id"></code> <span id="xw-pack-ver" class="xw-dim"></span></div>
+        <div class="wb-actions">
+          <button type="button" id="xw-dl" class="wb-button">Download .lxpack</button>
+          <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
+          <button type="button" id="xw-play" class="wb-button wb-button-ghost">Play in browser</button>
+          <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> keeps the bundle in this browser for the play page to load.</p></span></span>
+        </div>
+      </div>
+      <div id="xw-export-status" class="wb-status"></div>
+
+      <div class="xw-work">
+        <div class="xw-edpane">
+          <nav class="xw-tabs" id="xw-tabs" role="tablist" aria-label="Pack sections"></nav>
+          <div id="xw-panel" class="xw-panel"></div>
+        </div>
+        <aside class="xw-issues" aria-label="Validation">
+          <h3>Checks <span id="xw-issue-sum" class="wb-fold-sum"></span>
+            <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The pack validator, re-run a moment after every edit against the pack exactly as it would be exported, with your disc resolving every coordinate. An error stops the engine loading the pack and stops the download; a warning does not.</p><p>Click an issue to go to the field.</p></span></span>
+          </h3>
+          <div id="xw-issues"></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .wb { max-width: none; }
+  .wb-header { margin-bottom: 0.6rem; }
+  .wb-header .lede { margin-bottom: 0; }
+  .wb-warn { margin: 0.4rem 0; padding: 0.35rem 0.7rem; border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px; background: var(--warn-soft); color: var(--text); font-size: 0.86em; }
+  .wb-toolbar { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; align-items: flex-start; }
+  .wb-toolbar-pack { align-items: center; justify-content: space-between; margin: 0.2rem 0 0.3rem; padding: 0.45rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-tool { display: block; margin: 0.25rem 0; min-width: 0; }
+  .wb-label { display: block; font-weight: 600; font-size: 0.86em; margin-bottom: 0.15rem; }
+  .wb input[type=text], .wb input[type=number], .wb input[type=search], .wb select, .wb textarea { max-width: 100%; padding: 0.25rem 0.45rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; font-size: 0.92em; }
+  .wb input[type=file] { color: var(--text-muted); max-width: 100%; }
+  .wb-inline { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  .wb-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.25rem 0; }
+  .wb-button { padding: 0.35rem 0.8rem; font: inherit; font-size: 0.92em; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: 1px solid var(--accent); border-radius: 6px; }
+  .wb-button:hover { background: var(--accent-hi); }
+  .wb-button:disabled { opacity: 0.6; cursor: progress; }
+  .wb-button-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .wb-button-ghost:hover { background: var(--bg-card-hi); border-color: var(--border-hi); }
+  .wb-file-button { display: inline-block; }
+  .wb-status { margin: 0.3rem 0; font-family: var(--font-mono); font-size: 0.84em; white-space: pre-wrap; color: var(--text-muted); }
+  .wb-status:empty { display: none; }
+  .wb-status.is-ok { color: var(--ok); }
+  .wb-status.is-err { color: var(--open); }
+  .wb-resume { margin: 0.4rem 0; padding: 0.5rem 0.8rem; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-soft); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .wb-resume[hidden] { display: none; }
+  .wb h3 { font-size: 0.95em; margin: 0.2rem 0 0.5rem; color: var(--text-bright); }
+  .wb-fold-sum { font-weight: 400; color: var(--text-dim); margin-left: 0.4rem; }
+  .wb-mini { padding: 0.1rem 0.5rem; font: inherit; font-size: 0.85em; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .wb-mini:hover { border-color: var(--accent); }
+  .wb-mini.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--text-bright); }
+  .wb-mini:disabled { opacity: 0.4; cursor: default; }
+  .wb-table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
+  .wb-table td, .wb-table th { padding: 0.22rem 0.4rem; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
+  .wb-table th { color: var(--text-dim); font-weight: 600; }
+  .wb-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .wb-empty { color: var(--text-dim); font-style: italic; padding: 0.6rem 0; }
+
+  /* Workbench layout: the section editor and the checks share one screen. */
+  .xw-dim { color: var(--text-dim); font-size: 0.9em; }
+  .xw-work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 0.7rem; align-items: start; }
+  .xw-edpane { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .xw-tabs { display: flex; flex-wrap: wrap; gap: 0.15rem; padding: 0.35rem 0.4rem 0; border-bottom: 1px solid var(--border); }
+  .xw-tab { padding: 0.3rem 0.7rem; font: inherit; font-size: 0.88em; color: var(--text-muted); background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; }
+  .xw-tab:hover { color: var(--text-bright); }
+  .xw-tab.is-active { color: var(--text-bright); background: var(--bg-raised); border-color: var(--border); margin-bottom: -1px; }
+  .xw-tab .xw-badge { margin-left: 0.3rem; }
+  .xw-badge { display: inline-block; min-width: 1.2em; padding: 0 0.3em; border-radius: 999px; font-size: 0.75em; font-weight: 700; text-align: center; background: var(--open); color: #fff; }
+  .xw-badge.is-warn { background: var(--warn); color: #1d1500; }
+  .xw-panel { padding: 0.7rem 0.8rem; background: var(--bg-raised); border-radius: 0 0 8px 8px; min-height: 24rem; }
+  .xw-issues { position: sticky; top: calc(var(--topbar-h) + 0.5rem); max-height: calc(100vh - var(--topbar-h) - 1rem); overflow: auto; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .xw-issue-file { margin: 0.5rem 0 0.2rem; font-family: var(--font-mono); font-size: 0.8em; color: var(--accent-hi); }
+  .xw-issue { display: block; width: 100%; text-align: left; padding: 0.25rem 0.4rem; margin: 0 0 2px; font: inherit; font-size: 0.82em; color: var(--text); background: var(--bg-raised); border: none; border-left: 3px solid var(--open); border-radius: 3px; cursor: pointer; }
+  .xw-issue.is-warning { border-left-color: var(--warn); }
+  .xw-issue:hover { background: var(--bg-card-hi); }
+  .xw-issue code { color: var(--text-dim); font-size: 0.92em; }
+  .xw-ok { color: var(--ok); font-size: 0.86em; }
+  .xw-flash { outline: 2px solid var(--accent) !important; outline-offset: 1px; }
+
+  /* Forms */
+  .xw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr)); gap: 0.4rem 0.8rem; }
+  .xw-field { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; font-size: 0.9em; }
+  .xw-field > span { font-weight: 600; font-size: 0.86em; color: var(--text-muted); }
+  .xw-field.is-wide { grid-column: 1 / -1; }
+  .xw-field input[type=text], .xw-field input[type=number], .xw-field select, .xw-field textarea { width: 100%; }
+  .xw-field textarea { font-family: var(--font-mono); min-height: 3.5rem; resize: vertical; }
+  .xw-field .xw-hint { font-weight: 400; font-size: 0.82em; color: var(--text-dim); }
+  .xw-check { flex-direction: row; align-items: center; gap: 0.4rem; }
+  .xw-row2 { display: flex; gap: 0.3rem; }
+  .xw-row2 > * { flex: 1 1 0; min-width: 0; }
+  .xw-stat { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.25rem; }
+  .xw-box { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); }
+  .xw-box > .xw-box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.9em; color: var(--text-bright); }
+  .xw-box-head .xw-sp { flex: 1 1 auto; }
+  .xw-sub { margin: 0.8rem 0 0.3rem; font-size: 0.92em; color: var(--accent-hi); }
+  .xw-split { display: grid; grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr); gap: 0.7rem; }
+  .xw-list { display: flex; flex-direction: column; gap: 1px; max-height: 32rem; overflow: auto; }
+  .xw-li { padding: 0.25rem 0.45rem; text-align: left; font: inherit; font-size: 0.85em; color: var(--text); background: transparent; border: none; border-left: 3px solid var(--border-hi); border-radius: 3px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .xw-li:hover { background: var(--bg-card-hi); }
+  .xw-li.is-active { background: var(--accent-soft); border-left-color: var(--accent); }
+  .xw-li.has-err { border-left-color: var(--open); }
+  .xw-preview-num { font-family: var(--font-mono); font-size: 0.82em; color: var(--text-dim); }
+  .xw-rows { font-family: var(--font-mono); font-size: 0.82em; margin-top: 0.3rem; }
+  .xw-rows div { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 0.4rem; padding: 0.05rem 0.2rem; }
+  .xw-rows .is-long { color: var(--warn); }
+  .xw-rows .is-bad { color: var(--open); }
+  .xw-rows .xw-page { border-top: 1px dashed var(--border); margin-top: 0.2rem; }
+  .xw-chart { width: 100%; max-width: 46rem; height: auto; display: block; }
+  .xw-chart text { font-size: 11px; fill: var(--text-muted); }
+  .xw-legend { display: flex; gap: 1rem; font-size: 0.82em; color: var(--text-muted); margin: 0.2rem 0; }
+  .xw-legend i { display: inline-block; width: 1.2em; height: 2px; vertical-align: middle; margin-right: 0.3em; }
+  .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
+
+  /* Tile painter */
+  .xw-painter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); gap: 0.6rem; }
+  .xw-tools { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; margin-bottom: 0.3rem; }
+  .xw-tools .xw-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
+  .xw-canvas-wrap { position: relative; overflow: auto; height: min(70vh, 40rem); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-code); }
+  .xw-canvas-wrap canvas { display: block; image-rendering: pixelated; cursor: crosshair; }
+  .xw-canvas-wrap.is-panning canvas { cursor: grabbing; }
+  .xw-hover { min-height: 1.3em; font-family: var(--font-mono); font-size: 0.8em; color: var(--text-muted); margin-top: 0.2rem; }
+  .xw-palette { display: flex; flex-direction: column; gap: 2px; }
+  .xw-swatch { display: grid; grid-template-columns: 1.6rem 1.4rem minmax(0, 1fr); gap: 0.4rem; align-items: center; padding: 0.15rem 0.3rem; font: inherit; font-size: 0.84em; text-align: left; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .xw-swatch:hover { background: var(--bg-card-hi); }
+  .xw-swatch.is-active { border-color: var(--accent); background: var(--accent-soft); }
+  .xw-swatch i { display: block; width: 1.4rem; height: 1.4rem; border-radius: 3px; border: 1px solid var(--border-hi); }
+  .xw-swatch code { text-align: center; }
+  .xw-quarters { display: inline-grid; grid-template-columns: 1.4rem 1.4rem; gap: 2px; }
+  .xw-quarters label { display: flex; align-items: center; justify-content: center; height: 1.4rem; border: 1px solid var(--border); border-radius: 2px; cursor: pointer; font-size: 0.75em; }
+  .xw-quarters input { display: none; }
+  .xw-quarters input:checked + span { color: var(--text-bright); font-weight: 700; }
+  .xw-quarters label:has(input:checked) { background: var(--text-dim); }
+  .xw-note { font-size: 0.82em; color: var(--text-dim); margin: 0.3rem 0; }
+
+  @media (max-width: 68rem) {
+    .xw-work { grid-template-columns: minmax(0, 1fr); }
+    .xw-issues { position: static; max-height: 20rem; }
+    .xw-painter { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 44rem) {
+    .xw-split { grid-template-columns: minmax(0, 1fr); }
+    .xw-list { max-height: 12rem; }
+  }
+
+  /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
+     or tap (tap toggles; Escape and tapping elsewhere close). */
+  .info-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.8em; font-weight: 700; cursor: help; user-select: none; margin-left: 0.35em; vertical-align: 0.1em; flex: none; }
+  .info-tip:hover, .info-tip:focus-visible, .info-tip.is-open { color: var(--accent-hi); border-color: var(--accent); }
+  .tip-pop { text-transform: none; letter-spacing: normal; display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(34rem, 86vw); padding: 0.8rem 1rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.55; text-align: left; cursor: auto; white-space: normal; }
+  .tip-pop p { margin: 0 0 0.6rem; }
+  .tip-pop p:last-child { margin-bottom: 0; }
+  .info-tip:hover > .tip-pop, .info-tip:focus-visible > .tip-pop, .info-tip.is-open > .tip-pop { display: block; }
+  .info-tip.tip-align-right > .tip-pop { left: auto; right: -0.6rem; transform: none; }
+  .info-tip.tip-align-left > .tip-pop { left: -0.6rem; right: auto; transform: none; }
+</style>
+
+<script src="../js/rom-cache.js"></script>
+<script src="../js/disc-info.js"></script>
+<script type="module" src="../js/expansion-workbench-app.js"></script>

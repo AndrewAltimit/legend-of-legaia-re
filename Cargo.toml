@@ -85,6 +85,7 @@ members = [
     "crates/engine-shell",
     "crates/asset-viewer",
     "crates/explorer",
+    "crates/web-expansion",
     "crates/web-minigames",
     "crates/web-patcher",
     "crates/web-play",
@@ -224,6 +225,7 @@ legaia-seq = { path = "crates/seq", default-features = false }
 legaia-tim = { path = "crates/tim", default-features = false }
 legaia-tmd = { path = "crates/tmd", default-features = false }
 legaia-vab = { path = "crates/vab", default-features = false }
+legaia-web-expansion = { path = "crates/web-expansion" }
 legaia-web-minigames = { path = "crates/web-minigames" }
 legaia-web-patcher = { path = "crates/web-patcher" }
 legaia-web-play = { path = "crates/web-play" }

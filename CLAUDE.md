@@ -126,7 +126,7 @@ How the runtime engine works.
 | [`asset-loader.md`](docs/subsystems/asset-loader.md) | LBA resolver + sub-asset chain. |
 | [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). No culling of the port's own: what drops geometry is retail's (visible-tile crop at retail framing, actor cull, per-prim rejects); the clip volume holds the whole scene (`SCENE_FAR`). |
 | [`renderer-port.md`](docs/subsystems/renderer-port.md) | The port's wgpu renderer pass by pass: PSX-mode rasterisation, the enhancement passes, the screen-space overlay, VRAM capture, the battle HUD and menu pipelines, the frame profiler. |
-| [`browser-host.md`](docs/subsystems/browser-host.md) | The browser host module by module: what the wasm bundle (`web-play` + `web-minigames` + `web-patcher` + `web-viewer`) exports for the play page, the minigames page, the viewer pages and the ROM patcher. |
+| [`browser-host.md`](docs/subsystems/browser-host.md) | The browser host module by module: what the wasm bundle (`web-play` + `web-minigames` + `web-patcher` + `web-expansion` + `web-viewer`) exports for the play page, the minigames page, the viewer pages, the ROM patcher and the expansion workbench. |
 | [`shading.md`](docs/subsystems/shading.md) | How a pixel gets its colour: texel index -> CLUT read from **VRAM** (not the file) -> `texel * colour / 128` -> depth cue -> blend -> dither. No light source. Why exported palettes look wrong. |
 | [`vr-mode.md`](docs/subsystems/vr-mode.md) | WebXR `immersive-vr` on the site's 3D pages: the flat renderer stays the geometry source, only the framebuffer and view-projection fork per eye. |
 | [`audio.md`](docs/subsystems/audio.md) | PsyQ libsnd / libspu stack, SsAPI sequencer, SPU DMA engine; the cold scene-entry sequence every host owes, and how BGM parity is measured against a save state. |
@@ -221,6 +221,7 @@ How the runtime engine works.
 | [`ratchet-integrity.md`](docs/tooling/ratchet-integrity.md) | What keeps a ratchet honest: `check-baseline-loosening.py` (a baselined value that moved the wrong way needs a ledger entry) and the disc-test tally (a skip is not a pass). |
 | [`doc-density.md`](docs/tooling/doc-density.md) | The two hard doc gates: `check-doc-density.py` (>800-char lines, >150-word cells) and `check-md-links.py` (relative links + `#anchors`). Bypass `LEGAIA_SKIP_PRECOMMIT=1`. |
 | [`translation/`](docs/tooling/translation/index.md) | `legaia-patcher translate` - community language packs: disc text → editable YAML → in-place reimport; pages for pack format, space and budgets, dialog import, UI strings, textures and fonts. Beginner guide: [`guides/translating.md`](docs/guides/translating.md). Exported packs carry game text - gitignored, never commit. |
+| [`expansion-workbench.md`](docs/tooling/expansion-workbench.md) | The site's in-browser expansion-pack editor over the user's disc: section editors, the tile painter and its corner-height overlay, validation with click-to-field, `.lxpack` export, the IndexedDB autosave and play hand-off keys. Session crate `web-expansion`. |
 | [`pal-localizations.md`](docs/tooling/pal-localizations.md) | Official PAL discs (FR/DE/IT): PROT.DAT is 1:1 with USA; `translate lift-official` re-keys their text onto USA coordinates. USA scene MANs have zero compressed slack. |
 
 ### Reference - [`docs/reference/`](docs/reference/)
@@ -342,7 +343,8 @@ The edges among the engine's kernel crates are a committed table (`scripts/ci/cr
 | [`crates/web-play`](crates/web-play/README.md) | - | The browser play page: `LegaiaRuntime` (the native window's `BootSession`), plus the field actor layer the viewer shares. An rlib; its exports ship in `web-viewer`'s bundle. |
 | [`crates/web-minigames`](crates/web-minigames/README.md) | - | The browser minigames page: `LegaiaMinigames`, a JSON shell over the minigame rules engines with no `World`. The play page holds one for in-world minigame art. An rlib below `web-play`. |
 | [`crates/web-patcher`](crates/web-patcher/README.md) | - | The site's client-side ROM patcher (randomizer, texture replacer, language-pack workbench; nothing is uploaded) as wasm exports over `patcher` and its layer crates. Names no engine crate. An rlib. |
-| [`crates/web-viewer`](crates/web-viewer/README.md) | - | The WASM bundle the site loads (`cdylib` over `web-play` and `web-patcher`), and its own product: the asset inspectors (disc browser, viewers, `.glb` export). |
+| [`crates/web-expansion`](crates/web-expansion/README.md) | - | The site's expansion workbench as wasm exports: disc pickers and coordinate resolver, pack JSON in / validation / `.lxpack` out, the XP, dialogue and map previews over the engine's own kernels. An rlib in the engine layer. |
+| [`crates/web-viewer`](crates/web-viewer/README.md) | - | The WASM bundle the site loads (`cdylib` over `web-play`, `web-patcher` and `web-expansion`), and its own product: the asset inspectors (disc browser, viewers, `.glb` export). |
 
 ### Ghidra-side scripts - [`ghidra/scripts/`](ghidra/scripts/README.md)
 
