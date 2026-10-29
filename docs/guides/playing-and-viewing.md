@@ -19,7 +19,8 @@ On this page:
 - Play: [the launcher](#0-the-launcher), [booting a scene](#1-boot-the-engine),
   [picking a scene, and cheats](#2-pick-a-scene), [FMVs](#3-play-the-fmvs),
   [minigames](#4-start-a-minigame-from-a-live-scene), [audio](#5-what-you-hear),
-  [saves and config](#6-saves-and-config-live-next-to-you).
+  [saves and config](#6-saves-and-config-live-next-to-you),
+  [expansion packs](#11-playing-an-expansion-pack).
 - Tools: [record and replay](#7-record-and-replay-a-session),
   [the asset viewer](#8-browse-assets-interactively),
   [script disassembly](#9-read-the-games-scripts),
@@ -712,6 +713,55 @@ Worth running before concluding a change did or didn't work in the browser: a
 stale bundle looks exactly like a fix that had no effect. See
 [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md).
 
+## 11. Playing an expansion pack
+
+An expansion pack adds content made for the port - maps, quests, fights,
+challenges - and plays beside your own disc; it carries no game data of its
+own ([`expansion-pack.md`](../formats/expansion-pack.md)). The flagship pack is
+[`packs/rebirth/`](../../packs/rebirth/README.md).
+
+**On the desktop**, the launcher's *Expansion pack...* button picks one: an
+`.lxpack` file, or the `pack.toml` inside a pack folder (dropping either on
+the window works too). The pack is checked the way the game checks it; one
+with errors is refused, and the help box lists the first few. A good pack is
+remembered in `launcher.toml` (`expansion = "..."`) and shown on the button by
+name; its version and authors are in the help box. *Delete* or a right-click
+on the button goes back to no pack. The launcher passes the pack to the game
+as `--expansion`, which also works by hand:
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
+    --expansion packs/rebirth           # New Game and Continue play with it
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion rebirth.lxpack --map rebirth_tower_1f   # straight onto a map
+```
+
+**In the browser**, the play page's *Expansion pack* card loads an `.lxpack`
+once the disc is up, and *Enter map* walks straight onto one of its maps. The
+expansion workbench's *Play in browser* opens `play.html?expansion=1`, which
+loads the pack the workbench stored in this browser. *Unload* goes back to
+the game as it shipped.
+
+With a pack loaded:
+
+- **New Game** starts the pack fresh with the new game; **Continue** loads a
+  save with the pack's progress. A save made with a pack carries that pack's
+  progress and reloads it; a save naming a pack that is not loaded still
+  loads, says so ("Saved with expansion 'rebirth' - not loaded"), and keeps
+  the pack's progress to write back on the next save.
+- **Entrances** lead from the retail game into the pack's maps: a tile in a
+  retail scene that enters a map when stepped on, often only once a story
+  point, quest or party level is reached. Rebirth's opens in Rim Elm, in the
+  room the tower's stair lands in, for a party of level 30 or more.
+- **Journal**: Select on the pause menu opens it (the hint under the menu
+  says so). *Quests* lists the started quests, active first, with each
+  objective's progress and the reward; *Challenges* lists the challenges with
+  their best scores, and Cross arms one for the next battle; *Travel* enters
+  any of the pack's maps directly, which is the way in for testing. The pack's
+  name and version head the screen, with the count of trading cards waiting.
+- **Toasts**: a line at the top of the screen says when a quest starts, an
+  objective moves ("The Rebirth Tower: 2/3") and a quest completes.
+
 ## Related docs
 
 - [engine.md](../subsystems/engine.md) - the engine's architecture and port boundaries.
@@ -719,3 +769,4 @@ stale bundle looks exactly like a fix that had no effect. See
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.
 - [determinism-replay.md](../tooling/determinism-replay.md) - the replay format.
 - [modding-and-translation.md](modding-and-translation.md) - randomize or translate the disc you just booted.
+- [expansion-pack-maps.md](../formats/expansion-pack-maps.md) - pack maps and their entrances.

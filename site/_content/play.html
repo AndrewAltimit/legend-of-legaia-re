@@ -838,6 +838,21 @@ div.play-vis-head { cursor: default; }
           <div class="play-save-status" id="save-status">Load a disc to export or import saves.</div>
         </div>
 
+        <div class="play-card" id="play-expansion-card">
+          <h3>Expansion pack</h3>
+          <label class="play-save-import">Load expansion (.lxpack)
+            <input type="file" id="expansion-import" accept=".lxpack" disabled>
+          </label>
+          <div class="play-btn-row">
+            <select id="expansion-map" disabled aria-label="Pack map"></select>
+            <button id="expansion-enter" type="button" disabled
+                    title="Walk straight into this map of the pack (its entrances in the retail scenes lead here too).">Enter map</button>
+            <button id="expansion-unload" type="button" disabled
+                    title="Play the game as it shipped. The pack's progress stays in your saves.">Unload</button>
+          </div>
+          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. A pack adds maps, quests and fights made for the port; New Game and Continue play with it, and Select in the pause menu opens its Journal.</div>
+        </div>
+
         <!-- Collapsed by default: the key list is long and most visitors only
              need it once. The open / closed choice is remembered per
              browser (`play-controls-open`). -->
@@ -1228,6 +1243,7 @@ div.play-vis-head { cursor: default; }
        * battle tools are session-only and start at the engine defaults. */
       if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(false);
       setSaveUi(true);
+      expansionDiscReady();
       /* A fresh runtime has an empty rack: mount the browser card (and any
        * card the player picked) before anything can open a save screen. */
       remountCards();
@@ -1249,6 +1265,135 @@ div.play-vis-head { cursor: default; }
       console.warn(err);
     }
   }
+
+  /* ---------------- expansion packs ----------------
+   * An `.lxpack` bundle from the file input, or the one the expansion
+   * workbench's "Play in browser" stored: IndexedDB database
+   * `legaia-expansion`, store `packs`, key `play`, value `{ id, name,
+   * version, bytes, savedAt }`, read when the page opens as
+   * `play.html?expansion=1`. The bytes go to the engine
+   * (`load_expansion`), which validates and activates the pack; the page
+   * keeps them only to hand back to a rebuilt engine (`recoverRuntime`). */
+  const expansionInput = document.getElementById('expansion-import');
+  const expansionMapSel = document.getElementById('expansion-map');
+  const expansionEnterBtn = document.getElementById('expansion-enter');
+  const expansionUnloadBtn = document.getElementById('expansion-unload');
+  const expansionStatus = document.getElementById('expansion-status');
+  let expansionBytes = null;
+
+  function expansionMsg(text, bad) {
+    expansionStatus.textContent = text;
+    expansionStatus.classList.toggle('is-error', !!bad);
+  }
+
+  function expansionShow(info) {
+    const pack = info && info.pack;
+    const ok = !!(info && info.ok && pack);
+    expansionMapSel.innerHTML = '';
+    for (const m of (ok ? pack.maps : [])) {
+      const o = document.createElement('option');
+      o.value = m.id;
+      o.textContent = m.name || m.id;
+      expansionMapSel.appendChild(o);
+    }
+    expansionMapSel.disabled = !ok || !pack.maps.length;
+    expansionEnterBtn.disabled = expansionMapSel.disabled;
+    expansionUnloadBtn.disabled = !ok;
+  }
+
+  function loadExpansionBytes(bytes, from) {
+    if (!runtime || typeof runtime.load_expansion !== 'function') {
+      expansionMsg('This build of the engine has no expansion-pack support.', true);
+      return;
+    }
+    let info = null;
+    try { info = JSON.parse(runtime.load_expansion(bytes)); } catch (e) {
+      expansionMsg(`Could not load ${from}: ${e.message || e}`, true);
+      return;
+    }
+    if (!info.ok) {
+      const errs = (info.errors || []).slice(0, 3).join(' | ');
+      expansionMsg(`${from} was not loaded: ${errs}`, true);
+      expansionShow(null);
+      return;
+    }
+    expansionBytes = bytes;
+    const p = info.pack;
+    const by = p.authors && p.authors.length ? ` by ${p.authors.join(', ')}` : '';
+    const warn = info.warnings && info.warnings.length ? ` (${info.warnings.length} warning(s))` : '';
+    expansionMsg(`${p.name} ${p.version}${by}${warn}. New Game and Continue play with it; Select in the pause menu opens its Journal.`);
+    expansionShow(info);
+  }
+
+  /* The workbench's hand-off slot; `null` when there is none or IndexedDB
+   * is unavailable (a private window, blocked storage). */
+  function readWorkbenchPack() {
+    return new Promise((resolve) => {
+      let req;
+      try { req = indexedDB.open('legaia-expansion', 1); } catch (e) { resolve(null); return; }
+      req.onupgradeneeded = () => {
+        try { req.result.createObjectStore('packs'); } catch (e) { /* exists */ }
+      };
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        try {
+          const t = req.result.transaction('packs', 'readonly');
+          const r = t.objectStore('packs').get('play');
+          r.onsuccess = () => resolve(r.result || null);
+          r.onerror = () => resolve(null);
+        } catch (e) {
+          resolve(null);
+        }
+      };
+    });
+  }
+
+  /* The engine's word on the pack: the active one, and a loaded save's pack
+   * that is not loaded (its progress is kept, and written back on save). */
+  function expansionRefresh() {
+    if (!runtime || typeof runtime.expansion_info_json !== 'function') return;
+    let info = null;
+    try { info = JSON.parse(runtime.expansion_info_json()); } catch (e) { return; }
+    if (info.dormant) {
+      expansionMsg(`This save was made with the expansion pack "${info.dormant}", which is not loaded. Its progress is kept; load the pack to play it.`, true);
+    }
+  }
+
+  async function expansionDiscReady() {
+    expansionInput.disabled = false;
+    expansionMsg('No expansion pack: the game as it shipped. Load an .lxpack to add one.');
+    if (!/[?&]expansion=1\b/.test(location.search)) return;
+    const rec = await readWorkbenchPack();
+    if (!rec || !rec.bytes) {
+      expansionMsg('No pack from the expansion workbench is stored in this browser.', true);
+      return;
+    }
+    const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes);
+    loadExpansionBytes(bytes, `${rec.id || 'the workbench pack'}.lxpack`);
+  }
+
+  expansionInput.addEventListener('change', async () => {
+    const f = expansionInput.files && expansionInput.files[0];
+    if (!f) return;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    loadExpansionBytes(bytes, f.name);
+    expansionInput.value = '';
+  });
+
+  expansionEnterBtn.addEventListener('click', () => {
+    const id = expansionMapSel.value;
+    if (!runtime || !id) return;
+    supersedeStarts();
+    enterWith(expansionMapSel.selectedOptions[0].textContent, (v) => v.enterExpansionMap(id, ''));
+  });
+
+  expansionUnloadBtn.addEventListener('click', () => {
+    if (!runtime) return;
+    try { runtime.unload_expansion(); } catch (e) { console.warn(e); }
+    expansionBytes = null;
+    expansionShow(null);
+    expansionMsg('No expansion pack: the game as it shipped. Its progress stays in your saves.');
+  });
 
   /* Slice a named ISO file's raw Mode2/2352 sectors out of the disc bytes
    * the page holds. `null` when no disc is up or the file is absent. */
@@ -1322,6 +1467,7 @@ div.play-vis-head { cursor: default; }
       if (r.landing === 'nowhere') throw new Error('no scene could be entered for this save');
       return r.state;
     });
+    expansionRefresh();
   }
 
   /* A New Game: the engine seeds the slate and enters the opening. */
@@ -1777,6 +1923,10 @@ div.play-vis-head { cursor: default; }
       runtime = fresh;
       window.__playRuntime = runtime;
       remountCards();
+      /* The pack the trapped engine held goes back into the fresh one. */
+      if (expansionBytes) {
+        try { fresh.load_expansion(expansionBytes); } catch (e) { console.warn(e); }
+      }
       if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       if (typeof window.__playApplyBattleTools === 'function') window.__playApplyBattleTools();
       if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(true);

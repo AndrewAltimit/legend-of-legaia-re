@@ -44,6 +44,9 @@ pub use target_panel::*;
 mod arts_editor;
 pub use arts_editor::*;
 
+mod journal;
+pub use journal::*;
+
 mod records_screen;
 pub use records_screen::*;
 

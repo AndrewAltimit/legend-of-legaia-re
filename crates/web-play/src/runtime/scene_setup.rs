@@ -185,7 +185,7 @@ impl LegaiaRuntime {
     /// Rebuild the page-facing render state for the scene the host now holds:
     /// the assembled map, the lead's posed mesh, the NPC catalog. Runs on scene
     /// entry and on every door the engine walks through.
-    pub(super) fn rebuild_render_state(&mut self) -> Result<(), JsValue> {
+    pub(crate) fn rebuild_render_state(&mut self) -> Result<(), JsValue> {
         // A scene swap drops the previous scene's script-spawned actors
         // with it (the MAN loader's retire sweep); the page re-uploads
         // whatever the new scene spawns.

@@ -32,6 +32,7 @@ pub mod play_cutscene;
 pub mod play_dance_art;
 pub mod play_dev_menu;
 pub mod play_dialog;
+pub mod play_expansion;
 pub mod play_field_fx;
 pub mod play_field_hud;
 pub mod play_fishing;

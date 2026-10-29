@@ -630,3 +630,88 @@ fn kind_one_opens_the_menu_on_the_save_screen_and_its_exit_ends_the_menu() {
     session.open_entry_screen();
     assert!(matches!(session.phase(), FieldMenuPhase::Browsing { .. }));
 }
+
+fn expansion_world() -> World {
+    let mut world = fresh_world();
+    let mut files = legaia_expansion_format::PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"id = \"t\"\nname = \"Test Pack\"\nversion = \"1.0.0\"\n".to_vec(),
+    );
+    files.insert(
+        "maps/hall.toml".into(),
+        b"name = \"Hall\"\nbase = { scene = { kind = \"scene\", name = \"tower\" } }\n[tiles]\nrows = [\".\"]\n[[spawns]]\nid = \"a\"\n".to_vec(),
+    );
+    files.insert(
+        "quests.toml".into(),
+        b"[[challenges]]\nid = \"c\"\ntitle = \"Chal\"\n".to_vec(),
+    );
+    let pack = legaia_expansion_format::ExpansionPack::from_files(&files).expect("parses");
+    world
+        .activate_expansion(std::sync::Arc::new(pack))
+        .expect("activates");
+    world
+}
+
+/// Select on the root list opens the Journal only while a pack is active,
+/// and the root resumes on the row it was opened over.
+#[test]
+fn select_opens_the_journal_only_with_a_pack() {
+    let select = PadButton::Select.mask();
+    let mut menu = FieldMenuSession::new();
+    assert!(
+        journal_on_select(select, &fresh_world()).is_none(),
+        "no pack"
+    );
+    let world = expansion_world();
+    assert!(journal_on_select(PadButton::Cross.mask(), &world).is_none());
+    let _ = tick_root_list(&mut menu, PadButton::Down.mask());
+    let view = journal_on_select(select, &world).expect("a pack is active");
+    assert_eq!(view.pack_name, "Test Pack");
+    let sub = open_journal(&mut menu, view).expect("opens over the browsing root");
+    assert!(matches!(sub, FieldMenuSubsession::Journal { .. }));
+    assert_eq!(
+        menu.phase(),
+        FieldMenuPhase::Suspended {
+            row: FieldMenuRow::Magic
+        }
+    );
+    let _ = menu.resume(false);
+    assert_eq!(menu.phase(), FieldMenuPhase::Browsing { cursor: 1 });
+}
+
+/// The Travel page's pick closes the menu and leaves the request for the
+/// scene host; the Challenges page arms its pick.
+#[test]
+fn the_journal_travels_and_arms_challenges() {
+    let mut world = expansion_world();
+    let mut menu = FieldMenuSession::new();
+    let view = journal_on_select(PadButton::Select.mask(), &world).unwrap();
+    let mut sub = open_journal(&mut menu, view.clone()).unwrap();
+    for edge in [PadButton::Left.mask(), PadButton::Cross.mask()] {
+        tick_open_subsession(&mut sub, edge, None, &world);
+    }
+    assert!(sub.is_done());
+    let done = finish_subsession(sub, &mut world);
+    assert!(done.close_menu, "travel closes the menu");
+    assert_eq!(
+        world.take_expansion_travel(),
+        Some(("hall".into(), String::new()))
+    );
+
+    let mut sub = open_journal(&mut FieldMenuSession::new(), view).unwrap();
+    for edge in [PadButton::Right.mask(), PadButton::Cross.mask()] {
+        tick_open_subsession(&mut sub, edge, None, &world);
+    }
+    let done = finish_subsession(sub, &mut world);
+    assert!(!done.close_menu);
+    assert_eq!(
+        world
+            .expansion
+            .quests
+            .challenge
+            .as_ref()
+            .map(|c| c.id.as_str()),
+        Some("c")
+    );
+}

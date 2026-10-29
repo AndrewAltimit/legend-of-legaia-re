@@ -248,6 +248,22 @@ impl LegaiaRuntime {
         // cursor. `tick` inks and routes off the same `root_menu_confirm_route`
         // the row renderer draws from, so a row cannot draw white and then
         // open something the gate forbids.
+        // Select with an expansion pack active opens its Journal over the
+        // root list, as on the native window.
+        let journal = self
+            .scene_host
+            .host()
+            .filter(|_| self.play_menu.is_some())
+            .and_then(|host| field_menu_dispatch::journal_on_select(edge, &host.world));
+        if let Some(view) = journal
+            && let Some(sub) = self
+                .root_menu_mut()
+                .and_then(|m| field_menu_dispatch::open_journal(m, view))
+            && let Some(m) = self.play_menu.as_mut()
+        {
+            m.sub = Some(PlaySub::Session(Box::new(sub)));
+            return;
+        }
         let suspended_row = if self.play_menu.is_some() {
             self.root_menu_mut()
                 .and_then(|m| field_menu_dispatch::tick_root_list(m, edge))

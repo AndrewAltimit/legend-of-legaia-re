@@ -425,6 +425,34 @@ One deliberate divergence from the native window: input is **edge**-triggered
 held pad). Both hosts label the buy/sell rows with the real item names off the
 SCUS table.
 
+## Expansion packs (`play_expansion`)
+
+The page's *Expansion pack* card hands an `.lxpack` bundle's bytes to
+`LegaiaRuntime::load_expansion`, from a file input or from the slot the
+expansion workbench's *Play in browser* fills (IndexedDB database
+`legaia-expansion`, store `packs`, key `play`, value `{ id, name, version,
+bytes, savedAt }`, read when the page opens as `play.html?expansion=1`). The
+export reads the bundle (`bundle::read_bundle`), validates it
+(`validate::validate_files`) and activates it through
+`SceneHost::activate_expansion_pack`, the native window's path; it answers
+JSON with the manifest, the maps and every error and warning, and refuses a
+pack with errors. It needs the disc loaded first. The page keeps the bytes
+to hand to a rebuilt engine after a trap.
+
+| Export | Does |
+|---|---|
+| `load_expansion(bytes)` | Read, validate and activate a bundle; JSON `{ ok, pack, errors, warnings }`. |
+| `unload_expansion()` | Deactivate; the progress stays dormant for the next save. |
+| `expansion_info_json()` | The active pack, the map the player is on, and `dormant`: the pack a loaded save names that is not loaded. |
+| `enter_expansion_map(map, spawn)` | `SceneHost::enter_expansion_map` with `enter_field`'s staging around it; the scene build reads the map off the same `Scene`. |
+
+Everything past activation is the engine's and needs nothing of the page:
+New Game restarts the pack, a save carries its progress, entrances fire from
+the retail scenes, Select opens the Journal in the pause menu
+([`field-menu.md`](field-menu.md#expansion-pack-journal-engine-extension)),
+and quest toasts ride the banner rows `shop_overlay_frame` builds. Disc-free
+and disc-gated tests: `play_expansion::tests`.
+
 ## Developer menu (`play_dev_menu`)
 
 The retail developer menu - the same `engine-menus`

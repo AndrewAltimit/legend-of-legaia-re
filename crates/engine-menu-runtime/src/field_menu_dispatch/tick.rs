@@ -187,6 +187,9 @@ pub fn finish_subsession(finished: FieldMenuSubsession, world: &mut World) -> Fi
             let _ = apply_list_order_outcome(&s, world);
         }
         FieldMenuSubsession::Status(_) => {}
+        FieldMenuSubsession::Journal { session, .. } => {
+            out.close_menu = apply_journal_outcome(&session, world);
+        }
         storage @ (FieldMenuSubsession::Save(_) | FieldMenuSubsession::Config(_)) => {
             out.handoff = SubsessionHandoff::without_world(storage);
         }

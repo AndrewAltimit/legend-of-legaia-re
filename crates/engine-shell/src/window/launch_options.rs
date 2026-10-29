@@ -501,8 +501,9 @@ pub struct DebugSeeds {
     /// `--play-record P:R`: a scene MAN record installed as a cutscene
     /// timeline once the scene is entered.
     pub play_record: Option<(usize, usize)>,
-    /// `--expansion DIR --map ID [--spawn ID]`: an expansion-pack map
-    /// entered in place of the `--scene` door entry.
+    /// `--expansion PATH [--map ID [--spawn ID]]`: the expansion pack every
+    /// entry plays with, and the pack map entered in place of the `--scene`
+    /// door entry.
     pub expansion: Option<ExpansionLaunch>,
     // --- expansion game modes (`--mode`) ---
     /// `--mode <INSTANCE>`: an expansion mode instance entered once the
@@ -518,7 +519,9 @@ pub struct DebugSeeds {
 pub struct ExpansionLaunch {
     /// The pack: a directory or an `.lxpack` bundle.
     pub pack: std::path::PathBuf,
-    pub map: String,
+    /// The map to boot into; `None` boots as without a pack (title screen,
+    /// `--scene`) with the pack active.
+    pub map: Option<String>,
     /// Empty for the map's first spawn.
     pub spawn: String,
 }
@@ -622,8 +625,8 @@ impl DebugSeeds {
         Ok(self)
     }
 
-    /// Attach the `--expansion` / `--map` / `--spawn` operands (clap pairs
-    /// the first two).
+    /// Attach the `--expansion` / `--map` / `--spawn` operands (clap makes
+    /// `--map` need `--expansion`).
     pub fn with_expansion(
         mut self,
         pack: Option<std::path::PathBuf>,
@@ -631,13 +634,13 @@ impl DebugSeeds {
         spawn: Option<String>,
     ) -> Result<Self> {
         self.expansion = match (pack, map) {
-            (Some(pack), Some(map)) => Some(ExpansionLaunch {
+            (Some(pack), map) => Some(ExpansionLaunch {
                 pack,
                 map,
                 spawn: spawn.unwrap_or_default(),
             }),
             (None, None) => None,
-            _ => anyhow::bail!("--expansion and --map go together"),
+            (None, Some(_)) => anyhow::bail!("--map needs --expansion"),
         };
         Ok(self)
     }

@@ -1252,10 +1252,11 @@ pub(crate) enum Cmd {
         #[arg(long, value_name = "P:R")]
         play_record: Option<String>,
         /// Load an expansion pack (a pack directory or an `.lxpack` bundle)
-        /// and boot straight into one of its maps, named by `--map`, in
-        /// place of the `--scene` entry. With `--resume-save` the pack is
-        /// active for the load, and a save made on a pack map returns there.
-        #[arg(long, value_name = "PATH", requires = "map")]
+        /// before anything else runs: New Game, Continue and `--resume-save`
+        /// all play with it (a save made on a pack map returns there). With
+        /// `--map`, boot straight into one of its maps in place of the
+        /// `--scene` entry.
+        #[arg(long, value_name = "PATH")]
         expansion: Option<PathBuf>,
         /// The pack map `--expansion` boots into (`maps/<id>.toml`).
         #[arg(long, value_name = "ID", requires = "expansion")]
@@ -1748,7 +1749,8 @@ mod locomotion_flag_tests {
         }
     }
 
-    /// `--expansion` and `--map` come as a pair, and `--spawn` needs a map.
+    /// `--map` needs `--expansion`, `--spawn` needs a map, and `--expansion`
+    /// stands alone (the pack for New Game and Continue).
     #[test]
     fn expansion_flags_parse_as_a_pair() {
         let parse = |args: &[&str]| {
@@ -1770,7 +1772,7 @@ mod locomotion_flag_tests {
             ),
             other => panic!("parsed {other:?}"),
         }
-        assert!(parse(&["--expansion", "packs/rebirth"]).is_err());
+        assert!(parse(&["--expansion", "packs/rebirth"]).is_ok());
         assert!(parse(&["--map", "m"]).is_err());
         assert!(parse(&["--spawn", "s"]).is_err());
     }

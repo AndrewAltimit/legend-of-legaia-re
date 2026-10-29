@@ -19,5 +19,8 @@ battle-spoils steps. With no pack loaded every kernel is the identity.
 | `map` | The active pack map: zones, exits, trigger events, once flags, the save location. |
 | `cards` | The trading-card plumbing: grant drain, battle reward sources, stakes, card notices and toasts, the card screen seat, the monster portrait cache. The cards themselves are `quest_save::ExpansionProgress::cards`. |
 | `modes` | `PackModeSeat`, the game-mode seat (instance picker, the running `ActiveMode`, the quit prompt, the results card) and the pending card rewards. |
+| `entrance` | Retail-scene entrances into the pack's maps (`EntranceWatch`). |
+| `journal` | The pause menu's Journal: content (`journal_view`) and cursor (`JournalSession`). |
+| `toast` | Quest notices as one-line toasts (`notice_text`, `ToastQueue`). |
 
 Format and engine wiring: [`expansion-pack-battle.md`](../../docs/formats/expansion-pack-battle.md), [`expansion-pack-quests.md`](../../docs/formats/expansion-pack-quests.md).

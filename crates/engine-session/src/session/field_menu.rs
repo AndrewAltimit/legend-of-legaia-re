@@ -222,7 +222,12 @@ impl<S: AudioSink> BootSession<S> {
             // Root list. A confirm suspends it on the routed row; build that
             // row's sub-session and control moves there next frame.
             let menu = self.field_menu.as_mut().expect("field_menu is Some");
-            if let Some(row) = tick_root_list(menu, pressed) {
+            // Select with an expansion pack active opens its Journal.
+            if let Some(view) = journal_on_select(pressed, &self.host.world)
+                && let Some(journal) = open_journal(menu, view)
+            {
+                self.field_menu_sub = Some(journal);
+            } else if let Some(row) = tick_root_list(menu, pressed) {
                 self.save_flow.reset();
                 let world = &self.host.world;
                 let chain_library = world.chain_library();

@@ -594,6 +594,21 @@ impl PlayWindowApp {
                     }
                     return true;
                 }
+                // Select with an expansion pack active opens its Journal
+                // over the root list (the engine extension every host
+                // shares; the retail list has no Select arm).
+                if let Some(view) =
+                    legaia_engine_menu_runtime::field_menu_dispatch::journal_on_select(
+                        pressed,
+                        &self.session.host.world,
+                    )
+                    && let Some(menu) = self.session.field_menu.as_mut()
+                    && let Some(journal) =
+                        legaia_engine_menu_runtime::field_menu_dispatch::open_journal(menu, view)
+                {
+                    *sub = Some(journal);
+                    return true;
+                }
                 // After Cross on a row the menu phase becomes Suspended.
                 // Build the matching sub-session and route control there.
                 let suspended_row = self

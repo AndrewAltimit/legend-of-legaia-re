@@ -94,6 +94,9 @@ pub struct MapDef {
     pub triggers: Vec<TriggerZone>,
     /// Tile rectangles that roll random encounters from a pack table.
     pub encounters: Vec<EncounterZone>,
+    /// Ways in from retail field scenes: a tile rectangle in a retail scene
+    /// that enters this map when the player steps onto it.
+    pub entrances: Vec<EntranceDef>,
     /// The music cue the map plays ([`DiscRef::Bgm`]). `None` keeps silence.
     pub bgm: Option<DiscRef>,
     /// Follow-camera framing.
@@ -373,6 +376,58 @@ pub enum ExitTarget {
     },
 }
 
+/// An inclusive retail field-grid tile rectangle `[x0, z0, x1, z1]`: the
+/// `128`-unit tiles of the scene's `128 x 128` field grid, tile `x` holding
+/// world `x * 128 .. x * 128 + 127` (`world >> 7`, the walk-on trigger
+/// dispatcher's quantisation).
+pub type FieldRect = [u8; 4];
+
+/// Whether retail field-grid tile `(x, z)` lies in `rect`.
+pub fn field_rect_contains(rect: &FieldRect, x: u8, z: u8) -> bool {
+    let (x0, x1) = (rect[0].min(rect[2]), rect[0].max(rect[2]));
+    let (z0, z1) = (rect[1].min(rect[3]), rect[1].max(rect[3]));
+    (x0..=x1).contains(&x) && (z0..=z1).contains(&z)
+}
+
+/// A way into the map from a retail field scene.
+///
+/// ```toml
+/// [[entrances]]
+/// id = "rim_elm_mist"
+/// scene = { kind = "scene", name = "town01" }
+/// rect = [30, 91, 30, 92]
+/// spawn = "entrance"
+/// requires = { min_level = 30 }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntranceDef {
+    #[serde(default)]
+    pub id: String,
+    /// The retail scene the entrance stands in ([`DiscRef::Scene`]).
+    pub scene: DiscRef,
+    /// The retail field-grid tiles that take the entrance.
+    pub rect: FieldRect,
+    /// The spawn of this map the player arrives at; the first when empty.
+    #[serde(default)]
+    pub spawn: String,
+    /// What must hold for the entrance to open: the quest prerequisite
+    /// shape (retail story flags, pack flags, completed quests, a party
+    /// level). Empty is always open.
+    #[serde(default)]
+    pub requires: crate::quest::Prerequisites,
+}
+
+impl EntranceDef {
+    /// The retail scene's CDNAME name, or `None` when [`Self::scene`] is not
+    /// a [`DiscRef::Scene`].
+    pub fn scene_name(&self) -> Option<&str> {
+        match &self.scene {
+            DiscRef::Scene { name } if !name.is_empty() => Some(name),
+            _ => None,
+        }
+    }
+}
+
 /// A tile rectangle that raises a pack event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TriggerZone {
@@ -646,6 +701,43 @@ impl MapDef {
             }
         }
         out
+    }
+}
+
+/// A map's checks. The tile layer, zones and props are checked when the map
+/// is entered; the validator covers its entrances, which are what reach the
+/// map from retail.
+impl crate::validate::SectionRules for MapDef {
+    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        for (i, e) in self.entrances.iter().enumerate() {
+            let at = format!("entrances[{i}]");
+            if !matches!(e.scene, DiscRef::Scene { .. }) {
+                cx.error(
+                    &format!("{at}.scene"),
+                    "an entrance names a scene (kind = \"scene\")",
+                );
+            }
+            cx.disc_ref(&format!("{at}.scene"), &e.scene);
+            if e.rect.iter().any(|&t| t > 0x7F) {
+                cx.error(
+                    &format!("{at}.rect"),
+                    "field-grid tiles run 0..=127 on each axis",
+                );
+            }
+            if self.spawn(&e.spawn).is_none() {
+                cx.error(
+                    &format!("{at}.spawn"),
+                    if e.spawn.is_empty() {
+                        "the map has no spawn to arrive at".to_string()
+                    } else {
+                        format!("the map has no spawn {:?}", e.spawn)
+                    },
+                );
+            }
+            for q in &e.requires.quests {
+                cx.reference("quest", q, &format!("{at}.requires.quests"));
+            }
+        }
     }
 }
 

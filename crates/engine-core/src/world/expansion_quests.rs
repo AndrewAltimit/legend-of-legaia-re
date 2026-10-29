@@ -22,7 +22,7 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_expansion_format::dialog::{DialogError, compile_line};
 
 /// The `World` as the quest tracker reads it.
-struct WorldQuestView<'a>(&'a World);
+pub(in crate::world) struct WorldQuestView<'a>(pub(in crate::world) &'a World);
 
 impl QuestWorld for WorldQuestView<'_> {
     fn story_flag(&self, idx: u16) -> bool {
@@ -115,9 +115,11 @@ impl World {
         let Some(pack) = self.expansion.pack.clone() else {
             return Err(ArmRefusal::Unknown);
         };
+        let seen = self.expansion.quests.notices.len();
         let mut rt = std::mem::take(&mut self.expansion.quests);
         let armed = rt.arm_challenge(&pack, &WorldQuestView(self), id);
         self.expansion.quests = rt;
+        self.toast_expansion_notices(seen);
         armed
     }
 
@@ -142,6 +144,8 @@ impl World {
         let pack = self.expansion.pack.clone();
         self.expansion.quests.load_block(pack.as_deref(), block);
         self.adopt_expansion_progress();
+        self.expansion.toasts.clear();
+        self.toast_dormant_pack();
     }
 
     /// Bring the quest runtime onto the active pack (adopting a dormant
@@ -263,6 +267,10 @@ impl World {
     /// The per-tick expansion step: resolve a finished pack line, start a
     /// queued one, and re-test the state objectives outside battle.
     pub(in crate::world) fn tick_expansion(&mut self) {
+        // Toasts count down whether or not a pack is active: the notice that
+        // a loaded save names a pack that is not loaded shows without one.
+        let frames = self.clock.display_frame_step.max(1);
+        self.expansion.toasts.tick(frames);
         if !self.expansion.is_active() {
             return;
         }
@@ -378,6 +386,7 @@ impl World {
             }
         }
         self.collect_card_grants();
+        self.toast_expansion_notices(seen);
         for n in self.expansion.quests.notices.iter().skip(seen) {
             if let QuestNotice::Started {
                 dialog: Some(line), ..

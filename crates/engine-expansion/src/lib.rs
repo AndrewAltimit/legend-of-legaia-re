@@ -13,13 +13,16 @@ pub mod battle;
 pub mod battle_waves;
 pub mod cards;
 pub mod dialog;
+pub mod entrance;
 pub mod flags;
+pub mod journal;
 pub mod map;
 pub mod modes;
 pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
 pub mod quest_save;
+pub mod toast;
 
 use std::sync::Arc;
 
@@ -47,6 +50,14 @@ pub struct ExpansionState {
     /// The card economy's notices, screen and portraits; the cards
     /// themselves are `quests.progress.cards`.
     pub cards: cards::CardRuntime,
+    /// The retail-scene entrances into the pack's maps
+    /// ([`entrance::EntranceWatch`]).
+    pub entrances: entrance::EntranceWatch,
+    /// A map the pause menu's Travel page picked, `(map id, spawn)`, for the
+    /// scene host to enter on its next tick.
+    pub travel: Option<(String, String)>,
+    /// Quest toasts for the hosts to show ([`toast::ToastQueue`]).
+    pub toasts: toast::ToastQueue,
 }
 
 impl ExpansionState {

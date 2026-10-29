@@ -635,6 +635,22 @@ impl FieldMenuSession {
         }
     }
 
+    /// Suspend the root list on the row under its cursor, for an engine
+    /// extension screen that is not one of the seven rows (the expansion
+    /// pack's Journal) to take the pad. [`Self::resume`] brings the cursor
+    /// back to the same row. `false`, changing nothing, unless the player is
+    /// browsing the rows.
+    pub fn suspend_at_cursor(&mut self) -> bool {
+        let FieldMenuPhase::Browsing { cursor } = self.phase else {
+            return false;
+        };
+        let Some(row) = FieldMenuRow::from_index(cursor) else {
+            return false;
+        };
+        self.phase = FieldMenuPhase::Suspended { row };
+        true
+    }
+
     /// Sub-session finished and shell hands control back. The caller chooses
     /// whether to drop back into Browsing (the default - most sub-sessions
     /// are "do a thing then return to the menu") or close the menu entirely

@@ -52,7 +52,8 @@ use legaia_engine_menus::options::OptionsState;
 use legaia_engine_render::window::EngineWindow;
 use legaia_engine_render::{RenderTarget, TextOverlay, UploadedFontAtlas};
 use legaia_engine_shell::launcher::{
-    self, DiscInfo, DiscProblem, LaunchDecision, LauncherSettings, OPTION_ROWS, OptionRow,
+    self, DiscInfo, DiscProblem, ExpansionInfo, LaunchDecision, LauncherSettings, OPTION_ROWS,
+    OptionRow,
 };
 use legaia_engine_ui::TextDraw;
 use winit::application::ApplicationHandler;
@@ -247,8 +248,8 @@ const LEFT_W: i32 = 170;
 const RIGHT_X: i32 = LEFT_X + LEFT_W + 10;
 const RIGHT_W: i32 = STAGE_W - PAD - RIGHT_X;
 const COLUMNS_Y: i32 = 108;
-const BUTTON_H: i32 = 20;
-const BUTTON_PITCH: i32 = 24;
+const BUTTON_H: i32 = 17;
+const BUTTON_PITCH: i32 = 20;
 const ROW_PITCH: i32 = 13;
 /// The option list's inset from the panel's top and bottom edges.
 const LIST_INSET: i32 = 5;
@@ -298,15 +299,17 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
 enum Item {
     Play,
     ChooseDisc,
+    Expansion,
     Panel,
     DataFolder,
     Quit,
     Opt(OptionRow),
 }
 
-const BUTTONS: [Item; 5] = [
+const BUTTONS: [Item; 6] = [
     Item::Play,
     Item::ChooseDisc,
+    Item::Expansion,
     Item::Panel,
     Item::DataFolder,
     Item::Quit,
@@ -338,6 +341,9 @@ struct LauncherApp {
     solid: (u32, u32, u32, u32),
     disc: Option<DiscInfo>,
     problem: Option<DiscProblem>,
+    /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
+    /// or why it could not be read.
+    expansion: Option<Result<ExpansionInfo, String>>,
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
@@ -383,6 +389,10 @@ impl LauncherApp {
             solid: (0, 0, 1, 1),
             disc: None,
             problem,
+            expansion: settings
+                .expansion
+                .as_deref()
+                .map(launcher::inspect_expansion),
             settings,
             settings_file,
             options,
@@ -515,6 +525,100 @@ impl LauncherApp {
         }
     }
 
+    /// Adopt the expansion pack `chosen` names (a folder, its `pack.toml`, or
+    /// an `.lxpack`) when it validates; a pack with errors is shown and not
+    /// remembered.
+    fn try_expansion(&mut self, chosen: &Path) {
+        let Some(path) = launcher::expansion_pack_path(chosen) else {
+            self.status = Some(vec![(
+                format!(
+                    "{} is not an expansion pack: choose an .lxpack file, or the pack.toml in a pack folder.",
+                    chosen.display()
+                ),
+                WARN,
+            )]);
+            self.win.request_redraw();
+            return;
+        };
+        match launcher::inspect_expansion(&path) {
+            Ok(info) if info.playable() => {
+                log::info!(
+                    "launcher: expansion pack {} at {}",
+                    info.summary(),
+                    path.display()
+                );
+                let mut msg = vec![(format!("Expansion pack: {}", info.summary()), GOOD)];
+                if info.warnings > 0 {
+                    msg.push((
+                        format!(
+                            "{} warning(s); `asset expansion validate` lists them.",
+                            info.warnings
+                        ),
+                        DIM,
+                    ));
+                }
+                self.status = Some(msg);
+                self.settings.expansion = Some(info.path.clone());
+                self.expansion = Some(Ok(info));
+                self.save_settings();
+            }
+            Ok(info) => {
+                log::warn!("launcher: expansion pack at {} has errors", path.display());
+                let mut msg = vec![(
+                    format!(
+                        "{} has {} error(s) and was not loaded:",
+                        path.display(),
+                        info.errors.len()
+                    ),
+                    WARN,
+                )];
+                msg.extend(info.errors.iter().take(4).map(|e| (e.clone(), DIM)));
+                self.status = Some(msg);
+            }
+            Err(e) => {
+                self.status = Some(vec![(
+                    format!("Could not read {}: {e}", path.display()),
+                    WARN,
+                )]);
+            }
+        }
+        self.win.request_redraw();
+    }
+
+    /// Play without an expansion pack from now on.
+    fn clear_expansion(&mut self) {
+        if self.settings.expansion.take().is_some() {
+            self.expansion = None;
+            self.save_settings();
+            self.status = Some(vec![(
+                "No expansion pack: the game as it shipped.".into(),
+                DIM,
+            )]);
+        }
+        self.win.request_redraw();
+    }
+
+    fn browse_expansion(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Choose an expansion pack (.lxpack, or pack.toml in a pack folder)")
+            .add_filter("Expansion pack", &["lxpack", "LXPACK", "toml", "TOML"]);
+        if let Some(dir) = self
+            .settings
+            .expansion
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|d| d.is_dir())
+        {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(w) = self.win.window.as_deref() {
+            dialog = dialog.set_parent(w);
+        }
+        if let Some(p) = dialog.pick_file() {
+            self.try_expansion(&p);
+        }
+    }
+
     /// Start the game and close the window while it runs.
     fn play(&mut self, evl: &ActiveEventLoop) {
         let Some(info) = self.disc.clone() else {
@@ -525,6 +629,11 @@ impl LauncherApp {
             self.focus = Item::ChooseDisc;
             return;
         };
+        if let Some(problem) = self.expansion_problem() {
+            self.status = Some(vec![(problem, WARN)]);
+            self.focus = Item::Expansion;
+            return;
+        }
         match spawn_game(&info, &self.settings) {
             Ok(g) => {
                 log::info!("launcher: game started on {}", info.bin.display());
@@ -544,6 +653,21 @@ impl LauncherApp {
     /// Close the window while the loop still runs. Dropped after `run_app`
     /// returns instead, the X11 destroy request is never flushed and a
     /// frozen window stays on screen behind the game (seen under Xvfb).
+    /// Why the remembered expansion pack cannot be played, if it cannot.
+    fn expansion_problem(&self) -> Option<String> {
+        match self.expansion.as_ref()? {
+            Ok(info) if info.playable() => None,
+            Ok(info) => Some(format!(
+                "The expansion pack has {} error(s): {} Choose it again or clear it (Delete).",
+                info.errors.len(),
+                info.errors.first().cloned().unwrap_or_default()
+            )),
+            Err(e) => Some(format!(
+                "The expansion pack cannot be read ({e}). Choose it again or clear it (Delete)."
+            )),
+        }
+    }
+
     fn close_window(&mut self) {
         self.atlas = None;
         if let Some(w) = self.win.window.as_deref() {
@@ -647,6 +771,8 @@ impl LauncherApp {
         match item {
             Item::Play => self.play(evl),
             Item::ChooseDisc => self.browse(),
+            Item::Expansion if dir < 0 => self.clear_expansion(),
+            Item::Expansion => self.browse_expansion(),
             Item::Panel => {
                 self.panel = match self.panel {
                     Panel::Options => Panel::Controls,
@@ -669,6 +795,10 @@ impl LauncherApp {
     /// `Delete` (or `Backspace` with nothing typed) on an option row: put
     /// that row back on its first-start value.
     fn reset_focused(&mut self) {
+        if self.focus == Item::Expansion {
+            self.clear_expansion();
+            return;
+        }
         if let Item::Opt(row) = self.focus
             && self.panel == Panel::Options
             && !row.is_default(&self.options, &self.settings)
@@ -786,6 +916,13 @@ impl LauncherApp {
         self.disc_card(c);
 
         // Left column: the buttons.
+        let expansion_label = match &self.expansion {
+            None => "Expansion pack...".to_string(),
+            Some(Ok(info)) if info.playable() => {
+                c.ellipsize_left(&format!("Pack: {}", info.name), LEFT_W - 12)
+            }
+            Some(_) => "Pack: has errors".to_string(),
+        };
         for (i, item) in BUTTONS.iter().enumerate() {
             let r = Rect::new(
                 LEFT_X,
@@ -820,6 +957,7 @@ impl LauncherApp {
                     Panel::Options => "Controls",
                     Panel::Controls => "Back to options",
                 },
+                Item::Expansion => &expansion_label,
                 Item::DataFolder => "Open saves folder",
                 Item::Quit => "Quit",
                 Item::Opt(_) => "",
@@ -1100,6 +1238,16 @@ impl LauncherApp {
                          Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
                     .into(),
             },
+            Item::Expansion => match &self.expansion {
+                None => "Play with an expansion pack: new maps, quests and fights made for \
+                         the port. Choose an .lxpack file, or the pack.toml in a pack folder."
+                    .into(),
+                Some(Ok(info)) if info.playable() => format!(
+                    "{}. New Game and Continue play with it. Delete or right-click: none.",
+                    info.summary()
+                ),
+                Some(_) => self.expansion_problem().unwrap_or_default(),
+            },
             Item::Panel => match self.panel {
                 Panel::Options => "Show the keyboard controls.".into(),
                 Panel::Controls => "Back to the options.".into(),
@@ -1223,7 +1371,13 @@ impl ApplicationHandler for LauncherApp {
             }
             WindowEvent::ScaleFactorChanged { .. } => self.win.request_redraw(),
             WindowEvent::RedrawRequested => self.redraw(evl),
-            WindowEvent::DroppedFile(p) => self.try_disc(&p),
+            WindowEvent::DroppedFile(p) => {
+                if launcher::expansion_pack_path(&p).is_some() {
+                    self.try_expansion(&p);
+                } else {
+                    self.try_disc(&p);
+                }
+            }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             // A scripted capture shows the scripted focus, not whatever row
             // the display's resting pointer happens to sit over.
@@ -1275,7 +1429,7 @@ impl ApplicationHandler for LauncherApp {
                 };
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
                 if let Some(item) = self.hit()
-                    && (dir > 0 || matches!(item, Item::Opt(_)))
+                    && (dir > 0 || matches!(item, Item::Opt(_) | Item::Expansion))
                 {
                     self.activate(item, dir, evl);
                 }

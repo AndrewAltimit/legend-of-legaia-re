@@ -2161,3 +2161,32 @@ input and adds no eighth root row. Both hosts project the editor through
 `field_menu_dispatch::arts_editor_view`; saving folds the edit into
 `World::chain_library` / `store_chain_library`, so the next battle's Arts rows
 reflect it.
+
+### Expansion-pack Journal (engine extension)
+
+While an expansion pack is active, **Select** on the root list opens the
+pack's Journal; the root list draws `SELECT: Journal` under the money box to
+say so. Retail's root picker reads no Select, and with no pack the arm is
+absent, so the retail menu is unchanged. The root is suspended on the row
+under the hand (`FieldMenuSession::suspend_at_cursor`) and resumes there.
+
+| Piece | Owner |
+|---|---|
+| Content: quests (active first, then completed) with objectives, progress and rewards; challenges with best scores; the card inbox; the pack's maps | `legaia_engine_expansion::journal::journal_view`, read through `World::expansion_journal` |
+| Cursor: three pages (Left / Right or L1 / R1), rows (Up / Down), Cross, Circle | `journal::JournalSession` |
+| Open and fold | `field_menu_dispatch::journal_on_select` + `open_journal`; `FieldMenuSubsession::Journal`; `apply_journal_outcome` from `finish_subsession` |
+| Draw | `engine-screens::pause_screens::journal_draws` over `engine-ui::journal_draws_for`, in the generic sub-window frame |
+
+The three hosts that step the root list (the native window, the headless
+`BootSession`, the browser play page) call the same two dispatcher steps
+before `tick_root_list`, and draw through `field_menu_sub_draws`, so the
+Journal is one screen on both play hosts.
+
+Only the selected row expands: its description (two lines), each objective
+with `progress/target` (green once done), and the reward. A Cross on a
+**Challenges** row arms that challenge for its next battle
+(`World::expansion_arm_challenge`; a refusal comes back as a toast). A Cross
+on a **Travel** row closes the menu and asks the scene host for the map
+(`World::request_expansion_travel`), which enters it on its next tick - the
+way onto a map whose entrance is out of reach
+([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#entrances)).

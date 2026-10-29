@@ -685,6 +685,8 @@ impl World {
         // engine's New Game is that boot.
         self.system_flag_set(0x52F);
         self.mode = SceneMode::Field;
+        // An active expansion pack starts over with the new game.
+        self.expansion_begin_new_game();
     }
 
     /// Does the party hold the **Point Card** (item

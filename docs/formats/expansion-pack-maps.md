@@ -27,6 +27,7 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `exits` | Tile rectangles leading to a retail scene or another pack map. |
 | `triggers` | Tile rectangles that raise a pack event (battle, dialog, quest). |
 | `encounters` | Tile rectangles naming a pack encounter table. |
+| `entrances` | Tile rectangles in retail field scenes that lead into the map. |
 | `bgm` | A `DiscRef::Bgm` (sound-test id). |
 | `camera` | `"default"`, `"retail"`, `"far"` or `"farther"` (the follow camera's distance presets). |
 
@@ -199,6 +200,55 @@ inside a zone. Outside every zone the map rolls nothing; it never rolls the
 base scene's retail encounters. A table needs `steps` to roll on a map: with
 no retail rate to borrow, a rate-less entry has nothing to fight on.
 
+## Entrances
+
+An entrance is the way into a map from the retail game: a rectangle of
+field-grid tiles in a retail scene that enters the map when the player steps
+onto it. It lives on the map it leads into.
+
+```toml
+[[entrances]]
+id = "rim_elm_mist_stair"
+scene = { kind = "scene", name = "town01" }
+rect = [35, 92, 36, 93]
+spawn = "entrance"
+requires = { min_level = 30 }
+```
+
+| Key | Meaning |
+|---|---|
+| `id` | Name, for logs. |
+| `scene` | The retail scene (`DiscRef::Scene`). |
+| `rect` | Inclusive `[x0, z0, x1, z1]` in the scene's `128 x 128` field grid, `0..=127` per axis. |
+| `spawn` | The spawn of this map the player arrives at; the first when empty. |
+| `requires` | The quest prerequisite shape: `story_flags`, `story_flags_clear`, `flags`, `quests`, `min_level`. Empty is always open. |
+
+Coordinates here are **retail field-grid tiles**, not map-local ones: tile
+`x` covers world `x * 128 .. x * 128 + 127`, the `world >> 7` quantisation the
+retail walk-on trigger dispatcher uses
+([`field-locomotion.md`](../subsystems/field-locomotion.md)). An exit's
+arrival `tile` is in the same space, so a map's exit can land beside its own
+entrance.
+
+An entrance fires the way a zone does: on a step onto its rectangle from
+outside it, while the gate holds, in a plain field tick the player walks
+freely (no pack map, no scene change parked, no dialogue or cutscene holding
+the player). Any other tick forgets the last tile, so arriving on an entrance
+(a door, a battle return, a Load) does not fire it. A shut entrance stays
+shut until the player steps off and back on after it opens.
+`World::step_expansion_entrance` holds the rule and `SceneHost` enters the
+map it names (`scene_host/expansion_entrance.rs`); the kernel is
+`legaia_engine_expansion::entrance::EntranceWatch`.
+
+Pick a rectangle the scene's walk reaches and that no retail trigger shares:
+a retail door's walk-on tile fires its own record on the same step. The
+validator checks the scene coordinate, the tile range, the spawn and the
+quests `requires` names; it cannot see the scene's walls without the disc.
+
+The pause menu's **Travel** page (the Journal, Select on the root list)
+enters any of the pack's maps directly, which is the way in for testing a map
+whose entrance is out of reach ([`field-menu.md`](../subsystems/field-menu.md#expansion-pack-journal-engine-extension)).
+
 ## Saving on a map
 
 A save made on a map writes the map id, the player's world position and
@@ -218,7 +268,12 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 
 `--expansion` takes a pack directory or an `.lxpack` bundle and activates it
 through `World::activate_expansion`; with `--resume-save` the save's own map
-(if any) is the landing instead of `--map`. Any scene change - an exit, a
+(if any) is the landing instead of `--map`. Without `--map` the pack is simply
+active, for the title's New Game and Continue. The browser play page loads an
+`.lxpack` through `LegaiaRuntime::load_expansion` and enters a map through
+`enter_expansion_map`, the same `SceneHost::enter_expansion_map` entry; its
+scene build reads the map's ground, walls and props off the same `Scene`
+([`browser-host.md`](../subsystems/browser-host.md)). Any scene change - an exit, a
 scene picker - leaves the map and drops its layer; a battle fought on the map
 returns to it. The map's `name` shows as the place-name banner on entry.
 
@@ -229,7 +284,10 @@ returns to it. The map's `name` shows as the place-name banner on entry.
 - **Props from other scenes.** A prop mesh must come from the base scene's
   geometry pack; a TMD from another PROT entry (and the VRAM it samples) is not
   loaded.
-- **Map references are not validated.** The pack validator does not yet check
-  a map's trigger, encounter and exit ids against the sections they name; a
-  broken one logs at run time.
-- **The browser host.** Only the native `play-window` enters pack maps.
+- **Map references are partly validated.** The validator checks a map's
+  entrances but not yet its trigger, encounter and exit ids against the
+  sections they name; a broken one logs at run time.
+- **Camera preset on an in-world entry.** A map entered through an entrance
+  or a Travel pick keeps the follow camera's distance; the map's `camera`
+  preset applies on a host's direct entry (`--map`, the play page's
+  *Enter map*).

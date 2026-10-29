@@ -49,6 +49,7 @@ mod encounter_step_counter_disc;
 mod entry_install_slice_disc;
 mod expansion_boss_disc;
 mod expansion_cards_disc;
+mod expansion_entrance_disc;
 mod expansion_map_disc;
 mod expansion_map_grid;
 mod expansion_waves_disc;

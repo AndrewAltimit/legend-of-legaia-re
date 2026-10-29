@@ -362,6 +362,7 @@ pub use battle_stage::{
 };
 mod effects;
 pub mod expansion_cards;
+mod expansion_entrance;
 mod expansion_map;
 mod lifecycle;
 mod minigame_warp;

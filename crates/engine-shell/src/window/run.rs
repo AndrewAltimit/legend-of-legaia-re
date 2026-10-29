@@ -226,22 +226,26 @@ fn enter_launch_scene(
         defaults.picker_party = true;
     }
     // `--expansion`: the pack goes in through the one activation path before
-    // any entry, so a `--resume-save` below lands with the pack's progress
-    // (and a save made on one of its maps returns to that map). Without a
-    // save, `--map` is the launch scene: its base scene loads under it, so
-    // the render build draws it like any field scene.
+    // any entry, so the title's New Game and Continue, and a `--resume-save`
+    // below, play with it (a save made on one of its maps returns to that
+    // map). Without a save, `--map` is the launch scene: its base scene
+    // loads under it, so the render build draws it like any field scene.
     if let Some(launch) = debug_seeds.expansion.as_ref() {
         let pack = launch.load()?;
+        log::info!(
+            "play-window: expansion pack '{}' {} ({})",
+            pack.manifest.name,
+            pack.manifest.version,
+            launch.pack.display()
+        );
         session
             .host
             .activate_expansion_pack(std::sync::Arc::new(pack))?;
-        if debug_seeds.resume_save.is_none() {
-            let mode =
-                session.enter_expansion_map_live(&launch.map, &launch.spawn, field_live_opts)?;
-            log::info!(
-                "play-window: entered expansion map '{}' (mode={mode:?})",
-                launch.map
-            );
+        if let Some(map) = launch.map.as_deref()
+            && debug_seeds.resume_save.is_none()
+        {
+            let mode = session.enter_expansion_map_live(map, &launch.spawn, field_live_opts)?;
+            log::info!("play-window: entered expansion map '{map}' (mode={mode:?})");
             return Ok(());
         }
     }

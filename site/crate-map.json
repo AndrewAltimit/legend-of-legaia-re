@@ -1590,13 +1590,16 @@
     "battle_waves",
     "cards",
     "dialog",
+    "entrance",
     "flags",
+    "journal",
     "map",
     "modes",
     "progression",
     "quest",
     "quest_challenge",
-    "quest_save"
+    "quest_save",
+    "toast"
    ],
    "band": "kernels",
    "track": "engine",
@@ -1605,6 +1608,7 @@
    "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides, level curve, rewards, quests. <code>World::expansion</code> is its seat; inert with no pack.",
    "dependents": [
     "engine-core",
+    "engine-menu-runtime",
     "engine-netplay",
     "engine-scene-host",
     "engine-screens",
@@ -1819,6 +1823,7 @@
     "engine-battle-vm",
     "engine-core",
     "engine-dev-menu",
+    "engine-expansion",
     "engine-field",
     "engine-menus",
     "engine-minigames",
@@ -1834,6 +1839,7 @@
     "engine-mode",
     "engine-title",
     "engine-vm",
+    "expansion-format",
     "prot"
    ],
    "bins": [],
@@ -3007,7 +3013,8 @@
     "engine-session",
     "engine-shell",
     "engine-ui",
-    "web-expansion"
+    "web-expansion",
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },
@@ -4533,6 +4540,7 @@
     "engine-ui",
     "engine-vm",
     "engine-world-views",
+    "expansion-format",
     "font",
     "game-tables",
     "iso",
@@ -4578,6 +4586,7 @@
     "play_dance_art",
     "play_dev_menu",
     "play_dialog",
+    "play_expansion",
     "play_field_fx",
     "play_field_hud",
     "play_fishing",

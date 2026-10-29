@@ -176,6 +176,11 @@ impl SceneHost {
         if let Some(event) = self.step_expansion_map()? {
             return Ok(event);
         }
+        // A retail scene's entrances into the pack's maps, and the pause
+        // menu's Travel page.
+        if let Some(event) = self.step_expansion_entrances() {
+            return Ok(event);
+        }
         if self.advance_scene_transition_hold() {
             return Ok(SceneTickEvent::Stepped);
         }

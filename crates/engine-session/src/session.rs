@@ -22,7 +22,8 @@ use legaia_engine_audio::AudioSink;
 use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_menu_runtime::field_menu_dispatch::{
-    FieldMenuSubsession, SubsessionHandoff, finish_subsession, tick_open_subsession, tick_root_list,
+    FieldMenuSubsession, SubsessionHandoff, finish_subsession, journal_on_select, open_journal,
+    tick_open_subsession, tick_root_list,
 };
 use legaia_engine_menus::field_menu::{FieldMenuGate, FieldMenuSession};
 use legaia_engine_menus::options::OptionsState;

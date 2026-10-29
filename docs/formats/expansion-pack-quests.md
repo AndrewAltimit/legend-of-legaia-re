@@ -197,14 +197,25 @@ The tracker (`QuestRuntime`) is a deterministic state machine: the same pack, pr
 |---|---|
 | `BattleEnded` | `World::finish_battle`, with the seated formation, its monsters and its boss byte. |
 | `SceneEntered` | `World::set_active_scene_label`, on every scene entry. |
-| `Talked` | `World::expansion_talked`, for a talk to a pack NPC. |
-| `ModeWon` | `World::expansion_notify`, from a pack mode's host. |
+| `Talked` | `World::expansion_talked`: a map's `talk` trigger, and every talk to a retail NPC (`World::trigger_field_interact`). |
+| `ModeWon` | `World::expansion_mode_won`, from a pack mode's host. |
 | `CounterAdd`, `FlagSet`, `FlagCleared` | Scripts, dialogue choices and hosts. |
 | `Refresh` | Every world tick outside battle. |
 
+An NPC id is a pack's own name (`tower_guide`, raised by a map trigger) or a
+**retail NPC**: `<scene>:<slot>`, the CDNAME scene and the placement slot the
+touch post engages (`town01:12`, `World::retail_npc_id`). Every talk to a
+retail villager reports its id while a pack is active, so a quest can name
+one as a giver or a `talk` objective; the retail talk runs unchanged and a
+pack line it raises waits for that dialogue to close. The engine logs each
+id at debug level (`expansion: talked to retail NPC ...`), which is how a
+modder reads off a villager's slot.
+
 The per-tick `Refresh` re-tests state objectives and prerequisites, which is how a level up, an item gained or a story flag set reaches quests without a hook on each of those paths. After each event the tracker starts the quests whose giver was talked to, completes the quests whose objectives are done, and auto-starts what may start, repeating until nothing moves so a completion's flags can open the next quest of a chain in one call.
 
-The tracker queues `QuestNotice`s for the host (started, objective updated, completed, challenge armed, cleared, failed; `World::take_expansion_notices`) and `Grant`s the `World` applies at once. `QuestRuntime::journal` lists the started quests with each objective's progress and target.
+The tracker queues `QuestNotice`s for the host (started, objective updated, completed, challenge armed, cleared, failed; `World::take_expansion_notices`) and `Grant`s the `World` applies at once. `QuestRuntime::journal` lists the started quests with each objective's progress and target; the pause menu's Journal is built on it (`legaia_engine_expansion::journal`, [`field-menu.md`](../subsystems/field-menu.md#expansion-pack-journal-engine-extension)).
+
+Each notice also becomes a **toast** both hosts draw on the banner rows (`legaia_engine_expansion::toast`, `World::expansion_toast`): `Quest started: <title>`, `<title>: 2/3` (or `objective 2/3 done` for a one-step objective), `Quest complete: <title>`, and the challenge outcomes. An objective that completed its quest in the same step shows as the completion alone. A reminder shows no toast; its line is the reminder.
 
 ## Saves
 

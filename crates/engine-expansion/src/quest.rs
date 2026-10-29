@@ -19,7 +19,9 @@
 use std::collections::BTreeMap;
 
 use legaia_expansion_format::ExpansionPack;
-use legaia_expansion_format::quest::{FormationRef, Goal, QuestDef, QuestSection, Rewards};
+use legaia_expansion_format::quest::{
+    FormationRef, Goal, Prerequisites, QuestDef, QuestSection, Rewards,
+};
 
 use crate::dialog::DialogRuntime;
 use crate::quest_challenge::ActiveChallenge;
@@ -521,7 +523,19 @@ impl QuestRuntime {
             }
             None => {}
         }
-        let p = &q.prerequisites;
+        self.prerequisites_hold(section, &q.prerequisites, world)
+    }
+
+    /// Whether every condition of `p` holds: the quests it names completed
+    /// at least once, its retail story flags set (or clear), its pack flags
+    /// set and the party level reached. A quest's start test, and the gate
+    /// a map entrance opens on.
+    pub fn prerequisites_hold(
+        &self,
+        section: &QuestSection,
+        p: &Prerequisites,
+        world: &dyn QuestWorld,
+    ) -> bool {
         p.quests.iter().all(|id| {
             section.quest(id).is_some()
                 && self

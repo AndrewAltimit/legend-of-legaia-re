@@ -9,6 +9,7 @@
 //! A host now builds its [`PauseMenuCtx`] and calls one entry per screen.
 
 use legaia_engine_core::world::World;
+use legaia_engine_expansion::journal::{JournalSession, JournalView};
 use legaia_engine_menu_runtime::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession,
 };
@@ -130,6 +131,9 @@ pub fn field_menu_root_draws(
             party_ap: &party_ap,
         }),
     );
+    if world.expansion.is_active() {
+        out.texts.extend(journal_hint_draws(ctx));
+    }
     if let Some(message) = refusal {
         out.extend(save_refusal_draws(ctx, message));
     }
@@ -178,8 +182,153 @@ pub fn field_menu_sub_draws(
             Some(w) => arts_editor_draws(ctx, s, w),
             None => PauseMenuDraws::default(),
         },
+        FieldMenuSubsession::Journal { session, view } => journal_draws(ctx, session, view),
     }
 }
+
+/// The expansion pack's Journal (an engine extension), inside the generic
+/// sub-window frame: one page of the [`JournalView`] the session opened on.
+pub fn journal_draws(
+    ctx: &PauseMenuCtx<'_>,
+    session: &JournalSession,
+    view: &JournalView,
+) -> PauseMenuDraws {
+    use legaia_engine_expansion::journal::JournalPage;
+    use legaia_engine_expansion::quest::QuestStatus;
+    struct Row {
+        title: String,
+        tag: String,
+        done: bool,
+        detail: String,
+        objectives: Vec<(String, u32, u32)>,
+        reward: String,
+    }
+    let rows: Vec<Row> = match session.page {
+        JournalPage::Quests => view
+            .quests
+            .iter()
+            .map(|q| Row {
+                title: q.title.clone(),
+                tag: match (q.status, q.completions) {
+                    (QuestStatus::Active, _) => "Active".into(),
+                    (QuestStatus::Completed, n) if n > 1 => format!("Done x{n}"),
+                    (QuestStatus::Completed, _) => "Done".into(),
+                },
+                done: q.status == QuestStatus::Completed,
+                detail: q.description.clone(),
+                objectives: q
+                    .objectives
+                    .iter()
+                    .map(|o| (o.text.clone(), o.progress, o.target))
+                    .collect(),
+                reward: q.rewards.clone(),
+            })
+            .collect(),
+        JournalPage::Challenges => view
+            .challenges
+            .iter()
+            .map(|c| Row {
+                title: c.title.clone(),
+                tag: match (c.armed, c.best) {
+                    (true, _) => "Armed".into(),
+                    (false, Some(best)) => format!("Best {best}"),
+                    (false, None) => "Not cleared".into(),
+                },
+                done: c.best.is_some(),
+                detail: if c.clears > 0 {
+                    format!("{} (cleared {}x)", c.description, c.clears)
+                } else {
+                    c.description.clone()
+                },
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
+        JournalPage::Travel => view
+            .maps
+            .iter()
+            .map(|m| Row {
+                title: m.name.clone(),
+                tag: String::new(),
+                done: false,
+                detail: m.map_id.clone(),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
+    };
+    let objectives: Vec<Vec<ui::JournalObjectiveView<'_>>> = rows
+        .iter()
+        .map(|r| {
+            r.objectives
+                .iter()
+                .map(|(text, progress, target)| ui::JournalObjectiveView {
+                    text,
+                    progress: *progress,
+                    target: *target,
+                })
+                .collect()
+        })
+        .collect();
+    let row_views: Vec<ui::JournalRowView<'_>> = rows
+        .iter()
+        .zip(&objectives)
+        .map(|(r, o)| ui::JournalRowView {
+            title: &r.title,
+            tag: &r.tag,
+            done: r.done,
+            detail: &r.detail,
+            objectives: o,
+            reward: &r.reward,
+        })
+        .collect();
+    let tabs: Vec<&str> = JournalPage::ALL.iter().map(|p| p.label()).collect();
+    let heading = format!("JOURNAL - {} {}", view.pack_name, view.pack_version);
+    let (empty, footer) = match session.page {
+        JournalPage::Quests => (
+            "No quest has started yet.",
+            "Left/Right: page   Up/Down: select   Circle: back",
+        ),
+        JournalPage::Challenges => (
+            "This pack has no challenges.",
+            "Cross: arm for the next battle   Circle: back",
+        ),
+        JournalPage::Travel => (
+            "This pack has no maps.",
+            "Cross: travel there   Circle: back",
+        ),
+    };
+    let args = ui::JournalDrawArgs {
+        heading: &heading,
+        tabs: &tabs,
+        tab: JournalPage::ALL
+            .iter()
+            .position(|p| *p == session.page)
+            .unwrap_or(0),
+        card_inbox: view.card_inbox,
+        rows: &row_views,
+        cursor: session.cursor,
+        empty,
+        footer,
+    };
+    let draws = ui::journal_draws_for(ctx.font, &args, ui::JOURNAL_PEN);
+    pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Prebuilt(draws)))
+}
+
+/// The root list's hint line while an expansion pack is active: Select
+/// opens the Journal. Stage pixels, under the money / play-time box.
+pub fn journal_hint_draws(ctx: &PauseMenuCtx<'_>) -> Vec<ui::TextDraw> {
+    let mut texts = ui::text_draws_for(
+        &ctx.font.layout_ascii("SELECT: Journal"),
+        JOURNAL_HINT_PEN,
+        [0.8, 0.8, 0.8, 1.0],
+    );
+    ui::scale_stage_text_draws(&mut texts, ctx.origin, ctx.scale);
+    texts
+}
+
+/// Where [`journal_hint_draws`] writes, in stage pixels.
+pub const JOURNAL_HINT_PEN: (i32, i32) = (24, 212);
 
 /// The record screen's list page, opened over the Magic screen's spell rows
 /// (Square).

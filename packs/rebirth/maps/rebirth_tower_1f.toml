@@ -52,6 +52,17 @@ id = "stair_down"
 rect = [7, 12, 7, 12]
 to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [28, 91], facing = 4 }
 
+# The way in from the retail game: the east end of the room the stair
+# lands in (Rim Elm, field-grid tiles 35..36 x 92..93), clear of the room's
+# doors (29,91), (31..33,87) and (28,98) / (32,99). It opens to a party that
+# has reached level 30, the level the `tower_rumour` quest starts at.
+[[entrances]]
+id = "rim_elm_mist_stair"
+scene = { kind = "scene", name = "town01" }
+rect = [35, 92, 36, 93]
+spawn = "entrance"
+requires = { min_level = 30 }
+
 # Stepping onto the dais wakes the floor's guardian - once, ever.
 [[triggers]]
 id = "dais_guardian"

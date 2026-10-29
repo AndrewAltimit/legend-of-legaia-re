@@ -753,6 +753,15 @@ void main() { o_color = texture(u_layer, v_uv); }
       return this._adopt(state, label);
     }
 
+    /* Enter map `mapId` of the active expansion pack at `spawn` (the map's
+     * first when empty) through the engine (`enter_expansion_map`, the twin
+     * of the native `play-window --expansion <pack> --map <id>`), then
+     * rebuild like any scene entry. */
+    enterExpansionMap(mapId, spawn) {
+      const state = JSON.parse(this.rt.enter_expansion_map(mapId, spawn || ''));
+      return this._adopt(state, state && state.scene);
+    }
+
     /* Land the save a Load / import parked, through the engine's one resume
      * entry (`play_resume_save`: the saved scene, else the running scene,
      * else the opening town - never a New Game; the native window's

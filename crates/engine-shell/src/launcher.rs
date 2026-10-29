@@ -81,6 +81,11 @@ pub struct LauncherSettings {
     /// The disc image the user picked (`.bin`, or the `.cue` they chose).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc: Option<PathBuf>,
+    /// The expansion pack to play with (a pack folder or an `.lxpack`
+    /// bundle), passed to the game as `--expansion`. `None` plays the game
+    /// as it shipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expansion: Option<PathBuf>,
     /// The `play-window` launch switches, in the layout the play page
     /// stores too (one serde shape for both hosts), flattened so the file
     /// keeps its keys at the top level.
@@ -303,6 +308,12 @@ pub fn play_args(info: &DiscInfo) -> Vec<std::ffi::OsString> {
 /// [`play_args`] plus the launch switches `settings` turns on.
 pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::ffi::OsString> {
     let mut args = play_args(info);
+    // The pack is the player's own choice of content, not a port switch, so
+    // it rides with `--retail` too.
+    if let Some(pack) = &settings.expansion {
+        args.push("--expansion".into());
+        args.push(pack.clone().into_os_string());
+    }
     if settings.switches.psx_render {
         args.push("--psx-render".into());
     }
@@ -387,6 +398,111 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
         args.push("--action-movement".into());
     }
     args
+}
+
+/// An expansion pack the launcher checked ([`inspect_expansion`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpansionInfo {
+    /// The pack folder or `.lxpack` file, as the game is given it.
+    pub path: PathBuf,
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// `authors`, joined.
+    pub authors: String,
+    /// The validator's errors (`file: field: message`); a pack with any is
+    /// not playable.
+    pub errors: Vec<String>,
+    /// How many warnings the validator raised.
+    pub warnings: usize,
+}
+
+impl ExpansionInfo {
+    /// The pack loads: the validator found no error.
+    pub fn playable(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// `Name 0.1.0 by Authors`.
+    pub fn summary(&self) -> String {
+        let mut s = format!("{} {}", self.name, self.version);
+        if !self.authors.is_empty() {
+            s.push_str(" by ");
+            s.push_str(&self.authors);
+        }
+        s
+    }
+}
+
+/// Where a chosen file names an expansion pack: an `.lxpack` bundle, a
+/// pack folder, or the `pack.toml` inside one (a file dialog picks files,
+/// so choosing a folder's manifest means the folder). `None` for anything
+/// else.
+pub fn expansion_pack_path(chosen: &Path) -> Option<PathBuf> {
+    let is = |p: &Path, ext: &str| p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext));
+    if chosen.is_dir() {
+        return chosen
+            .join("pack.toml")
+            .is_file()
+            .then(|| chosen.to_path_buf());
+    }
+    if is(chosen, "lxpack") {
+        return Some(chosen.to_path_buf());
+    }
+    if chosen
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("pack.toml"))
+    {
+        return chosen.parent().map(Path::to_path_buf);
+    }
+    None
+}
+
+/// Read and validate the pack at `path` (a folder or an `.lxpack`) the way
+/// the game will: `Err` when it cannot be read at all, else its manifest
+/// and every validator error.
+pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, String> {
+    use legaia_expansion_format::validate::{Severity, validate_files};
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let files = legaia_expansion_format::read_files(&path).map_err(|e| format!("{e:#}"))?;
+    let issues = validate_files(&files, None);
+    let errors: Vec<String> = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .map(|i| {
+            if i.field.is_empty() {
+                format!("{}: {}", i.path, i.message)
+            } else {
+                format!("{}: {}: {}", i.path, i.field, i.message)
+            }
+        })
+        .collect();
+    let warnings = issues.len() - errors.len();
+    let pack = legaia_expansion_format::ExpansionPack::from_files(&files);
+    let (id, name, version, authors) = match &pack {
+        Ok(p) => (
+            p.manifest.id.clone(),
+            p.manifest.name.clone(),
+            p.manifest.version.clone(),
+            p.manifest.authors.join(", "),
+        ),
+        Err(_) => Default::default(),
+    };
+    let mut errors = errors;
+    if let Err(e) = pack
+        && errors.is_empty()
+    {
+        errors.push(format!("{e:#}"));
+    }
+    Ok(ExpansionInfo {
+        path,
+        id,
+        name,
+        version,
+        authors,
+        errors,
+        warnings,
+    })
 }
 
 const SPIRIT_AP_RETAIL: i16 = legaia_engine_core::world::SPIRIT_AP_RETAIL;
@@ -1318,6 +1434,64 @@ mod tests {
         assert_eq!(a[0], "play-window");
         assert_eq!(a[2], "/g/l.bin");
         assert!(a.iter().any(|s| s == "--boot-ui"));
+    }
+
+    /// The remembered expansion pack rides the play args as `--expansion`,
+    /// beside `--retail` too, and round-trips through the settings file.
+    #[test]
+    fn the_expansion_pack_rides_the_play_args_and_round_trips() {
+        let info = ok_info(Path::new("/g/l.bin"));
+        let s = LauncherSettings {
+            expansion: Some("/packs/rebirth.lxpack".into()),
+            switches: PersistedSwitches {
+                retail: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let a = play_args_with(&info, &s);
+        let at = a
+            .iter()
+            .position(|x| x == "--expansion")
+            .expect("--expansion");
+        assert_eq!(a[at + 1], "/packs/rebirth.lxpack");
+        assert!(a.iter().any(|x| x == "--retail"));
+        let text = toml::to_string(&s).unwrap();
+        assert!(text.contains("expansion"));
+        assert_eq!(toml::from_str::<LauncherSettings>(&text).unwrap(), s);
+        // No pack writes no key.
+        let none = toml::to_string(&LauncherSettings::default()).unwrap();
+        assert!(!none.contains("expansion"));
+    }
+
+    /// A chosen file names a pack as a bundle, a folder or its manifest; the
+    /// committed Rebirth pack inspects clean.
+    #[test]
+    fn expansion_choices_resolve_and_rebirth_inspects_clean() {
+        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        assert_eq!(expansion_pack_path(rebirth).as_deref(), Some(rebirth));
+        assert_eq!(
+            expansion_pack_path(&rebirth.join("pack.toml")).as_deref(),
+            Some(rebirth)
+        );
+        assert_eq!(
+            expansion_pack_path(Path::new("/x/y.LXPACK")).as_deref(),
+            Some(Path::new("/x/y.LXPACK"))
+        );
+        assert_eq!(expansion_pack_path(Path::new("/x/game.bin")), None);
+        let info = inspect_expansion(rebirth).expect("reads");
+        assert!(info.playable(), "{:?}", info.errors);
+        assert_eq!(info.id, "rebirth");
+        assert!(info.summary().starts_with("Legend of Legaia: Rebirth 0."));
+        // A pack with an error is not playable, and says why.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pack.toml"),
+            "id = \"Bad Id\"\nname = \"x\"\nversion = \"1\"\n",
+        )
+        .unwrap();
+        let bad = inspect_expansion(dir.path()).expect("reads");
+        assert!(!bad.playable());
     }
 
     #[test]
