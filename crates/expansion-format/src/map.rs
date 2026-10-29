@@ -178,7 +178,9 @@ impl Default for TileLayer {
 pub struct TileStyle {
     /// Painter label (`"stone floor"`). Carried, not read.
     pub label: String,
-    /// Which quarters of the tile are wall.
+    /// Which quarters of the tile are wall. Left out when open, which is
+    /// also how it reads back (the default variant has no written form).
+    #[serde(skip_serializing_if = "Walls::is_open")]
     pub walls: Walls,
     /// Floor tier, an index into [`MapDef::floor_heights`] (`0..16`).
     pub height: u8,
@@ -243,6 +245,11 @@ impl Quarter {
 }
 
 impl Walls {
+    /// The unwritten default: no walls, no `walls` key.
+    pub fn is_open(&self) -> bool {
+        matches!(self, Self::Open)
+    }
+
     /// The 4-bit wall mask ([`Quarter::bit`] order).
     pub fn mask(&self) -> u8 {
         match self {
@@ -813,5 +820,13 @@ tile = [1, 2]
         assert_eq!(m.tiles.origin, [16, 16]);
         assert_eq!(m.tile_grid().unwrap().width, 0);
         assert_eq!(m.camera, CameraPreset::Default);
+    }
+
+    #[test]
+    fn an_open_tile_style_writes_and_reads_back() {
+        let m = parse("[tiles]\nrows = [\".\"]\n[tiles.legend]\n\".\" = { height = 1 }\n");
+        let text = toml::to_string(&m).unwrap();
+        assert!(!text.contains("walls"), "{text}");
+        assert_eq!(parse(&text), m);
     }
 }
