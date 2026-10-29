@@ -2083,12 +2083,21 @@
   "engine-modes": {
    "package": "legaia-engine-modes",
    "deps": [
-    "engine-system"
+    "engine-system",
+    "expansion-format"
    ],
    "dev_deps": [],
    "bins": [],
    "lib": true,
-   "modules": [],
+   "modules": [
+    "cards",
+    "fixed",
+    "golf",
+    "poker",
+    "prop_hunt",
+    "racing",
+    "session"
+   ],
    "band": "kernels",
    "track": "engine",
    "rank": 1,
@@ -2899,7 +2908,8 @@
    "dependents": [
     "asset",
     "engine-core",
-    "engine-expansion"
+    "engine-expansion",
+    "engine-modes"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },
