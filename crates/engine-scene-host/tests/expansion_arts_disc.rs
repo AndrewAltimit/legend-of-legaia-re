@@ -49,6 +49,12 @@ name = "Cinder Wyrm"
 base = 0x81
 mp = 34
 power = 200
+
+[spells.storm]
+name = "Cinder Storm"
+base = 0x81
+mp = 20
+target = "all_enemies"
 "#
         .to_vec(),
     );
@@ -56,7 +62,8 @@ power = 200
         "battle.toml".into(),
         format!(
             "[monsters.drake]\nbase = {{ kind = \"monster\", id = {CARUBAN} }}\nhp = 3000\n\
-             [formations.f]\nmonsters = [\"drake\"]\n[bosses.b]\nformation = \"f\"\nonce = false\n"
+             [formations.f]\nmonsters = [\"drake\"]\n[formations.pair]\nmonsters = [\"drake\", \"drake\"]\n\
+             [bosses.b]\nformation = \"f\"\nonce = false\n"
         )
         .into_bytes(),
     );
@@ -233,7 +240,16 @@ fn a_pack_art_and_a_pack_spell_run_in_a_real_battle() {
 
     // Cast the pack spell under its menu id.
     assert!(until_command(&mut host, 4_000), "the next round opens");
-    let menu_id = host.world.expansion_pack_spell_ids(0)[0];
+    let menu_id = host
+        .world
+        .expansion_pack_spell_ids(0)
+        .into_iter()
+        .find(|&id| {
+            host.world
+                .expansion_pack_spell(id)
+                .is_some_and(|s| s.key == "wyrm")
+        })
+        .expect("Cinder Wyrm is known");
     let entry = host
         .world
         .tables
@@ -294,6 +310,74 @@ fn a_pack_art_and_a_pack_spell_run_in_a_real_battle() {
         .unwrap()
         .xp;
     assert!(xp > 0, "the cast trained the pack spell");
+    host.world.abandon_live_battle();
+    host.world.deactivate_expansion();
+}
+
+/// A pack spell whose `target` widens its base's shape strikes every
+/// monster: Cinder Storm rides Gimard (one enemy) as `all_enemies`.
+#[test]
+fn a_widened_pack_spell_strikes_every_monster() {
+    let Some(mut host) = host() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    assert!(host.world.start_expansion_battle("pair"));
+    host.world.battle.player_driven = true;
+    assert!(until_command(&mut host, 4_000), "the command ring opens");
+    let pc = usize::from(host.world.party.party_count);
+    let menu_id = host
+        .world
+        .expansion_pack_spell_ids(0)
+        .into_iter()
+        .find(|&id| {
+            host.world
+                .expansion_pack_spell(id)
+                .is_some_and(|s| s.key == "storm")
+        })
+        .expect("Cinder Storm is known");
+    let before: Vec<u16> = (pc..pc + 2)
+        .map(|s| host.world.actors[s].battle.hp)
+        .collect();
+    assert!(before.iter().all(|&h| h > 0), "{before:?}");
+    host.world.battle.player_driven = false;
+    host.world.commit_party_command(
+        0,
+        PendingPartyAction::Spell {
+            spell_id: menu_id,
+            target_row: CursorRow::Enemy,
+            target_slot: 0,
+        },
+    );
+    host.world.battle.player_driven = true;
+    let mut cast_seen = false;
+    for _ in 0..4_000 {
+        let _ = host.tick();
+        cast_seen |= host.world.expansion.spells.casting.is_some();
+        if cast_seen
+            && host
+                .world
+                .battle
+                .command
+                .as_ref()
+                .is_some_and(|c| c.actor == 0)
+        {
+            break;
+        }
+        if host.world.mode != SceneMode::Battle {
+            break;
+        }
+    }
+    assert!(cast_seen, "the pack cast was in flight");
+    let after: Vec<u16> = (pc..pc + 2)
+        .map(|s| host.world.actors[s].battle.hp)
+        .collect();
+    for k in 0..2 {
+        assert!(
+            after[k] < before[k],
+            "monster {k} was struck: {before:?} -> {after:?}"
+        );
+    }
     host.world.abandon_live_battle();
     host.world.deactivate_expansion();
 }

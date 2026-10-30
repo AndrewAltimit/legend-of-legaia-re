@@ -245,6 +245,19 @@ impl World {
         Some(c.worn_bonus(p, roster, swap))
     }
 
+    /// The name of the pack item roster slot `roster` wears in equipment
+    /// byte `index` (the record's own byte stays `0` under it), for the
+    /// retail screens' slot rows to show instead of an empty slot. `None`
+    /// with no pack gear there.
+    pub fn pack_worn_item_name(&self, roster: u8, index: u8) -> Option<String> {
+        let key = self.pack_item_progress().worn.get(&(roster, index))?;
+        let name = self
+            .pack_items()
+            .and_then(|c| c.get(key).map(|i| i.name().to_string()))
+            .unwrap_or_else(|| key.clone());
+        Some(name)
+    }
+
     /// Return to the pack bag any worn pack item whose retail slot a retail
     /// item now fills (the retail equip screen, Best Equipment, a script),
     /// so a slot never counts twice.

@@ -173,6 +173,12 @@ fn pack_gear_displaces_retail_gear_and_folds_into_the_battle_seed() {
     // The retail weapon went to the bag and the byte is empty.
     assert_eq!(w.party.roster.members[0].equipment().slots[2], 0);
     assert_eq!(w.party.inventory.get(&0x27).copied(), Some(1));
+    // The retail screens name the slot the pack item fills.
+    assert_eq!(
+        w.pack_worn_item_name(0, 2).as_deref(),
+        Some("Rebirth Blade")
+    );
+    assert_eq!(w.pack_worn_item_name(0, 3), None);
     // The look is the borrowed Chaos Breaker; the stats are the pack's.
     assert_eq!(w.member_look_equipment(0)[2], 0x27);
     w.seed_party_battle_stats();

@@ -180,7 +180,7 @@ It is written only while the player holds or wears a pack item, so a block witho
 
 - At most five pack items take part in one fight ([battle aliases](#battle-aliases)).
 - Pack gear is worn by the three heroes only.
-- The retail Items and Equip screens show neither pack items nor a worn pack item's name (its slot reads empty); the pack item screen and the Journal list them.
+- The retail Items and Equip screens list no pack items (their rows are the retail bag's slots); the pack item screen and the Journal list them. A slot a pack item fills shows that item's name on the retail Equip and Status screens (`World::pack_worn_item_name`), though the record's byte under it stays `0`.
 - A pack weapon's `icon` picks its battle mesh and swing costs from the retail weapon it names.
 
 ## Rebirth's gear

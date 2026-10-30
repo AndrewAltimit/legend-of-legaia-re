@@ -503,6 +503,41 @@ impl World {
             .collect()
     }
 
+    /// The pack arts roster slot `roster` (`0` Vahn, `1` Noa, `2` Gala)
+    /// knows, as `(name, "R U R D U  30 AP")` lines for the pause menu's
+    /// arts screen. Empty with no pack.
+    pub fn expansion_known_arts_lines(&self, roster: u8) -> Vec<(String, String)> {
+        let character = match roster {
+            0 => legaia_art::Character::Vahn,
+            1 => legaia_art::Character::Noa,
+            2 => legaia_art::Character::Gala,
+            _ => return Vec::new(),
+        };
+        let Some(arts) = self.pack_arts() else {
+            return Vec::new();
+        };
+        arts.of(pack_character(character))
+            .filter(|a| self.pack_art_known(&a.key) && !a.commands.is_empty())
+            .map(|a| {
+                let commands: Vec<&str> = a
+                    .commands
+                    .iter()
+                    .filter_map(|&b| legaia_art::Command::from_byte(b))
+                    .map(|c| match c {
+                        legaia_art::Command::Left => "L",
+                        legaia_art::Command::Right => "R",
+                        legaia_art::Command::Up => "U",
+                        legaia_art::Command::Down => "D",
+                    })
+                    .collect();
+                (
+                    a.name.clone(),
+                    format!("{}  {} AP", commands.join(" "), a.ap),
+                )
+            })
+            .collect()
+    }
+
     // ---- Spells ----------------------------------------------------------
 
     /// Install each pack spell's menu entry in the spell catalog: the base
@@ -711,7 +746,8 @@ impl World {
     }
 
     /// Scale a field (pause-menu) cast of pack spell menu id `menu_id` by
-    /// roster slot `roster`: its restore times the pack power at its level.
+    /// roster slot `roster`: its restore - its base module's own roll where
+    /// the base heals through one - times the pack power at its level.
     /// Identity for any retail id.
     pub fn expansion_scale_field_cast(
         &self,
@@ -728,9 +764,32 @@ impl World {
             .level(roster, &s.key)
             .map_or(1, |l| l.level);
         let scale = |a: &mut u16| *a = xs::scale_magnitude(*a, &s.def, level);
+        // A base whose battle module rolls its own restore (Vera, Orb,
+        // Spoon) rolls it here too, at the pack spell's level, for the
+        // seat's HP - not the catalog's placeholder scalar - then takes the
+        // pack power, clamped to what the seat is missing.
+        let heal = |t: u8, a: &mut u16| {
+            let Some(m) = self.party.roster.members.get(usize::from(t)) else {
+                return scale(a);
+            };
+            let h = m.hp_mp_sp();
+            match super::battle::seru_module_heal(s.base(), level, h.hp_cur, h.hp_max) {
+                Some(roll) => {
+                    let missing = h.hp_max.saturating_sub(h.hp_cur);
+                    *a = xs::scale_magnitude(roll, &s.def, level).min(missing);
+                }
+                None => scale(a),
+            }
+        };
         match outcome {
-            O::Heal { amount, .. } | O::Damage { amount, .. } => scale(amount),
-            O::MultiHeal { targets } | O::MultiDamage { targets, .. } => {
+            O::Heal { target, amount } => heal(*target, amount),
+            O::Damage { amount, .. } => scale(amount),
+            O::MultiHeal { targets } => {
+                for (t, a) in targets.iter_mut() {
+                    heal(*t, a);
+                }
+            }
+            O::MultiDamage { targets, .. } => {
                 for (_, a) in targets.iter_mut() {
                     scale(a);
                 }

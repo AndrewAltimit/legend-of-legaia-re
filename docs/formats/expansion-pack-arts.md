@@ -11,7 +11,7 @@
 | References | `battle.toml` monsters (`learn.capture`), bosses, quests and flags (`requires`), items (`learn.item`) |
 | Animation | The hero's own retail art clips, by action constant or name; no animation data is carried |
 | Storage | Learned set beside the character records; tail record `5` of the [expansion block](expansion-pack-quests.md#saves) |
-| Shown in | The battle arts list (Triangle), the battle label, the battle and field Magic lists, the Journal's Arts page |
+| Shown in | The battle arts list (Triangle), the battle label, the battle and field Magic lists, the Status page's arts screen (Triangle), the Journal's Arts page |
 | Sample | [`packs/rebirth/arts.toml`](../../packs/rebirth/arts.toml), [`packs/rebirth/spells.toml`](../../packs/rebirth/spells.toml) |
 
 ## How a pack art runs
@@ -197,7 +197,7 @@ The arts and spells known are part of the pack's progress, so they save, park an
 - A pack art plays retail clips only; it cannot move a hero in a way no retail art of theirs does. A clip a hero's battle form lacks (a stripped equipment variant) is skipped with a warning and that segment plays nothing.
 - The validator cannot see retail combos; the two matching rules above are the author's to keep. The workbench's Arts tab checks a combo against the disc's arts table.
 - A pack spell keeps its base's presentation: a single-target base given `target = "all_enemies"` folds damage on every enemy while its module still aims at one.
-- The retail pause menu's Status page lists no pack art; the Journal's Arts page lists the known arts and spells.
+- The pause menu lists a hero's known pack arts (name, commands and AP) under the saved chains of the arts screen Triangle opens from the Status page (`World::expansion_known_arts_lines`); the Journal's Arts page lists the known arts and spells. The port draws no retail Moves page for either to join.
 
 ## Rebirth's arts and Seru
 

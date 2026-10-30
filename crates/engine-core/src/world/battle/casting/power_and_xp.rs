@@ -275,29 +275,7 @@ impl World {
         target_hp_max: u16,
     ) -> Option<u16> {
         let level = self.caster_magic_power_byte(caster, spell_id);
-        match spell_id {
-            VERA_SPELL_ID => Some(legaia_engine_battle_vm::battle_formulas::vera_heal_amount(
-                level,
-                target_hp,
-                target_hp_max,
-            )),
-            ORB_SPELL_ID => {
-                let want = legaia_engine_battle_vm::battle_formulas::orb_heal_amount(level);
-                // Retail's sweep clamps each seat to its own missing HP before
-                // storing; the fold caps at max HP anyway, so clamping here
-                // only makes the reported amount the restored one.
-                let missing = u32::from(target_hp_max.saturating_sub(target_hp));
-                Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
-            }
-            // PROT 0919's arm 7: the same unsigned clamp over its own amount
-            // (`sltu v0,a0,a3` at `0x801F8078`).
-            SPOON_SPELL_ID => {
-                let want = legaia_engine_battle_vm::battle_formulas::spoon_heal_amount(level);
-                let missing = u32::from(target_hp_max.saturating_sub(target_hp));
-                Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
-            }
-            _ => None,
-        }
+        seru_module_heal(spell_id, level, target_hp, target_hp_max)
     }
 
     /// The spell XP a striking-free high-block module credits in its own arm,
@@ -358,5 +336,42 @@ impl World {
             target_hp,
             target_hp_max,
         )
+    }
+}
+
+/// The restore a player Seru heal module rolls for one seat at magic level
+/// `level` (Vera, Orb, Spoon), clamped to the seat's missing HP; `None` for
+/// a spell whose module computes no restore. The battle fold and a field
+/// cast of a pack spell on one of these bases both read it.
+///
+/// REF: FUN_801F69D8 (PROT 0905 arm 9 restore, PROT 0911 arm 9 heal sweep)
+pub(in crate::world) fn seru_module_heal(
+    spell_id: u8,
+    level: u8,
+    target_hp: u16,
+    target_hp_max: u16,
+) -> Option<u16> {
+    match spell_id {
+        VERA_SPELL_ID => Some(legaia_engine_battle_vm::battle_formulas::vera_heal_amount(
+            level,
+            target_hp,
+            target_hp_max,
+        )),
+        ORB_SPELL_ID => {
+            let want = legaia_engine_battle_vm::battle_formulas::orb_heal_amount(level);
+            // Retail's sweep clamps each seat to its own missing HP before
+            // storing; the fold caps at max HP anyway, so clamping here
+            // only makes the reported amount the restored one.
+            let missing = u32::from(target_hp_max.saturating_sub(target_hp));
+            Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
+        }
+        // PROT 0919's arm 7: the same unsigned clamp over its own amount
+        // (`sltu v0,a0,a3` at `0x801F8078`).
+        SPOON_SPELL_ID => {
+            let want = legaia_engine_battle_vm::battle_formulas::spoon_heal_amount(level);
+            let missing = u32::from(target_hp_max.saturating_sub(target_hp));
+            Some(want.min(missing).min(u32::from(u16::MAX)) as u16)
+        }
+        _ => None,
     }
 }

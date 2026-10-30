@@ -940,7 +940,7 @@ pub fn equip_draws(
         equip_info,
         item_effects: world.and_then(|w| w.tables.item_effects.as_ref()),
     });
-    let model = ps::equip_screen_model(
+    let mut model = ps::equip_screen_model(
         session,
         char_slot,
         &names,
@@ -948,6 +948,21 @@ pub fn equip_draws(
         Some(&text),
         compare,
     );
+    // A slot an expansion pack's gear fills reads empty on the record (its
+    // byte stays `0`); the row names the pack item instead.
+    if let Some(w) = world {
+        let order = legaia_engine_menus::equip_session::BROWSE_SLOT_ORDER;
+        for (row, &slot) in model.slot_items.iter_mut().zip(order.iter()) {
+            if row.is_empty() {
+                let index = legaia_engine_menus::equip_session::record_byte_for_engine_slot(
+                    slot, char_slot,
+                );
+                if let Some(n) = w.pack_worn_item_name(char_slot, index as u8) {
+                    *row = n;
+                }
+            }
+        }
+    }
     equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
 }
 
@@ -1020,6 +1035,14 @@ pub fn arts_editor_draws(
             pretty_sequence: pretty,
         })
         .collect();
+    let pack_rows: Vec<ui::ArtsChainRow<'_>> = view
+        .pack_arts
+        .iter()
+        .map(|(name, line)| ui::ArtsChainRow {
+            name,
+            pretty_sequence: line,
+        })
+        .collect();
     let args = ui::ArtsEditorDrawArgs {
         character_name: &view.character_name,
         phase: match view.phase {
@@ -1035,6 +1058,7 @@ pub fn arts_editor_draws(
         max_len: view.max_len,
         naming_name: &view.naming_name,
         can_add_new: view.can_add_new,
+        pack_arts: &pack_rows,
     };
     pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Arts(args)))
 }

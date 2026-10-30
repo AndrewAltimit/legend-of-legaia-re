@@ -2161,6 +2161,9 @@ input and adds no eighth root row. Both hosts project the editor through
 `field_menu_dispatch::arts_editor_view`; saving folds the edit into
 `World::chain_library` / `store_chain_library`, so the next battle's Arts rows
 reflect it.
+While an expansion pack is active, the browse view also lists the expansion
+pack arts the character knows, read-only, under the saved chains (name,
+commands, AP: `World::expansion_known_arts_lines`).
 
 ### Expansion-pack Journal (engine extension)
 

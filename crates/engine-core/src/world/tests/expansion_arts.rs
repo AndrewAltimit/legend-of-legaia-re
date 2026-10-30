@@ -347,6 +347,13 @@ fn arts_learn_on_their_conditions() {
             .current()
             .is_some_and(|t| t == "Vahn learned Ember Cascade!")
     );
+    // The pause menu's arts screen lists the known art that has commands
+    // (a finisher has none) for Vahn, and nothing for Noa.
+    assert_eq!(
+        w.expansion_known_arts_lines(0),
+        [("Ember Cascade".to_string(), "R U R D U  30 AP".to_string())]
+    );
+    assert!(w.expansion_known_arts_lines(1).is_empty());
 }
 
 /// Seru capture of the pack monster teaches the pack spell (and not the
@@ -410,6 +417,48 @@ fn a_captured_pack_monster_teaches_its_spell_and_the_cast_runs_as_its_base() {
     w.deactivate_expansion();
     assert!(w.tables.spell_catalog.get(0xC1).is_none());
     assert!(w.tables.spell_catalog.get(0x81).is_some());
+}
+
+/// A field cast of a pack spell on a healing base rolls the base module's
+/// own restore at the pack spell's level for the seat's HP, not the
+/// catalog's placeholder scalar.
+#[test]
+fn a_field_cast_of_a_pack_heal_rolls_its_base_module() {
+    use legaia_engine_battle::spells::SpellOutcome;
+    let mut w = arts_world();
+    let mut hms = w.party.roster.members[0].hp_mp_sp();
+    hms.hp_cur = 100;
+    w.party.roster.members[0].set_hp_mp_sp(hms);
+    let w = with_pack(w);
+    // "aegis" rides Vera (0x83) under menu id 0xC0 at level 1.
+    assert_eq!(w.expansion_pack_spell_ids(0), [0xC0]);
+    let want = legaia_engine_battle_vm::battle_formulas::vera_heal_amount(1, 100, 900);
+    assert!(want > 0 && want != 60);
+    let mut o = SpellOutcome::Heal {
+        target: 0,
+        amount: 60,
+    };
+    w.expansion_scale_field_cast(0, 0xC0, &mut o);
+    assert_eq!(
+        o,
+        SpellOutcome::Heal {
+            target: 0,
+            amount: want.min(800)
+        }
+    );
+    // A retail id is left alone.
+    let mut o = SpellOutcome::Heal {
+        target: 0,
+        amount: 60,
+    };
+    w.expansion_scale_field_cast(0, 0x83, &mut o);
+    assert_eq!(
+        o,
+        SpellOutcome::Heal {
+            target: 0,
+            amount: 60
+        }
+    );
 }
 
 /// Learned arts and spells ride the save's expansion block (tail record 5),
