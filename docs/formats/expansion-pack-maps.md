@@ -259,6 +259,7 @@ facing = 0                                      # compass sector, 0..8
 clip = 2                                        # optional idle clip id
 patrol = [[9, 8], [9, 6]]                       # optional loop of tiles
 walk_clip = 4                                   # optional clip a patrol leg plays
+pause = 90                                      # optional ticks it stands at each stop
 line = "tower_guide_hello"                      # a dialog.toml line
 shop = "tower_dealer"                           # optional: an items.toml shop or a cards.toml dealer
 requires = { quests = ["tower_rumour"] }        # optional: silent until it holds
@@ -274,8 +275,20 @@ clip byte names a record of the scene's ANM bundle
 ([`anm.md`](anm.md), [`script-vm.md`](../subsystems/script-vm.md)). A pack NPC
 borrows one by coordinate, `DiscRef::Npc { scene, index }`, the placement's
 partition-1 index (the site's NPC page lists it as the NPC's slot; `0` is
-the scene controller). Its model and idle clip come from that record; `clip`
-overrides the clip with another record of the same bundle (id = record + 1).
+the scene controller). Its model comes from that record; `clip` names its
+idle clip, another record of the same bundle (id = record + 1).
+
+Left out, the clips come from the placement's own motion stream where it
+installs a default-move record (op `0x17` `[move, anim]`,
+`legaia_scene_formats::man_motion::placement_default_move`): the actor
+rests in `move` and walks in `anim`, so `clip` takes the first and a
+patrolling NPC's `walk_clip` the second
+(`expansion_map::fill_borrowed_npc_clips`, at entry). The placement's clip
+byte is not always the rest clip - Rim Elm's old man (`town01` placement
+37) is placed on his walk cycle, which his stream replaces on its first
+tick - and a pack map runs no stream, so a borrowed NPC without this marks
+time in place and a patrol glides in its idle pose. A placement whose
+stream installs nothing keeps its clip byte.
 The model scene must be the base scene - the mesh indexes the base scene's
 pool and samples its VRAM - unless the placement is a party member or save
 point (model byte `0xF0` and up), whose mesh is the resident global pool.
@@ -291,7 +304,7 @@ slots. From there the NPC is a field NPC on every path a retail one takes:
 | Draw | The live-scene placement list (`npc_catalog::live_scene_placements`, `catalog_live_scene_npcs`) both hosts build their NPC meshes and clips from, posed by the base scene's ANM bundle. |
 | Collision | Its anchor in `World::npcs.positions`: the moving-actor box (`FUN_801CFC40`'s moving arm, ±40 units) blocks the player as a village NPC does. |
 | Talk | The facing probe (`FUN_801CF9F4`'s port) picks it on Cross; `World::trigger_field_interact` turns it to the player and hands the talk to the map. |
-| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. A leg starts only while no dialogue holds the field. |
+| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. At each stop the NPC turns back to `clip` and stands `pause` ticks (`ActiveMap::patrol_tick`). A leg starts only while no dialogue holds the field. |
 
 Talking to an NPC runs its `line` through the pack dialogue runner
 (`World::expansion_say`) and then raises the quest event `Talked(id)`
@@ -1181,5 +1194,5 @@ once, with no streaming.
   or a Travel pick keeps the follow camera's distance; the map's `camera`
   preset applies on a host's direct entry (`--map`, a pack map row in the
   play page's scene list).
-- **NPC clips.** A patrolling NPC keeps `walk_clip` (or its idle clip) at the
-  ends of its legs; nothing cues the idle clip back between legs.
+- **NPC clips.** A patrolling NPC with no `pause` keeps `walk_clip` at the
+  ends of its legs: it sets out again on the next tick.

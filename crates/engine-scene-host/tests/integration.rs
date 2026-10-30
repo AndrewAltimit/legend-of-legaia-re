@@ -58,6 +58,7 @@ mod expansion_map_detail_disc;
 mod expansion_map_disc;
 mod expansion_map_grid;
 mod expansion_map_npcs_disc;
+mod expansion_npc_clips_disc;
 mod expansion_podium_disc;
 mod expansion_solid_props_disc;
 mod expansion_stage_disc;

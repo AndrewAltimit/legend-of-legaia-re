@@ -42,7 +42,7 @@ use legaia_scene_formats::field_objects::{
     ObjectRecord, TILE_CENTER,
 };
 
-use legaia_scene_formats::man_section::ActorPlacement;
+use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
 use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 
@@ -1585,6 +1585,57 @@ pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u
         }],
         scale: LEGAIA_OBJECT_SCALE,
     }])
+}
+
+/// Fill each borrowed NPC's clips from its retail placement's motion stream
+/// where the pack names none: the default-move record the stream installs
+/// (`legaia_scene_formats::man_motion::placement_default_move`) gives the
+/// clip the actor rests in, which becomes [`NpcDef::clip`], and the clip it
+/// walks in, which a patrolling NPC takes as [`NpcDef::walk_clip`].
+///
+/// A retail placement's clip byte is not always its rest clip: Rim Elm's
+/// old man (`town01` placement 37) is placed on his walk cycle and his
+/// stream restamps the rest clip on its first tick. A pack map runs no
+/// stream, so without this the NPC would mark time in place - and a patrol
+/// would glide in its idle pose.
+///
+/// [`NpcDef::clip`]: legaia_expansion_format::map::NpcDef::clip
+/// [`NpcDef::walk_clip`]: legaia_expansion_format::map::NpcDef::walk_clip
+pub fn fill_borrowed_npc_clips(index: &ProtIndex, def: &mut MapDef) -> Result<()> {
+    let mut moves: std::collections::BTreeMap<String, Option<(Vec<u8>, ManFile)>> =
+        Default::default();
+    for npc in &mut def.npcs {
+        let Some(DiscRef::Npc { scene, index: pi }) = &npc.model else {
+            continue;
+        };
+        if npc.clip.is_some() && (npc.walk_clip.is_some() || npc.patrol.is_empty()) {
+            continue;
+        }
+        if !moves.contains_key(scene) {
+            let s = Scene::load(index, scene)?;
+            let parsed = s.field_man_payload(index)?.and_then(|man| {
+                legaia_scene_formats::man_section::parse(&man)
+                    .ok()
+                    .map(|f| (man, f))
+            });
+            moves.insert(scene.clone(), parsed);
+        }
+        let Some((man, mf)) = moves[scene].as_ref() else {
+            continue;
+        };
+        let Some([rest, walk]) =
+            legaia_scene_formats::man_motion::placement_default_move(man, mf, usize::from(*pi))
+        else {
+            continue;
+        };
+        if rest != 0 {
+            npc.clip.get_or_insert(rest);
+        }
+        if !npc.patrol.is_empty() && walk != 0 && walk != rest {
+            npc.walk_clip.get_or_insert(walk);
+        }
+    }
+    Ok(())
 }
 
 /// Resolve the map's NPCs into actor placements: each [`DiscRef::Npc`]'s

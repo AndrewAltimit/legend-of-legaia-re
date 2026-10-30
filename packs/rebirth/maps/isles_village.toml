@@ -113,7 +113,7 @@ event = { kind = "shop", shop = "isles_trader" }
 [[npcs]]
 id = "isles_elder"
 label = "Elder Tolva"
-model = { kind = "npc", scene = "town01", index = 43 }
+model = { kind = "npc", scene = "town01", index = 10 }
 tile = [24, 17]
 facing = 0
 line = "isles_elder_idle"
@@ -121,7 +121,7 @@ line = "isles_elder_idle"
 [[npcs]]
 id = "isles_fisher"
 label = "Fisher Dunn"
-model = { kind = "npc", scene = "town01", index = 10 }
+model = { kind = "npc", scene = "town01", index = 12 }
 tile = [20, 38]
 facing = 4
 line = "isles_fisher_active"
@@ -143,12 +143,13 @@ label = "Islander"
 model = { kind = "npc", scene = "town01", index = 13 }
 tile = [28, 24]
 patrol = [[28, 24], [34, 22], [28, 24], [24, 26]]
+pause = 90
 line = "isles_villager_a"
 
 [[npcs]]
 id = "isles_villager_b"
 label = "Islander"
-model = { kind = "npc", scene = "town01", index = 25 }
+model = { kind = "npc", scene = "town01", index = 44 }
 tile = [12, 14]
 facing = 2
 line = "isles_villager_b"
@@ -156,7 +157,7 @@ line = "isles_villager_b"
 [[npcs]]
 id = "isles_child"
 label = "Child"
-model = { kind = "npc", scene = "town01", index = 37 }
+model = { kind = "npc", scene = "town01", index = 15 }
 tile = [26, 21]
 patrol = [[26, 21], [22, 19], [26, 18], [27, 21]]
 line = "isles_child"

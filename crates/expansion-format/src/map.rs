@@ -436,6 +436,10 @@ pub struct NpcDef {
     /// The clip id a patrol leg plays (a walk cycle of the same bundle).
     /// `None` keeps the idle clip while walking.
     pub walk_clip: Option<u8>,
+    /// Ticks a patrolling NPC stands at each stop, in its idle clip
+    /// ([`Self::clip`]), before it sets out for the next one. `0` walks the
+    /// loop without stopping.
+    pub pause: u16,
     /// The `dialog.toml` line the NPC says when talked to. Empty says
     /// nothing (a quest giver whose quest lines do the talking).
     pub line: String,

@@ -62,6 +62,11 @@ pub struct ActiveMap {
     /// Each NPC's next patrol stop, an index into its route
     /// ([`Self::patrol_route`]), parallel to `def.npcs`.
     patrol_next: Vec<usize>,
+    /// Per NPC, parallel to `def.npcs`: whether a patrol leg is in flight,
+    /// and the ticks left of its stand at the stop it reached
+    /// ([`Self::patrol_tick`]).
+    patrol_walking: Vec<bool>,
+    patrol_wait: Vec<u16>,
     /// The standable props' tops ([`MapDef::floor_tops`]).
     floor_tops: Vec<FloorTop>,
     /// The map's sculpted floor ([`MapDef::terrain_heightfield`]), `None`
@@ -96,6 +101,17 @@ pub struct NpcTalk {
     pub cutscene: Option<String>,
 }
 
+/// What a patrolling NPC does this tick ([`ActiveMap::patrol_tick`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatrolStep {
+    /// It just reached a stop: it turns to its idle clip and stands.
+    Arrived,
+    /// It stands at the stop.
+    Wait,
+    /// It sets out for the stop at world `(x, z)`.
+    SetOut((i16, i16)),
+}
+
 impl ActiveMap {
     /// A map entered with the player on map-local tile `spawn`. `flag_set`
     /// answers whether a pack flag is raised: a `once` trigger whose flag
@@ -123,6 +139,8 @@ impl ActiveMap {
             encounter: None,
             events: Vec::new(),
             patrol_next: Vec::new(),
+            patrol_walking: Vec::new(),
+            patrol_wait: Vec::new(),
             floor_tops: Vec::new(),
             terrain: None,
             stage_tops: Vec::new(),
@@ -131,6 +149,8 @@ impl ActiveMap {
             foam_cluts: None,
         };
         m.patrol_next = vec![0; m.def.npcs.len()];
+        m.patrol_walking = vec![false; m.def.npcs.len()];
+        m.patrol_wait = vec![0; m.def.npcs.len()];
         m.floor_tops = m.def.floor_tops();
         // A terrain that does not build was refused by the map's load.
         m.terrain = m.def.terrain_heightfield().ok().flatten().map(Arc::new);
@@ -360,6 +380,38 @@ impl ActiveMap {
         }
         *cursor = (*cursor + 1) % route.len();
         Some(route[*cursor])
+    }
+
+    /// One patrol tick of NPC `n`, called while no leg of its is in
+    /// flight: a leg that was walking has just reached its stop, and the NPC
+    /// stands there [`NpcDef::pause`] ticks before it sets out for the next
+    /// stop. `None` for an NPC that stands still.
+    ///
+    /// [`NpcDef::pause`]: legaia_expansion_format::map::NpcDef::pause
+    pub fn patrol_tick(&mut self, n: usize) -> Option<PatrolStep> {
+        let pause = self.def.npcs.get(n)?.pause;
+        if self.patrol_route(n).is_empty() {
+            return None;
+        }
+        let walking = self.patrol_walking.get_mut(n)?;
+        if std::mem::take(walking) && pause > 0 {
+            self.patrol_wait[n] = pause;
+            return Some(PatrolStep::Arrived);
+        }
+        if self.patrol_wait[n] > 0 {
+            self.patrol_wait[n] -= 1;
+            return Some(PatrolStep::Wait);
+        }
+        let stop = self.next_patrol_stop(n)?;
+        Some(PatrolStep::SetOut(stop))
+    }
+
+    /// Record that NPC `n`'s leg toward the stop [`Self::patrol_tick`] gave
+    /// is in flight.
+    pub fn patrol_set_out(&mut self, n: usize) {
+        if let Some(w) = self.patrol_walking.get_mut(n) {
+            *w = true;
+        }
     }
 
     /// The height (up positive) of the standable top under world `(x, z)`,
@@ -736,6 +788,26 @@ requires = { quests = ["intro"] }
         assert_eq!(m.next_patrol_stop(1), Some(centre(5, 0)));
         assert_eq!(m.next_patrol_stop(1), Some(centre(4, 1)));
         assert_eq!(m.next_patrol_stop(1), Some(centre(5, 1)));
+    }
+
+    #[test]
+    fn a_patrol_stands_out_its_pause_at_each_stop() {
+        let mut def: MapDef = toml::from_str(NPC_MAP).unwrap();
+        def.npcs[1].pause = 2;
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("m", Arc::new(def), Arc::new(grid), (0, 0), |_| false);
+        assert_eq!(m.patrol_tick(0), None, "the elder stands still");
+        let centre = |c: i16, r: i16| ((10 + c) * 128 + 64, (20 + r) * 128 + 64);
+        // Seated, it sets out at once.
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::SetOut(centre(5, 1))));
+        m.patrol_set_out(1);
+        // The leg lands: it arrives, stands two ticks, sets out again.
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::Arrived));
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::Wait));
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::Wait));
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::SetOut(centre(5, 0))));
+        // A leg that never set out (blocked) does not count as an arrival.
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::SetOut(centre(4, 1))));
     }
 
     #[test]

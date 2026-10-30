@@ -153,10 +153,13 @@ impl World {
     }
 
     /// One tick of the pack NPCs' patrols: each patrolling NPC with no walk
-    /// leg in flight starts the next one, toward the next stop of its loop.
+    /// leg in flight stands out its pause at the stop it reached, in its
+    /// idle clip, then starts the next leg toward the next stop of its loop
+    /// in its walk clip ([`legaia_engine_expansion::map::ActiveMap::patrol_tick`]).
     /// Nobody sets out while a dialogue holds the field, so the NPC being
     /// talked to stays put.
     pub fn step_expansion_npc_patrols(&mut self) {
+        use legaia_engine_expansion::map::PatrolStep;
         // A cutscene moves the NPCs itself.
         if self.dialogue_owns_input() || self.expansion.cutscene.active() {
             return;
@@ -164,30 +167,38 @@ impl World {
         let Some(map) = self.expansion.map.as_ref() else {
             return;
         };
-        let walkers: Vec<(usize, u8, Option<u8>)> = map
+        let walkers: Vec<(usize, u8, Option<u8>, Option<u8>)> = map
             .npcs()
             .enumerate()
             .filter(|(_, (_, d))| !d.patrol.is_empty())
-            .map(|(n, (slot, d))| (n, slot, d.walk_clip))
+            .map(|(n, (slot, d))| (n, slot, d.walk_clip, d.clip))
             .collect();
-        for (n, slot, walk_clip) in walkers {
+        for (n, slot, walk_clip, idle_clip) in walkers {
             if self.npcs.motions.contains_key(&slot) || self.expansion_npc_hidden(slot) {
                 continue;
             }
-            let Some((x, z)) = self
-                .expansion
-                .map
-                .as_mut()
-                .and_then(|m| m.next_patrol_stop(n))
-            else {
+            let Some(step) = self.expansion.map.as_mut().and_then(|m| m.patrol_tick(n)) else {
                 continue;
             };
-            if self.start_field_npc_motion(slot, x, z)
-                && let Some(clip) = walk_clip
-            {
-                // The leg plays the walk clip, as a `4C 51` walk's move-anim
-                // id does.
-                self.carry_npc_run_anim(slot, clip);
+            match step {
+                PatrolStep::Arrived => {
+                    if let Some(clip) = idle_clip {
+                        self.carry_npc_run_anim(slot, clip);
+                    }
+                }
+                PatrolStep::Wait => {}
+                PatrolStep::SetOut((x, z)) => {
+                    if self.start_field_npc_motion(slot, x, z) {
+                        if let Some(m) = self.expansion.map.as_mut() {
+                            m.patrol_set_out(n);
+                        }
+                        if let Some(clip) = walk_clip {
+                            // The leg plays the walk clip, as a `4C 51`
+                            // walk's move-anim id does.
+                            self.carry_npc_run_anim(slot, clip);
+                        }
+                    }
+                }
             }
         }
     }

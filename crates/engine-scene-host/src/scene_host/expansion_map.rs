@@ -25,8 +25,8 @@ use legaia_engine_scene::expansion_map::detail::{
     needs_library, resolve_materials, resolve_mesh_library,
 };
 use legaia_engine_scene::expansion_map::{
-    BaseInputs, SceneOverride, base_scenery, build_field_image, floor_lut, prop_records_at,
-    prop_scales_at, resolve_map_npcs, tile_centre_world,
+    BaseInputs, SceneOverride, base_scenery, build_field_image, fill_borrowed_npc_clips, floor_lut,
+    prop_records_at, prop_scales_at, resolve_map_npcs, tile_centre_world,
 };
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
@@ -227,7 +227,11 @@ impl SceneHost {
                 image.decoration_chunk
             );
         }
-        let mut npcs = resolve_map_npcs(&self.index, def, &base_name)
+        // Borrowed NPCs rest and walk in the clips their retail streams
+        // name, where the pack names none.
+        fill_borrowed_npc_clips(&self.index, &mut live_def)
+            .with_context(|| format!("map '{map_id}' NPC clips"))?;
+        let mut npcs = resolve_map_npcs(&self.index, &live_def, &base_name)
             .with_context(|| format!("map '{map_id}' NPCs"))?;
         // The base scene's own animated props, as scenery after the NPCs.
         let scenery_props = base_scenery(&self.index, def, &base_name, 1 + def.npcs.len())
