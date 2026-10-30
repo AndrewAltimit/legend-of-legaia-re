@@ -133,7 +133,7 @@ fn rebirth_tower_game_night_builds_every_round() {
     assert_eq!(players.len(), 4);
     assert_eq!(players[1].1, "Keeper Odalric");
     let night = PartyNight::new(def, &pack.modes, &players, 5).unwrap();
-    assert_eq!(night.total_rounds(), 6);
+    assert_eq!(night.total_rounds(), 7);
     let kinds: BTreeSet<ModeKind> = night.infos.iter().map(|i| i.kind).collect();
     assert_eq!(kinds.len(), 5, "every kind of game: {kinds:?}");
     for seats in [2, 4] {
