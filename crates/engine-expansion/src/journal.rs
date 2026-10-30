@@ -67,6 +67,20 @@ pub struct TravelRow {
     pub name: String,
 }
 
+/// One pack item the party holds or wears (the Items page).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ItemRow {
+    pub key: String,
+    pub name: String,
+    pub description: String,
+    /// `Weapon`, `Item`, ...
+    pub kind: &'static str,
+    pub equipment: bool,
+    pub held: u8,
+    /// How many the heroes wear.
+    pub worn: usize,
+}
+
 /// The Journal's content.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct JournalView {
@@ -87,6 +101,10 @@ pub struct JournalView {
     pub boosters: u32,
     /// The pack's maps, in id order.
     pub maps: Vec<TravelRow>,
+    /// The pack defines items (the Items page opens the item screen).
+    pub has_items: bool,
+    /// The pack items held or worn, consumables first.
+    pub items: Vec<ItemRow>,
 }
 
 impl JournalView {
@@ -97,6 +115,7 @@ impl JournalView {
             JournalPage::Challenges => self.challenges.len(),
             JournalPage::Cards => usize::from(self.has_cards),
             JournalPage::Travel => self.maps.len(),
+            JournalPage::Items => self.items.len().max(usize::from(self.has_items)),
         }
     }
 }
@@ -116,7 +135,9 @@ pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime) -> JournalView {
                 .objectives
                 .iter()
                 .map(|o| ObjectiveRow {
-                    text: o.text.map_or_else(|| goal_text(o.goal), str::to_string),
+                    text: o
+                        .text
+                        .map_or_else(|| goal_text_in(pack, o.goal), str::to_string),
                     progress: o.progress.min(o.target),
                     target: o.target,
                 })
@@ -161,7 +182,38 @@ pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime) -> JournalView {
                 name: non_empty(&m.name, id),
             })
             .collect(),
+        has_items: !pack.items.items.is_empty(),
+        items: item_rows(pack, &rt.progress.items),
     }
+}
+
+fn item_rows(pack: &ExpansionPack, progress: &crate::items::ItemProgress) -> Vec<ItemRow> {
+    let mut rows: Vec<ItemRow> = pack
+        .items
+        .items
+        .iter()
+        .filter(|(k, _)| progress.count(k) > 0 || progress.worn_count(k) > 0)
+        .map(|(k, d)| ItemRow {
+            key: k.clone(),
+            name: non_empty(&d.name, k),
+            description: d.description.replace('|', " "),
+            kind: d.kind.label(),
+            equipment: d.kind.is_equipment(),
+            held: progress.count(k),
+            worn: progress.worn_count(k),
+        })
+        .collect();
+    rows.sort_by_key(|r| r.equipment);
+    rows
+}
+
+/// The name a pack names item `r` by: a pack item's own name, `item 0xNN`
+/// for a retail id (the Journal has no retail name table).
+fn item_name(pack: &ExpansionPack, r: &legaia_expansion_format::items::ItemRef) -> String {
+    r.pack_key()
+        .map(|k| k.rsplit(':').next().unwrap_or(k))
+        .and_then(|k| pack.items.items.get(k))
+        .map_or_else(|| r.to_string(), |d| d.name.clone())
 }
 
 fn non_empty(s: &str, fallback: &str) -> String {
@@ -176,6 +228,22 @@ fn formation_text(f: &FormationRef) -> String {
     match f {
         FormationRef::Id(id) => format!("formation {id}"),
         FormationRef::Pack(name) => name.replace('_', " "),
+    }
+}
+
+/// [`goal_text`], naming a collect objective's pack item by its name.
+pub fn goal_text_in(pack: &ExpansionPack, goal: &Goal) -> String {
+    match goal {
+        Goal::CollectItem {
+            item,
+            count,
+            hand_in,
+        } if item.pack_key().is_some() => format!(
+            "{} {count} {}",
+            if *hand_in { "Bring" } else { "Collect" },
+            item_name(pack, item)
+        ),
+        _ => goal_text(goal),
     }
 }
 
@@ -256,10 +324,18 @@ pub enum JournalPage {
     /// Enter one of the pack's maps directly - the testing fallback for a
     /// map whose entrance is out of reach.
     Travel,
+    /// The pack items held and worn; Cross opens the pack item screen.
+    Items,
 }
 
 impl JournalPage {
-    pub const ALL: [Self; 4] = [Self::Quests, Self::Challenges, Self::Cards, Self::Travel];
+    pub const ALL: [Self; 5] = [
+        Self::Quests,
+        Self::Challenges,
+        Self::Cards,
+        Self::Travel,
+        Self::Items,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -267,6 +343,7 @@ impl JournalPage {
             Self::Challenges => "Challenges",
             Self::Cards => "Cards",
             Self::Travel => "Travel",
+            Self::Items => "Items",
         }
     }
 }
@@ -283,6 +360,9 @@ pub enum JournalOutcome {
     /// Cross on the Cards page: open the card menu (the pause menu closes
     /// first).
     OpenCards,
+    /// Cross on the Items page: open the pack item screen, on its Gear tab
+    /// for a worn item (the pause menu closes first).
+    OpenItems { gear: bool },
 }
 
 /// The Journal's cursor.
@@ -344,6 +424,9 @@ impl JournalSession {
                         })
                 }
                 JournalPage::Cards => view.has_cards.then_some(JournalOutcome::OpenCards),
+                JournalPage::Items => view.has_items.then(|| JournalOutcome::OpenItems {
+                    gear: view.items.get(self.cursor).is_some_and(|i| i.equipment),
+                }),
                 JournalPage::Quests => None,
             };
         }

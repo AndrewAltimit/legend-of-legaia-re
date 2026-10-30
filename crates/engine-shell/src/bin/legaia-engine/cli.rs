@@ -1280,7 +1280,9 @@ pub(crate) enum Cmd {
         /// `builtin-prop-hunt`). `picker` opens the mode picker instead.
         /// The same seat the backquote key opens in play. `cards`,
         /// `cards-binder` and `cards-dealer[:ID]` open the active pack's card
-        /// screen (the card menu, the binder, a dealer's counter) instead.
+        /// screen (the card menu, the binder, a dealer's counter) instead;
+        /// `items`, `items-gear` and `shop[:ID]` its item screen (the pack
+        /// bag, its Gear tab, a pack shop's counter).
         #[arg(long = "mode", value_name = "INSTANCE")]
         pack_mode: Option<String>,
         // --- end expansion game modes ---

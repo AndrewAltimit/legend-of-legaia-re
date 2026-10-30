@@ -59,6 +59,10 @@ pub fn apply_journal_outcome(session: &JournalSession, world: &mut World) -> boo
             world.expansion.open_cards = world.cards_available();
             world.expansion.open_cards
         }
+        Some(JournalOutcome::OpenItems { gear }) => {
+            world.expansion.open_items = world.pack_items().is_some().then_some(*gear);
+            world.expansion.open_items.is_some()
+        }
         Some(JournalOutcome::Closed) | None => false,
     }
 }

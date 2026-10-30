@@ -688,7 +688,12 @@ fn the_journal_travels_and_arms_challenges() {
     let mut menu = FieldMenuSession::new();
     let view = journal_on_select(PadButton::Select.mask(), &world).unwrap();
     let mut sub = open_journal(&mut menu, view.clone()).unwrap();
-    for edge in [PadButton::Left.mask(), PadButton::Cross.mask()] {
+    // Left wraps from Quests to the last page (Items), then to Travel.
+    for edge in [
+        PadButton::Left.mask(),
+        PadButton::Left.mask(),
+        PadButton::Cross.mask(),
+    ] {
         tick_open_subsession(&mut sub, edge, None, &world);
     }
     assert!(sub.is_done());

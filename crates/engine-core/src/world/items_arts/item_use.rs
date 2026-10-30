@@ -23,6 +23,11 @@ impl World {
         item_id: u8,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
+        // An expansion pack consumable that runs a retail item's own handler
+        // (`as_item`) is that item from here on.
+        if let Some(retail) = self.pack_alias_as_item(item_id) {
+            return self.use_item(retail, target_slot);
+        }
         let entry = match self.tables.item_catalog.get(item_id) {
             Some(e) => *e,
             None => return legaia_engine_menus::items::ItemOutcome::NoEffect,

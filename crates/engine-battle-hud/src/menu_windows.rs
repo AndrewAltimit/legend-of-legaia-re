@@ -93,10 +93,16 @@ pub fn battle_item_menu_model(
     }
     let menu = world.battle.item_menu.as_ref()?;
     let view = menu.menu_view();
-    let description = view
-        .selected_id
-        .and_then(|id| world.menu.text.as_ref().and_then(|t| t.item_desc(id)))
-        .map(str::to_string);
+    let description = view.selected_id.and_then(|id| {
+        world.pack_alias_description(id).or_else(|| {
+            world
+                .menu
+                .text
+                .as_ref()
+                .and_then(|t| t.item_desc(id))
+                .map(str::to_string)
+        })
+    });
     let actor = world.battle_ctx.active_actor;
     let actor_name = menu
         .targets

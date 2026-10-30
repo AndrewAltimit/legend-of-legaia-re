@@ -187,6 +187,7 @@ mod expansion;
 mod expansion_boss;
 mod expansion_cards;
 mod expansion_hosts;
+mod expansion_items;
 mod expansion_map;
 mod expansion_map_npcs;
 mod expansion_modes;

@@ -44,7 +44,14 @@ impl World {
         let mut global = [0u32; ABILITY_WORDS];
         for (rslot, own_words) in by_record.iter_mut().enumerate().take(records) {
             let equip = self.party.roster.members[rslot].equipment().slots;
-            let words = self.tables.accessory_passives.bits_for_equipment(&equip);
+            let mut words = self.tables.accessory_passives.bits_for_equipment(&equip);
+            // An expansion pack's worn gear and set tiers add their passives
+            // (nothing without a pack).
+            if let Some(b) = self.pack_worn_bonus(rslot as u8) {
+                for (w, p) in words.iter_mut().zip(b.ability_words) {
+                    *w |= p;
+                }
+            }
             // Rebuild the record-side bitfield (retail zeroes `+0xF4..+0x103`
             // at `0x800425EC..0x800425F8` and re-derives it from the eight
             // equipment bytes `+0x196..`, `0x80042620..0x8004270C`). Bytes
@@ -219,13 +226,37 @@ impl World {
                 base_int: int,
                 equip: rec.equipment().slots,
             };
-            let stats = legaia_engine_battle::battle_stats::compute_battle_stats_with_passives(
+            let mut stats = legaia_engine_battle::battle_stats::compute_battle_stats_with_passives(
                 &record,
                 &self.tables.equipment_table,
                 &self.tables.accessory_passives,
                 &[],
                 &legaia_engine_battle::battle_stats::StatusModifiers::default(),
             );
+            // An expansion pack's worn gear: its flat bonuses fold like the
+            // retail table's (UDF / LDF / SPD into the seed; a worn item's
+            // ATK into its slot's per-swing byte below), its passives join
+            // the record's.
+            let pack = self.pack_worn_bonus(self.party_roster_slot(slot) as u8);
+            if let Some(b) = &pack {
+                let add = |v: u16, d: i16| (i32::from(v) + i32::from(d)).clamp(0, 999) as u16;
+                stats.atk = add(stats.atk, b.total.atk);
+                stats.udf = add(stats.udf, b.total.udf);
+                stats.ldf = add(stats.ldf, b.total.ldf);
+                stats.spd = add(stats.spd, b.total.spd);
+                if !self.tables.accessory_passives.is_empty() {
+                    let retail = self
+                        .tables
+                        .accessory_passives
+                        .bits_for_equipment(&record.equip);
+                    crate::world::expansion_items::fold_pack_percent_boosts(
+                        &mut stats,
+                        &record,
+                        &b.ability_words,
+                        &retail,
+                    );
+                }
+            }
             // Max-HP percent passives (indices 0x00 / 0x01) rebuild the
             // effective max HP from the base, capped at 9999 - applied to the
             // live battle actor, the engine's effective-max-HP holder. Only
@@ -233,10 +264,15 @@ impl World {
             // keep their values. (Retail's max-MP boosts, indices 0x02/0x03,
             // have no engine consumer yet: the battle actor carries current
             // MP only, no max-MP mirror.)
-            let pwords = self
+            let mut pwords = self
                 .tables
                 .accessory_passives
                 .bits_for_equipment(&record.equip);
+            if let Some(b) = &pack {
+                for (w, p) in pwords.iter_mut().zip(b.ability_words) {
+                    *w |= p;
+                }
+            }
             if pwords[0] & 0x3 != 0 {
                 let mut max_hp = base_max_hp;
                 if pwords[0] & 0x1 != 0 {
@@ -272,6 +308,17 @@ impl World {
                     let b = m.atk.clamp(0, 255) as u8;
                     equip_atk[i] = b;
                     equip_atk_sum = equip_atk_sum.saturating_add(u16::from(b));
+                }
+            }
+            // A worn pack item's ATK rides its slot's byte, as a retail
+            // weapon's does (its record byte is `0`, so nothing above set it).
+            if let Some(b) = &pack {
+                for (i, slot_byte) in equip_atk.iter_mut().enumerate() {
+                    let a = b.slot_atk.get(i).copied().unwrap_or(0).clamp(0, 255) as u8;
+                    if a > 0 && *slot_byte == 0 {
+                        *slot_byte = a;
+                        equip_atk_sum = equip_atk_sum.saturating_add(u16::from(a));
+                    }
                 }
             }
             if let Some(s) = self.battle.attack.get_mut(slot) {

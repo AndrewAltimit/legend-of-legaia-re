@@ -406,9 +406,11 @@ pub struct NpcDef {
     pub line_after: String,
     /// When [`Self::line_after`] replaces [`Self::line`]. Empty never does.
     pub after: crate::quest::Prerequisites,
-    /// The card dealer the NPC runs (a `cards.toml` `[[dealers]]` id):
-    /// talking to it opens that dealer's counter, as a `card_dealer`
-    /// trigger does. Its `line` is said only when the counter cannot open.
+    /// The shop the NPC runs: an `items.toml` `[[shops]]` id (talking opens
+    /// that shop, as a `shop` trigger does) or a `cards.toml` `[[dealers]]`
+    /// id (the dealer's counter, as a `card_dealer` trigger). An id that
+    /// names both opens the item shop. Its `line` is said only when the
+    /// counter cannot open.
     pub shop: Option<String>,
 }
 
@@ -642,6 +644,11 @@ pub enum MapEvent {
     CardDealer {
         #[serde(default)]
         dealer: String,
+    },
+    /// Open an item shop (`items.toml` `shops`; empty = the first one).
+    Shop {
+        #[serde(default)]
+        shop: String,
     },
     /// Arm a `quests.toml` challenge for its next battle; with `start`, also
     /// start the battle against the formation the challenge names.

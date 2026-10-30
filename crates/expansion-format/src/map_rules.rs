@@ -305,6 +305,20 @@ fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
                     );
                 }
             }
+            MapEvent::Shop { shop } => {
+                let shops = &cx.pack().items.shops;
+                let known = if shop.is_empty() {
+                    !shops.is_empty()
+                } else {
+                    shops.iter().any(|s| s.id == *shop)
+                };
+                if !known {
+                    cx.error(
+                        &format!("{at}.shop"),
+                        format!("shop {shop:?} is not an items.toml [[shops]] id"),
+                    );
+                }
+            }
             MapEvent::SetFlag { flag } | MapEvent::Counter { counter: flag, .. } => {
                 if flag.is_empty() {
                     cx.error(&at, "the event names no flag or counter");
@@ -570,13 +584,22 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 );
             }
         }
-        if let Some(shop) = &n.shop
-            && !cx.pack().cards.dealers.iter().any(|d| d.id == *shop)
-        {
-            cx.error(
-                &format!("{at}.shop"),
-                format!("shop {shop:?} is not a cards.toml [[dealers]] id"),
-            );
+        if let Some(shop) = &n.shop {
+            let dealer = cx.pack().cards.dealers.iter().any(|d| d.id == *shop);
+            let item_shop = cx.pack().items.shops.iter().any(|s| s.id == *shop);
+            match (dealer, item_shop) {
+                (false, false) => cx.error(
+                    &format!("{at}.shop"),
+                    format!(
+                        "shop {shop:?} is neither an items.toml [[shops]] id nor a cards.toml [[dealers]] id"
+                    ),
+                ),
+                (true, true) => cx.warning(
+                    &format!("{at}.shop"),
+                    format!("shop {shop:?} is both an item shop and a card dealer; the item shop opens"),
+                ),
+                _ => {}
+            }
         }
         if n.line.is_empty() && n.shop.is_none() && !talk_key_is_used(cx, &n.id) {
             cx.warning(

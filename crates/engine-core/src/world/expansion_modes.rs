@@ -124,6 +124,10 @@ impl World {
     /// Close the seat and restore the suspended mode. A session still
     /// running is forfeited (no rewards). No-op while no seat is open.
     pub fn exit_pack_mode(&mut self) {
+        if self.expansion.items.seat.is_some() {
+            self.close_item_screen();
+            return;
+        }
         if self.expansion.cards.seat.is_some() {
             self.close_card_screen();
             return;
@@ -155,6 +159,10 @@ impl World {
 
     /// One frame of the seat, off this frame's pad (seat 0).
     pub(crate) fn tick_pack_mode(&mut self) {
+        if self.expansion.items.seat.is_some() {
+            self.tick_item_seat();
+            return;
+        }
         if self.expansion.cards.seat.is_some() {
             self.tick_card_seat();
             return;

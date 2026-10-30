@@ -196,6 +196,13 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             .map(str::to_string)
     } else if cat == ActionCategory::Item.as_byte() {
         let id = actor.battle.params[0];
+        if world.pack_item_alias(id).is_some() {
+            return world
+                .tables
+                .item_catalog
+                .get(id)
+                .map(|e| e.name.to_string());
+        }
         world
             .menu
             .text

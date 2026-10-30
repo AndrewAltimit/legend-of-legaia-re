@@ -238,6 +238,10 @@ PROT 0941's enemy Steal ([cast-module.md](cast-module.md)) is a rejection sample
 
 **The fourth rule is an asymmetry, and it is retail's.** The draw is over the whole array while the removal is window-bounded, so a steal that lands in the half the active window does not cover announces an item the party keeps.
 
+### Expansion-pack items
+
+An [expansion pack](../formats/expansion-pack-items.md)'s items never enter this array: the id space is full, so pack items live in the pack's own store beside it and save with the pack's progress. During a fight a pack drop, steal or Item row borrows one of the five unnamed ids (`0x12`, `0x1A`, `0x52`, `0xB9`, `0xFD`) as an alias, and a grant or consume of an alias goes to the pack store, never to a slot here.
+
 ### Slot order in a save
 
 `SaveExt::item_slots` carries the array itself - 256 `(id, count)` pairs, slot order, holes intact - beside the compact `inventory` list the v1 prelude carries. The engine save format writes it as the optional `LGX6` block; a file without one seeds densely from the list.

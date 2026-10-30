@@ -72,8 +72,8 @@ pub trait QuestWorld {
     fn story_flag(&self, idx: u16) -> bool;
     /// The present party as `(roster slot, level)` pairs.
     fn party(&self) -> Vec<(u8, u8)>;
-    /// How many of item `item` the bag holds.
-    fn item_count(&self, item: u8) -> u32;
+    /// How many of item `item` (a retail id or a pack item) the bags hold.
+    fn item_count(&self, item: &legaia_expansion_format::items::ItemRef) -> u32;
     /// The save's play clock, in seconds.
     fn play_seconds(&self) -> u32;
     /// The runtime formation id the pack's `battle.toml` formation `id`
@@ -155,13 +155,14 @@ pub enum Grant {
     Gold(u32),
     /// EXP for each present party member.
     Xp(u32),
+    /// `count` of a retail or pack item for the bag.
     Item {
-        item: u8,
+        item: legaia_expansion_format::items::ItemRef,
         count: u8,
     },
     /// A hand-in: take `count` of `item` from the bag.
     TakeItem {
-        item: u8,
+        item: legaia_expansion_format::items::ItemRef,
         count: u32,
     },
     Card(String),
@@ -317,7 +318,7 @@ fn refresh_goal(
         Goal::ReachLevel { level } if world.party_level() >= *level => 1,
         Goal::Counter { counter, at_least } if flags.counter(counter) >= *at_least => 1,
         Goal::Flag { flag } if flags.is_set(flag) => 1,
-        Goal::CollectItem { item, count, .. } => world.item_count(*item).min((*count).max(1)),
+        Goal::CollectItem { item, count, .. } => world.item_count(item).min((*count).max(1)),
         _ => return false,
     };
     let next = if matches!(goal, Goal::CollectItem { .. }) {
@@ -650,9 +651,12 @@ impl QuestRuntime {
                 item,
                 count,
                 hand_in: true,
-            } = o.goal
+            } = &o.goal
             {
-                self.grants.push(Grant::TakeItem { item, count });
+                self.grants.push(Grant::TakeItem {
+                    item: item.clone(),
+                    count: *count,
+                });
             }
         }
         self.reward(&q.rewards);
@@ -672,7 +676,7 @@ impl QuestRuntime {
         }
         for i in &r.items {
             self.grants.push(Grant::Item {
-                item: i.item,
+                item: i.item.clone(),
                 count: i.count,
             });
         }
@@ -780,8 +784,11 @@ impl QuestWorld for StaticQuestWorld {
     fn party(&self) -> Vec<(u8, u8)> {
         self.party.clone()
     }
-    fn item_count(&self, item: u8) -> u32 {
-        self.items.get(&item).copied().unwrap_or(0)
+    fn item_count(&self, item: &legaia_expansion_format::items::ItemRef) -> u32 {
+        item.retail_id()
+            .and_then(|id| self.items.get(&id))
+            .copied()
+            .unwrap_or(0)
     }
     fn play_seconds(&self) -> u32 {
         self.play_seconds

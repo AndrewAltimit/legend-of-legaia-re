@@ -271,6 +271,30 @@ pub fn journal_draws(
                 reward: String::new(),
             })
             .collect(),
+        JournalPage::Items if view.items.is_empty() && view.has_items => vec![Row {
+            title: "Pack items".into(),
+            tag: "none yet".into(),
+            done: false,
+            detail: "Items and gear from this pack's shops, bosses and quests.".into(),
+            objectives: Vec::new(),
+            reward: String::new(),
+        }],
+        JournalPage::Items => view
+            .items
+            .iter()
+            .map(|i| Row {
+                title: i.name.clone(),
+                tag: if i.worn > 0 {
+                    format!("x{} E{}", i.held, i.worn)
+                } else {
+                    format!("x{}", i.held)
+                },
+                done: i.worn > 0,
+                detail: format!("{}. {}", i.kind, i.description),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
     };
     let objectives: Vec<Vec<ui::JournalObjectiveView<'_>>> = rows
         .iter()
@@ -315,6 +339,10 @@ pub fn journal_draws(
         JournalPage::Travel => (
             "This pack has no maps.",
             "Cross: travel there   Circle: back",
+        ),
+        JournalPage::Items => (
+            "This pack has no items.",
+            "Cross: open the item screen   Circle: back",
         ),
     };
     let args = ui::JournalDrawArgs {

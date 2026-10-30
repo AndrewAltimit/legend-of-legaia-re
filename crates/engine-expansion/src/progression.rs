@@ -6,7 +6,7 @@ use legaia_expansion_format::progression::{
     EnemyScaling, LevelReward, MAX_LEVEL, ProgressionSection, ScalingScope, XP_CAP, XpCurve,
 };
 
-use crate::battle::{item_id, scale_permille};
+use crate::battle::scale_permille;
 
 /// A multiplier in thousandths, `1000` when unset. A non-positive or
 /// non-finite one reads as `1000` (the validator reports it).
@@ -79,14 +79,20 @@ pub fn scaling_applies(s: &EnemyScaling, pack_formation: bool) -> bool {
 }
 
 /// The items `rewards` grant roster slot `char_slot` for levelling from
-/// `old` to `new`, as `(item id, count)`.
-pub fn level_rewards(rewards: &[LevelReward], char_slot: u8, old: u8, new: u8) -> Vec<(u8, u8)> {
+/// `old` to `new`, as `(item, count)`.
+pub fn level_rewards(
+    rewards: &[LevelReward],
+    char_slot: u8,
+    old: u8,
+    new: u8,
+) -> Vec<(legaia_expansion_format::items::ItemRef, u8)> {
     rewards
         .iter()
         .filter(|r| r.level > old && r.level <= new)
         .filter(|r| r.character.is_none_or(|c| c == char_slot))
         .flat_map(|r| r.items.iter())
-        .filter_map(|i| Some((item_id(&i.item)?, i.count)))
+        .filter(|i| i.item.is_item())
+        .map(|i| (i.item.clone(), i.count))
         .collect()
 }
 
@@ -129,7 +135,6 @@ mod tests {
     use super::*;
     use legaia_expansion_format::battle::ItemReward;
     use legaia_expansion_format::progression::XpBand;
-    use legaia_expansion_format::refs::DiscRef;
 
     fn retail() -> Vec<u32> {
         legaia_engine_battle::levelup::retail_xp_table()
@@ -197,10 +202,16 @@ mod tests {
         assert!(scaling_applies(&s, true) && !scaling_applies(&s, false));
     }
 
+    fn ids(v: Vec<(legaia_expansion_format::items::ItemRef, u8)>) -> Vec<(u8, u8)> {
+        v.into_iter()
+            .map(|(r, c)| (r.retail_id().unwrap(), c))
+            .collect()
+    }
+
     #[test]
     fn level_rewards_fire_once_on_the_crossing() {
         let item = |id| ItemReward {
-            item: DiscRef::Item { id },
+            item: legaia_expansion_format::items::ItemRef::Retail(id),
             count: 1,
         };
         let rewards = vec![
@@ -215,10 +226,10 @@ mod tests {
                 character: Some(1),
             },
         ];
-        assert_eq!(level_rewards(&rewards, 0, 48, 52), [(1, 1)]);
-        assert_eq!(level_rewards(&rewards, 0, 50, 52), []);
-        assert_eq!(level_rewards(&rewards, 0, 49, 65), [(1, 1)]);
-        assert_eq!(level_rewards(&rewards, 1, 49, 65), [(1, 1), (2, 1)]);
+        assert_eq!(ids(level_rewards(&rewards, 0, 48, 52)), [(1, 1)]);
+        assert_eq!(ids(level_rewards(&rewards, 0, 50, 52)), []);
+        assert_eq!(ids(level_rewards(&rewards, 0, 49, 65)), [(1, 1)]);
+        assert_eq!(ids(level_rewards(&rewards, 1, 49, 65)), [(1, 1), (2, 1)]);
     }
 
     #[test]

@@ -16,13 +16,14 @@
 //!
 //! The trading-card screens (binder, boosters, dealer, deck builder) are
 //! [`binder`]'s, drawn the same way; a Grid Duel card's art box stays a
-//! frame.
+//! frame. The pack item screen (shops and the pack bag) is [`items`]'s.
 
 mod binder;
 mod cards;
 mod duel;
 mod golf;
 mod hunt;
+mod items;
 pub mod netplay;
 mod poker;
 mod race;
@@ -38,6 +39,10 @@ use crate::TextDraw;
 pub use binder::{
     CardScreenView, PortraitRef, card_screen_prims, card_screen_strings, card_screen_texts,
     card_toast_texts,
+};
+pub use items::{
+    ItemCompareView, ItemMemberView, ItemRowView, ItemScreenView, item_screen_prims,
+    item_screen_strings, item_screen_texts,
 };
 
 /// Stage width.

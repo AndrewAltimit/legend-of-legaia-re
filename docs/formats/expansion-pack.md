@@ -30,6 +30,7 @@ quests.toml        quests and challenges
 dialog.toml        dialogue lines
 cards.toml         trading cards
 modes.toml         game modes
+items.toml         items, equipment, sets and shops
 maps/<id>.toml     one custom map per file; the file stem is the map id
 assets/...         the modder's own files (art, models, sound, text)
 README.md, LICENSE, LICENSE.md, LICENSE.txt, CHANGELOG.md
@@ -93,7 +94,7 @@ mesh       = { kind = "tmd", prot = 874, index = 3 }
 | `scene` | `name` | CDNAME scene name ([scene-names.md](../reference/scene-names.md)) | `[a-z0-9_]`, at most 32 characters |
 | `tmd` | `prot`, `index` | PROT extraction index ([prot.md](prot.md)), `index`th TMD object | `prot` in `0..=1232` |
 | `tim` | `prot`, `index` | PROT extraction index, `index`th TIM in its pack | `prot` in `0..=1232` |
-| `item` | `id` | Item id ([item-table.md](item-table.md)) | the `u8` range |
+| `item` | `id` | Retail item id ([item-table.md](item-table.md)); a pack item is named by its key instead ([items](expansion-pack-items.md#item-references)) | the `u8` range |
 | `bgm` | `id` | Sound-test id ([music-tracks.md](../reference/music-tracks.md)) | `0..=80` |
 | `npc` | `scene`, `index` | A retail NPC placement: the scene's MAN partition-1 record `index` ([maps](expansion-pack-maps.md#npcs)) | scene-name syntax; `index` not `0` (the scene controller) |
 
@@ -113,6 +114,7 @@ Each content section is a TOML file whose type lives in its own module of `legai
 | `dialog.toml` | `DialogSection` | `dialog` |
 | `cards.toml` | `CardSection` | `cards` |
 | `modes.toml` | `ModeSection` | `modes` |
+| `items.toml` | `ItemSection` | `items` |
 | `maps/<id>.toml` | `MapDef` | `map` |
 
 ### battle.toml
@@ -185,9 +187,13 @@ A golf course or a race may name a pack map, and is then played in the 3D field 
 
 A map hole needs no `rows`: its walls, void and heights are the map's tiles. A legend character missing from `surfaces` plays as the surface its style's `label` names (rough; sand or bunker; water or pond; lava, chasm or pit as out of bounds), else as fairway. A map race's `half_width` is in race units, two field world units each. Sample: the `links` test pack, `crates/engine-modes/tests/fixtures/links/`.
 
+### items.toml
+
+New consumables and equipment beside the retail item id space, equipment sets with tiered bonuses, and the pack's shops. A consumable runs one of the retail item handlers; worn gear folds into the battle seed like retail gear; a drop, steal, reward or shop row names a retail id or a pack item key. Declares `item`, `item_set` and `shop` ids. Reference: [`expansion-pack-items.md`](expansion-pack-items.md).
+
 ### maps/&lt;id&gt;.toml
 
-One custom map per file, the file stem its id: a tile grid with walls and floor tiers laid over a retail base scene, props, NPCs borrowed from retail placements, spawns, exits, trigger and encounter zones, and the entrances that lead into the map from the retail game. Declares `map` ids and the pack-wide NPC ids; references `formation`, `boss`, `line`, `quest` and the `cards.toml` dealers. Reference: [`expansion-pack-maps.md`](expansion-pack-maps.md).
+One custom map per file, the file stem its id: a tile grid with walls and floor tiers laid over a retail base scene, props, NPCs borrowed from retail placements, spawns, exits, trigger and encounter zones, and the entrances that lead into the map from the retail game. Declares `map` ids and the pack-wide NPC ids; references `formation`, `boss`, `line`, `quest`, the `items.toml` shops and the `cards.toml` dealers. Reference: [`expansion-pack-maps.md`](expansion-pack-maps.md).
 
 ## The `.lxpack` bundle
 

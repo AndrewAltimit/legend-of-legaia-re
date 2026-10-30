@@ -102,7 +102,7 @@ fn an_ordered_quest_counts_only_its_current_objective() {
             Grant::Gold(500),
             Grant::Xp(100),
             Grant::Item {
-                item: 0x10,
+                item: 0x10.into(),
                 count: 2
             },
             Grant::Card("tower".into()),
@@ -279,7 +279,7 @@ fn a_hand_in_takes_the_items_on_completion() {
     assert_eq!(
         rt.take_grants(),
         vec![Grant::TakeItem {
-            item: 0x20,
+            item: 0x20.into(),
             count: 3
         }]
     );
@@ -455,7 +455,10 @@ fn rewards_from_code_built_defs_match_toml() {
             goal: Goal::ReachLevel { level: 5 },
         }],
         rewards: Rewards {
-            items: vec![ItemReward { item: 1, count: 1 }],
+            items: vec![ItemReward {
+                item: 1.into(),
+                count: 1,
+            }],
             ..Default::default()
         },
         repeat: Repeat::default(),
@@ -463,7 +466,13 @@ fn rewards_from_code_built_defs_match_toml() {
     });
     let mut rt = QuestRuntime::default();
     rt.handle(&p, &world(5), QuestEvent::Refresh);
-    assert_eq!(rt.take_grants(), vec![Grant::Item { item: 1, count: 1 }]);
+    assert_eq!(
+        rt.take_grants(),
+        vec![Grant::Item {
+            item: 1.into(),
+            count: 1
+        }]
+    );
 }
 
 #[test]

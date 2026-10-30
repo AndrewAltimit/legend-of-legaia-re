@@ -24,6 +24,10 @@
 //!              state, u16 count then str id + u32 copies each (binder
 //!              order), u16 count then str booster id + u32 unopened each,
 //!              u16 deck count then str each, u16 seen count then str each
+//!          4 = pack items (only once the player holds or wears any):
+//!              u16 count then str key + u8 count each (the bag), u16 count
+//!              then u8 roster slot + u8 equipment byte + str key each (the
+//!              worn gear)
 //! ```
 //!
 //! `str` is a `u16` byte length then UTF-8. Integers are little-endian.
@@ -62,6 +66,8 @@ pub struct ExpansionProgress {
     /// The trading-card collection, boosters and duel deck. Written only
     /// when it holds anything.
     pub cards: legaia_engine_modes::cards::economy::CardProgress,
+    /// The pack items held and worn. Written only when it holds anything.
+    pub items: crate::items::ItemProgress,
 }
 
 impl ExpansionProgress {
@@ -149,6 +155,21 @@ impl ExpansionProgress {
             put_len(&mut w, c.seen.len());
             for id in c.seen.iter().take(MAX_LEN) {
                 put_str(&mut w, id);
+            }
+        }
+        let it = &self.items;
+        if !it.is_empty() {
+            w.push(TAIL_ITEMS);
+            put_len(&mut w, it.bag.len());
+            for (k, n) in it.bag.iter().take(MAX_LEN) {
+                put_str(&mut w, k);
+                w.push(*n);
+            }
+            put_len(&mut w, it.worn.len());
+            for (&(r, i), k) in it.worn.iter().take(MAX_LEN) {
+                w.push(r);
+                w.push(i);
+                put_str(&mut w, k);
             }
         }
         w
@@ -243,6 +264,24 @@ impl ExpansionProgress {
                         c.seen.insert(r.str()?);
                     }
                 }
+                TAIL_ITEMS => {
+                    let it = &mut out.items;
+                    for _ in 0..r.u16()? {
+                        let k = r.str()?;
+                        let n = r.u8()?;
+                        if n > 0 {
+                            it.bag.insert(k, n.min(crate::items::STACK_CAP));
+                        }
+                    }
+                    for _ in 0..r.u16()? {
+                        let roster = r.u8()?;
+                        let index = r.u8()?;
+                        if index > 7 {
+                            return None;
+                        }
+                        it.worn.insert((roster, index), r.str()?);
+                    }
+                }
                 _ => return None,
             }
         }
@@ -274,6 +313,8 @@ const TAIL_CLEARED_BOSSES: u8 = 1;
 const TAIL_MAP: u8 = 2;
 /// Tail record tag: the trading-card state.
 const TAIL_CARDS: u8 = 3;
+/// Tail record tag: the pack items held and worn.
+const TAIL_ITEMS: u8 = 4;
 
 struct Reader<'a> {
     b: &'a [u8],
@@ -399,6 +440,25 @@ mod tests {
             facing: 3,
         });
         assert_eq!(ExpansionProgress::decode(&p.encode()), Some(p));
+    }
+
+    #[test]
+    fn the_item_record_round_trips_and_is_absent_without_items() {
+        let plain = sample().encode();
+        let mut p = sample();
+        assert_eq!(p.encode(), plain, "no pack items, no item record");
+        p.items.add("rebirth_blade", 1);
+        p.items.add("phoenix_plume", 7);
+        p.items.add("rebirth_mail", 1);
+        assert!(p.items.equip("rebirth_mail", 0, 0));
+        let bytes = p.encode();
+        assert_eq!(&bytes[..plain.len()], &plain[..], "appended after the rest");
+        assert_eq!(bytes[plain.len()], 4, "tag 4");
+        let back = ExpansionProgress::decode(&bytes).unwrap();
+        assert_eq!(back.items.count("phoenix_plume"), 7);
+        assert_eq!(back.items.worn_at(0, 0), Some("rebirth_mail"));
+        assert_eq!(back, p);
+        assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
     }
 
     #[test]

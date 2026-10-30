@@ -202,7 +202,8 @@ pub enum Goal {
     /// Hold `count` of item `item`. With `hand_in`, completing the quest
     /// takes them from the bag.
     CollectItem {
-        item: u8,
+        /// A retail id or a pack item ([`crate::items::ItemRef`]).
+        item: crate::items::ItemRef,
         #[serde(default = "one")]
         count: u32,
         #[serde(default)]
@@ -257,7 +258,8 @@ pub struct Rewards {
 /// `count` of item `item`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ItemReward {
-    pub item: u8,
+    /// A retail id or a pack item ([`crate::items::ItemRef`]).
+    pub item: crate::items::ItemRef,
     #[serde(default = "one_u8")]
     pub count: u8,
 }
@@ -345,7 +347,7 @@ impl Rewards {
     fn check(&self, cx: &mut crate::validate::Checker<'_>, at: &str) {
         for (i, r) in self.items.iter().enumerate() {
             let field = format!("{at}.items[{i}]");
-            cx.disc_ref(&field, &crate::refs::DiscRef::Item { id: r.item });
+            r.item.check(cx, &field);
             if r.count == 0 {
                 cx.warning(&field, "count 0 grants nothing");
             }
@@ -441,7 +443,7 @@ impl crate::validate::SectionRules for QuestSection {
                         }
                     }
                     Goal::CollectItem { item, count, .. } => {
-                        cx.disc_ref(&field, &crate::refs::DiscRef::Item { id: *item });
+                        item.check(cx, &field);
                         zero_count(cx, *count, &field);
                     }
                     Goal::ReachLevel { level } if !(1..=99).contains(level) => {

@@ -24,6 +24,7 @@ use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot, Monster
 use legaia_expansion_format::battle::{
     self as fmt, BattleSection, MonsterRef, Stat, local_key, qualify,
 };
+use legaia_expansion_format::items::ItemRef;
 use legaia_expansion_format::refs::DiscRef;
 
 use crate::battle_waves::CompiledWave;
@@ -94,8 +95,8 @@ pub struct CompiledBoss {
     pub formation_id: u16,
     /// Global BGM id of the battle track.
     pub bgm: Option<u16>,
-    /// `(item id, count)`.
-    pub reward_items: Vec<(u8, u8)>,
+    /// `(item, count)`: retail ids and pack items.
+    pub reward_items: Vec<(ItemRef, u8)>,
     pub reward_gold: u32,
     pub once: bool,
 }
@@ -114,12 +115,9 @@ pub struct CompiledBattle {
     pub bosses: BTreeMap<String, CompiledBoss>,
 }
 
-/// The item id a [`DiscRef::Item`] names.
-pub fn item_id(r: &DiscRef) -> Option<u8> {
-    match r {
-        DiscRef::Item { id } => Some(*id),
-        _ => None,
-    }
+/// The retail item id an [`ItemRef`] names; `None` for a pack item.
+pub fn item_id(r: &ItemRef) -> Option<u8> {
+    r.retail_id()
 }
 
 impl CompiledBattle {
@@ -268,7 +266,8 @@ impl CompiledBattle {
                     reward_items: b
                         .reward_items
                         .iter()
-                        .filter_map(|r| Some((item_id(&r.item)?, r.count)))
+                        .filter(|r| r.item.is_item())
+                        .map(|r| (r.item.clone(), r.count))
                         .collect(),
                     reward_gold: b.reward_gold,
                     once: b.once,
@@ -386,6 +385,8 @@ pub fn derive_monster(base: &MonsterDef, ov: &fmt::MonsterDef) -> MonsterDef {
         reinstall(&mut d);
     }
     if let Some(drop) = &ov.drop {
+        // A pack item drop has no retail id: the fight lends it one
+        // ([`BattlePlan::pack_drops`]), so the record seats none here.
         d.drop_item = item_id(&drop.item).filter(|&i| i != 0);
         d.drop_chance_pct = drop.chance_pct;
     }
@@ -436,6 +437,12 @@ pub struct BattlePlan {
     pub defs: Vec<MonsterDef>,
     /// `(base id, chance %, item id)`.
     pub steals: Vec<(u16, u8, u8)>,
+    /// `(base id, chance %, pack item key)`: a pack monster's drop that is a
+    /// pack item. The `World` lends the key a fight alias and writes it into
+    /// the seated def's `drop_item`.
+    pub pack_drops: Vec<(u16, u8, String)>,
+    /// `(base id, chance %, pack item key)`: the same for a steal.
+    pub pack_steals: Vec<(u16, u8, String)>,
 }
 
 /// Plan the catalog swap for a fight on `formation`.
@@ -471,10 +478,24 @@ pub fn plan_battle(
         };
         let def = match variant {
             Some(ov) => {
-                if let Some(s) = &ov.steal
-                    && let Some(item) = item_id(&s.item)
+                if let Some(s) = &ov.steal {
+                    if let Some(item) = item_id(&s.item) {
+                        plan.steals.push((id, s.chance_pct, item));
+                    } else if let Some(key) = s
+                        .item
+                        .pack_key()
+                        .and_then(|k| local_key(&compiled.pack_id, k))
+                    {
+                        plan.pack_steals.push((id, s.chance_pct, key.to_string()));
+                    }
+                }
+                if let Some(d) = &ov.drop
+                    && let Some(key) = d
+                        .item
+                        .pack_key()
+                        .and_then(|k| local_key(&compiled.pack_id, k))
                 {
-                    plan.steals.push((id, s.chance_pct, item));
+                    plan.pack_drops.push((id, d.chance_pct, key.to_string()));
                 }
                 derive_monster(&base, ov)
             }
@@ -630,7 +651,10 @@ reward_items = [{ item = { kind = "item", id = 5 }, count = 2 }]
         );
         let king = c.boss("king").unwrap();
         assert_eq!(king.bgm, Some(2030));
-        assert_eq!(king.reward_items, [(5, 2)]);
+        assert_eq!(
+            king.reward_items,
+            [(ItemRef::Disc(DiscRef::Item { id: 5 }), 2)]
+        );
         assert_eq!(c.base_monster_ids(), [12, 73]);
         assert!(c.formation(12).is_none());
     }
@@ -709,7 +733,7 @@ max_standing = 2
         o.defence = Some(Stat::Set(200));
         o.exp = Some(Stat::Scale { mul: 10.0 });
         o.drop = Some(ItemChance {
-            item: DiscRef::Item { id: 7 },
+            item: ItemRef::Disc(DiscRef::Item { id: 7 }),
             chance_pct: 40,
         });
         o.element = Some(3);

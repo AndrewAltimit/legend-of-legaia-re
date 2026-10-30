@@ -46,13 +46,8 @@ impl QuestWorld for WorldQuestView<'_> {
             .collect()
     }
 
-    fn item_count(&self, item: u8) -> u32 {
-        self.0
-            .party
-            .inventory
-            .get(&item)
-            .copied()
-            .map_or(0, u32::from)
+    fn item_count(&self, item: &legaia_expansion_format::items::ItemRef) -> u32 {
+        self.0.held_item_count(item)
     }
 
     fn play_seconds(&self) -> u32 {
@@ -338,6 +333,16 @@ impl World {
                 log::warn!("expansion: the card menu did not open");
             }
         }
+        // The Journal's Items page: the item screen, the same way.
+        if let Some(gear) = self.expansion.open_items
+            && !self.dialogue_owns_input()
+            && matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
+        {
+            self.expansion.open_items = None;
+            if !self.open_item_bag(gear) {
+                log::warn!("expansion: the item screen did not open");
+            }
+        }
         // A queued fight starts once its lines are done and the player walks.
         if !self.expansion.quests.fights.is_empty()
             && self.expansion.quests.dialog.pending.is_none()
@@ -435,17 +440,9 @@ impl World {
                 }
                 Grant::Xp(n) => self.grant_expansion_xp(n),
                 Grant::Item { item, count } => {
-                    let _ = self.party.inventory.add(item, count);
+                    self.grant_item_ref(&item, count);
                 }
-                Grant::TakeItem { item, count } => {
-                    let held = self.party.inventory.get(&item).copied().unwrap_or(0);
-                    let left = u32::from(held).saturating_sub(count) as u8;
-                    if left == 0 {
-                        self.party.inventory.remove(&item);
-                    } else {
-                        self.party.inventory.insert(item, left);
-                    }
-                }
+                Grant::TakeItem { item, count } => self.take_item_ref(&item, count),
                 Grant::Card(id) => self.expansion.quests.card_inbox.push(id),
                 Grant::Fight(f) => self.expansion.quests.fights.push(f),
             }

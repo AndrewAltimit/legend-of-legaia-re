@@ -33,7 +33,7 @@ A pack monster is always **derived** from a retail one. It keeps the base monste
 | `name` | The battle HUD name. |
 | `hp`, `mp`, `exp`, `gold` | Set or scaled; held to `0..=65535`. |
 | `attack`, `defence`, `agility`, `speed`, `intelligence` | The record stats ATK, UDF + LDF, AGL, SPD, INT. |
-| `drop`, `steal` | The victory drop and the Evil God Icon steal, item and percent. |
+| `drop`, `steal` | The victory drop and the Evil God Icon steal, item and percent. The item is a retail id or a pack item ([items](expansion-pack-items.md#battle-aliases)). |
 | `element` | Element id `0..=7` (`7` neutral). |
 | `spells` | Spell ids the monster AI may cast, at most three; replaces the base's. |
 | `script` | The monster's own battle AI in place of the base's retail picks ([boss scripts](#boss-scripts)). |
@@ -136,7 +136,7 @@ reward_gold = 50000
 once = true
 ```
 
-A boss is a formation plus staging. `no_escape` marks its formation scripted. `music` replaces the battle track for this fight (when the host's battle-music swap is on). `reward_items` and `reward_gold` pay on victory on top of the formation's spoils, and land in the spoils' drops and gold. A `once` boss refuses a second start after a victory (`World::expansion_boss_cleared`).
+A boss is a formation plus staging. `no_escape` marks its formation scripted. `music` replaces the battle track for this fight (when the host's battle-music swap is on). `reward_items` and `reward_gold` pay on victory on top of the formation's spoils, and land in the spoils' drops and gold; a reward item may be a pack item, which lands in the pack bag with a toast ([items](expansion-pack-items.md)). A `once` boss refuses a second start after a victory (`World::expansion_boss_cleared`).
 
 Quests and maps start fights through two `World` entry points: `start_expansion_battle(formation)` and `start_expansion_boss(boss)`. Both go through the ordinary encounter path - transition, battle music, `begin_encounter_battle` - as `World::force_encounter` does.
 

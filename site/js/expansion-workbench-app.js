@@ -29,7 +29,7 @@
 
 import {
   h, renderManifest, renderBattle, renderProgression, drawXpChart, renderQuests,
-  renderDialog, renderCards, renderModes,
+  renderDialog, renderCards, renderItems, renderModes,
 } from './expansion-workbench-forms.js';
 import { renderMaps } from './expansion-workbench-map.js';
 
@@ -93,6 +93,7 @@ const TABS = [
   ['quests', 'Quests', 'quests.toml', renderQuests],
   ['dialog', 'Dialog', 'dialog.toml', renderDialog],
   ['cards', 'Cards', 'cards.toml', renderCards],
+  ['items', 'Items', 'items.toml', renderItems],
   ['modes', 'Modes', 'modes.toml', renderModes],
   ['maps', 'Maps', 'maps/', renderMaps],
   ['files', 'Files', null, renderFiles],
@@ -126,6 +127,9 @@ function idsOf(kind) {
     case 'line': return keys(p.dialog.lines);
     case 'card': return arr(p.cards.cards);
     case 'booster': return arr(p.cards.boosters);
+    case 'item': return keys(p.items && p.items.items);
+    case 'item_set': return keys(p.items && p.items.sets);
+    case 'shop': return arr(p.items && p.items.shops);
     case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
     case 'map': return keys(p.maps);
     case 'npc': return Object.values(p.maps || {}).flatMap((m) => arr(m.npcs));

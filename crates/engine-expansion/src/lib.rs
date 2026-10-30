@@ -16,6 +16,8 @@ pub mod cards;
 pub mod dialog;
 pub mod entrance;
 pub mod flags;
+pub mod item_screen;
+pub mod items;
 pub mod journal;
 pub mod map;
 pub mod map_detail;
@@ -62,8 +64,14 @@ pub struct ExpansionState {
     /// The Journal's Cards page asked for the card menu, opened once the
     /// pause menu has closed and the player walks again.
     pub open_cards: bool,
+    /// The Journal's Items page asked for the pack item screen (`Some(gear
+    /// tab)`), opened once the pause menu has closed.
+    pub open_items: Option<bool>,
     /// Quest toasts for the hosts to show ([`toast::ToastQueue`]).
     pub toasts: toast::ToastQueue,
+    /// The pack's compiled items, this fight's item aliases and the item
+    /// screen; the items held are `quests.progress.items`.
+    pub items: items::ItemRuntime,
 }
 
 impl ExpansionState {

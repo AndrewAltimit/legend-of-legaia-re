@@ -498,6 +498,7 @@ fn unchanged(path: &str, a: &ExpansionPack, b: &ExpansionPack) -> bool {
         "dialog.toml" => a.dialog == b.dialog,
         "cards.toml" => a.cards == b.cards,
         "modes.toml" => a.modes == b.modes,
+        "items.toml" => a.items == b.items,
         _ => match path
             .strip_prefix("maps/")
             .and_then(|p| p.strip_suffix(".toml"))

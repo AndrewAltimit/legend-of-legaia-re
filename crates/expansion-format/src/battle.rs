@@ -102,8 +102,8 @@ impl Stat {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ItemChance {
-    /// A [`DiscRef::Item`].
-    pub item: DiscRef,
+    /// A retail item or a pack item ([`crate::items::ItemRef`]).
+    pub item: crate::items::ItemRef,
     /// Percent, `0..=100`.
     pub chance_pct: u8,
 }
@@ -302,8 +302,8 @@ pub struct EncounterOverride {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ItemReward {
-    /// A [`DiscRef::Item`].
-    pub item: DiscRef,
+    /// A retail item or a pack item ([`crate::items::ItemRef`]).
+    pub item: crate::items::ItemRef,
     #[serde(default = "one_u8")]
     pub count: u8,
 }
@@ -374,7 +374,7 @@ impl BattleSection {
             }
             for (what, chance) in [("drop", &m.drop), ("steal", &m.steal)] {
                 if let Some(c) = chance {
-                    if !matches!(c.item, DiscRef::Item { .. }) {
+                    if !c.item.is_item() {
                         out.push(format!("monster `{key}`: {what} item must be an item ref"));
                     }
                     if c.chance_pct > 100 {
@@ -533,10 +533,7 @@ impl BattleSection {
             {
                 out.push(format!("boss `{key}`: music must be a bgm ref"));
             }
-            if b.reward_items
-                .iter()
-                .any(|r| !matches!(r.item, DiscRef::Item { .. }))
-            {
+            if b.reward_items.iter().any(|r| !r.item.is_item()) {
                 out.push(format!("boss `{key}`: reward items must be item refs"));
             }
         }
@@ -603,7 +600,7 @@ impl crate::validate::SectionRules for BattleSection {
             }
             for (what, chance) in [("drop", &m.drop), ("steal", &m.steal)] {
                 if let Some(c) = chance {
-                    cx.disc_ref(&format!("monsters.{key}.{what}.item"), &c.item);
+                    c.item.check(cx, &format!("monsters.{key}.{what}.item"));
                 }
             }
         }
@@ -626,7 +623,7 @@ impl crate::validate::SectionRules for BattleSection {
                 cx.disc_ref(&format!("bosses.{key}.music"), m);
             }
             for (i, r) in b.reward_items.iter().enumerate() {
-                cx.disc_ref(&format!("bosses.{key}.reward_items[{i}]"), &r.item);
+                r.item.check(cx, &format!("bosses.{key}.reward_items[{i}]"));
             }
         }
     }

@@ -2,7 +2,7 @@
 
 The expansion-pack format: a modder-authored bundle of new content for the
 port - custom maps, battles and bosses, a level curve, quests and
-challenges, dialogue, trading cards and game modes - parsed into one
+challenges, dialogue, trading cards, game modes and items - parsed into one
 `ExpansionPack`.
 
 A pack carries no Sony bytes. Disc content is named by coordinate
@@ -18,7 +18,7 @@ shareable language pack follows. The format reference is
 | `refs` | `DiscRef` coordinates, their disc-free range checks, the `DiscResolver` trait |
 | `bundle` | The deterministic `.lxpack` single-file archive |
 | `validate` | The validator, the `SectionRules` extension trait, the no-disc-bytes rule |
-| `battle`, `progression`, `quest`, `dialog`, `cards`, `modes`, `map` | The content sections |
+| `battle`, `progression`, `quest`, `dialog`, `cards`, `modes`, `items`, `map` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by) |
 
 The core API takes and returns bytes, so it builds for `wasm32`; only
 `from_dir` / `read_files` touch the file system. The command line is

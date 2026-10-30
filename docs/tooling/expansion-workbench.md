@@ -80,6 +80,7 @@ content offer only ids the pack defines.
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
 | Dialog | Lines with a per-row check under the text: the 36-character row warning and any markup with no glyph. |
 | Cards | Cards, boosters, sell prices, drop rules. |
+| Items | Pack items (kind, look, prices, the effect of a consumable, the stats, passives, element and set of equipment), sets and their tiers, shops and their gated stock. Every item picker elsewhere (drops, steals, rewards, collect objectives) offers retail and pack items together. |
 | Modes | Poker tables, card duels, golf courses, race tracks, prop hunt arenas. |
 | Maps | The tile painter. |
 | Files | Each exported file, to copy or download on its own. |

@@ -176,6 +176,41 @@ export function field(ctx, obj, spec, path) {
     case 'item': case 'oitem': discPicker('items', 'item', t === 'oitem'); break;
     case 'scene': case 'oscene': discPicker('scenes', 'scene', t === 'oscene'); break;
     case 'bgm': case 'obgm': discPicker('bgm', 'bgm', t === 'obgm'); break;
+    case 'anyitem': case 'anyitemid': {
+      // A retail item or a pack item: a pack key is a string, a retail item
+      // a coordinate (`anyitem`) or a bare id (`anyitemid`).
+      const pack = (ctx.pack.items && ctx.pack.items.items) || {};
+      const opts = Object.entries(pack).map(([k, d]) => ['p:' + k, `${d.name || k} (pack)`]);
+      for (const [v, l] of discOptions(ctx, 'items')) opts.push(['r:' + v, l]);
+      const val = typeof cur === 'string' ? 'p:' + cur : cur == null ? '' : 'r:' + (typeof cur === 'object' ? cur.id : cur);
+      if (val.startsWith('r:') && !opts.some(([v]) => v === val)) opts.push([val, `retail item ${val.slice(2)}`]);
+      select(opts, val, false, (v) => {
+        if (v.startsWith('p:')) set(v.slice(2));
+        else if (v.startsWith('r:')) set(t === 'anyitem' ? { kind: 'item', id: intOr(v.slice(2), 0) } : intOr(v.slice(2), 0));
+      });
+      break;
+    }
+    case 'dbool':
+      // A bool that is `true` when left out.
+      input = h('input', { type: 'checkbox' });
+      input.checked = cur !== false;
+      input.addEventListener('change', () => set(input.checked ? undefined : false));
+      wrap.append(input, label);
+      return wrap;
+    case 'chars': {
+      input = h('div', { class: 'xw-inline wb-inline' });
+      const have = new Set(cur || []);
+      for (const c of ['vahn', 'noa', 'gala']) {
+        const cb = h('input', { type: 'checkbox' });
+        cb.checked = have.has(c);
+        cb.addEventListener('change', () => {
+          if (cb.checked) have.add(c); else have.delete(c);
+          set(['vahn', 'noa', 'gala'].filter((x) => have.has(x)));
+        });
+        input.append(h('label', { class: 'xw-check xw-field' }, cb, c));
+      }
+      break;
+    }
     case 'monsterid': case 'itemid': {
       const which = t === 'monsterid' ? 'monsters' : 'items';
       if (!catList(ctx, which).length) numInput(cur, false, false);
@@ -416,7 +451,7 @@ function itemChanceEd(ctx, box, owner, key, path, label) {
     ctx.changed(true);
   });
   row.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, on, label)));
-  if (owner[key]) row.append(grid(ctx, owner[key], [{ k: 'item', t: 'item', label: 'Item' }, { k: 'chance_pct', t: 'int', label: 'Chance %' }], p));
+  if (owner[key]) row.append(grid(ctx, owner[key], [{ k: 'item', t: 'anyitem', label: 'Item' }, { k: 'chance_pct', t: 'int', label: 'Chance %' }], p));
   box.append(row);
 }
 
@@ -684,7 +719,7 @@ export function renderBattle(ctx, el) {
         title: 'Reward items',
         add: 'Item',
         make: () => ({ item: { kind: 'item', id: (catList(ctx, 'items')[0] || { id: 1 }).id }, count: 1 }),
-        render: (b2, it, p2) => b2.append(grid(ctx, it, [{ k: 'item', t: 'item', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }], p2)),
+        render: (b2, it, p2) => b2.append(grid(ctx, it, [{ k: 'item', t: 'anyitem', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }], p2)),
       });
     },
   });
@@ -750,7 +785,7 @@ export function renderProgression(ctx, el) {
       listEd(ctx, box, r, 'items', p, {
         add: 'Item',
         make: () => ({ item: { kind: 'item', id: (catList(ctx, 'items')[0] || { id: 1 }).id }, count: 1 }),
-        render: (b2, it, p2) => b2.append(grid(ctx, it, [{ k: 'item', t: 'item', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }], p2)),
+        render: (b2, it, p2) => b2.append(grid(ctx, it, [{ k: 'item', t: 'anyitem', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }], p2)),
       });
     },
   });
@@ -812,7 +847,7 @@ const GOALS = {
   win_boss: [{ k: 'boss', t: 'oref', kind: 'boss', label: 'Boss' }],
   enter_scene: [{ k: 'scene', t: 'scenename', label: 'Scene' }],
   reach_level: [{ k: 'level', t: 'int', label: 'Level' }],
-  collect_item: [{ k: 'item', t: 'itemid', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }, { k: 'hand_in', t: 'bool', label: 'Hand in' }],
+  collect_item: [{ k: 'item', t: 'anyitemid', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }, { k: 'hand_in', t: 'bool', label: 'Hand in' }],
   talk: [{ k: 'npc', label: 'NPC id' }],
   win_mode: [{ k: 'mode', t: 'ref', kind: 'mode', label: 'Mode' }, { k: 'count', t: 'int', label: 'Count' }],
   counter: [{ k: 'counter', label: 'Counter' }, { k: 'at_least', t: 'int', label: 'At least' }],
@@ -845,7 +880,7 @@ function rewardsEd(ctx, box, owner, path) {
   listEd(ctx, rb, r, 'items', p, {
     add: 'Item',
     make: () => ({ item: (catList(ctx, 'items')[0] || { id: 1 }).id, count: 1 }),
-    render: (b2, it, p2) => b2.append(grid(ctx, it, [{ k: 'item', t: 'itemid', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }], p2)),
+    render: (b2, it, p2) => b2.append(grid(ctx, it, [{ k: 'item', t: 'anyitemid', label: 'Item' }, { k: 'count', t: 'int', label: 'Count' }], p2)),
   });
   listEd(ctx, rb, r, 'counters', p, {
     add: 'Counter',
@@ -1082,6 +1117,131 @@ export function renderCards(ctx, el) {
         { k: 'chance_percent', t: 'int', label: 'Chance %' },
         { k: 'count', t: 'int', label: 'Count' },
       ], p));
+    },
+  });
+}
+
+// --- Items ---------------------------------------------------------------------------------
+const ITEM_KINDS = ['consumable', 'weapon', 'armor', 'helmet', 'boots', 'accessory', 'key'];
+const STATUSES = ['venom', 'toxic', 'numb', 'sleep', 'confuse', 'rot', 'curse', 'stone'];
+const EFFECTS = {
+  heal_hp: [{ k: 'amount', t: 'int', label: 'HP' }, { k: 'full', t: 'bool', label: 'Full' }],
+  heal_mp: [{ k: 'amount', t: 'int', label: 'MP' }, { k: 'full', t: 'bool', label: 'Full' }],
+  revive: [{ k: 'percent', t: 'int', label: 'HP %' }],
+  cure: [{ k: 'status', t: 'sel', opts: STATUSES, label: 'Status' }],
+  cure_all: [],
+  damage: [{ k: 'amount', t: 'int', label: 'Damage' }],
+  as_item: [{ k: 'item', t: 'itemid', label: 'Retail item', hint: 'runs its own effect' }],
+};
+const EFFECT_MAKE = {
+  heal_hp: () => ({ kind: 'heal_hp', amount: 500 }),
+  heal_mp: () => ({ kind: 'heal_mp', amount: 100 }),
+  revive: () => ({ kind: 'revive', percent: 50 }),
+  cure: () => ({ kind: 'cure', status: 'venom' }),
+  cure_all: () => ({ kind: 'cure_all' }),
+  damage: () => ({ kind: 'damage', amount: 1000 }),
+  as_item: () => ({ kind: 'as_item', item: 0x8e }),
+};
+
+function effectEd(ctx, box, it, p) {
+  const ep = joinPath(p, 'effect');
+  const eb = h('div', { class: 'xw-box', 'data-path': ep });
+  const ks = h('select', {}, ...Object.keys(EFFECTS).map((k) => h('option', { value: k, selected: (it.effect || {}).kind === k }, k.replace('_', ' '))));
+  ks.addEventListener('change', () => { it.effect = EFFECT_MAKE[ks.value](); ctx.changed(true); });
+  if (!it.effect) it.effect = EFFECT_MAKE.heal_hp();
+  eb.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-field' }, h('span', {}, 'Effect'), ks)));
+  eb.append(grid(ctx, it.effect, EFFECTS[it.effect.kind] || [], ep));
+  eb.append(grid(ctx, it, [
+    { k: 'all_party', t: 'bool', label: 'Whole party' },
+    { k: 'field', t: 'dbool', label: 'Usable in the field' },
+    { k: 'battle', t: 'dbool', label: 'Usable in battle' },
+  ], p));
+  box.append(eb);
+}
+
+export function renderItems(ctx, el) {
+  const s = ctx.pack.items || (ctx.pack.items = { items: {}, sets: {}, shops: [] });
+  el.append(h('p', { class: 'xw-note' }, 'items.toml: new consumables and equipment, equipment sets and the pack\'s shops. A pack item lives beside the retail id space; drops, steals, rewards and shop rows pick a retail item or a pack item. An item borrows a retail item\'s look as its icon (and, for a weapon, its battle mesh).'));
+  el.append(h('h4', { class: 'xw-sub' }, 'Items'));
+  splitEd(ctx, el, s, 'items', '', {
+    prefix: 'item',
+    add: 'Item',
+    make: () => ({ name: 'New item', kind: 'consumable', price: 100, effect: EFFECT_MAKE.heal_hp() }),
+    label: (it, id) => `${id} [${it.kind || 'consumable'}]`,
+    render: (box, it, p) => {
+      const kind = it.kind || 'consumable';
+      box.append(grid(ctx, it, [
+        { k: 'name', label: 'Name', hint: 'at most 20 characters' },
+        { k: 'kind', t: 'sel', opts: ITEM_KINDS, label: 'Kind' },
+        { k: 'icon', t: 'oitem', label: 'Icon / look (retail item)' },
+        { k: 'price', t: 'int', label: 'Buy price', hint: '0: not sold' },
+        { k: 'sell', t: 'oint', label: 'Sell price', ph: 'half the price' },
+        { k: 'description', t: 'textarea', label: 'Description', hint: '| breaks a line', wide: true },
+      ], p));
+      if (kind === 'consumable') {
+        effectEd(ctx, box, it, p);
+      } else if (kind !== 'key') {
+        box.append(h('h4', { class: 'xw-sub' }, 'While worn'));
+        box.append(grid(ctx, it, [
+          { k: 'characters', t: 'chars', label: 'Worn by', hint: 'none: everyone', wide: true },
+          { k: 'attack', t: 'int', label: 'ATK' },
+          { k: 'defence', t: 'int', label: 'DEF (both)' },
+          { k: 'udf', t: 'int', label: 'UDF' },
+          { k: 'ldf', t: 'int', label: 'LDF' },
+          { k: 'speed', t: 'int', label: 'SPD' },
+          { k: 'intelligence', t: 'int', label: 'INT', hint: 'menu only, as retail head gear' },
+          { k: 'element', t: 'osel', label: 'Guards element', opts: ELEMENTS.slice(0, 7).map((n, i) => [String(i), n]), num: true },
+          { k: 'passives', t: 'csvint', label: 'Passives', hint: 'accessory passive indices 0-63' },
+          { k: 'set', t: 'oref', kind: 'item_set', label: 'Set' },
+        ], p));
+      }
+    },
+  });
+  el.append(h('h4', { class: 'xw-sub' }, 'Sets'));
+  splitEd(ctx, el, s, 'sets', '', {
+    prefix: 'set',
+    add: 'Set',
+    make: () => ({ name: 'New set', bonuses: [{ pieces: 2, attack: 5 }] }),
+    render: (box, set, p) => {
+      box.append(grid(ctx, set, [{ k: 'name', label: 'Name' }], p));
+      listEd(ctx, box, set, 'bonuses', p, {
+        title: 'Tiers',
+        add: 'Tier',
+        make: () => ({ pieces: 2 }),
+        label: (b) => `${b.pieces} pieces`,
+        render: (b2, b, p2) => b2.append(grid(ctx, b, [
+          { k: 'pieces', t: 'int', label: 'Pieces worn' },
+          { k: 'attack', t: 'int', label: 'ATK' },
+          { k: 'defence', t: 'int', label: 'DEF (both)' },
+          { k: 'speed', t: 'int', label: 'SPD' },
+          { k: 'intelligence', t: 'int', label: 'INT' },
+          { k: 'passives', t: 'csvint', label: 'Passives' },
+        ], p2)),
+      });
+    },
+  });
+  el.append(h('h4', { class: 'xw-sub' }, 'Shops', h('span', { class: 'xw-hint' }, ' opened by a map shop trigger or a shop NPC')));
+  splitEd(ctx, el, s, 'shops', '', {
+    arrayId: true,
+    prefix: 'shop',
+    add: 'Shop',
+    make: () => ({ name: 'New shop', stock: [] }),
+    render: (box, shop, p) => {
+      box.append(grid(ctx, shop, [{ k: 'name', label: 'Name' }], p));
+      // Bare rows become `{ item }` so each can take a price and a gate.
+      shop.stock = (shop.stock || []).map((e) => (e && typeof e === 'object' && 'item' in e ? e : { item: e }));
+      listEd(ctx, box, shop, 'stock', p, {
+        title: 'Stock',
+        add: 'Row',
+        make: () => ({ item: ctx.ids('item')[0] || (catList(ctx, 'items')[0] || { id: 0x77 }).id }),
+        render: (b2, row, p2) => {
+          b2.append(grid(ctx, row, [
+            { k: 'item', t: 'anyitemid', label: 'Item' },
+            { k: 'price', t: 'oint', label: 'Price', ph: 'the item\'s' },
+          ], p2));
+          b2.append(gateBox(ctx, row, 'requires', p2, 'Listed when'));
+        },
+      });
     },
   });
 }

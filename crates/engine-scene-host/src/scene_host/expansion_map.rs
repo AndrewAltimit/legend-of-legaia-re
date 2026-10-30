@@ -331,6 +331,11 @@ impl SceneHost {
                     log::warn!("expansion: map trigger card dealer `{dealer}` did not open");
                 }
             }
+            MapEvent::Shop { shop } => {
+                if !w.open_item_shop(shop) {
+                    log::warn!("expansion: map trigger shop `{shop}` did not open");
+                }
+            }
             MapEvent::Challenge { challenge, start } => {
                 if !w.expansion_take_challenge(challenge, *start) {
                     log::info!("expansion: map trigger challenge `{challenge}` did not arm");

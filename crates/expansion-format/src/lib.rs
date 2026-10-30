@@ -18,6 +18,7 @@
 //! quests.toml        quests and challenges       -> quest
 //! dialog.toml        dialogue lines              -> dialog
 //! cards.toml         trading cards               -> cards
+//! items.toml         items, equipment, shops     -> items
 //! modes.toml         game modes                  -> modes
 //! maps/<id>.toml     custom maps, one per file   -> map
 //! assets/...         the modder's own files
@@ -34,6 +35,7 @@ pub mod boss_script;
 pub mod bundle;
 pub mod cards;
 pub mod dialog;
+pub mod items;
 pub mod manifest;
 pub mod map;
 pub mod map_detail;
@@ -61,6 +63,8 @@ pub struct ExpansionPack {
     pub dialog: dialog::DialogSection,
     pub cards: cards::CardSection,
     pub modes: modes::ModeSection,
+    /// New items, equipment, sets and shops.
+    pub items: items::ItemSection,
     /// Custom maps keyed by map id (the `maps/<id>.toml` file stem).
     pub maps: BTreeMap<String, map::MapDef>,
     /// The modder's own files under `assets/`, keyed by their path relative
@@ -81,6 +85,7 @@ pub const SECTION_FILES: &[&str] = &[
     "dialog.toml",
     "cards.toml",
     "modes.toml",
+    "items.toml",
 ];
 
 /// Documentation files a pack may carry at its root.
@@ -157,6 +162,7 @@ impl ExpansionPack {
             dialog: section(files, "dialog.toml")?,
             cards: section(files, "cards.toml")?,
             modes: section(files, "modes.toml")?,
+            items: section(files, "items.toml")?,
             maps,
             assets,
             docs,
@@ -189,6 +195,7 @@ impl ExpansionPack {
         put(&mut out, "dialog.toml", &self.dialog)?;
         put(&mut out, "cards.toml", &self.cards)?;
         put(&mut out, "modes.toml", &self.modes)?;
+        put(&mut out, "items.toml", &self.items)?;
         for (id, map) in &self.maps {
             let name = format!("maps/{id}.toml");
             let text = toml::to_string(map).with_context(|| format!("writing {name}"))?;

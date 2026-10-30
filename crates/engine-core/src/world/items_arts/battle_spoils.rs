@@ -240,12 +240,11 @@ impl World {
         );
         let mut drops: Vec<u8> = Vec::new();
         // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
-        if item != 0
-            && self.party.inventory.get(&item).copied().unwrap_or(0)
-                != legaia_engine_battle::battle_steal::HELD_CAP
+        if item != 0 && self.held_count_by_id(item) != legaia_engine_battle::battle_steal::HELD_CAP
         {
             drops.push(item);
-            let _ = self.party.inventory.add(item, 1);
+            // An expansion pack item's fight alias lands in the pack bag.
+            let _ = self.grant_item_id(item, 1);
         }
         // The bonus equipment drop (`WorldToggles::bonus_drop`, the
         // `--equipment-drops` twin) rolls here, where the hook joins: right

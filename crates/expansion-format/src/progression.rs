@@ -21,7 +21,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::battle::ItemReward;
-use crate::refs::DiscRef;
 
 /// The highest level a character reaches.
 pub const MAX_LEVEL: u8 = 99;
@@ -191,10 +190,7 @@ impl ProgressionSection {
             if !(2..=MAX_LEVEL).contains(&r.level) {
                 out.push(format!("level_rewards: level {} is not 2..=99", r.level));
             }
-            if r.items
-                .iter()
-                .any(|i| !matches!(i.item, DiscRef::Item { .. }))
-            {
+            if r.items.iter().any(|i| !i.item.is_item()) {
                 out.push(format!("level_rewards: level {} names a non-item", r.level));
             }
             if r.character.is_some_and(|c| c > 3) {
@@ -215,7 +211,8 @@ impl crate::validate::SectionRules for ProgressionSection {
         }
         for (i, r) in self.level_rewards.iter().enumerate() {
             for (k, item) in r.items.iter().enumerate() {
-                cx.disc_ref(&format!("level_rewards[{i}].items[{k}]"), &item.item);
+                item.item
+                    .check(cx, &format!("level_rewards[{i}].items[{k}]"));
             }
         }
     }

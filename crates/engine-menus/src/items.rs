@@ -592,6 +592,11 @@ impl ItemCatalog {
         }
     }
 
+    /// Drop `id`'s entry (an expansion pack's fight alias going back).
+    pub fn remove(&mut self, id: u8) -> Option<ItemEntry> {
+        self.by_id.remove(&id)
+    }
+
     pub fn get(&self, id: u8) -> Option<&ItemEntry> {
         self.by_id.get(&id)
     }

@@ -2173,7 +2173,7 @@ under the hand (`FieldMenuSession::suspend_at_cursor`) and resumes there.
 | Piece | Owner |
 |---|---|
 | Content: quests (active first, then completed) with objectives, progress and rewards; challenges with best scores; the card collection (owned, new, boosters); the pack's maps | `legaia_engine_expansion::journal::journal_view`, read through `World::expansion_journal` |
-| Cursor: four pages - Quests, Challenges, Cards, Travel (Left / Right or L1 / R1) - rows (Up / Down), Cross, Circle | `journal::JournalSession` |
+| Cursor: five pages - Quests, Challenges, Cards, Travel, Items (Left / Right or L1 / R1) - rows (Up / Down), Cross, Circle | `journal::JournalSession` |
 | Open and fold | `field_menu_dispatch::journal_on_select` + `open_journal`; `FieldMenuSubsession::Journal`; `apply_journal_outcome` from `finish_subsession` |
 | Draw | `engine-screens::pause_screens::journal_draws` over `engine-ui::journal_draws_for`, in the generic sub-window frame |
 
@@ -2192,4 +2192,8 @@ tick after it. A Cross on a
 on a **Travel** row closes the menu and asks the scene host for the map
 (`World::request_expansion_travel`), which enters it on its next tick - the
 way onto a map whose entrance is out of reach
-([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#entrances)).
+([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#entrances)). The **Items** page lists the pack
+items the party holds and wears; a Cross closes the menu and opens the pack
+item screen (its Gear tab for a worn item) on the first free field tick, where
+consumables are used and gear is worn with a stat compare
+([`expansion-pack-items.md`](../formats/expansion-pack-items.md#the-item-screen)).

@@ -83,13 +83,7 @@ impl World {
             costs: s.costs,
             chip_icons: {
                 let roster = self.party_roster_slot(s.actor as usize);
-                let equip = self
-                    .party
-                    .roster
-                    .members
-                    .get(roster)
-                    .map(|r| r.equipment().slots)
-                    .unwrap_or_default();
+                let equip = self.member_look_equipment(roster);
                 legaia_engine_battle::arts_command_input::retail_chip_icons(
                     roster as u8 + 1,
                     &equip,

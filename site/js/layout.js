@@ -283,6 +283,7 @@ const NAV = [
       { href: 'formats/expansion-pack-battle.html', text: 'Battles and progression', key: 'formats/expansion-pack-battle', indent: true },
       { href: 'formats/expansion-pack-quests.html', text: 'Quests, dialogue, saves', key: 'formats/expansion-pack-quests', indent: true },
       { href: 'formats/expansion-pack-maps.html', text: 'Maps', key: 'formats/expansion-pack-maps', indent: true },
+      { href: 'formats/expansion-pack-items.html', text: 'Items and shops', key: 'formats/expansion-pack-items', indent: true },
     ],
   },
   {

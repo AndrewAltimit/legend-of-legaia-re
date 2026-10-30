@@ -129,15 +129,24 @@ pub(super) fn enter_debug_pack_mode(session: &mut NativeSession, seeds: &super::
     let card_screen = match id {
         "cards" => Some(world.open_card_menu()),
         "cards-binder" => Some(world.open_card_binder()),
+        // The pack item screen rides it as well: the bag, or a shop.
+        "items" => Some(world.open_item_bag(false)),
+        "items-gear" => Some(world.open_item_bag(true)),
         _ => id
             .strip_prefix("cards-dealer")
-            .map(|d| world.open_card_dealer(d.trim_start_matches(':'))),
+            .map(|d| world.open_card_dealer(d.trim_start_matches(':')))
+            .or_else(|| {
+                id.strip_prefix("shop")
+                    .map(|d| world.open_item_shop(d.trim_start_matches(':')))
+            }),
     };
     if let Some(opened) = card_screen {
         if opened {
-            log::info!("play-window: --mode {id}: the card screen is open");
+            log::info!("play-window: --mode {id}: the screen is open");
         } else {
-            log::warn!("play-window: --mode {id}: no pack cards (or no such dealer)");
+            log::warn!(
+                "play-window: --mode {id}: no pack cards / items (or no such dealer / shop)"
+            );
         }
         return;
     }

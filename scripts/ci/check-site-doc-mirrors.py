@@ -158,6 +158,8 @@ MIRRORS = [
      "site/_content/formats/expansion-pack-quests.html"),
     ("docs/formats/expansion-pack-maps.md",
      "site/_content/formats/expansion-pack-maps.html"),
+    ("docs/formats/expansion-pack-items.md",
+     "site/_content/formats/expansion-pack-items.html"),
     ("docs/subsystems/expansion-modes.md",
      "site/_content/subsystems/expansion-modes.html"),
     ("docs/subsystems/netplay.md",

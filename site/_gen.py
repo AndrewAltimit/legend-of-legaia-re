@@ -755,6 +755,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/expansion-pack-battle.html", "Expansion packs: battles", "formats/expansion-pack-battle", "formats/expansion-pack-battle.html"),
     ("formats/expansion-pack-quests.html", "Expansion packs: quests", "formats/expansion-pack-quests", "formats/expansion-pack-quests.html"),
     ("formats/expansion-pack-maps.html", "Expansion packs: maps",   "formats/expansion-pack-maps", "formats/expansion-pack-maps.html"),
+    ("formats/expansion-pack-items.html", "Expansion packs: items", "formats/expansion-pack-items", "formats/expansion-pack-items.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
     # Per-tooling pages (mirrored from docs/tooling/)
     ("tooling/extraction.html",    "Extraction CLIs",               "tooling/extraction",         "tooling/extraction.html"),

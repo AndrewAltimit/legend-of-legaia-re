@@ -75,7 +75,7 @@ Each objective is a table with a `kind`, that kind's keys, and an optional `text
 | `win_boss` | `boss` or `formation` (optional) | A boss battle is won (optionally that one). |
 | `enter_scene` | `scene` | The player enters the scene (CDNAME name or pack map id). |
 | `reach_level` | `level` | The party's highest level reaches `level`. |
-| `collect_item` | `item`, `count`, `hand_in` | The bag holds `count` of the item. |
+| `collect_item` | `item`, `count`, `hand_in` | The bag holds `count` of the item: a retail id or a pack item ([items](expansion-pack-items.md#item-references)). |
 | `talk` | `npc` | The player talks to the NPC. |
 | `win_mode` | `mode`, `count` | The pack mode is won `count` times. |
 | `counter` | `counter`, `at_least` | The pack counter reaches `at_least`. |
@@ -93,7 +93,7 @@ In an ordered quest only the first objective that is not done takes an event, so
 |---|---|
 | `gold` | Added to the purse (clamped at 9,999,999). |
 | `xp` | EXP for each present party member, unscaled. |
-| `items` | `[{ item, count }]` added to the bag. |
+| `items` | `[{ item, count }]` added to the bag: a retail id to the retail bag, a pack item to the pack bag. |
 | `cards` | Trading-card ids, handed to the card collection. |
 | `set_flags` | Pack flags raised. |
 | `counters` | `[{ counter, add }]` added to pack counters (`add` defaults to 1). |
@@ -244,6 +244,9 @@ u16    challenge count, then str id + u32 best + u32 clears each
              state, u16 count then str id + u32 copies each (binder order),
              u16 count then str booster id + u32 unopened each,
              u16 deck count then str each, u16 seen count then str each
+         4 = pack items: u16 count then str key + u8 count each (the bag),
+             u16 count then u8 roster slot + u8 equipment byte + str key each
+             (the worn gear)
 ```
 
 `str` is a `u16` byte length then UTF-8; integers are little-endian; maps are written in key order, so equal progress encodes to equal bytes. An armed challenge, queued notices and the line on screen are not saved.
@@ -257,6 +260,7 @@ Each tail record is written only when it carries something, so a block with none
 | `1` | Cleared bosses | A once-only `battle.toml` boss is beaten | The battle runtime's `cleared_bosses` |
 | `2` | Map | The save is made on a pack map | `map::MapLocation` ([maps](expansion-pack-maps.md#saving-on-a-map)) |
 | `3` | Cards | The player has any card state | `CardProgress` ([cards](../subsystems/expansion-modes.md#the-card-economy)) |
+| `4` | Pack items | The player holds or wears a pack item | `ItemProgress` ([items](expansion-pack-items.md#saves)) |
 
 The reader takes records until the block ends; a tag it does not know, or a block with bytes left over, decodes to nothing (`ExpansionProgress::decode` answers `None`), so a new record kind needs a tag the reader learns at the same time.
 

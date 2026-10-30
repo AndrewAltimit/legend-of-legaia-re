@@ -330,12 +330,13 @@ impl SceneHost {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
-            let Some(record) = self.world.party.roster.members.get(slot) else {
+            if self.world.party.roster.members.get(slot).is_none() {
                 continue;
-            };
+            }
             // The assembler keys sections off the first five equipment
-            // bytes (`+0x196..+0x19B`); the record carries eight.
-            let s = record.equipment().slots;
+            // bytes (`+0x196..+0x19B`); the record carries eight. A worn
+            // expansion pack item swings as its borrowed look.
+            let s = self.world.member_look_equipment(slot);
             let equipped = [s[0], s[1], s[2], s[3], s[4]];
             let Ok(bytes) = self.index.entry_bytes(prot) else {
                 continue;
@@ -527,10 +528,10 @@ impl SceneHost {
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         const GUARD_TABLE_VA: u32 = 0x801F_672C;
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
-            let Some(record) = self.world.party.roster.members.get(slot) else {
+            if self.world.party.roster.members.get(slot).is_none() {
                 continue;
-            };
-            let s = record.equipment().slots;
+            }
+            let s = self.world.member_look_equipment(slot);
             let equipped = [s[0], s[1], s[2], s[3], s[4]];
             let Ok(bytes) = self.index.entry_bytes_extended(prot) else {
                 continue;

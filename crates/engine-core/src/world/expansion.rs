@@ -61,6 +61,7 @@ impl World {
         // One activation path for battles and quests: the quest runtime
         // follows the pack (adopting progress a save left dormant for it).
         self.adopt_expansion_progress();
+        self.compile_expansion_items();
         Ok(())
     }
 
@@ -71,6 +72,7 @@ impl World {
             return;
         }
         self.expansion_end_battle();
+        self.expansion_release_item_aliases();
         if let Some(c) = self.expansion.battle.compiled.as_ref() {
             for f in &c.formations {
                 self.tables
@@ -258,6 +260,7 @@ impl World {
             .into_iter()
             .map(|(id, chance, item)| (id, (chance, item)))
             .collect();
+        self.expansion_lend_item_aliases(&plan.pack_drops, &plan.pack_steals);
     }
 
     /// Put back the catalog entries a fight's swap replaced.
@@ -338,9 +341,13 @@ impl World {
         if !fought {
             return;
         }
-        for &(item, count) in &b.reward_items {
-            if self.party.inventory.add(item, count) {
-                rewards.drops.push(item);
+        for (item, count) in &b.reward_items {
+            // A retail reward is named on the results window by its id; a
+            // pack reward by its toast (it has no id outside a fight).
+            if self.grant_item_ref(item, *count)
+                && let Some(id) = item.retail_id()
+            {
+                rewards.drops.push(id);
             }
         }
         if b.reward_gold > 0 {
@@ -361,7 +368,7 @@ impl World {
         };
         for (item, count) in xp::level_rewards(&pack.progression.level_rewards, char_slot, old, new)
         {
-            let _ = self.party.inventory.add(item, count);
+            self.grant_item_ref(&item, count);
         }
     }
 

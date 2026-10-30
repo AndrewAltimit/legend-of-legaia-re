@@ -27,7 +27,7 @@ pub fn banner_stage_draws(inputs: &ScreenInputs<'_>) -> Vec<TextDraw> {
     // (not over the card screen, which owns the frame).
     if let Some(text) = world
         .expansion_toast()
-        .filter(|_| !world.card_screen_open())
+        .filter(|_| !world.card_screen_open() && !world.item_screen_open())
     {
         out.extend(ui::quest_toast_draws_for(font, text));
     }

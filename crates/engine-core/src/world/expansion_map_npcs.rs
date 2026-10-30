@@ -63,9 +63,14 @@ impl World {
         else {
             return false;
         };
-        // A dealer NPC opens its counter; its line is the fallback.
+        // A shop NPC opens its counter (an item shop before a card dealer
+        // of the same id); its line is the fallback.
         let opened = talk.shop.as_deref().is_some_and(|d| {
-            let ok = self.open_card_dealer(d);
+            let ok = if self.has_item_shop(d) {
+                self.open_item_shop(d)
+            } else {
+                self.open_card_dealer(d)
+            };
             if !ok {
                 log::warn!("expansion: npc `{}` dealer `{d}` did not open", talk.npc);
             }

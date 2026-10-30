@@ -18,6 +18,8 @@ battle-spoils steps. With no pack loaded every kernel is the identity.
 | `quest_save` | The save's expansion block. |
 | `map` | The active pack map: zones, exits, trigger events, once flags, the save location. |
 | `cards` | The trading-card plumbing: grant drain, battle reward sources, stakes, card notices and toasts, the card screen seat, the monster portrait cache. The cards themselves are `quest_save::ExpansionProgress::cards`. |
+| `items` | Pack items at runtime: the compiled catalog, `ItemProgress` (the pack bag and worn gear, saved as tail record 4), the worn-gear stat / passive / set arithmetic, the per-fight `BattleAliases` over the five unnamed retail ids. |
+| `item_screen` | The pack item screen's state machine (shop Buy / Sell, bag Items / Gear with the equip compare) over an `ItemScreenHost`, and the model it draws from. |
 | `modes` | `PackModeSeat`, the game-mode seat (instance picker, the running `ActiveMode`, the quit prompt, the results card) and the pending card rewards. |
 | `entrance` | Retail-scene entrances into the pack's maps (`EntranceWatch`). |
 | `journal` | The pause menu's Journal: content (`journal_view`) and cursor (`JournalSession`). |

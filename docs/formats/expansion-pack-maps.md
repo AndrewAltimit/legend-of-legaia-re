@@ -205,7 +205,7 @@ clip = 2                                        # optional idle clip id
 patrol = [[9, 8], [9, 6]]                       # optional loop of tiles
 walk_clip = 4                                   # optional clip a patrol leg plays
 line = "tower_guide_hello"                      # a dialog.toml line
-shop = "tower_dealer"                           # optional: a cards.toml dealer
+shop = "tower_dealer"                           # optional: an items.toml shop or a cards.toml dealer
 requires = { quests = ["tower_rumour"] }        # optional: silent until it holds
 line_after = "tower_guide_thanks"               # optional: said once `after` holds
 after = { bosses = ["cinder_warden"] }
@@ -240,9 +240,13 @@ Talking to an NPC runs its `line` through the pack dialogue runner
 (`World::expansion_say`) and then raises the quest event `Talked(id)`
 (`World::expansion_talked`), so a quest naming the NPC as `giver` or in a
 `talk` objective advances; a quest line the talk starts plays after the
-NPC's own. An NPC with a `shop` (a `cards.toml` `[[dealers]]` id) opens that
-dealer's counter instead (`World::open_card_dealer`, the `card_dealer`
-trigger's path), and says its `line` only when the counter cannot open.
+NPC's own. An NPC with a `shop` opens that counter instead: an
+`items.toml` `[[shops]]` id opens the pack item shop (`World::open_item_shop`,
+the `shop` trigger's path, [items](expansion-pack-items.md#the-item-screen)),
+a `cards.toml` `[[dealers]]` id the dealer's counter
+(`World::open_card_dealer`, the `card_dealer` trigger's path); an id that is
+both opens the item shop. It says its `line` only when the counter cannot
+open.
 While its `requires` gate is shut the NPC says nothing and opens no shop
 (the talk still counts as `Talked(id)`); once its `after` gate holds it says
 `line_after` in place of `line` (`ActiveMap::talk_gated`).
@@ -282,9 +286,9 @@ the sections it names, with or without a disc:
 | Every spawn, exit, zone, prop, NPC tile and patrol waypoint lies on the grid | error |
 | The map has a spawn; spawn, exit, trigger, encounter and prop ids are unique in the map | error |
 | NPC ids are unique across the pack | error |
-| A trigger's `battle` / `boss` / `dialog` / `start_quest` / `card_dealer` names a defined formation, boss, line, quest, dealer | error |
+| A trigger's `battle` / `boss` / `dialog` / `start_quest` / `card_dealer` / `shop` names a defined formation, boss, line, quest, dealer, shop | error |
 | A trigger's `challenge` / `mode` names a defined challenge and mode instance; `start = true` on a challenge with no formation | error |
-| An NPC's `line`, `line_after` and `shop`, and an exit's `locked_line`, name a defined line and dealer | error |
+| An NPC's `line`, `line_after` and `shop`, and an exit's `locked_line`, name a defined line and an item shop or dealer | error |
 | A gate's quests and bosses are defined; no empty pack flag id; `min_level` in `1..=99` | error |
 | A `line_after` with no `after` gate; a `locked_line` on an exit with no `requires` | warning |
 | An encounter zone's `table` is a `battle.toml` `[[encounters]]` `scene` | error |
@@ -339,6 +343,7 @@ hands it to that section's runtime the tick it fires:
 | `{ kind = "set_flag", flag = X }` | raises pack flag `X` |
 | `{ kind = "counter", counter = C, add = 1 }` | adds to pack counter `C` |
 | `{ kind = "card_dealer", dealer = D }` | opens the `cards.toml` dealer `D`'s counter (`World::open_card_dealer`; empty = the first dealer) |
+| `{ kind = "shop", shop = S }` | opens the `items.toml` shop `S`'s counter (`World::open_item_shop`; empty = the first shop) |
 | `{ kind = "challenge", challenge = C, start = false }` | arms the `quests.toml` challenge `C` (`World::expansion_take_challenge`); `start = true` also starts the fight against its formation. A refusal (a party rule already broken) shows as a toast |
 | `{ kind = "mode", mode = M }` | enters the `modes.toml` instance `M` (`World::enter_pack_mode`) |
 | `{ kind = "rest", cost = 0, save = false }` | a rest point (below) |
