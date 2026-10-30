@@ -35,7 +35,7 @@ export function createPreview3d(env) {
     open: false, ready: false, visible: false, frame: null, map: null, spawn: '',
     dirty: true, timer: null, sent: null, layers: { walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false },
     select: null, path: null, marker: null, mode: 'orbit', onPick: null, stats: null, last: null, live: false, liveTimer: null,
-    auto: true,
+    auto: true, painter: true, arrival: false,
   };
   let channel = null;
   try { channel = new BroadcastChannel(CHANNEL); } catch (e) { channel = null; }
@@ -66,7 +66,7 @@ export function createPreview3d(env) {
   const playerBtn = btn('Player', 'The field camera: the follow view the game draws the map with', () => setMode('player'));
   const fitBtn = btn('Fit map', 'Frame the whole map', () => {
     setMode('orbit', true);
-    post({ type: 'xw-camera', mode: 'orbit', focus: null });
+    post({ type: 'xw-camera', mode: 'orbit', focus: null, painter: P.painter });
   });
   const walkBtn = btn('Walk from selection', 'Stand the player on the selected tile and switch to the field camera: walk with the arrow keys in the picture', () => {
     const t = selTile();
@@ -101,7 +101,34 @@ export function createPreview3d(env) {
   autoCb.checked = true;
   autoCb.addEventListener('change', () => { P.auto = autoCb.checked; if (P.auto && P.dirty) schedule(); });
   autoLab.append(autoCb, document.createTextNode('Auto'));
-  ctrls.append(orbitBtn, playerBtn, fitBtn, walkBtn, reloadBtn, autoLab);
+  const check = (label, title, on, fn) => {
+    const lab = document.createElement('label');
+    lab.className = 'xw-check';
+    lab.title = title;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = on;
+    cb.addEventListener('change', () => fn(cb.checked));
+    lab.append(cb, document.createTextNode(label));
+    return lab;
+  };
+  /* The game looks at a map from its low-Z side with the world's own
+   * handedness, which is the painter's grid mirrored (the painter draws row 0
+   * at the top). Match painter turns the orbit camera to the high-Z side and
+   * mirrors the picture, so the 3D view reads as the grid does: row 0 at the
+   * top, columns left to right. The Player camera is always the game's. */
+  const painterLab = check('Match painter', 'Orbit view oriented as the painter draws the grid (row 0 at the top, columns left to right); off shows the map with the game\'s own handedness', true, (on) => {
+    P.painter = on;
+    post({ type: 'xw-camera', mode: P.mode, painter: on });
+  });
+  /* A preview entry skips the map's arrival cutscene and place-name banner;
+   * ticked, the map is entered again as a player arrives. */
+  const arrivalLab = check('Arrival', 'Play the map\'s arrival cutscene and name banner on entry, as a player arriving sees them (re-enters the map at its spawn)', false, (on) => {
+    P.arrival = on;
+    post({ type: 'xw-arrival', on });
+    if (on && P.sent) { P.sent = null; P.dirty = true; flush(); }
+  });
+  ctrls.append(orbitBtn, playerBtn, fitBtn, walkBtn, reloadBtn, autoLab, painterLab, arrivalLab);
   // The map editor's bar (expansion-workbench-gizmos.js), under the head.
   const editSlot = document.createElement('div');
   editSlot.className = 'xw-3d-editslot';
@@ -141,7 +168,7 @@ export function createPreview3d(env) {
     P.mode = mode;
     orbitBtn.classList.toggle('is-on', mode === 'orbit');
     playerBtn.classList.toggle('is-on', mode === 'player');
-    if (!refit) post({ type: 'xw-camera', mode });
+    if (!refit) post({ type: 'xw-camera', mode, painter: P.painter });
     if (mode === 'player' && P.frame) P.frame.focus();
   }
 
@@ -218,6 +245,7 @@ export function createPreview3d(env) {
     if (m.type === 'xw-ready') {
       P.ready = true;
       P.sent = null;
+      post({ type: 'xw-arrival', on: P.arrival });
       syncRun();
       sendEdit();
       flush();
@@ -240,7 +268,7 @@ export function createPreview3d(env) {
       }
       sendOverlay();
       sendEdit();
-      post({ type: 'xw-camera', mode: P.mode });
+      post({ type: 'xw-camera', mode: P.mode, painter: P.painter });
       syncRun();
       if (m.ok && P.pending) sendPending();
     } else if (m.type === 'xw-pick') {
@@ -423,6 +451,6 @@ export function createPreview3d(env) {
     playHere,
     setLive(on) { P.live = !!on; pushLive(); },
     /* Headless-verification hook. */
-    state: () => ({ open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, status: status.textContent }),
+    state: () => ({ open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
   };
 }

@@ -284,6 +284,11 @@ pub struct SceneHost {
     /// ([`SceneHost::sync_pack_mode_map`]), so a broken map is tried once
     /// and the mode draws its top-down screen instead.
     pub(crate) failed_pack_mode_map: Option<String>,
+    /// Enter pack maps without their arrival presentation: no place-name
+    /// banner and no arrival cutscene ([`SceneHost::enter_expansion_map`]).
+    /// The expansion workbench's 3D preview sets it, so an edit-and-look
+    /// entry shows the map rather than its story beat; play leaves it off.
+    pub quiet_expansion_arrivals: bool,
     /// The disc's inbound door / warp arrivals keyed by destination
     /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
     /// first scene-picker entry that asks for it and kept for the session.
@@ -387,6 +392,7 @@ mod effects;
 pub mod expansion_cards;
 mod expansion_entrance;
 mod expansion_map;
+pub use expansion_map::ExpansionReloadSeat;
 mod lifecycle;
 mod minigame_warp;
 mod player_rig;

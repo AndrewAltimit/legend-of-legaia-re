@@ -143,6 +143,7 @@ asset expansion bundle my-pack -o my-pack.lxpack   # refuses a pack with errors
 asset expansion info my-pack.lxpack [--json]
 asset expansion unbundle my-pack.lxpack -o my-pack-copy/</code></pre>
   <p>None of these reads a disc, so they range-check coordinates without confirming them; the engine and the workbench check them against a real disc. Then play it: <code>legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --expansion my-pack</code>, adding <code>--map &lt;id&gt;</code> to walk straight onto a map (<a href="playing-expansion-packs.html">playing a pack</a>).</p>
+  <p>Add <code>--expansion-watch</code> and the window reloads the pack in place each time you save a file of it, rebuilding the map you stand on with you where you stood; <code>End</code> does the same by hand. A pack with an error is refused and the running one stays, with the reason on the notice line.</p>
 </section>
 
 <section class="doc-section" id="tips" data-doc="things-that-catch-people-out">

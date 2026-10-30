@@ -54,8 +54,106 @@ fn info_json(pack: Option<&ExpansionPack>, errors: &[String], warnings: &[String
     .to_string()
 }
 
+/// The pack library's dependency report (`LegaiaRuntime::expansion_library_check`):
+/// each installed pack's `requires` and `conflicts` checked against every
+/// other installed pack by the format's own rule
+/// (`legaia_expansion_format::manifest::check_dependencies`).
+///
+/// `library` is `{ active, packs: [{ id, version, requires, conflicts }] }`.
+/// The answer maps each pack id to `{ problems: [{ kind, dep, installed,
+/// active, text }], uses: [..] }`: `kind` is `missing`, `wrong_version` or
+/// `conflict`, `active` marks a conflict with the active pack, and `uses`
+/// lists the requirements an installed pack does meet. The engine plays one
+/// pack at a time, so a met requirement is recorded, not loaded beside it.
+pub fn library_dependency_report(library: &serde_json::Value) -> serde_json::Value {
+    use legaia_expansion_format::manifest::{DependencyProblem, PackManifest, check_dependencies};
+    let strings = |v: &serde_json::Value| -> Vec<String> {
+        v.as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|s| s.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let active = library["active"].as_str();
+    let packs: Vec<(String, String, Vec<String>, Vec<String>)> = library["packs"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| {
+                    Some((
+                        p["id"].as_str()?.to_string(),
+                        p["version"].as_str().unwrap_or_default().to_string(),
+                        strings(&p["requires"]),
+                        strings(&p["conflicts"]),
+                    ))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let installed: Vec<(&str, &str)> = packs
+        .iter()
+        .map(|(id, v, _, _)| (id.as_str(), v.as_str()))
+        .collect();
+    let mut out = serde_json::Map::new();
+    for (id, version, requires, conflicts) in &packs {
+        let m = PackManifest {
+            id: id.clone(),
+            version: version.clone(),
+            requires: requires.clone(),
+            conflicts: conflicts.clone(),
+            ..PackManifest::default()
+        };
+        let problems: Vec<serde_json::Value> = check_dependencies(&m, &installed)
+            .into_iter()
+            .map(|p| {
+                let text = p.to_string();
+                let (kind, dep, installed) = match p {
+                    DependencyProblem::Missing { dep } => ("missing", dep, None),
+                    DependencyProblem::WrongVersion { dep, installed } => {
+                        ("wrong_version", dep, Some(installed))
+                    }
+                    DependencyProblem::Conflict { dep, installed } => {
+                        ("conflict", dep, Some(installed))
+                    }
+                };
+                let dep_id = dep.split('@').next().unwrap_or_default().to_string();
+                json!({
+                    "kind": kind,
+                    "dep": dep,
+                    "installed": installed,
+                    "active": kind == "conflict" && Some(dep_id.as_str()) == active,
+                    "text": text,
+                })
+            })
+            .collect();
+        let uses: Vec<serde_json::Value> = m
+            .required()
+            .into_iter()
+            .filter_map(|d| {
+                let (_, v) = installed
+                    .iter()
+                    .find(|(i, v)| *i != id.as_str() && d.matches(i, v))?;
+                Some(json!({ "dep": d.to_string(), "installed": v }))
+            })
+            .collect();
+        out.insert(id.clone(), json!({ "problems": problems, "uses": uses }));
+    }
+    serde_json::Value::Object(out)
+}
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// The pack library's dependency check ([`library_dependency_report`]):
+    /// `library` JSON in, the per-pack report JSON out (`{}` on bad input).
+    pub fn expansion_library_check(&self, library: &str) -> String {
+        serde_json::from_str::<serde_json::Value>(library)
+            .map(|v| library_dependency_report(&v))
+            .unwrap_or_else(|_| json!({}))
+            .to_string()
+    }
+
     /// Load an expansion pack from its `.lxpack` bundle bytes and make it the
     /// active pack. Needs a loaded disc ([`Self::load_disc`]): activation
     /// reads the disc's progression tables. Returns JSON
@@ -319,6 +417,34 @@ mod tests {
                 .contains("update the engine"),
             "{loaded}"
         );
+    }
+
+    /// The library check reads each pack's requirements against the rest of
+    /// the library: a missing pack, a version out of range, a conflict with
+    /// the active pack.
+    #[test]
+    fn library_check_names_unmet_requires_and_active_conflicts() {
+        let lib = json!({
+            "active": "base",
+            "packs": [
+                { "id": "base", "version": "1.4.0", "requires": [], "conflicts": [] },
+                { "id": "addon", "version": "0.1.0", "requires": ["base@^1.2", "extra"], "conflicts": [] },
+                { "id": "rival", "version": "2.0.0", "requires": [], "conflicts": ["base@>=1"] },
+                { "id": "old", "version": "0.1.0", "requires": ["base@^2"], "conflicts": [] },
+            ],
+        });
+        let r = library_dependency_report(&lib);
+        let addon = &r["addon"];
+        assert_eq!(addon["problems"].as_array().unwrap().len(), 1);
+        assert_eq!(addon["problems"][0]["kind"], "missing");
+        assert_eq!(addon["problems"][0]["dep"], "extra");
+        assert_eq!(addon["uses"][0]["installed"], "1.4.0");
+        assert_eq!(r["rival"]["problems"][0]["kind"], "conflict");
+        assert_eq!(r["rival"]["problems"][0]["active"], true);
+        assert_eq!(r["old"]["problems"][0]["kind"], "wrong_version");
+        assert_eq!(r["base"]["problems"].as_array().unwrap().len(), 0);
+        let rt = LegaiaRuntime::new();
+        assert_eq!(rt.expansion_library_check("not json"), "{}");
     }
 
     /// The Rebirth bundle reads and validates; with no disc loaded it is

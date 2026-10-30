@@ -644,10 +644,36 @@ async function exportBundle() {
   return S.wb.export_bundle(JSON.stringify(S.pack));
 }
 
-// The play page's slot, written by Play in browser and Play here.
-function storePlay(bytes) {
+// The play hand-off goes through the play page's pack library
+// (js/play-pack-library.js): the bundle is installed there under the pack's
+// id - an older version replaced, as an install from a file does - and made
+// the active pack, and the play page opens on it (`?expansion=1&lib=<id>`).
+// The old `play` slot is still written, for a play page that predates the
+// library.
+async function installInLibrary(bytes) {
   const m = S.pack.manifest;
-  return idb(PLAY_DB, PLAY_STORE, 'readwrite', (s) => s.put({ id: m.id, name: m.name, version: m.version, bytes, savedAt: Date.now() }, PLAY_KEY));
+  const lib = window.LegaiaPackLibrary;
+  await idb(PLAY_DB, PLAY_STORE, 'readwrite', (s) => s.put({ id: m.id, name: m.name, version: m.version, bytes, savedAt: Date.now() }, PLAY_KEY));
+  if (!lib) return { installed: false, prev: null };
+  const prev = await lib.get(m.id);
+  const rel = m.cover && m.cover.startsWith('assets/') ? m.cover.slice(7) : null;
+  let cover = null;
+  try { cover = rel ? S.wb.asset_bytes(rel) : null; } catch (e) { cover = null; }
+  const ok = await lib.put(lib.recordFor(bytes, m, cover));
+  if (ok === null && !window.indexedDB) return { installed: false, prev };
+  await lib.setActive(m.id);
+  return { installed: true, prev };
+}
+
+function playLibUrl(map) {
+  const id = encodeURIComponent(S.pack.manifest.id);
+  const q = map ? `&map=${encodeURIComponent(map)}` : '';
+  return new URL(`../play.html?expansion=1&lib=${id}${q}`, import.meta.url).href;
+}
+
+// Play here's fallback with no play tab open: the library, then a tab.
+function storePlay(bytes) {
+  return installInLibrary(bytes);
 }
 
 // Play here: the map the Maps tab is on, in a play tab - hot-reloaded in
@@ -677,16 +703,16 @@ async function playInBrowser() {
   try {
     const bytes = await exportBundle();
     const m = S.pack.manifest;
-    const ok = await idb(PLAY_DB, PLAY_STORE, 'readwrite', (s) => s.put({ id: m.id, name: m.name, version: m.version, bytes, savedAt: Date.now() }, PLAY_KEY));
-    if (ok === null && !window.indexedDB) throw new Error('this browser has no IndexedDB');
-    setStatus(`Stored ${m.id}.lxpack for the play page.`, 'ok', 'xw-export-status');
-    window.open(new URL('../play.html?expansion=1', import.meta.url).href, '_blank', 'noopener');
+    const r = await installInLibrary(bytes);
+    if (!r.installed && !window.indexedDB) throw new Error('this browser has no IndexedDB');
+    const was = r.prev && r.prev.version && r.prev.version !== m.version ? ` (updated from ${r.prev.version})` : '';
+    setStatus(`${m.name} ${m.version} is in the play library and active${was}; the play page opens on it.`, 'ok', 'xw-export-status');
+    window.open(playLibUrl(null), '_blank', 'noopener');
   } catch (e) {
     setStatus('Not stored: ' + errText(e), 'err', 'xw-export-status');
   }
 }
 
-// --- Info tips (same behaviour as the translation workbench's) ---------------------------
 function setupInfoTips() {
   const openTips = () => document.querySelectorAll('.info-tip.is-open');
   const close = (tip) => { tip.classList.remove('is-open'); tip.setAttribute('aria-expanded', 'false'); };
@@ -889,7 +915,7 @@ function initRest() {
     pack: () => S.pack,
     exportBundle: () => S.wb.export_bundle(JSON.stringify(S.pack)),
     storePlay,
-    playUrl: (map) => new URL(`../play.html?expansion=1&map=${encodeURIComponent(map)}`, import.meta.url).href,
+    playUrl: playLibUrl,
   });
   $('xw-panel').before(S.preview.el);
   S.share = attachShare({

@@ -134,6 +134,7 @@ impl PlayWindowApp {
             slot_cabinet_assets: None,
             slot_gpu: None,
             netplay: None,
+            pack_reload: None,
             netplay_menu: None,
             slot_marquee_clock: Default::default(),
             slot_dots: Vec::new(),

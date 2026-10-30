@@ -1059,7 +1059,12 @@ impl OptionRow {
             H::CameraDistance => Self::CameraDistance,
             H::PreciseMovement => Self::PreciseMovement,
             H::Bloom => Self::Bloom,
-            H::DiagRows | H::AudioMute | H::DebugCamera | H::CheatMaxAp | H::CheatEncounters => {
+            H::DiagRows
+            | H::AudioMute
+            | H::DebugCamera
+            | H::CheatMaxAp
+            | H::CheatEncounters
+            | H::ReloadPack => {
                 return None;
             }
         })

@@ -23,6 +23,7 @@ impl PlayWindowApp {
         // world `rand()` stream, used to run here per redraw as well; it is a
         // per-tick session step now - `BootSession::step_field_fog`.)
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
+        self.poll_pack_watch();
         self.poll_gamepad();
         self.run_sim_ticks(ticks);
         // The frame's rumble, after its ticks (`BootSession::rumble_frame`).

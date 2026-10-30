@@ -1273,6 +1273,12 @@ pub(crate) enum Cmd {
         /// `--scene` entry.
         #[arg(long, value_name = "PATH")]
         expansion: Option<PathBuf>,
+        /// Watch the `--expansion` pack (its folder, or the `.lxpack` file)
+        /// and reload it in place whenever a file in it changes, the player
+        /// kept where they stand on the map - edit the TOML in an editor and
+        /// see it live. `End` reloads by hand with or without it.
+        #[arg(long, requires = "expansion")]
+        expansion_watch: bool,
         /// The pack map `--expansion` boots into (`maps/<id>.toml`).
         #[arg(long, value_name = "ID", requires = "expansion")]
         map: Option<String>,
@@ -1812,6 +1818,8 @@ mod locomotion_flag_tests {
             other => panic!("parsed {other:?}"),
         }
         assert!(parse(&["--expansion", "packs/rebirth"]).is_ok());
+        assert!(parse(&["--expansion", "packs/rebirth", "--expansion-watch"]).is_ok());
+        assert!(parse(&["--expansion-watch"]).is_err());
         assert!(parse(&["--map", "m"]).is_err());
         assert!(parse(&["--spawn", "s"]).is_err());
     }

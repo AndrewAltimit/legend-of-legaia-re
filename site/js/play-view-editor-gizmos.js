@@ -286,7 +286,9 @@ void main() {
     _edRay(cx, cy) {
       const cv = this.renderer.canvas;
       const r = cv.getBoundingClientRect();
-      const nx = ((cx - r.left) / r.width) * 2 - 1, ny = 1 - ((cy - r.top) / r.height) * 2;
+      /* The preview's Match painter mirrors the canvas (`mirrorView`). */
+      const m = this.mirrorView ? -1 : 1;
+      const nx = (((cx - r.left) / r.width) * 2 - 1) * m, ny = 1 - ((cy - r.top) / r.height) * 2;
       const inv = inv4(this._edVp());
       if (!inv) return null;
       const a = xf(inv, nx, ny, -1), b = xf(inv, nx, ny, 1);
@@ -298,7 +300,8 @@ void main() {
       const q = xf(vp || this._edVp(), p[0], p[1], p[2]);
       if (q[3] <= 0) return null;
       const r = this.renderer.canvas.getBoundingClientRect();
-      return [r.left + (q[0] + 1) / 2 * r.width, r.top + (1 - q[1]) / 2 * r.height];
+      const x = this.mirrorView ? -q[0] : q[0];
+      return [r.left + (x + 1) / 2 * r.width, r.top + (1 - q[1]) / 2 * r.height];
     }
 
     /* The ground's retail Y (down) at world (x, z): the heightfield the

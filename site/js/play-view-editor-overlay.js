@@ -382,7 +382,9 @@ void main() {
       if (!m || !this.renderer) return null;
       const cv = this.renderer.canvas;
       const rect = cv.getBoundingClientRect();
-      const nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+      let nx = ((clientX - rect.left) / rect.width) * 2 - 1;
+      /* The preview's Match painter mirrors the canvas (CSS). */
+      if (this.mirrorView) nx = -nx;
       const ny = 1 - ((clientY - rect.top) / rect.height) * 2;
       const vp = buildWorldOrbitVp(cv.width, cv.height, this._ext, this.cam);
       const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
@@ -419,8 +421,11 @@ void main() {
         this.cam.halfWidth = this.cam.halfHeight = Math.max(600, Math.min(16000, span * 0.7));
         /* Seen from the map's low-Z side, as the field camera looks: the
          * painter's columns keep their left and right, and its row 0 is
-         * the near edge. (No yaw keeps both: the view mirrors screen X.) */
-        this.cam.yaw = 0;
+         * the near edge - the painter's grid mirrored top to bottom, since
+         * the view mirrors screen X. Under the preview's Match painter
+         * (`matchPainter`, with the canvas mirrored back) from the high-Z
+         * side instead: row 0 the far edge, at the top, as painted. */
+        this.cam.yaw = this.matchPainter ? Math.PI : 0;
         this.cam.pitch = 0.62;
       }
       const p = this.editorTileCentre(c, r);

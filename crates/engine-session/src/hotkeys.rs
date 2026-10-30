@@ -54,10 +54,14 @@ pub enum HostHotkey {
     // --- lane L ---
     /// `F10`: the bloom enhancement ([`OptionsState::bloom`]).
     Bloom,
+    /// `End`: reload the active expansion pack from where it came from (the
+    /// native window's `--expansion` folder or bundle, the play page's pack
+    /// library) and re-enter the pack map the player is on, where they stand.
+    ReloadPack,
 }
 
 /// Every hotkey with its `KeyboardEvent.code`.
-pub const HOST_HOTKEYS: [(HostHotkey, &str); 13] = [
+pub const HOST_HOTKEYS: [(HostHotkey, &str); 14] = [
     (HostHotkey::DiagRows, "F1"),
     (HostHotkey::AudioMute, "F2"),
     (HostHotkey::DebugCamera, "F3"),
@@ -72,6 +76,7 @@ pub const HOST_HOTKEYS: [(HostHotkey, &str); 13] = [
     (HostHotkey::PreciseMovement, "KeyR"),
     // --- lane L ---
     (HostHotkey::Bloom, "F10"),
+    (HostHotkey::ReloadPack, "End"),
 ];
 
 impl HostHotkey {
@@ -109,6 +114,7 @@ impl HostHotkey {
             HostHotkey::CameraDistance => "camera_distance",
             HostHotkey::PreciseMovement => "precise_movement",
             HostHotkey::Bloom => "bloom",
+            HostHotkey::ReloadPack => "reload_pack",
         }
     }
 
@@ -129,6 +135,7 @@ impl HostHotkey {
             HostHotkey::CameraDistance => "Camera distance",
             HostHotkey::PreciseMovement => "Free-angle movement",
             HostHotkey::Bloom => "Bloom",
+            HostHotkey::ReloadPack => "Reload pack",
         }
     }
 
@@ -141,11 +148,23 @@ impl HostHotkey {
     /// Whether the key is refused while a front-end screen (boot logos,
     /// title, save select) owns the frame: the field camera's vantage and
     /// distance and the field locomotion knob have nothing to act on there.
+    /// A pack reload re-enters the map the player stands on, which a
+    /// front-end screen has taken the frame from.
     pub fn needs_field(self) -> bool {
         matches!(
             self,
-            HostHotkey::DebugCamera | HostHotkey::CameraDistance | HostHotkey::PreciseMovement
+            HostHotkey::DebugCamera
+                | HostHotkey::CameraDistance
+                | HostHotkey::PreciseMovement
+                | HostHotkey::ReloadPack
         )
+    }
+
+    /// Whether the key is a one-shot action with no state to show (the AP
+    /// cheat, the pack reload): the hotkey help lists its label alone, and
+    /// its notice is the action's own outcome.
+    pub fn is_action(self) -> bool {
+        matches!(self, HostHotkey::CheatMaxAp | HostHotkey::ReloadPack)
     }
 
     /// Whether a play host refuses this key with `screens` owning its frame:
@@ -216,7 +235,8 @@ pub fn apply_options_hotkey(opts: &mut OptionsState, hotkey: HostHotkey) -> bool
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
-        | HostHotkey::CheatEncounters => return false,
+        | HostHotkey::CheatEncounters
+        | HostHotkey::ReloadPack => return false,
     }
     true
 }
@@ -244,7 +264,8 @@ pub fn options_hotkey_state(opts: &OptionsState, hotkey: HostHotkey) -> Option<S
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
-        | HostHotkey::CheatEncounters => return None,
+        | HostHotkey::CheatEncounters
+        | HostHotkey::ReloadPack => return None,
     })
 }
 
@@ -260,6 +281,53 @@ pub fn toggle_notice(hotkey: HostHotkey, state: &str) -> String {
 /// nothing to act on yet.
 pub fn refused_notice(hotkey: HostHotkey) -> String {
     format!("{}: only while walking around", hotkey.label())
+}
+
+/// How a pack reload ended, as both hosts word it on their notice line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackReloadOutcome {
+    /// The pack activated again; `map` is the pack map re-entered with the
+    /// player where they stood, `None` when they were not on one.
+    Reloaded {
+        /// The pack's id and version (`"rebirth 0.3.0"`).
+        pack: String,
+        /// The map re-entered.
+        map: Option<String>,
+        /// Wall time of the reload, milliseconds.
+        ms: u32,
+    },
+    /// The player is in a fight or a screen on a pack map: the reload waits.
+    Busy,
+    /// No pack is active, or it has no source to reload from.
+    NoPack,
+    /// The pack did not read or activate; the running one stays. The
+    /// reason's first line is shown.
+    Refused(String),
+}
+
+/// The notice line after a pack reload (`"Reload pack: rebirth 0.3.0
+/// (180 ms)"`), the one wording both hosts show.
+pub fn pack_reload_notice(outcome: &PackReloadOutcome) -> String {
+    let label = HostHotkey::ReloadPack.label();
+    match outcome {
+        // The map is on screen; the line names what reloaded, short enough
+        // for the 320-wide notice row.
+        PackReloadOutcome::Reloaded { pack, ms, .. } => format!("{label}: {pack} ({ms} ms)"),
+        PackReloadOutcome::Busy => format!("{label}: waits until the fight or screen is over"),
+        PackReloadOutcome::NoPack => format!("{label}: no expansion pack is loaded"),
+        PackReloadOutcome::Refused(why) => {
+            let first = why.lines().next().unwrap_or_default();
+            let mut s = format!("{label} refused: {first}");
+            // The notice row holds about fifty-five characters; the host's
+            // log carries the whole line.
+            if s.len() > 56 {
+                let cut = (0..=53).rev().find(|&i| s.is_char_boundary(i)).unwrap_or(0);
+                s.truncate(cut);
+                s.push_str("...");
+            }
+            s
+        }
+    }
 }
 
 #[cfg(test)]
@@ -320,6 +388,24 @@ mod tests {
             Some(o.lighting_time_of_day.as_str())
         );
         assert_eq!(options_hotkey_state(&o, HostHotkey::DiagRows), None);
+    }
+
+    #[test]
+    fn pack_reload_notices_name_the_outcome() {
+        let r = PackReloadOutcome::Reloaded {
+            pack: "rebirth 0.3.0".into(),
+            map: Some("rebirth_atrium".into()),
+            ms: 180,
+        };
+        assert_eq!(
+            pack_reload_notice(&r),
+            "Reload pack: rebirth 0.3.0 (180 ms)"
+        );
+        let long = PackReloadOutcome::Refused(format!("{}\nsecond", "x".repeat(300)));
+        let s = pack_reload_notice(&long);
+        assert!(s.len() <= 56 && s.ends_with("..."), "{s}");
+        assert!(HostHotkey::ReloadPack.is_action());
+        assert!(HostHotkey::ReloadPack.needs_field());
     }
 
     #[test]

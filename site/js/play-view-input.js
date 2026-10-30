@@ -155,7 +155,9 @@
          * below steer the page's debug-orbit vantage (`F3`), the one camera
          * this page still owns, and are kept in step so toggling it does
          * not snap the view. */
-        const dx = (e.clientX - lastX) * 0.006;
+        /* A canvas the workbench preview mirrors (`mirrorView`) turns the
+         * way the drag goes on screen. */
+        const dx = (e.clientX - lastX) * 0.006 * (this.mirrorView ? -1 : 1);
         const dy = (e.clientY - lastY) * 0.004;
         this.cam.yaw += dx;
         this.cam.pitch = Math.max(0.12, Math.min(1.35, this.cam.pitch + dy));

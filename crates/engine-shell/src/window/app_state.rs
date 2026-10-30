@@ -724,6 +724,8 @@ pub(super) struct PlayWindowApp {
     pub(super) slot_gpu: Option<UploadedVram>,
     /// The multiplayer room this window is in (`--host` / `--join`).
     pub(super) netplay: Option<super::netplay::NetHost>,
+    /// The `--expansion` pack's hot reload (`End`, `--expansion-watch`).
+    pub(super) pack_reload: Option<super::pack_reload::PackReload>,
     /// The Multiplayer screen while no room is open (Tab, `--multiplayer`).
     pub(super) netplay_menu: Option<super::netplay::NetMenu>,
     /// The marquee's legend / blink counters.

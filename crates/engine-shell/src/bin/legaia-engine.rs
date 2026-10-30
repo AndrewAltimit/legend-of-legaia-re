@@ -447,6 +447,7 @@ fn main() -> Result<()> {
             play_record,
             play_cutscene,
             expansion,
+            expansion_watch,
             map,
             spawn,
             pack_mode,
@@ -556,6 +557,7 @@ fn main() -> Result<()> {
                 .with_play_record(play_record.as_deref())?
                 .with_play_cutscene(play_cutscene)
                 .with_expansion(expansion, map, spawn)?
+                .with_expansion_watch(expansion_watch)?
                 .with_pack_mode(pack_mode)
                 .with_netplay(window::NetLaunch {
                     host,

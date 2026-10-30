@@ -449,16 +449,18 @@ to hand to a rebuilt engine after a trap.
 | `unload_expansion()` | Deactivate; the progress stays dormant for the next save. |
 | `expansion_bundle_info(bytes)` | The library's read of a bundle, nothing activated and no disc needed: `{ ok, summary, errors }` or `{ ok: false, error: { kind, message } }`. |
 | `expansion_bundle_cover(bytes)` | The bundle's cover PNG bytes, empty when it has none. |
+| `expansion_library_check(library)` | The pack library's dependency check: `{ active, packs: [{ id, version, requires, conflicts }] }` in, per pack `{ problems: [{ kind, dep, installed, active, text }], uses }` out (`manifest::check_dependencies`). |
 | `expansion_info_json()` | The active pack, the map the player is on, `dormant` (the pack a loaded save names that is not loaded) and `compat` (what a save from another version of the active pack lost: `{ saved_version, pack_version, notice, lines }`). |
 | `enter_expansion_map(map, spawn)` | `SceneHost::enter_expansion_map` with `enter_field`'s staging around it; the scene build reads the map off the same `Scene`. |
 | `reload_expansion(bytes)` | The hot reload (`play_expansion_live`): activate as `load_expansion` does, then re-enter the map the player is on with them seated where they stood (`SceneHost::enter_expansion_map_seated`), the follow camera kept; JSON `{ ok, pack, errors, warnings, map, reentered, ms }`. |
 | `expansion_overlay_json()` | The active pack map for the editor overlay: tile rectangle and origin, each tile's wall mask and floor height (the world's floor sampler), spawns, exits, trigger and encounter zones, props, NPCs, the player. |
 | `expansion_seat_player(col, row)` | Stand the player on a map tile, on its floor. |
+| `expansion_set_quiet_arrivals(on)` | Enter pack maps without their arrival cutscene and place-name banner (`SceneHost::quiet_expansion_arrivals`). |
 | `expansion_preview_cutscene(id)` | Play a pack cutscene now, through the trigger path. |
 | `expansion_preview_fight(kind, id)` | Start a pack fight now: `kind` `formation` or `boss`, through a map trigger's `battle` / `boss` path. |
 | `expansion_preview_cards()` | Put one of every pack card the collection lacks into it and open the binder (the preview's own world, not a save). |
 
-The last six are the expansion workbench's edit-test loop
+The last seven are the expansion workbench's edit-test loop
 ([`expansion-workbench.md`](../tooling/expansion-workbench.md#the-3d-preview)):
 its 3D preview is this page framed as `play.html?xwpreview=1`, and its *Play
 here* reaches an open play tab over BroadcastChannel `legaia-expansion-live`;

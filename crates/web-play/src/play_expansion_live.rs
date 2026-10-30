@@ -19,8 +19,7 @@
 //! from the engine's own floor sampler, and the spawns, exits, trigger and
 //! encounter zones, props and NPCs of the definition the engine runs.
 
-use legaia_engine_battle::encounter::EncounterPhase;
-use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene_host::scene_host::ExpansionReloadSeat;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
@@ -38,6 +37,15 @@ impl LegaiaRuntime {
     /// (a fight, a card screen), answered with `busy: true`.
     pub fn reload_expansion(&mut self, bytes: &[u8]) -> String {
         self.reload_expansion_core(bytes).to_string()
+    }
+
+    /// Enter pack maps without their place-name banner and arrival cutscene
+    /// (`SceneHost::quiet_expansion_arrivals`): the workbench's 3D preview
+    /// sets it, and clears it to watch the arrival as a player would.
+    pub fn expansion_set_quiet_arrivals(&mut self, on: bool) {
+        if let Some(h) = self.scene_host.host_mut() {
+            h.quiet_expansion_arrivals = on;
+        }
     }
 
     /// The active pack map for the editor overlay (JSON, `null` off a pack
@@ -120,31 +128,15 @@ impl LegaiaRuntime {
     /// JsValue-free body of [`Self::reload_expansion`].
     pub(crate) fn reload_expansion_core(&mut self, bytes: &[u8]) -> Value {
         let t0 = now_ms();
-        let before = self.scene_host.host().and_then(|h| {
-            let map = h.active_expansion_map()?.to_string();
-            // A fight counts from the moment it is armed: the field-to-battle
-            // transition plays while the mode is still the field's.
-            let fighting = h.world.encounters.session.as_ref().is_some_and(|s| {
-                matches!(
-                    s.phase(),
-                    EncounterPhase::Transition { .. }
-                        | EncounterPhase::Triggered(_)
-                        | EncounterPhase::Battling { .. }
-                )
-            });
-            let field = h.world.mode == SceneMode::Field && !fighting;
-            let p = h.world.actors.first()?;
-            let seat = (
-                p.move_state.world_x,
-                p.move_state.world_z,
-                (p.move_state.render_26 as u16) & 0x0FFF,
-            );
-            Some((map, seat, field))
-        });
+        let before = self
+            .scene_host
+            .host()
+            .map(|h| h.expansion_reload_seat())
+            .unwrap_or(ExpansionReloadSeat::OffPack);
         // On a pack map but not on its field - a fight, a card screen, a
         // mode round: activation would take the map out from under it, so
         // the reload waits until the field is back.
-        if let Some((map, _, false)) = &before {
+        if let ExpansionReloadSeat::Busy { map } = &before {
             return json!({
                 "ok": false,
                 "busy": true,
@@ -165,7 +157,7 @@ impl LegaiaRuntime {
             return v;
         }
         let mut reentered = false;
-        if let Some((map, seat, true)) = before {
+        if let ExpansionReloadSeat::Field { map, seat } = before {
             let has = self
                 .scene_host
                 .host()

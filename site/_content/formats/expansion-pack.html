@@ -93,7 +93,20 @@ version = "0.1.0"</code></pre>
       <tr><td><code>base@&gt;=1.2 &lt;2</code></td><td>both bounds</td></tr>
     </tbody>
   </table>
-  <p>A pre-release satisfies a range only when a comparator names a pre-release of the same version. <code>check_dependencies</code> checks a manifest against the installed packs and names each missing pack, out-of-range version and installed conflict.</p>
+  <p>A pre-release satisfies a range only when a comparator names a pre-release of the same version. <code>check_dependencies</code> checks a manifest against the installed packs and names each missing pack, out-of-range version and installed conflict. The play page's pack library runs it on every installed pack and lists the findings under each row, a conflict with the active pack in red.</p>
+  <h3 id="one-active-pack">One active pack</h3>
+  <p>The engine plays <strong>one pack at a time</strong>: activating a pack replaces the active one, so <code>requires</code> and <code>conflicts</code> are checked and shown, never acted on, and a key qualified with another pack's id resolves to nothing at runtime. Layering several packs is a design, not yet a feature:</p>
+  <table>
+    <thead><tr><th>What a pack adds</th><th>Rule under layering</th></tr></thead>
+    <tbody>
+      <tr><td>Its own content (monsters, quests, cards, maps, items, arts)</td><td>Kept side by side: every id is namespaced by its pack</td></tr>
+      <tr><td>Allocated id spaces (formations and tracks from <code>0xE000</code>, queue bytes from <code>0x33</code>, aliased item ids)</td><td>Numbered per pack at activation, in load order, through an indirection the save records</td></tr>
+      <tr><td>Overrides of retail coordinates (encounter cells, a retail monster or boss, an entrance, shop stock)</td><td>An error, unless the later pack <code>requires</code> the earlier: then the later wins</td></tr>
+      <tr><td>Global settings (XP curve, multipliers, mode music)</td><td>The last pack in load order wins, with a warning</td></tr>
+      <tr><td>Progress (the save's expansion block)</td><td>One block per pack id, as a dormant block is kept today</td></tr>
+    </tbody>
+  </table>
+  <p>Load order would be the <code>requires</code> graph's topological order, ties in the player's order, with a cycle or an active conflict refusing the set. The cost is the runtime: the battle tables, formation and item seats, arts bank, audio track table, map seat and save block each hold one pack today.</p>
 </section>
 
 <section class="doc-section" id="content-ids-and-namespacing" data-doc="content-ids-and-namespacing">
@@ -361,7 +374,8 @@ asset expansion unbundle rebirth.lxpack -o out/        # out/ must be empty or a
 asset expansion info rebirth.lxpack [--json]
 asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
 legaia-engine packs [--dir DIR] [--json]                # the installed packs
-legaia-engine play-window --expansion rebirth           # an installed pack, by id</code></pre>
+legaia-engine play-window --expansion rebirth           # an installed pack, by id
+legaia-engine play-window --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch  # reload on every save</code></pre>
   <p><code>validate</code> exits non-zero on any error, and with <code>--strict</code> on any warning. None of these reads a disc. The native host's installed packs live in <code>packs/</code> under its data directory: <code>legaia-engine packs</code> lists each with its version, authors, pack format and whether it plays, <code>--expansion</code> takes a pack id as well as a path, and the launcher's pack picker opens there. The same checks run in the browser on the <a href="../tooling/expansion-workbench.html">expansion workbench</a>, with the visitor's disc resolving every coordinate.</p>
 </section>
 

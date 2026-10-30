@@ -527,6 +527,9 @@ pub struct ExpansionLaunch {
     pub map: Option<String>,
     /// Empty for the map's first spawn.
     pub spawn: String,
+    /// `--expansion-watch`: reload the pack whenever its files change
+    /// (`window::pack_reload`).
+    pub watch: bool,
 }
 
 impl ExpansionLaunch {
@@ -536,18 +539,43 @@ impl ExpansionLaunch {
     /// A `pack` that is not a path names an installed pack by id, looked up
     /// in the packs folder (`crate::launcher::resolve_pack`).
     pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
-        let dir = crate::launcher::packs_dir();
-        let path =
-            crate::launcher::resolve_pack(&self.pack, dir.as_deref()).with_context(|| {
-                format!(
-                    "--expansion {}: no such file or folder, and no installed pack has that id{}",
-                    self.pack.display(),
-                    dir.map(|d| format!(" (packs folder {})", d.display()))
-                        .unwrap_or_default()
-                )
-            })?;
+        let path = self.resolve_path()?;
         legaia_expansion_format::read_files(&path)
             .and_then(|files| legaia_expansion_format::ExpansionPack::from_files(&files))
+            .with_context(|| format!("--expansion {}", path.display()))
+    }
+
+    /// The pack folder or `.lxpack` file `pack` names: a path, or the id of
+    /// an installed pack in the packs folder (`crate::launcher::resolve_pack`).
+    pub fn resolve_path(&self) -> Result<std::path::PathBuf> {
+        let dir = crate::launcher::packs_dir();
+        crate::launcher::resolve_pack(&self.pack, dir.as_deref()).with_context(|| {
+            format!(
+                "--expansion {}: no such file or folder, and no installed pack has that id{}",
+                self.pack.display(),
+                dir.map(|d| format!(" (packs folder {})", d.display()))
+                    .unwrap_or_default()
+            )
+        })
+    }
+
+    /// [`Self::load`] for a hot reload: the validator runs first, and a pack
+    /// with an error is refused with its first lines, so the running pack
+    /// stays (activation itself checks less).
+    pub fn load_checked(&self) -> Result<legaia_expansion_format::ExpansionPack> {
+        let path = self.resolve_path()?;
+        let files = legaia_expansion_format::read_files(&path)
+            .with_context(|| format!("--expansion {}", path.display()))?;
+        let issues = legaia_expansion_format::validate::validate_files(&files, None);
+        let errors = legaia_expansion_format::share::error_lines(&issues);
+        if !errors.is_empty() {
+            let more = match errors.len() {
+                1 => String::new(),
+                n => format!(" (and {} more)", n - 1),
+            };
+            anyhow::bail!("{}{more}", errors[0]);
+        }
+        legaia_expansion_format::ExpansionPack::from_files(&files)
             .with_context(|| format!("--expansion {}", path.display()))
     }
 }
@@ -660,12 +688,23 @@ impl DebugSeeds {
                 pack,
                 map,
                 spawn: spawn.unwrap_or_default(),
+                watch: false,
             }),
             (None, None) => None,
             (None, Some(_)) => anyhow::bail!("--map needs --expansion"),
         };
         Ok(self)
     }
+    /// Attach `--expansion-watch` (clap makes it need `--expansion`).
+    pub fn with_expansion_watch(mut self, watch: bool) -> Result<Self> {
+        match self.expansion.as_mut() {
+            Some(launch) => launch.watch = watch,
+            None if watch => anyhow::bail!("--expansion-watch needs --expansion"),
+            None => {}
+        }
+        Ok(self)
+    }
+
     // --- expansion game modes (`--mode`) ---
     /// Attach the `--mode <INSTANCE>` operand.
     pub fn with_pack_mode(mut self, instance: Option<String>) -> Self {
@@ -1106,6 +1145,8 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F10" => KeyCode::F10,
         // The hotkey help panel (`help_key`): `F12`, or the `?` key.
         "F12" => KeyCode::F12,
+        // The pack reload (`window::pack_reload`).
+        "END" => KeyCode::End,
         "/" | "?" | "SLASH" => KeyCode::Slash,
         // The multiplayer room screen (`window::netplay`).
         "TAB" => KeyCode::Tab,
@@ -1284,6 +1325,7 @@ mod key_script_tests {
         names.extend((1..=12).map(|f| format!("F{f}")));
         names.push("/".to_string());
         names.push("Tab".to_string());
+        names.push("End".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names

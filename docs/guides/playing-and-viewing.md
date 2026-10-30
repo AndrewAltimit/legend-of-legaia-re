@@ -273,11 +273,12 @@ enhancement has a retail-faithful off position
 | `F2` | Mute audio | off, remembered | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
 | `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
+| `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
 In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
-around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
+around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state
 (`F11` fullscreen among them), under it the key each pad button is on (Cross,
 Circle, Start, ...), read from the live Key Config table, and the mouse's
@@ -758,11 +759,31 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --expansion rebirth.lxpack --map rebirth_tower_1f   # straight onto a map
 ```
 
+**Editing a pack while you play it.** `End` reloads the pack from its folder
+or `.lxpack` and, when you stand on one of its maps, rebuilds that map with you
+where you stood; the camera keeps its framing and no name banner plays. With
+`--expansion-watch` the window does that by itself whenever a file of the pack
+changes, so a map edited in a text editor shows a moment after it is saved:
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch
+```
+
+A pack with an error is refused and the running one stays; the notice line
+says why (*Reload pack refused: ...*, the whole line in the log). In a fight or
+a menu the reload waits until you are back on the map; a cutscene running on
+the map ends with the reload.
+
 **In the browser**, the play page's *Expansion pack* card loads an `.lxpack`
 once the disc is up, and *Enter map* walks straight onto one of its maps. The
-expansion workbench's *Play in browser* opens `play.html?expansion=1`, which
-loads the pack the workbench stored in this browser. *Unload* goes back to
-the game as it shipped.
+packs you install stay in the browser's pack library, listed with their cover,
+version and authors; a pack that needs another pack you have not installed, or
+conflicts with one you have, says so under its row. The expansion workbench's
+*Play in browser* installs the working pack in that library (replacing the
+version there) and opens the play page on it, and `End` on the play page
+reloads the library's copy in place. *Unload* goes back to the game as it
+shipped.
 
 With a pack loaded:
 

@@ -61,6 +61,8 @@ mod menu_draws;
 mod minigames;
 #[path = "window/netplay.rs"]
 mod netplay;
+#[path = "window/pack_reload.rs"]
+mod pack_reload;
 #[path = "window/record.rs"]
 mod record;
 #[path = "window/run.rs"]

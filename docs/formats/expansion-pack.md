@@ -99,6 +99,22 @@ A `requires` or `conflicts` entry is a pack id, optionally followed by `@` and a
 
 A pre-release (`2.0.0-rc.1`) satisfies a range only when a comparator names a pre-release of the same `MAJOR.MINOR.PATCH`. Content ids of another pack (`base:thing`) resolve against the id part of the entry. `manifest::check_dependencies` checks a manifest against a list of installed `(id, version)` pairs and names each missing pack, out-of-range version and installed conflict.
 
+The play page's pack library runs that check on every installed pack against the rest of the library (`LegaiaRuntime::expansion_library_check`) and lists, under each pack, an unmet requirement (missing, or the wrong version installed) and a conflict with an installed pack, the active one called out.
+
+### One active pack
+
+The engine plays **one pack at a time**: activating a pack (`World::activate_expansion`) replaces the active one. So `requires` and `conflicts` are checked and shown, never acted on: a pack another pack requires is not loaded beside it, and a key qualified with another pack's id (`base:thing`) resolves to nothing at runtime (`ItemKey::resolve`). Layering several packs is a design, not yet a feature, because every runtime seat assumes one pack:
+
+| What a pack adds | Why two packs collide | Rule under layering |
+|---|---|---|
+| Its own content (monsters, quests, cards, maps, items, arts) | Never by id: each id is namespaced by its pack | Kept side by side; a `pack:` reference resolves against the pack it names |
+| Allocated id spaces (formations and tracks from `0xE000`, queue bytes from `0x33`, the five aliased item ids) | Each pack numbers from the same base | Numbered per pack at activation, in load order, through an indirection the save block records |
+| Overrides of retail coordinates (encounter cells, a retail monster or boss, a retail scene's entrance, shop stock) | Two packs can override the same coordinate | An error, unless the later pack `requires` the earlier: then the later wins, as an explicit patch over it |
+| Global settings (the XP curve and multipliers, mode music, the starting party) | There is one of each | The last pack in load order that sets one wins, with a warning naming the pack it overrides |
+| Progress (the save's `LXP1` block, its tail records) | Written for the one active pack | One block per pack id; the save already keeps a pack's block dormant when that pack is not loaded |
+
+Load order would be the `requires` graph's topological order, ties broken by the order the player lists the packs, with a cycle or an active `conflicts` refusing the set before anything activates. What it costs is the runtime: the compiled battle tables, the formation and item seats, the arts bank, the audio track table, the map seat and the save block each hold one pack today, and each would hold a merged view in load order instead.
+
 ## Content ids and namespacing
 
 Content a section defines (a monster, a quest, a card, a map) has a local id: `[a-z0-9_]`, at most 48 characters, unique within its kind across the whole pack. The pack id is its namespace, so `tower_king` in pack `rebirth` is `rebirth:tower_king` to the engine and to other packs.

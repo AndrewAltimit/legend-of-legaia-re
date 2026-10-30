@@ -356,6 +356,10 @@ div.play-vis-head { cursor: default; }
 .play-lib-name { font-size: 0.8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .play-lib-ver { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); font-weight: 400; }
 .play-lib-by { font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.play-lib-deps { grid-column: 2 / -1; display: flex; flex-direction: column; gap: 0.1rem; font-size: 0.7rem; }
+.play-lib-dep { color: var(--text-muted); }
+.play-lib-dep.is-bad { color: #d84b4b; }
+.play-lib-dep.is-warn { color: var(--warn); }
 .play-lib-actions { display: flex; gap: 0.3rem; }
 .play-lib-actions button { font-size: 0.72rem; padding: 0.15rem 0.45rem; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); cursor: pointer; }
 .play-lib-actions button:hover { border-color: var(--accent); }
@@ -1419,16 +1423,23 @@ div.play-vis-head { cursor: default; }
       if (packLibrary) await packLibrary.loadActive();
       return;
     }
-    const rec = await readWorkbenchPack();
-    if (!rec || !rec.bytes) {
-      expansionMsg('No pack from the expansion workbench is stored in this browser.', true);
-      return;
+    const q = new URLSearchParams(location.search);
+    /* `&lib=<id>`: the workbench installed the pack in the library and made
+     * it active - play the library's copy. Without it, the older hand-off
+     * slot. */
+    if (q.get('lib') && packLibrary) {
+      await packLibrary.loadId(q.get('lib'));
+    } else {
+      const rec = await readWorkbenchPack();
+      if (!rec || !rec.bytes) {
+        expansionMsg('No pack from the expansion workbench is stored in this browser.', true);
+        return;
+      }
+      const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes);
+      loadExpansionBytes(bytes, `${rec.id || 'the workbench pack'}.lxpack`);
     }
-    const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes);
-    loadExpansionBytes(bytes, `${rec.id || 'the workbench pack'}.lxpack`);
     /* `&map=<id>` (the workbench's Play here): straight onto that map,
      * at `&spawn=<id>` or its first spawn. */
-    const q = new URLSearchParams(location.search);
     if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
   }
 
@@ -3655,6 +3666,7 @@ div.play-vis-head { cursor: default; }
   window.__playHotkeyPageState = {
     diag_rows: () => (hudEl && hudEl.style.display === 'none' ? 'off' : 'on'),
     cheat_encounters: () => (cheatNoEncEl.checked ? 'off' : 'on'),
+    reload_pack: () => 'reading the pack library',
   };
   const noticeEl = document.getElementById('play-notice');
   let noticeTimer = 0;
@@ -3702,6 +3714,10 @@ div.play-vis-head { cursor: default; }
     bloom: () => { syncRenderToggles(); applyRenderToggles(); },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
+    /* `End`: reload the active pack from the library's copy - the one the
+     * workbench's Play just updated - in place, the player kept where they
+     * stand (the native window reloads its `--expansion` folder). */
+    reload_pack: () => { if (packLibrary) packLibrary.reloadActive(expansionLive); },
   };
 
   /* Fullscreen `.play-screen` - the canvas wrap plus the minigame status

@@ -32,6 +32,28 @@ use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
 use legaia_expansion_format::refs::DiscRef;
 
+/// What [`SceneHost::expansion_reload_seat`] reads off the running world.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExpansionReloadSeat {
+    /// Not on a pack map: the reload re-activates the pack and enters
+    /// nothing.
+    OffPack,
+    /// On pack map `map` but off its field (a fight, a screen): the reload
+    /// waits.
+    Busy {
+        /// The pack map the player is on.
+        map: String,
+    },
+    /// On pack map `map`'s field at world `(x, z)` facing the 12-bit angle:
+    /// re-enter it there ([`SceneHost::enter_expansion_map_seated`]).
+    Field {
+        /// The pack map the player is on.
+        map: String,
+        /// `(x, z, facing)`.
+        seat: (i16, i16, u16),
+    },
+}
+
 impl SceneHost {
     /// Make `pack` the world's active expansion pack through the one
     /// activation path, [`legaia_engine_core::world::World::activate_expansion`]
@@ -50,6 +72,43 @@ impl SceneHost {
     /// The id of the pack map the player is in, if any.
     pub fn active_expansion_map(&self) -> Option<&str> {
         self.world.expansion.map.as_ref().map(|m| m.map_id.as_str())
+    }
+
+    /// Where a hot reload of the active pack would put the player back: the
+    /// one reading both play hosts take before they re-activate the pack
+    /// (the native window's `End` and `--expansion-watch`, the play page's
+    /// `reload_expansion`).
+    ///
+    /// A fight counts from the moment it is armed - the field-to-battle
+    /// transition plays while the mode is still the field's - and a card
+    /// screen or a mode round is not the field either: activation would
+    /// take the map out from under them, so those answer
+    /// [`ExpansionReloadSeat::Busy`] and the reload waits.
+    pub fn expansion_reload_seat(&self) -> ExpansionReloadSeat {
+        use legaia_engine_battle::encounter::EncounterPhase;
+        let Some(map) = self.active_expansion_map().map(str::to_string) else {
+            return ExpansionReloadSeat::OffPack;
+        };
+        let fighting = self.world.encounters.session.as_ref().is_some_and(|s| {
+            matches!(
+                s.phase(),
+                EncounterPhase::Transition { .. }
+                    | EncounterPhase::Triggered(_)
+                    | EncounterPhase::Battling { .. }
+            )
+        });
+        if self.world.mode != legaia_engine_mode::mode::SceneMode::Field || fighting {
+            return ExpansionReloadSeat::Busy { map };
+        }
+        let Some(p) = self.world.actors.first() else {
+            return ExpansionReloadSeat::OffPack;
+        };
+        let seat = (
+            p.move_state.world_x,
+            p.move_state.world_z,
+            (p.move_state.render_26 as u16) & 0x0FFF,
+        );
+        ExpansionReloadSeat::Field { map, seat }
     }
 
     /// Enter map `map_id` of the active pack as a playable field scene, the
@@ -235,7 +294,10 @@ impl SceneHost {
         self.world.recentre_field_window_on_player();
         // The place-name banner: the loader's balloon, carrying the map's
         // display name where a retail scene's MAN carries its own.
-        if let Some(banner) = crate::place_name_banner::man_load_banner(def.name.as_bytes(), true) {
+        if !self.quiet_expansion_arrivals
+            && let Some(banner) =
+                crate::place_name_banner::man_load_banner(def.name.as_bytes(), true)
+        {
             self.world.cutscene.text_balloon = Some(banner);
         }
         // The map's music (its `bgm`, its `[audio]` music or the zone at
@@ -261,6 +323,7 @@ impl SceneHost {
         // The first arrival cutscene whose gate holds and that is unseen (or
         // repeats) plays once the field is free.
         if seat.is_none()
+            && !self.quiet_expansion_arrivals
             && let Some(c) = def.enter_cutscenes.iter().find(|e| {
                 (e.repeat
                     || !self

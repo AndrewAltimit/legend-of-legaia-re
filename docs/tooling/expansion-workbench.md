@@ -367,11 +367,27 @@ enhancements.
 
 | Control | Does |
 |---|---|
-| Orbit | The free camera: the play page's debug orbit turned around a focus of its own (drag turns, wheel zooms out to a whole map, right or middle drag pans). Opens on the whole map from its low-Z side, as the field camera looks: the painter's row 0 nearest, its columns left to right. |
+| Orbit | The free camera: the play page's debug orbit turned around a focus of its own (drag turns, wheel zooms out to a whole map, right or middle drag pans). Opens on the whole map. |
+| Match painter | On (the default), the orbit view reads as the painter's grid: row 0 the far edge at the top, columns left to right. Off, the map from its low-Z side with the game's own handedness, as the field camera looks. |
+| Arrival | Off (the default), the preview enters a map without its arrival cutscene and place-name banner. Ticked, the map is entered again at its spawn as a player arrives. |
 | Player | The field camera: the follow view the game draws the map with, on the player. |
 | Fit map | Back to the whole map in the orbit camera. |
 | Walk from selection | Stands the player on the selected tile (`expansion_seat_player`) and switches to the field camera; the arrow keys walk in the picture. |
 | Layers | Walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props: translucent volumes over the picture. |
+
+**Orientation.** The game draws the world with screen X mirrored (the
+retail horizontal flip, `buildWorldOrbitVp`), so its picture of a map seen
+from above is the painter's grid flipped top to bottom - no camera turn makes
+the two agree. *Match painter* turns the orbit to the map's high-Z side and
+mirrors the frame's canvas back (a CSS flip, so the renderer's winding parity
+is untouched): screen right is +X and row 0 is at the top, as painted. The
+click-to-tile pick and the pan read the flip back (`mirrorView`); the Player
+camera is never flipped.
+
+**Arrivals.** The preview sets `SceneHost::quiet_expansion_arrivals`
+(`LegaiaRuntime::expansion_set_quiet_arrivals`), so an entry skips the map's
+`enter_cutscenes` and its place-name balloon; a player's entry, and the
+preview with *Arrival* ticked, play both.
 
 The volumes are read back from the engine, not from the editor:
 `expansion_overlay_json` is the definition the engine runs, with each tile's
@@ -492,27 +508,32 @@ its top half - 1152 draws. Rebirth's atrium (15 x 13) is the small case.
 |---|---|---|
 | `map_preview`, `validate`, `export_bundle` (each edit, in the workbench) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
 | Painter redraw on a hover | - | 1 - 6 ms |
-| Hot reload in wasm (`reload_expansion`: activation, map entry, the page's scene build) | 0.5 - 0.65 s | 2.6 s |
+| Hot reload, native build of the same call (`big_map_reload_cost`), of which the coplanar pass | - | 0.92 s, 0.30 s (2.5 s, 1.8 s with the bucket walk) |
 | Hot reload, the page's GL upload after it (`PlayView._rebuild`) | - | 0.4 s |
-| Hot reload, post to built | 0.6 - 1.0 s | 3.3 s |
 | One preview frame: sim, scene sync and draw list, no GL | - | 4 ms |
 | One preview frame under SwiftShader, `gl.finish` included | - | 46 - 244 ms |
 | Editor overlay | - | 15 357 vertices |
 
 The ranges are the same steps on a quiet and a busy machine. Every
 workbench-side step stays a few frames long, so painting a big map stays
-live. Two costs do not. The **rebuild** of a big decorated map is seconds of
-wasm, and it blocks the page while it runs - hence the delay that grows with
-the last rebuild and the **Auto** switch. Most of it is the scene build's
-cross-draw coplanar pass
+live. The **rebuild** of a big decorated map blocks the page while it runs -
+hence the delay that grows with the last rebuild and the **Auto** switch. The
+largest part of it was the scene build's cross-draw coplanar pass
 ([`renderer.md`](../subsystems/renderer.md#coplanar-surfaces-retails-ordering-model-the-ports-depth-policy)):
-94 006 planes, 1.8 million candidate pairs after the pass's in-plane sweep
-(the quadratic walk before the sweep made it 12 s). The headless **frame**
-is GL fill on a software rasteriser, which the throttles above keep off the
-editor's input; a hardware GPU draws the same 1152 draws in a few
-milliseconds. `play_expansion_live::tests::big_map_reload_cost` (ignored,
-disc-gated) builds the same map natively and splits the reload into the
-engine's map entry and the page's scene build.
+94 006 planes, each bucketed under 81 keys of a normal-and-distance
+straddle. Walked bucket by bucket it sorted 7.6 million entries and met the
+ground's tiles again in every bucket of the straddle (1.8 s natively, 12 s
+before the in-bucket sweep). The pass now gathers each normal key's planes
+once (`coplanar_draws::grouped_pair_hits`): two planes share a bucket of a key
+exactly when their distance quanta along it are at most two apart, so a pair
+is met once per key, cut on both in-plane axes, and the hits sorted by the
+bucket the walk would have met them in give its order - the same pairs, the
+same offsets, in 0.3 s. The headless **frame** is GL fill on a software
+rasteriser, which the throttles above keep off the editor's input; a hardware
+GPU draws the same 1152 draws in a few milliseconds.
+`play_expansion_live::tests::big_map_reload_cost` (ignored, disc-gated)
+builds the same map natively and splits the reload into the engine's map
+entry and the page's scene build.
 
 ## Sharing
 
@@ -544,7 +565,8 @@ the disc picker.
 ## Play here
 
 **Play here** plays the map the Maps tab is on in a play tab, for an
-edit-and-look loop with the game's own controls. It posts the bundle on
+edit-and-look loop with the game's own controls (the native window's twin is
+`--expansion-watch`, [below](#native-hot-reload)). It posts the bundle on
 BroadcastChannel `legaia-expansion-live` as `{ type: "reload", nonce, id,
 map, bytes }`; a play tab whose active pack has that id hot-reloads it in
 place (`PlayView.reloadExpansion`, the preview's call) and answers `{ type:
@@ -552,7 +574,24 @@ place (`PlayView.reloadExpansion`, the preview's call) and answers `{ type:
 with the player where they stood. With no answer the bundle goes to the
 hand-off slot below and a play tab opens as
 `play.html?expansion=1&map=<id>`, which enters that map once the pack loads.
-With **Live** ticked every edit goes to the open play tab as it is made.
+The opened tab is `play.html?expansion=1&lib=<id>&map=<id>`: the bundle went
+into the pack library first (below). With **Live** ticked every edit goes to
+the open play tab as it is made.
+
+### Native hot reload
+
+The native window reloads the pack it was started with in place: `End`
+(`HostHotkey::ReloadPack`) re-reads `--expansion`'s folder or bundle, and
+`--expansion-watch` polls the pack's files every half second (no file-system
+notification dependency) and reloads once a change has held still for one
+poll, so an editor's save-and-rename lands as one reload. The reload is the
+page's: the validator first (a pack with an error is refused and the running
+pack stays), the one activation path, then the map re-entered seated where
+the player stood (`SceneHost::expansion_reload_seat`, the reading both hosts
+take), the follow camera's framing kept and no banner, and the window's scene
+render state rebuilt. In a fight or a screen it waits and is retried. Both
+hosts word the outcome through `hotkeys::pack_reload_notice`; on the play page
+`End` reloads the library's copy of the active pack the same way.
 
 ## Persistence and the play hand-off
 
@@ -562,18 +601,25 @@ the tree or bundle it was loaded from. A returning visitor who loads a disc is
 offered "resume". Every access is wrapped; without storage the page still
 works.
 
-**Play in browser** exports the bundle and stores it in database
-`legaia-expansion`, store `packs`, key `play`, as
-`{ id, name, version, bytes, savedAt }` (`bytes` a `Uint8Array` of the
-`.lxpack`), then opens `play.html?expansion=1`. The play page reads that key
-once its disc is up and loads the bundle through `LegaiaRuntime::load_expansion`,
-the same call as its own *Install a pack* file input
-([`browser-host.md`](../subsystems/browser-host.md)).
+**Play in browser** (and Play here with no play tab open) exports the bundle
+and installs it in the play page's pack library below - an older version
+under the same id replaced, the pack made active - then opens
+`play.html?expansion=1&lib=<id>`, which plays the library's copy once its
+disc is up through `LegaiaRuntime::load_expansion`, the same call as its own
+*Install a pack* file input ([`browser-host.md`](../subsystems/browser-host.md)).
+The bundle is also written to the older hand-off slot (database
+`legaia-expansion`, store `packs`, key `play`, `{ id, name, version, bytes,
+savedAt }`), which a play page opened as plain `?expansion=1` reads.
 
 The play page's **installed packs** (`site/js/play-pack-library.js`) live in
 the same database and store, so neither side bumps its schema version: key
-`lib:<id>` holds `{ id, name, version, authors, description, bytes, cover,
-installedAt }` and key `active` the active pack's id. Installing (the file
+`lib:<id>` holds `{ id, name, version, authors, description, requires,
+conflicts, bytes, cover, installedAt }` and key `active` the active pack's id.
+Each row runs the format's dependency check against the rest of the library
+(`LegaiaRuntime::expansion_library_check`, over
+`manifest::check_dependencies`) and lists an unmet requirement and a conflict
+with an installed pack, the active one in red; the engine plays
+[one pack at a time](../formats/expansion-pack.md#one-active-pack). Installing (the file
 input, or a drop on the expansion card) reads the bundle through the import
 gates with `LegaiaRuntime::expansion_bundle_info` / `expansion_bundle_cover`,
 replaces any version installed under the same id, and plays it; the list shows

@@ -105,6 +105,11 @@
     let wantOrbit = true;
     let focusTile = null;
     let pendingEdit = null;
+    /* The orbit view turned and mirrored to read as the painter's grid
+     * (`xw-camera` `painter`), and whether an entry plays the map's arrival
+     * (`xw-arrival`): off, the preview enters quietly. */
+    let matchPainter = true;
+    let arrival = false;
 
     function viewReady() {
       const v = api.view();
@@ -160,6 +165,17 @@
 
     function applyCamera(v) {
       v.debugCamera = wantOrbit;
+      /* Match painter: the orbit sits on the map's high-Z side
+       * (`focusEditorTile`, yaw pi) and the canvas is mirrored, so screen
+       * right is +X and the painter's row 0 is the far edge at the top. The
+       * mirror is the canvas's (CSS), so the renderer's own winding parity
+       * is untouched; picking and panning read it back (`mirrorView`). */
+      if (v.matchPainter !== matchPainter) {
+        if (v.matchPainter !== undefined) v.cam.yaw += Math.PI;
+        v.matchPainter = matchPainter;
+      }
+      v.mirrorView = wantOrbit && matchPainter;
+      v.canvas.style.transform = v.mirrorView ? 'scaleX(-1)' : '';
       if (wantOrbit) {
         if (focusTile) v.focusEditorTile(focusTile[0], focusTile[1]);
         else if (!v.editorFocus) v.focusEditorTile();
@@ -177,12 +193,13 @@
       cv.addEventListener('contextmenu', (e) => e.preventDefault());
       cv.addEventListener('pointermove', (e) => {
         if (!down || down.b === 0 || !v.debugCamera || !v.editorFocus) return;
-        const dx = e.clientX - down.x, dy = e.clientY - down.y;
+        const dx = (e.clientX - down.x) * (v.mirrorView ? -1 : 1), dy = e.clientY - down.y;
         down.x = e.clientX; down.y = e.clientY;
         down.moved = true;
         const k = (v.cam.halfWidth * 2) / Math.max(cv.clientWidth, 1);
         const sy = Math.sin(v.cam.yaw), cy = Math.cos(v.cam.yaw);
-        /* Screen X is mirrored on this camera (buildWorldOrbitVp). */
+        /* Screen X is mirrored on this camera (buildWorldOrbitVp), and
+         * mirrored back by the canvas under Match painter. */
         v.editorFocus[0] += (dx * cy + dy * sy) * k;
         v.editorFocus[2] += (dx * sy - dy * cy) * k;
         focusTile = null;
@@ -200,8 +217,14 @@
       });
     }
 
+    function setQuiet() {
+      const rt = api.runtime();
+      if (rt && typeof rt.expansion_set_quiet_arrivals === 'function') rt.expansion_set_quiet_arrivals(!arrival);
+    }
+
     function enter(map, spawn) {
       const t0 = performance.now();
+      setQuiet();
       api.enterMap(map, spawn || '');
       if (packId(api.runtime()).map !== map) throw new Error(`map ${map} did not enter`);
       const v = viewReady();
@@ -258,8 +281,12 @@
         else pendingEdit = Object.assign(pendingEdit || {}, m);
       } else if (m.type === 'xw-overlay') {
         if (v) v.setEditorOverlay(m);
+      } else if (m.type === 'xw-arrival') {
+        arrival = !!m.on;
+        setQuiet();
       } else if (m.type === 'xw-camera') {
         wantOrbit = m.mode !== 'player';
+        if (m.painter !== undefined) matchPainter = !!m.painter;
         if (m.focus !== undefined) focusTile = m.focus;
         if (v) {
           if (m.focus === null) v.editorFocus = null;
