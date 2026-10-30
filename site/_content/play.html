@@ -69,6 +69,7 @@
 .play-mode[disabled] { opacity: 0.45; cursor: not-allowed; }
 .play-mode.is-active { border-color: var(--accent); background: var(--accent-soft); }
 .play-mode-name { font-weight: 600; font-size: 0.92rem; }
+.play-mode-pack .play-mode-tag { color: var(--accent); }
 .play-mode-desc { color: var(--text-muted); font-size: 0.76rem; line-height: 1.45; }
 .play-mode-tag {
   font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-dim);
@@ -265,6 +266,8 @@ body.xw-preview .play-focus-veil { display: none; }
 .play-scene-item:hover { background: var(--bg-raised); }
 .play-scene-item.is-active { background: var(--accent-soft); }
 .play-scene-code { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); }
+.play-scene-group.is-pack { color: var(--accent); }
+.play-scene-pack-tag { color: var(--text-dim); text-transform: none; letter-spacing: 0; }
 .play-scene-group {
   font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--text-dim); padding: 0.45rem 0.2rem 0.2rem; font-family: var(--font-mono);
@@ -350,6 +353,7 @@ div.play-vis-head { cursor: default; }
 .play-lib-empty { font-size: 0.74rem; color: var(--text-dim); }
 .play-lib-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 1px solid var(--border); background: var(--bg); padding: 0.3rem; }
 .play-lib-row.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.play-lib-row.is-builtin .play-lib-cover.is-blank { color: var(--accent); }
 .play-lib-cover { width: 64px; height: 36px; object-fit: cover; display: block; background: var(--bg-raised); }
 .play-lib-cover.is-blank { display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-weight: 600; }
 .play-lib-meta { min-width: 0; }
@@ -432,6 +436,15 @@ div.play-vis-head { cursor: default; }
           prologue - the narrated tableaux in their sepia grade (Z or Space skips ahead, as on the
           console) - ending at the naming prompt. Continue loads a save from an inserted memory
           card. Idle on the title for 25 seconds, at the prompt or on the menu, and the attract movie plays, as on the console.</span>
+      </button>
+      <button class="play-mode play-mode-pack" type="button" data-mode="rebirth" id="play-mode-rebirth"
+              title="Load the Rebirth expansion pack this site serves, then boot to the title screen. The Expansion pack card below switches packs or unloads it.">
+        <span class="play-mode-tag">expansion pack</span>
+        <span class="play-mode-name">Legend of Legaia: Rebirth</span>
+        <span class="play-mode-desc">The same New Game with the project's flagship expansion pack
+          loaded: a tower that rose where the Mist died, built for the climb from level 60 to 99, with
+          its own quests, bosses, items and game modes. The pack points at your disc, it brings
+          no game data; Select in the pause menu opens its Journal.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
@@ -881,14 +894,11 @@ div.play-vis-head { cursor: default; }
 
         <div class="play-card" id="play-expansion-card">
           <h3>Expansion pack</h3>
-          <label class="play-save-import">Install a pack (.lxpack, or drop one on this card)
+          <label class="play-save-import">Install another pack (.lxpack, or drop one on this card)
             <input type="file" id="expansion-import" accept=".lxpack" disabled>
           </label>
           <div class="play-lib" id="expansion-library" aria-label="Installed packs"></div>
           <div class="play-btn-row">
-            <select id="expansion-map" disabled aria-label="Pack map"></select>
-            <button id="expansion-enter" type="button" disabled
-                    title="Walk straight into this map of the pack (its entrances in the retail scenes lead here too).">Enter map</button>
             <button id="expansion-unload" type="button" disabled
                     title="Play the game as it shipped. The pack's progress stays in your saves.">Unload</button>
           </div>
@@ -1197,9 +1207,32 @@ div.play-vis-head { cursor: default; }
     renderList('');
   }).catch(() => {});
 
+  /* The active expansion pack's maps, listed in the picker as a section of
+   * their own above the disc's (`expansionShow` sets it on a load and
+   * clears it on an unload): `{ name, maps: [{ id, name }] }` or null. A
+   * click enters the map through the same call the workbench's Play here
+   * uses (`enterExpansionMap`). */
+  let pickerPack = null;
+  /* The pack map running now (its id), from the entry's state. */
+  let activePackMap = null;
+  const escHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
   function renderList(filter) {
     const f = (filter || '').trim().toLowerCase();
     const parts = [];
+    if (pickerPack && pickerPack.maps.length) {
+      const maps = pickerPack.maps
+        .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f));
+      if (maps.length) {
+        parts.push(`<div class="play-scene-group is-pack">${escHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack</span></div>`);
+        for (const m of maps) {
+          const cls = m.id === activePackMap ? 'play-scene-item is-pack is-active' : 'play-scene-item is-pack';
+          parts.push(
+            `<button class="${cls}" type="button" data-pack-map="${escHtml(m.id)}">` +
+            `<span>${escHtml(m.name || m.id)}</span><span class="play-scene-code">${escHtml(m.id)}</span></button>`);
+        }
+      }
+    }
     for (const g of GROUPS) {
       const items = scenes
         .filter(s => s.category === g.key)
@@ -1208,7 +1241,7 @@ div.play-vis-head { cursor: default; }
       if (!items.length) continue;
       parts.push(`<div class="play-scene-group">${g.title}</div>`);
       for (const s of items) {
-        const cls = s.label === active ? 'play-scene-item is-active' : 'play-scene-item';
+        const cls = s.label === active && !activePackMap ? 'play-scene-item is-active' : 'play-scene-item';
         parts.push(
           `<button class="${cls}" type="button" data-scene="${s.label}">` +
           `<span>${s.display}</span><span class="play-scene-code">${s.label}</span></button>`);
@@ -1220,7 +1253,9 @@ div.play-vis-head { cursor: default; }
   searchEl.addEventListener('input', () => renderList(searchEl.value));
   listEl.addEventListener('click', (e) => {
     const b = e.target.closest('.play-scene-item');
-    if (b) enter(b.dataset.scene);
+    if (!b) return;
+    if (b.dataset.packMap) expansionEnterMap(b.dataset.packMap, '');
+    else enter(b.dataset.scene);
   });
 
   document.getElementById('play-modes').addEventListener('click', (e) => {
@@ -1228,7 +1263,23 @@ div.play-vis-head { cursor: default; }
     if (!b) return;
     for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
     b.classList.add('is-active');
-    if (b.dataset.mode === 'newgame') {
+    if (b.dataset.mode === 'rebirth') {
+      /* The built-in Rebirth pack (play-pack-library.js BUILTIN), then the
+       * same boot chain as New game. A pack that fails to load says why on
+       * the expansion card and boots nothing. */
+      if (!runtime || !packLibrary) return;
+      b.disabled = true;
+      packLibrary.playBuiltin('rebirth').then((ok) => {
+        b.disabled = false;
+        if (!ok) {
+          document.getElementById('play-expansion-card').scrollIntoView({ block: 'nearest' });
+          return;
+        }
+        supersedeStarts();
+        if (view) { try { view.stop(); } catch (e) {} }
+        runBootTitle(onTitleOutcome);
+      });
+    } else if (b.dataset.mode === 'newgame') {
       /* Boot chain: show the retail title card (New Game / Continue) off the
        * disc's own title art, then run the prologue cutscene chain (falling
        * back to Rim Elm directly if the cutscene scene fails to enter).
@@ -1323,8 +1374,6 @@ div.play-vis-head { cursor: default; }
    * (`load_expansion`), which validates and activates the pack; the page
    * keeps them only to hand back to a rebuilt engine (`recoverRuntime`). */
   const expansionInput = document.getElementById('expansion-import');
-  const expansionMapSel = document.getElementById('expansion-map');
-  const expansionEnterBtn = document.getElementById('expansion-enter');
   const expansionUnloadBtn = document.getElementById('expansion-unload');
   const expansionStatus = document.getElementById('expansion-status');
   let expansionBytes = null;
@@ -1334,18 +1383,14 @@ div.play-vis-head { cursor: default; }
     expansionStatus.classList.toggle('is-error', !!bad);
   }
 
+  /* A load's outcome: the pack's maps become a section of the scene picker
+   * (`pickerPack`), and Unload is offered. */
   function expansionShow(info) {
     const pack = info && info.pack;
     const ok = !!(info && info.ok && pack);
-    expansionMapSel.innerHTML = '';
-    for (const m of (ok ? pack.maps : [])) {
-      const o = document.createElement('option');
-      o.value = m.id;
-      o.textContent = m.name || m.id;
-      expansionMapSel.appendChild(o);
-    }
-    expansionMapSel.disabled = !ok || !pack.maps.length;
-    expansionEnterBtn.disabled = expansionMapSel.disabled;
+    pickerPack = ok ? { name: pack.name || pack.id, maps: pack.maps || [] } : null;
+    if (!ok) activePackMap = null;
+    renderList(searchEl.value);
     expansionUnloadBtn.disabled = !ok;
   }
 
@@ -1373,7 +1418,8 @@ div.play-vis-head { cursor: default; }
     const p = info.pack;
     const by = p.authors && p.authors.length ? ` by ${p.authors.join(', ')}` : '';
     const warn = info.warnings && info.warnings.length ? ` (${info.warnings.length} warning(s))` : '';
-    expansionMsg(`${p.name} ${p.version}${by}${warn}. New Game and Continue play with it; Select in the pause menu opens its Journal.`);
+    const where = p.maps && p.maps.length ? ` Its maps are listed first in the Scenes list.` : '';
+    expansionMsg(`${p.name} ${p.version}${by}${warn}. New Game and Continue play with it; Select in the pause menu opens its Journal.${where}`);
     expansionShow(info);
   }
 
@@ -1416,7 +1462,7 @@ div.play-vis-head { cursor: default; }
 
   async function expansionDiscReady() {
     expansionInput.disabled = false;
-    expansionMsg('No expansion pack: the game as it shipped. Install an .lxpack to add one.');
+    expansionMsg('No expansion pack: the game as it shipped. Play Rebirth from the list, or install an .lxpack.');
     if (packLibrary) packLibrary.render();
     /* Without the workbench's hand-off, play with the library's active pack. */
     if (!/[?&]expansion=1\b/.test(location.search)) {
@@ -1447,7 +1493,8 @@ div.play-vis-head { cursor: default; }
   function expansionEnterMap(id, spawn) {
     if (!runtime || !id) return;
     supersedeStarts();
-    enterWith(id, (v) => v.enterExpansionMap(id, spawn || ''));
+    const m = pickerPack && pickerPack.maps.find((x) => x.id === id);
+    enterWith((m && m.name) || id, (v) => v.enterExpansionMap(id, spawn || ''));
   }
 
   /* The workbench's edit-test loop (js/play-expansion-live.js): a Play here
@@ -1508,13 +1555,6 @@ div.play-vis-head { cursor: default; }
       if (f) await expansionInstall(new Uint8Array(await f.arrayBuffer()), f.name);
     });
   })();
-
-  expansionEnterBtn.addEventListener('click', () => {
-    const id = expansionMapSel.value;
-    if (!runtime || !id) return;
-    supersedeStarts();
-    enterWith(expansionMapSel.selectedOptions[0].textContent, (v) => v.enterExpansionMap(id, ''));
-  });
 
   expansionUnloadBtn.addEventListener('click', () => {
     if (!runtime) return;
@@ -1632,7 +1672,7 @@ div.play-vis-head { cursor: default; }
         view = new window.PlayView(runtime, canvas, {
           onState: onState,
           menuOverlay: menuCanvas,
-          onScene: (name) => { active = name; renderList(searchEl.value); },
+          onScene: (name) => { active = name; activePackMap = null; renderList(searchEl.value); },
           /* The opening naming prompt committed: the name is in the party
            * record from here on (status panel, dialogue, saves), so say so. */
           onNamed: (name) => {
@@ -1683,7 +1723,9 @@ div.play-vis-head { cursor: default; }
         if (window.__playApplyRenderToggles) window.__playApplyRenderToggles();
       }
       const st = run(view);
-      if (st && st.scene) { active = st.scene; renderList(searchEl.value); }
+      activePackMap = (st && st.expansion_map && st.expansion_map.id) || null;
+      if (st && st.scene) active = st.scene;
+      renderList(searchEl.value);
       view.start();
       /* Picking a scene is a user gesture: bring up the BGM output now (browser
        * autoplay policy) so the scene's music sounds without waiting for a

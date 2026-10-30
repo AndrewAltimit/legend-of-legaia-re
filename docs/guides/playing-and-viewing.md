@@ -743,18 +743,24 @@ challenges - and plays beside your own disc; it carries no game data of its
 own ([`expansion-pack.md`](../formats/expansion-pack.md)). The flagship pack is
 [`packs/rebirth/`](../../packs/rebirth/README.md).
 
-**On the desktop**, the launcher's *Expansion pack...* button picks one: an
+**On the desktop**, Rebirth comes with the game: the release archive carries it
+as `packs/rebirth.lxpack` beside the launcher
+([`releases.md`](../tooling/releases.md#the-bundled-expansion-pack)). The
+launcher's *Expansion pack...* button steps through the packs it finds - the
+archive's `packs/` folder and the `packs/` folder in your saves folder, where
+you can drop more - and past the last one opens a file dialog for any other
 `.lxpack` file, or the `pack.toml` inside a pack folder (dropping either on
 the window works too). The pack is checked the way the game checks it; one
 with errors is refused, and the help box lists the first few. A good pack is
 remembered in `launcher.toml` (`expansion = "..."`) and shown on the button by
 name; its version and authors are in the help box. *Delete* or a right-click
 on the button goes back to no pack. The launcher passes the pack to the game
-as `--expansion`, which also works by hand:
+as `--expansion`, which also works by hand, with a path or the id of a pack in
+either folder (`legaia-engine packs` lists them):
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
-    --expansion packs/rebirth           # New Game and Continue play with it
+    --expansion rebirth                 # New Game and Continue play with it
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --expansion rebirth.lxpack --map rebirth_tower_1f   # straight onto a map
 ```
@@ -775,8 +781,15 @@ says why (*Reload pack refused: ...*, the whole line in the log). In a fight or
 a menu the reload waits until you are back on the map; a cutscene running on
 the map ends with the reload.
 
-**In the browser**, the play page's *Expansion pack* card loads an `.lxpack`
-once the disc is up, and *Enter map* walks straight onto one of its maps. The
+**In the browser**, Rebirth is built in: once the disc is up, the play page's
+*Legend of Legaia: Rebirth* boot mode loads it and opens the title screen, and
+the *Expansion pack* card lists it first with a *Play* button. The page fetches
+the pack tree the site serves (`packs/rebirth.json`, regenerated from
+`packs/rebirth/` on every site build) and the engine bundles it, so it is
+always the site's current version and is never copied into the browser's
+library. The same card loads any other `.lxpack`. While a pack is active, the
+Scenes list opens with a section under the pack's name listing its maps; a
+click walks straight onto one, as a retail scene's row does. The
 packs you install stay in the browser's pack library, listed with their cover,
 version and authors; a pack that needs another pack you have not installed, or
 conflicts with one you have, says so under its row. The expansion workbench's

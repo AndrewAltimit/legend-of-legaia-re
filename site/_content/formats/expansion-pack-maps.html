@@ -547,7 +547,7 @@ requires = { min_level = 30 }</code></pre>
   </table>
   <p>Coordinates here are <strong>retail field-grid tiles</strong>, not map-local ones: tile <code>x</code> covers world <code>x * 128 .. x * 128 + 127</code>, the <code>world &gt;&gt; 7</code> quantisation the retail walk-on trigger dispatcher uses (<a href="../subsystems/field-locomotion.html">field locomotion</a>). An exit's arrival <code>tile</code> is in the same space, so a map's exit can land beside its own entrance.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 730 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a pack map is reached: a step onto an entrance rectangle in a retail field scene passes the EntranceWatch gate into SceneHost enter_expansion_map, as do the Journal's Travel page, the --map flag or the play page's Enter map, and a Load of a save made on a map; the map's exits lead back to a retail scene or into another map of the pack">
+    <svg viewBox="0 0 730 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a pack map is reached: a step onto an entrance rectangle in a retail field scene passes the EntranceWatch gate into SceneHost enter_expansion_map, as do the Journal's Travel page, the --map flag or the play page's scene list, and a Load of a save made on a map; the map's exits lead back to a retail scene or into another map of the pack">
       <defs><marker id="em-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="20" y="20" width="150" height="52" rx="4"/>
       <rect class="dg-node" x="195" y="20" width="150" height="52" rx="4"/>
@@ -562,7 +562,7 @@ requires = { min_level = 30 }</code></pre>
       <text class="dg-label" x="270" y="42">Entrance rect</text><text class="dg-sub" x="270" y="60">field-grid tiles</text>
       <text class="dg-label" x="450" y="42">EntranceWatch</text><text class="dg-sub" x="450" y="60">step on, gate holds</text>
       <text class="dg-label" x="95" y="152">Journal: Travel</text><text class="dg-sub" x="95" y="170">any map of the pack</text>
-      <text class="dg-label" x="270" y="152">--map / Enter map</text><text class="dg-sub" x="270" y="170">direct entry</text>
+      <text class="dg-label" x="270" y="152">--map / scene list</text><text class="dg-sub" x="270" y="170">direct entry</text>
       <text class="dg-label" x="450" y="152">enter_expansion_map</text><text class="dg-sub" x="450" y="170">SceneHost</text>
       <text class="dg-label" x="635" y="152">Pack map</text><text class="dg-sub" x="635" y="170">base scene + layer</text>
       <text class="dg-label" x="450" y="262">Load a map save</text><text class="dg-sub" x="450" y="280">resume_save re-enters</text>
@@ -603,7 +603,7 @@ requires = { min_level = 30 }</code></pre>
 <section class="doc-section" id="gaps" data-doc="gaps">
   <h2>Gaps</h2>
   <ul class="bullets">
-    <li><strong>Camera preset on an in-world entry.</strong> A map entered through an entrance or a Travel pick keeps the follow camera's distance; the map's <code>camera</code> preset applies on a host's direct entry (<code>--map</code>, the play page's <em>Enter map</em>).</li>
+    <li><strong>Camera preset on an in-world entry.</strong> A map entered through an entrance or a Travel pick keeps the follow camera's distance; the map's <code>camera</code> preset applies on a host's direct entry (<code>--map</code>, a pack map row in the play page's scene list).</li>
     <li><strong>NPC clips.</strong> A patrolling NPC keeps <code>walk_clip</code> (or its idle clip) at the ends of its legs; nothing cues the idle clip back between legs.</li>
   </ul>
 </section>

@@ -1145,7 +1145,7 @@ once, with no streaming.
   decoration cells, which neither host deforms per frame.
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
-  preset applies on a host's direct entry (`--map`, the play page's
-  *Enter map*).
+  preset applies on a host's direct entry (`--map`, a pack map row in the
+  play page's scene list).
 - **NPC clips.** A patrolling NPC keeps `walk_clip` (or its idle clip) at the
   ends of its legs; nothing cues the idle clip back between legs.
