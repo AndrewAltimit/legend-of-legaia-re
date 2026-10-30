@@ -621,7 +621,10 @@ yaw = 0.0                                   # added to facing into the room
 ```
 
 A brush's draw for a tile is a pure function of its `seed`, its index and
-the tile, so editing one brush never reshuffles another. An edge copy is
+the tile, so editing one brush never reshuffles another. A brush paints
+floor tiles; it paints a walled tile only when its `on` names that tile's
+character, which is how a forest stands its trees on the thicket that walls
+a path in. An edge copy is
 pushed against the walled side and turned to face into the room (a mesh
 whose front faces `+Z` needs no `yaw`); a corner tile gets one copy per
 walled side.

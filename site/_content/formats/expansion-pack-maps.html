@@ -361,7 +361,7 @@ walls = "#"
 every = 3
 inset = 6
 y = 120</code></pre>
-  <p>A brush's draw for a tile is a pure function of its seed, its index and the tile; an edge copy is pushed against the walled side and turned to face the room. Limits: 8192 decorations a map, 32 a tile. A map decorated on more tiles than it has free records (of 508) bakes cells of <code>c x c</code> tiles onto one anchor tile each. Decorations on the tile a placed prop's record anchors on are left out, with a validator warning.</p>
+  <p>A brush paints floor tiles, and a walled tile only when its <code>on</code> names that tile's character (a forest's trees on the thicket that walls a path in). A brush's draw for a tile is a pure function of its seed, its index and the tile; an edge copy is pushed against the walled side and turned to face the room. Limits: 8192 decorations a map, 32 a tile. A map decorated on more tiles than it has free records (of 508) bakes cells of <code>c x c</code> tiles onto one anchor tile each. Decorations on the tile a placed prop's record anchors on are left out, with a validator warning.</p>
   <h3 id="organic-placement">Organic placement</h3>
   <p>Scatter brushes jitter, turn, scale and tilt each mesh, and a <code>cluster = { centre, radius, falloff }</code> thins a brush from a dense centre to a sparse rim. Edge runs take <code>jitter</code>, <code>yaw_jitter</code>, <code>scale_range</code> and a <code>seed</code>; decal brushes jitter position, yaw and size.</p>
   <h3 id="decals">Decals</h3>

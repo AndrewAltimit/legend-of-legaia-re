@@ -156,6 +156,17 @@ fn scatter_follows_density_and_keeps_paths_clear() {
     m.scatter[0].density = 1.0;
     let d = m.decorations().unwrap();
     assert_eq!(d.len(), 3, "one on each `,` tile");
+    // A walled tile takes a brush only when `on` names it: an unnamed brush
+    // never paints the walls, `#` paints exactly the 20 wall tiles.
+    m.scatter[0].on = String::new();
+    m.scatter[0].rect = [0, 0, 6, 4];
+    assert!(m.decorations().unwrap().iter().all(|x| {
+        let [c, r] = x.tile;
+        (1..=5).contains(&c) && (1..=3).contains(&r)
+    }));
+    m.scatter[0].on = "#".into();
+    let d = m.decorations().unwrap();
+    assert_eq!(d.len(), 20, "one on each wall tile");
 }
 
 #[test]

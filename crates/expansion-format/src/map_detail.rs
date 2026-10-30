@@ -1028,7 +1028,13 @@ impl crate::map::MapDef {
             for row in r0..=r1 {
                 for col in c0..=c1 {
                     let (c, r) = (usize::from(col), usize::from(row));
-                    if !floor(c, r) || !char_ok(&brush.on, c, r) {
+                    // A brush paints floor tiles; a walled tile only when its
+                    // `on` names the tile's character outright (a forest's
+                    // thicket, the trees standing on the tiles that wall the
+                    // path in).
+                    let named = !brush.on.is_empty() && char_ok(&brush.on, c, r);
+                    let walled_ok = named && grid.get(c, r).is_some_and(|t| !t.void);
+                    if !(floor(c, r) || walled_ok) || !char_ok(&brush.on, c, r) {
                         continue;
                     }
                     if brush.keep_clear && clear.contains(&[col, row]) {

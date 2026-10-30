@@ -354,3 +354,46 @@ fn a_kept_room_seats_its_animated_scenery() {
         assert!(!host.world.npcs.positions.contains_key(&(p.index as u8)));
     }
 }
+
+/// Every Rebirth map leaves its base scene's texels as the base scene wrote
+/// them: the foreign meshes, models, decals and the particle sheet all land
+/// in VRAM the base left free. Pins the 4F Verdant Vault's pink-veined green
+/// stone (`concnow`'s own 4bpp camouflage texture, CLUT row 509) as the
+/// retail texel, not a relocation collision.
+#[test]
+fn no_rebirth_map_overwrites_its_base_scenes_texels() {
+    let Some(mut host) = host() else { return };
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("Rebirth loads");
+    let maps: Vec<(String, String)> = pack
+        .maps
+        .iter()
+        .filter_map(|(id, m)| m.base.scene_name().map(|s| (id.clone(), s.to_string())))
+        .collect();
+    host.activate_expansion_pack(Arc::new(pack))
+        .expect("activates");
+    assert!(maps.len() >= 8, "{} maps", maps.len());
+    for (map, base) in maps {
+        host.enter_expansion_map(&map, "")
+            .unwrap_or_else(|e| panic!("{map}: {e:#}"));
+        let scene = host.scene.as_ref().unwrap();
+        let with = field_resources(&host.index, scene).expect("the map's resources");
+        let b = Scene::load(&host.index, &base).expect("the base scene");
+        let without = field_resources(&host.index, &b).expect("the base's resources");
+        let mut kept = 0usize;
+        for y in 0..512 {
+            for x in 0..1024 {
+                if without.vram.is_written(x, y) {
+                    assert_eq!(
+                        with.vram.pixel(x, y),
+                        without.vram.pixel(x, y),
+                        "{map}: base texel ({x}, {y}) of {base} changed"
+                    );
+                    kept += 1;
+                }
+            }
+        }
+        eprintln!("[{map}] {kept} texels of {base} unchanged");
+        assert!(kept > 10_000, "{map}: {kept} base texels");
+    }
+}
