@@ -550,7 +550,7 @@ history's step around each 3D edit (`ctx.commit`).
 Measured headless (Chromium with SwiftShader, the software GL, on the real
 disc) on the largest map the format allows: 120 x 120 tiles, walls round the
 edge and a wall pillar every 8 tiles, and a scatter brush at density 0.6 over
-its top half - 1152 draws. Rebirth's atrium (15 x 13) is the small case.
+its top half - 1152 draws. Rebirth's atrium (29 x 13) is the small case.
 
 | Step | Atrium | 120 x 120 |
 |---|---|---|
