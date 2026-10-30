@@ -352,6 +352,16 @@ impl NetPlay {
             .map_or_else(|| id.to_string(), |p| p.name.clone())
     }
 
+    /// Name `net`'s seats after the players in them, so a screen reads
+    /// "Noa" rather than "Seat 2" (and a watcher sees nobody as "You").
+    pub(crate) fn name_seats(&self, net: &mut NetMode) {
+        net.mode.seat_names = net
+            .seats
+            .iter()
+            .map(|p| p.map(|id| self.name_of(id)).unwrap_or_default())
+            .collect();
+    }
+
     fn note(&mut self, line: String) {
         self.chat.push(line);
         let excess = self.chat.len().saturating_sub(CHAT_LINES);
@@ -909,6 +919,8 @@ impl NetPlay {
                 return;
             }
         };
+        let mut net = net;
+        self.name_seats(&mut net);
         let name = net.mode.name.clone();
         let phase = if let Some(cfg) = net.lockstep_config() {
             let session = LockstepSession::new(ModeSim::new(net.mode.clone()), cfg);

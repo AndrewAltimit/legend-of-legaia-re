@@ -87,8 +87,12 @@ pub struct CardSeat {
 
 /// Frames a toast line stays up.
 pub const TOAST_FRAMES: u16 = 150;
-/// Toast lines on screen at once.
-pub const TOAST_LINES: usize = 3;
+/// Toast lines on screen at once: one, the rest queued behind it, so a
+/// burst of drops (a boss's spoils, a booster's cards) reads in turn
+/// rather than piling up over the party HUD and the quest toast.
+pub const TOAST_LINES: usize = 1;
+/// Queued lines past which the showing one runs at double speed.
+pub const TOAST_HURRY: usize = 3;
 /// Notices kept for a host that has not taken them.
 const RECENT_CAP: usize = 32;
 
@@ -146,8 +150,13 @@ impl CardRuntime {
         }
         let excess = self.recent.len().saturating_sub(RECENT_CAP);
         self.recent.drain(..excess);
+        let step = if self.toasts.len() > TOAST_HURRY {
+            2
+        } else {
+            1
+        };
         for t in self.toasts.iter_mut().take(TOAST_LINES) {
-            t.frames_left = t.frames_left.saturating_sub(1);
+            t.frames_left = t.frames_left.saturating_sub(step);
         }
         self.toasts.retain(|t| t.frames_left > 0);
     }
@@ -341,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn notices_toast_for_a_while_and_stay_takeable() {
+    fn notices_toast_one_at_a_time_and_stay_takeable() {
         let mut rt = CardRuntime::default();
         for i in 0..4 {
             rt.notices.push(CardNotice::Booster {
@@ -350,18 +359,27 @@ mod tests {
             });
         }
         rt.tick_toasts();
-        assert_eq!(
-            rt.toast_lines(),
-            ["Got booster: B0", "Got booster: B1", "Got booster: B2"]
-        );
-        for _ in 0..TOAST_FRAMES {
+        assert_eq!(rt.toast_lines(), ["Got booster: B0"], "one line shows");
+        let mut shown = vec![rt.toast_lines()[0].to_string()];
+        for _ in 0..TOAST_FRAMES as usize * 4 {
             rt.tick_toasts();
+            if let Some(l) = rt.toast_lines().first()
+                && shown.last().map(String::as_str) != Some(*l)
+            {
+                shown.push(l.to_string());
+            }
         }
         assert_eq!(
-            rt.toast_lines(),
-            ["Got booster: B3"],
-            "the fourth waits its turn"
+            shown,
+            [
+                "Got booster: B0",
+                "Got booster: B1",
+                "Got booster: B2",
+                "Got booster: B3"
+            ],
+            "each waits its turn"
         );
+        assert!(rt.toast_lines().is_empty());
         assert_eq!(rt.take_notices().len(), 4);
         assert!(rt.take_notices().is_empty());
     }

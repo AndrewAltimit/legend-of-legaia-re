@@ -189,6 +189,13 @@ pub struct ActiveMode {
     /// "You" and the one [`Self::settle`] settles for. `0` offline; a
     /// networked session seats each peer where the room put it.
     pub local_seat: usize,
+    /// Each seat's player name, by seat (a networked session's room names;
+    /// empty offline, and an empty name reads as the seat number).
+    pub seat_names: Vec<String>,
+    /// This machine's player holds no seat and watches the table (a party
+    /// night's players outside a Grid Duel match, a late joiner): no seat
+    /// is "You", and [`Self::local_seat`] only picks the side drawn near.
+    pub watching: bool,
     /// A view received from a hosting peer, drawn in place of the local
     /// session's (a host-authoritative guest holds the session only for its
     /// labels; see [`Self::set_remote_view`]).
@@ -306,6 +313,8 @@ impl ActiveMode {
             runner,
             card_names,
             local_seat: 0,
+            seat_names: Vec::new(),
+            watching: false,
             remote_view: None,
             remote_results: None,
             book,
@@ -348,7 +357,7 @@ impl ActiveMode {
 
     /// Advance one frame; returns this tick's events as log lines.
     pub fn tick(&mut self, pads: &[PadWord]) -> Vec<String> {
-        let me = self.local_seat;
+        let me = self.viewer_seat();
         self.tick_for(pads, &[me]).pop().unwrap_or_default()
     }
 
@@ -359,19 +368,24 @@ impl ActiveMode {
         fn lines<E>(
             ev: &[E],
             viewers: &[usize],
-            f: fn(&E, usize) -> Option<String>,
+            names: &[String],
+            f: fn(&E, &Namer<'_>) -> Option<String>,
         ) -> Vec<Vec<String>> {
             viewers
                 .iter()
-                .map(|&me| ev.iter().filter_map(|e| f(e, me)).collect())
+                .map(|&me| {
+                    let n = Namer { me, names };
+                    ev.iter().filter_map(|e| f(e, &n)).collect()
+                })
                 .collect()
         }
+        let names = &self.seat_names;
         match &mut self.runner {
-            ModeRunner::Poker(s) => lines(&s.tick(pads), viewers, poker_line),
-            ModeRunner::Duel(s) => lines(&s.tick(pads), viewers, duel_line),
-            ModeRunner::Golf(s) => lines(&s.tick(pads), viewers, golf_line),
-            ModeRunner::Race(s) => lines(&s.tick(pads), viewers, race_line),
-            ModeRunner::PropHunt(s) => lines(&s.tick(pads), viewers, hunt_line),
+            ModeRunner::Poker(s) => lines(&s.tick(pads), viewers, names, poker_line),
+            ModeRunner::Duel(s) => lines(&s.tick(pads), viewers, names, duel_line),
+            ModeRunner::Golf(s) => lines(&s.tick(pads), viewers, names, golf_line),
+            ModeRunner::Race(s) => lines(&s.tick(pads), viewers, names, race_line),
+            ModeRunner::PropHunt(s) => lines(&s.tick(pads), viewers, names, hunt_line),
         }
     }
 
@@ -387,9 +401,13 @@ impl ActiveMode {
         match &mut self.runner {
             ModeRunner::PropHunt(s) => {
                 let ev = s.tick_with_positions(pads, positions);
+                let names = &self.seat_names;
                 viewers
                     .iter()
-                    .map(|&me| ev.iter().filter_map(|e| hunt_line(e, me)).collect())
+                    .map(|&me| {
+                        let n = Namer { me, names };
+                        ev.iter().filter_map(|e| hunt_line(e, &n)).collect()
+                    })
                     .collect()
             }
             _ => self.tick_for(pads, viewers),
@@ -404,13 +422,16 @@ impl ActiveMode {
         pads: &[PadWord],
         positions: &[Option<crate::fixed::Vec2>],
     ) -> Vec<String> {
-        let me = self.local_seat;
+        let me = self.viewer_seat();
+        let names = &self.seat_names;
         match &mut self.runner {
-            ModeRunner::PropHunt(s) => s
-                .tick_with_positions(pads, positions)
-                .iter()
-                .filter_map(|e| hunt_line(e, me))
-                .collect(),
+            ModeRunner::PropHunt(s) => {
+                let n = Namer { me, names };
+                s.tick_with_positions(pads, positions)
+                    .iter()
+                    .filter_map(|e| hunt_line(e, &n))
+                    .collect()
+            }
             _ => self.tick(pads),
         }
     }
@@ -461,10 +482,38 @@ impl ActiveMode {
         self.remote_view.is_some()
     }
 
-    /// Seat `seat` as this machine's player reads it ("You" for
-    /// [`Self::local_seat`]).
+    /// Seat `seat` as this machine's player reads it: "You" for
+    /// [`Self::local_seat`] (unless [`Self::watching`]), else the seat's
+    /// player name, else "Seat N".
     pub fn seat_name(&self, seat: usize) -> String {
-        seat_name_for(seat, self.local_seat)
+        self.seat_label(seat, &format!("Seat {}", seat + 1))
+    }
+
+    /// The seat this machine's log lines are worded for: the local seat, or
+    /// none (`usize::MAX`) for a watcher.
+    pub fn viewer_seat(&self) -> usize {
+        if self.watching {
+            usize::MAX
+        } else {
+            self.local_seat
+        }
+    }
+
+    /// Whether `seat` is this machine's player's.
+    pub fn is_you(&self, seat: usize) -> bool {
+        !self.watching && seat == self.local_seat
+    }
+
+    /// [`Self::seat_name`] with `fallback` for a seat with no name (the
+    /// duel's "Rival").
+    pub fn seat_label(&self, seat: usize, fallback: &str) -> String {
+        if self.is_you(seat) {
+            return "You".to_string();
+        }
+        match self.seat_names.get(seat) {
+            Some(n) if !n.is_empty() => n.clone(),
+            _ => fallback.to_string(),
+        }
     }
 
     pub fn view(&self) -> ModeView {
@@ -477,6 +526,25 @@ impl ActiveMode {
             ModeRunner::Golf(s) => ModeView::Golf(s.view()),
             ModeRunner::Race(s) => ModeView::Race(s.view()),
             ModeRunner::PropHunt(s) => ModeView::PropHunt(s.view()),
+        }
+    }
+
+    /// The seat a turn-based table waits on: the poker seat to bet, the
+    /// Grid Duel seat to pick (or to take its spoils). `None` between turns
+    /// and for a real-time mode.
+    pub fn waiting_on(&self) -> Option<usize> {
+        use crate::cards::duel::DuelPhase;
+        match self.view() {
+            ModeView::Poker(v) => match v.phase {
+                crate::poker::Phase::Betting(_) => v.to_act,
+                _ => None,
+            },
+            ModeView::Duel(v) => match v.phase {
+                DuelPhase::PickCard { seat } | DuelPhase::PickCell { seat, .. } => Some(seat),
+                DuelPhase::Spoils { winner } => Some(winner),
+                DuelPhase::Finished => None,
+            },
+            _ => None,
         }
     }
 
@@ -631,11 +699,32 @@ pub fn seat_name_for(seat: usize, me: usize) -> String {
     }
 }
 
-fn poker_line(e: &PokerEvent, me: usize) -> Option<String> {
+/// How a log line names a seat for the player reading it: "You" for the
+/// reader's own seat (`me`; `usize::MAX` for a watcher), else the seat's
+/// player name when the session has one, else "Seat N".
+#[derive(Debug, Clone, Copy)]
+pub struct Namer<'a> {
+    pub me: usize,
+    pub names: &'a [String],
+}
+
+impl Namer<'_> {
+    pub fn name(&self, seat: usize) -> String {
+        if seat == self.me {
+            return "You".to_string();
+        }
+        match self.names.get(seat) {
+            Some(n) if !n.is_empty() => n.clone(),
+            _ => seat_name_for(seat, usize::MAX),
+        }
+    }
+}
+
+fn poker_line(e: &PokerEvent, n: &Namer<'_>) -> Option<String> {
     Some(match e {
         PokerEvent::HandStarted { hand, .. } => format!("Hand {hand}"),
         PokerEvent::Acted { seat, action } => {
-            let who = seat_name_for(*seat, me);
+            let who = n.name(*seat);
             match action {
                 Action::Fold => format!("{who}: fold"),
                 Action::Check => format!("{who}: check"),
@@ -650,7 +739,7 @@ fn poker_line(e: &PokerEvent, me: usize) -> Option<String> {
             hand,
             ..
         } => {
-            let who: Vec<String> = winners.iter().map(|&s| seat_name_for(s, me)).collect();
+            let who: Vec<String> = winners.iter().map(|&s| n.name(s)).collect();
             match hand {
                 Some(h) => format!(
                     "{} win {amount} ({})",
@@ -660,34 +749,34 @@ fn poker_line(e: &PokerEvent, me: usize) -> Option<String> {
                 None => format!("{} win {amount}", who.join(", ")),
             }
         }
-        PokerEvent::SeatBusted { seat } => format!("{} busted", seat_name_for(*seat, me)),
+        PokerEvent::SeatBusted { seat } => format!("{} busted", n.name(*seat)),
         PokerEvent::Finished => "Table closed".to_string(),
         PokerEvent::BlindPosted { .. } | PokerEvent::Dealt { .. } => return None,
     })
 }
 
-fn duel_line(e: &DuelEvent, me: usize) -> Option<String> {
+fn duel_line(e: &DuelEvent, n: &Namer<'_>) -> Option<String> {
     Some(match e {
         DuelEvent::Captured { by, chained, .. } => {
             let what = if *chained { "chain capture" } else { "capture" };
-            format!("{}: {what}", seat_name_for(*by, me))
+            format!("{}: {what}", n.name(*by))
         }
         DuelEvent::GameOver { scores } => format!("Final {} - {}", scores[0], scores[1]),
         DuelEvent::SpoilTaken { seat, card } => {
-            format!("{} takes {card}", seat_name_for(*seat, me))
+            format!("{} takes {card}", n.name(*seat))
         }
         DuelEvent::Placed { .. } => return None,
     })
 }
 
-fn golf_line(e: &GolfEvent, me: usize) -> Option<String> {
+fn golf_line(e: &GolfEvent, n: &Namer<'_>) -> Option<String> {
     Some(match e {
         GolfEvent::HoleStarted { hole } => format!("Hole {}", hole + 1),
-        GolfEvent::Hazard { seat } => format!("{}: hazard, +1 stroke", seat_name_for(*seat, me)),
+        GolfEvent::Hazard { seat } => format!("{}: hazard, +1 stroke", n.name(*seat)),
         GolfEvent::Holed { seat, strokes } => {
-            format!("{}: holed in {strokes}", seat_name_for(*seat, me))
+            format!("{}: holed in {strokes}", n.name(*seat))
         }
-        GolfEvent::PickedUp { seat } => format!("{}: picked up", seat_name_for(*seat, me)),
+        GolfEvent::PickedUp { seat } => format!("{}: picked up", n.name(*seat)),
         GolfEvent::Finished => "Round over".to_string(),
         GolfEvent::Struck { .. } | GolfEvent::WallHit { .. } | GolfEvent::HoleFinished { .. } => {
             return None;
@@ -695,32 +784,28 @@ fn golf_line(e: &GolfEvent, me: usize) -> Option<String> {
     })
 }
 
-fn race_line(e: &RaceEvent, me: usize) -> Option<String> {
+fn race_line(e: &RaceEvent, n: &Namer<'_>) -> Option<String> {
     Some(match e {
         RaceEvent::Go => "Go!".to_string(),
-        RaceEvent::Lap { seat, lap } => format!("{}: lap {}", seat_name_for(*seat, me), lap + 1),
+        RaceEvent::Lap { seat, lap } => format!("{}: lap {}", n.name(*seat), lap + 1),
         RaceEvent::Finished { seat, place, .. } => {
-            format!("{} finished #{place}", seat_name_for(*seat, me))
+            format!("{} finished #{place}", n.name(*seat))
         }
         RaceEvent::RaceOver => "Race over".to_string(),
         _ => return None,
     })
 }
 
-fn hunt_line(e: &HuntEvent, me: usize) -> Option<String> {
+fn hunt_line(e: &HuntEvent, n: &Namer<'_>) -> Option<String> {
     Some(match e {
         HuntEvent::RoundStarted { round, .. } => format!("Round {}", round + 1),
         HuntEvent::HuntersReleased => "Hunters released".to_string(),
         HuntEvent::Found { hunter, hider } => {
-            format!(
-                "{} found {}",
-                seat_name_for(*hunter, me),
-                seat_name_for(*hider, me)
-            )
+            format!("{} found {}", n.name(*hunter), n.name(*hider))
         }
-        HuntEvent::Missed { hunter, .. } => format!("{}: decoy!", seat_name_for(*hunter, me)),
-        HuntEvent::HunterOut { seat } => format!("{} is out", seat_name_for(*seat, me)),
-        HuntEvent::Taunt { seat, .. } => format!("{} taunts", seat_name_for(*seat, me)),
+        HuntEvent::Missed { hunter, .. } => format!("{}: decoy!", n.name(*hunter)),
+        HuntEvent::HunterOut { seat } => format!("{} is out", n.name(*seat)),
+        HuntEvent::Taunt { seat, .. } => format!("{} taunts", n.name(*seat)),
         HuntEvent::RoundOver { hunters_won } => if *hunters_won {
             "Hunters win the round"
         } else {

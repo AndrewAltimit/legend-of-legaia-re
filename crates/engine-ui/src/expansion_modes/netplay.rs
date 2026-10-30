@@ -10,7 +10,8 @@
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
 use super::{
-    Canvas, LINE, STAGE_H, STAGE_W, footer, header, ink, labels_to_draws, pen, seat_color,
+    Canvas, LINE, STAGE_H, STAGE_W, clip, footer, header, ink, labels_to_draws, pen, seat_color,
+    wrap,
 };
 use crate::TextDraw;
 
@@ -299,9 +300,11 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
         ink::PANEL,
         ink::PANEL_EDGE,
     );
-    let start = s.chat.len().saturating_sub(rows);
-    for (i, l) in s.chat[start..].iter().enumerate() {
-        c.text(l.clone(), 10, cy + 1 + i as i32 * LINE, pen::WHITE);
+    for (i, l) in wrapped_tail(s.chat, SCREEN_CHAT_CHARS, rows)
+        .into_iter()
+        .enumerate()
+    {
+        c.text(l, 10, cy + 1 + i as i32 * LINE, pen::WHITE);
     }
     let draft = match s.draft {
         Some(d) => format!("> {d}_"),
@@ -322,32 +325,66 @@ fn compose_screen(s: &NetScreen<'_>) -> Canvas {
     c
 }
 
+/// Characters a roaming-panel line holds (the panel is 128 px, its
+/// labels inset 4; a player row's dot takes 9 more).
+pub const PANEL_CHARS: usize = 19;
+/// Wrapped chat lines the roaming panel shows, newest last.
+pub const PANEL_CHAT_LINES: usize = 5;
+/// Characters a room-screen chat line holds.
+const SCREEN_CHAT_CHARS: usize = 48;
+
+/// `chat` wrapped to `width`, keeping the newest messages whole that fit in
+/// `rows` lines (the newest one's last `rows` lines when it alone runs
+/// longer), so no message shows from its middle.
+fn wrapped_tail(chat: &[String], width: usize, rows: usize) -> Vec<String> {
+    let mut kept: Vec<Vec<String>> = Vec::new();
+    let mut used = 0;
+    for msg in chat.iter().rev() {
+        let lines = wrap(msg, width);
+        if used + lines.len() > rows {
+            if kept.is_empty() {
+                kept.push(lines[lines.len() - rows..].to_vec());
+            }
+            break;
+        }
+        used += lines.len();
+        kept.push(lines);
+    }
+    kept.into_iter().rev().flatten().collect()
+}
+
 fn compose_panel(p: &NetPanel<'_>) -> Canvas {
     let mut c = Canvas::default();
-    let lines = p.players.len() + p.chat.len() + usize::from(p.notice.is_some()) + 1;
+    let chat = wrapped_tail(p.chat, PANEL_CHARS, PANEL_CHAT_LINES);
+    let notice: Vec<String> = p
+        .notice
+        .map(|n| wrap(n, PANEL_CHARS).into_iter().take(2).collect())
+        .unwrap_or_default();
+    let lines = p.players.len() + chat.len() + notice.len() + 1;
     let (w, x, y) = (128, STAGE_W - 132, NET_PANEL_TOP);
     let h = lines as i32 * 12 + 6;
     c.panel(x, y, w, h, [10, 14, 24, 200], ink::PANEL_EDGE);
-    c.text(p.title, x + 4, y + 1, pen::GOLD);
+    c.text(clip(p.title, PANEL_CHARS), x + 4, y + 1, pen::GOLD);
     let mut ry = y + 1 + 12;
     for pl in p.players {
         if let Some(seat) = pl.seat {
             c.dot(x + 7, ry + 7, 2, seat_color(usize::from(seat)));
         }
         c.text(
-            player_label(pl),
+            clip(&player_label(pl), PANEL_CHARS - 2),
             x + 13,
             ry,
             if pl.you { pen::WHITE } else { pen::DIM },
         );
         ry += 12;
     }
-    for l in p.chat {
-        c.text(l.clone(), x + 4, ry, pen::WHITE);
+    for l in chat {
+        c.text(l, x + 4, ry, pen::WHITE);
         ry += 12;
     }
-    if let Some(n) = p.notice {
+    for n in notice {
         c.text(n, x + 4, ry, pen::RED);
+        ry += 12;
     }
     c
 }
@@ -450,5 +487,27 @@ mod tests {
         assert_eq!(s[0], "Room K7QX2M");
         assert!(s.contains(&"Noa".to_string()));
         assert!(!net_panel_prims(&p).is_empty());
+    }
+
+    #[test]
+    fn long_round_labels_wrap_inside_the_roaming_panel() {
+        let players = rows();
+        let chat = vec![
+            "Round 4/4: Grid Duel - Practice Duel (Vahn vs Noa)".to_string(),
+            "Round 4: Practice Duel - Vahn won".to_string(),
+        ];
+        let p = NetPanel {
+            title: "Room K7QX2M",
+            players: &players,
+            chat: &chat,
+            notice: Some("A very long notice that a pack could raise"),
+        };
+        let s = net_panel_strings(&p);
+        assert!(s.iter().all(|l| l.chars().count() <= PANEL_CHARS), "{s:?}");
+        assert!(s.iter().any(|l| l.contains("Grid")), "{s:?}");
+        // Whole messages, newest last; the panel grows to hold them.
+        assert!(s.iter().any(|l| l.starts_with("Round 4/4")), "{s:?}");
+        assert!(s.iter().any(|l| l.ends_with("Vahn won")), "{s:?}");
+        assert_eq!(super::super::wrap("Supercalifragilistic", 8).len(), 3);
     }
 }

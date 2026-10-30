@@ -1,7 +1,7 @@
 //! The poker table: opponents along the far rail, the board and pot in the
 //! middle, the player's hand and action menu along the near edge.
 
-use legaia_engine_modes::active::{category_label, seat_name_for};
+use legaia_engine_modes::active::{ActiveMode, category_label};
 use legaia_engine_modes::poker::{Phase, PokerView, SeatView, Street};
 
 use super::cards::{CARD_H, CARD_W, card_back, card_slot, pip, playing_card, rank_label};
@@ -9,9 +9,10 @@ use super::{Canvas, footer, ink, log_box, pen};
 
 const TABLE: (i32, i32, i32, i32) = (8, 20, 304, 150);
 
-/// `me` is the local player's seat: the near edge's hand and menu.
-pub(super) fn draw(c: &mut Canvas, v: &PokerView, me: usize, log: &[String]) {
-    let mine = me;
+/// The local player's seat ([`ActiveMode::local_seat`]) is the near
+/// edge's hand and menu; a watcher sees seat names, no "You".
+pub(super) fn draw(c: &mut Canvas, v: &PokerView, mode: &ActiveMode, log: &[String]) {
+    let mine = mode.local_seat.min(v.seats.len().saturating_sub(1));
     let (tx, ty, tw, th) = TABLE;
     c.rect(tx, ty, tw, th, ink::FELT_EDGE);
     c.rect(tx + 4, ty + 4, tw - 8, th - 8, ink::FELT);
@@ -43,7 +44,7 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, me: usize, log: &[String]) {
         } else {
             pen::WHITE
         };
-        c.text_centre(seat_name_for(seat, mine), cx, 27, name_ink);
+        c.text_centre(mode.seat_name(seat), cx, 27, name_ink);
         c.text_centre(seat_status(s), cx, 41, status_ink(s));
         if v.button == seat {
             button_marker(c, x + pw - 4, 29);
@@ -77,8 +78,12 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, me: usize, log: &[String]) {
     // The pot line, or the showdown's awards over it.
     if showdown && !v.last_awards.is_empty() {
         let (w, amount, hand) = &v.last_awards[0];
-        let names: Vec<String> = w.iter().map(|&s| seat_name_for(s, mine)).collect();
-        let verb = if w == &[mine] { "win" } else { "wins" };
+        let names: Vec<String> = w.iter().map(|&s| mode.seat_name(s)).collect();
+        let verb = if w.len() == 1 && mode.is_you(w[0]) {
+            "win"
+        } else {
+            "wins"
+        };
         let text = match hand {
             Some(h) => format!(
                 "{} {verb} {amount} - {}",
@@ -131,7 +136,7 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, me: usize, log: &[String]) {
         button_marker(c, hx - 4, 176);
     }
     c.text_centre(
-        format!("You {}", me.chips),
+        format!("{} {}", mode.seat_name(mine), me.chips),
         hx + CARD_W + 1,
         210,
         if showdown && winners.contains(&mine) {

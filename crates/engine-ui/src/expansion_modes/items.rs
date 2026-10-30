@@ -17,7 +17,7 @@
 
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
-use super::{Canvas, LINE, STAGE_H, STAGE_W, footer, header, ink, labels_to_draws, pen};
+use super::{Canvas, LINE, STAGE_H, STAGE_W, footer, header, ink, labels_to_draws, pen, wrap};
 use crate::TextDraw;
 
 /// One list row.
@@ -95,25 +95,6 @@ const SIDE_W: i32 = 112;
 const PANEL_H: i32 = LIST_ROWS as i32 * LINE + 8;
 /// Characters per side-panel line (the dialog font averages ~6 px).
 const SIDE_CHARS: usize = 17;
-
-/// Break `s` into lines of at most `width` characters on spaces.
-fn wrap(s: &str, width: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut line = String::new();
-    for word in s.split_whitespace() {
-        if !line.is_empty() && line.len() + 1 + word.len() > width {
-            out.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    if !line.is_empty() {
-        out.push(line);
-    }
-    out
-}
 
 fn compose(v: &ItemScreenView) -> Canvas {
     let mut c = Canvas::default();

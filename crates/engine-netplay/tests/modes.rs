@@ -296,3 +296,64 @@ fn a_host_off_the_free_field_cannot_start_a_game() {
     room.start("builtin-poker");
     assert!(room.peers[1].mode().is_some());
 }
+
+#[test]
+fn an_idle_seat_runs_out_of_time_and_the_ai_moves_for_it() {
+    use legaia_engine_netplay::view_stream::TURN_LIMIT_FRAMES;
+    let mut room = Room::open(2, lan(), 3);
+    room.start("builtin-poker");
+    let guest_seat = room.peers[1].mode().unwrap().local_seat;
+    // The host plays; the guest never touches the pad.
+    let mut frame = 0u32;
+    let mut guest_acted = false;
+    let log_has = |room: &Room, i: usize, needle: &str| {
+        room.peers[i]
+            .world
+            .expansion
+            .mode_seat
+            .as_ref()
+            .is_some_and(|s| s.log.iter().any(|l| l.contains(needle)))
+    };
+    while frame < TURN_LIMIT_FRAMES * 3 {
+        room.step_with(&mut |i, _| if i == 0 { tap(frame) } else { 0 });
+        frame += 1;
+        if log_has(&room, 0, "Guest1 ran out of time") {
+            guest_acted = true;
+            // The guest's own log says so in its words.
+            for _ in 0..8 {
+                room.step();
+            }
+            assert!(log_has(&room, 1, "Out of time"), "the guest is told");
+            break;
+        }
+    }
+    assert!(guest_acted, "the table moved past an idle seat");
+    // The seat is the guest's again once the turn moves on.
+    for _ in 0..600 {
+        room.step_with(&mut |i, _| if i == 0 { tap(frame) } else { 0 });
+        frame += 1;
+    }
+    let seat = room.peers[0].world.expansion.mode_seat.as_ref().unwrap();
+    let ModeStage::Playing { mode, .. } = &seat.stage else {
+        return;
+    };
+    if mode.waiting_on() != Some(guest_seat) {
+        assert!(
+            !mode.seat_kind(guest_seat).is_ai(),
+            "the seat is handed back"
+        );
+    }
+}
+
+#[test]
+fn seats_read_as_the_players_in_them() {
+    let mut room = Room::open(2, lan(), 4);
+    room.start("builtin-poker");
+    let host = room.peers[0].mode().unwrap();
+    assert_eq!(host.seat_name(0), "You");
+    assert_eq!(host.seat_name(1), "Guest1");
+    let guest = room.peers[1].mode().unwrap();
+    assert_eq!(guest.seat_name(0), "Host");
+    assert_eq!(guest.seat_name(1), "You");
+    assert!(!guest.watching);
+}

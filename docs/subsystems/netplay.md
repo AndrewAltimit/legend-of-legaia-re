@@ -335,6 +335,22 @@ hands. Grid Duel is played with open hands and passes through unredacted.
 The price is a round trip of input latency, which a turn-based table does
 not notice, and that the session ends if its host leaves.
 
+**Turn clock.** The host runs a clock over the seat a table waits on
+(`ActiveMode::waiting_on`: the poker seat to bet, the Grid Duel seat to pick
+or take its spoils). A player seat that sits 30 seconds with no new press
+(`view_stream::TURN_LIMIT_FRAMES`) is warned at 20 and then handed to the
+AI for that one turn; the seat is the player's again once the turn moves on.
+Every viewer's log says so in its own words ("Noa ran out of time", "Out of
+time - the AI moves for you"). An away player therefore cannot stall a
+table; a dropped one is the AI's for the rest of the session as before.
+
+**Seat names.** Every peer names a session's seats after the room members
+in them (`ActiveMode::seat_names`), so the screens and log lines read "Noa"
+rather than "Seat 2"; only the viewer's own seat reads "You". A member who
+holds no seat (a party night's players outside a Grid Duel match, a late
+joiner) watches with `ActiveMode::watching` set: no seat is "You", the duel
+prompt names whose turn it is, and the results highlight nobody.
+
 Leaving a mode (the quit prompt, or the results screen) sends
 `EndSession`; another player still mid-game is returned to the lobby with
 a notice, while one reading the results keeps them until they leave.

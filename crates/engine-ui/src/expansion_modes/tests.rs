@@ -172,6 +172,7 @@ fn quit_prompt_and_results_read() {
         granted: &granted,
         completed: true,
         local_seat: 0,
+        seat_names: &[],
         over_world: false,
         holding: false,
         banner: None,

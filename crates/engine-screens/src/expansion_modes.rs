@@ -79,6 +79,7 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
             granted,
             completed,
             local_seat,
+            seat_names,
         } => ModeScreen::Results {
             name,
             kind: *kind,
@@ -86,6 +87,7 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
             granted,
             completed: *completed,
             local_seat: *local_seat,
+            seat_names,
             // A duel at a table: the reaction shot, then the card over it.
             over_world: seat.stage_frame.is_some(),
             holding: seat.world_stage.holds_results(),

@@ -130,6 +130,7 @@ impl NetMode {
         }
         let local_seat = seats.iter().position(|p| *p == Some(me));
         mode.local_seat = local_seat.unwrap_or(0);
+        mode.watching = local_seat.is_none();
         Ok(Self {
             mode,
             seats,

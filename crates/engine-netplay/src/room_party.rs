@@ -248,7 +248,7 @@ impl NetPlay {
             .and_then(|section| {
                 NetMode::build(&section, cards, &maps, &order, me, host).map_err(|e| e.to_string())
             });
-        let net = match built {
+        let mut net = match built {
             Ok(n) => n,
             Err(e) => {
                 self.notice_and_note(format!("Could not start the round: {e}"));
@@ -258,6 +258,7 @@ impl NetPlay {
                 return;
             }
         };
+        self.name_seats(&mut net);
         let phase = if let Some(cfg) = net.lockstep_config() {
             let session = LockstepSession::new(ModeSim::new(net.mode.clone()), cfg);
             Phase::Lockstep(Box::new(LockstepRun { session }))

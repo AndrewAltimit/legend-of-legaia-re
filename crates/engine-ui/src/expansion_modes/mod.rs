@@ -29,9 +29,7 @@ pub mod party;
 mod poker;
 mod race;
 
-use legaia_engine_modes::active::{
-    ActiveMode, ModeEntry, ModeKind, ModeView, score_unit, seat_name_for,
-};
+use legaia_engine_modes::active::{ActiveMode, ModeEntry, ModeKind, ModeView, score_unit};
 use legaia_engine_modes::session::Placement;
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, line_quad};
 
@@ -237,6 +235,8 @@ pub enum ModeScreen<'a> {
         completed: bool,
         /// The local player's seat (the highlighted "You" row).
         local_seat: usize,
+        /// Each seat's player name (empty offline: "Seat N").
+        seat_names: &'a [String],
         /// Over the world (a duel at a table): no backdrop, and while
         /// `holding` only the stage's banner - the reaction shot plays
         /// first.
@@ -333,7 +333,7 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
         } => {
             header(&mut c, &mode.name, mode.kind().label());
             match mode.view() {
-                ModeView::Poker(v) => poker::draw(&mut c, &v, mode.local_seat, log),
+                ModeView::Poker(v) => poker::draw(&mut c, &v, mode, log),
                 ModeView::Duel(v) => duel::draw(&mut c, mode, &v, log),
                 ModeView::Golf(v) => golf::draw(&mut c, mode, &v, log),
                 ModeView::Race(v) => race::draw(&mut c, mode, &v, log),
@@ -365,6 +365,7 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
             granted,
             completed,
             local_seat,
+            seat_names,
             over_world,
             ..
         } => {
@@ -372,7 +373,9 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
                 // A shade over the table, lighter than the backdrop.
                 c.rect(0, 0, STAGE_W, STAGE_H, [6, 8, 14, 140]);
             }
-            results(&mut c, name, kind, rows, granted, completed, local_seat)
+            results(
+                &mut c, name, kind, rows, granted, completed, local_seat, seat_names,
+            )
         }
     }
     c
@@ -404,6 +407,56 @@ pub(crate) fn stage_banner_at(c: &mut Canvas, text: &str, y: i32) {
 pub(crate) fn footer(c: &mut Canvas, hint: &str) {
     c.rect(0, STAGE_H - 15, STAGE_W, 15, ink::BAR);
     c.text(hint, 6, STAGE_H - 15, pen::DIM);
+}
+
+/// Break `s` into lines of at most `width` characters on spaces; a word
+/// longer than a line is cut across lines. The flat screens draw in the
+/// dialog font, which averages about 6 stage pixels a character, so a
+/// panel `w` pixels across fits about `w / 6.5` (and the room panel's
+/// labels, which name players and rounds a pack chose, are wrapped rather
+/// than run off the panel's edge).
+pub(crate) fn wrap(s: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    let mut line = String::new();
+    for word in s.split_whitespace() {
+        let mut word = word;
+        while word.chars().count() > width {
+            if !line.is_empty() {
+                out.push(std::mem::take(&mut line));
+            }
+            let cut = word
+                .char_indices()
+                .nth(width)
+                .map_or(word.len(), |(i, _)| i);
+            out.push(word[..cut].to_string());
+            word = &word[cut..];
+        }
+        if word.is_empty() {
+            continue;
+        }
+        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > width {
+            out.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        out.push(line);
+    }
+    out
+}
+
+/// `s` cut to `width` characters, the cut marked with `..`.
+pub(crate) fn clip(s: &str, width: usize) -> String {
+    if s.chars().count() <= width {
+        return s.to_string();
+    }
+    let mut t: String = s.chars().take(width.saturating_sub(2)).collect();
+    t.push_str("..");
+    t
 }
 
 /// The recent-event box.
@@ -510,6 +563,7 @@ fn results(
     granted: &[String],
     completed: bool,
     me: usize,
+    names: &[String],
 ) {
     header(c, name, kind.label());
     let (x, w) = (40, 240);
@@ -535,7 +589,8 @@ fn results(
         }
         let ink = if you { pen::WHITE } else { pen::DIM };
         c.text(place_label(p.place), x + 8, y, ink);
-        c.text(seat_name_for(p.seat, me), x + 48, y, ink);
+        let who = seat_label(p.seat, me, names);
+        c.text(who, x + 48, y, ink);
         let score = if kind == ModeKind::Race && p.score == i64::MAX {
             "DNF".to_string()
         } else if kind == ModeKind::Race {
@@ -607,6 +662,12 @@ pub(crate) fn fx(v: i32) -> f32 {
 }
 
 /// Distinct marker colours per seat.
+/// Seat `seat` as the player in seat `me` reads it, with the session's
+/// player names (`names`, empty offline).
+pub(crate) fn seat_label(seat: usize, me: usize, names: &[String]) -> String {
+    legaia_engine_modes::active::Namer { me, names }.name(seat)
+}
+
 pub(crate) fn seat_color(seat: usize) -> [u8; 4] {
     const C: [[u8; 4]; 8] = [
         [240, 220, 80, 255],

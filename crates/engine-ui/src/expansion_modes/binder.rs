@@ -24,7 +24,7 @@ use legaia_expansion_format::refs::DiscRef;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
 use super::cards::{element_color, rarity_color, side_label};
-use super::{Canvas, LINE, STAGE_H, STAGE_W, footer, header, ink, labels_to_draws, pen};
+use super::{Canvas, LINE, STAGE_H, STAGE_W, footer, header, ink, labels_to_draws, pen, wrap};
 use crate::TextDraw;
 
 /// One portrait image, RGBA8 row-major.
@@ -63,8 +63,8 @@ pub fn card_screen_strings(v: &CardScreenView<'_>) -> Vec<String> {
 }
 
 /// The card toasts ("Got card: X") as text draws in stage pixels: centred
-/// near the top of the stage over play (`top`), or stacked above the
-/// footer while an expansion screen owns the frame.
+/// one row under the quest toast over play (`top`), or above the footer
+/// while an expansion screen owns the frame.
 pub fn card_toast_texts(font: &legaia_font::Font, lines: &[&str], top: bool) -> Vec<TextDraw> {
     labels_to_draws(font, &toast_canvas(lines, top).labels)
 }
@@ -73,7 +73,8 @@ fn toast_canvas(lines: &[&str], top: bool) -> Canvas {
     let mut c = Canvas::default();
     for (i, l) in lines.iter().enumerate() {
         let y = if top {
-            24 + i as i32 * LINE
+            // Under the quest toast's row, itself under the party HUD.
+            crate::menu::screens::QUEST_TOAST_Y + LINE + i as i32 * LINE
         } else {
             STAGE_H - 46 - i as i32 * LINE
         };
@@ -405,25 +406,6 @@ fn binder(
         pen::DIM,
     );
     footer(c, "Cross: detail  L1/R1: page  Square: sort  Tri: filter");
-}
-
-/// Split `text` into lines of at most `n` characters at spaces.
-fn wrap(text: &str, n: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut line = String::new();
-    for word in text.split_whitespace() {
-        if !line.is_empty() && line.len() + 1 + word.len() > n {
-            out.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    if !line.is_empty() {
-        out.push(line);
-    }
-    out
 }
 
 fn detail_view(c: &mut Canvas, v: &CardScreenView<'_>, e: &BinderEntry, at: usize, n: usize) {
@@ -822,9 +804,10 @@ mod tests {
     }
 
     #[test]
-    fn toasts_stack_from_the_top_over_play_and_above_the_footer_in_a_screen() {
+    fn toasts_sit_under_the_quest_toast_over_play_and_above_the_footer_in_a_screen() {
         let c = toast_canvas(&["Got card: A", "Lost card: B"], true);
-        assert_eq!((c.labels[0].y, c.labels[1].y), (24, 24 + LINE));
+        let top = crate::menu::screens::QUEST_TOAST_Y + LINE;
+        assert_eq!((c.labels[0].y, c.labels[1].y), (top, top + LINE));
         assert_eq!(c.labels[1].color, pen::RED);
         let c = toast_canvas(&["Got card: A"], false);
         assert_eq!(c.labels[0].y, STAGE_H - 46);

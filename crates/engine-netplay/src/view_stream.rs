@@ -9,13 +9,32 @@
 use std::collections::VecDeque;
 
 use legaia_engine_modes::active::ActiveMode;
-use legaia_engine_modes::session::PadWord;
+use legaia_engine_modes::session::{AiTier, PadWord, SeatKind};
 use legaia_netplay::protocol::{Message, PlayerId};
 
 use crate::mode_net::{StreamFrame, StreamedView, decode_pad, encode_pad, redact};
 
 /// Queued pad words per guest a host holds before dropping the oldest.
 const PAD_QUEUE: usize = 32;
+
+/// Frames a turn-based table (poker, Grid Duel) waits on one seat with no
+/// press before the AI moves for it: an away player cannot stall the
+/// table. Thirty seconds.
+pub const TURN_LIMIT_FRAMES: u32 = 30 * 60;
+/// Frames before the limit the table warns the seat.
+pub const TURN_WARN_FRAMES: u32 = 10 * 60;
+
+/// The host's turn clock over the seat a table waits on.
+#[derive(Debug, Clone, Default)]
+struct TurnClock {
+    /// The seat being waited on, and for how many frames without a press.
+    seat: Option<usize>,
+    frames: u32,
+    last_pad: PadWord,
+    /// A seat the AI took over on its timeout, handed back once the turn
+    /// moves on.
+    auto: Option<usize>,
+}
 
 /// One guest seat on the host.
 #[derive(Debug, Clone)]
@@ -41,6 +60,10 @@ pub struct ViewHost {
     outbox: Vec<Message>,
     /// Frames sent, numbering each so a guest can drop a stale one.
     sent: u32,
+    /// Frames a waited-on seat may sit idle before the AI moves for it
+    /// ([`TURN_LIMIT_FRAMES`]; `0` = no limit).
+    pub turn_limit: u32,
+    clock: TurnClock,
 }
 
 impl ViewHost {
@@ -68,6 +91,8 @@ impl ViewHost {
             guests,
             outbox: Vec::new(),
             sent: 0,
+            turn_limit: TURN_LIMIT_FRAMES,
+            clock: TurnClock::default(),
         }
     }
 
@@ -138,15 +163,29 @@ impl ViewHost {
                 *slot = g.held;
             }
         }
-        let mut viewers: Vec<usize> = vec![mode.local_seat];
+        let mut viewers: Vec<usize> = vec![mode.viewer_seat()];
         viewers.extend(self.guests.iter().map(|g| g.seat));
+        let timer = self.turn_clock(mode, &pads);
         let mut logs = if positions.is_empty() {
             mode.tick_for(&pads, &viewers)
         } else {
             mode.tick_for_positions(&pads, positions, &viewers)
         }
         .into_iter();
-        let own = logs.next().unwrap_or_default();
+        let mut own = logs.next().unwrap_or_default();
+        let mut logs: Vec<Vec<String>> = logs.collect();
+        if let Some((seat, line)) = timer {
+            let names = mode.seat_names.clone();
+            let word = |me: usize| {
+                let n = legaia_engine_modes::active::Namer { me, names: &names };
+                line(&n.name(seat), seat == me)
+            };
+            own.insert(0, word(viewers[0]));
+            for (log, &v) in logs.iter_mut().zip(&viewers[1..]) {
+                log.insert(0, word(v));
+            }
+        }
+        let logs = logs.into_iter();
         let results = mode.results();
         let view = StreamedView::from_view(mode.view());
         for (g, log) in self.guests.iter_mut().zip(logs) {
@@ -178,6 +217,73 @@ impl ViewHost {
 
     pub fn drain_outbox(&mut self) -> Vec<Message> {
         std::mem::take(&mut self.outbox)
+    }
+
+    /// Whether `seat` is a player's (the host's or a seated guest's).
+    fn player_seat(&self, seat: usize) -> bool {
+        self.host_seat == Some(seat) || self.guests.iter().any(|g| !g.watcher && g.seat == seat)
+    }
+
+    /// Run the turn clock before a tick: hand a timed-out seat back once
+    /// its turn has moved on, count the frames the waited-on player seat
+    /// sits without a press, warn it, and at the limit give its move to the
+    /// AI. Returns the seat and the line to word for each viewer (`name`,
+    /// whether the viewer is that seat).
+    #[allow(clippy::type_complexity)]
+    fn turn_clock(
+        &mut self,
+        mode: &mut ActiveMode,
+        pads: &[PadWord],
+    ) -> Option<(usize, fn(&str, bool) -> String)> {
+        let waiting = mode.waiting_on();
+        if let Some(s) = self.clock.auto
+            && waiting != Some(s)
+        {
+            self.clock.auto = None;
+            if self.player_seat(s) {
+                mode.set_seat_kind(s, SeatKind::Human);
+            }
+        }
+        let Some(s) = waiting
+            .filter(|&s| self.turn_limit > 0 && self.player_seat(s) && !mode.seat_kind(s).is_ai())
+        else {
+            self.clock.seat = None;
+            self.clock.frames = 0;
+            return None;
+        };
+        let pad = pads.get(s).copied().unwrap_or(0);
+        let pressed = pad & !self.clock.last_pad != 0;
+        self.clock.last_pad = pad;
+        if self.clock.seat != Some(s) || pressed {
+            self.clock.seat = Some(s);
+            self.clock.frames = 0;
+            return None;
+        }
+        self.clock.frames += 1;
+        let warn_at = self.turn_limit.saturating_sub(TURN_WARN_FRAMES);
+        if self.clock.frames == warn_at && warn_at > 0 {
+            return Some((s, |who, you| {
+                if you {
+                    "10 seconds left to move!".to_string()
+                } else {
+                    format!("{who}: 10 seconds left")
+                }
+            }));
+        }
+        if self.clock.frames >= self.turn_limit {
+            mode.set_seat_kind(s, SeatKind::Ai(AiTier::Regular));
+            self.clock.auto = Some(s);
+            self.clock.seat = None;
+            self.clock.frames = 0;
+            return Some((s, |who, you| {
+                if you {
+                    "Out of time - the AI moves for you".to_string()
+                } else {
+                    format!("{who} ran out of time")
+                }
+            }));
+        }
+        None
     }
 }
 

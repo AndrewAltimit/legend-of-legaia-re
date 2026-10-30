@@ -72,8 +72,11 @@ pub enum ModeStage {
         granted: Vec<String>,
         /// The session ran to its end (`false`: the player quit).
         completed: bool,
-        /// The local player's seat ("You" on the rows).
+        /// The local player's seat ("You" on the rows; `usize::MAX` for a
+        /// player who watched).
         local_seat: usize,
+        /// Each seat's player name (a networked session's; empty offline).
+        seat_names: Vec<String>,
     },
 }
 
@@ -299,7 +302,8 @@ impl PackModeSeat {
                             rows: Vec::new(),
                             granted: Vec::new(),
                             completed: false,
-                            local_seat: mode.local_seat,
+                            local_seat: mode.viewer_seat(),
+                            seat_names: mode.seat_names.clone(),
                         };
                     } else if pressed(PadButton::Circle) || pressed(PadButton::Start) {
                         *quit_prompt = false;
@@ -322,7 +326,8 @@ impl PackModeSeat {
                             rows: results.placements,
                             granted: Vec::new(),
                             completed: true,
-                            local_seat: mode.local_seat,
+                            local_seat: mode.viewer_seat(),
+                            seat_names: mode.seat_names.clone(),
                         };
                     }
                     return SeatStep::Stay;
@@ -344,7 +349,8 @@ impl PackModeSeat {
                     rows,
                     granted: granted_lines(&settlement.results.rewards),
                     completed: true,
-                    local_seat: mode.local_seat,
+                    local_seat: mode.viewer_seat(),
+                    seat_names: mode.seat_names.clone(),
                 };
                 SeatStep::Settled {
                     mode_id,
