@@ -174,6 +174,16 @@ where it was placed (`FieldImage::prop_anchors`); the mesh keeps drawing.
 Only with no free tile in reach does the prop replace it, and the entry
 logs the tiles that happened to. Its solid tile is always its own.
 
+The prop's record carries its anchor tile's ground texture: the tile
+style's, or, on a kept map whose style names none, the texture the cell's
+retail record already drew, so a prop on a kept floor leaves no hole. The
+builder never writes records `1..=3`: those object ids name the
+protagonist and NPC meshes, which the field draw never takes from the
+scene pack. A prop's `offset[1]` is from tier `0` of the pack's grid, not
+from the base room's floor: a kept room whose floor stands above tier `0`
+(its own records carry the lift in their `+0x02` word) needs the same lift
+on the prop.
+
 ### Standable props
 
 A prop with a `top` is a floor box: a flat surface `top` world units up (the
@@ -619,7 +629,7 @@ walled side.
 |---|---|
 | Decorations a map | 8192 |
 | Decorations a tile | 32 |
-| A decorated tile's records | One a tile, out of the map's 511 |
+| A decorated tile's records | One a tile, out of the map's 508 |
 
 A map decorated on more tiles than it has free records bakes **cells of
 `c x c` tiles**: each cell's decorations move onto one anchor tile (offset by
@@ -868,7 +878,7 @@ and one without (leaves draw opaque). The packet colour tints them.
 One map is one field grid: at most `120 x 120` tiles of `128` world units
 (`MAX_MAP_TILES`; the grid is `128` a side and the map keeps a margin row
 below it), about 15,000 units a side - larger than any retail room. Two
-budgets bound how much it can hold: `511` object records (ground textures,
+budgets bound how much it can hold: `508` object records (`4..=511`; ground textures,
 walls, props and decorated cells share them; decorations fall back to
 baked cells when they run out) and the VRAM the base scene leaves free for
 foreign meshes and model textures. A world larger than one grid is several

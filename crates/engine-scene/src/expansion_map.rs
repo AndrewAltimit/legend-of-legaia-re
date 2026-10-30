@@ -63,6 +63,9 @@ const TRIGGER_BLOCK_OFFSET: usize = 0x10000;
 
 /// The number of object records a map has (`0x4000 / 0x20`).
 const RECORD_SLOTS: usize = 0x4000 / OBJECT_RECORD_STRIDE;
+/// The first record a pack map allocates: past the empty record 0 and the
+/// protagonist / NPC object ids `1..=3`.
+const FIRST_FREE_RECORD: usize = 4;
 
 /// Record flags of a ground-texture cell: bit `0x1`, which the grid-mark
 /// refresh mirrors into the cell's walk-visible bit `0x1000` - the ground
@@ -491,9 +494,12 @@ fn write_objects(
 ) -> Result<WrittenObjects> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
-    // Record 0 is the empty slot every unnamed cell points at. In a kept
-    // base map the free slots are the all-zero records past 0.
-    let mut free: Vec<usize> = (1..RECORD_SLOTS)
+    // Record 0 is the empty slot every unnamed cell points at, and object
+    // ids 1..=3 name the protagonist / NPC meshes, which the field draw never
+    // takes from the scene pack (`pack_mesh_index`), so a mesh in one of them
+    // would not draw. In a kept base map the free slots are the all-zero
+    // records past those.
+    let mut free: Vec<usize> = (FIRST_FREE_RECORD..RECORD_SLOTS)
         .filter(|&i| {
             !keep
                 || img[i * OBJECT_RECORD_STRIDE..(i + 1) * OBJECT_RECORD_STRIDE]
@@ -669,7 +675,26 @@ fn write_objects(
             }
         }
         anchors_taken.push(anchor);
-        let tex = tile_texture[usize::from(anchor.1) * grid.width + usize::from(anchor.0)];
+        // A tile whose style names no ground keeps the ground the cell
+        // already draws (a kept retail floor), so the prop's record does not
+        // punch a hole in it.
+        let tex = tile_texture[usize::from(anchor.1) * grid.width + usize::from(anchor.0)].or_else(
+            || {
+                let (gc, gr) = grid_tile(def, anchor.0, anchor.1);
+                let o = cell_off(gc, gr);
+                let prev =
+                    usize::from(u16::from_le_bytes([img[o], img[o + 1]]) & OBJECT_INDEX_MASK);
+                let rec = &img[prev * OBJECT_RECORD_STRIDE..(prev + 1) * OBJECT_RECORD_STRIDE];
+                let flags = u16::from_le_bytes([rec[0x12], rec[0x13]]);
+                (prev != 0 && flags & FLAGS_GROUND != 0 && rec[0x15] != 0).then(|| {
+                    (
+                        rec[0x14],
+                        rec[0x15],
+                        u16::from_le_bytes([rec[0x16], rec[0x17]]),
+                    )
+                })
+            },
+        );
         // The offset that carries the record from its anchor tile back to the
         // prop's own; the floor tiers' difference with it.
         let ladder = def.floor_ladder().unwrap_or([0; FLOOR_TIERS]);

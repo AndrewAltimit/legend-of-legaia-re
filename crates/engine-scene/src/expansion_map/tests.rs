@@ -528,3 +528,67 @@ fn a_prop_on_a_mesh_cell_anchors_beside_it() {
     let r = &out.image[usize::from(c) * OBJECT_RECORD_STRIDE..];
     assert_eq!(u16::from_le_bytes([r[0x10], r[0x11]]), 4);
 }
+
+#[test]
+fn a_prop_on_a_kept_retail_floor_keeps_its_ground() {
+    // A kept map whose tile style names no ground: the cell's retail record
+    // draws the floor texture, and the prop's record standing in for it
+    // carries the same texture words, so the floor under the prop stays.
+    let mut def: MapDef = toml::from_str(&MAP.replace(
+        "base = { scene = { kind = \"scene\", name = \"dolk\" } }",
+        "base = { scene = { kind = \"scene\", name = \"dolk\" }, geometry = \"keep\" }",
+    ))
+    .unwrap();
+    def.tiles.legend.get_mut(".").unwrap().ground = None;
+    def.props.truncate(1);
+    def.props[0].tile = [1, 1];
+    def.props[0].solid = false;
+    let grid = def.tile_grid().unwrap();
+    let (gc, gr) = grid_tile(&def, 1, 1);
+    let mut base = vec![0u8; 0x12000];
+    let slot = 5usize;
+    let r = &mut base[slot * OBJECT_RECORD_STRIDE..(slot + 1) * OBJECT_RECORD_STRIDE];
+    r[0x12..0x14].copy_from_slice(&0x11u16.to_le_bytes());
+    r[0x14] = 3;
+    r[0x15] = 14;
+    r[0x16..0x18].copy_from_slice(&0x7E00u16.to_le_bytes());
+    let o = OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
+    base[o..o + 2].copy_from_slice(&(slot as u16).to_le_bytes());
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: Some(&base),
+            geometry_entry: Some(99),
+            geometry_len: Some(20),
+            library: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(out.prop_anchors[0], (1, 1));
+    let c = usize::from(cell(&out.image, gc, gr) & OBJECT_INDEX_MASK);
+    assert_ne!(c, slot);
+    let r = &out.image[c * OBJECT_RECORD_STRIDE..(c + 1) * OBJECT_RECORD_STRIDE];
+    assert_eq!(u16::from_le_bytes([r[0x10], r[0x11]]), 7);
+    assert_ne!(u16::from_le_bytes([r[0x12], r[0x13]]) & FLAGS_GROUND, 0);
+    assert_eq!((r[0x14], r[0x15]), (3, 14));
+    assert_eq!(u16::from_le_bytes([r[0x16], r[0x17]]), 0x7E00);
+}
+
+#[test]
+fn no_mesh_record_takes_a_protagonist_object_id() {
+    // Object ids 1..=3 never draw from the scene pack, so every record the
+    // builder writes sits at 4 or past.
+    let img = image(&def());
+    for i in 1..4 {
+        assert!(
+            img[i * OBJECT_RECORD_STRIDE..(i + 1) * OBJECT_RECORD_STRIDE]
+                .iter()
+                .all(|&b| b == 0),
+            "record {i} is written"
+        );
+    }
+    let placed = parse_placements(&img);
+    assert!(placed.iter().any(|p| p.pack_index == Some(7)));
+    assert!(placed.iter().all(|p| p.obj_idx >= 4));
+}
