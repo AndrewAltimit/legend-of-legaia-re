@@ -570,7 +570,11 @@ impl BattleSection {
                 let at = format!("monsters.{key}");
                 let sub = if let Some(s) = rest.strip_prefix("script ") {
                     match s.split_once([':', ' ']) {
-                        Some((head, _)) if head.starts_with("phases[") || head == "enrage" => {
+                        Some((head, _))
+                            if head.starts_with("phases[")
+                                || head == "enrage"
+                                || head.starts_with("enrage.") =>
+                        {
                             format!(".script.{}", head.trim_end_matches(':'))
                         }
                         _ => ".script".to_string(),
@@ -822,6 +826,27 @@ once = true
     fn an_empty_file_is_an_empty_section() {
         let s: BattleSection = toml::from_str("").unwrap();
         assert_eq!(s, BattleSection::default());
+    }
+
+    #[test]
+    fn a_script_problem_names_its_phase_field() {
+        let s = BattleSection::default();
+        for (line, field) in [
+            (
+                "monster `w`: script enrage.flash: frames must be 1..=600",
+                "monsters.w.script.enrage.flash",
+            ),
+            (
+                "monster `w`: script phases[1].tint: frames must be 0..=600",
+                "monsters.w.script.phases[1].tint",
+            ),
+            (
+                "monster `w`: script enrage: round starts at 1",
+                "monsters.w.script.enrage",
+            ),
+        ] {
+            assert_eq!(s.problem_field(line), field, "{line}");
+        }
     }
 
     #[test]

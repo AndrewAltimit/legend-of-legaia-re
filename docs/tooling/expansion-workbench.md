@@ -100,7 +100,7 @@ content offer only ids the pack defines.
 | Tab | Edits |
 |---|---|
 | Manifest | `pack.toml`. |
-| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses (music, intro and outro cutscenes, rewards). |
+| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers and each phase's screen flash and tint), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses (music, intro and outro cutscenes, rewards). |
 | Progression | Multipliers, the curve (retail, scaled, banded, explicit) with a live chart against retail, enemy scaling, level-up rewards. |
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
 | Dialog | Lines with a per-row check under the text: the 36-character row warning and any markup with no glyph. |
@@ -128,7 +128,7 @@ validator path, so a check clicks through to the field.
 |---|---|---|
 | `pack.toml` | Manifest | Form |
 | `battle.toml` | Derived monsters, stats, drop, steal | Form |
-| `battle.toml` | Boss script: phases, moves, summons, immunities, last stand | Form (phase list) |
+| `battle.toml` | Boss script: phases, moves, summons, immunities, last stand, each phase's screen flash and tint | Form (phase list) |
 | `battle.toml` | Formations, seats | Form |
 | `battle.toml` | Formation waves (`wipe` / `refill`, count, max standing) | Form (wave list) |
 | `battle.toml` | Encounter overrides, bosses (intro / outro cutscenes), reward items | Form |

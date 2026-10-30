@@ -750,6 +750,7 @@ function phaseEd(ctx, box, ph, p, base, opts) {
     { k: 'music', t: 'omusic', label: 'Music from here', hint: 'cross-fades as the phase begins' },
     { k: 'sound', t: 'osound', label: 'Sound', hint: 'played as it begins' },
   ], p));
+  phaseScreenEd(ctx, box, ph, p);
   if (!opts.first) {
     const g = h('div', { class: 'xw-grid' });
     for (const st of PHASE_STATS) g.append(field(ctx, ph, { k: st, t: 'stat', label: st }, p));
@@ -765,6 +766,30 @@ function phaseEd(ctx, box, ph, p, base, opts) {
     label: (mv) => (mv.spell != null ? `spell ${spellName(ctx, mv.spell) || mv.spell}` : `swing ${mv.attack}${mv.hits > 1 ? ' x' + mv.hits : ''}`) + (mv.charge ? ' (telegraphed)' : ''),
     render: (b2, mv, p2) => moveEd(ctx, b2, mv, p2, base),
   });
+}
+
+// A phase's screen layer (docs/formats/expansion-pack-battle.md): a flash as
+// it begins, and a tint held from it on. Each is absent until ticked, so an
+// opened phase writes nothing.
+const PHASE_SCREEN = [
+  ['flash', 'Screen flash', 'fades out as the phase begins', () => ({ color: [255, 255, 255], frames: 30 }),
+    [{ k: 'frames', t: 'int', label: 'Fade frames', hint: '1..600' }]],
+  ['tint', 'Battle tint', 'held from this phase on; [0, 0, 0] clears an earlier one', () => ({ color: [40, 0, 0], frames: 40, mode: 'add' }),
+    [{ k: 'frames', t: 'int', label: 'Ramp frames', hint: '0..600' }, { k: 'mode', t: 'sel', opts: [['add', 'add (a glow)'], ['subtract', 'subtract (a shade)']], label: 'Mode' }]],
+];
+function phaseScreenEd(ctx, box, ph, p) {
+  for (const [k, label, hint, make, more] of PHASE_SCREEN) {
+    const fp = `${p}.${k}`;
+    const fb = h('div', { class: 'xw-box', 'data-path': fp });
+    const on = h('input', { type: 'checkbox' });
+    on.checked = ph[k] != null;
+    on.addEventListener('change', () => { if (on.checked) ph[k] = make(); else delete ph[k]; ctx.changed(true); });
+    const fx = ph[k];
+    const swatch = fx ? h('span', { class: 'xw-swatch', title: `rgb(${fx.color.join(', ')})`, style: `display:inline-block;width:1.1em;height:1.1em;vertical-align:middle;border:1px solid var(--border-hi);border-radius:3px;background:rgb(${(fx.color || [0, 0, 0]).join(',')})` }) : null;
+    fb.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, on, label), swatch, h('span', { class: 'xw-hint' }, ' ' + hint)));
+    if (fx) fb.append(grid(ctx, fx, [{ k: 'color', t: 'tuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour', hint: '0..255' }, ...more], fp));
+    box.append(fb);
+  }
 }
 
 function bossScriptEd(ctx, box, m, p, base) {
