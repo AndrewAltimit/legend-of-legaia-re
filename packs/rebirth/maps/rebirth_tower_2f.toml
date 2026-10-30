@@ -103,3 +103,109 @@ table = "tower_2f"
 id = "east_aisle"
 rect = [13, 3, 18, 22]
 table = "tower_2f"
+
+# ---------------------------------------------------------------------------
+# Detail: the Ember Stair burns. The retail hall keeps its own torches and
+# brickwork; the pack adds the brazier's fire, the wisps that circle it,
+# embers on the pillar tops, rubble and stalagmites, and the hall's red
+# light. All of it draws only - the walls above are unchanged.
+# ---------------------------------------------------------------------------
+
+# The brazier's fire: the Rogue's Tower's flame ring (`rugi` mesh 32) turning
+# on its tile, breathing, and lighting the pillars around it.
+[[props]]
+id = "brazier_fire"
+mesh = { object = 32 }
+tile = [10, 13]
+offset = [0, 4, 0]
+scale = 0.45
+animate = [{ kind = "spin", period = 180 }, { kind = "pulse", amount = 0.12, period = 46 }]
+light = { color = [255, 90, 30], radius = 900, height = 60, flicker = 0.45, period = 9 }
+
+# Two pyre wisps circle the brazier.
+[[props]]
+id = "wisp_w"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [9, 12]
+offset = [40, 90, 40]
+scale = 0.8
+animate = [{ kind = "orbit", radius = 70, period = 240 }, { kind = "bob", amplitude = 14, period = 70 }, { kind = "spin", period = 90 }]
+light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
+
+[[props]]
+id = "wisp_e"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 12]
+offset = [-40, 90, 40]
+scale = 0.8
+animate = [{ kind = "orbit", radius = 70, period = -240, phase = 0.5 }, { kind = "bob", amplitude = 14, period = 70, phase = 0.5 }, { kind = "spin", period = -90 }]
+light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
+
+# Embers sit on the four middle pillars' tops: decorations, so the pillars'
+# own retail meshes keep drawing in the same cells, each lit by a lamp below.
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [8, 11]
+offset = [0, 270, 0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [12, 11]
+offset = [0, 270, 0]
+rotation = [0.0, 30.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [8, 15]
+offset = [0, 270, 0]
+rotation = [0.0, 15.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [12, 15]
+offset = [0, 270, 0]
+rotation = [0.0, 45.0, 0.0]
+
+# Stalagmites (`rugi` mesh 24) along the walled half of the edge tiles.
+[[edges]]
+id = "stalagmites"
+mesh = { object = 24 }
+on = "abcdefghijk"
+every = 2
+inset = 40
+scale = 0.6
+
+# Fallen rock across the floor (`rugi` meshes 18..20, the cave's boulders).
+[[scatter]]
+id = "rubble"
+rect = [0, 3, 21, 22]
+on = "."
+density = 0.22
+seed = 2202
+jitter = 48
+scale = [0.25, 0.5]
+tilt = 8.0
+meshes = [
+  { mesh = { object = 18 } },
+  { mesh = { object = 19 } },
+  { mesh = { object = 20 } },
+  { mesh = { object = 17 }, scale = [0.3, 0.45] },
+]
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "ember_nw", tile = [8, 11], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 11 },
+  { id = "ember_ne", tile = [12, 11], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 13 },
+  { id = "ember_sw", tile = [8, 15], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 12 },
+  { id = "ember_se", tile = [12, 15], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 14 },
+  { id = "stair_glow_s", tile = [10, 23], offset = [0, 120, 0], color = [255, 70, 40], radius = 700, flicker = 0.2, period = 20 },
+  { id = "stair_glow_n", tile = [10, 2], offset = [0, 120, 0], color = [255, 70, 40], radius = 700, flicker = 0.2, period = 23 },
+]
+
+# Smoke drifts down the two aisles.
+[fog]
+regions = [
+  { rect = [1, 8, 6, 17], angle = 0.0, spread = 30.0, speed = 14 },
+  { rect = [14, 4, 18, 21], angle = 180.0, spread = 30.0, speed = 14 },
+]

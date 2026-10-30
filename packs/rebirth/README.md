@@ -49,6 +49,20 @@ Rebirth is built for the climb from there to 99.
 | 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), kept whole | 85-95 | Boss: the Azure Seraph |
 | 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), kept whole | 95-99 | Superboss: the Hollow Sovereign, in two waves |
 
+1F and 2F carry the detail layer
+([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)):
+the Atrium's walls stand (the tower's stone blocks and a low south parapet),
+Rogue's Tower torches line them and light the hall under enhanced lighting,
+vines, grass, rubble and Rim Elm's barrels and crates dress the floor (props
+from three scenes, their textures copied into free VRAM), four ember
+crystals - the pack's own glTF model, `assets/models/ember_crystal.glb` from
+`scripts/models/generate_ember_crystal.py` - float, turn and glow round the
+dais, a rune ring turns before the Warden's Stone, the dais flagstones
+drift, and mist curls over the outer ring. The Ember Stair keeps its retail
+hall and adds the brazier's turning fire ring, two orbiting pyre wisps,
+embers on the middle pillars, stalagmites, rubble, red lamps and smoke down
+the aisles.
+
 Each floor's stairs chain to the next (`exits` with `to = { kind = "map" }`);
 the 1F stair down leads to Rim Elm.
 

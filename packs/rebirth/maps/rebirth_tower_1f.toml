@@ -29,11 +29,15 @@ rows = [
   "#.............#",
   "#.,.,.,.,.,.,.#",
   "#......=......#",
-  "#######>#######",
+  "_______>_______",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
+# The walls stand: the Sky Gardens Tower's own tile-sized stone block
+# (mesh 10, three storeys) on the north, east and west, and a low generated
+# parapet along the south so the follow camera sees over it.
+"#" = { label = "wall", walls = "all", wall = { kind = "mesh", index = 10 } }
+"_" = { label = "parapet", walls = "all", wall = { kind = "box", height = 96, tpage = 28, clut = 32576, tile = 2 } }
 "." = { label = "stone floor", ground = { kind = "base_cell", cell = [8, 11] } }
 "," = { label = "worn stone", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
 "^" = { label = "dais", height = 1, ground = { kind = "texture", tpage = 28, clut = 32576, tile = 0 } }
@@ -49,6 +53,9 @@ facing = 4
 [[spawns]]
 id = "from_above"
 tile = [7, 2]
+# Facing the room, so the follow camera frames it over the low south
+# parapet rather than from behind the tall north wall.
+facing = 4
 
 # On the dais beside the Warden's Stone: where the Journal's Travel lands.
 [[spawns]]
@@ -197,3 +204,168 @@ tile = [11, 6]
 rotation = [0.0, 270.0, 0.0]
 scale = 0.8
 solid = true
+
+# ---------------------------------------------------------------------------
+# Detail: what makes the Atrium read as a room rather than a floor plan.
+# Everything below draws only - none of it closes a tile - so the Tower Green
+# hole on the dais and the Sol Ring round it run as before.
+# ---------------------------------------------------------------------------
+
+# Four ember crystals float at the dais corners, turning slowly and bobbing
+# out of step, each carrying a warm light. The model is the pack's own
+# (`assets/models/ember_crystal.glb`, made by
+# `scripts/models/generate_ember_crystal.py`), not a disc mesh.
+[[props]]
+id = "crystal_nw"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [3, 4]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+[[props]]
+id = "crystal_ne"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 4]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = -300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.25 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+[[props]]
+id = "crystal_sw"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [3, 8]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = -300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.5 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+[[props]]
+id = "crystal_se"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 8]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.75 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+# A rune ring (Rogue's Tower, `rugi` mesh 12) turns under the stone's
+# northern face, hovering a hand above the dais.
+[[props]]
+id = "rune_ring"
+mesh = { scene = "rugi", object = 12 }
+tile = [7, 5]
+offset = [0, 6, 0]
+animate = [{ kind = "spin", period = 600 }, { kind = "pulse", amount = 0.08, period = 90 }]
+
+# Wall torches from the Rogue's Tower (`rugi` mesh 15: a bracket and an
+# additive flame, which enhanced lighting turns into a light of its own) on
+# every third stretch of the stone walls.
+[[edges]]
+id = "torches"
+mesh = { scene = "rugi", object = 15 }
+walls = "#"
+every = 3
+inset = 6
+y = 120
+
+# Hanging vines (`tower` mesh 16) down the walls between the torches.
+[[edges]]
+id = "vines"
+mesh = { object = 16 }
+walls = "#"
+every = 3
+phase = 1
+inset = 2
+scale = 0.85
+
+# Grass tufts (`tower` mesh 27) at the foot of every wall.
+[[edges]]
+id = "wall_grass"
+mesh = { object = 27 }
+walls = "#_"
+every = 2
+inset = 20
+scale = 0.6
+
+# Rubble and weeds over the outer floor: the Rogue's Tower's boulders, small,
+# and the Sky Gardens' grass.
+[[scatter]]
+id = "rubble"
+rect = [1, 1, 13, 11]
+on = ".,"
+density = 0.45
+seed = 1101
+jitter = 44
+scale = [0.5, 0.9]
+meshes = [
+  { mesh = { scene = "rugi", object = 18 }, weight = 2 },
+  { mesh = { scene = "rugi", object = 19 }, weight = 2 },
+  { mesh = { scene = "rugi", object = 20 }, weight = 1 },
+  { mesh = { object = 23 }, weight = 3, scale = [0.5, 0.8] },
+  { mesh = { object = 27 }, weight = 3, scale = [0.45, 0.7] },
+]
+
+# The card dealer's stall by the entrance: Rim Elm's barrels and crates.
+[[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [1, 11]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-30, 0, -36]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-34, 0, 20]
+scale = 0.65
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [3, 11]
+offset = [0, 0, 24]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [13, 10]
+offset = [20, 0, 20]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [13, 2]
+offset = [20, 0, -20]
+scale = 0.8
+
+[lighting]
+mood = "cave"
+lamps = [
+  # The Warden's Stone glows a cold blue.
+  { id = "stone", tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 },
+  # Daylight spilling down the stair from Rim Elm.
+  { id = "stair_light", tile = [7, 11], offset = [0, 80, 40], color = [255, 230, 190], radius = 620 },
+]
+
+# The dais's flagstones drift: its atlas cell scrolls a texel every eighth
+# frame, so the floor under the stone seems to flow.
+[[materials]]
+kind = "scroll"
+cell = { tpage = 28, clut = 32576, tile = 0 }
+dx = 1
+dy = 1
+period = 8
+
+# Mist curls over the outer ring and the entrance hall.
+[fog]
+regions = [
+  { rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 },
+  { rect = [1, 9, 13, 11], angle = 270.0, spread = 40.0, speed = 18 },
+]
