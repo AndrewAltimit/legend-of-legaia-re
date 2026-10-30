@@ -336,7 +336,13 @@ impl PlayWindowApp {
             let offsets = if draws.is_empty() {
                 Default::default()
             } else {
-                let planes = plane_summaries_parallel(&draws, res);
+                // The distinct meshes' planes on the thread pool: the same map
+                // the serial `draw_plane_summaries` builds.
+                let planes =
+                    coplanar_draws::draw_plane_summaries_with(&draws, res, |ids, planes_of| {
+                        use rayon::prelude::*;
+                        ids.par_iter().map(|&i| (i, planes_of(i))).collect()
+                    });
                 coplanar_draws::coplanar_draw_offsets(&draws, &planes)
             };
             (
@@ -379,35 +385,6 @@ impl PlayWindowApp {
             .fog_volume
             .set_ground_field(&label, field);
     }
-}
-
-/// [`legaia_engine_scene::coplanar_draws::draw_plane_summaries`] with each
-/// distinct mesh's planes built in parallel: the same map.
-fn plane_summaries_parallel(
-    draws: &[legaia_engine_scene::field_env::EnvDraw],
-    res: &SceneResources,
-) -> std::collections::HashMap<usize, legaia_engine_scene::coplanar_draws::MeshPlanes> {
-    use rayon::prelude::*;
-    let mut ids: Vec<usize> = draws.iter().map(|d| d.res_tmd).collect();
-    ids.sort_unstable();
-    ids.dedup();
-    ids.retain(|&i| i < res.tmds.len());
-    ids.par_iter()
-        .map(|&i| {
-            let rt = &res.tmds[i];
-            let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&rt.tmd, &rt.raw);
-            let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rt.tmd, &rt.raw);
-            let mut positions = mesh.positions;
-            let mut indices = mesh.indices;
-            let base = positions.len() as u32;
-            positions.extend_from_slice(&cmesh.positions);
-            indices.extend(cmesh.indices.iter().map(|i| i + base));
-            (
-                i,
-                legaia_engine_scene::coplanar_draws::mesh_planes(&positions, &indices),
-            )
-        })
-        .collect()
 }
 
 impl PlayWindowApp {

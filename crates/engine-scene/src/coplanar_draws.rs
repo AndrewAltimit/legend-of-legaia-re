@@ -972,14 +972,30 @@ pub fn draw_plane_summaries(
     draws: &[EnvDraw],
     res: &crate::scene_resources::SceneResources,
 ) -> HashMap<usize, MeshPlanes> {
-    let mut out: HashMap<usize, MeshPlanes> = HashMap::new();
-    for d in draws {
-        if out.contains_key(&d.res_tmd) {
-            continue;
-        }
-        let Some(rt) = res.tmds.get(d.res_tmd) else {
-            continue;
-        };
+    draw_plane_summaries_with(draws, res, |ids, planes_of| {
+        ids.iter().map(|&i| (i, planes_of(i))).collect()
+    })
+}
+
+/// [`draw_plane_summaries`] with the per-mesh builds handed to `map`: the
+/// caller decides how the distinct meshes are walked (the native window runs
+/// them on a thread pool; wasm has none). `map` receives the sorted distinct
+/// in-range `res_tmd` ids and the one per-mesh builder, and returns one
+/// `(id, planes)` per id - the same map whatever order it builds in.
+pub fn draw_plane_summaries_with<F>(
+    draws: &[EnvDraw],
+    res: &crate::scene_resources::SceneResources,
+    map: F,
+) -> HashMap<usize, MeshPlanes>
+where
+    F: FnOnce(&[usize], &(dyn Fn(usize) -> MeshPlanes + Sync)) -> Vec<(usize, MeshPlanes)>,
+{
+    let mut ids: Vec<usize> = draws.iter().map(|d| d.res_tmd).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.retain(|&i| i < res.tmds.len());
+    let planes_of = |i: usize| {
+        let rt = &res.tmds[i];
         let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&rt.tmd, &rt.raw);
         let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rt.tmd, &rt.raw);
         let mut positions = mesh.positions;
@@ -987,9 +1003,9 @@ pub fn draw_plane_summaries(
         let base = positions.len() as u32;
         positions.extend_from_slice(&cmesh.positions);
         indices.extend(cmesh.indices.iter().map(|i| i + base));
-        out.insert(d.res_tmd, mesh_planes(&positions, &indices));
-    }
-    out
+        mesh_planes(&positions, &indices)
+    };
+    map(&ids, &planes_of).into_iter().collect()
 }
 
 #[cfg(test)]

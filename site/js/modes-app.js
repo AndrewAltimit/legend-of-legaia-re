@@ -111,7 +111,7 @@
   /* `Cross` -> "Cross (Z)", the first bound key from the engine's table. */
   function button(name) {
     const keys = window.legaiaPadKeysFor ? window.legaiaPadKeysFor(name) : [];
-    const dir = ['Up', 'Down', 'Left', 'Right'].includes(name);
+    const dir = /^(Up|Down|Left|Right)$/.test(name); // a D-pad label prefers an arrow key
     const k = keys.find((c) => c.startsWith('Arrow') === dir) || keys[0];
     return k ? `${esc(name)} <kbd class="gm-key">${esc(keyName(k))}</kbd>` : esc(name);
   }
