@@ -138,6 +138,10 @@ spawn = "from_below"
 tile = [18, 10]
 facing = 0
 radius = 92
+# The hall's own card table (the map's decor at this tile) is the table:
+# the cards and chips go on its top rather than on a second, built-in one.
+draw_table = false
+height = 84
 players = [
   { npc = "high_table_odile", name = "Odile" },
   { npc = "high_table_brann", name = "Brann" },
