@@ -334,12 +334,18 @@ mesh = { object = 130 }
 tile = [18, 16]
 offset = [0, 0, -40]
 
-# The High Table: the Rest's round table (`koin1` mesh 30) on its tile.
+# The High Table: the Rest's long card table (`koin1` mesh 120, a table
+# on its own legs) on its tile, the regulars' cups and plates on its top
+# (mesh 133).
 [[decor]]
-mesh = { object = 30 }
+mesh = { object = 120 }
 tile = [18, 10]
-offset = [0, 64, 0]
-scale = 1.2
+scale = 1.3
+
+[[decor]]
+mesh = { object = 133 }
+tile = [18, 10]
+offset = [0, 84, 0]
 
 # Barrels at the bar's ends, a display case at the armory.
 [[props]]
@@ -387,13 +393,19 @@ mesh = { object = 136 }
 tile = [1, 16]
 
 # The games room: the game-night table (the Rest's round table, `koin1`
-# mesh 30, with four chairs, mesh 27) and the casino's arcade cabinets
+# mesh 120, with four chairs, mesh 27) and the casino's arcade cabinets
 # (mesh 78) on the east wall.
 [[decor]]
-mesh = { object = 30 }
+mesh = { object = 120 }
 tile = [33, 12]
-offset = [0, 64, 0]
-scale = 1.6
+rotation = [0.0, 90.0, 0.0]
+scale = 1.3
+
+[[decor]]
+mesh = { object = 32 }
+tile = [33, 12]
+offset = [0, 84, 0]
+rotation = [0.0, 90.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
@@ -526,25 +538,19 @@ scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 180 }]
 light = { color = [255, 190, 120], radius = 520, height = 0, flicker = 0.1, period = 28 }
 
-# Gaming rugs (the casino's checked cloth) under the High Table and the
+# The casino's red rugs (`koin1` mesh 25) under the High Table and the
 # game-night table.
-[[decals]]
-id = "high_table_rug"
-cell = { tpage = 10, clut = 32395, tile = 37 }
+[[decor]]
+mesh = { object = 25 }
 tile = [18, 10]
 offset = [0, 2, 0]
-size = [640, 512]
-sides = 4
-yaw = [0.0, 0.0]
+scale = 2.0
 
-[[decals]]
-id = "games_rug"
-cell = { tpage = 10, clut = 32395, tile = 37 }
+[[decor]]
+mesh = { object = 25 }
 tile = [33, 12]
 offset = [0, 2, 0]
-size = [720, 720]
-sides = 4
-yaw = [0.0, 0.0]
+scale = 2.2
 
 # Paper lanterns hang over every room, swaying a little in the hearth's
 # draught (`assets/models/lantern.glb`).
