@@ -313,3 +313,59 @@ fn borrowed_scenes_list_each_from_once() {
     assert_eq!(t.borrowed_cells_mut("cave02").len(), 2);
     assert_eq!(t.borrowed_cells_mut("rugi").len(), 1);
 }
+
+#[test]
+fn detail_reach_keeps_boundary_detail_near_the_walkable_floor() {
+    // A walled block of `%` up in the thicket (rows 1-2) and a walkable
+    // patch of `^` by the floor (rows 4-5).
+    let src = r############"
+name = "t"
+base = { scene = { kind = "scene", name = "town01" } }
+[tiles]
+origin = [4, 4]
+rows = [
+  "##########",
+  "##%%######",
+  "##%%######",
+  "##########",
+  "......^^..",
+  "......^^..",
+]
+[tiles.legend]
+"#" = { walls = "all" }
+"%" = { walls = "all" }
+"." = {}
+"^" = {}
+[terrain]
+detail = 4
+materials = [{ name = "a", chars = ".#", cells = [{ tpage = 1, clut = 1, tile = 1 }] }, { name = "b", chars = "^%", cells = [{ tpage = 2, clut = 2, tile = 2 }] }]
+"############;
+    let all: MapDef = toml::from_str(src).expect("parses");
+    let mut near = all.clone();
+    near.terrain.as_mut().unwrap().detail_reach = 1;
+    let (all, near) = (
+        all.terrain_surface().unwrap().unwrap(),
+        near.terrain_surface().unwrap().unwrap(),
+    );
+    let res = all.field.res;
+    let qc = all.field.cols - 1;
+    let row_of = |q: usize| (q / qc) / res;
+    // Every boundary subdivides with no reach; with one, only those within
+    // a tile of the walkable rows do, and the walled block's do not.
+    assert!(all.fine.keys().any(|&q| row_of(q) <= 2));
+    assert!(!near.fine.is_empty());
+    assert!(near.fine.keys().all(|&q| row_of(q) >= 3));
+    // Far from the floor no quad blends either; the coarse materials stay.
+    for (q, (a, n)) in all.paint.iter().zip(&near.paint).enumerate() {
+        for (a, n) in a.iter().zip(n) {
+            assert_eq!(
+                a.map(|p| (p.cell, p.material)),
+                n.map(|p| (p.cell, p.material))
+            );
+            if row_of(q) <= 1 {
+                assert!(n.is_none_or(|p| p.overlay.is_none()));
+            }
+        }
+    }
+    assert_eq!(all.field, near.field);
+}

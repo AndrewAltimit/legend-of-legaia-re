@@ -148,7 +148,7 @@ export function scatterEd(dctx, box, map) {
   const sec = section(box, 'scatter', 'Scatter brushes', 'a seeded brush: the same file paints the same floor', (map.scatter || []).length, 'decorations');
   listEd(dctx, sec, map, 'scatter', '', {
     add: 'Scatter brush', fold: true, dup: freshOf('scatter'),
-    make: () => ({ id: '', rect: [0, 0, 0, 0], meshes: [{ mesh: { object: 0 }, weight: 1, scale: null, y: 0 }], density: 1, seed: 0, jitter: 40, yaw: [0, 360], scale: [1, 1], tilt: 0, on: '', keep_clear: true, cluster: null }),
+    make: () => ({ id: '', rect: [0, 0, 0, 0], meshes: [{ mesh: { object: 0 }, weight: 1, scale: null, y: 0 }], density: 1, seed: 0, jitter: 40, yaw: [0, 360], scale: [1, 1], tilt: 0, on: '', keep_clear: true, cluster: null, clearance: null }),
     label: (s, i) => `${s.id || `brush ${i + 1}`} - ${(s.meshes || []).length} mesh(es), density ${s.density}`,
     render: (b, s, p) => {
       const g = grid(dctx, s, [
@@ -178,6 +178,20 @@ export function scatterEd(dctx, box, map) {
         ], cp));
       }
       b.append(cb);
+      const kp = `${p}.clearance`;
+      const kb = h('div', { class: 'xw-box', 'data-path': kp });
+      const kon = h('input', { type: 'checkbox' });
+      kon.checked = s.clearance != null;
+      kon.addEventListener('change', () => { s.clearance = kon.checked ? { radius: 1, front: 3, keep: 0 } : null; dctx.changed(true); });
+      kb.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, kon, 'Clearance'), h('span', { class: 'xw-hint' }, 'thin round the walkable floor so the player reads from the camera')));
+      if (s.clearance) {
+        kb.append(grid(dctx, s.clearance, [
+          { k: 'radius', t: 'float', label: 'Sides (tiles)', hint: 'to the sides of and behind the floor' },
+          { k: 'front', t: 'float', label: 'Camera side (tiles)', hint: 'toward +Z, where the follow camera stands' },
+          { k: 'keep', t: 'float', label: 'Keep', hint: 'density kept inside: 0 none, 1 all' },
+        ], kp));
+      }
+      b.append(kb);
       listEd(dctx, b, s, 'meshes', p, {
         title: 'Meshes', hint: 'picked by weight', add: 'Mesh', dup: true,
         make: () => ({ mesh: { object: 0 }, weight: 1, scale: null, y: 0 }),

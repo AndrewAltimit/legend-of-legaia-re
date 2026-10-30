@@ -91,6 +91,14 @@ pub struct TerrainDef {
     /// the surface, and the floor the player walks, are unchanged.
     #[serde(default = "detail_off")]
     pub detail: u8,
+    /// How far, in tiles, from the walkable floor (a tile neither void nor
+    /// fully walled) a boundary is drawn in full: past it a quad keeps its
+    /// own two triangles' materials, with no [`Self::detail`] subdivision
+    /// and no [`Self::soften`] overlay. Ground a forest or a cliff band
+    /// walls off is seen only from afar and through what stands on it, and
+    /// there the finer boundary costs triangles nobody sees. `0` draws
+    /// every boundary in full.
+    pub detail_reach: u8,
     /// The baked sun: `[azimuth, elevation]` in degrees (azimuth `0` lights
     /// from `+Z`, `90` from `+X`).
     pub sun: [f32; 2],
@@ -121,6 +129,7 @@ impl Default for TerrainDef {
             blend: 0.5,
             soften: 0.3,
             detail: 1,
+            detail_reach: 0,
             sun: [135.0, 50.0],
             shading: 0.5,
             shapes: Vec::new(),
@@ -1356,6 +1365,47 @@ fn tile_materials(
     (mats, per_tile)
 }
 
+/// Each map tile's Chebyshev distance in tiles from the nearest walkable
+/// tile (neither void nor fully walled), capped at `reach + 1`, row-major;
+/// `None` when `reach` is `0` (no limit).
+fn walkable_distance(grid: &TileGrid, reach: u8) -> Option<Vec<u8>> {
+    if reach == 0 {
+        return None;
+    }
+    let cap = reach.saturating_add(1);
+    let (w, h) = (grid.width, grid.height);
+    let mut d = vec![cap; w * h];
+    let mut queue = std::collections::VecDeque::new();
+    for r in 0..h {
+        for c in 0..w {
+            if grid.get(c, r).is_some_and(|t| !t.void && t.walls != 0xF) {
+                d[r * w + c] = 0;
+                queue.push_back((c, r));
+            }
+        }
+    }
+    while let Some((c, r)) = queue.pop_front() {
+        let next = d[r * w + c] + 1;
+        if next >= cap {
+            continue;
+        }
+        for dr in -1..=1isize {
+            for dc in -1..=1isize {
+                let (nc, nr) = (c as isize + dc, r as isize + dr);
+                if nc < 0 || nr < 0 || nc >= w as isize || nr >= h as isize {
+                    continue;
+                }
+                let k = nr as usize * w + nc as usize;
+                if d[k] > next {
+                    d[k] = next;
+                    queue.push_back((nc as usize, nr as usize));
+                }
+            }
+        }
+    }
+    Some(d)
+}
+
 fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) -> TerrainSurface {
     let (mats, per_tile) = tile_materials(t, def, grid);
     let (cols, rows, res, skirt) = (field.cols, field.rows, field.res, field.skirt);
@@ -1447,6 +1497,18 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
         scored
     };
     let detail = usize::from(t.detail.clamp(1, 4));
+    // Each tile's distance from the walkable floor, in tiles (Chebyshev),
+    // when `detail_reach` limits where a boundary draws in full; a skirt
+    // quad counts its overshoot past the map's edge.
+    let reach_of = walkable_distance(grid, t.detail_reach);
+    let in_reach = |tc: isize, tr: isize| -> bool {
+        let Some(d) = &reach_of else { return true };
+        let c = tc.clamp(0, grid.width as isize - 1);
+        let r = tr.clamp(0, grid.height as isize - 1);
+        let over = (tc - c).abs().max((tr - r).abs()) as u32;
+        u32::from(d[r as usize * grid.width + c as usize]).saturating_add(over)
+            <= u32::from(t.detail_reach)
+    };
     // The winning material at each vertex: a quad whose corners or
     // triangles disagree lies on a boundary and is subdivided.
     let vertex_win: Vec<Option<u16>> = if detail > 1 {
@@ -1482,6 +1544,7 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                 .max((hs[1] - hs[2]).abs() * std::f32::consts::FRAC_1_SQRT_2);
             let tile_c = (i / res) as isize - skirt as isize;
             let tile_r = (j / res) as isize - skirt as isize;
+            let full = in_reach(tile_c, tile_r);
             let tile_hash = |salt: u64| {
                 splitmix64(
                     t.seed
@@ -1508,7 +1571,7 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                     .first()
                     .and_then(|&(m, _)| paint_of(m).map(|p| (m, p)));
                 let runner = match (scored.first(), scored.get(1)) {
-                    (Some(&(_, a)), Some(&(m, b))) if a - b < t.soften => paint_of(m),
+                    (Some(&(_, a)), Some(&(m, b))) if full && a - b < t.soften => paint_of(m),
                     _ => None,
                 };
                 (ground, runner)
@@ -1551,7 +1614,7 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                     overlay: runner,
                 })
             };
-            if detail > 1 {
+            if detail > 1 && full {
                 let win = |a: usize, b: usize| vertex_win[b * cols + a];
                 let mats = [
                     tris[0].0.map(|g| g.0),

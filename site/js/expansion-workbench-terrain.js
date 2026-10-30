@@ -175,7 +175,8 @@ export function renderTerrain(ctx, mctx, side, map) {
     num('Walkable step', t.max_step, (v) => { t.max_step = Math.max(1, v); ctx.changed(true); }, { min: 1 }),
     num('Skirt (tiles)', t.skirt, (v) => { t.skirt = Math.max(0, Math.min(12, Math.round(v))); ctx.changed(true); }, { min: 0, max: 12 })));
   box.append(h('div', { class: 'xw-tools' },
-    num('Boundary detail', t.detail || 1, (v) => { t.detail = [1, 2, 4].includes(v) ? v : 1; ctx.changed(true); }, { min: 1, max: 4, title: 'Sub-quads a side on a material boundary: 1, 2 or 4 (finer edges, more triangles)' })));
+    num('Boundary detail', t.detail || 1, (v) => { t.detail = [1, 2, 4].includes(v) ? v : 1; ctx.changed(true); }, { min: 1, max: 4, title: 'Sub-quads a side on a material boundary: 1, 2 or 4 (finer edges, more triangles)' }),
+    num('Detail reach (tiles)', t.detail_reach || 0, (v) => { t.detail_reach = Math.max(0, Math.min(255, Math.round(v))); ctx.changed(true); }, { min: 0, max: 255, title: 'Draw boundary detail and soft blends only this many tiles from the walkable floor (0: everywhere) - fewer triangles under a forest' })));
   box.append(heightmapImport(ctx, mctx, t));
   const water = h('input', { type: 'checkbox' });
   water.checked = !!t.water;

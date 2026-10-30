@@ -679,8 +679,43 @@ Nothing has to sit on the grid:
 |---|---|
 | `[[scatter]]` `jitter`, `yaw`, `scale`, `tilt` | Each mesh off its tile centre, turned, scaled and tilted inside the ranges. |
 | `[[scatter]]` `cluster = { centre, radius, falloff }` | Density falls from the centre (map-local tiles, the rectangle's centre when left out) as `(1 - d / radius) ^ falloff`: a dense clump, a sparse rim. |
+| `[[scatter]]` `clearance = { radius, front, keep }` | The brush thins round the walkable floor ([Clearance](#clearance)): the player and the path read through a forest from the follow camera. |
 | `[[edges]]` `jitter`, `yaw_jitter`, `scale_range`, `seed` | Each copy slides along its wall (and a quarter of `jitter` toward the room), turns and scales, seeded per tile. |
 | `[[decals]]` brushes | Jitter, yaw range and `size_jitter` per decal. |
+
+### Clearance
+
+A forest scattered on the thicket that walls a path in stands its trees on
+the camera's side of the path as well, and from the follow camera - which
+stands on a map's `-Z` side (rows shrinking, the top of the painter's
+grid) looking toward `+Z` - those
+trunks and canopies cover the path and the player. A brush's `clearance`
+keeps them off:
+
+```toml
+[[scatter]]
+on = "Tt"
+clearance = { radius = 0.9, front = 3.5, keep = 0.0 }
+```
+
+A tile's reach `e` is its least distance to a walkable tile centre (one
+neither void nor fully walled), each axis over the band's half-width on
+that side: `front` tiles for a tile on the camera's side of the walkable
+one, `radius` tiles to the sides and behind. Up to `e = 1` the brush keeps
+`keep` of its density; from there it ramps back to full by `e = 1.5`, so
+the clearing's edge is a thinning, not a line
+([`clearance_weight`](../../crates/expansion-format/src/map_detail.rs)).
+The draw stays a pure function of the file: the clearance only scales the
+density each tile's own seeded stream reads. Retail forests are laid out
+the same way - the West Voz Forest (`vell`) flanks its path with trees and
+keeps the camera's side of it low.
+
+The camera-occlusion fade (see-through walls) applies to a pack map's
+decorations like any field geometry: a decoration cell is a terrain-tile
+draw, so it is both an occluder the visibility gate ray-casts and a draw
+the fade dissolves. The gate arms only when the player is completely
+hidden, so a canopy that half covers them does not fade - which is what the
+clearance is for.
 
 ### Decals
 
@@ -916,6 +951,7 @@ seed = 4120
 variation = 0.2         # macro brightness noise over the vertex colours
 blend = 0.55            # width of the dithered boundary between materials
 detail = 4              # sub-quads a side on a material boundary: 1, 2 or 4
+detail_reach = 3        # tiles from the walkable floor that boundaries draw in full (0 = all)
 sun = [150.0, 42.0]     # baked sun: azimuth, elevation (degrees)
 shading = 0.6
 shapes = [
@@ -1026,6 +1062,14 @@ sub-quad samples only a few texels, and the hosts drop a prim whose texels
 are all zero words (their test for an unwritten page), so a quad any of
 whose sub-prims would read that way against the map's VRAM draws whole
 (`MeshLibrary::terrain_vram`).
+
+`detail_reach` limits where a boundary draws in full to the tiles within
+that many tiles (Chebyshev) of the walkable floor - a tile neither void nor
+fully walled - a skirt quad counting its overshoot past the map's edge.
+Past it a quad keeps its own two triangles' materials, with no subdivision
+and no soft overlay. A forest's thicket or a cliff band is ground seen only
+from afar and through what stands on it, where the finer boundary is
+triangles nobody sees; `0` (the default) draws every boundary in full.
 
 **Textures from another scene.** A material, the `cliff` or the `water`
 whose atlas cells name another retail scene's VRAM says so with

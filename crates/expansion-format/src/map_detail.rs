@@ -90,6 +90,81 @@ pub struct ScatterBrush {
     /// Thin the brush away from a centre: dense in the middle, sparse at
     /// the rim ([`Cluster`]). `None` paints the rectangle evenly.
     pub cluster: Option<Cluster>,
+    /// Thin the brush round the walkable floor so the player and the path
+    /// read through it from the follow camera ([`Clearance`]). `None`
+    /// paints up to the path's edge.
+    pub clearance: Option<Clearance>,
+}
+
+/// A [`ScatterBrush`]'s clearance round the walkable floor (every tile
+/// that is not void and not fully walled). The follow camera stands on a
+/// map's `-Z` side (rows shrinking, the top of the painter's grid) looking
+/// toward `+Z`, so what stands on that side of the path is what covers it: the band is `radius` tiles
+/// wide to the sides and behind a walkable tile and `front` tiles deep
+/// toward the camera.
+///
+/// A tile's reach `e` is its least distance to a walkable tile centre,
+/// each axis over the band's half-width on that side (`front` for a tile
+/// on the camera side of the walkable one, `radius` otherwise). Up to
+/// `e = 1` the brush keeps `keep` of its density; from there it ramps back
+/// to full by `e = 1.5`, so the edge of a clearing is a thinning, not a
+/// line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Clearance {
+    /// Tiles to the sides of and behind the walkable floor.
+    pub radius: f32,
+    /// Tiles toward the camera (`-Z`, rows shrinking).
+    pub front: f32,
+    /// The fraction of the density kept inside the band (`0` = none).
+    pub keep: f32,
+}
+
+impl Default for Clearance {
+    fn default() -> Self {
+        Self {
+            radius: 1.0,
+            front: 3.0,
+            keep: 0.0,
+        }
+    }
+}
+
+/// The density factor [`Clearance`] gives tile `(col, row)`, with
+/// `walkable` answering whether a map-local tile is walkable floor.
+pub fn clearance_weight(
+    k: &Clearance,
+    col: u16,
+    row: u16,
+    walkable: impl Fn(i32, i32) -> bool,
+) -> f32 {
+    let radius = k.radius.max(0.01);
+    let front = k.front.max(0.01);
+    // Past `e = 1.5` nothing thins, so only that far needs looking at.
+    let reach = (radius.max(front) * 1.5).ceil() as i32;
+    let (c, r) = (i32::from(col), i32::from(row));
+    let mut e = f32::INFINITY;
+    for dr in -reach..=reach {
+        for dc in -reach..=reach {
+            if !walkable(c + dc, r + dr) {
+                continue;
+            }
+            // `dr` runs from this tile to the walkable one: positive is
+            // this tile on the walkable one's `-Z` side, the camera's.
+            let dz = dr as f32;
+            let along = if dz > 0.0 { front } else { radius };
+            let d = ((dc as f32) / radius).hypot(dz / along);
+            e = e.min(d);
+        }
+    }
+    let keep = k.keep.clamp(0.0, 1.0);
+    if e <= 1.0 {
+        keep
+    } else if e < 1.5 {
+        keep + (1.0 - keep) * (e - 1.0) / 0.5
+    } else {
+        1.0
+    }
 }
 
 /// A [`ScatterBrush`]'s falloff: the density at a tile `d` tiles from
@@ -131,6 +206,7 @@ impl Default for ScatterBrush {
             on: String::new(),
             keep_clear: true,
             cluster: None,
+            clearance: None,
         }
     }
 }
@@ -1044,6 +1120,15 @@ impl crate::map::MapDef {
                     let density = match &brush.cluster {
                         None => density,
                         Some(k) => density * cluster_weight(k, &brush.rect, col, row),
+                    };
+                    let density = match &brush.clearance {
+                        None => density,
+                        Some(k) => {
+                            density
+                                * clearance_weight(k, col, row, |c, r| {
+                                    c >= 0 && r >= 0 && floor(c as usize, r as usize)
+                                })
+                        }
                     };
                     let n = density.trunc() as u32 + u32::from(rng.unit() < density.fract());
                     let jitter = f32::from(brush.jitter.min(256));

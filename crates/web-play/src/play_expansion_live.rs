@@ -49,6 +49,13 @@ impl LegaiaRuntime {
         self.expansion_overlay().to_string()
     }
 
+    /// Hide the field HUD (the party readout and the passive badges) while
+    /// the workbench's 3D preview has an edit mode on, and show it again
+    /// with `false`. The play page never sets it.
+    pub fn set_editor_hud_hidden(&mut self, hidden: bool) {
+        self.editor_hud_hidden = hidden;
+    }
+
     /// Stand the player on map-local tile `(col, row)` of the active pack
     /// map, on its floor (the workbench's "walk from here"). `false` off a
     /// pack map or off its rectangle.
@@ -548,5 +555,84 @@ mod tests {
             f.terrain.len(),
             ov["floor"].as_array().map_or(0, Vec::len)
         );
+    }
+
+    /// Disc-gated, ignored (a measurement, not a check): each Isles map's
+    /// entry cost on the play page's path - the engine's map entry, the
+    /// page's scene build and the arrays it uploads - with the triangle
+    /// count drawn and a hash of the uploaded arrays (a change of output
+    /// shows as a change of hash): `cargo test -p legaia-web-play --profile
+    /// release-test --lib isles_map_entry_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn isles_map_entry_cost() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let pack = bundle(&rebirth_files());
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let v: Value = serde_json::from_str(&rt.load_expansion_core(&pack)).unwrap();
+        assert_eq!(v["ok"], true, "{v}");
+        for map in [
+            "isles_beach",
+            "isles_village",
+            "isles_grotto",
+            "isles_thornwood",
+        ] {
+            let t = std::time::Instant::now();
+            rt.scene_host
+                .host_mut()
+                .unwrap()
+                .enter_expansion_map(map, "")
+                .expect("enter");
+            let engine = t.elapsed();
+            let t = std::time::Instant::now();
+            assert!(rt.rebuild_render_state().is_ok());
+            let page = t.elapsed();
+            let t = std::time::Instant::now();
+            let arrays = scene_build(&rt);
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            std::hash::Hash::hash(&arrays, &mut h);
+            // Each distinct mesh the page uploads, as `ensure` builds it.
+            let mut slots: Vec<(u32, u32)> = rt
+                .field_terrain_slots()
+                .into_iter()
+                .map(|s| (s, 0))
+                .chain(
+                    rt.field_placement_slots()
+                        .into_iter()
+                        .zip(rt.field_placement_anim_ids()),
+                )
+                .collect();
+            slots.sort_unstable();
+            slots.dedup();
+            let mut tris = 0;
+            for (slot, anim) in slots {
+                if rt.field_mesh_posed(slot, anim).is_err() {
+                    continue;
+                }
+                let idx = rt.field_mesh_indices();
+                tris += idx.len() / 3;
+                let bits: Vec<u32> = rt
+                    .field_mesh_positions()
+                    .iter()
+                    .map(|f| f.to_bits())
+                    .collect();
+                std::hash::Hash::hash(&bits, &mut h);
+                std::hash::Hash::hash(&idx, &mut h);
+                std::hash::Hash::hash(&rt.field_mesh_uvs(), &mut h);
+                std::hash::Hash::hash(&rt.field_mesh_cba_tsb(), &mut h);
+                std::hash::Hash::hash(&rt.field_mesh_flat_rgba(), &mut h);
+            }
+            let upload = t.elapsed();
+            eprintln!(
+                "{map}: engine entry {engine:?}, page build {page:?}, arrays {upload:?}; \
+                 ~{tris} triangles, output hash {:016x}",
+                std::hash::Hasher::finish(&h)
+            );
+        }
     }
 }

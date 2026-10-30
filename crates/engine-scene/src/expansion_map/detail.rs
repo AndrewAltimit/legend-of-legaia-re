@@ -130,6 +130,10 @@ pub struct MeshLibrary {
     /// whose texels the hosts' texture filter would read as missing (all
     /// zero words) is drawn whole instead ([`super::terrain::tile_meshes`]).
     pub terrain_vram: Option<TerrainVram>,
+    /// The terrain resolved for drawing (heights, paint, colours) from
+    /// [`Self::terrain`] (or the map's own `[terrain]`): built once here,
+    /// where the blend palettes need it, and reused by the image build.
+    pub terrain_surface: Option<std::sync::Arc<legaia_expansion_format::terrain::TerrainSurface>>,
 }
 
 /// [`MeshLibrary::terrain_vram`]: the map's VRAM, shared.
@@ -317,7 +321,9 @@ pub fn resolve_mesh_library(
         .unwrap_or(def)
         .terrain_surface()
         .context("the terrain")?
+        .map(std::sync::Arc::new)
     {
+        lib.terrain_surface = Some(surface.clone());
         // The blend palettes copy what the map's VRAM will hold: the base
         // scene's words under the copies made so far.
         let mut vram = base_vram.clone();

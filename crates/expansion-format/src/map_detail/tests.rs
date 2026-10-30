@@ -222,6 +222,49 @@ fn the_tile_stream_is_stable() {
 }
 
 #[test]
+fn a_clearance_keeps_the_camera_side_of_the_path_open() {
+    // A path along row 8 of an open field; the camera's side is rows 7
+    // and up the grid.
+    let walk = |_c: i32, r: i32| r == 8;
+    let k = Clearance {
+        radius: 0.9,
+        front: 3.5,
+        keep: 0.0,
+    };
+    // The camera's side clears three rows deep and thins on the fourth;
+    // behind the path only the row beside it thins.
+    for r in 5..=7 {
+        assert_eq!(clearance_weight(&k, 4, r, walk), 0.0, "row {r}");
+    }
+    assert!((0.0..1.0).contains(&clearance_weight(&k, 4, 4, walk)));
+    assert_eq!(clearance_weight(&k, 4, 1, walk), 1.0);
+    assert!((0.1..0.5).contains(&clearance_weight(&k, 4, 9, walk)));
+    assert_eq!(clearance_weight(&k, 4, 10, walk), 1.0);
+    // `keep` is the floor of the band.
+    let half = Clearance { keep: 0.5, ..k };
+    assert_eq!(clearance_weight(&half, 4, 7, walk), 0.5);
+    // On a map: a brush over the walls of HALL's room leaves the wall row
+    // above the room (the camera's side) bare, the one below it painted.
+    let mut m = parse(HALL);
+    m.decor.clear();
+    m.edges.clear();
+    m.scatter[0].on = "#".into();
+    m.scatter[0].density = 1.0;
+    m.scatter[0].rect = [0, 0, 6, 4];
+    m.scatter[0].clearance = Some(Clearance {
+        radius: 0.5,
+        front: 1.5,
+        keep: 0.0,
+    });
+    let d = m.decorations().unwrap();
+    assert!(d.iter().any(|x| x.tile[1] == 4));
+    assert!(
+        !d.iter()
+            .any(|x| x.tile[1] == 0 && (1..=5).contains(&x.tile[0]))
+    );
+}
+
+#[test]
 fn a_cluster_thins_toward_its_rim() {
     let k = Cluster {
         centre: Some([5.0, 5.0]),

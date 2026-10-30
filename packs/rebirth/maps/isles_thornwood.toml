@@ -172,16 +172,19 @@ scale = 1.6
 animate = [{ kind = "spin", period = 500 }, { kind = "bob", amplitude = 12, period = 200 }]
 light = { color = [120, 200, 255], radius = 640, height = 60, flicker = 0.1, period = 50 }
 
-# Forest walls: trees on every thicket tile, densest away from the path.
+# Forest walls: trees on every thicket tile, cleared off the camera's side
+# of the path (the follow camera stands to the north, `-Z`) so the player
+# and the path always read through the canopy, as in the West Voz Forest.
 [[scatter]]
 id = "forest"
-rect = [0, 0, 69, 33]
+rect = [0, 0, 87, 33]
 on = "Tt"
 density = 1.0
 seed = 4301
 jitter = 40
 yaw = [0.0, 360.0]
 scale = [0.3, 0.45]
+clearance = { radius = 0.9, front = 3.5, keep = 0.0 }
 meshes = [
   { mesh = { object = 3 }, weight = 3, scale = [0.22, 0.32] },
   { mesh = { object = 12 }, weight = 2 },
@@ -251,6 +254,26 @@ meshes = [
   { mesh = { scene = "town01", object = 10 }, weight = 1 },
 ]
 
+# The thicket's floor: ferns and shrubs under the trees and across the
+# cleared band, low enough to leave the path in view, off the row beside it.
+# Last of the brushes, so adding it reshuffles none of the others.
+[[scatter]]
+id = "thicket_floor"
+rect = [0, 0, 87, 33]
+on = "Tt"
+density = 0.9
+seed = 4307
+jitter = 48
+yaw = [0.0, 360.0]
+scale = [0.4, 0.6]
+clearance = { radius = 0.5, front = 1.2, keep = 0.0 }
+meshes = [
+  { mesh = { object = 13 }, weight = 3 },
+  { mesh = { object = 14 }, weight = 2 },
+  { mesh = { object = 20 }, weight = 2 },
+  { mesh = { object = 4 }, weight = 2 },
+]
+
 [[edges]]
 id = "ruin_vines"
 mesh = { object = 41 }
@@ -318,6 +341,9 @@ variation = 0.28
 blend = 0.7
 soften = 0.35
 detail = 4
+# Boundary detail and soft blends only near the path: the thicket's floor
+# is seen through the trees, where the finer edge is triangles nobody sees.
+detail_reach = 2
 sun = [225.0, 38.0]
 shading = 0.6
 shapes = [

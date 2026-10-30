@@ -150,7 +150,7 @@ export function createPreview3d(env) {
     toggleBtn.textContent = on ? 'Close 3D preview' : 'Open 3D preview';
     body.hidden = !on;
     ctrls.hidden = !on;
-    editSlot.hidden = !on || !editSlot.firstChild;
+    editSlot.hidden = !on || !editSlot.firstChild || !!P.editOff;
     layerBox.hidden = !on;
     if (on && !P.frame) {
       const f = document.createElement('iframe');
@@ -262,7 +262,7 @@ export function createPreview3d(env) {
   /* The 3D editor's state for the frame (`xw-edit`): kept whole, so a new
    * frame or a rebuilt map gets all of it again. */
   function sendEdit() {
-    if (P.edit) post(Object.assign({ type: 'xw-edit' }, P.edit));
+    if (P.edit) post(Object.assign({ type: 'xw-edit' }, P.edit, P.editOff ? { mode: 'view' } : {}));
   }
 
   /* An action for the frame's engine (a cutscene, a fight, the binder),
@@ -401,12 +401,22 @@ export function createPreview3d(env) {
      * frame's answers, and its bar. */
     edit(msg) {
       P.edit = Object.assign(P.edit || {}, msg);
-      if (P.ready) post(Object.assign({ type: 'xw-edit' }, msg));
+      if (P.ready) post(Object.assign({ type: 'xw-edit' }, msg, P.editOff ? { mode: 'view' } : {}));
+    },
+    /* Off the Maps tab the 3D editor stands down: the frame drops to the
+     * view mode and the edit bar hides; back on the tab both come back as
+     * they were. */
+    suspendEdit(off) {
+      off = !!off;
+      if (P.editOff === off) return;
+      P.editOff = off;
+      editSlot.hidden = off || !editSlot.firstChild || !P.open;
+      if (P.ready) sendEdit();
     },
     onEdit(fn) { P.onEdit = fn; },
     setEditBar(bar) {
       if (bar && bar.parentNode !== editSlot) { editSlot.innerHTML = ''; editSlot.append(bar); }
-      editSlot.hidden = !bar || !P.open;
+      editSlot.hidden = !bar || !P.open || !!P.editOff;
     },
     isOpen: () => P.open,
     open: () => { if (!P.open) setOpen(true); },

@@ -409,15 +409,23 @@ pub fn build_field_image(
     }
     // A terrain whose cells borrow another scene's VRAM paints with the
     // library's rewritten copy (the heights are the same either way).
-    let borrowed = base
-        .library
-        .and_then(|l| l.terrain.as_ref())
-        .map(|t| MapDef {
-            terrain: Some(t.clone()),
-            ..def.clone()
-        });
-    let surface = borrowed.as_ref().unwrap_or(def).terrain_surface()?;
-    let terrain_walls = match &surface {
+    // The library built it already for the blend palettes.
+    let computed;
+    let surface = match base.library.and_then(|l| l.terrain_surface.as_deref()) {
+        Some(s) => Some(s),
+        None => {
+            let borrowed = base
+                .library
+                .and_then(|l| l.terrain.as_ref())
+                .map(|t| MapDef {
+                    terrain: Some(t.clone()),
+                    ..def.clone()
+                });
+            computed = borrowed.as_ref().unwrap_or(def).terrain_surface()?;
+            computed.as_ref()
+        }
+    };
+    let terrain_walls = match surface {
         Some(_) => Some(def.terrain_walls(grid)?),
         None => None,
     };
@@ -434,10 +442,10 @@ pub fn build_field_image(
         base,
         keep,
         &mut added,
-        surface.as_ref(),
+        surface,
         &mut cell_items,
     )?;
-    if let Some(s) = &surface {
+    if let Some(s) = surface {
         let foam = base.library.and_then(|l| l.foam_sheet.as_ref());
         let no_stp = Default::default();
         let stp = base.library.map_or(&no_stp, |l| &l.stp_cluts);
@@ -468,14 +476,7 @@ pub fn build_field_image(
         }
     }
     let (dropped, chunk) = write_decorations(
-        &mut img,
-        def,
-        grid,
-        base,
-        &mut added,
-        &mut free,
-        surface.as_ref(),
-        cell_items,
+        &mut img, def, grid, base, &mut added, &mut free, surface, cell_items,
     )?;
     // A kept room keeps its own floor steps (`KeptFloor`).
     let kept = KeptFloor::new(def, grid, base.base_map);

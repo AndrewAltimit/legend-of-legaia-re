@@ -428,6 +428,12 @@ The **Edit** bar under the preview's head turns the picture into an editor.
 modes take the left button; Alt with a drag still turns the camera, and a
 drag that starts on nothing in **Select** turns it too.
 
+The editor belongs to the Maps tab: on the Cutscenes, Battle and Cards tabs
+the frame drops to **View** and the bar hides (`suspendEdit`), and back on
+Maps both return as they were. While a mode other than **View** is on, the
+field HUD - the party readout and the passive-ability badges - stays off
+the frame (`set_editor_hud_hidden`), so it never covers the map being edited.
+
 | Mode | Does |
 |---|---|
 | Select | A click picks the object under it - a prop, decoration, NPC, spawn, lamp, emitter, trigger, exit or encounter zone; Shift or Ctrl adds or takes away. The selection gets a gizmo: **Move** (two arrows for one axis, a square for both; dragging an object moves it), **Rotate** (a ring: props and decorations in 15-degree steps, NPCs and spawns by facing sector), **Scale** (a corner handle: props and decorations; a zone's corner resizes it). A drag snaps to the tile or to the 32-unit sub-tile grid (**Snap**); Shift places freely. **Duplicate** (Ctrl+D) copies the selection one tile over (a prop to the nearest free tile); **Delete** removes it. |

@@ -183,6 +183,8 @@ struct TriRec {
     d: f32,
     area: f32,
     p2: [[f32; 2]; 3],
+    /// `p2`'s bounding box, `[min, max]`.
+    bb: [[f32; 2]; 2],
 }
 
 fn dominant_axis(n: [f32; 3]) -> usize {
@@ -276,6 +278,12 @@ fn tri_overlap_area(a: &TriRec, b: &TriRec) -> f32 {
 /// discard, not a nudge - run that pass FIRST). Returns the number of
 /// triangles moved.
 pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
+    separate_coplanar_prims_with(mesh, true)
+}
+
+/// [`separate_coplanar_prims`] with the pair search's sweep on or off
+/// ([`overlap_pairs`]).
+fn separate_coplanar_prims_with(mesh: &mut VramMesh, sweep: bool) -> usize {
     use std::collections::HashMap;
     let tris: Vec<[u32; 3]> = mesh
         .indices
@@ -311,13 +319,19 @@ pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
         if area < 1.0 {
             continue;
         }
+        let p2 = [project2(v[0], ax), project2(v[1], ax), project2(v[2], ax)];
+        let bb = [
+            [0, 1].map(|k| p2[0][k].min(p2[1][k]).min(p2[2][k])),
+            [0, 1].map(|k| p2[0][k].max(p2[1][k]).max(p2[2][k])),
+        ];
         recs.push(TriRec {
             tri: t_idx,
             n,
             vis,
             d,
             area,
-            p2: [project2(v[0], ax), project2(v[1], ax), project2(v[2], ax)],
+            p2,
+            bb,
         });
     }
     // Bucket by quantized plane; d straddles land in adjacent buckets.
@@ -337,27 +351,9 @@ pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
     }
     // Overlap edges between coplanar rec pairs.
     let mut edges: HashMap<usize, Vec<usize>> = HashMap::new();
-    let mut seen: std::collections::HashSet<(usize, usize)> = Default::default();
-    for members in buckets.values() {
-        for xi in 0..members.len() {
-            for yi in (xi + 1)..members.len() {
-                let (i, j) = (members[xi].min(members[yi]), members[xi].max(members[yi]));
-                if i == j || seen.contains(&(i, j)) {
-                    continue;
-                }
-                let (a, b) = (&recs[i], &recs[j]);
-                if dot(a.n, b.n) < 0.9999 || (a.d - b.d).abs() > 0.05 {
-                    continue;
-                }
-                let ov = tri_overlap_area(a, b);
-                if ov < 4.0 || ov < 0.02 * a.area.min(b.area) {
-                    continue;
-                }
-                seen.insert((i, j));
-                edges.entry(i).or_default().push(j);
-                edges.entry(j).or_default().push(i);
-            }
-        }
+    for (i, j) in overlap_pairs(&recs, buckets.into_values().collect(), sweep) {
+        edges.entry(i).or_default().push(j);
+        edges.entry(j).or_default().push(i);
     }
     if edges.is_empty() {
         return 0;
@@ -407,6 +403,61 @@ pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
         moved += 1;
     }
     moved
+}
+
+/// The coplanar overlapping pairs `(i, j)`, `i < j`, among the rec
+/// `buckets` [`separate_coplanar_prims`] builds.
+///
+/// Two triangles whose projected boxes do not overlap with positive area
+/// cannot overlap by the area a pair needs, so with `sweep` each bucket is
+/// walked in box order and only pairs whose boxes overlap on the sweep
+/// axis are compared - the same pairs as the all-pairs walk (`sweep =
+/// false`, kept for the test that holds the two equal) without its cost on
+/// a large flat floor: a sculpted terrain cell is thousands of
+/// near-coplanar prims in one bucket.
+fn overlap_pairs(
+    recs: &[TriRec],
+    mut buckets: Vec<Vec<usize>>,
+    sweep: bool,
+) -> std::collections::BTreeSet<(usize, usize)> {
+    let mut out = std::collections::BTreeSet::new();
+    for members in &mut buckets {
+        if sweep {
+            members.sort_by(|&a, &b| {
+                recs[a].bb[0][0]
+                    .total_cmp(&recs[b].bb[0][0])
+                    .then(a.cmp(&b))
+            });
+        }
+        for xi in 0..members.len() {
+            let ax_max = recs[members[xi]].bb[1][0];
+            for yi in (xi + 1)..members.len() {
+                if sweep && recs[members[yi]].bb[0][0] >= ax_max {
+                    break;
+                }
+                let (i, j) = (members[xi].min(members[yi]), members[xi].max(members[yi]));
+                if i == j {
+                    continue;
+                }
+                let (a, b) = (&recs[i], &recs[j]);
+                if sweep && (a.bb[1][1] <= b.bb[0][1] || b.bb[1][1] <= a.bb[0][1]) {
+                    continue;
+                }
+                if dot(a.n, b.n) < 0.9999 || (a.d - b.d).abs() > 0.05 {
+                    continue;
+                }
+                if out.contains(&(i, j)) {
+                    continue;
+                }
+                let ov = tri_overlap_area(a, b);
+                if ov < 4.0 || ov < 0.02 * a.area.min(b.area) {
+                    continue;
+                }
+                out.insert((i, j));
+            }
+        }
+    }
+    out
 }
 
 /// Run both coplanar passes over the **hybrid** of one TMD's textured and
@@ -605,6 +656,44 @@ mod tests {
             assert_ne!(w & BLEND_DOUBLE_SIDED_BIT, 0);
             assert_eq!(w & !BLEND_DOUBLE_SIDED_BIT, 0); // ABE/ABR untouched
         }
+    }
+
+    #[test]
+    fn swept_pair_search_matches_all_pairs() {
+        // A rolling floor of 32-unit quads at a few heights (whole flat
+        // runs share a bucket), with decal quads laid over it at random,
+        // some exactly coplanar with the floor under them.
+        let mut seed = 0x1234_5678_9ABC_DEF0u64;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f32 / (1u64 << 53) as f32
+        };
+        let mut tris = Vec::new();
+        let quad = |tris: &mut Vec<[[f32; 3]; 3]>, x: f32, z: f32, w: f32, y: f32| {
+            tris.push([[x, y, z], [x + w, y, z], [x, y, z + w]]);
+            tris.push([[x + w, y, z], [x + w, y, z + w], [x, y, z + w]]);
+        };
+        for i in 0..24 {
+            for j in 0..24 {
+                let y = if (i / 6 + j / 6) % 2 == 0 { 0.0 } else { -16.0 };
+                quad(&mut tris, i as f32 * 32.0, j as f32 * 32.0, 32.0, y);
+            }
+        }
+        for _ in 0..300 {
+            let (x, z) = (rnd() * 740.0, rnd() * 740.0);
+            let w = 8.0 + rnd() * 60.0;
+            let y = if rnd() < 0.5 { 0.0 } else { -16.0 };
+            quad(&mut tris, x, z, w, y);
+        }
+        let m = mesh_from_tris(&tris);
+        let (mut swept, mut all) = (m.clone(), m);
+        let a = separate_coplanar_prims_with(&mut swept, true);
+        let b = separate_coplanar_prims_with(&mut all, false);
+        assert!(a > 0);
+        assert_eq!(a, b);
+        assert_eq!(swept.positions, all.positions);
     }
 
     #[test]
