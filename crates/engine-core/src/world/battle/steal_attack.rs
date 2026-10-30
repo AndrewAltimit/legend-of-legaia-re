@@ -55,9 +55,11 @@ impl World {
             self.actors.get(i).is_some_and(|a| a.battle.hp != 0)
                 && record_bits(self, i).is_some_and(|b| word(b, 1) & bs::ITEMS_UP_BIT != 0)
         });
-        let entry = self.actors[slot]
-            .battle_monster_id
-            .and_then(|id| self.tables.steal_table.as_ref()?.entry(id));
+        let entry = self.actors[slot].battle_monster_id.and_then(|id| {
+            self.expansion_steal_override(id)
+                .or_else(|| self.run_rules_steal_override(id))
+                .or_else(|| self.tables.steal_table.as_ref()?.entry(id))
+        });
         let inputs = StealAttackInputs {
             acting_party,
             special_battle: self.special_battle_word() != 0,
@@ -71,9 +73,7 @@ impl World {
             caption_up: self.battle_ctx.message_id == bs::STEAL_CAPTION_ELEMENT,
         };
         // `FUN_80042F4C` is only ever asked about the row's own item.
-        let held = entry
-            .and_then(|e| self.party.inventory.get(&e.item_id).copied())
-            .unwrap_or(0);
+        let held = entry.map_or(0, |e| self.held_count_by_id(e.item_id));
         let mut band = self.battle.steal;
         let forced = std::mem::take(&mut self.battle.forced_steal);
         let spoils = bs::resolve_death_spoils(
@@ -102,10 +102,13 @@ impl World {
         let Some(spoils) = spoils else {
             return;
         };
-        let _ = self.party.inventory.add(spoils.item(), 1);
+        let _ = self.grant_item_id(spoils.item(), 1);
         self.battle_ctx.message_id = bs::STEAL_CAPTION_ELEMENT;
         let text = bs::compose_caption(&self.battle.ui_strings, spoils).map(|bytes| {
             bs::caption_text(&bytes, |id| {
+                if self.pack_item_alias(id).is_some() {
+                    return self.tables.item_catalog.get(id).map(|e| e.name.to_string());
+                }
                 self.menu
                     .text
                     .as_ref()

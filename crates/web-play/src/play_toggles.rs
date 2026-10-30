@@ -354,6 +354,18 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.save_anywhere
     }
 
+    /// Action movement, the native `--action-movement`: the platformer
+    /// field walk (Square jumps, R2 dashes). Retail mode holds it off.
+    pub fn set_action_movement(&mut self, on: bool) {
+        self.page_toggles.tweaks.action_movement = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_action_movement`] is on.
+    pub fn action_movement(&self) -> bool {
+        self.page_toggles.tweaks.action_movement
+    }
+
     /// Spirit AP, the native `--spirit-ap` (retail `32`; clamped to
     /// `-100..=100` when applied). Retail mode holds `32`.
     pub fn set_spirit_ap(&mut self, ap: i16) {
@@ -710,6 +722,7 @@ mod tests {
             "set_hp_readout_guard",
             "set_bonus_drop",
             "set_save_anywhere",
+            "set_action_movement",
             "set_spirit_ap",
             "set_damage_ap",
             "set_seru_catch_rate",

@@ -9,7 +9,7 @@ impl World {
     /// enemies = party band, allies = monster band). Single-enemy → a random
     /// living party slot; `AllEnemies` → class `8`; `AllAllies` → class `9`;
     /// `OneAlly` → the most-weakened living ally (or self); `SelfOnly` → self.
-    pub(super) fn monster_cast_target_class(
+    pub(in crate::world) fn monster_cast_target_class(
         &mut self,
         slot: u8,
         def: &legaia_engine_battle::spells::SpellDef,
@@ -41,7 +41,7 @@ impl World {
     /// Resolve an absolute target list from a `+0x1DD` target class: `8` = all
     /// living party, `9` = all living monsters, `< party_count` = that single
     /// party slot, otherwise that single monster/self slot.
-    pub(super) fn resolve_class_to_slots(&self, slot: u8, class: u8) -> Vec<u8> {
+    pub(in crate::world) fn resolve_class_to_slots(&self, slot: u8, class: u8) -> Vec<u8> {
         let pc = self.party.party_count.max(1);
         let n = self.actors.len() as u8;
         let alive = |i: u8| {

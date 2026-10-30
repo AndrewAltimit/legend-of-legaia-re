@@ -268,6 +268,18 @@ pub fn upload_battle_stage_tims_into_vram(
     stage_entry: u32,
     vram: &mut legaia_tim::Vram,
 ) -> usize {
+    upload_battle_stage_tims_into_vram_tinted(scene, stage_entry, vram, None)
+}
+
+/// [`upload_battle_stage_tims_into_vram`] with every stage TIM's palette
+/// under `tint` ([`legaia_tim::tint::tint_bgr555`]); `None` uploads the stream's bytes as
+/// they are.
+pub fn upload_battle_stage_tims_into_vram_tinted(
+    scene: &Scene,
+    stage_entry: u32,
+    vram: &mut legaia_tim::Vram,
+    tint: Option<[u8; 3]>,
+) -> usize {
     let Some(entry) = scene.entries.iter().find(|e| e.idx == stage_entry) else {
         return 0;
     };
@@ -278,7 +290,12 @@ pub fn upload_battle_stage_tims_into_vram(
         if end > bytes.len() {
             continue;
         }
-        if let Ok(tim) = legaia_tim::parse(&bytes[hit.offset..end]) {
+        if let Ok(mut tim) = legaia_tim::parse(&bytes[hit.offset..end]) {
+            if let (Some(t), Some(clut)) = (tint, tim.clut.as_mut()) {
+                for w in &mut clut.entries {
+                    *w = legaia_tim::tint::tint_bgr555(*w, t);
+                }
+            }
             vram.upload_tim_partial(&tim, true, true);
             uploaded += 1;
         }

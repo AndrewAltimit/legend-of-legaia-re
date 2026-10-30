@@ -1,0 +1,331 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs: battles</div>
+  <h1>Expansion packs: battles and progression</h1>
+  <p class="lede">Two files of an <a href="expansion-pack.html">expansion pack</a> shape its fights: <code>battle.toml</code> (monsters, formations, encounter overrides, bosses) and <code>progression.toml</code> (the XP curve, EXP and gold multipliers, enemy level scaling, level-up rewards). Both are optional and every field in them is optional, so a pack writes only what it changes. With no pack active every hook is the identity, and the retail game plays bit for bit.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Files</dt><dd><code>battle.toml</code>, <code>progression.toml</code> at the pack root; both optional.</dd>
+    <dt>Parser</dt><dd><code>legaia_expansion_format::{battle, progression}</code> (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/src/battle.rs" target="_blank" rel="noopener">battle.rs</a>, <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/src/progression.rs" target="_blank" rel="noopener">progression.rs</a>).</dd>
+    <dt>Runtime</dt><dd>Kernels <code>legaia_engine_expansion::{battle, battle_waves, boss_script, progression}</code>; the <code>World</code> hooks in <code>crates/engine-core/src/world/expansion.rs</code> and <code>expansion_boss.rs</code>.</dd>
+    <dt>Ids</dt><dd>Declares <code>monster</code>, <code>formation</code> and <code>boss</code>; pack formations compile to engine formation ids from <code>0xE000</code>.</dd>
+    <dt>Limits</dt><dd>Four monsters standing at once; up to 16 waves after the first; up to 64 arrivals in a <code>refill</code> wave.</dd>
+    <dt>Retail check</dt><dd><code>engine-core</code> test <code>expansion_battle::no_pack_and_a_dropped_pack_play_the_retail_fight</code>.</dd>
+    <dt>Used by</dt><dd><a href="expansion-pack-quests.html">Quests</a> (fights a quest starts, <code>win_boss</code> objectives) &middot; <a href="expansion-pack-maps.html">maps</a> (trigger fights, encounter zones) &middot; <a href="../subsystems/battle.html">battle</a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="ids" data-doc="ids">
+  <h2>Ids</h2>
+  <p>Every key in these files is local to the pack. The engine qualifies it with the pack id: key <code>ash_court</code> in pack <code>rebirth</code> is <code>rebirth:ash_court</code>. A reference may use either form; a reference into another pack is refused.</p>
+  <p>Disc content is named only by coordinate (<a href="expansion-pack.html#disc-references"><code>DiscRef</code></a>): a retail monster by its 1-based monster-archive id (<code>{ kind = "monster", id = 73 }</code>), an item by its item id (<code>{ kind = "item", id = 12 }</code>), a music cue by its sound-test index (<code>{ kind = "bgm", id = 30 }</code>).</p>
+</section>
+
+<section class="doc-section" id="monsters" data-doc="monsters">
+  <h2>Monsters</h2>
+<pre><code>[monsters.ashen_caruban]
+base = { kind = "monster", id = 73 }
+name = "Ashen Caruban"
+hp = 30000                 # a bare number sets the stat
+attack = { mul = 1.8 }     # { mul = x } scales the base monster's
+exp = { mul = 12.0 }
+drop = { item = { kind = "item", id = 12 }, chance_pct = 50 }
+steal = { item = { kind = "item", id = 9 }, chance_pct = 25 }
+element = 3
+spells = [0x81]</code></pre>
+  <p>A pack monster is always <strong>derived</strong> from a retail one. It keeps the base monster's mesh, animations, attack set, sounds and Seru, which the engine reads off the player's disc; the pack changes its numbers.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>base</code></td><td>The retail monster it is built on (required).</td></tr>
+      <tr><td><code>name</code></td><td>The battle HUD name.</td></tr>
+      <tr><td><code>hp</code>, <code>mp</code>, <code>exp</code>, <code>gold</code></td><td>Set or scaled; held to <code>0..=65535</code>.</td></tr>
+      <tr><td><code>attack</code>, <code>defence</code>, <code>agility</code>, <code>speed</code>, <code>intelligence</code></td><td>The record stats ATK, UDF + LDF, AGL, SPD, INT.</td></tr>
+      <tr><td><code>drop</code>, <code>steal</code></td><td>The victory drop and the Evil God Icon steal, item and percent.</td></tr>
+      <tr><td><code>element</code></td><td>Element id <code>0..=7</code> (<code>7</code> neutral).</td></tr>
+      <tr><td><code>spells</code></td><td>Spell ids the monster AI may cast, at most three; replaces the base's.</td></tr>
+      <tr><td><code>script</code></td><td>The monster's own battle AI in place of the base's retail picks (<a href="#boss-scripts">boss scripts</a>).</td></tr>
+    </tbody>
+  </table>
+  <p>The battle stats are <strong>record</strong> values, not what the fight installs. The battle loader boosts the record by the fight's class exactly as it does a retail one: a scripted fight installs ATK &times;5/4 and both defences &times;2, a random encounter defences &times;7/4 and INT &times;5/4 (<code>MonsterDef::installed_stats</code>, <a href="../subsystems/battle.html">battle</a>). Record stats clamp to <code>0x3FFF</code> so the scripted doubling cannot wrap 16 bits.</p>
+  <h3 id="base-id">Pack monsters fight under their base monster's id</h3>
+  <p>The monster id a battle seat carries keys every disc read for that seat - mesh, action clips, the AI's swing entries, the battle heap layout - in both play hosts. A pack monster therefore keeps its base monster's id. For the length of a fight the engine swaps the pack monster's numbers into the catalog under that id and restores the scene's entry when the fight ends (<code>World::expansion_prepare_battle</code> / <code>expansion_end_battle</code>).</p>
+  <div class="callout callout-warn">
+    <p class="callout-title">One version of each base monster per formation</p>
+    <p>A formation of two <code>ashen_caruban</code> is fine; <code>ashen_caruban</code> beside a retail Caruban, or beside a second Caruban variant, is a validation error.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="formations" data-doc="formations">
+  <h2>Formations</h2>
+<pre><code>[formations.ash_court]
+label = "Ash Court"
+monsters = ["ashen_caruban", { kind = "monster", id = 12 }]
+scripted = false</code></pre>
+  <p>A slot is a pack monster key or a retail monster ref. A formation may continue in <a href="#waves">waves</a>. <code>scripted = true</code> makes the formation a retail-style boss row: no escape, the boss battle intro, the alternate seat layout and the scripted stat boost (the formation header byte <code>record[+0]</code>, <a href="encounter.html">encounter record</a>).</p>
+  <p>Pack formations register in the formation table at ids <code>0xE000</code> and up, in key order, beside the scene's own MAN rows. They are re-registered before every pack fight, since a scene's MAN install fills the table.</p>
+  <h3 id="formation-size">Formation size</h3>
+  <p>A formation holds at most <strong>four</strong> monsters at once. The battle actor table has eight seats: the party takes seats <code>0..=2</code>, and seat <code>7</code> is the summon seat every Seru cast poses its creature on, which leaves four monster seats beside a full party. Retail's largest formations are four monsters, so four is both the retail and the engine limit; a fifth monster would share the summon seat with the first summon cast. A fight with more enemies than that brings them in waves: later monsters take the seats earlier ones vacate.</p>
+</section>
+
+<section class="doc-section" id="waves" data-doc="waves">
+  <h2>Waves</h2>
+<pre><code>[formations.tower_gauntlet]
+label = "Tower Gauntlet"
+monsters = ["ironhide_ogre", "ironhide_ogre"]        # wave 1
+
+[[formations.tower_gauntlet.waves]]                  # wave 2
+monsters = ["ember_lizard", "ember_lizard", "ember_lizard"]
+
+[[formations.tower_gauntlet.waves]]                  # wave 3
+monsters = ["runed_golem", "ironhide_ogre"]
+arrival = "refill"
+count = 6
+max_standing = 3</code></pre>
+  <p><code>monsters</code> is the first wave, the monsters the battle opens on. Each <code>[[formations.&lt;key&gt;.waves]]</code> table after it is one more wave, in order. The battle never returns to the field between waves: a wave's monsters take the monster seats of the fight in progress, a "Wave N / M" banner stands for the battle timed message's hold (about two seconds) as a wave begins, and when the last wave is down the ordinary victory runs once.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 480 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The Tower Gauntlet's four monster seats over three waves. Wave 1 seats two ogres. When both are down the wipe scan seats wave 2, three lizards, together. When those are down wave 3 arrives as a refill: one monster per freed seat as each round opens, never while three stand, six arrivals in all, cycling golem and ogre. When the last wave is down, one victory pays every monster.">
+      <defs><marker id="eb-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-label dg-start" x="12" y="18">Wave 1 - the formation's monsters</text>
+      <rect class="dg-node-accent" x="12" y="28" width="105" height="40" rx="4"/>
+      <rect class="dg-node-accent" x="125" y="28" width="105" height="40" rx="4"/>
+      <rect class="dg-group" x="238" y="28" width="105" height="40" rx="4"/>
+      <rect class="dg-group" x="351" y="28" width="105" height="40" rx="4"/>
+      <text class="dg-label" x="64" y="52">Ogre</text><text class="dg-label" x="177" y="52">Ogre</text>
+      <text class="dg-sub" x="290" y="52">free</text><text class="dg-sub" x="403" y="52">free</text>
+      <path class="dg-edge" d="M240 70 L240 112" marker-end="url(#eb-arrow)"/>
+      <text class="dg-edge-label" x="250" y="95">all down: the wipe scan seats wave 2</text>
+      <text class="dg-label dg-start" x="12" y="130">Wave 2 - arrival = "wipe" (the default)</text>
+      <rect class="dg-node-accent" x="12" y="140" width="105" height="40" rx="4"/>
+      <rect class="dg-node-accent" x="125" y="140" width="105" height="40" rx="4"/>
+      <rect class="dg-node-accent" x="238" y="140" width="105" height="40" rx="4"/>
+      <rect class="dg-group" x="351" y="140" width="105" height="40" rx="4"/>
+      <text class="dg-label" x="64" y="164">Lizard</text><text class="dg-label" x="177" y="164">Lizard</text><text class="dg-label" x="290" y="164">Lizard</text>
+      <text class="dg-sub" x="403" y="164">free</text>
+      <path class="dg-edge" d="M240 182 L240 224" marker-end="url(#eb-arrow)"/>
+      <text class="dg-edge-label" x="250" y="207">all down again</text>
+      <text class="dg-label dg-start" x="12" y="242">Wave 3 - "refill", count 6, max_standing 3</text>
+      <rect class="dg-node-accent" x="12" y="252" width="105" height="40" rx="4"/>
+      <rect class="dg-node-accent" x="125" y="252" width="105" height="40" rx="4"/>
+      <rect class="dg-node-accent" x="238" y="252" width="105" height="40" rx="4"/>
+      <rect class="dg-node-warn" x="351" y="252" width="105" height="40" rx="4"/>
+      <text class="dg-label" x="64" y="276">Golem</text><text class="dg-label" x="177" y="276">Ogre</text><text class="dg-label" x="290" y="276">Golem</text>
+      <text class="dg-label" x="403" y="270">held</text><text class="dg-sub" x="403" y="285">3 standing</text>
+      <text class="dg-edge-label" x="12" y="314">One arrival per freed seat as a round opens, 6 in all.</text>
+      <text class="dg-edge-label" x="12" y="332">Last wave down: one victory pays every monster.</text>
+    </svg>
+    <figcaption>The four monster seats of the Rebirth <em>Tower Gauntlet</em>. A <code>wipe</code> wave seats together when the side is empty; a <code>refill</code> wave trickles in, capped by <code>max_standing</code>, until it has sent its <code>count</code>.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>Field</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>monsters</code></td><td>The wave's monsters, pack keys or retail refs.</td></tr>
+      <tr><td><code>arrival</code></td><td><code>wipe</code> (the default): the whole wave seats together once every monster standing is down, at most four. <code>refill</code>: one monster per freed seat, at the start of a round.</td></tr>
+      <tr><td><code>count</code></td><td><code>refill</code> only: arrivals in all, cycling through <code>monsters</code> (default one per listed monster, at most 64).</td></tr>
+      <tr><td><code>max_standing</code></td><td><code>refill</code> only: no arrival while this many monsters stand (default four).</td></tr>
+    </tbody>
+  </table>
+  <p>A formation lists at most 16 waves after its first.</p>
+  <h3 id="when-a-wave-arrives">When a wave arrives</h3>
+  <p>A <code>wipe</code> wave arrives at the moment the action that downed the last standing monster resolves: the battle action SM's end-of-action wipe scan asks the <code>World</code> for more monsters before it signals the victory, and seats them before any frame sees an empty monster side. The round then runs on: party members still owed a turn act against the new arrivals, and the next round opens with every seat's initiative rolled afresh.</p>
+  <p>A <code>refill</code> wave tops up freed seats as each round opens, ahead of the round's initiative seed, so its arrivals act in that round; a wipe also refills every free seat at once. When a wave starts that stands more monsters than the seats laid out, the seat layout widens to it and the monsters still standing move to the wider layout's seats. The next wave, of either kind, takes over once a <code>refill</code> wave has sent its <code>count</code>.</p>
+  <h3 id="wave-spoils">Spoils</h3>
+  <p>Every monster a wave seats joins the fight's formation, so the one victory pays all of them together: the EXP of every wave summed (then the pack's <code>xp_mul</code>, the retail 3/4 share), the gold accumulated over every monster (then the retail halving and the pack's <code>gold_mul</code>), and one drop roll over every seat. A fight the party flees or loses pays nothing, as any fight.</p>
+  <h3 id="one-version">One version of each base monster</h3>
+  <p>A pack monster fights under its base monster's id, and one catalog swap covers the whole battle, so the one-variant rule holds across all of a formation's waves together: an <code>ashen_caruban</code> in wave 1 and a retail Caruban in wave 3 is a validation error.</p>
+  <h3 id="escape-and-bosses">Escape and bosses</h3>
+  <p>Escape stays open between and during waves unless the formation is scripted (<code>scripted = true</code>, or a <code>no_escape</code> boss's formation). A boss whose formation has waves pays its <code>reward_items</code> and <code>reward_gold</code> once, after the last wave.</p>
+</section>
+
+<section class="doc-section" id="encounter-overrides" data-doc="encounter-overrides">
+  <h2>Encounter overrides</h2>
+<pre><code>[[encounters]]
+scene = "chitei2"
+retail_weight = 3
+formations = [{ formation = "ogre_pack", weight = 2 }, { formation = "forge_guard" }]
+steps = [120, 240]</code></pre>
+  <p>An override changes what one scene (by CDNAME name) rolls.</p>
+  <ul class="bullets">
+    <li><strong>Without <code>steps</code></strong>, retail's own rate decides <em>when</em> a fight comes - the region roll or the mean-rate stand-in, every Incense and accessory modifier included - and the override decides <em>which</em>: one <code>rand()</code> picks among the listed formations by weight, with the retail roll's own formation keeping <code>retail_weight</code> (default <code>0</code>, which replaces every retail fight in the scene).</li>
+    <li><strong>With <code>steps = [min, max]</code></strong>, the pack owns the rate: a counter drawn in <code>min..=max</code> counts field steps and fights when it runs out, so a scene retail never fights in can hold encounters. The session's transition and post-battle grace, the Incense window and the engaged hold still gate it.</li>
+  </ul>
+  <p>The <code>scene</code> key is a free string, so a pack map's encounter zones name their tables here too (<a href="expansion-pack-maps.html">maps</a>).</p>
+</section>
+
+<section class="doc-section" id="bosses" data-doc="bosses">
+  <h2>Bosses</h2>
+<pre><code>[bosses.ash_king]
+formation = "ash_court"
+no_escape = true                     # the default
+music = { kind = "bgm", id = 30 }
+reward_items = [{ item = { kind = "item", id = 233 }, count = 1 }]
+reward_gold = 50000
+once = true</code></pre>
+  <p>A boss is a formation plus staging. <code>no_escape</code> marks its formation scripted. <code>music</code> replaces the battle track for this fight (when the host's battle-music swap is on). <code>reward_items</code> and <code>reward_gold</code> pay on victory on top of the formation's spoils, and land in the spoils' drops and gold. A <code>once</code> boss refuses a second start after a victory (<code>World::expansion_boss_cleared</code>).</p>
+  <h3 id="battle-stage">Battle stage</h3>
+<pre><code>[bosses.ash_king]
+formation = "ash_court"
+stage = { scene = "jou", index = 1, tint = [150, 110, 170] }
+
+[formations.ash_court]
+stage = { scene = "rikuroa" }        # the block's own pick</code></pre>
+  <p>A fight is fought on the retail stage of the room it starts in. <code>stage</code> names another by coordinate, on a boss or a formation, and a boss's own wins: <code>scene</code> is a CDNAME block, <code>index</code> the block's <code>index</code>-th battle-stage stream in bundle-slot order (left out, the block's own pick). The stream brings the whole stage - the backdrop shell drawn twice, its second-copy transform and outdoor class, and the ground-grid tile (<a href="../subsystems/battle-stage-camera.html">battle stage</a>).</p>
+  <p><code>keep_object_1</code> keeps the shell object battle init otherwise drops. <code>tint</code> multiplies the stage's own palettes per channel (<code>128</code> unchanged, <code>255</code> about double): the textured shell and the ground tile take it, the shell's untextured panels do not. The tint is applied as the stage stream re-uploads on the battle edge (<code>resolve_battle_stage</code>), so both hosts draw one VRAM. With a disc the validator checks the index against the block's stage streams; at run time a coordinate that names none leaves the room's stage standing. With no pack the pick is retail's.</p>
+  <p>Quests and maps start fights through two <code>World</code> entry points: <code>start_expansion_battle(formation)</code> and <code>start_expansion_boss(boss)</code>. Both go through the ordinary encounter path - transition, battle music, <code>begin_encounter_battle</code> - as <code>World::force_encounter</code> does.</p>
+</section>
+
+<section class="doc-section" id="boss-scripts" data-doc="boss-scripts">
+  <h2>Boss scripts</h2>
+<pre><code>[monsters.cinder_warden.script]
+target = "random"
+immune = ["sleep", "confuse", "stone"]
+last_stand = { line = "warden_last" }
+enrage = { when = { round = 15 }, line = "warden_inferno", attack = { mul = 1.25 } }
+
+[[monsters.cinder_warden.script.phases]]      # phase 1 opens the fight
+moves = [
+    { attack = 0, weight = 3 },               # the base monster's first swing
+    { spell = 0x25, weight = 1, cooldown = 2 },
+]
+
+[[monsters.cinder_warden.script.phases]]
+when = { hp_below_pct = 50 }
+line = "warden_rage"
+attack = { mul = 1.3 }
+summon = ["pyre_wisp"]
+moves = [
+    { attack = 2, hits = 2, weight = 3, target = "lowest_hp" },
+    { spell = 0x46, weight = 2, charge = true, charge_line = "warden_charge" },
+]</code></pre>
+  <p>A pack monster with a <code>script</code> table fights with the script's AI in place of its base monster's retail AI: on each of its turns the script, not the retail picker, chooses the action and the target. A pack monster without one keeps the base's AI, and a fight with no scripted monster in it never reaches the script runtime. Parser <code>legaia_expansion_format::boss_script</code>, kernel <code>legaia_engine_expansion::boss_script</code>, <code>World</code> hooks in <code>crates/engine-core/src/world/expansion_boss.rs</code>.</p>
+  <ol class="steps">
+    <li><b>Round opens</b><span>phase checks for every scripted seat; pending summons take free seats &middot; <code>World::expansion_boss_round_start</code></span></li>
+    <li><b>Its turn</b><span>phase checks again, then the pick: a due charged move, or one weighted draw &middot; <code>World::expansion_boss_pick</code></span></li>
+    <li><b>Charge</b><span>a telegraphed pick spends the turn; its banner stands &middot; <code>MonsterAction::Wait</code></span></li>
+    <li><b>Act</b><span>a swing through the attack band, or a spell through the cast band &middot; the retail paths</span></li>
+    <li><b>Each frame</b><span>immunities stripped, banners dequeued, the last stand's catch-all &middot; <code>World::expansion_boss_frame</code></span></li>
+  </ol>
+
+  <h3 id="boss-moves">Moves are disc content</h3>
+  <ul>
+    <li><code>attack = n</code> is the <code>n</code>th (0-based) swing of the base monster's attack list: its archive swing records, the entries the retail picker rolls over (tags <code>0x0C..=0x1F</code> with an AGL cost, listed by <code>asset monster-archive --id N</code> and by the workbench's swing picker). It stages through the ordinary attack band, so the clip, the hit events and the power byte are the disc's. <code>hits</code> chains it up to eight times.</li>
+    <li><code>spell = id</code> is a spell-table id, cast through the retail cast path as a pack monster's <code>spells</code> list is: MP debit, cast band, the move-power record and impact status. A capture-class special resolves off the disc table as the retail AI's own scripted casts do. A cast the monster cannot afford falls back to a physical strike, as in retail.</li>
+  </ul>
+  <p>A swing index past the base's list, or a spell id the disc does not hold, makes that turn fall back to the retail pick; the disc-gated test <code>expansion_boss_script_disc</code> checks every Rebirth move against the disc.</p>
+
+  <h3 id="boss-phases">Phases</h3>
+  <p><code>phases</code> is an ordered list. The first opens the fight and takes no <code>when</code>; each later one begins when any condition its <code>when</code> sets holds. Phases run forward only, and one check may begin several in order.</p>
+  <table>
+    <thead><tr><th><code>when</code></th><th>Holds when</th></tr></thead>
+    <tbody>
+      <tr><td><code>hp_below_pct</code></td><td>The monster's HP is below this percent of its maximum.</td></tr>
+      <tr><td><code>round</code></td><td>The battle has reached this round (the first is 1).</td></tr>
+      <tr><td><code>allies_down</code></td><td>At least this many monsters of the fight have fallen.</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Phase field</th><th>Effect, once as the phase begins</th></tr></thead>
+    <tbody>
+      <tr><td><code>line</code></td><td>A pack dialog line shown as the battle banner.</td></tr>
+      <tr><td><code>moves</code></td><td>The weighted move list; a phase that lists none keeps the moves before it.</td></tr>
+      <tr><td><code>target</code></td><td>The phase's targeting rule.</td></tr>
+      <tr><td><code>attack</code>, <code>defence</code>, <code>agility</code>, <code>speed</code>, <code>intelligence</code></td><td>Set or scale (<code>{ mul = x }</code>) the live battle stat and its base half.</td></tr>
+      <tr><td><code>element</code></td><td>The monster's element; the affinity matrix reads it both ways, so it changes what the monster resists.</td></tr>
+      <tr><td><code>heal_pct</code></td><td>Restores this percent of maximum HP.</td></tr>
+      <tr><td><code>summon</code></td><td>Monsters seated into free monster seats at the next turn boundary.</td></tr>
+      <tr><td><code>flash</code></td><td><code>{ color, frames }</code>: a full-screen flash fading out as the phase begins.</td></tr>
+      <tr><td><code>tint</code></td><td><code>{ color, frames, mode }</code>: a colour held over the battle from this phase on, added or subtracted; black clears it.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="boss-picks">Picks, targets and telegraphs</h3>
+  <p>Each turn draws once from the battle RNG over the standing moves' weights (none when one move is ready), so a fight replays bit for bit. <code>cooldown</code> keeps a move out of the draw for that many of the monster's own turns. <code>target</code> is <code>random</code>, <code>lowest_hp</code>, <code>highest_attack</code> or <code>healer</code> (a member who knows an ally-side spell, the most MP first); the move's rule wins over the phase's, the phase's over the script's. A spell whose shape is not one enemy keeps its shape's targets.</p>
+  <p>A spell move the monster cannot afford becomes a swing on the retail cast path; <code>ignore_mp = true</code> casts it whatever MP is left and spends none.</p>
+  <p>A move with <code>charge = true</code> is telegraphed: the turn it is picked the monster only gathers power under <code>charge_line</code> (or a generic line), and the move lands on its next turn.</p>
+
+  <h3 id="boss-enrage">Enrage, immunities, last stand</h3>
+  <ul>
+    <li><code>enrage</code>: a phase keyed on <code>when.round</code> alone, applied once over whatever phase stands; its <code>moves</code>, when set, replace the phases' for the rest of the fight.</li>
+    <li><code>immune</code>: statuses that never take hold (<code>venom</code>, <code>toxic</code>, <code>numb</code>, <code>sleep</code>, <code>confuse</code>, <code>rot</code>, <code>curse</code>, <code>stone</code>), stripped every battle frame.</li>
+    <li><code>last_stand</code>: the first lethal blow of the fight holds at 1 HP, under its <code>line</code>; the next kills.</li>
+  </ul>
+
+  <h3 id="boss-banners">Banners and summons</h3>
+  <p>Every line shows on the battle's timed-message line, the one the wave banner uses, for about two seconds; a banner raised while another stands queues behind it. A banner is one row (the line's first page, rows joined), and the validator warns past 40 characters.</p>
+  <p>The three stock banners (an enrage with no <code>line</code>, a charge with no <code>charge_line</code>, a last stand with no <code>line</code>) read the pack's own <code>dialog.toml</code> lines <code>boss_enraged</code>, <code>boss_charging</code> and <code>boss_last_stand</code> when it has them, so a pack in another language words them its way; without them the engine's English wording stands ("&lt;name&gt; is enraged!", "&lt;name&gt; is gathering power!", "&lt;name&gt; refuses to fall!"). <code>&lt;name&gt;</code> reads as the boss's name.</p>
+  <p>A summon takes a free monster seat through the wave seating path at the next safe point: one raised as a round opens is seated before the initiative seed and acts that round; one raised on the boss's own turn mid-round is seated as that turn ends and first acts the round after. Its mesh binds on both hosts and it joins the spoils. When the seats laid out are full the block widens and the standing monsters move; with four standing the summon is dropped. Summons count toward the one-version rule with the formation's waves.</p>
+
+  <h3 id="boss-validation">Validation</h3>
+  <p>Refused: a first phase with a <code>when</code> or no moves, a later phase without one, HP thresholds that do not fall phase by phase, a move with both or neither of <code>attack</code> and <code>spell</code>, <code>hits</code> outside 1..8 or without <code>attack</code>, a zero weight, a <code>charge_line</code> without <code>charge</code>, an <code>ignore_mp</code> without <code>spell</code>, an enrage keyed on anything but <code>round</code>, an unknown summon, more than four summons in a phase, more than eight phases or twelve moves, a duplicated immunity. Every line must name a dialog line of the pack.</p>
+  <p class="hint">The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s battle tab edits scripts phase by phase, with the base monster's swings and the disc's spells in the move pickers.</p>
+</section>
+
+<section class="doc-section" id="progression" data-doc="progression">
+  <h2>Progression</h2>
+<pre><code>xp_mul = 1.5
+gold_mul = 1.25
+
+[xp_curve]
+kind = "banded"
+bands = [{ from_level = 60, mul = 0.35 }, { from_level = 80, mul = 0.3 }]
+
+[enemy_scaling]
+from_level = 50
+per_level = 0.02
+max_mul = 1.8
+scope = "pack"
+rewards = true
+
+[[level_rewards]]
+level = 99
+items = [{ item = { kind = "item", id = 237 } }]
+character = 0</code></pre>
+  <table>
+    <thead><tr><th>Field</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>xp_mul</code>, <code>gold_mul</code></td><td>Scale every won battle's summed EXP (before the retail 3/4 share) and credited gold.</td></tr>
+      <tr><td><code>xp_curve</code></td><td><code>retail</code>; <code>scaled { mul }</code>; <code>banded { bands }</code>, retail's per-level steps scaled from each band's <code>from_level</code>; <code>explicit { levels }</code>, 98 cumulative values for levels 2 to 99.</td></tr>
+      <tr><td><code>enemy_scaling</code></td><td>Past <code>from_level</code>, each level of the strongest present member adds <code>per_level</code> to a stat multiplier capped at <code>max_mul</code>.</td></tr>
+      <tr><td><code>level_rewards</code></td><td>Items granted when a character first reaches <code>level</code>; <code>character</code> (roster slot) restricts it to one.</td></tr>
+    </tbody>
+  </table>
+  <p>Every curve is held rising and within the record's 9,999,999 ceiling. The pack's curve replaces the tracker's table at activation and the previous one returns at deactivation; the Noa / Gala threshold corrections still apply on top of it.</p>
+  <p>Enemy scaling multiplies HP, MP, ATK, both defences, INT and SPD, and EXP and gold when <code>rewards</code> is set. It leaves AGL alone, since AGL is the action gauge a monster's swings spend and scaling it changes how many attacks a turn holds. <code>scope = "pack"</code> reaches the pack's formations only; <code>scope = "all"</code> reaches retail fights too.</p>
+  <p class="hint">The site's <a href="../tooling/expansion-workbench.html">expansion workbench</a> draws a pack's curve against retail's as it is edited.</p>
+</section>
+
+<section class="doc-section" id="engine-wiring" data-doc="engine-wiring">
+  <h2>Engine wiring</h2>
+  <p>A pack fight passes through the same <code>World</code> paths as a retail one; each hook below is the identity with no pack active.</p>
+  <ol class="steps">
+    <li><b>Activate</b><span>formations installed, XP curve swapped &middot; <code>World::activate_expansion</code></span></li>
+    <li><b>Scene entry</b><span>base monsters merged from the disc's archive &middot; <code>SceneHost::merge_expansion_monsters</code></span></li>
+    <li><b>Encounter</b><span>the override picks the formation &middot; <code>World::on_field_step</code></span></li>
+    <li><b>Seat</b><span>catalog swap for every wave's monsters &middot; <code>enter_battle_from_formation</code></span></li>
+    <li><b>Waves</b><span>arrivals at the wipe hold and round start &middot; <code>World::expansion_seat_wave</code></span></li>
+    <li><b>Spoils</b><span>scaling, boss reward, level rewards; catalog restored &middot; <code>apply_battle_loot</code>, <code>finish_battle</code></span></li>
+  </ol>
+  <table>
+    <thead><tr><th>Hook</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Activation, formation install, XP curve swap</td><td><code>World::activate_expansion</code> / <code>deactivate_expansion</code></td></tr>
+      <tr><td>Base monsters merged from the disc's monster archive at each scene entry</td><td><code>SceneHost::merge_expansion_monsters</code></td></tr>
+      <tr><td>Catalog swap at seat time (every wave's monsters), restore after the spoils</td><td><code>World::enter_battle_from_formation</code>, <code>finish_battle</code>, <code>abandon_live_battle</code></td></tr>
+      <tr><td>Wave arrivals</td><td><code>World::expansion_seat_wave</code>, from the action SM's wipe hold (<code>BattleActionHost::reinforce_monster_wipe</code>) and <code>World::begin_battle_round</code></td></tr>
+      <tr><td>Wave meshes</td><td><code>battle_stage::stage_wave_monsters</code> (world half), the play window's <code>bind_wave_monsters</code>, the browser page's <code>bind_wave_monsters_web</code></td></tr>
+      <tr><td>Encounter override</td><td><code>World::on_field_step</code></td></tr>
+      <tr><td>Spoils scaling, boss reward</td><td><code>World::apply_battle_loot</code></td></tr>
+      <tr><td>Level-up rewards</td><td><code>World::apply_battle_xp</code></td></tr>
+      <tr><td>Steal override</td><td>the death-spoils steal in <code>battle/steal_attack.rs</code></td></tr>
+      <tr><td>Boss track</td><td><code>World::swap_to_battle_bgm</code></td></tr>
+      <tr><td>Boss script pick</td><td><code>World::expansion_boss_pick</code>, the top of <code>World::pick_monster_action</code>; a swing stream through <code>World::arm_monster_strike_budget</code></td></tr>
+      <tr><td>Boss phase checks, summons</td><td><code>World::expansion_boss_round_start</code>, from <code>World::begin_battle_round</code></td></tr>
+      <tr><td>Last stand</td><td><code>World::expansion_survives_lethal</code>, from <code>apply_battle_hp_delta</code> and <code>apply_combo_total</code></td></tr>
+      <tr><td>Immunities, banner queue</td><td><code>World::expansion_boss_frame</code>, ahead of the battle frame's dead-marking sweep</td></tr>
+    </tbody>
+  </table>
+  <p>A boss's <code>once</code> record lives in the runtime (<code>BattleRuntime::cleared_bosses</code>) and is saved as tail record 1 of the save's expansion block (<a href="expansion-pack-quests.html#saves">saves</a>), so a beaten once-only boss stays beaten across a Load.</p>
+  <div class="see-also"><span class="see-also-label">See also</span> <a href="expansion-pack.html">Pack format</a> &middot; <a href="expansion-pack-quests.html">Quests and dialogue</a> &middot; <a href="expansion-pack-maps.html">Maps</a> &middot; <a href="../subsystems/expansion-modes.html">Game modes</a> &middot; <a href="../guides/expansion-packs.html">Expansion packs hub</a></div>
+</section>

@@ -532,6 +532,7 @@ fn compose_arts(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
             max_len: 9,
             naming_name: "",
             can_add_new: true,
+            pack_arts: &[],
         })),
     )
 }

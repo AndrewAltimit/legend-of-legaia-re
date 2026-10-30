@@ -36,6 +36,7 @@
       "web-play",
       "web-minigames",
       "web-patcher",
+      "web-expansion",
       "asset-viewer",
       "explorer",
       "patcher",
@@ -48,7 +49,7 @@
   {
    "id": "top",
    "title": "Session, presentation, tools",
-   "blurb": "What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside.",
+   "blurb": "What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside.",
    "rows": [
     {
      "label": "",
@@ -59,7 +60,9 @@
       "engine-audio",
       "engine-export",
       "parity",
-      "engine-capture"
+      "engine-capture",
+      "netplay",
+      "engine-netplay"
      ]
     }
    ]
@@ -117,6 +120,7 @@
     {
      "label": "rank 4",
      "crates": [
+      "engine-expansion",
       "engine-fishing",
       "engine-minigames",
       "engine-scene"
@@ -145,6 +149,7 @@
       "engine-camera",
       "engine-dev-menu",
       "engine-mode",
+      "engine-modes",
       "engine-motion-vm",
       "engine-title"
      ]
@@ -153,6 +158,7 @@
      "label": "rank 0",
      "crates": [
       "engine-dialog",
+      "engine-run-rules",
       "engine-system",
       "engine-vm"
      ]
@@ -168,6 +174,7 @@
      "label": "",
      "crates": [
       "disc-patch",
+      "randomizer",
       "translate",
       "code-hooks",
       "arts-patch",
@@ -197,7 +204,8 @@
       "ui-formats",
       "game-tables",
       "overlay-images",
-      "disc-audit"
+      "disc-audit",
+      "expansion-format"
      ]
     }
    ]
@@ -270,6 +278,7 @@
     "monster_archive",
     "monster_gltf",
     "monster_model",
+    "monster_portrait",
     "player_anm",
     "player_file_annex",
     "scene_gltf",
@@ -307,6 +316,7 @@
     "render-kernels",
     "texture-replace",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -334,6 +344,7 @@
     "engine-battle",
     "engine-core",
     "engine-field",
+    "engine-netplay",
     "engine-scene",
     "engine-vm"
    ],
@@ -406,10 +417,12 @@
     "engine-scene-host",
     "engine-session",
     "engine-shell",
+    "expansion-format",
     "explorer",
     "parity",
     "patcher",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -422,10 +435,10 @@
    "deps": [
     "art",
     "code-hooks",
-    "disc-patch",
     "game-tables",
     "iso",
-    "lzs"
+    "lzs",
+    "randomizer"
    ],
    "dev_deps": [],
    "bins": [],
@@ -456,6 +469,7 @@
     "bytes",
     "container-formats",
     "disc-audit",
+    "expansion-format",
     "game-tables",
     "iso",
     "lzs",
@@ -696,6 +710,7 @@
     "game-tables",
     "lzs",
     "party-swap",
+    "randomizer",
     "texture-replace",
     "translate",
     "vab",
@@ -796,14 +811,12 @@
     "field_script",
     "monster",
     "ppf",
-    "rng",
     "space_ledger"
    ],
    "band": "libraries",
    "track": "patcher",
-   "scope": "The patcher's foundation: <code>DiscPatcher</code> same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN and monster-slot re-pack, the seeded <code>rng</code>. Depends on no other patcher crate.",
+   "scope": "The patcher's foundation: <code>DiscPatcher</code> same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN and monster-slot re-pack. Depends on no other patcher crate.",
    "dependents": [
-    "arts-patch",
     "delilas-challenge",
     "delilas-party",
     "patcher",
@@ -833,6 +846,7 @@
     "bgm_tail",
     "duck",
     "note_trace",
+    "pcm_bus",
     "seq_calc",
     "seq_events",
     "seq_slots",
@@ -947,6 +961,7 @@
     "engine-capture",
     "engine-cheats",
     "engine-core",
+    "engine-expansion",
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigame-scenes",
@@ -957,6 +972,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -1187,6 +1203,7 @@
     "engine-ui",
     "engine-world-views",
     "parity",
+    "web-expansion",
     "web-minigames",
     "web-play"
    ],
@@ -1372,22 +1389,27 @@
     "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-motion-vm",
+    "engine-run-rules",
     "engine-scene",
     "engine-system",
     "engine-vm",
+    "expansion-format",
     "game-tables",
     "gamedata",
     "mes",
     "minigame-formats",
     "overlay-images",
     "prot",
+    "randomizer",
     "render-kernels",
     "save",
     "scene-formats",
@@ -1430,6 +1452,7 @@
     "engine-cheats",
     "engine-export",
     "engine-menu-runtime",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene-host",
     "engine-screens",
@@ -1557,6 +1580,70 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-effects/README.md"
   },
+  "engine-expansion": {
+   "package": "legaia-engine-expansion",
+   "deps": [
+    "engine-battle",
+    "engine-mode",
+    "engine-modes",
+    "engine-system",
+    "expansion-format"
+   ],
+   "dev_deps": [
+    "engine-battle-vm",
+    "engine-run-rules",
+    "game-tables"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "arts",
+    "audio",
+    "battle",
+    "battle_waves",
+    "boss_script",
+    "cards",
+    "cutscene",
+    "dialog",
+    "duel_stage",
+    "entrance",
+    "flags",
+    "item_screen",
+    "items",
+    "journal",
+    "map",
+    "map_detail",
+    "mode_stage",
+    "modes",
+    "party",
+    "podium_stage",
+    "poker_stage",
+    "progression",
+    "quest",
+    "quest_challenge",
+    "quest_save",
+    "save_compat",
+    "spells",
+    "toast"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 4,
+   "role": "expansion-pack runtime kernels: monster and formation overrides, level curve, quests, the mode seat",
+   "scope": "The <code>World</code>-free runtime of an expansion pack: monster / formation overrides and battle waves, level curve, rewards, quests, dialogue and pack flags, map zones and entrances, the card economy, the mode seat, the Journal and toasts, the <code>LXP1</code> save block. <code>World::expansion</code> is its seat; inert with no pack.",
+   "dependents": [
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-netplay",
+    "engine-scene-host",
+    "engine-screens",
+    "engine-session",
+    "engine-world-views",
+    "parity",
+    "web-expansion"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/README.md"
+  },
   "engine-export": {
    "package": "legaia-engine-export",
    "deps": [
@@ -1612,6 +1699,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "action_movement",
     "actor_colour_tween",
     "actor_handler",
     "actor_look",
@@ -1762,9 +1850,11 @@
     "engine-battle-vm",
     "engine-core",
     "engine-dev-menu",
+    "engine-expansion",
     "engine-field",
     "engine-menus",
     "engine-minigames",
+    "engine-run-rules",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -1777,6 +1867,7 @@
     "engine-mode",
     "engine-title",
     "engine-vm",
+    "expansion-format",
     "prot"
    ],
    "bins": [],
@@ -2035,8 +2126,10 @@
     "engine-battle-loop",
     "engine-capture",
     "engine-core",
+    "engine-expansion",
     "engine-field",
     "engine-minigame-scenes",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene-host",
     "engine-screens",
@@ -2048,6 +2141,42 @@
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-mode/README.md"
+  },
+  "engine-modes": {
+   "package": "legaia-engine-modes",
+   "deps": [
+    "engine-system",
+    "expansion-format"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "active",
+    "cards",
+    "fixed",
+    "golf",
+    "map_frame",
+    "party",
+    "poker",
+    "prop_hunt",
+    "racing",
+    "session"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 1,
+   "role": "rules engines for the port's own game modes: poker, golf, racing, card battles, prop hunt",
+   "scope": "Rules engines for the port's own game modes (poker, golf, racing, the Grid Duel card battle, prop hunt) and the trading-card economy, card screens and trade table: deterministic, <code>World</code>-free, lockstep-ready.",
+   "dependents": [
+    "engine-core",
+    "engine-expansion",
+    "engine-netplay",
+    "engine-screens",
+    "engine-ui",
+    "engine-world-views"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
   },
   "engine-motion-vm": {
    "package": "legaia-engine-motion-vm",
@@ -2076,6 +2205,47 @@
     "engine-field"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-motion-vm/README.md"
+  },
+  "engine-netplay": {
+   "package": "legaia-engine-netplay",
+   "deps": [
+    "anm",
+    "engine-core",
+    "engine-expansion",
+    "engine-mode",
+    "engine-modes",
+    "engine-scene-host",
+    "engine-system",
+    "engine-ui",
+    "expansion-format",
+    "font",
+    "netplay",
+    "render-kernels",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "avatar_pose",
+    "connect",
+    "field_hunt",
+    "mode_net",
+    "party",
+    "roam",
+    "room",
+    "screens",
+    "trade",
+    "view_stream"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "Netplay in the play hosts: <code>NetPlay</code> (one player's room connection, lobby, room screen, chat and emotes), networked modes (lockstep golf / racing / prop hunt, host-authoritative poker / Grid Duel view stream), shared-world roaming avatars. Above <code>engine-core</code>.",
+   "dependents": [
+    "engine-shell",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-netplay/README.md"
   },
   "engine-render": {
    "package": "legaia-engine-render",
@@ -2119,6 +2289,35 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-render/README.md"
   },
+  "engine-run-rules": {
+   "package": "legaia-engine-run-rules",
+   "deps": [
+    "randomizer"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "boss_rush",
+    "rules",
+    "save",
+    "scaling",
+    "setup"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 0,
+   "role": "run rules: difficulty presets, New Game+, ironman, randomizer seed, Boss Rush, the rules screen session",
+   "scope": "The run rules, <code>World</code>-free: <code>RunRules</code> (difficulty presets, New Game+, ironman, randomizer seed, Boss Rush mode), New Game+'s enemy curve, the Boss Rush run and intermission, the New Game rules screen session, the <code>LGXF</code> save body. <code>World::run_rules</code> is its seat; identity under the default rules.",
+   "dependents": [
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-screens",
+    "engine-session",
+    "engine-shell"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-run-rules/README.md"
+  },
   "engine-save-state": {
    "package": "legaia-engine-save-state",
    "deps": [
@@ -2131,8 +2330,10 @@
    ],
    "dev_deps": [
     "engine-battle-vm",
+    "engine-expansion",
     "engine-field",
     "engine-world-views",
+    "expansion-format",
     "prot",
     "scene-formats"
    ],
@@ -2164,6 +2365,7 @@
     "engine-field",
     "engine-system",
     "engine-vm",
+    "expansion-format",
     "game-tables",
     "iso",
     "lzs",
@@ -2193,6 +2395,7 @@
     "clut_walk_anim",
     "coplanar_draws",
     "cutscene_caption",
+    "expansion_map",
     "field_env",
     "field_ground",
     "field_occlusion",
@@ -2229,6 +2432,7 @@
     "engine-world-views",
     "explorer",
     "parity",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -2248,6 +2452,7 @@
     "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menus",
@@ -2259,6 +2464,7 @@
     "engine-system",
     "engine-vm",
     "engine-world-views",
+    "expansion-format",
     "game-tables",
     "minigame-formats",
     "overlay-images",
@@ -2274,7 +2480,9 @@
     "disc-audit",
     "disc-patch",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-camera",
+    "engine-modes",
     "font",
     "gamedata",
     "lzs",
@@ -2300,6 +2508,7 @@
    "dependents": [
     "engine-capture",
     "engine-menu-runtime",
+    "engine-netplay",
     "engine-screens",
     "engine-session",
     "engine-shell",
@@ -2321,6 +2530,7 @@
     "engine-dev-menu",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menu-runtime",
@@ -2328,6 +2538,8 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
+    "engine-run-rules",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
@@ -2350,8 +2562,10 @@
     "battle_fx",
     "battle_value_readout",
     "dev_menu",
+    "expansion_modes",
     "field_frame",
     "field_messages",
+    "run_rules",
     "field_occlusion",
     "world_map_labels",
     "minigame_hud",
@@ -2384,11 +2598,13 @@
     "engine-camera",
     "engine-core",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-menu-runtime",
     "engine-menus",
     "engine-minigame-scenes",
     "engine-mode",
+    "engine-run-rules",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2396,6 +2612,7 @@
     "engine-title",
     "engine-vm",
     "engine-world-views",
+    "expansion-format",
     "font",
     "game-tables",
     "iso",
@@ -2432,6 +2649,7 @@
     "mode_trace",
     "native",
     "party_spec",
+    "run_rules",
     "scene_actors",
     "session",
     "session_switches",
@@ -2476,7 +2694,9 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-netplay",
     "engine-render",
+    "engine-run-rules",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2486,12 +2706,14 @@
     "engine-title",
     "engine-ui",
     "engine-world-views",
+    "expansion-format",
     "font",
     "game-tables",
     "iso",
     "mdec",
     "mednafen",
     "minigame-formats",
+    "netplay",
     "overlay-images",
     "parity",
     "prot",
@@ -2507,6 +2729,8 @@
     "xa"
    ],
    "dev_deps": [
+    "engine-expansion",
+    "engine-modes",
     "pcsx-redux",
     "web-play"
    ],
@@ -2586,6 +2810,7 @@
     "engine-core",
     "engine-dev-menu",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menu-runtime",
@@ -2593,7 +2818,9 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-motion-vm",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2645,6 +2872,8 @@
    "package": "legaia-engine-ui",
    "deps": [
     "engine-battle-vm",
+    "engine-modes",
+    "expansion-format",
     "font",
     "game-tables",
     "minigame-formats",
@@ -2673,6 +2902,7 @@
     "boot_logos",
     "cast_theeder",
     "dance",
+    "expansion_modes",
     "field_party_hud",
     "fishing",
     "menu",
@@ -2681,6 +2911,7 @@
     "pause_menu",
     "prize_exchange",
     "ringside_backdrop",
+    "run_rules_screen",
     "shop_screen",
     "slot_cabinet",
     "slot_paylines",
@@ -2693,6 +2924,7 @@
    "scope": "Renderer-agnostic UI draw-list builders over the wgpu-free kernels of <code>render-kernels</code> and the battle HUD model in <code>engine-battle-vm</code> - the draw layer both the native renderer and the browser play page use.",
    "dependents": [
     "asset-viewer",
+    "engine-netplay",
     "engine-render",
     "engine-screens",
     "engine-shell",
@@ -2769,13 +3001,16 @@
     "engine-camera",
     "engine-core",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-scene",
     "engine-system",
+    "expansion-format",
     "render-kernels",
     "scene-formats",
     "tmd",
@@ -2799,6 +3034,7 @@
     "field_view_window",
     "minigame_caption",
     "muscle_dome",
+    "pack_mode_world",
     "passive_hud",
     "pause_screens",
     "scene_staging",
@@ -2822,6 +3058,64 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-world-views/README.md"
+  },
+  "expansion-format": {
+   "package": "legaia-expansion-format",
+   "deps": [
+    "art"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "arts",
+    "audio",
+    "audio_clip",
+    "battle",
+    "boss_script",
+    "bundle",
+    "cards",
+    "cutscene",
+    "dialog",
+    "diff",
+    "flow",
+    "items",
+    "manifest",
+    "map",
+    "map_detail",
+    "map_detail_rules",
+    "map_rules",
+    "modes",
+    "progression",
+    "quest",
+    "refs",
+    "share",
+    "spells",
+    "terrain",
+    "terrain_rules",
+    "validate",
+    "version",
+    "xref"
+   ],
+   "band": "families",
+   "track": "patcher",
+   "scope": "The expansion-pack format for the port: manifest, monsters and formations, level curve, quests, dialogue, trading cards, game modes, custom maps, the <code>.lxpack</code> bundle. Disc content by coordinate only - no Sony bytes.",
+   "dependents": [
+    "asset",
+    "engine-core",
+    "engine-expansion",
+    "engine-modes",
+    "engine-netplay",
+    "engine-scene",
+    "engine-scene-host",
+    "engine-session",
+    "engine-shell",
+    "engine-ui",
+    "engine-world-views",
+    "web-expansion",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
   },
   "explorer": {
    "package": "legaia-explorer",
@@ -2935,6 +3229,7 @@
     "engine-battle-hud",
     "engine-dialog",
     "engine-menus",
+    "engine-netplay",
     "engine-render",
     "engine-screens",
     "engine-session",
@@ -2945,6 +3240,7 @@
     "game-tables",
     "render-kernels",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -3029,6 +3325,7 @@
     "patcher",
     "texture-replace",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -3060,6 +3357,7 @@
     "engine-system",
     "explorer",
     "patcher",
+    "web-expansion",
     "web-minigames",
     "web-viewer"
    ],
@@ -3096,6 +3394,7 @@
     "extract",
     "patcher",
     "texture-replace",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -3307,6 +3606,34 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/minigame-formats/README.md"
   },
+  "netplay": {
+   "package": "legaia-netplay",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [
+    "legaia-relay"
+   ],
+   "lib": true,
+   "modules": [
+    "authority",
+    "codec",
+    "lockstep",
+    "protocol",
+    "relay",
+    "transport",
+    "websocket",
+    "wire"
+   ],
+   "band": "top",
+   "track": "engine",
+   "scope": "Multiplayer: versioned wire protocol, delay-based lockstep and host-authoritative session cores over a generic <code>Simulation</code>, loopback / TCP / WebSocket / browser transports, the room relay (standalone or in-process <code>RelayServer::spawn</code>). Names no engine crate.",
+   "dependents": [
+    "engine-netplay",
+    "engine-shell",
+    "web-play"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/netplay/README.md"
+  },
   "overlay-images": {
    "package": "legaia-overlay-images",
    "deps": [
@@ -3374,6 +3701,7 @@
     "engine-core",
     "engine-dialog",
     "engine-effects",
+    "engine-expansion",
     "engine-field",
     "engine-menu-runtime",
     "engine-menus",
@@ -3405,6 +3733,7 @@
     "mdec",
     "overlay-images",
     "patcher",
+    "randomizer",
     "render-kernels",
     "tmd",
     "ui-formats"
@@ -3488,6 +3817,7 @@
     "minigame-formats",
     "party-swap",
     "prot",
+    "randomizer",
     "scene-formats",
     "texture-replace",
     "tim",
@@ -3515,7 +3845,6 @@
     "chest",
     "damage_ap",
     "door",
-    "drops",
     "earth_egg",
     "element_affinity",
     "encounter",
@@ -3659,6 +3988,34 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ram-image/README.md"
   },
+  "randomizer": {
+   "package": "legaia-randomizer",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "bands",
+    "drops",
+    "encounters",
+    "items",
+    "monsters",
+    "rng",
+    "sites"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The randomizer's planning logic shared by the patcher and the engine's run rules: the seeded <code>rng</code> (SplitMix64, seed strings), drop planning, the monster and encounter safety lists, item pools, order-independent site picks, stat bands, formation rerolls. No disc I/O, no dependencies.",
+   "dependents": [
+    "arts-patch",
+    "delilas-party",
+    "engine-core",
+    "engine-run-rules",
+    "patcher",
+    "web-patcher"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/randomizer/README.md"
+  },
   "render-kernels": {
    "package": "legaia-render-kernels",
    "deps": [
@@ -3728,6 +4085,7 @@
     "engine-fishing",
     "engine-minigame-scenes",
     "engine-minigames",
+    "engine-netplay",
     "engine-render",
     "engine-scene",
     "engine-scene-host",
@@ -3855,6 +4213,7 @@
     "patcher",
     "render-kernels",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -3929,6 +4288,7 @@
    "modules": [
     "encode",
     "multi_palette",
+    "tint",
     "vram"
    ],
    "band": "leaves",
@@ -4003,6 +4363,7 @@
     "engine-field",
     "engine-fishing",
     "engine-minigame-scenes",
+    "engine-netplay",
     "engine-scene",
     "engine-scene-host",
     "engine-session",
@@ -4014,6 +4375,7 @@
     "patcher",
     "render-kernels",
     "scene-formats",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -4156,6 +4518,40 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/vab/README.md"
   },
+  "web-expansion": {
+   "package": "legaia-web-expansion",
+   "deps": [
+    "actor-formats",
+    "art",
+    "engine-battle",
+    "engine-battle-vm",
+    "engine-expansion",
+    "engine-scene",
+    "expansion-format",
+    "font",
+    "game-tables",
+    "gamedata",
+    "iso",
+    "scene-formats",
+    "tmd"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "catalog",
+    "session",
+    "wasm",
+    "xref"
+   ],
+   "band": "hosts",
+   "track": "engine",
+   "scope": "The site's expansion workbench as wasm exports: disc pickers and coordinate resolver, pack JSON in / validation / <code>.lxpack</code> out, the XP, dialogue and map previews over the engine's own kernels. An rlib in the engine layer.",
+   "dependents": [
+    "web-viewer"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-expansion/README.md"
+  },
   "web-minigames": {
    "package": "legaia-web-minigames",
    "deps": [
@@ -4225,6 +4621,7 @@
     "lzs",
     "patcher",
     "prot",
+    "randomizer",
     "texture-replace",
     "tim",
     "translate",
@@ -4269,6 +4666,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-netplay",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -4279,11 +4677,13 @@
     "engine-ui",
     "engine-vm",
     "engine-world-views",
+    "expansion-format",
     "font",
     "game-tables",
     "iso",
     "mdec",
     "minigame-formats",
+    "netplay",
     "overlay-images",
     "render-kernels",
     "save",
@@ -4317,11 +4717,14 @@
     "play_battle_vram",
     "play_bgm",
     "play_camera",
+    "play_cards",
     "play_cheats",
     "play_cutscene",
     "play_dance_art",
     "play_dev_menu",
     "play_dialog",
+    "play_expansion",
+    "play_expansion_live",
     "play_field_fx",
     "play_field_hud",
     "play_fishing",
@@ -4336,7 +4739,10 @@
     "play_minigame_slots",
     "play_minigames",
     "play_name_entry",
+    "play_netplay",
+    "play_pack_modes",
     "play_rumble",
+    "play_run_rules",
     "play_sfx",
     "play_shop",
     "play_tile_board",
@@ -4389,6 +4795,7 @@
     "tmd",
     "ui-formats",
     "vab",
+    "web-expansion",
     "web-patcher",
     "web-play",
     "xa"
@@ -4416,7 +4823,7 @@
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code> and <code>web-patcher</code>), and its own product: the asset inspectors (disc browser, viewers, <code>.glb</code> export).",
+   "scope": "The WASM bundle the site loads (<code>cdylib</code> over <code>web-play</code>, <code>web-patcher</code> and <code>web-expansion</code>), and its own product: the asset inspectors (disc browser, viewers, <code>.glb</code> export).",
    "dependents": [],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/web-viewer/README.md"
   },

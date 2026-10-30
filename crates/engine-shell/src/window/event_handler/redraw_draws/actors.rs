@@ -321,6 +321,14 @@ impl<'m> DrawCtx<'_, 'm> {
             if !app.session.host.world.actor_slot_drawn(i) {
                 continue;
             }
+            // A field prop hunt's hider is drawn as its prop instead
+            // (`remote_props`, the local player's own disguise included).
+            if !in_battle
+                && app.session.host.world.player_actor_slot.map(usize::from) == Some(i)
+                && app.netplay_self_disguise().is_some()
+            {
+                continue;
+            }
             // The summon band's hide (`+0x21C = 0xFF` with the prim
             // word zeroed, `0x801E4B30..0x801E4B6C`): every party
             // seat and living monster is off screen while the
@@ -525,6 +533,33 @@ impl<'m> DrawCtx<'_, 'm> {
                     mvp: actor_cam * model,
                     cue,
                 });
+            }
+        }
+        // The other netplay players walking this scene, and a field prop
+        // hunt's hiders as their props.
+        if !in_battle {
+            for (mi, model) in &store.posed.remote_props {
+                if let Some(mesh) = store.meshes.get(*mi) {
+                    draws.push(SceneDraw {
+                        mesh,
+                        mvp: actor_cam * *model,
+                        cue: None,
+                    });
+                }
+            }
+            for (mesh, color, model) in &store.posed.remote_avatars {
+                draws.push(SceneDraw {
+                    mesh,
+                    mvp: actor_cam * *model,
+                    cue: player_tint_cue,
+                });
+                if let Some(c) = color {
+                    color_draws.push(ColorSceneDraw {
+                        mesh: c,
+                        mvp: actor_cam * *model,
+                        cue: player_tint_cue,
+                    });
+                }
             }
         }
     }

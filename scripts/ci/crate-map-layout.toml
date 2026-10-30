@@ -39,14 +39,14 @@ id = "hosts"
 title = "Hosts and front ends"
 blurb = "The programs people run. Each one is a thin shell over the crates below."
 track = "engine"
-crates = ["engine-shell", "web-viewer", "web-play", "web-minigames", "web-patcher", "asset-viewer", "explorer", "patcher", "extract", "asset"]
+crates = ["engine-shell", "web-viewer", "web-play", "web-minigames", "web-patcher", "web-expansion", "asset-viewer", "explorer", "patcher", "extract", "asset"]
 
 [[bands]]
 id = "top"
 title = "Session, presentation, tools"
-blurb = "What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside."
+blurb = "What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside."
 track = "engine"
-crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture"]
+crates = ["engine-session", "engine-screens", "engine-render", "engine-audio", "engine-export", "parity", "engine-capture", "netplay", "engine-netplay"]
 
 [[bands]]
 id = "drivers"
@@ -76,7 +76,7 @@ title = "Patcher and capture libraries"
 blurb = "The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles."
 track = "patcher"
 crates = [
-    "disc-patch", "translate", "code-hooks", "arts-patch", "texture-replace",
+    "disc-patch", "randomizer", "translate", "code-hooks", "arts-patch", "texture-replace",
     "party-swap", "delilas-party", "delilas-challenge",
     "ram-image", "mednafen", "pcsx-redux",
 ]
@@ -88,7 +88,7 @@ blurb = "The Legaia-specific layer over the parsers: containers, scenes, actors,
 track = "preservation"
 crates = [
     "container-formats", "scene-formats", "actor-formats", "minigame-formats",
-    "ui-formats", "game-tables", "overlay-images", "disc-audit",
+    "ui-formats", "game-tables", "overlay-images", "disc-audit", "expansion-format",
 ]
 
 [[bands]]
@@ -116,6 +116,7 @@ pcsx-redux = { track = "tooling" }
 gamedata = { track = "tooling" }
 cheats = { track = "tooling" }
 app-theme = { track = "tooling" }
+expansion-format = { track = "patcher" }
 
 # --- The three hosts on one engine ----------------------------------------
 

@@ -293,6 +293,20 @@ pub trait AudioSink {
         self.with_core(|s| s.swap_bgm(new_seq, fade_in_samples));
     }
 
+    /// Fade the SPU master to silence over `fade_samples`, then detach the
+    /// sequencer and bring the master back to full - a track leaving with
+    /// nothing in its place (an expansion pack's music zone handing over to
+    /// a pack track). At once with `0` or no sequencer.
+    fn fade_out_sequencer(&self, fade_samples: u32) {
+        self.with_core(|s| s.fade_out_sequencer(fade_samples));
+    }
+
+    /// Run `f` on the PCM bus ([`crate::pcm_bus`]): an expansion pack's own
+    /// music, sounds and ambient loops.
+    fn with_pcm_bus<R>(&self, f: impl FnOnce(&mut crate::PcmBus) -> R) -> R {
+        self.with_core(|s| f(&mut s.pcm))
+    }
+
     /// Snapshot of the attached sequencer's progress, `None` with none
     /// attached. A duplicate-start guard keys on this: a re-emitted start for
     /// the track already sounding keeps its playhead, but the same id after

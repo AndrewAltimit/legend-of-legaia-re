@@ -2,16 +2,17 @@
 
 What the site's wasm bundle exports, one section per module family: the play runtime, the minigames page, the viewer pages and the ROM patcher. The architecture the browser host shares with the native window is in [`engine.md`](engine.md#the-browser-host); the gates that keep the two in step are in [`host-drift.md`](../tooling/host-drift.md).
 
-## Four crates, one bundle
+## Five crates, one bundle
 
-The browser side is four crates:
+The browser side is five crates:
 
 - [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `legaia_iso::image` and `legaia_prot::toc_index`.
 - [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames`; the play page holds one for the art it draws over an in-world minigame.
 - [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
+- [`legaia-web-expansion`](../../crates/web-expansion/README.md) - the expansion workbench (`catalog`, `session`, `wasm`): an engine-layer crate whose previews are the engine's own kernels.
 - [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the `cdylib` the site loads.
 
-`web-viewer` depends on `web-play` and `web-patcher`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
+`web-viewer` depends on `web-play`, `web-patcher` and `web-expansion`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
 
 ## Playing the port in the browser (`runtime` + `play`)
 
@@ -423,6 +424,58 @@ One deliberate divergence from the native window: input is **edge**-triggered
 (`menu_runtime::step` does no edge detection, and the native window feeds it the
 held pad). Both hosts label the buy/sell rows with the real item names off the
 SCUS table.
+
+## Expansion packs (`play_expansion`)
+
+The page's *Expansion pack* card hands an `.lxpack` bundle's bytes to
+`LegaiaRuntime::load_expansion`, from a file input or from the slot the
+expansion workbench's *Play in browser* fills (IndexedDB database
+`legaia-expansion`, store `packs`, key `play`, value `{ id, name, version,
+bytes, savedAt }`, read when the page opens as `play.html?expansion=1`), or
+from the page's installed-packs library in the same store
+([`expansion-workbench.md`](../tooling/expansion-workbench.md#persistence-and-the-play-hand-off)).
+The export reads the bundle through the import gates
+(`share::import_bundle`: integrity, trust, pack format and engine version),
+validates it
+(`validate::validate_files`) and activates it through
+`SceneHost::activate_expansion_pack`, the native window's path; it answers
+JSON with the manifest, the maps and every error and warning, and refuses a
+pack with errors. It needs the disc loaded first. The page keeps the bytes
+to hand to a rebuilt engine after a trap.
+
+| Export | Does |
+|---|---|
+| `load_expansion(bytes)` | Read, validate and activate a bundle; JSON `{ ok, pack, errors, warnings }`. |
+| `unload_expansion()` | Deactivate; the progress stays dormant for the next save. |
+| `expansion_bundle_info(bytes)` | The library's read of a bundle, nothing activated and no disc needed: `{ ok, summary, errors }` or `{ ok: false, error: { kind, message } }`. |
+| `expansion_bundle_cover(bytes)` | The bundle's cover PNG bytes, empty when it has none. |
+| `expansion_library_check(library)` | The pack library's dependency check: `{ active, packs: [{ id, version, requires, conflicts }] }` in, per pack `{ problems: [{ kind, dep, installed, active, text }], uses }` out (`manifest::check_dependencies`). |
+| `expansion_info_json()` | The active pack, the map the player is on, `dormant` (the pack a loaded save names that is not loaded) and `compat` (what a save from another version of the active pack lost: `{ saved_version, pack_version, notice, lines }`). |
+| `enter_expansion_map(map, spawn)` | `SceneHost::enter_expansion_map` with `enter_field`'s staging around it; the scene build reads the map off the same `Scene`. |
+| `reload_expansion(bytes)` | The hot reload (`play_expansion_live`): activate as `load_expansion` does, then re-enter the map the player is on with them seated where they stood (`SceneHost::enter_expansion_map_seated`), the follow camera kept; JSON `{ ok, pack, errors, warnings, map, reentered, ms }`. |
+| `expansion_overlay_json()` | The active pack map for the editor overlay: tile rectangle and origin, each tile's wall mask and floor height (the world's floor sampler), spawns, exits, trigger and encounter zones, props, NPCs, the player. |
+| `expansion_seat_player(col, row)` | Stand the player on a map tile, on its floor. |
+| `expansion_set_quiet_arrivals(on)` | Enter pack maps without their arrival cutscene and place-name banner (`SceneHost::quiet_expansion_arrivals`). |
+| `expansion_preview_cutscene(id)` | Play a pack cutscene now, through the trigger path. |
+| `expansion_preview_fight(kind, id)` | Start a pack fight now: `kind` `formation` or `boss`, through a map trigger's `battle` / `boss` path. |
+| `expansion_preview_cards()` | Put one of every pack card the collection lacks into it and open the binder (the preview's own world, not a save). |
+
+The last seven are the expansion workbench's edit-test loop
+([`expansion-workbench.md`](../tooling/expansion-workbench.md#the-3d-preview)):
+its 3D preview is this page framed as `play.html?xwpreview=1`, and its *Play
+here* reaches an open play tab over BroadcastChannel `legaia-expansion-live`;
+both are `site/js/play-expansion-live.js`, and the overlay pass is
+`site/js/play-view-editor-overlay.js`. `play.html?expansion=1&map=<id>`
+enters that map once the workbench's pack loads. The disc-gated
+`play_expansion_live::tests` pin that a reload uploads exactly what a fresh
+entry of the map uploads.
+
+Everything past activation is the engine's and needs nothing of the page:
+New Game restarts the pack, a save carries its progress, entrances fire from
+the retail scenes, Select opens the Journal in the pause menu
+([`field-menu.md`](field-menu.md#expansion-pack-journal-engine-extension)),
+and quest toasts ride the banner rows `shop_overlay_frame` builds. Disc-free
+and disc-gated tests: `play_expansion::tests`.
 
 ## Developer menu (`play_dev_menu`)
 
@@ -1380,6 +1433,17 @@ reference TIMs sitting in other PROT entries.
 | [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; `play_host_hotkey_notice` / `play_host_hotkey_refusal` word the notice line; `host_hotkeys_json` lists the table. The page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-play/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-play/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
 | [`play_cheats`](../../crates/web-play/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
-| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches, the launcher-remembered ones stored under `legaia.switches` (`PersistedSwitches`): `--retail` (`OptionsState::pin_retail` for the session; the options store keeps the pre-pin values), `--psx-render` (`set_psx_render`), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`, and the [gameplay tweaks](gameplay-tweaks.md) (`set_shiny_seru`, `set_flee_exp`, `set_exp_rate_permille`, `set_fortress_encounter_fix`, `set_jewel_fix`, `set_hp_readout_guard`, `set_bonus_drop`, `set_save_anywhere`, and the battle-tuning setters `set_enemy_stat_permille`, `set_enemy_attack_permille`, `set_spirit_ap`, `set_damage_ap`, `set_seru_catch_rate`). |
+| [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches, the launcher-remembered ones stored under `legaia.switches` (`PersistedSwitches`): `--retail` (`OptionsState::pin_retail` for the session; the options store keeps the pre-pin values), `--psx-render` (`set_psx_render`), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`, and the [gameplay tweaks](gameplay-tweaks.md) (`set_shiny_seru`, `set_flee_exp`, `set_exp_rate_permille`, `set_fortress_encounter_fix`, `set_jewel_fix`, `set_hp_readout_guard`, `set_bonus_drop`, `set_save_anywhere`, `set_action_movement`, and the battle-tuning setters `set_enemy_stat_permille`, `set_enemy_attack_permille`, `set_spirit_ap`, `set_damage_ap`, `set_seru_catch_rate`). |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |
 | [`play_host_parity`](../../crates/web-play/src/play_host_parity.rs) | Read-only probes over the live `World` for the tests pairing this host against the native window; not wasm exports. |
+
+## Expansion workbench (`legaia-web-expansion`)
+
+`ExpansionWorkbench` drives the site's `tooling/expansion-workbench.html`: the
+visitor's disc is parsed once for the pickers and the validator's disc
+resolver, the page edits the pack as its JSON form, and the session validates,
+previews and exports it (`validate`, `files_view`, `export_bundle`, `xp_chart`,
+`check_dialog`, `map_preview`, `scene_objects`). The map preview is the
+engine's own synthetic field image read back, and a base scene's geometry
+pack is its scene assembly, so the page shows what the engine would load.
+Exports and page: [`expansion-workbench.md`](../tooling/expansion-workbench.md).

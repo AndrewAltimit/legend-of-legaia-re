@@ -9,8 +9,8 @@ use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_OFFSET, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
-use legaia_patcher::encounter::{self, SceneEncounters};
+use legaia_patcher::encounter::SceneEncounters;
+use legaia_randomizer::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -177,7 +177,7 @@ fn protected_slots(patcher: &DiscPatcher) -> std::collections::BTreeMap<(usize, 
         };
         for f in 0..scene.formation_count() {
             for (s, &id) in scene.formation_ids(f).iter().enumerate() {
-                if encounter::is_protected_formation_id(id) {
+                if legaia_randomizer::encounters::is_protected_formation_id(id) {
                     map.insert((idx, f, s), id);
                 }
             }

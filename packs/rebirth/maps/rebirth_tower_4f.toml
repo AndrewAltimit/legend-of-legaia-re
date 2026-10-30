@@ -1,0 +1,252 @@
+# Tower of Rebirth, fourth floor: the Verdant Vault. The overgrown palace
+# court of present-day Conkram (`concnow`), kept whole on the base
+# scene's own floor ladder: a high terrace ring (tier 8), the broken
+# colonnade inside it (tier 7) and the sunken court at the centre (tier
+# 1), with the retail stairs between them re-traced. The Verdant Colossus
+# sleeps in the sunken court.
+
+name = "Tower of Rebirth 4F - Verdant Vault"
+base = { scene = { kind = "scene", name = "concnow" }, geometry = "keep", scenery = true }
+# Sound-test track 8, "Call of the Ruins".
+bgm = { kind = "bgm", id = 8 }
+camera = "default"
+
+[tiles]
+origin = [13, 16]
+rows = [
+  "##############a.....b#############",
+  "##%%%%%%c%,,%##e....###,,%%%%%%%%%",
+  "##%%%%%%c,,,%#h.....i##,,%f%%%%%%%",
+  "##%%%%%%c,,,%#.......i#,,,f%%%%%%%",
+  "##%%%%%%c,,,%j.......k#,,,f%%%%%%%",
+  "##%%%%%%m,,,n.........k,,,f%%%%%%%",
+  "%%%%%ollm,,,,,,,,,,,,,,,,,pllq%%%%",
+  "%%%%%c,,,,,,,,,,,,,,,,,,,,,,,f%%%%",
+  "%%%%%c,,,,,,,_,_,_,_,_,,,,,,,f%%%%",
+  "%%%%%c,,,,,,___&_``_+_t,,,,,,f%%%%",
+  "%%%%%c,,,,,___u+v``_`w__,,,,,f%%%%",
+  "%%%%om,,,,,_________x__,,,,,,pl%%%",
+  "%%%%c,,,,,,_yuvzA``BC__+,,,,,,f%%%",
+  "%%%%c,,,,,,Czv__``__v___,,,,,,f%%%",
+  "%%%%c,,,,,,n`___`__`_____,,,,,f%%%",
+  "%%%%co,,,,,,_```````_DDvcf,,,,f%%%",
+  "%%%%%%f,,,,%,_``__`_`___+,,,m%f%%%",
+  "%%%%%%F,,EEn___GH___````_,,,I%%%%%",
+  "%%%%%%c,,,,,,______`````,,,,f%%%%%",
+  "%%%%%%c,,,,,u%,__w_```&`_,,,f%%%%%",
+  "%%%%%%c,,,,,v,,_z___uuC__,,,f%%%%%",
+  "%%%%%%cll,l,,____`__```_l,llf%%%%%",
+  "%%%%%%%%%%%%,,+_``z+&``,IEE%%%%%%%",
+  "#%%%%%%%%%cn,,,_``_DJH`,f%%%%%%%%%",
+  "#%%%%%%%%%c,,,,_``____,,f%%%%%%%%%",
+  "#%%%%%%%%%c%%%q_____K%%%f%%%%%%%%%",
+  "#%==========%%%_`,,_%%%%==========",
+  "#%=@@$$$@@$=%%n,,,,,g%%%=$$@@@$$$=",
+  "%%=@@$$$$$$=%n,,,,,,,c%%=$$@@@$$$=",
+  "%%==$$$@@@$=n,,,,,,,,,F%=$$@@@$$$=",
+]
+
+[tiles.legend]
+"," = { label = "floor, tier 8", height = 8 }
+"." = { label = "floor" }
+"_" = { label = "floor, tier 7", height = 7 }
+"`" = { label = "floor, tier 1", height = 1 }
+"#" = { label = "wall", walls = "all" }
+"$" = { label = "wall, tier 3", height = 3, walls = "all" }
+"%" = { label = "wall, tier 8", height = 8, walls = "all" }
+"&" = { label = "wall, tier 1", height = 1, walls = "all" }
+"+" = { label = "wall, tier 7", height = 7, walls = "all" }
+"=" = { label = "wall, tier 11", height = 11, walls = "all" }
+"@" = { label = "wall, tier 2", height = 2, walls = "all" }
+"A" = { label = "wall nook", height = 1, walls = ["tl", "tr", "bl"] }
+"B" = { label = "wall corner", height = 7, walls = ["br"] }
+"C" = { label = "wall edge", height = 7, walls = ["tl", "bl"] }
+"D" = { label = "wall edge", height = 7, walls = ["tl", "tr"] }
+"E" = { label = "wall edge", height = 8, walls = ["tl", "tr"] }
+"F" = { label = "wall nook", height = 8, walls = ["tl", "tr", "br"] }
+"G" = { label = "wall edge", height = 7, walls = ["tr", "br"] }
+"H" = { label = "wall edge", height = 1, walls = ["tl", "bl"] }
+"I" = { label = "wall nook", height = 8, walls = ["tl", "tr", "bl"] }
+"J" = { label = "wall edge", height = 1, walls = ["tl", "tr"] }
+"K" = { label = "wall corner", height = 1, walls = ["br"] }
+"a" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"b" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"c" = { label = "wall edge", height = 8, walls = ["tr", "br"] }
+"e" = { label = "wall edge", walls = ["tl", "bl"] }
+"f" = { label = "wall edge", height = 8, walls = ["tl", "bl"] }
+"g" = { label = "wall corner", height = 8, walls = ["tr"] }
+"h" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"i" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"j" = { label = "wall corner", walls = ["tl"] }
+"k" = { label = "wall corner", walls = ["tr"] }
+"l" = { label = "wall edge", height = 8, walls = ["bl", "br"] }
+"m" = { label = "wall nook", height = 8, walls = ["tr", "bl", "br"] }
+"n" = { label = "wall corner", height = 8, walls = ["tl"] }
+"o" = { label = "wall corner", height = 8, walls = ["br"] }
+"p" = { label = "wall nook", height = 8, walls = ["tl", "bl", "br"] }
+"q" = { label = "wall corner", height = 8, walls = ["bl"] }
+"t" = { label = "wall corner", height = 7, walls = ["bl"] }
+"u" = { label = "wall edge", height = 7, walls = ["bl", "br"] }
+"v" = { label = "wall corner", height = 7, walls = ["tl"] }
+"w" = { label = "wall edge", height = 7, walls = ["tr", "bl"] }
+"x" = { label = "wall corner", height = 1, walls = ["tr"] }
+"y" = { label = "wall nook", height = 7, walls = ["tl", "bl", "br"] }
+"z" = { label = "wall corner", height = 7, walls = ["tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [17, 27]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [17, 2]
+
+[[exits]]
+id = "stair_down"
+rect = [13, 29, 21, 29]
+to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [15, 0, 19, 0]
+to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [12, 24, 20, 25]
+event = { kind = "dialog", line = "floor_4f_intro" }
+once = true
+
+# The sunken court: the Verdant Colossus's quest giver.
+[[triggers]]
+id = "sunken_court"
+rect = [14, 15, 18, 15]
+event = { kind = "talk", npc = "vault_heart" }
+
+[[triggers]]
+id = "sunken_court_still"
+rect = [14, 15, 18, 15]
+event = { kind = "dialog", line = "vault_after" }
+requires = { bosses = ["verdant_colossus"] }
+
+[[encounters]]
+id = "west_terrace"
+rect = [5, 6, 10, 21]
+table = "tower_4f"
+
+[[encounters]]
+id = "east_terrace"
+rect = [24, 6, 29, 21]
+table = "tower_4f"
+
+# ---------------------------------------------------------------------------
+# Detail: the vault drips and grows. Water falls from the broken colonnade,
+# motes and spores drift over the court, and a ring of green light turns
+# on the floor of the sunken court where the Colossus sleeps, the vault's
+# heart hanging over it.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "verdant_ring"
+mesh = { object = 127 }
+tile = [16, 13]
+offset = [0, 24, 0]
+rotation = [90.0, 0.0, 0.0]
+scale = 0.75
+animate = [{ kind = "spin", period = -720 }, { kind = "pulse", amount = 0.08, period = 120 }]
+light = { color = [120, 255, 150], radius = 1300, height = 40, flicker = 0.12, period = 50 }
+
+[[props]]
+id = "vault_heart"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [16, 12]
+offset = [0, 170, 64]
+scale = 2.2
+animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 18, period = 200 }]
+light = { color = [120, 255, 140], radius = 1000, height = 0, flicker = 0.12, period = 40 }
+
+[[emitters]]
+kind = "drips"
+rect = [11, 8, 23, 21]
+count = 28
+seed = 401
+
+[[emitters]]
+kind = "dust"
+rect = [5, 6, 29, 21]
+count = 60
+color = [170, 210, 150]
+seed = 402
+
+[[emitters]]
+kind = "sparkles"
+rect = [11, 9, 22, 20]
+height = [10, 120]
+count = 30
+color = [140, 255, 150]
+seed = 403
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "court_glow", tile = [16, 15], offset = [0, 60, 0], color = [90, 220, 120], radius = 800, flicker = 0.15, period = 60 },
+  # A pale shaft over the heart, so the vault is not one green.
+  { id = "heart_shaft", tile = [16, 12], offset = [0, 320, 0], color = [235, 245, 210], radius = 520, flicker = 0.05, period = 90 },
+]
+
+[fog]
+regions = [{ rect = [11, 9, 23, 20], angle = 0.0, spread = 180.0, speed = 8 }]
+
+# ---------------------------------------------------------------------------
+# The heart's cage: two brass armillary rings turn round the vault's heart
+# on crossed axes, and the sunken court drips into the dark.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "heart_ring_a"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [15, 12]
+offset = [128, 170, 64]
+scale = 1.1
+animate = [{ kind = "spin", axis = "x", period = 360 }, { kind = "bob", amplitude = 18, period = 200 }]
+
+[[props]]
+id = "heart_ring_b"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [17, 12]
+offset = [-128, 170, 64]
+scale = 1.3
+animate = [{ kind = "spin", axis = "z", period = -480 }, { kind = "bob", amplitude = 18, period = 200 }]
+
+[[audio.ambient]]
+id = "court_drips"
+sound = { kind = "sound", id = "drips" }
+tile = [16, 15]
+radius = 900
+inner = 256
+volume = 0.6
+
+[[audio.ambient]]
+id = "west_drips"
+sound = { kind = "sound", id = "drips" }
+tile = [7, 13]
+radius = 640
+inner = 128
+volume = 0.4
+
+[[audio.ambient]]
+id = "east_drips"
+sound = { kind = "sound", id = "drips" }
+tile = [26, 13]
+radius = 640
+inner = 128
+volume = 0.4
+
+[[audio.ambient]]
+id = "heart_hum"
+sound = { kind = "sound", id = "drone" }
+tile = [16, 12]
+radius = 700
+inner = 160
+volume = 0.35

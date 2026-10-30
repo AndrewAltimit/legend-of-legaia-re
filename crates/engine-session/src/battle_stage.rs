@@ -90,10 +90,13 @@ pub fn resolve_battle_stage(host: &SceneHost, scus: Option<&[u8]>) -> Option<Bat
     // DMA-every-TIM build leaves whichever sibling was written last holding
     // them. Retail only ever has the recorded stream resident.
     let mut vram = res.vram.clone();
-    let restored_tims = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
+    // An expansion pack's stage tint rides the stage's own palettes, so the
+    // shell and the ground tile take it on both hosts alike.
+    let restored_tims = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram_tinted(
         scene,
         stage_entry,
         &mut vram,
+        host.battle_stage_tint(),
     );
     // Which transform retail gives the SECOND backdrop copy: a half turn
     // about Y, or an X mirror on the stages the `DAT_80078B50` table names.
@@ -146,6 +149,15 @@ pub fn stage_battle_world(
     archive: Option<&[u8]>,
 ) -> Option<BattleStage> {
     let stage = resolve_battle_stage(host, scus);
+    if let Some(st) = host.pack_stage_resolved() {
+        log::info!(
+            "battle stage: pack stage {:?} index {:?} -> entry {:?}{}",
+            st.scene,
+            st.index,
+            stage.as_ref().map(|s| s.stage_entry),
+            if st.tint.is_some() { " (tinted)" } else { "" }
+        );
+    }
     host.world.battle.stage_outdoor = stage.as_ref().is_some_and(|s| s.outdoor);
     host.world.fog_volume.battle_luma = stage.as_ref().and_then(|s| {
         let (tmd, raw) = &s.dome;
@@ -175,6 +187,54 @@ pub fn stage_battle_world(
         }
     }
     stage
+}
+
+/// One monster an expansion wave seated mid-battle, for a host's draw half.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaveSeat {
+    /// The actor slot it holds.
+    pub actor: usize,
+    pub monster_id: u16,
+    /// Its battle texture slot: the monster seat, as at the battle's entry.
+    pub tex_slot: u8,
+}
+
+/// The world half of an expansion wave's new monsters
+/// (`World::take_expansion_reseated_monsters`): each one's texture slot and
+/// idle, the step [`stage_battle_world`] runs for the opening monsters. The
+/// host's draw half then injects each texture and binds each mesh, as it
+/// does at entry. Empty without a pack, outside battle, or when nothing
+/// arrived since the last call.
+pub fn stage_wave_monsters(host: &mut SceneHost, archive: Option<&[u8]>) -> Vec<WaveSeat> {
+    if host.world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return Vec::new();
+    }
+    let mut slots = host.world.take_expansion_reseated_monsters();
+    slots.sort_unstable();
+    slots.dedup();
+    if slots.is_empty() {
+        return Vec::new();
+    }
+    let seated = host.world.battle_monster_slots();
+    let mut out = Vec::new();
+    for slot in slots {
+        let Some(&(actor, monster_id, tex_slot)) = seated.iter().find(|s| s.0 == slot) else {
+            continue;
+        };
+        let idle = archive.and_then(|a| {
+            legaia_actor_formats::monster_archive::idle_animation(a, monster_id)
+                .ok()
+                .flatten()
+        });
+        host.world
+            .install_monster_battle_form(actor, tex_slot, idle.as_ref());
+        out.push(WaveSeat {
+            actor,
+            monster_id,
+            tex_slot,
+        });
+    }
+    out
 }
 
 /// The `summon.dat` actor-record byte the seat installer `FUN_801F19EC`

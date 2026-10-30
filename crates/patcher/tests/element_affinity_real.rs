@@ -12,7 +12,7 @@
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_game_tables::element_affinity::{BATTLE_ACTION_OVERLAY_PROT_INDEX, ElementAffinity};
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

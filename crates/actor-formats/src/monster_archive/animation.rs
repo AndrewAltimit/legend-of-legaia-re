@@ -210,6 +210,37 @@ impl MonsterAnimation {
         Some([b[0], b[1], b[2], b[3]])
     }
 
+    /// Overwrite the entry's power run (`+0x00..+0x04`); `false` (and no
+    /// change) on a headless clip. An expansion pack's art reuses a retail
+    /// clip with its own power bytes this way.
+    pub fn set_entry_power_run(&mut self, run: [u8; 4]) -> bool {
+        match self
+            .effect_script
+            .get_mut(ENTRY_POWER_RUN_OFFSET..ENTRY_POWER_RUN_OFFSET + 4)
+        {
+            Some(b) => {
+                b.copy_from_slice(&run);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Overwrite the entry's hit-event frame list (`+0x10..+0x14`); `false`
+    /// on a headless clip.
+    pub fn set_entry_event_frames(&mut self, frames: [u8; 4]) -> bool {
+        match self
+            .effect_script
+            .get_mut(EVENT_FRAME_LIST_OFFSET..EVENT_FRAME_LIST_OFFSET + 4)
+        {
+            Some(b) => {
+                b.copy_from_slice(&frames);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// The entry's zero-terminated **hit-event frame list** (`+0x10..+0x14`),
     /// in whole clip frames (the tick's `cursor >> 4`). See
     /// `docs/formats/monster-animation.md` § Event-frame list.

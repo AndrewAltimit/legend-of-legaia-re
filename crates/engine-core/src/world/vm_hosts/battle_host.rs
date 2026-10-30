@@ -132,6 +132,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// from ([`World::monster_cast_def`]): retail's state `0x28` reads the
     /// `+3` byte for every id, capture route included (`0x801E4500`).
     fn spell_mp_cost(&self, id: u8) -> u8 {
+        if let Some(mp) = self.world.expansion_cast_mp(id) {
+            return mp;
+        }
         if self.world.tables.spell_catalog.get(id).is_some() {
             return self.world.tables.spell_catalog.mp_cost(id);
         }
@@ -193,6 +196,13 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         if let Some(a) = self.world.actors.get_mut(slot as usize) {
             a.battle.seat = Some((x, z));
         }
+    }
+    /// An expansion fight's next wave takes the monster seats before the
+    /// wipe ends the battle (`World::expansion_seat_wave`); never without a
+    /// pack.
+    fn reinforce_monster_wipe(&mut self) -> bool {
+        self.world
+            .expansion_seat_wave(legaia_engine_expansion::battle_waves::Moment::Wipe)
     }
     fn battle_end(&mut self, cause: BattleEndCause) {
         self.world.battle.end = Some(cause);
@@ -711,7 +721,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
 
     fn spirit_turn_ap(&self) -> i16 {
-        self.world.toggles.spirit_ap
+        self.world.run_scale_ap(self.world.toggles.spirit_ap)
     }
     /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
     /// list the AI auto-fill arm draws its queue bytes from.

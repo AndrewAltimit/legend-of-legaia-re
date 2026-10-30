@@ -1,0 +1,191 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; expansion packs</div>
+  <h1>Expansion packs</h1>
+  <p class="lede">An expansion pack is new content made for the port - custom maps, fights and bosses, a level curve that makes level 99 worth reaching, quests and challenges, dialogue, trading cards, and game modes the original never had - that plays beside your own Legend of Legaia disc. It carries no game data: everything it borrows from the game, it names by coordinate, and the engine reads it off your disc. This page is the tour; the guides below it cover playing one, making one and playing online, and the format pages are the specification.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>What it is</dt><dd>A folder of TOML files (or one <code>.lxpack</code> file) the engine loads next to your disc. Nothing on the disc changes.</dd>
+    <dt>What it can add</dt><dd>Monsters derived from retail ones, formations with waves, bosses, encounter overrides, an XP curve and enemy scaling, quests, challenges, dialogue, trading cards and dealers, poker / Grid Duel / golf / racing / prop-hunt instances, custom maps with NPCs, props and entrances.</dd>
+    <dt>Where it plays</dt><dd>The native port (launcher or <code>play-window --expansion</code>) and the browser play page.</dd>
+    <dt>How it is made</dt><dd>By hand in any text editor, or on the <a href="../tooling/expansion-workbench.html">expansion workbench</a> in the browser.</dd>
+    <dt>Without a pack</dt><dd>The game as it shipped, bit for bit: every pack hook is the identity when no pack is loaded.</dd>
+    <dt>Flagship</dt><dd><a href="rebirth.html">Legend of Legaia: Rebirth</a>, written with exactly the format and tooling any modder uses.</dd>
+  </dl>
+  <div class="card-grid cols-3">
+    <a class="card card-primary" href="playing-expansion-packs.html">
+      <div class="card-title">Play a pack</div>
+      <div class="card-body">Load an <code>.lxpack</code> on the desktop or in the browser; entrances, the Journal, toasts and saves.</div>
+    </a>
+    <a class="card" href="making-expansion-packs.html">
+      <div class="card-title">Make a pack</div>
+      <div class="card-body">The workbench step by step, the files by hand, validating and bundling from the command line.</div>
+    </a>
+    <a class="card" href="playing-online.html">
+      <div class="card-title">Play online</div>
+      <div class="card-body">Host a world, walk a town together, sit down at poker, golf, a race or prop hunt.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="pack-vs-patch" data-doc="-">
+  <h2>A pack is not a ROM patch</h2>
+  <p>The project has two ways to change the game, and they point opposite ways. The <a href="../tooling/rom-patcher.html">randomizer and disc patcher</a> rewrite bytes on your copy of the disc, so any emulator or console plays the result. An expansion pack leaves the disc alone and adds to the <em>port</em>: it can do what no disc edit can - more enemies than a battle has seats, a map that exists on no disc, a poker table - because the engine is the one reading it.</p>
+  <table>
+    <thead><tr><th></th><th>ROM patch</th><th>Expansion pack</th></tr></thead>
+    <tbody>
+      <tr><td>Changes</td><td>Your <code>.bin</code> (or a <code>.ppf</code> beside it)</td><td>Nothing on the disc</td></tr>
+      <tr><td>Plays on</td><td>Any emulator or console</td><td>The port, native or browser</td></tr>
+      <tr><td>Bound by</td><td>Retail's code, sector sizes, free space</td><td>The engine's own limits</td></tr>
+      <tr><td>Shared as</td><td>A seed or a PPF</td><td>A pack folder or one <code>.lxpack</code></td></tr>
+      <tr><td>Turned off by</td><td>Using the unpatched disc</td><td><em>Unload</em>, or not loading it</td></tr>
+    </tbody>
+  </table>
+  <p>Both share one rule: nothing that ships contains the disc's bytes.</p>
+</section>
+
+<section class="doc-section" id="coordinates" data-doc="-">
+  <h2>Coordinates, not copies</h2>
+  <p>A pack monster is always <strong>derived</strong> from a retail one: the pack writes <code>base = { kind = "monster", id = 109 }</code> and new numbers, and the engine reads that monster's mesh, textures, animations and attacks off your disc. A pack map names the retail scene whose scenery it reuses; an NPC names the retail placement whose model it wears; a card's portrait names the monster it shows. Each of those is a <a href="../formats/expansion-pack.html#disc-references"><code>DiscRef</code></a>, a coordinate into the disc.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The coordinate model. On the left, the shareable expansion pack holds TOML files: battle, maps, cards. Each names disc content by a DiscRef coordinate: monster 109, scene town01, npc town01 slot 12, tmd PROT 874 object 3, bgm 30. In the middle the engine's resolver checks each coordinate and reads the asset. On the right, the player's own disc image supplies the monster archive, scene bundles, MAN placements and music. Only the left side is ever shared; the disc bytes stay on the player's machine.">
+      <defs><marker id="xh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="8" y="10" width="236" height="310" rx="6"/>
+      <text class="dg-edge-label" x="18" y="28">the pack (shared)</text>
+      <rect class="dg-node-accent" x="20" y="40" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="126" y="58">battle.toml</text><text class="dg-sub" x="126" y="74">monster id 109</text>
+      <rect class="dg-node-accent" x="20" y="96" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="126" y="114">maps/tower.toml</text><text class="dg-sub" x="126" y="130">scene town01 + tiles</text>
+      <rect class="dg-node-accent" x="20" y="152" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="126" y="170">maps: [[npcs]]</text><text class="dg-sub" x="126" y="186">npc town01 slot 12</text>
+      <rect class="dg-node-accent" x="20" y="208" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="126" y="226">maps: [[props]]</text><text class="dg-sub" x="126" y="242">tmd PROT 874 object 3</text>
+      <rect class="dg-node-accent" x="20" y="264" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="126" y="282">battle: bosses</text><text class="dg-sub" x="126" y="298">bgm 30</text>
+      <rect class="dg-node" x="284" y="120" width="152" height="96" rx="4"/>
+      <text class="dg-label" x="360" y="150">DiscResolver</text>
+      <text class="dg-sub" x="360" y="170">range check, then</text>
+      <text class="dg-sub" x="360" y="186">look up on the disc</text>
+      <text class="dg-sub" x="360" y="202">and read the asset</text>
+      <rect class="dg-group" x="476" y="10" width="236" height="310" rx="6"/>
+      <text class="dg-edge-label" x="486" y="28">your disc (never shared)</text>
+      <rect class="dg-node-ok" x="488" y="40" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="594" y="58">PROT 867</text><text class="dg-sub" x="594" y="74">monster archive</text>
+      <rect class="dg-node-ok" x="488" y="96" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="594" y="114">scene bundle</text><text class="dg-sub" x="594" y="130">VRAM, geometry pack</text>
+      <rect class="dg-node-ok" x="488" y="152" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="594" y="170">scene MAN</text><text class="dg-sub" x="594" y="186">actor placements</text>
+      <rect class="dg-node-ok" x="488" y="208" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="594" y="226">PROT 874</text><text class="dg-sub" x="594" y="242">TMD objects</text>
+      <rect class="dg-node-ok" x="488" y="264" width="212" height="44" rx="4"/>
+      <text class="dg-label" x="594" y="282">music bank</text><text class="dg-sub" x="594" y="298">SEQ + VAB</text>
+      <path class="dg-edge" d="M232 62 L282 140" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M232 118 L282 156" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M232 174 L282 170" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M232 230 L282 186" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M232 286 L282 200" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M436 140 L486 62" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M436 156 L486 118" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M436 170 L486 174" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M436 186 L486 230" marker-end="url(#xh-arrow)"/>
+      <path class="dg-edge" d="M436 200 L486 286" marker-end="url(#xh-arrow)"/>
+    </svg>
+    <figcaption>Pack to coordinate to disc. The validator range-checks a coordinate with no disc at all; with a disc (in the engine, or on the workbench) it also checks that the coordinate names something real.</figcaption>
+  </figure>
+  <p>The validator backs the rule up: a file under <code>assets/</code> must be a PNG, glTF, Ogg, WAV or plain text file and must not look like any disc format, and no file in a pack may be named like a disc file (<a href="../formats/expansion-pack.html#the-no-disc-bytes-rule">the no-disc-bytes rule</a>). That is what makes a pack safe to post anywhere.</p>
+</section>
+
+<section class="doc-section" id="layout" data-doc="-">
+  <h2>What is in a pack</h2>
+  <p>Every file but the manifest is optional, and every key in a file is optional: a pack writes only what it changes.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">required</span><span class="bm-name">pack.toml</span><span class="bm-size">id, name, version</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">fights</span><span class="bm-name">battle.toml progression.toml</span><span class="bm-size">monsters, curve</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">story</span><span class="bm-name">quests.toml dialog.toml cutscenes.toml</span><span class="bm-size">quests, lines, scenes</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">play</span><span class="bm-name">cards.toml modes.toml</span><span class="bm-size">cards, modes</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">places</span><span class="bm-name">maps/*.toml</span><span class="bm-size">one per map</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">own files</span><span class="bm-name">assets/</span><span class="bm-size">png, ogg, ...</span></div>
+  </div>
+  <p class="dg-note">The pack as a directory, by what each file is for; as an <code>.lxpack</code> the same files sit in one deterministic archive.</p>
+  <div class="card-grid cols-2">
+    <a class="card" href="../formats/expansion-pack.html">
+      <div class="card-title">The format</div>
+      <div class="card-body">Layout, <code>pack.toml</code>, coordinates, the <code>.lxpack</code> bundle byte by byte, validation, cards and modes sections.</div>
+    </a>
+    <a class="card" href="../formats/expansion-pack-battle.html">
+      <div class="card-title">Battles and progression</div>
+      <div class="card-body">Derived monsters, formations and waves, encounter overrides, bosses, the XP curve and enemy scaling.</div>
+    </a>
+    <a class="card" href="../formats/expansion-pack-quests.html">
+      <div class="card-title">Quests, dialogue and saves</div>
+      <div class="card-body">Quests and challenges, pack dialogue on the retail dialogue runner, and the progress block a save carries.</div>
+    </a>
+    <a class="card" href="../formats/expansion-pack-maps.html">
+      <div class="card-title">Maps</div>
+      <div class="card-body">Tiles over a retail base scene, corner-height tiers, props and NPCs, zones and entrances from the retail world.</div>
+    </a>
+    <a class="card" href="../subsystems/expansion-modes.html">
+      <div class="card-title">Game modes and cards</div>
+      <div class="card-body">Hold'em, Grid Duel, golf, racing, prop hunt; the card economy and its screens.</div>
+    </a>
+    <a class="card" href="../subsystems/netplay.html">
+      <div class="card-title">Netplay</div>
+      <div class="card-body">Rooms and the relay, lockstep and host-authoritative sessions, roaming avatars.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="reaching-the-engine" data-doc="-">
+  <h2>How a pack reaches the engine</h2>
+  <p>Both hosts end in the same call. The native window takes a pack folder or an <code>.lxpack</code>; the browser page takes an <code>.lxpack</code> (a file pick, or the bundle the workbench hands over). Each validates it - a pack with errors is refused, with the first few named - and activates it through <code>SceneHost::activate_expansion_pack</code>, which is <code>World::activate_expansion</code>: the battle tables compile, the XP curve swaps, the quest runtime adopts any progress a save kept for the pack.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two hosts, one activation path. Native: the launcher's Expansion pack button or play-window --expansion with a folder or an .lxpack. Browser: the play page's Load expansion input, or the workbench's Play in browser hand-off through IndexedDB, both reaching LegaiaRuntime.load_expansion. Both validate the files and call SceneHost.activate_expansion_pack, which is World.activate_expansion. From there New Game, Continue, entrances, the Journal's Travel page and the direct map entries play with the pack.">
+      <defs><marker id="xh-arrow2" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="10" y="20">native window</text>
+      <rect class="dg-node" x="10" y="28" width="200" height="44" rx="4"/>
+      <text class="dg-label" x="110" y="46">Launcher button</text><text class="dg-sub" x="110" y="62">folder or .lxpack</text>
+      <rect class="dg-node" x="10" y="80" width="200" height="44" rx="4"/>
+      <text class="dg-label" x="110" y="98">--expansion PATH</text><text class="dg-sub" x="110" y="114">[--map ID]</text>
+      <text class="dg-edge-label" x="10" y="156">browser play page</text>
+      <rect class="dg-node" x="10" y="164" width="200" height="44" rx="4"/>
+      <text class="dg-label" x="110" y="182">Load expansion</text><text class="dg-sub" x="110" y="198">.lxpack file input</text>
+      <rect class="dg-node" x="10" y="216" width="200" height="44" rx="4"/>
+      <text class="dg-label" x="110" y="234">Workbench hand-off</text><text class="dg-sub" x="110" y="250">play.html?expansion=1</text>
+      <rect class="dg-node" x="250" y="190" width="150" height="44" rx="4"/>
+      <text class="dg-label" x="325" y="208">load_expansion</text><text class="dg-sub" x="325" y="224">read_bundle</text>
+      <rect class="dg-node-accent" x="290" y="70" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="390" y="92">validate, then</text>
+      <text class="dg-sub" x="390" y="110">activate_expansion_pack</text>
+      <text class="dg-sub" x="390" y="126">World::activate_expansion</text>
+      <rect class="dg-node-ok" x="530" y="40" width="180" height="200" rx="4"/>
+      <text class="dg-label" x="620" y="64">Plays with the pack</text>
+      <text class="dg-sub" x="620" y="90">New Game, Continue</text>
+      <text class="dg-sub" x="620" y="110">entrances to maps</text>
+      <text class="dg-sub" x="620" y="130">Journal: quests, cards</text>
+      <text class="dg-sub" x="620" y="150">Travel page</text>
+      <text class="dg-sub" x="620" y="170">--map / Enter map</text>
+      <text class="dg-sub" x="620" y="190">pack fights, modes</text>
+      <text class="dg-sub" x="620" y="210">saves keep progress</text>
+      <path class="dg-edge" d="M210 50 L298 92" marker-end="url(#xh-arrow2)"/>
+      <path class="dg-edge" d="M210 102 L298 108" marker-end="url(#xh-arrow2)"/>
+      <path class="dg-edge" d="M210 186 L248 206" marker-end="url(#xh-arrow2)"/>
+      <path class="dg-edge" d="M210 238 L248 220" marker-end="url(#xh-arrow2)"/>
+      <path class="dg-edge" d="M325 190 L360 142" marker-end="url(#xh-arrow2)"/>
+      <path class="dg-edge" d="M490 105 L528 120" marker-end="url(#xh-arrow2)"/>
+    </svg>
+    <figcaption>Two hosts, one activation path. A save made with the pack keeps its progress in its own block, so loading it without the pack keeps that progress for later rather than losing it.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="what-a-pack-can-do" data-doc="-">
+  <h2>What a pack can do that retail cannot</h2>
+  <ul class="bullets">
+    <li><strong>Fights past the seat limit.</strong> A battle has four monster seats; a formation's <a href="../formats/expansion-pack-battle.html#waves">waves</a> bring more in as seats free up, and one victory pays for all of them.</li>
+    <li><strong>A reason to reach 99.</strong> A banded or explicit XP curve, EXP and gold multipliers, and enemies that scale with the party past a level.</li>
+    <li><strong>New places.</strong> A <a href="../formats/expansion-pack-maps.html">map</a> painted tile by tile over a retail scene's scenery, with its own walls, heights, props, NPCs and encounter zones, reached through an entrance in the retail world.</li>
+    <li><strong>New things to do.</strong> Quests that track retail story flags and the pack's own, challenges with scores, trading cards dropped in battle and sold at dealers, and five <a href="../subsystems/expansion-modes.html">game modes</a> - several of them playable <a href="playing-online.html">online</a>.</li>
+  </ul>
+  <p class="callout callout-tip">Start with the <a href="rebirth.html">Rebirth</a> pack: load it, play it, then open it on the <a href="../tooling/expansion-workbench.html">workbench</a> and see how each piece is written.</p>
+</section>

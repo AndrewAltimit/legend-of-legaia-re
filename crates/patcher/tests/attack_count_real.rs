@@ -26,7 +26,8 @@ use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::apply;
 use legaia_patcher::attack_count::{self, ACTION_BAND, COST_UNAVAILABLE};
-use legaia_patcher::monster_stats::{SCALE_PINNED_MONSTER_IDS, ScalePermille, StatScale};
+use legaia_patcher::monster_stats::{ScalePermille, StatScale};
+use legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

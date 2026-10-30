@@ -3210,4 +3210,5 @@ still reports:
 [Music tracks](../reference/music-tracks.md) ·
 [Audio function tables](../reference/functions/audio.md) ·
 [Cutscene / STR](cutscene.md) ·
+[Expansion-pack audio](../formats/expansion-pack-audio.md) (the PCM bus beside the SPU, pack tracks, zones, positional loops) ·
 [Host drift](../tooling/host-drift.md)

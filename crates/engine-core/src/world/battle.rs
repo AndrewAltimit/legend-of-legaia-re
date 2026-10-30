@@ -15,6 +15,7 @@ mod camera_ghost;
 mod capture;
 mod cast_band;
 mod casting;
+pub(in crate::world) use casting::seru_module_heal;
 pub(in crate::world) mod clip_ladder;
 mod command_flow;
 mod commit_log_launch;

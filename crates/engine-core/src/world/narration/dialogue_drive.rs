@@ -136,6 +136,7 @@ impl World {
                     let choice = panel.picker_cursor();
                     let target = panel.picker().and_then(|pk| pk.jump_target(choice));
                     id.last_choice = Some(choice);
+                    self.expansion_observe_choice(&id.bytecode, choice);
                     // A user choice is progress: clear the wrap map so a
                     // branch that jumps back over PCs this talk already ran
                     // is not read as a loop. A branch whose reply box is

@@ -5,9 +5,9 @@
 use anyhow::{Context, Result};
 
 /// Resolve a user seed string to a numeric seed (shared with the in-browser
-/// patcher via [`legaia_disc_patch::rng::seed_from_str`]).
+/// patcher via [`legaia_randomizer::rng::seed_from_str`]).
 pub(crate) fn resolve_seed(seed: &str) -> u64 {
-    legaia_disc_patch::rng::seed_from_str(seed)
+    legaia_randomizer::rng::seed_from_str(seed)
 }
 
 /// Parse an item id from a decimal or `0x`-hex string (e.g. `154` or `0x9a`).

@@ -117,16 +117,106 @@ pub(super) fn install_debug_play_record(
     );
 }
 
+/// `--play-cutscene ID`: queue the active pack's cutscene `ID` once the
+/// launch scene is entered (`World::expansion_play_cutscene`); it starts on
+/// the first free field frame. A DEBUG affordance for reaching a pack's
+/// scripted beat without playing up to it.
+pub(super) fn install_debug_play_cutscene(
+    session: &mut NativeSession,
+    seeds: &super::super::DebugSeeds,
+) {
+    let Some(id) = seeds.play_cutscene.as_deref() else {
+        return;
+    };
+    let ok = session.host.world.expansion_play_cutscene(id);
+    log::info!(
+        "play-window: --play-cutscene {id} {}",
+        if ok {
+            "queued"
+        } else {
+            "is not a cutscene of the active pack"
+        }
+    );
+}
+
+// --- expansion game modes (`--mode`) ---
+/// `--mode <INSTANCE>`: enter an expansion game mode (or, for `picker`, open
+/// the mode picker) over the entered scene. Leaving it returns to the scene.
+pub(super) fn enter_debug_pack_mode(session: &mut NativeSession, seeds: &super::super::DebugSeeds) {
+    let Some(id) = seeds.pack_mode.as_deref() else {
+        return;
+    };
+    let world = &mut session.host.world;
+    // The trading-card screens ride the same flag.
+    let card_screen = match id {
+        "cards" => Some(world.open_card_menu()),
+        "cards-binder" => Some(world.open_card_binder()),
+        // The pack item screen rides it as well: the bag, or a shop.
+        "items" => Some(world.open_item_bag(false)),
+        "items-gear" => Some(world.open_item_bag(true)),
+        _ => id
+            .strip_prefix("cards-dealer")
+            .map(|d| world.open_card_dealer(d.trim_start_matches(':')))
+            .or_else(|| {
+                id.strip_prefix("shop")
+                    .map(|d| world.open_item_shop(d.trim_start_matches(':')))
+            }),
+    };
+    if let Some(opened) = card_screen {
+        if opened {
+            log::info!("play-window: --mode {id}: the screen is open");
+        } else {
+            log::warn!(
+                "play-window: --mode {id}: no pack cards / items (or no such dealer / shop)"
+            );
+        }
+        return;
+    }
+    if id == "picker" {
+        world.open_pack_mode_picker();
+        log::info!("play-window: --mode picker: the mode picker is open");
+        return;
+    }
+    // `<night>:podium` plays a party night's rounds out at once and lands on
+    // its podium (`World::debug_play_out_party_night`).
+    let (id, podium) = match id.strip_suffix(":podium") {
+        Some(night) => (night, true),
+        None => (id, false),
+    };
+    match world.enter_pack_mode(id) {
+        Ok(()) if podium => {
+            let ok = world.debug_play_out_party_night();
+            log::info!("play-window: --mode {id}:podium: played out {ok}");
+        }
+        Ok(()) => log::info!("play-window: --mode {id}: entered"),
+        Err(e) => {
+            let known: Vec<String> = world
+                .pack_mode_entries()
+                .into_iter()
+                .map(|e| e.id)
+                .collect();
+            log::warn!(
+                "play-window: --mode {id}: {e} (known: {})",
+                known.join(", ")
+            );
+        }
+    }
+}
+// --- end expansion game modes ---
+
 /// A `--battle` operand: a scene MAN formation-row index, "the first row
 /// the scene registered that carries monsters", or a formation cell no row
 /// carries (`cell:[s:]id,...`, hex ids, `s:` = scripted), registered as a
 /// formation of its own the way the retail comparison's headless seed does
-/// (`legaia_engine_capture::formation_cell`).
+/// (`legaia_engine_capture::formation_cell`); or, with `--expansion`, an
+/// active pack's boss (`boss:KEY`) or formation (`pack:KEY`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::window) enum BattleEntry {
     Row(u16),
     First,
     Cell(legaia_engine_capture::formation_cell::FormationCell),
+    PackBoss(String),
+    PackFormation(String),
 }
 
 impl BattleEntry {
@@ -135,12 +225,19 @@ impl BattleEntry {
         if t.eq_ignore_ascii_case("first") {
             return Ok(Self::First);
         }
+        if let Some(k) = t.strip_prefix("boss:") {
+            return Ok(Self::PackBoss(k.to_string()));
+        }
+        if let Some(k) = t.strip_prefix("pack:") {
+            return Ok(Self::PackFormation(k.to_string()));
+        }
         if let Some(cell) = legaia_engine_capture::formation_cell::FormationCell::parse_spec(t) {
             return Ok(Self::Cell(cell));
         }
         t.parse::<u16>().map(Self::Row).map_err(|_| {
             anyhow::anyhow!(
-                "--battle wants a formation row index, `first` or `cell:[s:]id,...`, got {spec:?}"
+                "--battle wants a formation row index, `first`, `cell:[s:]id,...`, `boss:KEY` or \
+                 `pack:KEY`, got {spec:?}"
             )
         })
     }
@@ -158,6 +255,8 @@ impl BattleEntry {
                 let index = &session.host.index;
                 cell.register(world, &scene, || index.entry_bytes_extended(867).ok())
             }
+            // Started through the pack's own entry points instead.
+            Self::PackBoss(_) | Self::PackFormation(_) => None,
         }
     }
 }
@@ -177,6 +276,20 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             return;
         }
     };
+    // A pack fight starts through the pack's own entry points, which arm
+    // the boss staging (music, reward, script) the way a map trigger does.
+    if let BattleEntry::PackBoss(key) | BattleEntry::PackFormation(key) = &entry {
+        let world = &mut session.host.world;
+        world.toggles.live_gameplay_loop = true;
+        let started = match &entry {
+            BattleEntry::PackBoss(_) => world.start_expansion_boss(key),
+            _ => world.start_expansion_battle(key),
+        };
+        if !started {
+            log::error!("play-window: --battle {spec}: no such fight in the active pack");
+        }
+        return;
+    }
     let resolved = entry.resolve(session);
     let world = &mut session.host.world;
     let Some(row) = resolved else {

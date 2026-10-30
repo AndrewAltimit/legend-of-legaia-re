@@ -28,6 +28,7 @@ legaia-engine-core.workspace = true
 legaia-engine-save-state.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-engine-scene-host.workspace = true
+legaia-engine-expansion.workspace = true
 legaia-engine-menu-runtime.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true
@@ -70,6 +71,7 @@ tempfile.workspace = true
 # the engine over it. The patcher family depends on no engine crate.
 legaia-arts-patch.workspace = true
 legaia-disc-patch.workspace = true
+legaia-randomizer.workspace = true
 legaia-patcher.workspace = true
 legaia-ui-formats.workspace = true
 legaia-lzs.workspace = true

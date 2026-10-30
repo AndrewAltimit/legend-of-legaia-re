@@ -101,7 +101,7 @@ fn enabling_unused_enemies_spawns_the_evil_bat_at_runtime() {
         let mut patched = SceneEncounters::locate(&entry, idx).unwrap();
         let changed = patched.randomize_with_extra(
             SEED,
-            legaia_patcher::drops::DropMode::Random,
+            legaia_randomizer::drops::DropMode::Random,
             UNUSED_ENEMY_IDS,
         );
         if changed == 0 {

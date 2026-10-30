@@ -273,6 +273,9 @@ impl SceneResources {
         // special range), so the shared blocks' head TMDs (the retail
         // `player_data` character pack) append after the scene's own.
         parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize, true);
+        // A pack map's generated wall boxes join the geometry pack, after
+        // its own meshes.
+        tmds.extend(override_tmds(scene));
         for shared in shared_scenes {
             parse_scene_tmds_anms(
                 shared,
@@ -547,6 +550,14 @@ impl SceneResources {
             let mut boot = Vram::new();
             bundle.upload_boot_resident_to_vram(&mut boot);
             vram.underlay(&boot);
+        }
+
+        // A pack map's carried-in meshes sample texture copies written into
+        // VRAM the scene leaves free (`expansion_map::detail`): over the
+        // scene's own build, so every rebuild of the map's scene - a battle's
+        // return included - carries them.
+        if let Some(o) = scene.overrides.as_ref() {
+            crate::expansion_map::detail::apply_vram_patches(&mut vram, &o.vram_patches);
         }
 
         Ok((

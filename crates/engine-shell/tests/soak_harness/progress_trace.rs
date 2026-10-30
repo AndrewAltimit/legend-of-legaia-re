@@ -102,6 +102,26 @@ pub(super) fn progress_digest(s: &NativeSession) -> u64 {
                 w.minigames.fishing, w.minigames.fishing_exchange
             );
         }
+        // The expansion mode seat (picker, a session, its results) or the
+        // card screen: the session's own rules digest and the stage.
+        SceneMode::Expansion => {
+            use legaia_engine_expansion::modes::ModeStage;
+            let x = &w.expansion;
+            if let Some(seat) = x.mode_seat.as_deref() {
+                match &seat.stage {
+                    ModeStage::Picker { cursor, error, .. } => {
+                        let _ = write!(h, "picker{cursor}{error:?}|");
+                    }
+                    ModeStage::Playing { mode, quit_prompt } => {
+                        let _ = write!(h, "play{:x}{quit_prompt}|", mode.state_hash());
+                    }
+                    ModeStage::Results { rows, .. } => {
+                        let _ = write!(h, "results{}|", rows.len());
+                    }
+                }
+            }
+            let _ = write!(h, "cards{:?}|", x.cards.seat);
+        }
         SceneMode::SlotMachine => {
             let _ = write!(h, "{:?}", w.minigames.slot_machine);
         }

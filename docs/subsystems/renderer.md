@@ -927,6 +927,35 @@ are a solid `6 x 6` block at tiles `(40..45, 46..51)`, a ten-cell run along
 (`edteien` has the same shape and the same 400 / 45 split). The port's
 `build_walk_heightfield` gate matches retail's.
 
+### A decoration cell with record flag `0x800` sorts at its farthest corner
+
+The object **record's** `0x800` flag is a different bit from the cell's. The
+decoration pass `FUN_801F7088` ORs `0x10000000` into the cell's
+`FUN_80043390` colour word when its record carries it (`andi v0,v0,0x800` /
+`lui v0,0x1000` / `or a1,a1,v0` at `0x801F78B8..0x801F78C8`). The dispatcher
+keeps the word's top byte at scratchpad `0x1F800043`, and with its bit `0x10`
+set every primitive handler links the prim at the largest of its corner
+`SZ`s instead of the average (`FUN_80045584`: `lbu v1,-0x2D1(t2)` /
+`andi s3,v1,0x10` / `mfc2` of `SZ0..SZ3` and the max at
+`0x80045670..0x800456E8`, then `srlv` by the OT shift).
+
+The flagged cells are mostly large slabs: `koin1`'s overhead boards over the
+Sol Tower lobby (meshes `96` and `106`, records `0x813` / `0x817`),
+`taiku2`'s throne dais and steps (`0x812`), cells in `town01` and `teien`.
+
+**Not ported.** The port draws these cells at their own per-pixel depth. A
+whole-mesh emulation (each flagged draw rasterised at the depth of its
+mesh's farthest bounding corner, the model for lights and shadows still
+recovered from the unseated matrix) changes `koin1`, `town01`, `teien` and
+`taiku2` frames, but no retail capture of those views is in hand to say it
+matches retail better than per-pixel depth does. Per-prim keying, which
+retail does, needs every prim's corner depths in the vertex stage. Seating
+the depth by baking it into a draw's `mvp`, as the battle ground grid's
+`pin_to_far_bucket` does, also corrupts the `view_proj^-1 * mvp` model
+recovery the point-light and shadow passes read, which darkens the whole
+frame through bogus shadow casters. Any port of this rule has to carry the
+seated clip matrix beside the draw's own `mvp`.
+
 ## The billboard projector (`FUN_800195A8`)
 
 Every camera-facing rectangle in the game goes through one helper: `MVMVA`
@@ -2555,6 +2584,15 @@ assemble field scenes apply the same map - the native play-window in its
 placement / posed-prop resolvers, the browser play page and the field-scene
 viewer in their placement / terrain position exporters (the drift gate's
 sim-pair rows pin all three call sites).
+
+The candidate pairs come from buckets of quantized plane (normal and
+distance). A bucket can hold thousands of planes - every ground cell of a
+large expansion-pack map lies on one plane - so within a bucket whose
+members share an in-plane axis the pairs are swept along it, and a pair
+further apart on that axis than the lifts' slide reach is never formed: it
+could be neither a conflict nor an abutment. The pairs kept are walked in
+the order of the full walk, so the offsets are the same (the
+`pruned_walk_matches_the_full_walk` test pins it).
 
 Five properties of the kernel, each closing a view-angle-dependent fight:
 

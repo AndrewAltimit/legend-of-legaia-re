@@ -68,6 +68,9 @@ pub struct HostScreenPrims {
     pub world_map_markers: Vec<ScreenPrim>,
     /// The overworld sky band.
     pub world_map_sky: Vec<ScreenPrim>,
+    /// An in-world golf round's or race's pieces (balls, cup, aim arrow,
+    /// bodies, trails), `HostView::pack_mode_world_prims`.
+    pub pack_mode_world: Vec<ScreenPrim>,
 }
 
 /// One frame of the PROT-0900 screen-effect widget family as screen
@@ -170,7 +173,32 @@ pub fn compose_screen_prims(
         fishing_hud,
         world_map_markers,
         world_map_sky,
+        pack_mode_world,
     } = host;
+
+    // A run-rules screen (the New Game rules, the Boss Rush intermission or
+    // result) owns the whole frame; nothing is drawn under it.
+    if let Some(screen) = crate::run_rules::active_screen(world) {
+        return (screen.prims(), Vec::new());
+    }
+
+    // An expansion mode screen owns the whole frame: its panels are the
+    // under-text list, and only the pause wipe may cover it. A golf round or
+    // race played on its pack map draws in the field instead: the stage's
+    // world pieces and the actors' shadows under its HUD.
+    if world.mode == legaia_engine_mode::mode::SceneMode::Expansion {
+        let mut over = Vec::new();
+        if let Some(level) = pause_wipe {
+            over.push(level_fade(level));
+        }
+        let mut under = Vec::new();
+        if world.pack_mode_stage().is_some() {
+            under.extend(drop_shadows);
+            under.extend(pack_mode_world);
+        }
+        under.extend(crate::expansion_modes::pack_mode_prims(world));
+        return (under, over);
+    }
 
     // The overworld sky band leads the under-text list: retail links it into
     // the farthest bucket of the table (`FUN_801F73E4`, the first call of
@@ -235,6 +263,10 @@ pub fn compose_screen_prims(
             under.push(p);
         }
     }
+    // An expansion-pack cutscene's letterbox, tint, flash and fade, all
+    // under the text so its dialogue box reads over a black screen and
+    // between the bars.
+    under.extend(expansion_cutscene_prims(world));
     // A shop opening's fade to black, then the pause menu's wipe.
     if let Some(level) = menu.shop_fade_level() {
         over.push(level_fade(level));
@@ -295,6 +327,36 @@ pub fn compose_screen_prims(
     (under, over)
 }
 
+/// The screen layer of the expansion-pack cutscene in play
+/// (`World::expansion_cutscene_screen`): its letterbox bars and its
+/// full-screen quads (tint, flash, fade). Empty with no cutscene.
+///
+/// Everything sits in the text's own bucket, so the dialogue box reads over
+/// it. Within a bucket the later-linked primitive draws first, so the bars go
+/// in ahead of the quads: they draw over the fade, and a flash or a fade to
+/// white leaves them black.
+pub fn expansion_cutscene_prims(world: &World) -> Vec<ScreenPrim> {
+    let (quads, bars) = world.expansion_cutscene_screen();
+    let ot = screen_prim::TEXT_OT_BUCKET as u32;
+    let mut out: Vec<ScreenPrim> =
+        screen_prim::cinematic_bar_prims(bars, screen_prim::PSX_DISPLAY_H)
+            .into_iter()
+            .map(|p| match p {
+                ScreenPrim::Flat(mut q) => {
+                    q.ot_index = ot;
+                    ScreenPrim::Flat(q)
+                }
+                other => other,
+            })
+            .collect();
+    out.extend(
+        quads
+            .into_iter()
+            .map(|(rgb, abr)| screen_prim::fade_prim(rgb, abr, ot)),
+    );
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,6 +395,7 @@ mod tests {
             fishing_hud: tag(109),
             world_map_markers: tag(110),
             world_map_sky: tag(111),
+            pack_mode_world: tag(112),
         };
         let (under, over) = compose_screen_prims(&w, &menu, None, host);
         assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 5]);

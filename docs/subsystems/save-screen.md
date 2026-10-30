@@ -999,6 +999,10 @@ chain library. `SaveFile::write_engine_ext_into_retail_sc_block` writes
 checksum. `from_retail_sc_block` reads it back magic-guarded: a retail block
 yields `SaveExtV2::default()`, a damaged blob costs the ext rather than the
 save, and a blob too large for the tail is withheld and the tail zeroed.
+An expansion pack's progress block follows as a third `u16`-length segment
+when the save carries one and it fits whole after the other two; a blob
+without one leaves those bytes zero, which reads as no block
+([`expansion-pack-quests.md`](../formats/expansion-pack-quests.md#saves)).
 Pinned by `crates/save/tests/resume_and_engine_ext.rs`.
 
 ### The composer is an in-place patch

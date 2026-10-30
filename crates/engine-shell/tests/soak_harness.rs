@@ -34,6 +34,9 @@
 //!   CI-shaped gate.
 //! - `soak_long` - opt-in, runs only when `LEGAIA_SOAK_SEEDS` or
 //!   `LEGAIA_SOAK_FRAMES` is set. Report-only unless `LEGAIA_SOAK_STRICT=1`.
+//! - `soak_expansion` - the expansion runs (`xp:` labels: the Rebirth pack's
+//!   maps, action movement, every mode-seat instance, the card menu, the
+//!   Journal) on a fixed budget; `LEGAIA_SOAK_EXPANSION=1` is the long form.
 //! - `soak_replay` - opt-in, runs only when `LEGAIA_SOAK_REPLAY=<file>` is set:
 //!   replays one saved finding and prints what the detectors see.
 //! - `front_end_new_game_reaches_free_roam` /
@@ -70,6 +73,7 @@ use legaia_engine_system::input::PadButton;
 
 mod driver;
 mod environment;
+mod expansion_runs;
 mod findings;
 mod front_end;
 mod policy;
@@ -83,6 +87,7 @@ mod talk_visit;
 
 use driver::*;
 use environment::*;
+use expansion_runs::*;
 use findings::*;
 use front_end::*;
 use policy::*;
@@ -206,6 +211,83 @@ fn soak_long() {
             .count();
         assert_eq!(fatal, 0, "strict soak: {fatal} rank-0 findings");
     }
+}
+
+/// Frames each expansion run gets in the fixed-budget expansion smoke.
+const EXPANSION_SMOKE_FRAMES: u64 = 1800;
+
+/// The expansion runs (`expansion_runs.rs`): the soak pack's maps (plain
+/// and with action movement), the mode seat on every pack and built-in
+/// instance, the picker and the card menu, the Journal through the pause
+/// menu. The fixed budget asserts no panic, tick error or hang, and no
+/// finding of any detector in a run that enters a mode seat or the card
+/// menu - those screens own the pad whole, so any finding there is the
+/// screen's. `LEGAIA_SOAK_EXPANSION=1` turns it into the long form: the
+/// `LEGAIA_SOAK_SEEDS` / `LEGAIA_SOAK_FRAMES` budget, findings confirmed and
+/// reported, strict under `LEGAIA_SOAK_STRICT=1`.
+#[test]
+fn soak_expansion() {
+    let Some(src) = source() else { return };
+    let long = env_flag("LEGAIA_SOAK_EXPANSION");
+    let probe = open_session(&src);
+    let known: BTreeSet<String> = scene_set(&probe).into_iter().collect();
+    drop(probe);
+    let scenes: Vec<String> = match std::env::var("LEGAIA_SOAK_SCENES") {
+        Ok(list) if long && !list.trim().is_empty() => {
+            list.split(',').map(|s| s.trim().to_string()).collect()
+        }
+        _ => expansion_runs(),
+    };
+    let cfg = SoakConfig {
+        tag: std::env::var("LEGAIA_SOAK_TAG").unwrap_or_else(|_| "expansion".into()),
+        scenes,
+        seeds: if long { seed_list(1) } else { vec![1] },
+        frames: if long {
+            env_u64("LEGAIA_SOAK_FRAMES").unwrap_or(3600)
+        } else {
+            EXPANSION_SMOKE_FRAMES
+        },
+        jobs: default_jobs(),
+        confirm: long && !env_flag("LEGAIA_SOAK_NO_CONFIRM"),
+    };
+    eprintln!(
+        "[soak-expansion] {} runs x {} seeds x {} frames: {:?}",
+        cfg.scenes.len(),
+        cfg.seeds.len(),
+        cfg.frames,
+        cfg.scenes
+    );
+    let r = soak(&src, &known, &cfg);
+    assert!(r.hangs.is_empty(), "hung ticks: {:?}", r.hangs);
+    let entry_failures: Vec<String> = r
+        .outcomes
+        .iter()
+        .filter(|o| !o.enter_ok)
+        .map(|o| format!("{}: {:?}", o.spec.scene, o.findings))
+        .collect();
+    assert!(
+        entry_failures.is_empty(),
+        "expansion runs that did not enter:\n{}",
+        entry_failures.join("\n")
+    );
+    let blocking: Vec<String> = r
+        .outcomes
+        .iter()
+        .flat_map(|o| o.findings.iter().map(move |f| (o, f)))
+        .filter(|(o, f)| {
+            let screen =
+                split_expansion(&o.spec.scene).is_some_and(|x| x.seat.is_some() || x.cards);
+            matches!(f.detector, "panic" | "tick_error")
+                || (screen && !long)
+                || (long && env_flag("LEGAIA_SOAK_STRICT") && f.rank() == 0)
+        })
+        .map(|(o, f)| format!("{} (frame {}): {}", o.spec.scene, f.frame, f.detail))
+        .collect();
+    assert!(
+        blocking.is_empty(),
+        "expansion soak findings:\n{}",
+        blocking.join("\n")
+    );
 }
 
 #[test]

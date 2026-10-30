@@ -28,6 +28,7 @@ pub mod mesh_raster;
 pub mod monster_archive;
 pub mod monster_gltf;
 pub mod monster_model;
+pub mod monster_portrait;
 pub mod player_anm;
 pub mod player_file_annex;
 pub mod scene_gltf;

@@ -16,12 +16,12 @@
 //! untouched, so the change is purely *which element beats which*. PROT 0898 is
 //! stored raw (no LZS), so the write is strictly same-size and in place.
 
-use legaia_disc_patch::rng::SplitMix64;
 use legaia_game_tables::element_affinity::ELEMENT_COUNT;
+use legaia_randomizer::rng::SplitMix64;
 
-/// Re-exported [`crate::drops::DropMode`] so the affinity pass shares the CLI's
+/// An alias of [`legaia_randomizer::drops::DropMode`] so the affinity pass shares the CLI's
 /// `shuffle` / `random` vocabulary.
-pub use crate::drops::DropMode as StatMode;
+pub type StatMode = legaia_randomizer::drops::DropMode;
 
 /// Number of cells in the affinity matrix (`8 × 8`).
 pub const MATRIX_CELLS: usize = ELEMENT_COUNT * ELEMENT_COUNT;

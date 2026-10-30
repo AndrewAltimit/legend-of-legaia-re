@@ -13,6 +13,69 @@ impl PlayWindowApp {
             || self.key_slot_machine(code, state)
             || self.key_muscle_dome(code, state)
             || self.key_baka_fighter(code, state)
+            || self.key_pack_modes(code, state)
+            || self.key_card_screen(code, state)
+    }
+
+    /// `\` (backslash): open the active pack's card menu (binder, boosters,
+    /// sell, deck) over the field or the overworld - the twin of the pause
+    /// menu's card row; pressed inside it, close it. Inert without pack
+    /// cards.
+    fn key_card_screen(&mut self, code: KeyCode, state: ElementState) -> bool {
+        if code != KeyCode::Backslash || state != ElementState::Pressed || self.boot_ui.is_active()
+        {
+            return false;
+        }
+        let frame = self.session.frames;
+        let world = &mut self.session.host.world;
+        if world.card_screen_open() {
+            world.close_card_screen();
+            self.record_switch(frame, crate::replay::SwitchChange::LeaveMode);
+        } else if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
+            if world.open_card_menu() {
+                self.record_switch(frame, crate::replay::SwitchChange::CardMenu);
+            } else {
+                log::info!("cards: the active pack has no cards");
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
+    // --- expansion game modes ---
+    /// `` ` `` (backquote): open the expansion game-mode picker over the
+    /// running scene - the active pack's modes, or the built-in practice set
+    /// without a pack. Pressed again inside it, leave (a session still in
+    /// play is forfeited). The modes read the pad; their controls are in
+    /// `docs/subsystems/expansion-modes.md`.
+    fn key_pack_modes(&mut self, code: KeyCode, state: ElementState) -> bool {
+        if code != KeyCode::Backquote || state != ElementState::Pressed || self.boot_ui.is_active()
+        {
+            return false;
+        }
+        let frame = self.session.frames;
+        let world = &mut self.session.host.world;
+        if world.mode == SceneMode::Expansion {
+            world.exit_pack_mode();
+            self.record_switch(frame, crate::replay::SwitchChange::LeaveMode);
+            log::info!("modes: left the mode seat");
+        } else if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap) {
+            world.open_pack_mode_picker();
+            self.record_switch(frame, crate::replay::SwitchChange::ModePicker);
+            log::info!("modes: picker open - Up/Down choose, Cross play, Circle back");
+        } else {
+            return false;
+        }
+        true
+    }
+    // --- end expansion game modes ---
+
+    /// Note a session switch on the record log, when recording.
+    fn record_switch(&mut self, frame: u64, change: crate::replay::SwitchChange) {
+        if let Some(log) = self.record_log.as_mut() {
+            log.record_switch(frame, change);
+        }
     }
 
     /// `K`: toggle the Noa dance (rhythm) minigame. Arms the mode-24 door

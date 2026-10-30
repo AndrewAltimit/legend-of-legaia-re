@@ -763,12 +763,15 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
         })
         .count();
     let monster_mask: u16 = if ctx.charm_widen { 0x384 } else { 0x4 };
-    let monsters_alive = (party_count..total)
-        .filter(|&s| {
-            host.actor(s).is_some_and(|a| a.liveness != 0)
-                && host.status_word(s) & monster_mask == 0
-        })
-        .count();
+    let count_monsters = |host: &H| {
+        (party_count..total)
+            .filter(|&s| {
+                host.actor(s).is_some_and(|a| a.liveness != 0)
+                    && host.status_word(s) & monster_mask == 0
+            })
+            .count()
+    };
+    let mut monsters_alive = count_monsters(&*host);
 
     // "No party seated" is not "party dead". Retail's scan counts the
     // seated-count byte's worth of table slots and nothing else - a battle
@@ -789,6 +792,20 @@ pub(super) fn end_of_action<H: BattleActionHost + ?Sized>(
     if party_seated > 0 && (party_alive == 0 || leader_out) {
         host.battle_end(BattleEndCause::PartyWipe);
         return StepOutcome::BattleComplete;
+    }
+    // A host with more monsters to seat holds the victory (port-only; the
+    // default seats nothing). A seated wave leaves the SM idling here: the
+    // host's turn cycling claims an `EndOfAction` with both sides standing,
+    // and it never saw this one (the side was wiped when the action
+    // ended). Stepping on to `PreActionWait` instead re-seeds the actor
+    // that just acted from its spent action bytes - a free second action
+    // at its old target, which a wave that did not refill that seat leaves
+    // a corpse the approach (`0x19`) never comes within reach of.
+    if monsters_alive == 0 && host.reinforce_monster_wipe() {
+        monsters_alive = count_monsters(&*host);
+        if monsters_alive != 0 {
+            return StepOutcome::Stay;
+        }
     }
     if monsters_alive == 0 {
         // Retail order: end signal (0x801E6670..0x801E6680), then the

@@ -18,6 +18,30 @@ fn end_of_action_party_wipe_signals_battle_end() {
     );
 }
 
+/// A host that seats a wave on the monster wipe keeps the battle going, and
+/// the SM idles at `EndOfAction` for the host's turn cycling: stepping on
+/// to `PreActionWait` would re-seed the actor that just acted from its
+/// spent action bytes.
+#[test]
+fn end_of_action_reinforced_wipe_idles_for_the_hosts_turn_pick() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 2);
+    ctx.action_state = ActionState::EndOfAction.as_byte();
+    for i in 3..ACTOR_SLOTS {
+        host.actors[i].liveness = 0;
+    }
+    host.reinforce_slot = Some(4);
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(ctx.action_state, ActionState::EndOfAction.as_byte());
+    assert!(
+        host.take()
+            .iter()
+            .all(|e| !matches!(e, Event::BattleEnd(_)))
+    );
+    // With nothing more to seat, the next wipe scan ends the battle.
+    host.actors[4].liveness = 0;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::BattleComplete);
+}
+
 /// A petrified party is a wipe even when the Stone bit lives only in the
 /// host's packed `+0x16E` (`status_word`), not in the actor view's
 /// `field_flags`: retail masks the whole word with `0x4`, Stone's own bit.

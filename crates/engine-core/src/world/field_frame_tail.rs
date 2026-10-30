@@ -137,7 +137,11 @@ impl World {
         let ambient = self.step_ambient_fx(vram);
         let clut = self.step_clut_fx(vram);
         let seeded = self.apply_vram_rect_seed(vram);
-        moved | copied | ambient | clut | seeded
+        // A pack map's animated materials (no-op off a map).
+        let materials = self.step_expansion_materials(vram);
+        // A seated Grid Duel's card page (no-op without one).
+        let duel = self.step_duel_card_page(vram);
+        moved | copied | ambient | clut | seeded | materials | duel
     }
 
     /// Whether a host advances its field-NPC clip players this tick.
@@ -160,7 +164,10 @@ impl World {
     /// port's separate [`SceneMode::WorldMap`] is the camera / encounter
     /// controller, not a different actor frame, so the clips run there too.
     pub fn field_npc_clips_advance(&self) -> bool {
+        // An in-world golf round or race keeps the field's NPCs - its
+        // bodies among them - animating under the mode seat.
         matches!(self.mode, SceneMode::Field | SceneMode::WorldMap)
+            || self.pack_mode_stage().is_some()
     }
 
     /// Drain this tick's ANIMATE cues, in every scene mode.

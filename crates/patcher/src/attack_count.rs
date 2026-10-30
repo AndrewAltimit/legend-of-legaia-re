@@ -63,7 +63,7 @@
 //! records the setting, and a `1x` scale writes nothing).
 //!
 //! Only the unwinnable-by-design Rim Elm sparring partner
-//! ([`crate::monster_stats::SCALE_PINNED_MONSTER_IDS`]) is pinned, for the
+//! ([`legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS`]) is pinned, for the
 //! same reason as the difficulty scale: the tutorial fight stays
 //! byte-identical at every setting.
 

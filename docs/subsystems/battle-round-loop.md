@@ -603,6 +603,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 | `monster_ai::apply_recent_target_ring` | The post-switch anti-repeat ring. |
 | `World::resolve_monster_target` | `FUN_801E7320`, wired as the `monster_setup` hook. |
 | `World::advance_battle_mode` | The `ctx+0x28a` writer: the action SM's `case 0xFF` (`_DAT_8007BD24[0x28A] += 1`). |
+| `World::expansion_boss_pick` | Not retail: an expansion pack's [boss script](../formats/expansion-pack-battle.md#boss-scripts) picks for a scripted pack monster ahead of the generic core; `None` (the retail pick) for every other seat. |
 
 - The cooldown latches arm once per battle with no per-round re-arm: retail clears the array only at battle init in `FUN_80055b6c`, so a boss self-heals at most once per fight.
 - The picker drives the live loop's monster turns, folding a chosen cast through `cast_spell_on_slots` (the shared player / monster cast path) and parking the SM at `EndOfAction`.

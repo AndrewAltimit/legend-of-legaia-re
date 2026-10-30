@@ -17,10 +17,10 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_disc_patch::rng::seed_from_str;
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
+use legaia_randomizer::drops::DropMode;
+use legaia_randomizer::rng::seed_from_str;
 use legaia_translate::{
     ImportPhase, ImportReport, LanguagePack, export_pack, import_pack, import_pack_phase,
     import_pack_relayout, lift,

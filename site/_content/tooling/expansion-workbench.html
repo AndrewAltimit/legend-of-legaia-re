@@ -1,0 +1,333 @@
+<header class="page-header wb-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; Expansion workbench</div>
+  <h1>Expansion workbench</h1>
+  <p class="lede">Build an expansion pack for the port in the browser: new monsters and bosses, a level curve, quests, dialogue, trading cards, game modes and custom maps, checked against your own disc as you edit and exported as one shareable <code>.lxpack</code>. Everything runs in this tab as WebAssembly - the disc never leaves your machine and nothing is uploaded. New to packs? Read <a href="../guides/expansion-packs.html">what an expansion pack is</a> and the <a href="../guides/making-expansion-packs.html">step-by-step guide</a>.</p>
+</header>
+
+<section class="doc-section" id="workbench">
+  <div class="wb xw">
+
+    <div class="wb-toolbar">
+      <label class="wb-tool">
+        <span class="wb-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
+        <input type="file" id="xw-file" accept=".bin,application/octet-stream">
+      </label>
+      <div class="wb-tool">
+        <span class="wb-label">Pack
+          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Open the Rebirth example (the project's own flagship pack), a <code>.lxpack</code> or a pack folder of your own, or start a new pack: empty, from the minimal template (a monster, a fight, a line, a quest and a small map wired together), or as a clone of Rebirth under your own id.</p><p>A pack folder is the directory holding <code>pack.toml</code>; the browser reads every file in it.</p></span></span>
+        </span>
+        <div class="wb-inline">
+          <button type="button" id="xw-rebirth" class="wb-button wb-button-ghost">Rebirth example</button>
+          <label class="wb-button wb-button-ghost wb-file-button">Open .lxpack<input type="file" id="xw-bundle-file" accept=".lxpack,application/octet-stream" hidden></label>
+          <label class="wb-button wb-button-ghost wb-file-button">Open folder<input type="file" id="xw-dir-file" webkitdirectory multiple hidden></label>
+          <button type="button" id="xw-fresh" class="wb-button wb-button-ghost" aria-controls="xw-new">New pack ...</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="xw-new" class="xw-new" hidden>
+      <label class="xw-field"><span>Pack id <span class="xw-hint">lower case, digits, _ and -</span></span><input type="text" id="xw-new-id" value="my_pack" spellcheck="false"></label>
+      <label class="xw-field"><span>Name</span><input type="text" id="xw-new-name" value="My expansion"></label>
+      <label class="xw-field"><span>Start from</span>
+        <select id="xw-new-tpl">
+          <option value="minimal">Minimal template: one of everything, wired together</option>
+          <option value="empty">Empty: only the manifest</option>
+          <option value="rebirth">Clone Rebirth: the flagship pack under your id</option>
+        </select>
+      </label>
+      <div class="wb-inline"><button type="button" id="xw-new-go" class="wb-button">Create</button><button type="button" id="xw-new-cancel" class="wb-button wb-button-ghost">Cancel</button></div>
+    </div>
+
+    <div class="wb-warn"><strong>A pack carries no game data.</strong> It names the disc's monsters, scenes, meshes and music by number, and every player supplies their own disc.
+      <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The names in the pickers (monsters, items, scenes) are read from the disc you load here and shown to you only. A picker writes the coordinate - <code>{ kind = "monster", id = 109 }</code> - never the name; a pack holds a name only where you type one.</p><p>Every export runs the validator's no-disc-bytes rule. Reference: <code>docs/formats/expansion-pack.md</code>.</p></span></span>
+    </div>
+
+    <div id="xw-resume" class="wb-resume" hidden></div>
+    <div id="xw-status" class="wb-status" role="status"></div>
+
+    <div id="xw-empty" class="xw-start">
+      <p><strong>No pack open.</strong> 1. Choose your disc image above (it stays in this tab). 2. Open the Rebirth example, a <code>.lxpack</code> or a pack folder, or press <strong>New pack</strong>.</p>
+      <p class="xw-dim">The editors fill this space: a tab per pack file, the checks beside them, Find to see where any id, flag or coordinate is used (and rename it everywhere), and the Flow tab for the pack's progression graph.</p>
+    </div>
+
+    <div id="xw-main" hidden>
+      <div class="wb-toolbar wb-toolbar-pack">
+        <div class="xw-packname"><strong id="xw-pack-title"></strong> <code id="xw-pack-id"></code> <span id="xw-pack-ver" class="xw-dim"></span>
+          <span id="xw-dirty" class="xw-dirty" hidden title="Changed since the pack was opened or last downloaded. The autosave keeps it in this browser; download the .lxpack to keep a copy of your own.">unsaved changes</span>
+          <span id="xw-saved" class="xw-saved" role="status"></span></div>
+        <div class="wb-actions">
+          <button type="button" id="xw-undo" class="wb-mini" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button type="button" id="xw-redo" class="wb-mini" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
+          <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys</button>
+          <button type="button" id="xw-dl" class="wb-button">Download .lxpack</button>
+          <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
+          <button type="button" id="xw-play" class="wb-button wb-button-ghost">Play in browser</button>
+          <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map the Maps tab is on, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play here</button>
+          <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
+          <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play here</strong> puts you on the map you are editing. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p></span></span>
+        </div>
+      </div>
+      <div id="xw-keyhelp" class="xw-keyhelp" hidden>
+        <table class="wb-table">
+          <tr><th>Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)</th><td>Undo / redo any edit, painter strokes included. In a text box the box's own undo runs first.</td></tr>
+          <tr><th>Ctrl+S</th><td>Download the <code>.lxpack</code>.</td></tr>
+          <tr><th>Ctrl+K or /</th><td>Find in the pack.</td></tr>
+          <tr><th>F8 / Shift+F8</th><td>Next / previous check.</td></tr>
+          <tr><th>Alt+1 .. Alt+0, Alt+[ / Alt+]</th><td>Go to a tab / the previous or next tab.</td></tr>
+          <tr><th>Painter</th><td>B paint, R fill rect, I pick, V select, S spawn, E exit, T trigger, N encounters, P prop, C NPC; Delete removes the selection; Ctrl+wheel zooms.</td></tr>
+          <tr><th>?</th><td>This list. Escape closes it.</td></tr>
+        </table>
+      </div>
+      <div id="xw-export-status" class="wb-status"></div>
+
+      <div class="xw-work">
+        <div class="xw-edpane">
+          <nav class="xw-tabs" id="xw-tabs" role="tablist" aria-label="Pack sections"></nav>
+          <div id="xw-panel" class="xw-panel"></div>
+        </div>
+        <aside class="xw-issues" aria-label="Find and checks">
+          <h3>Find
+            <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Every place in the pack a value sits. An id (a monster, a line, a quest, a map, a pack flag) lists where it is defined, set, read and referenced; <code>monster:109</code>, <code>item:5</code>, <code>scene:town01</code> or <code>bgm:12</code> list a retail coordinate's users; anything else is a text search over keys and values.</p><p>Empty, it lists the pack's flags and counters with how often each is set and read: a flag read and never set is a gate that never opens. Click a place to go to the field. Ctrl+K or / focuses the box.</p></span></span>
+          </h3>
+          <div id="xw-findbox" class="xw-findbox"></div>
+          <h3>Checks <span id="xw-issue-sum" class="wb-fold-sum"></span>
+            <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The pack validator, re-run a moment after every edit against the pack exactly as it would be exported, with your disc resolving every coordinate. An error stops the engine loading the pack and stops the download; a warning does not.</p><p>Click an issue to go to the field.</p></span></span>
+          </h3>
+          <div id="xw-issues"></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .wb { max-width: none; }
+  .wb-header { margin-bottom: 0.6rem; }
+  .wb-header .lede { margin-bottom: 0; }
+  .wb-warn { margin: 0.4rem 0; padding: 0.35rem 0.7rem; border: 1px solid var(--warn); border-left-width: 4px; border-radius: 6px; background: var(--warn-soft); color: var(--text); font-size: 0.86em; }
+  .wb-toolbar { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; align-items: flex-start; }
+  .wb-toolbar-pack { align-items: center; justify-content: space-between; margin: 0.2rem 0 0.3rem; padding: 0.45rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .wb-tool { display: block; margin: 0.25rem 0; min-width: 0; }
+  .wb-label { display: block; font-weight: 600; font-size: 0.86em; margin-bottom: 0.15rem; }
+  .wb input[type=text], .wb input[type=number], .wb input[type=search], .wb select, .wb textarea { max-width: 100%; padding: 0.25rem 0.45rem; background: var(--bg-code); color: var(--text); border: 1px solid var(--border); border-radius: 5px; font: inherit; font-size: 0.92em; }
+  .wb input[type=file] { color: var(--text-muted); max-width: 100%; }
+  .wb-inline { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  .wb-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.25rem 0; }
+  .wb-button { padding: 0.35rem 0.8rem; font: inherit; font-size: 0.92em; font-weight: 600; cursor: pointer; background: var(--accent); color: #06231f; border: 1px solid var(--accent); border-radius: 6px; }
+  .wb-button:hover { background: var(--accent-hi); }
+  .wb-button:disabled { opacity: 0.6; cursor: progress; }
+  .wb-button-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .wb-button-ghost:hover { background: var(--bg-card-hi); border-color: var(--border-hi); }
+  .wb-file-button { display: inline-block; }
+  .wb-status { margin: 0.3rem 0; font-family: var(--font-mono); font-size: 0.84em; white-space: pre-wrap; color: var(--text-muted); }
+  .wb-status:empty { display: none; }
+  .wb-status.is-ok { color: var(--ok); }
+  .wb-status.is-err { color: var(--open); }
+  .wb-resume { margin: 0.4rem 0; padding: 0.5rem 0.8rem; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-soft); display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .wb-resume[hidden] { display: none; }
+  .wb h3 { font-size: 0.95em; margin: 0.2rem 0 0.5rem; color: var(--text-bright); }
+  .wb-fold-sum { font-weight: 400; color: var(--text-dim); margin-left: 0.4rem; }
+  .wb-mini { padding: 0.1rem 0.5rem; font: inherit; font-size: 0.85em; color: var(--text); background: var(--bg-code); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+  .wb-mini:hover { border-color: var(--accent); }
+  .wb-mini.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--text-bright); }
+  .wb-mini:disabled { opacity: 0.4; cursor: default; }
+  .wb-table { width: 100%; border-collapse: collapse; font-size: 0.86em; }
+  .wb-table td, .wb-table th { padding: 0.22rem 0.4rem; border-bottom: 1px solid var(--line-soft); text-align: left; vertical-align: middle; }
+  .wb-table th { color: var(--text-dim); font-weight: 600; }
+  .wb-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .wb-empty { color: var(--text-dim); font-style: italic; padding: 0.6rem 0; }
+
+  /* Workbench layout: the section editor and the checks share one screen. */
+  .xw-dim { color: var(--text-dim); font-size: 0.9em; }
+  .xw-work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: 0.7rem; align-items: start; }
+  .xw-edpane { min-width: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .xw-tabs { display: flex; flex-wrap: wrap; gap: 0.15rem; padding: 0.35rem 0.4rem 0; border-bottom: 1px solid var(--border); }
+  .xw-tab { padding: 0.3rem 0.7rem; font: inherit; font-size: 0.88em; color: var(--text-muted); background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; cursor: pointer; }
+  .xw-tab:hover { color: var(--text-bright); }
+  .xw-tab.is-active { color: var(--text-bright); background: var(--bg-raised); border-color: var(--border); margin-bottom: -1px; }
+  .xw-tab .xw-badge { margin-left: 0.3rem; }
+  .xw-badge { display: inline-block; min-width: 1.2em; padding: 0 0.3em; border-radius: 999px; font-size: 0.75em; font-weight: 700; text-align: center; background: var(--open); color: #fff; }
+  .xw-badge.is-warn { background: var(--warn); color: #1d1500; }
+  .xw-panel { padding: 0.7rem 0.8rem; background: var(--bg-raised); border-radius: 0 0 8px 8px; min-height: 24rem; container-type: inline-size; }
+  .xw-issues { position: sticky; top: calc(var(--topbar-h) + 0.5rem); max-height: calc(100vh - var(--topbar-h) - 1rem); overflow: auto; padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); }
+  .xw-issue-file { margin: 0.5rem 0 0.2rem; font-family: var(--font-mono); font-size: 0.8em; color: var(--accent-hi); }
+  .xw-issue { display: block; width: 100%; text-align: left; padding: 0.25rem 0.4rem; margin: 0 0 2px; font: inherit; font-size: 0.82em; color: var(--text); background: var(--bg-raised); border: none; border-left: 3px solid var(--open); border-radius: 3px; cursor: pointer; }
+  .xw-issue.is-warning { border-left-color: var(--warn); }
+  .xw-issue:hover { background: var(--bg-card-hi); }
+  .xw-issue code { color: var(--text-dim); font-size: 0.92em; }
+  .xw-ok { color: var(--ok); font-size: 0.86em; }
+  .xw-flash { outline: 2px solid var(--accent) !important; outline-offset: 1px; }
+  .xw-dirty { display: inline-block; margin-left: 0.4rem; padding: 0 0.45em; border-radius: 999px; font-size: 0.78em; font-weight: 700; background: var(--warn-soft); color: var(--text-bright); border: 1px solid var(--warn); }
+  .xw-dirty[hidden] { display: none; }
+  .xw-saved { margin-left: 0.4rem; font-size: 0.78em; color: var(--text-dim); }
+  .xw-saved.is-err { color: var(--warn); }
+  .xw-new { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(15rem, 100%), 1fr)); gap: 0.4rem 0.8rem; align-items: end; margin: 0.4rem 0; padding: 0.6rem 0.8rem; border: 1px solid var(--accent-line); border-radius: 6px; background: var(--accent-soft); }
+  .xw-new[hidden] { display: none; }
+  .xw-start { margin: 0.6rem 0; padding: 0.9rem 1rem; border: 1px dashed var(--border-hi); border-radius: 8px; background: var(--bg-card); font-size: 0.92em; }
+  .xw-start[hidden] { display: none; }
+  .xw-start p { margin: 0.2rem 0; }
+  .xw-keyhelp { margin: 0.3rem 0; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); overflow-x: auto; }
+  .xw-keyhelp[hidden] { display: none; }
+  .xw-keyhelp th { white-space: nowrap; color: var(--text-muted); }
+  .xw-findbox { margin-bottom: 0.6rem; }
+  .xw-find-row input { width: 100%; }
+  .xw-find-out { max-height: 18rem; overflow: auto; margin-top: 0.3rem; font-size: 0.82em; }
+  .xw-find-head { margin: 0.2rem 0; color: var(--text-muted); }
+  .xw-find-role { margin: 0.4rem 0 0.1rem; font-weight: 700; color: var(--accent-hi); }
+  .xw-hit { display: block; width: 100%; text-align: left; padding: 0.15rem 0.4rem; margin: 0 0 1px; font: inherit; color: var(--text); background: var(--bg-raised); border: none; border-left: 3px solid var(--accent-line); border-radius: 3px; cursor: pointer; overflow-wrap: anywhere; }
+  .xw-hit:hover { background: var(--bg-card-hi); }
+  .xw-hit.is-warn { border-left-color: var(--warn); }
+  .xw-hit-file { font-family: var(--font-mono); color: var(--accent-hi); }
+  .xw-list-ed { display: flex; flex-direction: column; gap: 0.2rem; }
+  .xw-list-row { display: flex; gap: 0.25rem; align-items: center; min-width: 0; }
+  .xw-list-row > select, .xw-list-row > input { flex: 1 1 auto; min-width: 0; }
+  .xw-list-row > .xw-dim { flex: none; min-width: 1.6em; }
+  .xw-list-row > .wb-mini { flex: none; }
+
+  /* Forms */
+  .xw-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr)); gap: 0.4rem 0.8rem; }
+  .xw-field { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; font-size: 0.9em; }
+  .xw-field > span { font-weight: 600; font-size: 0.86em; color: var(--text-muted); }
+  .xw-field.is-wide { grid-column: 1 / -1; }
+  .xw-field input[type=text], .xw-field input[type=number], .xw-field select, .xw-field textarea { width: 100%; }
+  .xw-field textarea { font-family: var(--font-mono); min-height: 3.5rem; resize: vertical; }
+  .xw-hint, .xw-field .xw-hint { font-weight: 400; font-size: 0.82em; color: var(--text-dim); }
+  .xw-check { flex-direction: row; align-items: center; gap: 0.4rem; }
+  .xw-row2 { display: flex; gap: 0.3rem; }
+  .xw-row2 > * { flex: 1 1 0; min-width: 0; }
+  .xw-tint-row > .xw-tint-swatch { flex: 0 0 2.6rem; min-height: 1.9rem; padding: 0 0.1rem; cursor: pointer; }
+  .xw-tint-row > .wb-mini { flex: 0 0 auto; }
+  .xw-tint input[type="checkbox"] { margin-right: 0.4rem; vertical-align: middle; }
+  .xw-stat { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.25rem; }
+  .xw-box { margin: 0.5rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); }
+  .xw-box > .xw-box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.9em; color: var(--text-bright); }
+  .xw-box-head .xw-sp { flex: 1 1 auto; }
+  .xw-sub { margin: 0.8rem 0 0.3rem; font-size: 0.92em; color: var(--accent-hi); }
+  .xw-split { display: grid; grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr); gap: 0.7rem; }
+  .xw-list { display: flex; flex-direction: column; gap: 1px; max-height: 32rem; overflow: auto; }
+  .xw-li { flex: none; padding: 0.25rem 0.45rem; text-align: left; font: inherit; font-size: 0.85em; color: var(--text); background: transparent; border: none; border-left: 3px solid var(--border-hi); border-radius: 3px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .xw-li:hover { background: var(--bg-card-hi); }
+  .xw-li.is-active { background: var(--accent-soft); border-left-color: var(--accent); }
+  .xw-li.has-err { border-left-color: var(--open); }
+  .xw-preview-num { font-family: var(--font-mono); font-size: 0.82em; color: var(--text-dim); }
+  .xw-rows { font-family: var(--font-mono); font-size: 0.82em; margin-top: 0.3rem; }
+  .xw-rows div { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr); gap: 0.4rem; padding: 0.05rem 0.2rem; }
+  .xw-rows .is-long { color: var(--warn); }
+  .xw-rows .is-bad { color: var(--open); }
+  .xw-rows .xw-page { border-top: 1px dashed var(--border); margin-top: 0.2rem; }
+  .xw-chart { width: 100%; max-width: 46rem; height: auto; display: block; }
+  /* The 3D preview dock (expansion-workbench-preview3d.js): the play page
+     framed, above the Maps and Cutscenes editors. */
+  .xw-3d { padding: 0.4rem 0.8rem; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+  .xw-3d[hidden] { display: none; }
+  .xw-3d-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; font-size: 0.88em; }
+  .xw-3d-ctrls { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+  .xw-3d-ctrls .xw-check { display: inline-flex; flex-direction: row; gap: 0.25rem; margin-left: 0.3rem; color: var(--text-muted); }
+  .xw-3d-ctrls[hidden], .xw-3d-layers[hidden], .xw-3d-body[hidden] { display: none; }
+  .xw-3d-layers { display: inline-flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; color: var(--text-muted); }
+  .xw-3d-layers .xw-check { display: inline-flex; flex-direction: row; gap: 0.25rem; }
+  .xw-3d-status { flex: 1 1 100%; font-family: var(--font-mono); font-size: 0.82em; color: var(--text-dim); }
+  .xw-3d-status.is-err { color: var(--warn); }
+  .xw-3d-editslot { margin-top: 0.3rem; }
+  .xw-3d-editslot[hidden] { display: none; }
+  .xw-3d-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.4rem; font-size: 0.88em; }
+  .xw-3d-edit .xw-check { display: inline-flex; flex-direction: row; align-items: center; gap: 0.25rem; color: var(--text-muted); }
+  .xw-3d-edit .xw-num { width: 4.5em; }
+  .xw-3d-edit .xw-hint { flex: 1 1 100%; }
+  .xw-3d-body { margin-top: 0.4rem; }
+  .xw-table tr.is-now td { background: var(--accent-soft); }
+  .xw-scrub input[type=range] { flex: 1 1 12rem; min-width: 8rem; }
+  .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
+  .xw-chart text { font-size: 11px; fill: var(--text-muted); }
+  .xw-legend { display: flex; gap: 1rem; font-size: 0.82em; color: var(--text-muted); margin: 0.2rem 0; }
+  .xw-legend i { display: inline-block; width: 1.2em; height: 2px; vertical-align: middle; margin-right: 0.3em; }
+  .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
+
+  /* Tile painter */
+  .xw-painter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); gap: 0.6rem; }
+  .xw-tools { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; margin-bottom: 0.3rem; }
+  .xw-tools .xw-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
+  .xw-canvas-wrap { position: relative; overflow: auto; height: min(70vh, 40rem); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-code); }
+  .xw-canvas-wrap canvas { display: block; image-rendering: pixelated; cursor: crosshair; }
+  .xw-canvas-wrap.is-panning canvas { cursor: grabbing; }
+  .xw-hover { min-height: 1.3em; font-family: var(--font-mono); font-size: 0.8em; color: var(--text-muted); margin-top: 0.2rem; }
+  .xw-palette { display: flex; flex-direction: column; gap: 2px; }
+  .xw-swatch { display: grid; grid-template-columns: 1.6rem 1.4rem minmax(0, 1fr); gap: 0.4rem; align-items: center; padding: 0.15rem 0.3rem; font: inherit; font-size: 0.84em; text-align: left; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
+  .xw-swatch:hover { background: var(--bg-card-hi); }
+  .xw-swatch.is-active { border-color: var(--accent); background: var(--accent-soft); }
+  .xw-swatch i { display: block; width: 1.4rem; height: 1.4rem; border-radius: 3px; border: 1px solid var(--border-hi); }
+  .xw-swatch code { text-align: center; }
+  .xw-quarters { display: inline-grid; grid-template-columns: 1.4rem 1.4rem; gap: 2px; }
+  .xw-quarters label { display: flex; align-items: center; justify-content: center; height: 1.4rem; border: 1px solid var(--border); border-radius: 2px; cursor: pointer; font-size: 0.75em; }
+  .xw-quarters input { display: none; }
+  .xw-quarters input:checked + span { color: var(--text-bright); font-weight: 700; }
+  .xw-quarters label:has(input:checked) { background: var(--text-dim); }
+  .xw-note { font-size: 0.82em; color: var(--text-dim); margin: 0.3rem 0; }
+  .xw-combo { font-family: var(--font-mono); font-size: 1.3em; letter-spacing: 0.15em; margin: 0.3rem 0; }
+  .xw-table { border-collapse: collapse; font-size: 0.82em; margin: 0.3rem 0; }
+  .xw-table th, .xw-table td { border: 1px solid var(--border); padding: 0.15rem 0.45rem; text-align: right; }
+
+  /* Contextual help: a "?" per tab and section, opening the format reference. */
+  .xw-help { display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; margin-left: 0.4em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.78em; font-weight: 700; text-decoration: none; vertical-align: 0.1em; flex: none; }
+  .xw-help:hover, .xw-help:focus-visible { color: var(--accent-hi); border-color: var(--accent); }
+  .xw-tabhelp { display: flex; align-items: center; justify-content: flex-end; gap: 0.2rem; margin: -0.2rem 0 0.3rem; font-size: 0.85em; }
+  .xw-tabhelp code { color: var(--accent-hi); }
+  /* A seat's clips side by side. */
+  .xw-clips-head { margin: 0.35rem 0 0.1rem; font-weight: 600; }
+  .xw-seat-who { grid-template-columns: repeat(auto-fill, minmax(min(8rem, 100%), 1fr)); }
+  .xw-clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(3.7rem, 1fr)); gap: 0.25rem 0.35rem; }
+  .xw-clips .xw-field > span { font-size: 0.8em; }
+  /* The painter's pick-a-tile prompt. */
+  .xw-pickbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0 0 0.3rem; padding: 0.3rem 0.6rem; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); font-size: 0.86em; color: var(--text-bright); }
+  /* A texture cell: the picker, the three words, the page's 8 x 8 atlas. */
+  .xw-cell select { margin-bottom: 0.25rem; }
+  .xw-cell-words .xw-grid { grid-template-columns: repeat(auto-fill, minmax(min(8rem, 100%), 1fr)); }
+  .xw-atlas { display: grid; grid-template-columns: repeat(8, 1.3rem); gap: 2px; margin-top: 0.3rem; }
+  .xw-atlas-c { width: 1.3rem; height: 1.3rem; padding: 0; border: 1px solid var(--border); border-radius: 2px; background: var(--bg-code); cursor: pointer; }
+  .xw-atlas-c.is-used { background: var(--accent-soft); border-color: var(--accent-line); }
+  .xw-atlas-c.is-on { outline: 2px solid var(--accent-hi); outline-offset: 0; }
+  /* Point lists: rows beside a 2D pad. */
+  .xw-points-body { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
+  .xw-points-body > .xw-list-ed { flex: 1 1 15rem; min-width: 0; }
+  .xw-pad { flex: 1 1 15rem; max-width: 24rem; min-width: 0; height: auto; aspect-ratio: 4 / 3; border: 1px solid var(--border); border-radius: 6px; cursor: crosshair; touch-action: none; }
+  .xw-points .xw-list-row input[type=number] { flex: 1 1 3.5rem; min-width: 0; width: 3.5rem; }
+  .xw-list-row.is-on { outline: 1px solid var(--accent); border-radius: 3px; }
+
+  @media (max-width: 68rem) {
+    .xw-work { grid-template-columns: minmax(0, 1fr); }
+    .xw-issues { position: static; max-height: 20rem; }
+    .xw-painter { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 44rem) {
+    .xw-split { grid-template-columns: minmax(0, 1fr); }
+    .xw-list { max-height: 12rem; }
+    .xw-panel { padding: 0.5rem 0.45rem; }
+    .xw-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+    .xw-tab { flex: none; }
+    .wb-toolbar-pack { padding: 0.4rem 0.5rem; }
+    .xw-box { padding: 0.45rem 0.4rem; }
+    .xw-stat { grid-template-columns: 4.5rem minmax(0, 1fr); }
+  }
+
+  /* A panel too narrow for the painter and its side column (the site's
+     rail and the checks beside it) stacks them, whatever the window. */
+  @container (max-width: 46rem) {
+    .xw-painter { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
+     or tap (tap toggles; Escape and tapping elsewhere close). */
+  .info-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; border-radius: 50%; border: 1px solid var(--border-hi); color: var(--text-dim); font-size: 0.8em; font-weight: 700; cursor: help; user-select: none; margin-left: 0.35em; vertical-align: 0.1em; flex: none; }
+  .info-tip:hover, .info-tip:focus-visible, .info-tip.is-open { color: var(--accent-hi); border-color: var(--accent); }
+  .tip-pop { text-transform: none; letter-spacing: normal; display: none; position: absolute; z-index: 40; top: calc(100% + 0.5rem); left: 50%; transform: translateX(-50%); width: min(34rem, 86vw); padding: 0.8rem 1rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45); color: var(--text-muted); font-size: 0.86rem; font-weight: 400; font-style: normal; line-height: 1.55; text-align: left; cursor: auto; white-space: normal; }
+  .tip-pop p { margin: 0 0 0.6rem; }
+  .tip-pop p:last-child { margin-bottom: 0; }
+  .info-tip:hover > .tip-pop, .info-tip:focus-visible > .tip-pop, .info-tip.is-open > .tip-pop { display: block; }
+  .info-tip.tip-align-right > .tip-pop { left: auto; right: -0.6rem; transform: none; }
+  .info-tip.tip-align-left > .tip-pop { left: -0.6rem; right: auto; transform: none; }
+</style>
+
+<script src="../js/rom-cache.js"></script>
+<script src="../js/disc-info.js"></script>
+<script src="../js/play-pack-library.js"></script>
+<script type="module" src="../js/expansion-workbench-app.js"></script>

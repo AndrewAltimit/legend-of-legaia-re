@@ -20,6 +20,51 @@ impl World {
         self.tables.character_max_mp[i] = mp_max;
     }
 
+    /// Credit `xp` EXP to roster character `char_id`: the level-up tracker's
+    /// grant, the record words retail keeps on every grant (cumulative and
+    /// next-level EXP, the level byte), and on a level up the pack's level
+    /// rewards, the record's growth and the rebuilt maxima. The per-member
+    /// body of [`Self::apply_battle_xp`], shared with an expansion quest's
+    /// EXP reward. Returns the level-up, if one happened.
+    pub(in crate::world) fn credit_character_xp(
+        &mut self,
+        char_id: u8,
+        xp: u32,
+    ) -> Option<LevelUpResult> {
+        let result = self.party.level_up_tracker.grant_xp(char_id, xp);
+        // Retail (`FUN_801E9504`) maintains the record's cumulative XP
+        // (+0x0), next-level threshold (+0x4, slots-1/2 corrected), and
+        // displayed-level byte (+0x130) on every grant; the Status menu
+        // (`FUN_801D33D8`) draws those words verbatim. Mirror them so the
+        // engine's status screen stays truthful even when no threshold
+        // was crossed.
+        let slot = char_id as usize;
+        if slot < self.party.level_up_tracker.level.len() {
+            let cur_level = self.party.level_up_tracker.level[slot];
+            let next = self
+                .party
+                .level_up_tracker
+                .threshold_for(slot, cur_level)
+                .unwrap_or(0);
+            if let Some(rec) = self.party.roster.members.get_mut(slot) {
+                rec.set_cumulative_xp(self.party.level_up_tracker.xp[slot]);
+                rec.set_next_level_xp(next);
+                rec.set_magic_rank(cur_level);
+            }
+        }
+        let result = result?;
+        self.expansion_level_rewards(char_id, result.old_level, result.new_level);
+        if let Some(rec) = self.party.roster.members.get_mut(char_id as usize) {
+            LevelUpTracker::apply_to_record(&result, rec);
+        }
+        // The grown base window reaches the live maxima through the
+        // aggregator's rebuild, which adds the equipment's boosts
+        // (`FUN_80042558`). Record only: mid-battle the actor holds the
+        // live HP.
+        self.rebuild_record_live_hp_mp(char_id as usize);
+        Some(result)
+    }
+
     /// Distribute `xp_reward` (the summed enemy EXP) to the surviving party
     /// members after a `BattleEndCause::MonsterWipe`. Mirrors the retail split
     /// ([`legaia_engine_battle_vm::battle_formulas::victory_exp_per_member`], `FUN_8004E568`):
@@ -63,38 +108,9 @@ impl World {
             // XP / level state belongs to the CHARACTER (roster slot), while
             // the live HP/MP resync targets the battle ordinal's actor mirror.
             let char_id = self.party_roster_slot(member as usize) as u8;
-            let result = self.party.level_up_tracker.grant_xp(char_id, per_member_xp);
-            // Retail (`FUN_801E9504`) maintains the record's cumulative XP
-            // (+0x0), next-level threshold (+0x4, slots-1/2 corrected), and
-            // displayed-level byte (+0x130) on every grant; the Status menu
-            // (`FUN_801D33D8`) draws those words verbatim. Mirror them so the
-            // engine's status screen stays truthful even when no threshold
-            // was crossed.
-            let slot = char_id as usize;
-            if slot < self.party.level_up_tracker.level.len() {
-                let cur_level = self.party.level_up_tracker.level[slot];
-                let next = self
-                    .party
-                    .level_up_tracker
-                    .threshold_for(slot, cur_level)
-                    .unwrap_or(0);
-                if let Some(rec) = self.party.roster.members.get_mut(slot) {
-                    rec.set_cumulative_xp(self.party.level_up_tracker.xp[slot]);
-                    rec.set_next_level_xp(next);
-                    rec.set_magic_rank(cur_level);
-                }
-            }
-            let Some(result) = result else {
+            let Some(result) = self.credit_character_xp(char_id, per_member_xp) else {
                 continue;
             };
-            if let Some(rec) = self.party.roster.members.get_mut(char_id as usize) {
-                LevelUpTracker::apply_to_record(&result, rec);
-            }
-            // The grown base window reaches the live maxima through the
-            // aggregator's rebuild, which adds the equipment's boosts
-            // (`FUN_80042558`). Record only: mid-battle the actor holds the
-            // live HP.
-            self.rebuild_record_live_hp_mp(char_id as usize);
             let new_hms = self
                 .party
                 .roster
@@ -184,7 +200,7 @@ impl World {
             // the record field; `1000` is the identity.
             xp_total = xp_total.saturating_add(u32::from(crate::world::scale_exp_permille(
                 def.exp,
-                self.toggles.exp_rate_permille,
+                self.run_exp_permille(),
             )));
             gold_acc = gold_acc.saturating_add(
                 legaia_engine_battle_vm::battle_formulas::victory_gold_per_monster(def.gold),
@@ -224,12 +240,11 @@ impl World {
         );
         let mut drops: Vec<u8> = Vec::new();
         // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
-        if item != 0
-            && self.party.inventory.get(&item).copied().unwrap_or(0)
-                != legaia_engine_battle::battle_steal::HELD_CAP
+        if item != 0 && self.held_count_by_id(item) != legaia_engine_battle::battle_steal::HELD_CAP
         {
             drops.push(item);
-            let _ = self.party.inventory.add(item, 1);
+            // An expansion pack item's fight alias lands in the pack bag.
+            let _ = self.grant_item_id(item, 1);
         }
         // The bonus equipment drop (`WorldToggles::bonus_drop`, the
         // `--equipment-drops` twin) rolls here, where the hook joins: right
@@ -267,6 +282,10 @@ impl World {
         if no_reward {
             xp_total = 0;
         }
+        // An expansion pack's EXP / gold multipliers (identity without one).
+        let (xp_total, gold_credited) = self.expansion_scale_spoils(xp_total, gold_credited);
+        // The run's difficulty scales the credited gold (identity at Normal).
+        let gold_credited = self.run_scale_gold(gold_credited);
 
         let alive = (0..usize::from(self.party.party_count))
             .filter(|&i| self.actors.get(i).is_some_and(|a| a.battle.hp > 0))
@@ -292,13 +311,19 @@ impl World {
         // approach dispatch ran it pre-battle) spawns `P2[50]` through the
         // gated record dispatch, and that record's own `51 42` script bytes
         // set the flag. See `SceneHost::tick`'s battle-return arm.
-        BattleRewards {
+        let mut rewards = BattleRewards {
             xp: xp_total,
             xp_share,
             gold: gold_credited,
             level_ups,
             drops,
-        }
+        };
+        // A pack fight's victory music, then a pack boss's own reward.
+        self.expansion_victory_music();
+        self.expansion_boss_victory(&mut rewards);
+        // The pack's trading-card drops (identity without a pack).
+        self.expansion_card_drops(formation);
+        rewards
     }
 
     /// The bonus equipment pool: every weapon, armour and accessory the
@@ -367,7 +392,7 @@ impl World {
         let Some(formation) = self.battle.active_formation.as_ref() else {
             return 0;
         };
-        let rate = self.toggles.exp_rate_permille;
+        let rate = self.run_exp_permille();
         let total: u32 = formation
             .slots
             .iter()

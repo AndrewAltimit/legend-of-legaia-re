@@ -29,6 +29,7 @@ depends on it. Hosts, tools and tests name its modules directly
 | `man_census` | A scene's MAN carriers and the scene-name entry points of the censuses whose decoders are `legaia_engine_field::man_field_scripts`. |
 | `clut_walk_anim` | The CLUT-walk shimmer: installs a scene's walker table and steps it over a VRAM. |
 | `cutscene_caption` | The opening's baked caption TIM, decoded to RGBA. |
+| `expansion_map` | An expansion-pack map as a scene's field layer: the synthetic `.MAP` image built from the map's tiles, its detail and terrain meshes, and the `Scene::overrides` seat it rides ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md)). |
 | `cd_dma` / `overlay_loader` / `stream_file` | The CD streaming reader host traits, the `ProtIndex`-backed host, the overlay loaders and the dual-mode stream-file API. |
 | `battle_overlay_readers` | The battle overlay's disc readers: the battle screen's labels (both halves, one merge order for every host) and the cast trigger's per-spell anim-pair lists, read off PROT 0898 through `ProtIndex`. |
 

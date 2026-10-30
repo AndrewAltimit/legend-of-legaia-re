@@ -45,6 +45,11 @@ impl PlayWindowApp {
         if repeat {
             return true;
         }
+        if hotkey == HostHotkey::ReloadPack {
+            // An action with its own outcome on the notice line.
+            self.reload_expansion_pack("End");
+            return true;
+        }
         if hotkey == HostHotkey::EnhancedLighting {
             // A launch switch (`--dynamic-lighting` / `--no-dynamic-lighting`)
             // may hold the renderer off the stored option: toggle what is on
@@ -69,6 +74,7 @@ impl PlayWindowApp {
             HostHotkey::CameraDistance => self.key_camera_distance(),
             HostHotkey::PreciseMovement => self.key_precise_movement(),
             HostHotkey::Bloom => self.key_bloom(),
+            HostHotkey::ReloadPack => {}
         }
         let notice = self.hotkey_notice(hotkey);
         self.show_notice(notice);

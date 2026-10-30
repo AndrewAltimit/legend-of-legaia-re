@@ -107,7 +107,7 @@ impl PlayWindowApp {
     /// state, read off the shared table so a new hotkey lists itself, laid
     /// out by [`help_panel_layout`]. Stage pixels.
     fn hotkey_help_stage_draws(&self) -> Vec<TextDraw> {
-        use legaia_engine_session::hotkeys::{HOST_HOTKEYS, HostHotkey};
+        use legaia_engine_session::hotkeys::HOST_HOTKEYS;
         // Each row's state, and whether it is one the original game does
         // not have (the launcher's original values, shared through
         // `hotkey_original_state`): that state is drawn green.
@@ -115,7 +115,7 @@ impl PlayWindowApp {
         let mut entries: Vec<(&str, String)> = HOST_HOTKEYS
             .iter()
             .map(|&(hk, _)| {
-                let line = if hk == HostHotkey::CheatMaxAp {
+                let line = if hk.is_action() {
                     states.push(None);
                     hk.label().to_string()
                 } else {
@@ -571,6 +571,27 @@ impl PlayWindowApp {
         if self.slot_gpu.is_some() {
             out.extend(self.slot_rules_text_draws(w, h));
         }
+        // The expansion mode seat's labels (picker, table, board, course,
+        // results), from the composition the browser play page draws too
+        // (`legaia_engine_screens::expansion_modes`); its panels ride the
+        // screen-prim pass under this layer.
+        let mut pack_mode = legaia_engine_screens::expansion_modes::pack_mode_stage_texts(
+            &self.session.host.world,
+            &self.font,
+        );
+        if !pack_mode.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_ui::scale_stage_text_draws(&mut pack_mode, stage_origin, stage_scale);
+            out.extend(pack_mode);
+        }
+        // The multiplayer room screen / roaming panel's labels
+        // (`legaia_engine_netplay::screens`), as on the browser page.
+        let mut net = self.netplay_stage_texts();
+        if !net.is_empty() {
+            let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+            legaia_engine_ui::scale_stage_text_draws(&mut net, stage_origin, stage_scale);
+            out.extend(net);
+        }
         // Baka Fighter minigame HUD. The HP / round-wins readout and the
         // input prompt are the title bar's caption; what draws here is the
         // game's own chrome.
@@ -942,7 +963,10 @@ fn help_panel_layout_with(
     // One column: `F12` still sits beside `Esc`.
     candidates.push(vec![false; n]);
     let scored: Vec<_> = candidates.iter().map(|c| (c, candidate(c))).collect();
-    let fits = |c: &(i32, i32, usize, i32)| c.1 + 8 <= stage_w && c.3 + 4 <= stage_h;
+    // The scrim is drawn from `y0 - 4` and is `height` tall (the height
+    // carries the text's gaps and the scrim's top margin), so with `y0` at
+    // its 4 px floor a panel fits while `height` does.
+    let fits = |c: &(i32, i32, usize, i32)| c.1 + 8 <= stage_w && c.3 <= stage_h;
     let (right, (col_w, body, rows, height)) = scored
         .iter()
         .find(|(_, c)| fits(c))
@@ -987,7 +1011,7 @@ mod help_panel_tests {
                     HostHotkey::CameraDistance => "farther",
                     _ => "off",
                 };
-                let line = if hk == HostHotkey::CheatMaxAp {
+                let line = if hk.is_action() {
                     hk.label().to_string()
                 } else {
                     format!("{}: {state}", hk.label())
@@ -1010,7 +1034,11 @@ mod help_panel_tests {
             l.x0 - 4 >= 0 && l.x0 + l.width + 4 <= stage_w,
             "{what}: the panel {l:?} leaves the {stage_w} px stage"
         );
-        assert!(l.y0 - 4 >= 0 && l.y0 + l.height <= stage_h, "{what}: {l:?}");
+        // The scrim spans `y0 - 4 .. y0 - 4 + height` (`hotkey_help_stage_draws`).
+        assert!(
+            l.y0 - 4 >= 0 && l.y0 - 4 + l.height <= stage_h,
+            "{what}: {l:?}"
+        );
         // Every row's text ends inside the panel.
         for ((_, line), &(col, _)) in entries.iter().zip(&l.cells) {
             let x = l.x0 + col * l.col_w + l.key_w;

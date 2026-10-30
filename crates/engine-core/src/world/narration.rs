@@ -35,6 +35,15 @@ impl World {
     /// the current scene without re-walking the [`legaia_engine_scene_host::scene_host::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+        // An ironman run's autosave falls due at each scene entry.
+        self.run_rules_scene_entered();
+        // An active expansion pack's enter-scene objectives.
+        if self.expansion.is_active() {
+            let scene = self.active_scene_label.clone();
+            self.expansion_notify(legaia_engine_expansion::quest::QuestEvent::SceneEntered(
+                scene,
+            ));
+        }
     }
 
     /// Display name for a party slot - the name-entry result if one was
@@ -557,7 +566,11 @@ impl World {
         // drains the request into the hold, and in that gap the pad must not
         // open a talk with whoever stands by (`taiku` P2[15] ends beside the
         // NPC whose talk then rode the scene change into `map03`).
-        self.scene_transition_hold.is_some()
+        // An expansion-pack cutscene holds the player the same way, from
+        // its first frame to its last (`World::expansion_cutscene_locks_player`;
+        // never with no pack).
+        self.expansion.cutscene.locks_player()
+            || self.scene_transition_hold.is_some()
             || self.pending_named_scene_transition.is_some()
             || self.pending_scene_transition.is_some()
             || self.cutscene_timeline_active()

@@ -59,6 +59,11 @@ const NAV = [
       { href: 'guides/modding-and-translation.html', text: 'Modding and translation', key: 'guides/modding-and-translation' },
       { href: 'guides/translating.html', text: 'Translating the game', key: 'guides/translating', indent: true },
       { href: 'guides/vrchat-world.html', text: 'VRChat world', key: 'guides/vrchat-world' },
+      { href: 'guides/expansion-packs.html', text: 'Expansion packs', key: 'guides/expansion-packs' },
+      { href: 'guides/playing-expansion-packs.html', text: 'Playing a pack', key: 'guides/playing-expansion-packs', indent: true },
+      { href: 'guides/making-expansion-packs.html', text: 'Making a pack', key: 'guides/making-expansion-packs', indent: true },
+      { href: 'guides/playing-online.html', text: 'Playing online', key: 'guides/playing-online', indent: true },
+      { href: 'guides/rebirth.html', text: 'Rebirth', key: 'guides/rebirth', indent: true },
     ],
   },
   {
@@ -70,6 +75,7 @@ const NAV = [
       { href: 'media.html',                     text: 'Media browser',            key: 'media' },
       { href: 'tooling/rom-patcher.html',       text: 'ROM patcher',              key: 'tooling/rom-patcher' },
       { href: 'tooling/translation-workbench.html', text: 'Translation workbench', key: 'tooling/translation-workbench' },
+      { href: 'tooling/expansion-workbench.html', text: 'Expansion workbench',   key: 'tooling/expansion-workbench' },
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
@@ -189,6 +195,9 @@ const NAV = [
       { heading: 'The port' },
       { href: 'subsystems/engine.html', text: 'Engine reimplementation', key: 'subsystems/engine' },
       { href: 'subsystems/gameplay-tweaks.html', text: 'Gameplay tweaks', key: 'subsystems/gameplay-tweaks' },
+      { href: 'subsystems/expansion-modes.html', text: 'Expansion game modes', key: 'subsystems/expansion-modes' },
+      { href: 'subsystems/run-rules.html', text: 'Run rules', key: 'subsystems/run-rules' },
+      { href: 'subsystems/netplay.html', text: 'Netplay', key: 'subsystems/netplay' },
       { href: 'subsystems/renderer-port.html', text: 'Port renderer (wgpu)', key: 'subsystems/renderer-port' },
       { href: 'subsystems/browser-host.html', text: 'Browser host', key: 'subsystems/browser-host' },
       { href: 'subsystems/vr-mode.html', text: 'VR mode (WebXR)', key: 'subsystems/vr-mode' },
@@ -270,6 +279,15 @@ const NAV = [
       { href: 'formats/mips-overlay.html', text: 'MIPS overlay code', key: 'formats/mips-overlay' },
       { href: 'formats/overlay-ptr-table.html', text: 'Overlay pointer tables', key: 'formats/overlay-ptr-table' },
       { href: 'formats/slot-b-module-layout.html', text: 'Slot-B module layout', key: 'formats/slot-b-module-layout' },
+      { heading: "The port's own formats" },
+      { href: 'formats/expansion-pack.html', text: 'Expansion packs', key: 'formats/expansion-pack' },
+      { href: 'formats/expansion-pack-battle.html', text: 'Battles and progression', key: 'formats/expansion-pack-battle', indent: true },
+      { href: 'formats/expansion-pack-quests.html', text: 'Quests, dialogue, saves', key: 'formats/expansion-pack-quests', indent: true },
+      { href: 'formats/expansion-pack-cutscenes.html', text: 'Cutscenes', key: 'formats/expansion-pack-cutscenes', indent: true },
+      { href: 'formats/expansion-pack-maps.html', text: 'Maps', key: 'formats/expansion-pack-maps', indent: true },
+      { href: 'formats/expansion-pack-items.html', text: 'Items and shops', key: 'formats/expansion-pack-items', indent: true },
+      { href: 'formats/expansion-pack-arts.html', text: 'Arts and Seru', key: 'formats/expansion-pack-arts', indent: true },
+      { href: 'formats/expansion-pack-audio.html', text: 'Audio', key: 'formats/expansion-pack-audio', indent: true },
     ],
   },
   {
@@ -336,7 +354,7 @@ const NAV = [
 /* ---------- Zones ---------- */
 /* Interactive pages get app chrome (no sidebar); everything else is docs. */
 const EXPLORE_KEYS = new Set([
-  'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'tooling/translation-workbench', 'world', 'shops',
+  'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'tooling/translation-workbench', 'tooling/expansion-workbench', 'world', 'shops',
   'minigames', 'arts', 'magic', 'monsters', 'characters', 'npcs', 'world-overview', 'disc-map',
 ]);
 /* Docs sections that open collapsed unless they hold the current page (or the
@@ -355,7 +373,7 @@ function zoneForKey(key) {
    so each one is reachable from the left nav on any explore page. */
 const EXPLORE_GROUPS = [
   { label: 'play',           title: 'Play', keys: ['play', 'minigames'] },
-  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
+  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench', 'tooling/expansion-workbench'] },
   { label: 'browse the disc', title: 'Explore the game data', keys: [
     '#Viewers', 'viewer', 'media', 'world-overview', 'disc-map',
     '#Game guide', 'world', 'characters', 'npcs', 'monsters', 'arts', 'magic', 'shops',
@@ -379,7 +397,7 @@ const RAIL = [
     icon: '<path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10.5V19h11v-8.5"/>' },
   { label: 'Play',   href: 'play.html',               match: k => k === 'play' || k === 'minigames',
     icon: '<rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/>' },
-  { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher' || k === 'tooling/translation-workbench',
+  { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher' || k === 'tooling/translation-workbench' || k === 'tooling/expansion-workbench',
     icon: '<path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/>' },
   { label: 'Browse', href: 'viewer.html',             match: k => ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic', 'disc-map'].includes(k),
     icon: '<path d="M7 9 12 6l5 3v6l-5 3-5-3z"/><path d="M7 9l5 3 5-3M12 12v6"/>' },

@@ -13,6 +13,8 @@ path = "src/lib.rs"
 [dependencies]
 legaia-engine-dev-menu.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-expansion.workspace = true
+legaia-engine-run-rules.workspace = true
 legaia-engine-world-views.workspace = true
 legaia-engine-battle-hud.workspace = true
 legaia-engine-scene-host.workspace = true
@@ -33,6 +35,7 @@ legaia-engine-menus.workspace = true
 legaia-engine-title.workspace = true
 legaia-engine-minigame-scenes.workspace = true
 legaia-engine-minigames.workspace = true
+legaia-engine-modes.workspace = true
 legaia-engine-mode.workspace = true
 legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true

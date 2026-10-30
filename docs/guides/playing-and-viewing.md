@@ -19,7 +19,8 @@ On this page:
 - Play: [the launcher](#0-the-launcher), [booting a scene](#1-boot-the-engine),
   [picking a scene, and cheats](#2-pick-a-scene), [FMVs](#3-play-the-fmvs),
   [minigames](#4-start-a-minigame-from-a-live-scene), [audio](#5-what-you-hear),
-  [saves and config](#6-saves-and-config-live-next-to-you).
+  [saves and config](#6-saves-and-config-live-next-to-you),
+  [expansion packs](#11-playing-an-expansion-pack).
 - Tools: [record and replay](#7-record-and-replay-a-session),
   [the asset viewer](#8-browse-assets-interactively),
   [script disassembly](#9-read-the-games-scripts),
@@ -120,6 +121,7 @@ view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
 | Play | Free-angle movement | `legaia-options.toml` | `R` | off |
+| Play | Action movement: Square jumps (twice in the air), R2 dashes (`--action-movement`) | `launcher.toml` | - | off |
 | Play | Smarter monsters (`--smart-monsters`) | `launcher.toml` | - | off |
 | Play | Saved-chain Arts list: in battle, Arts picks from your saved combos (`--arts-saved-list`) | `launcher.toml` | - | off |
 | Play | Reduce flashing | `legaia-options.toml` | - | on |
@@ -271,11 +273,12 @@ enhancement has a retail-faithful off position
 | `F2` | Mute audio | off, remembered | `--no-audio` |
 | `F1` | The engine's diagnostic text rows | off | - |
 | `F11`, `Alt+Enter` | Borderless fullscreen | off, remembered | `--fullscreen` / `--windowed` |
+| `End` | Reload the expansion pack in place (see [section 11](#11-playing-an-expansion-pack)) | - | `--expansion-watch` |
 
 In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
-around (`F3`, `T`, `R`) says so when pressed on the title screen or in a menu.
+around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a menu.
 `F12` (or `?`) opens a panel listing every toggle key with its current state
 (`F11` fullscreen among them), under it the key each pad button is on (Cross,
 Circle, Start, ...), read from the live Key Config table, and the mouse's
@@ -456,7 +459,7 @@ so the state they leave is one a playthrough could reach:
 
 | Cheat | Native | Effect |
 |---|---|---|
-| Level | `--cheat-level N` | Raising grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. Lowering rebuilds the character from its New Game stats plus the growth for the levels it keeps; stat-up items used along the way are lost. |
+| Level | `--cheat-level N` | Raising grants each present member the XP that reaches level `N`, so the stat gains are their own retail growth. As in retail, a level-up raises the maxima but not current HP / MP (add `--cheat-restore` to fill them) and changes no equipment. Lowering rebuilds the character from its New Game stats plus the growth for the levels it keeps; stat-up items used along the way are lost. |
 | Restore | `--cheat-restore` | Refills HP / MP and revives, mid-battle included. |
 | Max AP | `--cheat-max-ap`, `F6` | Fills the AP (Spirit) gauge to 100; in battle the Spirit / Super Art command opens at once. |
 | Grant Seru | `--cheat-seru N` | Teaches the 21 Seru and the member's own Ra-Seru (Vahn also the Sim-Seru and Evil Seru summons, as retail carries them), every spell at level `N` (1-9). |
@@ -528,6 +531,63 @@ one asset in that chain nobody has decoded, so both hosts draw the HUD's digit
 and caption rows from the dialog font and skip its glyphs. The captions are
 engine-side English placeholders at the retail pen positions, so a long
 placeholder can overlap the count beside it.
+
+### Playing online
+
+Several players can share a world: walk the same town and see each other,
+chat, and sit down together at poker, Grid Duel, golf, a race or prop hunt.
+One player hosts with a native play window; the others join from a play
+window or the browser play page.
+
+```bash
+# Host: runs the room server inside the window, on port 7462 by default.
+legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --host --name Vahn
+# Join from another machine on the network (address and code from the
+# host's room screen).
+legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --room K7QX2M --name Noa
+```
+
+Without the flags, `Tab` (or the launcher's **Play online** button)
+opens the Multiplayer screen, which hosts a room or joins one by address
+and code from inside the game.
+
+In a room, `Tab` opens the room screen: the room code and the address to join at,
+the players, Ready (guests), the game pick and Start (the host), emotes,
+quick chat, Leave. `T` on it types a chat line, Enter sends. Start needs
+every seated guest ready. A game draws on the usual mode screen; Start
+inside it asks to leave, which ends the game for the table. Online games
+grant no coins, gold or cards. Standing in a town, the host can start
+**Prop hunt here**: hiders pick one of the scene's own props and hide as
+it, the hunter tags props with Cross, and a wrong guess costs health.
+With an expansion pack's card collection, the room screen also trades
+cards one for one with another player.
+
+On the browser play page, open **Online** in the tools, enter the relay
+address as a WebSocket URL (`ws://192.168.1.4:7462/`), the room code and a
+name, and press Join. A browser cannot host. A page served over
+`https://` can only reach `wss://`, so playing from the published site
+needs the relay behind a TLS proxy; a page served locally over `http://`
+reaches `ws://` directly. A standalone `legaia-relay --bind 0.0.0.0:7462`
+hosts rooms without a game window.
+
+**Party night.** The host's Game row lists party nights first
+(**Practice Night** with no pack, **Tower Game Night** with Rebirth): a
+playlist of short rounds - a golf hole, a few poker hands, one lap, a Grid
+Duel ladder, a prop hunt round - scored by placement on one scoreboard.
+Between rounds a card shows the next round, the standings and the last
+round's points; the last round scores double, a wager round puts a share
+of everyone's points in a pot, and with some nights last place picks the
+next game. The podium hands out each player's prize in their own game
+(gold, boosters). A player who drops keeps their score; a round that
+desyncs is void and the night goes on. The number keys `1` to `5` send a
+quick reaction (wave, cheer, bow, dance, laugh) even mid-round. Played
+alone, Rebirth's 5F games-room table runs Tower Game Night against the
+keeper and two regulars.
+
+Everyone in a room runs the same engine build and the same expansion pack
+(or none); the relay turns a mismatch away. Each player's world is their
+own: only avatars are shared, so battles, doors and story progress are
+not. Details and limits: [netplay.md](../subsystems/netplay.md#in-the-hosts).
 
 ## 5. What you hear
 
@@ -676,6 +736,76 @@ Worth running before concluding a change did or didn't work in the browser: a
 stale bundle looks exactly like a fix that had no effect. See
 [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md).
 
+## 11. Playing an expansion pack
+
+An expansion pack adds content made for the port - maps, quests, fights,
+challenges - and plays beside your own disc; it carries no game data of its
+own ([`expansion-pack.md`](../formats/expansion-pack.md)). The flagship pack is
+[`packs/rebirth/`](../../packs/rebirth/README.md).
+
+**On the desktop**, the launcher's *Expansion pack...* button picks one: an
+`.lxpack` file, or the `pack.toml` inside a pack folder (dropping either on
+the window works too). The pack is checked the way the game checks it; one
+with errors is refused, and the help box lists the first few. A good pack is
+remembered in `launcher.toml` (`expansion = "..."`) and shown on the button by
+name; its version and authors are in the help box. *Delete* or a right-click
+on the button goes back to no pack. The launcher passes the pack to the game
+as `--expansion`, which also works by hand:
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
+    --expansion packs/rebirth           # New Game and Continue play with it
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion rebirth.lxpack --map rebirth_tower_1f   # straight onto a map
+```
+
+**Editing a pack while you play it.** `End` reloads the pack from its folder
+or `.lxpack` and, when you stand on one of its maps, rebuilds that map with you
+where you stood; the camera keeps its framing and no name banner plays. With
+`--expansion-watch` the window does that by itself whenever a file of the pack
+changes, so a map edited in a text editor shows a moment after it is saved:
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch
+```
+
+A pack with an error is refused and the running one stays; the notice line
+says why (*Reload pack refused: ...*, the whole line in the log). In a fight or
+a menu the reload waits until you are back on the map; a cutscene running on
+the map ends with the reload.
+
+**In the browser**, the play page's *Expansion pack* card loads an `.lxpack`
+once the disc is up, and *Enter map* walks straight onto one of its maps. The
+packs you install stay in the browser's pack library, listed with their cover,
+version and authors; a pack that needs another pack you have not installed, or
+conflicts with one you have, says so under its row. The expansion workbench's
+*Play in browser* installs the working pack in that library (replacing the
+version there) and opens the play page on it, and `End` on the play page
+reloads the library's copy in place. *Unload* goes back to the game as it
+shipped.
+
+With a pack loaded:
+
+- **New Game** starts the pack fresh with the new game; **Continue** loads a
+  save with the pack's progress. A save made with a pack carries that pack's
+  progress and reloads it; a save naming a pack that is not loaded still
+  loads, says so ("Saved with expansion 'rebirth' - not loaded"), and keeps
+  the pack's progress to write back on the next save.
+- **Entrances** lead from the retail game into the pack's maps: a tile in a
+  retail scene that enters a map when stepped on, often only once a story
+  point, quest or party level is reached. Rebirth's opens in Rim Elm, behind the
+  woodpile by the south gate, for a party of level 30 or more.
+- **Journal**: Select on the pause menu opens it (the hint under the menu
+  says so). *Quests* lists the started quests, active first, with each
+  objective's progress and the reward; *Challenges* lists the challenges with
+  their best scores, and Cross arms one for the next battle; *Cards* shows the
+  trading-card collection and opens the card menu; *Travel* enters
+  any of the pack's maps directly, which is the way in for testing. The pack's
+  name and version head the screen, with the count of new cards.
+- **Toasts**: a line at the top of the screen says when a quest starts, an
+  objective moves ("The Rebirth Tower: 2/3") and a quest completes.
+
 ## Related docs
 
 - [engine.md](../subsystems/engine.md) - the engine's architecture and port boundaries.
@@ -683,3 +813,4 @@ stale bundle looks exactly like a fix that had no effect. See
 - [renderer.md](../subsystems/renderer.md) - what "retail-faithful rendering" means here.
 - [determinism-replay.md](../tooling/determinism-replay.md) - the replay format.
 - [modding-and-translation.md](modding-and-translation.md) - randomize or translate the disc you just booted.
+- [expansion-pack-maps.md](../formats/expansion-pack-maps.md) - pack maps and their entrances.

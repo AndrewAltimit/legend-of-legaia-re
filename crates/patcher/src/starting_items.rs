@@ -39,7 +39,7 @@ use legaia_game_tables::new_game::{
     WARP_ALL_FLAGS_LO, WARP_FLAGS_SC_OFFSET, WARP_SEED_LEN,
 };
 
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::rng::SplitMix64;
 
 /// Number of MIPS instructions the reclaimable inventory-seed region holds
 /// (40 bytes / 4).

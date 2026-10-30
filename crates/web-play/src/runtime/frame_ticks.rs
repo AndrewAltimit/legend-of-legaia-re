@@ -61,6 +61,13 @@ impl LegaiaRuntime {
         let rig_gen = self.player_rig_gen;
         for s in 0..steps {
             r.ticks = s + 1;
+            // A Boss Rush's next stage, an ironman run's card rules: the
+            // native window's `poll_run_rules`, at the same point of its
+            // tick (after the wipe probe, ahead of the owner claim).
+            if let Some(scene) = self.poll_run_rules() {
+                self.rebuild_render_state().map_err(js_text)?;
+                r.scenes.push(scene.to_string());
+            }
             // The tick's owner, in the order both play hosts share
             // (`BootSession::claim_tick`): a host-held screen; the naming
             // prompt, stepped on the tick's edge by the session; retail's
@@ -69,7 +76,9 @@ impl LegaiaRuntime {
             // scene; the pause menu's spawn hand-over and its press; a
             // menu-overlay screen that suspends the field; the field.
             let claims = TickClaims {
-                host_screen: self.play_menu_owns_frame() || self.is_game_over(),
+                host_screen: self.play_menu_owns_frame()
+                    || self.is_game_over()
+                    || self.boss_rush_screen_owns_frame(),
                 overlay_open: self.menu.is_open(),
                 overlay_suspends: self.menu.is_open() && self.menu.suspends_field(),
                 pause_menu_ready: self.ensure_menu_assets(),
@@ -78,6 +87,12 @@ impl LegaiaRuntime {
                 .scene_host
                 .session_mut()
                 .map_or(TickOwner::Field(false), |s| s.claim_tick(claims, edge));
+            // The multiplayer room's frame, every tick whoever owns it (the
+            // native window's twin): only the field's tick hands it the pad.
+            let net_pad_filter = self.step_netplay(match owner {
+                TickOwner::Field(false) => pad,
+                _ => 0,
+            });
             match owner {
                 // A host-held screen: the pause menu once it owns the frame
                 // (one menu step per tick, with the SFX scheduler stepping
@@ -85,6 +100,19 @@ impl LegaiaRuntime {
                 // drainer), or the party-wipe hold, which steps once per
                 // remaining tick and ends the frame.
                 TickOwner::HostScreen => {
+                    // The Boss Rush intermission or result (the native
+                    // window's `BootUiState::BossRush` arm): one step per
+                    // tick, the world frozen under it.
+                    if self.boss_rush_screen_owns_frame() {
+                        if self.boss_rush_screen_step(edge) {
+                            let _ = self.play_title_bgm();
+                            r.quit = true;
+                            break;
+                        }
+                        edge = 0;
+                        self.tick_field_party_hud();
+                        continue;
+                    }
                     if self.play_menu_owns_frame() {
                         self.play_menu_input(edge);
                         r.menu_ticked = true;
@@ -156,7 +184,10 @@ impl LegaiaRuntime {
                     continue;
                 }
                 TickOwner::Field(neutral) => {
-                    self.set_pad(if neutral { 0 } else { pad });
+                    // The room frame first: its screen may hold the pad.
+                    let pad = if neutral { 0 } else { pad };
+                    let pad = pad & net_pad_filter;
+                    self.set_pad(pad);
                 }
             }
             // The field's tick; an open inn prompt (which does not suspend

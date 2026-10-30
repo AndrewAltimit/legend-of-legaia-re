@@ -116,6 +116,9 @@ impl World {
     }
 
     pub(in crate::world) fn summon_attacker_element(&self, spell_id: u8) -> Option<u8> {
+        if let Some(e) = self.expansion_cast_element(spell_id) {
+            return Some(e);
+        }
         self.summon_creature_def(spell_id).map(|d| d.element)
     }
 

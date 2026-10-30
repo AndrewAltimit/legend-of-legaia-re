@@ -137,11 +137,15 @@ impl ApplicationHandler for PlayWindowApp {
                     KeyEvent {
                         physical_key: PhysicalKey::Code(code),
                         state,
+                        text,
                         ..
                     },
                 ..
             } => {
-                self.handle_keyboard(evl, code, state);
+                // A chat line being typed takes every key, Escape included.
+                if !self.netplay_text_key(code, state, text.as_deref()) {
+                    self.handle_keyboard(evl, code, state);
+                }
             }
             // Alt is read for the Alt+Enter fullscreen toggle only.
             WindowEvent::ModifiersChanged(m) => self.alt_held = m.state().alt_key(),

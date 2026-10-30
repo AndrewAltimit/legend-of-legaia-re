@@ -21,6 +21,8 @@ mod presentation_ticks;
 mod scene_entry;
 #[path = "battle/summon_spawn.rs"]
 mod summon_spawn;
+#[path = "battle/wave_seat.rs"]
+mod wave_seat;
 
 pub(super) use scene_entry::*;
 
@@ -122,6 +124,8 @@ impl PlayWindowApp {
                 on_battle_left(&mut self.battle_hud, &mut self.encounter_banner);
                 self.exit_battle_render();
             }
+            // An expansion wave's monsters, seated since the last frame.
+            None if mode == SceneMode::Battle => self.bind_wave_monsters(),
             None => {}
         }
     }

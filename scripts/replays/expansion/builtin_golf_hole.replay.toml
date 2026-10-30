@@ -1,0 +1,989 @@
+# The built-in golf course through the World mode seat: the picker opens on
+# frame 0 (a `mode_picker` switch, the play window's backquote key), Down
+# twice and Cross pick golf, then each stroke starts the power meter and
+# strikes 45 frames later. Pad input and switches only - no disc bytes.
+# Runs disc-free: crates/engine-shell/tests/expansion_replay.rs.
+[meta]
+schema = "j-replay-v1"
+rng_seed = 4951
+frames = 3600
+
+[[event]]
+frame = 2
+pad = 64
+
+[[event]]
+frame = 3
+pad = 0
+
+[[event]]
+frame = 6
+pad = 64
+
+[[event]]
+frame = 7
+pad = 0
+
+[[event]]
+frame = 10
+pad = 16384
+
+[[event]]
+frame = 11
+pad = 0
+
+[[event]]
+frame = 30
+pad = 16384
+
+[[event]]
+frame = 31
+pad = 0
+
+[[event]]
+frame = 75
+pad = 16384
+
+[[event]]
+frame = 76
+pad = 0
+
+[[event]]
+frame = 90
+pad = 16384
+
+[[event]]
+frame = 91
+pad = 0
+
+[[event]]
+frame = 135
+pad = 16384
+
+[[event]]
+frame = 136
+pad = 0
+
+[[event]]
+frame = 150
+pad = 16384
+
+[[event]]
+frame = 151
+pad = 0
+
+[[event]]
+frame = 195
+pad = 16384
+
+[[event]]
+frame = 196
+pad = 0
+
+[[event]]
+frame = 210
+pad = 16384
+
+[[event]]
+frame = 211
+pad = 0
+
+[[event]]
+frame = 255
+pad = 16384
+
+[[event]]
+frame = 256
+pad = 0
+
+[[event]]
+frame = 270
+pad = 16384
+
+[[event]]
+frame = 271
+pad = 0
+
+[[event]]
+frame = 315
+pad = 16384
+
+[[event]]
+frame = 316
+pad = 0
+
+[[event]]
+frame = 330
+pad = 16384
+
+[[event]]
+frame = 331
+pad = 0
+
+[[event]]
+frame = 375
+pad = 16384
+
+[[event]]
+frame = 376
+pad = 0
+
+[[event]]
+frame = 390
+pad = 16384
+
+[[event]]
+frame = 391
+pad = 0
+
+[[event]]
+frame = 435
+pad = 16384
+
+[[event]]
+frame = 436
+pad = 0
+
+[[event]]
+frame = 450
+pad = 16384
+
+[[event]]
+frame = 451
+pad = 0
+
+[[event]]
+frame = 495
+pad = 16384
+
+[[event]]
+frame = 496
+pad = 0
+
+[[event]]
+frame = 510
+pad = 16384
+
+[[event]]
+frame = 511
+pad = 0
+
+[[event]]
+frame = 555
+pad = 16384
+
+[[event]]
+frame = 556
+pad = 0
+
+[[event]]
+frame = 570
+pad = 16384
+
+[[event]]
+frame = 571
+pad = 0
+
+[[event]]
+frame = 615
+pad = 16384
+
+[[event]]
+frame = 616
+pad = 0
+
+[[event]]
+frame = 630
+pad = 16384
+
+[[event]]
+frame = 631
+pad = 0
+
+[[event]]
+frame = 675
+pad = 16384
+
+[[event]]
+frame = 676
+pad = 0
+
+[[event]]
+frame = 690
+pad = 16384
+
+[[event]]
+frame = 691
+pad = 0
+
+[[event]]
+frame = 735
+pad = 16384
+
+[[event]]
+frame = 736
+pad = 0
+
+[[event]]
+frame = 750
+pad = 16384
+
+[[event]]
+frame = 751
+pad = 0
+
+[[event]]
+frame = 795
+pad = 16384
+
+[[event]]
+frame = 796
+pad = 0
+
+[[event]]
+frame = 810
+pad = 16384
+
+[[event]]
+frame = 811
+pad = 0
+
+[[event]]
+frame = 855
+pad = 16384
+
+[[event]]
+frame = 856
+pad = 0
+
+[[event]]
+frame = 870
+pad = 16384
+
+[[event]]
+frame = 871
+pad = 0
+
+[[event]]
+frame = 915
+pad = 16384
+
+[[event]]
+frame = 916
+pad = 0
+
+[[event]]
+frame = 930
+pad = 16384
+
+[[event]]
+frame = 931
+pad = 0
+
+[[event]]
+frame = 975
+pad = 16384
+
+[[event]]
+frame = 976
+pad = 0
+
+[[event]]
+frame = 990
+pad = 16384
+
+[[event]]
+frame = 991
+pad = 0
+
+[[event]]
+frame = 1035
+pad = 16384
+
+[[event]]
+frame = 1036
+pad = 0
+
+[[event]]
+frame = 1050
+pad = 16384
+
+[[event]]
+frame = 1051
+pad = 0
+
+[[event]]
+frame = 1095
+pad = 16384
+
+[[event]]
+frame = 1096
+pad = 0
+
+[[event]]
+frame = 1110
+pad = 16384
+
+[[event]]
+frame = 1111
+pad = 0
+
+[[event]]
+frame = 1155
+pad = 16384
+
+[[event]]
+frame = 1156
+pad = 0
+
+[[event]]
+frame = 1170
+pad = 16384
+
+[[event]]
+frame = 1171
+pad = 0
+
+[[event]]
+frame = 1215
+pad = 16384
+
+[[event]]
+frame = 1216
+pad = 0
+
+[[event]]
+frame = 1230
+pad = 16384
+
+[[event]]
+frame = 1231
+pad = 0
+
+[[event]]
+frame = 1275
+pad = 16384
+
+[[event]]
+frame = 1276
+pad = 0
+
+[[event]]
+frame = 1290
+pad = 16384
+
+[[event]]
+frame = 1291
+pad = 0
+
+[[event]]
+frame = 1335
+pad = 16384
+
+[[event]]
+frame = 1336
+pad = 0
+
+[[event]]
+frame = 1350
+pad = 16384
+
+[[event]]
+frame = 1351
+pad = 0
+
+[[event]]
+frame = 1395
+pad = 16384
+
+[[event]]
+frame = 1396
+pad = 0
+
+[[event]]
+frame = 1410
+pad = 16384
+
+[[event]]
+frame = 1411
+pad = 0
+
+[[event]]
+frame = 1455
+pad = 16384
+
+[[event]]
+frame = 1456
+pad = 0
+
+[[event]]
+frame = 1470
+pad = 16384
+
+[[event]]
+frame = 1471
+pad = 0
+
+[[event]]
+frame = 1515
+pad = 16384
+
+[[event]]
+frame = 1516
+pad = 0
+
+[[event]]
+frame = 1530
+pad = 16384
+
+[[event]]
+frame = 1531
+pad = 0
+
+[[event]]
+frame = 1575
+pad = 16384
+
+[[event]]
+frame = 1576
+pad = 0
+
+[[event]]
+frame = 1590
+pad = 16384
+
+[[event]]
+frame = 1591
+pad = 0
+
+[[event]]
+frame = 1635
+pad = 16384
+
+[[event]]
+frame = 1636
+pad = 0
+
+[[event]]
+frame = 1650
+pad = 16384
+
+[[event]]
+frame = 1651
+pad = 0
+
+[[event]]
+frame = 1695
+pad = 16384
+
+[[event]]
+frame = 1696
+pad = 0
+
+[[event]]
+frame = 1710
+pad = 16384
+
+[[event]]
+frame = 1711
+pad = 0
+
+[[event]]
+frame = 1755
+pad = 16384
+
+[[event]]
+frame = 1756
+pad = 0
+
+[[event]]
+frame = 1770
+pad = 16384
+
+[[event]]
+frame = 1771
+pad = 0
+
+[[event]]
+frame = 1815
+pad = 16384
+
+[[event]]
+frame = 1816
+pad = 0
+
+[[event]]
+frame = 1830
+pad = 16384
+
+[[event]]
+frame = 1831
+pad = 0
+
+[[event]]
+frame = 1875
+pad = 16384
+
+[[event]]
+frame = 1876
+pad = 0
+
+[[event]]
+frame = 1890
+pad = 16384
+
+[[event]]
+frame = 1891
+pad = 0
+
+[[event]]
+frame = 1935
+pad = 16384
+
+[[event]]
+frame = 1936
+pad = 0
+
+[[event]]
+frame = 1950
+pad = 16384
+
+[[event]]
+frame = 1951
+pad = 0
+
+[[event]]
+frame = 1995
+pad = 16384
+
+[[event]]
+frame = 1996
+pad = 0
+
+[[event]]
+frame = 2010
+pad = 16384
+
+[[event]]
+frame = 2011
+pad = 0
+
+[[event]]
+frame = 2055
+pad = 16384
+
+[[event]]
+frame = 2056
+pad = 0
+
+[[event]]
+frame = 2070
+pad = 16384
+
+[[event]]
+frame = 2071
+pad = 0
+
+[[event]]
+frame = 2115
+pad = 16384
+
+[[event]]
+frame = 2116
+pad = 0
+
+[[event]]
+frame = 2130
+pad = 16384
+
+[[event]]
+frame = 2131
+pad = 0
+
+[[event]]
+frame = 2175
+pad = 16384
+
+[[event]]
+frame = 2176
+pad = 0
+
+[[event]]
+frame = 2190
+pad = 16384
+
+[[event]]
+frame = 2191
+pad = 0
+
+[[event]]
+frame = 2235
+pad = 16384
+
+[[event]]
+frame = 2236
+pad = 0
+
+[[event]]
+frame = 2250
+pad = 16384
+
+[[event]]
+frame = 2251
+pad = 0
+
+[[event]]
+frame = 2295
+pad = 16384
+
+[[event]]
+frame = 2296
+pad = 0
+
+[[event]]
+frame = 2310
+pad = 16384
+
+[[event]]
+frame = 2311
+pad = 0
+
+[[event]]
+frame = 2355
+pad = 16384
+
+[[event]]
+frame = 2356
+pad = 0
+
+[[event]]
+frame = 2370
+pad = 16384
+
+[[event]]
+frame = 2371
+pad = 0
+
+[[event]]
+frame = 2415
+pad = 16384
+
+[[event]]
+frame = 2416
+pad = 0
+
+[[event]]
+frame = 2430
+pad = 16384
+
+[[event]]
+frame = 2431
+pad = 0
+
+[[event]]
+frame = 2475
+pad = 16384
+
+[[event]]
+frame = 2476
+pad = 0
+
+[[event]]
+frame = 2490
+pad = 16384
+
+[[event]]
+frame = 2491
+pad = 0
+
+[[event]]
+frame = 2535
+pad = 16384
+
+[[event]]
+frame = 2536
+pad = 0
+
+[[event]]
+frame = 2550
+pad = 16384
+
+[[event]]
+frame = 2551
+pad = 0
+
+[[event]]
+frame = 2595
+pad = 16384
+
+[[event]]
+frame = 2596
+pad = 0
+
+[[event]]
+frame = 2610
+pad = 16384
+
+[[event]]
+frame = 2611
+pad = 0
+
+[[event]]
+frame = 2655
+pad = 16384
+
+[[event]]
+frame = 2656
+pad = 0
+
+[[event]]
+frame = 2670
+pad = 16384
+
+[[event]]
+frame = 2671
+pad = 0
+
+[[event]]
+frame = 2715
+pad = 16384
+
+[[event]]
+frame = 2716
+pad = 0
+
+[[event]]
+frame = 2730
+pad = 16384
+
+[[event]]
+frame = 2731
+pad = 0
+
+[[event]]
+frame = 2775
+pad = 16384
+
+[[event]]
+frame = 2776
+pad = 0
+
+[[event]]
+frame = 2790
+pad = 16384
+
+[[event]]
+frame = 2791
+pad = 0
+
+[[event]]
+frame = 2835
+pad = 16384
+
+[[event]]
+frame = 2836
+pad = 0
+
+[[event]]
+frame = 2850
+pad = 16384
+
+[[event]]
+frame = 2851
+pad = 0
+
+[[event]]
+frame = 2895
+pad = 16384
+
+[[event]]
+frame = 2896
+pad = 0
+
+[[event]]
+frame = 2910
+pad = 16384
+
+[[event]]
+frame = 2911
+pad = 0
+
+[[event]]
+frame = 2955
+pad = 16384
+
+[[event]]
+frame = 2956
+pad = 0
+
+[[event]]
+frame = 2970
+pad = 16384
+
+[[event]]
+frame = 2971
+pad = 0
+
+[[event]]
+frame = 3015
+pad = 16384
+
+[[event]]
+frame = 3016
+pad = 0
+
+[[event]]
+frame = 3030
+pad = 16384
+
+[[event]]
+frame = 3031
+pad = 0
+
+[[event]]
+frame = 3075
+pad = 16384
+
+[[event]]
+frame = 3076
+pad = 0
+
+[[event]]
+frame = 3090
+pad = 16384
+
+[[event]]
+frame = 3091
+pad = 0
+
+[[event]]
+frame = 3135
+pad = 16384
+
+[[event]]
+frame = 3136
+pad = 0
+
+[[event]]
+frame = 3150
+pad = 16384
+
+[[event]]
+frame = 3151
+pad = 0
+
+[[event]]
+frame = 3195
+pad = 16384
+
+[[event]]
+frame = 3196
+pad = 0
+
+[[event]]
+frame = 3210
+pad = 16384
+
+[[event]]
+frame = 3211
+pad = 0
+
+[[event]]
+frame = 3255
+pad = 16384
+
+[[event]]
+frame = 3256
+pad = 0
+
+[[event]]
+frame = 3270
+pad = 16384
+
+[[event]]
+frame = 3271
+pad = 0
+
+[[event]]
+frame = 3315
+pad = 16384
+
+[[event]]
+frame = 3316
+pad = 0
+
+[[event]]
+frame = 3330
+pad = 16384
+
+[[event]]
+frame = 3331
+pad = 0
+
+[[event]]
+frame = 3375
+pad = 16384
+
+[[event]]
+frame = 3376
+pad = 0
+
+[[event]]
+frame = 3390
+pad = 16384
+
+[[event]]
+frame = 3391
+pad = 0
+
+[[event]]
+frame = 3435
+pad = 16384
+
+[[event]]
+frame = 3436
+pad = 0
+
+[[event]]
+frame = 3450
+pad = 16384
+
+[[event]]
+frame = 3451
+pad = 0
+
+[[event]]
+frame = 3495
+pad = 16384
+
+[[event]]
+frame = 3496
+pad = 0
+
+[[event]]
+frame = 3510
+pad = 16384
+
+[[event]]
+frame = 3511
+pad = 0
+
+[[event]]
+frame = 3555
+pad = 16384
+
+[[event]]
+frame = 3556
+pad = 0
+
+[[event]]
+frame = 3570
+pad = 16384
+
+[[event]]
+frame = 3571
+pad = 0
+
+[[switch]]
+frame = 0
+set = "mode_picker"

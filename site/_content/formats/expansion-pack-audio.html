@@ -1,0 +1,120 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs: audio</div>
+  <h1>Expansion packs: audio</h1>
+  <p class="lede"><code>audio.toml</code> and each map's <code>[audio]</code> table give an <a href="expansion-pack.html">expansion pack</a> its soundscape: the music of a map, a zone, a boss phase, a victory or a game mode, the sounds triggers and telegraphs raise, and loops that sound from points on a map. Retail sound is named by coordinate; the modder's own WAV and Ogg Vorbis files play beside it. With no pack active every hook is the identity and the mixer's PCM bus stays empty, so the retail output is bit-identical.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Files</dt><dd><code>audio.toml</code> at the pack root (optional); <code>[audio]</code> in any map. Declares <code>track</code> and <code>sound</code> ids.</dd>
+    <dt>Assets</dt><dd><code>.wav</code> (8/16/24/32-bit PCM, 32-bit float) and <code>.ogg</code> (Vorbis), mono or stereo, 8-96 kHz, at most 360 s.</dd>
+    <dt>Parser</dt><dd><code>legaia_expansion_format::{audio, audio_clip}</code>.</dd>
+    <dt>Runtime</dt><dd><code>legaia_engine_expansion::audio</code>; <code>engine-core</code>'s <code>world::expansion_audio</code>; the mixer's PCM bus <code>engine-audio::pcm_bus</code>; one director, <code>AudioDirector</code>, on the native window and the browser page.</dd>
+    <dt>Sample</dt><dd><code>packs/rebirth/audio.toml</code></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="music-and-sound-references" data-doc="music-and-sound-references">
+  <h2>Music and sound references</h2>
+  <table class="data">
+    <thead><tr><th>Form</th><th>Plays</th></tr></thead>
+    <tbody>
+      <tr><td><code>{ kind = "bgm", id = 30 }</code></td><td>A retail music cue by sound-test id (<a href="../reference/music-tracks.html">music tracks</a>).</td></tr>
+      <tr><td><code>{ kind = "track", id = "tower_hum" }</code></td><td>A pack track.</td></tr>
+      <tr><td><code>{ kind = "silence" }</code></td><td>Nothing.</td></tr>
+      <tr><td><code>{ kind = "sfx", id = 0x21 }</code></td><td>A retail sound cue (static table <code>0x000..0x100</code>, or the base scene's runtime bank <code>0x200..=0x2FF</code>) through the field's cue ring.</td></tr>
+      <tr><td><code>{ kind = "sound", id = "chime" }</code></td><td>A pack sound on the PCM bus.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="audiotoml" data-doc="audiotoml">
+  <h2><code>audio.toml</code></h2>
+<pre><code>[tracks.echo_drone]
+file = "audio/tower_drone.wav"   # relative to assets/
+gain = 0.8                       # 0..=4 on top of normalisation
+loop_start = 0                   # frames; the file's own loop, else 0
+loop_end = 132300                # exclusive; the file's own loop, else its end
+
+[sounds.chime]
+file = "audio/chime.wav"
+
+[music]
+battle = { kind = "bgm", id = 26 }
+boss = { kind = "bgm", id = 28 }
+victory = { kind = "track", id = "fanfare" }
+boss_victory = { kind = "bgm", id = 65 }
+
+[music.modes]
+poker = { kind = "bgm", id = 18 }</code></pre>
+  <p>A track loops unless <code>loop = false</code>; a sound plays once unless <code>loop = true</code>. Loop points default to the file's own loop - a WAV <code>smpl</code> chunk, an Ogg <code>LOOPSTART</code> / <code>LOOPLENGTH</code> comment - then to the whole clip. <code>music.battle</code> scores fights on the pack's maps, <code>music.boss</code> a boss with no music of its own, <code>music.victory</code> / <code>boss_victory</code> a won fight's results; <code>music.modes</code> is keyed by mode instance id or mode kind, the instance winning.</p>
+</section>
+
+<section class="doc-section" id="a-maps-audio" data-doc="a-maps-audio">
+  <h2>A map's <code>[audio]</code></h2>
+<pre><code>[audio]
+music = { kind = "track", id = "echo_drone" }   # wins over the map's bgm
+fade_frames = 40
+
+[[audio.zones]]
+rect = [8, 7, 14, 10]
+music = { kind = "bgm", id = 18 }
+
+[[audio.ambient]]
+sound = { kind = "sound", id = "torch" }
+tile = [13, 4]
+radius = 512        # silent from here (a tile is 128)
+inner = 96          # full volume within
+volume = 0.5</code></pre>
+  <p>The first zone holding the player's tile plays, else the map's music, else its <code>bgm</code>; a change cross-fades over <code>fade_frames</code>, and the first pick on entry cuts. A trigger may raise a sound: <code>event = { kind = "sound", sound = ... }</code>. A map places at most 16 ambient sources, 4 of them retail cues.</p>
+</section>
+
+<section class="doc-section" id="boss-music-phases-and-telegraphs" data-doc="boss-music-phases-and-telegraphs">
+  <h2>Boss music, phases and telegraphs</h2>
+  <p>A boss's <code>music</code> may be a pack track. A boss-script phase takes <code>music</code>, cross-fading in as it begins, and <code>sound</code>; a telegraphed move takes <code>charge_sound</code>, played on its charge turn. The battle's end restores the stashed field track as for any fight.</p>
+</section>
+
+<section class="doc-section" id="how-music-reaches-the-director" data-doc="how-music-reaches-the-director">
+  <h2>How music reaches the director</h2>
+  <p>Every change is an ordinary field BGM start with the world's current track kept in step, so the battle swap stashes and restores a zone's track as it does a retail scene's. A pack track rides music id <code>0xE000 + n</code>; the engine's sub-op <code>0xFC</code> asks for a cross-fade.</p>
+  <table class="data">
+    <thead><tr><th>From -&gt; to</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>Pack track -&gt; pack track</td><td>A true cross-fade on the PCM bus.</td></tr>
+      <tr><td>Retail score -&gt; pack track</td><td>The score fades out and its sequencer leaves at silence; the track fades in.</td></tr>
+      <tr><td>Pack track -&gt; retail score</td><td>The track fades out; the score starts.</td></tr>
+      <tr><td>Retail -&gt; retail</td><td>The old score fades out first; the new one starts at silence, since its bank is uploaded over the old one's samples.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="sounds-and-ambient-sources" data-doc="sounds-and-ambient-sources">
+  <h2>Sounds and ambient sources</h2>
+  <p>Each tick on a pack map the world recomputes every ambient source's level: full within <code>inner</code>, a smooth fall to silence at <code>radius</code>, an equal-power pan by where the source sits across the camera's view. It is presentation only. A pack sound loops on the PCM bus; a retail cue keys one of the voices 20-23 through the same positional-emitter path the retail river uses, its volume written each tick and released out of range.</p>
+</section>
+
+<section class="doc-section" id="levels" data-doc="levels">
+  <h2>Levels</h2>
+  <p>With <code>normalize</code> on (the default) a clip's gain brings its RMS to <code>0.07</code> of full scale (about -23 dBFS), the level the retail field scores measure at through the port's mixer, before <code>gain</code>. Tracks follow the BGM volume option and the battle duck; sounds and ambient loops follow the SFX volume. Mute, master volume and the mono options cover the bus too.</p>
+</section>
+
+<section class="doc-section" id="decoders" data-doc="decoders">
+  <h2>Decoders</h2>
+  <p>WAV is read by the format crate; Ogg Vorbis goes through <code>lewton</code>, a small pure-Rust decoder. One decoder on both hosts keeps their output identical and lets the validator check a file the way the engine plays it; the workbench previews files with the browser's own decoder.</p>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <p>Errors: a missing, mistyped or undecodable file, <code>gain</code> outside <code>0..=4</code>, a loop that ends before it starts or past the clip, an undeclared track or sound, a <code>bgm</code> id outside the sound test, a cue outside the two cue ranges, a zone or source off the map, a <code>radius</code> not past <code>inner</code>, a volume outside <code>0..=1</code>, too many sources. Warnings: a loop shorter than 50 ms, a <code>music.modes</code> key that names no mode.</p>
+</section>
+
+<section class="doc-section" id="the-world-api" data-doc="the-world-api">
+  <h2>The World API</h2>
+  <p>For cutscene steps and scripts: <code>World::expansion_play_sound(&amp;SoundRef)</code>, <code>World::expansion_set_music(Some(&amp;MusicRef), fade_frames)</code> (held over the zones until cleared with <code>None</code>) and <code>World::expansion_music_id</code>.</p>
+</section>
+
+<section class="doc-section" id="rebirth" data-doc="rebirth">
+  <h2>Rebirth</h2>
+  <p>The Rebirth pack keeps each floor's retail music and adds a games-room zone on 5F (the Sol casino's theme over the Rest's bar tune), the pack's own drone in 7F's inner sanctum, crackling crystals, braziers and hearth, the Warden's Stone hum and running water, casino music at the poker table, the Hollow Sovereign's phase music with a chime on its ultimate's telegraph, and the title theme over every tower boss's results. Its WAV files are synthesised from sine partials and seeded noise by a script in the repository - no disc audio.</p>
+</section>

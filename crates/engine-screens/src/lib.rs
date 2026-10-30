@@ -31,8 +31,10 @@ pub mod battle_value_readout;
 // --- end lane B ---
 mod battle_item;
 pub mod dev_menu;
+pub mod expansion_modes;
 pub mod field_frame;
 pub mod field_messages;
+pub mod run_rules;
 // --- lane B ---
 pub mod field_occlusion;
 pub mod world_map_labels;

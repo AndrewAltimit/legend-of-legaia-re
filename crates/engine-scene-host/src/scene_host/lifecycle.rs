@@ -56,6 +56,9 @@ impl SceneHost {
             battle_party_forms: None,
             last_minigame_warp: None,
             pending_entry_seat: None,
+            pending_scene_override: None,
+            failed_pack_mode_map: None,
+            quiet_expansion_arrivals: false,
             arrival_catalog: None,
             pending_picker_arrivals: None,
             picker_seat: None,
@@ -135,6 +138,10 @@ impl SceneHost {
         // SFX ring queue to the host's director, which keys the voices off.
         // REF: FUN_80017910, FUN_8001DCF8
         self.world.release_sustained_sfx();
+        // An expansion-pack cutscene ends at the door, and a pack map's hidden
+        // NPCs are that visit's own (the identity with no pack: nothing runs).
+        self.world.expansion.cutscene.clear();
+        self.world.expansion.cutscene.hidden.clear();
         // A scene load that lands while a battle is still up (a host's scene
         // picker, a debug seat) abandons that battle first, so its results
         // sequencer and field snapshot cannot ride into the next fight.
@@ -177,7 +184,12 @@ impl SceneHost {
         // REF: FUN_8003A024
         self.world.cutscene.narration_seed =
             legaia_engine_field::cutscene_narration::RollerSeed::SCENE_RESET;
-        let scene = Scene::load(&self.index, name)?;
+        // Any scene load leaves the pack map the player was in; an
+        // expansion-map entry seats the next one after its load.
+        self.world.expansion.map = None;
+        let overrides = self.pending_scene_override.take();
+        let mut scene = Scene::load(&self.index, name)?;
+        scene.overrides = overrides;
         // `_DAT_80084540`: the scene's raw CDNAME define (the `block_range`
         // start, before the extraction-frame shift `Scene::start` carries).
         self.world.battle.map_id = self.index.block_range(name).map_or(0, |(raw, _)| raw);

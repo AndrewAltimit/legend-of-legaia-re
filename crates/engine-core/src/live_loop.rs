@@ -63,17 +63,37 @@ impl World {
     /// - Tags the world with the scene label.
     /// - Falls back to the synthetic encounter registry **only** when the
     ///   scene's own MAN carried no encounter table (towns resolve to a 0 %
-    ///   trigger rate there, so this invents no town fights).
+    ///   trigger rate there, so this invents no town fights), and never on
+    ///   an expansion-pack map, whose encounter zones are the pack's
+    ///   (`legaia_engine_expansion::map::ActiveMap::encounter_table`). The
+    ///   fallback replaces the formation table and monster catalog, so with
+    ///   a pack active it puts back what the pack's fights seat: the retail
+    ///   monsters the scene entry merged and the pack's formations. Every
+    ///   entry path (a direct `--map`, a save resume, the browser page's
+    ///   map entry) arms after the scene entry's merge, so this is the one
+    ///   ordering they share.
     /// - Applies `opts`: the field-side encounter roll, player-driven
     ///   battles + the Seru registry, and the battle BGM swap.
     pub fn arm_live_loop(&mut self, scene: &str, opts: &LiveLoopOpts) {
         self.set_active_scene_label(scene);
 
-        if self.encounters.session.is_none() && matches!(self.mode, SceneMode::Field) {
+        if self.encounters.session.is_none()
+            && matches!(self.mode, SceneMode::Field)
+            && self.expansion.map.is_none()
+        {
+            let kept: Vec<_> = self
+                .expansion_base_monster_ids()
+                .iter()
+                .filter_map(|id| self.tables.monster_catalog.by_id.get(id).cloned())
+                .collect();
             self.set_formation_table(
                 legaia_engine_battle::monster_catalog::vanilla_formation_table(),
                 legaia_engine_battle::monster_catalog::vanilla_monster_catalog(),
             );
+            for def in kept {
+                self.tables.monster_catalog.insert(def);
+            }
+            self.install_expansion_formations();
             let registry = legaia_engine_battle::encounter_registry::vanilla_encounter_registry();
             self.install_encounter_for_scene(&registry, scene);
         }

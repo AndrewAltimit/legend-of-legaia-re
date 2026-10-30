@@ -518,6 +518,11 @@ impl SpellCatalog {
         self.spells.insert(def.id, def);
     }
 
+    /// Take id `id`'s entry out of the catalog.
+    pub fn remove(&mut self, id: u8) -> Option<SpellDef> {
+        self.spells.remove(&id)
+    }
+
     pub fn get(&self, id: u8) -> Option<&SpellDef> {
         self.spells.get(&id)
     }

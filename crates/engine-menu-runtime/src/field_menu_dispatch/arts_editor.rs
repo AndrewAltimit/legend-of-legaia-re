@@ -48,6 +48,9 @@ pub struct ArtsEditorView {
     /// `true` while the library has room for one more chain - the browse
     /// list only shows its trailing "+ New" row then.
     pub can_add_new: bool,
+    /// The expansion pack arts the character knows, `(name, "commands  AP")`
+    /// ([`World::expansion_known_arts_lines`]); empty with no pack.
+    pub pack_arts: Vec<(String, String)>,
 }
 
 /// Project a live [`ChainEditor`] into the renderer-agnostic
@@ -131,6 +134,7 @@ pub fn arts_editor_view(editor: &ChainEditor, world: &World) -> ArtsEditorView {
         min_len: ChainLibrary::MIN_LEN,
         max_len: ChainLibrary::MAX_LEN,
         naming_name,
+        pack_arts: world.expansion_known_arts_lines(char_slot),
     }
 }
 

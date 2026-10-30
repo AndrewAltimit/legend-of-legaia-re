@@ -9,7 +9,9 @@ pool, the monster-archive re-packer, and the disc write-back.
 
 ### `rng`
 
-Lives in [`legaia-disc-patch`](../../crates/disc-patch/README.md).
+Lives in [`legaia-randomizer`](../../crates/randomizer/README.md), with the
+drop planner (`drops`) and the monster and encounter safety lists (`monsters`,
+`encounters`) the engine's [run rules](../subsystems/run-rules.md) share.
 Version-stable `SplitMix64` PRNG. A published seed always reproduces a run,
 independent of any external generator's algorithm (the first output for seed 0 is
 pinned by a test).

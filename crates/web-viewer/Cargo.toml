@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 legaia-web-play.workspace = true
 legaia-web-patcher.workspace = true
+legaia-web-expansion.workspace = true
 legaia-engine-menus.workspace = true
 legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true

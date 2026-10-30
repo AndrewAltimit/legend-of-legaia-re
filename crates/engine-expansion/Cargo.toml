@@ -1,0 +1,22 @@
+[package]
+name = "legaia-engine-expansion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_expansion"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-expansion-format.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-system.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-modes.workspace = true
+
+[dev-dependencies]
+legaia-engine-battle-vm.workspace = true
+legaia-engine-run-rules.workspace = true
+legaia-game-tables.workspace = true
+toml.workspace = true

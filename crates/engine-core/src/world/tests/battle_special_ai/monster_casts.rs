@@ -107,6 +107,7 @@ fn smarter_targeting_redirects_to_lowest_hp_without_moving_rng() {
             MonsterAction::Physical { target } => target,
             MonsterAction::Cast { targets, .. } => targets[0],
             MonsterAction::Flee => panic!("flee checkpoint fired in a targeting test"),
+            MonsterAction::Wait => panic!("no boss script in a targeting test"),
         }
     }
 

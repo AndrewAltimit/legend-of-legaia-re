@@ -33,6 +33,7 @@ ENGINE_LAYER_EXTRA = {
     "parity",
     "asset-viewer",
     "explorer",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer",

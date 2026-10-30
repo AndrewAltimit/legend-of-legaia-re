@@ -641,6 +641,9 @@ pub struct RegionEncounterTracker {
     suppressed: bool,
     /// Accessory / status rate modifiers, refreshed by the host each step.
     modifiers: EncounterRateModifiers,
+    /// A port run rule's scale on the step increment, in permille; `1000`
+    /// (retail) leaves the increment as retail computes it.
+    rate_permille: u16,
 }
 
 impl RegionEncounterTracker {
@@ -652,7 +655,14 @@ impl RegionEncounterTracker {
             last_formation: None,
             suppressed: false,
             modifiers: EncounterRateModifiers::default(),
+            rate_permille: 1000,
         }
+    }
+
+    /// Scale each step's increment by `permille` (a port run rule: the
+    /// difficulty's encounter rate). `1000` is retail.
+    pub fn set_rate_permille(&mut self, permille: u16) {
+        self.rate_permille = permille;
     }
 
     pub fn table(&self) -> &RegionEncounterTable {
@@ -739,9 +749,12 @@ impl RegionEncounterTracker {
         if region.formation_count == 0 {
             return None;
         }
-        let inc = self
+        let mut inc = self
             .modifiers
             .apply(self.setting.scale(region.rate_increment)) as i32;
+        if self.rate_permille != 1000 && inc > 0 {
+            inc = ((inc as i64 * i64::from(self.rate_permille) + 500) / 1000).max(1) as i32;
+        }
         // While the counter stays positive, the step does not fire and no RNG
         // is consumed (retail `bgtz v1, ...; sw v1, _DAT_8007B5FC`).
         if self.counter - inc > 0 {

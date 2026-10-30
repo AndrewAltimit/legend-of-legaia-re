@@ -10,7 +10,8 @@ This crate is the top of the family; the rule for what lives where:
 
 | Crate | Holds |
 |---|---|
-| [`legaia-disc-patch`](../disc-patch/README.md) | The write foundation: `DiscPatcher`, PPF, the free-space ledger, re-pack budgets, the monster-slot re-pack, the seeded `rng`. |
+| [`legaia-disc-patch`](../disc-patch/README.md) | The write foundation: `DiscPatcher`, PPF, the free-space ledger, re-pack budgets, the monster-slot re-pack. |
+| [`legaia-randomizer`](../randomizer/README.md) | The planning logic the engine shares: the seeded `rng`, drop planning, the safety lists. |
 | [`legaia-code-hooks`](../code-hooks/README.md) | The MIPS toolkit (`mips`, `mips_sim`), the shared injection-arena map (`arenas`) and the hook mods that are only a plan over those. |
 | [`legaia-party-swap`](../party-swap/README.md) | Disc-free model-transform kernels. |
 | [`legaia-arts-patch`](../arts-patch/README.md) | The Tactical Arts family: `arts`, `arts_power`, `arts_ap_grant`, `oscillating_ap`, `super_art_*`. |

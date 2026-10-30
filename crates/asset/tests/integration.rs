@@ -8,4 +8,5 @@
 //! Only tests that spawn the `asset` binary live here; a format's own tests
 //! sit in the crate that owns the format.
 
+mod expansion_cli;
 mod slot_bonus_marquee;

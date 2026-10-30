@@ -1,0 +1,48 @@
+# A walled ring over the retail `tower`: a three-tile corridor round an
+# inner block, the race track of `links-race`.
+name = "Tower Ring"
+base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
+
+[tiles]
+origin = [16, 16]
+rows = [
+  "##################",
+  "#................#",
+  "#................#",
+  "#................#",
+  "#...##########...#",
+  "#...##########...#",
+  "#...##########...#",
+  "#...##########...#",
+  "#................#",
+  "#................#",
+  "#................#",
+  "##################",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 96, tpage = 28, clut = 32576, tile = 1 } }
+"." = { label = "track", ground = { kind = "base_cell", cell = [8, 11] } }
+
+[[spawns]]
+id = "start"
+tile = [2, 2]
+
+# The rival racers, seats 2 and 3 (`bodies` in modes.toml): Rim Elm's Noa
+# and Gala placements, party members drawn in any scene. `walk_clip` is each
+# one's run (the party bank's slot 2, clip id `7 * member + 3`).
+[[npcs]]
+id = "racer_noa"
+model = { kind = "npc", scene = "town01", index = 3 }
+tile = [3, 1]
+facing = 6
+clip = 9
+walk_clip = 10
+
+[[npcs]]
+id = "racer_gala"
+model = { kind = "npc", scene = "town01", index = 4 }
+tile = [3, 3]
+facing = 6
+clip = 16
+walk_clip = 17

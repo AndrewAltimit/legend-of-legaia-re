@@ -1,0 +1,40 @@
+# A walled room over the retail `tower` with one duel table in the middle.
+name = "Duel Room"
+base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
+
+[tiles]
+origin = [16, 16]
+rows = [
+  "###########",
+  "#.........#",
+  "#.........#",
+  "#.........#",
+  "#.........#",
+  "#.........#",
+  "#.........#",
+  "#.........#",
+  "###########",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 96, tpage = 28, clut = 32576, tile = 1 } }
+"." = { label = "floor", ground = { kind = "base_cell", cell = [8, 11] } }
+
+[[spawns]]
+id = "door"
+tile = [2, 4]
+facing = 6
+
+[[npcs]]
+id = "rival_noa"
+model = { kind = "npc", scene = "town01", index = 3 }
+tile = [7, 4]
+facing = 2
+clip = 9
+
+[[npcs]]
+id = "fan_gala"
+model = { kind = "npc", scene = "town01", index = 4 }
+tile = [8, 2]
+facing = 2
+clip = 16

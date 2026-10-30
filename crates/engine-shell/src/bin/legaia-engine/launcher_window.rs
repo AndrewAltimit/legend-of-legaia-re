@@ -52,7 +52,8 @@ use legaia_engine_menus::options::OptionsState;
 use legaia_engine_render::window::EngineWindow;
 use legaia_engine_render::{RenderTarget, TextOverlay, UploadedFontAtlas};
 use legaia_engine_shell::launcher::{
-    self, DiscInfo, DiscProblem, LaunchDecision, LauncherSettings, OPTION_ROWS, OptionRow,
+    self, DiscInfo, DiscProblem, ExpansionInfo, LaunchDecision, LauncherSettings, OPTION_ROWS,
+    OptionRow,
 };
 use legaia_engine_ui::TextDraw;
 use winit::application::ApplicationHandler;
@@ -247,8 +248,8 @@ const LEFT_W: i32 = 170;
 const RIGHT_X: i32 = LEFT_X + LEFT_W + 10;
 const RIGHT_W: i32 = STAGE_W - PAD - RIGHT_X;
 const COLUMNS_Y: i32 = 108;
-const BUTTON_H: i32 = 20;
-const BUTTON_PITCH: i32 = 24;
+const BUTTON_H: i32 = 17;
+const BUTTON_PITCH: i32 = 20;
 const ROW_PITCH: i32 = 13;
 /// The option list's inset from the panel's top and bottom edges.
 const LIST_INSET: i32 = 5;
@@ -297,16 +298,20 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
     Play,
+    Online,
     ChooseDisc,
+    Expansion,
     Panel,
     DataFolder,
     Quit,
     Opt(OptionRow),
 }
 
-const BUTTONS: [Item; 5] = [
+const BUTTONS: [Item; 7] = [
     Item::Play,
+    Item::Online,
     Item::ChooseDisc,
+    Item::Expansion,
     Item::Panel,
     Item::DataFolder,
     Item::Quit,
@@ -338,6 +343,12 @@ struct LauncherApp {
     solid: (u32, u32, u32, u32),
     disc: Option<DiscInfo>,
     problem: Option<DiscProblem>,
+    /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
+    /// or why it could not be read.
+    expansion: Option<Result<ExpansionInfo, String>>,
+    /// How many packs the packs folder holds ([`launcher::scan_packs`]),
+    /// counted once when the window opens.
+    installed_packs: usize,
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
@@ -383,6 +394,13 @@ impl LauncherApp {
             solid: (0, 0, 1, 1),
             disc: None,
             problem,
+            expansion: settings
+                .expansion
+                .as_deref()
+                .map(launcher::inspect_expansion),
+            installed_packs: launcher::packs_dir()
+                .map(|d| launcher::scan_packs(&d).len())
+                .unwrap_or(0),
             settings,
             settings_file,
             options,
@@ -494,7 +512,9 @@ impl LauncherApp {
             .disc
             .as_deref()
             .and_then(Path::parent)
+            .map(Path::to_path_buf)
             .filter(|d| d.is_dir())
+            .or_else(|| launcher::packs_dir().filter(|d| d.is_dir()))
         {
             dialog = dialog.set_directory(dir);
         }
@@ -515,8 +535,106 @@ impl LauncherApp {
         }
     }
 
+    /// Adopt the expansion pack `chosen` names (a folder, its `pack.toml`, or
+    /// an `.lxpack`) when it validates; a pack with errors is shown and not
+    /// remembered.
+    fn try_expansion(&mut self, chosen: &Path) {
+        let Some(path) = launcher::expansion_pack_path(chosen) else {
+            self.status = Some(vec![(
+                format!(
+                    "{} is not an expansion pack: choose an .lxpack file, or the pack.toml in a pack folder.",
+                    chosen.display()
+                ),
+                WARN,
+            )]);
+            self.win.request_redraw();
+            return;
+        };
+        match launcher::inspect_expansion(&path) {
+            Ok(info) if info.playable() => {
+                log::info!(
+                    "launcher: expansion pack {} at {}",
+                    info.summary(),
+                    path.display()
+                );
+                let mut msg = vec![(format!("Expansion pack: {}", info.summary()), GOOD)];
+                if info.warnings > 0 {
+                    msg.push((
+                        format!(
+                            "{} warning(s); `asset expansion validate` lists them.",
+                            info.warnings
+                        ),
+                        DIM,
+                    ));
+                }
+                self.status = Some(msg);
+                self.settings.expansion = Some(info.path.clone());
+                self.expansion = Some(Ok(info));
+                self.save_settings();
+            }
+            Ok(info) => {
+                log::warn!("launcher: expansion pack at {} has errors", path.display());
+                let mut msg = vec![(
+                    format!(
+                        "{} has {} error(s) and was not loaded:",
+                        path.display(),
+                        info.errors.len()
+                    ),
+                    WARN,
+                )];
+                msg.extend(info.errors.iter().take(4).map(|e| (e.clone(), DIM)));
+                self.status = Some(msg);
+            }
+            Err(e) => {
+                self.status = Some(vec![(
+                    format!("Could not read {}: {e}", path.display()),
+                    WARN,
+                )]);
+            }
+        }
+        self.win.request_redraw();
+    }
+
+    /// Play without an expansion pack from now on.
+    fn clear_expansion(&mut self) {
+        if self.settings.expansion.take().is_some() {
+            self.expansion = None;
+            self.save_settings();
+            self.status = Some(vec![(
+                "No expansion pack: the game as it shipped.".into(),
+                DIM,
+            )]);
+        }
+        self.win.request_redraw();
+    }
+
+    fn browse_expansion(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Choose an expansion pack (.lxpack, or pack.toml in a pack folder)")
+            .add_filter("Expansion pack", &["lxpack", "LXPACK", "toml", "TOML"]);
+        if let Some(dir) = self
+            .settings
+            .expansion
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .filter(|d| d.is_dir())
+            .or_else(|| launcher::packs_dir().filter(|d| d.is_dir()))
+        {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(w) = self.win.window.as_deref() {
+            dialog = dialog.set_parent(w);
+        }
+        if let Some(p) = dialog.pick_file() {
+            self.try_expansion(&p);
+        }
+    }
+
     /// Start the game and close the window while it runs.
-    fn play(&mut self, evl: &ActiveEventLoop) {
+    /// Start the game; `online` opens its Multiplayer screen once the
+    /// field is up (`--multiplayer`).
+    fn play(&mut self, evl: &ActiveEventLoop, online: bool) {
         let Some(info) = self.disc.clone() else {
             self.status = Some(vec![(
                 "Choose your Legend of Legaia (USA) disc image first.".into(),
@@ -525,7 +643,12 @@ impl LauncherApp {
             self.focus = Item::ChooseDisc;
             return;
         };
-        match spawn_game(&info, &self.settings) {
+        if let Some(problem) = self.expansion_problem() {
+            self.status = Some(vec![(problem, WARN)]);
+            self.focus = Item::Expansion;
+            return;
+        }
+        match spawn_game(&info, &self.settings, online) {
             Ok(g) => {
                 log::info!("launcher: game started on {}", info.bin.display());
                 self.game = Some(g);
@@ -544,6 +667,21 @@ impl LauncherApp {
     /// Close the window while the loop still runs. Dropped after `run_app`
     /// returns instead, the X11 destroy request is never flushed and a
     /// frozen window stays on screen behind the game (seen under Xvfb).
+    /// Why the remembered expansion pack cannot be played, if it cannot.
+    fn expansion_problem(&self) -> Option<String> {
+        match self.expansion.as_ref()? {
+            Ok(info) if info.playable() => None,
+            Ok(info) => Some(format!(
+                "The expansion pack has {} error(s): {} Choose it again or clear it (Delete).",
+                info.errors.len(),
+                info.errors.first().cloned().unwrap_or_default()
+            )),
+            Err(e) => Some(format!(
+                "The expansion pack cannot be read ({e}). Choose it again or clear it (Delete)."
+            )),
+        }
+    }
+
     fn close_window(&mut self) {
         self.atlas = None;
         if let Some(w) = self.win.window.as_deref() {
@@ -645,8 +783,11 @@ impl LauncherApp {
     fn activate(&mut self, item: Item, dir: i8, evl: &ActiveEventLoop) {
         self.focus = item;
         match item {
-            Item::Play => self.play(evl),
+            Item::Play => self.play(evl, false),
+            Item::Online => self.play(evl, true),
             Item::ChooseDisc => self.browse(),
+            Item::Expansion if dir < 0 => self.clear_expansion(),
+            Item::Expansion => self.browse_expansion(),
             Item::Panel => {
                 self.panel = match self.panel {
                     Panel::Options => Panel::Controls,
@@ -669,6 +810,10 @@ impl LauncherApp {
     /// `Delete` (or `Backspace` with nothing typed) on an option row: put
     /// that row back on its first-start value.
     fn reset_focused(&mut self) {
+        if self.focus == Item::Expansion {
+            self.clear_expansion();
+            return;
+        }
         if let Item::Opt(row) = self.focus
             && self.panel == Panel::Options
             && !row.is_default(&self.options, &self.settings)
@@ -786,16 +931,18 @@ impl LauncherApp {
         self.disc_card(c);
 
         // Left column: the buttons.
+        let expansion_label = match &self.expansion {
+            None => "Expansion pack...".to_string(),
+            Some(Ok(info)) if info.playable() => {
+                c.ellipsize_left(&format!("Pack: {}", info.name), LEFT_W - 12)
+            }
+            Some(_) => "Pack: has errors".to_string(),
+        };
         for (i, item) in BUTTONS.iter().enumerate() {
-            let r = Rect::new(
-                LEFT_X,
-                COLUMNS_Y + i as i32 * BUTTON_PITCH,
-                LEFT_W,
-                BUTTON_H,
-            );
+            let r = button_rect(i);
             hits.push((*item, r));
             let focused = self.focus == *item;
-            let enabled = *item != Item::Play || self.disc.is_some();
+            let enabled = !matches!(item, Item::Play | Item::Online) || self.disc.is_some();
             let (bg, ink) = match (*item == Item::Play, enabled, focused) {
                 (true, true, false) => (PRIMARY, ON_GOLD),
                 (true, true, true) => (PRIMARY_FOCUS, ON_GOLD),
@@ -809,6 +956,7 @@ impl LauncherApp {
             }
             let label = match item {
                 Item::Play => "Play",
+                Item::Online => "Play online",
                 Item::ChooseDisc => {
                     if self.disc.is_some() {
                         "Change disc..."
@@ -820,7 +968,8 @@ impl LauncherApp {
                     Panel::Options => "Controls",
                     Panel::Controls => "Back to options",
                 },
-                Item::DataFolder => "Open saves folder",
+                Item::Expansion => &expansion_label,
+                Item::DataFolder => "Saves folder",
                 Item::Quit => "Quit",
                 Item::Opt(_) => "",
             };
@@ -1100,6 +1249,30 @@ impl LauncherApp {
                          Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
                     .into(),
             },
+            Item::Online => "Start the game with the Multiplayer screen open: host a room \
+                             others on your network join, or join one with its address and \
+                             room code. Tab opens the same screen in play."
+                .into(),
+            Item::Expansion => match &self.expansion {
+                None => {
+                    let installed = self.installed_packs;
+                    let mut s = "Play with an expansion pack: new maps, quests and fights made \
+                                 for the port. Choose an .lxpack file, or the pack.toml in a pack \
+                                 folder."
+                        .to_string();
+                    if installed > 0 {
+                        s.push_str(&format!(
+                            " {installed} installed in the packs folder (`legaia-engine packs`)."
+                        ));
+                    }
+                    s
+                }
+                Some(Ok(info)) if info.playable() => format!(
+                    "{}. New Game and Continue play with it. Delete or right-click: none.",
+                    info.summary()
+                ),
+                Some(_) => self.expansion_problem().unwrap_or_default(),
+            },
             Item::Panel => match self.panel {
                 Panel::Options => "Show the keyboard controls.".into(),
                 Panel::Controls => "Back to the options.".into(),
@@ -1223,7 +1396,13 @@ impl ApplicationHandler for LauncherApp {
             }
             WindowEvent::ScaleFactorChanged { .. } => self.win.request_redraw(),
             WindowEvent::RedrawRequested => self.redraw(evl),
-            WindowEvent::DroppedFile(p) => self.try_disc(&p),
+            WindowEvent::DroppedFile(p) => {
+                if launcher::expansion_pack_path(&p).is_some() {
+                    self.try_expansion(&p);
+                } else {
+                    self.try_disc(&p);
+                }
+            }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             // A scripted capture shows the scripted focus, not whatever row
             // the display's resting pointer happens to sit over.
@@ -1275,7 +1454,7 @@ impl ApplicationHandler for LauncherApp {
                 };
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
                 if let Some(item) = self.hit()
-                    && (dir > 0 || matches!(item, Item::Opt(_)))
+                    && (dir > 0 || matches!(item, Item::Opt(_) | Item::Expansion))
                 {
                     self.activate(item, dir, evl);
                 }
@@ -1568,12 +1747,15 @@ impl Canvas<'_> {
 /// Start the game in a child process, its output copied into
 /// [`launcher::GAME_LOG`] (in the data directory) as well as to this
 /// process's own stdout / stderr, so a terminal still shows it.
-fn spawn_game(info: &DiscInfo, settings: &LauncherSettings) -> Result<Running> {
+fn spawn_game(info: &DiscInfo, settings: &LauncherSettings, online: bool) -> Result<Running> {
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe().context("locate the legaia-engine executable")?;
     let mut cmd = Command::new(&exe);
-    cmd.args(launcher::play_args_with(info, settings))
-        .stdin(Stdio::null())
+    cmd.args(launcher::play_args_with(info, settings));
+    if online {
+        cmd.arg("--multiplayer");
+    }
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     console::no_window_if_detached(&mut cmd);
@@ -1730,9 +1912,30 @@ fn sentence(s: &str) -> String {
     }
 }
 
+/// The rows the buttons take: the last two (the saves folder and Quit) share
+/// one, so the help box under them keeps room for a whole message.
+const BUTTON_ROWS: i32 = BUTTONS.len() as i32 - 1;
+
+/// Button `i`'s rect: one full-width row each, except the last two, which
+/// split the bottom row.
+fn button_rect(i: usize) -> Rect {
+    let last_row = BUTTON_ROWS - 1;
+    let y = COLUMNS_Y + (i as i32).min(last_row) * BUTTON_PITCH;
+    if (i as i32) < last_row {
+        return Rect::new(LEFT_X, y, LEFT_W, BUTTON_H);
+    }
+    let half = (LEFT_W - 4) / 2;
+    let x = if (i as i32) == last_row {
+        LEFT_X
+    } else {
+        LEFT_X + LEFT_W - half
+    };
+    Rect::new(x, y, half, BUTTON_H)
+}
+
 /// The help box under the buttons.
 fn help_rect() -> Rect {
-    let y = COLUMNS_Y + BUTTONS.len() as i32 * BUTTON_PITCH + 4;
+    let y = COLUMNS_Y + BUTTON_ROWS * BUTTON_PITCH + 4;
     Rect::new(LEFT_X, y, LEFT_W, STAGE_H - PAD - y)
 }
 

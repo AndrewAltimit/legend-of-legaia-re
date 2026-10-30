@@ -753,6 +753,26 @@ void main() { o_color = texture(u_layer, v_uv); }
       return this._adopt(state, label);
     }
 
+    /* Enter map `mapId` of the active expansion pack at `spawn` (the map's
+     * first when empty) through the engine (`enter_expansion_map`, the twin
+     * of the native `play-window --expansion <pack> --map <id>`), then
+     * rebuild like any scene entry. */
+    enterExpansionMap(mapId, spawn) {
+      const state = JSON.parse(this.rt.enter_expansion_map(mapId, spawn || ''));
+      return this._adopt(state, state && state.scene);
+    }
+
+    /* Hot-reload the active pack from `.lxpack` bytes (the expansion
+     * workbench's preview and its Play here): the engine re-activates the
+     * pack and, when the player is on one of its maps, re-enters it with the
+     * player where they stood (`reload_expansion`); the page then rebuilds
+     * like any scene entry. Returns the engine's JSON report. */
+    reloadExpansion(bytes) {
+      const r = JSON.parse(this.rt.reload_expansion(bytes));
+      if (r.reentered) this._adopt(null, this.scene);
+      return r;
+    }
+
     /* Land the save a Load / import parked, through the engine's one resume
      * entry (`play_resume_save`: the saved scene, else the running scene,
      * else the opening town - never a New Game; the native window's
@@ -990,6 +1010,13 @@ void main() { o_color = texture(u_layer, v_uv); }
        * above the floor so the camera looks at the character, not their feet. */
       this.cam.centerY = -t[1] + 60;
       this.cam.centerZ = t[2];
+      /* The expansion workbench preview's free camera turns around its own
+       * focus (draw frame, Y up) instead of the player. */
+      if (this.debugCamera && this.editorFocus) {
+        this.cam.centerX = this.editorFocus[0];
+        this.cam.centerY = this.editorFocus[1];
+        this.cam.centerZ = this.editorFocus[2];
+      }
       this.cam.roll = 0;
       if (this.debugCamera || typeof this.rt.play_camera_vp !== 'function') {
         this.cam.vp = null;

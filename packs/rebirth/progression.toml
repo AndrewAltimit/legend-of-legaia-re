@@ -1,0 +1,68 @@
+# Legend of Legaia: Rebirth - progression.
+#
+# Retail's curve to level 99 asks for 9.6 million XP, 7.5 million of it
+# past level 60, and the retail game has nothing left to fight by then.
+# Rebirth keeps the retail steps through level 39 (the story), then cuts
+# each step so a level costs between about 36,000 and 90,000 XP all the way
+# up: 60 to 99 is about 2.5 million. With half again on every fight's EXP
+# that is three to five field fights a level on the floor that matches it,
+# and one or two for a gauntlet or a keeper. The README works the numbers
+# through, and `crates/engine-expansion/tests/rebirth_balance.rs` checks
+# them on the battle kernels.
+# Format: docs/formats/expansion-pack-battle.md.
+
+xp_mul = 1.5
+gold_mul = 1.25
+
+[xp_curve]
+kind = "banded"
+bands = [
+    { from_level = 40, mul = 0.75 },
+    { from_level = 45, mul = 0.62 },
+    { from_level = 50, mul = 0.5 },
+    { from_level = 55, mul = 0.43 },
+    { from_level = 60, mul = 0.4 },
+    { from_level = 65, mul = 0.37 },
+    { from_level = 70, mul = 0.35 },
+    { from_level = 80, mul = 0.33 },
+    { from_level = 90, mul = 0.3 },
+]
+
+# The tower grows with the party, but slower than the party does: +0.5% to
+# its monsters' stats and spoils per level of the strongest member past 50,
+# at most x1.25 (level 100 would reach it). A level-99 party's ATK is half
+# again its level-50 figure, so every level gained still counts, and a
+# cleared floor stays worth a visit. Retail fights are left alone.
+[enemy_scaling]
+from_level = 50
+per_level = 0.005
+max_mul = 1.25
+scope = "pack"
+rewards = true
+
+# Level 55, 80 and 99 are the climb's milestones: 55 is when the tower's
+# first arts come (arts.toml), 80 the Rebirth finishers, 99 the Warden's
+# last request and the First Breath (quests.toml).
+[[level_rewards]]
+level = 55
+items = [{ item = { kind = "item", id = 131 } }, { item = { kind = "item", id = 132 } }]
+
+[[level_rewards]]
+level = 60
+items = [{ item = { kind = "item", id = 121 }, count = 3 }]
+
+[[level_rewards]]
+level = 70
+items = [{ item = { kind = "item", id = 248 } }]
+
+[[level_rewards]]
+level = 80
+items = [{ item = { kind = "item", id = 249 } }]
+
+[[level_rewards]]
+level = 90
+items = [{ item = { kind = "item", id = 250 } }]
+
+[[level_rewards]]
+level = 99
+items = [{ item = { kind = "item", id = 237 } }]

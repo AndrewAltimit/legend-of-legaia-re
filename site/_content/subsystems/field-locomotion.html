@@ -235,6 +235,43 @@
   </ul>
 </section>
 
+<section class="doc-section" id="action-movement" data-doc="action-movement-enhancement">
+  <h2>Action movement: a platformer body, off by default</h2>
+  <p>Not retail. With <code>WorldToggles::action_movement</code> on, the walk and its settle give way to a fixed-point platformer body from <code>legaia_engine_field::action_movement</code>: momentum, a sprint, a jump and a second jump in the air, a dash, coyote time and a jump buffer, with gravity onto the scene's floor levels. It takes the player only where the walk would have: every pad lock still holds, and doors and touches still fire because the body keeps publishing the position and the pushed direction they read. Off, the walk is byte for byte the retail one.</p>
+  <figure class="diagram dg-fit">
+    <svg viewBox="0 0 860 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Side view of the floor the action body walks. On the left a stair, a rise of up to 48 units, is climbed without jumping. In the middle a ledge taller than a stair refuses the walk; a jump arcs over its lip and lands on top, and a lip within 40 units of the feet is climbed onto in the air. On the right the floor drops by more than 48 units and the body walks off the edge and falls, landing on the lower floor. Walls block in every case.">
+      <defs><marker id="fl-act-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <path class="dg-edge-dim" d="M20 170 L150 170 L150 156 L230 156 L230 96 L560 96 L560 186 L840 186"/>
+      <text class="dg-edge-label" x="96" y="194">stair: walked</text>
+      <text class="dg-edge-label" x="236" y="116">ledge: refused</text>
+      <path class="dg-edge" d="M190 152 C215 30 300 30 330 92" marker-end="url(#fl-act-arrow)"/>
+      <circle class="dg-node-accent" cx="190" cy="150" r="7"/>
+      <circle class="dg-node-ok" cx="334" cy="92" r="7"/>
+      <rect class="dg-node" x="250" y="14" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="345" y="36">jump (Square)</text>
+      <text class="dg-sub" x="345" y="54">again in the air; land on top</text>
+      <path class="dg-edge" d="M520 92 C560 92 590 120 620 182" marker-end="url(#fl-act-arrow)"/>
+      <rect class="dg-node" x="600" y="20" width="220" height="56" rx="5"/>
+      <text class="dg-label" x="710" y="42">drop deeper than a stair</text>
+      <text class="dg-sub" x="710" y="60">walk off, fall, land</text>
+    </svg>
+    <figcaption>A rise of up to 48 units is a stair; a taller one is a ledge that takes a jump. Plain tiles slope their tiers across the tile, so most tier changes are slopes the body walks; the ledges are the stepped ramp tiles.</figcaption>
+  </figure>
+  <table class="data-table">
+    <thead><tr><th>Button</th><th>Under action movement</th></tr></thead>
+    <tbody>
+      <tr><td>D-pad / left stick</td><td>steer, camera-relative, with momentum</td></tr>
+      <tr><td>Square</td><td>jump; press again in the air for the double jump; let go early for a lower jump</td></tr>
+      <tr><td>R2</td><td>dash along the stick, or the facing</td></tr>
+      <tr><td>Cross / R1</td><td>sprint (inverting the Field Move option); Cross still talks</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>Deterministic.</strong> Positions and velocities are integers in 256ths of a unit and directions come off the retail sine table, so one pad stream is one trajectory on every host - the property lockstep play needs.</li>
+    <li><strong>Where to turn it on.</strong> <code>play-window --action-movement</code>, the launcher's Action movement row, or the Action movement box in the play page's Gameplay tweaks panel. Retail-faithful mode holds it off.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="touch-interact" data-doc="field-vm-actor-placement--motion-opcodes">
   <h2>Touching and talking</h2>
   <p>Collision asks two questions at once: is there a wall, and is there somebody. Before the wall probes, each step tests three points against every other actor - a wider sweep than the wall edge, 64 units ahead and 32 to either side, because actors block with a body box. The same step then decides whether the contact means anything.</p>
@@ -322,6 +359,7 @@
   <ul class="bullets">
     <li><strong>Faithful path.</strong> <code>World::step_field_locomotion</code> rings the held pad around the same eight-direction compass, hands the remapped mask to the wall-slide resolver and walks the result through the same per-axis 2-unit collision with the three-probe edge and the actor boxes. Wall-press captures rest byte-exact. Retail picks its rotation step from scene data; a free-orbiting camera has none, so the port rounds the live camera azimuth to the nearest eighth.</li>
     <li><strong>Enhancements.</strong> Free-angle movement (<code>options::precise_movement</code>, default off): continuous azimuth, true 45&deg; diagonals at unit speed, analog stick angle. <code>--no-edge-collision</code> / <code>--no-solid-npcs</code> fall back to a centre test and walk-through NPCs.</li>
+    <li><strong>Action movement.</strong> <code>WorldToggles::action_movement</code> (<code>--action-movement</code>, default off, off in retail mode) swaps the walk and its settle for a fixed-point platformer body from <code>legaia_engine_field::action_movement</code>: momentum and sprint, Square to jump and jump again in the air, R2 to dash, coyote time and jump buffering, gravity onto the floor levels. Walls still block, a stair is climbed, a taller ledge takes a jump; every pad lock still holds the player, and doors and touches still fire.</li>
     <li><strong>Floor.</strong> <code>World::sample_field_floor_height</code> carries both height models.</li>
     <li><strong>Run button.</strong> The run mask defaults to the retail <code>Cross | R1</code> plus Square; which key is which pad button is a host binding (<code>legaia-engine config set --binding W=R1</code>).</li>
   </ul>

@@ -491,6 +491,11 @@ pub(super) fn run_one(
     // `<venue>+mg<sub_id>`: enter the venue, then request the mode-24 door
     // warp the op-`0x3E` arm makes (`World::request_minigame_warp`), so the
     // host's next tick loads the minigame overlay through the retail path.
+    // `xp:<target>+...`: an expansion run (`expansion_runs.rs`); its own
+    // suffixes, none of the retail ones.
+    let expansion = split_expansion(label);
+    let xp_label = expansion.as_ref().map(ExpansionRun::retail_label);
+    let label = xp_label.as_deref().unwrap_or(label);
     let (label, rage) = split_rage(label);
     let (label, shop_visits) = split_shop(label);
     let (label, talk_visits) = split_talk(label);
@@ -499,7 +504,10 @@ pub(super) fn run_one(
     // A label the scene set does not hold names no scene: entering it by
     // name loads an empty field (no MAN, no player) that then reads as a
     // softlock. Report it as the entry failure it is.
-    if front_end.is_none() && !known_scenes.contains(scene) {
+    let pack_map = expansion
+        .as_ref()
+        .is_some_and(|r| r.pack && is_pack_map(&r.target));
+    if front_end.is_none() && !pack_map && !known_scenes.contains(scene) {
         findings.push(mk(
             &session,
             "unknown_scene",
@@ -519,6 +527,9 @@ pub(super) fn run_one(
     let entered = catch_unwind(AssertUnwindSafe(|| {
         if let Some(route) = &front_end {
             return enter_through_front_end(&mut session, route, &opts).map(|_| ());
+        }
+        if let Some(run) = &expansion {
+            return enter_expansion_run(&mut session, run, &opts);
         }
         let r = session
             .enter_scene_live(scene, &opts)
@@ -781,7 +792,15 @@ pub(super) fn run_one(
             stats.menu_opens += 1;
         }
         if let Some(sub) = session.field_menu_sub.as_ref() {
-            stats.menu_rows.insert(format!("{:?}", sub.row()));
+            // The Journal has no row of its own (it resumes on the row it
+            // was opened over), so it is named here rather than by row.
+            let name = match sub {
+                legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession::Journal {
+                    ..
+                } => "Journal".to_string(),
+                _ => format!("{:?}", sub.row()),
+            };
+            stats.menu_rows.insert(name);
         }
         if session.host.world.shops.shop_open && !was_shop_open {
             stats.shop_opens += 1;

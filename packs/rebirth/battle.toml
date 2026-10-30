@@ -1,0 +1,1177 @@
+# Legend of Legaia: Rebirth - battles.
+#
+# Every monster here is a retail monster with new numbers: `base` names the
+# retail record (its 1-based monster-archive id), and the engine reads that
+# monster's mesh, animation and attacks off the player's own disc. Stats are
+# record values; a bare number sets one, `{ mul = x }` scales the base's.
+# Format: docs/formats/expansion-pack-battle.md.
+#
+# Element ids: 0 earth, 1 water, 2 fire, 3 wind, 4 thunder, 5 light,
+# 6 dark, 7 neutral.
+#
+# Stats are tuned for the floor's party level *before* the pack's enemy
+# scaling (progression.toml: +1% per party level past 50, at most x1.5),
+# and before the battle loader's own boost (a random encounter installs
+# both defences x7/4, a boss formation ATK x5/4 and both defences x2).
+# The README works the numbers through.
+
+# --- 1F, the Atrium (party level 40-50) --------------------------------------
+
+[monsters.ironhide_ogre]
+base = { kind = "monster", id = 109 }
+name = "Ironhide Ogre"
+hp = 4600
+attack = 340
+defence = 170
+speed = { mul = 1.2 }
+exp = 5600
+gold = 3600
+drop = { item = { kind = "item", id = 121 }, chance_pct = 25 }
+
+[monsters.ember_lizard]
+base = { kind = "monster", id = 124 }
+name = "Ember Lizard"
+hp = 4300
+attack = 360
+defence = 160
+intelligence = { mul = 1.5 }
+exp = 5400
+gold = 3400
+# Scale Lizard is a water monster; the ember breed burns.
+element = 2
+
+[monsters.runed_golem]
+base = { kind = "monster", id = 130 }
+name = "Runed Golem"
+hp = 5200
+attack = 320
+defence = 190
+exp = 6000
+gold = 3800
+steal = { item = { kind = "item", id = 125 }, chance_pct = 20 }
+
+[monsters.gale_hound]
+base = { kind = "monster", id = 42 }
+name = "Gale Hound"
+hp = 3500
+attack = 350
+defence = 150
+speed = { mul = 1.3 }
+exp = 5000
+gold = 3000
+drop = { item = { kind = "item", id = 133 }, chance_pct = 10 }
+
+# --- 2F, the Ember Stair (party level 50-60) ---------------------------------
+
+[monsters.magma_visage]
+base = { kind = "monster", id = 126 }
+name = "Magma Visage"
+hp = 6500
+attack = 380
+defence = 185
+intelligence = { mul = 1.6 }
+exp = 7000
+gold = 4200
+drop = { item = { kind = "item", id = 223 }, chance_pct = 4 }
+
+[monsters.pyre_wisp]
+base = { kind = "monster", id = 66 }
+name = "Pyre Wisp"
+hp = 5800
+attack = 360
+defence = 180
+speed = { mul = 1.3 }
+exp = 6600
+gold = 4000
+drop = { item = { kind = "item", id = 125 }, chance_pct = 15 }
+
+[monsters.hearth_gola]
+base = { kind = "monster", id = 100 }
+name = "Hearth Gola"
+hp = 7300
+attack = 370
+defence = 200
+exp = 7400
+gold = 4400
+steal = { item = { kind = "item", id = 139 }, chance_pct = 15 }
+
+# --- 3F, the Hanging Garden (party level 55-65) ------------------------------
+
+[monsters.thorn_mantis]
+base = { kind = "monster", id = 54 }
+name = "Thorn Mantis"
+hp = 7100
+attack = 400
+defence = 195
+speed = { mul = 1.3 }
+exp = 8000
+gold = 4600
+
+[monsters.mire_slime]
+base = { kind = "monster", id = 9 }
+name = "Mire Slime"
+hp = 7600
+attack = 380
+defence = 210
+exp = 7800
+gold = 4400
+drop = { item = { kind = "item", id = 122 }, chance_pct = 20 }
+
+[monsters.gilded_bison]
+base = { kind = "monster", id = 60 }
+name = "Gilded Bison"
+hp = 8500
+attack = 400
+defence = 200
+exp = 9500
+# The garden's prize: a bison worth a small fortune.
+gold = 12000
+drop = { item = { kind = "item", id = 252 }, chance_pct = 3 }
+
+[monsters.bloom_mushura]
+base = { kind = "monster", id = 103 }
+name = "Bloom Mushura"
+hp = 8000
+attack = 410
+defence = 205
+exp = 8400
+gold = 4800
+drop = { item = { kind = "item", id = 123 }, chance_pct = 20 }
+
+# --- 4F, the Verdant Vault (party level 60-70) -------------------------------
+
+[monsters.verdant_iota]
+base = { kind = "monster", id = 155 }
+name = "Verdant Iota"
+hp = 7400
+attack = 430
+defence = 215
+exp = 9600
+gold = 5200
+drop = { item = { kind = "item", id = 221 }, chance_pct = 4 }
+
+[monsters.grove_kemaro]
+base = { kind = "monster", id = 146 }
+name = "Grove Kemaro"
+hp = 7000
+attack = 420
+defence = 220
+intelligence = { mul = 1.4 }
+exp = 9400
+gold = 5000
+
+[monsters.fountain_freed]
+base = { kind = "monster", id = 94 }
+name = "Fountain Freed"
+hp = 7200
+attack = 410
+defence = 210
+intelligence = { mul = 1.4 }
+exp = 9800
+gold = 5400
+drop = { item = { kind = "item", id = 222 }, chance_pct = 4 }
+
+[monsters.moss_grude]
+base = { kind = "monster", id = 106 }
+name = "Moss Grude"
+hp = 8200
+attack = 440
+defence = 230
+exp = 10000
+gold = 5600
+steal = { item = { kind = "item", id = 140 }, chance_pct = 15 }
+
+# --- 6F, the Engine Deep (party level 70-85) ---------------------------------
+
+[monsters.brass_sentinel]
+base = { kind = "monster", id = 129 }
+name = "Brass Sentinel"
+hp = 8800
+attack = 490
+defence = 240
+exp = 12400
+gold = 6800
+drop = { item = { kind = "item", id = 131 }, chance_pct = 6 }
+
+[monsters.furnace_mask]
+base = { kind = "monster", id = 127 }
+name = "Furnace Mask"
+hp = 7600
+attack = 500
+defence = 230
+intelligence = { mul = 1.5 }
+exp = 12000
+gold = 6600
+element = 2
+
+[monsters.storm_barra]
+base = { kind = "monster", id = 143 }
+name = "Storm Barra"
+hp = 7400
+attack = 520
+defence = 235
+speed = { mul = 1.2 }
+exp = 12600
+gold = 7000
+drop = { item = { kind = "item", id = 224 }, chance_pct = 4 }
+
+[monsters.echo_lamia]
+base = { kind = "monster", id = 133 }
+name = "Echo Lamia"
+hp = 7400
+attack = 500
+defence = 245
+intelligence = { mul = 1.5 }
+exp = 13000
+gold = 7200
+steal = { item = { kind = "item", id = 142 }, chance_pct = 10 }
+
+# --- 7F, the Sanctum of Echoes (party level 85-95) ---------------------------
+
+[monsters.sleepless_one]
+base = { kind = "monster", id = 121 }
+name = "Sleepless One"
+hp = 10500
+attack = 580
+defence = 255
+exp = 16000
+gold = 8800
+drop = { item = { kind = "item", id = 227 }, chance_pct = 4 }
+
+[monsters.fallen_lantern]
+base = { kind = "monster", id = 118 }
+name = "Fallen Lantern"
+hp = 10000
+attack = 610
+defence = 250
+exp = 15600
+gold = 8600
+drop = { item = { kind = "item", id = 128 }, chance_pct = 10 }
+
+[monsters.storm_gilium]
+base = { kind = "monster", id = 161 }
+name = "Storm Gilium"
+hp = 9800
+attack = 520
+defence = 265
+exp = 16800
+gold = 9200
+# A pack item (items.toml): steal the tower's MP restore.
+steal = { item = "mist_tonic", chance_pct = 12 }
+
+[monsters.prism_topaz]
+base = { kind = "monster", id = 112 }
+name = "Prism Topaz"
+hp = 9400
+attack = 540
+defence = 270
+exp = 16400
+gold = 9000
+drop = { item = { kind = "item", id = 226 }, chance_pct = 4 }
+
+# --- Named bosses ------------------------------------------------------------
+
+[monsters.cinder_warden]
+base = { kind = "monster", id = 172 }
+name = "Cinder Warden"
+hp = 30000
+mp = 900
+attack = 470
+defence = 240
+intelligence = { mul = 1.5 }
+exp = 40000
+gold = 30000
+
+# The Warden's script: swings and Fire Breath, then below half its armour
+# splits - harder, faster, Lava Breath and a double swing at whoever is
+# weakest. Past round 15 it only burns hotter.
+# Swing indices are the base monster's own attack list (Caruban $3: three
+# swings); spells are spell-table ids (0x25 Fire Breath, 0x46 Lava Breath).
+[monsters.cinder_warden.script]
+immune = ["sleep", "confuse", "stone"]
+enrage = { when = { round = 15 }, line = "warden_inferno", attack = { mul = 1.25 }, flash = { color = [255, 90, 20], frames = 40 }, tint = { color = [80, 24, 0], frames = 60 } }
+
+[[monsters.cinder_warden.script.phases]]
+moves = [
+    { attack = 0, weight = 3 },
+    { attack = 1, weight = 2 },
+    { spell = 0x25, weight = 1, cooldown = 2 },
+]
+
+[[monsters.cinder_warden.script.phases]]
+when = { hp_below_pct = 50 }
+line = "warden_rage"
+sound = { kind = "sound", id = "sting_phase" }
+# Its armour splits: a white-hot flash, and the fight burns orange from here.
+flash = { color = [255, 120, 40], frames = 36 }
+tint = { color = [44, 14, 0], frames = 50 }
+attack = { mul = 1.3 }
+speed = { mul = 1.25 }
+moves = [
+    { attack = 2, hits = 2, weight = 3, target = "lowest_hp" },
+    { spell = 0x46, weight = 2, cooldown = 1 },
+    { attack = 0, weight = 1 },
+]
+
+[monsters.verdant_colossus]
+base = { kind = "monster", id = 174 }
+name = "Verdant Colossus"
+hp = 32000
+mp = 1500
+attack = 540
+defence = 255
+exp = 48000
+gold = 36000
+
+# The Colossus heals itself and calls the moss back once below 60%, then
+# telegraphs Earthquake; below a quarter it turns to earth and rages.
+# Berserker $3 has four swings; 0x4F Spore Gas, 0x4A Earthquake.
+[monsters.verdant_colossus.script]
+immune = ["sleep", "numb"]
+
+[[monsters.verdant_colossus.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 2 },
+    { spell = 0x4F, weight = 1, target = "healer", cooldown = 2 },
+]
+
+[[monsters.verdant_colossus.script.phases]]
+when = { hp_below_pct = 60 }
+line = "colossus_roots"
+sound = { kind = "sound", id = "sting_phase" }
+# The moss comes back: a green flash, the light under the canopy.
+flash = { color = [90, 255, 120], frames = 36 }
+tint = { color = [0, 28, 8], frames = 60 }
+heal_pct = 15
+defence = { mul = 1.3 }
+summon = ["moss_grude"]
+moves = [
+    { spell = 0x4A, weight = 2, charge = true, ignore_mp = true, charge_line = "colossus_quake", cooldown = 3 },
+    { attack = 3, weight = 2 },
+    { attack = 1, weight = 2 },
+]
+
+[[monsters.verdant_colossus.script.phases]]
+when = { hp_below_pct = 25 }
+line = "colossus_bloom"
+sound = { kind = "sound", id = "sting_phase" }
+flash = { color = [220, 255, 150], frames = 40 }
+tint = { color = [24, 40, 0], frames = 40 }
+element = 0
+attack = { mul = 1.3 }
+
+[monsters.iron_regent]
+base = { kind = "monster", id = 170 }
+name = "Iron Regent"
+hp = 29000
+mp = 1500
+attack = 560
+defence = 270
+exp = 56000
+gold = 42000
+
+# The Regent goes for whoever hits hardest and calls fresh guards into any
+# empty seat at two thirds and one third; its last phase telegraphs
+# Hyper Crush. Jette has four swings; 0x4C Hyper Lightning, 0x4B Hyper Crush.
+[monsters.iron_regent.script]
+target = "highest_attack"
+immune = ["sleep", "numb", "stone"]
+
+[[monsters.iron_regent.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 2 },
+    { attack = 3, weight = 1 },
+]
+
+[[monsters.iron_regent.script.phases]]
+when = { hp_below_pct = 66 }
+line = "regent_guard"
+sound = { kind = "sound", id = "sting_phase" }
+# The engine stokes: a furnace flash and a warm glow.
+flash = { color = [255, 200, 120], frames = 30 }
+tint = { color = [36, 22, 0], frames = 50 }
+summon = ["brass_sentinel"]
+moves = [
+    { attack = 2, hits = 2, weight = 2 },
+    { attack = 0, weight = 2 },
+    { spell = 0x4C, weight = 1, target = "lowest_hp", cooldown = 1 },
+]
+
+[[monsters.iron_regent.script.phases]]
+when = { hp_below_pct = 33 }
+line = "regent_iron"
+sound = { kind = "sound", id = "sting_phase" }
+# Turned to iron: the colour drains toward a cold grey-gold.
+flash = { color = [255, 255, 230], frames = 30 }
+tint = { color = [10, 26, 44], frames = 50, mode = "subtract" }
+summon = ["brass_sentinel"]
+defence = { mul = 1.4 }
+moves = [
+    { spell = 0x4B, weight = 2, charge = true, ignore_mp = true, charge_line = "regent_crush", cooldown = 3 },
+    { attack = 3, hits = 2, weight = 3 },
+]
+
+[monsters.azure_seraph]
+base = { kind = "monster", id = 167 }
+name = "Azure Seraph"
+hp = 60000
+mp = 4000
+attack = 620
+# Lapis's own record defence is 975; the seraph trades armour for reach.
+defence = 300
+intelligence = 900
+exp = 62000
+gold = 50000
+
+# The Seraph turns to storm below half (thunder element, a telegraphed
+# Water Hazard); from round 14 the sky opens and Thunder Storm is all she
+# casts between triple swings. Lapis has two swings; 0x54 Water Column,
+# 0x71 Water Hazard, 0x75 Paralyzing Wave, 0x77 Thunder Storm.
+[monsters.azure_seraph.script]
+immune = ["sleep", "confuse", "curse"]
+enrage = { when = { round = 14 }, line = "seraph_storm", intelligence = { mul = 1.2 }, flash = { color = [255, 255, 255], frames = 20 }, tint = { color = [12, 20, 64], frames = 30 }, moves = [
+    { spell = 0x77, weight = 1, cooldown = 1 },
+    { attack = 1, hits = 3, weight = 1 },
+] }
+
+[[monsters.azure_seraph.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 1 },
+    { spell = 0x54, weight = 2, target = "healer" },
+]
+
+[[monsters.azure_seraph.script.phases]]
+when = { hp_below_pct = 50 }
+line = "seraph_tide"
+sound = { kind = "sound", id = "sting_phase" }
+# The tide rises: a blue flash, the sanctum under water.
+flash = { color = [140, 190, 255], frames = 40 }
+tint = { color = [0, 14, 44], frames = 60 }
+element = 4
+# The drowned choir answers her.
+summon = ["fallen_lantern", "fallen_lantern"]
+moves = [
+    { spell = 0x71, weight = 2, charge = true, ignore_mp = true, charge_line = "seraph_tide_charge", cooldown = 3 },
+    { spell = 0x75, weight = 1, cooldown = 2 },
+    { attack = 1, hits = 2, weight = 2 },
+]
+
+# --- 8F, the Hollow Throne (party level 95-99) -------------------------------
+
+[monsters.throne_herald]
+base = { kind = "monster", id = 149 }
+name = "Throne Herald"
+hp = 12000
+attack = 600
+defence = 270
+exp = 20000
+gold = 10000
+# A pack item (items.toml): the tower's party revive.
+drop = { item = "phoenix_plume", chance_pct = 8 }
+
+[monsters.hollow_sovereign]
+base = { kind = "monster", id = 138 }
+name = "Hollow Sovereign"
+hp = 30000
+mp = 3000
+attack = 520
+defence = 260
+speed = { mul = 1.4 }
+intelligence = { mul = 1.6 }
+exp = 65000
+gold = 60000
+drop = { item = { kind = "item", id = 237 }, chance_pct = 100 }
+
+# The superboss's first form: three phases. At two thirds the shell calls
+# a herald back; at one third it is unmade and telegraphs Grand Beam, its
+# ultimate. It survives the first killing blow once. Dohati has three
+# swings; 0x6A Astral Wave, 0x58 Cross Beam, 0x53 Curse All, 0x63 Grand Beam.
+[monsters.hollow_sovereign.script]
+immune = ["sleep", "confuse", "numb", "stone", "curse"]
+last_stand = { line = "sovereign_last" }
+enrage = { when = { round = 20 }, line = "sovereign_end", attack = { mul = 1.5 }, flash = { color = [255, 30, 30], frames = 30 } }
+
+[[monsters.hollow_sovereign.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 2 },
+    { spell = 0x6A, weight = 1 },
+]
+
+[[monsters.hollow_sovereign.script.phases]]
+when = { hp_below_pct = 66 }
+line = "sovereign_hollow"
+sound = { kind = "sound", id = "sting_phase" }
+# The shell cracks: a red flash, the throne room bleeds red.
+flash = { color = [220, 40, 40], frames = 40 }
+tint = { color = [0, 22, 22], frames = 60, mode = "subtract" }
+# The shell cracks and the music turns: "Apocalypse" (61).
+music = { kind = "bgm", id = 61 }
+attack = { mul = 1.2 }
+summon = ["throne_herald"]
+moves = [
+    { attack = 2, hits = 2, weight = 2 },
+    { spell = 0x58, weight = 2, target = "healer" },
+    { spell = 0x53, weight = 1, cooldown = 3 },
+]
+
+[[monsters.hollow_sovereign.script.phases]]
+when = { hp_below_pct = 33 }
+line = "sovereign_unmade"
+speed = { mul = 1.2 }
+# Unmade: white, then the dark of the hollow.
+flash = { color = [255, 255, 255], frames = 50 }
+tint = { color = [18, 28, 14], frames = 60, mode = "subtract" }
+# The pack's own chime (assets/audio/chime.wav) rings as it is unmade, and
+# again on every Grand Beam telegraph.
+sound = { kind = "sound", id = "chime" }
+moves = [
+    { spell = 0x63, weight = 2, charge = true, ignore_mp = true, charge_line = "sovereign_ultimate", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
+    { attack = 0, hits = 2, weight = 2, target = "lowest_hp" },
+    { spell = 0x58, weight = 1 },
+]
+
+[monsters.sovereign_unbound]
+base = { kind = "monster", id = 179 }
+name = "Sovereign Unbound"
+hp = 34000
+mp = 4000
+attack = 540
+defence = 280
+speed = { mul = 1.3 }
+intelligence = { mul = 1.5 }
+exp = 65000
+gold = 60000
+drop = { item = { kind = "item", id = 236 }, chance_pct = 100 }
+
+# What the Sovereign hid: Chaos Flare from the start, then below half a
+# telegraphed Thunder Burst; a last stand of its own. Songi has five
+# swings; 0x36 Chaos Flare, 0x74 Thunder Burst.
+[monsters.sovereign_unbound.script]
+immune = ["sleep", "confuse", "numb", "stone", "curse"]
+last_stand = { line = "unbound_last" }
+
+[[monsters.sovereign_unbound.script.phases]]
+# The unbound form arrives to the Wild Arms battle theme (73).
+music = { kind = "bgm", id = 73 }
+# It arrives in violet.
+tint = { color = [26, 0, 36], frames = 90 }
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 3, weight = 2 },
+    { spell = 0x36, weight = 1, cooldown = 1 },
+]
+
+[[monsters.sovereign_unbound.script.phases]]
+when = { hp_below_pct = 50 }
+line = "unbound_break"
+sound = { kind = "sound", id = "sting_phase" }
+flash = { color = [180, 120, 255], frames = 40 }
+tint = { color = [44, 0, 60], frames = 50 }
+attack = { mul = 1.2 }
+moves = [
+    { spell = 0x74, weight = 2, charge = true, ignore_mp = true, charge_line = "unbound_charge", cooldown = 3 },
+    { spell = 0x36, weight = 2, cooldown = 1 },
+    { attack = 2, hits = 2, weight = 2 },
+]
+
+# --- Past level 99: the First Breath -------------------------------------------
+#
+# What Ysolde's seal held under the Warden's Stone all along: the Mist's
+# first breath, older than the throne. It is the pack's last fight, offered
+# once the party stands at level 99 (quests.toml `first_breath`). Built on
+# Rogue, the retail boss that cycles its element, it turns through fire,
+# wind and thunder as it falls and calls the throne's heralds back once.
+# Rogue's swings stand; 0x25 Fire Breath, 0x77 Thunder Storm, 0x36 Chaos
+# Flare, 0x63 Grand Beam.
+
+[monsters.first_breath]
+base = { kind = "monster", id = 168 }
+name = "The First Breath"
+hp = 52000
+mp = 4000
+attack = 700
+defence = 300
+intelligence = { mul = 2.0 }
+exp = 65000
+gold = 65000
+
+[monsters.first_breath.script]
+immune = ["sleep", "confuse", "numb", "stone", "curse", "venom"]
+last_stand = { line = "breath_last" }
+enrage = { when = { round = 22 }, line = "breath_end", attack = { mul = 1.3 } }
+
+[[monsters.first_breath.script.phases]]
+element = 2
+moves = [
+    { attack = 0, weight = 3 },
+    { spell = 0x25, weight = 2, cooldown = 1 },
+]
+
+[[monsters.first_breath.script.phases]]
+when = { hp_below_pct = 70 }
+line = "breath_wind"
+element = 3
+speed = { mul = 1.2 }
+summon = ["throne_herald", "throne_herald"]
+moves = [
+    { attack = 0, hits = 2, weight = 3, target = "lowest_hp" },
+    { spell = 0x36, weight = 1, cooldown = 2 },
+]
+
+[[monsters.first_breath.script.phases]]
+when = { hp_below_pct = 40 }
+line = "breath_thunder"
+element = 4
+attack = { mul = 1.15 }
+heal_pct = 10
+summon = ["throne_herald", "throne_herald"]
+moves = [
+    { spell = 0x63, weight = 2, charge = true, ignore_mp = true, charge_line = "breath_charge", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
+    { spell = 0x77, weight = 1, cooldown = 1 },
+    { attack = 0, hits = 2, weight = 2 },
+]
+
+# --- Formations: field encounters --------------------------------------------
+
+[formations.ogre_pack]
+label = "Ironhide Ogres"
+monsters = ["ironhide_ogre", "ironhide_ogre", "ironhide_ogre"]
+
+[formations.forge_guard]
+label = "Forge Guard"
+monsters = ["runed_golem", "ember_lizard", "ember_lizard", "ironhide_ogre"]
+
+[formations.hound_pack]
+label = "Gale Hounds"
+monsters = ["gale_hound", "gale_hound", "runed_golem", "gale_hound"]
+
+[formations.ember_court]
+label = "Ember Court"
+monsters = ["magma_visage", "pyre_wisp", "pyre_wisp"]
+
+[formations.hearth_guard]
+label = "Hearth Guard"
+monsters = ["hearth_gola", "hearth_gola", "magma_visage", "ember_lizard"]
+
+[formations.thorn_thicket]
+label = "Thorn Thicket"
+monsters = ["thorn_mantis", "thorn_mantis", "bloom_mushura"]
+
+[formations.mire_bloom]
+label = "Mire Bloom"
+monsters = ["mire_slime", "bloom_mushura", "mire_slime", "thorn_mantis"]
+
+[formations.gilded_herd]
+label = "Gilded Herd"
+monsters = ["gilded_bison", "gilded_bison"]
+
+[formations.vault_wardens]
+label = "Vault Wardens"
+monsters = ["verdant_iota", "grove_kemaro", "verdant_iota"]
+
+[formations.fountain_court]
+label = "Fountain Court"
+monsters = ["fountain_freed", "moss_grude", "fountain_freed", "grove_kemaro"]
+
+[formations.brass_line]
+label = "Brass Line"
+monsters = ["brass_sentinel", "brass_sentinel", "furnace_mask"]
+
+[formations.storm_engine]
+label = "Storm Engine"
+monsters = ["storm_barra", "echo_lamia", "storm_barra", "furnace_mask"]
+
+[formations.sleepless_choir]
+label = "Sleepless Choir"
+monsters = ["sleepless_one", "fallen_lantern", "sleepless_one"]
+
+[formations.prism_storm]
+label = "Prism Storm"
+monsters = ["prism_topaz", "storm_gilium", "fallen_lantern"]
+
+# 8F: the throne's honour guard walks the long carpet.
+[formations.herald_watch]
+label = "Herald Watch"
+monsters = ["throne_herald", "storm_gilium", "throne_herald"]
+
+# --- Formations: gauntlets (waves) -------------------------------------------
+
+# The first floor's training gauntlet: two ogres, then three lizards
+# together, then six more arriving one at a time, three at most at once.
+[formations.tower_gauntlet]
+label = "Tower Gauntlet"
+monsters = ["ironhide_ogre", "ironhide_ogre"]
+
+[[formations.tower_gauntlet.waves]]
+monsters = ["ember_lizard", "ember_lizard", "ember_lizard"]
+
+[[formations.tower_gauntlet.waves]]
+monsters = ["runed_golem", "ironhide_ogre"]
+arrival = "refill"
+count = 5
+max_standing = 3
+
+# 3F: four full waves of the garden, the last one the gilded herd.
+[formations.garden_gauntlet]
+label = "Garden Gauntlet"
+monsters = ["thorn_mantis", "thorn_mantis", "thorn_mantis"]
+
+[[formations.garden_gauntlet.waves]]
+monsters = ["mire_slime", "mire_slime", "bloom_mushura"]
+
+[[formations.garden_gauntlet.waves]]
+monsters = ["thorn_mantis", "bloom_mushura", "mire_slime"]
+
+[[formations.garden_gauntlet.waves]]
+monsters = ["gilded_bison", "gilded_bison"]
+
+# 6F: the engine never stops. One opening line, then twelve arrivals
+# feeding every free seat, four standing at once.
+[formations.engine_gauntlet]
+label = "Engine Gauntlet"
+monsters = ["brass_sentinel", "brass_sentinel", "brass_sentinel"]
+
+[[formations.engine_gauntlet.waves]]
+monsters = ["furnace_mask", "storm_barra", "echo_lamia", "brass_sentinel"]
+arrival = "refill"
+count = 6
+max_standing = 3
+
+# --- Formations: bosses ------------------------------------------------------
+
+[formations.ember_throne]
+label = "Cinder Warden"
+monsters = ["cinder_warden", "pyre_wisp", "pyre_wisp"]
+
+[formations.verdant_heart]
+label = "Verdant Colossus"
+monsters = ["verdant_colossus", "moss_grude"]
+
+[formations.regent_hall]
+label = "Iron Regent"
+monsters = ["iron_regent", "brass_sentinel", "brass_sentinel"]
+
+[formations.sanctum_seraph]
+label = "Azure Seraph"
+monsters = ["azure_seraph"]
+
+# The superboss: the Sovereign and its heralds, then - once they fall -
+# what the Sovereign was hollowing out all along.
+[formations.hollow_throne]
+label = "Hollow Throne"
+monsters = ["hollow_sovereign", "throne_herald", "throne_herald"]
+
+[[formations.hollow_throne.waves]]
+monsters = ["sovereign_unbound"]
+
+# The pack's last fight, under the Warden's Stone.
+[formations.first_breath]
+label = "The First Breath"
+monsters = ["first_breath"]
+
+# The throne's echo: a repeatable rematch of the second phase alone, with
+# heralds feeding back in while it stands.
+[formations.throne_echo]
+label = "Echo of the Throne"
+monsters = ["sovereign_unbound", "throne_herald"]
+
+[[formations.throne_echo.waves]]
+monsters = ["throne_herald"]
+arrival = "refill"
+count = 2
+max_standing = 2
+
+# --- Encounter overrides -----------------------------------------------------
+
+# Jette's Fortress keeps its own fights and mixes the pack's in, so a party
+# still finishing the story meets the tower's first breed there.
+[[encounters]]
+scene = "chitei2"
+retail_weight = 3
+formations = [
+    { formation = "ogre_pack", weight = 2 },
+    { formation = "forge_guard", weight = 1 },
+]
+
+# Each tower floor's encounter zones name one of these tables
+# (`maps/rebirth_tower_<n>f.toml`, `[[encounters]] table = ...`).
+[[encounters]]
+scene = "tower_1f"
+steps = [12, 24]
+formations = [
+    { formation = "ogre_pack", weight = 2 },
+    { formation = "forge_guard", weight = 1 },
+]
+
+[[encounters]]
+scene = "tower_1f_wings"
+steps = [12, 24]
+formations = [
+    { formation = "hound_pack", weight = 3 },
+    { formation = "ogre_pack", weight = 1 },
+]
+
+[[encounters]]
+scene = "tower_2f"
+steps = [14, 26]
+formations = [
+    { formation = "ember_court", weight = 3 },
+    { formation = "hearth_guard", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_3f"
+steps = [14, 26]
+formations = [
+    { formation = "thorn_thicket", weight = 3 },
+    { formation = "mire_bloom", weight = 3 },
+    { formation = "gilded_herd", weight = 1 },
+]
+
+[[encounters]]
+scene = "tower_4f"
+steps = [14, 28]
+formations = [
+    { formation = "vault_wardens", weight = 3 },
+    { formation = "fountain_court", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_6f"
+steps = [16, 30]
+formations = [
+    { formation = "brass_line", weight = 3 },
+    { formation = "storm_engine", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_7f"
+steps = [16, 30]
+formations = [
+    { formation = "sleepless_choir", weight = 3 },
+    { formation = "prism_storm", weight = 2 },
+]
+
+[[encounters]]
+scene = "tower_8f"
+steps = [18, 32]
+formations = [
+    { formation = "herald_watch", weight = 1 },
+]
+
+# --- Bosses ------------------------------------------------------------------
+
+# Sound-test cues: 28 "Attack!" (boss theme 1), 32 "Apostles of the Mist"
+# (boss theme 2), 31 "Cort's War", 29 "The Cold Koru", 61 "Apocalypse",
+# 73 the Wild Arms battle theme. The Hollow Sovereign opens on 32 and its
+# script's phases change the music as it falls (audio.toml, the format page
+# docs/formats/expansion-pack-audio.md).
+
+[bosses.cinder_warden]
+no_escape = true
+formation = "ember_throne"
+music = { kind = "bgm", id = 28 }
+reward_items = [{ item = { kind = "item", id = 223 }, count = 1 }, { item = "ember_heart" }]
+reward_gold = 20000
+once = true
+intro = "warden_intro"
+outro = "warden_fallen"
+# The Warden burns on Bio Castle's lava floor.
+stage = { scene = "jouinc", index = 0 }
+
+[bosses.verdant_colossus]
+no_escape = true
+formation = "verdant_heart"
+music = { kind = "bgm", id = 32 }
+reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }, { item = "rebirth_maul" }]
+reward_gold = 30000
+once = true
+intro = "colossus_intro"
+outro = "colossus_fallen"
+# The Colossus stands in Mt. Letona's deep wood.
+stage = { scene = "retona", index = 0 }
+
+[bosses.iron_regent]
+no_escape = true
+formation = "regent_hall"
+music = { kind = "bgm", id = 31 }
+reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }, { item = "rebirth_blade" }]
+reward_gold = 40000
+once = true
+intro = "regent_intro"
+outro = "regent_fallen"
+# The Regent holds court among Sol Tower's machine halls, lit a shade
+# brighter so its iron phase's drain still reads.
+stage = { scene = "korb3", index = 1, tint = [150, 150, 150] }
+
+[bosses.azure_seraph]
+no_escape = true
+formation = "sanctum_seraph"
+music = { kind = "bgm", id = 29 }
+reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }, { item = "rebirth_talon" }]
+reward_gold = 50000
+once = true
+intro = "seraph_intro"
+outro = "seraph_fallen"
+# The Seraph sings under the moonlit pillars of Noa's Conkram dream, the
+# night lifted a little so the storm phase reads.
+stage = { scene = "urudre2", index = 0, tint = [156, 156, 168] }
+
+[bosses.hollow_sovereign]
+no_escape = true
+formation = "hollow_throne"
+music = { kind = "bgm", id = 32 }
+reward_items = [
+    { item = { kind = "item", id = 233 }, count = 1 },
+    { item = { kind = "item", id = 250 }, count = 2 },
+    { item = "sovereign_eye" },
+]
+reward_gold = 100000
+once = true
+intro = "sovereign_intro"
+# The Sovereign rules under the Mist's violet sky over the Juggernaut,
+# lifted so the phases' red bleed and grey drain still read.
+stage = { scene = "jou", tint = [150, 140, 156] }
+
+# Not once: the echo can be fought again and again for its spoils.
+[bosses.throne_echo]
+no_escape = true
+formation = "throne_echo"
+music = { kind = "bgm", id = 73 }
+reward_gold = 20000
+once = false
+intro = "echo_intro"
+outro = "echo_fallen"
+# The echo haunts Dohati's hall, drained to a ghostly violet.
+stage = { scene = "dohaty", index = 0, tint = [150, 120, 190] }
+
+[bosses.first_breath]
+no_escape = true
+formation = "first_breath"
+music = { kind = "bgm", id = 61 }
+reward_items = [{ item = { kind = "item", id = 235 }, count = 1 }, { item = "phoenix_plume", count = 3 }]
+reward_gold = 150000
+once = true
+intro = "breath_intro"
+outro = "breath_fallen"
+# The Breath of fire, wind and thunder meets the party on Uru Mais's
+# storm-swept peak.
+stage = { scene = "uru" }
+
+# --- The Rebirth Isles (party level 30-40) -----------------------------------
+#
+# An outdoor region past the tower's sea gate (maps/isles_*.toml): a beach,
+# a fishing village, the Thornwood and its ruins, and a grotto under the
+# cliffs. Beach and grotto beasts are water-aligned, the Thornwood's are
+# earth and wind. The Thornwood's mini-boss guards the ruins' gate.
+
+[monsters.isles_spikefish]
+base = { kind = "monster", id = 70 }
+name = "Tide Spikefish"
+hp = 3200
+attack = 300
+defence = 150
+speed = { mul = 1.2 }
+exp = 3900
+gold = 2400
+element = 1
+
+[monsters.isles_gel_frog]
+base = { kind = "monster", id = 44 }
+name = "Surf Frog"
+hp = 3600
+attack = 290
+defence = 160
+exp = 4100
+gold = 2500
+element = 1
+drop = { item = { kind = "item", id = 121 }, chance_pct = 15 }
+
+[monsters.isles_gull]
+base = { kind = "monster", id = 71 }
+name = "Squall Gull"
+hp = 2900
+attack = 320
+defence = 140
+speed = { mul = 1.35 }
+exp = 3800
+gold = 2300
+element = 3
+
+[monsters.isles_mushrin]
+base = { kind = "monster", id = 24 }
+name = "Thorncap"
+hp = 3800
+attack = 300
+defence = 170
+exp = 4300
+gold = 2700
+element = 0
+steal = { item = { kind = "item", id = 122 }, chance_pct = 20 }
+
+[monsters.isles_mantis]
+base = { kind = "monster", id = 53 }
+name = "Bramble Mantis"
+hp = 4200
+attack = 330
+defence = 165
+speed = { mul = 1.2 }
+exp = 4600
+gold = 2900
+element = 3
+
+[monsters.isles_wolf]
+base = { kind = "monster", id = 41 }
+name = "Thornwood Wolf"
+hp = 4000
+attack = 340
+defence = 160
+speed = { mul = 1.25 }
+exp = 4500
+gold = 2800
+element = 0
+
+[monsters.isles_bee]
+base = { kind = "monster", id = 62 }
+name = "Ruin Wasp"
+hp = 2600
+attack = 310
+defence = 150
+speed = { mul = 1.3 }
+exp = 3600
+gold = 2200
+element = 3
+
+[monsters.isles_slime]
+base = { kind = "monster", id = 9 }
+name = "Grotto Ooze"
+hp = 4400
+attack = 300
+defence = 190
+exp = 4800
+gold = 3000
+element = 1
+drop = { item = { kind = "item", id = 123 }, chance_pct = 15 }
+
+[monsters.isles_nighto]
+base = { kind = "monster", id = 51 }
+name = "Pearl Wisp"
+hp = 3400
+mp = 400
+attack = 280
+defence = 170
+intelligence = { mul = 1.4 }
+exp = 4700
+gold = 3100
+element = 5
+
+# The Thornwood's mini-boss: the hive queen grown into the ruins' gate.
+# Queen Bee keeps her own swings; 0x13 is the base's sting spell row.
+[monsters.isles_hive_queen]
+base = { kind = "monster", id = 63 }
+name = "Thornwood Queen"
+hp = 18000
+mp = 900
+attack = 400
+defence = 210
+speed = { mul = 1.2 }
+exp = 22000
+gold = 15000
+element = 3
+
+[monsters.isles_hive_queen.script]
+immune = ["sleep", "confuse"]
+
+[[monsters.isles_hive_queen.script.phases]]
+moves = [
+    { attack = 0, weight = 3 },
+    { attack = 1, weight = 2 },
+]
+
+[[monsters.isles_hive_queen.script.phases]]
+when = { hp_below_pct = 50 }
+line = "isles_queen_rage"
+flash = { color = [255, 230, 120], frames = 30 }
+tint = { color = [30, 24, 0], frames = 50 }
+attack = { mul = 1.2 }
+speed = { mul = 1.2 }
+moves = [
+    { attack = 1, hits = 2, weight = 3, target = "lowest_hp" },
+    { attack = 0, weight = 1 },
+]
+
+[formations.isles_shore]
+label = "Shoreline"
+monsters = ["isles_spikefish", "isles_gel_frog", "isles_spikefish"]
+
+[formations.isles_squall]
+label = "Squall Gulls"
+monsters = ["isles_gull", "isles_gull", "isles_gel_frog"]
+
+[formations.isles_thicket]
+label = "Thornwood Thicket"
+monsters = ["isles_mushrin", "isles_mantis", "isles_mushrin"]
+
+[formations.isles_pack]
+label = "Thornwood Pack"
+monsters = ["isles_wolf", "isles_wolf", "isles_bee"]
+
+[formations.isles_ruin_swarm]
+label = "Ruin Swarm"
+monsters = ["isles_bee", "isles_bee", "isles_mantis", "isles_bee"]
+
+[formations.isles_grotto]
+label = "Grotto Ooze"
+monsters = ["isles_slime", "isles_nighto", "isles_slime"]
+
+[formations.isles_pearl]
+label = "Pearl Wisps"
+monsters = ["isles_nighto", "isles_nighto", "isles_nighto"]
+
+[formations.isles_queen]
+label = "Thornwood Queen"
+monsters = ["isles_hive_queen", "isles_bee", "isles_bee"]
+
+[[encounters]]
+scene = "isles_beach"
+steps = [16, 30]
+formations = [
+    { formation = "isles_shore", weight = 3 },
+    { formation = "isles_squall", weight = 2 },
+]
+
+[[encounters]]
+scene = "isles_thornwood"
+steps = [12, 24]
+formations = [
+    { formation = "isles_thicket", weight = 3 },
+    { formation = "isles_pack", weight = 2 },
+]
+
+[[encounters]]
+scene = "isles_ruins"
+steps = [12, 22]
+formations = [
+    { formation = "isles_ruin_swarm", weight = 3 },
+    { formation = "isles_pack", weight = 1 },
+]
+
+[[encounters]]
+scene = "isles_grotto"
+steps = [14, 26]
+formations = [
+    { formation = "isles_grotto", weight = 3 },
+    { formation = "isles_pearl", weight = 1 },
+]
+
+[bosses.isles_hive_queen]
+no_escape = true
+formation = "isles_queen"
+music = { kind = "bgm", id = 28 }
+reward_items = [{ item = { kind = "item", id = 125 }, count = 3 }]
+reward_gold = 12000
+once = true

@@ -15,12 +15,14 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 toml = { workspace = true, features = ["display"] }
 legaia-engine-dialog.workspace = true
 legaia-engine-camera.workspace = true
 legaia-engine-field.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
+legaia-expansion-format.workspace = true
 legaia-render-kernels.workspace = true
 legaia-actor-formats.workspace = true
 legaia-anm.workspace = true

@@ -51,6 +51,7 @@ flowchart TD
 - [Per-frame flow](#per-frame-flow) - [base step](#base-step-selection-walk--run) · [clip base](#the-clip-base-and-the-settle-tail) · [wall slide](#wall-slide-resolution-fun_80046494) · [pad octant](#gp0x2d8-is-authored-not-computed)
 - [Collision](#collision---fun_801cfe4c) - [wall probes](#wall-probes) · [actor probes](#actor-probes-fun_801cfc40) · [touch and interact](#touch-and-interact-dispatch) · [port](#engine-model)
 - [Vertical settle + ledge hop](#vertical-settle--ledge-hop---fun_801d1ba0--fun_801d1878) - [hop-arc controller](#the-scripted-hop-arc-controller)
+- [Action movement (enhancement)](#action-movement-enhancement)
 - [Where the collision grid comes from](#where-the-collision-grid-comes-from) - [collision byte](#collision-byte-walls--floor-height) · [object-grid cell word](#object-grid-cell-word) · [floor height](#floor-height-two-models) · [trigger block](#trigger-block-0x10000---four-kind-sub-tables) · [timed warp](#the-timed-kind-0-warp) · [object records](#object-record-format-0x0000-0x20-byte-stride) · [object bind](#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose) · [door swing](#the-door-swing-how-a-bind-script-drives-the-clip) · [load chain](#field-buffer-load-chain)
 - [Spawn position on scene entry](#spawn-position-on-scene-entry)
 - [Intra-scene doorways](#intra-scene-doorways---the-walk-touch-teleport-family)
@@ -682,6 +683,73 @@ Deliberate differences:
 Coverage: `engine-core/tests/field_ledge_hop_wired.rs` (the whole flight on a synthetic grid: take-off, peak above both endpoints, exact landing, lock release, reap); `field_ledge_hop_footing.rs` (what the rise is measured from - flat non-zero ground classifies nothing, an authored step does, and a wall press on a non-zero-tier floor starts no hop); disc-gated `field_ledge_hop_disc.rs` (an authored ledge in a real scene's `.MAP`).
 
 Authored ledges are common - retail's predicate finds candidates in most field scenes, Rim Elm included. The full-scene wall-press legs in `parity/tests/field_collision_discriminator.rs` also catch a misclassifying hop, as a 42-unit overshoot into the wall.
+
+## Action movement (enhancement)
+
+Not retail. `WorldToggles::action_movement` (default off, off under `pin_retail` and `--retail`) swaps the walk controller and its settle for a platformer-style body: momentum, a sprint, a jump with a double jump, a dash, air control, coyote time and jump buffering, with gravity onto the scene's floor levels. It exists for the expansion modes that want a faster, more responsive player (prop hunt, racing, co-op roaming) and as a play enhancement. Off, `World::step_field_locomotion` and `World::step_field_vertical` run exactly the code above; `field_action_movement.rs` pins a digest of the walk over a scripted pad stream, the action buttons included, with and without the vertical settle.
+
+### Where it takes over
+
+The switch is read **after** every gate the walk has: an input-owning dialogue, the tile board, a committed battle, a script context engaging the player, the movement-disabled bit `+0x10 & 0x80000` and the kind-0 warp's pad hold. A frame any of them refuses is a frame the action model does not run either. It also stands aside while something scripted owns the player's height (a scripted arc, a ledge hop in flight, the `+0x8E` mirror), off `SceneMode::Field`, and on the kingdom world maps (`_DAT_8007B6A8` set), whose walk is the world-map controller's.
+
+A frame the model drives owns all three coordinates and the facing; the settle that follows runs only its clip tail, so no glide and no ledge hop start. A frame it does not drive sets an airborne body down on the floor under it, so a lock that lands mid-jump leaves no one hanging. The walk's side effects are kept: the direction mask (the stick's world direction, so pushing into a door posts its touch even when the door refuses the step), the step-delta pair, the walk-regen fill on grounded travel, the walk-touch and ambient-touch posts, and a clip base for the settle tail's pick.
+
+### Controls
+
+| Button | Field use without the model | Under the model |
+|---|---|---|
+| D-pad / left stick | walk | steer, camera-relative at full angular resolution (the stick's own angle and length) |
+| Square (`ACTION_JUMP_BUTTON`) | the port's alternate run button | jump; again in the air for the double jump; let go early for a lower jump |
+| R2 (`ACTION_DASH_BUTTON`) | nothing | dash along the stick, or the facing with the stick at rest |
+| Cross / R1 | run (Cross also talks) | sprint, inverting the Field Move option as the run does; Cross still talks |
+| Circle / L2, Triangle | cancel, menu | unchanged |
+
+### The kernel
+
+`legaia_engine_field::action_movement` is `World`-free. `ActionBody::step` takes an `ActionParams`, one frame's `ActionInput` and an `ActionTerrain`, which `engine-core` implements over the same probes the walk uses: one axis of `advance_with_collision` at a one-unit stride (the leading-edge footprint or the centre test, then the prop and NPC body probes, a touched prop latched as it is there) and the `FUN_80019278` floor sample. Positions and velocities are integers in 256ths of a world unit, and directions come off the retail sine table, so one input stream gives one trajectory on every host.
+
+Travel commits one world unit at a time, Z before X. A wall refuses the step outright, airborne or not. The floor ahead decides the rest (Y grows downward, so a rise is a smaller Y):
+
+| Body | Floor ahead | Outcome |
+|---|---|---|
+| grounded | rises by up to `step_height` (48) | climbed - a stair or a bilinear slope |
+| grounded | rises by more | refused: a ledge, which takes a jump |
+| grounded | drops by up to `snap_down` (48) | followed down |
+| grounded | drops by more | the body leaves the ground and falls |
+| airborne, falling | up to `mantle` (40) above the feet | climbed onto, and landed |
+| airborne, rising | up to `mantle` above the feet | the feet ride up over the lip |
+| airborne | higher still | refused |
+
+Plain tiles interpolate their tiers across the tile, so most tier changes are slopes the walk climbs. The ledges the jump is for are the ramp / stair tiles' flat-mean steps (the object-grid `0x800` model) where one step is taller than a stair.
+
+### Default tuning
+
+60 Hz frames, world units (a tile is 128; retail walks 8 a frame and runs 12):
+
+| Parameter | Default |
+|---|---|
+| run / sprint speed | 16 / 24 per frame |
+| ground accel / decel / reversal | 3 / 4 / 6 per frame² |
+| air accel / decel | 2 / 2 per frame² |
+| jump / air-jump speed | 27 / 23 up, one air jump |
+| gravity rising (held) / falling | 2.5 / 3.25 per frame², terminal 36 |
+| jump cut on release | rise speed halved |
+| dash | 36 per frame for 9 frames, 30-frame cooldown, one in the air |
+| coyote / jump buffer | 6 / 6 frames |
+
+A held jump rises about 133 units and lands 19 frames later; the double jump adds about 105. The parameters are `World::locomotion.action_params`, which a mode may replace.
+
+### Animation
+
+The model reports `Idle`, `Run`, `Jump`, `Fall`, `Land` or `Dash`. Idle and run go through the walk's clip-base pick (idle `2`, run `3`, the `99` scene sentinel and the non-positive-clip gate as there); jump and fall take the ledge hop's airborne base `6` and landing takes its base `7`, the party bundle's hop clips; a dash plays the run. Take-off and landing push the hop's cues `0x2A` / `0x29` into the SFX ring.
+
+### Switches and coverage
+
+`GameplayTweaks::action_movement` carries it on both play hosts: `play-window --action-movement` (the launcher's *Action movement* row) and the *Action movement* box in the browser play page's *Gameplay tweaks* panel, remembered on both. There is no hotkey: the host hotkeys toggle persisted options, and this is a session switch.
+
+Coverage: the kernel's unit tests (`action_movement::tests`: arc apex and landing, the variable and double jump, walls, a ledge climbed by jumping, an unreachable cliff, stairs and a fall, coyote time, the jump buffer, the dash and its cooldown, the quick turn, and a 600-frame scripted stream replayed bit for bit); `engine-core/tests/field_action_movement.rs` (the off-path digest, a jump on the frame tick, a wall, the stepped block climbed by jumping, the pad locks, a lock mid-jump); disc-gated `engine-scene-host/tests/field_action_movement_disc.rs` (in `town01`: a jump off the real floor, runs at the walls resting on walkable ground, and Mei's door still warping the player inside).
+
+Not modelled: prop tops are not floors (a placed prop blocks as a wall), and nothing stops the head at a ceiling. A ledge taller than both jumps plus the mantle, which retail's hop would climb, stays out of reach.
 
 ## Where the collision grid comes from
 

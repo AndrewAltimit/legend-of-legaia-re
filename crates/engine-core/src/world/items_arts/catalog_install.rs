@@ -41,6 +41,8 @@ impl World {
     /// [`legaia_engine_battle::spells::SpellCatalog::vanilla`]).
     pub fn set_spell_catalog(&mut self, catalog: legaia_engine_battle::spells::SpellCatalog) {
         self.tables.spell_catalog = catalog;
+        // An active expansion pack's spells keep their menu entries.
+        self.expansion_install_spell_entries();
     }
 
     /// Stage one decoded art record for the player-driven battle Arts submenu,

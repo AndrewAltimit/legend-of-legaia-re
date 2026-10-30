@@ -1,0 +1,274 @@
+# Tower of Rebirth, seventh floor: the Sanctum of Echoes. The octagonal
+# vault at the bottom of the retail Sol Tower (`korb3`), kept whole, its
+# ring corridor re-traced tile by tile. The Azure Seraph keeps the inner
+# hall.
+
+name = "Tower of Rebirth 7F - Sanctum of Echoes"
+base = { scene = { kind = "scene", name = "korb3" }, geometry = "keep", scenery = true }
+# Sound-test track 11, "The Profane Realm".
+bgm = { kind = "bgm", id = 11 }
+camera = "default"
+
+[tiles]
+origin = [26, 17]
+rows = [
+  "    ab.....c.....de",
+  "   ab...ccc#ccc...de",
+  "  ab...fgh###hij...de",
+  " ab...fg.......ij...de",
+  "ab...fg..#k.l#..ij...de",
+  "b...fg..##k.l#j..ij...d",
+  "...fg..#b.....hj..i#...",
+  "..lg..fh.......ij..dk..",
+  "..#..#k..a###e..ij..#..",
+  "..ih.ih..#   #..##.hg..",
+  ".........#   #..##.....",
+  "..ac.ac..#   #..##.ce..",
+  "..#..le..i# #g..ab..#..",
+  "..le..de..ihg..ab..a#..",
+  "...#e..#e.....ab..a#...",
+  "j...de.##e###ab..ab...f",
+  "ij...d#######b..ab...fg",
+  " ij...# h......ab...fg",
+  "  ij..# e.###.ab...fg",
+  "   i####hhh#hhh...fg",
+  "      #g...h.....fg",
+  "      j.........fg",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall corner", walls = ["br"] }
+"b" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"c" = { label = "wall edge", walls = ["bl", "br"] }
+"d" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"e" = { label = "wall corner", walls = ["bl"] }
+"f" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"g" = { label = "wall corner", walls = ["tl"] }
+"h" = { label = "wall edge", walls = ["tl", "tr"] }
+"i" = { label = "wall corner", walls = ["tr"] }
+"j" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"k" = { label = "wall edge", walls = ["tl", "bl"] }
+"l" = { label = "wall edge", walls = ["tr", "br"] }
+
+[[spawns]]
+id = "from_below"
+tile = [9, 20]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [7, 1]
+
+[[exits]]
+id = "stair_down"
+rect = [9, 21, 13, 21]
+to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [6, 0, 10, 0]
+to = { kind = "map", map = "rebirth_tower_8f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [12, 20, 16, 20]
+event = { kind = "dialog", line = "floor_7f_intro" }
+once = true
+
+[[triggers]]
+id = "inner_hall"
+rect = [10, 7, 12, 7]
+event = { kind = "talk", npc = "sanctum_echo" }
+
+[[triggers]]
+id = "inner_hall_silent"
+rect = [10, 7, 12, 7]
+event = { kind = "dialog", line = "seraph_after" }
+requires = { bosses = ["azure_seraph"] }
+
+# A quiet alcove by the stair from below: the last rest point under the
+# throne.
+[[triggers]]
+id = "rest_alcove"
+rect = [15, 19, 17, 19]
+event = { kind = "rest", save = true }
+
+[[encounters]]
+id = "north_ring"
+rect = [0, 0, 22, 4]
+table = "tower_7f"
+
+[[encounters]]
+id = "west_ring"
+rect = [0, 5, 6, 16]
+table = "tower_7f"
+
+[[encounters]]
+id = "east_ring"
+rect = [16, 5, 22, 16]
+table = "tower_7f"
+
+# ---------------------------------------------------------------------------
+# Detail: the Sanctum's echoes. Three crystals circle the inner hall's
+# heart, blue sparks hang in the vault, dust drifts round the ring, and the
+# Sol Tower's own scenery runs (`scenery`).
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "echo_1"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 10]
+offset = [0, 140, 0]
+scale = 2.0
+animate = [{ kind = "orbit", radius = 140, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
+light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
+
+[[props]]
+id = "echo_2"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 11]
+offset = [0, 140, -128]
+scale = 2.0
+animate = [{ kind = "orbit", radius = 140, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
+light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
+
+[[props]]
+id = "echo_3"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [10, 10]
+offset = [128, 140, 0]
+scale = 2.0
+animate = [{ kind = "orbit", radius = 140, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
+light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
+
+[[emitters]]
+kind = "sparkles"
+rect = [7, 6, 15, 14]
+height = [30, 260]
+count = 48
+color = [130, 170, 255]
+seed = 701
+
+[[emitters]]
+kind = "dust"
+rect = [0, 0, 22, 21]
+count = 60
+color = [170, 190, 230]
+seed = 702
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "heart", tile = [11, 10], offset = [0, 120, 0], color = [100, 150, 255], radius = 1000, flicker = 0.1, period = 45 },
+  # The rest alcove keeps a warm candle: the one safe light on the floor.
+  { id = "rest_candle", tile = [16, 19], offset = [0, 90, 0], color = [255, 190, 120], radius = 420, flicker = 0.2, period = 17 },
+]
+
+# Sound: inside the Sanctum's inner ring the floor's music gives way to the
+# tower's echo, the pack's own drone (`audio.toml` `tracks.echo_drone`).
+[audio]
+fade_frames = 90
+
+[[audio.zones]]
+id = "inner_sanctum"
+rect = [9, 6, 15, 13]
+music = { kind = "track", id = "echo_drone" }
+
+# ---------------------------------------------------------------------------
+# The four obelisks: dark stones banded with blue runes stand at the inner
+# hall's corners (`assets/models/obelisk.glb`), each lit from within, and a
+# brass ring turns over the heart where the echoes circle.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "obelisk_nw"
+mesh = { asset = "models/obelisk.glb" }
+tile = [8, 7]
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 60 }
+
+[[props]]
+id = "obelisk_ne"
+mesh = { asset = "models/obelisk.glb" }
+tile = [14, 7]
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 64 }
+
+[[props]]
+id = "obelisk_sw"
+mesh = { asset = "models/obelisk.glb" }
+tile = [9, 14]
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 58 }
+
+[[props]]
+id = "obelisk_se"
+mesh = { asset = "models/obelisk.glb" }
+tile = [13, 14]
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 62 }
+
+[[props]]
+id = "heart_ring"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [12, 10]
+offset = [-128, 260, 0]
+scale = 1.8
+animate = [{ kind = "spin", axis = "y", period = 720 }, { kind = "sway", axis = "z", degrees = 18.0, period = 360 }]
+
+# Motes rise off each obelisk's runes.
+[[emitters]]
+kind = "sparkles"
+rect = [8, 7, 8, 7]
+height = [40, 230]
+count = 10
+velocity = [0.0, 0.5, 0.0]
+color = [140, 190, 255]
+seed = 703
+
+[[emitters]]
+kind = "sparkles"
+rect = [14, 7, 14, 7]
+height = [40, 230]
+count = 10
+velocity = [0.0, 0.5, 0.0]
+color = [140, 190, 255]
+seed = 704
+
+[[emitters]]
+kind = "sparkles"
+rect = [9, 14, 9, 14]
+height = [40, 230]
+count = 10
+velocity = [0.0, 0.5, 0.0]
+color = [140, 190, 255]
+seed = 705
+
+[[emitters]]
+kind = "sparkles"
+rect = [13, 14, 13, 14]
+height = [40, 230]
+count = 10
+velocity = [0.0, 0.5, 0.0]
+color = [140, 190, 255]
+seed = 706
+
+# Sound: the ring corridor breathes the tower's drone, faintly, so the
+# walk round to the inner hall is never silent between the music zones.
+[[audio.ambient]]
+id = "ring_hum_n"
+sound = { kind = "sound", id = "drone" }
+tile = [11, 2]
+radius = 900
+inner = 300
+volume = 0.2
+
+[[audio.ambient]]
+id = "ring_hum_s"
+sound = { kind = "sound", id = "drone" }
+tile = [11, 18]
+radius = 900
+inner = 300
+volume = 0.2

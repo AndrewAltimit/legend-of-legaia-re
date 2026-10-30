@@ -501,6 +501,83 @@ pub struct DebugSeeds {
     /// `--play-record P:R`: a scene MAN record installed as a cutscene
     /// timeline once the scene is entered.
     pub play_record: Option<(usize, usize)>,
+    /// `--play-cutscene ID`: an expansion-pack cutscene played once the
+    /// scene is entered.
+    pub play_cutscene: Option<String>,
+    /// `--expansion PATH [--map ID [--spawn ID]]`: the expansion pack every
+    /// entry plays with, and the pack map entered in place of the `--scene`
+    /// door entry.
+    pub expansion: Option<ExpansionLaunch>,
+    // --- expansion game modes (`--mode`) ---
+    /// `--mode <INSTANCE>`: an expansion mode instance entered once the
+    /// scene is entered (`picker` opens the mode picker instead).
+    pub pack_mode: Option<String>,
+    // --- end expansion game modes ---
+    /// `--host` / `--join` / `--room` / `--name`: a multiplayer room to open.
+    pub netplay: super::NetLaunch,
+}
+
+/// The `--expansion` / `--map` / `--spawn` operands.
+#[derive(Debug, Clone)]
+pub struct ExpansionLaunch {
+    /// The pack: a directory or an `.lxpack` bundle.
+    pub pack: std::path::PathBuf,
+    /// The map to boot into; `None` boots as without a pack (title screen,
+    /// `--scene`) with the pack active.
+    pub map: Option<String>,
+    /// Empty for the map's first spawn.
+    pub spawn: String,
+    /// `--expansion-watch`: reload the pack whenever its files change
+    /// (`window::pack_reload`).
+    pub watch: bool,
+}
+
+impl ExpansionLaunch {
+    /// Read the pack, a directory or an `.lxpack` bundle
+    /// (`legaia_expansion_format::read_files`).
+    ///
+    /// A `pack` that is not a path names an installed pack by id, looked up
+    /// in the packs folder (`crate::launcher::resolve_pack`).
+    pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
+        let path = self.resolve_path()?;
+        legaia_expansion_format::read_files(&path)
+            .and_then(|files| legaia_expansion_format::ExpansionPack::from_files(&files))
+            .with_context(|| format!("--expansion {}", path.display()))
+    }
+
+    /// The pack folder or `.lxpack` file `pack` names: a path, or the id of
+    /// an installed pack in the packs folder (`crate::launcher::resolve_pack`).
+    pub fn resolve_path(&self) -> Result<std::path::PathBuf> {
+        let dir = crate::launcher::packs_dir();
+        crate::launcher::resolve_pack(&self.pack, dir.as_deref()).with_context(|| {
+            format!(
+                "--expansion {}: no such file or folder, and no installed pack has that id{}",
+                self.pack.display(),
+                dir.map(|d| format!(" (packs folder {})", d.display()))
+                    .unwrap_or_default()
+            )
+        })
+    }
+
+    /// [`Self::load`] for a hot reload: the validator runs first, and a pack
+    /// with an error is refused with its first lines, so the running pack
+    /// stays (activation itself checks less).
+    pub fn load_checked(&self) -> Result<legaia_expansion_format::ExpansionPack> {
+        let path = self.resolve_path()?;
+        let files = legaia_expansion_format::read_files(&path)
+            .with_context(|| format!("--expansion {}", path.display()))?;
+        let issues = legaia_expansion_format::validate::validate_files(&files, None);
+        let errors = legaia_expansion_format::share::error_lines(&issues);
+        if !errors.is_empty() {
+            let more = match errors.len() {
+                1 => String::new(),
+                n => format!(" (and {} more)", n - 1),
+            };
+            anyhow::bail!("{}{more}", errors[0]);
+        }
+        legaia_expansion_format::ExpansionPack::from_files(&files)
+            .with_context(|| format!("--expansion {}", path.display()))
+    }
 }
 
 /// The `--cheat-*` operands - the native twin of the browser play page's
@@ -591,6 +668,56 @@ impl DebugSeeds {
         }
         Ok(self)
     }
+
+    /// Attach the `--play-cutscene ID` operand.
+    pub fn with_play_cutscene(mut self, id: Option<String>) -> Self {
+        self.play_cutscene = id;
+        self
+    }
+
+    /// Attach the `--expansion` / `--map` / `--spawn` operands (clap makes
+    /// `--map` need `--expansion`).
+    pub fn with_expansion(
+        mut self,
+        pack: Option<std::path::PathBuf>,
+        map: Option<String>,
+        spawn: Option<String>,
+    ) -> Result<Self> {
+        self.expansion = match (pack, map) {
+            (Some(pack), map) => Some(ExpansionLaunch {
+                pack,
+                map,
+                spawn: spawn.unwrap_or_default(),
+                watch: false,
+            }),
+            (None, None) => None,
+            (None, Some(_)) => anyhow::bail!("--map needs --expansion"),
+        };
+        Ok(self)
+    }
+    /// Attach `--expansion-watch` (clap makes it need `--expansion`).
+    pub fn with_expansion_watch(mut self, watch: bool) -> Result<Self> {
+        match self.expansion.as_mut() {
+            Some(launch) => launch.watch = watch,
+            None if watch => anyhow::bail!("--expansion-watch needs --expansion"),
+            None => {}
+        }
+        Ok(self)
+    }
+
+    // --- expansion game modes (`--mode`) ---
+    /// Attach the `--mode <INSTANCE>` operand.
+    pub fn with_pack_mode(mut self, instance: Option<String>) -> Self {
+        self.pack_mode = instance;
+        self
+    }
+
+    /// Attach the `--host` / `--join` operands.
+    pub fn with_netplay(mut self, netplay: super::NetLaunch) -> Self {
+        self.netplay = netplay;
+        self
+    }
+    // --- end expansion game modes ---
 
     /// Attach the `--cheat-*` operands.
     pub fn with_cheats(mut self, cheats: PlayCheats) -> Self {
@@ -1018,7 +1145,14 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F10" => KeyCode::F10,
         // The hotkey help panel (`help_key`): `F12`, or the `?` key.
         "F12" => KeyCode::F12,
+        // The pack reload (`window::pack_reload`).
+        "END" => KeyCode::End,
         "/" | "?" | "SLASH" => KeyCode::Slash,
+        // The multiplayer room screen (`window::netplay`).
+        "TAB" => KeyCode::Tab,
+        // The expansion game-mode picker (`` ` ``) and the card menu (`\`).
+        "`" | "BACKQUOTE" => KeyCode::Backquote,
+        "\\" | "BACKSLASH" => KeyCode::Backslash,
         "W" => KeyCode::KeyW,
         "X" => KeyCode::KeyX,
         "Y" => KeyCode::KeyY,
@@ -1190,6 +1324,10 @@ mod key_script_tests {
         names.extend((0..=9).map(|d| d.to_string()));
         names.extend((1..=12).map(|f| format!("F{f}")));
         names.push("/".to_string());
+        names.push("Tab".to_string());
+        names.push("End".to_string());
+        names.push("`".to_string());
+        names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names
             .iter()
             .filter_map(|n| key_from_name(n))

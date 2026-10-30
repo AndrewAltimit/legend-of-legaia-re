@@ -13,9 +13,15 @@ use super::*;
 /// `--strict` exits non-zero when the recorded trace disagrees with the
 /// replay file's `[[expected]]` fixture; without it, divergence is
 /// printed to stderr but doesn't fail.
-pub(crate) fn cmd_replay(input: &Path, out: &Path, strict: bool) -> Result<()> {
+pub(crate) fn cmd_replay(
+    input: &Path,
+    out: &Path,
+    strict: bool,
+    packs: &[std::path::PathBuf],
+) -> Result<()> {
     let replay = ReplayFile::from_path(input)?;
-    let trace = synthetic_replay_trace(&replay);
+    let shelf = legaia_engine_shell::replay::PackShelf::from_paths(packs)?;
+    let trace = synthetic_replay_trace(&replay, &shelf)?;
     // One JSON object per frame, the `mode-trace` JSONL shape.
     let mut jsonl = String::new();
     for f in &trace {
@@ -31,10 +37,11 @@ pub(crate) fn cmd_replay(input: &Path, out: &Path, strict: bool) -> Result<()> {
         out.display().to_string()
     };
     eprintln!(
-        "replay '{}' (frames={}, events={}, expected={}) -> {}",
+        "replay '{}' (frames={}, events={}, switches={}, expected={}) -> {}",
         input.display(),
         replay.meta.frames,
         replay.events.len(),
+        replay.switches.len(),
         replay.expected.len(),
         out_label,
     );
@@ -62,7 +69,14 @@ pub(crate) fn cmd_replay(input: &Path, out: &Path, strict: bool) -> Result<()> {
 /// through `replay`'s frame count. Mirrors
 /// `crates/engine-shell/tests/determinism_j2.rs::build_mode_trace` so
 /// the subcommand's behaviour is the same the determinism gate tests.
-fn synthetic_replay_trace(replay: &ReplayFile) -> Vec<ModeTraceFrame> {
+///
+/// Each frame applies the replay's `[[switch]]` rows for it (packs off
+/// `shelf`), then the pad in force, then ticks. A pack map switch needs a
+/// scene host and fails here.
+fn synthetic_replay_trace(
+    replay: &ReplayFile,
+    shelf: &legaia_engine_shell::replay::PackShelf,
+) -> Result<Vec<ModeTraceFrame>> {
     let pad_stream = replay.expand_pad_stream();
     let mut world = legaia_engine_core::world::World::new();
     while world.actors.len() < 8 {
@@ -73,11 +87,14 @@ fn synthetic_replay_trace(replay: &ReplayFile) -> Vec<ModeTraceFrame> {
     world.rng_state = replay.meta.rng_seed;
     let mut out = Vec::with_capacity(pad_stream.len());
     out.push(synthetic_replay_sample(&world));
-    for _ in pad_stream.iter().skip(1) {
+    // Tick `i` runs frame `i`: its switches, then its pad.
+    for (frame, &pad) in pad_stream.iter().enumerate().take(pad_stream.len() - 1) {
+        legaia_engine_shell::replay::apply_switches_at(&mut world, replay, frame as u64, shelf)?;
+        world.set_pad(pad);
         let _ = world.tick();
         out.push(synthetic_replay_sample(&world));
     }
-    out
+    Ok(out)
 }
 
 fn synthetic_replay_sample(world: &legaia_engine_core::world::World) -> ModeTraceFrame {

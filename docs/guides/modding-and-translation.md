@@ -32,6 +32,7 @@ flowchart LR
 | Translate the game | [5](#5-translate-the-game) |
 | Read a memory-card save | [6](#6-inspect-saves) |
 | Look up game data or cheat codes | [7](#7-look-things-up-without-a-disc), [8](#8-cheat-databases) |
+| Make an expansion pack for the port | [9](#9-make-an-expansion-pack) |
 
 A patched USA image also boots in the port (`legaia-engine` accepts it like
 the retail disc). The port reads the disc's data, so data edits - drops,
@@ -230,11 +231,41 @@ NTSC-U databases are embedded, so no input file is needed:
 A file that parses to zero entries warns on stderr rather than silently
 printing `[]`. Background + pinned offsets: [cheats.md](../reference/cheats.md).
 
+## 9. Make an expansion pack
+
+An expansion pack is not a disc patch: it is new content - monsters and
+bosses, a level curve, quests, dialogue, trading cards, game modes, custom
+maps - that the port loads beside your disc. It names disc content only by
+coordinate, so a pack is yours to share. The site's **expansion workbench**
+page builds one in the browser:
+
+1. Pick your `.bin`. The workbench reads its monsters, items, scenes and music
+   for the pickers; nothing is uploaded, and no name from the disc is written
+   into the pack.
+2. Load the **Rebirth example** (the project's own flagship pack) to start
+   from, a `.lxpack` or a pack folder of your own, or start fresh.
+3. Edit section by section. The checks panel re-runs the validator after
+   every edit, with your disc resolving every coordinate; click an issue to
+   go to its field.
+4. Lay out a map on the **Maps** tab: paint tiles from the legend, place
+   spawns, exits, trigger and encounter zones and props, and turn on
+   **Heights** to see which cells the floor slopes across.
+5. **Download .lxpack** to share it, or take the TOML files one at a time on
+   the Files tab for a pack kept as a folder.
+
+The same pack works from the command line (`asset expansion validate`,
+`asset expansion bundle`) and runs in the native port with
+`legaia-engine play-window --expansion <dir>`, or on the browser play page:
+the workbench's **Play in browser** button hands the pack straight to it. Page reference:
+[expansion-workbench.md](../tooling/expansion-workbench.md); format:
+[expansion-pack.md](../formats/expansion-pack.md).
+
 ## Related docs
 
 - [randomizer.md](../tooling/randomizer.md) - every randomizer feature + how the code hooks work.
 - [translating.md](translating.md) - the translator's guide.
 - [translation/](../tooling/translation/index.md) - pack schema, markup, budgets, what may be committed.
 - [pal-localizations.md](../tooling/pal-localizations.md) - the official PAL text and how it lifts.
+- [expansion-workbench.md](../tooling/expansion-workbench.md) - the in-browser expansion-pack editor.
 - [save-record.md](../formats/save-record.md) - the character-record byte layout.
 - [getting-started.md](getting-started.md) - back to the tool index.

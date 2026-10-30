@@ -12,6 +12,7 @@
 //! | Status  | [`legaia_engine_menus::status_screen::StatusScreenSession`]         |
 //! | Save    | [`legaia_engine_menus::save_select::SaveSelectSession`] (Save mode) |
 //! | Config  | [`legaia_engine_menus::options::OptionsSession`]                    |
+//! | Journal | [`legaia_engine_expansion::journal::JournalSession`] (expansion)   |
 //!
 //! Pure plumbing - the dispatcher builds the right sub-session from
 //! [`World`] state, routes per-frame pad input into it, and exposes
@@ -27,6 +28,7 @@ use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_battle::spells::SpellCatalog;
 use legaia_engine_battle::tactical_arts_editor::{ChainEditor, ChainLibrary, EditInput};
 use legaia_engine_core::world::World;
+use legaia_engine_expansion::journal::{JournalOutcome, JournalSession, JournalView};
 use legaia_engine_menus::equip_session::{EquipInput, EquipOutcome, EquipSession};
 use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::inventory_use::{
@@ -48,6 +50,7 @@ use legaia_engine_menus::status_screen::{
 use legaia_engine_system::input::{Mapping, PadButton};
 
 mod arts_editor;
+mod journal;
 mod outcomes;
 mod session_builders;
 mod status;
@@ -56,6 +59,7 @@ mod tests;
 mod tick;
 
 pub use arts_editor::*;
+pub use journal::*;
 pub use outcomes::*;
 pub use session_builders::*;
 pub use status::*;
@@ -97,6 +101,13 @@ pub enum FieldMenuSubsession {
     Status(StatusScreenSession),
     Save(SaveSelectSession),
     Config(OptionsSession),
+    /// The expansion pack's Journal (an engine extension; Select on the root
+    /// list while a pack is active, [`try_open_journal`]). `view` is the
+    /// content the session pages through, projected when it opened.
+    Journal {
+        session: JournalSession,
+        view: Box<JournalView>,
+    },
 }
 
 impl FieldMenuSubsession {
@@ -169,6 +180,9 @@ impl FieldMenuSubsession {
                 _ => FieldMenuRow::Save,
             },
             Self::Config(_) => FieldMenuRow::Options,
+            // No row of its own; the root resumes on the row it was opened
+            // over (`FieldMenuSession::suspend_at_cursor`), not this one.
+            Self::Journal { .. } => FieldMenuRow::Items,
         }
     }
 
@@ -306,6 +320,7 @@ impl FieldMenuSubsession {
             Self::Config(s) => {
                 let _ = s.tick_with_key(OptionsInput::from_pad_edge(pressed), key_pressed);
             }
+            Self::Journal { session, view } => session.tick(view, pressed),
         }
     }
 
@@ -323,6 +338,7 @@ impl FieldMenuSubsession {
             Self::Status(s) => s.is_done(),
             Self::Save(s) => s.is_done(),
             Self::Config(s) => s.is_done(),
+            Self::Journal { session, .. } => session.is_done(),
         }
     }
 }

@@ -61,6 +61,12 @@ impl World {
             // the first round start.
             RoundPhase::Open => self.begin_battle_round(),
             RoundPhase::Execute => {
+                // A summon a boss's mid-round phase change raised takes its
+                // seat here, between two actors' turns - the same seam a
+                // wipe's wave arrives on - rather than at the next round's
+                // start. It holds no initiative key, so it first acts next
+                // round (never without a scripted pack monster).
+                self.expansion_seat_summons();
                 let pick = if std::mem::take(&mut self.battle.round_flow.leader_first) {
                     self.leader_first_combatant()
                 } else {
@@ -167,6 +173,14 @@ impl World {
         if self.battle_sideband_holds_round() {
             return;
         }
+        // An expansion fight's refill wave tops up the freed monster seats
+        // as the round opens, ahead of the sweep and the initiative seed so
+        // the arrivals take their turns this round (never without a pack).
+        self.expansion_seat_wave(legaia_engine_expansion::battle_waves::Moment::RoundStart);
+        // Expansion boss scripts check their phases as the round opens and
+        // seat what they summon, ahead of the initiative seed (never
+        // without a scripted pack monster in the fight).
+        self.expansion_boss_round_start();
         self.battle.round_flow.flat_walk_last = None;
         // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
         // `+0x1DF` action-stream clear, and the party band's stale-target
@@ -244,6 +258,8 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ActionState;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle.round_flow.flat_walk_last = None;
+        // An armed expansion challenge's turn limit counts rounds.
+        self.expansion_round_begun();
         self.battle.sweep_battle_intro_names();
         self.battle.commit_log_launch = None;
         // Retail's Begin moves the flow to `0xFE`, whose arm restarts the

@@ -402,10 +402,10 @@ pub(crate) fn bone_frames(
         // Bend-plane reference: child's bone, else parent's bone, else
         // the world axis least parallel to the bone.
         let mut refs: Vec<[f32; 3]> = Vec::new();
-        if let Some((d, _)) = child[i].and_then(&bone) {
+        if let Some((d, _)) = child[i].and_then(bone) {
             refs.push(d);
         }
-        if let Some((d, _)) = parent[i].and_then(&bone) {
+        if let Some((d, _)) = parent[i].and_then(bone) {
             refs.push(d);
         }
         refs.extend([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);

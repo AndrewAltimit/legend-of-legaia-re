@@ -95,9 +95,10 @@ mod world_toggles;
 
 pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
 pub use audio_state::{
-    ARENA_SIDE_BAND_REQUEST, AudioState, BGM_PARK_SENTINEL, BGM_SUB_OP_ENGINE_FIELD_CLOSE,
-    BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK,
-    SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
+    ARENA_SIDE_BAND_REQUEST, AudioState, BGM_PARK_SENTINEL, BGM_SUB_OP_ENGINE_FADE,
+    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
+    FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SideBandBank, VAB_01_RAW_BASE,
+    runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
 pub use config::*;
 pub use cutscene_state::{CappedTimeline, CutsceneState};
@@ -183,6 +184,22 @@ pub use effects::{
     MAX_DEBUG_EFFECTS,
 };
 mod encounters;
+mod expansion;
+mod expansion_arts;
+mod expansion_audio;
+mod expansion_boss;
+mod expansion_cards;
+mod expansion_cutscene;
+mod expansion_duel_page;
+mod expansion_hosts;
+mod expansion_items;
+mod expansion_map;
+mod expansion_map_npcs;
+mod expansion_modes;
+mod expansion_party;
+mod expansion_podium;
+mod expansion_quests;
+pub mod expansion_stage;
 pub use encounters::FieldBossStager;
 mod field_carriers;
 mod field_frame_tail;
@@ -191,6 +208,7 @@ pub(crate) mod field_xa;
 pub use field_xa::{scene_minigame_door_xa_prestage, scene_xa_prestage};
 mod field_loop;
 mod field_movement;
+pub use field_movement::{ACTION_DASH_BUTTON, ACTION_JUMP_BUTTON};
 pub mod field_npc_cull;
 mod field_npc_height;
 mod field_warp;
@@ -214,6 +232,8 @@ use legaia_engine_field::object_tint::{
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;
+pub mod run_rules;
+pub mod run_rules_boss_rush;
 pub use retail_progression::RetailProgressionTables;
 pub use save::{FIELD_MENU_DENY_CUE, FIELD_MENU_LOCK_BIT, FIELD_SYSTEM_LOCK_BIT};
 mod save;

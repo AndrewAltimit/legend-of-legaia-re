@@ -71,7 +71,16 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
                 // the SCUS item table (`PTR_DAT_8007436C`), the raw id only
                 // when no table was staged.
                 item_name: match engine_slots[usize::from(s)] {
-                    0 => String::new(),
+                    // An expansion pack's worn gear leaves the record's
+                    // byte `0`; its row names the pack item.
+                    0 => world
+                        .pack_worn_item_name(
+                            i as u8,
+                            legaia_engine_menus::equip_session::record_byte_for_engine_slot(
+                                s, i as u8,
+                            ) as u8,
+                        )
+                        .unwrap_or_default(),
                     id => world
                         .menu
                         .text

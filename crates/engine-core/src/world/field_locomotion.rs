@@ -338,6 +338,18 @@ pub struct FieldLocomotion {
     /// delayed `0x29` frames from the crossing) replaces the fade-out in the
     /// one fade slot the port has.
     pub(crate) warp_fade_in_in: Option<i32>,
+    /// Tuning of the action-movement enhancement
+    /// ([`crate::world::WorldToggles::action_movement`]); the kernel's
+    /// default until a mode or a host writes its own.
+    pub action_params: legaia_engine_field::action_movement::ActionParams,
+    /// The action model's body while it drives the player (`None` until
+    /// the first frame it does, and again once it hands the player back).
+    pub(crate) action_body: Option<legaia_engine_field::action_movement::ActionBody>,
+    /// The action model's last step, for the hosts and tests.
+    pub(crate) action_last: Option<legaia_engine_field::action_movement::ActionStep>,
+    /// Whether this frame's player step ran the action model; the settle
+    /// that follows stands aside for it.
+    pub(crate) action_drove: bool,
 }
 
 impl FieldLocomotion {
@@ -383,6 +395,10 @@ impl FieldLocomotion {
             warp: legaia_engine_field::field_warp_tile::WarpTimer::default(),
             warp_fade_in_in: None,
             arrival_facing: 0,
+            action_params: legaia_engine_field::action_movement::ActionParams::default(),
+            action_body: None,
+            action_last: None,
+            action_drove: false,
         }
     }
 }

@@ -1,0 +1,33 @@
+# Golf on `links_green`: the map's tiles are the course. `,` plays as rough
+# from the surface table; `s` and `w` from their legend labels.
+[[golf]]
+id = "links-golf"
+name = "Tower Green"
+map = "links_green"
+surfaces = { "," = "rough" }
+# The AI seat's body: a map NPC (seats in order, the player's skipped).
+bodies = ["rival_noa"]
+
+[[golf.holes]]
+par = 2
+tee = [2, 2]
+cup = [11, 2]
+
+[[golf.holes]]
+par = 3
+tee = [11, 7]
+cup = [2, 7]
+area = [1, 4, 12, 8]
+
+# A race round the ring of `links_ring`, two laps, three racers.
+[[races]]
+id = "links-race"
+name = "Tower Ring"
+map = "links_ring"
+laps = 2
+racers = 3
+half_width = 90
+ai_tier = "novice"
+waypoints = [[2, 2], [15, 2], [15, 9], [2, 9]]
+bodies = ["racer_noa", "racer_gala"]
+boost_segments = [0]

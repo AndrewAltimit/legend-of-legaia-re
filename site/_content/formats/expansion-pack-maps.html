@@ -1,0 +1,609 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; <a href="expansion-pack.html">expansion packs</a> &middot; maps</div>
+  <h1>Expansion packs: maps</h1>
+  <p class="lede">A pack map is a walkable field scene a modder lays out tile by tile, with no disc bytes in the pack. It borrows its look from a retail <strong>base scene</strong> - that scene's texture pages, palettes and geometry pack stay on the player's disc and are named only by coordinate - and supplies everything that makes it a place: walls, floor heights, props, NPCs, spawns, exits, trigger zones and encounter zones. One file per map, <code>maps/&lt;id&gt;.toml</code>, the file stem its id.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>File</dt><dd><code>maps/&lt;id&gt;.toml</code> in a pack (<a href="expansion-pack.html#layout">layout</a>); <code>maps/</code> is flat</dd>
+    <dt>Schema</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/src/map.rs" target="_blank" rel="noopener"><code>legaia_expansion_format::map</code></a> (<code>MapDef</code>)</dd>
+    <dt>Validation</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/src/map_rules.rs" target="_blank" rel="noopener"><code>legaia_expansion_format::map_rules</code></a></dd>
+    <dt>Field image</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-scene/src/expansion_map.rs" target="_blank" rel="noopener"><code>legaia_engine_scene::expansion_map</code></a> bakes the tiles into a <a href="field-map.html"><code>.MAP</code></a>-shaped image</dd>
+    <dt>Entry</dt><dd><code>SceneHost::enter_expansion_map</code> (<code>engine-scene-host</code>, <code>scene_host/expansion_map.rs</code>)</dd>
+    <dt>Runtime</dt><dd>Zones and NPCs <code>legaia_engine_expansion::map</code>; entrances <code>legaia_engine_expansion::entrance</code></dd>
+    <dt>Editor</dt><dd>The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s tile painter edits the file 1:1</dd>
+    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/rebirth/maps/rebirth_tower_1f.toml" target="_blank" rel="noopener"><code>packs/rebirth/maps/rebirth_tower_1f.toml</code></a></dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="file-layout" data-doc="file-layout">
+  <h2>File layout</h2>
+  <table>
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>name</code></td><td>Display name; shows as the place-name banner on entry.</td></tr>
+      <tr><td><code>size</code></td><td>Optional <code>[width, height]</code> in tiles; must match <code>tiles.rows</code>.</td></tr>
+      <tr><td><code>base</code></td><td><code>scene</code> (a scene <code>DiscRef</code>) and <code>geometry</code> (<code>"none"</code> or <code>"keep"</code>).</td></tr>
+      <tr><td><code>floor_heights</code></td><td>Up to 16 tier heights in world units, up positive. Empty takes the base scene's ladder.</td></tr>
+      <tr><td><code>tiles</code></td><td><code>origin</code>, <code>rows</code>, <code>legend</code>: the painter's grid.</td></tr>
+      <tr><td><code>props</code></td><td>Placed meshes from the base scene's geometry pack; a prop with a <code>top</code> is standable.</td></tr>
+      <tr><td><code>npcs</code></td><td>Field NPCs wearing a retail placement's model, saying pack lines.</td></tr>
+      <tr><td><code>spawns</code></td><td>Named arrival points; the first is the default.</td></tr>
+      <tr><td><code>exits</code></td><td>Tile rectangles leading to a retail scene or another pack map.</td></tr>
+      <tr><td><code>triggers</code></td><td>Tile rectangles that raise a pack event (battle, dialogue, quest).</td></tr>
+      <tr><td><code>encounters</code></td><td>Tile rectangles naming a pack encounter table.</td></tr>
+      <tr><td><code>entrances</code></td><td>Tile rectangles in retail field scenes that lead into the map.</td></tr>
+      <tr><td><code>bgm</code></td><td>A music <code>DiscRef</code> (sound-test id).</td></tr>
+      <tr><td><code>camera</code></td><td><code>"default"</code>, <code>"retail"</code>, <code>"far"</code> or <code>"farther"</code>: the follow camera's distance presets.</td></tr>
+    </tbody>
+  </table>
+  <p>Every coordinate a map carries is a <strong>map-local tile</strong> <code>[column, row]</code>, counted from the first character of the first row: the column grows with world <code>+X</code>, the row with world <code>+Z</code>. A rectangle is inclusive, <code>[col0, row0, col1, row1]</code>. The one exception is an entrance, whose rectangle is in the retail scene's own field grid (<a href="#entrances">below</a>).</p>
+</section>
+
+<section class="doc-section" id="the-tile-layer" data-doc="the-tile-layer">
+  <h2>The tile layer</h2>
+  <p><code>rows</code> is a list of strings, one character per tile, and <code>legend</code> maps each character to a style. A space is void - no floor, every quarter wall - unless the legend names it, and a row shorter than the widest is padded with void. That pair is the whole tile format, so a 2D painter reads and writes it 1:1: the palette is the legend and the canvas is the rows.</p>
+  <p>A worked example: a small walled room with a raised step, a half-walled tile and an opening in the east wall.</p>
+<pre><code>[tiles]
+origin = [16, 16]
+rows = [
+  "#######",
+  "#.....#",
+  "#.^^.h#",
+  "#.^^...",
+  "#######",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor", ground = { kind = "base_cell", cell = [8, 11] } }
+"^" = { label = "step", height = 1 }
+"h" = { walls = ["tl", "br"] }          # two of the four quarters
+
+[[spawns]]
+id = "start"
+tile = [1, 1]
+
+[[exits]]
+rect = [6, 3, 6, 3]
+to = { kind = "retail", scene = { kind = "scene", name = "town01" } }
+
+[[triggers]]
+rect = [2, 2, 3, 3]
+event = { kind = "dialog", line = "step_hint" }
+
+[[encounters]]
+rect = [4, 1, 5, 3]
+table = "room_1"</code></pre>
+  <figure class="diagram">
+    <svg viewBox="0 0 520 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The example rows drawn as a seven by five tile grid: an outer ring of solid wall tiles, floor inside, a two by two block of tier-1 step tiles, one tile with its top-left and bottom-right quarters walled, an opening in the east wall carrying the exit, the spawn in the top-left floor tile, the trigger rectangle over the step and the encounter rectangle over the two right-hand floor columns">
+      <!-- row 0 -->
+      <rect class="dg-node-warn" x="20" y="20" width="280" height="40"/>
+      <!-- row 4 -->
+      <rect class="dg-node-warn" x="20" y="180" width="280" height="40"/>
+      <!-- west wall rows 1..3 -->
+      <rect class="dg-node-warn" x="20" y="60" width="40" height="120"/>
+      <!-- east wall rows 1..2 -->
+      <rect class="dg-node-warn" x="260" y="60" width="40" height="80"/>
+      <!-- floor rows 1..3 -->
+      <rect class="dg-node" x="60" y="60" width="200" height="40"/>
+      <rect class="dg-node" x="60" y="100" width="40" height="80"/>
+      <rect class="dg-node" x="180" y="100" width="40" height="40"/>
+      <rect class="dg-node" x="180" y="140" width="120" height="40"/>
+      <!-- step tiles, tier 1 -->
+      <rect class="dg-node-accent" x="100" y="100" width="80" height="80"/>
+      <!-- half wall tile h at col 5 row 2 -->
+      <rect class="dg-node" x="220" y="100" width="40" height="40"/>
+      <rect class="dg-node-warn" x="220" y="100" width="20" height="20"/>
+      <rect class="dg-node-warn" x="240" y="120" width="20" height="20"/>
+      <!-- tile grid lines -->
+      <path class="dg-edge-dim" d="M60 20 V220 M100 20 V220 M140 20 V220 M180 20 V220 M220 20 V220 M260 20 V220 M20 60 H300 M20 100 H300 M20 140 H300 M20 180 H300"/>
+      <!-- zones -->
+      <rect class="dg-edge" x="102" y="102" width="76" height="76" rx="2"/>
+      <rect class="dg-edge" x="182" y="62" width="76" height="116" rx="2" stroke-dasharray="6 3"/>
+      <circle class="dg-node-ok" cx="80" cy="80" r="11"/>
+      <rect class="dg-node-ok" x="264" y="144" width="32" height="32" rx="3"/>
+      <text class="dg-label" x="80" y="84">S</text>
+      <text class="dg-label" x="280" y="164">E</text>
+      <text class="dg-label" x="120" y="124">1</text><text class="dg-label" x="160" y="124">1</text>
+      <text class="dg-label" x="120" y="164">1</text><text class="dg-label" x="160" y="164">1</text>
+      <text class="dg-sub" x="40" y="236">col 0</text><text class="dg-sub" x="280" y="236">col 6</text>
+      <!-- key -->
+      <rect class="dg-node-warn" x="330" y="24" width="18" height="18"/>
+      <text class="dg-label dg-start" x="356" y="37">wall quarter</text>
+      <rect class="dg-node" x="330" y="52" width="18" height="18"/>
+      <text class="dg-label dg-start" x="356" y="65">floor, tier 0</text>
+      <rect class="dg-node-accent" x="330" y="80" width="18" height="18"/>
+      <text class="dg-label dg-start" x="356" y="93">floor, tier 1</text>
+      <circle class="dg-node-ok" cx="339" cy="117" r="9"/>
+      <text class="dg-label dg-start" x="356" y="121">S spawn</text>
+      <rect class="dg-node-ok" x="330" y="136" width="18" height="18" rx="3"/>
+      <text class="dg-label dg-start" x="356" y="149">E exit</text>
+      <path class="dg-edge" d="M330 172 H348"/>
+      <text class="dg-label dg-start" x="356" y="176">trigger zone</text>
+      <path class="dg-edge" d="M330 198 H348" stroke-dasharray="6 3"/>
+      <text class="dg-label dg-start" x="356" y="202">encounter zone</text>
+    </svg>
+    <figcaption>The rows above as the painter shows them. Each tile is four <code>64 x 64</code> quarters, so <code>h</code> walls only its top-left and bottom-right quarters; the opening at column 6 of row 3 is floor, which is where the exit sits.</figcaption>
+  </figure>
+  <p>A legend style takes these keys:</p>
+<pre><code>"#" = { label = "wall", walls = "all" }
+"h" = { walls = ["tl", "br"] }
+"^" = { height = 1, ground = { kind = "texture", tpage = 28, clut = 32576, tile = 0 } }
+"." = { ground = { kind = "base_cell", cell = [8, 11] } }
+"d" = { ground = { kind = "mesh", index = 4 } }
+"W" = { walls = "all", wall = { kind = "box", height = 160, tpage = 28, clut = 32576, tile = 2 } }</code></pre>
+  <ul class="bullets">
+    <li><strong><code>walls</code></strong> is <code>"none"</code>, <code>"all"</code>, or a list of quarters. A tile is four <code>64 x 64</code> sub-cells: <code>tl</code> low X / low Z, <code>tr</code> high X / low Z, <code>bl</code> low X / high Z, <code>br</code> high X / high Z - top-left to bottom-right in the painter's view.</li>
+    <li><strong><code>height</code></strong> is a tier, an index into <code>floor_heights</code>.</li>
+    <li><strong><code>ground</code></strong> is what draws on the floor: a <code>texture</code> (one <code>32 x 32</code> cell of the <code>8 x 8</code> atlas on texture page <code>tpage</code> through palette <code>clut</code>, all in the base scene's VRAM), a <code>base_cell</code> (the ground texture of one of the base scene's own cells, in its field-grid coordinates), or a <code>mesh</code> (a base-pack mesh stamped on the tile as a decoration cell). No <code>ground</code> draws nothing.</li>
+    <li><strong><code>wall</code></strong> is what stands on the tile so it can be seen (<a href="#visible-walls">visible walls</a>). It draws only: collision stays <code>walls</code>.</li>
+  </ul>
+
+  <h3 id="tiers-are-corner-heights">Tiers are corner heights</h3>
+  <p>The retail floor is a vertex grid, not a set of flat tiles. The sampler <code>FUN_80019278</code> reads a tile's tier as the height at its <strong>low-X / low-Z corner</strong> and interpolates across the cell from the four corner tiles' tiers (<a href="../subsystems/field-locomotion.html">field locomotion</a>); the ground mesh is built the same way. A cell is flat only where its four corners agree, so a raised block of <code>N x N</code> tiles is flat over its first <code>(N-1) x (N-1)</code> cells and slopes along its edges. The player walks the same surface the ground draws. Void tiles take the tier of a floor neighbour above or to the left, so the map's own edges stay level.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 560 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A six by six grid of tile corners with a three by three block of tier-1 tiles. Each corner dot carries the tier of the tile whose low corner it is. The four cells inside the block whose corners are all 1 are flat and raised; the twelve cells around them, including the block's own last row and column and the ring just above and left of it, are hatched as slopes; the rest are flat at tier 0">
+      <defs>
+        <pattern id="em-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <path class="dg-edge-dim" d="M0 0 V8"/>
+        </pattern>
+      </defs>
+      <!-- flat low cells: whole grid background -->
+      <rect class="dg-node" x="40" y="30" width="250" height="250"/>
+      <!-- sloped cells: rows/cols 0..3 minus flat 1..2 -->
+      <rect x="40" y="30" width="200" height="200" fill="url(#em-hatch)"/>
+      <!-- flat raised cells 1..2 -->
+      <rect class="dg-node-accent" x="90" y="80" width="100" height="100"/>
+      <!-- cell lines -->
+      <path class="dg-edge-dim" d="M90 30 V280 M140 30 V280 M190 30 V280 M240 30 V280 M40 80 H290 M40 130 H290 M40 180 H290 M40 230 H290"/>
+      <!-- painted block outline (tiles 1..3) -->
+      <rect class="dg-edge" x="90" y="80" width="150" height="150"/>
+      <!-- corner dots: tier 1 for corners 1..3 -->
+      <g class="dg-node">
+        <circle cx="40" cy="30" r="4"/><circle cx="90" cy="30" r="4"/><circle cx="140" cy="30" r="4"/><circle cx="190" cy="30" r="4"/><circle cx="240" cy="30" r="4"/><circle cx="290" cy="30" r="4"/>
+        <circle cx="40" cy="80" r="4"/><circle cx="40" cy="130" r="4"/><circle cx="40" cy="180" r="4"/><circle cx="40" cy="230" r="4"/><circle cx="40" cy="280" r="4"/>
+        <circle cx="90" cy="280" r="4"/><circle cx="140" cy="280" r="4"/><circle cx="190" cy="280" r="4"/><circle cx="240" cy="280" r="4"/><circle cx="290" cy="280" r="4"/>
+        <circle cx="290" cy="80" r="4"/><circle cx="290" cy="130" r="4"/><circle cx="290" cy="180" r="4"/><circle cx="290" cy="230" r="4"/>
+      </g>
+      <g class="dg-node-ok">
+        <circle cx="90" cy="80" r="6"/><circle cx="140" cy="80" r="6"/><circle cx="190" cy="80" r="6"/>
+        <circle cx="90" cy="130" r="6"/><circle cx="140" cy="130" r="6"/><circle cx="190" cy="130" r="6"/>
+        <circle cx="90" cy="180" r="6"/><circle cx="140" cy="180" r="6"/><circle cx="190" cy="180" r="6"/>
+      </g>
+      <text class="dg-sub" x="140" y="300">X grows right, Z grows down</text>
+      <!-- key -->
+      <circle class="dg-node-ok" cx="329" cy="46" r="6"/>
+      <text class="dg-label dg-start" x="344" y="50">corner at tier 1</text>
+      <circle class="dg-node" cx="329" cy="74" r="4"/>
+      <text class="dg-label dg-start" x="344" y="78">corner at tier 0</text>
+      <rect class="dg-node-accent" x="320" y="94" width="18" height="18"/>
+      <text class="dg-label dg-start" x="344" y="107">flat, raised</text>
+      <rect class="dg-node" x="320" y="122" width="18" height="18"/>
+      <rect x="320" y="122" width="18" height="18" fill="url(#em-hatch)"/>
+      <text class="dg-label dg-start" x="344" y="135">sloped cell</text>
+      <rect class="dg-node" x="320" y="150" width="18" height="18"/>
+      <text class="dg-label dg-start" x="344" y="163">flat, tier 0</text>
+      <rect class="dg-edge" x="320" y="178" width="18" height="18"/>
+      <text class="dg-label dg-start" x="344" y="191">the 3 x 3 painted tiles</text>
+      <text class="dg-sub dg-start" x="320" y="222">a tile's tier is its low-X / low-Z</text>
+      <text class="dg-sub dg-start" x="320" y="238">corner; each cell interpolates</text>
+      <text class="dg-sub dg-start" x="320" y="254">between its four corners</text>
+    </svg>
+    <figcaption>A 3 x 3 raised block. Only the 2 x 2 cells whose four corners are all tier 1 are flat; along the block's top and left edges the cell outside it ramps up onto it, and along its bottom and right edges its own last row and column ramp down. The workbench's <strong>Heights</strong> overlay hatches exactly these cells, read back from the engine's own image.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="the-base-scene" data-doc="the-base-scene">
+  <h2>The base scene</h2>
+  <p>The map is entered as an ordinary field entry of the base scene with a synthetic field layer laid over it. The base scene's VRAM, its geometry pack and its sound load as they would for the retail scene, which is what draws the map. Its MAN does not run: no entry script, NPCs, object binds, shops or encounter table of the base scene take part.</p>
+  <table>
+    <thead><tr><th><code>geometry</code></th><th>What draws</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td><code>"keep"</code></td><td>The base scene's own placed objects, decoration cells and ground, under the map</td><td>A retail room re-purposed with new walls and zones</td></tr>
+      <tr><td><code>"none"</code></td><td>Only the map's own ground and props</td><td>A new layout in the base scene's materials</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="the-synthetic-field-image" data-doc="the-synthetic-field-image">
+  <h2>The synthetic field image</h2>
+  <p>The engine bakes the tile layer into a <code>.MAP</code>-shaped image in the layout of the <a href="field-map.html">per-scene field map</a> and seats it on the scene; every <code>.MAP</code> reader - collision grid, floor sampler, placements, decoration cells, ground - parses it unchanged. The image is the modder's layout run through the documented format: <code>0x12000</code> bytes of map plus the <code>0x800</code>-byte fallback window after it.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:8"><span class="bm-off">+0x00000</span><span class="bm-name">object records</span><span class="bm-size">0x4000</span></div>
+    <div class="bm-cell bm-accent" style="--w:8"><span class="bm-off">+0x04000</span><span class="bm-name">collision grid</span><span class="bm-size">0x4000</span></div>
+    <div class="bm-cell" style="--w:16"><span class="bm-off">+0x08000</span><span class="bm-name">object cells</span><span class="bm-size">0x8000</span></div>
+    <div class="bm-cell bm-dim" style="--w:4"><span class="bm-off">+0x10000</span><span class="bm-name">trigger block</span><span class="bm-size">0x2000</span></div>
+    <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off">+0x12000</span><span class="bm-name">window</span><span class="bm-size">0x800</span></div>
+  </div>
+  <p class="dg-note">To scale. The window is where a retail scene's <code>.PCH</code> walk-on triggers land.</p>
+  <table>
+    <thead><tr><th>Region</th><th>What the map writes</th></tr></thead>
+    <tbody>
+      <tr><td><code>+0x04000</code> collision grid</td><td>Tile <code>(c, r)</code>'s tier in byte <code>(c, r)</code>'s low nibble; its wall quarters in byte <code>(c, r + 1)</code>'s high nibble. Everything off the map is wall.</td></tr>
+      <tr><td><code>+0x00000</code> object records</td><td>One record per distinct ground texture, decoration mesh and prop.</td></tr>
+      <tr><td><code>+0x08000</code> object cells</td><td>Each tile's record index; the draw gates are derived by the grid-mark refresh.</td></tr>
+      <tr><td><code>+0x10000</code> trigger block</td><td>The empty four-table header chain.</td></tr>
+      <tr><td><code>+0x12000</code> fallback window</td><td>Zeros: no <code>.PCH</code> triggers. Exits and zones run in the pack runtime instead.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="wall-nibble-shift">One grid byte, two tiles</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">bits 7..4</span><span class="bm-name">wall quarters of tile (c, r - 1)</span><span class="bm-size">br bl tr tl</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">bits 3..0</span><span class="bm-name">tier of tile (c, r)</span><span class="bm-size">0..15</span></div>
+  </div>
+  <p>The one-row shift of the wall nibble is the wall probe's <code>+2</code> Z bias (<a href="../subsystems/field-locomotion.html">field locomotion</a>): the probe reads a point's wall bits from the grid row below the one its floor nibble sits in, so a wall painted on tile row <code>r</code> is stored in byte row <code>r + 1</code>. That is why a map keeps one free grid row below it: the <code>origin</code> row plus the map's height must stay under 127.</p>
+  <p>The draw gates come out of the record flags the way they do on a retail map. <code>FUN_80017BEC</code> mirrors flag bit <code>0x1</code> into cell bit <code>0x1000</code> (the ground heightfield's gate) and bit <code>0x2</code> into <code>0x2000</code> (the decoration / placed-object gate), and clears flag bit <code>0x1</code> when the record's <code>+0x16</code> countdown is zero. On a ground record <code>+0x16</code> is the palette word, which is never zero for a real palette, so a textured tile keeps its gate.</p>
+  <table>
+    <thead><tr><th>Record</th><th>Flags</th><th>Fields</th></tr></thead>
+    <tbody>
+      <tr><td>Ground texture</td><td><code>0x0001</code></td><td><code>+0x14</code> atlas cell, <code>+0x15</code> tpage, <code>+0x16</code> clut</td></tr>
+      <tr><td>Decoration mesh</td><td><code>0x0012</code></td><td><code>+0x10</code> pack mesh</td></tr>
+      <tr><td>Wall</td><td><code>0x0012</code> (<code>0x0013</code> on a textured tile)</td><td><code>+0x10</code> wall mesh, the tile's ground texture</td></tr>
+      <tr><td>Prop</td><td><code>0x0016</code> (<code>0x0017</code> on a textured tile)</td><td><code>+0x00..+0x0C</code> offset and rotation, <code>+0x10</code> pack mesh, the tile's ground texture</td></tr>
+    </tbody>
+  </table>
+  <p>A cell names one record, so a prop's record also carries the ground texture of the tile it stands on, and a tile holds at most one prop.</p>
+</section>
+
+<section class="doc-section" id="props" data-doc="props">
+  <h2>Props</h2>
+<pre><code>[[props]]
+mesh = { object = 7 }                       # base geometry pack mesh 7
+tile = [2, 2]
+offset = [0, 0, 0]                          # world units from the tile centre, y up
+rotation = [0.0, 45.0, 0.0]                 # degrees; y is the yaw
+scale = 0.75                                # uniform; 1 when left out
+solid = true                                # close the prop's tile
+top = 64                                    # standable: a floor 64 units up
+footprint = [128, 128]                      # the top's extent, world units</code></pre>
+  <p><code>mesh</code> takes four forms:</p>
+  <table>
+    <thead><tr><th>Form</th><th>Mesh</th></tr></thead>
+    <tbody>
+      <tr><td><code>{ object = N }</code></td><td>Mesh <code>N</code> of the base scene's geometry pack.</td></tr>
+      <tr><td><code>{ scene = "town01", object = N }</code></td><td>Mesh <code>N</code> of any field scene's pack (<a href="#meshes-from-other-scenes">meshes from other scenes</a>).</td></tr>
+      <tr><td><code>{ tmd = { kind = "tmd", prot = P, index = N } }</code></td><td>Mesh <code>N</code> of the pack held in PROT entry <code>P</code>, whichever scene's block holds it.</td></tr>
+      <tr><td><code>{ asset = "models/x.glb", colors = 256 }</code></td><td>A glTF model the pack carries (<a href="#model-assets">model assets</a>).</td></tr>
+    </tbody>
+  </table>
+  <p><code>scale</code> folds into the prop's model matrix after its rotation, where a retail placed object's render scale lands. Props carry no collision box of their own: <code>solid</code> closes the tile. <code>animate</code> and <code>light</code> are the prop's <a href="#animated-props">animators</a> and <a href="#lights">light</a>. A cell names one record, so a prop whose tile's cell already draws a mesh (a kept retail cell, a wall, a mesh ground) anchors its record on the nearest free tile within three, its offset carrying the draw back; only with none in reach does it replace the mesh, and the entry logs it.</p>
+  <p>The prop's record carries its anchor tile's ground texture (the style's, or on a kept map the texture the retail record drew), so a prop on a kept floor leaves no hole. Records <code>1..=3</code> stay unwritten: those object ids name the protagonist and NPC meshes, which never draw from the scene pack. A prop's height offset is from the floor the player walks on its tile: <code>0</code> stands it on the floor.</p>
+  <h3 id="a-kept-rooms-floor">A kept room's floor</h3>
+  <p>Many retail rooms raise no floor through the tier grid: their stairs, daises and terraces stand on cells flagged <code>0x800</code> whose kind-2 trigger records give the step. A kept room (<code>geometry = "keep"</code>) carries those records into its image, so the player walks the retail floor, and props, decorations and decals on a flagged tile stand on the same step (<code>KeptFloor</code>). The workbench's map preview shows each tile's walk height (<code>floor</code>).</p>
+  <h3 id="standable-props">Standable props</h3>
+  <p>A prop with a <code>top</code> is a floor box: a flat surface <code>top</code> world units up (the <code>floor_heights</code> convention) over its <code>footprint</code>, centred on the tile centre plus <code>offset</code>, the whole tile when the footprint is left out. It does not close its tile, so <code>solid</code> is unread.</p>
+  <p>The floor sampler (<code>World::sample_field_floor_height</code>, the <code>FUN_80019278</code> port, and its camera-ladder sibling) answers the higher of the grid floor and the top inside the box. The tier grid is untouched: a top is not a corner height, so it neither slopes into its neighbours nor bends the ground mesh around it, which is why it is a separate surface rather than a raised tier. The prop's mesh draws on the tile's floor as before; matching <code>top</code> to the mesh's visible height is the modder's call.</p>
+  <table>
+    <thead><tr><th>Mover</th><th>On a standable prop</th></tr></thead>
+    <tbody>
+      <tr><td>Action movement</td><td>Stands, walks across, climbs a rise up to its step height, jumps onto a taller top and lands on it, falls off its edge.</td></tr>
+      <tr><td>The retail walk</td><td>Refused at the edge of any top higher than the one it stands on: the walk climbs nothing. Walking off a top is not refused.</td></tr>
+      <tr><td>NPC patrols</td><td>Walk the sampled floor; route them around a top.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="npcs" data-doc="npcs">
+  <h2>NPCs</h2>
+<pre><code>[[npcs]]
+id = "tower_guide"                              # the quest talk key
+model = { kind = "npc", scene = "tower", index = 3 }
+tile = [7, 8]
+facing = 0                                      # compass sector, 0..8
+clip = 2                                        # optional idle clip id
+patrol = [[9, 8], [9, 6]]                       # optional loop of tiles
+walk_clip = 4                                   # optional clip a patrol leg plays
+line = "tower_guide_hello"                      # a dialog.toml line
+shop = "tower_dealer"                           # optional: a cards.toml dealer</code></pre>
+  <p>An NPC is not an asset. A retail NPC is one record of its scene's MAN actor placement list, whose model byte indexes the scene's model pool and whose clip byte names a record of the scene's ANM bundle (<a href="anm.html">ANM</a>, <a href="../subsystems/script-vm.html">script VM</a>). A pack NPC borrows one by coordinate, <code>{ kind = "npc", scene, index }</code>, the placement's partition-1 index - the slot the site's <a href="../npcs.html">NPC page</a> lists; <code>0</code> is the scene controller. Its model and idle clip come from that record; <code>clip</code> overrides the clip with another record of the same bundle (id = record + 1). The model scene must be the base scene - the mesh indexes the base scene's pool and samples its VRAM - unless the placement is a party member or save point (model byte <code>0xF0</code> and up), whose mesh is the resident global pool.</p>
+  <p>At entry the engine reads each NPC's placement off the disc (<code>expansion_map::resolve_map_npcs</code>) and seats it as an actor placement of its own, slot <code>1 + n</code> for the map's <code>n</code>th NPC (<code>map::npc_slot</code>): the pack map runs no MAN, so nothing else holds those slots. From there the NPC is a field NPC on every path a retail one takes:</p>
+  <table>
+    <thead><tr><th>Path</th><th>What reads the pack NPC</th></tr></thead>
+    <tbody>
+      <tr><td>Draw</td><td>The live-scene placement list (<code>npc_catalog::live_scene_placements</code>, <code>catalog_live_scene_npcs</code>) both hosts build their NPC meshes and clips from, posed by the base scene's ANM bundle.</td></tr>
+      <tr><td>Collision</td><td>Its anchor in <code>World::npcs.positions</code>: the moving-actor box (<code>FUN_801CFC40</code>'s moving arm, &plusmn;40 units) blocks the player as a village NPC does.</td></tr>
+      <tr><td>Talk</td><td>The facing probe (<code>FUN_801CF9F4</code>'s port) picks it on Cross; <code>World::trigger_field_interact</code> turns it to the player and hands the talk to the map.</td></tr>
+      <tr><td>Patrol</td><td>A loop of scripted walk legs through the motion VM (<code>World::start_field_npc_motion</code>): tile, each waypoint, back, each leg cueing <code>walk_clip</code> the way a <code>4C 51</code> walk cues its move clip. A leg starts only while no dialogue holds the field.</td></tr>
+    </tbody>
+  </table>
+  <p>Talking to an NPC runs its <code>line</code> through the pack dialogue runner (<code>World::expansion_say</code>) and then raises the quest event <code>Talked(id)</code> (<code>World::expansion_talked</code>), so a quest naming the NPC as <code>giver</code> or in a <code>talk</code> objective advances (<a href="expansion-pack-quests.html">quests</a>); a quest line the talk starts plays after the NPC's own. An NPC with a <code>shop</code> opens that counter instead: an <code>items.toml</code> shop id the <a href="expansion-pack-items.html#the-item-screen">pack item shop</a> (<code>World::open_item_shop</code>), a <code>cards.toml</code> <code>[[dealers]]</code> id the dealer's counter (<code>World::open_card_dealer</code>); an id that is both opens the item shop. It says its <code>line</code> only when the counter cannot open. An NPC with a <code>cutscene</code> plays it in place of its line, and one whose <code>present</code> gate is shut stays off the map for the visit (parked on retail's off-map hide box) until a cutscene's <code>show</code> step brings it on.</p>
+</section>
+
+<section class="doc-section" id="visible-walls" data-doc="visible-walls">
+  <h2>Visible walls</h2>
+  <p>A legend style's <code>wall</code> draws on every tile of that style:</p>
+  <ul class="bullets">
+    <li><code>{ kind = "box", height, tpage, clut, tile }</code> - a box the tile's size, <code>height</code> world units tall, each side and the top textured with one <code>32 x 32</code> atlas cell of the base scene's VRAM (the three words of a <code>texture</code> ground). Faces taller than <code>128</code> units stack.</li>
+    <li><code>{ kind = "mesh", index }</code> - the base scene's geometry-pack mesh <code>index</code>.</li>
+  </ul>
+  <p>The box is built when the map loads (<code>expansion_map::wall_box_tmd</code>): the pack carries the five numbers, and the engine runs them through the Legaia TMD encoder. The scene's resource build appends each distinct box to the base scene's geometry pack after the pack's own meshes, so box <code>k</code> is pack mesh <code>geometry_len + k</code>, where <code>geometry_len</code> is the pack's length as the field load's descriptor walk registers it (<code>scene_resources::field_geometry_pack</code>). Each wall tile is a decoration cell naming that mesh, which both hosts draw through the ordinary decoration-cell path.</p>
+  <p>A scene whose geometry the descriptor walk cannot enumerate has no length to append to, and a box on it is refused at entry. A tile holds one cell mesh, so a style cannot carry both a <code>mesh</code> ground and a <code>wall</code>.</p>
+</section>
+
+<section class="doc-section" id="meshes-from-other-scenes" data-doc="meshes-from-other-scenes">
+  <h2>Meshes from other scenes</h2>
+  <p>A mesh from another scene's pack samples that scene's VRAM, which the map does not load. At entry the engine builds the source scene's field resources, takes the mesh and relocates what it samples (<code>expansion_map::detail</code>):</p>
+  <ol class="bullets">
+    <li>For every texture page its primitives read, the bounding rectangle of their UVs; for every palette, its 16 or 256 entries.</li>
+    <li>Each the map's VRAM already holds word for word stays put - the boot-resident system UI, a page two scenes share.</li>
+    <li>The rest are copied into free VRAM (<code>VramAlloc</code>) and the primitives' CLUT, page and UV words are rewritten to the copies.</li>
+  </ol>
+  <p>Free VRAM is what the base scene's build leaves unwritten (its TIMs, the system UI, the effect-texture pool and the field character atlas count as written), minus the battle transition's capture pages (<code>320 &lt;= x &lt; 640</code>) and the dialog font's page. A texture rectangle stays inside one page and a palette starts on a 16-halfword boundary. The copies are written by the scene's resource build after its own uploads, so both hosts and every rebuild - a battle's return included - carry them, and the base scene's own words are never written.</p>
+</section>
+
+<section class="doc-section" id="model-assets" data-doc="model-assets">
+  <h2>Model assets</h2>
+  <p><code>{ asset = "path" }</code> names a glTF 2.0 file under the pack's <code>assets/</code>, converted at entry (<code>expansion_map::gltf</code>): the default scene's node tree is baked into the vertices, triangle primitives (<code>POSITION</code>, <code>TEXCOORD_0</code>, <code>indices</code>) become <code>Ft3</code> primitives, and a material's PNG <code>baseColorTexture</code> is box-filtered to at most <code>256 x 256</code>, median-cut to <code>colors</code> (16 or 256) and written into free VRAM as a 4bpp or 8bpp page. One glTF unit is <code>100</code> world units, <code>+Y</code> up; at most <code>16384</code> triangles. Skins, morph targets and animations are not read.</p>
+  <p>A model is always palettised: there is no full-colour path, which keeps it inside the scene's one shading law - PSX mode snaps and dithers it like the disc's meshes, clean mode draws the same texels without the snap. <code>scripts/models/generate_ember_crystal.py</code> writes the Rebirth pack's crystal as a worked example.</p>
+</section>
+
+<section class="doc-section" id="decorations" data-doc="decorations">
+  <h2>Decorations</h2>
+  <p>A tile holds one prop but any number of decorations. They draw only. When the map loads, every decoration of a tile is baked with the tile's own cell mesh into one mesh (<code>tmd_ops::bake</code>, each part's primitives byte for byte, only its vertices moved), drawn through the ordinary decoration-cell path on both hosts. Three sections paint them, expanding deterministically into one list:</p>
+<pre><code>[[decor]]                                   # one at a time
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-30, 0, -36]
+
+[[scatter]]                                 # a seeded brush
+rect = [1, 1, 13, 11]
+on = ".,"
+density = 0.45                              # expected meshes a tile
+seed = 1101
+jitter = 44
+scale = [0.5, 0.9]
+meshes = [{ mesh = { scene = "rugi", object = 18 }, weight = 2 }, { mesh = { object = 27 } }]
+
+[[edges]]                                   # along wall edges
+mesh = { scene = "rugi", object = 15 }
+walls = "#"
+every = 3
+inset = 6
+y = 120</code></pre>
+  <p>A brush paints floor tiles, and a walled tile only when its <code>on</code> names that tile's character (a forest's trees on the thicket that walls a path in). A brush's draw for a tile is a pure function of its seed, its index and the tile; an edge copy is pushed against the walled side and turned to face the room. Limits: 8192 decorations a map, 32 a tile. A map decorated on more tiles than it has free records (of 508) bakes cells of <code>c x c</code> tiles onto one anchor tile each. Decorations on the tile a placed prop's record anchors on are left out, with a validator warning.</p>
+  <h3 id="organic-placement">Organic placement</h3>
+  <p>Scatter brushes jitter, turn, scale and tilt each mesh, and a <code>cluster = { centre, radius, falloff }</code> thins a brush from a dense centre to a sparse rim, and a <code>clearance = { radius, front, keep }</code> thins it round the walkable floor (below). Edge runs take <code>jitter</code>, <code>yaw_jitter</code>, <code>scale_range</code> and a <code>seed</code>; decal brushes jitter position, yaw and size.</p>
+  <h3 id="clearance">Clearance</h3>
+  <p>The follow camera stands on a map's <code>-Z</code> side (the top of the painter's grid) looking toward <code>+Z</code>, so a forest scattered on the thicket that walls a path in stands trunks and canopies between the camera and the path. A brush's <code>clearance</code> keeps them off: a band <code>radius</code> tiles wide to the sides and behind every walkable tile and <code>front</code> tiles deep toward the camera keeps <code>keep</code> of the brush's density, ramping back to full at half the band again past it. The West Voz Forest is laid out the same way. The camera-occlusion fade covers decorations like any field geometry, but it arms only when the player is completely hidden - a canopy that half covers them is what the clearance is for.</p>
+  <h3 id="decals">Decals</h3>
+<pre><code>[[decals]]
+cell = { tpage = 28, clut = 32577, tile = 4 }
+rect = [1, 1, 6, 5]      # a brush; or tile = [c, r]
+density = 0.9
+size = [90, 90]
+sides = 9                # 4 = rectangle, 3..=16 a polygon
+span = 1                 # atlas cells a side</code></pre>
+  <p>A decal is a flat textured polygon in the floor plane - crack, moss, stain, rune - built at load and baked into its tile's cell like any decoration. It also caps a mesh: the Sky Gardens Tower's pillar tops are authored as untextured black <code>G4</code> faces (the tower's ceiling hides them from the retail camera), so the Atrium's pillars wear octagonal stone decals at their tops.</p>
+</section>
+
+<section class="doc-section" id="animated-props" data-doc="animated-props">
+  <h2>Animated props</h2>
+<pre><code>animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.25 }]
+# also: sway (axis, degrees), orbit (radius), pulse (amount)</code></pre>
+  <p>Each animator is a pure function of <code>World::frame</code>; <code>phase</code> is a fraction of the period, and a prop's animators compose in list order. The pose reaches both hosts through the placed-draw tables they already fold in each frame - <code>World::object_draw_turn_matrices</code> and <code>object_draw_displacements</code> - under a record key of the prop's own (<code>PROP_RECORD_BASE + n</code>). Animation is draw only: collision and standable tops stay where the prop rests. </p>
+  <h3 id="disc-animation-clips">Disc animation clips</h3>
+  <p>A disc-animated object is a scene actor in retail, a MAN placement with a clip. A pack map gets one as an <code>[[npcs]]</code> entry with <code>scenery = true</code> - drawn and clip-played by both hosts' NPC draw, with no anchor (nothing collides with it, nothing talks to it) - or by <code>base = { ..., scenery = true }</code>, which seats every animated, non-talking, non-door placement of the base scene's MAN where its header places it. A kept retail room otherwise stands still, since a pack map runs no MAN.</p>
+</section>
+
+<section class="doc-section" id="lights" data-doc="lights">
+  <h2>Lights</h2>
+<pre><code>[lighting]
+mood = "cave"                               # day, dusk, night, cave
+lamps = [{ tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 }]
+
+[[props]]
+light = { color = [255, 150, 70], radius = 560, flicker = 0.25, period = 18 }</code></pre>
+  <p>Enhanced lighting lights a pack map as it lights a retail scene - from the emitter primitives of the meshes it draws, so a torch carried in from another scene lights its wall - plus the map's lamps and prop lights. <code>mood</code> stands in for the base scene's under the time of day <code>Auto</code>. Both hosts read mood and lights through one kernel (<code>engine-screens::field_frame</code>). With enhanced lighting off the map renders retail-faithful: baked colours, no lamps.</p>
+</section>
+
+<section class="doc-section" id="animated-materials" data-doc="animated-materials">
+  <h2>Animated materials</h2>
+<pre><code>[[materials]]
+kind = "cycle"        # palette cycling: clut, start, count, period, reverse
+[[materials]]
+kind = "hsv"          # hue / brightness: clut, start, count, period, hue, value
+[[materials]]
+kind = "tint"         # standing recolour: clut, start, count, hue, value, color = [r, g, b]
+[[materials]]
+kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, period</code></pre>
+  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>tint</code> recolours entries once and holds them (a static hue turn and brightness shift through that kernel, then a per-channel multiply, <code>128</code> unchanged), so a kept room's art takes the map's mood; <code>scroll</code> rotates an atlas cell by whole texels. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
+</section>
+
+<section class="doc-section" id="fog" data-doc="fog">
+  <h2>Fog</h2>
+<pre><code>[fog]
+regions = [{ rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 }]</code></pre>
+  <p>Arms the retail field fog pool over the map: each region becomes a MAN-section-4 region record and the ambient particle gate goes up (<code>World::arm_expansion_fog</code>). The wisps are the pool's own, drawn by both hosts through <code>World::fog_render_step</code>; the pool draws from the world's random stream as retail's does.</p>
+</section>
+
+<section class="doc-section" id="particles" data-doc="particles">
+  <h2>Particles</h2>
+<pre><code>[[emitters]]
+kind = "embers"          # embers, sparkles, dust, leaves, drips, smoke
+rect = [3, 4, 3, 4]
+height = [40, 90]
+count = 14
+seed = 11
+# optional over the kind's preset: life, velocity, spread, gravity, sway,
+# size, color, color_end, additive</code></pre>
+  <p>Each particle is a camera-facing sprite drawn through the field screen-effect pass the retail fog sheets use (<code>HostView::fog_prims</code>, both hosts), projected by the same view. Its whole life is a pure function of the seed, its index and <code>World::frame</code> - no state, no random stream - so it is the same on both hosts and in every run. The sprites are the engine's own (a soft dot, a spark, a leaf, a drop, drawn at load into free VRAM), additive for the glowing kinds, opaque for leaves.</p>
+</section>
+
+<section class="doc-section" id="terrain" data-doc="terrain">
+  <h2>Terrain</h2>
+<pre><code>[terrain]
+resolution = 4          # vertices a tile side: 1, 2 or 4
+smooth = 2              # blur passes over the tier base
+max_step = 40           # height a 64 x 64 sub-cell may span and stay walkable
+skirt = 8               # tiles drawn past each edge
+shapes = [
+  { kind = "ridge", from = [14.0, 9.0], to = [27.0, 6.5], radius = 2.6, height = 30 },
+  { kind = "plateau", rect = [40, 18, 41, 33], height = 22, edge = 0.18 },
+  { kind = "flatten", at = [9.5, 9.5], radius = 2.6 },
+]
+materials = [{ name = "sand", chars = ".", tint = [134, 130, 122], cells = [{ tpage = 12, clut = 32005, tile = 3 }] }]
+cliff = { slope = 0.95, cells = [{ tpage = 12, clut = 32006, tile = 6 }] }
+water = { level = -10, cells = [{ tpage = 9, clut = 31880, tile = 56 }], foam = 16, wade = 5, surf = 150 }
+sky = { tpage = 10, clut = 31104, radius = 6 }</code></pre>
+  <p>A map with <code>[terrain]</code> floors on a <strong>heightfield</strong> instead of the tier grid: <code>resolution</code> vertices a tile side. The tiers are its base (smoothed into slopes), and the <code>shapes</code> sculpt it in order - <code>raise</code>, <code>ridge</code>, <code>plateau</code>, <code>ramp</code>, <code>flatten</code> (to a height, or the mean under the brush), <code>smooth</code>, <code>noise</code>, <code>stroke</code> (a brush dragged along a path - what the workbench's 3D sculpt brush writes) and <code>heightmap</code> (a grayscale PNG under <code>assets/</code>, black to white over a height range). It is a pure function of the pack.</p>
+  <h3 id="walking-the-terrain">Walking the terrain</h3>
+  <p>The floor sampler answers the terrain's surface, interpolated over the very triangle the mesh draws, so the player stands on the drawn ground to the unit. Tiers are written <code>0</code>; props, decorations, NPCs, lamps and emitters stand on the surface. A sub-cell steeper than <code>max_step</code>, or deeper than <code>wade</code> under the water, is a wall quarter: slopes walk, cliffs and deep water block.</p>
+  <h3 id="drawing-the-terrain">Drawing the terrain</h3>
+  <p>Each tile's quads bake into its decoration cell, so both hosts draw it on the path they already run. Ground quads take the material with the highest weight at their centre after a dithering noise (<code>blend</code>), so material boundaries are organic, not the tile grid; each tile turns its cell one of eight ways against repeats; steep quads take the <code>cliff</code> material. Vertex colours carry the material tints across boundaries, a macro brightness variation and a baked sun, under the retail field's own <code>texel * colour / 128</code> law. Water is a flat textured surface coloured by depth, meeting the slope in the depth buffer; an additive foam band rolls in every <code>surf</code> frames; <code>sky</code> rings the map with a retail sky page.</p>
+  <p><strong>Detail.</strong> With <code>detail = 2</code> or <code>4</code> a quad on a material boundary is cut into finer sub-quads lying on its own two triangles, so a boundary steps every 16 or 8 units instead of 32 while the surface the player walks stays the same. <code>detail_reach</code> keeps that detail, and the soft blends, to the tiles within that many of the walkable floor: ground a forest or a cliff band walls off is seen only through what stands on it, where the finer boundary is triangles nobody sees (<code>0</code> draws every boundary in full). <strong>Borrowed textures:</strong> a material, the cliff or the water with <code>from = "&lt;scene&gt;"</code> names that retail scene's VRAM; the map copies each cell and its palette into free VRAM at entry, so a cave can paint with another scene's rock. <strong>Decals</strong> drape over the slope under them.</p>
+</section>
+
+<section class="doc-section" id="how-large-a-map-can-be" data-doc="how-large-a-map-can-be">
+  <h2>How large a map can be</h2>
+  <p>One map is one field grid: at most <code>120 x 120</code> tiles of <code>128</code> world units, about 15,000 units a side - larger than any retail room. Two budgets bound what it holds: 508 object records (ground textures, walls, props and decorated cells share them) and the VRAM the base scene leaves free for foreign meshes and model textures. A larger world is several maps joined by map exits, which enter at once with no streaming.</p>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <p>The validator (<a href="expansion-pack.html#validation">expansion-pack validation</a>) checks each map against the sections it names, with or without a disc:</p>
+  <table>
+    <thead><tr><th>Check</th><th>Severity</th></tr></thead>
+    <tbody>
+      <tr><td><code>tiles</code> resolve (legend, sizes, tiers); at most 16 floor tiers</td><td>error</td></tr>
+      <tr><td>Every spawn, exit, zone, prop, NPC tile and patrol waypoint lies on the grid</td><td>error</td></tr>
+      <tr><td>The map has a spawn; spawn, exit, trigger, encounter and prop ids are unique in the map</td><td>error</td></tr>
+      <tr><td>NPC ids are unique across the pack</td><td>error</td></tr>
+      <tr><td>A trigger's <code>battle</code> / <code>boss</code> / <code>dialog</code> / <code>start_quest</code> / <code>card_dealer</code> names a defined formation, boss, line, quest or dealer</td><td>error</td></tr>
+      <tr><td>An NPC's <code>line</code> and <code>shop</code> name a defined line and dealer</td><td>error</td></tr>
+      <tr><td>An encounter zone's <code>table</code> is a <code>battle.toml</code> <code>[[encounters]]</code> <code>scene</code></td><td>error</td></tr>
+      <tr><td>... whose table has no <code>steps</code> (it can never roll on a map)</td><td>warning</td></tr>
+      <tr><td>A <code>talk</code> trigger's NPC id that no quest gives from or talks to</td><td>warning</td></tr>
+      <tr><td>An exit to another map names a map of the pack and a spawn it has</td><td>error</td></tr>
+      <tr><td>Facings are sectors <code>0..8</code>; a retail exit's tile is on the <code>128 x 128</code> grid</td><td>error</td></tr>
+      <tr><td>Disc refs: the base scene, retail exit scenes, NPC models, BGM, prop TMDs (range rules, then the disc when one is loaded)</td><td>error</td></tr>
+      <tr><td>One prop and one NPC a tile; a style with both a <code>mesh</code> ground and a <code>wall</code></td><td>error</td></tr>
+      <tr><td>Wall box height <code>1..=512</code>; standable footprint <code>1..=1024</code> a side</td><td>error</td></tr>
+      <tr><td>An NPC model from a scene other than the base scene</td><td>warning</td></tr>
+      <tr><td>A spawn, NPC or waypoint on a void or fully walled tile; an NPC on a prop's tile</td><td>warning</td></tr>
+      <tr><td>With a disc: a geometry-pack index (<code>{ object = N }</code> props, <code>mesh</code> grounds and walls) past the base scene's pack</td><td>error</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="exits-triggers-and-encounter-zones" data-doc="exits-triggers-and-encounter-zones">
+  <h2>Exits, triggers and encounter zones</h2>
+  <p>Zones fire on <strong>entry</strong> - stepping onto a tile of the rectangle from outside it - the way a retail walk-on trigger fires on a tile crossing. Standing still fires nothing, and the spawn tile does not fire on arrival.</p>
+  <h3 id="exits">Exits</h3>
+  <ul class="bullets">
+    <li><code>to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [20, 44], facing = 4 }</code> raises the named scene change a door's op <code>0x3F</code> raises, so it parks behind the streaming hold and arrives on that field-grid tile facing that compass sector. With no <code>tile</code> the player lands where the scene's own doors land them.</li>
+    <li><code>to = { kind = "map", map = "...", spawn = "..." }</code> enters another map of the same pack at once.</li>
+  </ul>
+  <h3 id="triggers">Triggers</h3>
+  <p>A trigger's <code>event</code> names content of another pack section, and the scene host hands it to that section's runtime the tick it fires:</p>
+  <table>
+    <thead><tr><th><code>event</code></th><th>Runs</th></tr></thead>
+    <tbody>
+      <tr><td><code>{ kind = "battle", formation = F }</code></td><td><code>World::start_expansion_battle(F)</code> - a <code>battle.toml</code> formation (<a href="expansion-pack-battle.html">battles</a>)</td></tr>
+      <tr><td><code>{ kind = "boss", boss = B }</code></td><td><code>World::start_expansion_boss(B)</code> - a <code>battle.toml</code> boss</td></tr>
+      <tr><td><code>{ kind = "dialog", line = L }</code></td><td><code>World::expansion_say(L)</code> - a <code>dialog.toml</code> line</td></tr>
+      <tr><td><code>{ kind = "talk", npc = N }</code></td><td><code>World::expansion_talked(N)</code> - a quest's talk objective</td></tr>
+      <tr><td><code>{ kind = "start_quest", quest = Q }</code></td><td><code>World::expansion_start_quest(Q)</code></td></tr>
+      <tr><td><code>{ kind = "set_flag", flag = X }</code></td><td>Raises pack flag <code>X</code></td></tr>
+      <tr><td><code>{ kind = "counter", counter = C, add = 1 }</code></td><td>Adds to pack counter <code>C</code></td></tr>
+      <tr><td><code>{ kind = "card_dealer", dealer = D }</code></td><td>Opens the <code>cards.toml</code> dealer <code>D</code>'s counter (<code>World::open_card_dealer</code>; empty = the first dealer)</td></tr>
+      <tr><td><code>{ kind = "shop", shop = S }</code></td><td>Opens the <code>items.toml</code> shop <code>S</code>'s counter (<code>World::open_item_shop</code>; empty = the first shop)</td></tr>
+      <tr><td><code>{ kind = "cutscene", cutscene = C }</code></td><td>Plays the <code>cutscenes.toml</code> cutscene <code>C</code> (<a href="expansion-pack-cutscenes.html">cutscenes</a>)</td></tr>
+      <tr><td><code>{ kind = "sound", sound = S }</code></td><td>Plays a retail cue or a pack sound (<a href="expansion-pack-audio.html">audio</a>)</td></tr>
+    </tbody>
+  </table>
+  <p>A map's <code>[[enter_cutscenes]]</code> (<code>cutscene</code>, <code>requires</code>, <code>repeat</code>) plays on arrival: the first entry whose gate holds and whose cutscene is unseen, or any with <code>repeat = true</code>. While a cutscene runs, the map's zones and exits fire nothing.</p>
+  <p><code>once = true</code> fires a trigger once <strong>ever</strong>: firing raises the pack flag <code>map.&lt;map id&gt;.&lt;trigger id&gt;</code> (<code>map.&lt;map id&gt;.&lt;index&gt;</code> for a trigger with no id), which saves with the pack's progress, and a trigger whose flag is up stays quiet on every later visit. Quests can read the flag like any other.</p>
+  <h3 id="encounter-zones">Encounter zones</h3>
+  <p>A zone's <code>table</code> names a <code>battle.toml</code> <code>[[encounters]]</code> entry by its <code>scene</code> key - a free string, so a pack map's tables sit beside the retail scenes' overrides:</p>
+<pre><code># battle.toml
+[[encounters]]
+scene = "tower_1f"
+steps = [12, 24]
+formations = [{ formation = "ogre_pack", weight = 2 }, { formation = "forge_guard", weight = 1 }]</code></pre>
+  <p>On a map, the pack's encounter lookup keys on the table of the zone under the player instead of the scene label, so the pack's own step counter and formation pick - the same roll a retail scene override uses - run while the player walks inside a zone. Outside every zone the map rolls nothing; it never rolls the base scene's retail encounters. A table needs <code>steps</code> to roll on a map: with no retail rate to borrow, a rate-less entry has nothing to fight on.</p>
+</section>
+
+<section class="doc-section" id="entrances" data-doc="entrances">
+  <h2>Entrances</h2>
+  <p>An entrance is the way into a map from the retail game: a rectangle of field-grid tiles in a retail scene that enters the map when the player steps onto it. It lives on the map it leads into.</p>
+<pre><code>[[entrances]]
+id = "rim_elm_mist_stair"
+scene = { kind = "scene", name = "town01" }
+rect = [17, 43, 18, 43]
+spawn = "entrance"
+requires = { min_level = 30 }</code></pre>
+  <table>
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>Name, for logs.</td></tr>
+      <tr><td><code>scene</code></td><td>The retail scene (a scene <code>DiscRef</code>).</td></tr>
+      <tr><td><code>rect</code></td><td>Inclusive <code>[x0, z0, x1, z1]</code> in the scene's <code>128 x 128</code> field grid, <code>0..=127</code> per axis.</td></tr>
+      <tr><td><code>spawn</code></td><td>The spawn of this map the player arrives at; the first when empty.</td></tr>
+      <tr><td><code>requires</code></td><td>The quest prerequisite shape: <code>story_flags</code>, <code>story_flags_clear</code>, <code>flags</code>, <code>quests</code>, <code>min_level</code>. Empty is always open.</td></tr>
+    </tbody>
+  </table>
+  <p>Coordinates here are <strong>retail field-grid tiles</strong>, not map-local ones: tile <code>x</code> covers world <code>x * 128 .. x * 128 + 127</code>, the <code>world &gt;&gt; 7</code> quantisation the retail walk-on trigger dispatcher uses (<a href="../subsystems/field-locomotion.html">field locomotion</a>). An exit's arrival <code>tile</code> is in the same space, so a map's exit can land beside its own entrance.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 730 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a pack map is reached: a step onto an entrance rectangle in a retail field scene passes the EntranceWatch gate into SceneHost enter_expansion_map, as do the Journal's Travel page, the --map flag or the play page's Enter map, and a Load of a save made on a map; the map's exits lead back to a retail scene or into another map of the pack">
+      <defs><marker id="em-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="20" width="150" height="52" rx="4"/>
+      <rect class="dg-node" x="195" y="20" width="150" height="52" rx="4"/>
+      <rect class="dg-node-warn" x="370" y="20" width="160" height="52" rx="4"/>
+      <rect class="dg-node" x="20" y="130" width="150" height="52" rx="4"/>
+      <rect class="dg-node" x="195" y="130" width="150" height="52" rx="4"/>
+      <rect class="dg-node-accent" x="370" y="130" width="160" height="52" rx="4"/>
+      <rect class="dg-node-ok" x="560" y="130" width="150" height="52" rx="4"/>
+      <rect class="dg-node" x="370" y="240" width="160" height="52" rx="4"/>
+      <rect class="dg-node" x="560" y="240" width="150" height="52" rx="4"/>
+      <text class="dg-label" x="95" y="42">Retail field scene</text><text class="dg-sub" x="95" y="60">the player walks</text>
+      <text class="dg-label" x="270" y="42">Entrance rect</text><text class="dg-sub" x="270" y="60">field-grid tiles</text>
+      <text class="dg-label" x="450" y="42">EntranceWatch</text><text class="dg-sub" x="450" y="60">step on, gate holds</text>
+      <text class="dg-label" x="95" y="152">Journal: Travel</text><text class="dg-sub" x="95" y="170">any map of the pack</text>
+      <text class="dg-label" x="270" y="152">--map / Enter map</text><text class="dg-sub" x="270" y="170">direct entry</text>
+      <text class="dg-label" x="450" y="152">enter_expansion_map</text><text class="dg-sub" x="450" y="170">SceneHost</text>
+      <text class="dg-label" x="635" y="152">Pack map</text><text class="dg-sub" x="635" y="170">base scene + layer</text>
+      <text class="dg-label" x="450" y="262">Load a map save</text><text class="dg-sub" x="450" y="280">resume_save re-enters</text>
+      <text class="dg-label" x="635" y="262">Retail scene</text><text class="dg-sub" x="635" y="280">exit: op 0x3F change</text>
+      <path class="dg-edge" d="M170 46 L193 46" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M345 46 L368 46" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M450 72 L450 128" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M345 156 L368 156" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M95 182 L95 208 L410 208 L410 184" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M450 240 L450 184" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M530 156 L558 156" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge" d="M635 182 L635 238" marker-end="url(#em-arrow)"/>
+      <path class="dg-edge-dim" d="M640 130 L640 104 L500 104 L500 128" marker-end="url(#em-arrow)"/>
+      <text class="dg-edge-label" x="548" y="98">exit to another map</text>
+    </svg>
+    <figcaption>Every way in ends in the same <code>SceneHost::enter_expansion_map</code>. Any scene change out of the map drops its layer; a battle fought on the map returns to it.</figcaption>
+  </figure>
+  <p>An entrance fires the way a zone does: on a step onto its rectangle from outside it, while the gate holds, in a plain field tick the player walks freely - no pack map, no scene change parked, no dialogue or cutscene holding the player. Any other tick forgets the last tile, so arriving on an entrance (a door, a battle return, a Load) does not fire it. A shut entrance stays shut until the player steps off and back on after it opens. <code>World::step_expansion_entrance</code> holds the rule and <code>SceneHost</code> enters the map it names (<code>scene_host/expansion_entrance.rs</code>); the kernel is <code>legaia_engine_expansion::entrance::EntranceWatch</code>.</p>
+  <div class="callout callout-tip">
+    <p class="callout-title">Picking a rectangle</p>
+    <p>Pick tiles the scene's walk reaches and that no retail trigger shares: a retail door's walk-on tile fires its own record on the same step. The validator checks the scene coordinate, the tile range, the spawn and the quests <code>requires</code> names; it cannot see the scene's walls without the disc.</p>
+  </div>
+  <p>The pause menu's <strong>Travel</strong> page (the Journal, Select on the root list) enters any of the pack's maps directly, which is the way in for testing a map whose entrance is out of reach (<a href="../subsystems/field-menu.html">field menu</a>).</p>
+</section>
+
+<section class="doc-section" id="saving-on-a-map" data-doc="saving-on-a-map">
+  <h2>Saving on a map</h2>
+  <p>A save made on a map writes the map id, the player's world position and facing as tail record 2 of the pack's expansion block (<code>LXP1</code>, <a href="expansion-pack-quests.html#saves">saves</a>); a save made off every map writes no such record, so its block is the one it was before. The save's resume scene is the base scene, so a Load lands there first; <code>BootSession::resume_save</code> - the native window's resume and the browser page's <code>play_resume_save</code> alike - then re-enters the map with the player seated where the save was made. Without the pack active the save lands in the base scene.</p>
+</section>
+
+<section class="doc-section" id="running-a-map" data-doc="running-a-map">
+  <h2>Running a map</h2>
+  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/rebirth --map rebirth_tower_1f [--spawn dais]</code></div>
+  <p><code>--expansion</code> takes a pack directory or an <code>.lxpack</code> bundle and activates it through <code>World::activate_expansion</code>; with <code>--resume-save</code> the save's own map (if any) is the landing instead of <code>--map</code>. Without <code>--map</code> the pack is simply active, for the title's New Game and Continue.</p>
+  <p>The browser play page loads an <code>.lxpack</code> through <code>LegaiaRuntime::load_expansion</code> and enters a map through <code>enter_expansion_map</code>, the same <code>SceneHost::enter_expansion_map</code> entry; its scene build reads the map's ground, walls and props off the same <code>Scene</code> (<a href="../subsystems/browser-host.html">browser host</a>). Any scene change - an exit, a scene picker - leaves the map and drops its layer; a battle fought on the map returns to it. The map's <code>name</code> shows as the place-name banner on entry. Step-by-step: <a href="../guides/expansion-packs.html">expansion packs guide</a>.</p>
+</section>
+
+<section class="doc-section" id="gaps" data-doc="gaps">
+  <h2>Gaps</h2>
+  <ul class="bullets">
+    <li><strong>Camera preset on an in-world entry.</strong> A map entered through an entrance or a Travel pick keeps the follow camera's distance; the map's <code>camera</code> preset applies on a host's direct entry (<code>--map</code>, the play page's <em>Enter map</em>).</li>
+    <li><strong>NPC clips.</strong> A patrolling NPC keeps <code>walk_clip</code> (or its idle clip) at the ends of its legs; nothing cues the idle clip back between legs.</li>
+  </ul>
+</section>

@@ -66,7 +66,7 @@ pub use tables::{
 };
 pub use tokenize::{
     BankArt, BankRow, BankTokens, art_ends, bank_rows, bank_view, derive_super_input,
-    hyper_queue_constants, tokenize, tokenize_bank,
+    hyper_queue_constants, tokenize, tokenize_bank, tokenize_bank_over,
 };
 
 #[cfg(test)]

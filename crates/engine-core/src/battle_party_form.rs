@@ -96,13 +96,15 @@ pub fn build_party_battle_form(
     member: usize,
 ) -> Option<PartyBattleForm> {
     let cslot = world.party_roster_slot(member);
+    // The record's bytes, with an expansion pack item's borrowed look in a
+    // slot it fills (the record's own bytes without a pack).
     let equipped: [u8; 5] = world
         .party
         .roster
         .members
         .get(cslot)
-        .map(|rec| {
-            let s = rec.equipment().slots;
+        .map(|_| {
+            let s = world.member_look_equipment(cslot);
             [s[0], s[1], s[2], s[3], s[4]]
         })
         .unwrap_or_default();
@@ -141,6 +143,7 @@ impl crate::world::World {
         }
         if let Some(character) = art_character(form.cslot) {
             self.install_art_bank_records(character, &form.art_records);
+            self.expansion_extend_art_bank(member, character);
         }
         // The seat's model table, fresh per fight (retail registers the
         // node and snapshots the pairs at every battle load). The draw set

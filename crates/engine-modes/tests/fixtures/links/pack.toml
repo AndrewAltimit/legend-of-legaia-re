@@ -1,0 +1,6 @@
+# A test pack for the in-world golf and racing modes: one golf course and one
+# race, each laid on a pack map over the retail `tower` scene. Every texture
+# is a coordinate into the player's own disc.
+id = "links-test"
+name = "Links (test pack)"
+version = "1.0.0"

@@ -54,6 +54,9 @@ impl<S: AudioSink> AudioDirector<S> {
         if let Some(vol) = duck::duck_apply(changed, self.master_vol, level) {
             self.audio.set_sequencer_master_vol(vol);
         }
+        if changed {
+            self.duck_pack_music();
+        }
         duck::step_duck(&mut self.duck_level, self.duck_target);
     }
 
@@ -145,6 +148,8 @@ impl<S: AudioSink> AudioDirector<S> {
     }
 
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
+        // A retail score takes the slot from a pack track.
+        self.release_pack_music();
         let Some(bank) = self.bank.clone() else {
             log::warn!("AudioDirector::start({bgm_id}) ignored - no VAB bank loaded for scene");
             return Ok(());
@@ -228,6 +233,7 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     fn pause(&mut self) {
         self.commands.push(super::AudioCommand::BgmPause);
         self.audio.set_sequencer_paused(true);
+        self.audio.with_pcm_bus(|b| b.set_music_paused(true));
     }
 
     /// Sub-op `4`: retail's re-attach replays the slot's sequence from its
@@ -237,6 +243,10 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
         self.commands.push(super::AudioCommand::BgmResume);
         self.audio.rewind_sequencer();
         self.audio.set_sequencer_paused(false);
+        self.audio.with_pcm_bus(|b| {
+            b.rewind_music();
+            b.set_music_paused(false);
+        });
     }
 
     /// Detach the track **and reopen the gate**, so a stop issued while
@@ -244,6 +254,7 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// does the same).
     fn stop(&mut self) {
         self.commands.push(super::AudioCommand::BgmStop);
+        self.release_pack_music();
         self.audio.detach_sequencer();
         self.audio.set_sequencer_paused(false);
         self.last_started = None;
@@ -260,6 +271,19 @@ impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     /// bit 1 on every pass through the arm - without this, a start issued
     /// while paused attaches its sequencer behind a still-closed gate and
     /// the score stays silent after the cutscene.
+    fn start_pack_track(
+        &mut self,
+        bgm_id: u16,
+        clip: legaia_engine_expansion::audio::PackClip<'_>,
+        fade_frames: u16,
+    ) {
+        self.start_pack_track_inner(bgm_id, clip, fade_frames);
+    }
+
+    fn start_owned_vab_faded(&mut self, bgm_id: u16, entry_bytes: &[u8], fade_frames: u16) {
+        self.start_owned_vab_faded_inner(bgm_id, entry_bytes, fade_frames);
+    }
+
     fn unhalt_pause(&mut self) {
         self.commands.push(super::AudioCommand::BgmUnhaltPause);
         if self.audio.sequencer_paused() {

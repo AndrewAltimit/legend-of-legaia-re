@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
+use legaia_randomizer::drops::DropMode;
 
 use super::Run;
 

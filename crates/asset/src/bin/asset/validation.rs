@@ -263,7 +263,7 @@ pub(crate) fn categorize_dir(
             .unwrap_or_else(|| p.display().to_string());
         reports.push(categorize::classify(&buf));
         let lbl = if cdname_map.is_some() {
-            entry_index_from_name(&name).map(&slot_label)
+            entry_index_from_name(&name).map(slot_label)
         } else {
             None
         };

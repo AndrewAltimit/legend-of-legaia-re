@@ -155,7 +155,9 @@
          * below steer the page's debug-orbit vantage (`F3`), the one camera
          * this page still owns, and are kept in step so toggling it does
          * not snap the view. */
-        const dx = (e.clientX - lastX) * 0.006;
+        /* A canvas the workbench preview mirrors (`mirrorView`) turns the
+         * way the drag goes on screen. */
+        const dx = (e.clientX - lastX) * 0.006 * (this.mirrorView ? -1 : 1);
         const dy = (e.clientY - lastY) * 0.004;
         this.cam.yaw += dx;
         this.cam.pitch = Math.max(0.12, Math.min(1.35, this.cam.pitch + dy));
@@ -187,7 +189,9 @@
           try { this.rt.play_camera_zoom_by(f); } catch (_) {}
           return;
         }
-        this.cam.halfWidth = Math.max(220, Math.min(6000, this.cam.halfWidth * f));
+        /* The expansion workbench's preview frames whole pack maps
+         * (`maxOrbitHalf`); the play page keeps its own reach. */
+        this.cam.halfWidth = Math.max(220, Math.min(this.maxOrbitHalf || 6000, this.cam.halfWidth * f));
         this.cam.halfHeight = this.cam.halfWidth;
       }, { passive: false });
       /* Double-click puts the follow camera back at the retail framing

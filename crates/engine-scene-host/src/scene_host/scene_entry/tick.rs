@@ -85,6 +85,7 @@ impl SceneHost {
         // The arena hub's screens run every tick, including the ones after a
         // leg has closed; its hand-off arms the next leg's drain below.
         self.world.tick_muscle_hub();
+        self.ensure_card_portraits();
         if matches!(self.world.mode, legaia_engine_mode::mode::SceneMode::Battle) {
             if !was_battle || self.world.audio.battle_sfx_bank.is_none() {
                 self.install_battle_sfx_bank();
@@ -170,6 +171,21 @@ impl SceneHost {
         // streaming actor `FUN_80021934` and returns, and the departing scene
         // keeps running under the actor's `0x46`-frame countdown. Park every
         // transition behind that hold and commit it on the hand-off tick.
+        // A pack map's exits: a retail exit raises the named scene change
+        // the hold below parks, a map-to-map exit enters at once.
+        if let Some(event) = self.step_expansion_map()? {
+            return Ok(event);
+        }
+        // A retail scene's entrances into the pack's maps, and the pause
+        // menu's Travel page.
+        if let Some(event) = self.step_expansion_entrances() {
+            return Ok(event);
+        }
+        // A golf round or race played on a pack map: enter its map under
+        // the running mode seat.
+        if let Some(event) = self.sync_pack_mode_map() {
+            return Ok(event);
+        }
         if self.advance_scene_transition_hold() {
             return Ok(SceneTickEvent::Stepped);
         }

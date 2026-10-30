@@ -1,0 +1,43 @@
+# A walled green over the retail `tower`: fairway, a rough patch, a bunker,
+# a pond and a raised plateau.
+name = "Tower Green"
+base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
+floor_heights = [0, 48]
+
+[tiles]
+origin = [16, 16]
+rows = [
+  "##############",
+  "#............#",
+  "#.T........O.#",
+  "#........,,,.#",
+  "#....ww......#",
+  "#....ww..ss..#",
+  "#........ss..#",
+  "#.O..^^^...T.#",
+  "#....^^^.....#",
+  "##############",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 64, tpage = 28, clut = 32576, tile = 1 } }
+"." = { label = "fairway", ground = { kind = "base_cell", cell = [8, 11] } }
+"T" = { label = "tee", ground = { kind = "base_cell", cell = [8, 11] } }
+"O" = { label = "cup", ground = { kind = "base_cell", cell = [8, 11] } }
+"," = { label = "long grass", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
+"s" = { label = "sand bunker", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 2 } }
+"w" = { label = "pond water", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 3 } }
+"^" = { label = "plateau", height = 1, ground = { kind = "texture", tpage = 28, clut = 32576, tile = 0 } }
+
+[[spawns]]
+id = "tee"
+tile = [2, 2]
+
+# Noa, the rival golfer: Rim Elm's Noa placement (a party member, so any
+# scene draws her). Seat 2's body (`bodies` in modes.toml).
+[[npcs]]
+id = "rival_noa"
+model = { kind = "npc", scene = "town01", index = 3 }
+tile = [2, 3]
+facing = 6
+clip = 9

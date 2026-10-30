@@ -19,7 +19,11 @@ impl PlayWindowApp {
             self.boot_ui.is_active()
                 || self.menu_runtime.is_open()
                 || self.cutscene.is_some()
-                || self.active_dialog.is_some(),
+                || self.active_dialog.is_some()
+                // The room screen or a party card owns the frame.
+                || self.netplay.as_ref().is_some_and(|n| {
+                    legaia_engine_netplay::screens::screen_owns_frame(&n.net)
+                }),
         )
     }
 

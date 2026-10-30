@@ -133,6 +133,9 @@ impl PlayWindowApp {
             fishing_gpu: None,
             slot_cabinet_assets: None,
             slot_gpu: None,
+            netplay: None,
+            pack_reload: None,
+            netplay_menu: None,
             slot_marquee_clock: Default::default(),
             slot_dots: Vec::new(),
             dance_venue_gpu: None,
@@ -160,6 +163,7 @@ impl PlayWindowApp {
             mapping,
             keys_down: std::collections::HashSet::new(),
             persist_disabled: false,
+            run_rules_screen: true,
             persist_cards: false,
             pending_key_name: None,
             menu_runtime: MenuRuntime::new(save_dir.to_path_buf()),
@@ -261,6 +265,7 @@ impl PlayWindowApp {
         // `--retail` pins the persisted engine-only options for this session
         // only, the way the fog override below does: nothing is written back.
         if fidelity.retail {
+            self.run_rules_screen = false;
             self.options_pins.pin_retail(&mut self.options_state);
         }
         self.psx_render |= fidelity.psx_render;

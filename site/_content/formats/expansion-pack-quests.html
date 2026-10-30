@@ -1,0 +1,318 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs: quests</div>
+  <h1>Expansion packs: quests, challenges and dialogue</h1>
+  <p class="lede">Two files of an <a href="expansion-pack.html">expansion pack</a> describe what the player is asked to do and what the pack's characters say: <code>quests.toml</code> (quests and challenges) and <code>dialog.toml</code> (dialogue lines). The engine tracks quest progress as a deterministic state machine, plays pack lines through the retail dialogue runner, and saves one pack's progress as the <code>LXP1</code> expansion block. Every hook is the identity with no pack active: no event is built, no battle command is refused, no line starts, and a save carries no expansion block.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Files</dt><dd><code>quests.toml</code>, <code>dialog.toml</code> at the pack root; both optional.</dd>
+    <dt>Parser</dt><dd><code>legaia_expansion_format::{quest, dialog}</code>; the line compiler <code>compile_line</code> and the markup encoder sit in <code>dialog</code>, so the validator compiles every line too.</dd>
+    <dt>Runtime</dt><dd><code>legaia_engine_expansion::quest</code> (the tracker), <code>quest_challenge</code> (rules and scores), <code>flags</code> (pack flags and counters), <code>dialog</code> (the line on screen), <code>quest_save</code> (the save block); <code>engine-core</code>'s <code>world::expansion_quests</code> wires them to the <code>World</code>.</dd>
+    <dt>Ids</dt><dd><code>quests.toml</code> declares <code>quest</code> and <code>challenge</code>; <code>dialog.toml</code> declares <code>line</code>.</dd>
+    <dt>Save</dt><dd>The <code>LXP1</code> block, carried in an <code>LGSF</code> file as <code>LGXD</code> and in a retail SC block's <code>LGXE</code> tail.</dd>
+    <dt>Used by</dt><dd><a href="expansion-pack-battle.html">Battles</a> (fights a quest starts) &middot; <a href="expansion-pack-maps.html">maps</a> (NPC talks, triggers) &middot; the pause menu's Journal (<a href="../subsystems/field-menu.html">field menu</a>)</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="ids-and-namespaces" data-doc="ids-and-namespaces">
+  <h2>Ids and namespaces</h2>
+  <p>A quest names everything by id. Retail content is named by its coordinate: a runtime formation id (<code>FormationDef::formation_id</code>), a 1-based monster id, a CDNAME scene name, an item id, a retail system flag index. Pack content is named by the string id the pack gives it: an NPC, a dialogue line, a mode, a counter, a flag, a <code>battle.toml</code> formation.</p>
+  <div class="callout callout-tip">
+    <p class="callout-title">A pack never writes a retail story flag</p>
+    <p>Pack flags and counters are the pack's own store (<code>PackFlags</code>), saved under the pack id. A pack reads retail system flags as prerequisites but never writes one: a quest reward, a dialogue choice and a script event all write pack flags. The compiled dialogue bytes carry no field-VM flag op for the same reason (<a href="#inline-runner">below</a>).</p>
+  </div>
+</section>
+
+<section class="doc-section" id="queststoml" data-doc="queststoml">
+  <h2><code>quests.toml</code></h2>
+<pre><code>[[quests]]
+id = "tower_trial"
+title = "The Rebirth Tower"
+description = "..."
+giver = "tower_guide"
+prerequisites = { quests = ["tower_rumour"], min_level = 30 }
+start_dialog = "guide_trial"
+objectives = [
+    { kind = "win_battles", count = 3, text = "Win three battles" },
+    { kind = "reach_level", level = 40 },
+    { kind = "talk", npc = "tower_guide" },
+]
+complete_dialog = "guide_done"
+rewards = { gold = 10000, set_flags = ["tower_open"] }</code></pre>
+  <figure class="diagram">
+    <svg viewBox="0 0 480 312" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A quest's life. Its prerequisites hold; it starts from auto_start, a talk to its giver, or a script. While active, quest events and the per-tick refresh advance its objectives, in order unless ordered is false. When every objective is done it completes and grants its rewards. A repeatable quest returns to waiting on its prerequisites once its cooldown passes, up to max_completions.">
+      <defs><marker id="eq-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="40" y="12" width="250" height="46" rx="4"/>
+      <text class="dg-label" x="165" y="32">Prerequisites hold</text><text class="dg-sub" x="165" y="49">quests, flags, story flags, level</text>
+      <rect class="dg-node-accent" x="40" y="86" width="250" height="46" rx="4"/>
+      <text class="dg-label" x="165" y="106">Started</text><text class="dg-sub" x="165" y="123">auto_start, giver talk or script</text>
+      <rect class="dg-node-accent" x="40" y="160" width="250" height="46" rx="4"/>
+      <text class="dg-label" x="165" y="180">Objectives advance</text><text class="dg-sub" x="165" y="197">ordered unless ordered = false</text>
+      <rect class="dg-node-ok" x="40" y="234" width="250" height="46" rx="4"/>
+      <text class="dg-label" x="165" y="254">Completed</text><text class="dg-sub" x="165" y="271">rewards granted, dialog shown</text>
+      <rect class="dg-node" x="320" y="140" width="150" height="102" rx="4"/>
+      <text class="dg-label" x="395" y="160">QuestEvent</text>
+      <text class="dg-sub" x="395" y="180">BattleEnded</text><text class="dg-sub" x="395" y="195">SceneEntered, Talked</text>
+      <text class="dg-sub" x="395" y="210">ModeWon, flags</text><text class="dg-sub" x="395" y="225">Refresh (each tick)</text>
+      <path class="dg-edge" d="M165 58 L165 84" marker-end="url(#eq-arrow)"/>
+      <path class="dg-edge" d="M165 132 L165 158" marker-end="url(#eq-arrow)"/>
+      <path class="dg-edge" d="M165 206 L165 232" marker-end="url(#eq-arrow)"/>
+      <path class="dg-edge" d="M320 183 L292 183" marker-end="url(#eq-arrow)"/>
+      <path class="dg-edge-dim" d="M40 257 L18 257 L18 35 L38 35" marker-end="url(#eq-arrow)"/>
+      <text class="dg-edge-label" x="24" y="300">repeatable: again after the cooldown, up to max_completions</text>
+    </svg>
+    <figcaption>One quest from start to completion. The tracker re-runs the whole cycle after every event until nothing moves, so a completion's flags can open the next quest of a chain in one call.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>Pack-unique; the key the save records progress under.</td></tr>
+      <tr><td><code>title</code>, <code>description</code></td><td>Journal text.</td></tr>
+      <tr><td><code>giver</code></td><td>NPC id whose talk starts the quest.</td></tr>
+      <tr><td><code>auto_start</code></td><td>Start as soon as the prerequisites hold.</td></tr>
+      <tr><td><code>prerequisites</code></td><td>Start conditions, all of which must hold.</td></tr>
+      <tr><td><code>ordered</code></td><td><code>true</code> (default): objectives complete in order. <code>false</code>: all at once.</td></tr>
+      <tr><td><code>objectives</code></td><td>The goals; the quest completes when every one is done.</td></tr>
+      <tr><td><code>rewards</code></td><td>Granted on completion.</td></tr>
+      <tr><td><code>repeat</code></td><td>Whether the quest can run again.</td></tr>
+      <tr><td><code>start_dialog</code>, <code>complete_dialog</code></td><td>Line ids shown on start and on completion.</td></tr>
+      <tr><td><code>active_dialog</code></td><td>Line id shown when the player talks to the giver while the quest is active.</td></tr>
+      <tr><td><code>start_battle</code>, <code>start_boss</code></td><td>A <code>battle.toml</code> formation or boss fought once the quest's start line is done.</td></tr>
+      <tr><td><code>start_cutscene</code>, <code>complete_cutscene</code></td><td>A <code>cutscenes.toml</code> cutscene played after the start or completion line, once the player is in the field (<a href="expansion-pack-cutscenes.html">cutscenes</a>).</td></tr>
+    </tbody>
+  </table>
+  <p>A quest with neither <code>giver</code> nor <code>auto_start</code> starts only from a script (<code>World::expansion_start_quest</code>).</p>
+
+  <h3 id="prerequisites">Prerequisites</h3>
+  <table>
+    <thead><tr><th>Key</th><th>Holds when</th></tr></thead>
+    <tbody>
+      <tr><td><code>quests</code></td><td>Each listed quest has completed at least once.</td></tr>
+      <tr><td><code>story_flags</code></td><td>Each listed retail system flag is set.</td></tr>
+      <tr><td><code>story_flags_clear</code></td><td>Each listed retail system flag is clear.</td></tr>
+      <tr><td><code>flags</code></td><td>Each listed pack flag is set.</td></tr>
+      <tr><td><code>min_level</code></td><td>The present party's highest level is at least this.</td></tr>
+    </tbody>
+  </table>
+  <p>The system flags are the field VM's flag bank (ops <code>0x50</code> / <code>0x60</code> / <code>0x70</code>, <code>World::system_flag_test</code>), the one place the story records how far the player has come, so a story point is named by the flag its scene script raises there.</p>
+
+  <h3 id="objectives">Objectives</h3>
+  <p>Each objective is a table with a <code>kind</code>, that kind's keys, and an optional <code>text</code> for the journal.</p>
+  <table>
+    <thead><tr><th><code>kind</code></th><th>Keys</th><th>Done when</th></tr></thead>
+    <tbody>
+      <tr><td><code>defeat_formation</code></td><td><code>formation</code>, <code>count</code></td><td><code>count</code> battles against the formation are won.</td></tr>
+      <tr><td><code>defeat_monster</code></td><td><code>monster</code>, <code>count</code></td><td><code>count</code> won battles had the monster in them.</td></tr>
+      <tr><td><code>win_battles</code></td><td><code>count</code></td><td><code>count</code> battles of any kind are won.</td></tr>
+      <tr><td><code>win_boss</code></td><td><code>boss</code> or <code>formation</code> (optional)</td><td>A boss battle is won (optionally that one).</td></tr>
+      <tr><td><code>enter_scene</code></td><td><code>scene</code></td><td>The player enters the scene (CDNAME name or pack map id).</td></tr>
+      <tr><td><code>reach_level</code></td><td><code>level</code></td><td>The party's highest level reaches <code>level</code>.</td></tr>
+      <tr><td><code>collect_item</code></td><td><code>item</code>, <code>count</code>, <code>hand_in</code></td><td>The bag holds <code>count</code> of the item.</td></tr>
+      <tr><td><code>talk</code></td><td><code>npc</code></td><td>The player talks to the NPC.</td></tr>
+      <tr><td><code>win_mode</code></td><td><code>mode</code>, <code>count</code></td><td>The pack mode is won <code>count</code> times.</td></tr>
+      <tr><td><code>counter</code></td><td><code>counter</code>, <code>at_least</code></td><td>The pack counter reaches <code>at_least</code>.</td></tr>
+      <tr><td><code>flag</code></td><td><code>flag</code></td><td>The pack flag is set.</td></tr>
+    </tbody>
+  </table>
+  <p><code>count</code> defaults to 1. A <code>formation</code> is a number (a runtime formation id) or a string (a <code>battle.toml</code> formation id, resolved through <code>QuestWorld::pack_formation_id</code> to its compiled <code>0xE000+</code> id). A <code>win_boss</code> naming a <code>battle.toml</code> <code>boss</code> matches a won battle against that boss's formation; one naming a <code>formation</code>, or nothing, matches a won battle whose formation record carries a non-zero header byte (<code>FormationDef::header_flags</code>: retail's scripted and boss rows, and every pack boss's formation).</p>
+  <ul class="bullets">
+    <li><strong>Event objectives</strong> (<code>defeat_*</code>, <code>win_*</code>, <code>enter_scene</code>, <code>talk</code>) count events.</li>
+    <li><strong>State objectives</strong> (<code>reach_level</code>, <code>counter</code>, <code>flag</code>) are re-tested against the world and latch once met.</li>
+    <li><strong><code>collect_item</code></strong> tracks the bag live and does not latch: dropping the items takes the progress back. With <code>hand_in = true</code>, completing the quest takes the items.</li>
+  </ul>
+  <p>In an ordered quest only the first objective that is not done takes an event, so one event never counts twice down the list; the objectives after it are re-tested only for state. The talk that starts a quest is not counted toward that quest's own <code>talk</code> objective: events reach the active quests before the giver check starts new ones.</p>
+
+  <h3 id="rewards">Rewards</h3>
+  <table>
+    <thead><tr><th>Key</th><th>Grant</th></tr></thead>
+    <tbody>
+      <tr><td><code>gold</code></td><td>Added to the purse (clamped at 9,999,999).</td></tr>
+      <tr><td><code>xp</code></td><td>EXP for each present party member, unscaled.</td></tr>
+      <tr><td><code>items</code></td><td><code>[{ item, count }]</code> added to the bag.</td></tr>
+      <tr><td><code>cards</code></td><td>Trading-card ids, handed to the card collection.</td></tr>
+      <tr><td><code>set_flags</code></td><td>Pack flags raised.</td></tr>
+      <tr><td><code>counters</code></td><td><code>[{ counter, add }]</code> added to pack counters (<code>add</code> defaults to 1).</td></tr>
+    </tbody>
+  </table>
+  <p>Quest EXP goes through the level-up tracker per member and keeps the record words the battle EXP path keeps (cumulative and next-level EXP, the level byte, grown maxima), without the battle's 3/4 scale and living-member split.</p>
+
+  <h3 id="repeat">Repeat</h3>
+  <table>
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>repeatable</code></td><td>The quest can be taken again after completing.</td></tr>
+      <tr><td><code>cooldown_seconds</code></td><td>Play-clock seconds that must pass after a completion.</td></tr>
+      <tr><td><code>max_completions</code></td><td>Cap on completions.</td></tr>
+    </tbody>
+  </table>
+  <p>The cooldown runs on the save's play clock (<code>clock.play_time_seconds</code>), so a "daily" quest is daily in play time and the tracker reads no wall clock.</p>
+</section>
+
+<section class="doc-section" id="challenges" data-doc="challenges">
+  <h2>Challenges</h2>
+<pre><code>[[challenges]]
+id = "bare_hands"
+formation = "ogre_pack"
+rules = { turn_limit = 10, no_items = true, no_magic = true }
+score = { base = 1000, turn_bonus = 100 }
+rewards = { gold = 2000 }</code></pre>
+  <p>A challenge is armed (<code>World::expansion_arm_challenge</code>, the Journal's <em>Challenges</em> page) and then applies to the next battle against its <code>formation</code>, or to the next battle at all when it names none. Arming is refused when the present party already breaks a party rule, or when a named formation does not resolve.</p>
+  <table>
+    <thead><tr><th>Rule</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>turn_limit</code></td><td>The battle must be won within this many rounds.</td></tr>
+      <tr><td><code>no_items</code></td><td>The battle command ring refuses the Item command.</td></tr>
+      <tr><td><code>no_magic</code></td><td>The battle command ring refuses the Ra-Seru Magic command.</td></tr>
+      <tr><td><code>solo</code></td><td>Only this roster slot may be in the party.</td></tr>
+      <tr><td><code>level_cap</code></td><td>No party member may be above this level.</td></tr>
+      <tr><td><code>enemy_scale_permille</code></td><td>Enemy HP and attack scale, <code>1000</code> = retail.</td></tr>
+    </tbody>
+  </table>
+  <p>The command refusals sit beside the special-battle word's Ra-Seru refusal in the command ring: the ring stays up and nothing commits. Rounds are counted as each round's execution begins. <code>solo</code> and <code>level_cap</code> are checked when the challenge is armed and again when the battle is won. <code>enemy_scale_permille</code> is answered by <code>QuestRuntime::enemy_scale_permille</code> for the battle setup to apply.</p>
+  <p>The battle's end clears or fails the challenge and disarms it. A win within the rules scores</p>
+<pre><code>base + turn_bonus * (turn_limit - rounds) + level_bonus * (level_cap - party level)</code></pre>
+  <p>with each bonus term present only when its rule is set and never negative. The save keeps the best score and the clear count per challenge; <code>rewards</code> are granted on the first clear. A loss, an escape, a win past the turn limit and a win that broke a party rule each fail the challenge with their own reason.</p>
+</section>
+
+<section class="doc-section" id="dialogtoml" data-doc="dialogtoml">
+  <h2><code>dialog.toml</code></h2>
+<pre><code>[lines.guide_intro]
+speaker = "Tower Guide"
+text = """
+A tower rose from the mist where
+nothing stood before.
+
+Will you hear what it asks?"""
+choices = [
+    { label = "Tell me.", set_flags = ["tower_listened"] },
+    { label = "Who are you?", reply = "Only one who watches the mist.", next = "guide_more" },
+]</code></pre>
+  <p>Each line of <code>text</code> is one dialog-box row and a blank line starts a new page. Rows are short: no retail text surface wraps (<a href="dialog-font.html">dialog font</a>). <code>speaker</code> is metadata for journals and tools; the box shows only the text, as retail boxes carry no name plate.</p>
+  <p>Text is the translation pipeline's markup: printable ASCII as itself, <code>{xx}</code> for any byte, <code>{op:arg}</code> for a two-byte token (<code>{c1:00}</code> is party member 0's name, <code>{cf:31}</code> a colour change), with typographic quotes, dashes and the ellipsis folded onto their ASCII glyphs. <code>dialog::encode_markup</code> is the dialog-segment subset of <code>legaia_translate::markup::encode</code>: the same grammar and the same bytes, without the patcher stack. Bytes <code>0x00..=0x1F</code> are refused as a token's opcode, since they would end the segment; the symbol aliases (<code>{btn:x}</code>) are not part of the subset.</p>
+  <p>A line may end on a menu of two to four <code>choices</code>. Each choice has a <code>label</code>, an optional <code>reply</code> (rows and pages as <code>text</code>), pack flags it raises (<code>set_flags</code>) and clears (<code>clear_flags</code>), a <code>next</code> line shown once the talk ends, and a fight (<code>battle</code>, a formation id, or <code>boss</code>) started once the talk and any chained lines are done.</p>
+
+  <h3 id="inline-runner">Dialogue on the inline runner</h3>
+  <p><code>World::expansion_say(line_id)</code> compiles the line (<code>dialog::compile_line</code>) into the inline interaction-script bytes an NPC talk hands the field VM's dialogue runner (<code>World::start_inline_dialogue</code>), so a pack line types, pages and opens its menu through the same pager and picker as a retail line (<a href="mes.html">MES dialog</a>):</p>
+<pre><code>page    = row+                       row = 0x1F &lt;encoded markup&gt; 0x00
+text    = page (0x24 page)*          0x24: next page, same box
+line    = text 0x21                  no menu: the talk ends
+        | text &lt;open&gt; j0..jN-1 label*N branch*N
+  open  = 0x27 / 0x28 / 0x29         two / three / four options
+  jK    = i16 LE, relative to jK's own offset, to branch K
+  label = 0x1F &lt;encoded label&gt; 0x00  immediate-labels form
+  branch= [text] 0x21                the option's reply, then the end</code></pre>
+  <p>The runner records the committed option on the pack line's own run (matched by the identity of the compiled buffer), and the world tick that sees the run finished applies the option's flags and queues its <code>next</code> line. A quest's <code>start_dialog</code>, <code>complete_dialog</code> and <code>active_dialog</code> lines queue the same way and start when no dialogue owns the player. A fight a choice or a quest start names waits behind them: once no line is pending or queued and the player is walking the field or the world map, the world tick starts it through <code>World::start_expansion_battle</code> or <code>World::start_expansion_boss</code>.</p>
+  <p class="hint">The <a href="../tooling/expansion-workbench.html">expansion workbench</a> checks each line as it is typed: row lengths, markup with no glyph and the compiled size.</p>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <p>Both sections implement <code>validate::SectionRules</code> (<a href="expansion-pack.html#validation">validation</a>). The checks:</p>
+  <table>
+    <thead><tr><th>Check</th><th>Severity</th></tr></thead>
+    <tbody>
+      <tr><td>A prerequisite quest, line, formation or boss that is not defined</td><td>error</td></tr>
+      <tr><td>A line that does not compile (no text, a menu outside 2..=4 options, text with no glyph)</td><td>error</td></tr>
+      <tr><td>A quest or choice naming both a battle and a boss</td><td>error</td></tr>
+      <tr><td>A quest requiring itself; <code>reach_level</code> outside 1..=99; a turn limit or enemy scale of 0; <code>solo</code> past slot 3</td><td>error</td></tr>
+      <tr><td>An item or monster id out of range</td><td>error</td></tr>
+      <tr><td>A quest with no giver and no <code>auto_start</code>; repeat settings on a one-shot quest; a count of 0; a row over 36 characters</td><td>warning</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="runtime" data-doc="runtime">
+  <h2>Runtime</h2>
+  <p>The tracker (<code>QuestRuntime</code>) is a deterministic state machine: the same pack, progress and events give the same notices, grants and progress bytes. It reads world state through <code>QuestWorld</code> (party levels, bag counts, system flags, the play clock, named formations) and consumes <code>QuestEvent</code>s:</p>
+  <table>
+    <thead><tr><th>Event</th><th>Raised by</th></tr></thead>
+    <tbody>
+      <tr><td><code>BattleEnded</code></td><td><code>World::finish_battle</code>, with the seated formation, its monsters and its boss byte.</td></tr>
+      <tr><td><code>SceneEntered</code></td><td><code>World::set_active_scene_label</code>, on every scene entry.</td></tr>
+      <tr><td><code>Talked</code></td><td><code>World::expansion_talked</code>: a map's NPC or <code>talk</code> trigger, and every talk to a retail NPC (<code>World::trigger_field_interact</code>).</td></tr>
+      <tr><td><code>ModeWon</code></td><td><code>World::expansion_mode_won</code>, from a pack mode's host.</td></tr>
+      <tr><td><code>CounterAdd</code>, <code>FlagSet</code>, <code>FlagCleared</code></td><td>Scripts, dialogue choices and hosts.</td></tr>
+      <tr><td><code>Refresh</code></td><td>Every world tick outside battle.</td></tr>
+    </tbody>
+  </table>
+  <p>An NPC id is a pack's own name (<code>tower_guide</code>, a pack map NPC or a map trigger) or a <strong>retail NPC</strong>: <code>&lt;scene&gt;:&lt;slot&gt;</code>, the CDNAME scene and the placement slot the touch post engages (<code>town01:12</code>, <code>World::retail_npc_id</code>). Every talk to a retail villager reports its id while a pack is active, so a quest can name one as a giver or a <code>talk</code> objective; the retail talk runs unchanged and a pack line it raises waits for that dialogue to close. The engine logs each id at debug level (<code>expansion: talked to retail NPC ...</code>), which is how a modder reads off a villager's slot.</p>
+  <p>The per-tick <code>Refresh</code> re-tests state objectives and prerequisites, which is how a level up, an item gained or a story flag set reaches quests without a hook on each of those paths. After each event the tracker starts the quests whose giver was talked to, completes the quests whose objectives are done, and auto-starts what may start, repeating until nothing moves so a completion's flags can open the next quest of a chain in one call.</p>
+  <p>The tracker queues <code>QuestNotice</code>s for the host (started, objective updated, completed, challenge armed, cleared, failed; <code>World::take_expansion_notices</code>) and <code>Grant</code>s the <code>World</code> applies at once. <code>QuestRuntime::journal</code> lists the started quests with each objective's progress and target; the pause menu's Journal is built on it (<code>legaia_engine_expansion::journal</code>, <a href="../subsystems/field-menu.html">field menu</a>).</p>
+  <p>Each notice also becomes a <strong>toast</strong> both hosts draw on the banner rows (<code>legaia_engine_expansion::toast</code>, <code>World::expansion_toast</code>): <code>Quest started: &lt;title&gt;</code>, <code>&lt;title&gt;: 2/3</code> (or <code>objective 2/3 done</code> for a one-step objective), <code>Quest complete: &lt;title&gt;</code>, and the challenge outcomes. An objective that completed its quest in the same step shows as the completion alone. A reminder shows no toast; its line is the reminder.</p>
+</section>
+
+<section class="doc-section" id="saves" data-doc="saves">
+  <h2>Saves</h2>
+  <p>The save carries one pack's progress as the <strong>expansion block</strong>, a byte string <code>quest_save</code> owns (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/src/quest_save.rs" target="_blank" rel="noopener">quest_save.rs</a>). <code>str</code> is a <code>u16</code> byte length then UTF-8; integers are little-endian; maps are written in key order, so equal progress encodes to equal bytes. An armed challenge, queued notices and the line on screen are not saved.</p>
+  <h3 id="block-body">The block</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">+0</span><span class="bm-name">"LXP1"</span><span class="bm-size">4 B</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+4</span><span class="bm-name">pack id</span><span class="bm-size">str</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">pack version</span><span class="bm-size">str</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off"></span><span class="bm-name">quests</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">flags</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">counters</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">challenges</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off"></span><span class="bm-name">tail records</span><span class="bm-size">0..n</span></div>
+  </div>
+  <p class="dg-note">Variable-length fields; widths are not to scale.</p>
+  <table>
+    <thead><tr><th>Field</th><th>Per entry</th></tr></thead>
+    <tbody>
+      <tr><td>quests</td><td><code>str</code> id, <code>u8</code> status (0 active, 1 completed), <code>u32</code> completions, <code>u32</code> last_completed_at, <code>u16</code> objective count, <code>u32</code> progress each</td></tr>
+      <tr><td>flags</td><td><code>str</code></td></tr>
+      <tr><td>counters</td><td><code>str</code> id, <code>i64</code> value</td></tr>
+      <tr><td>challenges</td><td><code>str</code> id, <code>u32</code> best, <code>u32</code> clears</td></tr>
+    </tbody>
+  </table>
+  <h3 id="tail-records">Tail records</h3>
+  <p>Zero or more tagged records follow the challenges, each a <code>u8</code> tag and its body. Each is written only when it carries something, so a block with none of them is the layout an older writer made, and such a block loads with an empty list, no map and no cards.</p>
+  <p><strong>Tag 1 - cleared bosses</strong> (a once-only <code>battle.toml</code> boss is beaten; the battle runtime's <code>cleared_bosses</code>):</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">01</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+1</span><span class="bm-name">count</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:5"><span class="bm-off">+3</span><span class="bm-name">boss key each</span><span class="bm-size">str &times; count</span></div>
+  </div>
+  <p><strong>Tag 2 - map</strong> (the save is made on a pack map; <code>map::MapLocation</code>, <a href="expansion-pack-maps.html">maps</a>):</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">02</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+1</span><span class="bm-name">map id</span><span class="bm-size">str</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">x</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">z</span><span class="bm-size">i16</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">facing</span><span class="bm-size">u16</span></div>
+  </div>
+  <p><strong>Tag 3 - cards</strong> (the player has any card state; <code>CardProgress</code>, <a href="../subsystems/expansion-modes.html#the-card-economy">card economy</a>):</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">03</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">flags</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+2</span><span class="bm-name">card stream</span><span class="bm-size">u64</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off">+10</span><span class="bm-name">collection</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell" style="--w:3"><span class="bm-off"></span><span class="bm-name">boosters</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">deck</span><span class="bm-size">u16 + n</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off"></span><span class="bm-name">seen</span><span class="bm-size">u16 + n</span></div>
+  </div>
+  <p>The card flags' bit 0 says the starter cards were handed over. The collection is <code>str</code> id + <code>u32</code> copies each, in binder order; boosters <code>str</code> id + <code>u32</code> unopened each; the deck and the seen list <code>str</code> each.</p>
+  <table>
+    <thead><tr><th>Tag</th><th>Record</th><th>Written when</th><th>Owner</th></tr></thead>
+    <tbody>
+      <tr><td><code>1</code></td><td>Cleared bosses</td><td>A once-only <code>battle.toml</code> boss is beaten</td><td>The battle runtime's <code>cleared_bosses</code></td></tr>
+      <tr><td><code>2</code></td><td>Map</td><td>The save is made on a pack map</td><td><code>map::MapLocation</code></td></tr>
+      <tr><td><code>3</code></td><td>Cards</td><td>The player has any card state</td><td><code>CardProgress</code></td></tr>
+      <tr><td><code>4</code></td><td>Pack items</td><td>The player holds or wears a pack item</td><td><code>ItemProgress</code> (<a href="expansion-pack-items.html#saves">items</a>)</td></tr>
+    </tbody>
+  </table>
+  <div class="callout callout-trap">
+    <p class="callout-title">An unknown tag rejects the whole block</p>
+    <p>The reader takes records until the block ends; a tag it does not know, or a block with bytes left over, decodes to nothing (<code>ExpansionProgress::decode</code> answers <code>None</code>), so a new record kind needs a tag the reader learns at the same time.</p>
+  </div>
+  <h3 id="where-the-block-lives">Where the block lives</h3>
+  <p><code>legaia_save</code> stores the block opaquely as <code>SaveExtV2::expansion</code>. An <code>LGSF</code> file carries it as the optional <code>LGXD</code> block after <code>LGXC</code>; a retail SC block carries it as a third <code>u16</code>-length segment of the <code>LGXE</code> engine-ext tail, written only when it fits whole after the <code>LGX2</code> and <code>LGX4</code> bodies (<a href="../subsystems/save-screen.html">save screen</a>). A save made with no pack writes neither, so its bytes are the bytes the engine wrote before the block existed.</p>
+  <ul class="bullets">
+    <li><strong>Activation.</strong> <code>World::activate_expansion</code> is the one activation path: it compiles the battle tables and brings the quest runtime onto the pack, adopting a dormant block saved for it and handing its cleared bosses to the battle runtime.</li>
+    <li><strong>Deactivation.</strong> <code>World::deactivate_expansion</code> folds the cleared bosses into the progress and parks it as the dormant block, so a re-activation picks it up.</li>
+    <li><strong>Save and load.</strong> <code>WorldSaveState::save_full</code> writes the active pack's progress; <code>load_full</code> restores it when the block's pack id is the active pack's. A block for any other pack, or one loaded with no pack active, is kept <strong>dormant</strong> and written back verbatim on the next save, so playing a session without the pack does not erase its progress; activating that pack later adopts the dormant block. A save without a block loads under a pack as fresh progress.</li>
+  </ul>
+  <div class="see-also"><span class="see-also-label">See also</span> <a href="expansion-pack.html">Pack format</a> &middot; <a href="expansion-pack-battle.html">Battles</a> &middot; <a href="expansion-pack-maps.html">Maps</a> &middot; <a href="../subsystems/expansion-modes.html">Game modes</a> &middot; <a href="../guides/expansion-packs.html">Expansion packs hub</a></div>
+</section>

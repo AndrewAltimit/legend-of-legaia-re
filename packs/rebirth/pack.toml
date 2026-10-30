@@ -1,0 +1,27 @@
+# Legend of Legaia: Rebirth - the flagship expansion pack.
+#
+# Authored with the same format and tooling any modder uses
+# (docs/formats/expansion-pack.md). Content sections (battle.toml,
+# quests.toml, maps/, ...) are added beside this file as they are written.
+
+id = "rebirth"
+name = "Legend of Legaia: Rebirth"
+version = "0.1.0"
+authors = ["The legend-of-legaia-re contributors"]
+license = "MIT OR Unlicense"
+homepage = "https://github.com/AndrewAltimit/legend-of-legaia-re"
+tags = ["endgame", "bosses", "quests", "minigames", "trading-cards"]
+description = """
+An expansion for the port that gives levelling to 99 a purpose: an \
+endgame tower of new fights and superbosses tuned for a late-game party, \
+a quest chain that threads them through the existing world, custom maps \
+built from the disc's own scenery, trading cards collected as battle \
+rewards and traded or sold, and new modes the original never had. It \
+needs your own Legend of Legaia (NA) disc; the pack carries no game data.\
+"""
+schema = 2
+disc = "SCUS-94254"
+# Shown by the play page's pack library, the launcher and the workbench.
+cover = "assets/cover.png"
+# The oldest engine the pack is tested against.
+min_engine = "0.1.0"

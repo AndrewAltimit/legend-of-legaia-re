@@ -8,7 +8,15 @@
 //!   replay with two button presses is six lines instead of six hundred;
 //! - an optional `[[expected]]` block of `(frame, scene_mode,
 //!   active_scene)` rows - the regression fixture against the engine's
-//!   [`ModeTraceFrame`] stream.
+//!   [`ModeTraceFrame`] stream;
+//! - an optional sparse `[[switch]]` array of [`SessionSwitch`] rows - the
+//!   host-side session changes that reach the simulation and that the pad
+//!   stream cannot carry: the action-movement switch, the active expansion
+//!   pack (by id and [`pack_content_hash`]), and the expansion mode seat,
+//!   card menu, battle and map entries a host makes outside the pad.
+//!
+//! Every addition to the schema is optional and skipped when empty, so a
+//! file written before it parses, and serialises back, unchanged.
 //!
 //! [`ReplayFile::expand_pad_stream`] turns the sparse event list into a
 //! dense `Vec<u16>` of length `meta.frames + 1` (frame 0 inclusive) for
@@ -17,12 +25,17 @@
 //! Pure data + serde here. The engine driver that consumes a [`ReplayFile`]
 //! is wired in J2 / J3.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
+use legaia_engine_core::world::World;
+use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_session::mode_trace::ModeTraceFrame;
+use legaia_expansion_format::ExpansionPack;
 
 /// Current replay-file schema version. Bumped whenever the layout adds
 /// or removes a field; readers reject anything that doesn't match so a
@@ -45,6 +58,61 @@ pub struct ReplayFile {
     /// diverging row.
     #[serde(default, rename = "expected", skip_serializing_if = "Vec::is_empty")]
     pub expected: Vec<ExpectedFrame>,
+    /// Sparse list of session switches, frame-ascending. A switch at frame
+    /// `N` is applied before frame `N` ticks, the same frame its pad event
+    /// would take effect on.
+    #[serde(default, rename = "switch", skip_serializing_if = "Vec::is_empty")]
+    pub switches: Vec<SessionSwitch>,
+}
+
+/// One session switch: a host-side change to the running session that
+/// reaches the simulation and is not pad input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionSwitch {
+    /// The frame the change is applied before.
+    pub frame: u64,
+    /// What changes.
+    #[serde(flatten)]
+    pub change: SwitchChange,
+}
+
+/// What a [`SessionSwitch`] changes. The TOML form names the variant in a
+/// `set` key: `set = "action_movement"`, `on = true`.
+///
+/// The value-setting rows (`action_movement`, `pack`, `no_pack`) are
+/// idempotent - applying one that already holds changes nothing - so a
+/// recorder may note them by watching the state. The entry rows open
+/// something and are recorded where the host makes the call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "set", rename_all = "snake_case")]
+pub enum SwitchChange {
+    /// `WorldToggles::action_movement`.
+    ActionMovement { on: bool },
+    /// Activate expansion pack `id`, whose [`pack_content_hash`] is `hash`.
+    /// The replay refuses a pack whose content differs.
+    Pack { id: String, hash: String },
+    /// Deactivate the active expansion pack.
+    NoPack,
+    /// Open the expansion mode picker (`World::open_pack_mode_picker`).
+    ModePicker,
+    /// Enter mode instance `id` (`World::enter_pack_mode`).
+    Mode { id: String },
+    /// Leave the mode seat (`World::exit_pack_mode`).
+    LeaveMode,
+    /// Open the active pack's card menu (`World::open_card_menu`).
+    CardMenu,
+    /// Start the active pack's formation `formation`
+    /// (`World::start_expansion_battle`).
+    Battle { formation: String },
+    /// Enter map `map` of the active pack at spawn `spawn`
+    /// (`SceneHost::enter_expansion_map`; empty = the map's first spawn).
+    Map { map: String, spawn: String },
+    /// The run's rules (`World::run_rules`, `legaia_engine_run_rules`):
+    /// difficulty, New Game+, ironman, randomizer seed, mode. A value row:
+    /// the recorder notes it whenever the world's rules change.
+    RunRules {
+        rules: legaia_engine_run_rules::rules::RunRules,
+    },
 }
 
 /// `[meta]` block.
@@ -127,6 +195,7 @@ impl ReplayFile {
             meta,
             events: Vec::new(),
             expected: Vec::new(),
+            switches: Vec::new(),
         }
     }
 
@@ -208,7 +277,40 @@ impl ReplayFile {
                 );
             }
         }
+        let mut last: Option<u64> = None;
+        for sw in &self.switches {
+            if sw.frame > self.meta.frames {
+                bail!(
+                    "replay switch frame {} exceeds meta.frames {}",
+                    sw.frame,
+                    self.meta.frames
+                );
+            }
+            if let Some(prev) = last
+                && sw.frame < prev
+            {
+                bail!(
+                    "replay switches must be frame-ascending; saw {} after {}",
+                    sw.frame,
+                    prev
+                );
+            }
+            last = Some(sw.frame);
+        }
         Ok(())
+    }
+
+    /// The switches applied before frame `frame` ticks, in file order.
+    pub fn switches_at(&self, frame: u64) -> impl Iterator<Item = &SwitchChange> {
+        self.switches
+            .iter()
+            .filter(move |s| s.frame == frame)
+            .map(|s| &s.change)
+    }
+
+    /// Append a switch at `frame`. Caller keeps the list frame-ascending.
+    pub fn push_switch(&mut self, frame: u64, change: SwitchChange) {
+        self.switches.push(SessionSwitch { frame, change });
     }
 
     /// Sparse event list -> dense `Vec<u16>` of length `meta.frames + 1`.
@@ -336,6 +438,186 @@ impl ReplayMeta {
         self.rng_seed = seed;
         self
     }
+}
+
+/// The content hash a [`SwitchChange::Pack`] row carries: SHA-256 (lower-case
+/// hex) over the pack's canonical file tree ([`ExpansionPack::to_files`]),
+/// each file as its path, a NUL, its length (`u64` LE) and its bytes. A pack
+/// read from its directory and from its `.lxpack` bundle hash the same; any
+/// edit to its content changes the hash.
+pub fn pack_content_hash(pack: &ExpansionPack) -> Result<String> {
+    let files = pack.to_files().context("serialise the pack to hash it")?;
+    let mut h = Sha256::new();
+    for (path, bytes) in &files {
+        h.update(path.as_bytes());
+        h.update([0u8]);
+        h.update((bytes.len() as u64).to_le_bytes());
+        h.update(bytes);
+    }
+    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// The `pack` switch row for `pack` as it stands.
+pub fn pack_switch(pack: &ExpansionPack) -> Result<SwitchChange> {
+    Ok(SwitchChange::Pack {
+        id: pack.manifest.id.clone(),
+        hash: pack_content_hash(pack)?,
+    })
+}
+
+/// The expansion packs a replay may activate, each with its content hash.
+#[derive(Debug, Clone, Default)]
+pub struct PackShelf {
+    packs: Vec<(Arc<ExpansionPack>, String)>,
+}
+
+impl PackShelf {
+    /// An empty shelf: a replay naming any pack fails.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Put `pack` on the shelf.
+    pub fn add(&mut self, pack: Arc<ExpansionPack>) -> Result<()> {
+        let hash = pack_content_hash(&pack)?;
+        self.packs.push((pack, hash));
+        Ok(())
+    }
+
+    /// A shelf of the packs at `paths` (pack directories or `.lxpack`
+    /// bundles).
+    pub fn from_paths(paths: &[PathBuf]) -> Result<Self> {
+        let mut shelf = Self::new();
+        for p in paths {
+            let files = legaia_expansion_format::read_files(p)?;
+            let pack = ExpansionPack::from_files(&files)
+                .with_context(|| format!("parse the expansion pack at {}", p.display()))?;
+            shelf.add(Arc::new(pack))?;
+        }
+        Ok(shelf)
+    }
+
+    /// The pack with id `id` and content hash `hash`. A pack of that id
+    /// whose content differs is refused by name: the replay was recorded
+    /// against other content and would not reproduce.
+    pub fn resolve(&self, id: &str, hash: &str) -> Result<Arc<ExpansionPack>> {
+        let mut seen = Vec::new();
+        for (pack, h) in &self.packs {
+            if pack.manifest.id == id {
+                if h == hash {
+                    return Ok(pack.clone());
+                }
+                seen.push(h.as_str());
+            }
+        }
+        if seen.is_empty() {
+            bail!("the replay activates expansion pack '{id}', which no --pack supplies");
+        }
+        bail!(
+            "expansion pack '{id}' differs from the one the replay was recorded with \
+             (recorded {hash}, supplied {})",
+            seen.join(", ")
+        )
+    }
+}
+
+/// What a replay driver applies [`SwitchChange`]s to: a bare [`World`], or
+/// a [`SceneHost`] (which can also enter a pack map and merges a pack's
+/// base monsters on activation).
+pub trait ReplaySeat {
+    /// The world the switches act on.
+    fn replay_world(&mut self) -> &mut World;
+
+    /// Activate `pack`.
+    fn replay_activate_pack(&mut self, pack: Arc<ExpansionPack>) -> Result<()> {
+        self.replay_world()
+            .activate_expansion(pack)
+            .map_err(|p| anyhow::anyhow!("the expansion pack does not activate: {}", p.join("; ")))
+    }
+
+    /// Enter map `map` of the active pack at `spawn`.
+    fn replay_enter_map(&mut self, map: &str, spawn: &str) -> Result<()> {
+        let _ = spawn;
+        bail!("a bare world cannot enter pack map '{map}': the replay needs a scene host")
+    }
+}
+
+impl ReplaySeat for World {
+    fn replay_world(&mut self) -> &mut World {
+        self
+    }
+}
+
+impl ReplaySeat for SceneHost {
+    fn replay_world(&mut self) -> &mut World {
+        &mut self.world
+    }
+
+    fn replay_activate_pack(&mut self, pack: Arc<ExpansionPack>) -> Result<()> {
+        self.activate_expansion_pack(pack)?;
+        self.merge_expansion_monsters();
+        Ok(())
+    }
+
+    fn replay_enter_map(&mut self, map: &str, spawn: &str) -> Result<()> {
+        self.enter_expansion_map(map, spawn)
+    }
+}
+
+/// Apply one switch to `seat`. Packs come off `shelf`.
+pub fn apply_switch<S: ReplaySeat + ?Sized>(
+    seat: &mut S,
+    change: &SwitchChange,
+    shelf: &PackShelf,
+) -> Result<()> {
+    match change {
+        SwitchChange::ActionMovement { on } => seat.replay_world().toggles.action_movement = *on,
+        SwitchChange::Pack { id, hash } => {
+            let active = seat.replay_world().expansion.pack.clone();
+            if let Some(p) = active
+                && p.manifest.id == *id
+                && pack_content_hash(&p)? == *hash
+            {
+                return Ok(());
+            }
+            let pack = shelf.resolve(id, hash)?;
+            seat.replay_activate_pack(pack)?;
+        }
+        SwitchChange::NoPack => seat.replay_world().deactivate_expansion(),
+        SwitchChange::ModePicker => seat.replay_world().open_pack_mode_picker(),
+        SwitchChange::Mode { id } => seat
+            .replay_world()
+            .enter_pack_mode(id)
+            .map_err(|e| anyhow::anyhow!("enter mode '{id}': {e}"))?,
+        SwitchChange::LeaveMode => seat.replay_world().exit_pack_mode(),
+        SwitchChange::CardMenu => {
+            if !seat.replay_world().open_card_menu() {
+                bail!("the card menu does not open: the active pack has no cards");
+            }
+        }
+        SwitchChange::Battle { formation } => {
+            if !seat.replay_world().start_expansion_battle(formation) {
+                bail!("expansion formation '{formation}' does not start");
+            }
+        }
+        SwitchChange::Map { map, spawn } => seat.replay_enter_map(map, spawn)?,
+        SwitchChange::RunRules { rules } => seat.replay_world().run_rules.rules = rules.clone(),
+    }
+    Ok(())
+}
+
+/// Apply every switch `replay` holds at `frame`, in file order.
+pub fn apply_switches_at<S: ReplaySeat + ?Sized>(
+    seat: &mut S,
+    replay: &ReplayFile,
+    frame: u64,
+    shelf: &PackShelf,
+) -> Result<()> {
+    for change in replay.switches_at(frame) {
+        apply_switch(seat, change, shelf)
+            .with_context(|| format!("replay switch at frame {frame}"))?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -516,5 +798,162 @@ mod tests {
         file.write_to(tmp.path()).unwrap();
         let loaded = ReplayFile::from_path(tmp.path()).unwrap();
         assert_eq!(loaded, file);
+    }
+    /// A file in the schema as it stood before `[[switch]]`: it must parse
+    /// to the same events and serialise back byte-for-byte.
+    const PRE_SWITCH_FILE: &str = r#"[meta]
+schema = "j-replay-v1"
+scenario = "title_attract"
+rng_seed = 305419896
+frames = 60
+
+[[event]]
+frame = 0
+pad = 0
+
+[[event]]
+frame = 10
+pad = 16384
+
+[[expected]]
+frame = 60
+scene_mode = "Field"
+active_scene = "town01"
+"#;
+
+    #[test]
+    fn a_file_without_switches_parses_and_writes_back_unchanged() {
+        let parsed = ReplayFile::from_toml_str(PRE_SWITCH_FILE).unwrap();
+        assert!(parsed.switches.is_empty());
+        assert_eq!(parsed.events.len(), 2);
+        assert_eq!(parsed.to_toml_string().unwrap(), PRE_SWITCH_FILE);
+    }
+
+    #[test]
+    fn switches_round_trip_in_every_shape() {
+        let mut file = ReplayFile::new(ReplayMeta::new(100));
+        file.push_switch(
+            0,
+            SwitchChange::Pack {
+                id: "rebirth".into(),
+                hash: "ab".repeat(32),
+            },
+        );
+        file.push_switch(0, SwitchChange::ActionMovement { on: true });
+        file.push_switch(5, SwitchChange::ModePicker);
+        file.push_switch(
+            6,
+            SwitchChange::Mode {
+                id: "builtin-golf".into(),
+            },
+        );
+        file.push_switch(7, SwitchChange::LeaveMode);
+        file.push_switch(8, SwitchChange::CardMenu);
+        file.push_switch(
+            9,
+            SwitchChange::Battle {
+                formation: "gauntlet".into(),
+            },
+        );
+        file.push_switch(
+            10,
+            SwitchChange::Map {
+                map: "rebirth_tower_1f".into(),
+                spawn: "entrance".into(),
+            },
+        );
+        file.push_switch(11, SwitchChange::NoPack);
+        file.push_switch(
+            11,
+            SwitchChange::RunRules {
+                rules: legaia_engine_run_rules::rules::RunRules {
+                    difficulty: legaia_engine_run_rules::rules::Difficulty::Hard,
+                    randomizer: Some(legaia_engine_run_rules::rules::Randomizer::all("seed")),
+                    ..Default::default()
+                },
+            },
+        );
+        let text = file.to_toml_string().unwrap();
+        assert!(text.contains("set = \"run_rules\""), "{text}");
+        assert!(text.contains("set = \"action_movement\""), "{text}");
+        assert_eq!(ReplayFile::from_toml_str(&text).unwrap(), file);
+        let at0: Vec<_> = file.switches_at(0).collect();
+        assert_eq!(at0.len(), 2);
+        assert_eq!(file.switches_at(1).count(), 0);
+    }
+
+    #[test]
+    fn switches_out_of_order_or_past_the_end_are_rejected() {
+        let mut file = ReplayFile::new(ReplayMeta::new(10));
+        file.push_switch(5, SwitchChange::LeaveMode);
+        file.push_switch(3, SwitchChange::LeaveMode);
+        let msg = format!("{:#}", file.validate().unwrap_err());
+        assert!(msg.contains("frame-ascending"), "got: {msg}");
+        let mut file = ReplayFile::new(ReplayMeta::new(10));
+        file.push_switch(11, SwitchChange::LeaveMode);
+        let msg = format!("{:#}", file.validate().unwrap_err());
+        assert!(msg.contains("exceeds meta.frames"), "got: {msg}");
+    }
+
+    fn tiny_pack(name: &str) -> ExpansionPack {
+        let mut files = legaia_expansion_format::PackFiles::new();
+        files.insert(
+            "pack.toml".into(),
+            format!("id = \"tiny\"\nname = \"{name}\"\nversion = \"0.1.0\"\n").into_bytes(),
+        );
+        ExpansionPack::from_files(&files).unwrap()
+    }
+
+    #[test]
+    fn the_content_hash_follows_content_not_container() {
+        let pack = tiny_pack("Tiny");
+        let h = pack_content_hash(&pack).unwrap();
+        assert_eq!(h.len(), 64);
+        let bundle =
+            legaia_expansion_format::bundle::write_bundle(&pack.to_files().unwrap()).unwrap();
+        let from_bundle = ExpansionPack::from_bundle(&bundle).unwrap();
+        assert_eq!(pack_content_hash(&from_bundle).unwrap(), h);
+        assert_ne!(pack_content_hash(&tiny_pack("Tiny 2")).unwrap(), h);
+    }
+
+    #[test]
+    fn the_shelf_refuses_a_pack_whose_content_moved() {
+        let mut shelf = PackShelf::new();
+        shelf.add(Arc::new(tiny_pack("Tiny"))).unwrap();
+        let good = pack_content_hash(&tiny_pack("Tiny")).unwrap();
+        assert!(shelf.resolve("tiny", &good).is_ok());
+        let moved = pack_content_hash(&tiny_pack("Tiny 2")).unwrap();
+        let msg = format!("{:#}", shelf.resolve("tiny", &moved).unwrap_err());
+        assert!(msg.contains("differs"), "got: {msg}");
+        let msg = format!("{:#}", shelf.resolve("other", &good).unwrap_err());
+        assert!(msg.contains("no --pack"), "got: {msg}");
+    }
+
+    #[test]
+    fn switches_apply_to_a_bare_world() {
+        let mut shelf = PackShelf::new();
+        shelf.add(Arc::new(tiny_pack("Tiny"))).unwrap();
+        let mut world = World::new();
+        apply_switch(
+            &mut world,
+            &SwitchChange::ActionMovement { on: true },
+            &shelf,
+        )
+        .unwrap();
+        assert!(world.toggles.action_movement);
+        let row = pack_switch(&tiny_pack("Tiny")).unwrap();
+        apply_switch(&mut world, &row, &shelf).unwrap();
+        assert_eq!(world.expansion.pack.as_ref().unwrap().manifest.id, "tiny");
+        // Re-applying the active pack is a no-op, not a re-activation.
+        let before = Arc::as_ptr(world.expansion.pack.as_ref().unwrap());
+        apply_switch(&mut world, &row, &shelf).unwrap();
+        assert_eq!(Arc::as_ptr(world.expansion.pack.as_ref().unwrap()), before);
+        let map = SwitchChange::Map {
+            map: "m".into(),
+            spawn: String::new(),
+        };
+        assert!(apply_switch(&mut world, &map, &shelf).is_err());
+        apply_switch(&mut world, &SwitchChange::NoPack, &shelf).unwrap();
+        assert!(world.expansion.pack.is_none());
     }
 }

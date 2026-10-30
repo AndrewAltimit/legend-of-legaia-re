@@ -33,6 +33,13 @@ pub const BGM_SUB_OP_ENGINE_LATCH: u8 = 0xFE;
 /// that one, so the close leaves it alone. Not a retail op-`0x35` word.
 pub const BGM_SUB_OP_ENGINE_FIELD_CLOSE: u8 = 0xFD;
 
+/// The `FieldEvent::Bgm` sub-op the **engine** raises for an expansion
+/// pack's cross-fading start - a music zone, a boss phase, a mode's music:
+/// a sub-op `1` start whose director fades the outgoing track over
+/// `World::expansion.audio.fade_frames` instead of cutting. Only a pack
+/// raises it; like [`BGM_SUB_OP_ENGINE_STOP`], not a retail op-`0x35` word.
+pub const BGM_SUB_OP_ENGINE_FADE: u8 = 0xFC;
+
 /// Audio-side state: BGM selection and resume, the SFX cue / delay slots, sound-bank handshakes and the battle SFX / XA / shout cue queues.
 pub struct AudioState {
     /// "Sound bank ready" gate.

@@ -26,6 +26,7 @@ pub mod effect_draws;
 pub mod field_view_window;
 pub mod minigame_caption;
 pub mod muscle_dome;
+pub mod pack_mode_world;
 pub mod passive_hud;
 pub mod pause_screens;
 pub mod scene_staging;

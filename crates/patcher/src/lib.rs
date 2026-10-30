@@ -49,7 +49,6 @@ pub mod charm_fix;
 pub mod chest;
 pub mod damage_ap;
 pub mod door;
-pub mod drops;
 pub mod earth_egg;
 pub mod element_affinity;
 pub mod encounter;

@@ -199,10 +199,11 @@ Top of the stack first. Every crate name links its README.
 
 - **Hosts and front ends.** The programs people run. Each one is a thin shell over the crates below. \
   [`engine-shell`](crates/engine-shell/README.md), [`web-viewer`](crates/web-viewer/README.md), [`web-play`](crates/web-play/README.md), [`web-minigames`](crates/web-minigames/README.md), [`web-patcher`](crates/web-patcher/README.md),
-  [`asset-viewer`](crates/asset-viewer/README.md), [`explorer`](crates/explorer/README.md), [`patcher`](crates/patcher/README.md), [`extract`](crates/extract/README.md), [`asset`](crates/asset/README.md)
-- **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer and the audio stack; plus the tools that step a World from outside. \
+  [`web-expansion`](crates/web-expansion/README.md), [`asset-viewer`](crates/asset-viewer/README.md), [`explorer`](crates/explorer/README.md), [`patcher`](crates/patcher/README.md), [`extract`](crates/extract/README.md),
+  [`asset`](crates/asset/README.md)
+- **Session, presentation, tools.** What both play hosts share above the simulation: the game session, the screens, the renderer, the audio stack and netplay; plus the tools that step a World from outside. \
   [`engine-session`](crates/engine-session/README.md), [`engine-screens`](crates/engine-screens/README.md), [`engine-render`](crates/engine-render/README.md), [`engine-audio`](crates/engine-audio/README.md), [`engine-export`](crates/engine-export/README.md),
-  [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md)
+  [`parity`](crates/parity/README.md), [`engine-capture`](crates/engine-capture/README.md), [`netplay`](crates/netplay/README.md), [`engine-netplay`](crates/engine-netplay/README.md)
 - **World drivers.** Layers that hold a running World from outside: scene entry and tick, the pause menu, the battle HUD's and the field screens' reads, the cheats, the LGSF saves. \
   [`engine-scene-host`](crates/engine-scene-host/README.md), [`engine-menu-runtime`](crates/engine-menu-runtime/README.md), [`engine-battle-hud`](crates/engine-battle-hud/README.md), [`engine-world-views`](crates/engine-world-views/README.md), [`engine-cheats`](crates/engine-cheats/README.md),
   [`engine-save-state`](crates/engine-save-state/README.md)
@@ -211,18 +212,19 @@ Top of the stack first. Every crate name links its README.
 - **World-free kernels.** The ported VMs and rules engines, ranked by the committed layering table: a kernel depends only on kernels of a lower rank. \
   Rank 6: [`engine-battle-loop`](crates/engine-battle-loop/README.md), [`engine-minigame-scenes`](crates/engine-minigame-scenes/README.md) \
   Rank 5: [`engine-battle-menus`](crates/engine-battle-menus/README.md), [`engine-menus`](crates/engine-menus/README.md) \
-  Rank 4: [`engine-fishing`](crates/engine-fishing/README.md), [`engine-minigames`](crates/engine-minigames/README.md), [`engine-scene`](crates/engine-scene/README.md) \
+  Rank 4: [`engine-expansion`](crates/engine-expansion/README.md), [`engine-fishing`](crates/engine-fishing/README.md), [`engine-minigames`](crates/engine-minigames/README.md), [`engine-scene`](crates/engine-scene/README.md) \
   Rank 3: [`engine-battle`](crates/engine-battle/README.md), [`engine-cast`](crates/engine-cast/README.md), [`engine-effects`](crates/engine-effects/README.md), [`engine-field`](crates/engine-field/README.md), [`engine-ui`](crates/engine-ui/README.md) \
   Rank 2: [`engine-battle-vm`](crates/engine-battle-vm/README.md), [`render-kernels`](crates/render-kernels/README.md) \
-  Rank 1: [`engine-camera`](crates/engine-camera/README.md), [`engine-dev-menu`](crates/engine-dev-menu/README.md), [`engine-mode`](crates/engine-mode/README.md), [`engine-motion-vm`](crates/engine-motion-vm/README.md), [`engine-title`](crates/engine-title/README.md) \
-  Rank 0: [`engine-dialog`](crates/engine-dialog/README.md), [`engine-system`](crates/engine-system/README.md), [`engine-vm`](crates/engine-vm/README.md)
+  Rank 1: [`engine-camera`](crates/engine-camera/README.md), [`engine-dev-menu`](crates/engine-dev-menu/README.md), [`engine-mode`](crates/engine-mode/README.md), [`engine-modes`](crates/engine-modes/README.md), [`engine-motion-vm`](crates/engine-motion-vm/README.md),
+  [`engine-title`](crates/engine-title/README.md) \
+  Rank 0: [`engine-dialog`](crates/engine-dialog/README.md), [`engine-run-rules`](crates/engine-run-rules/README.md), [`engine-system`](crates/engine-system/README.md), [`engine-vm`](crates/engine-vm/README.md)
 - **Patcher and capture libraries.** The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles. \
-  [`disc-patch`](crates/disc-patch/README.md), [`translate`](crates/translate/README.md), [`code-hooks`](crates/code-hooks/README.md), [`arts-patch`](crates/arts-patch/README.md), [`texture-replace`](crates/texture-replace/README.md),
-  [`party-swap`](crates/party-swap/README.md), [`delilas-party`](crates/delilas-party/README.md), [`delilas-challenge`](crates/delilas-challenge/README.md), [`ram-image`](crates/ram-image/README.md), [`mednafen`](crates/mednafen/README.md),
-  [`pcsx-redux`](crates/pcsx-redux/README.md)
+  [`disc-patch`](crates/disc-patch/README.md), [`randomizer`](crates/randomizer/README.md), [`translate`](crates/translate/README.md), [`code-hooks`](crates/code-hooks/README.md), [`arts-patch`](crates/arts-patch/README.md),
+  [`texture-replace`](crates/texture-replace/README.md), [`party-swap`](crates/party-swap/README.md), [`delilas-party`](crates/delilas-party/README.md), [`delilas-challenge`](crates/delilas-challenge/README.md), [`ram-image`](crates/ram-image/README.md),
+  [`mednafen`](crates/mednafen/README.md), [`pcsx-redux`](crates/pcsx-redux/README.md)
 - **Format families.** The Legaia-specific layer over the parsers: containers, scenes, actors, minigames, the 2D interface, the static tables, code overlays. \
   [`container-formats`](crates/container-formats/README.md), [`scene-formats`](crates/scene-formats/README.md), [`actor-formats`](crates/actor-formats/README.md), [`minigame-formats`](crates/minigame-formats/README.md), [`ui-formats`](crates/ui-formats/README.md),
-  [`game-tables`](crates/game-tables/README.md), [`overlay-images`](crates/overlay-images/README.md), [`disc-audit`](crates/disc-audit/README.md)
+  [`game-tables`](crates/game-tables/README.md), [`overlay-images`](crates/overlay-images/README.md), [`disc-audit`](crates/disc-audit/README.md), [`expansion-format`](crates/expansion-format/README.md)
 - **Disc and per-format parsers.** The foundation: sector reader, the PROT archive, LZS, and one small crate per file format. \
   [`iso`](crates/iso/README.md), [`prot`](crates/prot/README.md), [`lzs`](crates/lzs/README.md), [`bytes`](crates/bytes/README.md), [`tim`](crates/tim/README.md),
   [`tmd`](crates/tmd/README.md), [`vab`](crates/vab/README.md), [`seq`](crates/seq/README.md), [`xa`](crates/xa/README.md), [`mdec`](crates/mdec/README.md),

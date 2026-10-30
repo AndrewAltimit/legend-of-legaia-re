@@ -7,7 +7,7 @@
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_disc_patch::ppf;
 use legaia_patcher::apply::{self, DropApplyReport};
-use legaia_patcher::drops::{DropAssignment, DropMode};
+use legaia_randomizer::drops::{DropAssignment, DropMode};
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

@@ -1,0 +1,609 @@
+# Tower of Rebirth, first floor: the Atrium. Unlike the floors above, this
+# one is laid out from scratch (`geometry = "none"`): a walled arena with a
+# raised dais floating in the dark, built from the retail Sky Gardens
+# Tower's (`tower`) textures and meshes. The Warden's Stone stands on the
+# dais; the stair at the south edge leads back down to Rim Elm, the one at
+# the north edge up into the tower.
+
+name = "Tower of Rebirth 1F - Atrium"
+size = [15, 13]
+base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
+# Sound-test track 45, "The Sol Tower".
+bgm = { kind = "bgm", id = 45 }
+camera = "default"
+# Tier 0 is the arena floor, tier 1 the dais.
+floor_heights = [0, 48]
+
+[tiles]
+origin = [16, 16]
+rows = [
+  "#######<#######",
+  "#.............#",
+  "#.o.,.,.,.,.o.#",
+  "#.............#",
+  "#,...^^^^^...,#",
+  "#....^^^^^....#",
+  "w,.o.^^^^^.o.,#",
+  "#....^^^^^....#",
+  "#,...^^^^^...,#",
+  "#.............#",
+  "#.,.,.,.,.,.,.#",
+  "#.o....=....o.#",
+  "_______>_______",
+]
+
+[tiles.legend]
+# The walls stand: the Sky Gardens Tower's own tile-sized stone block
+# (mesh 10, three storeys) on the north, east and west, and a low generated
+# parapet along the south so the follow camera sees over it.
+"#" = { label = "wall", walls = "all", wall = { kind = "mesh", index = 10 } }
+"_" = { label = "parapet", walls = "all", wall = { kind = "box", height = 96, tpage = 28, clut = 32576, tile = 2 } }
+"." = { label = "stone floor", ground = { kind = "base_cell", cell = [8, 11] } }
+"," = { label = "worn stone", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
+"^" = { label = "dais", height = 1, ground = { kind = "texture", tpage = 28, clut = 32576, tile = 0 } }
+# Pillar and statue bases: solid, the stone floor under them. The
+# columns themselves are decorations (below), so each can carry a cap.
+"o" = { label = "pillar base", walls = "all", ground = { kind = "base_cell", cell = [8, 11] } }
+"=" = { label = "stair landing", ground = { kind = "base_cell", cell = [8, 11] } }
+">" = { label = "stair down", ground = { kind = "base_cell", cell = [8, 11] } }
+"<" = { label = "stair up", ground = { kind = "base_cell", cell = [8, 11] } }
+# The sea gate: a crack in the west wall, salt wind and a stair down to
+# the Rebirth Isles (maps/isles_beach.toml).
+"w" = { label = "sea gate", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
+
+[[spawns]]
+id = "entrance"
+tile = [7, 10]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [7, 2]
+# Facing the room, so the follow camera frames it over the low south
+# parapet rather than from behind the tall north wall.
+facing = 4
+
+# Inside the sea gate, back up from the Rebirth Isles.
+[[spawns]]
+id = "from_sea"
+tile = [1, 6]
+facing = 2
+
+# On the dais beside the Warden's Stone: where the Journal's Travel lands.
+[[spawns]]
+id = "dais"
+tile = [7, 7]
+
+# The first arrival plays the tower's intro (`cutscenes.toml`
+# `tower_intro`): the camera rises up the hall and the Warden's familiar
+# comes down to meet the party.
+[[enter_cutscenes]]
+cutscene = "tower_intro"
+
+[[exits]]
+id = "stair_down"
+rect = [7, 12, 7, 12]
+to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [20, 44], facing = 4 }
+
+# The way in from the retail game: behind the woodpile by Rim Elm's south
+# gate (town01 field-grid tiles 17..18 x 43), clear of the gate's own
+# walk-on tiles (24..26, 44..46). The stair down lands beside it on (20, 44).
+# It opens to a party that has reached level 30, the level the
+# `tower_rumour` quest starts at.
+[[entrances]]
+id = "rim_elm_mist_stair"
+scene = { kind = "scene", name = "town01" }
+rect = [17, 43, 18, 43]
+spawn = "entrance"
+requires = { min_level = 30 }
+
+# The sea gate in the west wall opens once Ysolde has spoken: the Rebirth
+# Isles beyond it are where a level-30 party grows into the Warden's Trial.
+[[exits]]
+id = "sea_gate"
+rect = [0, 6, 0, 6]
+to = { kind = "map", map = "isles_beach", spawn = "sea_stair" }
+requires = { flags = ["tower_heard"] }
+locked_line = "isles_sea_gate"
+
+# The stair up is the seal Ysolde lifts: shut until the Warden's Trial.
+[[exits]]
+id = "stair_up"
+rect = [7, 0, 7, 0]
+to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_below" }
+requires = { flags = ["tower_open"] }
+locked_line = "stair_sealed"
+
+# Stepping onto the dais wakes the floor's guardian - once, ever, and only
+# once the seal is lifted (a party fresh from Rim Elm meets the Warden
+# first). The stone's own row (8) stays clear of it.
+[[triggers]]
+id = "dais_guardian"
+rect = [5, 5, 9, 7]
+event = { kind = "battle", formation = "forge_guard" }
+once = true
+requires = { flags = ["tower_open"] }
+
+# Inside the entrance the Warden's voice first reaches the party: this
+# counts as talking to the guide (`tower_guide`) for `tower_rumour`.
+[[triggers]]
+id = "entrance_guide"
+rect = [6, 9, 8, 9]
+event = { kind = "talk", npc = "tower_guide" }
+once = true
+
+# The card dealer keeps a stall in the west corner by the entrance: step
+# onto it to buy boosters or sell cards (`cards.toml` dealer `tower`).
+[[triggers]]
+id = "card_dealer"
+rect = [1, 9, 2, 10]
+event = { kind = "card_dealer", dealer = "tower" }
+
+# The foot of the dais, in front of the Warden's Stone: stepping up to it
+# is talking to the guide, every time.
+[[triggers]]
+id = "warden_stone"
+rect = [5, 8, 9, 8]
+event = { kind = "talk", npc = "tower_guide" }
+
+# The back of the dais offers the training gauntlet, as often as wanted.
+[[triggers]]
+id = "gauntlet_bell"
+rect = [5, 4, 9, 4]
+event = { kind = "dialog", line = "gauntlet_offer" }
+
+# The trial stone east of the entrance arms the Bare Hands challenge once
+# the Warden's Trial is done.
+[[triggers]]
+id = "trial_stone"
+rect = [12, 9, 13, 9]
+event = { kind = "dialog", line = "challenge_board" }
+requires = { quests = ["tower_trial"] }
+
+# The landing by the stair down is a rest point: the party recovers, and
+# may write a save.
+[[triggers]]
+id = "rest_landing"
+rect = [9, 11, 11, 11]
+event = { kind = "rest", save = true }
+
+# The far ring past the dais rolls the floor's encounter table
+# (`battle.toml`, `scene = "tower_1f"`).
+[[encounters]]
+id = "outer_ring"
+rect = [1, 1, 13, 3]
+table = "tower_1f"
+
+# The wings beside the dais roll the hound packs (`tower_1f_wings`).
+[[encounters]]
+id = "west_wing"
+rect = [1, 4, 3, 8]
+table = "tower_1f_wings"
+
+[[encounters]]
+id = "east_wing"
+rect = [11, 4, 13, 8]
+table = "tower_1f_wings"
+
+# The Warden's Stone: the base pack's altar block (mesh 37).
+[[props]]
+id = "warden_stone"
+mesh = { object = 37 }
+tile = [7, 6]
+solid = true
+
+# ---------------------------------------------------------------------------
+# Detail: what makes the Atrium read as a room rather than a floor plan.
+# Everything below draws only - none of it closes a tile - so the Tower Green
+# hole on the dais and the Sol Ring round it run as before.
+# ---------------------------------------------------------------------------
+
+# Four ember crystals float at the dais corners, turning slowly and bobbing
+# out of step, each carrying a warm light. The model is the pack's own
+# (`assets/models/ember_crystal.glb`, made by
+# `scripts/models/generate_ember_crystal.py`), not a disc mesh.
+[[props]]
+id = "crystal_nw"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [3, 4]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+[[props]]
+id = "crystal_ne"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 4]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = -300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.25 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+[[props]]
+id = "crystal_sw"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [3, 8]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = -300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.5 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+[[props]]
+id = "crystal_se"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 8]
+offset = [0, 72, 0]
+scale = 1.4
+animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.75 }]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+
+# A rune ring (Rogue's Tower, `rugi` mesh 12) turns under the stone's
+# northern face, hovering a hand above the dais.
+[[props]]
+id = "rune_ring"
+mesh = { scene = "rugi", object = 12 }
+tile = [7, 5]
+offset = [0, 6, 0]
+animate = [{ kind = "spin", period = 600 }, { kind = "pulse", amount = 0.08, period = 90 }]
+
+# Wall torches from the Rogue's Tower (`rugi` mesh 15: a bracket and an
+# additive flame, which enhanced lighting turns into a light of its own) on
+# every third stretch of the stone walls.
+[[edges]]
+id = "torches"
+mesh = { scene = "rugi", object = 15 }
+walls = "#"
+every = 3
+inset = 6
+y = 120
+jitter = 20
+seed = 21
+
+# Hanging vines (`tower` mesh 16) down the walls between the torches.
+[[edges]]
+id = "vines"
+mesh = { object = 16 }
+walls = "#"
+every = 3
+phase = 1
+inset = 2
+jitter = 30
+yaw_jitter = 8.0
+scale_range = [0.7, 1.0]
+seed = 22
+
+# Grass tufts (`tower` mesh 27) at the foot of every wall.
+[[edges]]
+id = "wall_grass"
+mesh = { object = 27 }
+walls = "#_o"
+every = 2
+inset = 20
+jitter = 40
+yaw_jitter = 180.0
+scale_range = [0.45, 0.75]
+seed = 23
+
+# Rubble and weeds over the outer floor: the Rogue's Tower's boulders, small,
+# and the Sky Gardens' grass.
+[[scatter]]
+id = "rubble"
+rect = [1, 1, 13, 11]
+on = ".,"
+density = 0.45
+seed = 1101
+jitter = 44
+scale = [0.5, 0.9]
+meshes = [
+  { mesh = { scene = "rugi", object = 18 }, weight = 2 },
+  { mesh = { scene = "rugi", object = 19 }, weight = 2 },
+  { mesh = { scene = "rugi", object = 20 }, weight = 1 },
+  { mesh = { object = 23 }, weight = 3, scale = [0.5, 0.8] },
+  { mesh = { object = 27 }, weight = 3, scale = [0.45, 0.7] },
+]
+
+# The card dealer's stall by the entrance: Rim Elm's barrels and crates.
+[[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [1, 11]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-30, 0, -36]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-34, 0, 20]
+scale = 0.65
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [3, 11]
+offset = [0, 0, 24]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [13, 10]
+offset = [20, 0, 20]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [13, 2]
+offset = [20, 0, -20]
+scale = 0.8
+
+[lighting]
+mood = "cave"
+lamps = [
+  # The Warden's Stone glows a cold blue.
+  { id = "stone", tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 },
+  # Daylight spilling down the stair from Rim Elm.
+  { id = "stair_light", tile = [7, 11], offset = [0, 80, 40], color = [255, 230, 190], radius = 620 },
+  # Sea light through the west wall's crack.
+  { id = "sea_gate", tile = [0, 6], offset = [40, 120, 0], color = [120, 200, 255], radius = 520, flicker = 0.15, period = 70 },
+]
+
+# The dais's flagstones drift: its atlas cell scrolls a texel every eighth
+# frame, so the floor under the stone seems to flow.
+[[materials]]
+kind = "scroll"
+cell = { tpage = 28, clut = 32576, tile = 0 }
+dx = 1
+dy = 1
+period = 8
+
+# Mist curls over the outer ring and the entrance hall.
+[fog]
+regions = [
+  { rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 },
+  { rect = [1, 9, 13, 11], angle = 270.0, spread = 40.0, speed = 18 },
+]
+
+# The Warden's familiar: one of the tower's grey beasts, which keeps the
+# stone company. It first appears in the intro cutscene, and waits by the
+# dais from then on.
+[[npcs]]
+id = "warden_familiar"
+label = "the Warden's familiar"
+model = { kind = "npc", scene = "tower", index = 1 }
+tile = [4, 8]
+facing = 4
+line = "familiar_purr"
+present = { flags = ["cutscene.tower_intro"] }
+line_after = "familiar_rest"
+after = { flags = ["breath_released"] }
+
+# The octagonal pillars and the carved face pillars flanking the dais, as
+# decorations on their solid bases. The Sky Gardens Tower authors their
+# tops as untextured black caps - its pillars run up into a dark ceiling the
+# retail camera never sees over - so each wears a stone octagon decal at
+# its top here, the angle the Atrium's far camera looks from.
+[[decor]]
+mesh = { object = 20 }
+tile = [2, 2]
+scale = 0.6
+
+[[decor]]
+mesh = { object = 20 }
+tile = [12, 2]
+scale = 0.6
+rotation = [0.0, 22.5, 0.0]
+
+[[decor]]
+mesh = { object = 20 }
+tile = [2, 11]
+scale = 0.6
+rotation = [0.0, 11.0, 0.0]
+
+[[decor]]
+mesh = { object = 20 }
+tile = [12, 11]
+scale = 0.6
+rotation = [0.0, 33.0, 0.0]
+
+[[decor]]
+mesh = { object = 19 }
+tile = [3, 6]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.8
+
+[[decor]]
+mesh = { object = 19 }
+tile = [11, 6]
+rotation = [0.0, 270.0, 0.0]
+scale = 0.8
+
+[[decals]]
+id = "pillar_caps"
+cell = { tpage = 28, clut = 32576, tile = 0 }
+tile = [2, 2]
+offset = [0, 270, 0]
+size = [172, 172]
+sides = 8
+yaw = [22.5, 22.5]
+
+[[decals]]
+cell = { tpage = 28, clut = 32576, tile = 0 }
+tile = [12, 2]
+offset = [0, 270, 0]
+size = [172, 172]
+sides = 8
+yaw = [45.0, 45.0]
+
+[[decals]]
+cell = { tpage = 28, clut = 32576, tile = 0 }
+tile = [2, 11]
+offset = [0, 270, 0]
+size = [172, 172]
+sides = 8
+yaw = [33.5, 33.5]
+
+[[decals]]
+cell = { tpage = 28, clut = 32576, tile = 0 }
+tile = [12, 11]
+offset = [0, 270, 0]
+size = [172, 172]
+sides = 8
+yaw = [55.5, 55.5]
+
+[[decals]]
+cell = { tpage = 28, clut = 32576, tile = 3 }
+tile = [3, 6]
+offset = [0, 308, 0]
+size = [224, 224]
+sides = 8
+yaw = [22.5, 22.5]
+
+[[decals]]
+cell = { tpage = 28, clut = 32576, tile = 3 }
+tile = [11, 6]
+offset = [0, 308, 0]
+size = [224, 224]
+sides = 8
+yaw = [22.5, 22.5]
+
+# Moss creeping out from the walls and round the dais: the Sky Gardens'
+# mossy flagstones (page 28 through its green palette), round patches in a
+# cluster brush - thick at the corners, gone by the middle of the floor.
+[[decals]]
+id = "moss_nw"
+cell = { tpage = 28, clut = 32577, tile = 4 }
+cells = [{ tpage = 28, clut = 32577, tile = 5 }, { tpage = 28, clut = 32577, tile = 12 }]
+rect = [1, 1, 6, 5]
+density = 0.9
+seed = 3101
+size = [90, 90]
+size_jitter = 0.35
+sides = 9
+jitter = 40
+
+[[decals]]
+id = "moss_se"
+cell = { tpage = 28, clut = 32577, tile = 4 }
+cells = [{ tpage = 28, clut = 32577, tile = 5 }, { tpage = 28, clut = 32577, tile = 12 }]
+rect = [9, 8, 13, 11]
+density = 0.8
+seed = 3102
+size = [90, 90]
+size_jitter = 0.35
+sides = 9
+jitter = 40
+
+# Cracked and worn flagstones breaking up the floor's grid.
+[[decals]]
+id = "worn"
+cell = { tpage = 28, clut = 32576, tile = 1 }
+cells = [{ tpage = 28, clut = 32576, tile = 2 }, { tpage = 28, clut = 32576, tile = 6 }, { tpage = 28, clut = 32576, tile = 16 }]
+rect = [1, 1, 13, 11]
+on = "."
+density = 0.18
+seed = 3103
+size = [70, 70]
+size_jitter = 0.4
+sides = 7
+jitter = 44
+
+# Embers rise from the four crystals; motes drift in the light from the
+# stair; sparks hang round the Warden's Stone.
+[[emitters]]
+kind = "embers"
+rect = [3, 4, 3, 4]
+height = [40, 90]
+count = 14
+seed = 11
+
+[[emitters]]
+kind = "embers"
+rect = [11, 4, 11, 4]
+height = [40, 90]
+count = 14
+seed = 12
+
+[[emitters]]
+kind = "embers"
+rect = [3, 8, 3, 8]
+height = [40, 90]
+count = 14
+seed = 13
+
+[[emitters]]
+kind = "embers"
+rect = [11, 8, 11, 8]
+height = [40, 90]
+count = 14
+seed = 14
+
+[[emitters]]
+kind = "dust"
+rect = [5, 9, 9, 11]
+count = 40
+seed = 15
+
+[[emitters]]
+kind = "sparkles"
+rect = [6, 5, 8, 7]
+height = [60, 220]
+count = 24
+color = [140, 180, 255]
+seed = 16
+
+# ---------------------------------------------------------------------------
+# Sound: each ember crystal crackles, and the Warden's Stone hums under the
+# floor's music. Pack sounds (`audio.toml`), heard by distance and panned
+# across the camera's view.
+# ---------------------------------------------------------------------------
+[[audio.ambient]]
+id = "crystal_nw"
+sound = { kind = "sound", id = "torch" }
+tile = [3, 4]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "crystal_ne"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 4]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "crystal_sw"
+sound = { kind = "sound", id = "torch" }
+tile = [3, 8]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "crystal_se"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 8]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "warden_stone"
+sound = { kind = "sound", id = "drone" }
+tile = [7, 6]
+radius = 640
+inner = 128
+volume = 0.35
+# The sea gate glows faintly blue, and sea mist curls in through it.
+[[emitters]]
+kind = "sparkles"
+rect = [0, 5, 1, 7]
+height = [20, 200]
+count = 20
+color = [120, 190, 255]
+seed = 171

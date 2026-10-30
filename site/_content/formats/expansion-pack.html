@@ -1,0 +1,398 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs</div>
+  <h1>Expansion packs: the format</h1>
+  <p class="lede">An expansion pack is a modder-authored bundle of new content for the port - custom maps, battles and bosses, a level curve, quests, dialogue, trading cards, game modes - that the engine loads beside the player's own disc. It is the port's own format, not a disc format, so nothing here is decoded from retail and the page carries no confidence labels: it is the specification. This page covers the pack's layout, the manifest and its versions, how a pack names disc content, the shareable <code>.lxpack</code> bundle, validation, what an import trusts, save compatibility across pack versions, and comparing two versions. The sections have pages of their own (<a href="expansion-pack-battle.html">battles</a>, <a href="expansion-pack-quests.html">quests</a>, <a href="expansion-pack-cutscenes.html">cutscenes</a>, <a href="expansion-pack-maps.html">maps</a>); the tour is the <a href="../guides/expansion-packs.html">expansion packs hub</a>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Source form</dt><dd>A directory: <code>pack.toml</code> plus optional section files, <code>maps/</code> and <code>assets/</code>.</dd>
+    <dt>Shareable form</dt><dd>One <code>.lxpack</code> file (<a href="#the-lxpack-bundle">bundle</a>), byte-deterministic.</dd>
+    <dt>Encoding</dt><dd>UTF-8 TOML for every manifest, section and map.</dd>
+    <dt>Schema</dt><dd>Version <code>2</code> (<code>manifest::SCHEMA_VERSION</code>); schemas <code>1</code> and <code>2</code> load.</dd>
+    <dt>Disc</dt><dd>NA release only, <code>SCUS-94254</code>.</dd>
+    <dt>Parser</dt><dd><code>ExpansionPack::from_files</code> - one parser for a directory, a bundle and the browser workbench's input.</dd>
+    <dt>Writer</dt><dd><code>ExpansionPack::to_files</code>, <code>bundle::write_bundle</code>.</dd>
+    <dt>Validator</dt><dd><code>validate::validate</code>, <code>validate::validate_files</code>.</dd>
+    <dt>Sharing</dt><dd><code>share::import_bundle</code> (the import gates), <code>diff::diff_packs</code> (two versions compared).</dd>
+    <dt>CLI</dt><dd><code>asset expansion validate / bundle / unbundle / info / diff</code>, <code>legaia-engine packs</code>.</dd>
+    <dt>Crate</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md" target="_blank" rel="noopener"><code>legaia_expansion_format</code></a>; the runtime is <code>legaia_engine_expansion</code>.</dd>
+  </dl>
+  <p class="callout callout-tip">A pack carries <strong>no bytes from the disc</strong>. Every disc asset it uses is named by a coordinate (<a href="#disc-references"><code>DiscRef</code></a>) and resolved against the disc the player supplies - the same rule a shareable <a href="../tooling/translation.html">language pack</a> follows. The flagship pack, <a href="../guides/rebirth.html">Rebirth</a>, is written with exactly the format and tooling on this page.</p>
+</section>
+
+<section class="doc-section" id="layout" data-doc="layout">
+  <h2>Layout</h2>
+  <p>Paths are relative to the pack root with <code>/</code> separators. Every file but <code>pack.toml</code> is optional; an absent section file is that section's default (empty).</p>
+<pre><code>my-pack/
+  pack.toml          manifest (required)
+  battle.toml        monsters, formations, encounter overrides, bosses
+  progression.toml   level curve, XP and rewards
+  quests.toml        quests and challenges
+  dialog.toml        dialogue lines
+  cards.toml         trading cards
+  cutscenes.toml     scripted scenes
+  modes.toml         game modes
+  items.toml         items, equipment, sets and shops
+  maps/
+    &lt;id&gt;.toml        one custom map per file; the file stem is the map id
+  assets/...         the modder's own files (art, models, sound, text)
+  README.md  LICENSE[.md|.txt]  CHANGELOG.md</code></pre>
+  <p>The loader reads the files above and ignores anything else; the validator reports an ignored file as a warning, so a misspelt section name does not vanish silently. <code>maps/</code> is flat: <code>maps/a/b.toml</code> is not a map.</p>
+  <p>The whole tree is one <code>PackFiles</code> value (<code>BTreeMap&lt;path, bytes&gt;</code>). The directory walker, the bundle reader and the browser workbench each produce one, so a pack parses the same way whichever form it arrived in.</p>
+</section>
+
+<section class="doc-section" id="the-manifest" data-doc="the-manifest">
+  <h2>The manifest</h2>
+  <p><code>pack.toml</code> is <code>manifest::PackManifest</code>. Unknown keys are an error, so a typo fails loudly.</p>
+  <table>
+    <thead><tr><th>Key</th><th>Type</th><th>Required</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>string</td><td>yes</td><td>Machine id, <code>[a-z0-9_-]</code>, at most 48 characters, starting with a letter or digit. Namespaces every content id in the pack.</td></tr>
+      <tr><td><code>name</code></td><td>string</td><td>yes</td><td>Display name.</td></tr>
+      <tr><td><code>version</code></td><td>string</td><td>yes</td><td>Semantic version, <code>MAJOR.MINOR.PATCH[-pre][+build]</code>.</td></tr>
+      <tr><td><code>authors</code></td><td>string list</td><td>no</td><td>Who made it.</td></tr>
+      <tr><td><code>description</code></td><td>string</td><td>no</td><td>What the pack adds.</td></tr>
+      <tr><td><code>schema</code></td><td>integer</td><td>no</td><td>Pack-format version the pack is written against; defaults to the current one.</td></tr>
+      <tr><td><code>disc</code></td><td>string</td><td>no</td><td>The disc the coordinates point into; <code>SCUS-94254</code>, the only value accepted.</td></tr>
+      <tr><td><code>license</code></td><td>string</td><td>no</td><td>Licence for the pack's own content: an SPDX expression or free text.</td></tr>
+      <tr><td><code>homepage</code></td><td>string</td><td>no</td><td>Where the pack is published, an <code>http(s)</code> URL.</td></tr>
+      <tr><td><code>tags</code></td><td>string list</td><td>no</td><td>Discovery tags, pack-id syntax.</td></tr>
+      <tr><td><code>requires</code></td><td>string list</td><td>no</td><td>Packs that must be loaded alongside this one: <code>id</code>, or <code>id@range</code> (<a href="#dependencies">dependencies</a>).</td></tr>
+      <tr><td><code>conflicts</code></td><td>string list</td><td>no</td><td>Packs that must not be, in the same form; a range limits the conflict to those versions.</td></tr>
+      <tr><td><code>cover</code></td><td>string</td><td>no</td><td>The cover image: a PNG under <code>assets/</code>, written from the pack root (<code>assets/cover.png</code>). Schema 2.</td></tr>
+      <tr><td><code>min_engine</code></td><td>string</td><td>no</td><td>The oldest engine version the pack runs on, semver. Schema 2.</td></tr>
+    </tbody>
+  </table>
+<pre><code>id = "tower"
+name = "The Tower"
+version = "0.1.0"</code></pre>
+</section>
+
+<section class="doc-section" id="versions-and-compatibility" data-doc="versions-and-compatibility">
+  <h2>Versions and compatibility</h2>
+  <p>Three versions meet when a pack loads: the pack's own <code>version</code>, the <strong>pack format</strong> it is written in (<code>schema</code>), and the <strong>engine</strong> reading it (<code>manifest::ENGINE_VERSION</code>, the workspace version every engine crate shares).</p>
+  <table>
+    <thead><tr><th>Gate</th><th>Passes when</th><th>Refusal</th></tr></thead>
+    <tbody>
+      <tr><td>Pack format</td><td><code>schema</code> in <code>1..=2</code></td><td>"written in pack format N, newer than this engine reads ... update the engine"</td></tr>
+      <tr><td>Engine</td><td><code>min_engine</code> absent, or not newer than this engine</td><td>"needs engine X or newer; this engine is Y"</td></tr>
+    </tbody>
+  </table>
+  <p><code>ExpansionPack::from_files</code> runs both gates first, on a lenient read of <code>pack.toml</code> (<code>ManifestPeek</code>), before the strict parse - so a pack from a newer format is refused with "update the engine", not with "unknown field" for whatever new key it carries. Every reader parses through <code>from_files</code>, so the native <code>--expansion</code>, the launcher, the play page and the workbench all refuse alike. Old packs keep loading: schema 2 only added optional keys.</p>
+  <h3 id="dependencies">Dependencies</h3>
+  <p>A <code>requires</code> or <code>conflicts</code> entry is a pack id, optionally <code>@</code> and a version range (<code>PackDep</code>): comparators that must all hold, separated by commas or spaces, with cargo's operators.</p>
+  <table>
+    <thead><tr><th>Entry</th><th>Matches</th></tr></thead>
+    <tbody>
+      <tr><td><code>base</code></td><td>any version</td></tr>
+      <tr><td><code>base@1.2.3</code>, <code>base@^1.2.3</code></td><td><code>&gt;=1.2.3, &lt;2.0.0</code>; below <code>1.0.0</code> the caret holds the leftmost non-zero part</td></tr>
+      <tr><td><code>base@~1.2.3</code></td><td><code>&gt;=1.2.3, &lt;1.3.0</code></td></tr>
+      <tr><td><code>base@=1.2</code>, <code>base@1.2.*</code></td><td>any <code>1.2.x</code></td></tr>
+      <tr><td><code>base@&gt;=1.2 &lt;2</code></td><td>both bounds</td></tr>
+    </tbody>
+  </table>
+  <p>A pre-release satisfies a range only when a comparator names a pre-release of the same version. <code>check_dependencies</code> checks a manifest against the installed packs and names each missing pack, out-of-range version and installed conflict. The play page's pack library runs it on every installed pack and lists the findings under each row, a conflict with the active pack in red.</p>
+  <h3 id="one-active-pack">One active pack</h3>
+  <p>The engine plays <strong>one pack at a time</strong>: activating a pack replaces the active one, so <code>requires</code> and <code>conflicts</code> are checked and shown, never acted on, and a key qualified with another pack's id resolves to nothing at runtime. Layering several packs is a design, not yet a feature:</p>
+  <table>
+    <thead><tr><th>What a pack adds</th><th>Rule under layering</th></tr></thead>
+    <tbody>
+      <tr><td>Its own content (monsters, quests, cards, maps, items, arts)</td><td>Kept side by side: every id is namespaced by its pack</td></tr>
+      <tr><td>Allocated id spaces (formations and tracks from <code>0xE000</code>, queue bytes from <code>0x33</code>, aliased item ids)</td><td>Numbered per pack at activation, in load order, through an indirection the save records</td></tr>
+      <tr><td>Overrides of retail coordinates (encounter cells, a retail monster or boss, an entrance, shop stock)</td><td>An error, unless the later pack <code>requires</code> the earlier: then the later wins</td></tr>
+      <tr><td>Global settings (XP curve, multipliers, mode music)</td><td>The last pack in load order wins, with a warning</td></tr>
+      <tr><td>Progress (the save's expansion block)</td><td>One block per pack id, as a dormant block is kept today</td></tr>
+    </tbody>
+  </table>
+  <p>Load order would be the <code>requires</code> graph's topological order, ties in the player's order, with a cycle or an active conflict refusing the set. The cost is the runtime: the battle tables, formation and item seats, arts bank, audio track table, map seat and save block each hold one pack today.</p>
+</section>
+
+<section class="doc-section" id="content-ids-and-namespacing" data-doc="content-ids-and-namespacing">
+  <h2>Content ids and namespacing</h2>
+  <p>Content a section defines (a monster, a quest, a card, a map) has a local id: <code>[a-z0-9_]</code>, at most 48 characters, unique within its kind across the whole pack. The pack id is its namespace, so <code>tower_king</code> in pack <code>rebirth</code> is <code>rebirth:tower_king</code> to the engine and to other packs.</p>
+  <ul class="bullets">
+    <li><code>tower_king</code> or <code>rebirth:tower_king</code> (the pack's own id): must be defined somewhere in this pack.</li>
+    <li><code>other:thing</code>: content of pack <code>other</code>, which must be listed in <code>requires</code>; the engine resolves it once that pack is loaded, not the validator.</li>
+  </ul>
+  <p>A definition never carries a <code>:</code>; writing one is an error.</p>
+</section>
+
+<section class="doc-section" id="disc-references" data-doc="disc-references">
+  <h2>Disc references</h2>
+  <p><code>refs::DiscRef</code> is the only way a pack names disc content: a TOML inline table tagged by <code>kind</code>.</p>
+<pre><code>boss_model = { kind = "monster", id = 77 }
+arena      = { kind = "scene", name = "town01" }
+mesh       = { kind = "tmd", prot = 874, index = 3 }
+guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 230" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A pack file holds a coordinate such as monster 109. The validator range-checks it with no disc. On the player's machine the engine's disc resolver looks the coordinate up in the player's own disc image and reads the mesh, textures and animations from there. The pack never contains those bytes.">
+      <defs><marker id="xp-ref-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-accent" x="10" y="30" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="110" y="56">battle.toml</text>
+      <text class="dg-sub" x="110" y="76">base = { kind = "monster",</text>
+      <text class="dg-sub" x="110" y="90">id = 109 }</text>
+      <rect class="dg-node" x="260" y="30" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="360" y="56">DiscRef</text>
+      <text class="dg-sub" x="360" y="76">check_range: no disc</text>
+      <text class="dg-sub" x="360" y="90">1..=186 monsters</text>
+      <rect class="dg-node-ok" x="510" y="30" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="610" y="56">Player's disc</text>
+      <text class="dg-sub" x="610" y="76">PROT 867 record 109</text>
+      <text class="dg-sub" x="610" y="90">mesh, textures, anims</text>
+      <path class="dg-edge" d="M210 65 L258 65" marker-end="url(#xp-ref-arrow)"/>
+      <path class="dg-edge" d="M460 65 L508 65" marker-end="url(#xp-ref-arrow)"/>
+      <text class="dg-edge-label" x="470" y="22">DiscResolver</text>
+      <rect class="dg-group" x="10" y="140" width="450" height="70" rx="6"/>
+      <text class="dg-label" x="235" y="168">what is shared: the pack</text>
+      <text class="dg-sub" x="235" y="188">numbers, names of its own, coordinates</text>
+      <rect class="dg-group" x="510" y="140" width="200" height="70" rx="6"/>
+      <text class="dg-label" x="610" y="168">never shared</text>
+      <text class="dg-sub" x="610" y="188">the disc's bytes</text>
+    </svg>
+    <figcaption>A coordinate costs the modder nothing: the engine reads the asset from the player's own disc, and the pack stays legal to post.</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th><code>kind</code></th><th>Fields</th><th>Coordinate space</th><th>Range checked without a disc</th></tr></thead>
+    <tbody>
+      <tr><td><code>monster</code></td><td><code>id</code></td><td>1-based monster record id in the PROT 867 archive (<a href="../subsystems/battle.html">battle</a>)</td><td><code>1..=186</code></td></tr>
+      <tr><td><code>scene</code></td><td><code>name</code></td><td>CDNAME scene name (<a href="../reference/scene-names.html">scene names</a>)</td><td><code>[a-z0-9_]</code>, at most 32 characters</td></tr>
+      <tr><td><code>tmd</code></td><td><code>prot</code>, <code>index</code></td><td>PROT extraction index (<a href="prot.html">PROT.DAT</a>), <code>index</code>th TMD object</td><td><code>prot</code> in <code>0..=1232</code></td></tr>
+      <tr><td><code>tim</code></td><td><code>prot</code>, <code>index</code></td><td>PROT extraction index, <code>index</code>th TIM in its pack</td><td><code>prot</code> in <code>0..=1232</code></td></tr>
+      <tr><td><code>item</code></td><td><code>id</code></td><td>Item id (<a href="item-table.html">item table</a>)</td><td>the <code>u8</code> range</td></tr>
+      <tr><td><code>bgm</code></td><td><code>id</code></td><td>Sound-test id (<a href="../reference/music-tracks.html">music tracks</a>)</td><td><code>0..=80</code></td></tr>
+      <tr><td><code>npc</code></td><td><code>scene</code>, <code>index</code></td><td>A retail NPC placement: the scene's MAN partition-1 record <code>index</code> (<a href="expansion-pack-maps.html#npcs">maps</a>)</td><td>scene-name syntax; <code>index</code> not <code>0</code> (the scene controller)</td></tr>
+    </tbody>
+  </table>
+  <p>PROT numbers are <strong>extraction</strong> indices, the <code>NNNN</code> in <code>extracted/PROT/NNNN_*.BIN</code>, not raw TOC indices (<a href="cdname.html#numbering-space">numbering space</a>).</p>
+  <p>Checking happens in two halves. <code>DiscRef::check_range</code> needs no disc and rejects a coordinate no NA disc can satisfy. <code>refs::DiscResolver</code> is the disc-backed half: the engine (and the workbench) implement <code>resolve(&amp;DiscRef)</code> over the player's disc - does entry 874 hold a TMD with an object 3 - and <code>validate::validate_with</code> runs every coordinate a section recorded through it.</p>
+</section>
+
+<section class="doc-section" id="sections" data-doc="sections">
+  <h2>Sections</h2>
+  <p>Each content section is a TOML file whose type lives in its own module of <code>legaia_expansion_format</code>. Every key is optional, so a pack writes only what it uses.</p>
+  <table>
+    <thead><tr><th>File</th><th>Type</th><th>Declares</th><th>Reference</th></tr></thead>
+    <tbody>
+      <tr><td><code>battle.toml</code></td><td><code>BattleSection</code></td><td><code>monster</code>, <code>formation</code>, <code>boss</code></td><td><a href="expansion-pack-battle.html">battles</a></td></tr>
+      <tr><td><code>progression.toml</code></td><td><code>ProgressionSection</code></td><td>-</td><td><a href="expansion-pack-battle.html#progression">progression</a></td></tr>
+      <tr><td><code>quests.toml</code></td><td><code>QuestSection</code></td><td><code>quest</code>, <code>challenge</code></td><td><a href="expansion-pack-quests.html">quests</a></td></tr>
+      <tr><td><code>dialog.toml</code></td><td><code>DialogSection</code></td><td><code>line</code></td><td><a href="expansion-pack-quests.html#dialogtoml">dialogue</a></td></tr>
+      <tr><td><code>cards.toml</code></td><td><code>CardSection</code></td><td>its own card, booster and dealer ids</td><td><a href="#cards-toml">below</a></td></tr>
+      <tr><td><code>cutscenes.toml</code></td><td><code>CutsceneSection</code></td><td><code>cutscene</code></td><td><a href="expansion-pack-cutscenes.html">cutscenes</a></td></tr>
+      <tr><td><code>modes.toml</code></td><td><code>ModeSection</code></td><td>its own instance ids</td><td><a href="#modes-toml">below</a></td></tr>
+      <tr><td><code>items.toml</code></td><td><code>ItemSection</code></td><td><code>item</code>, <code>item_set</code>, <code>shop</code></td><td><a href="expansion-pack-items.html">items</a></td></tr>
+      <tr><td><code>audio.toml</code></td><td><code>AudioSection</code></td><td><code>track</code>, <code>sound</code></td><td><a href="expansion-pack-audio.html">audio</a></td></tr>
+      <tr><td><code>arts.toml</code></td><td><code>ArtSection</code></td><td><code>art</code>, <code>art_chain</code></td><td><a href="expansion-pack-arts.html">arts</a></td></tr>
+      <tr><td><code>spells.toml</code></td><td><code>SpellSection</code></td><td><code>spell</code></td><td><a href="expansion-pack-arts.html#spellstoml">spells</a></td></tr>
+      <tr><td><code>maps/&lt;id&gt;.toml</code></td><td><code>MapDef</code></td><td><code>map</code>, <code>npc</code></td><td><a href="expansion-pack-maps.html">maps</a></td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>battle.toml</strong> - monsters derived from a retail record (set or scaled stats, drop, steal, element, spells), formations of up to four monsters with optional waves, per-scene encounter overrides and named bosses. Formations compile to engine ids from <code>0xE000</code>; a once-only boss's victory is saved.</li>
+    <li><strong>progression.toml</strong> - the XP curve (retail, scaled, banded or explicit), EXP and gold multipliers, enemy level scaling and level-up item rewards.</li>
+    <li><strong>quests.toml</strong> - quests (giver, prerequisites keyed to retail system flags, party level and other quests, ordered or unordered objectives, rewards, repeat rules) and challenges (rule sets over one battle with a score).</li>
+    <li><strong>dialog.toml</strong> - lines in the translation markup, as rows and pages, with two- to four-option menus that set pack flags, chain a line or start a fight. Every line is compiled at validation, so text with no glyph is an error.</li>
+    <li><strong>cutscenes.toml</strong> - scripted scenes: step lists (walks, turns, camera moves, fades, lines that branch on the option picked, flags, items, a closing fight) on a main track and named tracks beside it, run on the engine's own sequencer and played by a map trigger, an arrival, an NPC or a quest moment.</li>
+    <li><strong>maps/&lt;id&gt;.toml</strong> - a tile grid with walls and floor tiers over a retail base scene, props, NPCs borrowed from retail placements, spawns, exits, trigger and encounter zones, and the entrances that lead in from the retail game.</li>
+  </ul>
+
+  <h3 id="cards-toml">cards.toml</h3>
+  <p>Trading cards, the boosters they come in, the dealers that sell them and the rules that hand them out. Card, booster and dealer ids are the section's own (cards keep hyphenated ids such as <code>mist-wisp</code>, which save files key on), so the section checks them itself; it references <code>formation</code> and <code>boss</code>, and records each card's art and each monster reward source as a disc coordinate.</p>
+  <table>
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>[[cards]]</code></td><td><code>id</code>, <code>name</code>, <code>flavor</code>, <code>rarity</code> (<code>common</code> / <code>uncommon</code> / <code>rare</code> / <code>legendary</code>), optional <code>element</code>, <code>sides = [top, right, bottom, left]</code> (each <code>1..=10</code>), <code>art</code> (a <code>DiscRef</code>), optional <code>sell</code></td></tr>
+      <tr><td><code>[sell_prices]</code></td><td>Gold per sold card by rarity; a card's own <code>sell</code> overrides; omitted, a built-in table</td></tr>
+      <tr><td><code>starter</code></td><td>Card ids handed over once, the first time the collection opens</td></tr>
+      <tr><td><code>[[boosters]]</code></td><td><code>id</code>, <code>name</code>, <code>cards_per_pack</code>, <code>pool</code> (empty = every card), <code>weights</code> by rarity, <code>guaranteed</code>, <code>price</code> (unpriced = never sold)</td></tr>
+      <tr><td><code>[[dealers]]</code></td><td><code>id</code>, <code>name</code>, <code>stock</code> (empty = every priced booster), <code>buys_cards</code> (default true), <code>sell_percent</code> (default 100)</td></tr>
+      <tr><td><code>[[rewards]]</code></td><td><code>source</code>, then <code>booster</code> and / or <code>card</code>, <code>chance_percent</code> (default 100) and <code>count</code> (default 1)</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Reward source</th><th>Rolls when</th></tr></thead>
+    <tbody>
+      <tr><td><code>{ kind = "monster", id = N }</code></td><td>A won fight seated retail monster <code>N</code>, once per seat - any fight while the pack is active, retail fights included. A pack monster's base id is its key.</td></tr>
+      <tr><td><code>{ kind = "formation", id = F }</code></td><td>The pack formation <code>F</code> was won.</td></tr>
+      <tr><td><code>{ kind = "boss", id = B }</code></td><td>The pack boss <code>B</code> was beaten.</td></tr>
+      <tr><td><code>{ kind = "mode", id = M }</code></td><td>The player won mode instance <code>M</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>The validator rejects a repeated or empty id, a side outside <code>1..=10</code>, a pool, starter, reward or stock naming a card or booster that does not exist, all-zero weights, a reward with neither a booster nor a card, a chance over 100 and a mode source no <code>modes.toml</code> instance has; it warns on a dealer stocking an unpriced booster or paying over the sell value. The runtime is on <a href="../subsystems/expansion-modes.html#trading-cards">game modes</a>.</p>
+
+  <h3 id="modes-toml">modes.toml</h3>
+  <p>Instances of the port's own game modes: the pack picks the numbers and the layout, the rules live in <code>legaia_engine_modes</code> (<a href="../subsystems/expansion-modes.html">game modes</a>). Each instance has an <code>id</code> (what a <code>kind = "mode"</code> reward source names), a <code>name</code> and an optional <code>location</code> (<code>DiscRef</code>).</p>
+  <table>
+    <thead><tr><th>Table</th><th>Keys (defaults)</th></tr></thead>
+    <tbody>
+      <tr><td><code>[[poker]]</code></td><td><code>seats</code> (4, <code>2..=6</code>), <code>buy_in</code> (1000), <code>small_blind</code> (10), <code>big_blind</code> (20), <code>currency</code> (<code>gold</code> / <code>coins</code>), <code>chip_value</code> (1), <code>ai_tier</code>, <code>max_hands</code>, <code>blind_double_every</code></td></tr>
+      <tr><td><code>[[card_duels]]</code></td><td><code>deck</code> (five card ids), <code>ai_tier</code>, <code>elemental_cells</code>, <code>chain</code>, <code>stakes</code>, <code>win_booster</code></td></tr>
+      <tr><td><code>[[golf]]</code></td><td><code>[[golf.holes]]</code>: <code>par</code> (3), <code>rows</code>, <code>heights</code>, <code>max_strokes</code> (0 = par + 5)</td></tr>
+      <tr><td><code>[[races]]</code></td><td><code>laps</code> (3), <code>points</code>, <code>half_width</code> (64), <code>boost_segments</code>, <code>racers</code> (4), <code>ai_tier</code></td></tr>
+      <tr><td><code>[[prop_hunt]]</code></td><td><code>props</code>, <code>decoys</code>, <code>bounds</code>, <code>blockers</code>, <code>rounds</code> (3), <code>hunters</code> (1), <code>players</code> (4), <code>hide_frames</code>, <code>round_frames</code>, <code>hunter_health</code> (100), <code>miss_penalty</code> (10), <code>ai_tier</code></td></tr>
+    </tbody>
+  </table>
+  <p>A golf hole is one character per tile: <code>.</code> fairway, <code>,</code> rough, <code>s</code> sand, <code>w</code> water, <code>#</code> wall, space out of bounds, <code>T</code> tee, <code>O</code> cup, and <code>^ v &lt; &gt;</code> fairway sloping downhill that way. The validator parses the section and runs no checks of its own on it: an instance is built when it is entered (<code>legaia_engine_modes::active</code>), and one whose data cannot make a session is refused there, the mode picker showing the reason.</p>
+</section>
+
+<section class="doc-section" id="the-lxpack-bundle" data-doc="the-lxpack-bundle">
+  <h2>The <code>.lxpack</code> bundle</h2>
+  <p>The shareable form of a pack is one file: <code>bundle::write_bundle</code> archives a <code>PackFiles</code> tree and <code>bundle::read_bundle</code> restores it. The bundle adds no metadata of its own - the manifest is <code>pack.toml</code>, one of the files - and no timestamps, so the same tree always gives the same bytes. All integers are little-endian.</p>
+  <h3 id="bundle-header">Header (16 bytes)</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:8"><span class="bm-off">0x00</span><span class="bm-name">magic <code>LXPACK\x1A\n</code></span><span class="bm-size">8 B</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">0x08</span><span class="bm-name">version 1</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">0x0A</span><span class="bm-name">flags 0</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">0x0C</span><span class="bm-name">entry count</span><span class="bm-size">u32</span></div>
+  </div>
+  <h3 id="bundle-entry">Entry-table record (44 bytes + path)</h3>
+  <div class="byte-map">
+    <div class="bm-cell" style="--w:2"><span class="bm-off">+0x00</span><span class="bm-name">path len</span><span class="bm-size">u16</span></div>
+    <div class="bm-cell bm-accent" style="--w:1"><span class="bm-off">+0x02</span><span class="bm-name">method</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell bm-pad" style="--w:1"><span class="bm-off">+0x03</span><span class="bm-name">0</span><span class="bm-size">u8</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x04</span><span class="bm-name">raw len</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">+0x08</span><span class="bm-name">stored len</span><span class="bm-size">u32</span></div>
+    <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">+0x0C</span><span class="bm-name">SHA-256 of raw bytes</span><span class="bm-size">32 B</span></div>
+    <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x2C</span><span class="bm-name">path, UTF-8</span><span class="bm-size">path len</span></div>
+  </div>
+  <p class="dg-note">The digest cell is drawn at a quarter of its width.</p>
+  <h3 id="bundle-file">The whole file</h3>
+  <div class="byte-map">
+    <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">0x00</span><span class="bm-name">header</span><span class="bm-size">16 B</span></div>
+    <div class="bm-cell" style="--w:4"><span class="bm-off">0x10</span><span class="bm-name">entry table, path order</span><span class="bm-size">count x record</span></div>
+    <div class="bm-cell" style="--w:7"><span class="bm-off">...</span><span class="bm-name">data: stored bytes back to back, table order, no padding</span><span class="bm-size">sum of stored lens</span></div>
+    <div class="bm-cell bm-dim" style="--w:3"><span class="bm-off">end - 32</span><span class="bm-name">trailer: SHA-256 of all before</span><span class="bm-size">32 B</span></div>
+  </div>
+  <ul class="bullets">
+    <li><strong>Method</strong> <code>0</code> is stored, <code>1</code> raw DEFLATE (RFC 1951). The writer deflates an entry only when that makes it smaller.</li>
+    <li><strong>The reader trusts nothing first.</strong> It checks the magic, version, flags and trailer before the table, refuses unsorted or duplicate paths, unknown methods, a stored entry whose lengths differ and trailing bytes, inflates each entry to exactly its declared length, and checks each entry's digest.</li>
+    <li><strong>Paths stay inside the output directory.</strong> Relative, <code>/</code>-separated, at most 255 bytes, no empty, <code>.</code> or <code>..</code> component and none of <code>\</code>, <code>:</code> or NUL - on every host.</li>
+    <li><strong>Limits.</strong> 16384 entries, 64 MiB per entry and 512 MiB in total once decompressed.</li>
+    <li><strong>Error kinds.</strong> Every refusal carries a kind - <code>not_a_bundle</code>, <code>corrupt</code>, <code>unsupported_version</code>, <code>too_large</code>, <code>bad_path</code> - so a reader words it for a person. The version is read before the checksum, so a bundle from a newer writer says so.</li>
+    <li><strong>Layout only.</strong> <code>asset expansion bundle</code> writes the files of the layout, everything the loader reads, so a bundle unpacks to exactly the editable tree and the workbench's import-then-export reproduces it byte for byte.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <p><code>validate::validate_files</code> checks a raw tree (paths, layout, parse errors) and then the parsed pack; <code>validate::validate</code> checks a parsed pack alone. Both return every issue rather than stopping at the first. An issue has a severity, its file, a dotted field path and a message. An <strong>error</strong> stops the engine loading the pack and stops <code>asset expansion bundle</code>; a <strong>warning</strong> does not.</p>
+  <table>
+    <thead><tr><th>Rule</th><th>Severity</th></tr></thead>
+    <tbody>
+      <tr><td><code>pack.toml</code> missing or unparsable, or any section or map unparsable</td><td>error</td></tr>
+      <tr><td><code>id</code>, <code>version</code>, <code>tags</code>, <code>requires</code> or <code>conflicts</code> malformed; empty <code>name</code></td><td>error</td></tr>
+      <tr><td><code>schema</code> outside the formats this build reads; <code>disc</code> other than <code>SCUS-94254</code></td><td>error</td></tr>
+      <tr><td><code>min_engine</code> malformed or newer than this engine; a <code>requires</code> / <code>conflicts</code> entry or range malformed</td><td>error</td></tr>
+      <tr><td><code>cover</code> not a <code>.png</code> under <code>assets/</code>, absent, or over 1 MiB</td><td>error</td></tr>
+      <tr><td>A file anywhere named like a program, script or scriptable document (<a href="#sharing-and-trust">trust</a>)</td><td>error</td></tr>
+      <tr><td>A pack in its own <code>requires</code> / <code>conflicts</code>, or one pack in both</td><td>error</td></tr>
+      <tr><td>Content id malformed, pack-qualified at its definition, or defined twice</td><td>error</td></tr>
+      <tr><td>Reference to undefined content, or to a pack not in <code>requires</code></td><td>error</td></tr>
+      <tr><td><code>DiscRef</code> out of range, or rejected by the supplied resolver</td><td>error</td></tr>
+      <tr><td>Any <a href="#the-no-disc-bytes-rule">no-disc-bytes</a> violation</td><td>error</td></tr>
+      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; no <code>cover</code>; non-URL <code>homepage</code>; a repeated list entry; a schema-2 key in a schema-1 manifest</td><td>warning</td></tr>
+      <tr><td>A file outside the <a href="#layout">layout</a></td><td>warning</td></tr>
+    </tbody>
+  </table>
+  <h3 id="adding-a-sections-checks">Adding a section's checks</h3>
+  <p>A section implements <code>validate::SectionRules</code>, whose two methods default to doing nothing. Validation calls <code>declare</code> on every section first, then <code>check</code> on every section, then resolves references, so a quest may name a boss from <code>battle.toml</code> whatever order the sections run in.</p>
+  <ol class="steps">
+    <li><b>Declare</b><span>every section registers the ids it defines</span></li>
+    <li><b>Check</b><span>every section checks its fields, names what it references, queues its coordinates</span></li>
+    <li><b>Resolve</b><span>references against the declared ids; coordinates through the disc resolver</span></li>
+  </ol>
+  <table>
+    <thead><tr><th><code>Checker</code> method</th><th>Use</th></tr></thead>
+    <tbody>
+      <tr><td><code>declare(kind, id, field)</code></td><td>Pass 1: register a content id the section defines.</td></tr>
+      <tr><td><code>reference(kind, id, field)</code></td><td>Pass 2: name content of <code>kind</code>, resolved after both passes.</td></tr>
+      <tr><td><code>disc_ref(field, &amp;DiscRef)</code></td><td>Pass 2: range-check a coordinate and queue it for the resolver.</td></tr>
+      <tr><td><code>error</code> / <code>warning(field, msg)</code></td><td>Report against the current file.</td></tr>
+      <tr><td><code>pack()</code>, <code>qualified(id)</code></td><td>Read the whole pack; form <code>pack:id</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>The battle, progression, quest, dialogue and card sections implement the trait in their own modules, and maps in <code>map_rules</code>; <code>modes.toml</code> alone keeps the empty impl in <code>validate.rs</code>, since its instances are checked when they are built.</p>
+</section>
+
+<section class="doc-section" id="the-no-disc-bytes-rule" data-doc="the-no-disc-bytes-rule">
+  <h2>The no-disc-bytes rule</h2>
+  <p>Every file under <code>assets/</code> must pass all four:</p>
+  <ol class="steps steps-vertical">
+    <li><b>Allowed type</b><span>extension <code>png</code>, <code>gltf</code>, <code>glb</code>, <code>ogg</code>, <code>wav</code>, <code>txt</code>, <code>md</code> or <code>toml</code> (any case)</span></li>
+    <li><b>Its type's signature</b><span>the PNG header, <code>glTF</code> version 2, <code>OggS</code>, <code>RIFF....WAVE</code>, or valid UTF-8 text with no NUL (a <code>.gltf</code> opens with <code>{</code>)</span></li>
+    <li><b>Not shaped like a disc format</b><span>no TIM, Legaia or Sony TMD, VAB, SEQ, VAG, PS-X executable, raw-sector sync or ISO 9660 descriptor at its start, and no PS-X EXE header or sector sync anywhere</span></li>
+    <li><b>Size</b><span>at most 8 MiB each, 64 MiB for all assets together</span></li>
+  </ol>
+  <p>Anywhere in the pack, a file named like a disc file is refused: <code>PROT.DAT</code>, <code>DMY.DAT</code>, <code>SCUS_942.54</code>, <code>SYSTEM.CNF</code>, <code>CDNAME.TXT</code>, a disc image (<code>.bin</code>, <code>.iso</code>, <code>.cue</code>, <code>.img</code>, <code>.ccd</code>, <code>.sub</code>, <code>.mdf</code>, <code>.mds</code>, <code>.chd</code>, <code>.ecm</code>, <code>.pbp</code>), streamed media (<code>.str</code>, <code>.xa</code>), or a retail format's extension (<code>.dat</code>, <code>.exe</code>, <code>.tim</code>, <code>.tmd</code>, <code>.vab</code>, <code>.vag</code>, <code>.seq</code>, <code>.lzs</code>, <code>.man</code>, <code>.mes</code>, <code>.anm</code>, <code>.mdt</code>, <code>.dpk</code>, <code>.spk</code>, <code>.pch</code>).</p>
+  <p class="callout callout-provenance">Packs are made to be shared, and the disc's bytes are not the project's to share. The type allowlist does most of the work: an LZS stream, a DATA_FIELD chunk or a headerless table has no PNG or Ogg signature, so it fails rule 2 even though it has no magic of its own for rule 3 to catch. The checks guard against accidents, not a proof; text a modder pastes in from the game is still the modder's responsibility.</p>
+</section>
+
+<section class="doc-section" id="sharing-and-trust" data-doc="sharing-and-trust">
+  <h2>Sharing and trust</h2>
+  <p>A pack is downloaded from strangers and opened in a browser tab or beside a game, so its contents are <strong>data only</strong>. Nothing in a pack is executed or interpreted as code: the engine reads TOML into typed structures, decodes PNG, glTF, Ogg and WAV with its own decoders, and shows text as text. The format has no scripting language - a cutscene, a boss script or a quest is a fixed vocabulary of steps the engine's own kernels run - and no field is a URL the engine fetches.</p>
+  <p><code>share::import_bundle</code> is the one gate a shared <code>.lxpack</code> passes through on every reader (the workbench's Open and drop, the play page's library, the launcher), in this order:</p>
+  <ol class="steps steps-vertical">
+    <li><b>Bundle</b><span>magic, bundle format, size limits, checksum, table, every path inside the pack directory - <code>not_a_bundle</code>, <code>unsupported_version</code>, <code>too_large</code>, <code>corrupt</code>, <code>bad_path</code></span></li>
+    <li><b>Trust</b><span>no disc file, no program, script or scriptable document anywhere (<code>.js</code>, <code>.html</code>, <code>.svg</code>, <code>.wasm</code>, <code>.exe</code>, <code>.sh</code>, ...), every asset an allowed type with its signature and no disc bytes, the asset budgets - <code>unsafe</code></span></li>
+    <li><b>Format</b><span>the pack-format and engine gates - <code>newer_format</code>, <code>older_format</code>, <code>newer_engine</code></span></li>
+    <li><b>Parse</b><span><code>pack.toml</code> and every section - <code>unparsable</code></span></li>
+  </ol>
+  <p>A pack that passes is opened; ordinary validation errors are left for the workbench to show and keep the engine from activating it. The play page re-reads its stored copy through the same gates on every activation. Packs are stored only in the viewer's own browser storage; nothing is uploaded.</p>
+  <p class="callout callout-provenance">The checks guard against accidents and obvious lures, not against every way to hide data inside a valid PNG or Ogg, and they cannot tell where pasted text came from. A pack's author answers for its content; the engine's part is that opening one can do nothing but add content to the game.</p>
+</section>
+
+<section class="doc-section" id="save-compatibility" data-doc="save-compatibility">
+  <h2>Save compatibility</h2>
+  <p>The save's expansion block (<a href="expansion-pack-quests.html">quests and saves</a>) records the pack version it was written under and names pack content by id. When a save made with one version loads under another, <code>save_compat::reconcile</code> runs as the progress is adopted for the active pack - on a load with the pack active, or when it activates after the load:</p>
+  <table>
+    <thead><tr><th>Saved entry</th><th>When the pack no longer defines it</th></tr></thead>
+    <tbody>
+      <tr><td>Quest, challenge, once-only boss</td><td>Dropped; a kept quest's objective progress is resized to its current objectives (new ones start at zero).</td></tr>
+      <tr><td>Pack-map location</td><td>Dropped; the resume lands in the map's base scene.</td></tr>
+      <tr><td>Card, booster set</td><td>Dropped with every copy; the duel deck keeps the cards that remain.</td></tr>
+      <tr><td>Pack item held or worn, art, spell</td><td>Dropped; a worn slot falls empty.</td></tr>
+      <tr><td>Pack flags and counters</td><td>Kept: names, not definitions.</td></tr>
+    </tbody>
+  </table>
+  <p>Nothing fails and nothing is invented. Both hosts show one toast (<code>Saved with rebirth 0.1.0: 3 saved entries are gone from the pack and were dropped</code>), the play page's expansion status repeats it, and the next save writes the reconciled progress under the new version.</p>
+</section>
+
+<section class="doc-section" id="diff-and-changelog" data-doc="diff-and-changelog">
+  <h2>Diff and changelog</h2>
+  <p><code>diff::diff_packs(old, new)</code> compares two versions through each file's TOML value, so comments and layout do not count. A top-level key holding a table of entries (<code>monsters</code>) or an array of tables with an <code>id</code> (<code>quests</code>, <code>cards</code>) is a collection: its entries are matched by key or id and reported added, removed or changed, a change listing each differing field as a dotted path with old and new values. Other keys are the file's <code>settings</code>; each map, asset and the manifest is an entry of its own.</p>
+  <p>The diff reads as semver: a removal is a major bump (it can break saves and dependent packs; below <code>1.0.0</code>, a minor one), an addition minor, a change alone a patch. <code>suggested_version</code> applies it, and <code>changelog</code> drafts a Markdown section - Added, Changed, Removed - for the top of <code>CHANGELOG.md</code>. The <a href="../tooling/expansion-workbench.html">workbench</a>'s Share panel and <code>asset expansion diff</code> both run it.</p>
+</section>
+
+<section class="doc-section" id="tooling" data-doc="tooling">
+  <h2>Tooling</h2>
+<pre><code>asset expansion info                                   # schema, bundle version, layout
+asset expansion validate packs/rebirth [--strict]      # a directory or an .lxpack
+asset expansion bundle packs/rebirth -o rebirth.lxpack # refuses a pack with errors
+asset expansion unbundle rebirth.lxpack -o out/        # out/ must be empty or absent
+asset expansion info rebirth.lxpack [--json]
+asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
+legaia-engine packs [--dir DIR] [--json]                # the installed packs
+legaia-engine play-window --expansion rebirth           # an installed pack, by id
+legaia-engine play-window --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch  # reload on every save</code></pre>
+  <p><code>validate</code> exits non-zero on any error, and with <code>--strict</code> on any warning. None of these reads a disc. The native host's installed packs live in <code>packs/</code> under its data directory: <code>legaia-engine packs</code> lists each with its version, authors, pack format and whether it plays, <code>--expansion</code> takes a pack id as well as a path, and the launcher's pack picker opens there. The same checks run in the browser on the <a href="../tooling/expansion-workbench.html">expansion workbench</a>, with the visitor's disc resolving every coordinate.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Pack pages</span>
+    <a href="../guides/expansion-packs.html">Expansion packs hub</a>
+    <a href="expansion-pack-battle.html">Battles</a>
+    <a href="expansion-pack-quests.html">Quests and saves</a>
+    <a href="expansion-pack-maps.html">Maps</a>
+    <a href="../subsystems/expansion-modes.html">Game modes</a>
+    <a href="../guides/rebirth.html">Rebirth</a>
+  </div>
+  <div class="see-also">
+    <span class="see-also-label">Related</span>
+    <a href="../tooling/translation.html">Language packs</a>
+    <a href="../subsystems/engine.html">Engine</a>
+  </div>
+</section>

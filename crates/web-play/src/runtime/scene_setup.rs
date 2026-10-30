@@ -185,7 +185,7 @@ impl LegaiaRuntime {
     /// Rebuild the page-facing render state for the scene the host now holds:
     /// the assembled map, the lead's posed mesh, the NPC catalog. Runs on scene
     /// entry and on every door the engine walks through.
-    pub(super) fn rebuild_render_state(&mut self) -> Result<(), JsValue> {
+    pub(crate) fn rebuild_render_state(&mut self) -> Result<(), JsValue> {
         // A scene swap drops the previous scene's script-spawned actors
         // with it (the MAN loader's retire sweep); the page re-uploads
         // whatever the new scene spawns.
@@ -450,8 +450,13 @@ impl LegaiaRuntime {
         };
         // The overworld draws the lead's field form too (retail walks the
         // same mesh across the continent; the native window binds it on
-        // both), so a kingdom scene keeps the rig.
-        if !matches!(host.world.mode, SceneMode::Field | SceneMode::WorldMap) {
+        // both), so a kingdom scene keeps the rig. So does an expansion
+        // mode: a golf round or race played on a pack map enters its map
+        // under the mode seat, with the leader as its golfer or racer.
+        if !matches!(
+            host.world.mode,
+            SceneMode::Field | SceneMode::WorldMap | SceneMode::Expansion
+        ) {
             return;
         }
         let roster_lead = usize::from(host.world.field_leader());

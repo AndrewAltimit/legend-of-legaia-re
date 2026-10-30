@@ -23,6 +23,11 @@ impl World {
         item_id: u8,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
+        // An expansion pack consumable that runs a retail item's own handler
+        // (`as_item`) is that item from here on.
+        if let Some(retail) = self.pack_alias_as_item(item_id) {
+            return self.use_item(retail, target_slot);
+        }
         let entry = match self.tables.item_catalog.get(item_id) {
             Some(e) => *e,
             None => return legaia_engine_menus::items::ItemOutcome::NoEffect,
@@ -116,6 +121,9 @@ impl World {
             return outcome;
         }
         let outcome = legaia_engine_menus::items::apply_effect(entry.effect, &snapshot);
+        // The run's difficulty scales what a healing item restores (the
+        // identity at Normal).
+        let outcome = self.run_scale_item_outcome(outcome, &snapshot);
         match outcome {
             legaia_engine_menus::items::ItemOutcome::HealedHp { amount } => {
                 if field_roster {

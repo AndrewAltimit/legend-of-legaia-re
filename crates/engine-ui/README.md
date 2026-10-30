@@ -124,6 +124,10 @@ navigation logic depends on the GPU backend.
 - `slot_cabinet` - the slot machine's 3D scene as screen primitives:
   cabinet mesh, reel cylinders, glass, marquee and coin HUD, projected
   through the machine's camera and linked at depth-derived OT buckets.
+- `expansion_modes` - the port's own game modes' screens (mode picker,
+  poker table, Grid Duel board, golf course, race and prop-hunt maps,
+  quit prompt, results) as flat stage prims plus dialog-font labels.
+  `legaia-engine-screens` projects the world's mode seat into it.
 - `shop_screen` - the gold shop's screen composition: window frames, the
   Buy / Sell / Quit picker, the paged lists and the party-compare column.
   `legaia-engine-screens` projects the live shop state into it.

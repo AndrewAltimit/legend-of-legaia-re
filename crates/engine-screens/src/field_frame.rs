@@ -24,9 +24,14 @@ pub fn lighting_mood(host: Option<&SceneHost>, time_of_day: &str) -> LightingMoo
         .map(|s| s.name.as_str())
         .unwrap_or("");
     let grade = host.and_then(|h| h.world.held_scene_grade());
-    TimeOfDay::from_name(time_of_day)
-        .unwrap_or_default()
-        .mood_graded(scene, grade)
+    let tod = TimeOfDay::from_name(time_of_day).unwrap_or_default();
+    // A pack map's own mood stands in for the base scene's under `Auto`.
+    if tod == TimeOfDay::Auto
+        && let Some(m) = host.and_then(|h| h.world.expansion_map_mood())
+    {
+        return m;
+    }
+    tod.mood_graded(scene, grade)
 }
 
 /// The volumetric fog bank's colour this frame: the bank's own `color`, or,
@@ -65,13 +70,15 @@ pub fn field_scene_lights(
     props: &[PropLights],
 ) -> Option<(Vec<ScenePointLight>, [f32; 3])> {
     let w = &host.world;
+    // A pack map's placed lamps and prop lights (none off a map).
+    let pack = w.expansion_map_lights();
     if screen_owned
         || w.mode != SceneMode::Field
         || host
             .scene
             .as_ref()
             .is_some_and(|s| is_world_map_scene(&s.name))
-        || (statics.is_empty() && props.is_empty())
+        || (statics.is_empty() && props.is_empty() && pack.is_empty())
     {
         return None;
     }
@@ -87,6 +94,7 @@ pub fn field_scene_lights(
         })
         .unwrap_or([0.0; 3]);
     let mut all = statics.to_vec();
+    all.extend(pack);
     all.extend(place_prop_lights(props, |slot, spawn| {
         w.field_npc_live_anchor(slot, spawn)
     }));

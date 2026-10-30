@@ -32,6 +32,32 @@ impl SceneHost {
         }
     }
 
+    /// Merge the retail monsters an active expansion pack's fights seat from
+    /// the monster archive into the catalog, and load the battle inputs a
+    /// fight needs, so a pack fight resolves real stats in any scene - one
+    /// whose MAN carries no encounters too. Scene entry calls it after its
+    /// own merge; a host that activates a pack mid-scene calls it once
+    /// itself. A no-op with no pack.
+    pub fn merge_expansion_monsters(&mut self) {
+        let ids = self.world.expansion_base_monster_ids();
+        if ids.is_empty() {
+            return;
+        }
+        let Some(archive) = self.monster_archive_bytes() else {
+            return;
+        };
+        let cat =
+            legaia_engine_battle::monster_catalog::catalog_from_monster_archive(&archive, &ids);
+        for def in cat.by_id.into_values() {
+            self.world.tables.monster_catalog.insert(def);
+        }
+        self.world.install_expansion_formations();
+        self.ensure_move_power_table();
+        self.ensure_cast_effect_pool();
+        self.refresh_battle_swing_costs();
+        self.refresh_battle_auto_combo_inputs();
+    }
+
     /// Lazily load + cache the monster stat archive (PROT 867, extended
     /// footprint - the archive lives in the entry's trailing-gap sectors,
     /// not the small indexed payload, so `entry_bytes` would truncate it).
@@ -304,12 +330,13 @@ impl SceneHost {
         /// PROT entries of the three weapon-carrying player battle files.
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
-            let Some(record) = self.world.party.roster.members.get(slot) else {
+            if self.world.party.roster.members.get(slot).is_none() {
                 continue;
-            };
+            }
             // The assembler keys sections off the first five equipment
-            // bytes (`+0x196..+0x19B`); the record carries eight.
-            let s = record.equipment().slots;
+            // bytes (`+0x196..+0x19B`); the record carries eight. A worn
+            // expansion pack item swings as its borrowed look.
+            let s = self.world.member_look_equipment(slot);
             let equipped = [s[0], s[1], s[2], s[3], s[4]];
             let Ok(bytes) = self.index.entry_bytes(prot) else {
                 continue;
@@ -501,10 +528,10 @@ impl SceneHost {
         const PLAYER_FILE_PROT: [u32; 3] = [863, 864, 865];
         const GUARD_TABLE_VA: u32 = 0x801F_672C;
         for (slot, &prot) in PLAYER_FILE_PROT.iter().enumerate() {
-            let Some(record) = self.world.party.roster.members.get(slot) else {
+            if self.world.party.roster.members.get(slot).is_none() {
                 continue;
-            };
-            let s = record.equipment().slots;
+            }
+            let s = self.world.member_look_equipment(slot);
             let equipped = [s[0], s[1], s[2], s[3], s[4]];
             let Ok(bytes) = self.index.entry_bytes_extended(prot) else {
                 continue;

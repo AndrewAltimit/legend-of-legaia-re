@@ -41,6 +41,34 @@ impl<S: AudioSink> BootSession<S> {
         })
     }
 
+    /// Start the run the New Game rules screen confirmed
+    /// ([`crate::run_rules::start_run_on`]) through the session's own field
+    /// entry - the native and headless twin of the page's `play_start_run`.
+    pub fn start_run(
+        &mut self,
+        rules: legaia_engine_run_rules::rules::RunRules,
+        source: Option<legaia_save::SaveFile>,
+        opts: &FieldLiveOpts,
+    ) -> Option<&'static str> {
+        crate::run_rules::start_run_on(
+            &mut SessionNewGame {
+                session: self,
+                opts,
+            },
+            rules,
+            source,
+        )
+    }
+
+    /// One frame of a Boss Rush ([`crate::run_rules::boss_rush_step_on`])
+    /// through the session's own field entry.
+    pub fn boss_rush_step(&mut self, opts: &FieldLiveOpts) -> crate::run_rules::BossRushHostStep {
+        crate::run_rules::boss_rush_step_on(&mut SessionNewGame {
+            session: self,
+            opts,
+        })
+    }
+
     /// Begin the New Game slate and hand the score over: the seeded world
     /// ([`Self::begin_new_game`]) and the title theme stopped so the
     /// prologue's own BGM (or its scripted silence) owns the audio. The
@@ -116,8 +144,94 @@ impl<S: AudioSink> BootSession<S> {
         // `enter_field` is the paired site.
         self.camera.reset_for_scene_entry();
 
+        self.install_live_catalogs();
         let world = &mut self.host.world;
+        // The enemy Steal table, kept at this site for the host-drift pairing
+        // with the play page's disc load.
+        if let Some(steal) = self.steal_table.clone() {
+            world.set_steal_table(steal);
+        }
 
+        // Scene label + encounter fallback + the loop / player-battle / BGM
+        // arming are the browser host's business too, so they live in one
+        // kernel both hosts call (`World::arm_live_loop`). Only the catalogs
+        // above stay here - they are disc-derived on native.
+        world.arm_live_loop(scene, &opts.to_live_loop_opts());
+
+        self.restage_audio_for_direct_entry();
+        Ok(self.host.world.mode)
+    }
+
+    /// Drop the world into map `map_id` of the active expansion pack
+    /// ([`SceneHost::set_expansion_pack`]) at spawn `spawn`, live: the
+    /// [`Self::enter_field_live`] staging around
+    /// [`SceneHost::enter_expansion_map`] instead of a retail scene entry.
+    ///
+    /// Unlike the retail entry this fails loudly: a pack map that does not
+    /// enter leaves the world on whatever was running.
+    ///
+    /// The live loop arms on the base scene's label, but the map rolls no
+    /// retail encounters: the arm installs no fallback on a pack map
+    /// ([`legaia_engine_core::world::World::arm_live_loop`]), and the map's
+    /// zones name pack tables
+    /// ([`legaia_engine_expansion::map::ActiveMap::encounter_table`]).
+    pub fn enter_expansion_map_live(
+        &mut self,
+        map_id: &str,
+        spawn: &str,
+        opts: &FieldLiveOpts,
+    ) -> Result<SceneMode> {
+        self.enter_expansion_map_live_seated(map_id, spawn, None, opts)
+    }
+
+    /// [`Self::enter_expansion_map_live`] with the player seated at world
+    /// `(x, z)` facing `facing` ([`SceneHost::enter_expansion_map_seated`]).
+    pub fn enter_expansion_map_live_seated(
+        &mut self,
+        map_id: &str,
+        spawn: &str,
+        seat: Option<(i16, i16, u16)>,
+        opts: &FieldLiveOpts,
+    ) -> Result<SceneMode> {
+        use legaia_engine_mode::mode::GameMode;
+        let _ = self
+            .mode_seat
+            .enter(GameMode::MainInit, &mut self.host.world);
+        self.host.enter_expansion_map_seated(map_id, spawn, seat)?;
+        self.camera.reset_for_scene_entry();
+        self.install_live_catalogs();
+        if let Some(steal) = self.steal_table.clone() {
+            self.host.world.set_steal_table(steal);
+        }
+        let base = self
+            .host
+            .scene
+            .as_ref()
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        let world = &mut self.host.world;
+        world.arm_live_loop(&base, &opts.to_live_loop_opts());
+        if let Some(distance) = self.host.world.expansion.map.as_ref().and_then(|m| {
+            use legaia_engine_camera::camera_distance::CameraDistance;
+            use legaia_expansion_format::map::CameraPreset;
+            match m.def.camera {
+                CameraPreset::Default => None,
+                CameraPreset::Retail => Some(CameraDistance::Retail),
+                CameraPreset::Far => Some(CameraDistance::Far),
+                CameraPreset::Farther => Some(CameraDistance::Farther),
+            }
+        }) {
+            self.camera.distance = distance;
+        }
+        self.restage_audio_for_direct_entry();
+        Ok(self.host.world.mode)
+    }
+
+    /// The disc-derived catalogs a live field entry installs on the world
+    /// (equipment, spells, items, the starting-party template) - the
+    /// half of [`Self::enter_field_live`] the browser host does its own way.
+    fn install_live_catalogs(&mut self) {
+        let world = &mut self.host.world;
         // Install the equipment / spell / item catalogs unconditionally so
         // every consumer - not just the battle loop - sees real data. The
         // field pause-menu (Equip / Magic / Items screens) reads these off
@@ -137,9 +251,6 @@ impl<S: AudioSink> BootSession<S> {
                 .unwrap_or_else(legaia_engine_battle::retail_magic::retail_seru_magic_catalog),
         );
         world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
-        if let Some(steal) = self.steal_table.clone() {
-            world.set_steal_table(steal);
-        }
         // The SCUS starting-party template is a disc table like the ones
         // above, not New Game state: a member who joins after a card load
         // takes their level-1 record from it exactly as one who joins in
@@ -150,15 +261,6 @@ impl<S: AudioSink> BootSession<S> {
         if world.tables.starting_party.is_none() {
             world.tables.starting_party = self.starting_party.clone();
         }
-
-        // Scene label + encounter fallback + the loop / player-battle / BGM
-        // arming are the browser host's business too, so they live in one
-        // kernel both hosts call (`World::arm_live_loop`). Only the catalogs
-        // above stay here - they are disc-derived on native.
-        world.arm_live_loop(scene, &opts.to_live_loop_opts());
-
-        self.restage_audio_for_direct_entry();
-        Ok(self.host.world.mode)
     }
 
     /// The audio half of a **direct** scene entry (dev warp, prologue skip,
@@ -330,6 +432,26 @@ impl<S: AudioSink> BootSession<S> {
             landing.scene(),
             self.host.world.party.party_count
         );
+        // A save made on a pack map carries the map in its expansion block:
+        // the landing above stood the party in the map's base scene, and the
+        // map goes back over it where the save was made.
+        // The map entry is a scene change, which notes the base scene as the
+        // one left; the save's own previous scene (hydrated above) stands.
+        if let Some(loc) = self.host.world.expansion_saved_map_location().cloned() {
+            let previous_scene = self.host.world.party.previous_scene.clone();
+            match self.enter_expansion_map_live_seated(
+                &loc.map_id,
+                "",
+                Some((loc.x, loc.z, loc.facing)),
+                opts,
+            ) {
+                Ok(_) => {
+                    self.host.world.party.previous_scene = previous_scene;
+                    log::info!("resume: back on pack map '{}'", loc.map_id);
+                }
+                Err(e) => log::warn!("resume: pack map '{}' did not enter ({e:#})", loc.map_id),
+            }
+        }
         landing
     }
 

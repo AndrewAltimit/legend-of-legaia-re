@@ -21,6 +21,7 @@ legaia-delilas-challenge.workspace = true
 legaia-delilas-party.workspace = true
 legaia-disc-audit.workspace = true
 legaia-disc-patch.workspace = true
+legaia-randomizer.workspace = true
 legaia-font.workspace = true
 legaia-game-tables.workspace = true
 legaia-iso.workspace = true

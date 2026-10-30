@@ -181,6 +181,7 @@ impl World {
         // direction decode, so an input-free (or fully wall-blocked) frame
         // leaves `(0, 0)` behind and the ledge-hop trigger stays quiet.
         self.locomotion.step_delta = (0, 0);
+        self.locomotion.action_drove = false;
         // The player tick drains the post-warp hold before any of its gates
         // (`FUN_801D1344` at `0x801D1618..0x801D1630`).
         let ratio = self.move_vm.ramp_ratio.max(1);
@@ -239,6 +240,12 @@ impl World {
         // settle ([`Self::tick_field_system_channel_clip_reset`]) and leaves
         // the idle base `2` for the next one.
         if legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
+            return;
+        }
+        // The action-movement enhancement takes the player from here, past
+        // every pad lock above; off, nothing below changes.
+        if self.action_movement_applies(slot) {
+            self.step_field_action_movement(slot);
             return;
         }
 
@@ -789,6 +796,13 @@ impl World {
             self.locomotion.ledge_hop = None;
             return;
         }
+        // The action model owns the player's height on a frame it drove: no
+        // glide and no hop, only the clip tail.
+        if self.locomotion.action_drove {
+            self.field_settle_clip_tail();
+            return;
+        }
+        self.settle_action_body(slot);
         if self.tick_field_ledge_hop(slot) {
             // Retail's hop holds the movement lock, which sends the settle to
             // its no-hop arm - and that arm still ends in the clip tail.
@@ -1225,7 +1239,8 @@ impl World {
                     self.field_dir_blocked(cx, cz, 2)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz), (cx, nz));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.locomotion.step_delta.1 = FIELD_PROBE_DELTA;
@@ -1237,7 +1252,8 @@ impl World {
                     self.field_dir_blocked(cx, cz, 0)
                 } else {
                     self.field_tile_is_wall(cx, nz)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz), (cx, nz));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_z = nz;
                     self.locomotion.step_delta.1 = -FIELD_PROBE_DELTA;
@@ -1253,7 +1269,8 @@ impl World {
                     self.field_dir_blocked(cx, cz2, 3)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz2), (nx, cz2));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.locomotion.step_delta.0 = FIELD_PROBE_DELTA;
@@ -1265,7 +1282,8 @@ impl World {
                     self.field_dir_blocked(cx, cz2, 1)
                 } else {
                     self.field_tile_is_wall(nx, cz2)
-                } || actors;
+                } || actors
+                    || self.expansion_top_blocks_walk((cx, cz2), (nx, cz2));
                 if noclip || !blocked {
                     self.actors[slot].move_state.world_x = nx;
                     self.locomotion.step_delta.0 = -FIELD_PROBE_DELTA;

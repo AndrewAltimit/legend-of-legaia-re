@@ -64,6 +64,11 @@ pub struct GameplayTweaks {
     /// Save anywhere (`--save-anywhere`, `WorldToggles::save_anywhere`): the
     /// pause menu's Save row works in every scene. Off by default.
     pub save_anywhere: bool,
+    /// Action movement (`--action-movement`,
+    /// `WorldToggles::action_movement`): the platformer field controller -
+    /// jump, double jump, dash, momentum. A port feature with no patcher
+    /// counterpart. Off by default.
+    pub action_movement: bool,
 }
 
 impl Default for GameplayTweaks {
@@ -95,6 +100,7 @@ impl GameplayTweaks {
             enemy_stat_permille: t.enemy_stat_permille,
             bonus_drop: t.bonus_drop,
             save_anywhere: t.save_anywhere,
+            action_movement: t.action_movement,
         }
     }
 
@@ -126,6 +132,7 @@ impl GameplayTweaks {
         toggles.enemy_stat_permille = clamp_u(self.enemy_stat_permille);
         toggles.bonus_drop = self.bonus_drop;
         toggles.save_anywhere = self.save_anywhere;
+        toggles.action_movement = self.action_movement;
     }
 
     /// The Spirit AP settings a host cycles, retail first.
@@ -280,6 +287,9 @@ pub struct PersistedSwitches {
     /// Save anywhere (`--save-anywhere`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub save_anywhere: bool,
+    /// Action movement (`--action-movement`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub action_movement: bool,
     /// The saved-chain Arts list (`--arts-saved-list`, the page's
     /// "Saved-chain Arts list" box).
     #[serde(default, skip_serializing_if = "is_false")]
@@ -306,6 +316,7 @@ impl PersistedSwitches {
             enemy_stat_permille: self.enemy_stat_permille.unwrap_or(SCALE_RETAIL),
             bonus_drop: self.equipment_drops,
             save_anywhere: self.save_anywhere,
+            action_movement: self.action_movement,
         }
     }
 
@@ -328,6 +339,7 @@ impl PersistedSwitches {
         self.enemy_stat_permille = off_retail(t.enemy_stat_permille, SCALE_RETAIL);
         self.equipment_drops = t.bonus_drop;
         self.save_anywhere = t.save_anywhere;
+        self.action_movement = t.action_movement;
     }
 
     /// Whether the scene-entry pulse is on.
@@ -390,6 +402,7 @@ mod tests {
                 enemy_stat_permille: 1500,
                 bonus_drop: true,
                 save_anywhere: true,
+                action_movement: true,
             },
             retail,
         }
@@ -424,7 +437,7 @@ mod tests {
         let d = GameplayTweaks::default();
         assert_eq!(d, GameplayTweaks::from_toggles(&WorldToggles::new()));
         assert!(d.shiny_seru && d.fortress_encounter_fix && d.hp_readout_guard);
-        assert!(!d.flee_exp && !d.jewel_fix && !d.save_anywhere);
+        assert!(!d.flee_exp && !d.jewel_fix && !d.save_anywhere && !d.action_movement);
         assert_eq!(d.exp_rate_permille, 1000);
         assert_eq!(GameplayTweaks::exp_rate_label(1500), "1.5x");
         assert_eq!(GameplayTweaks::exp_rate_label(500), "0.5x");

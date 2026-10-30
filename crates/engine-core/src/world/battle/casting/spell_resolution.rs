@@ -122,6 +122,7 @@ impl World {
         // normal roll). Mirrors the retail `--shiny-seru` damage hook
         // (`FUN_801dd864` `+0x161` high-bit read). Computed once per cast.
         let shiny_cast = is_party_summon_cast
+            && !self.expansion_casting_pack(caster, def.id)
             && self
                 .seru
                 .log
@@ -151,6 +152,7 @@ impl World {
             None
         };
 
+        let mut struck: Vec<u8> = Vec::new();
         for &t in targets {
             let Some(actor) = self.actors.get(t as usize) else {
                 continue;
@@ -228,6 +230,15 @@ impl World {
                     snap.target_hp_max,
                 ));
             }
+            // An expansion pack spell's power percent at its magic level, on
+            // the rolled damage or restore (identity for any other cast).
+            match &mut outcome {
+                legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. }
+                | legaia_engine_battle::spells::SpellOutcome::Heal { amount, .. } => {
+                    *amount = self.expansion_scale_cast(caster, def.id, *amount);
+                }
+                _ => {}
+            }
             // Shiny Seru: +35% on the final magnitude (9999-capped), after the
             // affinity / summon roll so it stacks on the spell's normal output.
             if shiny_cast
@@ -283,7 +294,12 @@ impl World {
             if damaged && let Some((kind, pct)) = side_effect {
                 self.apply_seru_side_effect(t, kind, pct);
             }
+            if damaged {
+                struck.push(t);
+            }
         }
+        // An expansion pack spell's status rider on each struck target.
+        self.expansion_cast_rider(caster, def.id, &struck);
         // Bank the accrued XP and run the once-per-cast level-up check
         // (FUN_801e70bc fires at summon return, state 0x36).
         if trains_spell_xp {

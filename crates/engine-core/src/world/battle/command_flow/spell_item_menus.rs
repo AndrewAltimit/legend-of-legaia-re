@@ -34,6 +34,9 @@ impl World {
                 learned.push(sid);
             }
         }
+        // An expansion pack's spells the character knows, under their menu
+        // ids (catalog entries installed at the battle's entry).
+        learned.extend(self.expansion_pack_spell_ids(char_slot));
         let caster_mp = self
             .actors
             .get(caster as usize)
@@ -138,12 +141,15 @@ impl World {
             InventoryContext, InventoryUseSession, TargetRow,
         };
         let names = self.party.roster_names();
-        let items: Vec<u8> = self
+        let mut items: Vec<u8> = self
             .party
             .inventory
             .iter()
             .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
             .collect();
+        // An expansion pack's battle consumables, under this fight's
+        // aliases (none without a pack).
+        items.extend(self.pack_battle_item_ids());
         let pc = self.party.party_count.clamp(1, 3) as usize;
         let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
@@ -375,6 +381,9 @@ impl World {
     /// Remove one copy of `item_id` from the inventory, dropping the entry
     /// when the count reaches zero. No-op when the player holds none.
     pub fn consume_item(&mut self, item_id: u8) {
+        if self.consume_pack_alias(item_id) {
+            return;
+        }
         if let Some(qty) = self.party.inventory.get_mut(&item_id) {
             *qty = qty.saturating_sub(1);
             if *qty == 0 {

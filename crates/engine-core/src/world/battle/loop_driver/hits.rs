@@ -241,6 +241,7 @@ impl World {
         if let Some(art) = art {
             self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
         }
+        self.expansion_art_hit_rider(attacker, target, dmg);
         if applied {
             self.apply_combo_total(target);
         }
@@ -711,6 +712,8 @@ impl World {
         if attacker < self.party.party_count {
             let clip = self.actors[attacker_i].battle.current_anim;
             raw = self.forced_melee_amount(target, clip, raw, kill_check);
+            // An expansion pack art's damage percent and element.
+            raw = self.expansion_scale_art_hit(attacker, target, raw);
         }
         let dmg = raw;
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the
@@ -1304,7 +1307,12 @@ impl World {
             0
         };
         if a.battle.max_hp > 0 && a.battle.hp == 0 {
-            a.battle.liveness = 0;
+            // An expansion boss script's last stand (never without a pack).
+            if before > 0 && self.expansion_survives_lethal(usize::from(target)) {
+                self.actors[usize::from(target)].battle.hp = 1;
+                return;
+            }
+            self.actors[usize::from(target)].battle.liveness = 0;
         }
     }
 

@@ -23,6 +23,7 @@ impl PlayWindowApp {
         // world `rand()` stream, used to run here per redraw as well; it is a
         // per-tick session step now - `BootSession::step_field_fog`.)
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
+        self.poll_pack_watch();
         self.poll_gamepad();
         self.run_sim_ticks(ticks);
         // The frame's rumble, after its ticks (`BootSession::rumble_frame`).
@@ -172,11 +173,16 @@ impl PlayWindowApp {
     fn sim_tick(&mut self) -> bool {
         crate::window::run::fire_deferred_battle(&mut self.session, self.tick_no);
         self.inject_scripted_tick_input();
+        if let Some(log) = self.record_log.as_mut() {
+            log.observe_world(self.session.frames, &self.session.host.world);
+        }
         // Party wipe: the world raises `game_over` when a battle resolves to
         // `BattleEndCause::PartyWipe`. The probe starts the return-to-title
         // hold, which owns the frame from here (the arm below skips the
         // scene tick while any boot UI is active).
         self.poll_game_over();
+        // A Boss Rush's stage entries and screens, an ironman run's card.
+        self.poll_run_rules();
         let pressed_edge = self.pad & !self.prev_pad;
         // The tick's owner, in the order both play hosts share
         // (`BootSession::claim_tick`): the window's boot UI (title, save
@@ -200,6 +206,15 @@ impl PlayWindowApp {
             pause_menu_ready: true,
         };
         let owner = self.session.claim_tick(claims, pressed_edge);
+        // The multiplayer room's frame runs every tick whoever owns it, so
+        // the connection is pumped and a lockstep game keeps its peers fed
+        // under a menu; only the field's tick hands it the pad, and what it
+        // returns is the part of the pad the field may see (none under a
+        // multiplayer screen, movement only in a field prop hunt).
+        let net_pad_filter = self.step_netplay(match owner {
+            TickOwner::Field(false) => self.pad,
+            _ => 0,
+        });
         match owner {
             TickOwner::HostScreen => {
                 let _ = self.tick_boot_ui();
@@ -274,6 +289,7 @@ impl PlayWindowApp {
         let field_pad = self.step_simple_dialog_picker(field_pad);
         let field_suspended = owner == TickOwner::OverlayScreen;
         let field_pad = self.resolve_tick_pad(field_pad);
+        let field_pad = field_pad & net_pad_filter;
         self.session.host.world.set_pad(field_pad);
         if field_suspended {
             // A shop / prize exchange: the field is frozen, tail included -

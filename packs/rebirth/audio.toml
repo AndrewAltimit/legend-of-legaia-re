@@ -1,0 +1,72 @@
+# The tower's soundscape. Music is the disc's own, named by sound-test id
+# (docs/reference/music-tracks.md); the WAV files under assets/audio/
+# are the pack's own work, synthesised by
+# `scripts/models/generate_rebirth_audio.py` - no disc audio is copied.
+
+# The Sanctum's echo: a six-second drone that loops on its own `smpl`
+# loop (7F's inner chamber plays it in place of the floor's music).
+[tracks.echo_drone]
+file = "audio/tower_drone.wav"
+gain = 0.8
+
+# Positional loops and the telegraph chime.
+[sounds.torch]
+file = "audio/torch.wav"
+
+[sounds.water]
+file = "audio/water.wav"
+
+[sounds.drone]
+file = "audio/tower_drone.wav"
+
+[sounds.chime]
+file = "audio/chime.wav"
+gain = 1.4
+
+# Ambient loops: the wind over the open top (8F), the Rest's crowd (5F),
+# the engine's hum (6F) and the drips of the sunken court (4F).
+[sounds.wind]
+file = "audio/wind.wav"
+
+[sounds.crowd]
+file = "audio/crowd.wav"
+gain = 0.8
+
+[sounds.engine]
+file = "audio/engine.wav"
+
+[sounds.drips]
+file = "audio/drips.wav"
+
+# The Isles' outdoors: the surf along the beach and the bay, and the
+# Thornwood's birdsong.
+[sounds.surf]
+file = "audio/surf.wav"
+
+[sounds.birds]
+file = "audio/birds.wav"
+gain = 0.8
+
+# The boss beats (cutscenes.toml, battle.toml): an entrance hit, the
+# shimmer of a phase change, and the knell as a keeper falls.
+[sounds.sting_boss]
+file = "audio/sting_boss.wav"
+gain = 1.3
+
+[sounds.sting_phase]
+file = "audio/sting_phase.wav"
+gain = 1.2
+
+[sounds.sting_fall]
+file = "audio/sting_fall.wav"
+gain = 1.2
+
+[music]
+# Every tower boss closes on the title theme (sound-test 65).
+boss_victory = { kind = "bgm", id = 65 }
+
+# The Gambler's Rest's tables: the Sol casino's "Wild Declaration" (18) at
+# poker, "Funky Ascent" (59) over a Grid Duel.
+[music.modes]
+poker = { kind = "bgm", id = 18 }
+card_duel = { kind = "bgm", id = 59 }

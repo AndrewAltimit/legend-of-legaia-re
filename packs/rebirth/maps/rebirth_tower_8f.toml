@@ -1,0 +1,280 @@
+# Tower of Rebirth, eighth floor: the Hollow Throne. The pillared throne
+# hall of the retail Zora's Floating Castle (`taiku2`), kept whole. No
+# encounters: the long walk up the carpet is the floor's only fight's
+# build-up. The superboss fights in two waves (battle.toml,
+# `hollow_throne`).
+
+name = "Tower of Rebirth 8F - Hollow Throne"
+base = { scene = { kind = "scene", name = "taiku2" }, geometry = "keep", scenery = true }
+# Sound-test track 52, "Ominous Presence".
+bgm = { kind = "bgm", id = 52 }
+camera = "default"
+
+[tiles]
+origin = [46, 3]
+rows = [
+  "    ###...###",
+  "  #cd.......ef#",
+  " #c...........f#",
+  "#c.............fi",
+  "#...............#",
+  "#j.#.........#.h#",
+  "#...............#",
+  "#.#...........#.#",
+  "#...............#",
+  "#j.#.........#.h#",
+  "#...............#",
+  "#.#...........#.#",
+  "#...............#",
+  "#j.#.........#.h#",
+  "#...............#",
+  "#.#....k.g....#.#",
+  "#....c.h.j.f....#",
+  "###...kc.fg...###",
+  "  #..bc...fi..#",
+  "  ###l..a..l###",
+  "  #.....#.....#",
+  "  #...#...#...#",
+  "  #...........#",
+  "  ##.........##",
+  "   ##.#...#.##",
+  "    #a##.##a#",
+  "       #a#",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall edge", walls = ["bl", "br"] }
+"b" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"c" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"d" = { label = "wall corner", walls = ["tl"] }
+"e" = { label = "wall corner", walls = ["tr"] }
+"f" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"g" = { label = "wall corner", walls = ["bl"] }
+"h" = { label = "wall edge", walls = ["tr", "br"] }
+"i" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"j" = { label = "wall edge", walls = ["tl", "bl"] }
+"k" = { label = "wall corner", walls = ["br"] }
+"l" = { label = "wall edge", walls = ["tl", "tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [8, 23]
+facing = 4
+
+[[exits]]
+id = "stair_down"
+rect = [8, 25, 8, 25]
+to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_above" }
+
+[[triggers]]
+id = "arrival"
+rect = [5, 20, 11, 22]
+event = { kind = "dialog", line = "floor_8f_intro" }
+once = true
+
+# The approach to the throne, once the Sanctum is silent and while the
+# Sovereign stands: it rises and speaks (`cutscenes.toml`
+# `sovereign_rises`), and the Hollow Throne quest's offer follows.
+[[triggers]]
+id = "throne_approach"
+rect = [4, 6, 12, 6]
+event = { kind = "cutscene", cutscene = "sovereign_rises" }
+once = true
+requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"], min_level = 88 }
+
+[[triggers]]
+id = "throne"
+rect = [5, 1, 11, 2]
+event = { kind = "talk", npc = "hollow_throne" }
+
+# The long carpet below the throne rolls the throne's honour guard
+# (`battle.toml`, `scene = "tower_8f"`): the top table for the last levels.
+[[encounters]]
+id = "long_carpet"
+rect = [3, 8, 13, 19]
+table = "tower_8f"
+
+# ---------------------------------------------------------------------------
+# Detail: the Hollow Throne. Dust hangs over the long carpet, the pillar
+# lamps spit sparks, a dark haze sits on the floor, violet motes gather at
+# the throne, and the castle's own scenery moves (`scenery`).
+# ---------------------------------------------------------------------------
+
+[[emitters]]
+kind = "dust"
+rect = [3, 2, 13, 24]
+count = 70
+color = [200, 170, 230]
+seed = 801
+
+[[emitters]]
+kind = "sparkles"
+rect = [6, 1, 10, 4]
+height = [40, 240]
+count = 40
+color = [200, 120, 255]
+seed = 802
+
+[[emitters]]
+kind = "embers"
+rect = [2, 5, 2, 13]
+height = [140, 180]
+count = 18
+color = [255, 220, 140]
+seed = 803
+
+[[emitters]]
+kind = "embers"
+rect = [14, 5, 14, 13]
+height = [140, 180]
+count = 18
+color = [255, 220, 140]
+seed = 804
+
+[[emitters]]
+kind = "smoke"
+rect = [2, 3, 14, 24]
+height = [0, 10]
+count = 24
+velocity = [0.0, 0.1, 0.0]
+size = [60, 110]
+color = [70, 50, 90]
+color_end = [30, 20, 40]
+seed = 805
+
+# The Hollow Throne itself: the castle's own carved throne (`taiku2` mesh
+# 69, the one the retail hall seats at the south end of the carpet) raised
+# again, larger, at the carpet's north end, turned to face the approach,
+# where the talk zone and the `sovereign_rises` shot look. The hall's floor
+# is the floor the player walks, so the props stand at 0; only the retail
+# dais at the south end steps up (its own floor records).
+[[props]]
+id = "hollow_throne_seat"
+mesh = { object = 69 }
+tile = [8, 1]
+offset = [0, 0, -60]
+rotation = [0.0, 180.0, 0.0]
+scale = 1.3
+solid = true
+light = { color = [200, 120, 255], radius = 640, height = 120, flicker = 0.15, period = 50 }
+
+# The hall's own standing lamps (`taiku2` mesh 70, the pair that light the
+# south dais) brought up to flank the throne, so its end of the carpet is the
+# brightest place in the hall.
+[[props]]
+id = "throne_lamp_west"
+mesh = { object = 70 }
+tile = [7, 1]
+offset = [0, 0, 0]
+solid = true
+light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, period = 40 }
+
+[[props]]
+id = "throne_lamp_east"
+mesh = { object = 70 }
+tile = [9, 1]
+offset = [0, 0, 0]
+solid = true
+light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, period = 44 }
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "throne", tile = [8, 1], offset = [0, 160, 0], color = [190, 110, 255], radius = 560, flicker = 0.2, period = 35 },
+  { id = "throne_west", tile = [6, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 21 },
+  { id = "throne_east", tile = [10, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 23 },
+  # The carpet's head burns warm between the braziers, so they read as fire
+  # rather than taking the throne's violet.
+  { id = "carpet_head", tile = [8, 5], offset = [0, 140, 0], color = [255, 160, 90], radius = 520, flicker = 0.25, period = 13 },
+]
+
+# Sound: the throne's two standing lamps spit and crackle.
+[[audio.ambient]]
+id = "throne_lamp_west"
+sound = { kind = "sound", id = "torch" }
+tile = [7, 1]
+radius = 448
+inner = 64
+volume = 0.5
+
+[[audio.ambient]]
+id = "throne_lamp_east"
+sound = { kind = "sound", id = "torch" }
+tile = [9, 1]
+radius = 448
+inner = 64
+volume = 0.5
+
+# ---------------------------------------------------------------------------
+# The open top: the wind howls through the hall from the broken roof, and
+# two iron braziers (`assets/models/brazier.glb`) burn either side of the
+# carpet's head, their sparks pulled upward.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "brazier_west"
+mesh = { asset = "models/brazier.glb" }
+tile = [5, 4]
+offset = [0, 0, 0]
+scale = 1.2
+solid = true
+light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 9 }
+
+[[props]]
+id = "brazier_east"
+mesh = { asset = "models/brazier.glb" }
+tile = [11, 4]
+offset = [0, 0, 0]
+scale = 1.2
+solid = true
+light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 11 }
+
+[[emitters]]
+kind = "embers"
+rect = [5, 4, 5, 4]
+height = [130, 170]
+count = 24
+velocity = [0.3, 1.6, 0.0]
+seed = 811
+
+[[emitters]]
+kind = "embers"
+rect = [11, 4, 11, 4]
+height = [130, 170]
+count = 24
+velocity = [0.3, 1.6, 0.0]
+seed = 812
+
+[[audio.ambient]]
+id = "brazier_west"
+sound = { kind = "sound", id = "torch" }
+tile = [5, 4]
+radius = 512
+inner = 96
+volume = 0.55
+
+[[audio.ambient]]
+id = "brazier_east"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 4]
+radius = 512
+inner = 96
+volume = 0.55
+
+[[audio.ambient]]
+id = "wind_north"
+sound = { kind = "sound", id = "wind" }
+tile = [8, 1]
+radius = 2600
+inner = 900
+volume = 0.55
+
+[[audio.ambient]]
+id = "wind_south"
+sound = { kind = "sound", id = "wind" }
+tile = [8, 22]
+radius = 1600
+inner = 500
+volume = 0.35

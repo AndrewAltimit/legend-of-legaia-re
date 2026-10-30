@@ -89,6 +89,7 @@ impl World {
         if self.shops.shop_armed {
             return false;
         }
+        self.prime_run_item_pools();
         let Some(data) = self.shops.item_shop_data.as_ref() else {
             return false;
         };
@@ -118,11 +119,18 @@ impl World {
         let record_ids = instr
             .get(rec.count_off + 1..rec.count_off + 1 + count)
             .unwrap_or(&[]);
+        // The run rules: a randomized stock and the difficulty's prices
+        // (both the identity under retail rules).
+        let randomized = self.run_rules_shop_stock(&rec.name, record_ids);
+        let record_ids = randomized.as_deref().unwrap_or(record_ids);
         let inv = legaia_engine_menus::shop::ShopInventory::from_stock_record(
             0,
             record_ids,
             self.shop_tail_rows_allowed(),
-            |id| data.price(id),
+            |id| {
+                self.run_scale_price(u32::from(data.price(id)))
+                    .min(u32::from(u16::MAX)) as u16
+            },
         );
         let mut session = legaia_engine_menus::shop::ShopSession::new(inv);
         session.vendor_id = vendor_id;

@@ -1,0 +1,132 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs: items</div>
+  <h1>Expansion packs: items, equipment and shops</h1>
+  <p class="lede"><code>items.toml</code> adds new consumables and equipment to an <a href="expansion-pack.html">expansion pack</a>, groups equipment into sets with bonuses for wearing them together, and opens the pack's own shops. Every hook is the identity with no pack active (or a pack with no items): nothing is compiled, no stat changes, no alias is lent, and a save carries no item record.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>File</dt><dd><code>items.toml</code> at the pack root; optional. Declares <code>item</code>, <code>item_set</code> and <code>shop</code> ids.</dd>
+    <dt>Parser</dt><dd><code>legaia_expansion_format::items</code> (also <code>ItemRef</code>, the retail-or-pack item reference).</dd>
+    <dt>Runtime</dt><dd><code>legaia_engine_expansion::{items, item_screen}</code>; <code>engine-core</code>'s <code>world::expansion_items</code> wires them to the <code>World</code>.</dd>
+    <dt>Referenced from</dt><dd><a href="expansion-pack-battle.html">battle.toml</a> drops, steals and boss rewards; level rewards; <a href="expansion-pack-quests.html">quest</a> rewards and <code>collect_item</code>; <a href="expansion-pack-maps.html">map</a> <code>shop</code> triggers and shop NPCs.</dd>
+    <dt>Save</dt><dd>Tail record <code>4</code> of the pack's <code>LXP1</code> expansion block.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="where-pack-items-live" data-doc="where-pack-items-live">
+  <h2>Where pack items live</h2>
+  <p>Retail's item id is a <code>u8</code>, and the static <a href="item-table.html">item table</a> names 250 of its 256 ids. The six blank ones are <code>0x00</code> ("no item") and five cut slots, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code> and <code>0xFD</code>. A pack item cannot take a retail id without displacing a real item, and five spare ids are too few for a gear set, so pack items live in their own store, keyed by their <code>items.toml</code> key.</p>
+  <table class="data">
+    <thead><tr><th>What</th><th>Retail</th><th>Pack</th></tr></thead>
+    <tbody>
+      <tr><td>The bag</td><td>256 <code>[id, count]</code> slots at <code>0x80085958</code></td><td><code>ItemProgress::bag</code>, key to count (cap 99)</td></tr>
+      <tr><td>Worn gear</td><td>The record's equipment bytes <code>+0x196..+0x19D</code></td><td><code>ItemProgress::worn</code>, (hero, byte) to key</td></tr>
+      <tr><td>Saved in</td><td>The SC block</td><td>The expansion block, tail record 4</td></tr>
+    </tbody>
+  </table>
+  <p>Neither retail structure ever holds a pack item, which keeps a retail save's bytes and a no-pack session untouched. The retail Items and Equip screens therefore do not list pack items; the pack item screen does.</p>
+  <h3 id="battle-aliases">Battle aliases</h3>
+  <p>A fight needs a <code>u8</code> for the pack items in it: a drop byte, a steal entry, an Item command row. For one fight the engine lends the five cut ids to those pack items - each pack drop and steal of the seated monsters first, then each battle-usable pack consumable held - with a catalog entry each, so the retail drop roll, steal, Item command, handler and results window all work on them unchanged. A grant or consume of an alias goes to the pack bag. At most five pack items take part in one fight.</p>
+</section>
+
+<section class="doc-section" id="itemstoml" data-doc="itemstoml">
+  <h2><code>items.toml</code></h2>
+<pre><code>[items.rebirth_blade]
+name = "Rebirth Blade"
+kind = "weapon"
+icon = { kind = "item", id = 0x27 }
+characters = ["vahn"]
+attack = 112
+set = "rebirth"
+
+[items.phoenix_plume]
+name = "Phoenix Plume"
+kind = "consumable"
+price = 12000
+effect = { kind = "revive", percent = 50 }
+all_party = true
+
+[sets.rebirth]
+bonuses = [{ pieces = 2, attack = 10 }, { pieces = 4, passives = [0x24] }]
+
+[[shops]]
+id = "tower_armory"
+stock = ["phoenix_plume", 0x79, { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } }]</code></pre>
+  <table class="data">
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>name</code>, <code>description</code></td><td>Menu name (at most 20 characters) and info line (<code>|</code> breaks it).</td></tr>
+      <tr><td><code>kind</code></td><td><code>consumable</code>, <code>weapon</code>, <code>armor</code>, <code>helmet</code>, <code>boots</code>, <code>accessory</code> or <code>key</code>.</td></tr>
+      <tr><td><code>icon</code></td><td>A retail item whose look the item borrows: its icon, and for equipment the battle mesh and swing.</td></tr>
+      <tr><td><code>price</code>, <code>sell</code></td><td>Buy price (<code>0</code> never sold); sell price, half the buy price by default.</td></tr>
+      <tr><td><code>characters</code></td><td>Who may wear it (<code>vahn</code>, <code>noa</code>, <code>gala</code>); everyone when empty.</td></tr>
+      <tr><td><code>attack</code>, <code>defence</code>, <code>udf</code>, <code>ldf</code>, <code>speed</code>, <code>intelligence</code></td><td>Flat bonuses while worn.</td></tr>
+      <tr><td><code>element</code>, <code>passives</code></td><td>An element guarded (the retail guard passive <code>0x1D + element</code>) and <a href="accessory-passive-table.html">passive indices</a> granted while worn.</td></tr>
+      <tr><td><code>set</code></td><td>The set the item belongs to.</td></tr>
+      <tr><td><code>effect</code>, <code>all_party</code>, <code>field</code>, <code>battle</code></td><td>A consumable's effect, whether it covers the party, and where it is usable.</td></tr>
+    </tbody>
+  </table>
+  <p>Each effect is a retail item handler: <code>heal_hp</code> / <code>heal_mp</code> (an amount or <code>full</code>), <code>revive</code> (a percent of max HP), <code>cure</code> (one ailment), <code>cure_all</code>, <code>damage</code>, and <code>as_item</code>, which runs a retail item's own handler (a stat raise, a battle buff, Fury Boost). A set tier applies while one hero wears at least <code>pieces</code> of the set, and tiers stack. A shop row is an item reference or <code>{ item, requires, price }</code>: <code>requires</code> lists it only while the quest-prerequisite gate holds.</p>
+</section>
+
+<section class="doc-section" id="item-references" data-doc="item-references">
+  <h2>Item references</h2>
+  <p>Everywhere a pack names an item it writes an <code>ItemRef</code>: an integer (<code>0x79</code>, a retail id), an item coordinate (<code>{ kind = "item", id = 0x79 }</code>), or a string (<code>"rebirth_blade"</code>, a pack item). Drops, steals, boss and level rewards, quest rewards, <code>collect_item</code> objectives and shop stock all take it.</p>
+</section>
+
+<section class="doc-section" id="runtime" data-doc="runtime">
+  <h2>Runtime</h2>
+  <ul class="bullets">
+    <li><strong>Grants and counts.</strong> A reward lands a retail id in the retail bag and a pack item in the pack bag with a <code>Got X</code> toast; a <code>collect_item</code> counts the bag its reference names.</li>
+    <li><strong>Wearing.</strong> A pack item empties its retail byte (the retail item there goes to the bag); a retail item later equipped over it sends the pack item back.</li>
+    <li><strong>The stat fold.</strong> The battle seed adds worn pack gear as retail gear: ATK into the slot's per-swing byte, UDF / LDF / SPD into the seeded lines, passives and set tiers into the record's ability bits. INT stays menu-only, as retail head gear's does.</li>
+    <li><strong>Look.</strong> A worn pack item's <code>icon</code> fills its empty byte for the battle mesh, swing costs and command chips.</li>
+    <li><strong>Consumables.</strong> In battle, held pack consumables join the Item command under their aliases; in the field, the bag's Items tab uses them.</li>
+  </ul>
+  <h3 id="the-item-screen">The item screen</h3>
+  <p>The pack item screen owns the frame under <code>SceneMode::Expansion</code>, as the card screen does, so both play hosts draw it from one composition. A map's <code>{ kind = "shop" }</code> trigger or a shop NPC opens a counter (<strong>Buy</strong> / <strong>Sell</strong>); the Journal's <strong>Items</strong> page opens the bag (<strong>Items</strong> / <strong>Gear</strong>). The Gear tab's member step shows what the slot holds now and the five equipment-fed stats before and after, green up and red down.</p>
+</section>
+
+<section class="doc-section" id="saves" data-doc="saves">
+  <h2>Saves</h2>
+  <p>The pack bag and the worn gear are pack progress: they save, park and adopt with the pack's <code>LXP1</code> block as tail record 4 (<code>u16</code> bag entries of key + count, then <code>u16</code> worn entries of hero + byte + key). The record is written only while something is held or worn, and a save made with no pack carries no block at all. Without the pack a worn pack item's retail byte stays empty; it is back when the pack is.</p>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <p>Errors: an empty or over-long name, a stat outside <code>-255..=255</code>, a passive past <code>0x3F</code>, an element past 6, an unknown set, a consumable with no effect or usable nowhere, a heal with no amount, a bad revive percent, an icon or <code>as_item</code> that is not an item, a shop row naming an unknown pack item, a map <code>shop</code> naming no shop. Warnings: equipment with no icon, misplaced fields, a set with one member, a pack row with no price.</p>
+</section>
+
+<section class="doc-section" id="limits" data-doc="limits">
+  <h2>Limits</h2>
+  <ul class="bullets">
+    <li>At most five pack items take part in one fight.</li>
+    <li>Pack gear is worn by the three heroes only.</li>
+    <li>The retail Items and Equip screens list no pack items; a slot a pack item fills shows that item's name on the Equip and Status screens.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="rebirths-gear" data-doc="rebirths-gear">
+  <h2>Rebirth's gear</h2>
+  <p>The flagship pack's gear is set against retail's endgame Ra-Seru set from the static <a href="equipment-table.html">equipment table</a>. Each Rebirth piece is about 12-15% above its Ra-Seru twin:</p>
+  <table class="data">
+    <thead><tr><th>Slot</th><th>Retail best</th><th>Rebirth</th></tr></thead>
+    <tbody>
+      <tr><td>Weapons</td><td>Ra-Seru Blade 98, Fangs 96, Club 100</td><td>Rebirth Blade 112, Talon 110, Maul 114 (boss rewards)</td></tr>
+      <tr><td>Body</td><td>Ra-Seru Armor 83/82, Robe 84/78, Plate 75/84</td><td>Rebirth Mail 94/94, Robe 95/88, Plate 86/96</td></tr>
+      <tr><td>Head</td><td>Ra-Seru head gear UDF 62-64</td><td>Rebirth Crown UDF 71, INT 70</td></tr>
+      <tr><td>Feet</td><td>Ra-Seru Thongs ATK 88, LDF 64, SPD 32</td><td>Rebirth Greaves ATK 98, LDF 70, SPD 35</td></tr>
+    </tbody>
+  </table>
+  <p>The set adds +10 ATK at two pieces, +12 defence at three and All Guard at four. Accessories pair two retail passives at the pair's price; consumables extend the retail line (2,500 HP, 300 MP, a party revive, a party full heal). The 5F Tower Armory opens its stock boss by boss.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <ul class="bullets">
+    <li><a href="expansion-pack.html">Expansion packs</a> &middot; <a href="expansion-pack-battle.html">battles</a> &middot; <a href="expansion-pack-quests.html">quests and saves</a> &middot; <a href="expansion-pack-maps.html">maps</a></li>
+    <li><a href="../subsystems/inventory.html">Inventory</a> - the retail bag pack items live beside.</li>
+  </ul>
+</section>

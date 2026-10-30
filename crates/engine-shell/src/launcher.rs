@@ -81,6 +81,11 @@ pub struct LauncherSettings {
     /// The disc image the user picked (`.bin`, or the `.cue` they chose).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disc: Option<PathBuf>,
+    /// The expansion pack to play with (a pack folder or an `.lxpack`
+    /// bundle), passed to the game as `--expansion`. `None` plays the game
+    /// as it shipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expansion: Option<PathBuf>,
     /// The `play-window` launch switches, in the layout the play page
     /// stores too (one serde shape for both hosts), flattened so the file
     /// keeps its keys at the top level.
@@ -303,6 +308,12 @@ pub fn play_args(info: &DiscInfo) -> Vec<std::ffi::OsString> {
 /// [`play_args`] plus the launch switches `settings` turns on.
 pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::ffi::OsString> {
     let mut args = play_args(info);
+    // The pack is the player's own choice of content, not a port switch, so
+    // it rides with `--retail` too.
+    if let Some(pack) = &settings.expansion {
+        args.push("--expansion".into());
+        args.push(pack.clone().into_os_string());
+    }
     if settings.switches.psx_render {
         args.push("--psx-render".into());
     }
@@ -383,7 +394,196 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.save_anywhere {
         args.push("--save-anywhere".into());
     }
+    if settings.switches.action_movement {
+        args.push("--action-movement".into());
+    }
     args
+}
+
+/// An expansion pack the launcher checked ([`inspect_expansion`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExpansionInfo {
+    /// The pack folder or `.lxpack` file, as the game is given it.
+    pub path: PathBuf,
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    /// `authors`, joined.
+    pub authors: String,
+    /// The manifest's description.
+    pub description: String,
+    /// The pack format the pack is written in, and the oldest engine it
+    /// needs.
+    pub schema: u32,
+    pub min_engine: Option<String>,
+    /// The cover image's path in the pack, when it has one.
+    pub cover: Option<String>,
+    /// The validator's errors (`file: field: message`); a pack with any is
+    /// not playable.
+    pub errors: Vec<String>,
+    /// How many warnings the validator raised.
+    pub warnings: usize,
+}
+
+impl ExpansionInfo {
+    /// The pack loads: the validator found no error.
+    pub fn playable(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// `Name 0.1.0 by Authors`.
+    pub fn summary(&self) -> String {
+        let mut s = format!("{} {}", self.name, self.version);
+        if !self.authors.is_empty() {
+            s.push_str(" by ");
+            s.push_str(&self.authors);
+        }
+        s
+    }
+}
+
+/// Where a chosen file names an expansion pack: an `.lxpack` bundle, a
+/// pack folder, or the `pack.toml` inside one (a file dialog picks files,
+/// so choosing a folder's manifest means the folder). `None` for anything
+/// else.
+pub fn expansion_pack_path(chosen: &Path) -> Option<PathBuf> {
+    let is = |p: &Path, ext: &str| p.extension().is_some_and(|e| e.eq_ignore_ascii_case(ext));
+    if chosen.is_dir() {
+        return chosen
+            .join("pack.toml")
+            .is_file()
+            .then(|| chosen.to_path_buf());
+    }
+    if is(chosen, "lxpack") {
+        return Some(chosen.to_path_buf());
+    }
+    if chosen
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("pack.toml"))
+    {
+        return chosen.parent().map(Path::to_path_buf);
+    }
+    None
+}
+
+/// Read and validate the pack at `path` (a folder or an `.lxpack`) the way
+/// the game will: `Err` when it cannot be read at all, else its manifest
+/// and every validator error.
+pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, String> {
+    use legaia_expansion_format::validate::{Severity, validate_files};
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // A bundle goes through the import gates the browser library uses, so a
+    // damaged, newer-format or unsafe `.lxpack` says which.
+    let files = if path.is_dir() {
+        legaia_expansion_format::read_dir_files(&path).map_err(|e| format!("{e:#}"))?
+    } else {
+        let bytes = std::fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+        legaia_expansion_format::share::import_bundle(&bytes)
+            .map_err(|e| e.message)?
+            .files
+    };
+    let issues = validate_files(&files, None);
+    let errors: Vec<String> = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .map(|i| {
+            if i.field.is_empty() {
+                format!("{}: {}", i.path, i.message)
+            } else {
+                format!("{}: {}: {}", i.path, i.field, i.message)
+            }
+        })
+        .collect();
+    let warnings = issues.len() - errors.len();
+    let pack = legaia_expansion_format::ExpansionPack::from_files(&files);
+    let (id, name, version, authors, description, schema, min_engine, cover) = match &pack {
+        Ok(p) => (
+            p.manifest.id.clone(),
+            p.manifest.name.clone(),
+            p.manifest.version.clone(),
+            p.manifest.authors.join(", "),
+            p.manifest.description.clone(),
+            p.manifest.schema,
+            p.manifest.min_engine.clone(),
+            p.manifest
+                .cover
+                .clone()
+                .filter(|c| files.contains_key(c.as_str())),
+        ),
+        Err(_) => Default::default(),
+    };
+    let mut errors = errors;
+    if let Err(e) = pack
+        && errors.is_empty()
+    {
+        errors.push(format!("{e:#}"));
+    }
+    Ok(ExpansionInfo {
+        path,
+        id,
+        name,
+        version,
+        authors,
+        description,
+        schema,
+        min_engine,
+        cover,
+        errors,
+        warnings,
+    })
+}
+
+/// The folder installed expansion packs live in: `packs/` under the data
+/// directory ([`data_dir`]). A pack is an `.lxpack` file or a pack folder
+/// dropped there; `legaia-engine packs` lists them and `--expansion <id>`
+/// finds one by its id.
+pub fn packs_dir() -> Option<PathBuf> {
+    data_dir().map(|d| d.join(PACKS_DIR))
+}
+
+/// [`packs_dir`]'s name under the data directory.
+pub const PACKS_DIR: &str = "packs";
+
+/// Every expansion pack in `dir` ([`expansion_pack_path`] accepts each
+/// entry), checked, in file-name order. A pack that cannot be read at all
+/// comes back as `Err((path, why))`. An absent directory is an empty list.
+pub fn scan_packs(dir: &Path) -> Vec<std::result::Result<ExpansionInfo, (PathBuf, String)>> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter_map(|p| expansion_pack_path(&p).filter(|q| q == &p))
+        .collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|p| inspect_expansion(&p).map_err(|e| (p, e)))
+        .collect()
+}
+
+/// What `--expansion NAME` names: the path itself when it exists, else the
+/// installed pack in `dir` whose manifest id is `NAME` (or whose file or
+/// folder is called `NAME` / `NAME.lxpack`). `None` when nothing matches.
+pub fn resolve_pack(name: &Path, dir: Option<&Path>) -> Option<PathBuf> {
+    if name.exists() {
+        return Some(name.to_path_buf());
+    }
+    let dir = dir?;
+    let id = name.to_str()?;
+    if !legaia_expansion_format::manifest::is_valid_pack_id(id) {
+        return None;
+    }
+    for candidate in [dir.join(id), dir.join(format!("{id}.lxpack"))] {
+        if candidate.exists() && expansion_pack_path(&candidate).is_some() {
+            return Some(candidate);
+        }
+    }
+    scan_packs(dir)
+        .into_iter()
+        .flatten()
+        .find(|i| i.id == id)
+        .map(|i| i.path)
 }
 
 const SPIRIT_AP_RETAIL: i16 = legaia_engine_core::world::SPIRIT_AP_RETAIL;
@@ -427,6 +627,7 @@ pub enum OptionRow {
     PsxRender,
     CameraDistance,
     PreciseMovement,
+    ActionMovement,
     ReduceFlashing,
     MasterVolume,
     MusicVolume,
@@ -455,7 +656,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 36] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -468,6 +669,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 35] = [
     (None, OptionRow::SeeThroughWalls),
     (None, OptionRow::EntryPulse),
     (Some("Play"), OptionRow::PreciseMovement),
+    (None, OptionRow::ActionMovement),
     (None, OptionRow::SmartMonsters),
     (None, OptionRow::ArtsSavedList),
     (None, OptionRow::ReduceFlashing),
@@ -520,6 +722,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.enemy_stat_permille = None;
     w.equipment_drops = false;
     w.save_anywhere = false;
+    w.action_movement = false;
     (opts, s)
 }
 
@@ -564,6 +767,7 @@ impl OptionRow {
             Self::PsxRender => "PlayStation pixel look",
             Self::CameraDistance => "Camera distance",
             Self::PreciseMovement => "Free-angle movement",
+            Self::ActionMovement => "Action movement",
             Self::ReduceFlashing => "Reduce flashing",
             Self::MasterVolume => "Master volume",
             Self::MusicVolume => "Music volume",
@@ -675,6 +879,10 @@ impl OptionRow {
                 "The pause menu's Save works everywhere, not only on the world map \
                  and at save points as in the original."
             }
+            Self::ActionMovement => {
+                "A faster, platformer-style walk in towns and dungeons: Square jumps \
+                 (twice in the air), R2 dashes. Not in the original."
+            }
             Self::SpiritAp => {
                 "How much AP the Spirit command charges; 32 is the original. Negative \
                  values make Spirit drain the gauge."
@@ -724,6 +932,7 @@ impl OptionRow {
                 | Self::EntryPulse
                 | Self::SmartMonsters
                 | Self::ArtsSavedList
+                | Self::ActionMovement
                 | Self::ShinySeru
                 | Self::FleeExp
                 | Self::ExpRate
@@ -797,6 +1006,7 @@ impl OptionRow {
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
             Self::SaveAnywhere => on_off(s.switches.save_anywhere),
+            Self::ActionMovement => on_off(s.switches.action_movement),
             Self::SpiritAp => s.switches.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL).to_string(),
             Self::DamageAp => s.switches.damage_ap.unwrap_or(DAMAGE_AP_RETAIL).to_string(),
             Self::SeruCatchRate => Tweaks::catch_rate_label(s.switches.seru_catch_pct),
@@ -849,7 +1059,12 @@ impl OptionRow {
             H::CameraDistance => Self::CameraDistance,
             H::PreciseMovement => Self::PreciseMovement,
             H::Bloom => Self::Bloom,
-            H::DiagRows | H::AudioMute | H::DebugCamera | H::CheatMaxAp | H::CheatEncounters => {
+            H::DiagRows
+            | H::AudioMute
+            | H::DebugCamera
+            | H::CheatMaxAp
+            | H::CheatEncounters
+            | H::ReloadPack => {
                 return None;
             }
         })
@@ -923,6 +1138,7 @@ impl OptionRow {
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
             Self::SaveAnywhere => w.save_anywhere = d.save_anywhere,
+            Self::ActionMovement => w.action_movement = d.action_movement,
             Self::SpiritAp => w.spirit_ap = d.spirit_ap,
             Self::DamageAp => w.damage_ap = d.damage_ap,
             Self::SeruCatchRate => w.seru_catch_pct = d.seru_catch_pct,
@@ -1019,6 +1235,7 @@ impl OptionRow {
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
             Self::SaveAnywhere => s.switches.save_anywhere ^= true,
+            Self::ActionMovement => s.switches.action_movement ^= true,
             Self::SpiritAp => step_opt(&mut s.switches.spirit_ap, &Tweaks::SPIRIT_AP_STEPS, dir),
             Self::DamageAp => step_opt(&mut s.switches.damage_ap, &Tweaks::DAMAGE_AP_STEPS, dir),
             Self::SeruCatchRate => {
@@ -1161,6 +1378,7 @@ mod tests {
         assert_eq!(shown(OptionRow::HpReadoutGuard), on_off(t.hp_readout_guard));
         assert_eq!(shown(OptionRow::BonusDrop), on_off(t.bonus_drop));
         assert_eq!(shown(OptionRow::SaveAnywhere), on_off(t.save_anywhere));
+        assert_eq!(shown(OptionRow::ActionMovement), on_off(t.action_movement));
         assert_eq!(shown(OptionRow::PsxRender), "On");
         assert_eq!(shown(OptionRow::EnhancedLighting), "Off");
         assert_eq!(shown(OptionRow::RetailTileCrop), "On");
@@ -1304,6 +1522,94 @@ mod tests {
         assert!(a.iter().any(|s| s == "--boot-ui"));
     }
 
+    /// The packs folder: every pack in it is listed with its metadata, and
+    /// `--expansion <id>` finds one by id.
+    #[test]
+    fn the_packs_folder_lists_and_resolves_by_id() {
+        let tmp = std::env::temp_dir().join(format!("legaia-packs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        let files = legaia_expansion_format::read_dir_files(rebirth).unwrap();
+        let bundle = legaia_expansion_format::bundle::write_bundle(&files).unwrap();
+        std::fs::write(tmp.join("renamed.lxpack"), &bundle).unwrap();
+        std::fs::write(tmp.join("broken.lxpack"), b"LXPACK\x1a\n junk").unwrap();
+        std::fs::write(tmp.join("notes.txt"), b"not a pack").unwrap();
+        let list = scan_packs(&tmp);
+        assert_eq!(list.len(), 2, "{list:?}");
+        let err = list[0].as_ref().unwrap_err();
+        assert!(err.0.ends_with("broken.lxpack"));
+        let ok = list[1].as_ref().unwrap();
+        assert_eq!((ok.id.as_str(), ok.schema), ("rebirth", 2));
+        assert_eq!(ok.cover.as_deref(), Some("assets/cover.png"));
+        assert!(ok.playable(), "{:?}", ok.errors);
+        assert_eq!(
+            resolve_pack(Path::new("rebirth"), Some(&tmp)),
+            Some(tmp.join("renamed.lxpack"))
+        );
+        assert_eq!(resolve_pack(Path::new("nope"), Some(&tmp)), None);
+        assert!(scan_packs(&tmp.join("absent")).is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// The remembered expansion pack rides the play args as `--expansion`,
+    /// beside `--retail` too, and round-trips through the settings file.
+    #[test]
+    fn the_expansion_pack_rides_the_play_args_and_round_trips() {
+        let info = ok_info(Path::new("/g/l.bin"));
+        let s = LauncherSettings {
+            expansion: Some("/packs/rebirth.lxpack".into()),
+            switches: PersistedSwitches {
+                retail: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let a = play_args_with(&info, &s);
+        let at = a
+            .iter()
+            .position(|x| x == "--expansion")
+            .expect("--expansion");
+        assert_eq!(a[at + 1], "/packs/rebirth.lxpack");
+        assert!(a.iter().any(|x| x == "--retail"));
+        let text = toml::to_string(&s).unwrap();
+        assert!(text.contains("expansion"));
+        assert_eq!(toml::from_str::<LauncherSettings>(&text).unwrap(), s);
+        // No pack writes no key.
+        let none = toml::to_string(&LauncherSettings::default()).unwrap();
+        assert!(!none.contains("expansion"));
+    }
+
+    /// A chosen file names a pack as a bundle, a folder or its manifest; the
+    /// committed Rebirth pack inspects clean.
+    #[test]
+    fn expansion_choices_resolve_and_rebirth_inspects_clean() {
+        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        assert_eq!(expansion_pack_path(rebirth).as_deref(), Some(rebirth));
+        assert_eq!(
+            expansion_pack_path(&rebirth.join("pack.toml")).as_deref(),
+            Some(rebirth)
+        );
+        assert_eq!(
+            expansion_pack_path(Path::new("/x/y.LXPACK")).as_deref(),
+            Some(Path::new("/x/y.LXPACK"))
+        );
+        assert_eq!(expansion_pack_path(Path::new("/x/game.bin")), None);
+        let info = inspect_expansion(rebirth).expect("reads");
+        assert!(info.playable(), "{:?}", info.errors);
+        assert_eq!(info.id, "rebirth");
+        assert!(info.summary().starts_with("Legend of Legaia: Rebirth 0."));
+        // A pack with an error is not playable, and says why.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pack.toml"),
+            "id = \"Bad Id\"\nname = \"x\"\nversion = \"1\"\n",
+        )
+        .unwrap();
+        let bad = inspect_expansion(dir.path()).expect("reads");
+        assert!(!bad.playable());
+    }
+
     #[test]
     fn launch_switches_ride_the_play_args_and_round_trip() {
         let info = ok_info(Path::new("/g/l.bin"));
@@ -1415,6 +1721,7 @@ mod tests {
         for row in [
             OptionRow::BonusDrop,
             OptionRow::SaveAnywhere,
+            OptionRow::ActionMovement,
             OptionRow::SpiritAp,
             OptionRow::DamageAp,
             OptionRow::SeruCatchRate,
@@ -1443,6 +1750,7 @@ mod tests {
             "--enemy-stat-scale=1.25",
             "--equipment-drops",
             "--save-anywhere",
+            "--action-movement",
         ] {
             assert!(a.iter().any(|x| x == flag), "{flag}");
             assert!(!plain.iter().any(|x| x == flag), "{flag} off by default");
@@ -1495,6 +1803,7 @@ mod tests {
             HpReadoutGuard => "play-hp-readout-guard",
             BonusDrop => "play-bonus-drop",
             SaveAnywhere => "play-save-anywhere",
+            ActionMovement => "play-action-movement",
             SpiritAp => "play-spirit-ap",
             DamageAp => "play-damage-ap",
             SeruCatchRate => "play-seru-catch-rate",

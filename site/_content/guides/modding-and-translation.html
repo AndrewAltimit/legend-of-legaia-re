@@ -194,6 +194,19 @@
   </div>
 </section>
 
+<section class="doc-section" id="expansion-packs">
+  <h2>9 &middot; Make an expansion pack</h2>
+  <p>An expansion pack is not a disc patch: it is new content - monsters and bosses, a level curve, quests, dialogue, trading cards, game modes, custom maps - that the port loads beside your disc. It names disc content only by coordinate, so a pack is yours to share. The <a href="../tooling/expansion-workbench.html">expansion workbench</a> builds one in the browser:</p>
+  <ol>
+    <li>Pick your <code>.bin</code>. The workbench reads its monsters, items, scenes and music for the pickers; nothing is uploaded, and no name from the disc is written into the pack.</li>
+    <li>Load the <strong>Rebirth example</strong> (the project's own flagship pack), a <code>.lxpack</code> or a pack folder of your own, or start fresh.</li>
+    <li>Edit section by section. The checks panel re-runs the validator after every edit, with your disc resolving every coordinate; click an issue to go to its field.</li>
+    <li>Lay out a map on the <strong>Maps</strong> tab: paint tiles from the legend, place spawns, exits, trigger and encounter zones and props, and turn on <strong>Heights</strong> to see which cells the floor slopes across.</li>
+    <li><strong>Download .lxpack</strong> to share it, or take the TOML files one at a time on the Files tab for a pack kept as a folder.</li>
+  </ol>
+  <p>The same pack works from the command line (<code>asset expansion validate</code>, <code>asset expansion bundle</code>) and runs in the native port with <code>legaia-engine play-window --expansion &lt;dir&gt;</code>, or on the browser play page: the workbench's <strong>Play in browser</strong> button hands the pack straight to it. The full guide is <a href="making-expansion-packs.html">making an expansion pack</a>; the tour is <a href="expansion-packs.html">expansion packs</a>.</p>
+</section>
+
 <section class="doc-section" id="see-also">
   <h2>See also</h2>
   <div class="see-also">

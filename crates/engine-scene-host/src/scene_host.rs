@@ -98,6 +98,24 @@ pub trait BgmDirector {
     /// sub-op 2 with sub-op `0xA`. Default is a no-op for stub directors
     /// with no pause latch to clear.
     fn unhalt_pause(&mut self) {}
+    /// Start an expansion pack's own track (a decoded WAV / Ogg file, not a
+    /// SEQ): music id `bgm_id` in the pack-track range, its clip, and the
+    /// frames to cross-fade from what plays now (`0` cuts). A director with
+    /// no PCM path ignores it.
+    fn start_pack_track(
+        &mut self,
+        bgm_id: u16,
+        clip: legaia_engine_expansion::audio::PackClip<'_>,
+        fade_frames: u16,
+    ) {
+        let _ = (bgm_id, clip, fade_frames);
+    }
+    /// [`BgmDirector::start_owned_vab`] cross-fading over `fade_frames`
+    /// (an expansion pack's music zone). The default cuts.
+    fn start_owned_vab_faded(&mut self, bgm_id: u16, entry_bytes: &[u8], fade_frames: u16) {
+        let _ = fade_frames;
+        self.start_owned_vab(bgm_id, entry_bytes);
+    }
 }
 
 /// PORT: FUN_80019898
@@ -161,7 +179,8 @@ pub fn bgm_bank_id(bgm_id: u16) -> u16 {
 }
 
 use legaia_engine_core::world::{
-    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
+    BGM_SUB_OP_ENGINE_FADE, BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH,
+    BGM_SUB_OP_ENGINE_STOP,
 };
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired
@@ -255,6 +274,21 @@ pub struct SceneHost {
     /// [`SceneHost::set_entry_seat`]; consumed (and cleared) by the next
     /// [`SceneHost::enter_field_scene`].
     pub(crate) pending_entry_seat: Option<(i16, i16)>,
+    /// The field layer of an expansion-pack map, armed by
+    /// [`SceneHost::enter_expansion_map`] and seated on the next
+    /// [`SceneHost::load_scene`]'s [`Scene`] (taken either way, so a failed
+    /// entry cannot hand it to the scene loaded after).
+    pub(crate) pending_scene_override:
+        Option<Arc<legaia_engine_scene::expansion_map::SceneOverride>>,
+    /// The pack map an in-world mode last failed to enter
+    /// ([`SceneHost::sync_pack_mode_map`]), so a broken map is tried once
+    /// and the mode draws its top-down screen instead.
+    pub(crate) failed_pack_mode_map: Option<String>,
+    /// Enter pack maps without their arrival presentation: no place-name
+    /// banner and no arrival cutscene ([`SceneHost::enter_expansion_map`]).
+    /// The expansion workbench's 3D preview sets it, so an edit-and-look
+    /// entry shows the map rather than its story beat; play leaves it off.
+    pub quiet_expansion_arrivals: bool,
     /// The disc's inbound door / warp arrivals keyed by destination
     /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
     /// first scene-picker entry that asks for it and kept for the session.
@@ -355,6 +389,10 @@ pub use battle_stage::{
     backdrop_shell_mesh, backdrop_shell_nclip, backdrop_slot_1_basis,
 };
 mod effects;
+pub mod expansion_cards;
+mod expansion_entrance;
+mod expansion_map;
+pub use expansion_map::ExpansionReloadSeat;
 mod lifecycle;
 mod minigame_warp;
 mod player_rig;

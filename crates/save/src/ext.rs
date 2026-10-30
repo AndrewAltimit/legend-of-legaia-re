@@ -113,6 +113,17 @@
 //! M      location display name (ASCII)
 //! ```
 //!
+//! ## Optional trailing blocks (`LGX6`..`LGXD`)
+//!
+//! After `LGX4` come the optional blocks, each `magic, u32 size, body` and
+//! each written only when its field is populated, in the order `LGX6`
+//! (item slots), `LGX7` (minigame purses), `LGX8` (field position), `LGX9`
+//! (audio levels), `LGXA` (options), `LGXB` (retail window), `LGXC`
+//! (previous scene), `LGXD` (expansion-pack progress, an opaque body whose
+//! layout `legaia_engine_expansion::quest_save` owns), `LGXF` (run rules, an
+//! opaque body whose layout `legaia_engine_run_rules::save` owns), then the
+//! `LGX5` resume trailer.
+//!
 //! ## The engine-ext blob inside a retail SC block (`LGXE`)
 //!
 //! Retail's composer copies `0x1A18` bytes of live game state to the front
@@ -131,7 +142,14 @@
 //! +0x1A1E  N      v2 body
 //!          2      v4_len (u16 LE)   the LGX4 body
 //!          M      v4 body
+//!          2      xp_len (u16 LE)   the expansion block (0 = none)
+//!          K      expansion body
 //! ```
+//!
+//! The expansion segment is written only when the save carries one and the
+//! tail has room for it after the `LGX2` / `LGX4` bodies; the bytes it would
+//! occupy are zero otherwise, so an older blob and a blob without a pack
+//! both read `xp_len = 0`.
 //!
 //! The block checksum covers the tail, so the writer restamps it like every
 //! other `write_retail_*` helper. See `docs/subsystems/save-screen.md`.
@@ -197,6 +215,14 @@ pub const SAVE_FILE_EXTB_MAGIC: [u8; 4] = *b"LGXB";
 /// Optional previous-scene block ([`SaveExtV2::previous_scene`]): the label's
 /// ASCII bytes. Emitted only when the save carries one.
 pub const SAVE_FILE_EXTC_MAGIC: [u8; 4] = *b"LGXC";
+/// Optional expansion-pack block ([`SaveExtV2::expansion`]): the body
+/// verbatim. Emitted only when the save carries one, so a save made without
+/// an expansion pack is byte-identical to a pre-block file.
+pub const SAVE_FILE_EXTD_MAGIC: [u8; 4] = *b"LGXD";
+/// Optional run-rules block ([`SaveExtV2::run_rules`]): the body verbatim.
+/// Emitted only when the save carries one, so a save of a run with retail
+/// rules is byte-identical to a pre-block file.
+pub const SAVE_FILE_EXTF_MAGIC: [u8; 4] = *b"LGXF";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -354,6 +380,19 @@ pub struct SaveExtV2 {
     /// An `LGSF` file carries it in the optional `LGXC` block. `None` = not
     /// known.
     pub previous_scene: Option<String>,
+    /// The expansion-pack block: one pack's quest progress, pack flags and
+    /// challenge records, in the layout `legaia_engine_expansion::quest_save`
+    /// owns; this crate stores it opaquely. An `LGSF` file carries it in the
+    /// optional `LGXD` block, a retail SC block in the engine-ext tail after
+    /// the `LGX4` body. `None` = no pack progress.
+    pub expansion: Option<Vec<u8>>,
+    /// The run-rules block: the rules a run plays under (difficulty, New
+    /// Game+, ironman, randomizer seed, Boss Rush), in the layout
+    /// `legaia_engine_run_rules::save` owns; this crate stores it opaquely.
+    /// An `LGSF` file carries it in the optional `LGXF` block, a retail SC
+    /// block as the engine-ext tail's segment after the expansion one.
+    /// `None` = retail rules.
+    pub run_rules: Option<Vec<u8>>,
 }
 
 /// Where a save was written: the scene to resume into and the name the

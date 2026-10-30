@@ -518,7 +518,14 @@ impl<S: AudioSink> BootSession<S> {
         // battle's summon / capture arms drive.
         let duck = self.host.world.take_field_audio_duck();
         let cd_reverb = self.host.world.cd_input_reverb();
-        let bgm = self.bgm.as_mut()?;
+        let Some(bgm) = self.bgm.as_mut() else {
+            // No audio: the pack's raised sounds are dropped, as every cue is.
+            let _ = self.host.world.take_expansion_sounds();
+            return None;
+        };
+        // An expansion pack's own sounds and ambient loops (identity without
+        // one).
+        bgm.drive_pack_audio(&mut self.host.world);
         bgm.set_cd_reverb(cd_reverb);
         if let Some(pct) = duck {
             bgm.set_duck_pct(pct);

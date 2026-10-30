@@ -13,6 +13,7 @@ pub mod cd_dma;
 pub mod clut_walk_anim;
 pub mod coplanar_draws;
 pub mod cutscene_caption;
+pub mod expansion_map;
 pub mod field_env;
 pub mod field_ground;
 pub mod field_occlusion;

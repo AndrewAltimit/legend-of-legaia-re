@@ -64,9 +64,13 @@ impl PlayWindowApp {
         // identically, and retail draws the party leader's field figure on
         // the overworld. Gating this to `Field` alone left the overworld
         // player invisible (the world-map draw branch had nothing bound to
-        // draw).
-        if matches!(world.mode, SceneMode::Field | SceneMode::WorldMap)
-            && let Some(pslot) = world.player_actor_slot
+        // draw). An expansion mode keeps it too: a golf round or race played
+        // on a pack map enters its map under the mode seat, and the leader
+        // is its golfer or racer (`World::stage_pack_mode`).
+        if matches!(
+            world.mode,
+            SceneMode::Field | SceneMode::WorldMap | SceneMode::Expansion
+        ) && let Some(pslot) = world.player_actor_slot
         {
             let roster_lead = usize::from(world.field_leader());
             if let Some(g) = player_rig {
@@ -242,25 +246,31 @@ impl PlayWindowApp {
         // uploaded meshes, which this upload replaces.
         self.npc_pose_cache.clear();
         self.npc_pose_verify.clear();
-        if self.session.host.world.mode == SceneMode::Field && self.win.renderer.is_some() {
+        // An expansion mode played on a pack map keeps the map's NPCs: they
+        // are its other golfers and racers.
+        if matches!(
+            self.session.host.world.mode,
+            SceneMode::Field | SceneMode::Expansion
+        ) && self.win.renderer.is_some()
+        {
             // The per-scene ANM bundle (see `find_scene_anm_bundle`): field
             // builds don't surface it through `res.anm_packs`, and the prologue
             // scenes' vignette actors need it or they render as a FROZEN tableau
             // under the narration crawl. Resolved once at the top of this fn -
             // the placed static objects pose from the same bundle.
             let locomotion_bundle = self.npc_anim_bundles.1.clone();
+            // The live scene's placements: a pack map's NPCs when one
+            // overlays the scene, else the MAN's partition-1 list.
             let placements = self
                 .session
                 .host
                 .scene
                 .as_ref()
-                .and_then(|s| s.field_man_payload(&self.session.host.index).ok().flatten())
-                .and_then(|man| {
-                    legaia_scene_formats::man_section::parse(&man)
-                        .ok()
-                        .map(|mf| {
-                            legaia_engine_field::man_field_scripts::classify_placements(&mf, &man)
-                        })
+                .map(|s| {
+                    legaia_engine_scene::npc_catalog::live_scene_placements(
+                        &self.session.host.index,
+                        s,
+                    )
                 })
                 .unwrap_or_default();
             let sources = NpcUploadSources {
@@ -269,7 +279,7 @@ impl PlayWindowApp {
                 locomotion_bundle: &locomotion_bundle,
                 live_npc_meshes,
             };
-            for (p, _kind) in &placements {
+            for p in &placements {
                 self.upload_field_npc(p, &sources, &mut prop_light_sets);
             }
             if !self.field_npc_draws.is_empty() {

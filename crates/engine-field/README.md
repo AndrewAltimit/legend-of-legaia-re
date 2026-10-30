@@ -48,7 +48,10 @@ a dependent crate.
   `camera_rig` (the `World`-held rig state: saved camera snapshot, scene
   offset + ease, shake amplitude, the zone-ramp register file).
 - **Player** - `field_anim` (the party locomotion clip player over PROT 0874
-  §1) and `walk_regen` (`FUN_801D0B90`, the walk-regen accessory passives).
+  §1), `walk_regen` (`FUN_801D0B90`, the walk-regen accessory passives) and
+  `action_movement` (the opt-in platformer controller, not retail: jump,
+  dash, momentum; see
+  [`field-locomotion.md`](../../docs/subsystems/field-locomotion.md#action-movement-enhancement)).
 - **Scene flow** - `scene_transition_actor` (the transition streaming actor),
   `field_save_screen_actor` (the overlay swap into the card UI and back),
   `field_submode` (op `0x49` sub-screen entry: `FUN_801D9C3C`,

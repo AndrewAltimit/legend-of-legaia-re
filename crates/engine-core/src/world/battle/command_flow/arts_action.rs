@@ -87,7 +87,29 @@ impl World {
         // rewrite.
         let bank = self.art_bank_rows(character);
         let records = legaia_art::bank_view(&bank);
-        let built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
+        let mut built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
+        // An expansion pack's known arts walk second, over the arrows the
+        // retail walk left (`legaia_engine_expansion::arts`): their rows sit
+        // past retail's 24, every retail row is blank in this pass, so a
+        // retail art matches exactly as without them - and the retail
+        // bank's one-arrow Super stubs, which end its walk at any start that
+        // finds their arrow, cannot hide them. No pack art known: no pass.
+        let extra = self.expansion_bank_rows(character);
+        if !extra.is_empty() {
+            let mut pack_bank: Vec<legaia_art::BankRow> = Vec::new();
+            for (b, cmds, sources) in extra {
+                let k = usize::from(b - 0x1B);
+                if pack_bank.len() <= k {
+                    pack_bank.resize(k + 1, (Vec::new(), [0; 4]));
+                }
+                pack_bank[k] = (cmds, sources);
+            }
+            let pack_records = legaia_art::bank_view(&pack_bank);
+            let over =
+                legaia_art::tokenize_bank_over(&pack_records, built.queue, built.marks, false);
+            built.queue = over.queue;
+            built.marks = over.marks;
+        }
         let tokens = built.queue;
         log::debug!(
             "arts queue: {:?} (Ra-Seru {miracle_armed}) -> {:02x?}",
@@ -167,6 +189,10 @@ impl World {
                 marks,
             );
         self.battle_ctx.super_trigger = trigger;
+        // The pack arts' further segments and chains, after the retail finish.
+        let mut marks = marks;
+        self.expansion.arts.turn_performed =
+            self.expansion_finish_arts_queue(character, &mut bytes, &mut marks);
         let actions: Vec<ActionConstant> = bytes
             .iter()
             .take_while(|&&b| b != 0)
@@ -285,6 +311,8 @@ impl World {
     ///
     /// PORT: FUN_801EED1C (Spirit-cost half) / FUN_801E295C (the `+0x224` spend)
     pub(super) fn charge_art_spirit(&mut self, caster: u8, actions: &[legaia_art::ActionConstant]) {
+        let performed = std::mem::take(&mut self.expansion.arts.turn_performed);
+        self.expansion_charge_pack_arts(caster, &performed);
         if actions.is_empty() {
             return;
         }

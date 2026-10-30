@@ -225,6 +225,30 @@ fn enter_launch_scene(
     if let Some(defaults) = session.host.new_game_defaults.as_mut() {
         defaults.picker_party = true;
     }
+    // `--expansion`: the pack goes in through the one activation path before
+    // any entry, so the title's New Game and Continue, and a `--resume-save`
+    // below, play with it (a save made on one of its maps returns to that
+    // map). Without a save, `--map` is the launch scene: its base scene
+    // loads under it, so the render build draws it like any field scene.
+    if let Some(launch) = debug_seeds.expansion.as_ref() {
+        let pack = launch.load()?;
+        log::info!(
+            "play-window: expansion pack '{}' {} ({})",
+            pack.manifest.name,
+            pack.manifest.version,
+            launch.pack.display()
+        );
+        session
+            .host
+            .activate_expansion_pack(std::sync::Arc::new(pack))?;
+        if let Some(map) = launch.map.as_deref()
+            && debug_seeds.resume_save.is_none()
+        {
+            let mode = session.enter_expansion_map_live(map, &launch.spawn, field_live_opts)?;
+            log::info!("play-window: entered expansion map '{map}' (mode={mode:?})");
+            return Ok(());
+        }
+    }
     // Which entry a scene takes is the scene's own property, decided by the
     // one engine predicate every host asks (`is_world_map_scene`) - the
     // browser play page's `enter_field` and the in-world door transition both
@@ -571,6 +595,8 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     }
     seed_demo_battle(&mut session, player_battle);
     install_debug_play_record(&mut session, &debug_seeds);
+    install_debug_play_cutscene(&mut session, &debug_seeds);
+    enter_debug_pack_mode(&mut session, &debug_seeds);
 
     // Apply the cheat file (if any) to the live World before building
     // scene resources. The applier mutates `world.party.roster` /
@@ -651,5 +677,15 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     // The spell / seru display names off the boot SCUS, for the shop's Trade
     // row: read once here, as the browser play page reads them at disc load.
     app.ensure_seru_names();
+    app.pack_reload = debug_seeds
+        .expansion
+        .clone()
+        .map(super::pack_reload::PackReload::new);
+    app.netplay = super::netplay::start_netplay(&debug_seeds.netplay, &app.session.host.world)?;
+    if app.netplay.is_none() && debug_seeds.netplay.menu {
+        app.netplay_menu = Some(super::netplay::NetMenu::new(
+            debug_seeds.netplay.name.as_deref(),
+        ));
+    }
     Ok(app)
 }

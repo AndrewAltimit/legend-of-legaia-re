@@ -446,11 +446,19 @@ impl PlayWindowApp {
         // Render scale: a bind record's prologue can leave the actor's
         // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
         // quarter), and retail's case-5 draw folds it into the model matrix.
-        let scales = legaia_engine_scene::field_env::placed_render_scales(
+        let mut scales = legaia_engine_scene::field_env::placed_render_scales(
             &env_draws,
             binds,
             &self.session.host.world.object_render_scales(),
         );
+        // An expansion-pack map's props carry their own scale.
+        if let Some(o) = scene.overrides.as_ref() {
+            for (d, s) in env_draws.iter().zip(scales.iter_mut()) {
+                if let Some(f) = o.prop_scale(d.anchor) {
+                    *s = f;
+                }
+            }
+        }
         let diag = std::env::var_os("LEGAIA_DIAG_PLACE").is_some();
         if diag {
             for d in &dropped {
@@ -513,8 +521,13 @@ impl PlayWindowApp {
         // Parallel to `draws`: a camera-facing cell's flags and rotation
         // (`EnvDraw::view_skip`), re-placed against the camera every frame.
         let mut facing = Vec::new();
-        let bind_records =
+        let mut bind_records =
             legaia_engine_scene::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
+        // An expansion-pack map's animated props draw under their own record
+        // keys (`World::object_draw_turn_matrices` / `object_draw_displacements`).
+        if let Some(o) = scene.overrides.as_ref() {
+            o.fill_prop_records(env_draws.iter().map(|d| d.anchor), &mut bind_records);
+        }
         for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on

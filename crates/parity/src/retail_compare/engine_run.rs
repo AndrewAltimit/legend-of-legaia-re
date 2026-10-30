@@ -58,6 +58,21 @@ impl BgmDirector for RecordingDirector {
         self.last = Some(bgm_id);
         self.held = false;
     }
+    // An expansion pack's starts select a track like any other (a retail
+    // state never raises them).
+    fn start_owned_vab_faded(&mut self, bgm_id: u16, _entry: &[u8], _fade_frames: u16) {
+        self.last = Some(bgm_id);
+        self.held = false;
+    }
+    fn start_pack_track(
+        &mut self,
+        bgm_id: u16,
+        _clip: legaia_engine_expansion::audio::PackClip<'_>,
+        _fade_frames: u16,
+    ) {
+        self.last = Some(bgm_id);
+        self.held = false;
+    }
     // The comparand is the id the scripts selected (retail's track-select
     // word is written by the op-0x35 start arms). A control op starts no
     // track, so it keeps `last` and only moves `held`.

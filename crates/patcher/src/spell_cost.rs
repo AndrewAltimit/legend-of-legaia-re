@@ -15,11 +15,11 @@
 //! internal-tier entry never gains a cost. The table lives in `SCUS_942.54`, so
 //! the edit is a same-size in-place SCUS patch (like the steal randomizer).
 
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::rng::SplitMix64;
 
-/// Re-exported [`crate::drops::DropMode`] so the MP-cost pass shares the CLI's
+/// An alias of [`legaia_randomizer::drops::DropMode`] so the MP-cost pass shares the CLI's
 /// `shuffle` / `random` vocabulary.
-pub use crate::drops::DropMode as StatMode;
+pub type StatMode = legaia_randomizer::drops::DropMode;
 
 /// Plan an MP-cost randomization over `current` (the costs of the randomizable
 /// spells, in id order). Deterministic in `(current, seed, mode)`.

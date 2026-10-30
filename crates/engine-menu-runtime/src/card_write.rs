@@ -239,11 +239,77 @@ fn write_save_into_block(
         .map_err(|e| format!("{e}"))?;
     }
     card.dirty = true;
+    // An ironman run keeps one save: every other save of the run goes.
+    let run_id = ironman_run_id(sf);
+    if run_id != 0 {
+        ironman_erase_run(card, run_id, Some(block));
+    }
     Ok(CardWrite {
         save_slot,
         ext_written,
         claimed: !was_active,
     })
+}
+
+/// The ironman run id `sf` carries (`0` for a save of no ironman run).
+pub fn ironman_run_id(sf: &SaveFile) -> u64 {
+    sf.ext_v2
+        .run_rules
+        .as_deref()
+        .and_then(legaia_engine_run_rules::save::RunSave::decode)
+        .map_or(0, |r| r.run_id)
+}
+
+/// The save numbers on `card` that belong to ironman run `run_id`.
+pub fn ironman_saves(card: &MountedCard, run_id: u64) -> Vec<usize> {
+    if run_id == 0 {
+        return Vec::new();
+    }
+    (0..crate::card_write::SAVE_NUMBERS)
+        .filter(|&n| {
+            card.save_numbered(n)
+                .is_some_and(|(sf, _)| ironman_run_id(&sf) == run_id)
+        })
+        .collect()
+}
+
+/// The save numbers a card can file.
+pub const SAVE_NUMBERS: usize = legaia_save::card::DIR_FRAMES;
+
+/// Erase every save of ironman run `run_id` from `card` but the one in
+/// block `keep`. Returns how many went; the card is dirty when any did.
+pub fn ironman_erase_run(card: &mut MountedCard, run_id: u64, keep: Option<u8>) -> usize {
+    let mut erased = 0;
+    for n in ironman_saves(card, run_id) {
+        let Some(block) = card.block_of_save_number(n) else {
+            continue;
+        };
+        if Some(block) != keep && card.erase_save_block(block).is_ok() {
+            erased += 1;
+        }
+    }
+    erased
+}
+
+/// An ironman run's autosave: `sf` written over the run's own save, or into
+/// the lowest save number the card has free. `Ok(None)` when `sf` is no
+/// ironman run's.
+pub fn ironman_autosave(
+    card: &mut MountedCard,
+    sf: &SaveFile,
+    resume: &SaveResume,
+    index: Option<&legaia_engine_scene::scene::ProtIndex>,
+) -> Result<Option<CardWrite>, String> {
+    let run_id = ironman_run_id(sf);
+    if run_id == 0 {
+        return Ok(None);
+    }
+    let cell = ironman_saves(card, run_id)
+        .first()
+        .copied()
+        .or_else(|| (0..SAVE_NUMBERS).find(|&n| card.block_of_save_number(n).is_none()))
+        .ok_or_else(|| "card is full".to_string())?;
+    write_save_into_cell(card, cell as u8, sf, resume, index).map(Some)
 }
 
 #[cfg(test)]
@@ -286,6 +352,52 @@ mod tests {
     /// A Save into a free block of a blank card claims the block, files it
     /// under the block's preferred number, and reads back through the same
     /// `save_at` both hosts' Load uses - resume point included.
+    /// An ironman run keeps one save: a second save of the run erases the
+    /// first, an autosave lands on the run's own save, and the wipe's erase
+    /// leaves the card with no save of the run. A save of no run is never
+    /// touched.
+    #[test]
+    fn ironman_keeps_one_save_and_a_wipe_erases_it() {
+        let resume = SaveResume {
+            scene: "town01".into(),
+            location: "Rim Elm".into(),
+        };
+        let mut card = blank_card();
+        let plain = a_save();
+        write_save_into_cell(&mut card, 4, &plain, &resume, None).unwrap();
+        let mut run = plain.clone();
+        let body = legaia_engine_run_rules::save::RunSave {
+            rules: legaia_engine_run_rules::rules::RunRules {
+                ironman: Some(Default::default()),
+                ..Default::default()
+            },
+            run_id: 77,
+            ..Default::default()
+        };
+        run.ext_v2.run_rules = body.encode();
+        assert_eq!(ironman_run_id(&run), 77);
+        assert_eq!(ironman_run_id(&plain), 0);
+        write_save_into_cell(&mut card, 0, &run, &resume, None).unwrap();
+        write_save_into_cell(&mut card, 1, &run, &resume, None).unwrap();
+        assert_eq!(
+            ironman_saves(&card, 77),
+            vec![1],
+            "the run keeps its newest save"
+        );
+        assert!(card.save_numbered(4).is_some(), "another save is untouched");
+        let w = ironman_autosave(&mut card, &run, &resume, None)
+            .unwrap()
+            .unwrap();
+        assert_eq!(w.save_slot, 1, "the autosave lands on the run's save");
+        assert_eq!(
+            ironman_autosave(&mut card, &plain, &resume, None).unwrap(),
+            None
+        );
+        assert_eq!(ironman_erase_run(&mut card, 77, None), 1);
+        assert!(ironman_saves(&card, 77).is_empty());
+        assert!(card.save_numbered(4).is_some());
+    }
+
     #[test]
     fn a_free_block_write_round_trips_through_the_load_path() {
         let mut card = blank_card();

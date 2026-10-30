@@ -1,0 +1,33 @@
+[package]
+name = "legaia-engine-netplay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_engine_netplay"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-anm.workspace = true
+legaia-engine-core.workspace = true
+legaia-engine-expansion.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-modes.workspace = true
+legaia-engine-scene-host.workspace = true
+legaia-engine-system.workspace = true
+legaia-engine-ui.workspace = true
+legaia-font.workspace = true
+legaia-render-kernels.workspace = true
+legaia-expansion-format.workspace = true
+legaia-netplay.workspace = true
+legaia-tmd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

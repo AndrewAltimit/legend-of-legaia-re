@@ -785,7 +785,7 @@ fn with_the_toggle_off_nothing_this_feature_touches_moves() {
         &mut patcher,
         &[],
         0xC0FFEE,
-        legaia_patcher::drops::DropMode::Shuffle,
+        legaia_randomizer::drops::DropMode::Shuffle,
     )
     .expect("drop shuffle");
     let img = patcher.into_image();

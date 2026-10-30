@@ -1,0 +1,16 @@
+# The duel at `duel_room`'s table: the player looks east (sector 6) across
+# the board at Noa; Gala watches from the far wall.
+[[card_duels]]
+id = "table-duel"
+name = "Table Duel"
+deck = ["d-fen", "d-storm", "d-shell", "d-ram", "d-maw"]
+ai_tier = "regular"
+elemental_cells = true
+chain = true
+map = "duel_room"
+
+[card_duels.table]
+tile = [5, 4]
+facing = 6
+opponent = { npc = "rival_noa", name = "Noa" }
+spectators = [{ npc = "fan_gala" }]

@@ -23,6 +23,7 @@ Run from the repo root:
     python3 site/_gen.py
 """
 from __future__ import annotations
+import base64
 import hashlib
 import html
 import json
@@ -83,6 +84,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "magic": "Legend of Legaia Seru Magic & Summons - Every Cast in 3D",
     "tooling/rom-patcher": "Legend of Legaia Randomizer - In-Browser ROM Patcher",
     "tooling/translation-workbench": "Legend of Legaia Translation Workbench - Edit a Language Pack in the Browser",
+    "tooling/expansion-workbench": "Legend of Legaia Expansion Workbench - Build an Expansion Pack in the Browser",
     "guides/vrchat-world": "Legend of Legaia in VRChat - Build a World from Your Own Disc",
     "guides/desktop-apps": "Legaia Explorer and the Native Legend of Legaia Port - Download and Run",
 }
@@ -167,6 +169,12 @@ DESCRIPTIONS: dict[str, str] = {
         "how much room every name, label and scene has, and download a "
         "shareable pack. The disc never leaves your machine."
     ),
+    "tooling/expansion-workbench": (
+        "Build a Legend of Legaia expansion pack in your browser: new monsters, "
+        "bosses, quests, dialogue, trading cards, game modes and tile-painted "
+        "maps, validated against your own disc and exported as one shareable "
+        ".lxpack. The disc never leaves your machine."
+    ),
     "quickstart": (
         "Get started with the Legend of Legaia RE tools: extract every asset "
         "from your disc, view them interactively, and boot the engine port "
@@ -211,7 +219,7 @@ DESCRIPTIONS: dict[str, str] = {
 APP_PAGE_KEYS: set[str] = {
     "play", "viewer", "media", "minigames", "monsters", "characters",
     "npcs", "world-overview", "disc-map", "tooling/rom-patcher",
-    "tooling/translation-workbench",
+    "tooling/translation-workbench", "tooling/expansion-workbench",
 }
 
 
@@ -407,6 +415,7 @@ WIDE_PAGES: set[str] = {
     "reference/scene-names",
     "tooling/rom-patcher",
     "tooling/translation-workbench",
+    "tooling/expansion-workbench",
 }
 
 # Wide pages that are long-form prose with one wide exhibit. They keep the
@@ -596,6 +605,11 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/modding-and-translation.html","Modding and translation", "guides/modding-and-translation","guides/modding-and-translation.html"),
     ("guides/translating.html",    "Translating the game",           "guides/translating",         "guides/translating.html"),
     ("guides/vrchat-world.html",   "Importing a world into VRChat",  "guides/vrchat-world",        "guides/vrchat-world.html"),
+    ("guides/expansion-packs.html", "Expansion packs",               "guides/expansion-packs",     "guides/expansion-packs.html"),
+    ("guides/playing-expansion-packs.html", "Playing an expansion pack", "guides/playing-expansion-packs", "guides/playing-expansion-packs.html"),
+    ("guides/making-expansion-packs.html", "Making an expansion pack", "guides/making-expansion-packs", "guides/making-expansion-packs.html"),
+    ("guides/playing-online.html", "Playing online",                 "guides/playing-online",      "guides/playing-online.html"),
+    ("guides/rebirth.html",        "Legend of Legaia: Rebirth",      "guides/rebirth",             "guides/rebirth.html"),
     # Technical write-ups (narrative deep-dives)
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
     ("writeups/gaza-orbit-softlock.html", "The endless camera orbit - anatomy of a retail softlock", "writeups/gaza-orbit-softlock", "writeups/gaza-orbit-softlock.html"),
@@ -675,6 +689,9 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/cutscene-internals.html","Cutscene: internals",     "subsystems/cutscene-internals","subsystems/cutscene-internals.html"),
     ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
     ("subsystems/gameplay-tweaks.html","Gameplay tweaks",           "subsystems/gameplay-tweaks", "subsystems/gameplay-tweaks.html"),
+    ("subsystems/expansion-modes.html","Expansion game modes",      "subsystems/expansion-modes", "subsystems/expansion-modes.html"),
+    ("subsystems/run-rules.html",  "Run rules",                     "subsystems/run-rules",       "subsystems/run-rules.html"),
+    ("subsystems/netplay.html",    "Netplay",                       "subsystems/netplay",         "subsystems/netplay.html"),
     ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
     # Per-format pages (mirrored from docs/formats/)
     ("formats/disc.html",          "PSX disc geometry",             "formats/disc",               "formats/disc.html"),
@@ -734,6 +751,15 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/steal-table.html",   "Steal table",                   "formats/steal-table",        "formats/steal-table.html"),
     ("formats/new-game-table.html","New-game party template",       "formats/new-game-table",     "formats/new-game-table.html"),
     ("formats/summon-readef.html", "summon.dat / readef.DAT slots", "formats/summon-readef",      "formats/summon-readef.html"),
+    # The port's own formats
+    ("formats/expansion-pack.html", "Expansion packs: format",      "formats/expansion-pack",     "formats/expansion-pack.html"),
+    ("formats/expansion-pack-battle.html", "Expansion packs: battles", "formats/expansion-pack-battle", "formats/expansion-pack-battle.html"),
+    ("formats/expansion-pack-quests.html", "Expansion packs: quests", "formats/expansion-pack-quests", "formats/expansion-pack-quests.html"),
+    ("formats/expansion-pack-cutscenes.html", "Expansion packs: cutscenes", "formats/expansion-pack-cutscenes", "formats/expansion-pack-cutscenes.html"),
+    ("formats/expansion-pack-maps.html", "Expansion packs: maps",   "formats/expansion-pack-maps", "formats/expansion-pack-maps.html"),
+    ("formats/expansion-pack-items.html", "Expansion packs: items", "formats/expansion-pack-items", "formats/expansion-pack-items.html"),
+    ("formats/expansion-pack-audio.html", "Expansion packs: audio", "formats/expansion-pack-audio", "formats/expansion-pack-audio.html"),
+    ("formats/expansion-pack-arts.html", "Expansion packs: arts and Seru", "formats/expansion-pack-arts", "formats/expansion-pack-arts.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
     # Per-tooling pages (mirrored from docs/tooling/)
     ("tooling/extraction.html",    "Extraction CLIs",               "tooling/extraction",         "tooling/extraction.html"),
@@ -761,6 +787,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/address-reference-scan.html","Address-reference scan","tooling/address-reference-scan","tooling/address-reference-scan.html"),
     ("tooling/rom-patcher.html",   "ROM patcher (in browser)",      "tooling/rom-patcher",        "tooling/rom-patcher.html"),
     ("tooling/translation-workbench.html","Translation workbench",   "tooling/translation-workbench","tooling/translation-workbench.html"),
+    ("tooling/expansion-workbench.html","Expansion workbench",       "tooling/expansion-workbench","tooling/expansion-workbench.html"),
     ("reference/index.html",       "Reference",                     "reference/index",            "reference/index.html"),
     ("reference/functions.html",   "Key functions",                 "reference/functions",        "reference/functions.html"),
     ("reference/memory-map.html",  "PSX RAM map",                   "reference/memory-map",       "reference/memory-map.html"),
@@ -1670,6 +1697,210 @@ def build_image_port_status() -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# The Rebirth showcase's content tables, read from packs/rebirth/ at build
+# time so the page cannot fall behind the pack. Only the pack's own text
+# (names, titles, descriptions) and its coordinates are shown - a retail
+# monster is named by its archive id, as the pack itself names it.
+
+REBIRTH_DIR = REPO_ROOT / "packs" / "rebirth"
+
+
+def _pack_toml(name: str) -> dict:
+    path = REBIRTH_DIR / name
+    if not path.exists():
+        return {}
+    with path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _scene_display(label: str) -> str:
+    for r in CDNAME_SCENES:
+        if r["label"] == label:
+            return f"{_esc(r['display'])} (<code>{_esc(label)}</code>)"
+    return f"<code>{_esc(label)}</code>"
+
+
+def _stat_text(v) -> str:
+    if isinstance(v, dict) and "mul" in v:
+        return f"x{v['mul']:g}"
+    return f"{v:,}" if isinstance(v, int) else _esc(str(v))
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}" + ("" if n == 1 else "s")
+
+
+def _table(head: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return '<p class="hint">None in this version of the pack.</p>'
+    th = "".join(f"<th>{h}</th>" for h in head)
+    body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    return f"<table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def build_rebirth_contents() -> str:
+    """The <!--REBIRTH_CONTENTS--> expansion: what packs/rebirth holds."""
+    if not (REBIRTH_DIR / "pack.toml").exists():
+        return '<p class="hint">The Rebirth pack is not in this checkout.</p>'
+    manifest = _pack_toml("pack.toml")
+    battle = _pack_toml("battle.toml")
+    prog = _pack_toml("progression.toml")
+    quests = _pack_toml("quests.toml")
+    dialog = _pack_toml("dialog.toml")
+    cards = _pack_toml("cards.toml")
+    modes = _pack_toml("modes.toml")
+    maps = []
+    for f in sorted((REBIRTH_DIR / "maps").glob("*.toml")):
+        with f.open("rb") as fh:
+            maps.append((f.stem, tomllib.load(fh)))
+
+    monsters = battle.get("monsters", {})
+    formations = battle.get("formations", {})
+    bosses = battle.get("bosses", {})
+    card_list = cards.get("cards", [])
+    mode_kinds = [("poker", "Poker table"), ("card_duels", "Grid Duel"), ("golf", "Golf course"),
+                  ("races", "Race track"), ("prop_hunt", "Prop-hunt arena")]
+    mode_rows = [(label, m) for key, label in mode_kinds for m in modes.get(key, [])]
+
+    out = [f'<p class="dg-note">Generated from <code>packs/rebirth/</code> at site build: '
+           f'{_esc(manifest.get("name", "rebirth"))} version {_esc(str(manifest.get("version", "?")))}'
+           + (f', licensed {_esc(manifest["license"])}' if manifest.get("license") else "") + ".</p>"]
+    tiles = [
+        (len(monsters), "monsters"), (len(formations), "formations"), (len(bosses), "bosses"),
+        (len(quests.get("quests", [])), "quests"), (len(quests.get("challenges", [])), "challenges"),
+        (len(dialog.get("lines", {})), "lines"), (len(card_list), "cards"),
+        (len(mode_rows), "modes"), (len(maps), "maps"),
+    ]
+    out.append('<div class="byte-map">' + "".join(
+        f'<div class="bm-cell{" bm-accent" if n else " bm-dim"}" style="--w:1"><span class="bm-name">{n}</span>'
+        f'<span class="bm-size">{lbl}</span></div>' for n, lbl in tiles) + "</div>")
+
+    # Monsters
+    rows = []
+    for key, m in monsters.items():
+        base = m.get("base", {})
+        changed = [f"{k} {_stat_text(m[k])}" for k in
+                   ("hp", "mp", "attack", "defence", "speed", "intelligence", "exp", "gold") if k in m]
+        rows.append([_esc(m.get("name", key)), f"monster&nbsp;{base.get('id', '?')}", ", ".join(changed)])
+    out.append('<h3 id="rebirth-monsters">Monsters</h3>')
+    out.append(_table(["Name", "Built on", "Changes"], rows))
+
+    # Formations and bosses
+    rows = []
+    for key, f in formations.items():
+        names = [monsters.get(x, {}).get("name", x) if isinstance(x, str) else f"monster {x.get('id', '?')}"
+                 for x in f.get("monsters", [])]
+        waves = f.get("waves", [])
+        extra = sum(w.get("count", len(w.get("monsters", []))) for w in waves)
+        rows.append([_esc(f.get("label", key)), _esc(", ".join(names)),
+                     f"{len(waves)} more, {extra} monsters" if waves else "-",
+                     "boss" if any(b.get("formation") == key for b in bosses.values()) else ""])
+    out.append('<h3 id="rebirth-formations">Formations</h3>')
+    out.append(_table(["Formation", "Opening seats", "Waves", ""], rows))
+    enc = battle.get("encounters", [])
+    if enc:
+        rows = [[_scene_display(e.get("scene", "")) if any(r["label"] == e.get("scene") for r in CDNAME_SCENES)
+                 else f"map table <code>{_esc(e.get('scene', ''))}</code>",
+                 _esc(", ".join(formations.get(x.get("formation"), {}).get("label", x.get("formation", ""))
+                                for x in e.get("formations", []))),
+                 "pack steps " + "-".join(str(v) for v in e["steps"]) if "steps" in e
+                 else f"retail rate, retail weight {e.get('retail_weight', 0)}"]
+                for e in enc]
+        out.append('<h3 id="rebirth-encounters">Encounters</h3>')
+        out.append(_table(["Where", "Formations", "Rate"], rows))
+
+    # Progression
+    curve = prog.get("xp_curve", {})
+    items = []
+    if prog.get("xp_mul"):
+        items.append(f"EXP x{prog['xp_mul']:g}")
+    if prog.get("gold_mul"):
+        items.append(f"gold x{prog['gold_mul']:g}")
+    if curve.get("kind") == "banded":
+        items.append("XP curve: retail steps, then " + ", ".join(
+            f"x{b['mul']:g} from level {b['from_level']}" for b in curve.get("bands", [])))
+    elif curve.get("kind"):
+        items.append(f"XP curve: {_esc(curve['kind'])}")
+    es = prog.get("enemy_scaling")
+    if es:
+        items.append(f"pack enemies grow {es.get('per_level', 0) * 100:g}% a level past level {es.get('from_level')}, "
+                     f"up to x{es.get('max_mul', 1):g}" + (", rewards too" if es.get("rewards") else ""))
+    lv = prog.get("level_rewards", [])
+    if lv:
+        items.append("item rewards at levels " + ", ".join(str(r["level"]) for r in lv))
+    if items:
+        out.append('<h3 id="rebirth-progression">Progression</h3>')
+        out.append('<ul class="bullets">' + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
+
+    # Quests and challenges
+    rows = []
+    for q in quests.get("quests", []):
+        pre = q.get("prerequisites", {})
+        gate = []
+        if pre.get("min_level"):
+            gate.append(f"level {pre['min_level']}")
+        gate += [next((x.get("title", x["id"]) for x in quests.get("quests", []) if x["id"] == r), r)
+                 for r in pre.get("quests", [])]
+        obj = "; ".join(o.get("text", o.get("kind", "")) for o in q.get("objectives", []))
+        rows.append([_esc(q.get("title", q["id"])), _esc(", ".join(gate)) or "-", _esc(obj)])
+    out.append('<h3 id="rebirth-quests">Quests</h3>')
+    out.append(_table(["Quest", "Opens after", "Objectives"], rows))
+    ch = quests.get("challenges", [])
+    if ch:
+        out.append(_table(["Challenge", "Rules"], [[_esc(c.get("title", c["id"])), _esc(c.get("description", ""))]
+                                                    for c in ch]))
+
+    # Cards
+    if card_list:
+        by_rarity: dict[str, int] = {}
+        for c in card_list:
+            by_rarity[c.get("rarity", "common")] = by_rarity.get(c.get("rarity", "common"), 0) + 1
+        out.append('<h3 id="rebirth-cards">Trading cards</h3>')
+        out.append("<p>" + f"{len(card_list)} cards: " + ", ".join(
+            f"{n} {r}" for r, n in sorted(by_rarity.items(), key=lambda kv: ["common", "uncommon", "rare", "legendary"].index(kv[0])
+                                          if kv[0] in ["common", "uncommon", "rare", "legendary"] else 9))
+                   + f"; {_count(len(cards.get('boosters', [])), 'booster')}, {_count(len(cards.get('dealers', [])), 'dealer')}, "
+                   f"{_count(len(cards.get('rewards', [])), 'reward rule')}.</p>")
+        out.append(_table(["Booster", "Cards a pack", "Price"],
+                          [[_esc(b.get("name", b["id"])), str(b.get("cards_per_pack", "")),
+                            f"{b['price']:,} gold" if b.get("price") else "not sold"]
+                           for b in cards.get("boosters", [])]))
+
+    # Cutscenes
+    scenes = _pack_toml("cutscenes.toml").get("cutscenes", {})
+    if scenes:
+        out.append('<h3 id="rebirth-cutscenes">Cutscenes</h3>')
+        out.append(_table(["Cutscene", "Plays on", "Steps"],
+                          [[_esc(c.get("title", cid)), _esc(c.get("map", "any scene")),
+                            str(len(c.get("steps", [])) + sum(len(t.get("steps", [])) for t in c.get("tracks", {}).values()))]
+                           for cid, c in scenes.items()]))
+
+    # Modes
+    out.append('<h3 id="rebirth-modes">Game modes</h3>')
+    out.append(_table(["Instance", "Mode"], [[_esc(m.get("name", m.get("id", ""))), label] for label, m in mode_rows]))
+
+    # Maps
+    rows = []
+    for stem, m in maps:
+        base = m.get("base", {}).get("scene", {}).get("name", "")
+        size = m.get("size") or [max((len(r) for r in m.get("tiles", {}).get("rows", [])), default=0),
+                                 len(m.get("tiles", {}).get("rows", []))]
+        ways = []
+        for e in m.get("entrances", []):
+            req = e.get("requires", {})
+            gate = f", level {req['min_level']}+" if req.get("min_level") else ""
+            ways.append(f"from {_scene_display(e.get('scene', {}).get('name', ''))}{gate}")
+        rows.append([_esc(m.get("name", stem)), f"{size[0]}&nbsp;x&nbsp;{size[1]}", _scene_display(base),
+                     ", ".join(_count(len(m.get(k, [])), noun) for k, noun in
+                               (("props", "prop"), ("npcs", "NPC"), ("triggers", "trigger"),
+                                ("encounters", "encounter zone"))),
+                     "; ".join(ways) or "Travel page"])
+    out.append('<h3 id="rebirth-maps">Maps</h3>')
+    out.append(_table(["Map", "Tiles", "Scenery from", "Holds", "Way in"], rows))
+    return "\n".join(out)
+
+
 def build_disc_patching_table() -> str:
     """Render the mod -> technique-tier master table for the disc-patching
     write-up index from `mods.toml`, grouped by tier in ladder order. Returns
@@ -1904,6 +2135,34 @@ def write_gitignore(generated: list[str]) -> None:
     (ROOT / ".gitignore").write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
+# Example expansion packs the workbench offers, by directory under packs/.
+EXAMPLE_PACKS = ("rebirth",)
+
+
+def build_example_packs() -> list[str]:
+    """Write site/packs/<id>.json for each example pack: every file of the
+    pack tree, text as UTF-8 and anything else as base64, in path order."""
+    out_paths: list[str] = []
+    for pack_id in EXAMPLE_PACKS:
+        src = REPO_ROOT / "packs" / pack_id
+        if not src.is_dir():
+            continue
+        files = []
+        for f in sorted(p for p in src.rglob("*") if p.is_file()):
+            rel = f.relative_to(src).as_posix()
+            data = f.read_bytes()
+            try:
+                files.append({"path": rel, "text": data.decode("utf-8")})
+            except UnicodeDecodeError:
+                files.append({"path": rel, "base64": base64.b64encode(data).decode("ascii")})
+        out = ROOT / "packs" / f"{pack_id}.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"id": pack_id, "files": files}, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        out_paths.append(f"packs/{pack_id}.json")
+        print(f"  wrote packs/{pack_id}.json")
+    return out_paths
+
+
 def main() -> int:
     written = 0
     search_index: list[dict] = []
@@ -1947,6 +2206,8 @@ def main() -> int:
             body = body.replace("<!--PROGRESS_METER-->", progress_meter)
         if "<!--IMAGE_PORT_STATUS-->" in body:
             body = body.replace("<!--IMAGE_PORT_STATUS-->", image_port_status)
+        if "<!--REBIRTH_CONTENTS-->" in body:
+            body = body.replace("<!--REBIRTH_CONTENTS-->", build_rebirth_contents())
 
         # Build search index entries from body fragment (first entry carries
         # the page's lede paragraph, which doubles as the meta description).
@@ -1966,6 +2227,11 @@ def main() -> int:
         written += 1
         generated.append(out_path)
         print(f"  wrote {out_path}")
+
+    # The expansion workbench's example pack: packs/<id>/ as one JSON
+    # document the page loads like a picked folder. The packs are the
+    # project's own content, not disc data.
+    generated.extend(build_example_packs())
 
     # Write search-index.json
     idx_path = ROOT / "search-index.json"

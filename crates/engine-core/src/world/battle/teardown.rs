@@ -147,6 +147,10 @@ impl World {
                 self.battle.spoils_frames = Self::SPOILS_BANNER_FRAMES;
             }
         }
+        // The spoils are paid: hand the scene's monsters back their catalog
+        // entries and drop any pack boss staging.
+        self.expansion_end_battle();
+        self.run_rules_end_battle();
         self.battle.victory = None;
         // The fade actor dies with the battle scene: the held black of the
         // exit / escape template (`holds_at_end`) comes down here, never in
@@ -164,6 +168,8 @@ impl World {
         // is the game over. `wipe_to_title` is `true` only on that arm; a
         // wipe under the latch takes the ordinary field return below.
         let survived = self.battle.end != Some(BattleEndCause::PartyWipe);
+        // A Boss Rush stage's fight moves the run on.
+        self.boss_rush_battle_finished(self.battle.end == Some(BattleEndCause::MonsterWipe));
         let wipe_to_title = !dome_leg && {
             let ret = legaia_engine_battle::battle_return_flags::apply_battle_return_flags(
                 &mut WorldFlagBank(self),
@@ -173,12 +179,17 @@ impl World {
         };
         if wipe_to_title {
             self.game_over = true;
+            // An ironman run's save goes with the party.
+            self.run_rules_party_fell();
         }
         // The same arm takes twenty seconds off a running escape clock
         // (`0x8003B62C..0x8003B648`), on every arm of it.
         if !dome_leg {
             self.battle.escape_timer.field_return_penalty();
         }
+        // An active expansion pack's battle objectives and challenge read
+        // the outcome while the formation is still seated.
+        self.expansion_battle_ended();
         self.battle.active_formation = None;
         self.battle.end = None;
         // Drop the battle seat anchors - the next battle's setup re-seats
@@ -385,6 +396,8 @@ impl World {
         self.battle.victory = None;
         self.battle.end = None;
         self.battle.loot_applied = false;
+        self.expansion_end_battle();
+        self.run_rules_end_battle();
         self.battle.spoils_frames = 0;
         self.battle.result_windows_glide = None;
         self.battle.inflight_seed = None;

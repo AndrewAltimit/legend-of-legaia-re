@@ -59,6 +59,10 @@ mod hud;
 mod menu_draws;
 #[path = "window/minigames.rs"]
 mod minigames;
+#[path = "window/netplay.rs"]
+mod netplay;
+#[path = "window/pack_reload.rs"]
+mod pack_reload;
 #[path = "window/record.rs"]
 mod record;
 #[path = "window/run.rs"]
@@ -73,6 +77,7 @@ mod session_steps;
 mod str_player;
 #[path = "window/title_save_draws.rs"]
 mod title_save_draws;
+pub use netplay::NetLaunch;
 
 pub use record::cmd_record;
 use record::{RecordLog, RecordTarget};

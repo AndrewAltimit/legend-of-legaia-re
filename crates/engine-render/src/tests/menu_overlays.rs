@@ -880,6 +880,7 @@ fn tactical_arts_editor_draws_browsing_lists_saved_chains() {
         max_len: 7,
         naming_name: "",
         can_add_new: true,
+        pack_arts: &[],
     };
     let draws = tactical_arts_editor_draws_for(&font, args, (16, 32));
     assert!(!draws.is_empty());
@@ -899,6 +900,7 @@ fn tactical_arts_editor_draws_editing_shows_running_sequence() {
         max_len: 7,
         naming_name: "",
         can_add_new: true,
+        pack_arts: &[],
     };
     let draws = tactical_arts_editor_draws_for(&font, args, (16, 32));
     // Editing emits at least: title, sequence line, two hint lines.
@@ -919,6 +921,7 @@ fn tactical_arts_editor_draws_naming_shows_name_and_sequence() {
         max_len: 7,
         naming_name: "Combo A",
         can_add_new: true,
+        pack_arts: &[],
     };
     let draws = tactical_arts_editor_draws_for(&font, args, (16, 32));
     assert!(!draws.is_empty());
@@ -950,6 +953,7 @@ fn tactical_arts_editor_draws_browse_no_new_when_full() {
             max_len: 7,
             naming_name: "",
             can_add_new: true,
+            pack_arts: &[],
         },
         (16, 32),
     );
@@ -966,6 +970,7 @@ fn tactical_arts_editor_draws_browse_no_new_when_full() {
             max_len: 7,
             naming_name: "",
             can_add_new: false,
+            pack_arts: &[],
         },
         (16, 32),
     );

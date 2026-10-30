@@ -369,6 +369,9 @@ impl World {
     /// scripted-battle install ([`Self::trigger_scripted_battle`]).
     pub fn trigger_field_interact(&mut self, interact_id: u8, slot: u8) {
         self.dialog.last_field_interact = Some((interact_id, slot));
+        // An active expansion pack hears the talk (`<scene>:<slot>`); the
+        // identity with none.
+        self.expansion_retail_npc_talked(slot);
         // The touch post's tail call (`FUN_801D5B5C` -> `jal 0x8003C9AC` at
         // `0x801D5BF0`): every moving-class walker is asked for its standing
         // move as the interaction engages, whatever the interaction is.
@@ -383,6 +386,10 @@ impl World {
         // snap (`town0c` `P1[21]`, Nene's "Bees!" beat, turns to the player
         // before the Queen Bee ambush).
         self.face_field_npc_at_player(slot);
+        // A pack map's NPC talks through the pack, not a MAN record.
+        if self.expansion_npc_interact(interact_id, slot) {
+            return;
+        }
         // A boss-stager placement (rikuroa's Caruban stager P1[3]): the
         // approach / interact runs the placement's own partition-1 record
         // through the field VM - the engine mirror of retail's touch

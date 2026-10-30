@@ -1,0 +1,143 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs: cutscenes</div>
+  <h1>Expansion packs: cutscenes</h1>
+  <p class="lede"><code>cutscenes.toml</code> holds an <a href="expansion-pack.html">expansion pack</a>'s scripted scenes: a camera rising up a hall, an NPC walking to meet the party, a line, a choice that branches, a fade, a fight. Each is a list of named steps that a small deterministic sequencer runs frame by frame, with named tracks running beside the main one. Every hook is the identity with no pack active: no cutscene can start, nothing locks the player, and the camera, the screen layer and the save gates read as before.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>File</dt><dd><code>cutscenes.toml</code> at the pack root; optional.</dd>
+    <dt>Parser</dt><dd><code>legaia_expansion_format::cutscene</code> (the step shapes, the reachability and spin checks, the validator rules).</dd>
+    <dt>Runtime</dt><dd>The sequencer <code>legaia_engine_expansion::cutscene</code> (<code>CutsceneRun</code>, its camera and screen layer, the workbench's <code>preview</code>); <code>engine-core</code>'s <code>world::expansion_cutscene</code> runs its commands on the <code>World</code>.</dd>
+    <dt>Hosts</dt><dd>Both play hosts frame the shot through <code>camera_view::pack_cutscene_view</code> and draw the fades and letterbox through <code>screen_layers::expansion_cutscene_prims</code>; nothing of a cutscene is host-side.</dd>
+    <dt>Ids</dt><dd>Declares <code>cutscene</code>; references <code>line</code>, <code>formation</code>, <code>boss</code>, <code>quest</code>, <code>map</code>.</dd>
+    <dt>Seen flag</dt><dd><code>cutscene.&lt;id&gt;</code>, a pack flag saved with the pack's progress.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="why" data-doc="why-a-step-list-not-field-vm-bytecode">
+  <h2>Why a step list, not field-VM bytecode</h2>
+  <p>Retail's own cutscenes are field-VM records (<a href="../subsystems/cutscene.html">cutscenes</a>): camera beats through op <code>0x45</code>, actor moves, inline dialogue, flag ops. A pack cutscene is a list of named steps on a sequencer of its own instead, for three reasons:</p>
+  <ul class="bullets">
+    <li><strong>A pack never writes a retail story flag.</strong> Field-VM bytecode reaches the flag bank, the scene control block and every placement's script state; a step list has no op for any of them, and its flags are pack flags, exactly as a pack dialogue line's are.</li>
+    <li><strong>It is checked as a whole.</strong> Every actor, line, label, track, flag, fight and tile is known before the cutscene runs, so the validator refuses a broken one.</li>
+    <li><strong>It is written by hand and edited in the workbench.</strong> A step reads as what it does; the workbench's step-list editor is a form over the same shape.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="cutscenestoml" data-doc="cutscenestoml">
+  <h2><code>cutscenes.toml</code></h2>
+<pre><code>[cutscenes.tower_intro]
+title = "The Tower Wakes"
+map = "rebirth_tower_1f"
+letterbox = true
+
+[[cutscenes.tower_intro.steps]]
+do = "camera"
+focus = { tile = [7, 11] }
+pitch = -14.0
+zoom = 0.55
+
+[[cutscenes.tower_intro.steps]]
+do = "start_track"
+track = "crane"
+
+[[cutscenes.tower_intro.steps]]
+do = "say"
+line = "intro_hall"
+
+[[cutscenes.tower_intro.tracks.crane.steps]]
+do = "camera"
+focus = { tile = [7, 1] }
+zoom = 2.3
+frames = 300</code></pre>
+  <table>
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>title</code></td><td>Display title.</td></tr>
+      <tr><td><code>map</code></td><td>The pack map it plays on: its tiles and NPCs, and the engine refuses it elsewhere. Without it, tiles are the scene's field-grid tiles and actors the player and <code>retail:&lt;slot&gt;</code>.</td></tr>
+      <tr><td><code>skippable</code></td><td>Start skips it once seen (default on).</td></tr>
+      <tr><td><code>lock_player</code></td><td>The player is held throughout (default on).</td></tr>
+      <tr><td><code>letterbox</code></td><td>Cinematic bars while it runs.</td></tr>
+      <tr><td><code>steps</code></td><td>The main track; the cutscene ends when it does.</td></tr>
+      <tr><td><code>tracks.&lt;name&gt;.steps</code></td><td>Tracks a <code>start_track</code> step runs beside it.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="steps" data-doc="steps">
+  <h2>Steps</h2>
+  <p>A step's <code>do</code> key names it. Frames are display frames, 60 a second; a step that takes time accepts <code>wait = false</code> to let the next one start at once.</p>
+  <table>
+    <thead><tr><th><code>do</code></th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>wait</code></td><td>Waits <code>frames</code>.</td></tr>
+      <tr><td><code>say</code></td><td>Shows a line and waits for it to close; <code>on_choice</code> names a label per option.</td></tr>
+      <tr><td><code>move</code></td><td>Walks an actor through <code>to</code> / <code>path</code> tiles (optional <code>speed</code>, <code>run</code>, <code>clip</code>); a leg that would cross a wall goes round it on the collision grid.</td></tr>
+      <tr><td><code>face</code>, <code>clip</code>, <code>teleport</code></td><td>Turn an actor (sector or toward another), play a clip, put it on a tile.</td></tr>
+      <tr><td><code>show</code>, <code>hide</code></td><td>Bring a pack NPC on or take it off.</td></tr>
+      <tr><td><code>camera</code>, <code>camera_reset</code>, <code>shake</code></td><td>Move the shot, ease it back, shake it.</td></tr>
+      <tr><td><code>fade</code>, <code>flash</code>, <code>tint</code></td><td>The screen layer: fade to black / white / clear, a dying flash, a held colour.</td></tr>
+      <tr><td><code>banner</code></td><td>A title across the lower screen in the place-name banner's balloon: a dialog line's first page.</td></tr>
+      <tr><td><code>set_flag</code>, <code>clear_flag</code>, <code>counter</code></td><td>Pack flags and counters.</td></tr>
+      <tr><td><code>label</code>, <code>goto</code>, <code>branch</code></td><td>Jump targets and jumps; a branch reads the quest gate shape and a counter.</td></tr>
+      <tr><td><code>start_track</code>, <code>join</code></td><td>Start a track; wait for one.</td></tr>
+      <tr><td><code>lock</code>, <code>unlock</code></td><td>Hold or free the player midway.</td></tr>
+      <tr><td><code>battle</code>, <code>boss</code></td><td>End on a <code>battle.toml</code> fight.</td></tr>
+      <tr><td><code>give_item</code>, <code>take_item</code>, <code>gold</code>, <code>give_card</code></td><td>Rewards.</td></tr>
+      <tr><td><code>start_quest</code></td><td>Start a quest.</td></tr>
+      <tr><td><code>sfx</code>, <code>bgm</code></td><td>A sound effect from the static table; switch the music.</td></tr>
+      <tr><td><code>sound</code>, <code>music</code>, <code>music_release</code></td><td>A retail cue or pack sound; a held music pick (a pack track too) cross-fading over <code>fade</code> frames; the music back to the map (<a href="expansion-pack-audio.html">audio</a>).</td></tr>
+      <tr><td><code>end</code></td><td>End here.</td></tr>
+    </tbody>
+  </table>
+  <h3>Actors and walks</h3>
+  <p>An actor is <code>"player"</code>, a pack NPC of the cutscene's map, or <code>"retail:&lt;slot&gt;"</code>. The player walks at the pad walk's pace (8 world units a frame, 12 running) and plays its walk clip; an NPC walks each leg on the motion VM. A walk goes straight from stop to stop where that keeps to open ground, and round a wall on the collision grid where it would not; a leg with no way round walks straight. A pack NPC's <code>present</code> gate keeps it off the map until it holds; <code>hide</code> parks it on retail's own off-map hide box, out of every draw, the talk probe and the collision boxes.</p>
+  <h3>Camera</h3>
+  <p>A camera step moves the shot from the follow camera's own: <code>focus</code> replaces the follow focus (a tile, or an actor followed while it moves), <code>yaw</code> and <code>pitch</code> are degrees added to the follow shot's, and <code>zoom</code> scales the eye-space translation so the shot pulls straight back along its line of sight. A glide eases still at both ends; <code>frames = 0</code> cuts. A cutscene that never moves the camera looks exactly like the field.</p>
+</section>
+
+<section class="doc-section" id="hooks" data-doc="hooks">
+  <h2>Hooks</h2>
+  <table>
+    <thead><tr><th>Hook</th><th>Plays</th></tr></thead>
+    <tbody>
+      <tr><td>A map trigger, <code>kind = "cutscene"</code></td><td>When the player steps into the zone (<code>once</code>, <code>requires</code> as usual).</td></tr>
+      <tr><td>A map's <code>enter_cutscenes</code></td><td>On arrival: the first unseen entry whose gate holds, or one with <code>repeat</code>.</td></tr>
+      <tr><td>A pack NPC's <code>cutscene</code></td><td>When the player talks to it, in place of its line.</td></tr>
+      <tr><td>A quest's <code>start_cutscene</code> / <code>complete_cutscene</code></td><td>After the quest's line, once back in the field.</td></tr>
+      <tr><td>A boss's <code>intro</code> / <code>outro</code></td><td>As its fight is called (the fight follows), and back on the field after a win.</td></tr>
+    </tbody>
+  </table>
+  <p>A hook queues the cutscene; it starts on the first field frame with no box open, no fight waiting and no scene change in flight.</p>
+</section>
+
+<section class="doc-section" id="runtime" data-doc="runtime">
+  <h2>Runtime</h2>
+  <p>The sequencer is a deterministic interpreter: each frame it advances its clocks, clears the waits that are over and runs each track to its next wait. It reads the world only through a narrow environment (is this actor walking, is the box closed, which option was picked, does this gate hold) and writes it only through commands, so the same answers give the same commands frame for frame. Each command uses a path the world already has - the faithful dialogue runner for a line, the motion VM for an NPC leg, the pack's queued fight for a battle. While a cutscene holds the player, the one predicate the walk, the talk probe, the menu button and the encounter roll already read answers that the player is engaged; the map's zones and exits fire nothing under it and its patrols pause.</p>
+  <div class="callout callout-tip">
+    <p class="callout-title">Skipping and saves</p>
+    <p>A cutscene seen to the end once raises <code>cutscene.&lt;id&gt;</code>; from then on Start skips it: walks land, glides arrive, unshown lines are skipped, and every flag, item and quest step still happens. A line ending on a menu stops the skip, since the choice is the player's. A cutscene is never a save state: a host save is refused while one runs and the pause menu cannot open; a loaded save starts outside any cutscene.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <ul class="bullets">
+    <li>Errors: an actor or tile the cutscene's map does not have; a line, fight, quest or card that does not exist; <code>on_choice</code> on a line without a menu or with more labels than options; a jump to an undefined label, a label defined twice; a step no flow reaches; a loop that never waits a frame; an unknown track; a malformed <code>face</code>; a zoom, pitch, frame count or shake out of range; a hook naming a missing cutscene, or an arrival cutscene bound to another map.</li>
+    <li>Warnings: a track nothing starts.</li>
+  </ul>
+  <p>The workbench's Cutscenes tab edits the step lists and shows a text timeline of each cutscene played on the engine's own sequencer against a stand-in world (<a href="../tooling/expansion-workbench.html">workbench</a>).</p>
+</section>
+
+<section class="doc-section" id="gaps" data-doc="gaps">
+  <h2>Gaps</h2>
+  <ul class="bullets">
+    <li>The field draws the party leader only, so the other members cannot be moved.</li>
+    <li>The path round a wall is the collision grid's: a prop with no wall bits under it is walked through.</li>
+    <li>A scene change ends a cutscene, so no step changes map midway.</li>
+    <li>A player <code>clip</code> names a clip base of the party bank, not a free animation.</li>
+  </ul>
+  <div class="see-also"><span class="see-also-label">See also</span> <a href="expansion-pack.html">Pack format</a> &middot; <a href="expansion-pack-quests.html">Quests and dialogue</a> &middot; <a href="expansion-pack-maps.html">Maps</a> &middot; <a href="../subsystems/cutscene.html">Retail cutscenes</a> &middot; <a href="../guides/expansion-packs.html">Expansion packs hub</a></div>
+</section>

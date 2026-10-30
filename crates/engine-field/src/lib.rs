@@ -19,6 +19,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod action_movement;
 pub mod actor_colour_tween;
 pub mod actor_handler;
 pub mod actor_look;

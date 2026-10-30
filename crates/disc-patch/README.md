@@ -16,8 +16,6 @@ of them.
 - `space_ledger` - the ledger of the SCUS and overlay regions the code mods
   and the translation importer claim, with the runtime buffers no claim may
   overlap.
-- `rng` - the version-stable `SplitMix64` generator every seeded pass draws
-  from, so a published seed reproduces a run on any build.
 - `man_compressed_budget` / `compress_within` - a scene MAN's stable
   compressed-stream budget and the greedy-then-optimal re-pack every MAN
   writer uses.

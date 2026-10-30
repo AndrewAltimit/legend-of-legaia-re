@@ -447,13 +447,19 @@ impl PlayWindowApp {
             fishing_hud: Vec::new(),
             world_map_markers: self.world_map_marker_prims(),
             world_map_sky: self.world_map_sky_prims(),
+            // An in-world golf round's or race's pieces, through the same
+            // `HostView::pack_mode_world_prims` kernel as the page.
+            pack_mode_world: self.host_view().pack_mode_world_prims(),
         };
-        let (under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
+        let (mut under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
             &self.session.host.world,
             &self.menu_runtime,
             self.session.pause_wipe().fade_level(),
             host,
         );
+        // The multiplayer room screen / roaming panel, over everything else
+        // under the text.
+        under.extend(self.netplay_prims());
         (over, under)
     }
 }

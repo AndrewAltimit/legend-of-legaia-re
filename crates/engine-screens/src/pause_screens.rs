@@ -9,6 +9,7 @@
 //! A host now builds its [`PauseMenuCtx`] and calls one entry per screen.
 
 use legaia_engine_core::world::World;
+use legaia_engine_expansion::journal::{JournalSession, JournalView};
 use legaia_engine_menu_runtime::field_menu_dispatch::{
     self, ArtsEditorPhaseTag, FieldMenuSubsession,
 };
@@ -130,6 +131,15 @@ pub fn field_menu_root_draws(
             party_ap: &party_ap,
         }),
     );
+    if world.expansion.is_active() {
+        out.texts
+            .extend(journal_hint_draws(ctx, world.cards_available()));
+    }
+    // The run's rules (difficulty, New Game+, seed ...), under retail rules
+    // nothing.
+    out.texts.extend(crate::run_rules::run_summary_draws(
+        ctx.font, world, ctx.origin, ctx.scale,
+    ));
     if let Some(message) = refusal {
         out.extend(save_refusal_draws(ctx, message));
     }
@@ -178,8 +188,225 @@ pub fn field_menu_sub_draws(
             Some(w) => arts_editor_draws(ctx, s, w),
             None => PauseMenuDraws::default(),
         },
+        FieldMenuSubsession::Journal { session, view } => journal_draws(ctx, session, view),
     }
 }
+
+/// The expansion pack's Journal (an engine extension), inside the generic
+/// sub-window frame: one page of the [`JournalView`] the session opened on.
+pub fn journal_draws(
+    ctx: &PauseMenuCtx<'_>,
+    session: &JournalSession,
+    view: &JournalView,
+) -> PauseMenuDraws {
+    use legaia_engine_expansion::journal::JournalPage;
+    use legaia_engine_expansion::quest::QuestStatus;
+    struct Row {
+        title: String,
+        tag: String,
+        done: bool,
+        detail: String,
+        objectives: Vec<(String, u32, u32)>,
+        reward: String,
+    }
+    let rows: Vec<Row> = match session.page {
+        JournalPage::Quests => view
+            .quests
+            .iter()
+            .map(|q| Row {
+                title: q.title.clone(),
+                tag: match (q.status, q.completions) {
+                    (QuestStatus::Active, _) => "Active".into(),
+                    (QuestStatus::Completed, n) if n > 1 => format!("Done x{n}"),
+                    (QuestStatus::Completed, _) => "Done".into(),
+                },
+                done: q.status == QuestStatus::Completed,
+                detail: q.description.clone(),
+                objectives: q
+                    .objectives
+                    .iter()
+                    .map(|o| (o.text.clone(), o.progress, o.target))
+                    .collect(),
+                reward: q.rewards.clone(),
+            })
+            .collect(),
+        JournalPage::Challenges => view
+            .challenges
+            .iter()
+            .map(|c| Row {
+                title: c.title.clone(),
+                tag: match (c.armed, c.best) {
+                    (true, _) => "Armed".into(),
+                    (false, Some(best)) => format!("Best {best}"),
+                    (false, None) => "Not cleared".into(),
+                },
+                done: c.best.is_some(),
+                detail: if c.clears > 0 {
+                    format!("{} (cleared {}x)", c.description, c.clears)
+                } else {
+                    c.description.clone()
+                },
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
+        JournalPage::Cards => (view.has_cards)
+            .then(|| Row {
+                title: "Card menu".into(),
+                tag: format!("{} owned", view.cards_owned),
+                done: false,
+                detail: format!(
+                    "Binder, boosters, sell and deck. {} new, {} booster(s) unopened.",
+                    view.cards_unseen, view.boosters
+                ),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .into_iter()
+            .collect(),
+        JournalPage::Travel => view
+            .maps
+            .iter()
+            .map(|m| Row {
+                title: m.name.clone(),
+                tag: String::new(),
+                done: false,
+                detail: m.map_id.clone(),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
+        JournalPage::Items if view.items.is_empty() && view.has_items => vec![Row {
+            title: "Pack items".into(),
+            tag: "none yet".into(),
+            done: false,
+            detail: "Items and gear from this pack's shops, bosses and quests.".into(),
+            objectives: Vec::new(),
+            reward: String::new(),
+        }],
+        JournalPage::Items => view
+            .items
+            .iter()
+            .map(|i| Row {
+                title: i.name.clone(),
+                tag: if i.worn > 0 {
+                    format!("x{} E{}", i.held, i.worn)
+                } else {
+                    format!("x{}", i.held)
+                },
+                done: i.worn > 0,
+                detail: format!("{}. {}", i.kind, i.description),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
+        JournalPage::Arts => view
+            .arts
+            .iter()
+            .map(|a| Row {
+                title: a.title.clone(),
+                tag: a.tag.clone(),
+                done: a.spell,
+                detail: a.detail.clone(),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
+    };
+    let objectives: Vec<Vec<ui::JournalObjectiveView<'_>>> = rows
+        .iter()
+        .map(|r| {
+            r.objectives
+                .iter()
+                .map(|(text, progress, target)| ui::JournalObjectiveView {
+                    text,
+                    progress: *progress,
+                    target: *target,
+                })
+                .collect()
+        })
+        .collect();
+    let row_views: Vec<ui::JournalRowView<'_>> = rows
+        .iter()
+        .zip(&objectives)
+        .map(|(r, o)| ui::JournalRowView {
+            title: &r.title,
+            tag: &r.tag,
+            done: r.done,
+            detail: &r.detail,
+            objectives: o,
+            reward: &r.reward,
+        })
+        .collect();
+    let tabs: Vec<&str> = JournalPage::ALL.iter().map(|p| p.label()).collect();
+    let heading = format!("JOURNAL - {} {}", view.pack_name, view.pack_version);
+    let (empty, footer) = match session.page {
+        JournalPage::Quests => (
+            "No quest has started yet.",
+            "Left/Right: page   Circle: back",
+        ),
+        JournalPage::Challenges => (
+            "This pack has no challenges.",
+            "Cross: arm for the next battle   Circle: back",
+        ),
+        JournalPage::Cards => (
+            "This pack has no trading cards.",
+            "Cross: open the card menu   Circle: back",
+        ),
+        JournalPage::Travel => (
+            "This pack has no maps.",
+            "Cross: travel there   Circle: back",
+        ),
+        JournalPage::Items => (
+            "This pack has no items.",
+            "Cross: open the item screen   Circle: back",
+        ),
+        JournalPage::Arts if view.has_arts => (
+            "No pack art or spell is known yet.",
+            "Left/Right: page   Circle: back",
+        ),
+        JournalPage::Arts => (
+            "This pack has no arts or spells.",
+            "Left/Right: page   Circle: back",
+        ),
+    };
+    let args = ui::JournalDrawArgs {
+        heading: &heading,
+        tabs: &tabs,
+        tab: JournalPage::ALL
+            .iter()
+            .position(|p| *p == session.page)
+            .unwrap_or(0),
+        cards_unseen: view.cards_unseen,
+        rows: &row_views,
+        cursor: session.cursor,
+        empty,
+        footer,
+    };
+    let draws = ui::journal_draws_for(ctx.font, &args, ui::JOURNAL_PEN);
+    pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Prebuilt(draws)))
+}
+
+/// The root list's hint line while an expansion pack is active: Select
+/// opens the Journal (whose Cards page opens the card menu when the pack has
+/// cards). Stage pixels, under the money / play-time box.
+pub fn journal_hint_draws(ctx: &PauseMenuCtx<'_>, cards: bool) -> Vec<ui::TextDraw> {
+    let hint = if cards {
+        "SELECT: Journal / Cards"
+    } else {
+        "SELECT: Journal"
+    };
+    let mut texts = ui::text_draws_for(
+        &ctx.font.layout_ascii(hint),
+        JOURNAL_HINT_PEN,
+        [0.8, 0.8, 0.8, 1.0],
+    );
+    ui::scale_stage_text_draws(&mut texts, ctx.origin, ctx.scale);
+    texts
+}
+
+/// Where [`journal_hint_draws`] writes, in stage pixels.
+pub const JOURNAL_HINT_PEN: (i32, i32) = (24, 212);
 
 /// The record screen's list page, opened over the Magic screen's spell rows
 /// (Square).
@@ -713,7 +940,7 @@ pub fn equip_draws(
         equip_info,
         item_effects: world.and_then(|w| w.tables.item_effects.as_ref()),
     });
-    let model = ps::equip_screen_model(
+    let mut model = ps::equip_screen_model(
         session,
         char_slot,
         &names,
@@ -721,6 +948,21 @@ pub fn equip_draws(
         Some(&text),
         compare,
     );
+    // A slot an expansion pack's gear fills reads empty on the record (its
+    // byte stays `0`); the row names the pack item instead.
+    if let Some(w) = world {
+        let order = legaia_engine_menus::equip_session::BROWSE_SLOT_ORDER;
+        for (row, &slot) in model.slot_items.iter_mut().zip(order.iter()) {
+            if row.is_empty() {
+                let index = legaia_engine_menus::equip_session::record_byte_for_engine_slot(
+                    slot, char_slot,
+                );
+                if let Some(n) = w.pack_worn_item_name(char_slot, index as u8) {
+                    *row = n;
+                }
+            }
+        }
+    }
     equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
 }
 
@@ -793,6 +1035,14 @@ pub fn arts_editor_draws(
             pretty_sequence: pretty,
         })
         .collect();
+    let pack_rows: Vec<ui::ArtsChainRow<'_>> = view
+        .pack_arts
+        .iter()
+        .map(|(name, line)| ui::ArtsChainRow {
+            name,
+            pretty_sequence: line,
+        })
+        .collect();
     let args = ui::ArtsEditorDrawArgs {
         character_name: &view.character_name,
         phase: match view.phase {
@@ -808,6 +1058,7 @@ pub fn arts_editor_draws(
         max_len: view.max_len,
         naming_name: &view.naming_name,
         can_add_new: view.can_add_new,
+        pack_arts: &pack_rows,
     };
     pause_screen_draws(ctx, PauseScreen::Generic(GenericContent::Arts(args)))
 }

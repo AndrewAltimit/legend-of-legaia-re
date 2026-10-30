@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_engine_field::field_anim::{FieldClipPlayer, FieldPlayerAnim};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::npc_catalog::{NpcCatalog, catalog_scene_npcs, scene_anm_bundle};
+use legaia_engine_scene::npc_catalog::{NpcCatalog, catalog_live_scene_npcs, scene_anm_bundle};
 use legaia_engine_scene_host::scene_host::SceneHost;
 
 /// What [`bind_scene_actors`] resolved, for a host's draw half.
@@ -72,12 +72,9 @@ pub fn bind_scene_actors(host: &mut SceneHost) -> SceneActorBinding {
     bind_lead_rig(host, locomotion_anm.as_ref());
 
     let catalog = match (host.scene.as_ref(), host.resources.as_ref()) {
-        (Some(scene), Some(res)) => catalog_scene_npcs(
-            &host.index,
-            &scene.name,
-            res,
-            Some(&host.world.field_head_pool),
-        ),
+        (Some(scene), Some(res)) => {
+            catalog_live_scene_npcs(&host.index, scene, res, Some(&host.world.field_head_pool))
+        }
         _ => Err("no scene loaded".to_string()),
     };
     let catalog = catalog.map(|mut cat| {

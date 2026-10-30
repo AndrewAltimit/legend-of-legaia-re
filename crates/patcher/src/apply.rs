@@ -12,7 +12,6 @@ pub(crate) use crate::casino::{self, CasinoExchange};
 pub(crate) use crate::chest::SceneChests;
 pub use crate::door::DoorSiteClass;
 pub(crate) use crate::door::SceneDoors;
-pub(crate) use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 pub(crate) use crate::encounter::SceneEncounters;
 pub(crate) use crate::house_door::SceneHouseDoors;
 pub(crate) use crate::map_door::SceneMapDoors;
@@ -20,7 +19,8 @@ pub(crate) use crate::monster_class;
 pub(crate) use crate::monster_stats;
 pub(crate) use crate::shop::SceneShops;
 pub(crate) use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
-pub(crate) use legaia_disc_patch::rng::SplitMix64;
+pub(crate) use legaia_randomizer::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
+pub(crate) use legaia_randomizer::rng::SplitMix64;
 
 /// `SCUS_942.54` filename (the static-table container).
 const SCUS_NAME: &str = "SCUS_942.54";

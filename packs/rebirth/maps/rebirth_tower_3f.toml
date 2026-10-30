@@ -1,0 +1,246 @@
+# Tower of Rebirth, third floor: the Hanging Garden. The terraces of the
+# retail Sky Gardens (`teien`), kept whole, with the garden's own walls
+# re-traced. The sundial on the middle terrace runs the Garden Gauntlet:
+# four waves in one battle, as often as the party asks for it.
+
+name = "Tower of Rebirth 3F - Hanging Garden"
+base = { scene = { kind = "scene", name = "teien" }, geometry = "keep", scenery = true }
+# Sound-test track 12, "The Sacred Realm".
+bgm = { kind = "bgm", id = 12 }
+camera = "default"
+
+[tiles]
+origin = [31, 28]
+rows = [
+  "     #............a#",
+  "   #b#.####cd####..a",
+  "  #b.#.............e#",
+  " #b..#....f...f.....###",
+  "#b.#.######...#.......a#",
+  "b....#....#g.e#####....a",
+  ".##....#..#h.i#..#...#.#",
+  ".......#..#...#..#...#..",
+  "#......#.........#...##.",
+  "#.####.#....f....#f..#..",
+  "###....#############.#.#",
+  "  #....#.........#.#.#..",
+  "  #....#.#.........#.##.",
+  "  #....##..........#.#..",
+  "  #.####.......#########",
+  "  #..................#",
+  "###....##............#",
+  "g.#.#####........#...#",
+  "c.......ibh..ia####..#",
+  "###....#.g....e......#",
+  "  #g.#...g....e.a...##",
+  "   c.....g....ec...e#",
+  "   #c..#.g....e#g#.d",
+  "    #c...g....e   d#",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"b" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"c" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"d" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"e" = { label = "wall edge", walls = ["tr", "br"] }
+"f" = { label = "wall edge", walls = ["bl", "br"] }
+"g" = { label = "wall edge", walls = ["tl", "bl"] }
+"h" = { label = "wall corner", walls = ["tl"] }
+"i" = { label = "wall corner", walls = ["tr"] }
+
+[[spawns]]
+id = "from_below"
+tile = [11, 21]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [11, 2]
+
+[[exits]]
+id = "stair_down"
+rect = [10, 23, 13, 23]
+to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [8, 0, 15, 0]
+to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [9, 19, 14, 20]
+event = { kind = "dialog", line = "floor_3f_intro" }
+once = true
+
+[[triggers]]
+id = "sundial"
+rect = [10, 12, 15, 13]
+event = { kind = "dialog", line = "sundial_offer" }
+
+[[encounters]]
+id = "west_terrace"
+rect = [0, 4, 9, 9]
+table = "tower_3f"
+
+[[encounters]]
+id = "east_terrace"
+rect = [15, 4, 23, 13]
+table = "tower_3f"
+
+[[encounters]]
+id = "lower_garden"
+rect = [2, 15, 20, 18]
+table = "tower_3f"
+
+# ---------------------------------------------------------------------------
+# Detail: the garden in late summer. Leaves fall from the terraces' trees,
+# fireflies hang over the lower garden, and a shard of sky-glass turns
+# slowly over the sundial. The garden's own animated scenery plays (`scenery`).
+# All of it draws only.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "sky_glass"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [12, 12]
+offset = [0, 250, 128]
+scale = 2.4
+animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 16, period = 240 }]
+light = { color = [170, 220, 255], radius = 1200, height = 0, flicker = 0.08, period = 90 }
+
+# Young trees in clumps on the lower garden.
+[[scatter]]
+id = "saplings"
+rect = [2, 14, 20, 21]
+on = "."
+density = 0.5
+seed = 301
+jitter = 50
+scale = [0.4, 0.65]
+tilt = 4.0
+cluster = { centre = [6.0, 17.0], radius = 5.0, falloff = 1.5 }
+meshes = [{ mesh = { object = 5 }, weight = 3 }, { mesh = { object = 8 }, weight = 1 }]
+
+# Flower beds round the sundial (the garden's flowering grass).
+[[decals]]
+id = "flowers"
+cell = { tpage = 8, clut = 32512, tile = 0 }
+cells = [{ tpage = 8, clut = 32512, tile = 1 }, { tpage = 8, clut = 32512, tile = 8 }]
+rect = [8, 9, 16, 14]
+on = "."
+density = 0.5
+seed = 302
+size = [96, 96]
+size_jitter = 0.3
+sides = 10
+jitter = 40
+
+[[emitters]]
+kind = "leaves"
+rect = [2, 2, 21, 21]
+count = 36
+seed = 303
+
+[[emitters]]
+kind = "sparkles"
+rect = [3, 14, 20, 21]
+height = [20, 90]
+count = 36
+color = [210, 255, 120]
+seed = 304
+
+[[emitters]]
+kind = "dust"
+rect = [8, 9, 16, 14]
+count = 30
+color = [255, 240, 190]
+seed = 305
+
+[lighting]
+mood = "day"
+
+# Sound: water runs in the garden's two channels.
+[[audio.ambient]]
+id = "upper_channel"
+sound = { kind = "sound", id = "water" }
+tile = [12, 7]
+radius = 640
+inner = 128
+volume = 0.5
+
+[[audio.ambient]]
+id = "lower_channel"
+sound = { kind = "sound", id = "water" }
+tile = [11, 20]
+radius = 640
+inner = 128
+volume = 0.5
+
+# ---------------------------------------------------------------------------
+# The sundial: the Gauntlet's own clock, a stepped stone plinth with a brass
+# dial (`assets/models/sundial.glb`, `scripts/models/generate_rebirth_props.py`)
+# under the turning sky-glass, a brass armillary ring circling between them.
+# A fountain plays in the lower garden, its spray catching the light.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "sundial"
+mesh = { asset = "models/sundial.glb" }
+# Two rows south of the terrace hedge, so the follow camera (which looks
+# south across the garden) sees it over the hedge.
+tile = [12, 13]
+# A prop's height counts from the floor the player walks (on a kept room,
+# its retail floor steps included), so the plinth stands at 0.
+offset = [0, 0, 0]
+scale = 1.7
+light = { color = [255, 230, 170], radius = 520, height = 100, flicker = 0.05, period = 80 }
+
+[[props]]
+id = "sundial_ring"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [13, 13]
+offset = [-128, 230, 0]
+scale = 0.9
+animate = [{ kind = "spin", axis = "y", period = 600 }, { kind = "sway", axis = "x", degrees = 24.0, period = 420 }]
+
+[[props]]
+id = "fountain_west"
+mesh = { asset = "models/fountain.glb" }
+tile = [8, 15]
+offset = [0, 0, 0]
+scale = 1.1
+solid = true
+light = { color = [170, 220, 255], radius = 420, height = 90, flicker = 0.08, period = 50 }
+
+# The fountain's spray.
+[[emitters]]
+kind = "drips"
+rect = [8, 15, 8, 15]
+height = [80, 110]
+count = 16
+velocity = [0.0, 1.2, 0.0]
+spread = [0.9, 0.4, 0.9]
+gravity = 0.06
+color = [190, 230, 255]
+seed = 306
+
+# The fountain splashes; a light wind moves through the terraces.
+[[audio.ambient]]
+id = "fountain_west"
+sound = { kind = "sound", id = "water" }
+tile = [8, 15]
+radius = 560
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "terrace_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [12, 6]
+radius = 1800
+inner = 900
+volume = 0.25

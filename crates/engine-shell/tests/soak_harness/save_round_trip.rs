@@ -79,6 +79,29 @@ pub(super) fn save_diff(
         a.ext_v2.field_position,
         b.ext_v2.field_position
     );
+    field!(
+        "ext_v2.previous_scene",
+        a.ext_v2.previous_scene,
+        b.ext_v2.previous_scene
+    );
+    // The expansion pack's save block (`legaia_engine_expansion::quest_save`,
+    // the LGXD tagged records), compared as bytes; the detail is the first
+    // differing offset.
+    if a.ext_v2.expansion != b.ext_v2.expansion {
+        let (x, y) = (
+            a.ext_v2.expansion.as_deref().unwrap_or_default(),
+            b.ext_v2.expansion.as_deref().unwrap_or_default(),
+        );
+        let off = x.iter().zip(y).position(|(p, q)| p != q);
+        return Some((
+            "ext_v2.expansion".into(),
+            format!(
+                "{} -> {} bytes, first difference at {off:?}",
+                x.len(),
+                y.len()
+            ),
+        ));
+    }
     field!("ext_v2", a.ext_v2, b.ext_v2);
     field!("ext", a.ext, b.ext);
     None

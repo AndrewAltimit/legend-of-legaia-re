@@ -1,0 +1,368 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; expansion game modes</div>
+  <h1>Expansion game modes</h1>
+  <p class="lede">Game modes the original never had: Texas Hold'em, a trading-card game with its own card battle, mini-golf, checkpoint racing and prop hunt. Their rules live in one <code>World</code>-free crate, <code>legaia_engine_modes</code>; an <a href="../guides/expansion-packs.html">expansion pack</a> picks the numbers and layouts in its <code>modes.toml</code> and <code>cards.toml</code>. Nothing here touches retail state, so a disc with no pack loaded plays bit-identically.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Crate</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md" target="_blank" rel="noopener"><code>crates/engine-modes</code></a> (<code>legaia_engine_modes</code>), depending on <code>engine-system</code> (pad layout) and <code>expansion-format</code> (pack schema).</dd>
+    <dt>Contract</dt><dd><code>session::ModeSession</code>: <code>tick(&amp;[PadWord]) -&gt; Vec&lt;Event&gt;</code>, <code>view()</code>, <code>state_hash()</code>, <code>is_finished()</code>, <code>results()</code>.</dd>
+    <dt>Math</dt><dd><code>fixed</code>: 20.12 fixed point, 12-bit angles, table sine, integer <code>atan2</code> and square root.</dd>
+    <dt>RNG</dt><dd><code>session::ModeRng</code> (SplitMix64), one per session, seeded from the config.</dd>
+    <dt>Modes</dt><dd><code>poker</code>, <code>cards</code> + <code>cards::duel</code> (with the economy in <code>cards::economy</code>, <code>cards::screen</code>, <code>cards::trade</code>), <code>golf</code>, <code>racing</code>, <code>prop_hunt</code>.</dd>
+    <dt>Pack schema</dt><dd><code>[[poker]]</code>, <code>[[card_duels]]</code>, <code>[[golf]]</code>, <code>[[races]]</code>, <code>[[prop_hunt]]</code> in <code>modes.toml</code>; <code>[[cards]]</code>, <code>starter</code>, <code>[[boosters]]</code>, <code>[[dealers]]</code>, <code>[[rewards]]</code> in <code>cards.toml</code> (<a href="../formats/expansion-pack.html">format page</a>).</dd>
+    <dt>Example pack</dt><dd><code>packs/rebirth/modes.toml</code>, <code>packs/rebirth/cards.toml</code>.</dd>
+    <dt>Built-in set</dt><dd><code>crates/engine-modes/builtin/</code>: one practice instance per mode, offered with no pack.</dd>
+    <dt>Host seat</dt><dd><code>legaia_engine_expansion::modes::PackModeSeat</code> on <code>World::expansion</code>, under <code>SceneMode::Expansion</code>.</dd>
+    <dt>Screens</dt><dd><code>legaia_engine_ui::expansion_modes</code>, projected by <code>legaia_engine_screens::expansion_modes</code>.</dd>
+    <dt>Tests</dt><dd>Per-module rule tests; <code>crates/engine-modes/tests/</code> determinism, random-pad soak and Rebirth conversion (<a href="#tests">below</a>).</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="session-contract" data-doc="the-session-contract">
+  <h2>The session contract</h2>
+  <p>A mode session is a pure function of three things: its config (including the seed), the order of its ticks, and the pad words fed to each tick. <code>tick</code> takes one raw pad word per seat (<code>PadButton</code> layout); a short slice reads as released pads. A seat is a human or an AI of a tier (<code>Novice</code>, <code>Regular</code>, <code>Expert</code>); an AI seat ignores its pad word and decides from the session's own RNG, so a missing player becomes an AI seat without changing the input shape.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Session contract: a config with its seed builds the session; each frame the host feeds one pad word per seat to tick; the host draws from view, peers compare state_hash, and when the session is finished results gives placements and rewards, which the host grants to the save">
+      <defs><marker id="xm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="85" y="44">Config + seed</text><text class="dg-sub" x="85" y="62">a pack instance</text>
+      <rect class="dg-node" x="10" y="150" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="85" y="174">Pad words</text><text class="dg-sub" x="85" y="192">per seat, per frame</text>
+      <rect class="dg-node-accent" x="250" y="80" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="335" y="108">ModeSession</text><text class="dg-sub" x="335" y="128">tick(&amp;[PadWord])</text>
+      <rect class="dg-node" x="510" y="10" width="180" height="48" rx="4"/>
+      <text class="dg-label" x="600" y="31">view()</text><text class="dg-sub" x="600" y="48">snapshot the host draws</text>
+      <rect class="dg-node" x="510" y="92" width="180" height="48" rx="4"/>
+      <text class="dg-label" x="600" y="113">state_hash()</text><text class="dg-sub" x="600" y="130">FNV-1a, peers compare</text>
+      <rect class="dg-node-ok" x="510" y="174" width="180" height="56" rx="4"/>
+      <text class="dg-label" x="600" y="196">results()</text><text class="dg-sub" x="600" y="214">places, rewards</text>
+      <path class="dg-edge" d="M160 48 L205 48 L205 100 L248 100" marker-end="url(#xm-arrow)"/>
+      <path class="dg-edge" d="M160 178 L205 178 L205 130 L248 130" marker-end="url(#xm-arrow)"/>
+      <path class="dg-edge" d="M420 100 L465 100 L465 34 L508 34" marker-end="url(#xm-arrow)"/>
+      <path class="dg-edge" d="M420 115 L508 115" marker-end="url(#xm-arrow)"/>
+      <path class="dg-edge-dim" d="M420 135 L465 135 L465 202 L508 202" marker-end="url(#xm-arrow)"/>
+      <text class="dg-edge-label" x="472" y="168">is_finished()</text>
+    </svg>
+    <figcaption>The whole surface a host sees. Nothing outside the config, the tick order and the pad words reaches the rules, which is what lets the same session run under lockstep netplay.</figcaption>
+  </figure>
+  <p>A host draws only from <code>view()</code>, an owned snapshot, and changes the session only through <code>tick</code>. Each mode also exposes its rule entry points (such as <code>PokerSession::act</code> or <code>GolfSession::strike</code>), which the pad path itself ends in; tests and alternative hosts use them directly. When <code>is_finished()</code> turns true, <code>results()</code> gives placements (1-based, ties sharing a place) and the rewards each seat takes away: a currency change, a booster pack or a card, all by pack id. Granting them to a save is the host's job.</p>
+  <h3 id="why-lockstep-holds">Why lockstep holds</h3>
+  <p>Lockstep netplay sends only pad words between peers; every peer runs the full session and must arrive at the same state after every tick. The kernels hold to four rules:</p>
+  <ul class="bullets">
+    <li><strong>No floats in state.</strong> Positions, velocities and speeds are 20.12 fixed point (<code>fixed::Fx</code>). <code>f64::sin</code> and <code>f64::sqrt</code> can round differently across libm builds, CPUs and wasm, so the trig is a literal quarter-wave sine table with linear interpolation, <code>atan2</code> is a binary search over it, and square roots are integer Newton. Products that could overflow widen to <code>i64</code> / <code>i128</code>.</li>
+    <li><strong>No ambient randomness.</strong> Each session owns a <code>ModeRng</code>; AI decisions, shuffles, Monte Carlo equity samples and booster rolls all draw from it. No clock, no global generator, no host state.</li>
+    <li><strong>No unordered iteration.</strong> State is <code>Vec</code> and <code>BTreeMap</code>, never a hash map.</li>
+    <li><strong>A checkable digest.</strong> <code>state_hash()</code> is FNV-1a 64 over every field the rules read, written field by field (not <code>std</code>'s <code>DefaultHasher</code>, whose algorithm is not stable across Rust releases). Peers compare it to detect a desync; the determinism tests compare it frame by frame.</li>
+  </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two netplay models. Lockstep: every peer runs the session from every seat's pad words and exchanges checkpoint hashes; used by golf, racing and prop hunt. Host-authoritative view stream: only the host runs the session; guests send pad changes and the host sends each guest a StateBlob view of its own seat, with other seats' poker hole cards redacted; used by poker and Grid Duel">
+      <defs><marker id="xm-arrow2" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="6" y="6" width="336" height="288" rx="6"/>
+      <text class="dg-label" x="174" y="28">Lockstep</text>
+      <text class="dg-sub" x="174" y="46">golf, racing, prop hunt</text>
+      <rect class="dg-node-accent" x="24" y="70" width="130" height="64" rx="4"/>
+      <text class="dg-label" x="89" y="96">Peer A</text><text class="dg-sub" x="89" y="114">full session</text>
+      <rect class="dg-node-accent" x="194" y="70" width="130" height="64" rx="4"/>
+      <text class="dg-label" x="259" y="96">Peer B</text><text class="dg-sub" x="259" y="114">full session</text>
+      <path class="dg-edge" d="M154 92 L192 92" marker-end="url(#xm-arrow2)"/>
+      <path class="dg-edge" d="M194 112 L156 112" marker-end="url(#xm-arrow2)"/>
+      <text class="dg-edge-label" x="174" y="160" text-anchor="middle">pad words, every frame</text>
+      <text class="dg-edge-label" x="174" y="178" text-anchor="middle">checkpoint hashes</text>
+      <text class="dg-sub" x="174" y="222">every peer holds the whole state</text>
+      <text class="dg-sub" x="174" y="240">a desync is caught at a checkpoint</text>
+      <text class="dg-sub" x="174" y="258">a dropped seat goes to the AI</text>
+      <rect class="dg-group" x="358" y="6" width="336" height="288" rx="6"/>
+      <text class="dg-label" x="526" y="28">Host-authoritative view stream</text>
+      <text class="dg-sub" x="526" y="46">poker, Grid Duel</text>
+      <rect class="dg-node-ok" x="376" y="70" width="130" height="64" rx="4"/>
+      <text class="dg-label" x="441" y="96">Host</text><text class="dg-sub" x="441" y="114">runs the session</text>
+      <rect class="dg-node" x="546" y="70" width="130" height="64" rx="4"/>
+      <text class="dg-label" x="611" y="96">Guest</text><text class="dg-sub" x="611" y="114">labels only</text>
+      <path class="dg-edge" d="M546 92 L508 92" marker-end="url(#xm-arrow2)"/>
+      <path class="dg-edge" d="M506 112 L544 112" marker-end="url(#xm-arrow2)"/>
+      <text class="dg-edge-label" x="526" y="160" text-anchor="middle">guest: pad changes</text>
+      <text class="dg-edge-label" x="526" y="178" text-anchor="middle">host: StateBlob per seat</text>
+      <text class="dg-sub" x="526" y="222">a guest sees only its own seat</text>
+      <text class="dg-sub" x="526" y="240">poker hole cards hidden to showdown</text>
+      <text class="dg-sub" x="526" y="258">ends if the host leaves</text>
+    </svg>
+    <figcaption>Which model a mode runs under online. The real-time modes hide nothing and run in lockstep; the turn-based tables run on the host so hidden cards stay hidden (<a href="netplay.html#in-the-hosts">netplay in the hosts</a>).</figcaption>
+  </figure>
+  <p>Hidden information (poker hole cards) would be part of every peer's state under lockstep, so netplay does not run the turn-based modes that way: poker and Grid Duel run on the host alone, which sends each guest only the view its seat may see. The real-time modes - golf, racing, prop hunt - hide nothing and run in lockstep.</p>
+  <p>Prop hunt is geometry-agnostic: its built-in <code>Arena</code> (bounds and rectangle blockers) is enough to play and test the rules, and a host with real scene collision feeds positions through <code>PropHuntSession::tick_with_positions</code>, which makes those positions part of the lockstep input.</p>
+</section>
+
+<section class="doc-section" id="poker" data-doc="poker">
+  <h2>Poker</h2>
+  <p>No-limit Texas Hold'em, 2 to 6 seats. Every seat buys in for the table's chips; a pack's <code>chip_value</code> and <code>currency</code> (gold or casino coins) turn the final stack into the currency reward, <code>(chips - buy_in) * chip_value</code>.</p>
+  <details class="disclosure">
+    <summary>The table rules: blinds, betting, pots, showdown</summary>
+    <div class="disclosure-body">
+      <ul class="bullets">
+        <li><strong>Blinds.</strong> The seat after the button posts the small blind and the next the big blind. Heads-up, the button posts the small blind, acts first preflop and last afterwards. <code>blind_double_every</code> doubles both every N hands.</li>
+        <li><strong>Betting.</strong> Preflop the current bet is the big blind even when the big blind is all-in for less, and the big blind keeps its option. A raise must add at least the last full raise (the big blind at a street's start). An all-in that raises by less is a short raise: every other seat acts again, but a seat that had already acted on the street may only call or fold.</li>
+        <li><strong>Run-out.</strong> When at most one seat can still bet, the rest of the board is dealt straight to showdown.</li>
+        <li><strong>Pots.</strong> Each distinct contribution level of a seat still in the hand closes a pot holding what every seat put in between the previous level and this one; seats that reached the level are eligible. Folded chips above the top live level join the last pot, and a bet nobody called returns as a one-seat pot.</li>
+        <li><strong>Showdown.</strong> The evaluator scores every 5-card subset of the 7 cards and packs category plus five tie-break ranks into one comparable <code>u32</code>; the wheel (A-2-3-4-5) is a five-high straight. A split pot's odd chips go one at a time to the tied winners nearest the button's left. The evaluator test enumerates all 2,598,960 five-card hands against the textbook category counts.</li>
+        <li><strong>End.</strong> One seat holds every chip, every human has busted, or <code>max_hands</code> is reached.</li>
+      </ul>
+    </div>
+  </details>
+  <p>The pad menu: Left / Right choose Fold, Check-Call, Raise or All-in; Up / Down size the raise in big-blind steps; Cross commits. AI seats reduce a spot to a win equity: the novice guesses it from its hand category and calls loosely; the regular and the expert sample it by Monte Carlo against random holdings (60 and 200 deals), compare it with pot odds and their fair share of the pot, and the expert bluffs now and then.</p>
+</section>
+
+<section class="doc-section" id="trading-cards" data-doc="trading-cards">
+  <h2>Trading cards</h2>
+  <p>A pack's <code>cards.toml</code> defines the cards. Each has an id, a name and flavour text of the pack's own, a rarity (common, uncommon, rare, legendary), an optional element, four side strengths for the duel, and a disc coordinate for its art (a retail monster by id, an item). <code>cards::CardBook</code> wraps the section:</p>
+  <table>
+    <thead><tr><th>Piece</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Boosters</td><td>A set has a size, an optional pool (default every card), rarity weights and an optional guaranteed rarity for the last slot. Each slot rolls a rarity on the weights (a rarity the pool lacks weighs zero), then a card uniformly within it.</td></tr>
+      <tr><td>Rewards</td><td>A rule ties a source (retail monster id, pack formation, pack boss or pack mode id) to a booster or card, a chance and a count; <code>roll_rewards</code> rolls each.</td></tr>
+      <tr><td>Selling</td><td>A card's own <code>sell</code> price, else the section's per-rarity table, else a built-in default.</td></tr>
+      <tr><td>Collection</td><td>Copies per id plus a binder order: every owned id once, new ids appended, the last copy leaving the binder. Serde-derived; <code>normalize</code> repairs one read from an older save.</td></tr>
+      <tr><td>Trades</td><td>A <code>TradeOffer</code> lists what each side gives; <code>execute</code> validates both collections first, then moves every line. A refused trade changes nothing.</td></tr>
+    </tbody>
+  </table>
+
+  <h3 id="the-card-economy">The card economy</h3>
+  <p>The player's cards are pack progress: <code>cards::economy::CardProgress</code> (the collection, unopened boosters by set, the chosen duel deck, the ids already shown, whether the starter cards were handed over, and the card stream's state) sits in <code>ExpansionProgress::cards</code> and rides the save's expansion block as <a href="../formats/expansion-pack-quests.html#saves">tail record 3</a>, written only once it holds anything - so a save with no card state, and every save made without a pack, keeps its bytes. Like quests, it follows the pack: parked in the dormant block when the pack is deactivated, adopted again when it returns. <code>legaia_engine_expansion::cards</code> is the plumbing around it, and <code>world::expansion_cards</code> the <code>World</code> side.</p>
+  <ul class="bullets">
+    <li><strong>Grants.</strong> Quest rewards (<code>quests.card_inbox</code>) and mode wins (<code>pending_card_rewards</code>) are drained by <code>World::collect_card_grants</code>, which the quest settle and the mode settle both call; battle drops are credited where they roll. An id the book does not know is dropped. Each credited grant raises a <code>CardNotice</code>, shown as a toast ("Got card: Mist Wisp (new!)") one at a time for 150 frames each (the rest queue behind it), one row under the quest toast, and kept for a host to take (<code>World::take_card_notices</code>).</li>
+    <li><strong>Starter.</strong> The section's <code>starter</code> cards are handed over once, the first time the card screen opens or a pack duel is dealt.</li>
+    <li><strong>Battle drops.</strong> <code>World::apply_battle_loot</code>, after the retail spoils and the pack boss reward, makes one call into <code>expansion_card_drops</code>: the sources are each defeated seat's retail monster id, the pack formation's local key and the pack boss whose formation was fought. A no-reward fight rolls nothing.</li>
+    <li><strong>The card stream.</strong> Every card roll draws from <code>CardProgress::rng</code>, a SplitMix stream saved with the collection, seeded once from the world's frame counter and RNG word mixed with the pack id. It never touches the game's RNG: a fight's spoils, its item drop and the world's RNG word come out identical with a pack active or not, and a reloaded save opens the same boosters.</li>
+    <li><strong>Shop.</strong> <code>buy_booster</code> charges a dealer's priced stock out of the party purse; <code>open_booster</code> consumes one and adds its cards; <code>sell_card</code> pays the dealer's <code>sell_percent</code> of the card's sell value, clamped at 9,999,999.</li>
+    <li><strong>Decks and stakes.</strong> A pack Grid Duel deals the player <code>CardProgress::duel_deck</code>: the chosen deck while all five are still owned, else the strongest five owned cards, else - with fewer than five owned - the duel's lent starter (the first five cards of the section). Under <code>stakes</code> the winner's take is real: a won card arrives as a pending reward, and a card the opponent takes leaves the collection (<code>settle_card_stakes</code>; a lent card costs nothing). The built-in practice duel keeps the starter deck.</li>
+  </ul>
+
+  <h3 id="trading-between-players">Trading between players</h3>
+  <p><code>cards::trade::TradeTable</code> runs one trade on an authority - the netplay host. The proposer puts an offer on the table, which bumps its revision and clears both confirmations; each side confirms that revision; once both have, the host's <code>settle</code> validates the offer against its own collection and the partner's last reported holdings and swaps, every line or none. A failed validation reopens the table with the confirmations cleared. The partner then applies its half with <code>TradeOffer::apply_one_side</code>, validated against its own collection.</p>
+  <p>The wire form is <code>TradeMsg</code> (holdings, offer, confirm, cancel, settled, refused) with its own byte codec. It travels as the payload of the netplay protocol's existing host-authoritative messages - <code>Action</code> from a client, <code>Event</code> from the host - so trades need no message of their own.</p>
+
+  <h3 id="card-screens">Card screens</h3>
+  <p><code>cards::screen::CardScreen</code> is one pad-driven state machine over a <code>CardProgress</code>, the party purse and the card book; <code>World</code> seats it as <code>ExpansionState::cards.seat</code> under <code>SceneMode::Expansion</code>, and <code>World::tick_pack_mode</code> hands it the frame before the mode seat.</p>
+  <ol class="steps">
+    <li><b>Card menu</b><span>Binder, Open boosters, Sell cards, Duel deck &middot; <code>World::open_card_menu</code></span></li>
+    <li><b>Dealer counter</b><span>priced stock as Buy rows, then Sell, Open, Binder &middot; a map's <code>card_dealer</code> trigger</span></li>
+    <li><b>Binder</b><span>4 x 2 per page; L1 / R1 page, Square sort, Triangle filter</span></li>
+    <li><b>Card detail</b><span>portrait, sides on a cross, flavour; Left / Right browse</span></li>
+    <li><b>Boosters &rarr; Reveal</b><span>open a set; Cross turns the next card, Triangle all</span></li>
+    <li><b>Sell / Deck builder</b><span>sell one copy; build the five-card duel deck</span></li>
+  </ol>
+  <table>
+    <thead><tr><th>Stage</th><th>Shows and does</th></tr></thead>
+    <tbody>
+      <tr><td>Card menu</td><td>Binder, Open boosters, Sell cards, Duel deck. Opened by <code>World::open_card_menu</code>.</td></tr>
+      <tr><td>Dealer counter</td><td>The dealer's priced stock as Buy rows, then Sell cards, Open boosters, Binder. Opened by a map's <code>card_dealer</code> trigger (<code>World::open_card_dealer</code>).</td></tr>
+      <tr><td>Binder</td><td>The whole set four by two per page: an owned card's face (portrait, element strip, name, sides, copies, a NEW tag), a missing one as a numbered blank. Square cycles the sort (set order, newest last, rarity, strength, copies), Triangle the filter (all, owned, missing, each rarity).</td></tr>
+      <tr><td>Card detail</td><td>The portrait large, the sides on a cross, rarity, element, copies, sell value and flavour text.</td></tr>
+      <tr><td>Boosters</td><td>Unopened sets with their counts and what a pack holds; Cross opens one.</td></tr>
+      <tr><td>Reveal</td><td>The pack's cards face down; a card never owned before is marked NEW.</td></tr>
+      <tr><td>Sell</td><td>Owned cards with what the dealer pays; Cross sells one copy.</td></tr>
+      <tr><td>Deck builder</td><td>Owned cards with copies in the deck, and its five slots; Cross adds, Square removes the last, Triangle fills with the strongest, Circle keeps a full deck.</td></tr>
+    </tbody>
+  </table>
+  <p>Circle backs out a stage and Start leaves from any; the header shows the purse and the set completion. <code>legaia_engine_ui::expansion_modes::card_screen_prims</code> / <code>card_screen_texts</code> draw every stage, routed through the same <code>pack_mode_prims</code> / <code>pack_mode_stage_texts</code> calls as the mode screens, so both hosts draw them with no code of their own. Toasts ride <code>pack_mode_stage_texts</code> in every mode: over play at the top of the stage, above the footer inside a mode screen; the card screen marks new cards with its own NEW tags and shows none.</p>
+
+  <h3 id="portraits">Portraits</h3>
+  <p>A card whose art is a retail monster shows that monster. The first time the card screen opens with a pack whose portraits are not built, the scene host renders one <code>64 x 48</code> RGBA image per monster off the player's own disc (<code>legaia_actor_formats::monster_portrait</code>): the battle mesh and texture pool staged as battle slot 0 (boss effect page included), posed in the idle action's first frame, drawn by the <code>mesh_raster</code> software rasteriser from a three-quarter view. The images stay in memory on the world (<code>ExpansionState::cards.portraits</code>); a pack carries only the monster id.</p>
+  <p>The card screens draw an image as flat stage-pixel runs of equal 15-bit colour, scaled nearest to its box, so it reaches both hosts through the ordinary screen-prim pass with no texture upload. Without a disc a card shows its element colour in the art box. A Grid Duel draws its cards from a texture page instead (below), and opening a duel builds the portraits as the card screen does.</p>
+
+  <h3 id="grid-duel">Grid Duel</h3>
+  <p>The card battle. Two players, five cards each with both hands face up, a 3x3 grid; a seeded coin flip picks who starts. Players alternate placing a card on an empty cell (the starter places five, the other four).</p>
+  <ul class="bullets">
+    <li><strong>Capture.</strong> A placed card takes each orthogonally adjacent opponent card whose facing side is strictly lower than its own.</li>
+    <li><strong>Elemental cells</strong> (optional). One to three cells carry an element; a card of that element plays every side at +1 there, a card of another element at -1 (never below 1).</li>
+    <li><strong>Chain</strong> (optional). Each card a placement captured then captures its own weaker opponent neighbours, one step and no further.</li>
+    <li><strong>Score.</strong> Owned grid cards plus unplayed hand cards; more wins, equal draws.</li>
+    <li><strong>Stakes</strong> (optional). The winner takes one card of the loser's deck: picked with the pad, or the strongest for an AI winner. In a pack the card moves between collections.</li>
+  </ul>
+  <p>The novice AI plays a random legal move; the regular maximises immediate captures while not exposing weak sides; the expert also subtracts the opponent's best reply.</p>
+  <p>A duel with no table in the world draws as its 2D board: the grid on a gold-rimmed felt, each hand fanned down its side with the selected card slid out, the score plates, the turn line and the selected card's panel - its full name, rarity, the four strengths, and what the cursor's elemental cell does to it.</p>
+
+  <h3 id="the-card-page">The card page</h3>
+  <p>Every card a duel shows, on the 2D board and on the table alike, is a textured quad sampling one 15-bit texture page the world writes into VRAM while a duel is seated (<code>cards::table_art</code>, written by <code>World::step_duel_card_page</code> inside the field VRAM step both hosts already run and re-upload after): seat 0's five faces, seat 1's five, and the card back.</p>
+  <ul class="bullets">
+    <li><strong>A face</strong> is <code>52 x 72</code> texels: a bevelled frame in its rarity's metal (bronze, silver, blue steel, gold), the monster's portrait box-filtered into a window over a vignette in its element's colour, an element gem, the four strengths on a cross, and rarity pips.</li>
+    <li><strong>The owner's colour</strong> shows through the face's transparent body from a quad drawn under it, so a captured card changes colour with no second texture.</li>
+    <li><strong>Where it lives.</strong> <code>(0, 256)</code>, <code>208 x 216</code> halfwords, in retail's display-buffer band; the pack-map VRAM allocator keeps the rectangle out of its free list, and the words it covers are put back when the duel closes. No disc bytes are written.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="golf" data-doc="golf">
+  <h2>Golf</h2>
+  <p>A course is a list of holes, each a tile grid written as strings in <code>modes.toml</code>, with an optional height-digit grid of the same shape. A tile is 32 world units.</p>
+  <table class="compact narrow">
+    <thead><tr><th>Char</th><th>Tile</th></tr></thead>
+    <tbody>
+      <tr><td class="hex">.</td><td>fairway</td></tr>
+      <tr><td class="hex">,</td><td>rough</td></tr>
+      <tr><td class="hex">s</td><td>sand</td></tr>
+      <tr><td class="hex">w</td><td>water (hazard)</td></tr>
+      <tr><td class="hex">#</td><td>wall</td></tr>
+      <tr><td class="hex">space</td><td>out of bounds (hazard)</td></tr>
+      <tr><td class="hex">T / O</td><td>tee / cup (both fairway)</td></tr>
+      <tr><td class="hex">^ v &lt; &gt;</td><td>fairway sloping downhill that way</td></tr>
+    </tbody>
+  </table>
+  <ul class="bullets">
+    <li><strong>Ball.</strong> A point integrated in four sub-steps per frame: arrow slopes and the negative height gradient accelerate it, surface friction (fairway, then rough, then sand, each stronger) and a small constant drag slow it, each axis moves separately and reflects off walls at 60 %, and a ball inside the cup radius below a speed limit drops. A ball that settles below a rest speed for 20 frames, or rolls for 20 seconds, stops.</li>
+    <li><strong>Hazards.</strong> Water or out of bounds costs a penalty stroke and replays from where the ball was struck.</li>
+    <li><strong>Stroke.</strong> Left / Right aim (Square held for fine steps), Cross starts a power meter that climbs to 100 and falls back, Cross again strikes (Circle returns to aiming).</li>
+    <li><strong>Order.</strong> Tee shots in seat order on the first hole, then lowest previous-hole score first; afterwards the ball farthest from the cup plays. A player who reaches the hole's cap (<code>max_strokes</code>, default par + 5) picks up and scores the cap.</li>
+    <li><strong>Result.</strong> Lowest total strokes wins.</li>
+  </ul>
+  <p>AI seats look ahead with the same physics: they simulate candidate aims and powers, keep the shot ending nearest the cup (holing out first, hazards last), then perturb it by their tier's error.</p>
+</section>
+
+<section class="doc-section" id="racing" data-doc="racing">
+  <h2>Racing</h2>
+  <p>A track is a closed centerline polyline with a half-width; every point within the half-width of a segment is drivable, and every centerline point is a checkpoint.</p>
+  <ul class="bullets">
+    <li><strong>Checkpoints.</strong> A racer passes the next checkpoint when the segment nearest to it becomes the segment leaving that checkpoint. The switch happens on the corner's bisector, so a cut corner still counts and a skipped segment never does; only the next checkpoint in order counts. Passing checkpoint 0 closes a lap.</li>
+    <li><strong>Driving.</strong> Heading plus scalar speed: Cross accelerates, Square brakes, Left / Right steer, R1 spends a full boost meter (it refills a unit a frame), and boost-pad segments give a short boost free.</li>
+    <li><strong>Contact.</strong> At the edge the racer is pushed back inside, the velocity's outward component is dropped and the rest turns the heading along the edge at seven eighths speed. Overlapping racers are pushed apart and the one behind loses a quarter of its speed. A finished racer coasts and no longer collides.</li>
+    <li><strong>End.</strong> All racers finished, <code>finish_grace</code> frames after the first finisher, or the time limit; unfinished racers place behind the finishers by laps, checkpoints and distance to the next one.</li>
+  </ul>
+  <p>AI racers steer by pure pursuit at a point two half-widths ahead along the centerline, offset by a per-racer line; tiers cap their top speed, brake for sharp turns and use the boost.</p>
+</section>
+
+<section class="doc-section" id="prop-hunt" data-doc="prop-hunt">
+  <h2>Prop hunt</h2>
+  <p>Seats split into hunters and hiders, rotating each round so every seat hunts in turn.</p>
+  <ol class="steps">
+    <li><b>Choose</b><span>hiders pick a prop from the arena's list; the cursor's prop is taken when the timer runs out</span></li>
+    <li><b>Hide</b><span>hiders move; hunters are held at the spawn until the hide timer ends</span></li>
+    <li><b>Hunt</b><span>hunters inspect the nearest prop in reach; hiders may taunt</span></li>
+  </ol>
+  <p>An inspect checks the nearest prop within reach (its radius plus a fixed reach), a hider winning a distance tie. A disguised hider is found and out for the round; a decoy costs the hunter <code>miss_penalty</code> health, and a hunter at zero is out; nothing in reach is a free whiff. Inspects have a cooldown. A taunt (Triangle) earns a few points and reports the hider's position to every host.</p>
+  <p>The round ends when every hider is found (hunters win), every hunter is out, or the timer expires (hiders win). Hiders score a point per second of hunt survived and a bonus for surviving; hunters score per find and a bonus for a won round. After the last round the highest total wins.</p>
+  <p>AI hiders stand beside a decoy of their own prop (the expert picks the prop with the most decoys), and novices fidget and taunt. AI hunters inspect unchecked props nearest first; regulars and experts prefer a prop they saw move.</p>
+</section>
+
+<section class="doc-section" id="in-world-golf-and-racing" data-doc="in-world-golf-and-racing">
+  <h2>In-world golf and racing</h2>
+  <p>A golf course or a race that names a pack map (<code>map = "&lt;id&gt;"</code> in <code>modes.toml</code>) is played in the 3D field scene that map builds instead of on a top-down board. The session stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. An instance with no map is always the top-down screen.</p>
+  <ul class="bullets">
+    <li><strong>Laying it out.</strong> A map hole is the map's tile grid inside the hole's <code>area</code>, one golf tile per map tile: a walled tile is a wall, a void tile or anything outside the area is out of bounds, and an open tile plays as its legend surface. A race's centerline is its waypoints' tile centres. <code>MapFrame</code> places the mode units on the field - four world units a mode unit for golf, two for racing.</li>
+    <li><strong>The stage.</strong> <code>WorldStage</code> turns the view into a frame: in golf the party leader stands at the player's ball facing the aim, swings and walks to the new lie, other seats stand at their balls, and the camera sits behind the ball looking down its aim; in a race the leader is the player's racer and the camera chases from behind. Banners carry the hole, par, countdown, laps and results.</li>
+    <li><strong>Bodies and online play.</strong> The leader is the session's local seat, so a networked peer stands its own golfer or racer. An instance's <code>bodies</code> names map NPCs that stand in for the other seats, posed and animated by <code>World::stage_pack_mode</code>.</li>
+    <li><strong>Entering the map.</strong> <code>World::pack_mode_wants_map</code> names the map and the scene host enters it at the instance's spawn, then puts the seat back under the expansion mode; a map that fails to enter falls back to the top-down screen.</li>
+    <li><strong>Drawing it.</strong> Both hosts draw the field as for any scene, with the camera from the shared resolver's venue arm, and the balls, cup, aim arrow, bodies and boost trail as depth-tested screen primitives built in code from no disc bytes, under the in-world HUD.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="party-night" data-doc="party-night">
+  <h2>Party night</h2>
+  <p><code>party::PartyNight</code> chains short rounds of the other modes into one points-based night: a round-intro card, a scoreboard after every round, a podium and prizes. It plays no round itself: a host ticks it once a frame, builds each cued round from <code>party::round_section</code> (the base instance cut short by the round's knobs, widened to seat everyone), plays it and reports the placements back. Two machines that build the night from the same definition, players and seed and report the same results hold the same scoreboard, which <code>scoreboard_hash</code> digests (timers excluded). A night is a <code>[[party_nights]]</code> table in <code>modes.toml</code>; the built-in set carries <strong>Practice Night</strong>, so a night is playable with no pack.</p>
+  <table>
+    <thead><tr><th>Rule</th><th>How it scores</th></tr></thead>
+    <tbody>
+      <tr><td>Placement</td><td><code>points[place - 1]</code>; tied seats share a place and its points; a place past the table scores 0.</td></tr>
+      <tr><td>Double points</td><td>A round marked <code>double</code>, and the final round with <code>double_final</code> (the default).</td></tr>
+      <tr><td>Wager</td><td>Every player still in stakes <code>wager</code> percent of their points; the round's winners split the pot.</td></tr>
+      <tr><td>Last place picks</td><td>Before every round after the first, last place picks the next from those left; an AI rival at once, a slow pick after ten seconds.</td></tr>
+      <tr><td>Grid Duel</td><td>King of the hill: the two lowest duel first, the winner holds the hill, the leader defends last; a draw keeps the king.</td></tr>
+      <tr><td>Void</td><td>A round that cannot finish scores nothing and takes no stakes; the night goes on.</td></tr>
+      <tr><td>Leaving</td><td>The total stands; nothing more is scored and no prize won.</td></tr>
+      <tr><td>Prizes</td><td>By final place: gold, coins, boosters, cards. None for a night ended early or one whose every round was void.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="party-alone">Played alone</h3>
+  <p><code>World::enter_pack_mode</code> with a night's id (a map trigger's <code>mode</code> event, a dialogue choice) opens the night against its AI rivals under <code>SceneMode::Expansion</code>. Between rounds the mode screen draws the party card; a round plays on the seat like any instance but settles nothing of its own, and its results stand three seconds before the night scores them. A Grid Duel match between two rivals plays out at once. Start on a party card ends the night early; any button closes the podium. Online, the room's host directs one copy per player (<a href="netplay.html#party-night">netplay</a>).</p>
+  <p>The party card is one <code>engine-ui</code> composition for both hosts: the intro card slides in with the round's kind, title, detail and tags over the standings; the scoreboard's rows step in with each player's last-round points; the podium raises 2nd / 1st / 3rd blocks with a figure in each player's colour under falling confetti.</p>
+  <p>A night whose pack names a <code>podium</code> ends on it in the world, alone or online. Online every peer raises it from its own verified copy of the night at the pack's anchor (<code>World::show_net_podium</code>), so the blocks agree everywhere; each peer stands its own leader on its block, and the others are their roaming avatars, or stand-ins where they are not in view. Nothing about it travels.</p>
+</section>
+
+<section class="doc-section" id="grid-duel-at-a-table" data-doc="grid-duel-at-a-table">
+  <h2>Grid Duel at a table</h2>
+  <p>A duel that names a pack map and a table (<code>map</code> and <code>[card_duels.table]</code> in <code>modes.toml</code>) is played on a board laid on a table in the 3D field scene: the opponent seated across it, the party leader standing at the player's side, spectators around, and the camera taking its shots. The session is unchanged and the only authority; the table reads its view each frame and feeds nothing back.</p>
+  <ul class="bullets">
+    <li><strong>The layout.</strong> <code>DuelTableFrame</code> places the table in its own axes - across from the player's seat toward the opponent's, and the player's right hand. Each hand is fanned on its seat's edge of the board, tilted toward its holder: the player reads their faces, the opponent's show their backs (whether a card shows its face is the projected quad's winding). The layout is made from the local seat, so each networked peer sits in the near seat and sees the table from their own chair.</li>
+    <li><strong>The timeline</strong> (<code>duel_stage::DuelStage</code>, its own frame clock, deterministic): the deal flies the ten cards from the dealer's pile into the hands; a placed card slides from the hand in an arc and drops onto its cell with a dust ring; each captured card then turns over about its long axis, its owner's colour changing at the half turn with a burst of sparks; a chain capture follows a beat later with a larger burst and "Chain!"; at the end the last flips play out and the result banner goes up.</li>
+    <li><strong>The NPCs.</strong> The opponent stands on its seat facing the board and plays its <code>think</code> clip while choosing; spectators keep their tiles and turn to the board. A move taking two or more cards, and the result, set their moods: the spectators cheer for the player and slump against them, the opponent the reverse.</li>
+    <li><strong>The shots.</strong> An establishing shot of the room while the cards are dealt, easing into a close shot over the board from behind the player's seat that drifts slowly; a push in over the cell being chosen, a pull back while captures flip, and at the end a low reaction shot across the board on the opponent. The results card waits for it and then draws over the table.</li>
+    <li><strong>Sound.</strong> Retail cue ids for the deal, the place, the flip and the result, pushed on the field's SFX ring (the table's <code>sfx</code>, or menu cues).</li>
+    <li><strong>Drawing it.</strong> Depth-tested screen primitives in explicit ordering-table bands: a wooden table on four legs (or a prop of the map), the gold-rimmed felt board (or a texture of the base scene), pulsing rings on the elemental cells and the cursor's frame, the cards' shadows, the cards themselves (owner quad, face or back subdivided so the affine mapping bends with the card, a raised card's rim light) and additive sparks. The HUD is only the score plates, the turn prompt and the selected card's panel.</li>
+  </ul>
+  <p>The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor (<code>--expansion packs/rebirth --map rebirth_tower_5f --mode wardens-duel</code>); the <code>duel_table</code> test pack is the minimal case.</p>
+</section>
+
+<section class="doc-section" id="poker-at-a-table" data-doc="poker-at-a-table">
+  <h2>Poker at a table</h2>
+  <p>A poker instance that names a pack map and a table (<code>map</code> and <code>[poker.table]</code>) is dealt on an oval felt table in the 3D field scene, the other seats' NPCs in chairs round it. The session is unchanged and the only authority; <code>poker::table::PokerTableFrame</code> places the table and <code>poker_stage::PokerStage</code> turns each frame's view into cards, chips, NPC poses, sounds and a shot.</p>
+  <ul class="bullets">
+    <li><strong>Chairs and hidden cards.</strong> Each peer sits in the near chair and the others keep their seat order round the oval, so a networked game shows every player the table from their own chair. A hole card shows its face only to its own seat, and to everyone at a showdown while its seat is still in; every other card lies face down and the card page holds no face for it at all.</li>
+    <li><strong>What plays.</strong> Each hand deals two rounds from the dealer's deck beside the button; the flop, turn and river fly to the board and turn up; bets slide out with the amount floating over them and into the pot when the street closes; folded cards slide in face down; at a showdown the live hands turn over while the camera sweeps half round the table, then holds on the winner; the pot slides to its winner with a burst and a banner naming the hand.</li>
+    <li><strong>The NPCs.</strong> Each plays its <code>think</code> clip on its turn, <code>fold</code> as it folds, <code>all_in</code> while all in, <code>cheer</code> on a won pot and <code>slump</code> when it busts.</li>
+    <li><strong>Drawing it.</strong> An oval felt lit brightest in the middle, a gold betting line, a padded rail on four legs; chips as stacked discs coloured by the stack's size against the big blind; the dealer button and a pulsing ring at the chair to act. The HUD is a plate per other seat, the pot, the player's own plate with the hand it makes, and the action menu.</li>
+  </ul>
+  <p>The Rebirth pack deals the Tower High Table in the Gambler's Rest hall (<code>--expansion packs/rebirth --map rebirth_tower_5f --mode tower-high-table</code>).</p>
+</section>
+
+<section class="doc-section" id="hosts" data-doc="hosts">
+  <h2>Hosts</h2>
+  <p>Both play hosts run the modes inside the running game, through one seat on the <code>World</code> and one screen composition.</p>
+  <h3 id="the-seat">The seat</h3>
+  <p><code>active::ActiveMode</code> is any one of the five sessions behind a common surface: build an instance by id from a mode section and a card section, tick it, read its view, settle it. <code>PackModeSeat</code> (in <code>engine-expansion</code>) holds one <code>ActiveMode</code> at a time, or the instance picker, or a finished session's results, and the mode the world returns to. <code>World::open_pack_mode_picker</code> and <code>World::enter_pack_mode(id)</code> seat it and switch the world to <code>SceneMode::Expansion</code>; the mode tick then runs <code>World::tick_pack_mode</code> in place of field and battle dispatch, feeding seat 0 the frame's pad word. <code>World::exit_pack_mode</code> closes it from outside (a session still in play is forfeited).</p>
+  <p>The instances are the active pack's <code>modes.toml</code> (with its <code>cards.toml</code> as the duel's card book) when the pack defines any mode, else the built-in practice set. A pack duel deals the player their collection's deck; the practice duel, and a pack duel before the player owns five cards, deal the first five cards of the card section. A golf round seats one regular AI beside the player.</p>
+  <p class="callout callout-tip"><code>SceneMode::Expansion</code> is not a retail mode: <code>GameMode::for_scene_mode</code> answers <code>None</code> for it, as for <code>Title</code>, and nothing reaches it without a host entering the seat, so a world that never does plays exactly as before.</p>
+  <h3 id="rewards">Rewards</h3>
+  <p>When a session finishes, the seat settles it: the session's own rewards, plus, when the player placed first, every <code>cards.toml</code> reward rule whose source is that mode's id. Seat 0's grants land at once - a currency change in the party gold purse or the casino coin bank (clamped to <code>0..=9,999,999</code>), boosters and cards in <code>ExpansionState::pending_card_rewards</code> for the card economy to collect. Quitting through the quit prompt grants nothing, a lost poker stack included.</p>
+  <h3 id="entry">Entry</h3>
+  <table>
+    <thead><tr><th>Host</th><th>Entry</th></tr></thead>
+    <tbody>
+      <tr><td>Native window</td><td><code>`</code> (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. <code>--mode &lt;INSTANCE&gt;</code> enters an instance once the launch scene is entered, <code>--mode picker</code> opens the picker.</td></tr>
+      <tr><td>Browser play page</td><td>The Game mode select in the play tools: the picker, every instance by name, and Leave the mode.</td></tr>
+      <tr><td>Card screens</td><td>Native: <code>\</code> (backslash) opens and closes the card menu; <code>--mode cards</code>, <code>cards-binder</code> and <code>cards-dealer[:ID]</code> open one at launch. Browser: <code>play_cards_open</code> / <code>play_cards_close</code>, with <code>play_cards_json</code> and <code>play_card_notices_json</code>. A pack map opens a dealer through its <code>card_dealer</code> trigger.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="controls">Controls</h3>
+  <p>Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). The picker takes Up / Down and Cross, and Circle or Start backs out; the results card leaves on Cross.</p>
+  <table>
+    <thead><tr><th>Mode</th><th>Controls</th></tr></thead>
+    <tbody>
+      <tr><td>Poker</td><td>Left / Right: Fold, Check-Call, Raise, All-in. Up / Down: raise size in big blinds. Cross: act, or skip the showdown.</td></tr>
+      <tr><td>Grid Duel</td><td>Left / Right: hand card. Cross: lift it, then D-pad to a cell and Cross to place. Circle: put it back.</td></tr>
+      <tr><td>Golf</td><td>Left / Right: aim (hold Square for fine steps). Cross: start the power meter, Cross again to strike. Circle: back to aiming.</td></tr>
+      <tr><td>Racing</td><td>Cross: accelerate. Square: brake. Left / Right: steer. R1: boost.</td></tr>
+      <tr><td>Prop hunt</td><td>Choose: Left / Right and Cross. Then the D-pad moves; a hunter inspects with Cross, a hider taunts with Triangle.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="screens">Screens</h3>
+  <p><code>legaia_engine_ui::expansion_modes</code> builds every screen in the 320x240 stage as flat panels plus dialog-font labels; <code>mode_screen_prims</code> and <code>mode_screen_texts</code> keep the two halves of one composition, and no panel's geometry depends on a label's measured width. <code>legaia_engine_screens::expansion_modes</code> projects the seat into it: while the seat owns the frame, <code>screen_layers::compose_screen_prims</code> returns its panels as the whole under-text list (only the pause wipe may cover it), and each host's text layer appends <code>pack_mode_stage_texts</code>, scaled with the rest of its stage group.</p>
+  <table>
+    <thead><tr><th>Screen</th><th>Shows</th></tr></thead>
+    <tbody>
+      <tr><td>Picker</td><td>Every instance with its mode kind, the cursor row, the last entry error.</td></tr>
+      <tr><td>Poker</td><td>Opponent plates along the far rail (chips, dealer button, card backs, bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu, the event log.</td></tr>
+      <tr><td>Grid Duel</td><td>The 3x3 grid on its board with elemental cells, both hands fanned down the sides, the score plates, the turn line and the selected card's panel; cards are the card page's faces.</td></tr>
+      <tr><td>Golf</td><td>The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard.</td></tr>
+      <tr><td>Racing</td><td>A functional top-down track map with boost segments and the start line, every racer, and the lap / place / speed / boost panel.</td></tr>
+      <tr><td>Prop hunt</td><td>A functional top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts.</td></tr>
+      <tr><td>Results</td><td>Placements with each mode's score, and what was won.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="doc-section" id="tests" data-doc="tests">
+  <h2>Tests</h2>
+  <ul class="bullets">
+    <li><strong>Rules.</strong> Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.</li>
+    <li><strong>Determinism.</strong> <code>tests/determinism.rs</code> runs each Rebirth mode twice with the same seed and scripted pads and asserts identical <code>state_hash</code> sequences and results, then that a different seed diverges, so the hash cannot be vacuous (compare <a href="../tooling/determinism-replay.html">determinism replay</a> for the whole <code>World</code>).</li>
+    <li><strong>Soak.</strong> <code>tests/soak.rs</code> drives every mode with random pads over many seeds and asserts no panic, termination within a frame bound, chip conservation, a full duel grid, a complete golf scorecard within the stroke cap, and no avatar inside a wall.</li>
+    <li><strong>Pack.</strong> <code>tests/rebirth_pack.rs</code> parses the Rebirth <code>cards.toml</code> / <code>modes.toml</code> and converts every instance into a session config.</li>
+    <li><strong>Seat.</strong> <code>engine-modes</code> <code>active</code> builds every built-in instance and rolls a won mode's reward rules; <code>engine-expansion</code> <code>modes</code> drives the picker, the quit prompt and the results card.</li>
+    <li><strong>World.</strong> <code>engine-core</code> <code>tests/expansion_modes_world.rs</code> enters each built-in instance from the field, drives it to its end through <code>World::tick</code>, and checks the coin bank, the pending card rewards and the restored field.</li>
+    <li><strong>The poker table.</strong> <code>engine-modes</code> <code>poker::table</code> and <code>poker::art</code> test the chairs and the page; <code>engine-expansion</code> <code>poker_stage::tests</code> runs AI hands through the stage (hashes unchanged, deterministic frames, hidden cards faceless until a showdown from any chair, NPCs never in the viewer's chair, chips and a won pot).</li>
+    <li><strong>The duel table.</strong> <code>engine-modes</code> <code>cards::table</code> and <code>cards::table_art</code> test the table's axes, seats and the card page; <code>engine-expansion</code> <code>duel_stage::tests</code> runs whole AI duels through the stage (session hashes unchanged, same seed same frames, the deal, cells, mid-flip colour change, the far seat's view, the held results); <code>engine-core</code> <code>tests/expansion_duel_table_world.rs</code> plays a duel to its end through <code>World::tick</code> at its table, checks its hashes against the 2D screen and the card page's write and restore; the disc-gated <code>engine-scene-host</code> <code>expansion_duel_table_disc</code> enters the test pack's duel and Rebirth's Warden's Duel through the scene host.</li>
+    <li><strong>Screens.</strong> <code>engine-ui</code> <code>expansion_modes::tests</code> checks each screen's key labels and that every panel lies on the stage; <code>expansion_modes::binder</code> checks the card screens' labels, the portrait runs and the toast placement.</li>
+    <li><strong>Card economy.</strong> <code>engine-modes</code> <code>cards::economy</code>, <code>cards::screen</code> and <code>cards::trade</code> test buying, opening (the same saved stream opens the same pack), selling, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. <code>engine-expansion</code> tests the grant drain, battle sources, stakes, toasts and the save block's card record; <code>engine-core</code> <code>world::tests::expansion_cards</code> checks that drops leave the retail spoils and RNG word untouched while crediting the collection; the disc-gated <code>engine-scene-host</code> <code>expansion_cards_disc</code> checks every Rebirth card's art against a real monster record and renders every portrait.</li>
+  </ul>
+  <div class="see-also"><span class="see-also-label">See also</span> <a href="netplay.html">Netplay</a> <a href="../formats/expansion-pack.html">Expansion-pack format</a> <a href="../guides/expansion-packs.html">Expansion packs</a> <a href="../guides/playing-online.html">Playing online</a></div>
+</section>

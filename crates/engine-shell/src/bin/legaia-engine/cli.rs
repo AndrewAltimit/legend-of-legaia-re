@@ -25,7 +25,7 @@ use std::path::PathBuf;
         also resolve against the current directory - run from the same directory \
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
-        Playing:      play-window, play-str, config, save, load\n  \
+        Playing:      play-window, play-str, config, save, load, packs\n  \
         Exploring:    list-scenes, info, record, replay, export-glb\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
@@ -621,6 +621,11 @@ pub(crate) enum Cmd {
         /// fixture (if present).
         #[arg(long, default_value_t = false)]
         strict: bool,
+        /// An expansion pack the replay's `pack` switches may activate (a
+        /// pack directory or `.lxpack` bundle); repeatable. A pack whose
+        /// content hash differs from the recorded one is refused.
+        #[arg(long = "pack")]
+        packs: Vec<PathBuf>,
     },
     /// Open a play-window session and capture your pad input into a
     /// replay file for `replay`. Thin shim over `play-window`: every
@@ -1086,13 +1091,15 @@ pub(crate) enum Cmd {
         /// `--battle first` takes the scene's lowest row that carries
         /// monsters. `--battle cell:[s:]ID,...` (hex monster ids, `s:` =
         /// scripted) registers a formation no row carries, as a boss or duel
-        /// installed from another table. The fight is armed at boot and opens
+        /// installed from another table. With `--expansion`, `boss:KEY` and
+        /// `pack:KEY` start the active pack's boss or formation, as a map
+        /// trigger does. The fight is armed at boot and opens
         /// through the ordinary transition, so what it shows is what an
         /// organic encounter shows.
         /// Forces the live loop on. Omit for normal play - the flag changes
         /// nothing when absent. Pairs with `--screenshot-tick` (allow ~40
         /// ticks for the intro transition).
-        #[arg(long, value_name = "ROW|first|cell:IDS")]
+        #[arg(long, value_name = "ROW|first|cell:IDS|boss:KEY|pack:KEY")]
         battle: Option<String>,
         /// Force the enhanced-lighting ENHANCEMENT (non-retail) on for this
         /// session: the scene mood's ambient + key light over the baked
@@ -1217,6 +1224,11 @@ pub(crate) enum Cmd {
         /// holds it off.
         #[arg(long, default_value_t = false)]
         save_anywhere: bool,
+        /// Action movement: a faster, platformer-style field walk - Square
+        /// jumps (and jumps again in the air), R2 dashes, the run button
+        /// sprints. Not retail; `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        action_movement: bool,
         /// DEBUG affordance, not a player surface: teach the lead party
         /// member a spell id (at level 1) before the first world tick, so a
         /// capture run can open the battle Magic arm without playing to the
@@ -1246,6 +1258,72 @@ pub(crate) enum Cmd {
         /// look at. The record runs against the launch's flags and seats.
         #[arg(long, value_name = "P:R")]
         play_record: Option<String>,
+        /// DEBUG affordance, not a player surface: once the scene (or
+        /// `--map`) is entered, play the active expansion pack's cutscene
+        /// `ID` (`cutscenes.toml`), the way a trigger, an arrival or a quest
+        /// starts one - e.g. `--expansion packs/rebirth --map
+        /// rebirth_tower_8f --play-cutscene sovereign_falls`. It runs against
+        /// the launch's flags.
+        #[arg(long, value_name = "ID", requires = "expansion")]
+        play_cutscene: Option<String>,
+        /// Load an expansion pack (a pack directory or an `.lxpack` bundle)
+        /// before anything else runs: New Game, Continue and `--resume-save`
+        /// all play with it (a save made on a pack map returns there). With
+        /// `--map`, boot straight into one of its maps in place of the
+        /// `--scene` entry.
+        #[arg(long, value_name = "PATH")]
+        expansion: Option<PathBuf>,
+        /// Watch the `--expansion` pack (its folder, or the `.lxpack` file)
+        /// and reload it in place whenever a file in it changes, the player
+        /// kept where they stand on the map - edit the TOML in an editor and
+        /// see it live. `End` reloads by hand with or without it.
+        #[arg(long, requires = "expansion")]
+        expansion_watch: bool,
+        /// The pack map `--expansion` boots into (`maps/<id>.toml`).
+        #[arg(long, value_name = "ID", requires = "expansion")]
+        map: Option<String>,
+        /// The spawn of `--map` the player arrives at; the map's first spawn
+        /// when omitted.
+        #[arg(long, value_name = "ID", requires = "map")]
+        spawn: Option<String>,
+        // --- expansion game modes (`--mode`) ---
+        /// Enter an expansion game mode once the scene is entered: an
+        /// instance id from the active pack's `modes.toml`, or from the
+        /// built-in practice set without a pack (`builtin-poker`,
+        /// `builtin-duel`, `builtin-golf`, `builtin-race`,
+        /// `builtin-prop-hunt`). `picker` opens the mode picker instead.
+        /// The same seat the backquote key opens in play. `cards`,
+        /// `cards-binder` and `cards-dealer[:ID]` open the active pack's card
+        /// screen (the card menu, the binder, a dealer's counter) instead;
+        /// `items`, `items-gear` and `shop[:ID]` its item screen (the pack
+        /// bag, its Gear tab, a pack shop's counter). DEBUG: `NIGHT:podium`
+        /// enters party night `NIGHT`, plays its rounds out at once (the
+        /// player first in each) and lands on its podium.
+        #[arg(long = "mode", value_name = "INSTANCE")]
+        pack_mode: Option<String>,
+        // --- end expansion game modes ---
+        // --- netplay (`--host` / `--join`) ---
+        /// Host a multiplayer room: run a relay on PORT (default 7462, all
+        /// interfaces) and create a room on it. The room screen (Tab) shows
+        /// the room code and the LAN address others join with.
+        #[arg(long, value_name = "PORT", num_args = 0..=1, default_missing_value = "7462", conflicts_with = "join")]
+        host: Option<u16>,
+        /// Join a multiplayer room on the relay at ADDR (`host:port`, a
+        /// hosting play window or `legaia-relay`). Needs `--room`.
+        #[arg(long, value_name = "ADDR", requires = "room")]
+        join: Option<String>,
+        /// The room code to join (six letters and digits).
+        #[arg(long, value_name = "CODE", requires = "join")]
+        room: Option<String>,
+        /// The name other players see.
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+        /// Open the Multiplayer screen (host a room, or join one by address
+        /// and code) once the field is up - what the launcher's Play online
+        /// button passes. Tab opens the same screen in play.
+        #[arg(long, default_value_t = false)]
+        multiplayer: bool,
+        // --- end netplay ---
         /// Start from an LGSF save file (the `save` / save-screen shape,
         /// resume trailer included) instead of a door entry into `--scene`:
         /// the save lands the way a card Load does
@@ -1263,7 +1341,9 @@ pub(crate) enum Cmd {
         /// (`legaia_engine_cheats::cheats`, the same mutation the browser play
         /// page's Cheats panel makes). Raising grants the XP; lowering
         /// rebuilds each character from the executable's New Game template
-        /// plus the growth for the levels it keeps.
+        /// plus the growth for the levels it keeps. As a retail level-up,
+        /// it raises the HP / MP maxima but not the current values (pair it
+        /// with `--cheat-restore`) and changes no equipment.
         #[arg(long, value_name = "LEVEL")]
         cheat_level: Option<u8>,
         /// Cheat: set the gold purse (clamped to 9,999,999).
@@ -1359,7 +1439,8 @@ pub(crate) enum Cmd {
                 "arts_saved_list",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
-                "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere"]
+                "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",
+                "action_movement"]
         )]
         retail: bool,
     },
@@ -1411,6 +1492,19 @@ pub(crate) enum Cmd {
         /// Window height.
         #[arg(long, default_value_t = 480)]
         height: u32,
+    },
+    /// List the installed expansion packs: every `.lxpack` and pack folder
+    /// in the packs folder (`packs/` under the data directory), with its
+    /// version, authors, pack format and whether it plays on this engine.
+    /// `play-window --expansion <id>` plays one by its id.
+    #[command(display_order = 5)]
+    Packs {
+        /// The folder to list instead of the packs folder.
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Print JSON instead of text.
+        #[arg(long)]
+        json: bool,
     },
     /// Show or update the keyboard-to-pad-button input mapping used by
     /// `play-window`. The config file defaults to `legaia-input.toml` in
@@ -1698,5 +1792,66 @@ mod locomotion_flag_tests {
                 "{old} must not parse"
             );
         }
+    }
+
+    /// `--map` needs `--expansion`, `--spawn` needs a map, and `--expansion`
+    /// stands alone (the pack for New Game and Continue).
+    #[test]
+    fn expansion_flags_parse_as_a_pair() {
+        let parse = |args: &[&str]| {
+            let mut argv = vec!["legaia-engine", "play-window"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv)
+        };
+        let cli = parse(&["--expansion", "packs/rebirth", "--map", "m", "--spawn", "s"])
+            .expect("the pair parses");
+        match cli.cmd.expect("subcommand") {
+            Cmd::PlayWindow {
+                expansion,
+                map,
+                spawn,
+                ..
+            } => assert_eq!(
+                (expansion, map.as_deref(), spawn.as_deref()),
+                (Some("packs/rebirth".into()), Some("m"), Some("s"))
+            ),
+            other => panic!("parsed {other:?}"),
+        }
+        assert!(parse(&["--expansion", "packs/rebirth"]).is_ok());
+        assert!(parse(&["--expansion", "packs/rebirth", "--expansion-watch"]).is_ok());
+        assert!(parse(&["--expansion-watch"]).is_err());
+        assert!(parse(&["--map", "m"]).is_err());
+        assert!(parse(&["--spawn", "s"]).is_err());
+    }
+
+    /// `--host` takes an optional port; `--join` needs `--room`, and the
+    /// two do not go together.
+    #[test]
+    fn netplay_flags_parse() {
+        let parse = |args: &[&str]| {
+            let mut argv = vec!["legaia-engine", "play-window"];
+            argv.extend_from_slice(args);
+            Cli::try_parse_from(argv)
+        };
+        let host = |args: &[&str]| match parse(args).expect("parses").cmd.expect("subcommand") {
+            Cmd::PlayWindow { host, .. } => host,
+            other => panic!("parsed {other:?}"),
+        };
+        assert_eq!(host(&["--host"]), Some(7462));
+        assert_eq!(host(&["--host", "9000"]), Some(9000));
+        assert_eq!(host(&[]), None);
+        assert!(
+            parse(&[
+                "--join",
+                "127.0.0.1:7462",
+                "--room",
+                "ABCDEF",
+                "--name",
+                "Noa"
+            ])
+            .is_ok()
+        );
+        assert!(parse(&["--join", "127.0.0.1:7462"]).is_err());
+        assert!(parse(&["--host", "--join", "x:1", "--room", "ABCDEF"]).is_err());
     }
 }

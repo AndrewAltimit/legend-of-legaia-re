@@ -5,6 +5,7 @@ use super::*;
 mod element_affinity;
 mod outcome_fold;
 mod power_and_xp;
+pub(in crate::world) use power_and_xp::seru_module_heal;
 mod predamage;
 mod spell_resolution;
 

@@ -83,13 +83,7 @@ impl World {
             costs: s.costs,
             chip_icons: {
                 let roster = self.party_roster_slot(s.actor as usize);
-                let equip = self
-                    .party
-                    .roster
-                    .members
-                    .get(roster)
-                    .map(|r| r.equipment().slots)
-                    .unwrap_or_default();
+                let equip = self.member_look_equipment(roster);
                 legaia_engine_battle::arts_command_input::retail_chip_icons(
                     roster as u8 + 1,
                     &equip,
@@ -238,8 +232,14 @@ impl World {
         let halved = record.ability_bits()[5] & 0x08 != 0;
         let character = self.caster_character(char_slot as u8);
         let first = usize::from(page) * ARTS_LIST_ROWS_PER_PAGE;
-        let rows = (first..count.min(first + ARTS_LIST_ROWS_PER_PAGE))
+        // An expansion pack's known arts list after the record's own.
+        let pack = self.expansion_arts_list_rows(character, halved);
+        let total = count + pack.len();
+        let rows = (first..total.min(first + ARTS_LIST_ROWS_PER_PAGE))
             .map(|i| {
+                if i >= count {
+                    return pack.get(i - count).cloned();
+                }
                 let id = skills.ids[i];
                 let e = table
                     .iter()
@@ -320,6 +320,10 @@ impl World {
         let loaded = preseed.len();
         // The Triangle list pages over the character's learned arts
         // (`record[+0x185]`), the count the retail pager reads.
+        let pack_known = self
+            .expansion_arts_list_rows(character, false)
+            .len()
+            .min(usize::from(u8::MAX)) as u8;
         let learned = self
             .party
             .roster
@@ -329,7 +333,8 @@ impl World {
         let mut session =
             ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed);
         if let Some(n) = learned {
-            session = session.with_list_rows(n);
+            // An expansion pack's known arts page on after the record's own.
+            session = session.with_list_rows_and_pack(n, pack_known);
         }
         // The gauge build cuts the window at the first command one full pool
         // cannot pay, zeroing that one byte (`sb zero,0x1df(a1)` at

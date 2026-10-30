@@ -722,6 +722,12 @@ pub(super) struct PlayWindowApp {
         Option<Option<std::sync::Arc<legaia_engine_ui::slot_cabinet::SlotCabinetAssets>>>,
     /// The machine's VRAM on the GPU while it is on screen.
     pub(super) slot_gpu: Option<UploadedVram>,
+    /// The multiplayer room this window is in (`--host` / `--join`).
+    pub(super) netplay: Option<super::netplay::NetHost>,
+    /// The `--expansion` pack's hot reload (`End`, `--expansion-watch`).
+    pub(super) pack_reload: Option<super::pack_reload::PackReload>,
+    /// The Multiplayer screen while no room is open (Tab, `--multiplayer`).
+    pub(super) netplay_menu: Option<super::netplay::NetMenu>,
     /// The marquee's legend / blink counters.
     pub(super) slot_marquee_clock: legaia_engine_ui::slot_cabinet::SlotMarqueeClock,
     /// This frame's composed dot buffer.
@@ -824,6 +830,9 @@ pub(super) struct PlayWindowApp {
     /// Never write the options or bindings files: set by the headless
     /// window, whose key presses are a test's, not a player's.
     pub(super) persist_disabled: bool,
+    /// The title's NEW GAME opens the New Game rules screen first (off in
+    /// retail-faithful mode, where NEW GAME is retail's straight start).
+    pub(super) run_rules_screen: bool,
     /// Write card saves back to their image even with
     /// [`Self::persist_disabled`] set: a headless window opened over a
     /// caller's own save directory (`HeadlessPlayWindow::open_boot_ui_in`),
@@ -1108,6 +1117,13 @@ pub(super) enum BootUiState {
     /// Game-over panel is active after a party wipe.
     #[allow(dead_code)]
     GameOver(legaia_engine_menus::game_over::GameOverSession),
+    /// The New Game rules screen between the title's NEW GAME and the
+    /// opening. The screen itself sits on the world
+    /// (`World::run_rules.setup`, `legaia_engine_session::run_rules`), so
+    /// the shared screen layers draw it; this arm feeds it the pad.
+    RunRules,
+    /// The Boss Rush intermission or result screen, also on the world.
+    BossRush,
 }
 
 /// The single world-space Y negation of the **field render frame**: field

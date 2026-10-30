@@ -22,6 +22,58 @@ impl PlayWindowApp {
         }
     }
 
+    /// The run rules' frame step (`legaia_engine_session::run_rules`), the
+    /// page's `poll_run_rules` twin: a Boss Rush's next stage entered and
+    /// armed (with the render rebuild a scene entry needs), its
+    /// intermission handed the frame, and an ironman run's card rules - the
+    /// run's save erased after a wipe, its autosave at a scene entry -
+    /// applied to the port-1 card.
+    pub(super) fn poll_run_rules(&mut self) {
+        use legaia_engine_session::run_rules::{BossRushHostStep, boss_rush_screen_up};
+        if !self.boot_ui.is_active() {
+            if let BossRushHostStep::Entered(scene) =
+                self.session.boss_rush_step(&self.field_live_opts)
+            {
+                log::info!("boss rush: entered '{scene}'");
+                self.rebuild_scene_render_state();
+            }
+            if boss_rush_screen_up(&self.session.host.world) {
+                self.boot_ui = BootUiState::BossRush;
+            }
+        }
+        let world = &mut self.session.host.world;
+        let erase = world.take_ironman_erase();
+        let autosave = world.take_run_autosave();
+        if erase.is_none() && !autosave {
+            return;
+        }
+        use legaia_engine_save_state::WorldSaveState;
+        let sf = autosave.then(|| self.session.host.world.save_full());
+        let resume = self.session.current_resume();
+        let index = self.session.host.index.clone();
+        let Some(card) = self.port1_card.as_mut() else {
+            return;
+        };
+        use legaia_engine_menu_runtime::card_write::{ironman_autosave, ironman_erase_run};
+        if let Some(run_id) = erase {
+            let n = ironman_erase_run(card, run_id, None);
+            log::info!("ironman: the party fell; {n} save(s) of the run erased");
+        }
+        if let Some(sf) = sf {
+            match ironman_autosave(card, &sf, &resume, Some(&index)) {
+                Ok(Some(w)) => log::info!("ironman: autosaved as save {}", w.save_slot + 1),
+                Ok(None) => {}
+                Err(e) => log::warn!("ironman: autosave failed: {e}"),
+            }
+        }
+        if (!self.persist_disabled || self.persist_cards)
+            && card.path.is_some()
+            && let Err(e) = card.persist()
+        {
+            log::warn!("ironman: card write failed: {e:#}");
+        }
+    }
+
     /// A field-VM shop (op `0x49` sub-0) or casino prize counter (sub-7)
     /// opened this tick: hand the player into it, take the screen's first
     /// step on no edge and queue its blip - the session's step

@@ -209,6 +209,22 @@ impl SaveFile {
             out.extend_from_slice(&body);
         }
 
+        // Optional LGXD block: the expansion-pack progress. Emitted only
+        // when the save carries one.
+        if let Some(body) = self.ext_v2.expansion.as_deref() {
+            out.extend_from_slice(&SAVE_FILE_EXTD_MAGIC);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(body);
+        }
+
+        // Optional LGXF block: the run rules. Emitted only when the save
+        // carries them.
+        if let Some(body) = self.ext_v2.run_rules.as_deref() {
+            out.extend_from_slice(&SAVE_FILE_EXTF_MAGIC);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(body);
+        }
+
         out
     }
 }

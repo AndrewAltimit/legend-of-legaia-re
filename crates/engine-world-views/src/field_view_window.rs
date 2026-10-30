@@ -70,6 +70,12 @@ pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells
     if !world.toggles.view_window_crop || !retail_framing || world.mode != SceneMode::Field {
         return None;
     }
+    // An expansion-pack cutscene's shot is not retail's frustum: the window
+    // is authored around the follow focus, and a shot moved off it would
+    // open black edges, so the map draws whole while one moves the camera.
+    if world.expansion_cutscene_camera().is_some() {
+        return None;
+    }
     let view = world.npcs.cull_view.as_ref()?;
     let [r0, r1, r2, r3] = view.attr_box.map(i32::from);
     let (tx, tz) = (

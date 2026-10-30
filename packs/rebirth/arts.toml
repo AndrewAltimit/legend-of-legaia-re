@@ -1,0 +1,115 @@
+# Rebirth's Tactical Arts: one art per hero learned on the climb, and one
+# "Rebirth" finisher each, reached by chaining that art into a retail one.
+# The arts come at level 55 once the Cinder Warden is out; the finishers at
+# 80 once the Iron Regent has fallen - both land on the climb's own pace.
+#
+# Every art plays the hero's own retail clips (a segment names the retail
+# art whose clip plays); the pack sets the power bytes, the damage percent
+# and what the art costs. Arrows: L / R / U / D. Vahn and Gala swing the
+# weapon on Left and the Ra-Seru arm on Right; Noa the other way round.
+#
+# Balance (retail figures from data/gamedata/arts.toml and the art records):
+# a retail four- or five-arrow regular art costs 24-30 AP and lands one or
+# two beats at x20-x28; a Super Art costs 54-66 AP for four ascending beats.
+# The mid arts sit at the top of the regular tier; the finishers just above
+# the Super tier, since they need a second art in the same turn.
+
+# --- Vahn ---------------------------------------------------------------------
+
+[arts.ember_cascade]
+character = "vahn"
+name = "Ember Cascade"
+description = "Pyro Pummel into a|burning somersault."
+commands = "RURDU"            # Ra-Seru, High, Ra-Seru, Low, High
+ap = 30
+segments = [
+    { art = "Pyro Pummel", power = ["U22", "L22"] },
+    { art = "Somersault", power = ["L28"] },
+]
+element = 2                   # fire
+learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
+
+[arts.rebirth_blaze]
+character = "vahn"
+name = "Rebirth Blaze"
+description = "The tower's fire, given back."
+ap = 30
+segments = [
+    { art = "Tornado Flame (Miracle)", power = ["U28", "L28", "U28", "L28"] },
+    { art = "Power Slash", power = ["L28"] },
+]
+damage_pct = 140
+element = 2
+learn = { level = 80, requires = { bosses = ["iron_regent"] } }
+
+[chains.rebirth_blaze]
+character = "vahn"
+arts = ["ember_cascade", 0x29]  # then Hyper Elbow (L R L)
+finisher = "rebirth_blaze"
+
+# --- Noa ----------------------------------------------------------------------
+
+[arts.gale_waltz]
+character = "noa"
+name = "Gale Waltz"
+description = "A lance turn and a|diving kick."
+commands = "LULDU"            # Ra-Seru, High, Ra-Seru, Low, High
+ap = 30
+segments = [
+    { art = "Mirage Lancer", power = ["U22", "U22"] },
+    { art = "Swan Driver", power = ["L28"] },
+]
+element = 3                   # wind
+rider = { status = "numb", chance = 20 }
+learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
+
+[arts.rebirth_tempest]
+character = "noa"
+name = "Rebirth Tempest"
+description = "Every wind the Mist held."
+ap = 30
+segments = [
+    { art = "Super Tempest", power = ["U28", "U28", "L28", "L28"] },
+    { art = "Dragon Fangs", power = ["L28"] },
+]
+damage_pct = 140
+element = 3
+learn = { level = 80, requires = { bosses = ["iron_regent"] } }
+
+[chains.rebirth_tempest]
+character = "noa"
+arts = ["gale_waltz", 0x29]   # then Sonic Javelin (R D R)
+finisher = "rebirth_tempest"
+
+# --- Gala ---------------------------------------------------------------------
+
+[arts.iron_avalanche]
+character = "gala"
+name = "Iron Avalanche"
+description = "Ram, then bring the|mountain down."
+commands = "RURDD"            # Ra-Seru, High, Ra-Seru, Low, Low
+ap = 30
+segments = [
+    { art = "Battering Ram", power = ["L22"] },
+    { art = "Super Ironhead", power = ["U28", "L28"] },
+]
+element = 4                   # thunder
+learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
+
+[arts.rebirth_thunder]
+character = "gala"
+name = "Rebirth Thunder"
+description = "Biron's own storm."
+ap = 30
+segments = [
+    { art = "Thunder Punch (Miracle)", power = ["U28", "L28", "U28", "L28"] },
+    { art = "Heaven's Drop", power = ["L28"] },
+]
+damage_pct = 140
+element = 4
+learn = { level = 80, requires = { bosses = ["iron_regent"] } }
+
+[chains.rebirth_thunder]
+character = "gala"
+arts = ["iron_avalanche", 0x27]   # then Ironhead (U D D)
+finisher = "rebirth_thunder"

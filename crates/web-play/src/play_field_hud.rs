@@ -48,11 +48,22 @@ impl LegaiaRuntime {
         let Some(h) = self.scene_host.host() else {
             return true;
         };
+        // The workbench preview is being edited: the map, not the party,
+        // owns the frame.
+        if self.editor_hud_hidden {
+            return true;
+        }
         // A movie owning the screen is the native window's `cutscene` term:
         // the readout must not sit over an in-game FMV.
         legaia_engine_world_views::world_map_panel_host::field_hud_suppressed(
             &h.world,
-            self.menu.is_open() || self.fmv.is_open(),
+            self.menu.is_open()
+                || self.fmv.is_open()
+                // The room screen or a party card owns the frame.
+                || self
+                    .netplay
+                    .as_ref()
+                    .is_some_and(legaia_engine_netplay::screens::screen_owns_frame),
         )
     }
 

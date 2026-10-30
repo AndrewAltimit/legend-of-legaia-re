@@ -51,6 +51,11 @@ impl World {
                 }
             };
         }
+        // An expansion pack that owns this scene's encounter rate rolls in
+        // place of both retail paths below.
+        if let Some(fired) = self.expansion_encounter_step() {
+            return fired;
+        }
         // Per-region path: when a field region tracker is installed, the
         // player's active region (rate increment + formation-range pick)
         // drives the roll (`FUN_801D9E1C`) instead of the session's
@@ -112,6 +117,7 @@ impl World {
                 self.terrain.region_tracker = Some(tracker);
                 return false;
             }
+            tracker.set_rate_permille(self.run_encounter_rate_permille());
             let roll = tracker.on_step(wx, wz, || self.next_rand());
             // Per-step roll diagnostics (trace level; off in normal runs):
             // which tile the step landed on and how far the region counter
@@ -130,6 +136,10 @@ impl World {
                         row_index: r.formation_id as usize,
                         roll_q8: 0,
                     };
+                    // An expansion pack's encounter override picks the fight.
+                    let er = self.expansion_substitute_roll(er);
+                    // The run rules' randomizer redraws the fight's seats.
+                    let er = self.run_rules_substitute_roll(er);
                     log::info!(
                         "encounter: region roll in '{}' at ({wx}, {wz}) -> formation row {}",
                         self.active_scene_label,
@@ -157,6 +167,32 @@ impl World {
         }
         let rng = self.next_rng();
         let modifiers = self.encounter_rate_modifiers();
+        if self.expansion_substitutes_rolls() || self.run_rules_rerolls_encounters() {
+            // The session's own `on_step`, opened up so the pack's override
+            // can pick the rolled fight before the transition is armed.
+            let roll = match self.encounters.session.as_mut() {
+                Some(s)
+                    if matches!(
+                        s.phase(),
+                        legaia_engine_battle::encounter::EncounterPhase::Idle
+                    ) =>
+                {
+                    s.tracker_mut().set_rate_modifiers(modifiers);
+                    s.tracker_mut().on_step(rng)
+                }
+                _ => None,
+            };
+            let Some(roll) = roll else {
+                return false;
+            };
+            let roll = self.expansion_substitute_roll(roll);
+            let roll = self.run_rules_substitute_roll(roll);
+            return self
+                .encounters
+                .session
+                .as_mut()
+                .is_some_and(|s| s.trigger_with(roll));
+        }
         match self.encounters.session.as_mut() {
             Some(session) => {
                 session.tracker_mut().set_rate_modifiers(modifiers);

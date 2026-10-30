@@ -27,6 +27,7 @@ members = [
     "crates/save",
     "crates/extract",
     "crates/disc-patch",
+    "crates/randomizer",
     "crates/translate",
     "crates/party-swap",
     "crates/texture-replace",
@@ -62,6 +63,12 @@ members = [
     "crates/engine-menu-runtime",
     "crates/engine-battle-hud",
     "crates/engine-cheats",
+    "crates/engine-netplay",
+    "crates/engine-expansion",
+    "crates/engine-run-rules",
+    "crates/engine-modes",
+    "crates/netplay",
+    "crates/expansion-format",
     "crates/engine-world-views",
     "crates/engine-save-state",
     "crates/engine-scene-host",
@@ -81,6 +88,7 @@ members = [
     "crates/engine-shell",
     "crates/asset-viewer",
     "crates/explorer",
+    "crates/web-expansion",
     "crates/web-minigames",
     "crates/web-patcher",
     "crates/web-play",
@@ -113,6 +121,9 @@ flate2 = "1"
 gilrs = "0.11"
 glam = { version = "0.34", features = ["bytemuck"] }
 js-sys = "0.3"
+# Ogg Vorbis decoding for expansion-pack audio assets (pure Rust, no C
+# libraries); default features pull in the `ogg` page reader it needs.
+lewton = "0.10"
 libc = "0.2"
 log = "0.4"
 png = "0.18"
@@ -163,6 +174,12 @@ legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-menu-runtime = { path = "crates/engine-menu-runtime" }
 legaia-engine-battle-hud = { path = "crates/engine-battle-hud" }
 legaia-engine-cheats = { path = "crates/engine-cheats" }
+legaia-engine-netplay = { path = "crates/engine-netplay" }
+legaia-engine-expansion = { path = "crates/engine-expansion" }
+legaia-engine-run-rules = { path = "crates/engine-run-rules" }
+legaia-engine-modes = { path = "crates/engine-modes" }
+legaia-netplay = { path = "crates/netplay", default-features = false }
+legaia-expansion-format = { path = "crates/expansion-format" }
 legaia-engine-world-views = { path = "crates/engine-world-views" }
 legaia-engine-save-state = { path = "crates/engine-save-state" }
 legaia-engine-scene-host = { path = "crates/engine-scene-host" }
@@ -201,6 +218,7 @@ legaia-ram-image = { path = "crates/ram-image" }
 legaia-mednafen = { path = "crates/mednafen", default-features = false }
 legaia-mes = { path = "crates/mes", default-features = false }
 legaia-disc-patch = { path = "crates/disc-patch" }
+legaia-randomizer = { path = "crates/randomizer" }
 legaia-translate = { path = "crates/translate" }
 legaia-code-hooks = { path = "crates/code-hooks" }
 legaia-party-swap = { path = "crates/party-swap" }
@@ -216,6 +234,7 @@ legaia-seq = { path = "crates/seq", default-features = false }
 legaia-tim = { path = "crates/tim", default-features = false }
 legaia-tmd = { path = "crates/tmd", default-features = false }
 legaia-vab = { path = "crates/vab", default-features = false }
+legaia-web-expansion = { path = "crates/web-expansion" }
 legaia-web-minigames = { path = "crates/web-minigames" }
 legaia-web-patcher = { path = "crates/web-patcher" }
 legaia-web-play = { path = "crates/web-play" }

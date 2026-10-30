@@ -110,16 +110,32 @@ impl<'a> HostView<'a> {
     /// `fog_puff_prim`. Empty outside game mode 3 or while the script gate
     /// (`_DAT_8007B854`) is clear - the two tests the pass makes at
     /// `0x80026EA4..0x80026EC4`. A read, not a step.
+    ///
+    /// A pack map's particle emitters ride the same pass
+    /// (`World::expansion_particle_quads`, through the follow frame): they
+    /// are sheets of the same shape, and drawing them here puts them on both
+    /// hosts at once.
     pub fn fog_prims(&self) -> Vec<ScreenPrim> {
         let world = self.world;
-        if !World::fog_mode(world.mode) || !world.fog.gate {
-            return Vec::new();
+        let mut out: Vec<ScreenPrim> = Vec::new();
+        if World::fog_mode(world.mode) && world.fog.gate {
+            out.extend(
+                world.fog_quads().iter().map(|q| {
+                    fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth)
+                }),
+            );
         }
-        world
-            .fog_quads()
-            .iter()
-            .map(|q| fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
-            .collect()
+        if world.expansion.map.is_some()
+            && let Some(view) = self.follow_frame().field_view()
+        {
+            let fx = world.field_fx_view(&view);
+            out.extend(
+                world.expansion_particle_quads(&fx).iter().map(|q| {
+                    fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth)
+                }),
+            );
+        }
+        out
     }
 
     /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
@@ -128,7 +144,7 @@ impl<'a> HostView<'a> {
     /// host depth-tests it against the scene already drawn: under the actor
     /// standing on it, over the ground. Empty outside game mode 3.
     pub fn drop_shadow_prims(&self) -> Vec<ScreenPrim> {
-        if !World::fog_mode(self.world.mode) {
+        if !World::fog_mode(self.world.mode) && self.world.pack_mode_stage().is_none() {
             return Vec::new();
         }
         let Some(view) = self.follow_frame().field_view() else {
@@ -196,6 +212,18 @@ impl<'a> HostView<'a> {
             self.scene_box,
             draw_player,
         )
+    }
+
+    /// This frame's in-world mode pieces - golf balls, the cup and flag,
+    /// the aim arrow, the other seats' bodies, boost trails
+    /// ([`crate::pack_mode_world::stage_prims`]) - through the frame the
+    /// stage's shot resolves to. Empty unless a golf round or race played on
+    /// a pack map owns the frame.
+    pub fn pack_mode_world_prims(&self) -> Vec<ScreenPrim> {
+        if self.world.pack_mode_stage().is_none() {
+            return Vec::new();
+        }
+        crate::pack_mode_world::stage_prims(self.world, &self.follow_frame(), self.scene_box)
     }
 
     /// This frame's overworld sky band (`FUN_801F73E4`) through the gate

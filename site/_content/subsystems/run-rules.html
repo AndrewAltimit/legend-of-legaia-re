@@ -1,0 +1,112 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">subsystems</a> &middot; run rules</div>
+  <h1>Run rules</h1>
+  <p class="lede">Twists for a whole run, picked on the New Game rules screen: a difficulty preset, New Game+, ironman, an in-engine randomizer and a Boss Rush mode. None of them exists in the original game. The default rules are the retail game, and every reader folds a rule in as an identity at that default, so a run with no rules plays bit-identically and writes byte-identical saves.</p>
+</header>
+
+<section class="doc-section" id="the-rules" data-doc="the-rules">
+  <h2>The rules</h2>
+  <dl class="kv">
+    <dt>Rule model</dt><dd><code>crates/engine-run-rules</code>: <code>RunRules</code> (mode, difficulty, optional New Game+, ironman, randomizer), the presets, New Game+'s curve, the Boss Rush run, the rules screen session, the save body.</dd>
+    <dt>Shared planners</dt><dd><code>crates/randomizer</code>: the disc patcher's seeded generator, drop planner and safety lists, used by the engine too.</dd>
+    <dt>World side</dt><dd><code>engine-core</code> <code>world::run_rules</code> and <code>world::run_rules_boss_rush</code>, seated as <code>World::run_rules</code>.</dd>
+    <dt>Hosts</dt><dd><code>engine-session</code> <code>run_rules</code>: the rules screen, the run start, the Boss Rush driver. Ironman's card rules are the shared card writer's (<code>engine-menu-runtime</code> <code>card_write</code>).</dd>
+    <dt>Save</dt><dd>The optional <code>LGXF</code> block; a card block's engine-ext tail segment.</dd>
+  </dl>
+  <figure class="diagram">
+    <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="NEW GAME opens the rules screen; Start stages the rules on the world; the New Game takes them, seeds the party and folds in the New Game+ carry; then either the story opening or the first Boss Rush stage">
+      <defs><marker id="rr-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="70" width="110" height="56" rx="4"/>
+      <text class="dg-label" x="65" y="94">Title</text><text class="dg-sub" x="65" y="112">NEW GAME</text>
+      <rect class="dg-node-accent" x="160" y="70" width="140" height="56" rx="4"/>
+      <text class="dg-label" x="230" y="94">Rules screen</text><text class="dg-sub" x="230" y="112">one confirm = retail</text>
+      <rect class="dg-node" x="340" y="70" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="415" y="94">New Game</text><text class="dg-sub" x="415" y="112">rules + NG+ carry</text>
+      <rect class="dg-node-ok" x="530" y="20" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="610" y="44">Story</text><text class="dg-sub" x="610" y="62">opdeene, town01</text>
+      <rect class="dg-node-ok" x="530" y="120" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="610" y="144">Boss Rush</text><text class="dg-sub" x="610" y="162">stage 1 scene + fight</text>
+      <path class="dg-edge" d="M120 98 L158 98" marker-end="url(#rr-arrow)"/>
+      <path class="dg-edge" d="M300 98 L338 98" marker-end="url(#rr-arrow)"/>
+      <path class="dg-edge" d="M490 90 L510 90 L510 48 L528 48" marker-end="url(#rr-arrow)"/>
+      <path class="dg-edge" d="M490 106 L510 106 L510 148 L528 148" marker-end="url(#rr-arrow)"/>
+      <text class="dg-edge-label" x="230" y="150">Circle: back to the title</text>
+    </svg>
+    <figcaption>The rules are staged on the world and taken by the New Game; a save load restores them from the save's block, and a save without one plays retail rules.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="difficulty-presets" data-doc="difficulty-presets">
+  <h2>Difficulty presets</h2>
+  <p>A preset is a bundle of scales and gates. Each scale multiplies the matching <a href="gameplay-tweaks.html">gameplay tweak</a> at the reader the tweak already uses, so the two stack; Normal is retail.</p>
+  <table>
+    <thead><tr><th>Knob</th><th>Easy</th><th>Normal</th><th>Hard</th><th>Nightmare</th></tr></thead>
+    <tbody>
+      <tr><td>Enemy stats</td><td>0.75x</td><td>1x</td><td>1.35x</td><td>1.8x</td></tr>
+      <tr><td>Enemy attack count</td><td>0.75x</td><td>1x</td><td>1.25x</td><td>1.5x</td></tr>
+      <tr><td>EXP</td><td>1.5x</td><td>1x</td><td>1x</td><td>0.9x</td></tr>
+      <tr><td>Gold</td><td>1.5x</td><td>1x</td><td>1x</td><td>0.8x</td></tr>
+      <tr><td>Encounter rate</td><td>0.6x</td><td>1x</td><td>1.25x</td><td>1.5x</td></tr>
+      <tr><td>Shop prices</td><td>0.8x</td><td>1x</td><td>1.25x</td><td>1.5x</td></tr>
+      <tr><td>Healing items</td><td>1.5x</td><td>1x</td><td>0.75x</td><td>0.5x</td></tr>
+      <tr><td>AP gain</td><td>1.25x</td><td>1x</td><td>1x</td><td>0.75x</td></tr>
+      <tr><td>Smarter monsters</td><td>no</td><td>no</td><td>yes</td><td>yes</td></tr>
+      <tr><td>No escape</td><td>no</td><td>no</td><td>no</td><td>yes</td></tr>
+    </tbody>
+  </table>
+  <p>The AI knob is the existing smarter-targeting rule; Tetsu, the unwinnable sparring partner, keeps his stats at every preset.</p>
+</section>
+
+<section class="doc-section" id="new-game" data-doc="new-game">
+  <h2>New Game+</h2>
+  <p>A New Game+ starts from any save on either card port, at that save's cycle plus one, keeping a chosen set: levels, equipment, items, Seru magic, arts, gold, cards. The source is loaded as a Continue would load it, the kept parts are snapshotted, and the New Game folds them back over the fresh records. Members the story has not introduced yet are written into the roster without joining, so the story's join keeps them; quest and key items stay where the story hands them over. An active pack's cards, items, worn gear and learned arts and spells carry too.</p>
+  <p>Enemies scale with the cycle and the party's strongest level, story bosses more steeply than ordinary monsters, so a set piece stays a fight at a cleared game's levels. While a pack is active the world raises the pack flags <code>run.ng_plus</code>, <code>run.hard</code>, <code>run.ironman</code>, <code>run.randomizer</code> and the counter <code>run.ng_plus_cycle</code>, which a pack's triggers and quests can gate on.</p>
+</section>
+
+<section class="doc-section" id="ironman" data-doc="ironman">
+  <h2>Ironman</h2>
+  <p>An ironman run has a run id its saves carry. The shared card writer keeps one save per run, erasing every other save of the run after a write; a party wipe erases the run's save; each scene entry autosaves over it. Hardcore refuses the battle Item command.</p>
+</section>
+
+<section class="doc-section" id="the-randomizer" data-doc="the-randomizer">
+  <h2>The randomizer</h2>
+  <p>The in-engine randomizer reassigns game data from a seed string with no disc patch, using the patcher's string-to-seed rule. Each part applies at its reader, keyed by the seed and the site (not the order the player meets them, and never through the game's own <code>rand()</code> stream).</p>
+  <table>
+    <thead><tr><th>Part</th><th>Rule</th></tr></thead>
+    <tbody>
+      <tr><td>Encounters</td><td>A random roll's seats redrawn from the scene's own encounter monsters, at most two species.</td></tr>
+      <tr><td>Monster stats</td><td>Each stat moved inside 0.8x to 1.25x per monster.</td></tr>
+      <tr><td>Drops and steals</td><td>Each item drawn from the sellable pool, its chance kept.</td></tr>
+      <tr><td>Shops</td><td>Each slot drawn from the sellable pool per scene, shop and slot.</td></tr>
+      <tr><td>Chests and gifts</td><td>Each item drawn from the sellable pool per scene and item.</td></tr>
+      <tr><td>Starting gear</td><td>Vahn's weapon and armour drawn from what he can wear.</td></tr>
+    </tbody>
+  </table>
+  <p>The safety rules are the patcher's own, from the shared crate: story bosses and tutorial enemies keep their stats and stay out of random fights, the Gimard fight is never redrawn, scripted fights never pass the roll sites, and no quest or key item ever moves. That is what keeps a randomized run completable. A chest's dialogue still names the scripted item.</p>
+</section>
+
+<section class="doc-section" id="boss-rush" data-doc="boss-rush">
+  <h2>Boss Rush</h2>
+  <p>Boss Rush fights the story bosses back to back: Gimard, Caruban, Songi, Zeto, Xain, Dohati, Koru and Cort, then an active pack's bosses, easiest first, each at the level its quest chain first admits it at plus two. Each stage enters its retail scene and arms the story's own scripted row, after the party (Vahn, Noa, Gala) is raised to the stage's level through the ordinary EXP path. A win pays a purse and opens the intermission (next battle, rest, buy supplies, give up); a loss ends the run. The clock counts the stages, not the intermission, and the leaderboard rides every save the session makes.</p>
+</section>
+
+<section class="doc-section" id="the-rules-screen" data-doc="the-rules-screen">
+  <h2>The rules screen</h2>
+  <p>The title's NEW GAME opens the screen on both hosts, except in retail-faithful mode. It opens on the retail rules with the cursor on Start. Up and Down pick a row, Left and Right change it, Cross confirms, Start begins the run from any row, Circle returns to the title. The screen sits on the world, so the shared screen layers draw it on the native window and the play page alike; the pause menu shows the run's summary line.</p>
+</section>
+
+<section class="doc-section" id="saves-and-replays" data-doc="saves-and-replays">
+  <h2>Saves and replays</h2>
+  <p>The run's block is versioned JSON: the rules, a Boss Rush in progress, the leaderboard, the ironman run id. LGSF files carry it in <code>LGXF</code>; a card block carries it in the engine-ext tail after the expansion segment. A retail run writes no block. A <a href="../tooling/determinism-replay.html">determinism replay</a> records the rules as a <code>run_rules</code> value row.</p>
+</section>
+
+<section class="doc-section" id="tests" data-doc="tests">
+  <h2>Tests</h2>
+  <ul class="bullets">
+    <li><strong>Kernels.</strong> <code>engine-run-rules</code>: retail identity, presets, round trips, the New Game+ curve, the Boss Rush run, the rules screen driven by pad.</li>
+    <li><strong>World.</strong> <code>engine-core</code> <code>world::tests::run_rules</code>: every reader the identity under retail rules, presets apply and clear, New Game+ carries the chosen parts, ironman marks the run, the randomizer is a function of its seed and keeps the protected fights.</li>
+    <li><strong>Card.</strong> <code>engine-menu-runtime</code>: one save per ironman run, the autosave lands on it, a wipe erases it.</li>
+    <li><strong>Disc.</strong> <code>engine-shell</code> <code>boss_rush_disc</code>: every stage's row seats its boss; a Boss Rush runs through its first stages.</li>
+  </ul>
+  <div class="see-also"><span class="see-also-label">See also</span> <a href="gameplay-tweaks.html">Gameplay tweaks</a> <a href="../tooling/randomizer.html">Disc randomizer</a> <a href="expansion-modes.html">Expansion game modes</a></div>
+</section>

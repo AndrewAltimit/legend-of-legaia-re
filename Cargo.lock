@@ -313,6 +313,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1670,10 +1676,10 @@ dependencies = [
  "anyhow",
  "legaia-art",
  "legaia-code-hooks",
- "legaia-disc-patch",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-lzs",
+ "legaia-randomizer",
 ]
 
 [[package]]
@@ -1686,6 +1692,7 @@ dependencies = [
  "legaia-bytes",
  "legaia-container-formats",
  "legaia-disc-audit",
+ "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-lzs",
@@ -1802,6 +1809,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-lzs",
  "legaia-party-swap",
+ "legaia-randomizer",
  "legaia-texture-replace",
  "legaia-translate",
  "legaia-vab",
@@ -2045,16 +2053,20 @@ dependencies = [
  "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-motion-vm",
+ "legaia-engine-run-rules",
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-gamedata",
  "legaia-lzs",
@@ -2062,6 +2074,7 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-randomizer",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
@@ -2100,6 +2113,21 @@ dependencies = [
  "legaia-render-kernels",
  "legaia-tim",
  "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-expansion"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-mode",
+ "legaia-engine-modes",
+ "legaia-engine-run-rules",
+ "legaia-engine-system",
+ "legaia-expansion-format",
+ "legaia-game-tables",
+ "toml",
 ]
 
 [[package]]
@@ -2165,16 +2193,19 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-core",
  "legaia-engine-dev-menu",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-run-rules",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
  "legaia-engine-title",
  "legaia-engine-vm",
+ "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-prot",
  "legaia-save",
@@ -2266,6 +2297,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-modes"
+version = "0.1.0"
+dependencies = [
+ "legaia-engine-system",
+ "legaia-expansion-format",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "legaia-engine-motion-vm"
 version = "0.1.0"
 dependencies = [
@@ -2273,6 +2315,28 @@ dependencies = [
  "legaia-engine-system",
  "legaia-lzs",
  "legaia-scene-formats",
+]
+
+[[package]]
+name = "legaia-engine-netplay"
+version = "0.1.0"
+dependencies = [
+ "legaia-anm",
+ "legaia-engine-core",
+ "legaia-engine-expansion",
+ "legaia-engine-mode",
+ "legaia-engine-modes",
+ "legaia-engine-scene-host",
+ "legaia-engine-system",
+ "legaia-engine-ui",
+ "legaia-expansion-format",
+ "legaia-font",
+ "legaia-netplay",
+ "legaia-render-kernels",
+ "legaia-tmd",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
@@ -2300,17 +2364,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-run-rules"
+version = "0.1.0"
+dependencies = [
+ "legaia-randomizer",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "legaia-engine-save-state"
 version = "0.1.0"
 dependencies = [
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-core",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-mode",
  "legaia-engine-system",
  "legaia-engine-world-views",
+ "legaia-expansion-format",
  "legaia-prot",
  "legaia-save",
  "legaia-scene-formats",
@@ -2333,6 +2408,7 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-expansion-format",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-lzs",
@@ -2349,6 +2425,7 @@ dependencies = [
  "legaia-ui-formats",
  "legaia-vab",
  "serde",
+ "serde_json",
  "toml",
 ]
 
@@ -2364,6 +2441,7 @@ dependencies = [
  "legaia-disc-patch",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -2371,17 +2449,20 @@ dependencies = [
  "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-engine-world-views",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-gamedata",
@@ -2401,6 +2482,7 @@ dependencies = [
  "legaia-ui-formats",
  "legaia-vab",
  "log",
+ "png",
 ]
 
 [[package]]
@@ -2417,6 +2499,7 @@ dependencies = [
  "legaia-engine-dev-menu",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-menu-runtime",
@@ -2424,6 +2507,8 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
+ "legaia-engine-run-rules",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
@@ -2455,12 +2540,14 @@ dependencies = [
  "legaia-engine-cheats",
  "legaia-engine-core",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-menu-runtime",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-run-rules",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
@@ -2468,6 +2555,7 @@ dependencies = [
  "legaia-engine-title",
  "legaia-engine-vm",
  "legaia-engine-world-views",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",
@@ -2514,6 +2602,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-export",
  "legaia-engine-field",
  "legaia-engine-fishing",
@@ -2522,7 +2611,10 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
+ "legaia-engine-netplay",
  "legaia-engine-render",
+ "legaia-engine-run-rules",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
@@ -2532,12 +2624,14 @@ dependencies = [
  "legaia-engine-title",
  "legaia-engine-ui",
  "legaia-engine-world-views",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-mdec",
  "legaia-mednafen",
  "legaia-minigame-formats",
+ "legaia-netplay",
  "legaia-overlay-images",
  "legaia-parity",
  "legaia-pcsx-redux",
@@ -2597,6 +2691,8 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
  "legaia-engine-field",
+ "legaia-engine-modes",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-mednafen",
@@ -2634,14 +2730,17 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-dev-menu",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-expansion-format",
  "legaia-lzs",
  "legaia-render-kernels",
  "legaia-save",
@@ -2649,6 +2748,21 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "legaia-ui-formats",
+]
+
+[[package]]
+name = "legaia-expansion-format"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "legaia-art",
+ "lewton",
+ "png",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
 ]
 
 [[package]]
@@ -2847,6 +2961,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-netplay"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
 name = "legaia-overlay-images"
 version = "0.1.0"
 dependencies = [
@@ -2884,6 +3008,7 @@ dependencies = [
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
+ "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-menu-runtime",
  "legaia-engine-menus",
@@ -2906,6 +3031,7 @@ dependencies = [
  "legaia-pcsx-redux",
  "legaia-prot",
  "legaia-ram-image",
+ "legaia-randomizer",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
@@ -2961,6 +3087,7 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-party-swap",
  "legaia-prot",
+ "legaia-randomizer",
  "legaia-scene-formats",
  "legaia-texture-replace",
  "legaia-tim",
@@ -3009,6 +3136,10 @@ dependencies = [
  "serde",
  "toml",
 ]
+
+[[package]]
+name = "legaia-randomizer"
+version = "0.1.0"
 
 [[package]]
 name = "legaia-render-kernels"
@@ -3148,6 +3279,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-web-expansion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-actor-formats",
+ "legaia-art",
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-expansion",
+ "legaia-engine-scene",
+ "legaia-expansion-format",
+ "legaia-font",
+ "legaia-game-tables",
+ "legaia-gamedata",
+ "legaia-iso",
+ "legaia-scene-formats",
+ "legaia-tmd",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "legaia-web-minigames"
 version = "0.1.0"
 dependencies = [
@@ -3213,6 +3367,7 @@ dependencies = [
  "legaia-lzs",
  "legaia-patcher",
  "legaia-prot",
+ "legaia-randomizer",
  "legaia-texture-replace",
  "legaia-tim",
  "legaia-translate",
@@ -3250,6 +3405,7 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-netplay",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
@@ -3260,11 +3416,13 @@ dependencies = [
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-engine-world-views",
+ "legaia-expansion-format",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-mdec",
  "legaia-minigame-formats",
+ "legaia-netplay",
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-render-kernels",
@@ -3321,6 +3479,7 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "legaia-vab",
+ "legaia-web-expansion",
  "legaia-web-patcher",
  "legaia-web-play",
  "legaia-xa",
@@ -3339,6 +3498,17 @@ dependencies = [
  "clap",
  "legaia-iso",
  "libc",
+]
+
+[[package]]
+name = "lewton"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "777b48df9aaab155475a83a7df3070395ea1ac6902f5cd062b8f2b028075c030"
+dependencies = [
+ "byteorder",
+ "ogg",
+ "tinyvec",
 ]
 
 [[package]]
@@ -3983,6 +4153,15 @@ dependencies = [
  "objc2 0.5.3",
  "objc2-core-location",
  "objc2-foundation 0.2.2",
+]
+
+[[package]]
+name = "ogg"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6951b4e8bf21c8193da321bcce9c9dd2e13c858fe078bf9054a288b419ae5d6e"
+dependencies = [
+ "byteorder",
 ]
 
 [[package]]
@@ -4861,6 +5040,12 @@ dependencies = [
  "bytemuck",
  "strict-num",
 ]
+
+[[package]]
+name = "tinyvec"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tokio"

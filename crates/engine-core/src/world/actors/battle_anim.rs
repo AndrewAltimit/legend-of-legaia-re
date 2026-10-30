@@ -835,7 +835,10 @@ impl World {
         // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
         // dynamic slot number - so the latch keeps the RAW staged id, which
         // is the id space both battle-camera dispatch tables index.
-        self.actors[i].battle.latched_anim = q;
+        // An expansion pack art's clip latches the retail constant it
+        // borrows (identity for every retail byte and with no pack).
+        let latch = self.expansion_art_latch(i, q);
+        self.actors[i].battle.latched_anim = latch;
         // The arts slow-motion arms (`FUN_8004AD80`; kernel
         // `legaia_engine_battle_vm::battle_anim_rate`). Order is retail's: the
         // unconditional decay first (`0x8004B080` - a non-normal actor's

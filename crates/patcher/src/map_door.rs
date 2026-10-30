@@ -57,7 +57,7 @@
 //! The edit is a same-size 2-byte in-place write per record (the `.MAP` is
 //! raw, not LZS) - no relocation, and the trigger tiles never move.
 
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::rng::SplitMix64;
 
 /// On-disc footprint of a per-scene `.MAP` field-map file (PROT entry sized
 /// exactly this; the trigger block occupies the last `0x2000` bytes). Mirrors
@@ -493,8 +493,8 @@ fn subcell_open(entry: &[u8], sx: i32, sz: i32) -> bool {
 /// Map-door randomization only supports `Shuffle` (the multiset-preserving
 /// permutation keeps every destination one the scene's kind-0 system already
 /// uses); `Random` would place the player off-map.
-pub fn supported_mode(mode: crate::drops::DropMode) -> bool {
-    matches!(mode, crate::drops::DropMode::Shuffle)
+pub fn supported_mode(mode: legaia_randomizer::drops::DropMode) -> bool {
+    matches!(mode, legaia_randomizer::drops::DropMode::Shuffle)
 }
 
 #[cfg(test)]

@@ -40,6 +40,10 @@ pub struct ArtsEditorDrawArgs<'a> {
     /// `true` when there is room in the library for one more saved
     /// chain - the browse list shows a trailing "+ New" row only then.
     pub can_add_new: bool,
+    /// The expansion pack arts the character knows, listed read-only under
+    /// the saved chains while browsing (`pretty_sequence` carries the
+    /// commands and the AP). Empty with no pack.
+    pub pack_arts: &'a [ArtsChainRow<'a>],
 }
 
 /// Build [`TextDraw`]s for the Tactical Arts editor overlay shared by
@@ -119,10 +123,33 @@ pub fn tactical_arts_editor_draws_for(
                     color,
                 ));
             }
-            let foot_y = pen.1
+            let mut foot_y = pen.1
                 + LINE_H
                 + (args.saved.len() + if args.can_add_new { 1 } else { 0 }) as i32 * LINE_H
                 + LINE_H;
+            // An expansion pack's arts the character knows: read-only rows
+            // (they are performed by their commands like any art).
+            if !args.pack_arts.is_empty() {
+                out.extend(text_draws_for(
+                    &font.layout_ascii("Pack arts"),
+                    (pen.0, foot_y - LINE_H / 2),
+                    gold,
+                ));
+                for (i, art) in args.pack_arts.iter().enumerate() {
+                    let y = foot_y - LINE_H / 2 + LINE_H * (i as i32 + 1);
+                    out.extend(text_draws_for(
+                        &font.layout_ascii(art.name),
+                        (pen.0 + 14, y),
+                        white,
+                    ));
+                    out.extend(text_draws_for(
+                        &font.layout_ascii(art.pretty_sequence),
+                        (pen.0 + 110, y),
+                        dim,
+                    ));
+                }
+                foot_y += LINE_H * (args.pack_arts.len() as i32 + 1);
+            }
             out.extend(text_draws_for(
                 &font.layout_ascii("Cross: Edit  Triangle: Delete  Circle: Back"),
                 (pen.0, foot_y),

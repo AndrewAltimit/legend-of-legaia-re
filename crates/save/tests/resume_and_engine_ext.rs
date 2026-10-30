@@ -56,6 +56,8 @@ fn a_save() -> SaveFile {
             field_position: None,
             audio_levels: None,
             options: None,
+            expansion: None,
+            run_rules: None,
             active_party: vec![1, 0],
             per_char: vec![
                 (
@@ -408,4 +410,87 @@ fn leader_summary_reads_the_record_not_a_placeholder() {
     assert_eq!(s.mp, (7, 89));
     assert_eq!(s.char_id, 0);
     assert!(SaveFile::default().leader_summary().is_none());
+}
+
+/// The expansion-pack block rides as the optional `LGXD` block of an `LGSF`
+/// file, verbatim, and only when the save carries one.
+#[test]
+fn the_expansion_block_round_trips_and_is_absent_without_a_pack() {
+    let plain = a_save();
+    let mut with = a_save();
+    with.ext_v2.expansion = Some(b"LXP1-opaque-body".to_vec());
+
+    let plain_bytes = plain.write();
+    let with_bytes = with.write();
+    assert!(
+        !plain_bytes
+            .windows(4)
+            .any(|w| w == legaia_save::SAVE_FILE_EXTD_MAGIC),
+        "a save without a pack carries no block"
+    );
+    assert_eq!(
+        &with_bytes[..plain_bytes.len()],
+        &plain_bytes[..],
+        "the block appends; every earlier byte is the plain save's"
+    );
+    assert_eq!(
+        SaveFile::parse(&plain_bytes).unwrap().ext_v2.expansion,
+        None
+    );
+    assert_eq!(SaveFile::parse(&with_bytes).unwrap(), with);
+
+    // The resume trailer still reads past the block.
+    let resume = a_resume();
+    let (back, r) = SaveFile::parse_with_resume(&with.write_with_resume(&resume)).unwrap();
+    assert_eq!(back, with);
+    assert_eq!(r, resume);
+}
+
+#[test]
+fn a_truncated_expansion_block_is_an_error() {
+    let mut with = a_save();
+    with.ext_v2.expansion = Some(vec![7; 32]);
+    let bytes = with.write();
+    assert!(SaveFile::parse(&bytes[..bytes.len() - 1]).is_err());
+}
+
+/// A retail block's engine-ext tail carries the block after the `LGX4`
+/// body; a blob written without one - or by an older writer - reads none.
+#[test]
+fn the_expansion_block_rides_the_retail_engine_ext_tail() {
+    let plain = a_save();
+    let mut with = a_save();
+    with.ext_v2.expansion = Some(b"LXP1-opaque-body".to_vec());
+
+    let mut plain_block = retail_shaped_block();
+    plain.write_into_retail_sc_block(&mut plain_block).unwrap();
+    let mut with_block = plain_block.clone();
+    assert!(
+        plain
+            .write_engine_ext_into_retail_sc_block(&mut plain_block)
+            .unwrap()
+    );
+    assert!(
+        with.write_engine_ext_into_retail_sc_block(&mut with_block)
+            .unwrap()
+    );
+    assert!(sc_block_checksum_valid(&with_block));
+
+    let back = SaveFile::read_engine_ext_from_retail_sc_block(&with_block).unwrap();
+    assert_eq!(back.expansion, with.ext_v2.expansion);
+    let back = SaveFile::read_engine_ext_from_retail_sc_block(&plain_block).unwrap();
+    assert_eq!(back.expansion, None);
+
+    // An expansion block too large for the tail is withheld; the rest of
+    // the blob still lands.
+    let mut huge = a_save();
+    huge.ext_v2.expansion = Some(vec![1; RETAIL_ENGINE_EXT_CAPACITY]);
+    let mut huge_block = retail_shaped_block();
+    assert!(
+        huge.write_engine_ext_into_retail_sc_block(&mut huge_block)
+            .unwrap()
+    );
+    let back = SaveFile::read_engine_ext_from_retail_sc_block(&huge_block).unwrap();
+    assert_eq!(back.expansion, None);
+    assert_eq!(back.play_time_seconds, huge.ext_v2.play_time_seconds);
 }

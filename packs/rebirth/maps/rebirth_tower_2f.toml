@@ -1,0 +1,334 @@
+# Tower of Rebirth, second floor: the Ember Stair. A pillared hall of the
+# retail Rogue's Tower (`rugi`), kept whole (`geometry = "keep"`): its
+# torches, brickwork and pillars draw as they do on the disc, and the tile
+# walls below are the retail room's own, re-traced so the hall walks the
+# way it looks. The Cinder Warden waits at the brazier in the middle.
+
+name = "Tower of Rebirth 2F - Ember Stair"
+base = { scene = { kind = "scene", name = "rugi" }, geometry = "keep", scenery = true }
+# Sound-test track 7, "The Fire Fortress".
+bgm = { kind = "bgm", id = 7 }
+camera = "default"
+
+[tiles]
+origin = [22, 41]
+rows = [
+  "       #######",
+  "       #.....#",
+  "  ######.....######",
+  "  b...............a",
+  "  b...............a",
+  "  b...............a",
+  "  b...............a",
+  "  b.....#...#.....a###",
+  "efg..................a",
+  "b....................a",
+  "b....................h",
+  "b.......#...#........a",
+  "b....................a",
+  "b....................a",
+  "b....................a",
+  "b.......#...#........a",
+  "b....................a",
+  "b....................a",
+  "##b...............h###",
+  "  b.....#...#.....a",
+  "  b...............a",
+  "  b...............a",
+  "  b...............a",
+  "  iccccj.....cckcjd",
+  "       #.....#",
+  "       #######",
+]
+
+[tiles.legend]
+"#" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"a" = { label = "wall edge", walls = ["tr", "br"] }
+"b" = { label = "wall edge", walls = ["tl", "bl"] }
+"c" = { label = "wall edge", walls = ["bl", "br"] }
+"d" = { label = "wall nook", walls = ["tr", "bl", "br"] }
+"e" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
+"f" = { label = "wall edge", walls = ["tl", "tr"] }
+"g" = { label = "wall corner", walls = ["tl"] }
+"h" = { label = "wall edge", walls = ["tr", "br"] }
+"i" = { label = "wall nook", walls = ["tl", "bl", "br"] }
+"j" = { label = "wall edge", walls = ["bl", "br"] }
+"k" = { label = "wall edge", walls = ["bl", "br"] }
+
+[[spawns]]
+id = "from_below"
+tile = [10, 22]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [10, 3]
+
+[[exits]]
+id = "stair_down"
+rect = [8, 24, 12, 24]
+to = { kind = "map", map = "rebirth_tower_1f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [8, 1, 12, 1]
+to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [8, 20, 12, 21]
+event = { kind = "dialog", line = "floor_2f_intro" }
+once = true
+
+# The brazier between the middle pillars: the Cinder Warden's quest giver.
+[[triggers]]
+id = "brazier"
+rect = [9, 12, 11, 13]
+event = { kind = "talk", npc = "ember_brazier" }
+
+# Once the Warden has fallen the brazier is only ash.
+[[triggers]]
+id = "brazier_cold"
+rect = [9, 12, 11, 13]
+event = { kind = "dialog", line = "ember_after" }
+requires = { bosses = ["cinder_warden"] }
+
+[[encounters]]
+id = "west_aisle"
+rect = [0, 8, 6, 17]
+table = "tower_2f"
+
+[[encounters]]
+id = "east_aisle"
+rect = [13, 3, 18, 22]
+table = "tower_2f"
+
+# ---------------------------------------------------------------------------
+# Detail: the Ember Stair burns. The retail hall keeps its own torches and
+# brickwork; the pack adds the brazier's fire, the wisps that circle it,
+# embers on the pillar tops, rubble and stalagmites, and the hall's red
+# light. All of it draws only - the walls above are unchanged.
+# ---------------------------------------------------------------------------
+
+# The brazier's fire: the Rogue's Tower's flame ring (`rugi` mesh 32) turning
+# on its tile, breathing, and lighting the pillars around it.
+[[props]]
+id = "brazier_fire"
+mesh = { object = 32 }
+tile = [10, 13]
+offset = [0, 4, 0]
+scale = 0.45
+animate = [{ kind = "spin", period = 180 }, { kind = "pulse", amount = 0.12, period = 46 }]
+light = { color = [255, 90, 30], radius = 900, height = 60, flicker = 0.45, period = 9 }
+
+# Two pyre wisps circle the brazier.
+[[props]]
+id = "wisp_w"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [9, 12]
+offset = [40, 90, 40]
+scale = 0.8
+animate = [{ kind = "orbit", radius = 70, period = 240 }, { kind = "bob", amplitude = 14, period = 70 }, { kind = "spin", period = 90 }]
+light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
+
+[[props]]
+id = "wisp_e"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 12]
+offset = [-40, 90, 40]
+scale = 0.8
+animate = [{ kind = "orbit", radius = 70, period = -240, phase = 0.5 }, { kind = "bob", amplitude = 14, period = 70, phase = 0.5 }, { kind = "spin", period = -90 }]
+light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
+
+# Embers sit on the four middle pillars' tops: decorations, so the pillars'
+# own retail meshes keep drawing in the same cells, each lit by a lamp below.
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [8, 11]
+offset = [0, 270, 0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [12, 11]
+offset = [0, 270, 0]
+rotation = [0.0, 30.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [8, 15]
+offset = [0, 270, 0]
+rotation = [0.0, 15.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [12, 15]
+offset = [0, 270, 0]
+rotation = [0.0, 45.0, 0.0]
+
+# Stalagmites (`rugi` mesh 24) along the walled half of the edge tiles.
+[[edges]]
+id = "stalagmites"
+mesh = { object = 24 }
+on = "abcdefghijk"
+every = 2
+inset = 40
+scale = 0.6
+
+# Fallen rock across the floor (`rugi` meshes 18..20, the cave's boulders).
+[[scatter]]
+id = "rubble"
+rect = [0, 3, 21, 22]
+on = "."
+density = 0.22
+seed = 2202
+jitter = 48
+scale = [0.25, 0.5]
+tilt = 8.0
+meshes = [
+  { mesh = { object = 18 } },
+  { mesh = { object = 19 } },
+  { mesh = { object = 20 } },
+  { mesh = { object = 17 }, scale = [0.3, 0.45] },
+]
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "ember_nw", tile = [8, 11], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 11 },
+  { id = "ember_ne", tile = [12, 11], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 13 },
+  { id = "ember_sw", tile = [8, 15], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 12 },
+  { id = "ember_se", tile = [12, 15], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 14 },
+  { id = "stair_glow_s", tile = [10, 23], offset = [0, 120, 0], color = [255, 70, 40], radius = 700, flicker = 0.2, period = 20 },
+  { id = "stair_glow_n", tile = [10, 2], offset = [0, 120, 0], color = [255, 70, 40], radius = 700, flicker = 0.2, period = 23 },
+]
+
+# Smoke drifts down the two aisles.
+[fog]
+regions = [
+  { rect = [1, 8, 6, 17], angle = 0.0, spread = 30.0, speed = 14 },
+  { rect = [14, 4, 18, 21], angle = 180.0, spread = 30.0, speed = 14 },
+]
+
+# Sparks climb from the brazier, embers drift up the aisles from the wall
+# torches, and smoke gathers under the ceiling by the stairs.
+[[emitters]]
+kind = "embers"
+rect = [9, 12, 11, 13]
+height = [10, 60]
+count = 40
+velocity = [0.0, 1.6, 0.0]
+seed = 201
+
+[[emitters]]
+kind = "embers"
+rect = [1, 8, 3, 17]
+count = 20
+color = [255, 120, 50]
+seed = 202
+
+[[emitters]]
+kind = "embers"
+rect = [17, 4, 19, 21]
+count = 20
+color = [255, 120, 50]
+seed = 203
+
+# Warm ash drifts down through the whole stair hall.
+[[emitters]]
+kind = "dust"
+rect = [4, 3, 16, 22]
+height = [60, 260]
+count = 40
+color = [255, 170, 110]
+seed = 205
+
+[[emitters]]
+kind = "smoke"
+rect = [8, 20, 12, 22]
+height = [40, 120]
+count = 14
+seed = 204
+
+# A rune circle (the Rogue's Tower's own, four atlas cells) glows on the
+# floor round the brazier.
+[[decals]]
+cell = { tpage = 10, clut = 32448, tile = 0 }
+span = 2
+tile = [10, 12]
+offset = [0, 3, 128]
+size = [300, 300]
+sides = 16
+color = [110, 110, 110]
+yaw = [0.0, 0.0]
+
+# The hall's own torch flames burn the Rogue's Tower's violet and its flame
+# ring burns blue; the Ember Stair's burn its fire's amber. The torches
+# draw through the violet ramps 32384 / 32385 (row 506), the ring through
+# the blue flame ramps 32257 / 32258 (row 504): each turned round the hue
+# circle and warmed, once on entry.
+[[materials]]
+kind = "tint"
+clut = 32384
+hue = 125.0
+color = [255, 150, 90]
+
+[[materials]]
+kind = "tint"
+clut = 32385
+hue = 125.0
+color = [255, 150, 90]
+
+[[materials]]
+kind = "tint"
+clut = 32257
+hue = 150.0
+color = [220, 140, 100]
+
+[[materials]]
+kind = "tint"
+clut = 32258
+hue = 150.0
+color = [220, 140, 100]
+
+# Sound: the four ember braziers roar as the party passes them.
+[[audio.ambient]]
+id = "ember_nw"
+sound = { kind = "sound", id = "torch" }
+tile = [8, 11]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "ember_ne"
+sound = { kind = "sound", id = "torch" }
+tile = [12, 11]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "ember_sw"
+sound = { kind = "sound", id = "torch" }
+tile = [8, 15]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "ember_se"
+sound = { kind = "sound", id = "torch" }
+tile = [12, 15]
+radius = 512
+inner = 96
+volume = 0.6
+
+# The fire in the middle roars loudest.
+[[audio.ambient]]
+id = "brazier_fire"
+sound = { kind = "sound", id = "torch" }
+tile = [10, 13]
+radius = 768
+inner = 160
+volume = 0.85

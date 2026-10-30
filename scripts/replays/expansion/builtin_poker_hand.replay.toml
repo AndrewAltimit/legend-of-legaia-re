@@ -1,0 +1,1598 @@
+# The built-in poker table through the World mode seat, entered directly
+# (a `mode` switch on frame 0). Every 12 frames Left moves the action menu
+# from Check-Call to Fold and Cross commits it (or skips a showdown), so the
+# hands turn over. Pad input and switches only - no disc bytes.
+# Runs disc-free: crates/engine-shell/tests/expansion_replay.rs.
+[meta]
+schema = "j-replay-v1"
+rng_seed = 9320
+frames = 1200
+
+[[event]]
+frame = 8
+pad = 128
+
+[[event]]
+frame = 9
+pad = 0
+
+[[event]]
+frame = 12
+pad = 16384
+
+[[event]]
+frame = 13
+pad = 0
+
+[[event]]
+frame = 20
+pad = 128
+
+[[event]]
+frame = 21
+pad = 0
+
+[[event]]
+frame = 24
+pad = 16384
+
+[[event]]
+frame = 25
+pad = 0
+
+[[event]]
+frame = 32
+pad = 128
+
+[[event]]
+frame = 33
+pad = 0
+
+[[event]]
+frame = 36
+pad = 16384
+
+[[event]]
+frame = 37
+pad = 0
+
+[[event]]
+frame = 44
+pad = 128
+
+[[event]]
+frame = 45
+pad = 0
+
+[[event]]
+frame = 48
+pad = 16384
+
+[[event]]
+frame = 49
+pad = 0
+
+[[event]]
+frame = 56
+pad = 128
+
+[[event]]
+frame = 57
+pad = 0
+
+[[event]]
+frame = 60
+pad = 16384
+
+[[event]]
+frame = 61
+pad = 0
+
+[[event]]
+frame = 68
+pad = 128
+
+[[event]]
+frame = 69
+pad = 0
+
+[[event]]
+frame = 72
+pad = 16384
+
+[[event]]
+frame = 73
+pad = 0
+
+[[event]]
+frame = 80
+pad = 128
+
+[[event]]
+frame = 81
+pad = 0
+
+[[event]]
+frame = 84
+pad = 16384
+
+[[event]]
+frame = 85
+pad = 0
+
+[[event]]
+frame = 92
+pad = 128
+
+[[event]]
+frame = 93
+pad = 0
+
+[[event]]
+frame = 96
+pad = 16384
+
+[[event]]
+frame = 97
+pad = 0
+
+[[event]]
+frame = 104
+pad = 128
+
+[[event]]
+frame = 105
+pad = 0
+
+[[event]]
+frame = 108
+pad = 16384
+
+[[event]]
+frame = 109
+pad = 0
+
+[[event]]
+frame = 116
+pad = 128
+
+[[event]]
+frame = 117
+pad = 0
+
+[[event]]
+frame = 120
+pad = 16384
+
+[[event]]
+frame = 121
+pad = 0
+
+[[event]]
+frame = 128
+pad = 128
+
+[[event]]
+frame = 129
+pad = 0
+
+[[event]]
+frame = 132
+pad = 16384
+
+[[event]]
+frame = 133
+pad = 0
+
+[[event]]
+frame = 140
+pad = 128
+
+[[event]]
+frame = 141
+pad = 0
+
+[[event]]
+frame = 144
+pad = 16384
+
+[[event]]
+frame = 145
+pad = 0
+
+[[event]]
+frame = 152
+pad = 128
+
+[[event]]
+frame = 153
+pad = 0
+
+[[event]]
+frame = 156
+pad = 16384
+
+[[event]]
+frame = 157
+pad = 0
+
+[[event]]
+frame = 164
+pad = 128
+
+[[event]]
+frame = 165
+pad = 0
+
+[[event]]
+frame = 168
+pad = 16384
+
+[[event]]
+frame = 169
+pad = 0
+
+[[event]]
+frame = 176
+pad = 128
+
+[[event]]
+frame = 177
+pad = 0
+
+[[event]]
+frame = 180
+pad = 16384
+
+[[event]]
+frame = 181
+pad = 0
+
+[[event]]
+frame = 188
+pad = 128
+
+[[event]]
+frame = 189
+pad = 0
+
+[[event]]
+frame = 192
+pad = 16384
+
+[[event]]
+frame = 193
+pad = 0
+
+[[event]]
+frame = 200
+pad = 128
+
+[[event]]
+frame = 201
+pad = 0
+
+[[event]]
+frame = 204
+pad = 16384
+
+[[event]]
+frame = 205
+pad = 0
+
+[[event]]
+frame = 212
+pad = 128
+
+[[event]]
+frame = 213
+pad = 0
+
+[[event]]
+frame = 216
+pad = 16384
+
+[[event]]
+frame = 217
+pad = 0
+
+[[event]]
+frame = 224
+pad = 128
+
+[[event]]
+frame = 225
+pad = 0
+
+[[event]]
+frame = 228
+pad = 16384
+
+[[event]]
+frame = 229
+pad = 0
+
+[[event]]
+frame = 236
+pad = 128
+
+[[event]]
+frame = 237
+pad = 0
+
+[[event]]
+frame = 240
+pad = 16384
+
+[[event]]
+frame = 241
+pad = 0
+
+[[event]]
+frame = 248
+pad = 128
+
+[[event]]
+frame = 249
+pad = 0
+
+[[event]]
+frame = 252
+pad = 16384
+
+[[event]]
+frame = 253
+pad = 0
+
+[[event]]
+frame = 260
+pad = 128
+
+[[event]]
+frame = 261
+pad = 0
+
+[[event]]
+frame = 264
+pad = 16384
+
+[[event]]
+frame = 265
+pad = 0
+
+[[event]]
+frame = 272
+pad = 128
+
+[[event]]
+frame = 273
+pad = 0
+
+[[event]]
+frame = 276
+pad = 16384
+
+[[event]]
+frame = 277
+pad = 0
+
+[[event]]
+frame = 284
+pad = 128
+
+[[event]]
+frame = 285
+pad = 0
+
+[[event]]
+frame = 288
+pad = 16384
+
+[[event]]
+frame = 289
+pad = 0
+
+[[event]]
+frame = 296
+pad = 128
+
+[[event]]
+frame = 297
+pad = 0
+
+[[event]]
+frame = 300
+pad = 16384
+
+[[event]]
+frame = 301
+pad = 0
+
+[[event]]
+frame = 308
+pad = 128
+
+[[event]]
+frame = 309
+pad = 0
+
+[[event]]
+frame = 312
+pad = 16384
+
+[[event]]
+frame = 313
+pad = 0
+
+[[event]]
+frame = 320
+pad = 128
+
+[[event]]
+frame = 321
+pad = 0
+
+[[event]]
+frame = 324
+pad = 16384
+
+[[event]]
+frame = 325
+pad = 0
+
+[[event]]
+frame = 332
+pad = 128
+
+[[event]]
+frame = 333
+pad = 0
+
+[[event]]
+frame = 336
+pad = 16384
+
+[[event]]
+frame = 337
+pad = 0
+
+[[event]]
+frame = 344
+pad = 128
+
+[[event]]
+frame = 345
+pad = 0
+
+[[event]]
+frame = 348
+pad = 16384
+
+[[event]]
+frame = 349
+pad = 0
+
+[[event]]
+frame = 356
+pad = 128
+
+[[event]]
+frame = 357
+pad = 0
+
+[[event]]
+frame = 360
+pad = 16384
+
+[[event]]
+frame = 361
+pad = 0
+
+[[event]]
+frame = 368
+pad = 128
+
+[[event]]
+frame = 369
+pad = 0
+
+[[event]]
+frame = 372
+pad = 16384
+
+[[event]]
+frame = 373
+pad = 0
+
+[[event]]
+frame = 380
+pad = 128
+
+[[event]]
+frame = 381
+pad = 0
+
+[[event]]
+frame = 384
+pad = 16384
+
+[[event]]
+frame = 385
+pad = 0
+
+[[event]]
+frame = 392
+pad = 128
+
+[[event]]
+frame = 393
+pad = 0
+
+[[event]]
+frame = 396
+pad = 16384
+
+[[event]]
+frame = 397
+pad = 0
+
+[[event]]
+frame = 404
+pad = 128
+
+[[event]]
+frame = 405
+pad = 0
+
+[[event]]
+frame = 408
+pad = 16384
+
+[[event]]
+frame = 409
+pad = 0
+
+[[event]]
+frame = 416
+pad = 128
+
+[[event]]
+frame = 417
+pad = 0
+
+[[event]]
+frame = 420
+pad = 16384
+
+[[event]]
+frame = 421
+pad = 0
+
+[[event]]
+frame = 428
+pad = 128
+
+[[event]]
+frame = 429
+pad = 0
+
+[[event]]
+frame = 432
+pad = 16384
+
+[[event]]
+frame = 433
+pad = 0
+
+[[event]]
+frame = 440
+pad = 128
+
+[[event]]
+frame = 441
+pad = 0
+
+[[event]]
+frame = 444
+pad = 16384
+
+[[event]]
+frame = 445
+pad = 0
+
+[[event]]
+frame = 452
+pad = 128
+
+[[event]]
+frame = 453
+pad = 0
+
+[[event]]
+frame = 456
+pad = 16384
+
+[[event]]
+frame = 457
+pad = 0
+
+[[event]]
+frame = 464
+pad = 128
+
+[[event]]
+frame = 465
+pad = 0
+
+[[event]]
+frame = 468
+pad = 16384
+
+[[event]]
+frame = 469
+pad = 0
+
+[[event]]
+frame = 476
+pad = 128
+
+[[event]]
+frame = 477
+pad = 0
+
+[[event]]
+frame = 480
+pad = 16384
+
+[[event]]
+frame = 481
+pad = 0
+
+[[event]]
+frame = 488
+pad = 128
+
+[[event]]
+frame = 489
+pad = 0
+
+[[event]]
+frame = 492
+pad = 16384
+
+[[event]]
+frame = 493
+pad = 0
+
+[[event]]
+frame = 500
+pad = 128
+
+[[event]]
+frame = 501
+pad = 0
+
+[[event]]
+frame = 504
+pad = 16384
+
+[[event]]
+frame = 505
+pad = 0
+
+[[event]]
+frame = 512
+pad = 128
+
+[[event]]
+frame = 513
+pad = 0
+
+[[event]]
+frame = 516
+pad = 16384
+
+[[event]]
+frame = 517
+pad = 0
+
+[[event]]
+frame = 524
+pad = 128
+
+[[event]]
+frame = 525
+pad = 0
+
+[[event]]
+frame = 528
+pad = 16384
+
+[[event]]
+frame = 529
+pad = 0
+
+[[event]]
+frame = 536
+pad = 128
+
+[[event]]
+frame = 537
+pad = 0
+
+[[event]]
+frame = 540
+pad = 16384
+
+[[event]]
+frame = 541
+pad = 0
+
+[[event]]
+frame = 548
+pad = 128
+
+[[event]]
+frame = 549
+pad = 0
+
+[[event]]
+frame = 552
+pad = 16384
+
+[[event]]
+frame = 553
+pad = 0
+
+[[event]]
+frame = 560
+pad = 128
+
+[[event]]
+frame = 561
+pad = 0
+
+[[event]]
+frame = 564
+pad = 16384
+
+[[event]]
+frame = 565
+pad = 0
+
+[[event]]
+frame = 572
+pad = 128
+
+[[event]]
+frame = 573
+pad = 0
+
+[[event]]
+frame = 576
+pad = 16384
+
+[[event]]
+frame = 577
+pad = 0
+
+[[event]]
+frame = 584
+pad = 128
+
+[[event]]
+frame = 585
+pad = 0
+
+[[event]]
+frame = 588
+pad = 16384
+
+[[event]]
+frame = 589
+pad = 0
+
+[[event]]
+frame = 596
+pad = 128
+
+[[event]]
+frame = 597
+pad = 0
+
+[[event]]
+frame = 600
+pad = 16384
+
+[[event]]
+frame = 601
+pad = 0
+
+[[event]]
+frame = 608
+pad = 128
+
+[[event]]
+frame = 609
+pad = 0
+
+[[event]]
+frame = 612
+pad = 16384
+
+[[event]]
+frame = 613
+pad = 0
+
+[[event]]
+frame = 620
+pad = 128
+
+[[event]]
+frame = 621
+pad = 0
+
+[[event]]
+frame = 624
+pad = 16384
+
+[[event]]
+frame = 625
+pad = 0
+
+[[event]]
+frame = 632
+pad = 128
+
+[[event]]
+frame = 633
+pad = 0
+
+[[event]]
+frame = 636
+pad = 16384
+
+[[event]]
+frame = 637
+pad = 0
+
+[[event]]
+frame = 644
+pad = 128
+
+[[event]]
+frame = 645
+pad = 0
+
+[[event]]
+frame = 648
+pad = 16384
+
+[[event]]
+frame = 649
+pad = 0
+
+[[event]]
+frame = 656
+pad = 128
+
+[[event]]
+frame = 657
+pad = 0
+
+[[event]]
+frame = 660
+pad = 16384
+
+[[event]]
+frame = 661
+pad = 0
+
+[[event]]
+frame = 668
+pad = 128
+
+[[event]]
+frame = 669
+pad = 0
+
+[[event]]
+frame = 672
+pad = 16384
+
+[[event]]
+frame = 673
+pad = 0
+
+[[event]]
+frame = 680
+pad = 128
+
+[[event]]
+frame = 681
+pad = 0
+
+[[event]]
+frame = 684
+pad = 16384
+
+[[event]]
+frame = 685
+pad = 0
+
+[[event]]
+frame = 692
+pad = 128
+
+[[event]]
+frame = 693
+pad = 0
+
+[[event]]
+frame = 696
+pad = 16384
+
+[[event]]
+frame = 697
+pad = 0
+
+[[event]]
+frame = 704
+pad = 128
+
+[[event]]
+frame = 705
+pad = 0
+
+[[event]]
+frame = 708
+pad = 16384
+
+[[event]]
+frame = 709
+pad = 0
+
+[[event]]
+frame = 716
+pad = 128
+
+[[event]]
+frame = 717
+pad = 0
+
+[[event]]
+frame = 720
+pad = 16384
+
+[[event]]
+frame = 721
+pad = 0
+
+[[event]]
+frame = 728
+pad = 128
+
+[[event]]
+frame = 729
+pad = 0
+
+[[event]]
+frame = 732
+pad = 16384
+
+[[event]]
+frame = 733
+pad = 0
+
+[[event]]
+frame = 740
+pad = 128
+
+[[event]]
+frame = 741
+pad = 0
+
+[[event]]
+frame = 744
+pad = 16384
+
+[[event]]
+frame = 745
+pad = 0
+
+[[event]]
+frame = 752
+pad = 128
+
+[[event]]
+frame = 753
+pad = 0
+
+[[event]]
+frame = 756
+pad = 16384
+
+[[event]]
+frame = 757
+pad = 0
+
+[[event]]
+frame = 764
+pad = 128
+
+[[event]]
+frame = 765
+pad = 0
+
+[[event]]
+frame = 768
+pad = 16384
+
+[[event]]
+frame = 769
+pad = 0
+
+[[event]]
+frame = 776
+pad = 128
+
+[[event]]
+frame = 777
+pad = 0
+
+[[event]]
+frame = 780
+pad = 16384
+
+[[event]]
+frame = 781
+pad = 0
+
+[[event]]
+frame = 788
+pad = 128
+
+[[event]]
+frame = 789
+pad = 0
+
+[[event]]
+frame = 792
+pad = 16384
+
+[[event]]
+frame = 793
+pad = 0
+
+[[event]]
+frame = 800
+pad = 128
+
+[[event]]
+frame = 801
+pad = 0
+
+[[event]]
+frame = 804
+pad = 16384
+
+[[event]]
+frame = 805
+pad = 0
+
+[[event]]
+frame = 812
+pad = 128
+
+[[event]]
+frame = 813
+pad = 0
+
+[[event]]
+frame = 816
+pad = 16384
+
+[[event]]
+frame = 817
+pad = 0
+
+[[event]]
+frame = 824
+pad = 128
+
+[[event]]
+frame = 825
+pad = 0
+
+[[event]]
+frame = 828
+pad = 16384
+
+[[event]]
+frame = 829
+pad = 0
+
+[[event]]
+frame = 836
+pad = 128
+
+[[event]]
+frame = 837
+pad = 0
+
+[[event]]
+frame = 840
+pad = 16384
+
+[[event]]
+frame = 841
+pad = 0
+
+[[event]]
+frame = 848
+pad = 128
+
+[[event]]
+frame = 849
+pad = 0
+
+[[event]]
+frame = 852
+pad = 16384
+
+[[event]]
+frame = 853
+pad = 0
+
+[[event]]
+frame = 860
+pad = 128
+
+[[event]]
+frame = 861
+pad = 0
+
+[[event]]
+frame = 864
+pad = 16384
+
+[[event]]
+frame = 865
+pad = 0
+
+[[event]]
+frame = 872
+pad = 128
+
+[[event]]
+frame = 873
+pad = 0
+
+[[event]]
+frame = 876
+pad = 16384
+
+[[event]]
+frame = 877
+pad = 0
+
+[[event]]
+frame = 884
+pad = 128
+
+[[event]]
+frame = 885
+pad = 0
+
+[[event]]
+frame = 888
+pad = 16384
+
+[[event]]
+frame = 889
+pad = 0
+
+[[event]]
+frame = 896
+pad = 128
+
+[[event]]
+frame = 897
+pad = 0
+
+[[event]]
+frame = 900
+pad = 16384
+
+[[event]]
+frame = 901
+pad = 0
+
+[[event]]
+frame = 908
+pad = 128
+
+[[event]]
+frame = 909
+pad = 0
+
+[[event]]
+frame = 912
+pad = 16384
+
+[[event]]
+frame = 913
+pad = 0
+
+[[event]]
+frame = 920
+pad = 128
+
+[[event]]
+frame = 921
+pad = 0
+
+[[event]]
+frame = 924
+pad = 16384
+
+[[event]]
+frame = 925
+pad = 0
+
+[[event]]
+frame = 932
+pad = 128
+
+[[event]]
+frame = 933
+pad = 0
+
+[[event]]
+frame = 936
+pad = 16384
+
+[[event]]
+frame = 937
+pad = 0
+
+[[event]]
+frame = 944
+pad = 128
+
+[[event]]
+frame = 945
+pad = 0
+
+[[event]]
+frame = 948
+pad = 16384
+
+[[event]]
+frame = 949
+pad = 0
+
+[[event]]
+frame = 956
+pad = 128
+
+[[event]]
+frame = 957
+pad = 0
+
+[[event]]
+frame = 960
+pad = 16384
+
+[[event]]
+frame = 961
+pad = 0
+
+[[event]]
+frame = 968
+pad = 128
+
+[[event]]
+frame = 969
+pad = 0
+
+[[event]]
+frame = 972
+pad = 16384
+
+[[event]]
+frame = 973
+pad = 0
+
+[[event]]
+frame = 980
+pad = 128
+
+[[event]]
+frame = 981
+pad = 0
+
+[[event]]
+frame = 984
+pad = 16384
+
+[[event]]
+frame = 985
+pad = 0
+
+[[event]]
+frame = 992
+pad = 128
+
+[[event]]
+frame = 993
+pad = 0
+
+[[event]]
+frame = 996
+pad = 16384
+
+[[event]]
+frame = 997
+pad = 0
+
+[[event]]
+frame = 1004
+pad = 128
+
+[[event]]
+frame = 1005
+pad = 0
+
+[[event]]
+frame = 1008
+pad = 16384
+
+[[event]]
+frame = 1009
+pad = 0
+
+[[event]]
+frame = 1016
+pad = 128
+
+[[event]]
+frame = 1017
+pad = 0
+
+[[event]]
+frame = 1020
+pad = 16384
+
+[[event]]
+frame = 1021
+pad = 0
+
+[[event]]
+frame = 1028
+pad = 128
+
+[[event]]
+frame = 1029
+pad = 0
+
+[[event]]
+frame = 1032
+pad = 16384
+
+[[event]]
+frame = 1033
+pad = 0
+
+[[event]]
+frame = 1040
+pad = 128
+
+[[event]]
+frame = 1041
+pad = 0
+
+[[event]]
+frame = 1044
+pad = 16384
+
+[[event]]
+frame = 1045
+pad = 0
+
+[[event]]
+frame = 1052
+pad = 128
+
+[[event]]
+frame = 1053
+pad = 0
+
+[[event]]
+frame = 1056
+pad = 16384
+
+[[event]]
+frame = 1057
+pad = 0
+
+[[event]]
+frame = 1064
+pad = 128
+
+[[event]]
+frame = 1065
+pad = 0
+
+[[event]]
+frame = 1068
+pad = 16384
+
+[[event]]
+frame = 1069
+pad = 0
+
+[[event]]
+frame = 1076
+pad = 128
+
+[[event]]
+frame = 1077
+pad = 0
+
+[[event]]
+frame = 1080
+pad = 16384
+
+[[event]]
+frame = 1081
+pad = 0
+
+[[event]]
+frame = 1088
+pad = 128
+
+[[event]]
+frame = 1089
+pad = 0
+
+[[event]]
+frame = 1092
+pad = 16384
+
+[[event]]
+frame = 1093
+pad = 0
+
+[[event]]
+frame = 1100
+pad = 128
+
+[[event]]
+frame = 1101
+pad = 0
+
+[[event]]
+frame = 1104
+pad = 16384
+
+[[event]]
+frame = 1105
+pad = 0
+
+[[event]]
+frame = 1112
+pad = 128
+
+[[event]]
+frame = 1113
+pad = 0
+
+[[event]]
+frame = 1116
+pad = 16384
+
+[[event]]
+frame = 1117
+pad = 0
+
+[[event]]
+frame = 1124
+pad = 128
+
+[[event]]
+frame = 1125
+pad = 0
+
+[[event]]
+frame = 1128
+pad = 16384
+
+[[event]]
+frame = 1129
+pad = 0
+
+[[event]]
+frame = 1136
+pad = 128
+
+[[event]]
+frame = 1137
+pad = 0
+
+[[event]]
+frame = 1140
+pad = 16384
+
+[[event]]
+frame = 1141
+pad = 0
+
+[[event]]
+frame = 1148
+pad = 128
+
+[[event]]
+frame = 1149
+pad = 0
+
+[[event]]
+frame = 1152
+pad = 16384
+
+[[event]]
+frame = 1153
+pad = 0
+
+[[event]]
+frame = 1160
+pad = 128
+
+[[event]]
+frame = 1161
+pad = 0
+
+[[event]]
+frame = 1164
+pad = 16384
+
+[[event]]
+frame = 1165
+pad = 0
+
+[[event]]
+frame = 1172
+pad = 128
+
+[[event]]
+frame = 1173
+pad = 0
+
+[[event]]
+frame = 1176
+pad = 16384
+
+[[event]]
+frame = 1177
+pad = 0
+
+[[event]]
+frame = 1184
+pad = 128
+
+[[event]]
+frame = 1185
+pad = 0
+
+[[event]]
+frame = 1188
+pad = 16384
+
+[[event]]
+frame = 1189
+pad = 0
+
+[[switch]]
+frame = 0
+set = "mode"
+id = "builtin-poker"

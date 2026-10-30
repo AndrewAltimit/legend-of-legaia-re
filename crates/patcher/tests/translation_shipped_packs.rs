@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 use legaia_translate::markup::{self, Target};
 use legaia_translate::{LanguagePack, import_pack};
 

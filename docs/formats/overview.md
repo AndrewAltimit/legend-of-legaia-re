@@ -183,6 +183,19 @@ PROT entries that carry MIPS code loaded into RAM at `0x801C0000` and above.
 
 The slot-B band shape and extent are Confirmed; the end of the topmost spawn record in an image is Inferred (see the page).
 
+## The port's own formats
+
+Formats the port defines rather than decodes. They carry no disc bytes, so they have no confidence level: the page is the specification.
+
+| Page | What it covers |
+|---|---|
+| [Expansion packs](expansion-pack.md) | Modder content packs: directory layout, `pack.toml`, `DiscRef` coordinates, the `.lxpack` bundle, validation and the no-disc-bytes rule. |
+| [Expansion packs: battles](expansion-pack-battle.md) | `battle.toml` (derived monsters, formations and waves, encounter overrides, bosses) and `progression.toml`. |
+| [Expansion packs: quests](expansion-pack-quests.md) | `quests.toml`, challenges, `dialog.toml`, and the save's expansion block. |
+| [Expansion packs: cutscenes](expansion-pack-cutscenes.md) | `cutscenes.toml`: scripted scenes on the pack's own sequencer, their hooks, skips and validation. |
+| [Expansion packs: cutscenes](expansion-pack-cutscenes.md) | `cutscenes.toml`: scripted scenes on the pack's own sequencer, their hooks, skips and validation. |
+| [Expansion packs: maps](expansion-pack-maps.md) | `maps/<id>.toml`: tiles, tiers, props, NPCs, walls, zones and entrances. |
+
 ## Video and streamed audio
 
 `MOV/MV*.STR` files are PSX MDEC video streams. Legaia's are the **Iki** bitstream - an LZSS-compressed per-block qscale / DC table plus an AC-only entropy stream, 16-bit little-endian MSB-first, column-major macroblocks - not STRv2. [`crates/mdec`](../../crates/mdec/README.md) decodes it: `mdec decode-str` writes frames to disk and `legaia-engine play-str` plays a movie in a window with synced XA audio. The decode algorithm and A/V sync path are in [`subsystems/cutscene.md`](../subsystems/cutscene.md).

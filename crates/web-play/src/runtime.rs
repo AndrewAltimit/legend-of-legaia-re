@@ -207,6 +207,10 @@ pub struct LegaiaRuntime {
     /// genuinely not projecting, which the kernel reads as the native
     /// window's does.
     pub(crate) field_hud_projection_reported: bool,
+    /// The workbench's 3D preview has an edit mode on
+    /// ([`Self::set_editor_hud_hidden`]): the field HUD (the party readout
+    /// and the passive badges) stays off the frame while the modder edits.
+    pub(crate) editor_hud_hidden: bool,
     /// Actor slots a field-VM `0x4C 0xD8` spawn (`FieldEvent::ActorSpawned`)
     /// gave a TMD reference this session - the native window's
     /// `pending_dynamic_mesh_slots`. The page drains them through
@@ -237,6 +241,10 @@ pub struct LegaiaRuntime {
     /// world's live layers and the shop / pause fades by
     /// [`crate::play_battle`]'s `rebuild_screen_geom`.
     pub(crate) screen_prims_base: legaia_engine_screens::screen_layers::HostScreenPrims,
+    /// The multiplayer room the page joined ([`crate::play_netplay`]).
+    pub(crate) netplay: Option<legaia_engine_netplay::room::NetPlay>,
+    /// The scene the netplay prop catalog was last built for.
+    pub(crate) netplay_props_scene: Option<u16>,
     /// The camera-occlusion fade's strength ramp
     /// (`engine-scene::field_occlusion::FadeRamp`), stepped once per drawn
     /// field frame by [`Self::play_occlusion_fade`] - the native window's
@@ -496,9 +504,12 @@ impl LegaiaRuntime {
             screen_over_run_start: 0,
             screen_backdrop_run_end: 0,
             screen_prims_base: Default::default(),
+            netplay: None,
+            netplay_props_scene: None,
             occl_fade: Default::default(),
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
+            editor_hud_hidden: false,
             passive_hud_icons: Vec::new(),
             field_hud_projected_y: None,
             field_hud_projection_reported: false,

@@ -343,11 +343,11 @@ pub(super) fn doors(run: &mut PatchRun<'_>) -> StepResult {
 pub(super) fn house_doors(run: &mut PatchRun<'_>) -> StepResult {
     let PatchOptions { house_doors, .. } = *run.opts;
     match parse_mode(house_doors) {
-        Some(legaia_patcher::drops::DropMode::Shuffle) => {
+        Some(legaia_randomizer::drops::DropMode::Shuffle) => {
             let rep = apply::randomize_house_doors(
                 &mut run.patcher,
                 run.seed,
-                legaia_patcher::drops::DropMode::Shuffle,
+                legaia_randomizer::drops::DropMode::Shuffle,
             )
             .map_err(|e| format!("house-doors: {e}"))?;
             run.summary.push_str(&format!(
