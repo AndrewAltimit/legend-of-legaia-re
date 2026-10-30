@@ -113,6 +113,9 @@ pub struct PackModeSeat {
     /// The headings of the NPCs a duel table turned to the board, restored
     /// when the seat closes.
     pub body_heading: Vec<(u8, i16)>,
+    /// Each seat's name as the results card reads it ("You", a table
+    /// NPC's name), noted as the session leaves play.
+    pub seat_names: Vec<String>,
 }
 
 /// A card grant waiting for the card economy.
@@ -156,6 +159,7 @@ impl PackModeSeat {
             player_return: None,
             body_idle: Vec::new(),
             body_heading: Vec::new(),
+            seat_names: Vec::new(),
             networked: false,
         }
     }
@@ -183,6 +187,7 @@ impl PackModeSeat {
             player_return: None,
             body_idle: Vec::new(),
             body_heading: Vec::new(),
+            seat_names: Vec::new(),
             networked: false,
         }
     }
@@ -296,6 +301,7 @@ impl PackModeSeat {
                 if *quit_prompt {
                     if pressed(PadButton::Cross) {
                         self.world_stage.note_final(mode);
+                        self.seat_names = seat_names(mode);
                         self.stage = ModeStage::Results {
                             name: mode.name.clone(),
                             kind: mode.kind(),
@@ -320,6 +326,7 @@ impl PackModeSeat {
                     // its end. Nothing is granted online.
                     if let Some(results) = mode.results() {
                         self.world_stage.note_final(mode);
+                        self.seat_names = seat_names(mode);
                         self.stage = ModeStage::Results {
                             name: mode.name.clone(),
                             kind: mode.kind(),
@@ -343,6 +350,7 @@ impl PackModeSeat {
                 let rows = settlement.results.placements.clone();
                 let mode_id = mode.id.clone();
                 self.world_stage.note_final(mode);
+                self.seat_names = seat_names(mode);
                 self.stage = ModeStage::Results {
                     name: mode.name.clone(),
                     kind: mode.kind(),
@@ -374,6 +382,18 @@ impl PackModeSeat {
             }
         }
     }
+}
+
+/// Every seat's name as `mode`'s local player reads it.
+pub fn seat_names(mode: &ActiveMode) -> Vec<String> {
+    let n = match mode.view() {
+        ModeView::Poker(v) => v.seats.len(),
+        ModeView::Duel(_) => 2,
+        ModeView::Golf(v) => v.balls.len(),
+        ModeView::Race(v) => v.racers.len(),
+        ModeView::PropHunt(v) => v.avatars.len(),
+    };
+    (0..n).map(|s| mode.seat_name(s)).collect()
 }
 
 /// Seat 0's rewards as result-screen lines.

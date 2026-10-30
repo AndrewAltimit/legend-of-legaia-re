@@ -44,6 +44,12 @@ impl World {
         self.expansion.mode_seat.as_deref()?.stage_frame.as_ref()
     }
 
+    /// Whether a duel or poker table in the world owns the frame.
+    pub fn table_stage_up(&self) -> bool {
+        self.pack_mode_stage()
+            .is_some_and(|s| s.duel.is_some() || s.poker.is_some())
+    }
+
     /// The pack map (and spawn) the running instance is played on, when the
     /// player is not on it yet - the scene host enters it.
     pub fn pack_mode_wants_map(&self) -> Option<(String, String)> {
@@ -174,13 +180,16 @@ impl World {
     /// and the table's sound cues. The NPCs' idle clips and headings are
     /// noted on the seat the first frame, for the close.
     fn stage_pack_mode_duel(&mut self, seat: &mut PackModeSeat) {
-        let Some(duel) = seat.stage_frame.as_ref().and_then(|f| f.duel.as_ref()) else {
+        let Some((poses, cues)) = seat
+            .stage_frame
+            .as_ref()
+            .and_then(|f| f.table_npcs_and_cues())
+            .map(|(n, c)| (n.to_vec(), c.to_vec()))
+        else {
             return;
         };
-        let cues = duel.cues.clone();
-        let poses = duel.npcs.clone();
-        for cue in cues {
-            self.push_sfx_cue(cue as i16);
+        for cue in &cues {
+            self.expansion_play_sound(cue);
         }
         let Some(map) = self.expansion.map.as_ref() else {
             return;

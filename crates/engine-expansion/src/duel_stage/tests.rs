@@ -27,6 +27,7 @@ fn table(facing: u8) -> DuelTableFrame {
             think: Some(3),
             cheer: Some(4),
             slump: Some(5),
+            ..Default::default()
         }),
         spectators: vec![DuelSeatNpc {
             npc: "fan".into(),

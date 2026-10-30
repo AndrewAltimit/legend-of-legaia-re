@@ -35,8 +35,10 @@
 
 use legaia_engine_modes::cards::duel::{CELLS, DuelPhase, DuelView, HAND};
 use legaia_engine_modes::cards::table::DuelTableFrame;
-use legaia_engine_modes::cards::table_art::{FACE_H, FACE_W};
+use legaia_engine_modes::cards::table_art::{self, FACE_H, FACE_W};
 use legaia_expansion_format::cards::CardElement;
+
+use legaia_expansion_format::audio::SoundRef;
 
 use crate::mode_stage::{LeaderClip, StagePose, StageShot};
 
@@ -63,7 +65,7 @@ pub const BANNER_FRAMES: u32 = 90;
 
 /// The close shot over the board: its pitch (12-bit units) and its
 /// distance over the field follow camera's eye depth.
-pub const CLOSE_PITCH: f32 = 380.0;
+pub const CLOSE_PITCH: f32 = 360.0;
 pub const CLOSE_DISTANCE: f32 = 0.175;
 
 /// A card's size on the table, as a fraction of a cell's width.
@@ -117,6 +119,13 @@ pub struct StageCard {
     pub card: usize,
     /// The seat whose colour shows under the face.
     pub owner: usize,
+    /// Its face's and its back's rectangles on the table's card page,
+    /// `[u, v, w, h]` (`table_art` for a duel, `poker::art` for poker).
+    pub face_uv: [u8; 4],
+    pub back_uv: [u8; 4],
+    /// A quad in the owner's colour goes under the face (a duel card's
+    /// transparent body); a playing card's face is opaque.
+    pub backing: bool,
     /// World centre `(X, Z)` and its height above the floor.
     pub centre: [f32; 2],
     pub height: f32,
@@ -184,8 +193,8 @@ pub struct DuelStageFrame {
     pub cells: [[f32; 2]; CELLS],
     /// The NPCs at the table.
     pub npcs: Vec<DuelNpcPose>,
-    /// Sound cues to play this frame (retail ids).
-    pub cues: Vec<u16>,
+    /// Sounds to play this frame (retail cues or pack sounds).
+    pub cues: Vec<SoundRef>,
     /// The opponent's seat position, for a reaction shot or a host's use.
     pub opponent_seat: [f32; 2],
     /// The reaction shot is up: the HUD steps aside.
@@ -271,7 +280,7 @@ pub struct DuelStage {
     /// The frame the game ended (the last placement resolved).
     ended: Option<u32>,
     shot: Option<StageShot>,
-    pending_cues: Vec<(u32, u16)>,
+    pending_cues: Vec<(u32, SoundRef)>,
     /// The session's last view, noted as it left play (the move that ended
     /// it), which the results stage plays out.
     final_view: Option<DuelView>,
@@ -385,7 +394,7 @@ impl DuelStage {
             };
         }
         let t = table.clone();
-        let mut cues: Vec<u16> = Vec::new();
+        let mut cues: Vec<SoundRef> = Vec::new();
         let first = self.last.is_none();
         let prev = self.last.clone();
 
@@ -441,7 +450,7 @@ impl DuelStage {
         }
         for &(cell, _) in &placed {
             self.shown_owner[cell] = view.grid[cell].map(|p| p.owner);
-            self.pending_cues.push((land, t.sfx.place));
+            self.pending_cues.push((land, t.sfx.place.clone()));
             let (r, a) = self.cell_at(&t, cell);
             self.bursts.push(Burst {
                 at: (r, a),
@@ -454,7 +463,7 @@ impl DuelStage {
         if let (Some(p), DuelPhase::PickCell { seat, .. }) = (&prev, view.phase)
             && matches!(p.phase, DuelPhase::PickCard { seat: s } if s == seat)
         {
-            cues.push(t.sfx.deal);
+            cues.push(t.sfx.deal.clone());
         }
         // Moods and banners off the move.
         if !captured.is_empty() {
@@ -490,11 +499,11 @@ impl DuelStage {
             let (mine, theirs) = (view.scores[me], view.scores[1 - me]);
             let at = now + self.settle_frames();
             let (text, cue, crowd, opp) = if mine > theirs {
-                ("You win!", t.sfx.win, Mood::Cheer, Mood::Slump)
+                ("You win!", t.sfx.win.clone(), Mood::Cheer, Mood::Slump)
             } else if mine < theirs {
-                ("You lose", t.sfx.lose, Mood::Slump, Mood::Cheer)
+                ("You lose", t.sfx.lose.clone(), Mood::Slump, Mood::Cheer)
             } else {
-                ("Draw", t.sfx.lose, Mood::Idle, Mood::Idle)
+                ("Draw", t.sfx.lose.clone(), Mood::Idle, Mood::Idle)
             };
             self.pending_cues.push((at, cue));
             self.banner = Some((text.to_string(), at, at + OUTRO_FRAMES));
@@ -570,7 +579,7 @@ impl DuelStage {
                     };
                     if first && *order != u32::MAX {
                         self.pending_cues
-                            .push((now + (order * DEAL_GAP).min(60), t.sfx.deal));
+                            .push((now + (order * DEAL_GAP).min(60), t.sfx.deal.clone()));
                     }
                     self.tweens.push((
                         *key,
@@ -644,7 +653,7 @@ impl DuelStage {
                     owner = if u < 0.5 { f.from_owner } else { f.to_owner };
                     if u >= 0.5 && !f.burst_sent {
                         f.burst_sent = true;
-                        cues.push(t.sfx.flip);
+                        cues.push(t.sfx.flip.clone());
                         let (r, a) = t.cell_local(cell);
                         self.bursts.push(Burst {
                             at: (r, a),
@@ -681,10 +690,17 @@ impl DuelStage {
             let (r1, u2) = (yaw(r0), yaw(u1));
             let scale = |v: [f32; 3], k: f32| [v[0] * k, v[1] * k, v[2] * k];
             let at = world(pose.pos[0], pose.pos[1]);
+            let rect = |slot: u16| {
+                let (u, v) = table_art::slot_uv(slot);
+                [u, v, FACE_W as u8, FACE_H as u8]
+            };
             cards.push(StageCard {
                 deck: key.0,
                 card: key.1,
                 owner,
+                face_uv: rect(table_art::card_slot(key.0, key.1)),
+                back_uv: rect(table_art::BACK_SLOT),
+                backing: true,
                 centre: at,
                 height: top + pose.pos[2],
                 right: dir(scale(r1, hw)),
@@ -701,7 +717,7 @@ impl DuelStage {
         self.bursts.retain(|b| now < b.start + BURST_FRAMES);
         for (at, cue) in &self.pending_cues {
             if *at == now {
-                cues.push(*cue);
+                cues.push(cue.clone());
             }
         }
         self.pending_cues.retain(|(at, _)| *at > now);
@@ -803,7 +819,7 @@ impl DuelStage {
         let (across, right) = t.axes(self.local);
         let c = t.centre();
         // Beside the near corner of the table, clear of the hand.
-        let (r, a) = (-(t.board * 0.5 + 92.0), -t.board_depth() * 0.5 - 30.0);
+        let (r, a) = (-(t.board * 0.5 + 44.0), -t.board_depth() * 0.5 - 36.0);
         let pos = [
             c[0] + right[0] * r + across[0] * a,
             c[1] + right[1] * r + across[1] * a,

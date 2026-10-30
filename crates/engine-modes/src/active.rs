@@ -24,6 +24,7 @@ use crate::cards::table::DuelTableFrame;
 use crate::golf::course::Course;
 use crate::golf::{GolfConfig, GolfEvent, GolfSession, GolfView};
 use crate::map_frame::MapFrame;
+use crate::poker::table::PokerTableFrame;
 use crate::poker::{Action, PokerConfig, PokerEvent, PokerSession, PokerView};
 use crate::prop_hunt::{Arena, HuntEvent, HuntView, PropHuntConfig, PropHuntSession};
 use crate::racing::{RaceConfig, RaceEvent, RaceSession, RaceView, Track};
@@ -95,6 +96,13 @@ pub fn entries(section: &ModeSection) -> Vec<ModeEntry> {
 pub fn instance_map(section: &ModeSection, id: &str) -> Option<(String, String)> {
     if let Some(c) = section.golf.iter().find(|c| c.id == id) {
         return c.map.clone().map(|m| (m, c.spawn.clone()));
+    }
+    if let Some(t) = section.poker.iter().find(|t| t.id == id) {
+        return t
+            .table
+            .as_ref()
+            .and(t.map.clone())
+            .map(|m| (m, t.spawn.clone()));
     }
     if let Some(d) = section.card_duels.iter().find(|d| d.id == id) {
         return d
@@ -207,6 +215,8 @@ pub struct ActiveMode {
     race_frame: Option<MapFrame>,
     /// A duel's table on its pack map.
     duel_table: Option<DuelTableFrame>,
+    /// A poker table on its pack map.
+    poker_table: Option<PokerTableFrame>,
 }
 
 /// A view of whichever session is running. A per-frame snapshot, built
@@ -257,9 +267,14 @@ impl ActiveMode {
         let book = CardBook::new(cards.clone());
         let mut race_frame = None;
         let mut duel_table = None;
+        let mut poker_table = None;
         let invalid = |e: &dyn std::fmt::Debug| BuildError::Invalid(format!("{id}: {e:?}"));
         let (name, runner) = if let Some(t) = modes.poker.iter().find(|t| t.id == id) {
             let cfg = PokerConfig::from_table(t, seed);
+            if let Some(map) = &t.map {
+                poker_table = PokerTableFrame::from_table(t, maps.get(map), map, cfg.seats.len())
+                    .map_err(|e| invalid(&e))?;
+            }
             (&t.name, ModeRunner::Poker(Box::new(PokerSession::new(cfg))))
         } else if let Some(d) = modes.card_duels.iter().find(|d| d.id == id) {
             let deck = match &opts.player_deck {
@@ -320,6 +335,7 @@ impl ActiveMode {
             book,
             race_frame,
             duel_table,
+            poker_table,
         })
     }
 
@@ -331,6 +347,7 @@ impl ActiveMode {
             ModeRunner::Golf(s) => s.frame(),
             ModeRunner::Race(_) => self.race_frame.as_ref(),
             ModeRunner::Duel(_) => self.duel_table.as_ref().map(|t| &t.frame),
+            ModeRunner::Poker(_) => self.poker_table.as_ref().map(|t| &t.frame),
             _ => None,
         }
     }
@@ -338,6 +355,11 @@ impl ActiveMode {
     /// A duel's table on its pack map, when it is played at one.
     pub fn duel_table(&self) -> Option<&DuelTableFrame> {
         self.duel_table.as_ref()
+    }
+
+    /// A poker table on its pack map, when the game is played at one.
+    pub fn poker_table(&self) -> Option<&PokerTableFrame> {
+        self.poker_table.as_ref()
     }
 
     /// The card book the duel's hands come from (names, art).
@@ -483,8 +505,8 @@ impl ActiveMode {
     }
 
     /// Seat `seat` as this machine's player reads it: "You" for
-    /// [`Self::local_seat`] (unless [`Self::watching`]), else the seat's
-    /// player name, else "Seat N".
+    /// [`Self::local_seat`] (unless [`Self::watching`]), else the name a
+    /// table gives its NPC, else the seat's player name, else "Seat N".
     pub fn seat_name(&self, seat: usize) -> String {
         self.seat_label(seat, &format!("Seat {}", seat + 1))
     }
@@ -509,6 +531,19 @@ impl ActiveMode {
     pub fn seat_label(&self, seat: usize, fallback: &str) -> String {
         if self.is_you(seat) {
             return "You".to_string();
+        }
+        if seat != self.local_seat {
+            if let Some(t) = &self.poker_table {
+                return t.seat_name(seat, self.local_seat);
+            }
+            if let Some(n) = self
+                .duel_table
+                .as_ref()
+                .and_then(|t| t.opponent.as_ref())
+                .filter(|n| !n.name.is_empty())
+            {
+                return n.name.clone();
+            }
         }
         match self.seat_names.get(seat) {
             Some(n) if !n.is_empty() => n.clone(),

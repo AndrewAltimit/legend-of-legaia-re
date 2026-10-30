@@ -452,6 +452,17 @@ choices = [
     { label = "Not yet.", reply = "\"The table will wait.\"" },
 ]
 
+[lines.high_table_hello]
+speaker = "High Table Regular"
+text = """
+Five thousand to sit, blinds that
+double every eight hands. Pull up
+a chair if your purse can stand it."""
+choices = [
+    { label = "Deal me in.", mode = "tower-high-table" },
+    { label = "Not tonight.", reply = "\"The felt will be warm.\"" },
+]
+
 [lines.duel_regular_hello]
 speaker = "Card-Room Regular"
 text = """

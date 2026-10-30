@@ -12,5 +12,5 @@ map = "duel_room"
 [card_duels.table]
 tile = [5, 4]
 facing = 6
-opponent = { npc = "rival_noa" }
+opponent = { npc = "rival_noa", name = "Noa" }
 spectators = [{ npc = "fan_gala" }]

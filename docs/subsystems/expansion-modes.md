@@ -413,6 +413,52 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 
 The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
 
+## Poker at a table
+
+A poker instance that names a pack map and a table (`map`, `[poker.table]`) is dealt on an oval felt table in the 3D field scene, the other seats' NPCs in chairs round it. It is built the way the duel table is: the session is unchanged and the only authority, `cards::table`'s sibling `poker::table::PokerTableFrame` places the table, and `legaia_engine_expansion::poker_stage::PokerStage` turns each frame's view into cards, chips, NPC poses, sounds and a shot.
+
+| Piece | Where |
+|---|---|
+| The table on the map | `poker::table::PokerTableFrame` (`ActiveMode::poker_table`) |
+| Card faces, back and digit glyphs | `poker::art`, written into the table page by `World::step_duel_card_page` |
+| The stage | `legaia_engine_expansion::poker_stage` |
+| Drawing | `legaia_engine_world_views::pack_mode_world` (its `poker` module) |
+| HUD | `ModeScreen::InWorld` (`engine-ui` `poker::hud`) |
+
+### Chairs and hidden cards
+
+Chairs ring the oval evenly. Each peer sits in the near chair - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
+
+A hole card shows its face only to its own seat, and to every seat at a showdown while its seat is still in the hand. Every other card lies face down, and the card page holds no face for it at all (`poker::art::VisibleCards`): the page is built from the view the session or the hosting peer sent, which for a guest already carries no other seat's cards.
+
+### What plays
+
+| Beat | What plays |
+|---|---|
+| Deal | Each new hand sweeps the old cards and deals two rounds from the dealer's deck beside the button, one card per seat in the hand, `4` frames apart, with a deal sound each; the viewer's cards stand up before them, the others lie face down before their chairs |
+| Streets | The flop, turn and river fly from the deck to the board row and turn face up, a flip sound each |
+| Bets | A seat's chips stand at its left; a bet slides out to its betting spot with the amount floating over it in the page's digit glyphs, and when the street closes the bets slide into the pot, whose total floats over it |
+| Folds | A folded seat's cards slide in toward the middle, face down; its NPC plays its `fold` clip |
+| Showdown | The live hands turn over; the camera sweeps half round the table over them, then holds low on the winner's chair |
+| Pot | The pot slides to its winners with a burst; a banner names the winner, the amount and the hand ("Odile wins 736 - Two pair"), the win or lose sound plays, the winner's NPC cheers and a busted seat's slumps |
+
+The dealer button sits on the felt before the button's chair, and a pulsing ring marks the chair to act; the opponent to act plays its `think` clip and the camera leans toward it.
+
+### Drawing the table
+
+The table is an oval: a felt fan lit brightest in the middle, a gold betting line, a padded rail and its wooden outer face, on four legs. Chips are stacked discs, a side band per chip with a white stripe every third and a face on top, coloured by the stack's size against the big blind. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
+
+The HUD is a plate per other seat along the top (its name, chips or state, its street bet, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
+
+### Running it
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion packs/rebirth --map rebirth_tower_5f --mode tower-high-table
+```
+
+The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt.
+
 ## Tests
 
 - **Rules.** Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.
@@ -424,6 +470,7 @@ The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floo
 - **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
 - **In the world.** `engine-modes` `tests/map_modes.rs` lays the `links` test pack's course and track out on their maps (surfaces, walls, heights, tee and cup in their tiles, a putt holing inside the cup's tile). `engine-core` `tests/expansion_stage_world.rs` stands the map's field image under the session and plays a scripted golf round and a scripted race to their ends through `World::tick` (the leader at the ball and on the floor, the swing, the camera following the rolling ball, the chase camera), and runs both with and without the map, asserting the session's state hash matches frame for frame. The disc-gated `engine-scene-host` `expansion_stage_disc` enters both through the scene host over the retail `tower`.
 - **The duel table.** `engine-modes` `cards::table` and `cards::table_art` test the table's axes and seats and the card page's layout, transparency and portrait window. `engine-expansion` `duel_stage::tests` runs whole AI duels through the stage: the session's hashes match with the stage and without it, the same seed gives the same frames, the deal starts on the pile and ends in the hands, a full grid's cards sit on their cells, a capture's colour changes mid-flip lifted off the board, the far seat sees the table turned round, and the reaction shot holds the results.
+- **The poker table.** `engine-modes` `poker::table` and `poker::art` test the chairs (the viewer's near, the rest even round the oval) and the page (no face for a hidden hole card). `engine-expansion` `poker_stage::tests` runs AI hands through the stage: hashes unchanged with and without it, deterministic frames, other seats' cards faceless until a showdown from either chair, NPCs never in the viewer's chair, chips, amounts and a won pot.
 - **The duel table in the world.** `engine-core` `tests/expansion_duel_table_world.rs` plays the `duel_table` pack's duel to its end through `World::tick` on its map (the opponent seated, the leader on the near side, bursts and cues, the held results card, the NPC put back), checks the session's hashes against the 2D screen frame for frame, and checks the card page is written and put back. The disc-gated `engine-scene-host` `expansion_duel_table_disc` enters it through the scene host over the retail `tower` with its portraits built.
 - **Screens.** `engine-ui` `expansion_modes::tests` checks each screen's key labels and that every panel lies on the stage; `expansion_modes::binder` checks the card screens' labels, the portrait runs and the toast placement.
 - **Card economy.** `engine-modes` `cards::economy`, `cards::screen` and `cards::trade` test buying, opening (the same saved stream opens the same pack), selling at a dealer's rate, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. Further:

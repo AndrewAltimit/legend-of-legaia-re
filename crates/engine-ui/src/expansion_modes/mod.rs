@@ -243,6 +243,8 @@ pub enum ModeScreen<'a> {
         over_world: bool,
         holding: bool,
         banner: Option<&'a str>,
+        /// Each seat's name ("You", a table NPC's); empty reads "Seat N".
+        names: &'a [String],
     },
 }
 
@@ -302,6 +304,7 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
                 ModeView::Golf(v) => golf::hud(&mut c, mode, &v, log),
                 ModeView::Race(v) => race::hud(&mut c, mode, &v),
                 ModeView::Duel(v) => duel::hud(&mut c, mode, &v, outro),
+                ModeView::Poker(v) => poker::hud(&mut c, mode, &v),
                 _ => {}
             }
             if let Some(text) = banner {
@@ -367,6 +370,7 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
             local_seat,
             seat_names,
             over_world,
+            names,
             ..
         } => {
             if over_world {
@@ -374,7 +378,7 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
                 c.rect(0, 0, STAGE_W, STAGE_H, [6, 8, 14, 140]);
             }
             results(
-                &mut c, name, kind, rows, granted, completed, local_seat, seat_names,
+                &mut c, name, kind, rows, granted, completed, local_seat, seat_names, names,
             )
         }
     }
@@ -565,6 +569,7 @@ fn results(
     completed: bool,
     me: usize,
     names: &[String],
+    table_names: &[String],
 ) {
     header(c, name, kind.label());
     let (x, w) = (40, 240);
@@ -590,7 +595,11 @@ fn results(
         }
         let ink = if you { pen::WHITE } else { pen::DIM };
         c.text(place_label(p.place), x + 8, y, ink);
-        let who = seat_label(p.seat, me, names);
+        let who = table_names
+            .get(p.seat)
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| seat_label(p.seat, me, names));
         c.text(who, x + 48, y, ink);
         let score = if kind == ModeKind::Race && p.score == i64::MAX {
             "DNF".to_string()

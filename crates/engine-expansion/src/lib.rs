@@ -28,6 +28,7 @@ pub mod map_detail;
 pub mod mode_stage;
 pub mod modes;
 pub mod party;
+pub mod poker_stage;
 pub mod progression;
 pub mod quest;
 pub mod quest_challenge;

@@ -176,6 +176,7 @@ fn quit_prompt_and_results_read() {
         over_world: false,
         holding: false,
         banner: None,
+        names: &[],
     });
     for needle in ["Game over", "1st", "2nd", "7 strokes", "+40 coins"] {
         assert!(has(&s, needle), "`{needle}` missing from {s:?}");

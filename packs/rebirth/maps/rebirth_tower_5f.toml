@@ -214,3 +214,47 @@ tile = [4, 7]
 facing = 2
 line = "card_room_dealer_hello"
 shop = "tower"
+
+# --- The High Table (`modes.toml` `tower-high-table`) ------------------------
+# Five regulars sit round the High Table in the hall; the table seats them
+# itself, so their tiles here are only where they wait between games.
+
+[[npcs]]
+id = "high_table_odile"
+label = "Odile, a High Table regular"
+model = { kind = "npc", scene = "koin1", index = 15 }
+tile = [8, 4]
+facing = 2
+line = "high_table_hello"
+
+[[npcs]]
+id = "high_table_brann"
+label = "Brann, a High Table regular"
+model = { kind = "npc", scene = "koin1", index = 16 }
+tile = [9, 4]
+facing = 4
+line = "high_table_hello"
+
+[[npcs]]
+id = "high_table_sefa"
+label = "Sefa, a High Table regular"
+model = { kind = "npc", scene = "koin1", index = 17 }
+tile = [11, 4]
+facing = 4
+line = "high_table_hello"
+
+[[npcs]]
+id = "high_table_corwin"
+label = "Corwin, a High Table regular"
+model = { kind = "npc", scene = "koin1", index = 18 }
+tile = [12, 4]
+facing = 6
+line = "high_table_hello"
+
+[[npcs]]
+id = "high_table_mott"
+label = "Old Mott, a High Table regular"
+model = { kind = "npc", scene = "koin1", index = 11 }
+tile = [12, 6]
+facing = 6
+line = "high_table_hello"

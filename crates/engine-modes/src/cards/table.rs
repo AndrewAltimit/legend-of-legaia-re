@@ -96,7 +96,7 @@ impl DuelTableFrame {
             seat_distance: f32::from(t.seat_distance.max(40)),
             draw_table: t.draw_table,
             surface: t.surface,
-            sfx: t.sfx,
+            sfx: t.sfx.clone(),
             opponent: t.opponent.clone(),
             spectators: t.spectators.clone(),
         }))

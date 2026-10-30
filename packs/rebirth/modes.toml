@@ -129,6 +129,22 @@ chip_value = 1
 ai_tier = "expert"
 max_hands = 60
 blind_double_every = 8
+# Dealt at the High Table in the Gambler's Rest hall: five of the tower's
+# regulars round the felt, the player's chair at its south edge.
+map = "rebirth_tower_5f"
+spawn = "from_below"
+
+[poker.table]
+tile = [10, 5]
+facing = 0
+radius = 92
+players = [
+  { npc = "high_table_odile", name = "Odile" },
+  { npc = "high_table_brann", name = "Brann" },
+  { npc = "high_table_sefa", name = "Sefa" },
+  { npc = "high_table_corwin", name = "Corwin" },
+  { npc = "high_table_mott", name = "Old Mott" },
+]
 
 # The keeper plays the tower's own breed, hands face up, captures chaining
 # and the loser's best card on the line.
@@ -148,9 +164,9 @@ spawn = "from_below"
 
 [card_duels.table]
 tile = [6, 7]
-offset = [0, 0, 64]
+offset = [-96, 0, 64]
 facing = 6
-opponent = { npc = "duel_second" }
+opponent = { npc = "duel_second", name = "The Warden's Second" }
 spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
 
 # Six holes up the tower's side. Each is a real-looking golf hole in

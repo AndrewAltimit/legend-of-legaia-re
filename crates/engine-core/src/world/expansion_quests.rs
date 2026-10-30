@@ -312,7 +312,11 @@ impl World {
         if !self.expansion.is_active() {
             return;
         }
-        self.expansion.cards.tick_toasts();
+        // A table in the world holds its card toasts (a lent starter, a
+        // stake) until the game is over: they would lie over its HUD.
+        if !self.table_stage_up() {
+            self.expansion.cards.tick_toasts();
+        }
         self.tick_expansion_audio();
         self.resolve_expansion_line();
         if !matches!(self.mode, SceneMode::Battle) {

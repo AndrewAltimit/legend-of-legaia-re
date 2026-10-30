@@ -215,10 +215,19 @@ A Grid Duel may name a pack map and a table on it, and is then played on a board
 | `board` (132) | The board's width, world units; its depth is 1.36 times that |
 | `seat_distance` (120) | Each seat's distance from the board's centre |
 | `draw_table` (true) | Draw the built-in wooden table under the board; off when a prop of the map is the table |
-| `opponent` | `{ npc, think, cheer, slump }`: the map NPC seated across the board and the clips it plays while thinking, on a win or a big capture, and on a loss |
+| `opponent` | `{ npc, name, think, cheer, slump }`: the map NPC seated across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss |
 | `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them |
 | `surface` | `{ tpage, clut, uv = [u, v, w, h] }`: a texture of the base scene's VRAM the board's cells sample instead of the built-in felt |
-| `sfx` | `{ deal, place, flip, win, lose }`: retail sound cue ids, menu cues by default |
+| `sfx` | `{ deal, place, flip, win, lose }`: sounds, each a retail cue (`{ kind = "sfx", id = N }`) or a pack sound (`{ kind = "sound", id = "..." }`); menu cues by default |
+
+A poker table names a map and a table the same way (`map`, `spawn`, `[poker.table]`):
+
+| Key (default) | Meaning |
+|---|---|
+| `tile`, `offset`, `facing`, `height` (64), `draw_table` (true), `surface`, `sfx` | As for a duel table; `sfx` plays `deal` per card, `place` for chips pushed out, `flip` per board card, `win` / `lose` for a pot |
+| `radius` (130) | The felt's half depth toward the player, world units; its half width is 1.35 times that |
+| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in }`, in seat order with the player's seat skipped; a seat with none stays empty-chaired |
+| `spectators` | NPCs watching from their tiles; they cheer when the player wins a pot |
 
 A table prop of the map should not be standable (`top`): the board sits `height` above the floor the sampler answers at the table's centre. Sample: the `duel_table` test pack, `crates/engine-modes/tests/fixtures/duel_table/`.
 

@@ -260,3 +260,70 @@ fn action_menu(c: &mut Canvas, v: &PokerView, seat: usize, x: i32, y: i32) {
         },
     );
 }
+
+/// The table HUD over an in-world poker game: a plate per other seat along
+/// the top (name, chips or state, the street bet, the seat to act lit), the
+/// pot under them, the player's own plate and the action menu along the
+/// bottom. The cards and chips themselves are the table's.
+pub(super) fn hud(c: &mut Canvas, mode: &legaia_engine_modes::active::ActiveMode, v: &PokerView) {
+    let me = mode.local_seat;
+    let name = |seat: usize| mode.seat_name(seat);
+    let others: Vec<usize> = (0..v.seats.len()).filter(|&s| s != me).collect();
+    let n = others.len().max(1) as i32;
+    let gap = 4;
+    let pw = ((super::STAGE_W - 8 - gap * (n - 1)) / n).min(104);
+    let x0 = (super::STAGE_W - (pw * n + gap * (n - 1))) / 2;
+    let plate = [10, 14, 24, 190];
+    for (i, &seat) in others.iter().enumerate() {
+        let s = &v.seats[seat];
+        let x = x0 + i as i32 * (pw + gap);
+        let acting = v.to_act == Some(seat) && matches!(v.phase, Phase::Betting(_));
+        let edge = if acting {
+            ink::HIGHLIGHT
+        } else {
+            ink::PANEL_EDGE
+        };
+        c.panel(x, 4, pw, 30, plate, edge);
+        if v.button == seat {
+            button_marker(c, x + pw - 6, 9);
+        }
+        c.text(
+            name(seat),
+            x + 4,
+            4,
+            if acting { pen::GOLD } else { pen::WHITE },
+        );
+        c.text(seat_status(s), x + 4, 18, status_ink(s));
+        if s.street_bet > 0 {
+            c.text_right(format!("+{}", s.street_bet), x + pw - 4, 18, pen::GOLD);
+        }
+    }
+    if v.pot > 0 {
+        c.panel(130, 37, 60, 16, plate, ink::PANEL_EDGE);
+        c.text_centre(format!("Pot {}", v.pot), super::STAGE_W / 2, 37, pen::GOLD);
+    }
+    // The player's plate, bottom-left.
+    if let Some(s) = v.seats.get(me) {
+        let y = super::STAGE_H - 56;
+        c.panel(4, y, 120, 52, plate, ink::PANEL_EDGE);
+        if v.button == me {
+            button_marker(c, 118, y + 6);
+        }
+        c.text("You", 8, y + 1, pen::GOLD);
+        c.text(format!("{} chips", s.chips), 8, y + 15, status_ink(s));
+        if s.street_bet > 0 {
+            c.text(format!("Bet {}", s.street_bet), 8, y + 31, pen::WHITE);
+        } else if s.folded {
+            c.text("Folded", 8, y + 31, pen::DIM);
+        }
+        if let (Some(h), false) = (s.hole, v.board.is_empty()) {
+            let mut seven: Vec<_> = h.to_vec();
+            seven.extend_from_slice(&v.board);
+            if seven.len() >= 5 && !s.folded {
+                let best = legaia_engine_modes::poker::hand::best_hand(&seven);
+                c.text_right(category_label(best.category()), 120, y + 31, pen::GREEN);
+            }
+        }
+    }
+    action_menu(c, v, me, super::STAGE_W - 4 - 130, super::STAGE_H - 56);
+}

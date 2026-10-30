@@ -32,9 +32,12 @@ use legaia_engine_modes::cards::table::DuelTableFrame;
 use legaia_engine_modes::fixed::{ANGLE_TURN, FX_ONE};
 use legaia_engine_modes::golf::{GolfPhase, GolfView};
 use legaia_engine_modes::map_frame::MapFrame;
+use legaia_engine_modes::poker::PokerView;
+use legaia_engine_modes::poker::table::PokerTableFrame;
 use legaia_engine_modes::racing::{BOOST_SPEED, MAX_SPEED, RacePhase, RaceView};
 
-use crate::duel_stage::{DuelStage, DuelStageFrame};
+use crate::duel_stage::{DuelNpcPose, DuelStage, DuelStageFrame};
+use crate::poker_stage::{PokerStage, PokerStageFrame};
 
 /// Frames the leader holds the swing clip after a strike.
 pub const SWING_FRAMES: u32 = 24;
@@ -167,6 +170,20 @@ pub struct StageFrame {
     pub banner: Option<String>,
     /// A Grid Duel's table: cards, bursts, NPCs and cues.
     pub duel: Option<DuelStageFrame>,
+    /// A poker table: cards, chips, NPCs and cues.
+    pub poker: Option<PokerStageFrame>,
+}
+
+impl StageFrame {
+    /// The NPCs a table drives this frame and the sound cues it plays.
+    pub fn table_npcs_and_cues(
+        &self,
+    ) -> Option<(&[DuelNpcPose], &[legaia_expansion_format::audio::SoundRef])> {
+        if let Some(d) = &self.duel {
+            return Some((&d.npcs, &d.cues));
+        }
+        self.poker.as_ref().map(|p| (&p.npcs[..], &p.cues[..]))
+    }
 }
 
 /// What the stage remembers between frames. Presentation only.
@@ -183,6 +200,8 @@ pub struct WorldStage {
     trails: Vec<Vec<[f32; 2]>>,
     /// A duel table's memory.
     pub duel: DuelStage,
+    /// A poker table's memory.
+    pub poker: PokerStage,
 }
 
 fn angle_rad(a: f32) -> f32 {
@@ -236,6 +255,10 @@ impl WorldStage {
                 let table = mode.duel_table()?;
                 return Some(self.duel_frame(table, &v, mode.local_seat));
             }
+            ModeView::Poker(v) => {
+                let table = mode.poker_table()?;
+                return Some(self.poker_frame(table, &v, mode.local_seat));
+            }
             _ => return None,
         };
         if let Some((_, t)) = &mut self.banner {
@@ -264,6 +287,30 @@ impl WorldStage {
             shot: duel.shot,
             banner: duel.banner.clone(),
             duel: Some(duel),
+            poker: None,
+        }
+    }
+
+    /// A poker table's frame off `view`.
+    fn poker_frame(
+        &mut self,
+        table: &PokerTableFrame,
+        view: &PokerView,
+        local: usize,
+    ) -> StageFrame {
+        let poker = self.poker.step(table, view, local);
+        StageFrame {
+            frame: table.frame.clone(),
+            leader: Some(self.poker.leader(&poker.table)),
+            bodies: Vec::new(),
+            balls: Vec::new(),
+            cup: None,
+            aim: None,
+            trails: Vec::new(),
+            shot: poker.shot,
+            banner: poker.banner.clone(),
+            duel: None,
+            poker: Some(poker),
         }
     }
 
@@ -271,6 +318,10 @@ impl WorldStage {
     /// duel table keeps playing its last moves and the reaction shot off
     /// the last view. `None` for every other mode.
     pub fn step_after(&mut self) -> Option<StageFrame> {
+        if let (Some(t), Some(v)) = (self.poker.table().cloned(), self.poker.last_view().cloned()) {
+            let local = self.poker.local();
+            return Some(self.poker_frame(&t, &v, local));
+        }
         let table = self.duel.table()?.clone();
         let view = self.duel.last_view()?.clone();
         let local = self.duel.local();
@@ -280,8 +331,10 @@ impl WorldStage {
     /// Note `mode`'s last view as the session leaves play, so the results
     /// stage plays out the move that ended it.
     pub fn note_final(&mut self, mode: &ActiveMode) {
-        if let ModeView::Duel(v) = mode.view() {
-            self.duel.note_final(v);
+        match mode.view() {
+            ModeView::Duel(v) => self.duel.note_final(v),
+            ModeView::Poker(v) => self.poker.note_final(v),
+            _ => {}
         }
     }
 
@@ -478,6 +531,7 @@ impl WorldStage {
             shot,
             banner: None,
             duel: None,
+            poker: None,
         }
     }
 
@@ -588,6 +642,7 @@ impl WorldStage {
             shot,
             banner,
             duel: None,
+            poker: None,
         }
     }
 }

@@ -92,6 +92,7 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
             over_world: seat.stage_frame.is_some(),
             holding: seat.world_stage.holds_results(),
             banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+            names: &seat.seat_names,
         },
     })
 }
@@ -211,7 +212,7 @@ pub fn pack_mode_stage_texts(world: &World, font: &legaia_font::Font) -> Vec<Tex
         .unwrap_or_default();
     // The card screen marks new cards itself; its toasts wait out unseen.
     let toasts = world.expansion.cards.toast_lines();
-    if !toasts.is_empty() && !world.card_screen_open() {
+    if !toasts.is_empty() && !world.card_screen_open() && !world.table_stage_up() {
         out.extend(card_toast_texts(
             font,
             &toasts,

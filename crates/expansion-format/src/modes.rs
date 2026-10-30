@@ -45,6 +45,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio::SoundRef;
 use crate::refs::DiscRef;
 
 /// The `modes.toml` section.
@@ -120,6 +121,70 @@ pub struct PokerTable {
     pub max_hands: Option<u32>,
     /// Double the blinds every this many hands.
     pub blind_double_every: Option<u32>,
+    /// A pack map (`maps/<id>.toml`) the table is played on, at
+    /// [`Self::table`]: the cards and chips are laid on a table in the 3D
+    /// field scene with the other seats' NPCs around it. Without a map (or a
+    /// table) the game is its 2D screen.
+    pub map: Option<String>,
+    /// The spawn the map is entered at (its first when empty).
+    pub spawn: String,
+    /// Where the table stands on [`Self::map`] and who sits at it.
+    pub table: Option<PokerTableLayout>,
+}
+
+/// A poker table on a pack map.
+///
+/// ```toml
+/// [poker.table]
+/// tile = [9, 8]
+/// facing = 4
+/// players = [{ npc = "gambler", think = 3, fold = 5, all_in = 4 }]
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PokerTableLayout {
+    /// Map-local tile the table is centred over.
+    pub tile: [u16; 2],
+    /// World units from the tile centre `[x, y, z]`, y up; `y` raises the
+    /// whole table.
+    pub offset: [i32; 3],
+    /// The compass sector (`0..8`) the player looks across the table in.
+    pub facing: u8,
+    /// The table top's height above the floor, world units.
+    pub height: u16,
+    /// The felt's half depth (toward the player), world units; its half
+    /// width is 1.35 times that.
+    pub radius: u16,
+    /// Draw the built-in table; off when a prop of the map is the table.
+    pub draw_table: bool,
+    /// The map NPCs seated in the other seats, in seat order with the
+    /// player's seat skipped. A seat with none sits empty-chaired.
+    pub players: Vec<DuelSeatNpc>,
+    /// Map NPCs watching from where they stand.
+    pub spectators: Vec<DuelSeatNpc>,
+    /// The felt sampled from the scene's own VRAM instead of the built-in
+    /// green.
+    pub surface: Option<DuelSurface>,
+    /// Retail sound cue ids: `deal` a card, `place` chips, `flip` a board
+    /// card, `win` / `lose` a pot.
+    pub sfx: DuelSfx,
+}
+
+impl Default for PokerTableLayout {
+    fn default() -> Self {
+        Self {
+            tile: [0, 0],
+            offset: [0, 0, 0],
+            facing: 0,
+            height: 64,
+            radius: 130,
+            draw_table: true,
+            players: Vec::new(),
+            spectators: Vec::new(),
+            surface: None,
+            sfx: DuelSfx::default(),
+        }
+    }
 }
 
 impl Default for PokerTable {
@@ -137,6 +202,9 @@ impl Default for PokerTable {
             ai_tier: AiTier::Regular,
             max_hands: None,
             blind_double_every: None,
+            map: None,
+            spawn: String::new(),
+            table: None,
         }
     }
 }
@@ -179,7 +247,7 @@ pub struct CardDuel {
 /// height = 64                   # the table top above the floor
 /// opponent = { npc = "warden", think = 2, win = 5, lose = 6 }
 /// spectators = [{ npc = "gambler", cheer = 3, slump = 4 }]
-/// sfx = { place = 32, flip = 33 }
+/// sfx = { place = { kind = "sfx", id = 32 }, flip = { kind = "sound", id = "card_flip" } }
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -232,7 +300,7 @@ impl Default for DuelTable {
     }
 }
 
-/// A map NPC at a duel table and the clips it reacts with (records of the
+/// A map NPC at a duel or poker table and the clips it reacts with (records of the
 /// base scene's ANM bundle, the [`crate::map::NpcDef::clip`] numbering).
 /// A clip left out keeps the NPC's idle.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -240,6 +308,9 @@ impl Default for DuelTable {
 pub struct DuelSeatNpc {
     /// The map NPC id (`[[npcs]]` of the duel's map).
     pub npc: String,
+    /// The name the table's banners and results card give the seat
+    /// ("The Warden's Second"); empty keeps "Rival" / "Seat N".
+    pub name: String,
     /// Played while the opponent thinks (the opponent only).
     pub think: Option<u8>,
     /// Played on a big capture by this NPC's side and on its win (a
@@ -247,6 +318,10 @@ pub struct DuelSeatNpc {
     pub cheer: Option<u8>,
     /// Played on a big loss and on its defeat.
     pub slump: Option<u8>,
+    /// Poker: played as the seat folds.
+    pub fold: Option<u8>,
+    /// Poker: played while the seat is all in.
+    pub all_in: Option<u8>,
 }
 
 /// A duel table's playing surface: one texture rectangle of the map's base
@@ -262,32 +337,35 @@ pub struct DuelSurface {
     pub uv: [u8; 4],
 }
 
-/// The retail sound cues a duel table plays (`docs/formats/sfx-table.md`
-/// ids). Each defaults to a menu cue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// The sounds a duel or poker table plays: retail cues
+/// (`{ kind = "sfx", id = N }`, `docs/formats/sfx-table.md` ids) or the
+/// pack's own (`{ kind = "sound", id = "..." }`, `audio.toml`). Each
+/// defaults to a menu cue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DuelSfx {
     /// A card dealt or lifted from the hand.
-    pub deal: u16,
-    /// A card laid on a cell.
-    pub place: u16,
-    /// A captured card turning over.
-    pub flip: u16,
+    pub deal: SoundRef,
+    /// A card laid on a cell; chips pushed out.
+    pub place: SoundRef,
+    /// A captured card turning over; a board card turned up.
+    pub flip: SoundRef,
     /// The player won.
-    pub win: u16,
+    pub win: SoundRef,
     /// The player lost or drew.
-    pub lose: u16,
+    pub lose: SoundRef,
 }
 
 impl Default for DuelSfx {
     fn default() -> Self {
         // The menu cursor, confirm and cancel cues (`menu_cues`).
+        let cue = |id| SoundRef::Sfx { id };
         Self {
-            deal: 0x21,
-            place: 0x20,
-            flip: 0x21,
-            win: 0x20,
-            lose: 0x37,
+            deal: cue(0x21),
+            place: cue(0x20),
+            flip: cue(0x21),
+            win: cue(0x20),
+            lose: cue(0x37),
         }
     }
 }

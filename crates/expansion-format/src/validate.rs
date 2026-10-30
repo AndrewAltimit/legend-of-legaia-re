@@ -607,7 +607,7 @@ fn check_asset_budget(cx: &mut Checker<'_>) {
     }
 }
 
-/// `modes.toml`'s duel tables: a duel played at a table names a map the
+/// `modes.toml`'s duel and poker tables: a duel played at a table names a map the
 /// pack has, a table tile on it and NPCs of that map. Run from the
 /// section's rules (`modes.rs`).
 pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Checker<'_>) {
@@ -650,6 +650,51 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
             }
             let seats = t.opponent.iter().chain(&t.spectators);
             for (k, n) in seats.enumerate() {
+                if !map.npcs.iter().any(|m| m.id == n.npc) {
+                    cx.error(
+                        &format!("{at}.table.npc[{k}]"),
+                        format!("map {map_id:?} has no NPC {:?}", n.npc),
+                    );
+                }
+            }
+        }
+        for (i, p) in modes.poker.iter().enumerate() {
+            let at = format!("poker[{i}]");
+            let Some(t) = &p.table else {
+                continue;
+            };
+            let Some(map_id) = &p.map else {
+                cx.warning(
+                    &format!("{at}.table"),
+                    "a table needs `map`; the game plays as its 2D screen",
+                );
+                continue;
+            };
+            let Some(map) = cx.pack().maps.get(map_id) else {
+                cx.error(
+                    &format!("{at}.map"),
+                    format!("the pack has no map {map_id:?}"),
+                );
+                continue;
+            };
+            if let Ok(g) = map.tile_grid()
+                && (usize::from(t.tile[0]) >= g.width || usize::from(t.tile[1]) >= g.height)
+            {
+                cx.error(
+                    &format!("{at}.table.tile"),
+                    format!("tile {:?} is off map {map_id:?}", t.tile),
+                );
+            }
+            if t.facing >= 8 {
+                cx.error(&format!("{at}.table.facing"), "a compass sector is 0..8");
+            }
+            if t.players.len() + 1 > usize::from(p.seats.max(2)) {
+                cx.warning(
+                    &format!("{at}.table.players"),
+                    "more players than the table's other seats; the rest stand by",
+                );
+            }
+            for (k, n) in t.players.iter().chain(&t.spectators).enumerate() {
                 if !map.npcs.iter().any(|m| m.id == n.npc) {
                     cx.error(
                         &format!("{at}.table.npc[{k}]"),

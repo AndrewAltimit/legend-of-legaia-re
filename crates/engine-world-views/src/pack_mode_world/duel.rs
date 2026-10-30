@@ -19,19 +19,19 @@
 //! shadows, cards by distance, sparks - all deeper than the HUD's buckets.
 
 use legaia_engine_expansion::duel_stage::{BurstKind, DuelStageFrame, StageCard};
-use legaia_engine_modes::cards::table_art::{self, BACK_SLOT};
+use legaia_engine_modes::cards::table_art;
 use legaia_render_kernels::screen_prim::{CornerDepth, FlatQuad, ScreenPrim, ScreenQuad};
 
 use super::{Projector, Pt};
 
 /// Ordering-table bands, farthest first. Every band sits deeper than the
 /// mode HUD's buckets (`engine-ui`'s `0x2000` down).
-const BAND_TABLE: u32 = 0x9_0000;
-const BAND_BOARD: u32 = 0x8_0000;
-const BAND_MARKS: u32 = 0x7_0000;
-const BAND_SHADOW: u32 = 0x6_0000;
-const BAND_CARDS: u32 = 0x4_0000;
-const BAND_SPARKS: u32 = 0x3_0000;
+pub(super) const BAND_TABLE: u32 = 0x9_0000;
+pub(super) const BAND_BOARD: u32 = 0x8_0000;
+pub(super) const BAND_MARKS: u32 = 0x7_0000;
+pub(super) const BAND_SHADOW: u32 = 0x6_0000;
+pub(super) const BAND_CARDS: u32 = 0x4_0000;
+pub(super) const BAND_SPARKS: u32 = 0x3_0000;
 
 /// The seat colours under a face: the player blue, the rival red.
 pub fn owner_rgb(seat: usize, local: usize) -> [u8; 3] {
@@ -44,17 +44,17 @@ pub fn owner_rgb(seat: usize, local: usize) -> [u8; 3] {
 
 /// Tilted space around the table: a table-local `(right, across)` and a
 /// height above the floor, through the projector.
-struct Table<'a, 'b> {
-    pr: &'a Projector<'b>,
-    floor: f32,
-    centre: [f32; 2],
-    right: [f32; 2],
-    across: [f32; 2],
-    eye: [f32; 3],
+pub(super) struct Table<'a, 'b> {
+    pub(super) pr: &'a Projector<'b>,
+    pub(super) floor: f32,
+    pub(super) centre: [f32; 2],
+    pub(super) right: [f32; 2],
+    pub(super) across: [f32; 2],
+    pub(super) eye: [f32; 3],
 }
 
 impl Table<'_, '_> {
-    fn world(&self, r: f32, a: f32, h: f32) -> [f32; 3] {
+    pub(super) fn world(&self, r: f32, a: f32, h: f32) -> [f32; 3] {
         [
             self.centre[0] + self.right[0] * r + self.across[0] * a,
             self.floor - h,
@@ -62,32 +62,32 @@ impl Table<'_, '_> {
         ]
     }
 
-    fn at(&self, r: f32, a: f32, h: f32) -> Option<Pt> {
+    pub(super) fn at(&self, r: f32, a: f32, h: f32) -> Option<Pt> {
         self.pr.at(self.world(r, a, h))
     }
 
     /// Distance from the eye to a raw world point.
-    fn dist(&self, p: [f32; 3]) -> f32 {
+    pub(super) fn dist(&self, p: [f32; 3]) -> f32 {
         let d = [p[0] - self.eye[0], p[1] - self.eye[1], p[2] - self.eye[2]];
         (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
     }
 }
 
-fn xy(p: Pt) -> (i16, i16) {
+pub(super) fn xy(p: Pt) -> (i16, i16) {
     (p.x.round() as i16, p.y.round() as i16)
 }
 
-fn rgba(c: [u8; 3], a: u8) -> [u8; 4] {
+pub(super) fn rgba(c: [u8; 3], a: u8) -> [u8; 4] {
     [c[0], c[1], c[2], a]
 }
 
-fn shade(c: [u8; 3], k: f32) -> [u8; 3] {
+pub(super) fn shade(c: [u8; 3], k: f32) -> [u8; 3] {
     c.map(|v| (f32::from(v) * k).clamp(0.0, 255.0) as u8)
 }
 
 /// A flat quad on four projected corners (`POLY_F4` order), gouraud when
 /// the colours differ.
-fn flat(c: [Pt; 4], colors: [[u8; 4]; 4], blend: Option<u8>, ot: u32) -> ScreenPrim {
+pub(super) fn flat(c: [Pt; 4], colors: [[u8; 4]; 4], blend: Option<u8>, ot: u32) -> ScreenPrim {
     ScreenPrim::Flat(FlatQuad {
         xy: c.map(xy),
         color: colors[0],
@@ -101,7 +101,7 @@ fn flat(c: [Pt; 4], colors: [[u8; 4]; 4], blend: Option<u8>, ot: u32) -> ScreenP
 
 /// Whether projected corners `[tl, tr, bl, ...]` turn their front to the
 /// screen (clockwise with Y down).
-fn front(c: &[Pt; 4]) -> bool {
+pub(super) fn front(c: &[Pt; 4]) -> bool {
     let (ax, ay) = (c[1].x - c[0].x, c[1].y - c[0].y);
     let (bx, by) = (c[2].x - c[0].x, c[2].y - c[0].y);
     ax * by - ay * bx > 0.0
@@ -111,7 +111,7 @@ fn front(c: &[Pt; 4]) -> bool {
 /// `(r0, a0)-(r1, a1)` at height `h`, brightest under the lamp at the board's
 /// centre.
 #[allow(clippy::too_many_arguments)]
-fn lit_rect(
+pub(super) fn lit_rect(
     out: &mut Vec<ScreenPrim>,
     t: &Table<'_, '_>,
     (r0, a0, r1, a1): (f32, f32, f32, f32),
@@ -145,7 +145,7 @@ fn lit_rect(
 /// A box side: the quad between two top corners and the same corners
 /// `depth` lower, drawn only when it faces the camera.
 #[allow(clippy::too_many_arguments)]
-fn side(
+pub(super) fn side(
     out: &mut Vec<ScreenPrim>,
     t: &Table<'_, '_>,
     a: (f32, f32),
@@ -175,7 +175,7 @@ fn side(
 
 /// A box from `(r0, a0)-(r1, a1)` between two heights: its visible sides.
 #[allow(clippy::too_many_arguments)]
-fn box_sides(
+pub(super) fn box_sides(
     out: &mut Vec<ScreenPrim>,
     t: &Table<'_, '_>,
     (r0, a0, r1, a1): (f32, f32, f32, f32),
@@ -193,10 +193,10 @@ fn box_sides(
     }
 }
 
-const WOOD: [u8; 3] = [104, 62, 34];
-const WOOD_DARK: [u8; 3] = [62, 36, 20];
-const RIM: [u8; 3] = [186, 146, 64];
-const FELT: [u8; 3] = [30, 98, 70];
+pub(super) const WOOD: [u8; 3] = [104, 62, 34];
+pub(super) const WOOD_DARK: [u8; 3] = [62, 36, 20];
+pub(super) const RIM: [u8; 3] = [186, 146, 64];
+pub(super) const FELT: [u8; 3] = [30, 98, 70];
 
 /// The table: legs, apron and top.
 fn table(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
@@ -405,7 +405,7 @@ fn marks(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
 
 /// An additive ring on the table.
 #[allow(clippy::too_many_arguments)]
-fn ring(
+pub(super) fn ring(
     out: &mut Vec<ScreenPrim>,
     t: &Table<'_, '_>,
     c: (f32, f32),
@@ -432,7 +432,7 @@ fn ring(
 
 /// A card's world corners, `[tl, tr, bl, br]`, sub-divided `2 x 2`: rows of
 /// points from the top edge down, each left to right.
-fn card_grid(t: &Table<'_, '_>, c: &StageCard) -> [[[f32; 3]; 3]; 3] {
+pub(super) fn card_grid(t: &Table<'_, '_>, c: &StageCard) -> [[[f32; 3]; 3]; 3] {
     std::array::from_fn(|row| {
         std::array::from_fn(|col| {
             let (u, v) = (col as f32 - 1.0, 1.0 - row as f32);
@@ -447,7 +447,12 @@ fn card_grid(t: &Table<'_, '_>, c: &StageCard) -> [[[f32; 3]; 3]; 3] {
 
 /// One card: its shadow on the table, the owner's colour, the face or the
 /// back.
-fn card(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame, c: &StageCard) {
+pub(super) fn card(
+    out: &mut Vec<ScreenPrim>,
+    t: &Table<'_, '_>,
+    (felt, local, clock): (f32, usize, u32),
+    c: &StageCard,
+) {
     let grid = card_grid(t, c);
     let pts: Option<Vec<Vec<Pt>>> = grid
         .iter()
@@ -463,7 +468,7 @@ fn card(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame, c: &St
     let ot = BAND_CARDS + near as u32 * 4;
     // The shadow: the card's outline pressed onto the table, spreading and
     // fading as it rises.
-    let top = s.table.top() + 0.4;
+    let top = felt + 0.4;
     let spread = 1.0 + c.airborne * 0.35;
     let off = c.airborne * 10.0;
     let sh = |u: f32, v: f32| {
@@ -488,21 +493,16 @@ fn card(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame, c: &St
     let corners = [pts[0][0], pts[0][2], pts[2][0], pts[2][2]];
     let facing = front(&corners);
     // The owner's colour under the face.
-    if facing {
-        let base = owner_rgb(c.owner, s.local);
+    if facing && c.backing {
+        let base = owner_rgb(c.owner, local);
         let hi = rgba(shade(base, 1.2), 255);
         let lo = rgba(shade(base, 0.7), 255);
         out.push(flat(corners, [hi, hi, lo, lo], None, ot + 2));
     }
     // The texture, `2 x 2` so its affine mapping bends with the card.
-    let slot = if facing {
-        table_art::card_slot(c.deck, c.card)
-    } else {
-        BACK_SLOT
-    };
-    let uv = table_art::slot_quad_uv(slot);
-    let (u0, v0) = uv[0];
-    let (u1, v1) = uv[3];
+    let [u, v, w, h] = if facing { c.face_uv } else { c.back_uv };
+    let (u0, v0) = (u, v);
+    let (u1, v1) = (u + w - 1, v + h - 1);
     let mid = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;
     let us = [u0, mid(u0, u1), u1];
     let vs = [v0, mid(v0, v1), v1];
@@ -543,7 +543,7 @@ fn card(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame, c: &St
     }
     // A raised card's rim light.
     if c.lit && facing {
-        let k = 0.55 + 0.45 * (s.clock as f32 / 10.0).sin().abs();
+        let k = 0.55 + 0.45 * (clock as f32 / 10.0).sin().abs();
         let g = rgba(shade([255, 210, 110], k), 255);
         let grow = |p: Pt, q: Pt| Pt {
             x: p.x + (p.x - q.x) * 0.08,
@@ -558,10 +558,10 @@ fn card(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame, c: &St
 
 /// The sparks of a capture (gold for the player, red for the rival; a
 /// chain's twice as many and higher) and a landing's dust ring.
-fn burst(
+pub(super) fn burst(
     out: &mut Vec<ScreenPrim>,
     t: &Table<'_, '_>,
-    s: &DuelStageFrame,
+    local: usize,
     b: &legaia_engine_expansion::duel_stage::StageBurst,
 ) {
     let age = b.age as f32;
@@ -574,7 +574,7 @@ fn burst(
             2.0,
             2.6,
             3.2,
-            if b.seat == s.local {
+            if b.seat == local {
                 [255, 214, 120]
             } else {
                 [255, 120, 96]
@@ -636,10 +636,10 @@ pub(super) fn duel_pieces(pr: &Projector<'_>, s: &DuelStageFrame) -> Vec<ScreenP
     board(&mut out, &t, s);
     marks(&mut out, &t, s);
     for card_ in &s.cards {
-        card(&mut out, &t, s, card_);
+        card(&mut out, &t, (s.table.top(), s.local, s.clock), card_);
     }
     for b in &s.bursts {
-        burst(&mut out, &t, s, b);
+        burst(&mut out, &t, s.local, b);
     }
     out
 }

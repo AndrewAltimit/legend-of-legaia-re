@@ -30,8 +30,10 @@
 //! busted, or `max_hands` is reached.
 
 pub mod ai;
+pub mod art;
 pub mod hand;
 pub mod pots;
+pub mod table;
 
 use legaia_engine_system::pad::PadButton;
 use serde::{Deserialize, Serialize};
