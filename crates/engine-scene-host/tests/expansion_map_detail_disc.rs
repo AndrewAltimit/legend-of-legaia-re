@@ -357,12 +357,34 @@ scenery = true
 #[test]
 fn a_kept_room_seats_its_animated_scenery() {
     let Some(mut host) = host() else { return };
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
-    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("Rebirth loads");
+    // A kept Rogue's Tower hall (the Rebirth floors are laid out from
+    // scratch, so the fixture keeps the retail room itself).
+    let map = r#"
+name = "Kept Hall"
+base = { scene = { kind = "scene", name = "rugi" }, geometry = "keep", scenery = true }
+
+[tiles]
+origin = [22, 41]
+rows = [
+  ".....",
+  ".....",
+  ".....",
+]
+[tiles.legend]
+"." = { label = "floor" }
+
+[[spawns]]
+id = "start"
+tile = [2, 1]
+"#;
+    let mut files = PackFiles::default();
+    files.insert("pack.toml".into(), PACK.as_bytes().to_vec());
+    files.insert("maps/kept_hall.toml".into(), map.as_bytes().to_vec());
+    let pack = ExpansionPack::from_files(&files).expect("parses");
     host.activate_expansion_pack(Arc::new(pack))
         .expect("activates");
-    host.enter_expansion_map("rebirth_tower_2f", "")
-        .expect("2F enters");
+    host.enter_expansion_map("kept_hall", "")
+        .expect("the kept hall enters");
     let o = host.scene.as_ref().unwrap().overrides.clone().unwrap();
     // rugi's animated scene props, after the map's own NPCs, each with a
     // clip and none anchored.

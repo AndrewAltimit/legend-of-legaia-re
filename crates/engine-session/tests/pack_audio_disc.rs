@@ -107,7 +107,7 @@ fn the_games_room_cross_fades_to_the_casino_theme() {
     assert!(rec.has(AudioCommand::BgmStartOwned(2024)), "{:?}", rec.cmds);
     assert!(!bar.is_silent(), "the bar tune sounds");
     // Into the games room (5F `[[audio.zones]]`, 40-frame fade).
-    stand(&mut s, [62, 56], (10, 8));
+    stand(&mut s, [20, 20], (32, 9));
     let fading = steps(&mut s, &mut rec, 20);
     assert!(rec.has(AudioCommand::BgmFade(2018, 40)), "{:?}", rec.cmds);
     assert!(
@@ -168,7 +168,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         retail.merge(frame(&mut s, &mut pcm));
     }
     assert!(!retail.is_silent(), "7F's own score sounds");
-    stand(&mut s, [26, 17], (12, 9));
+    stand(&mut s, [20, 20], (12, 19));
     for _ in 0..120 {
         frame(&mut s, &mut pcm);
     }
@@ -194,7 +194,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         "the normalised drone sits near the retail score's level"
     );
     // Back out of the sanctum: the floor's score returns.
-    stand(&mut s, [26, 17], (9, 20));
+    stand(&mut s, [20, 20], (4, 20));
     for _ in 0..200 {
         frame(&mut s, &mut pcm);
     }
