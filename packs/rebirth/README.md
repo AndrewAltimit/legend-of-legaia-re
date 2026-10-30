@@ -48,38 +48,57 @@ Rebirth is built for the climb from there to 99.
 | Floor | Map | Base scene | Party level | What's there |
 |---|---|---|---|---|
 | 1F Atrium | `rebirth_tower_1f` | `tower` (Sky Gardens Tower), built from scratch | 40-48 | The Warden's Stone, the training gauntlet bell, the card dealer, the stair down to Rim Elm |
-| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), kept whole | 50-55 | Boss: the Cinder Warden |
-| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), kept whole | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
-| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), kept whole | 60-68 | Boss: the Verdant Colossus |
-| 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), kept whole | - | No monsters; Keeper Odalric and his five tables |
+| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), built from scratch (37 x 40) | 50-55 | Boss: the Cinder Warden; the forge and the ash shrine |
+| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), built from scratch (39 x 40) | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
+| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), built from scratch (49 x 37) | 60-68 | Boss: the Verdant Colossus; the Root Archive and the Flooded Cloister |
+| 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), built from scratch (37 x 30) | - | No monsters; Keeper Odalric and his five tables |
 | 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), built from scratch (35 x 37) | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
 | 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), built from scratch (33 x 34) | 80-88 | Boss: the Azure Seraph |
 | 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), built from scratch (31 x 36) | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch in the nave |
 
-1F and 2F carry the detail layer
-([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)):
-the Atrium's walls stand (the tower's stone blocks and a low south parapet),
+Every floor carries the detail layer
+([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)).
+The Atrium's walls stand (the tower's stone blocks and a low south parapet),
 Rogue's Tower torches line them and light the hall under enhanced lighting,
 vines, grass, rubble and Rim Elm's barrels and crates dress the floor (props
 from three scenes, their textures copied into free VRAM), four ember
 crystals - the pack's own glTF model, `assets/models/ember_crystal.glb` from
 `scripts/models/generate_ember_crystal.py` - float, turn and glow round the
 dais, a rune ring turns before the Warden's Stone, the dais flagstones
-drift, and mist curls over the outer ring. The Ember Stair keeps its retail
-hall and adds the brazier's turning fire ring, two orbiting pyre wisps,
-embers on the middle pillars, stalagmites, rubble, red lamps and smoke down
-the aisles.
+drift, and mist curls over the outer ring. Its pillars are decorations
+wearing octagonal stone decals over the retail mesh's black caps, moss and
+worn-stone decals break up its floor, embers rise from the crystals and
+sparks hang round the Warden's Stone.
 
-The Atrium's pillars are decorations wearing octagonal stone decals over
-the retail mesh's black caps, moss and worn-stone decals break up its floor,
-embers rise from the crystals and sparks hang round the Warden's Stone. The
-floors above keep their retail rooms and play the rooms' own animated
-scenery (`base.scenery`), with a theme each: falling leaves, fireflies,
-flower beds and a turning cloud ring in the Hanging Garden; drips, spores
-and a green ring of light in the Verdant Vault; hearth smoke and sparks in
-the Gambler's Rest; spark showers, steam and two flywheels in the Engine
-Deep; three orbiting echo crystals and blue motes in the Sanctum; dust,
-violet motes and a low haze in the Hollow Throne.
+The floors above are laid out from scratch (`geometry = "none"`) out of
+their base scenes' textures and meshes, each bigger than the retail room it
+borrows and each a set of rooms on several floor tiers, laid for the follow
+camera: a low parapet on every room's north (camera) edge, full walls on
+its far and side edges.
+
+- **2F Ember Stair** climbs away from the camera in four flights: the
+  lower hall between two lava moats (the Rogue's Tower's water turned to
+  fire and set flowing by `[[materials]]` tint and scroll), the forge and
+  the ash shrine off it, the middle hall between lava runs and four ember
+  pillars, the upper terrace with the Cinder Warden's brazier on its dais
+  (the tower's flame ring turning, two pyre wisps, a rune circle).
+- **3F Hanging Garden** steps up three terraces: the lower garden's
+  parterre round a fountain, the orchard and the rose arbour's brick
+  arches either side of the raised sundial plaza, the upper terrace's
+  reflecting basin and the belvedere open to the sky.
+- **4F Verdant Vault** is climbed down into: a high gallery rings the
+  colonnade, steps drop into the sunken court where the moss over the
+  Colossus breathes under the vault's heart; off the galleries, the Root
+  Archive and the Flooded Cloister.
+- **5F Gambler's Rest** is a hall with the keeper's long bar, the High
+  Table and the hearth; the card room (the Warden's Duel table, the card
+  dealer) and the games room (Tower Game Night, the arcade cabinets, its
+  own music) off it; the lounge's piano stage and the stair up behind the
+  bar. Old Mott, a Sol casino slot player whose motion stream seats him,
+  waits on a bar stool.
+- **6F-8F**: spark showers, steam and two flywheels in the Engine Deep;
+  three orbiting echo crystals and blue motes in the Sanctum; dust, violet
+  motes and a low haze in the Hollow Throne.
 
 Each floor's stairs chain to the next (`exits` with `to = { kind = "map" }`);
 the 1F stair down leads to Rim Elm. The 1F stair up is the seal Ysolde

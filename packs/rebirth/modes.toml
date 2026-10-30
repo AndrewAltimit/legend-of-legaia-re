@@ -135,7 +135,7 @@ map = "rebirth_tower_5f"
 spawn = "from_below"
 
 [poker.table]
-tile = [10, 5]
+tile = [18, 10]
 facing = 0
 radius = 92
 players = [
@@ -163,7 +163,7 @@ map = "rebirth_tower_5f"
 spawn = "from_below"
 
 [card_duels.table]
-tile = [6, 7]
+tile = [3, 12]
 offset = [-96, 0, 64]
 facing = 6
 opponent = { npc = "duel_second", name = "The Warden's Second" }
@@ -396,7 +396,7 @@ ai_tier = "regular"
 # The night ends on a podium in the Rest's hall (5F), facing the stair the
 # party came up: the top three's leaders on the blocks, the rivals played
 # by the Rest's regulars.
-podium = { map = "rebirth_tower_5f", tile = [5, 5], facing = 4, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
+podium = { map = "rebirth_tower_5f", tile = [24, 10], facing = 0, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
 
 [[party_nights.rounds]]
 mode = "tower-green"

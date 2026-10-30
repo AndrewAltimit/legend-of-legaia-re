@@ -1,189 +1,237 @@
-# Tower of Rebirth, second floor: the Ember Stair. A pillared hall of the
-# retail Rogue's Tower (`rugi`), kept whole (`geometry = "keep"`): its
-# torches, brickwork and pillars draw as they do on the disc, and the tile
-# walls below are the retail room's own, re-traced so the hall walks the
-# way it looks. The Cinder Warden waits at the brazier in the middle.
+# Tower of Rebirth, second floor: the Ember Stair. Laid out from scratch
+# (`geometry = "none"`) out of the retail Rogue's Tower (`rugi`) brick and
+# rock: a stair of fire that climbs away from the camera in four flights.
+# The landing opens on the lower hall, its centre aisle walled from the side
+# aisles by two lava moats with a bridge across each; off the hall, the west
+# forge (anvils and a slag trough) and the east ash shrine. The first flight
+# climbs to the middle hall between lava runs and four ember pillars; the
+# second to the upper terrace, where the Cinder Warden's brazier burns on a
+# raised dais and the stair up leaves through the far wall behind it.
+#
+# The follow camera looks south from the north side: every room's north
+# edge is a low parapet, its far and side walls stand full height.
 
 name = "Tower of Rebirth 2F - Ember Stair"
-base = { scene = { kind = "scene", name = "rugi" }, geometry = "keep", scenery = true }
+size = [37, 40]
+base = { scene = { kind = "scene", name = "rugi" }, geometry = "none" }
 # Sound-test track 7, "The Fire Fortress".
 bgm = { kind = "bgm", id = 7 }
-camera = "default"
+camera = "far"
+# Tier 0 the landing, lower hall and side rooms, tier 1 the middle hall,
+# tier 2 the upper terrace, tier 3 the brazier dais. Each flight is the row
+# before the next tier: tiers are corner heights, so that row is the slope.
+floor_heights = [0, 56, 112, 160]
 
 [tiles]
-origin = [22, 41]
+origin = [20, 20]
 rows = [
-  "       #######",
-  "       #.....#",
-  "  ######.....######",
-  "  b...............a",
-  "  b...............a",
-  "  b...............a",
-  "  b...............a",
-  "  b.....#...#.....a###",
-  "efg..................a",
-  "b....................a",
-  "b....................h",
-  "b.......#...#........a",
-  "b....................a",
-  "b....................a",
-  "b....................a",
-  "b.......#...#........a",
-  "b....................a",
-  "b....................a",
-  "##b...............h###",
-  "  b.....#...#.....a",
-  "  b...............a",
-  "  b...............a",
-  "  b...............a",
-  "  iccccj.....cckcjd",
-  "       #.....#",
-  "       #######",
+  "            _____________            ",
+  "            #k..........#            ",
+  "            >...........#            ",
+  "            #...........#            ",
+  "            #k..........#            ",
+  "       ______...........______       ",
+  "       #.....................#       ",
+  "       #...LL...........LL...#       ",
+  "_______#.o.LL...........LL.o.#_______",
+  "#gffff##...LL...........LL...##aaaah#",
+  "#fFfffff...==...........==...aaaaaaa#",
+  "#fffQfff...==...........==...aaaaaAa#",
+  "#fFfff##...LL...........LL...##aaaaa#",
+  "#ffgff##.o.LL...........LL.o.##aaaah#",
+  "########...LL...........LL...########",
+  "       #.....................#       ",
+  "       ######SSSSSSSSSSS######       ",
+  "         #,,,,,,,,,,,,,,,,,#         ",
+  "         #ll,,,,,,,,,,,,,ll#         ",
+  "         #ll,,p,,,,,,,p,,ll#         ",
+  "         #ll,,,,,,,,,,,,,ll#         ",
+  "         #ll,,,,,,,,,,,,,ll#         ",
+  "         #ll,,,,,,,,,,,,,ll#         ",
+  "         #ll,,p,,,,,,,p,,ll#         ",
+  "         #ll,,,,,,,,,,,,,ll#         ",
+  "         #,,,,,,,,,,,,,,,,,#         ",
+  "     --------sssssssssss--------     ",
+  "     #:::::::::::::::::::::::::#     ",
+  "     #:::::::::::::::::::::::::#     ",
+  "     #::o:::::::::::::::::::o::#     ",
+  "     #:::::::^^^^^^^^^^^:::::::#     ",
+  "     #:::::::^^^^^^^^^^^:::::::#     ",
+  "     #:::::::^^^^^B^^^^^:::::::#     ",
+  "     #::o::::^^^^^^^^^^^::::o::#     ",
+  "     #:::::::^^^^^^^^^^^:::::::#     ",
+  "     #:::::::^^^^^^^^^^^:::::::#     ",
+  "     #:::::::::::::::::::::::::#     ",
+  "     #::o:::::::::::::::::::o::#     ",
+  "     #::::::::::K:::K::::::::::#     ",
+  "     #############<#############     ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
-"." = { label = "floor" }
-"a" = { label = "wall edge", walls = ["tr", "br"] }
-"b" = { label = "wall edge", walls = ["tl", "bl"] }
-"c" = { label = "wall edge", walls = ["bl", "br"] }
-"d" = { label = "wall nook", walls = ["tr", "bl", "br"] }
-"e" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
-"f" = { label = "wall edge", walls = ["tl", "tr"] }
-"g" = { label = "wall corner", walls = ["tl"] }
-"h" = { label = "wall edge", walls = ["tr", "br"] }
-"i" = { label = "wall nook", walls = ["tl", "bl", "br"] }
-"j" = { label = "wall edge", walls = ["bl", "br"] }
-"k" = { label = "wall edge", walls = ["bl", "br"] }
+"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32523, tile = 38 } }
+"_" = { label = "parapet", walls = "all", wall = { kind = "box", height = 48, tpage = 12, clut = 32576, tile = 0 } }
+"-" = { label = "parapet (terrace)", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 12, clut = 32576, tile = 0 } }
+"." = { label = "hall floor", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 8 } }
+"," = { label = "middle hall", height = 1, ground = { kind = "texture", tpage = 12, clut = 32576, tile = 1 } }
+":" = { label = "upper terrace", height = 2, ground = { kind = "texture", tpage = 11, clut = 32523, tile = 46 } }
+"^" = { label = "brazier dais", height = 3, ground = { kind = "texture", tpage = 12, clut = 32576, tile = 0 } }
+"S" = { label = "first flight", ground = { kind = "texture", tpage = 6, clut = 30464, tile = 24 } }
+"s" = { label = "second flight", height = 1, ground = { kind = "texture", tpage = 6, clut = 30464, tile = 24 } }
+"=" = { label = "bridge", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 0 } }
+"f" = { label = "forge floor", ground = { kind = "texture", tpage = 27, clut = 32192, tile = 0 } }
+"a" = { label = "shrine floor", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 1 } }
+# Floor under a set piece standing against a wall, kept clear of the wall
+# torches and stalagmites.
+"k" = { label = "brazier stand", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 8 } }
+"K" = { label = "brazier stand (terrace)", height = 2, ground = { kind = "texture", tpage = 11, clut = 32523, tile = 46 } }
+"g" = { label = "forge floor (set piece)", ground = { kind = "texture", tpage = 27, clut = 32192, tile = 0 } }
+"h" = { label = "shrine floor (set piece)", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 1 } }
+# Lava: the Rogue's Tower's water, turned to fire and set flowing by the
+# materials below. Never walked.
+"L" = { label = "lava", walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
+"l" = { label = "lava run", height = 1, walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
+"Q" = { label = "slag trough", walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
+# Solid stone: piers, the ember pillars, anvils, the ash altar, the brazier.
+"o" = { label = "pier", walls = "all", wall = { kind = "box", height = 288, tpage = 11, clut = 32523, tile = 46 } }
+"p" = { label = "ember pillar", height = 1, walls = "all", wall = { kind = "box", height = 256, tpage = 12, clut = 32576, tile = 1 } }
+"F" = { label = "anvil", walls = "all", wall = { kind = "box", height = 64, tpage = 8, clut = 32256, tile = 8 } }
+"A" = { label = "ash altar", walls = "all", wall = { kind = "box", height = 96, tpage = 8, clut = 32256, tile = 0 } }
+"B" = { label = "brazier", height = 3, walls = "all", wall = { kind = "box", height = 40, tpage = 11, clut = 32523, tile = 38 } }
+">" = { label = "stair down", ground = { kind = "texture", tpage = 6, clut = 30464, tile = 24 } }
+"<" = { label = "stair up", height = 2, ground = { kind = "texture", tpage = 6, clut = 30464, tile = 24 } }
 
 [[spawns]]
 id = "from_below"
-tile = [10, 22]
+tile = [18, 2]
 facing = 4
 
 [[spawns]]
 id = "from_above"
-tile = [10, 3]
+tile = [18, 37]
 
 [[exits]]
 id = "stair_down"
-rect = [8, 24, 12, 24]
+rect = [12, 2, 12, 2]
 to = { kind = "map", map = "rebirth_tower_1f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
-rect = [8, 1, 12, 1]
+rect = [18, 39, 18, 39]
 to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_below" }
 
 [[triggers]]
 id = "arrival"
-rect = [8, 20, 12, 21]
+rect = [13, 3, 23, 3]
 event = { kind = "toast", line = "floor_2f_intro" }
 once = true
 
-# The brazier between the middle pillars: the Cinder Warden's quest giver.
+# The brazier on the dais: the Cinder Warden's quest giver, examined from
+# the dais round it.
 [[triggers]]
 id = "brazier"
-rect = [9, 12, 11, 13]
+rect = [18, 32, 18, 32]
 event = { kind = "talk", npc = "ember_brazier" }
 press = true
 
 # Once the Warden has fallen the brazier is only ash.
 [[triggers]]
 id = "brazier_cold"
-rect = [9, 12, 11, 13]
+rect = [18, 32, 18, 32]
 event = { kind = "dialog", line = "ember_after" }
 press = true
 requires = { bosses = ["cinder_warden"] }
 once = true
 
 [[encounters]]
-id = "west_aisle"
-rect = [0, 8, 6, 17]
+id = "lower_hall"
+rect = [8, 6, 28, 15]
 table = "tower_2f"
 
 [[encounters]]
-id = "east_aisle"
-rect = [13, 3, 18, 22]
+id = "middle_hall"
+rect = [10, 17, 26, 25]
+table = "tower_2f"
+
+[[encounters]]
+id = "terrace_west"
+rect = [6, 27, 11, 38]
+table = "tower_2f"
+
+[[encounters]]
+id = "terrace_east"
+rect = [25, 27, 30, 38]
 table = "tower_2f"
 
 # ---------------------------------------------------------------------------
-# Detail: the Ember Stair burns. The retail hall keeps its own torches and
-# brickwork; the pack adds the brazier's fire, the wisps that circle it,
-# embers on the pillar tops, rubble and stalagmites, and the hall's red
-# light. All of it draws only - the walls above are unchanged.
+# The brazier: the Rogue's Tower's flame ring (`rugi` mesh 32) turning on
+# the dais, breathing, two pyre wisps circling it. Its fire lights the
+# terrace round it.
 # ---------------------------------------------------------------------------
 
-# The brazier's fire: the Rogue's Tower's flame ring (`rugi` mesh 32) turning
-# on its tile, breathing, and lighting the pillars around it.
 [[props]]
 id = "brazier_fire"
 mesh = { object = 32 }
-tile = [10, 13]
-offset = [0, 4, 0]
+tile = [18, 32]
+offset = [0, 44, 0]
 scale = 0.45
 animate = [{ kind = "spin", period = 180 }, { kind = "pulse", amount = 0.12, period = 46 }]
 light = { color = [255, 90, 30], radius = 900, height = 60, flicker = 0.45, period = 9 }
 
-# Two pyre wisps circle the brazier.
 [[props]]
 id = "wisp_w"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [9, 12]
-offset = [40, 90, 40]
+tile = [17, 31]
+offset = [40, 110, 40]
 scale = 0.8
-animate = [{ kind = "orbit", radius = 70, period = 240 }, { kind = "bob", amplitude = 14, period = 70 }, { kind = "spin", period = 90 }]
+animate = [{ kind = "orbit", radius = 90, period = 240 }, { kind = "bob", amplitude = 14, period = 70 }, { kind = "spin", period = 90 }]
 light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
 
 [[props]]
 id = "wisp_e"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [11, 12]
-offset = [-40, 90, 40]
+tile = [19, 33]
+offset = [-40, 110, -40]
 scale = 0.8
-animate = [{ kind = "orbit", radius = 70, period = -240, phase = 0.5 }, { kind = "bob", amplitude = 14, period = 70, phase = 0.5 }, { kind = "spin", period = -90 }]
+animate = [{ kind = "orbit", radius = 90, period = -240, phase = 0.5 }, { kind = "bob", amplitude = 14, period = 70, phase = 0.5 }, { kind = "spin", period = -90 }]
 light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
 
-# Embers sit on the four middle pillars' tops: decorations, so the pillars'
-# own retail meshes keep drawing in the same cells, each lit by a lamp below.
-[[decor]]
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [8, 11]
-offset = [0, 270, 0]
+# Iron braziers (`assets/models/brazier.glb`) at the stair down, the foot of
+# the first flight and either side of the stair up, so the way on reads
+# from across each hall.
+[[props]]
+id = "brazier_landing_n"
+mesh = { asset = "models/brazier.glb" }
+tile = [13, 1]
+solid = true
+light = { color = [255, 120, 50], radius = 520, height = 140, flicker = 0.4, period = 9 }
 
-[[decor]]
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [12, 11]
-offset = [0, 270, 0]
-rotation = [0.0, 30.0, 0.0]
+[[props]]
+id = "brazier_landing_s"
+mesh = { asset = "models/brazier.glb" }
+tile = [13, 4]
+solid = true
+light = { color = [255, 120, 50], radius = 520, height = 140, flicker = 0.4, period = 11 }
 
-[[decor]]
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [8, 15]
-offset = [0, 270, 0]
-rotation = [0.0, 15.0, 0.0]
+[[props]]
+id = "brazier_flight_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [13, 15]
+scale = 1.1
+solid = true
+light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 10 }
 
-[[decor]]
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [12, 15]
-offset = [0, 270, 0]
-rotation = [0.0, 45.0, 0.0]
+[[props]]
+id = "brazier_flight_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [23, 15]
+scale = 1.1
+solid = true
+light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 12 }
 
-# Stalagmites (`rugi` mesh 24) along the walled half of the edge tiles.
-[[edges]]
-id = "stalagmites"
-mesh = { object = 24 }
-on = "abcdefghijk"
-every = 2
-inset = 40
-scale = 0.6
-
-# Iron braziers (`assets/models/brazier.glb`) flank the mouth of each
-# stair, so the way on reads from across the hall.
 [[props]]
 id = "brazier_up_w"
 mesh = { asset = "models/brazier.glb" }
-tile = [7, 3]
+tile = [16, 38]
 scale = 1.1
 solid = true
 light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 9 }
@@ -191,55 +239,111 @@ light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, per
 [[props]]
 id = "brazier_up_e"
 mesh = { asset = "models/brazier.glb" }
-tile = [13, 3]
+tile = [20, 38]
 scale = 1.1
 solid = true
 light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 11 }
 
+# The forge: a brazier for the coals behind the anvils, and red banners of
+# the smiths over the door. The east shrine keeps two black obelisks
+# either side of its ash altar.
 [[props]]
-id = "brazier_down_w"
+id = "forge_coals"
 mesh = { asset = "models/brazier.glb" }
-tile = [7, 22]
-scale = 1.1
+tile = [1, 9]
+scale = 1.3
 solid = true
-light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 10 }
+light = { color = [255, 110, 40], radius = 600, height = 120, flicker = 0.5, period = 7 }
 
 [[props]]
-id = "brazier_down_e"
-mesh = { asset = "models/brazier.glb" }
-tile = [13, 22]
-scale = 1.1
+id = "forge_banner"
+mesh = { asset = "models/banner_red.glb" }
+tile = [3, 13]
+offset = [0, 60, 50]
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 150 }]
+
+[[props]]
+id = "shrine_obelisk_n"
+mesh = { asset = "models/obelisk.glb" }
+tile = [35, 9]
 solid = true
-light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 12 }
 
-[[emitters]]
-kind = "embers"
-rect = [7, 3, 13, 3]
-height = [130, 170]
-count = 18
-velocity = [0.0, 1.5, 0.0]
-seed = 206
+[[props]]
+id = "shrine_obelisk_s"
+mesh = { asset = "models/obelisk.glb" }
+tile = [35, 13]
+solid = true
 
-[[emitters]]
-kind = "embers"
-rect = [7, 22, 13, 22]
-height = [130, 170]
-count = 18
-velocity = [0.0, 1.5, 0.0]
-seed = 207
+[[props]]
+id = "shrine_ember"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [33, 11]
+offset = [64, 170, 0]
+scale = 1.2
+animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 120 }]
+light = { color = [255, 170, 120], radius = 520, height = 0, flicker = 0.15, period = 40 }
 
-# Fallen rock heaps in two of the hall's corners, where the ceiling
-# gave way: the cave's boulders (`rugi` meshes 17..20), piled.
+# Embers sit on the four ember pillars' tops, each lit by a lamp below.
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [14, 19]
+offset = [0, 270, 0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [22, 19]
+offset = [0, 270, 0]
+rotation = [0.0, 30.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [14, 23]
+offset = [0, 270, 0]
+rotation = [0.0, 15.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [22, 23]
+offset = [0, 270, 0]
+rotation = [0.0, 45.0, 0.0]
+
+# The Rogue's Tower's wall torches (`rugi` mesh 15) down every hall.
+[[edges]]
+id = "torches"
+mesh = { object = 15 }
+walls = "#"
+on = ".,:fa"
+every = 3
+inset = 6
+y = 150
+seed = 2201
+
+# Stalagmites (`rugi` mesh 24) along the rock walls, between the torches.
+[[edges]]
+id = "stalagmites"
+mesh = { object = 24 }
+walls = "#o"
+on = ".,:"
+every = 3
+phase = 1
+inset = 40
+jitter = 30
+scale_range = [0.45, 0.7]
+seed = 2202
+
+# Fallen rock heaps in the lower hall's side aisles and the terrace's far
+# corners, where the ceiling gave way: the cave's boulders (`rugi` 17..20).
 [[scatter]]
-id = "rubble_heaps"
-rect = [0, 3, 21, 22]
+id = "rubble_west"
+rect = [8, 6, 10, 15]
 on = "."
-density = 2.5
+density = 1.2
 seed = 2203
 jitter = 50
 scale = [0.3, 0.55]
 tilt = 10.0
-cluster = { centre = [3.0, 4.0], radius = 2.2, falloff = 1.0 }
+keep_clear = true
+cluster = { centre = [8.0, 14.0], radius = 3.0, falloff = 1.0 }
 meshes = [
   { mesh = { object = 17 }, scale = [0.3, 0.45] },
   { mesh = { object = 18 } },
@@ -248,14 +352,16 @@ meshes = [
 ]
 
 [[scatter]]
-rect = [0, 3, 21, 22]
+id = "rubble_east"
+rect = [26, 6, 28, 15]
 on = "."
-density = 2.5
+density = 1.2
 seed = 2204
 jitter = 50
 scale = [0.3, 0.55]
 tilt = 10.0
-cluster = { centre = [17.0, 21.0], radius = 2.2, falloff = 1.0 }
+keep_clear = true
+cluster = { centre = [28.0, 7.0], radius = 3.0, falloff = 1.0 }
 meshes = [
   { mesh = { object = 17 }, scale = [0.3, 0.45] },
   { mesh = { object = 18 } },
@@ -263,81 +369,123 @@ meshes = [
   { mesh = { object = 20 } },
 ]
 
-[lighting]
-mood = "dusk"
-lamps = [
-  { id = "ember_nw", tile = [8, 11], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 11 },
-  { id = "ember_ne", tile = [12, 11], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 13 },
-  { id = "ember_sw", tile = [8, 15], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 12 },
-  { id = "ember_se", tile = [12, 15], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 14 },
-  { id = "stair_glow_s", tile = [10, 23], offset = [0, 120, 0], color = [255, 70, 40], radius = 700, flicker = 0.2, period = 20 },
-  { id = "stair_glow_n", tile = [10, 2], offset = [0, 120, 0], color = [255, 70, 40], radius = 700, flicker = 0.2, period = 23 },
+[[scatter]]
+id = "rubble_terrace"
+rect = [6, 34, 30, 38]
+on = ":"
+density = 0.8
+seed = 2205
+jitter = 50
+scale = [0.3, 0.5]
+tilt = 10.0
+keep_clear = true
+cluster = { centre = [7.0, 38.0], radius = 4.0, falloff = 1.2 }
+meshes = [
+  { mesh = { object = 17 }, scale = [0.3, 0.45] },
+  { mesh = { object = 19 } },
+  { mesh = { object = 20 } },
 ]
 
-# Smoke drifts down the two aisles.
+# A rune circle (the Rogue's Tower's own, four atlas cells) glows on the
+# dais round the brazier.
+[[decals]]
+cell = { tpage = 10, clut = 32448, tile = 0 }
+span = 2
+tile = [18, 32]
+offset = [0, 3, 0]
+size = [420, 420]
+sides = 16
+color = [110, 110, 110]
+yaw = [0.0, 0.0]
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "ember_nw", tile = [14, 19], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 11 },
+  { id = "ember_ne", tile = [22, 19], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 13 },
+  { id = "ember_sw", tile = [14, 23], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 12 },
+  { id = "ember_se", tile = [22, 23], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 14 },
+  # The lava glows up from the moats and runs.
+  { id = "moat_w", tile = [11, 10], offset = [0, 40, 64], color = [255, 90, 20], radius = 640, flicker = 0.25, period = 30 },
+  { id = "moat_e", tile = [25, 10], offset = [0, 40, 64], color = [255, 90, 20], radius = 640, flicker = 0.25, period = 33 },
+  { id = "run_w", tile = [10, 21], offset = [64, 40, 0], color = [255, 90, 20], radius = 600, flicker = 0.25, period = 29 },
+  { id = "run_e", tile = [26, 21], offset = [-64, 40, 0], color = [255, 90, 20], radius = 600, flicker = 0.25, period = 31 },
+  { id = "forge", tile = [3, 11], offset = [0, 80, 0], color = [255, 110, 40], radius = 560, flicker = 0.45, period = 8 },
+  { id = "shrine", tile = [33, 11], offset = [0, 160, 0], color = [255, 200, 150], radius = 520, flicker = 0.1, period = 60 },
+]
+
+# Smoke drifts down the side aisles and over the terrace.
 [fog]
 regions = [
-  { rect = [1, 8, 6, 17], angle = 0.0, spread = 30.0, speed = 14 },
-  { rect = [14, 4, 18, 21], angle = 180.0, spread = 30.0, speed = 14 },
+  { rect = [8, 6, 10, 15], angle = 0.0, spread = 30.0, speed = 14 },
+  { rect = [26, 6, 28, 15], angle = 180.0, spread = 30.0, speed = 14 },
+  { rect = [6, 27, 30, 29], angle = 90.0, spread = 40.0, speed = 10 },
 ]
 
-# Sparks climb from the brazier, embers drift up the aisles from the wall
-# torches, and smoke gathers under the ceiling by the stairs.
+# Sparks climb from the brazier, embers rise off the lava, the forge
+# smokes, and warm ash drifts down through every hall.
 [[emitters]]
 kind = "embers"
-rect = [9, 12, 11, 13]
-height = [10, 60]
+rect = [17, 31, 19, 33]
+height = [40, 100]
 count = 40
 velocity = [0.0, 1.6, 0.0]
 seed = 201
 
 [[emitters]]
 kind = "embers"
-rect = [1, 8, 3, 17]
-count = 20
-color = [255, 120, 50]
+rect = [11, 7, 12, 14]
+height = [0, 30]
+count = 24
+color = [255, 140, 50]
 seed = 202
 
 [[emitters]]
 kind = "embers"
-rect = [17, 4, 19, 21]
-count = 20
-color = [255, 120, 50]
+rect = [24, 7, 25, 14]
+height = [0, 30]
+count = 24
+color = [255, 140, 50]
 seed = 203
 
-# Warm ash drifts down through the whole stair hall.
 [[emitters]]
-kind = "dust"
-rect = [4, 3, 16, 22]
-height = [60, 260]
-count = 40
-color = [255, 170, 110]
-seed = 205
+kind = "embers"
+rect = [10, 18, 11, 24]
+height = [0, 30]
+count = 20
+color = [255, 140, 50]
+seed = 206
+
+[[emitters]]
+kind = "embers"
+rect = [25, 18, 26, 24]
+height = [0, 30]
+count = 20
+color = [255, 140, 50]
+seed = 207
 
 [[emitters]]
 kind = "smoke"
-rect = [8, 20, 12, 22]
-height = [40, 120]
-count = 14
+rect = [1, 9, 4, 12]
+height = [60, 140]
+count = 12
+color = [90, 80, 75]
 seed = 204
 
-# A rune circle (the Rogue's Tower's own, four atlas cells) glows on the
-# floor round the brazier.
-[[decals]]
-cell = { tpage = 10, clut = 32448, tile = 0 }
-span = 2
-tile = [10, 12]
-offset = [0, 3, 128]
-size = [300, 300]
-sides = 16
-color = [110, 110, 110]
-yaw = [0.0, 0.0]
+[[emitters]]
+kind = "dust"
+rect = [8, 5, 28, 38]
+height = [60, 260]
+count = 60
+color = [255, 170, 110]
+seed = 205
 
 # The hall's own torch flames burn the Rogue's Tower's violet and its flame
 # ring burns blue; the Ember Stair's burn its fire's amber. The torches
 # draw through the violet ramps 32384 / 32385 (row 506), the ring through
 # the blue flame ramps 32257 / 32258 (row 504): each turned round the hue
-# circle and warmed, once on entry.
+# circle and warmed, once on entry. The tower's water (30720) turns to
+# lava and flows.
 [[materials]]
 kind = "tint"
 clut = 32384
@@ -362,44 +510,66 @@ clut = 32258
 hue = 150.0
 color = [220, 140, 100]
 
-# Sound: the four ember braziers roar as the party passes them.
-[[audio.ambient]]
-id = "ember_nw"
-sound = { kind = "sound", id = "torch" }
-tile = [8, 11]
-radius = 512
-inner = 96
-volume = 0.6
+[[materials]]
+kind = "tint"
+clut = 30720
+hue = 175.0
+value = 8
+color = [255, 150, 70]
 
-[[audio.ambient]]
-id = "ember_ne"
-sound = { kind = "sound", id = "torch" }
-tile = [12, 11]
-radius = 512
-inner = 96
-volume = 0.6
+[[materials]]
+kind = "scroll"
+cell = { tpage = 5, clut = 30720, tile = 0 }
+dx = 1
+dy = 1
+period = 6
 
-[[audio.ambient]]
-id = "ember_sw"
-sound = { kind = "sound", id = "torch" }
-tile = [8, 15]
-radius = 512
-inner = 96
-volume = 0.6
-
-[[audio.ambient]]
-id = "ember_se"
-sound = { kind = "sound", id = "torch" }
-tile = [12, 15]
-radius = 512
-inner = 96
-volume = 0.6
-
-# The fire in the middle roars loudest.
+# Sound: the brazier roars loudest; the lava hisses along its moats and
+# runs; the forge's coals crackle.
 [[audio.ambient]]
 id = "brazier_fire"
 sound = { kind = "sound", id = "torch" }
-tile = [10, 13]
+tile = [18, 32]
 radius = 768
 inner = 160
 volume = 0.85
+
+[[audio.ambient]]
+id = "moat_w"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 10]
+radius = 560
+inner = 96
+volume = 0.45
+
+[[audio.ambient]]
+id = "moat_e"
+sound = { kind = "sound", id = "torch" }
+tile = [25, 10]
+radius = 560
+inner = 96
+volume = 0.45
+
+[[audio.ambient]]
+id = "lava_runs"
+sound = { kind = "sound", id = "torch" }
+tile = [18, 21]
+radius = 900
+inner = 300
+volume = 0.4
+
+[[audio.ambient]]
+id = "forge"
+sound = { kind = "sound", id = "torch" }
+tile = [2, 10]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "shrine_hum"
+sound = { kind = "sound", id = "drone" }
+tile = [33, 11]
+radius = 480
+inner = 96
+volume = 0.3

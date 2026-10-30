@@ -144,7 +144,7 @@ frames = 30
 
 [[cutscenes.hollow_stirs.steps]]
 do = "camera"
-focus = { tile = [8, 1] }
+focus = { tile = [23, 28] }
 pitch = -10.0
 zoom = 1.6
 frames = 150
@@ -336,7 +336,7 @@ title = "The Cinder Warden"
 map = "rebirth_tower_2f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [10, 13] }, pitch = -10.0, zoom = 0.7, frames = 70 },
+    { do = "camera", focus = { tile = [18, 32] }, pitch = -10.0, zoom = 0.7, frames = 70 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 12, frames = 45 },
     { do = "flash", color = [255, 110, 30], frames = 36 },
@@ -351,7 +351,7 @@ title = "The Ember Stair Goes Cold"
 map = "rebirth_tower_2f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [10, 13] }, pitch = -6.0, zoom = 0.85, frames = 60 },
+    { do = "camera", focus = { tile = [18, 32] }, pitch = -6.0, zoom = 0.85, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [255, 240, 220], frames = 50 },
     { do = "banner", line = "fallen_cinder_warden" },
@@ -364,7 +364,7 @@ title = "The Verdant Colossus"
 map = "rebirth_tower_4f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [16, 13] }, pitch = -14.0, zoom = 0.9, frames = 80 },
+    { do = "camera", focus = { tile = [24, 20] }, pitch = -14.0, zoom = 0.9, frames = 80 },
     { do = "shake", amplitude = 6, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 16, frames = 50 },
@@ -380,7 +380,7 @@ title = "The Vault Sleeps"
 map = "rebirth_tower_4f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [16, 13] }, pitch = -8.0, zoom = 1.0, frames = 60 },
+    { do = "camera", focus = { tile = [24, 20] }, pitch = -8.0, zoom = 1.0, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [230, 255, 230], frames = 50 },
     { do = "banner", line = "fallen_verdant_colossus" },
