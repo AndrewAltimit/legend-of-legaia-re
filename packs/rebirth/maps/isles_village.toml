@@ -1,12 +1,14 @@
-# Rebirth Isles: Tolva's village at dusk. Laid out from scratch over Rim
-# Elm's (`town01`) grass and earth: a green in the middle with the well and
-# the windmill, thatched huts round it, the lodge to the east, the trading
-# post by the south lane, and the jetty out over the bay. Lanterns burn on
-# the lanes, smoke rises from the huts, and the village's beasts wander
-# (Rim Elm's own animated scenery, `scenery = true` NPCs).
+# Rebirth Isles: Tolva's village at dusk, a fishing village on a low hill
+# over the bay. Laid out from scratch over Rim Elm's (`town01`) grass and
+# earth: the lane from the beach runs east past a row of hedged cottages to
+# the green, where the well stands and the elder's house looks down from its
+# terrace; the market square and Pell's trading post sit south-west of it,
+# the south lane runs down to the boardwalk and the two jetties, the lodge
+# keeps the east end, and the climb past the orchard leads into the
+# Thornwood. The windmill turns on its knoll in the north-west.
 
 name = "Rebirth Isles - Tolva's Haven"
-size = [52, 42]
+size = [64, 50]
 base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
 # Sound-test track 6, "Rim Elm".
 bgm = { kind = "bgm", id = 6 }
@@ -17,104 +19,108 @@ floor_heights = [0, 16, 210, -60]
 [tiles]
 origin = [4, 4]
 rows = [
-  "####################################################",
-  "####################################################",
-  "#ggggggggggggggGGGGGGGGGGGggggGGGGgggggggggGGGGGGGg#",
-  "#gggggggggggggGGGGGGGGGGGGGGGGGGGGgggggggggGGGGGGGG#",
-  "#gggggggggggggGGGGGGGGGGGGGGGGGGGGGggggggggGGGGGGGG#",
-  "#ggggggggggggggHHHGGGGGGGGGGGGGGGGGggggggggGGGGGGGG#",
-  "#ggggggggggggggHHHGgggGGGGGGGddGHHHGGggggggGGGGgggG#",
-  "#GgggggGGGgggggHHHggggGGGGGddddGHHHGGGgggggGGGggggg#",
-  "#GgggggGHHHggggggggggggGGGdddgGGHHHGGGgggggGGGggggg#",
-  "#GgggggGHHHggggggggggggGddddggGGGGGGGGgHHHggGGggggg#",
-  "#gggggggHHHggggggggggggGddGgggggggGGGGgHHHggggggggg#",
-  "#ggggggggggggggggggggggGdGGggggggggGGGgHHHggggggggG#",
-  "#ggggggggggggggggggggggGdGGggggggggGGGggggggggggGGG#",
-  "#ggggggggggggggggggggggGdGGggggggggGGGggggggggggGGG>",
-  "#ggggggggggggggGGGGGGGGGdggggggggggGGGgggggggggGGdd>",
-  "#ggggggggggggGGGGGGGGGGgdgggggggggggggggggggggddddd>",
-  "#gGGGgggggggGGGGGGGGGGGgdggggggggggggggggggggddddGG#",
-  "#ggggggggHHHGGGGGGGGGGgpppgggggggggggggggggddddGGGg#",
-  "#ggggggggHHHGGGGGGGgggpppppgggggGGGGGGGGGddddgggggg#",
-  "#ggggggGGHHHGGGGGGgggpppppppgggGGGGGGGGGdddgggggggg#",
-  "#gggggGGGGGGGGGGGggggpppppppgggGGGGGGGddddgLLLLLggg#",
-  "#ggggggGGGGGGGGGGggggpppppppggggGGGGddddGGGLLLLLggg#",
-  "#ggggggggggggggGGgddddpppppdddddddddddGGGGGLLLLLggg#",
-  "#gggggggggggdddddddddddpppggggggggggdGGGGGGLLLLLggg#",
-  "#ggggggggggddddddddggggddggggggggggggggGGGGGGGggggg#",
-  "#ggggggHHHdddggggggggggddgggggggggggggGGGGGGGGggggg#",
-  "#ggggggHHHdggggggggggggddggggggggggGGGGGGGGGGGggggg#",
-  "#GgggggHHHgggggggggGGGGdGGGGGGGgggGGGHHHGGGGGGggggg#",
-  "#GggggdddggggggggggGGGddGGGGGGGGGGGGGHHHGGGGGgggggg#",
-  "<GggdddggggggggggggGGGddGGGGGGGgggGGGHHHGGGGGgggggg#",
-  "<ggdddgggggggTTTggggGGddGGGGGGggggggggggggggggggggg#",
-  "<gggdggGGGgggTTTggggggddGGGGGHHHggggggggggggggggggg#",
-  "#gggggGGGGgggTTTgggggddGGGGGGHHHggggggggggggggggggg#",
-  "#gggggGGGGgggggggggggddGGGGGGHHHggggggggggggggggggg#",
-  "#gggGGGGGggggggggggGGdGGGGggggggggggggggggggggggggg#",
-  "#ggGGGGggggGGggggggGdd,,,,,,gggGGGGgggggggggggggggg,",
-  ",,,,GGggggGGG,,,,,,jj~~~~~~~,,,,,,,,gggggggg,,,,,,,~",
-  "~~~~,,,,,,,,,~~~~~~jj~~~~~~~~~~~~~~~,,,,,,,,~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "################################################################",
+  "################################################################",
+  "#gGGGGGGGGGGGGGGGGGGGGGgggggggggggggghhhhhhhhhhhhhhhhhhhhhhhhhg#",
+  "#gGGGGGGGGGGGGGGGGGGGGGgggggggggggggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGGGGGGGGGgggggggggggggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGGGGGGGGGgggggggggggggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGGGGGGGGGgggggggggggggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGggggggghhhhhhhhhhhhggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGggggggghyyyyyyyyyyhggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGggggggghyyyyyyyyyyhggghfffffffffffffffffffffffhg#",
+  "#gGGGGGGGGGGGGGggggggghyyyyyyyyyyhggghhhhhhhhhhhhhhhhhhgghhhhhg#",
+  "#gGGGGGGGGGGGGGggggggghyyyyyyyyyyhgggggggggggggggggggggddgggggg#",
+  "#gGGGGGGGGGGGGGggggggghyyyyyyyyyyhGGGGGGGGGGGgggggggggddddddddd>",
+  "#ggggggggggggggggggggghyyyyyyyyyyhGGGGGGGGGGGgggggggggddddddddd>",
+  "#ghhhhhhhghhhhhhhhhhhhhyyyyyyyyyyhGGGGGGGGGGGggggggggdddddddddd>",
+  "#ghyyyyyhghyyyyyhhyyyyhyyyyyyyyyyhGGGGGGGGGGGgggggggddddggGGGGG#",
+  "#ghyyyyyhghyyyyyhhyyyyhhhhhyyhhhhhGGGGGGGGGGGggggggddddgggGGGGG#",
+  "#ghyyyyyhghyyyyyhhyyyyhggggddgggggggggggggggggggggdhhhhhhhhhhhG#",
+  "#ghyyyyyhghyyyyyhhyyyyhpppppppppppgggggggggggggggddhyyyyyyyyyhG#",
+  "#ghyyyyyhghyyyyyhhyyyyhpppppppppppggggggggggggggdddhyyyyyyyyyhG#",
+  "#ghhhyhhhghhhyhhhhhyyhhpppppppppppgggggggggggggddddhyyyyyyyyyhG#",
+  "#ggggggggggggggggggggggpppppppppppggggggggggggdddddyyyyyyyyyyhG#",
+  "<ddddddddddddddddddddddpppppppppppdddddddddddddddddyyyyyyyyyyhG#",
+  "<ddddddddddddddddddddddpppppppppppdddddddddddddddddyyyyyyyyyyhG#",
+  "#gGGGGggggggddgggggggggpppppppppppggggggggggggggggghyyyyyyyyyhG#",
+  "#gGGGGggggggddgggggggggpppppppppppghhhyhhhghhhyhhhghyyyyyyyyyhG#",
+  "#gGGGGggggggddgggggggggpppppppppppghyyyyyhghyyyyyhghyyyyyyyyyhG#",
+  "#gGGGGmmmmmmmmmmmmmmmmgggggddgggggghyyyyyhghyyyyyhghhhhhhhhhhhG#",
+  "#gGGGGmyyyymmmmmmmmmmmgggggddgggggghyyyyyhghyyyyyhggggggggGGGGG#",
+  "#gGGGGmyyyymmmmmmmmmmmgggggddgggggghyyyyyhghyyyyyhggggggggGGGGG#",
+  "#gGGGGmyyyymmmmmmmmmmmgggggddgggggghyyyyyhghyyyyyhggggggggGGGGG#",
+  "#gGGGGmyyyymmmmmmmmmmmgggggddgggggghhhhhhhghhhhhhhggggggggggggg#",
+  "#gGGGGmyyyymmmmmmmmmmmgggggddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
+  "#gGGGGmmmmmmmmmmmmmmmmgggggddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
+  "#gGGGGmmmmmmmmmmmmmmmmdddddddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
+  "#gggggmmmmmmmmmmmmmmmmdddddddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
+  "#ggggggggggggggggggggggggggddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
+  "#ggggggggggggkkkkkkkkkkkkkkkkkkkkkkkkkkkkkGGGGGGGGGGGGGGGGGGGGG#",
+  "#ggggggggggggkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgggggg,,,,,,,,,,,,,,,#",
+  ",,,,,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+  ",,,,,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,~~~~~~~~~~~,,,",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
 ]
 
 [tiles.legend]
 "#" = { label = "wooded rise", walls = "all", height = 2, ground = { kind = "texture", tpage = 12, clut = 32006, tile = 36 } }
 "g" = { label = "grass", ground = { kind = "texture", tpage = 12, clut = 32003, tile = 0 } }
 "G" = { label = "grass (long)", ground = { kind = "texture", tpage = 12, clut = 32001, tile = 9 } }
+"f" = { label = "orchard", ground = { kind = "texture", tpage = 12, clut = 32001, tile = 9 } }
 "d" = { label = "lane", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+"m" = { label = "market square", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
 "p" = { label = "village green", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+"y" = { label = "yard", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+"h" = { label = "hedge", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32001, tile = 9 }, wall = { kind = "box", height = 56, tpage = 12, clut = 32001, tile = 9 } }
 "," = { label = "shingle", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
 "~" = { label = "bay", walls = "all", height = 3, ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
 "j" = { label = "jetty", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
-"H" = { label = "hut", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
-"L" = { label = "lodge", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
-"T" = { label = "trading post", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+"k" = { label = "boardwalk", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
 "<" = { label = "to the beach", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
 ">" = { label = "to the Thornwood", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
 
 [[spawns]]
 id = "from_beach"
-tile = [2, 30]
+tile = [2, 22]
 facing = 2
 
 [[spawns]]
 id = "from_thornwood"
-tile = [49, 14]
+tile = [61, 13]
 facing = 6
 
 [[exits]]
 id = "to_beach"
-rect = [0, 29, 0, 31]
+rect = [0, 22, 0, 23]
 to = { kind = "map", map = "isles_beach", spawn = "from_village" }
 
 [[exits]]
 id = "to_thornwood"
-rect = [51, 13, 51, 15]
+rect = [63, 12, 63, 14]
 to = { kind = "map", map = "isles_thornwood", spawn = "from_village" }
 requires = { quests = ["isles_landfall"] }
 locked_line = "isles_elder_thorns_active"
 
-# The lodge's hearth: the party rests, and may save.
+# The lodge's hearth, just inside its gate: the party rests, and may save.
 [[triggers]]
 id = "lodge"
-rect = [42, 21, 42, 22]
+rect = [53, 21, 53, 23]
 event = { kind = "rest", save = true }
-
-# Pell's stall: stepping up to the counter opens the shop.
-[[triggers]]
-id = "trading_post"
-rect = [16, 30, 16, 32]
-event = { kind = "shop", shop = "isles_trader" }
 
 [[npcs]]
 id = "isles_elder"
 label = "Elder Tolva"
 model = { kind = "npc", scene = "town01", index = 10 }
-tile = [24, 17]
+tile = [28, 17]
 facing = 0
 line = "isles_elder_idle"
 
@@ -122,7 +128,7 @@ line = "isles_elder_idle"
 id = "isles_fisher"
 label = "Fisher Dunn"
 model = { kind = "npc", scene = "town01", index = 12 }
-tile = [20, 38]
+tile = [35, 46]
 facing = 4
 line = "isles_fisher_active"
 line_after = "isles_fisher_done"
@@ -132,8 +138,8 @@ after = { quests = ["isles_nets"] }
 id = "isles_trader_pell"
 label = "Trader Pell"
 model = { kind = "npc", scene = "town01", index = 33 }
-tile = [17, 31]
-facing = 6
+tile = [12, 30]
+facing = 2
 line = "isles_shop_keeper"
 shop = "isles_trader"
 
@@ -141,165 +147,520 @@ shop = "isles_trader"
 id = "isles_villager_a"
 label = "Islander"
 model = { kind = "npc", scene = "town01", index = 13 }
-tile = [28, 24]
-patrol = [[28, 24], [34, 22], [28, 24], [24, 26]]
-pause = 90
+tile = [24, 19]
 line = "isles_villager_a"
+patrol = [[32, 19], [32, 25], [24, 25]]
+pause = 120
 
 [[npcs]]
 id = "isles_villager_b"
 label = "Islander"
 model = { kind = "npc", scene = "town01", index = 44 }
-tile = [12, 14]
-facing = 2
+tile = [17, 31]
+facing = 6
 line = "isles_villager_b"
 
 [[npcs]]
 id = "isles_child"
 label = "Child"
 model = { kind = "npc", scene = "town01", index = 15 }
-tile = [26, 21]
-patrol = [[26, 21], [22, 19], [26, 18], [27, 21]]
+tile = [26, 24]
 line = "isles_child"
+patrol = [[30, 24], [30, 20], [26, 20]]
+pause = 45
 
 [[npcs]]
 id = "isles_hen_a"
 label = "hen"
 model = { kind = "npc", scene = "town01", index = 6 }
-tile = [30, 14]
+tile = [8, 21]
 scenery = true
 
 [[npcs]]
 id = "isles_hen_b"
 label = "hen"
 model = { kind = "npc", scene = "town01", index = 7 }
-tile = [31, 16]
+tile = [10, 21]
 scenery = true
 
 [[npcs]]
 id = "isles_mill"
 label = "windmill sails"
 model = { kind = "npc", scene = "town01", index = 5 }
-tile = [20, 13]
+tile = [7, 7]
 scenery = true
 
+# Houses: each cottage stands in its own hedged yard, its door to the lane.
 [[props]]
-id = "hut_0"
+id = "cottage_w1"
 mesh = { scene = "town01", object = 42 }
-tile = [9, 9]
-rotation = [0.0, 0.0, 0.0]
-scale = 0.75
+tile = [5, 17]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.7
 solid = true
 
 [[props]]
-id = "hut_1"
+id = "cottage_w2"
 mesh = { scene = "town01", object = 43 }
-tile = [16, 6]
-rotation = [0.0, 90.0, 0.0]
-scale = 0.75
+tile = [13, 17]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.7
 solid = true
 
 [[props]]
-id = "hut_2"
-mesh = { scene = "town01", object = 50 }
-tile = [33, 7]
-rotation = [0.0, 200.0, 0.0]
-scale = 0.75
-solid = true
-
-[[props]]
-id = "hut_3"
-mesh = { scene = "town01", object = 43 }
-tile = [40, 10]
-rotation = [0.0, 300.0, 0.0]
-scale = 0.75
-solid = true
-
-[[props]]
-id = "hut_4"
-mesh = { scene = "town01", object = 50 }
-tile = [10, 18]
-rotation = [0.0, 45.0, 0.0]
-scale = 0.75
-solid = true
-
-[[props]]
-id = "hut_5"
+id = "cottage_w3"
 mesh = { scene = "town01", object = 42 }
+tile = [19, 17]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.62
+solid = true
+
+[[props]]
+id = "cottage_e1"
+mesh = { scene = "town01", object = 43 }
 tile = [38, 28]
-rotation = [0.0, 160.0, 0.0]
-scale = 0.75
+scale = 0.7
 solid = true
 
 [[props]]
-id = "hut_6"
-mesh = { scene = "town01", object = 43 }
-tile = [30, 32]
-rotation = [0.0, 260.0, 0.0]
-scale = 0.75
-solid = true
-
-[[props]]
-id = "hut_7"
+id = "cottage_e2"
 mesh = { scene = "town01", object = 42 }
-tile = [8, 26]
-rotation = [0.0, 120.0, 0.0]
-scale = 0.75
+tile = [46, 28]
+scale = 0.7
 solid = true
 
+[[props]]
+id = "elder_house"
+mesh = { scene = "town01", object = 50 }
+tile = [27, 11]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.72
+solid = true
+light = { color = [255, 180, 110], radius = 560, height = 90, flicker = 0.2, period = 13 }
 
 [[props]]
 id = "lodge"
 mesh = { scene = "town01", object = 50 }
-tile = [45, 21]
-rotation = [0.0, 270.0, 0.0]
-scale = 0.9
+tile = [56, 22]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.85
 solid = true
 light = { color = [255, 170, 90], radius = 700, height = 100, flicker = 0.3, period = 11 }
 
 [[props]]
 id = "trading_post"
 mesh = { scene = "town01", object = 50 }
-tile = [14, 31]
-rotation = [0.0, 90.0, 0.0]
+tile = [8, 30]
+rotation = [0.0, 270.0, 0.0]
 scale = 0.55
 solid = true
 
+# The green: the well at its heart, the windmill on its knoll, the old
+# tree in the west meadow.
 [[props]]
 id = "well"
 mesh = { scene = "town01", object = 28 }
-tile = [24, 20]
+tile = [28, 22]
 solid = true
 
 [[props]]
 id = "windmill"
 mesh = { scene = "town01", object = 13 }
-tile = [20, 12]
+tile = [7, 6]
 scale = 1.2
 solid = true
 
 [[props]]
 id = "great_tree"
-mesh = { scene = "town01", object = 65 }
-tile = [31, 17]
-scale = 0.18
+mesh = { scene = "town01", object = 88 }
+tile = [16, 8]
+scale = 0.62
 solid = true
 animate = [{ kind = "sway", axis = "x", degrees = 1.5, period = 260 }]
 
-[[edges]]
-id = "lane_lanterns"
-mesh = { scene = "rugi", object = 15 }
-walls = "HLT"
-every = 4
-inset = 8
-y = 90
-seed = 4201
+# Boats drawn up on the shingle and moored by the jetties.
+[[props]]
+id = "boat_beached_a"
+mesh = { scene = "town01", object = 48 }
+tile = [5, 39]
+rotation = [0.0, 20.0, 0.0]
+scale = 1.2
+solid = true
 
+[[props]]
+id = "boat_beached_b"
+mesh = { scene = "town01", object = 48 }
+tile = [9, 40]
+rotation = [0.0, 75.0, 0.0]
+scale = 1.1
+solid = true
+
+[[props]]
+id = "boat_moored_a"
+mesh = { scene = "town01", object = 48 }
+tile = [22, 43]
+scale = 1.3
+solid = true
+
+[[props]]
+id = "boat_moored_b"
+mesh = { scene = "town01", object = 48 }
+tile = [31, 44]
+rotation = [0.0, 180.0, 0.0]
+scale = 1.3
+solid = true
+
+# Market stalls: tables in two rows facing the square, crates and barrels
+# stacked behind them.
+[[props]]
+id = "stall_0"
+mesh = { scene = "town01", object = 57 }
+tile = [14, 28]
+scale = 0.9
+solid = true
+
+[[props]]
+id = "stall_1"
+mesh = { scene = "town01", object = 57 }
+tile = [17, 28]
+scale = 0.9
+solid = true
+
+[[props]]
+id = "stall_2"
+mesh = { scene = "town01", object = 57 }
+tile = [20, 28]
+scale = 0.9
+solid = true
+
+[[props]]
+id = "stall_3"
+mesh = { scene = "town01", object = 57 }
+tile = [14, 33]
+scale = 0.9
+solid = true
+
+[[props]]
+id = "stall_4"
+mesh = { scene = "town01", object = 57 }
+tile = [17, 33]
+scale = 0.9
+solid = true
+
+[[props]]
+id = "market_goods_0"
+mesh = { scene = "town01", object = 46 }
+tile = [13, 27]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_1"
+mesh = { scene = "town01", object = 33 }
+tile = [18, 27]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_2"
+mesh = { scene = "town01", object = 46 }
+tile = [21, 30]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_3"
+mesh = { scene = "town01", object = 33 }
+tile = [13, 34]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_4"
+mesh = { scene = "town01", object = 46 }
+tile = [19, 34]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_5"
+mesh = { scene = "town01", object = 46 }
+tile = [7, 34]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_6"
+mesh = { scene = "town01", object = 33 }
+tile = [10, 34]
+scale = 0.8
+solid = true
+
+# The dock: cargo along the back of the boardwalk.
+[[props]]
+id = "dock_cargo_0"
+mesh = { scene = "town01", object = 46 }
+tile = [14, 36]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_1"
+mesh = { scene = "town01", object = 33 }
+tile = [16, 36]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_2"
+mesh = { scene = "town01", object = 46 }
+tile = [24, 36]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_3"
+mesh = { scene = "town01", object = 33 }
+tile = [31, 36]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_4"
+mesh = { scene = "town01", object = 46 }
+tile = [33, 36]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_5"
+mesh = { scene = "town01", object = 46 }
+tile = [39, 36]
+rotation = [0.0, 45.0, 0.0]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_6"
+mesh = { scene = "town01", object = 33 }
+tile = [40, 37]
+scale = 0.85
+solid = true
+
+# Lantern posts at the lane corners.
+[[props]]
+id = "lantern_0"
+mesh = { scene = "rugi", object = 15 }
+tile = [22, 21]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 11 }
+
+[[props]]
+id = "lantern_1"
+mesh = { scene = "rugi", object = 15 }
+tile = [34, 21]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 12 }
+
+[[props]]
+id = "lantern_2"
+mesh = { scene = "rugi", object = 15 }
+tile = [22, 27]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 13 }
+
+[[props]]
+id = "lantern_3"
+mesh = { scene = "rugi", object = 15 }
+tile = [34, 27]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 14 }
+
+[[props]]
+id = "lantern_4"
+mesh = { scene = "rugi", object = 15 }
+tile = [29, 36]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 15 }
+
+[[props]]
+id = "lantern_5"
+mesh = { scene = "rugi", object = 15 }
+tile = [14, 25]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 11 }
+
+[[props]]
+id = "lantern_6"
+mesh = { scene = "rugi", object = 15 }
+tile = [49, 24]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 12 }
+
+[[props]]
+id = "lantern_7"
+mesh = { scene = "rugi", object = 15 }
+tile = [4, 21]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 13 }
+
+[[props]]
+id = "lantern_8"
+mesh = { scene = "rugi", object = 15 }
+tile = [45, 24]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 14 }
+
+[[props]]
+id = "lantern_9"
+mesh = { scene = "rugi", object = 15 }
+tile = [26, 15]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 15 }
+
+[[props]]
+id = "lantern_10"
+mesh = { scene = "rugi", object = 15 }
+tile = [29, 15]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 11 }
+
+[[props]]
+id = "lantern_11"
+mesh = { scene = "rugi", object = 15 }
+tile = [55, 15]
+offset = [0, 40, 0]
+light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 12 }
+
+# The orchard: fruit trees in rows behind the hedge.
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [40, 4]
+rotation = [0.0, 84.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [43, 4]
+rotation = [0.0, 195.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [46, 4]
+rotation = [0.0, 306.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [49, 4]
+rotation = [0.0, 57.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [52, 4]
+rotation = [0.0, 168.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [55, 4]
+rotation = [0.0, 279.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [58, 4]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [40, 7]
+rotation = [0.0, 117.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [43, 7]
+rotation = [0.0, 228.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [46, 7]
+rotation = [0.0, 339.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [49, 7]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [52, 7]
+rotation = [0.0, 201.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [55, 7]
+rotation = [0.0, 312.0, 0.0]
+scale = 0.32
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 88 }
+tile = [58, 7]
+rotation = [0.0, 63.0, 0.0]
+scale = 0.32
+solid = true
+
+# Yard life: flowers along the cottages, a bench of pots by each door.
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [4, 19]
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [12, 19]
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [45, 26]
+
+[[decor]]
+mesh = { scene = "town01", object = 30 }
+tile = [26, 14]
+
+[[decor]]
+mesh = { scene = "town01", object = 30 }
+tile = [29, 14]
+
+# Trees and bushes along the wooded rise, palms on the shore.
 [[edges]]
-id = "wall_bushes"
+id = "rise_bushes"
 mesh = { scene = "town01", object = 88 }
 walls = "#"
-every = 3
+every = 2
 inset = 40
 jitter = 40
 yaw_jitter = 180.0
@@ -307,59 +668,79 @@ scale_range = [0.12, 0.18]
 seed = 4202
 
 [[scatter]]
-id = "garden_flowers"
-rect = [2, 2, 49, 35]
+id = "rise_trees"
+rect = [0, 0, 63, 38]
+on = "#"
+density = 0.5
+seed = 4206
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.1, 0.14]
+clearance = { radius = 0.6, front = 2.5, keep = 0.0 }
+meshes = [
+  { mesh = { scene = "town01", object = 88 }, weight = 3, scale = [0.22, 0.34] },
+  { mesh = { scene = "vell", object = 12 }, weight = 1, scale = [0.35, 0.5] },
+]
+
+# The hedges: leafy bushes along every hedge tile.
+[[scatter]]
+id = "hedge_leaves"
+rect = [0, 0, 63, 38]
+on = "h"
+density = 1.0
+seed = 4207
+jitter = 24
+yaw = [0.0, 360.0]
+scale = [0.08, 0.11]
+keep_clear = false
+meshes = [{ mesh = { scene = "town01", object = 88 }, weight = 1 }]
+
+[[scatter]]
+id = "meadow_flowers"
+rect = [1, 2, 62, 37]
 on = "gG"
-density = 0.06
+density = 0.08
 seed = 4203
 jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.6, 1.0]
 meshes = [
-  { mesh = { scene = "town01", object = 80 }, weight = 2 },
+  { mesh = { scene = "town01", object = 80 }, weight = 1 },
   { mesh = { scene = "vell", object = 13 }, weight = 3, scale = [0.25, 0.4] },
   { mesh = { scene = "vell", object = 10 }, weight = 3, scale = [0.3, 0.5] },
 ]
 
 [[scatter]]
-id = "yard_clutter"
-rect = [2, 2, 49, 35]
-on = "gGd"
-density = 0.03
+id = "yard_flowers"
+rect = [1, 2, 62, 37]
+on = "y"
+density = 0.06
 seed = 4204
-jitter = 40
+jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.7, 0.9]
+scale = [0.25, 0.4]
 meshes = [
-  { mesh = { scene = "town01", object = 34 }, weight = 2 },
-  { mesh = { scene = "town01", object = 46 }, weight = 2 },
-  { mesh = { scene = "town01", object = 83 }, weight = 1 },
-  { mesh = { scene = "town01", object = 81 }, weight = 1 },
+  { mesh = { scene = "vell", object = 13 }, weight = 1 },
+  { mesh = { scene = "vell", object = 10 }, weight = 1 },
 ]
 
 [[scatter]]
-id = "orchard"
-rect = [2, 2, 14, 14]
-on = "gG"
-density = 0.35
-seed = 4205
-jitter = 40
+id = "shore_palms"
+rect = [1, 36, 62, 40]
+on = ",G"
+density = 0.18
+seed = 4208
+jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.8, 1.2]
-cluster = { radius = 8.0, falloff = 1.2 }
-keep_clear = true
+scale = [0.32, 0.45]
 meshes = [
-  { mesh = { scene = "town01", object = 65 }, weight = 1, scale = [0.12, 0.16] },
-  { mesh = { scene = "town01", object = 88 }, weight = 2, scale = [0.14, 0.2] },
+  { mesh = { scene = "vell", object = 12 }, weight = 1 },
+  { mesh = { scene = "vell", object = 15 }, weight = 1 },
 ]
-
-[[decor]]
-mesh = { scene = "town01", object = 30 }
-tile = [44, 25]
 
 [[emitters]]
 kind = "smoke"
-rect = [9, 9, 9, 9]
+rect = [5, 17, 5, 17]
 height = [150, 200]
 count = 10
 color = [70, 64, 60]
@@ -367,31 +748,39 @@ seed = 4211
 
 [[emitters]]
 kind = "smoke"
-rect = [33, 7, 33, 7]
+rect = [46, 28, 46, 28]
 height = [150, 200]
 count = 10
 color = [70, 64, 60]
 seed = 4212
 
 [[emitters]]
+kind = "smoke"
+rect = [27, 11, 27, 11]
+height = [170, 220]
+count = 10
+color = [70, 64, 60]
+seed = 4216
+
+[[emitters]]
 kind = "embers"
-rect = [43, 21, 44, 22]
+rect = [53, 21, 54, 23]
 height = [60, 120]
 count = 14
 seed = 4213
 
 [[emitters]]
 kind = "sparkles"
-rect = [4, 26, 40, 36]
-height = [40, 160]
-count = 40
-color = [255, 230, 120]
+rect = [2, 41, 62, 48]
+height = [0, 20]
+count = 50
+color = [255, 230, 160]
 seed = 4214
 
 [[emitters]]
 kind = "leaves"
-rect = [24, 14, 36, 22]
-count = 20
+rect = [38, 3, 60, 9]
+count = 24
 color = [200, 150, 60]
 seed = 4215
 
@@ -405,18 +794,16 @@ period = 8
 [lighting]
 mood = "dusk"
 lamps = [
-  { id = "green", tile = [24, 20], offset = [0, 200, 0], color = [255, 190, 120], radius = 900, flicker = 0.1, period = 30 },
-  { id = "post", tile = [16, 31], offset = [0, 140, 0], color = [255, 200, 140], radius = 520, flicker = 0.2, period = 13 },
-  { id = "jetty", tile = [20, 39], offset = [0, 120, 0], color = [255, 210, 150], radius = 520, flicker = 0.2, period = 15 },
-  { id = "huts_nw", tile = [12, 10], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 9 },
-  { id = "huts_ne", tile = [37, 9], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 10 },
-  { id = "huts_s", tile = [34, 30], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 12 },
+  { id = "green", tile = [28, 22], offset = [0, 200, 0], color = [255, 190, 120], radius = 900, flicker = 0.1, period = 30 },
+  { id = "market", tile = [15, 31], offset = [0, 160, 0], color = [255, 200, 140], radius = 700, flicker = 0.2, period = 13 },
+  { id = "dock", tile = [27, 38], offset = [0, 140, 0], color = [255, 210, 150], radius = 700, flicker = 0.2, period = 15 },
+  { id = "jetty_e", tile = [35, 46], offset = [0, 120, 0], color = [255, 210, 150], radius = 480, flicker = 0.2, period = 17 },
 ]
 
-# The ground: the village sits on a low hill rising from the bay, ringed by
-# a wooded rise; the lanes are worn into the turf and blend into it, each
-# house and the well stand on a levelled pad, and the bay shelves away
-# under the jetty.
+# The ground: the village sits on a low hill over the bay, ringed by a
+# wooded rise. The elder's house stands on a terrace above the green, the
+# windmill on its knoll; each house is levelled on its pad, the market square
+# is flat, and the boardwalk and jetties stand on piles over the shelving bay.
 [terrain]
 resolution = 4
 smooth = 3
@@ -428,38 +815,43 @@ blend = 0.6
 sun = [210.0, 34.0]
 shading = 0.55
 shapes = [
-  { kind = "noise", rect = [0, 0, 51, 1], amplitude = 50, scale = 1.8, seed = 1 },
-  { kind = "raise", at = [25.0, 18.0], radius = 21.0, height = 64 },
-  { kind = "raise", at = [9.0, 9.0], radius = 7.0, height = 22 },
-  { kind = "raise", at = [40.0, 26.0], radius = 8.0, height = 16 },
-  { kind = "noise", rect = [1, 2, 50, 34], amplitude = 7, scale = 3.0, seed = 2 },
-  { kind = "flatten", at = [9.5, 9.5], radius = 2.6 },
-  { kind = "flatten", at = [16.5, 6.5], radius = 2.6 },
-  { kind = "flatten", at = [33.5, 7.5], radius = 2.6 },
-  { kind = "flatten", at = [40.5, 10.5], radius = 2.6 },
-  { kind = "flatten", at = [10.5, 18.5], radius = 2.6 },
-  { kind = "flatten", at = [38.5, 28.5], radius = 2.6 },
-  { kind = "flatten", at = [30.5, 32.5], radius = 2.6 },
-  { kind = "flatten", at = [8.5, 26.5], radius = 2.6 },
-  { kind = "flatten", at = [45.5, 21.5], radius = 2.6 },
-  { kind = "flatten", at = [14.5, 31.5], radius = 2.6 },
-  { kind = "flatten", at = [24.5, 20.5], radius = 2.6 },
-  { kind = "flatten", at = [20.5, 12.5], radius = 2.6 },
-  { kind = "flatten", at = [31.5, 17.5], radius = 2.6 },
-  { kind = "noise", rect = [0, 33, 51, 41], amplitude = 16, scale = 1.6, seed = 5 },
-  { kind = "plateau", rect = [19, 35, 20, 40], height = 18, edge = 0.18 },
+  { kind = "noise", rect = [0, 0, 63, 1], amplitude = 50, scale = 1.8, seed = 1 },
+  { kind = "plateau", rect = [1, 2, 62, 36], height = 14, edge = 0.5 },
+  { kind = "raise", at = [28.0, 21.0], radius = 22.0, height = 40 },
+  { kind = "plateau", rect = [22, 7, 33, 15], height = 70, edge = 0.25 },
+  { kind = "raise", at = [7.0, 6.0], radius = 6.0, height = 46 },
+  { kind = "raise", at = [49.0, 6.0], radius = 12.0, height = 24 },
+  { kind = "noise", rect = [1, 2, 62, 35], amplitude = 6, scale = 3.0, seed = 2 },
+  { kind = "flatten", at = [5.5, 17.5], radius = 2.4 },
+  { kind = "flatten", at = [13.5, 17.5], radius = 2.4 },
+  { kind = "flatten", at = [19.5, 17.5], radius = 2.2 },
+  { kind = "flatten", at = [38.5, 28.5], radius = 2.4 },
+  { kind = "flatten", at = [46.5, 28.5], radius = 2.4 },
+  { kind = "flatten", at = [27.5, 11.5], radius = 3.0 },
+  { kind = "flatten", at = [56.5, 22.5], radius = 3.2 },
+  { kind = "flatten", at = [8.5, 30.5], radius = 2.2 },
+  { kind = "flatten", at = [28.5, 22.5], radius = 2.0 },
+  { kind = "flatten", at = [7.5, 6.5], radius = 2.0 },
+  { kind = "flatten", at = [16.5, 8.5], radius = 2.0 },
+  { kind = "flatten", at = [14.0, 31.0], radius = 5.0 },
+  { kind = "noise", rect = [0, 41, 63, 49], amplitude = 16, scale = 1.6, seed = 5 },
+  { kind = "plateau", rect = [13, 37, 41, 38], height = 16, edge = 0.2 },
+  { kind = "plateau", rect = [18, 39, 19, 46], height = 16, edge = 0.15 },
+  { kind = "plateau", rect = [16, 46, 21, 46], height = 16, edge = 0.15 },
+  { kind = "plateau", rect = [34, 39, 35, 47], height = 16, edge = 0.15 },
+  { kind = "plateau", rect = [32, 47, 37, 47], height = 16, edge = 0.15 },
 ]
 materials = [
   { name = "turf", chars = "g", tint = [130, 136, 120], cells = [
     { tpage = 12, clut = 32000, tile = 24 }, { tpage = 12, clut = 32000, tile = 25 }, { tpage = 12, clut = 32000, tile = 26 }, { tpage = 12, clut = 32000, tile = 32 }, { tpage = 12, clut = 32000, tile = 33 }, { tpage = 12, clut = 32000, tile = 34 }, { tpage = 12, clut = 32000, tile = 40 }, { tpage = 12, clut = 32000, tile = 41 }, { tpage = 12, clut = 32000, tile = 42 },
   ] },
-  { name = "long grass", chars = "G", tint = [128, 138, 116], cells = [
+  { name = "long grass", chars = "Gfh", tint = [128, 138, 116], cells = [
     { tpage = 12, clut = 32001, tile = 3 }, { tpage = 12, clut = 32001, tile = 4 }, { tpage = 12, clut = 32001, tile = 5 }, { tpage = 12, clut = 32001, tile = 11 }, { tpage = 12, clut = 32001, tile = 12 }, { tpage = 12, clut = 32001, tile = 13 }, { tpage = 12, clut = 32001, tile = 19 }, { tpage = 12, clut = 32001, tile = 20 }, { tpage = 12, clut = 32001, tile = 21 },
   ] },
   { name = "lane", chars = "d<>", lift = -4, tint = [124, 118, 110], cells = [
     { tpage = 12, clut = 32004, tile = 24 }, { tpage = 12, clut = 32004, tile = 26 }, { tpage = 12, clut = 32004, tile = 32 }, { tpage = 12, clut = 32004, tile = 33 }, { tpage = 12, clut = 32004, tile = 40 }, { tpage = 12, clut = 32004, tile = 41 }, { tpage = 12, clut = 32004, tile = 42 },
   ] },
-  { name = "green", chars = "p", tint = [116, 112, 104], cells = [
+  { name = "green", chars = "pm", tint = [116, 112, 104], cells = [
     { tpage = 12, clut = 32004, tile = 3 }, { tpage = 12, clut = 32004, tile = 5 }, { tpage = 12, clut = 32004, tile = 19 }, { tpage = 12, clut = 32004, tile = 20 },
   ] },
   { name = "shingle", chars = ",", tint = [118, 116, 112], cells = [
@@ -468,13 +860,13 @@ materials = [
   { name = "bay bed", chars = "~", tint = [96, 100, 110], cells = [
     { tpage = 12, clut = 32008, tile = 3 }, { tpage = 12, clut = 32008, tile = 5 }, { tpage = 12, clut = 32008, tile = 11 }, { tpage = 12, clut = 32008, tile = 19 }, { tpage = 12, clut = 32008, tile = 21 },
   ] },
-  { name = "yard", chars = "HLT", tint = [124, 118, 108], cells = [
+  { name = "yard", chars = "y", tint = [124, 118, 108], cells = [
     { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 },
   ] },
   { name = "rise", chars = "#", tint = [106, 118, 100], cells = [
     { tpage = 12, clut = 32001, tile = 3 }, { tpage = 12, clut = 32001, tile = 4 }, { tpage = 12, clut = 32001, tile = 5 }, { tpage = 12, clut = 32001, tile = 11 }, { tpage = 12, clut = 32001, tile = 12 }, { tpage = 12, clut = 32001, tile = 13 },
   ] },
-  { name = "jetty", chars = "j", rotate = false, tint = [240, 214, 186], cells = [{ tpage = 27, clut = 32128, tile = 27 }, { tpage = 27, clut = 32128, tile = 28 }, { tpage = 27, clut = 32128, tile = 35 }, { tpage = 27, clut = 32128, tile = 36 }, { tpage = 27, clut = 32128, tile = 43 }, { tpage = 27, clut = 32128, tile = 44 }] },
+  { name = "planks", chars = "jk", rotate = false, tint = [240, 214, 186], cells = [{ tpage = 27, clut = 32128, tile = 27 }, { tpage = 27, clut = 32128, tile = 28 }, { tpage = 27, clut = 32128, tile = 35 }, { tpage = 27, clut = 32128, tile = 36 }, { tpage = 27, clut = 32128, tile = 43 }, { tpage = 27, clut = 32128, tile = 44 }] },
 ]
 cliff = { slope = 1.05, tint = [120, 114, 106], cells = [
   { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 }, { tpage = 12, clut = 32006, tile = 48 }, { tpage = 12, clut = 32006, tile = 49 }, { tpage = 12, clut = 32006, tile = 56 }, { tpage = 12, clut = 32006, tile = 57 },
@@ -482,14 +874,14 @@ cliff = { slope = 1.05, tint = [120, 114, 106], cells = [
 water = { level = -8, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [140, 160, 160], deep = [64, 84, 120], depth = 50, foam = 14, foam_color = [140, 140, 136], wade = 4 }
 sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4, color = [150, 120, 110] }
 
-# Village life: the bay's surf at the jetty, the wind in the wooded rise,
-# and a murmur round the lodge and the green.
+# Village life: the bay's surf at the dock, the wind in the wooded rise, and
+# a murmur round the lodge, the market and the green.
 [audio]
 
 [[audio.ambient]]
 id = "bay_surf"
 sound = { kind = "sound", id = "surf" }
-tile = [20, 38]
+tile = [20, 42]
 radius = 1500
 inner = 320
 volume = 0.7
@@ -497,7 +889,7 @@ volume = 0.7
 [[audio.ambient]]
 id = "bay_east"
 sound = { kind = "sound", id = "surf" }
-tile = [44, 37]
+tile = [50, 42]
 radius = 1300
 inner = 300
 volume = 0.6
@@ -505,7 +897,7 @@ volume = 0.6
 [[audio.ambient]]
 id = "rise_wind"
 sound = { kind = "sound", id = "wind" }
-tile = [26, 1]
+tile = [32, 1]
 radius = 1400
 inner = 400
 volume = 0.3
@@ -513,23 +905,23 @@ volume = 0.3
 [[audio.ambient]]
 id = "lodge"
 sound = { kind = "sound", id = "crowd" }
-tile = [45, 22]
+tile = [56, 22]
 radius = 700
 inner = 160
 volume = 0.35
 
 [[audio.ambient]]
-id = "green"
+id = "market"
 sound = { kind = "sound", id = "crowd" }
-tile = [24, 20]
-radius = 600
-inner = 140
-volume = 0.25
+tile = [15, 31]
+radius = 700
+inner = 160
+volume = 0.3
 
 [[audio.ambient]]
 id = "woods"
 sound = { kind = "sound", id = "birds" }
-tile = [6, 4]
+tile = [49, 6]
 radius = 1200
 inner = 300
 volume = 0.5
