@@ -1589,7 +1589,11 @@
     "engine-system",
     "expansion-format"
    ],
-   "dev_deps": [],
+   "dev_deps": [
+    "engine-battle-vm",
+    "engine-run-rules",
+    "game-tables"
+   ],
    "bins": [],
    "lib": true,
    "modules": [
@@ -3074,6 +3078,7 @@
     "cutscene",
     "dialog",
     "diff",
+    "flow",
     "items",
     "manifest",
     "map",
@@ -3089,7 +3094,8 @@
     "terrain",
     "terrain_rules",
     "validate",
-    "version"
+    "version",
+    "xref"
    ],
    "band": "families",
    "track": "patcher",
@@ -4282,6 +4288,7 @@
    "modules": [
     "encode",
     "multi_palette",
+    "tint",
     "vram"
    ],
    "band": "leaves",
@@ -4534,7 +4541,8 @@
    "modules": [
     "catalog",
     "session",
-    "wasm"
+    "wasm",
+    "xref"
    ],
    "band": "hosts",
    "track": "engine",
