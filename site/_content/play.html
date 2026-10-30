@@ -70,6 +70,15 @@
 .play-mode.is-active { border-color: var(--accent); background: var(--accent-soft); }
 .play-mode-name { font-weight: 600; font-size: 0.92rem; }
 .play-mode-pack .play-mode-tag { color: var(--accent); }
+/* Expansion packs are the port's own, still-moving feature: every place
+ * the page offers one says so. */
+.play-experimental {
+  display: inline-block; margin-left: 0.35rem; padding: 0 0.35rem;
+  border: 1px solid var(--warn-line); border-radius: 3px;
+  background: var(--warn-soft); color: var(--warn-text);
+  font-family: var(--font-mono); font-size: 0.62rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
+}
 .play-mode-desc { color: var(--text-muted); font-size: 0.76rem; line-height: 1.45; }
 .play-mode-tag {
   font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-dim);
@@ -439,12 +448,13 @@ div.play-vis-head { cursor: default; }
       </button>
       <button class="play-mode play-mode-pack" type="button" data-mode="rebirth" id="play-mode-rebirth"
               title="Load the Rebirth expansion pack this site serves, then boot to the title screen. The Expansion pack card below switches packs or unloads it.">
-        <span class="play-mode-tag">expansion pack</span>
+        <span class="play-mode-tag">expansion pack <span class="play-experimental">experimental</span></span>
         <span class="play-mode-name">Legend of Legaia: Rebirth</span>
         <span class="play-mode-desc">The same New Game with the project's flagship expansion pack
           loaded: a tower that rose where the Mist died, built for the climb from level 60 to 99, with
           its own quests, bosses, items and game modes. The pack points at your disc, it brings
-          no game data; Select in the pause menu opens its Journal.</span>
+          no game data; Select in the pause menu opens its Journal. Experimental: expansion packs
+          are still changing, so expect rough edges, and keep a save from before the tower.</span>
       </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
@@ -902,7 +912,7 @@ div.play-vis-head { cursor: default; }
         </div>
 
         <div class="play-card" id="play-expansion-card">
-          <h3>Expansion pack</h3>
+          <h3>Expansion pack <span class="play-experimental">experimental</span></h3>
           <label class="play-save-import">Install another pack (.lxpack, or drop one on this card)
             <input type="file" id="expansion-import" accept=".lxpack" disabled>
           </label>
@@ -911,7 +921,7 @@ div.play-vis-head { cursor: default; }
             <button id="expansion-unload" type="button" disabled
                     title="Play the game as it shipped. The pack's progress stays in your saves.">Unload</button>
           </div>
-          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. A pack adds maps, quests and fights made for the port; New Game and Continue play with it, and Select in the pause menu opens its Journal.</div>
+          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. Expansion packs are experimental. A pack adds maps, quests and fights made for the port; New Game and Continue play with it, and Select in the pause menu opens its Journal.</div>
         </div>
 
         <!-- Collapsed by default: the key list is long and most visitors only
@@ -1237,7 +1247,7 @@ div.play-vis-head { cursor: default; }
       const maps = pickerPack.maps
         .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f));
       if (maps.length) {
-        parts.push(`<div class="play-scene-group is-pack">${window.escapeHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack</span></div>`);
+        parts.push(`<div class="play-scene-group is-pack">${window.escapeHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack</span> <span class="play-experimental">experimental</span></div>`);
         for (const m of maps) {
           const cls = m.id === activePackMap ? 'play-scene-item is-pack is-active' : 'play-scene-item is-pack';
           parts.push(
