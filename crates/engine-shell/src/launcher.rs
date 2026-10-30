@@ -407,6 +407,9 @@ pub struct ExpansionInfo {
     pub path: PathBuf,
     pub id: String,
     pub name: String,
+    /// The label for narrow places: the manifest's `short_name`, else its
+    /// name (`PackManifest::short_label`).
+    pub short_name: String,
     pub version: String,
     /// `authors`, joined.
     pub authors: String,
@@ -496,22 +499,24 @@ pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, Stri
         .collect();
     let warnings = issues.len() - errors.len();
     let pack = legaia_expansion_format::ExpansionPack::from_files(&files);
-    let (id, name, version, authors, description, schema, min_engine, cover) = match &pack {
-        Ok(p) => (
-            p.manifest.id.clone(),
-            p.manifest.name.clone(),
-            p.manifest.version.clone(),
-            p.manifest.authors.join(", "),
-            p.manifest.description.clone(),
-            p.manifest.schema,
-            p.manifest.min_engine.clone(),
-            p.manifest
-                .cover
-                .clone()
-                .filter(|c| files.contains_key(c.as_str())),
-        ),
-        Err(_) => Default::default(),
-    };
+    let (id, name, short_name, version, authors, description, schema, min_engine, cover) =
+        match &pack {
+            Ok(p) => (
+                p.manifest.id.clone(),
+                p.manifest.name.clone(),
+                p.manifest.short_label().to_string(),
+                p.manifest.version.clone(),
+                p.manifest.authors.join(", "),
+                p.manifest.description.clone(),
+                p.manifest.schema,
+                p.manifest.min_engine.clone(),
+                p.manifest
+                    .cover
+                    .clone()
+                    .filter(|c| files.contains_key(c.as_str())),
+            ),
+            Err(_) => Default::default(),
+        };
     let mut errors = errors;
     if let Err(e) = pack
         && errors.is_empty()
@@ -522,6 +527,7 @@ pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, Stri
         path,
         id,
         name,
+        short_name,
         version,
         authors,
         description,
@@ -1588,7 +1594,8 @@ mod tests {
         let err = list[0].as_ref().unwrap_err();
         assert!(err.0.ends_with("broken.lxpack"));
         let ok = list[1].as_ref().unwrap();
-        assert_eq!((ok.id.as_str(), ok.schema), ("rebirth", 2));
+        assert_eq!((ok.id.as_str(), ok.schema), ("rebirth", 3));
+        assert_eq!(ok.short_name, "Rebirth", "the button's label");
         assert_eq!(ok.cover.as_deref(), Some("assets/cover.png"));
         assert!(ok.playable(), "{:?}", ok.errors);
         let dirs = [tmp.clone()];

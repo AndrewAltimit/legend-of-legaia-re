@@ -10,7 +10,7 @@
     <dt>Source form</dt><dd>A directory: <code>pack.toml</code> plus optional section files, <code>maps/</code> and <code>assets/</code>.</dd>
     <dt>Shareable form</dt><dd>One <code>.lxpack</code> file (<a href="#the-lxpack-bundle">bundle</a>), byte-deterministic.</dd>
     <dt>Encoding</dt><dd>UTF-8 TOML for every manifest, section and map.</dd>
-    <dt>Schema</dt><dd>Version <code>2</code> (<code>manifest::SCHEMA_VERSION</code>); schemas <code>1</code> and <code>2</code> load.</dd>
+    <dt>Schema</dt><dd>Version <code>3</code> (<code>manifest::SCHEMA_VERSION</code>); schemas <code>1</code> to <code>3</code> load.</dd>
     <dt>Disc</dt><dd>NA release only, <code>SCUS-94254</code>.</dd>
     <dt>Parser</dt><dd><code>ExpansionPack::from_files</code> - one parser for a directory, a bundle and the browser workbench's input.</dd>
     <dt>Writer</dt><dd><code>ExpansionPack::to_files</code>, <code>bundle::write_bundle</code>.</dd>
@@ -51,6 +51,7 @@
     <tbody>
       <tr><td><code>id</code></td><td>string</td><td>yes</td><td>Machine id, <code>[a-z0-9_-]</code>, at most 48 characters, starting with a letter or digit. Namespaces every content id in the pack.</td></tr>
       <tr><td><code>name</code></td><td>string</td><td>yes</td><td>Display name.</td></tr>
+      <tr><td><code>short_name</code></td><td>string</td><td>no</td><td>A label for narrow places (the launcher's Expansion button): one line of at most 24 characters; unset, those places show <code>name</code>. Schema 3.</td></tr>
       <tr><td><code>version</code></td><td>string</td><td>yes</td><td>Semantic version, <code>MAJOR.MINOR.PATCH[-pre][+build]</code>.</td></tr>
       <tr><td><code>authors</code></td><td>string list</td><td>no</td><td>Who made it.</td></tr>
       <tr><td><code>description</code></td><td>string</td><td>no</td><td>What the pack adds.</td></tr>
@@ -76,11 +77,11 @@ version = "0.1.0"</code></pre>
   <table>
     <thead><tr><th>Gate</th><th>Passes when</th><th>Refusal</th></tr></thead>
     <tbody>
-      <tr><td>Pack format</td><td><code>schema</code> in <code>1..=2</code></td><td>"written in pack format N, newer than this engine reads ... update the engine"</td></tr>
+      <tr><td>Pack format</td><td><code>schema</code> in <code>1..=3</code></td><td>"written in pack format N, newer than this engine reads ... update the engine"</td></tr>
       <tr><td>Engine</td><td><code>min_engine</code> absent, or not newer than this engine</td><td>"needs engine X or newer; this engine is Y"</td></tr>
     </tbody>
   </table>
-  <p><code>ExpansionPack::from_files</code> runs both gates first, on a lenient read of <code>pack.toml</code> (<code>ManifestPeek</code>), before the strict parse - so a pack from a newer format is refused with "update the engine", not with "unknown field" for whatever new key it carries. Every reader parses through <code>from_files</code>, so the native <code>--expansion</code>, the launcher, the play page and the workbench all refuse alike. Old packs keep loading: schema 2 only added optional keys.</p>
+  <p><code>ExpansionPack::from_files</code> runs both gates first, on a lenient read of <code>pack.toml</code> (<code>ManifestPeek</code>), before the strict parse - so a pack from a newer format is refused with "update the engine", not with "unknown field" for whatever new key it carries. Every reader parses through <code>from_files</code>, so the native <code>--expansion</code>, the launcher, the play page and the workbench all refuse alike. Old packs keep loading: schemas 2 (<code>cover</code>, <code>min_engine</code>) and 3 (<code>short_name</code>) only added optional keys.</p>
   <h3 id="dependencies">Dependencies</h3>
   <p>A <code>requires</code> or <code>conflicts</code> entry is a pack id, optionally <code>@</code> and a version range (<code>PackDep</code>): comparators that must all hold, separated by commas or spaces, with cargo's operators.</p>
   <table>
@@ -282,7 +283,7 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
     <thead><tr><th>Rule</th><th>Severity</th></tr></thead>
     <tbody>
       <tr><td><code>pack.toml</code> missing or unparsable, or any section or map unparsable</td><td>error</td></tr>
-      <tr><td><code>id</code>, <code>version</code>, <code>tags</code>, <code>requires</code> or <code>conflicts</code> malformed; empty <code>name</code></td><td>error</td></tr>
+      <tr><td><code>id</code>, <code>version</code>, <code>tags</code>, <code>requires</code> or <code>conflicts</code> malformed; empty <code>name</code>; <code>short_name</code> empty, over 24 characters or more than one line</td><td>error</td></tr>
       <tr><td><code>schema</code> outside the formats this build reads; <code>disc</code> other than <code>SCUS-94254</code></td><td>error</td></tr>
       <tr><td><code>min_engine</code> malformed or newer than this engine; a <code>requires</code> / <code>conflicts</code> entry or range malformed</td><td>error</td></tr>
       <tr><td><code>cover</code> not a <code>.png</code> under <code>assets/</code>, absent, or over 1 MiB</td><td>error</td></tr>
@@ -292,7 +293,7 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
       <tr><td>Reference to undefined content, or to a pack not in <code>requires</code></td><td>error</td></tr>
       <tr><td><code>DiscRef</code> out of range, or rejected by the supplied resolver</td><td>error</td></tr>
       <tr><td>Any <a href="#the-no-disc-bytes-rule">no-disc-bytes</a> violation</td><td>error</td></tr>
-      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; no <code>cover</code>; non-URL <code>homepage</code>; a repeated list entry; a schema-2 key in a schema-1 manifest</td><td>warning</td></tr>
+      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; no <code>cover</code>; non-URL <code>homepage</code>; a repeated list entry; a manifest key newer than the manifest's <code>schema</code></td><td>warning</td></tr>
       <tr><td>A file outside the <a href="#layout">layout</a></td><td>warning</td></tr>
     </tbody>
   </table>

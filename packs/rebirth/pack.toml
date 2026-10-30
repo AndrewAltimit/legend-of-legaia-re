@@ -6,6 +6,8 @@
 
 id = "rebirth"
 name = "Legend of Legaia: Rebirth"
+# The launcher's Expansion button and other narrow places.
+short_name = "Rebirth"
 version = "0.1.0"
 authors = ["The legend-of-legaia-re contributors"]
 license = "MIT OR Unlicense"
@@ -19,7 +21,7 @@ built from the disc's own scenery, trading cards collected as battle \
 rewards and traded or sold, and new modes the original never had. It \
 needs your own Legend of Legaia (NA) disc; the pack carries no game data.\
 """
-schema = 2
+schema = 3
 disc = "SCUS-94254"
 # Shown by the play page's pack library, the launcher and the workbench.
 cover = "assets/cover.png"

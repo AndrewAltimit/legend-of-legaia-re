@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::manifest::{
-    MAX_COVER_LEN, MIN_SCHEMA_VERSION, PackDep, SCHEMA_VERSION, SUPPORTED_DISC, dep_id,
-    is_valid_content_id, is_valid_pack_id, is_valid_semver,
+    MAX_COVER_LEN, MAX_SHORT_NAME_LEN, MIN_SCHEMA_VERSION, PackDep, SCHEMA_VERSION, SUPPORTED_DISC,
+    dep_id, is_valid_content_id, is_valid_pack_id, is_valid_semver,
 };
 use crate::refs::{DiscRef, DiscResolver};
 use crate::{ExpansionPack, PackFiles};
@@ -525,6 +525,28 @@ fn check_manifest(cx: &mut Checker<'_>) {
                     format!("`{field}` is a schema 2 key; set `schema = 2` so older engines refuse the pack instead of tripping on it"),
                 );
             }
+        }
+    }
+    if m.schema < 3 && m.short_name.is_some() {
+        cx.warning(
+            "short_name",
+            "`short_name` is a schema 3 key; set `schema = 3` so older engines refuse the pack instead of tripping on it",
+        );
+    }
+    if let Some(short) = &m.short_name {
+        let n = short.trim().chars().count();
+        if n == 0 {
+            cx.error(
+                "short_name",
+                "short_name is empty; remove it to use the name",
+            );
+        } else if n > MAX_SHORT_NAME_LEN || short.contains(['\n', '\r']) {
+            cx.error(
+                "short_name",
+                format!(
+                    "short_name {short:?} is not one line of at most {MAX_SHORT_NAME_LEN} characters"
+                ),
+            );
         }
     }
     if let Some(v) = &m.min_engine {
@@ -1131,6 +1153,34 @@ laps = 1
             issues
                 .iter()
                 .any(|i| i.field == "min_engine" && i.severity == Severity::Warning)
+        );
+    }
+
+    #[test]
+    fn short_name_rules() {
+        let mut p = good_pack();
+        p.manifest.name = "Legend of Legaia: A Very Long Subtitle".into();
+        assert_eq!(p.manifest.short_label(), p.manifest.name);
+        p.manifest.short_name = Some("Subtitle".into());
+        let issues = validate(&p);
+        assert!(errors(&issues).is_empty(), "{issues:#?}");
+        assert_eq!(p.manifest.short_label(), "Subtitle");
+        for bad in ["  ", "A short name that runs on too long", "Two\nlines"] {
+            p.manifest.short_name = Some(bad.into());
+            let e = errors(&validate(&p));
+            assert!(
+                e.iter().any(|m| m.contains("[short_name]")),
+                "{bad:?}: {e:#?}"
+            );
+        }
+        p.manifest.short_name = Some("Subtitle".into());
+        p.manifest.schema = 2;
+        let issues = validate(&p);
+        assert!(errors(&issues).is_empty());
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.field == "short_name" && i.severity == Severity::Warning)
         );
     }
 

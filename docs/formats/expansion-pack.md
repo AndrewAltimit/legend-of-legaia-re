@@ -11,7 +11,7 @@ A pack carries **no bytes from the disc**. Every disc asset it uses is named by 
 | Source form | A directory: `pack.toml` plus optional section files, `maps/`, `assets/` |
 | Shareable form | One `.lxpack` file ([bundle](#the-lxpack-bundle)) |
 | Text encoding | UTF-8 TOML for every manifest, section and map |
-| Schema version | `2` (`manifest::SCHEMA_VERSION`); schemas `1` and `2` load |
+| Schema version | `3` (`manifest::SCHEMA_VERSION`); schemas `1` to `3` load |
 | Disc | NA release only, `SCUS-94254` |
 | Parser | `ExpansionPack::from_files` (one parser for directory, bundle and browser input) |
 | Writer | `ExpansionPack::to_files`, `bundle::write_bundle` |
@@ -53,6 +53,7 @@ The whole tree is one `PackFiles` value (`BTreeMap<path, bytes>`). The directory
 |---|---|---|---|
 | `id` | string | yes | Machine id, `[a-z0-9_-]`, at most 48 characters, starting with a letter or digit. Namespaces every content id in the pack. |
 | `name` | string | yes | Display name. |
+| `short_name` | string | no | A label for narrow places (the launcher's Expansion button): one line of at most 24 characters; unset, those places show `name`. Schema 3. |
 | `version` | string | yes | Semantic version, `MAJOR.MINOR.PATCH[-pre][+build]`. |
 | `authors` | string list | no | Who made it. |
 | `description` | string | no | What the pack adds. |
@@ -80,10 +81,10 @@ Three versions meet when a pack loads: the pack's own `version`, the **pack form
 
 | Gate | Passes when | Refusal |
 |---|---|---|
-| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=2`) | "written in pack format N, newer than this engine reads ... update the engine" |
+| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=3`) | "written in pack format N, newer than this engine reads ... update the engine" |
 | Engine | `min_engine` is absent, or not newer than `ENGINE_VERSION` | "needs engine X or newer; this engine is Y" |
 
-`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schema 2 only added optional keys, so a schema-1 pack is a valid schema-2 pack with them absent. The validator warns when a schema-1 manifest uses a schema-2 key, since an older engine would trip on it.
+`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schemas 2 (`cover`, `min_engine`) and 3 (`short_name`) only added optional keys, so an older pack is a valid newer one with them absent. The validator warns when a manifest uses a key newer than its `schema`, since an older engine would trip on it.
 
 ### Dependencies
 
@@ -333,7 +334,7 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Rule | Severity |
 |---|---|
 | `pack.toml` missing or unparsable, or any section or map unparsable | error |
-| `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name` | error |
+| `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name`; `short_name` empty, over 24 characters or more than one line | error |
 | `schema` outside the formats this build reads; `disc` other than `SCUS-94254` | error |
 | `min_engine` malformed or newer than this engine; a `requires` / `conflicts` entry or its range malformed | error |
 | `cover` not a `.png` under `assets/`, absent from the pack, or over 1 MiB | error |
@@ -343,7 +344,7 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Reference to undefined content, or to a pack not in `requires` | error |
 | `DiscRef` out of range, or rejected by the supplied resolver | error |
 | Any [no-disc-bytes](#the-no-disc-bytes-rule) violation | error |
-| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a schema-2 key in a schema-1 manifest | warning |
+| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a manifest key newer than the manifest's `schema` | warning |
 | A file outside the [layout](#layout) | warning |
 | A [flow lint](#flow-lints): a pack flag or counter read and never written, or written and never read; a map, quest or challenge the player cannot reach; a quest prerequisite cycle; a card, booster or pack item nothing (reachable) grants | warning |
 

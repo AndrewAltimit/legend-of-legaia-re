@@ -953,7 +953,8 @@ impl LauncherApp {
         let expansion_label = match &self.expansion {
             None => "Expansion pack...".to_string(),
             Some(Ok(info)) if info.playable() => {
-                c.ellipsize_left(&format!("Pack: {}", info.name), LEFT_W - 12)
+                // A name reads from its start: a long one keeps its head.
+                c.ellipsize_right(&format!("Pack: {}", info.short_name), LEFT_W - 12)
             }
             Some(_) => "Pack: has errors".to_string(),
         };
@@ -1769,6 +1770,22 @@ impl Canvas<'_> {
         }
         "...".into()
     }
+
+    /// `text` cut to `max_w` pixels by dropping characters from its end
+    /// behind `...` - for a name, whose start says what it is.
+    fn ellipsize_right(&self, text: &str, max_w: i32) -> String {
+        if self.width(text) <= max_w {
+            return text.to_string();
+        }
+        let chars: Vec<char> = text.chars().collect();
+        for end in (1..chars.len()).rev() {
+            let s = format!("{}...", chars[..end].iter().collect::<String>().trim_end());
+            if self.width(&s) <= max_w {
+                return s;
+            }
+        }
+        "...".into()
+    }
 }
 
 // --- The game process --------------------------------------------------
@@ -2121,6 +2138,11 @@ mod tests {
         assert!(s.ends_with(".bin"));
         assert!(c.width(&s) <= 120);
         assert_eq!(c.ellipsize_left("short", 120), "short");
+        let s = c.ellipsize_right("Pack: Legend of Legaia: A Long Subtitle", 120);
+        assert!(s.starts_with("Pack: "), "{s}");
+        assert!(s.ends_with("..."));
+        assert!(c.width(&s) <= 120);
+        assert_eq!(c.ellipsize_right("short", 120), "short");
     }
 
     #[test]

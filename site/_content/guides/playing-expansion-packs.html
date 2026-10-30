@@ -7,8 +7,8 @@
 <section class="doc-section" id="desktop" data-doc="-">
   <h2>On the desktop</h2>
   <ol class="steps steps-vertical">
-    <li><b>Pick the pack</b><span>The launcher's <em>Expansion pack...</em> button takes an <code>.lxpack</code> file, or the <code>pack.toml</code> inside a pack folder. Dropping either on the window works too.</span></li>
-    <li><b>It is checked</b><span>The launcher runs the same validator the game does. A pack with errors is refused and the help box lists the first few; a good one shows on the button by name, with its version and authors in the help box.</span></li>
+    <li><b>Pick the pack</b><span>The launcher's <em>Expansion pack...</em> button steps through the packs it finds - Rebirth, which the release archive carries in its <code>packs/</code> folder, and any you drop in the <code>packs/</code> folder of your saves folder - and past the last one opens a file dialog for an <code>.lxpack</code> file or the <code>pack.toml</code> inside a pack folder. Dropping either on the window works too.</span></li>
+    <li><b>It is checked</b><span>The launcher runs the same validator the game does. A pack with errors is refused and the help box lists the first few; a good one shows on the button by its short name (<em>Pack: Rebirth</em>), with its full name, version and authors in the help box.</span></li>
     <li><b>Play</b><span>New Game and Continue now play with the pack. The choice is remembered (<code>expansion = "..."</code> in <code>launcher.toml</code>); <em>Delete</em> or a right-click on the button goes back to no pack.</span></li>
   </ol>
   <p>The launcher hands the pack to the game as <code>--expansion</code>, which works by hand too:</p>
@@ -34,7 +34,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     <tbody>
       <tr><td>New Game / Continue</td><td>New Game starts the pack fresh; Continue loads a save with the pack's progress.</td></tr>
       <tr><td>Entrances</td><td>A tile in a retail scene that enters a pack map when stepped on, often only once a story point, quest or party level is reached.</td></tr>
-      <tr><td>Journal</td><td>Select on the pause menu (the hint under the menu says so): <em>Quests</em>, <em>Challenges</em>, <em>Cards</em>, <em>Travel</em>.</td></tr>
+      <tr><td>Journal</td><td>Select on the pause menu (the hint under the menu says so): <em>Quests</em>, <em>Challenges</em>, <em>Cards</em>, <em>Travel</em>, <em>Items</em>, <em>Arts</em>.</td></tr>
       <tr><td>Toasts</td><td>A line at the top of the screen when a quest starts, an objective moves, a quest completes or a card arrives.</td></tr>
       <tr><td>Battles</td><td>Pack formations and bosses, encounter overrides in retail scenes, the pack's XP curve and rewards.</td></tr>
       <tr><td>Modes</td><td>The pack's poker tables, duels, golf courses, races and prop-hunt arenas, from the mode picker.</td></tr>
@@ -45,7 +45,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     <li><strong>Quests</strong> lists the started quests, active first, with each objective's progress and the reward.</li>
     <li><strong>Challenges</strong> lists the challenges with their best scores; Cross arms one for the next battle.</li>
     <li><strong>Cards</strong> shows the trading-card collection and opens the card menu (binder, boosters, selling, the duel deck).</li>
-    <li><strong>Travel</strong> enters any of the pack's maps directly - the way in for testing a map whose entrance is out of reach.</li>
+    <li><strong>Travel</strong> lists the pack maps you have been to on this save and takes you straight back to one. The <em>Unlock all Travel maps</em> cheat (<code>--cheat-travel</code>, the play page's Cheats panel) lists every map - the way in for testing a map whose entrance is out of reach.</li>
   </ul>
   <p>The pack's name and version head the screen, with the count of new cards.</p>
   <h3 id="modes">Game modes and cards</h3>

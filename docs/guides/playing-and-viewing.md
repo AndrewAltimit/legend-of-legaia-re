@@ -47,8 +47,8 @@ Started with **no subcommand** - the archive's `Legend of Legaia` program
 ```
 
 The launcher is one screen: a disc card at the top, the actions on the left
-(*Play*, *Choose disc...* / *Change disc...*, *Controls*, *Open saves
-folder*, *Quit*) with a help box under them that explains whatever is
+(*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Controls*,
+*Expansion pack...*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
 focused, and the options on the right. Once a disc validates, the screen is
 lettered in the game's own dialog font, read from that disc.
 
@@ -467,6 +467,7 @@ so the state they leave is one a playthrough could reach:
 | Max items | `--cheat-max-items` | Every held item and every usable consumable to 99. Key items and equipment are left alone, so no story gate opens early. |
 | No encounters | `--no-live-loop`, `F7` | Random encounters off; story and boss fights still happen. |
 | Walk through walls | `--cheat-noclip` | The field and world-map walk ignores walls, people and props; a door you walk into still opens. |
+| Unlock all Travel maps | `--cheat-travel` | With an expansion pack, the Journal's *Travel* page lists every map of the pack, not only the ones you have been to. |
 | Gold | `--cheat-gold N` | Sets the purse, capped at 9,999,999. |
 | Coins | `--cheat-coins N` | Sets the casino coin bank, capped at 9,999,999. |
 | Item | `--cheat-item ITEM[:QTY]` | Adds through the bag's own add helper: stacks cap at 99, a full bag refuses. `ITEM` is an id or a name (`healing-leaf:5`). Repeatable. |
@@ -753,7 +754,8 @@ you can drop more - and past the last one opens a file dialog for any other
 the window works too). The pack is checked the way the game checks it; one
 with errors is refused, and the help box lists the first few. A good pack is
 remembered in `launcher.toml` (`expansion = "..."`) and shown on the button by
-name; its version and authors are in the help box. *Delete* or a right-click
+its short name (*Pack: Rebirth*; the manifest's `short_name`, else its name cut
+at the end); its full name, version and authors are in the help box. *Delete* or a right-click
 on the button goes back to no pack. The launcher passes the pack to the game
 as `--expansion`, which also works by hand, with a path or the id of a pack in
 either folder (`legaia-engine packs` lists them):
@@ -764,6 +766,14 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --expansion rebirth.lxpack --map rebirth_tower_1f   # straight onto a map
 ```
+
+**Where Rebirth starts.** Rebirth is made for a late-game party: its way in is
+an entrance in Rim Elm that opens at party level 30, so *Continue* a late save
+(or play a New Game up to it). Once you have been on one of its maps, the
+Journal's *Travel* page (Select on the pause menu) takes you back there from
+anywhere. To look around before that, start the game from a terminal straight
+onto a map (`--map`, above) or add `--cheat-travel`, which lists every map on
+the Travel page.
 
 **Editing a pack while you play it.** `End` reloads the pack from its folder
 or `.lxpack` and, when you stand on one of its maps, rebuilds that map with you
@@ -813,8 +823,9 @@ With a pack loaded:
   says so). *Quests* lists the started quests, active first, with each
   objective's progress and the reward; *Challenges* lists the challenges with
   their best scores, and Cross arms one for the next battle; *Cards* shows the
-  trading-card collection and opens the card menu; *Travel* enters
-  any of the pack's maps directly, which is the way in for testing. The pack's
+  trading-card collection and opens the card menu; *Travel* lists the pack
+  maps you have been to on this save and takes you straight back to one
+  (the *Unlock all Travel maps* cheat lists every map, for testing). The pack's
   name and version head the screen, with the count of new cards.
 - **Toasts**: a line at the top of the screen says when a quest starts, an
   objective moves ("The Rebirth Tower: 2/3") and a quest completes.

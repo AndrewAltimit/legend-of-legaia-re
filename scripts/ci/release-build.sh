@@ -478,8 +478,14 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'quests, bosses and game modes. In the launcher, click the Expansion\n'
     printf 'pack button (or select it and press Enter) to play with it; New Game\n'
     printf 'and Continue then use it. Delete (or a right-click) on the button goes\n'
-    printf 'back to the game as it shipped. From a terminal:\n'
+    printf 'back to the game as it shipped. The tower'"'"'s entrance is in Rim Elm and\n'
+    printf 'opens for a party of level 30 or more, so Continue a late save. Select\n'
+    printf 'on the pause menu opens the pack'"'"'s Journal: quests, challenges, cards,\n'
+    printf 'and Travel back to any of its maps you have been to. From a terminal:\n'
     printf '    %s/legaia-engine play-window --disc <disc.bin> --boot-ui --expansion rebirth\n' "$TOOLS_DIR"
+    printf 'and to look around first (straight onto a map, every map on Travel):\n'
+    printf '    %s/legaia-engine play-window --disc <disc.bin> --expansion rebirth \\\n' "$TOOLS_DIR"
+    printf '        --map rebirth_tower_1f --cheat-travel\n'
     printf 'Other packs (.lxpack files) can be dropped in the same folder, or in\n'
     printf 'the packs folder of your saves folder, and show up the same way.\n'
     printf 'The pack holds no game data either: it points at the disc you supply.\n\n'
