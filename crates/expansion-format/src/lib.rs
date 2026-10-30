@@ -51,6 +51,7 @@ pub mod map;
 pub mod map_detail;
 pub mod map_detail_rules;
 pub mod map_rules;
+pub mod mesh_catalog;
 pub mod modes;
 pub mod npc_postures;
 pub mod progression;

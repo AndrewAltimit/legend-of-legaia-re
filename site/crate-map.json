@@ -1660,12 +1660,14 @@
     "tmd"
    ],
    "dev_deps": [
-    "engine-world-views"
+    "engine-world-views",
+    "expansion-format"
    ],
    "bins": [],
    "lib": true,
    "modules": [
-    "glb_export"
+    "glb_export",
+    "mesh_catalog"
    ],
    "band": "top",
    "track": "engine",
@@ -3089,6 +3091,7 @@
     "map_detail",
     "map_detail_rules",
     "map_rules",
+    "mesh_catalog",
     "modes",
     "npc_postures",
     "progression",

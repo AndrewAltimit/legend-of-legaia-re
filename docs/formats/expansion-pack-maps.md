@@ -652,6 +652,36 @@ rebuild of the map's VRAM - the return from a battle included - carry them.
 The base scene's own words are never written. A map whose foreign meshes do
 not fit the free VRAM is refused at entry.
 
+### The mesh catalog
+
+A coordinate does not say what it names: `{ scene = "town01", object = 47 }`
+is a bed and `object = 48` is the stern of a boat cut open where it meets a
+wall, and both have been placed as boats. The mesh catalog
+([`legaia_expansion_format::mesh_catalog`](../../crates/expansion-format/src/mesh_catalog.rs),
+`crates/expansion-format/data/mesh_catalog.toml`) labels every mesh of the
+geometry packs the Rebirth pack borrows from (`town01`, `vell`, `rugi`,
+`cave01`, `uru`), one entry per `(scene, object)`:
+
+| Field | Meaning |
+|---|---|
+| `label` | What the mesh is, in a few words. |
+| `kind` | `building`, `plant`, `rock`, `furniture`, `structure`, `light`, `vehicle`, `terrain` or `other`. |
+| `size` | The base footprint's width (`X`) and depth (`Z`) and the mesh's height, world units at scale 1, unrotated ([Solid props](#solid-props) measures the same hull). A flat card - a sprite tree, a fern - has no floor-plane hull, so its size is its bounding box. |
+| `solid` | At scale 1 it stands in the player's way (`Footprint::is_large_obstacle`): a placement wants `solid = true`. |
+| `tris` | Triangles it draws. |
+| `note` | How it reads and what it suits: an interior wall open behind, a black occluder block that is no prop, a card that draws from one side. |
+
+The numbers are measured off the disc and the labels are hand-written from a
+contact sheet: `legaia-engine mesh-catalog --scene <s> --catalog <file>
+--sheet-dir <dir>` measures each scene's pack (`legaia_engine_export::mesh_catalog`),
+merges the measurements into the file keeping every label already there,
+and draws a numbered sheet of the meshes (a red corner marks a `solid` one)
+to read new labels from. The sheet draws disc meshes and stays local; the
+file holds labels and numbers only. A disc-gated test checks the committed
+sizes against the disc. It sits beside the [posture table](#npc-clip-postures):
+that one says what a borrowed NPC's clips are, this one what a borrowed
+mesh is.
+
 ## Model assets
 
 `{ asset = "path" }` names a glTF 2.0 file under the pack's `assets/` (a

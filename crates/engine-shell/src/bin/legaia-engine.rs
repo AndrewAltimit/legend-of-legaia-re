@@ -29,9 +29,9 @@ use cli::{Cli, Cmd};
 use commands::{cmd_audio_trace, cmd_mode_trace, cmd_pcm_trace, cmd_sim_trace, cmd_vram_oracle};
 use commands::{
     cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter, cmd_equip, cmd_export_glb,
-    cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts, cmd_play,
-    cmd_replay, cmd_save, cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_target_pick,
-    cmd_title,
+    cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts,
+    cmd_mesh_catalog, cmd_play, cmd_replay, cmd_save, cmd_save_select, cmd_scenarios,
+    cmd_seru_capture, cmd_target_pick, cmd_title,
 };
 use legaia_engine_shell::window::{self, cmd_play_str, cmd_play_window, cmd_record};
 use std::path::{Path, PathBuf};
@@ -167,6 +167,23 @@ fn main() -> Result<()> {
             no_props,
             items,
             party,
+            &extracted_root,
+            disc.as_deref(),
+        ),
+        Cmd::MeshCatalog {
+            scene,
+            catalog,
+            sheet_dir,
+            cell,
+            singles,
+            extracted_root,
+            disc,
+        } => cmd_mesh_catalog(
+            &scene,
+            catalog.as_deref(),
+            sheet_dir.as_deref(),
+            cell,
+            singles,
             &extracted_root,
             disc.as_deref(),
         ),

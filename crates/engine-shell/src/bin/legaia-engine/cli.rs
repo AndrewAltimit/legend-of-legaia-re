@@ -26,7 +26,7 @@ use std::path::PathBuf;
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
         Playing:      play-window, play-str, config, save, load, packs\n  \
-        Exploring:    list-scenes, info, record, replay, export-glb\n  \
+        Exploring:    list-scenes, info, record, replay, export-glb, mesh-catalog\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
         parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
@@ -749,6 +749,34 @@ pub(crate) enum Cmd {
         extracted_root: PathBuf,
         /// Alternative source: read PROT.DAT + CDNAME.TXT directly from a
         /// `.bin` disc image. When provided, `--extracted-root` is ignored.
+        #[arg(long)]
+        disc: Option<PathBuf>,
+    },
+    /// Measure every mesh of a field scene's geometry pack for the
+    /// expansion-pack mesh catalog: per object its base footprint, height
+    /// and whether it stands in the player's way, merged into a catalog
+    /// file (labels already there are kept), plus a numbered contact sheet
+    /// PNG per scene to read the labels from. The sheet is Sony-derived -
+    /// keep it local. See docs/formats/expansion-pack-maps.md#the-mesh-catalog.
+    #[command(display_order = 7, name = "mesh-catalog")]
+    MeshCatalog {
+        /// CDNAME scene name. Repeat for several scenes.
+        #[arg(long, required = true)]
+        scene: Vec<String>,
+        /// The catalog file to merge into and rewrite (created if missing).
+        #[arg(long)]
+        catalog: Option<PathBuf>,
+        /// Write `<dir>/<scene>.png` contact sheets.
+        #[arg(long)]
+        sheet_dir: Option<PathBuf>,
+        /// Contact-sheet cell size in pixels.
+        #[arg(long, default_value_t = 160)]
+        cell: usize,
+        /// Render each object alone as `<dir>/<scene>_<object>.png` too.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        singles: bool,
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
         #[arg(long)]
         disc: Option<PathBuf>,
     },
