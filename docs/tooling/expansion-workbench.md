@@ -138,7 +138,9 @@ raise or lower lays a ridge along it; **Remove last stroke** pops one. The
 canvas shades the relief and the water from `map_preview`'s `terrain` - the
 heightfield the engine's floor sampler and meshes are built from - and the
 painter's wall quarters include the ones the terrain adds (too steep, too
-deep), so what is walkable reads off the canvas.
+deep), so what is walkable reads off the canvas. The 3D preview draws the
+sculpted ground as the engine builds it, and its volumes stand on the
+terrain's floor.
 
 The **Heights** overlay is read back from `map_preview`, which builds the
 synthetic field image the engine enters
