@@ -39,7 +39,7 @@ pub struct EncounterApplyReport {
     pub solo_collapsed: usize,
     /// Random formations reduced by the unconditional **battle-load safety**
     /// post-pass ([`encounter::SceneEncounters::enforce_species_limits`]): a
-    /// formation held more than [`encounter::MAX_DISTINCT_SPECIES`] distinct
+    /// formation held more than [`MAX_DISTINCT_SPECIES`](legaia_randomizer::encounters::MAX_DISTINCT_SPECIES) distinct
     /// species, or its summed distinct-species heap cost exceeded the disc's
     /// authored maximum. See [`battle_load_budget`].
     pub battle_load_capped: usize,
@@ -553,7 +553,7 @@ fn enforce_solo_strong_encounters(
 /// underlying scoped randomization.
 ///
 /// Whatever the options, an **unconditional battle-load safety pass** runs
-/// last: no random formation may exceed [`encounter::MAX_DISTINCT_SPECIES`]
+/// last: no random formation may exceed [`MAX_DISTINCT_SPECIES`](legaia_randomizer::encounters::MAX_DISTINCT_SPECIES)
 /// distinct species (retail's battle setup holds "the other species" in one
 /// register, so a third distinct species is dropped-and-duplicated on half of
 /// all rolls) nor the disc's authored heap-cost maximum
