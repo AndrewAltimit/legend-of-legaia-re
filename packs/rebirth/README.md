@@ -52,9 +52,9 @@ Rebirth is built for the climb from there to 99.
 | 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), kept whole | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
 | 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), kept whole | 60-68 | Boss: the Verdant Colossus |
 | 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), kept whole | - | No monsters; Keeper Odalric and his five tables |
-| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), kept whole | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
-| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), kept whole | 80-88 | Boss: the Azure Seraph |
-| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), kept whole | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch on the long carpet |
+| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), built from scratch (35 x 37) | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
+| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), built from scratch (33 x 34) | 80-88 | Boss: the Azure Seraph |
+| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), built from scratch (31 x 36) | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch in the nave |
 
 1F and 2F carry the detail layer
 ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)):
@@ -201,7 +201,7 @@ choice on their fight's own offer (`challenge = ...` beside `battle` /
 `boss`), so the challenge applies to that fight.
 
 Rest points (`kind = "rest"`, with a save) stand on the 1F stair landing,
-by the 5F hearth and in a 7F alcove.
+by the 5F hearth and in a 7F alcove off the landing.
 
 Quest and boss rewards hand out cards by id from `cards.toml`, among them
 the four legendaries.
