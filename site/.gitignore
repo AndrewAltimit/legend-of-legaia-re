@@ -27,6 +27,8 @@
 /formats/effect.html
 /formats/encounter.html
 /formats/equipment-table.html
+/formats/expansion-pack-arts.html
+/formats/expansion-pack-audio.html
 /formats/expansion-pack-battle.html
 /formats/expansion-pack-cutscenes.html
 /formats/expansion-pack-items.html
@@ -160,6 +162,7 @@
 /subsystems/renderer-internals.html
 /subsystems/renderer-port.html
 /subsystems/renderer.html
+/subsystems/run-rules.html
 /subsystems/save-screen.html
 /subsystems/script-vm-internals.html
 /subsystems/script-vm-menuctrl.html

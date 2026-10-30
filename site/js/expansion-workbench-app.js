@@ -36,6 +36,7 @@ import { renderMaps } from './expansion-workbench-map.js';
 import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
+import { createPreview3d } from './expansion-workbench-preview3d.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -154,6 +155,8 @@ function idsOf(kind) {
 
 const ctx = {
   get pack() { return S.pack; },
+  // The 3D preview (expansion-workbench-preview3d.js), null until the page is up.
+  get preview() { return S.preview; },
   get cat() { return S.cat; },
   get chart() { return S.chart; },
   sel: S.sel,
@@ -168,6 +171,7 @@ const ctx = {
   changed: (structural) => {
     scheduleValidate();
     scheduleSave();
+    if (S.preview) S.preview.changed();
     if (structural) rerender();
   },
   rerender: () => rerender(),
@@ -227,6 +231,7 @@ function rerender() {
   $('xw-pack-id').textContent = m.id || '';
   $('xw-pack-ver').textContent = `${m.version || ''}${S.label ? ' - ' + S.label : ''}`;
   renderTabs();
+  if (S.preview) S.preview.show(['maps', 'cutscenes', 'battle', 'cards'].includes(S.tab));
   const panel = $('xw-panel');
   // Keep the panel's scroll position across a structural re-render.
   const y = window.scrollY;
@@ -471,6 +476,35 @@ async function exportBundle() {
   return S.wb.export_bundle(JSON.stringify(S.pack));
 }
 
+// The play page's slot, written by Play in browser and Play here.
+function storePlay(bytes) {
+  const m = S.pack.manifest;
+  return idb(PLAY_DB, PLAY_STORE, 'readwrite', (s) => s.put({ id: m.id, name: m.name, version: m.version, bytes, savedAt: Date.now() }, PLAY_KEY));
+}
+
+// Play here: the map the Maps tab is on, in a play tab - hot-reloaded in
+// place when one is open on the pack.
+async function playHere() {
+  const map = S.preview && S.preview.state().map;
+  if (!map) {
+    setStatus('Open a map on the Maps tab first.', 'err', 'xw-export-status');
+    return;
+  }
+  try {
+    const r = await S.preview.playHere(map);
+    if (r.reloaded) {
+      const a = r.answer;
+      setStatus(a.ok
+        ? (a.reentered ? `Reloaded in the open play tab on ${a.map} (${a.ms} ms); the player kept their place.` : `Reloaded in the open play tab${a.map ? ` (it is on ${a.map})` : ''}.`)
+        : `The play tab refused the pack: ${(a.errors || []).slice(0, 2).join(' | ')}`, a.ok ? 'ok' : 'err', 'xw-export-status');
+    } else {
+      setStatus(`No play tab was open on this pack: opened one on ${map}.`, 'ok', 'xw-export-status');
+    }
+  } catch (e) {
+    setStatus('Not sent: ' + errText(e), 'err', 'xw-export-status');
+  }
+}
+
 async function playInBrowser() {
   try {
     const bytes = await exportBundle();
@@ -560,6 +594,15 @@ function init() {
   });
   $('xw-toml').addEventListener('click', () => { S.tab = 'files'; rerender(); });
   $('xw-play').addEventListener('click', playInBrowser);
+  $('xw-play-here').addEventListener('click', playHere);
+  $('xw-live').addEventListener('change', (ev) => S.preview && S.preview.setLive(ev.target.checked));
+  S.preview = createPreview3d({
+    pack: () => S.pack,
+    exportBundle: () => S.wb.export_bundle(JSON.stringify(S.pack)),
+    storePlay,
+    playUrl: (map) => new URL(`../play.html?expansion=1&map=${encodeURIComponent(map)}`, import.meta.url).href,
+  });
+  $('xw-panel').before(S.preview.el);
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
@@ -567,3 +610,5 @@ else init();
 
 // Headless-verification hook: the page state (no disc bytes).
 window.__xwState = S;
+// ... and the editors' context: `__xwCtx.changed(true)` after a scripted edit.
+window.__xwCtx = ctx;

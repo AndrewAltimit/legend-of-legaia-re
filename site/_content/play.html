@@ -111,6 +111,9 @@ body.play-embedded .play-canvas { border: 0; }
   font-family: var(--font-mono); font-size: 0.9rem; text-align: center; padding: 1rem;
 }
 .play-focus-veil.is-hidden { display: none; }
+/* The expansion workbench's 3D preview (`?xwpreview=1`): the picture is
+   looked at and clicked to pick tiles, so no veil dims it. */
+body.xw-preview .play-focus-veil { display: none; }
 
 /* Dialogue box, drawn over the canvas the way the game does. Colors
    mirror the retail FUN_8002C69C window fill: two-pass mode-0
@@ -1066,6 +1069,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/play-atlas-blitter.js"></script>
 <script src="js/play-app.js"></script>
 <script src="js/play-view-scene-build.js"></script>
+<script src="js/play-view-editor-overlay.js"></script>
 <script src="js/play-view-input.js"></script>
 <script src="js/play-view-overlay.js"></script>
 <script src="js/play-view-field-sync.js"></script>
@@ -1074,6 +1078,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/play-fmv.js"></script>
 <script src="js/canvas-abr.js"></script>
 <script src="js/play-minigames.js"></script>
+<script src="js/play-expansion-live.js"></script>
 <script>
 (function () {
   'use strict';
@@ -1263,6 +1268,8 @@ div.play-vis-head { cursor: default; }
       if (typeof window.__playSyncAfterRuntime === 'function') window.__playSyncAfterRuntime(false);
       setSaveUi(true);
       expansionDiscReady();
+      /* The workbench's 3D preview: the disc is up, ask for the pack. */
+      if (expansionLive && expansionLive.ready) expansionLive.ready();
       /* A fresh runtime has an empty rack: mount the browser card (and any
        * card the player picked) before anything can open a save screen. */
       remountCards();
@@ -1320,13 +1327,17 @@ div.play-vis-head { cursor: default; }
     expansionUnloadBtn.disabled = !ok;
   }
 
+  /* The engine's answer to the last load (`load_expansion`'s JSON). */
+  let lastExpansionInfo = null;
   function loadExpansionBytes(bytes, from) {
+    lastExpansionInfo = { ok: false, errors: ['no engine'] };
     if (!runtime || typeof runtime.load_expansion !== 'function') {
       expansionMsg('This build of the engine has no expansion-pack support.', true);
       return;
     }
     let info = null;
-    try { info = JSON.parse(runtime.load_expansion(bytes)); } catch (e) {
+    try { info = JSON.parse(runtime.load_expansion(bytes)); lastExpansionInfo = info; } catch (e) {
+      lastExpansionInfo = { ok: false, errors: [String(e && e.message ? e.message : e)] };
       expansionMsg(`Could not load ${from}: ${e.message || e}`, true);
       return;
     }
@@ -1389,7 +1400,34 @@ div.play-vis-head { cursor: default; }
     }
     const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes);
     loadExpansionBytes(bytes, `${rec.id || 'the workbench pack'}.lxpack`);
+    /* `&map=<id>` (the workbench's Play here): straight onto that map,
+     * at `&spawn=<id>` or its first spawn. */
+    const q = new URLSearchParams(location.search);
+    if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
   }
+
+  /* Enter map `id` of the active pack through the page's ordinary entry. */
+  function expansionEnterMap(id, spawn) {
+    if (!runtime || !id) return;
+    supersedeStarts();
+    enterWith(id, (v) => v.enterExpansionMap(id, spawn || ''));
+  }
+
+  /* The workbench's edit-test loop (js/play-expansion-live.js): a Play here
+   * reload over BroadcastChannel, or - framed as `?xwpreview=1` - the
+   * workbench's 3D preview driven by postMessage. */
+  const expansionLive = window.LegaiaExpansionLive ? window.LegaiaExpansionLive.attach({
+    runtime: () => runtime,
+    view: () => view,
+    loadPack: (bytes, from) => {
+      loadExpansionBytes(bytes, from);
+      return lastExpansionInfo;
+    },
+    enterMap: expansionEnterMap,
+    status: expansionMsg,
+    /* A hot reload took: these are the bytes a rebuilt engine reloads. */
+    adopted: (bytes) => { expansionBytes = bytes; },
+  }) : null;
 
   expansionInput.addEventListener('change', async () => {
     const f = expansionInput.files && expansionInput.files[0];
@@ -2125,13 +2163,16 @@ div.play-vis-head { cursor: default; }
     level: embedQuery.has('level') ? parseInt(embedQuery.get('level'), 10) : null,
     lead: embedQuery.has('lead') ? parseInt(embedQuery.get('lead'), 10) : null,
   } : null;
-  if (embedQuery.get('embed') === '1') {
+  /* `?xwpreview=1`: the expansion workbench's 3D preview frames this page
+   * (js/play-expansion-live.js); it shows the picture alone, as `embed=1`. */
+  if (embedQuery.get('embed') === '1' || embedQuery.get('xwpreview') === '1') {
     /* Only the picture: lift the screen out of the page chrome (the shared
      * layout injects its rail and header around the content). */
     const lift = () => {
       const screen = document.getElementById('play-screen');
       if (!screen) return;
       document.body.classList.add('play-embedded');
+      if (embedQuery.get('xwpreview') === '1') document.body.classList.add('xw-preview');
       if (screen.parentElement !== document.body) document.body.prepend(screen);
       for (const el of Array.from(document.body.children)) {
         if (el !== screen && el.tagName !== 'SCRIPT') el.style.display = 'none';

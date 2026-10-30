@@ -187,7 +187,9 @@
           try { this.rt.play_camera_zoom_by(f); } catch (_) {}
           return;
         }
-        this.cam.halfWidth = Math.max(220, Math.min(6000, this.cam.halfWidth * f));
+        /* The expansion workbench's preview frames whole pack maps
+         * (`maxOrbitHalf`); the play page keeps its own reach. */
+        this.cam.halfWidth = Math.max(220, Math.min(this.maxOrbitHalf || 6000, this.cam.halfWidth * f));
         this.cam.halfHeight = this.cam.halfWidth;
       }, { passive: false });
       /* Double-click puts the follow camera back at the retail framing

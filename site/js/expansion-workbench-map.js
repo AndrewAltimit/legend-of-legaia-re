@@ -313,6 +313,15 @@ function draw(ctx, cv) {
     const [c0, r0, c1, r1] = V.drag.rect;
     zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.15)', [3, 3]);
   }
+  // The tile last clicked here or in the 3D preview, with nothing selected.
+  if (!V.sel && V.cursor && V.cursor.map === V.map) {
+    const [c, r] = V.cursor.tile;
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 2;
+    g.setLineDash([3, 2]);
+    g.strokeRect(c * cs + 1, r * cs + 1, cs - 2, cs - 2);
+    g.setLineDash([]);
+  }
 }
 
 // --- The tab ------------------------------------------------------------------------
@@ -359,7 +368,16 @@ export function renderMaps(ctx, el) {
   const path = '';
 
   const cv = h('canvas', {});
-  const redraw = () => draw(ctx, cv);
+  // The 3D preview (expansion-workbench-preview3d.js) follows the painter's
+  // selection: the selected object's tile or zone, else the last tile clicked.
+  const pv = ctx.preview;
+  const selShape = () => {
+    const o = V.sel && map[V.sel.type] && map[V.sel.type][V.sel.i];
+    if (o && o.rect) return { rect: o.rect };
+    if (o && o.tile) return { tile: o.tile };
+    return V.cursor && V.cursor.map === V.map ? { tile: V.cursor.tile } : null;
+  };
+  const redraw = () => { draw(ctx, cv); if (pv) pv.select(selShape()); };
   // Edits from the side forms redraw the canvas without a re-render.
   const mctx = Object.create(ctx);
   mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx, redraw); redraw(); } };
@@ -478,6 +496,8 @@ export function renderMaps(ctx, el) {
     const [c, r] = tileOf(ev);
     const { w: mw, h: mh } = dims(map);
     if (c < 0 || r < 0 || c >= mw || r >= mh) return;
+    V.cursor = { map: V.map, tile: [c, r] };
+    if (pv) pv.hold(true);
     const t = V.tool;
     if (t === 'paint') {
       snapshot(ctx, V.map);
@@ -546,6 +566,7 @@ export function renderMaps(ctx, el) {
   };
   const onUp = () => {
     if (!cv.isConnected) return;
+    if (pv) pv.hold(false);
     const d = V.drag;
     V.drag = null;
     wrap.classList.remove('is-panning');
@@ -607,6 +628,25 @@ export function renderMaps(ctx, el) {
   }, { passive: false });
   wrap.addEventListener('scroll', () => { V.scroll[V.map] = [wrap.scrollLeft, wrap.scrollTop]; });
 
+  // A click in the 3D preview selects here: the first object on the tile
+  // (as the Select tool picks), else the tile itself.
+  if (pv) {
+    pv.setMap(V.map, '');
+    pv.onPick((c, r) => {
+      if (!cv.isConnected) return;
+      V.cursor = { map: V.map, tile: [c, r] };
+      const hit = objectsAt(map, c, r);
+      V.sel = hit.length ? hit[0] : null;
+      hover.textContent = describe(ctx, map, c, r);
+      renderSelection(ctx, mctx, side, map);
+      redraw();
+      const x = (c + 0.5) * V.cell, y = (r + 0.5) * V.cell;
+      if (x < wrap.scrollLeft || x > wrap.scrollLeft + wrap.clientWidth || y < wrap.scrollTop || y > wrap.scrollTop + wrap.clientHeight) {
+        wrap.scrollLeft = x - wrap.clientWidth / 2;
+        wrap.scrollTop = y - wrap.clientHeight / 2;
+      }
+    });
+  }
   loadObjects(ctx, baseScene(map), () => { renderSelection(ctx, mctx, side, map); redraw(); });
   if (!V.preview[V.map]) V.preview[V.map] = ctx.mapPreview(map);
   redraw();

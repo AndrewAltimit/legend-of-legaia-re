@@ -200,8 +200,49 @@ function stepsEd(ctx, parent, cs, owner, path, title) {
   parent.append(wrap);
 }
 
+// Where the camera looks over a cutscene, from its camera steps and the
+// frames the timeline put them at: keys `{ f, t }` (frame, map tile), the
+// camera easing from one to the next over a step's `frames`. A step with no
+// focus keeps the last; an actor focus is the actor's tile on the map (the
+// player's is the first spawn); a reset returns to the player.
+export function cameraKeys(cs, map, rows) {
+  const spawn = (map.spawns && map.spawns[0] && map.spawns[0].tile) || [0, 0];
+  const actorTile = (a) => {
+    if (!a || a === 'player') return spawn;
+    const n = (map.npcs || []).find((x) => x.id === a);
+    return n ? n.tile : spawn;
+  };
+  let last = spawn;
+  const keys = [{ f: 0, t: spawn }];
+  for (const r of rows) {
+    if (r.kind !== 'camera' && r.kind !== 'camera_reset') continue;
+    const list = r.track ? ((cs.tracks || {})[r.track] || {}).steps : cs.steps;
+    const st = list && list[r.step];
+    if (!st) continue;
+    let to = last;
+    if (r.kind === 'camera_reset') to = spawn;
+    else if (st.focus) to = st.focus.tile || actorTile(st.focus.actor);
+    keys.push({ f: r.frame, t: last }, { f: r.frame + (st.frames || 0), t: to });
+    last = to;
+  }
+  return keys;
+}
+
+// The camera's tile at frame `f` (fractional between keys).
+export function cameraAt(keys, f) {
+  let p = keys[0].t;
+  for (let i = 1; i < keys.length; i++) {
+    const a = keys[i - 1], b = keys[i];
+    if (f <= a.f) break;
+    if (f >= b.f) { p = b.t; continue; }
+    const k = b.f > a.f ? (f - a.f) / (b.f - a.f) : 1;
+    return [a.t[0] + (b.t[0] - a.t[0]) * k, a.t[1] + (b.t[1] - a.t[1]) * k];
+  }
+  return p;
+}
+
 // The timeline preview: the session plays the cutscene and lists its steps by frame.
-function timeline(ctx, parent, id) {
+function timeline(ctx, parent, id, cs) {
   const box = h('div', { class: 'xw-box xw-timeline' });
   const picks = h('input', { type: 'text', placeholder: 'e.g. 0, 1', spellcheck: 'false', 'aria-label': 'Options picked at each menu' });
   const out = h('div', {});
@@ -224,6 +265,33 @@ function timeline(ctx, parent, id) {
     }
     table.append(body);
     out.append(table);
+    // On its map in the 3D preview: the camera's path, scrubbed by frame.
+    const map = cs && cs.map && ctx.pack.maps && ctx.pack.maps[cs.map];
+    const pv = ctx.preview;
+    if (!map || !pv) return;
+    const keys = cameraKeys(cs, map, res.rows);
+    const path = [];
+    for (const k of keys) {
+      const l = path[path.length - 1];
+      if (!l || l[0] !== k.t[0] || l[1] !== k.t[1]) path.push(k.t);
+    }
+    const slider = h('input', { type: 'range', min: 0, max: Math.max(1, res.frames), value: 0, 'aria-label': 'Scrub the timeline' });
+    const at = h('span', { class: 'xw-preview-num' }, 'frame 0');
+    const scrub = () => {
+      const f = parseInt(slider.value, 10) || 0;
+      at.textContent = `frame ${f} (${(f / 60).toFixed(1)} s)`;
+      // The step running at that frame.
+      let cur = -1;
+      res.rows.forEach((r, i) => { if (r.frame <= f) cur = i; });
+      body.querySelectorAll('tr').forEach((tr, i) => tr.classList.toggle('is-now', i === cur));
+      pv.setPath(path, cameraAt(keys, f));
+    };
+    slider.addEventListener('input', scrub);
+    out.append(h('div', { class: 'xw-tools xw-scrub' },
+      h('span', { class: 'wb-label' }, `On ${cs.map} in 3D`),
+      h('button', { type: 'button', class: 'wb-mini', onclick: () => { pv.open(); pv.setMap(cs.map, ''); scrub(); } }, 'Show the camera path'),
+      slider, at,
+      h('button', { type: 'button', class: 'wb-mini', title: 'Play the cutscene in the 3D preview, through the engine', onclick: () => { pv.open(); pv.setMap(cs.map, ''); pv.playCutscene(id); } }, 'Play in 3D')));
   };
   box.append(
     h('div', { class: 'xw-box-head' }, 'Timeline preview', h('span', { class: 'xw-sp' }),
@@ -273,7 +341,7 @@ export function renderCutscenes(ctx, el) {
           ctx.changed(true);
         },
       }, '+ Track')));
-      timeline(ctx, box, id);
+      timeline(ctx, box, id, cs);
     },
   });
 }

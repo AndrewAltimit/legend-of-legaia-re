@@ -445,6 +445,22 @@ to hand to a rebuilt engine after a trap.
 | `unload_expansion()` | Deactivate; the progress stays dormant for the next save. |
 | `expansion_info_json()` | The active pack, the map the player is on, and `dormant`: the pack a loaded save names that is not loaded. |
 | `enter_expansion_map(map, spawn)` | `SceneHost::enter_expansion_map` with `enter_field`'s staging around it; the scene build reads the map off the same `Scene`. |
+| `reload_expansion(bytes)` | The hot reload (`play_expansion_live`): activate as `load_expansion` does, then re-enter the map the player is on with them seated where they stood (`SceneHost::enter_expansion_map_seated`), the follow camera kept; JSON `{ ok, pack, errors, warnings, map, reentered, ms }`. |
+| `expansion_overlay_json()` | The active pack map for the editor overlay: tile rectangle and origin, each tile's wall mask and floor height (the world's floor sampler), spawns, exits, trigger and encounter zones, props, NPCs, the player. |
+| `expansion_seat_player(col, row)` | Stand the player on a map tile, on its floor. |
+| `expansion_preview_cutscene(id)` | Play a pack cutscene now, through the trigger path. |
+| `expansion_preview_fight(kind, id)` | Start a pack fight now: `kind` `formation` or `boss`, through a map trigger's `battle` / `boss` path. |
+| `expansion_preview_cards()` | Put one of every pack card the collection lacks into it and open the binder (the preview's own world, not a save). |
+
+The last six are the expansion workbench's edit-test loop
+([`expansion-workbench.md`](../tooling/expansion-workbench.md#the-3d-preview)):
+its 3D preview is this page framed as `play.html?xwpreview=1`, and its *Play
+here* reaches an open play tab over BroadcastChannel `legaia-expansion-live`;
+both are `site/js/play-expansion-live.js`, and the overlay pass is
+`site/js/play-view-editor-overlay.js`. `play.html?expansion=1&map=<id>`
+enters that map once the workbench's pack loads. The disc-gated
+`play_expansion_live::tests` pin that a reload uploads exactly what a fresh
+entry of the map uploads.
 
 Everything past activation is the engine's and needs nothing of the page:
 New Game restarts the pack, a save carries its progress, entrances fire from

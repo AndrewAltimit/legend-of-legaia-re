@@ -692,6 +692,16 @@ function bossScriptEd(ctx, box, m, p, base) {
   box.append(wrap);
 }
 
+// A button that opens the 3D preview (expansion-workbench-preview3d.js) and
+// runs `run(preview)` there; nothing without one.
+function preview3dButton(ctx, label, title, run) {
+  if (!ctx.preview) return '';
+  return h('div', { class: 'xw-tools' }, h('button', {
+    type: 'button', class: 'wb-mini', title,
+    onclick: () => { ctx.preview.open(); run(ctx.preview); window.scrollTo({ top: 0, behavior: 'smooth' }); },
+  }, label));
+}
+
 export function renderBattle(ctx, el) {
   const b = ctx.pack.battle;
   el.append(h('p', { class: 'xw-note' }, 'battle.toml: monsters derived from a retail record, formations of up to four, per-scene encounter overrides and bosses. A derived monster keeps its base\'s mesh, animation and attacks; only the numbers change.'));
@@ -724,12 +734,13 @@ export function renderBattle(ctx, el) {
     add: 'Formation',
     make: () => ({ label: '', monsters: [] }),
     label: (f, id) => `${id} (${(f.monsters || []).length})`,
-    render: (box, f, p) => {
+    render: (box, f, p, id) => {
       box.append(grid(ctx, f, [{ k: 'label', label: 'Label' }, { k: 'scripted', t: 'bool', label: 'Scripted (fixed stats, no random boost)' }], p));
       const seats = h('div', { class: 'xw-grid', 'data-path': `${p}.monsters` });
       const n = Math.min(4, f.monsters.length + 1);
       for (let i = 0; i < n; i++) seats.append(monsterRefSlot(ctx, f, i, p));
       box.append(seats);
+      box.append(preview3dButton(ctx, 'Fight in 3D', 'Start this fight in the 3D preview (above): the monsters as the engine draws and runs them', (pv) => pv.fight('formation', id)));
     },
   });
 
@@ -759,7 +770,8 @@ export function renderBattle(ctx, el) {
     prefix: 'boss',
     add: 'Boss',
     make: () => ({ formation: ctx.ids('formation')[0] || '', no_escape: true, reward_items: [], reward_gold: 0, once: true }),
-    render: (box, bo, p) => {
+    render: (box, bo, p, id) => {
+      box.append(preview3dButton(ctx, 'Fight in 3D', 'Start this boss fight in the 3D preview (above), its script, music and phases running', (pv) => pv.fight('boss', id)));
       box.append(grid(ctx, bo, [
         { k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' },
         { k: 'music', t: 'omusic', label: 'Music', hint: 'retail or a pack track; audio.toml music.boss when unset' },
@@ -1117,7 +1129,8 @@ export function renderCards(ctx, el) {
   el.append(h('p', { class: 'xw-note' }, 'cards.toml: trading cards (a retail monster as the art), booster sets, where boosters drop, and what the shops pay per rarity.'));
   c.sell_prices = c.sell_prices || { common: 0, uncommon: 0, rare: 0, legendary: 0 };
   el.append(h('h4', { class: 'xw-sub' }, 'Sell prices'), grid(ctx, c.sell_prices, RARITIES.map((r) => ({ k: r, t: 'int', label: r })), 'sell_prices'));
-  el.append(h('h4', { class: 'xw-sub' }, 'Cards'));
+  el.append(h('h4', { class: 'xw-sub' }, 'Cards'),
+    preview3dButton(ctx, 'Card faces in 3D', 'Every card of the pack into the 3D preview\'s binder (above): the faces the engine draws, portraits included. The preview\'s collection is its own, not a save.', (pv) => pv.cards()));
   splitEd(ctx, el, c, 'cards', '', {
     arrayId: true,
     prefix: 'card',

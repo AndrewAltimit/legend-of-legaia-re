@@ -39,7 +39,9 @@
           <button type="button" id="xw-dl" class="wb-button">Download .lxpack</button>
           <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
           <button type="button" id="xw-play" class="wb-button wb-button-ghost">Play in browser</button>
-          <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> keeps the bundle in this browser for the play page to load.</p></span></span>
+          <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map the Maps tab is on, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play here</button>
+          <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
+          <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> keeps the bundle in this browser for the play page to load.</p><p><strong>Play here</strong> puts you on the map you are editing. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p></span></span>
         </div>
       </div>
       <div id="xw-export-status" class="wb-status"></div>
@@ -147,6 +149,22 @@
   .xw-rows .is-bad { color: var(--open); }
   .xw-rows .xw-page { border-top: 1px dashed var(--border); margin-top: 0.2rem; }
   .xw-chart { width: 100%; max-width: 46rem; height: auto; display: block; }
+  /* The 3D preview dock (expansion-workbench-preview3d.js): the play page
+     framed, above the Maps and Cutscenes editors. */
+  .xw-3d { padding: 0.4rem 0.8rem; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+  .xw-3d[hidden] { display: none; }
+  .xw-3d-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.6rem; font-size: 0.88em; }
+  .xw-3d-ctrls { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+  .xw-3d-ctrls .xw-check { display: inline-flex; flex-direction: row; gap: 0.25rem; margin-left: 0.3rem; color: var(--text-muted); }
+  .xw-3d-ctrls[hidden], .xw-3d-layers[hidden], .xw-3d-body[hidden] { display: none; }
+  .xw-3d-layers { display: inline-flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; color: var(--text-muted); }
+  .xw-3d-layers .xw-check { display: inline-flex; flex-direction: row; gap: 0.25rem; }
+  .xw-3d-status { flex: 1 1 100%; font-family: var(--font-mono); font-size: 0.82em; color: var(--text-dim); }
+  .xw-3d-status.is-err { color: var(--warn); }
+  .xw-3d-body { margin-top: 0.4rem; }
+  .xw-table tr.is-now td { background: var(--accent-soft); }
+  .xw-scrub input[type=range] { flex: 1 1 12rem; min-width: 8rem; }
+  .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
   .xw-chart text { font-size: 11px; fill: var(--text-muted); }
   .xw-legend { display: flex; gap: 1rem; font-size: 0.82em; color: var(--text-muted); margin: 0.2rem 0; }
   .xw-legend i { display: inline-block; width: 1.2em; height: 2px; vertical-align: middle; margin-right: 0.3em; }

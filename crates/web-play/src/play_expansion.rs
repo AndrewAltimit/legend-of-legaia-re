@@ -153,6 +153,19 @@ impl LegaiaRuntime {
         map_id: &str,
         spawn: &str,
     ) -> Result<String, String> {
+        self.enter_expansion_map_seated_core(map_id, spawn, None)
+    }
+
+    /// [`Self::enter_expansion_map_core`] with the player seated at world
+    /// `(x, z)` facing `facing` instead of at the spawn
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::enter_expansion_map_seated`]):
+    /// the workbench's hot reload re-entering the map where the player stood.
+    pub(crate) fn enter_expansion_map_seated_core(
+        &mut self,
+        map_id: &str,
+        spawn: &str,
+        seat: Option<(i16, i16, u16)>,
+    ) -> Result<String, String> {
         let host = self
             .scene_host
             .host_mut()
@@ -168,7 +181,7 @@ impl LegaiaRuntime {
             .scene_host
             .host_mut()
             .ok_or_else(|| "enter_expansion_map: call load_disc first".to_string())?;
-        host.enter_expansion_map(map_id, spawn)
+        host.enter_expansion_map_seated(map_id, spawn, seat)
             .map_err(|e| format!("enter_expansion_map({map_id}): {e:#}"))?;
         let base = host
             .scene

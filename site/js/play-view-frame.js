@@ -240,6 +240,9 @@
        * only - never over a minigame venue, which owns its own VRAM and
        * camera. Raised by the two branches below after their scene draw. */
       this._fogFrameOk = false;
+      /* The expansion editor's volumes (play-view-editor-overlay.js) go
+       * over field frames only; the field branch raises this. */
+      this._editorFrame = false;
       if (window.LegaiaPlayMinigames && window.LegaiaPlayMinigames.frame(rt, this, skipDraw)) {
         /* An in-world minigame (casino slots, Muscle Dome, Baka Fighter,
          * dance hall) owns the 3D frame; HUD/overlay below still run. Runs
@@ -592,6 +595,7 @@
        * once per eye with the XR view matrices. */
       if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
       this._fogFrameOk = true;
+      this._editorFrame = !skipDraw;
       }
       } catch (e) {
         this._onEngineTrap('engine draw', e);
@@ -611,6 +615,9 @@
       /* Bloom (an enhancement, off by default - the native renderer's bloom
        * pass twin): over the fogged 3D frame, under the screen prims and HUD. */
       if (!skipDraw && this._fogFrameOk && this.bloom) this._drawBloom(rt);
+      /* The expansion workbench preview's editor volumes, over the finished
+       * field picture and under the screen prims (a no-op elsewhere). */
+      if (this._editorFrame && this.editorOverlayOn) this._drawEditorOverlay();
       if (!skipDraw) this._drawScreenPrims(rt);
 
       /* FPS + HUD, sampled twice a second. */
