@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::expansion_map::detail::resolve_mesh_library;
 use legaia_engine_scene::expansion_map::footprint::{footprint, hull_contains, hull_extent};
 use legaia_engine_scene::expansion_map::tile_centre_world;
@@ -209,15 +210,23 @@ fn every_building_on_the_rebirth_maps_blocks_the_player() {
                 }
                 host.world.actors[0].move_state.world_x = sx as i16;
                 host.world.actors[0].move_state.world_z = sz as i16;
+                // A walk that rolls an encounter (or otherwise leaves the
+                // field) proves nothing about the wall: the battle seats the
+                // party elsewhere. Re-enter and take the next side.
+                let mut left_field = false;
                 for _ in 0..90 {
                     host.world.set_pad(btn.mask());
                     match host.tick().expect("tick") {
                         SceneTickEvent::Stepped => {}
                         _ => break,
                     }
+                    if host.world.mode != SceneMode::Field {
+                        left_field = true;
+                        break;
+                    }
                 }
                 host.world.set_pad(0);
-                if host.active_expansion_map() != Some(map.as_str()) {
+                if left_field || host.active_expansion_map() != Some(map.as_str()) {
                     host.enter_expansion_map(map, "").expect("re-enter");
                     continue;
                 }
