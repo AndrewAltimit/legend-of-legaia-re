@@ -50,7 +50,14 @@ const joinPath = (base, k) => (base ? (typeof k === 'number' ? `${base}[${k}]` :
 // A picker's <option>s, built once per distinct list and cloned after: a tab
 // holds dozens of pickers over the same few hundred disc names, and building
 // each option afresh was most of a tab switch's time.
+//
+// A long list (more than LAZY_OPTIONS) is not even cloned until it is used:
+// the closed picker holds only its chosen option, and the whole list goes in
+// the first time it is pressed, focused or keyed. A shop's stock rows each
+// pick from every item, and a few hundred options a row was most of the
+// Items tab's build and its layout.
 const OPTION_CACHE = new Map();
+const LAZY_OPTIONS = 48;
 export function fillOptions(sel, opts, val) {
   const key = opts.map((o) => `${o[0]}\u0001${o[1]}`).join('\u0002');
   let tpl = OPTION_CACHE.get(key);
@@ -65,9 +72,38 @@ export function fillOptions(sel, opts, val) {
     }
     OPTION_CACHE.set(key, tpl);
   }
+  const want = val == null ? null : String(val);
+  if (opts.length > LAZY_OPTIONS) {
+    const at = sel.options.length;
+    const hit = want == null ? null : opts.find((o) => String(o[0]) === want);
+    let stub = null;
+    if (hit) {
+      stub = document.createElement('option');
+      stub.value = String(hit[0]);
+      stub.textContent = hit[1];
+      stub.selected = true;
+      sel.append(stub);
+    } else if (at === 0 && opts.length) {
+      // Nothing chosen and nothing before: the list's first, as a full
+      // picker would show it.
+      stub = document.createElement('option');
+      stub.value = String(opts[0][0]);
+      stub.textContent = opts[0][1];
+      sel.append(stub);
+    }
+    const expand = () => {
+      for (const t of ['pointerdown', 'focus', 'keydown']) sel.removeEventListener(t, expand);
+      const keep = sel.value;
+      const full = tpl.cloneNode(true);
+      if (stub) stub.replaceWith(full);
+      else sel.insertBefore(full, sel.options[at] || null);
+      sel.value = keep;
+    };
+    for (const t of ['pointerdown', 'focus', 'keydown']) sel.addEventListener(t, expand);
+    return !!hit;
+  }
   sel.append(tpl.cloneNode(true));
-  if (val == null) return false;
-  const want = String(val);
+  if (want == null) return false;
   for (const o of sel.options) {
     if (o.value === want) { o.selected = true; return true; }
   }
