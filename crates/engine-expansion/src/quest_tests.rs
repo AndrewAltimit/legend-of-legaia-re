@@ -623,3 +623,37 @@ fn talking_to_the_giver_of_an_active_quest_shows_its_reminder() {
         dialog: "again".into()
     }));
 }
+
+#[test]
+fn boss_chain_levels_follow_the_prerequisite_chain() {
+    let section: QuestSection = toml::from_str(
+        r#"
+[[quests]]
+id = "climb"
+title = "Climb"
+description = ""
+prerequisites = { min_level = 40 }
+objectives = [{ kind = "reach_level", level = 60 }]
+
+[[quests]]
+id = "keeper"
+title = "Keeper"
+description = ""
+prerequisites = { quests = ["climb"], min_level = 50 }
+objectives = [{ kind = "win_boss", boss = "keeper" }]
+
+[[quests]]
+id = "rematch"
+title = "Rematch"
+description = ""
+prerequisites = { quests = ["keeper"] }
+objectives = [{ kind = "win_boss", boss = "echo" }, { kind = "win_boss", boss = "keeper" }]
+"#,
+    )
+    .unwrap();
+    let levels = super::boss_chain_levels(&section);
+    // `climb` must be complete, so its reach_level counts.
+    assert_eq!(levels.get("keeper"), Some(&60));
+    assert_eq!(levels.get("echo"), Some(&60));
+    assert_eq!(levels.len(), 2);
+}

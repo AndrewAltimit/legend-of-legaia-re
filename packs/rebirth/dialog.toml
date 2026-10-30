@@ -31,8 +31,8 @@ Every beast it twisted, too.
 Will you hear what the tower asks
 of those who climb it?"""
 choices = [
-    { label = "Tell me.", set_flags = ["tower_listened"] },
-    { label = "Who are you, really?", reply = "A voice with no body left.\nA warden with nothing to guard.\n\nListen, then.", set_flags = ["guide_asked"] },
+    { label = "Tell me." },
+    { label = "Who are you, really?", reply = "A voice with no body left.\nA warden with nothing to guard.\n\nListen, then." },
 ]
 
 [lines.guide_trial]
@@ -44,6 +44,10 @@ to the weak. It would only eat you.
 Win three battles. Grow until you
 stand at level 40.
 
+The sea gate in the west wall is
+open to you. The isles beyond it
+are kinder than this hall.
+
 Then come back to the stone, and
 I will unseal the way up."""
 
@@ -51,6 +55,10 @@ I will unseal the way up."""
 speaker = "Warden Ysolde"
 text = """
 Three battles, and level 40.
+
+If this hall is too much, take
+the sea gate west. The isles will
+make you stronger.
 
 The tower is patient. It has
 waited longer than you have
@@ -64,6 +72,10 @@ Yes... you will do.
 The seal is lifted. Eight floors
 rise above us, each one a memory
 the Mist would not let go.
+
+A fire keeps watch on the second
+floor. Do not wake its keeper
+before you stand at level 50.
 
 At the top sits the thing that
 gathered them. Climb, and do not
@@ -79,6 +91,9 @@ Then reach the very peak of
 yourself. Level 99, and nothing
 less.
 
+The throne's echo, the trials and
+the old breeds will take you there.
+
 Come back to the stone when there
 is nothing left in you to grow."""
 
@@ -88,11 +103,17 @@ text = """
 There is nothing more the tower
 can teach you.
 
-The memories are at rest. The
-seal can sleep, and so can I.
+The memories are at rest. And now
+I can tell you what I could not
+before.
 
-Thank you. Whatever you face out
-there, you face it reborn."""
+The seal was never on the stair.
+It is on this stone. Under it is
+the first breath of the Mist.
+
+I held it here alone, all this
+time. I am so tired. Will you
+help me let it go?"""
 
 [lines.gauntlet_offer]
 speaker = "The Bell"
@@ -108,6 +129,51 @@ choices = [
     { label = "Leave it.", reply = "The bell sways, and is still." },
 ]
 
+# --- The First Breath (1F, past level 99) -------------------------------------
+
+[lines.breath_offer]
+speaker = "Warden Ysolde"
+text = """
+Stand on the stone, all of you.
+
+When I lift the seal, it will
+come up all at once - everything
+the Mist was before it had a name.
+
+I cannot hold it and fight it.
+That part is yours."""
+choices = [
+    { label = "Lift the seal.", boss = "first_breath" },
+    { label = "Not yet.", reply = "Then I hold it a little longer.\nI am good at that." },
+]
+
+[lines.breath_done]
+speaker = "Warden Ysolde"
+text = """
+...It is gone. I can feel the
+stone go light under me.
+
+The memories are at rest. The
+seal can sleep, and so can I.
+
+Thank you. Whatever you face out
+there, you face it reborn."""
+
+[lines.breath_wind]
+text = "The Breath turns to a howling gale!"
+
+[lines.breath_thunder]
+text = "The heralds answer the Breath!"
+
+[lines.breath_charge]
+text = "The whole hall breathes in..."
+
+[lines.breath_end]
+text = "The stone shudders under it!"
+
+[lines.breath_last]
+text = "It will not be held. It will not!"
+
 # --- Floor arrivals ----------------------------------------------------------
 
 [lines.floor_2f_intro]
@@ -117,8 +183,8 @@ text = """
 heat? The Mist burned here once.
 
 Something tends the brazier at the
-heart of this hall. Approach it
-only when you are ready.)"""
+heart of this hall. It will not
+rise for anyone below level 50.)"""
 
 [lines.floor_3f_intro]
 speaker = "Warden Ysolde"
@@ -137,8 +203,8 @@ text = """
 the green swallowed whole.
 
 Something vast sleeps in the
-sunken court. Let it sleep, or
-wake it on your own terms.)"""
+sunken court. It stirs for no one
+below level 60.)"""
 
 [lines.floor_5f_intro]
 speaker = "Warden Ysolde"
@@ -157,7 +223,8 @@ machines once. They remember how
 to run.
 
 Their master waits in the upper
-alcove. The lever below starts
+alcove, and receives no one below
+level 70. The lever below starts
 something that does not stop.)"""
 
 [lines.floor_7f_intro]
@@ -168,7 +235,8 @@ prayer the Mist drowned is still
 whispering in these walls.
 
 The voice in the inner hall is
-not one of them. Be careful.)"""
+not one of them. It will not sing
+to anyone below level 80.)"""
 
 [lines.floor_8f_intro]
 speaker = "Warden Ysolde"
@@ -177,7 +245,10 @@ text = """
 
 This is where it all gathered.
 Whatever sits up there, it has
-been waiting for you.)"""
+been waiting for you.
+
+Do not climb the last steps below
+level 88. It would only keep you.)"""
 
 # --- Floor trials ------------------------------------------------------------
 
@@ -208,7 +279,11 @@ only to those who do.)"""
 speaker = "Warden Ysolde"
 text = """
 (The garden is quiet. Even the
-thorns are watching you now.)"""
+thorns are watching you now.
+
+The vault above is breathing in
+its sleep. Wake it at level 60,
+not before.)"""
 
 [lines.engine_offer]
 speaker = "The Lever"
@@ -259,7 +334,11 @@ speaker = "Warden Ysolde"
 text = """
 (The fire is out. For the first
 time in an age, the stair is
-cold.)"""
+cold.
+
+The garden above felt it die. Its
+sundial is turning. Go and see
+what it counts out.)"""
 
 [lines.vault_offer]
 speaker = "The Sunken Court"
@@ -276,7 +355,11 @@ choices = [
 speaker = "Warden Ysolde"
 text = """
 (It sleeps for good now. Let the
-green have the rest of it.)"""
+green have the rest of it.
+
+Above is a hall where nothing
+hunts. Rest there. And listen -
+the tower sounds different now.)"""
 
 [lines.regent_offer]
 speaker = "The Iron Regent"
@@ -295,7 +378,11 @@ choices = [
 speaker = "Warden Ysolde"
 text = """
 (The engine is winding down. You
-can hear the tower breathe again.)"""
+can hear the tower breathe again.
+
+Can you hear the singing above?
+Every prayer the Mist drowned. Go
+up when you stand at level 80.)"""
 
 [lines.seraph_offer]
 speaker = "The Azure Seraph"
@@ -315,7 +402,11 @@ choices = [
 speaker = "Warden Ysolde"
 text = """
 (The sanctum is silent. Only the
-throne is left above you.)"""
+throne is left above you.
+
+It took a voice from every one of
+those prayers. It will want yours.
+Be level 88 before you answer.)"""
 
 [lines.guide_sovereign]
 speaker = "The Hollow Throne"
@@ -395,13 +486,18 @@ see no reason to stop now.
 
 Cards, golf, a race, a game of
 hide and seek. Win my tables and
-I will make it worth your while."""
+I will make it worth your while.
+
+The engine floor above? Its Regent
+sees no one under level 70. Play
+a hand while you grow."""
 
 [lines.keeper_tables]
 speaker = "Keeper Odalric"
 text = """
 Every table in the tower is open
-to you now.
+to you now. The card room is by
+the bar, the games room past it.
 
 Win one of each, and come back to
 tell me about it."""
@@ -423,7 +519,7 @@ THE GAMBLER'S REST
 Hold'em at the Tower High Table.
 The Warden's Duel, cards on view.
 
-The Rebirth Links, nine holes up
+The Rebirth Links, six holes up
 the tower's side. The Spiral
 Circuit. And hide and seek in the
 Old Vault."""
@@ -475,6 +571,31 @@ text = """
 Two captures in one move and the
 whole room stands up. You will see."""
 
+[lines.duel_regular_after]
+speaker = "Card-Room Regular"
+text = """
+The throne's empty, they say. The
+second has been playing looser
+ever since. Watch the corners."""
+
+[lines.duel_watcher_after]
+speaker = "Watching Gambler"
+text = """
+You heard it too, didn't you? A
+voice from the top of the tower.
+The whole room went quiet."""
+
+[lines.duel_second_after]
+speaker = "The Warden's Second"
+text = """
+Odalric says you beat every table
+in the house. Sit anyway. The deck
+wants a rematch."""
+choices = [
+    { label = "Deal me in.", mode = "wardens-duel" },
+    { label = "Not yet.", reply = "\"The table will wait.\"" },
+]
+
 [lines.card_room_dealer_hello]
 speaker = "Tower Card Dealer"
 text = """
@@ -485,7 +606,7 @@ keep."""
 [lines.rest_games]
 speaker = "Keeper Odalric"
 text = """
-The games room. Nine holes, a
+The games room. Six holes, a
 race, or hide and seek in the
 old vault."""
 choices = [
@@ -504,13 +625,13 @@ The Ironhide breed is spreading
 out of the tower and into the
 fortress below.
 
-Thin them out. Ten will do, for
-now."""
+Thin them out. Six packs will do,
+for now."""
 
 [lines.bounty_ogres_done]
 speaker = "Warden Ysolde"
 text = """
-Ten fewer. They will breed again,
+Six packs fewer. They will breed,
 of course. Come back when they
 do."""
 
@@ -539,14 +660,31 @@ text = """
 (The Brass Sentinels keep marching
 out of the Engine Deep.
 
-Break a dozen of them, and the
-engine will run slower for it.)"""
+Break eight of their lines, and
+the engine will run slower.)"""
 
 [lines.sentinel_hunt_done]
 speaker = "Warden Ysolde"
 text = """
-(A dozen sentinels scrapped. The
+(Eight sentinel lines broken. The
 engine stutters. Well done.)"""
+
+[lines.bounty_board_done]
+speaker = "Warden Ysolde"
+text = """
+Four bounties. The old breeds are
+thinner than they have been since
+the Mist came.
+
+Take these. The seal kept them
+for hunters like you."""
+
+[lines.echo_breaker_done]
+speaker = "Warden Ysolde"
+text = """
+(Five times broken. Listen - the
+echo has no voice left. Only
+yours comes back from the throne.)"""
 
 [lines.every_floor_done]
 speaker = "Warden Ysolde"
@@ -657,6 +795,23 @@ text = """
 Rrrowww...
 
 (It keeps one eye on the stone.)"""
+
+[lines.stair_sealed]
+text = """
+(The stair rises into a seal of
+pale light. It does not give.
+
+The Warden's Stone waits behind
+you.)"""
+
+[lines.familiar_rest]
+speaker = "The Warden's familiar"
+text = """
+Prrr...
+
+(It has curled up on the stone,
+as if something heavy has been
+lifted from under it.)"""
 
 [lines.hollow_stirs_voice]
 speaker = "The Hollow Voice"
@@ -963,3 +1118,9 @@ text = "The Sanctum falls silent"
 
 [lines.fallen_throne_echo]
 text = "The echo fades"
+
+[lines.banner_first_breath]
+text = "The First Breath"
+
+[lines.fallen_first_breath]
+text = "The stone is light at last"

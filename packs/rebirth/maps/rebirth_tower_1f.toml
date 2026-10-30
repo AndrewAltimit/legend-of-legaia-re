@@ -97,25 +97,32 @@ rect = [17, 43, 18, 43]
 spawn = "entrance"
 requires = { min_level = 30 }
 
-# The sea gate in the west wall opens once the Warden's Trial is done.
+# The sea gate in the west wall opens once Ysolde has spoken: the Rebirth
+# Isles beyond it are where a level-30 party grows into the Warden's Trial.
 [[exits]]
 id = "sea_gate"
 rect = [0, 6, 0, 6]
 to = { kind = "map", map = "isles_beach", spawn = "sea_stair" }
-requires = { quests = ["tower_trial"] }
+requires = { flags = ["tower_heard"] }
 locked_line = "isles_sea_gate"
 
+# The stair up is the seal Ysolde lifts: shut until the Warden's Trial.
 [[exits]]
 id = "stair_up"
 rect = [7, 0, 7, 0]
 to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_below" }
+requires = { flags = ["tower_open"] }
+locked_line = "stair_sealed"
 
-# Stepping onto the dais wakes the floor's guardian - once, ever.
+# Stepping onto the dais wakes the floor's guardian - once, ever, and only
+# once the seal is lifted (a party fresh from Rim Elm meets the Warden
+# first). The stone's own row (8) stays clear of it.
 [[triggers]]
 id = "dais_guardian"
-rect = [5, 5, 9, 8]
+rect = [5, 5, 9, 7]
 event = { kind = "battle", formation = "forge_guard" }
 once = true
+requires = { flags = ["tower_open"] }
 
 # Inside the entrance the Warden's voice first reaches the party: this
 # counts as talking to the guide (`tower_guide`) for `tower_rumour`.
@@ -371,6 +378,8 @@ tile = [4, 8]
 facing = 4
 line = "familiar_purr"
 present = { flags = ["cutscene.tower_intro"] }
+line_after = "familiar_rest"
+after = { flags = ["breath_released"] }
 
 # The octagonal pillars and the carved face pillars flanking the dais, as
 # decorations on their solid bases. The Sky Gardens Tower authors their

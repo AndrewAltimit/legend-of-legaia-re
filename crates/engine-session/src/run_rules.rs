@@ -197,20 +197,72 @@ pub fn start_staged_run_on<H: NewGameHost>(host: &mut H) -> Option<&'static str>
     }
 }
 
-/// The active pack's bosses a Boss Rush appends, at the level of the
-/// strongest retail stage plus five per pack boss.
+/// The active pack's bosses a Boss Rush appends, easiest first: each at the
+/// level its quest chain first admits it at plus two
+/// (`legaia_engine_expansion::quest::boss_chain_levels`), and a boss no quest
+/// names at the strongest retail stage's level plus five per such boss.
 fn boss_rush_pack_stages(world: &legaia_engine_core::world::World) -> Vec<(String, u8)> {
     let Some(c) = world.expansion.battle.compiled.as_ref() else {
         return Vec::new();
     };
+    let chain = world
+        .expansion
+        .pack
+        .as_ref()
+        .map(|p| legaia_engine_expansion::quest::boss_chain_levels(&p.quests))
+        .unwrap_or_default();
+    pack_stage_levels(c.bosses.keys(), &chain)
+}
+
+/// [`boss_rush_pack_stages`]'s ordering over plain data.
+fn pack_stage_levels<'a>(
+    bosses: impl Iterator<Item = &'a String>,
+    chain: &std::collections::BTreeMap<String, u8>,
+) -> Vec<(String, u8)> {
     let base = legaia_engine_run_rules::boss_rush::RETAIL_STAGES
         .last()
         .map_or(30, |s| s.level);
-    c.bosses
-        .keys()
-        .enumerate()
-        .map(|(i, k)| (k.clone(), base.saturating_add(5 * (i as u8 + 1)).min(99)))
-        .collect()
+    let mut unpaced = 0u8;
+    let mut out: Vec<(String, u8)> = bosses
+        .map(|k| {
+            let level = match chain.get(k) {
+                Some(&l) if l > 0 => l.saturating_add(2),
+                _ => {
+                    unpaced = unpaced.saturating_add(1);
+                    base.saturating_add(5u8.saturating_mul(unpaced))
+                }
+            };
+            (k.clone(), level.min(99))
+        })
+        .collect();
+    out.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    out
+}
+
+#[cfg(test)]
+mod pack_stage_tests {
+    use super::pack_stage_levels;
+
+    #[test]
+    fn pack_bosses_run_in_their_quest_chain_order() {
+        let chain = [("warden".to_string(), 50), ("throne".to_string(), 88)]
+            .into_iter()
+            .collect();
+        let bosses = ["throne", "loose", "warden"].map(String::from);
+        let stages = pack_stage_levels(bosses.iter(), &chain);
+        let base = legaia_engine_run_rules::boss_rush::RETAIL_STAGES
+            .last()
+            .unwrap()
+            .level;
+        assert_eq!(
+            stages,
+            vec![
+                ("loose".to_string(), base + 5),
+                ("warden".to_string(), 52),
+                ("throne".to_string(), 90),
+            ]
+        );
+    }
 }
 
 /// What [`boss_rush_step_on`] did this frame.

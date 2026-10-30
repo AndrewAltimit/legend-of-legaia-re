@@ -506,3 +506,31 @@ steps = [
     { do = "wait", frames = 120 },
     { do = "camera_reset", frames = 50 },
 ]
+
+# --- 1F: the First Breath ------------------------------------------------------
+
+# The pack's last fight opens on the Warden's Stone, the seal lifting.
+[cutscenes.breath_intro]
+title = "The First Breath"
+map = "rebirth_tower_1f"
+letterbox = true
+steps = [
+    { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -12.0, zoom = 0.8, frames = 60 },
+    { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
+    { do = "flash", color = [220, 220, 255], frames = 40 },
+    { do = "banner", line = "banner_first_breath" },
+    { do = "wait", frames = 100 },
+]
+
+[cutscenes.breath_fallen]
+title = "The Seal Sleeps"
+map = "rebirth_tower_1f"
+letterbox = true
+steps = [
+    { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },
+    { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
+    { do = "flash", color = [255, 255, 255], frames = 50 },
+    { do = "banner", line = "fallen_first_breath" },
+    { do = "wait", frames = 120 },
+    { do = "camera_reset", frames = 50 },
+]

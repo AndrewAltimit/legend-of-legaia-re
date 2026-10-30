@@ -80,7 +80,9 @@ A chest's dialogue still names the item the script names; the bag receives the r
 
 ## Boss Rush
 
-Boss Rush fights the story bosses back to back from a New Game. Each stage is a scripted battle row of a retail scene (`boss_rush::RETAIL_STAGES`): Gimard, Caruban, Songi, Zeto, Xain, Dohati, Koru and Cort. The run seeds Vahn, Noa and Gala in their starter gear; before each stage the host enters the stage's scene as an opening leg, the party is raised to the stage's level through the ordinary EXP path and rested, and the fight is armed the way `play-window --battle` arms a row (its record's flag arm and music replayed, then the encounter transition). An active pack's bosses follow the retail stages.
+Boss Rush fights the story bosses back to back from a New Game. Each stage is a scripted battle row of a retail scene (`boss_rush::RETAIL_STAGES`): Gimard, Caruban, Songi, Zeto, Xain, Dohati, Koru and Cort. The run seeds Vahn, Noa and Gala in their starter gear; before each stage the host enters the stage's scene as an opening leg, the party is raised to the stage's level through the ordinary EXP path and rested, and the fight is armed the way `play-window --battle` arms a row (its record's flag arm and music replayed, then the encounter transition).
+
+An active pack's bosses follow the retail stages, easiest first: each at the level its quest chain first admits it at plus two (`legaia_engine_expansion::quest::boss_chain_levels`: the highest `min_level` along the prerequisite chain and the `reach_level` objectives that chain completes), and a boss no quest names at the last retail stage's level plus five per such boss.
 
 A won stage pays `STAGE_PURSE` gold and opens the intermission: next battle, rest, buy supplies (resolved by name against the disc's item table), or give up. A lost stage ends the run. The clock counts the frames a stage is entered and fought, not the intermission. The leaderboard (`BossRushRecord`: runs, clears, the most stages, the fastest clear) lives on the world and rides every save the session makes.
 

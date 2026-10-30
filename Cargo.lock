@@ -2120,10 +2120,13 @@ name = "legaia-engine-expansion"
 version = "0.1.0"
 dependencies = [
  "legaia-engine-battle",
+ "legaia-engine-battle-vm",
  "legaia-engine-mode",
  "legaia-engine-modes",
+ "legaia-engine-run-rules",
  "legaia-engine-system",
  "legaia-expansion-format",
+ "legaia-game-tables",
  "toml",
 ]
 

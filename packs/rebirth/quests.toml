@@ -33,7 +33,7 @@ rewards = { set_flags = ["tower_heard"] }
 [[quests]]
 id = "tower_trial"
 title = "The Warden's Trial"
-description = "Warden Ysolde will lift the tower's seal for a party that proves itself in battle and grows strong enough to survive the climb."
+description = "Warden Ysolde will lift the tower's seal for a party that proves itself in battle and grows strong enough to survive the climb. The sea gate in the Atrium's west wall leads to the Rebirth Isles, a gentler place to grow."
 giver = "tower_guide"
 prerequisites = { quests = ["tower_rumour"] }
 start_dialog = "guide_trial"
@@ -122,7 +122,7 @@ id = "sanctum_echoes"
 title = "The Sanctum of Echoes"
 description = "Every prayer the Mist drowned is still whispering on the seventh floor. One voice speaks over all of them."
 giver = "sanctum_echo"
-prerequisites = { quests = ["engine_deep"], min_level = 85 }
+prerequisites = { quests = ["engine_deep"], min_level = 80 }
 start_dialog = "seraph_offer"
 active_dialog = "seraph_offer"
 objectives = [
@@ -136,7 +136,7 @@ id = "tower_sovereign"
 title = "The Hollow Throne"
 description = "Something hollow sits on the throne at the top of the tower, made of everything the Mist took."
 giver = "hollow_throne"
-prerequisites = { quests = ["sanctum_echoes"], min_level = 90 }
+prerequisites = { quests = ["sanctum_echoes"], min_level = 88 }
 start_dialog = "guide_sovereign"
 active_dialog = "guide_sovereign"
 objectives = [
@@ -153,14 +153,29 @@ title = "Rebirth"
 description = "The throne is empty. Warden Ysolde asks one last thing: reach the peak of your own strength."
 auto_start = true
 # After the ending cutscene, not under it.
-prerequisites = { quests = ["tower_sovereign"], flags = ["cutscene.sovereign_falls"] }
+prerequisites = { quests = ["tower_sovereign"], flags = ["throne_broken"] }
 start_dialog = "guide_rebirth"
 objectives = [
     { kind = "reach_level", level = 99, text = "Reach level 99" },
+    { kind = "counter", counter = "bosses_felled", at_least = 5, text = "Fell the tower's five keepers" },
     { kind = "talk", npc = "tower_guide", text = "Return to the Warden's Stone" },
 ]
 complete_dialog = "guide_rebirth_done"
-rewards = { cards = ["heart-of-the-mist"], set_flags = ["reborn"] }
+rewards = { gold = 99999, set_flags = ["reborn"] }
+
+[[quests]]
+id = "first_breath"
+title = "The First Breath"
+description = "Ysolde's seal was never on the stair. Under the Warden's Stone lies the first breath the Mist ever drew, and she has held it down alone since before the Mist came."
+giver = "tower_guide"
+prerequisites = { quests = ["rebirth"], flags = ["reborn"] }
+start_dialog = "breath_offer"
+active_dialog = "breath_offer"
+objectives = [
+    { kind = "win_boss", boss = "first_breath", text = "Release the First Breath" },
+]
+complete_dialog = "breath_done"
+rewards = { cards = ["heart-of-the-mist"], set_flags = ["breath_released"], counters = [{ counter = "bosses_felled" }] }
 
 # --- Side quests -------------------------------------------------------------
 
@@ -169,7 +184,7 @@ id = "every_floor"
 title = "Every Floor"
 description = "Set foot on all eight floors of the Tower of Rebirth."
 auto_start = true
-prerequisites = { quests = ["tower_trial"] }
+prerequisites = { flags = ["tower_open"] }
 ordered = false
 objectives = [
     { kind = "enter_scene", scene = "rebirth_tower_2f", text = "The Ember Stair" },
@@ -186,12 +201,12 @@ rewards = { gold = 20000, items = [{ item = "mist_lantern" }], cards = ["sky-sov
 [[quests]]
 id = "bounty_ironhide"
 title = "Bounty: Ironhide Ogres"
-description = "The Ironhide breed is spreading out of the tower. Thin it out - any monster built on the Dark Ogre counts."
+description = "The Ironhide breed is spreading out of the tower. Thin it out: any fight with a monster built on the Dark Ogre counts."
 giver = "tower_guide"
-prerequisites = { quests = ["tower_trial"] }
+prerequisites = { flags = ["tower_open"] }
 start_dialog = "bounty_ogres_start"
 objectives = [
-    { kind = "defeat_monster", monster = 109, count = 10, text = "Defeat ten Ironhide Ogres" },
+    { kind = "defeat_monster", monster = 109, count = 6, text = "Win six fights against Ironhide Ogres" },
     { kind = "talk", npc = "tower_guide", text = "Report to the Warden's Stone" },
 ]
 complete_dialog = "bounty_ogres_done"
@@ -203,7 +218,7 @@ id = "warden_remedy"
 title = "A Remedy for Stone"
 description = "The Warden's Stone is cracking. Ysolde asks for Healing Fruit to close the cracks."
 giver = "tower_guide"
-prerequisites = { quests = ["tower_trial"] }
+prerequisites = { flags = ["tower_open"] }
 start_dialog = "remedy_start"
 objectives = [
     { kind = "collect_item", item = 123, count = 5, hand_in = true, text = "Gather five Healing Fruit" },
@@ -231,7 +246,7 @@ giver = "regent_seat"
 prerequisites = { quests = ["engine_deep"] }
 start_dialog = "sentinel_hunt_start"
 objectives = [
-    { kind = "defeat_monster", monster = 129, count = 12, text = "Scrap twelve Brass Sentinels" },
+    { kind = "defeat_monster", monster = 129, count = 8, text = "Win eight fights against Brass Sentinels" },
 ]
 complete_dialog = "sentinel_hunt_done"
 rewards = { gold = 40000, items = [{ item = 131, count = 2 }], counters = [{ counter = "bounties" }] }
@@ -256,18 +271,42 @@ id = "seasoned_hunter"
 title = "Seasoned Hunter"
 description = "Win a hundred battles anywhere once the tower is open."
 auto_start = true
-prerequisites = { quests = ["tower_trial"] }
+prerequisites = { flags = ["tower_open"] }
 objectives = [
     { kind = "win_battles", count = 100, text = "Win one hundred battles" },
 ]
 rewards = { gold = 50000, items = [{ item = 236, count = 1 }] }
+
+[[quests]]
+id = "bounty_board"
+title = "Tower Bounty Hunter"
+description = "Ysolde keeps count of every bounty the party brings in. Four, and she will open what the seal kept for hunters."
+auto_start = true
+prerequisites = { flags = ["tower_open"] }
+objectives = [
+    { kind = "counter", counter = "bounties", at_least = 4, text = "Complete four tower bounties" },
+]
+complete_dialog = "bounty_board_done"
+rewards = { gold = 60000, items = [{ item = 0x86, count = 2 }] }
+
+[[quests]]
+id = "echo_breaker"
+title = "Echo Breaker"
+description = "The throne's echo keeps re-forming. Break it five times and it will stop answering in the Sovereign's voice."
+auto_start = true
+prerequisites = { flags = ["throne_broken"] }
+objectives = [
+    { kind = "counter", counter = "echoes_broken", at_least = 5, text = "Break the Echo five times" },
+]
+complete_dialog = "echo_breaker_done"
+rewards = { xp = 60000, items = [{ item = 0x8E, count = 3 }] }
 
 # --- The keeper's tables (5F) ------------------------------------------------
 
 [[quests]]
 id = "keeper_tables"
 title = "The Keeper's Tables"
-description = "Keeper Odalric runs five tables in the Gambler's Rest. Win one of each. (Open the tables with the mode picker.)"
+description = "Keeper Odalric runs five tables in the Gambler's Rest. Win one of each: the card room by the bar holds the High Table and the Warden's Duel, the games room past it the links, the circuit and the vault."
 giver = "rest_keeper"
 prerequisites = { quests = ["gamblers_rest"] }
 start_dialog = "keeper_tables"
@@ -298,7 +337,7 @@ id = "trial_master"
 title = "Trial Master"
 description = "Clear three of the tower's challenges."
 auto_start = true
-prerequisites = { quests = ["tower_trial"] }
+prerequisites = { flags = ["tower_open"] }
 objectives = [
     { kind = "counter", counter = "challenges_cleared", at_least = 3, text = "Clear three challenges" },
 ]
@@ -353,7 +392,8 @@ rewards = { gold = 100000, items = [{ item = 235, count = 1 }], counters = [{ co
 # --- The Rebirth Isles -------------------------------------------------------
 #
 # Past the tower's sea gate (1F west wall) lies the region the Mist hid
-# longest. NPC ids and where they stand:
+# longest. It opens as soon as the party has heard Ysolde (`tower_rumour`),
+# and it is where a level-30 party grows into the Warden's Trial. NPC ids and where they stand:
 #   isles_ferrywoman  isles_beach    by the sea gate's landing
 #   isles_elder       isles_village  the elder's porch
 #   isles_fisher      isles_village  the jetty
@@ -365,7 +405,7 @@ id = "isles_landfall"
 title = "Landfall"
 description = "A ferry nobody remembers rowing has left the party on an island beach. The ferrywoman says the village up the dunes has not seen a stranger in an age."
 giver = "isles_ferrywoman"
-prerequisites = { quests = ["tower_trial"] }
+prerequisites = { quests = ["tower_rumour"] }
 start_dialog = "isles_ferry_hello"
 active_dialog = "isles_ferry_active"
 objectives = [
@@ -380,7 +420,7 @@ id = "isles_nets"
 title = "Torn Nets"
 description = "Something in the shallows shreds the fishers' nets every night. Clear the shore of the beasts that wade in from the reef."
 giver = "isles_fisher"
-prerequisites = { quests = ["isles_landfall"] }
+prerequisites = { flags = ["isles_welcome"] }
 start_dialog = "isles_fisher_offer"
 active_dialog = "isles_fisher_active"
 objectives = [
@@ -411,7 +451,7 @@ id = "isles_pearl"
 title = "The Pearl Below"
 description = "Under the ruins a stair runs down to a grotto where the sea still sings. Something there remembers the islands before the Mist."
 giver = "isles_hermit"
-prerequisites = { quests = ["isles_thornwood"] }
+prerequisites = { flags = ["isles_gate_open"] }
 start_dialog = "isles_hermit_grotto"
 active_dialog = "isles_hermit_grotto"
 objectives = [

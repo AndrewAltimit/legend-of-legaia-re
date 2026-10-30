@@ -1,5 +1,5 @@
 //! Disc-gated: the Rebirth 1F training gauntlet (`tower_gauntlet`: two
-//! waves, then six refill arrivals with three standing at most) fought on
+//! waves, then five refill arrivals with three standing at most) fought on
 //! auto through the native session on its pack map resolves, with no party
 //! member parked in an approach state while refills take freed seats.
 //!
@@ -178,7 +178,8 @@ fn run(permille: u16, seed: u32) -> bool {
             }
         } else if in_battle {
             eprintln!("[ran] tower_gauntlet resolved after {tick} ticks; arrivals {seen:?}");
-            assert_eq!(seen.iter().filter(|s| s.1 >= 3).count(), 2 + 3 + 6);
+            // Two ogres, three lizards, five refills (`battle.toml`).
+            assert_eq!(seen.iter().filter(|s| s.1 >= 3).count(), 2 + 3 + 5);
             return true;
         }
         assert!(

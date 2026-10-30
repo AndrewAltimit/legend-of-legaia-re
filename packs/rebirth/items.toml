@@ -272,4 +272,7 @@ stock = [
     0x7A,
     0x7B,
     { item = "phoenix_plume", requires = { quests = ["isles_nets"] } },
+    # The Pearl's song brings the sea's traders back to Pell.
+    { item = 0x7D, requires = { flags = ["isles_pearl_heard"] } },
+    { item = "sovereign_nectar", requires = { flags = ["isles_pearl_heard"] } },
 ]

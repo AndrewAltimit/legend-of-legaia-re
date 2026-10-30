@@ -427,6 +427,11 @@ mode = "windmill-links"
 name = "Windmill Putt-off"
 holes = [2]
 
+[[party_nights.rounds]]
+mode = "drake-circuit"
+name = "Drake Dash"
+laps = 1
+
 [[party_nights.prizes]]
 place = 1
 gold = 1500

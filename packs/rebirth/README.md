@@ -29,9 +29,9 @@ Rebirth is built for the climb from there to 99.
 |---|---|
 | `pack.toml` | The manifest. |
 | `maps/rebirth_tower_1f.toml` ... `_8f.toml` | The eight floors of the tower. |
-| `battle.toml` | 30 derived monsters, 23 formations (five in waves), seven tower encounter tables and one retail-scene override, 6 bosses. |
-| `progression.toml` | The level curve past 60, EXP and gold multipliers, enemy scaling, level-up rewards. |
-| `quests.toml` | A ten-quest main chain, ten side quests, five challenges. |
+| `battle.toml` | The derived monsters, formations (five in waves), the tower and Isles encounter tables, one retail-scene override, eight bosses (every one refuses Run). |
+| `progression.toml` | The level curve past 40, EXP and gold multipliers, enemy scaling, level-up rewards at 55, 60, 70, 80, 90 and 99. |
+| `quests.toml` | An eleven-quest main chain ending in the First Breath, ten side quests, four Isles quests, five challenges. |
 | `dialog.toml` | Every line the pack says. |
 | `cutscenes.toml` | The tower intro on the first arrival in the Atrium, the voice on the throne speaking at the Gambler's Rest, the Sovereign rising before the last fight and the throne breaking after it, and each floor keeper's intro and fall. |
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
@@ -40,21 +40,21 @@ Rebirth is built for the climb from there to 99.
 | `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips, surf, birdsong) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
 | `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
 | `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers (`scripts/models/generate_rebirth_props.py`). |
-| `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Azure Seraph), chained from that art into a retail one; all on the heroes' own retail clips. |
+| `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Iron Regent), chained from that art into a retail one; all on the heroes' own retail clips. |
 | `spells.toml` | Four tower Seru - Hearthfire, Verdant Bloom, Grove Fang, Tempest Dive - each cast as the retail Seru it grew from and taught by capturing its pack monster once that floor's keeper falls. |
 
 ### The tower
 
 | Floor | Map | Base scene | Party level | What's there |
 |---|---|---|---|---|
-| 1F Atrium | `rebirth_tower_1f` | `tower` (Sky Gardens Tower), built from scratch | 40-50 | The Warden's Stone, the training gauntlet bell, the card dealer, the stair down to Rim Elm |
-| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), kept whole | 50-60 | Boss: the Cinder Warden |
-| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), kept whole | 55-65 | The Garden Gauntlet (four waves), the Gilded Herd |
-| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), kept whole | 60-70 | Boss: the Verdant Colossus |
+| 1F Atrium | `rebirth_tower_1f` | `tower` (Sky Gardens Tower), built from scratch | 40-48 | The Warden's Stone, the training gauntlet bell, the card dealer, the stair down to Rim Elm |
+| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), kept whole | 50-55 | Boss: the Cinder Warden |
+| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), kept whole | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
+| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), kept whole | 60-68 | Boss: the Verdant Colossus |
 | 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), kept whole | - | No monsters; Keeper Odalric and his five tables |
-| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), kept whole | 70-85 | Boss: the Iron Regent; the Engine Gauntlet (twelve refills) |
-| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), kept whole | 85-95 | Boss: the Azure Seraph |
-| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), kept whole | 95-99 | Superboss: the Hollow Sovereign, in two waves |
+| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), kept whole | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
+| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), kept whole | 80-88 | Boss: the Azure Seraph |
+| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), kept whole | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch on the long carpet |
 
 1F and 2F carry the detail layer
 ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)):
@@ -82,12 +82,15 @@ Deep; three orbiting echo crystals and blue motes in the Sanctum; dust,
 violet motes and a low haze in the Hollow Throne.
 
 Each floor's stairs chain to the next (`exits` with `to = { kind = "map" }`);
-the 1F stair down leads to Rim Elm.
+the 1F stair down leads to Rim Elm. The 1F stair up is the seal Ysolde
+lifts: it stays shut (`requires = { flags = ["tower_open"] }`, with a locked
+line) until the Warden's Trial is done.
 
 ### The Rebirth Isles
 
-Past a sea gate in the Atrium's west wall (open once the Warden's Trial is
-done) lies an outdoor region of four maps, each laid out from scratch at
+Past a sea gate in the Atrium's west wall (open once Ysolde has first
+spoken, so a level-30 party grows here into the Warden's Trial) lies an
+outdoor region of four maps, each laid out from scratch at
 the field grid's larger sizes and dressed with the detail layer. The
 four stand on a sculpted `[terrain]` (sloping shores, cliffs, dunes, a
 hill, a forest of wooded banks, a rock floor and a pool under animated
@@ -117,6 +120,14 @@ The region's monsters, formations, encounter tables and mini-boss are
 | Iron Regent | 6F | Jette | 31 "Cort's War" | the Regent and two Brass Sentinels |
 | Azure Seraph | 7F | Lapis | 29 "The Cold Koru" | the Seraph alone |
 | Hollow Sovereign | 8F | Dohati, then Songi | 61 "Apocalypse" | wave 1: the Sovereign and two Throne Heralds; wave 2: the Sovereign Unbound |
+| Echo of the Throne | 8F | Songi | 73 (Wild Arms battle) | repeatable rematch: the Unbound and a herald, two more heralds refilling |
+| The First Breath | 1F, past 99 | Rogue | 61 "Apocalypse" | the Breath alone, calling two heralds at 70% and two more at 40% |
+| Thornwood Queen | the Isles | Queen Bee | 28 "Attack!" | the Queen and two Ruin Wasps |
+
+All but the Echo are `once = true`: their gold and item rewards pay out on
+the first victory and the boss refuses a second start. The Echo is the
+repeatable endgame fight. Every boss is `no_escape = true`, which also seats
+it on the battle loader's scripted profile (ATK x5/4, both defences x2).
 
 Each keeper's fight opens on its intro cutscene (`battle.toml` `intro`):
 the shot finds the keeper's place, the entrance sting hits, the screen
@@ -124,11 +135,6 @@ flashes the keeper's colour and its title banner rises. Each phase change
 rings the phase shimmer under the script's banner line, and a won fight
 closes back on the floor (`outro`) on the falling knell and a banner of
 what is left.
-| Echo of the Throne | 8F | Songi | 61 "Apocalypse" | repeatable rematch: the Unbound and a herald, four more heralds refilling |
-
-The first five are `once = true`: their gold and item rewards pay out on the
-first victory and the boss refuses a second start. The Echo is the
-repeatable endgame fight.
 
 Every boss fights with a boss script (`[monsters.<key>.script]` in
 `battle.toml`) instead of its base monster's retail AI. Each move is the base
@@ -139,13 +145,14 @@ disc's:
 |---|---|
 | Cinder Warden | Below half its armour splits: attack x1.3, speed x1.25, Lava Breath and a double swing at the weakest member. Enrages at round 15. |
 | Verdant Colossus | Below 60% it heals 15%, hardens, calls a Moss Grude back and telegraphs Earthquake; below 25% it turns to earth and rages. |
-| Iron Regent | Strikes whoever hits hardest; at two thirds and one third it summons two Brass Sentinels into empty seats, and its last phase telegraphs Hyper Crush. |
-| Azure Seraph | Below half turns to thunder and telegraphs Water Hazard; from round 14 the sky opens: Thunder Storm and triple swings. |
+| Iron Regent | Strikes whoever hits hardest; at two thirds and one third it summons a Brass Sentinel into an empty seat, and its last phase telegraphs Hyper Crush. |
+| Azure Seraph | Below half turns to thunder, calls two Fallen Lanterns (the drowned choir) and telegraphs Water Hazard; from round 14 the sky opens: Thunder Storm and triple swings. |
 | Hollow Sovereign | Three phases: at two thirds it calls a herald, at one third it is unmade and telegraphs Grand Beam. A last stand, and an enrage at round 20. |
 | Sovereign Unbound | Chaos Flare from the start; below half a telegraphed Thunder Burst. A last stand of its own. |
+| The First Breath | Fire, then wind (70%: double swings at the weakest, Chaos Flare, two heralds), then thunder (40%: heals 10%, two more heralds, a telegraphed Grand Beam with the chime). A last stand, and an enrage at round 22. |
 
 Their banner lines are the `warden_*`, `colossus_*`, `regent_*`, `seraph_*`,
-`sovereign_*` and `unbound_*` lines in `dialog.toml`.
+`sovereign_*`, `unbound_*` and `breath_*` lines in `dialog.toml`.
 Every telegraphed spell is `ignore_mp`: once a boss has charged it, it lands
 whatever MP the boss has left.
 
@@ -155,8 +162,18 @@ The main chain climbs the tower: **A Tower Wakes** (starts on its own at
 level 30) -> **The Warden's Trial** -> **The Ember Stair** -> **The Hanging
 Garden** -> **The Verdant Vault** -> **The Gambler's Rest** -> **The Engine
 Deep** -> **The Sanctum of Echoes** -> **The Hollow Throne** -> **Rebirth**
-(reach level 99 and return to the stone). Each boss quest has a minimum
-level, so the chain paces the climb.
+(reach level 99 and return to the stone) -> **The First Breath** (what
+Ysolde's seal held under the stone all along). Each boss quest has a minimum
+level (50, 60, 70, 80, 88), so the chain paces the climb, and every keeper's
+payoff line - and each floor's arrival line - names the level the next one
+asks for, so the player always knows where to go and when.
+
+The Isles quests open as soon as Ysolde has spoken (**Landfall**, **Torn
+Nets**, **The Thornwood Queen** from level 35, **The Pearl Below**): the
+region is the bridge from the tower's opening at 30 to the trial at 40. A
+few NPCs answer progress through `line_after`: the Warden's familiar once the
+throne is empty, the 5F card room once the engine stops and the throne
+falls.
 
 Side quests: **Every Floor** (stand on all eight floors), two repeatable
 bounties (**Ironhide Ogres**, **Brass Sentinels**), **A Remedy for Stone**
@@ -240,56 +257,61 @@ before and after a piece goes on.
 ## Levelling to 99: the numbers
 
 **The curve.** Retail asks for 9.65 million XP to reach 99, 7.5 million of
-it past level 60. `progression.toml` keeps retail's steps through 59 and
-scales each later step to 35% (60-79) and 30% (80-99): 60 to 99 costs
-**2,392,683 XP** per character.
+it past level 60. `progression.toml` keeps retail's steps through 39 (the
+story) and cuts each later step in bands (x0.75 at 40 down to x0.3 at 90),
+so every level from 40 to 99 costs between about 36,000 and 90,000 XP and
+the cost rises steadily: 60 to 99 is **2,492,187 XP** per character.
 
 **A fight's EXP.** A won battle sums its monsters' EXP; the pack's enemy
-scaling multiplies it by `1 + 1% x (party level - 50)` (x1.49 at level 99,
-under the x1.5 cap), `xp_mul` adds half again, and the retail victory share gives
-each of three living members a quarter of the pool (3/4 split three ways):
+scaling multiplies it (and the monsters' stats) by `1 + 0.5% x (party level
+- 50)`, at most x1.25 - slower than the party itself grows, so a level gained
+is a level that counts. `xp_mul` adds half again, and the retail victory
+share gives each of three living members a quarter of the pool:
 
 ```text
 share = sum(monster exp) x scale(level) x 1.5 x 3/4 / 3
 ```
 
-| Table | Played at | Average pool | Share per member | Next level costs | Fights per level |
-|---|---|---|---|---|---|
-| `tower_1f` | 45 | 18,666 | 7,000 | 61,347 | 8.8 |
-| `tower_2f` | 55 | 23,000 | 9,056 | 91,597 (still retail) | 10.1 |
-| `tower_3f` | 62 | 26,514 | 11,136 | 40,740 | 3.7 |
-| `tower_4f` | 68 | 32,760 | 14,496 | 48,998 | 3.4 |
-| `tower_6f` | 78 | 42,160 | 20,236 | 64,456 | 3.2 |
-| `tower_7f` | 90 | 54,640 | 28,686 | 73,543 | 2.6 |
+**The curve, checked.** `crates/engine-expansion/tests/rebirth_balance.rs`
+seats every pack formation the way the engine does (`derive_monster`, the
+level scaling, the battle loader's install profile), runs both sides' hits
+through the melee kernel (`physical_predamage`) and holds each fight to a
+target at Normal, Hard and Nightmare; the model's assumptions are in the
+file's header. `rebirth_chain.rs` plays the whole quest chain through the
+tracker. At Normal, at the level each area is first met:
 
-Grinding the matching floor's table, **60 to 99 takes about 110 battles** -
-two or three full climbs of the tower. The gauntlets are the fast lane: the
-Garden Gauntlet's fourteen monsters pay about 59,000 per member at level 90,
-the Engine Gauntlet's fifteen about 98,000, and the Echo of the Throne about
-87,000, each worth a level or more in one battle. Boss quests add 20,000 to
-50,000 quest EXP on top.
+| Area | Fight | Level | Rounds to win | Rounds survived unhealed | Worst move | Fights per level |
+|---|---|---|---|---|---|---|
+| Isles | `isles_shore` | 30 | 3.4 | 9.7 | 122 | 6.1 |
+| Isles | Thornwood Queen | 35 | 7.5 | 4.4 | 980 | 3.4 |
+| 1F | `forge_guard` | 40 | 4.1 | 9.0 | 145 | 4.3 |
+| 1F | Tower Gauntlet | 45 | 9.1 | 13.3 | 145 | 1.8 |
+| 2F | Cinder Warden | 50 | 9.0 | 6.5 | 1,114 | 1.9 |
+| 3F | `mire_bloom` | 55 | 4.6 | 10.6 | 170 | 3.2 |
+| 3F | Garden Gauntlet | 60 | 12.7 | 14.5 | 167 | 1.2 |
+| 4F | `fountain_court` | 60 | 4.7 | 10.2 | 187 | 2.8 |
+| 4F | Verdant Colossus | 65 | 9.8 | 6.4 | 785 | 1.7 |
+| 6F | `storm_engine` | 70 | 4.9 | 7.4 | 286 | 2.5 |
+| 6F | Iron Regent | 75 | 11.8 | 4.3 | 1,314 | 1.3 |
+| 7F | `prism_storm` | 80 | 3.9 | 7.6 | 461 | 3.0 |
+| 7F | Azure Seraph | 85 | 11.1 | 6.0 | 1,874 | 1.9 |
+| 8F | `herald_watch` | 90 | 4.5 | 7.2 | 470 | 2.9 |
+| 8F | Hollow Sovereign | 90 | 14.7 | 3.5 | 1,514 | 1.0 |
+| 8F | Echo of the Throne | 95 | 10.2 | 6.5 | 734 | 1.6 |
+| 8F | Echo Storm (x1.5) | 99 | 14.4 | 3.5 | 1,411 | - |
+| 1F | The First Breath | 99 | 15.3 | 4.7 | 2,620 | - |
 
-**The stat budget.** A level-99 character's base stats reach their growth
-ceilings (`DAT_80076918`; Vahn: HP 5,000, ATK 465, UDF/LDF 425). With endgame
-gear a party member lands Tactical Art hits of roughly 1,300-1,600 Offense
-([battle-formulas.md](../../docs/subsystems/battle-formulas.md#offense-value)).
-Monster stats here are **record** values: the battle loader installs a random
-encounter's defences x7/4 and a boss formation's ATK x5/4 and defences x2,
-and the pack's scaling multiplies everything by up to x1.49. The tuning
-targets, at the floor's level:
+Field fights last three to five rounds and move the bar every three to six
+of them; a keeper or gauntlet is worth a level or more. Hard (enemy stats
+x1.35, attacks x1.25) stretches the keepers to 12-20 rounds; Nightmare
+(x1.8, x1.5) to 16-23, with the party lasting about one round unhealed
+against the superbosses - winnable with Spirit and healing, and no single
+blow at any preset lands for a full-HP member's whole HP.
 
-- 7F field monsters: record DEF 250-270 -> about 620 installed at 90, so an
-  Art hit lands for roughly 700; record ATK 560-610 -> about 1,100 Offense
-  against a level-90 party's ~650 defence, about 450 a swing.
-- The Hollow Sovereign: record HP 44,000 per phase, which scaling holds at the
-  65,535 cap by level 99, so the two waves are about 131,000 HP together; record
-  DEF 260-280 -> about 800 installed, roughly 600 an Art hit, so a full
-  level-99 party needs around ten rounds. Its second phase's record ATK 850
-  lands about 1,500 a swing on a 9,999-HP party member - a fight that needs
-  healing and Spirit, but one a prepared level-99 party wins.
-
-These figures are worked from the formulas, not measured over a full fight;
-retuning is a number edit in `battle.toml`.
+**Rewards on the way.** Level 55 brings the tower's arts and a Power and
+Guardian Water, 80 the Rebirth finishers, 99 the Warden's last request and
+the First Breath; the gear chase runs from the Ra-Seru set through the
+Rebirth set (see Gear).
 
 ## Playing it
 
@@ -401,4 +423,13 @@ own copy, so the pack is safe to share. The validator enforces it.
 The gaps found while building this pack - arming a challenge, entering a
 mode from a map, gated exits, triggers and NPC lines, rest points - are
 format features now ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#gates)).
-The stairs stay open by choice: the quest chain paces the climb by level.
+Above 1F the stairs stay open by choice: the quest chain paces the climb by level.
+
+Every pack flag and counter the pack writes is read somewhere (the
+validator's flow lints hold it to that): the trial's `tower_open` lifts the
+stair seal and arms the dais guardian, `rest_open` opens the 5F tables,
+`hollow_heard`, `tables_beaten`, `sovereign_fallen` and `breath_released`
+turn NPC lines, `throne_broken` and `reborn` gate the last two quests, the
+Isles flags gate the next Isles quest and Pell's late stock, and the
+`bosses_felled`, `bounties` and `echoes_broken` counters are objectives of
+**Rebirth**, **Tower Bounty Hunter** and **Echo Breaker**.

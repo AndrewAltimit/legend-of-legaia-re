@@ -817,6 +817,51 @@ impl QuestWorld for StaticQuestWorld {
     }
 }
 
+/// The party level each `battle.toml` boss a quest asks for is first met
+/// at: the highest `min_level` along the quest's prerequisite chain, and the
+/// `reach_level` objectives of the quests that chain completes. A boss more
+/// than one quest names takes the lowest. Bosses no quest names are absent.
+///
+/// The pack's own pacing, read from data it already carries - what a Boss
+/// Rush stages its pack bosses at.
+pub fn boss_chain_levels(section: &QuestSection) -> BTreeMap<String, u8> {
+    fn chain(section: &QuestSection, q: &QuestDef, seen: &mut Vec<String>) -> u8 {
+        if seen.contains(&q.id) {
+            return 0;
+        }
+        seen.push(q.id.clone());
+        let mut level = q.prerequisites.min_level.unwrap_or(0);
+        for id in &q.prerequisites.quests {
+            let Some(p) = section.quest(id) else {
+                continue;
+            };
+            let reached = p
+                .objectives
+                .iter()
+                .filter_map(|o| match o.goal {
+                    Goal::ReachLevel { level } => Some(level),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+            level = level.max(reached).max(chain(section, p, seen));
+        }
+        level
+    }
+    let mut out: BTreeMap<String, u8> = BTreeMap::new();
+    for q in &section.quests {
+        for o in &q.objectives {
+            if let Goal::WinBoss { boss: Some(b), .. } = &o.goal {
+                let level = chain(section, q, &mut Vec::new());
+                out.entry(b.clone())
+                    .and_modify(|l| *l = (*l).min(level))
+                    .or_insert(level);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 #[path = "quest_tests.rs"]
 mod tests;

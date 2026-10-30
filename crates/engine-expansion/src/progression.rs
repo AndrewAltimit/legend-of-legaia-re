@@ -263,14 +263,14 @@ mod rebirth {
         assert_eq!(prog.problems(), Vec::<String>::new());
     }
 
-    /// Rebirth's curve keeps retail's to level 59 and puts level 99 within a
-    /// fraction of retail's total.
+    /// Rebirth's curve keeps retail's to level 39 (the story's levels) and
+    /// puts level 99 within a fraction of retail's total.
     #[test]
     fn the_rebirth_curve_shortens_the_endgame() {
         let prog: ProgressionSection = toml::from_str(PROGRESSION).unwrap();
         let retail = legaia_engine_battle::levelup::retail_xp_table();
         let t = xp_table(&prog.xp_curve, &retail);
-        assert_eq!(&t[..58], &retail[..58]);
+        assert_eq!(&t[..38], &retail[..38]);
         let (r60, r99, t99) = (retail[57], retail[97], t[97]);
         assert!(
             t99 - r60 < (r99 - r60) / 3 + 1,

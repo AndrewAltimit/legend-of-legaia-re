@@ -20,7 +20,7 @@
 [monsters.ironhide_ogre]
 base = { kind = "monster", id = 109 }
 name = "Ironhide Ogre"
-hp = 5300
+hp = 4600
 attack = 340
 defence = 170
 speed = { mul = 1.2 }
@@ -31,7 +31,7 @@ drop = { item = { kind = "item", id = 121 }, chance_pct = 25 }
 [monsters.ember_lizard]
 base = { kind = "monster", id = 124 }
 name = "Ember Lizard"
-hp = 4900
+hp = 4300
 attack = 360
 defence = 160
 intelligence = { mul = 1.5 }
@@ -43,7 +43,7 @@ element = 2
 [monsters.runed_golem]
 base = { kind = "monster", id = 130 }
 name = "Runed Golem"
-hp = 6000
+hp = 5200
 attack = 320
 defence = 190
 exp = 6000
@@ -53,7 +53,7 @@ steal = { item = { kind = "item", id = 125 }, chance_pct = 20 }
 [monsters.gale_hound]
 base = { kind = "monster", id = 42 }
 name = "Gale Hound"
-hp = 3900
+hp = 3500
 attack = 350
 defence = 150
 speed = { mul = 1.3 }
@@ -123,7 +123,7 @@ name = "Gilded Bison"
 hp = 8500
 attack = 400
 defence = 200
-exp = 8200
+exp = 9500
 # The garden's prize: a bison worth a small fortune.
 gold = 12000
 drop = { item = { kind = "item", id = 252 }, chance_pct = 3 }
@@ -143,7 +143,7 @@ drop = { item = { kind = "item", id = 123 }, chance_pct = 20 }
 [monsters.verdant_iota]
 base = { kind = "monster", id = 155 }
 name = "Verdant Iota"
-hp = 9200
+hp = 7400
 attack = 430
 defence = 215
 exp = 9600
@@ -153,7 +153,7 @@ drop = { item = { kind = "item", id = 221 }, chance_pct = 4 }
 [monsters.grove_kemaro]
 base = { kind = "monster", id = 146 }
 name = "Grove Kemaro"
-hp = 8700
+hp = 7000
 attack = 420
 defence = 220
 intelligence = { mul = 1.4 }
@@ -163,7 +163,7 @@ gold = 5000
 [monsters.fountain_freed]
 base = { kind = "monster", id = 94 }
 name = "Fountain Freed"
-hp = 9700
+hp = 7200
 attack = 410
 defence = 210
 intelligence = { mul = 1.4 }
@@ -174,7 +174,7 @@ drop = { item = { kind = "item", id = 222 }, chance_pct = 4 }
 [monsters.moss_grude]
 base = { kind = "monster", id = 106 }
 name = "Moss Grude"
-hp = 10200
+hp = 8200
 attack = 440
 defence = 230
 exp = 10000
@@ -186,7 +186,7 @@ steal = { item = { kind = "item", id = 140 }, chance_pct = 15 }
 [monsters.brass_sentinel]
 base = { kind = "monster", id = 129 }
 name = "Brass Sentinel"
-hp = 11900
+hp = 8800
 attack = 490
 defence = 240
 exp = 12400
@@ -196,7 +196,7 @@ drop = { item = { kind = "item", id = 131 }, chance_pct = 6 }
 [monsters.furnace_mask]
 base = { kind = "monster", id = 127 }
 name = "Furnace Mask"
-hp = 11000
+hp = 7600
 attack = 500
 defence = 230
 intelligence = { mul = 1.5 }
@@ -207,7 +207,7 @@ element = 2
 [monsters.storm_barra]
 base = { kind = "monster", id = 143 }
 name = "Storm Barra"
-hp = 11600
+hp = 7400
 attack = 520
 defence = 235
 speed = { mul = 1.2 }
@@ -218,7 +218,7 @@ drop = { item = { kind = "item", id = 224 }, chance_pct = 4 }
 [monsters.echo_lamia]
 base = { kind = "monster", id = 133 }
 name = "Echo Lamia"
-hp = 12800
+hp = 7400
 attack = 500
 defence = 245
 intelligence = { mul = 1.5 }
@@ -231,7 +231,7 @@ steal = { item = { kind = "item", id = 142 }, chance_pct = 10 }
 [monsters.sleepless_one]
 base = { kind = "monster", id = 121 }
 name = "Sleepless One"
-hp = 16200
+hp = 10500
 attack = 580
 defence = 255
 exp = 16000
@@ -241,7 +241,7 @@ drop = { item = { kind = "item", id = 227 }, chance_pct = 4 }
 [monsters.fallen_lantern]
 base = { kind = "monster", id = 118 }
 name = "Fallen Lantern"
-hp = 15300
+hp = 10000
 attack = 610
 defence = 250
 exp = 15600
@@ -251,8 +251,8 @@ drop = { item = { kind = "item", id = 128 }, chance_pct = 10 }
 [monsters.storm_gilium]
 base = { kind = "monster", id = 161 }
 name = "Storm Gilium"
-hp = 17800
-attack = 560
+hp = 9800
+attack = 520
 defence = 265
 exp = 16800
 gold = 9200
@@ -262,8 +262,8 @@ steal = { item = "mist_tonic", chance_pct = 12 }
 [monsters.prism_topaz]
 base = { kind = "monster", id = 112 }
 name = "Prism Topaz"
-hp = 17000
-attack = 590
+hp = 9400
+attack = 540
 defence = 270
 exp = 16400
 gold = 9000
@@ -316,7 +316,7 @@ moves = [
 [monsters.verdant_colossus]
 base = { kind = "monster", id = 174 }
 name = "Verdant Colossus"
-hp = 40000
+hp = 32000
 mp = 1500
 attack = 540
 defence = 255
@@ -364,9 +364,9 @@ attack = { mul = 1.3 }
 [monsters.iron_regent]
 base = { kind = "monster", id = 170 }
 name = "Iron Regent"
-hp = 50000
+hp = 29000
 mp = 1500
-attack = 620
+attack = 560
 defence = 270
 exp = 56000
 gold = 42000
@@ -392,7 +392,7 @@ sound = { kind = "sound", id = "sting_phase" }
 # The engine stokes: a furnace flash and a warm glow.
 flash = { color = [255, 200, 120], frames = 30 }
 tint = { color = [36, 22, 0], frames = 50 }
-summon = ["brass_sentinel", "brass_sentinel"]
+summon = ["brass_sentinel"]
 moves = [
     { attack = 2, hits = 2, weight = 2 },
     { attack = 0, weight = 2 },
@@ -406,11 +406,11 @@ sound = { kind = "sound", id = "sting_phase" }
 # Turned to iron: the colour drains toward a cold grey-gold.
 flash = { color = [255, 255, 230], frames = 30 }
 tint = { color = [10, 26, 44], frames = 50, mode = "subtract" }
-summon = ["brass_sentinel", "brass_sentinel"]
+summon = ["brass_sentinel"]
 defence = { mul = 1.4 }
 moves = [
     { spell = 0x4B, weight = 2, charge = true, ignore_mp = true, charge_line = "regent_crush", cooldown = 3 },
-    { attack = 3, hits = 3, weight = 3 },
+    { attack = 3, hits = 2, weight = 3 },
 ]
 
 [monsters.azure_seraph]
@@ -418,7 +418,7 @@ base = { kind = "monster", id = 167 }
 name = "Azure Seraph"
 hp = 60000
 mp = 4000
-attack = 700
+attack = 620
 # Lapis's own record defence is 975; the seraph trades armour for reach.
 defence = 300
 intelligence = 900
@@ -451,6 +451,8 @@ sound = { kind = "sound", id = "sting_phase" }
 flash = { color = [140, 190, 255], frames = 40 }
 tint = { color = [0, 14, 44], frames = 60 }
 element = 4
+# The drowned choir answers her.
+summon = ["fallen_lantern", "fallen_lantern"]
 moves = [
     { spell = 0x71, weight = 2, charge = true, ignore_mp = true, charge_line = "seraph_tide_charge", cooldown = 3 },
     { spell = 0x75, weight = 1, cooldown = 2 },
@@ -462,8 +464,8 @@ moves = [
 [monsters.throne_herald]
 base = { kind = "monster", id = 149 }
 name = "Throne Herald"
-hp = 24000
-attack = 700
+hp = 12000
+attack = 600
 defence = 270
 exp = 20000
 gold = 10000
@@ -473,9 +475,9 @@ drop = { item = "phoenix_plume", chance_pct = 8 }
 [monsters.hollow_sovereign]
 base = { kind = "monster", id = 138 }
 name = "Hollow Sovereign"
-hp = 44000
+hp = 30000
 mp = 3000
-attack = 780
+attack = 520
 defence = 260
 speed = { mul = 1.4 }
 intelligence = { mul = 1.6 }
@@ -528,16 +530,16 @@ tint = { color = [40, 60, 30], frames = 60, mode = "subtract" }
 sound = { kind = "sound", id = "chime" }
 moves = [
     { spell = 0x63, weight = 2, charge = true, ignore_mp = true, charge_line = "sovereign_ultimate", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
-    { attack = 0, hits = 3, weight = 2, target = "lowest_hp" },
+    { attack = 0, hits = 2, weight = 2, target = "lowest_hp" },
     { spell = 0x58, weight = 1 },
 ]
 
 [monsters.sovereign_unbound]
 base = { kind = "monster", id = 179 }
 name = "Sovereign Unbound"
-hp = 44000
+hp = 34000
 mp = 4000
-attack = 850
+attack = 540
 defence = 280
 speed = { mul = 1.3 }
 intelligence = { mul = 1.5 }
@@ -574,6 +576,63 @@ moves = [
     { spell = 0x74, weight = 2, charge = true, ignore_mp = true, charge_line = "unbound_charge", cooldown = 3 },
     { spell = 0x36, weight = 2, cooldown = 1 },
     { attack = 2, hits = 2, weight = 2 },
+]
+
+# --- Past level 99: the First Breath -------------------------------------------
+#
+# What Ysolde's seal held under the Warden's Stone all along: the Mist's
+# first breath, older than the throne. It is the pack's last fight, offered
+# once the party stands at level 99 (quests.toml `first_breath`). Built on
+# Rogue, the retail boss that cycles its element, it turns through fire,
+# wind and thunder as it falls and calls the throne's heralds back once.
+# Rogue's swings stand; 0x25 Fire Breath, 0x77 Thunder Storm, 0x36 Chaos
+# Flare, 0x63 Grand Beam.
+
+[monsters.first_breath]
+base = { kind = "monster", id = 168 }
+name = "The First Breath"
+hp = 52000
+mp = 4000
+attack = 700
+defence = 300
+intelligence = { mul = 2.0 }
+exp = 65000
+gold = 65000
+
+[monsters.first_breath.script]
+immune = ["sleep", "confuse", "numb", "stone", "curse", "venom"]
+last_stand = { line = "breath_last" }
+enrage = { when = { round = 22 }, line = "breath_end", attack = { mul = 1.3 } }
+
+[[monsters.first_breath.script.phases]]
+element = 2
+moves = [
+    { attack = 0, weight = 3 },
+    { spell = 0x25, weight = 2, cooldown = 1 },
+]
+
+[[monsters.first_breath.script.phases]]
+when = { hp_below_pct = 70 }
+line = "breath_wind"
+element = 3
+speed = { mul = 1.2 }
+summon = ["throne_herald", "throne_herald"]
+moves = [
+    { attack = 0, hits = 2, weight = 3, target = "lowest_hp" },
+    { spell = 0x36, weight = 1, cooldown = 2 },
+]
+
+[[monsters.first_breath.script.phases]]
+when = { hp_below_pct = 40 }
+line = "breath_thunder"
+element = 4
+attack = { mul = 1.15 }
+heal_pct = 10
+summon = ["throne_herald", "throne_herald"]
+moves = [
+    { spell = 0x63, weight = 2, charge = true, ignore_mp = true, charge_line = "breath_charge", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
+    { spell = 0x77, weight = 1, cooldown = 1 },
+    { attack = 0, hits = 2, weight = 2 },
 ]
 
 # --- Formations: field encounters --------------------------------------------
@@ -632,7 +691,12 @@ monsters = ["sleepless_one", "fallen_lantern", "sleepless_one"]
 
 [formations.prism_storm]
 label = "Prism Storm"
-monsters = ["prism_topaz", "storm_gilium", "prism_topaz", "fallen_lantern"]
+monsters = ["prism_topaz", "storm_gilium", "fallen_lantern"]
+
+# 8F: the throne's honour guard walks the long carpet.
+[formations.herald_watch]
+label = "Herald Watch"
+monsters = ["throne_herald", "storm_gilium", "throne_herald"]
 
 # --- Formations: gauntlets (waves) -------------------------------------------
 
@@ -648,7 +712,7 @@ monsters = ["ember_lizard", "ember_lizard", "ember_lizard"]
 [[formations.tower_gauntlet.waves]]
 monsters = ["runed_golem", "ironhide_ogre"]
 arrival = "refill"
-count = 6
+count = 5
 max_standing = 3
 
 # 3F: four full waves of the garden, the last one the gilded herd.
@@ -657,13 +721,13 @@ label = "Garden Gauntlet"
 monsters = ["thorn_mantis", "thorn_mantis", "thorn_mantis"]
 
 [[formations.garden_gauntlet.waves]]
-monsters = ["mire_slime", "mire_slime", "bloom_mushura", "bloom_mushura"]
+monsters = ["mire_slime", "mire_slime", "bloom_mushura"]
 
 [[formations.garden_gauntlet.waves]]
-monsters = ["thorn_mantis", "bloom_mushura", "mire_slime", "thorn_mantis"]
+monsters = ["thorn_mantis", "bloom_mushura", "mire_slime"]
 
 [[formations.garden_gauntlet.waves]]
-monsters = ["gilded_bison", "gilded_bison", "gilded_bison"]
+monsters = ["gilded_bison", "gilded_bison"]
 
 # 6F: the engine never stops. One opening line, then twelve arrivals
 # feeding every free seat, four standing at once.
@@ -674,8 +738,8 @@ monsters = ["brass_sentinel", "brass_sentinel", "brass_sentinel"]
 [[formations.engine_gauntlet.waves]]
 monsters = ["furnace_mask", "storm_barra", "echo_lamia", "brass_sentinel"]
 arrival = "refill"
-count = 12
-max_standing = 4
+count = 6
+max_standing = 3
 
 # --- Formations: bosses ------------------------------------------------------
 
@@ -704,6 +768,11 @@ monsters = ["hollow_sovereign", "throne_herald", "throne_herald"]
 [[formations.hollow_throne.waves]]
 monsters = ["sovereign_unbound"]
 
+# The pack's last fight, under the Warden's Stone.
+[formations.first_breath]
+label = "The First Breath"
+monsters = ["first_breath"]
+
 # The throne's echo: a repeatable rematch of the second phase alone, with
 # heralds feeding back in while it stands.
 [formations.throne_echo]
@@ -713,8 +782,8 @@ monsters = ["sovereign_unbound", "throne_herald"]
 [[formations.throne_echo.waves]]
 monsters = ["throne_herald"]
 arrival = "refill"
-count = 4
-max_standing = 3
+count = 2
+max_standing = 2
 
 # --- Encounter overrides -----------------------------------------------------
 
@@ -787,6 +856,13 @@ formations = [
     { formation = "prism_storm", weight = 2 },
 ]
 
+[[encounters]]
+scene = "tower_8f"
+steps = [18, 32]
+formations = [
+    { formation = "herald_watch", weight = 1 },
+]
+
 # --- Bosses ------------------------------------------------------------------
 
 # Sound-test cues: 28 "Attack!" (boss theme 1), 32 "Apostles of the Mist"
@@ -796,6 +872,7 @@ formations = [
 # docs/formats/expansion-pack-audio.md).
 
 [bosses.cinder_warden]
+no_escape = true
 formation = "ember_throne"
 music = { kind = "bgm", id = 28 }
 reward_items = [{ item = { kind = "item", id = 223 }, count = 1 }, { item = "ember_heart" }]
@@ -805,6 +882,7 @@ intro = "warden_intro"
 outro = "warden_fallen"
 
 [bosses.verdant_colossus]
+no_escape = true
 formation = "verdant_heart"
 music = { kind = "bgm", id = 32 }
 reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }, { item = "rebirth_maul" }]
@@ -814,6 +892,7 @@ intro = "colossus_intro"
 outro = "colossus_fallen"
 
 [bosses.iron_regent]
+no_escape = true
 formation = "regent_hall"
 music = { kind = "bgm", id = 31 }
 reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }, { item = "rebirth_blade" }]
@@ -823,6 +902,7 @@ intro = "regent_intro"
 outro = "regent_fallen"
 
 [bosses.azure_seraph]
+no_escape = true
 formation = "sanctum_seraph"
 music = { kind = "bgm", id = 29 }
 reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }, { item = "rebirth_talon" }]
@@ -832,6 +912,7 @@ intro = "seraph_intro"
 outro = "seraph_fallen"
 
 [bosses.hollow_sovereign]
+no_escape = true
 formation = "hollow_throne"
 music = { kind = "bgm", id = 32 }
 reward_items = [
@@ -845,6 +926,7 @@ intro = "sovereign_intro"
 
 # Not once: the echo can be fought again and again for its spoils.
 [bosses.throne_echo]
+no_escape = true
 formation = "throne_echo"
 music = { kind = "bgm", id = 73 }
 reward_gold = 20000
@@ -852,7 +934,17 @@ once = false
 intro = "echo_intro"
 outro = "echo_fallen"
 
-# --- The Rebirth Isles (party level 35-45) -----------------------------------
+[bosses.first_breath]
+no_escape = true
+formation = "first_breath"
+music = { kind = "bgm", id = 61 }
+reward_items = [{ item = { kind = "item", id = 235 }, count = 1 }, { item = "phoenix_plume", count = 3 }]
+reward_gold = 150000
+once = true
+intro = "breath_intro"
+outro = "breath_fallen"
+
+# --- The Rebirth Isles (party level 30-40) -----------------------------------
 #
 # An outdoor region past the tower's sea gate (maps/isles_*.toml): a beach,
 # a fishing village, the Thornwood and its ruins, and a grotto under the
@@ -1059,6 +1151,7 @@ formations = [
 ]
 
 [bosses.isles_hive_queen]
+no_escape = true
 formation = "isles_queen"
 music = { kind = "bgm", id = 28 }
 reward_items = [{ item = { kind = "item", id = 125 }, count = 3 }]

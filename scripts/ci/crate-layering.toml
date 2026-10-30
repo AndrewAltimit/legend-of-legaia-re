@@ -223,6 +223,7 @@ reason = "the battle HUD model and the numeral readout the draw-list builders pr
 [crates.engine-expansion]
 role = "expansion-pack runtime kernels: monster and formation overrides, level curve, quests, the mode seat"
 deps = ["engine-battle", "engine-mode", "engine-modes", "engine-system"]
+dev = ["engine-battle-vm", "engine-run-rules"]
 
 [crates.engine-run-rules]
 role = "run rules: difficulty presets, New Game+, ironman, randomizer seed, Boss Rush, the rules screen session"

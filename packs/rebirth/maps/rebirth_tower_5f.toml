@@ -88,20 +88,20 @@ event = { kind = "dialog", line = "rest_board" }
 id = "card_room"
 rect = [4, 8, 5, 8]
 event = { kind = "dialog", line = "rest_cards" }
-requires = { quests = ["gamblers_rest"] }
+requires = { flags = ["rest_open"] }
 
 [[triggers]]
 id = "games_room"
 rect = [9, 8, 10, 8]
 event = { kind = "dialog", line = "rest_games" }
-requires = { quests = ["gamblers_rest"] }
+requires = { flags = ["rest_open"] }
 
 # The High Table's empty seat: sitting down deals in.
 [[triggers]]
 id = "high_table_seat"
 rect = [7, 9, 7, 9]
 event = { kind = "mode", mode = "tower-high-table" }
-requires = { quests = ["gamblers_rest"] }
+requires = { flags = ["rest_open"] }
 
 # The Tower Armory (items.toml): its stock grows as the bosses fall.
 [[triggers]]
@@ -115,7 +115,7 @@ event = { kind = "shop", shop = "tower_armory" }
 id = "game_night_table"
 rect = [8, 9, 8, 9]
 event = { kind = "mode", mode = "tower-game-night" }
-requires = { quests = ["gamblers_rest"] }
+requires = { flags = ["rest_open"] }
 
 # The Rest itself: the party recovers by the hearth, and may save.
 [[triggers]]
@@ -191,6 +191,8 @@ model = { kind = "npc", scene = "koin1", index = 11 }
 tile = [8, 8]
 facing = 6
 line = "duel_second_hello"
+line_after = "duel_second_after"
+after = { flags = ["tables_beaten"] }
 
 [[npcs]]
 id = "duel_regular"
@@ -199,6 +201,8 @@ model = { kind = "npc", scene = "koin1", index = 12 }
 tile = [9, 7]
 facing = 2
 line = "duel_regular_hello"
+line_after = "duel_regular_after"
+after = { flags = ["sovereign_fallen"] }
 
 [[npcs]]
 id = "duel_watcher"
@@ -207,6 +211,8 @@ model = { kind = "npc", scene = "koin1", index = 14 }
 tile = [9, 8]
 facing = 2
 line = "duel_watcher_hello"
+line_after = "duel_watcher_after"
+after = { flags = ["hollow_heard"] }
 
 [[npcs]]
 id = "card_room_dealer"

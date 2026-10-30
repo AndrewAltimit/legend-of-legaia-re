@@ -82,12 +82,19 @@ id = "throne_approach"
 rect = [4, 6, 12, 6]
 event = { kind = "cutscene", cutscene = "sovereign_rises" }
 once = true
-requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"], min_level = 90 }
+requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"], min_level = 88 }
 
 [[triggers]]
 id = "throne"
 rect = [5, 1, 11, 2]
 event = { kind = "talk", npc = "hollow_throne" }
+
+# The long carpet below the throne rolls the throne's honour guard
+# (`battle.toml`, `scene = "tower_8f"`): the top table for the last levels.
+[[encounters]]
+id = "long_carpet"
+rect = [3, 8, 13, 19]
+table = "tower_8f"
 
 # ---------------------------------------------------------------------------
 # Detail: the Hollow Throne. Dust hangs over the long carpet, the pillar

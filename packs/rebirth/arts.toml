@@ -1,5 +1,7 @@
 # Rebirth's Tactical Arts: one art per hero learned on the climb, and one
 # "Rebirth" finisher each, reached by chaining that art into a retail one.
+# The arts come at level 55 once the Cinder Warden is out; the finishers at
+# 80 once the Iron Regent has fallen - both land on the climb's own pace.
 #
 # Every art plays the hero's own retail clips (a segment names the retail
 # art whose clip plays); the pack sets the power bytes, the damage percent
@@ -38,7 +40,7 @@ segments = [
 ]
 damage_pct = 140
 element = 2
-learn = { level = 80, requires = { bosses = ["azure_seraph"] } }
+learn = { level = 80, requires = { bosses = ["iron_regent"] } }
 
 [chains.rebirth_blaze]
 character = "vahn"
@@ -72,7 +74,7 @@ segments = [
 ]
 damage_pct = 140
 element = 3
-learn = { level = 80, requires = { bosses = ["azure_seraph"] } }
+learn = { level = 80, requires = { bosses = ["iron_regent"] } }
 
 [chains.rebirth_tempest]
 character = "noa"
@@ -105,7 +107,7 @@ segments = [
 ]
 damage_pct = 140
 element = 4
-learn = { level = 80, requires = { bosses = ["azure_seraph"] } }
+learn = { level = 80, requires = { bosses = ["iron_regent"] } }
 
 [chains.rebirth_thunder]
 character = "gala"
