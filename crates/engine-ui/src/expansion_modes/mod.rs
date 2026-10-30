@@ -50,6 +50,8 @@ pub use items::{
 pub const STAGE_W: i32 = 320;
 /// Stage height.
 pub const STAGE_H: i32 = 240;
+/// Where a duel's reaction-shot banner sits.
+const REACTION_BANNER_Y: i32 = 196;
 /// One text line's pitch.
 pub const LINE: i32 = 14;
 
@@ -223,6 +225,8 @@ pub enum ModeScreen<'a> {
         quit_prompt: bool,
         /// The stage's banner ("Birdie!", "Lap 2", the countdown).
         banner: Option<&'a str>,
+        /// A duel table's reaction shot is up: the HUD steps aside.
+        outro: bool,
     },
     /// A finished (or quit) session.
     Results {
@@ -233,6 +237,12 @@ pub enum ModeScreen<'a> {
         completed: bool,
         /// The local player's seat (the highlighted "You" row).
         local_seat: usize,
+        /// Over the world (a duel at a table): no backdrop, and while
+        /// `holding` only the stage's banner - the reaction shot plays
+        /// first.
+        over_world: bool,
+        holding: bool,
+        banner: Option<&'a str>,
     },
 }
 
@@ -269,7 +279,15 @@ fn labels_to_draws(font: &legaia_font::Font, labels: &[Label]) -> Vec<TextDraw> 
 
 pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
     let mut c = Canvas::default();
-    if !matches!(screen, ModeScreen::InWorld { .. }) {
+    let over_world = matches!(
+        screen,
+        ModeScreen::InWorld { .. }
+            | ModeScreen::Results {
+                over_world: true,
+                ..
+            }
+    );
+    if !over_world {
         c.rect(0, 0, STAGE_W, STAGE_H, ink::BACKDROP);
     }
     match *screen {
@@ -278,14 +296,20 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
             log,
             quit_prompt,
             banner,
+            outro,
         } => {
             match mode.view() {
                 ModeView::Golf(v) => golf::hud(&mut c, mode, &v, log),
                 ModeView::Race(v) => race::hud(&mut c, mode, &v),
+                ModeView::Duel(v) => duel::hud(&mut c, mode, &v, outro),
                 _ => {}
             }
             if let Some(text) = banner {
-                stage_banner(&mut c, text);
+                if outro {
+                    stage_banner_at(&mut c, text, REACTION_BANNER_Y)
+                } else {
+                    stage_banner(&mut c, text)
+                }
             }
             if quit_prompt {
                 modal(
@@ -325,13 +349,31 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
             }
         }
         ModeScreen::Results {
+            over_world: true,
+            holding: true,
+            banner,
+            ..
+        } => {
+            if let Some(text) = banner {
+                stage_banner_at(&mut c, text, REACTION_BANNER_Y);
+            }
+        }
+        ModeScreen::Results {
             name,
             kind,
             rows,
             granted,
             completed,
             local_seat,
-        } => results(&mut c, name, kind, rows, granted, completed, local_seat),
+            over_world,
+            ..
+        } => {
+            if over_world {
+                // A shade over the table, lighter than the backdrop.
+                c.rect(0, 0, STAGE_W, STAGE_H, [6, 8, 14, 140]);
+            }
+            results(&mut c, name, kind, rows, granted, completed, local_seat)
+        }
     }
     c
 }
@@ -346,8 +388,14 @@ pub(crate) fn header(c: &mut Canvas, name: &str, kind: &str) {
 
 /// A banner across the upper middle of the stage, over the world.
 pub(crate) fn stage_banner(c: &mut Canvas, text: &str) {
+    stage_banner_at(c, text, 52);
+}
+
+/// [`stage_banner`] at row `y`: a duel's reaction shot puts it low, clear
+/// of the opponent's face.
+pub(crate) fn stage_banner_at(c: &mut Canvas, text: &str, y: i32) {
     let (w, h) = (180, 22);
-    let (x, y) = ((STAGE_W - w) / 2, 52);
+    let x = (STAGE_W - w) / 2;
     c.panel(x, y, w, h, [10, 14, 24, 200], ink::HIGHLIGHT);
     c.text_centre(text, STAGE_W / 2, y + 4, pen::GOLD);
 }

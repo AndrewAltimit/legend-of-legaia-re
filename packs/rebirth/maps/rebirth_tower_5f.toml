@@ -176,3 +176,41 @@ tile = [13, 4]
 radius = 512
 inner = 96
 volume = 0.5
+
+# --- The card room's duel table (`modes.toml` `wardens-duel`) ---------------
+# The Warden's Duel is played at a table on the card room's floor: the
+# Warden's second sits across it, two regulars watch from the wall, and the
+# tower's card dealer keeps his counter beside them.
+
+[[npcs]]
+id = "duel_second"
+label = "the Warden's second"
+model = { kind = "npc", scene = "koin1", index = 11 }
+tile = [8, 8]
+facing = 6
+line = "duel_second_hello"
+
+[[npcs]]
+id = "duel_regular"
+label = "a card-room regular"
+model = { kind = "npc", scene = "koin1", index = 12 }
+tile = [9, 7]
+facing = 2
+line = "duel_regular_hello"
+
+[[npcs]]
+id = "duel_watcher"
+label = "a watching gambler"
+model = { kind = "npc", scene = "koin1", index = 14 }
+tile = [9, 8]
+facing = 2
+line = "duel_watcher_hello"
+
+[[npcs]]
+id = "card_room_dealer"
+label = "the tower's card dealer"
+model = { kind = "npc", scene = "koin1", index = 13 }
+tile = [4, 7]
+facing = 2
+line = "card_room_dealer_hello"
+shop = "tower"

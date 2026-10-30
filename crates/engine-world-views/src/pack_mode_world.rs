@@ -22,6 +22,8 @@ use legaia_engine_field::camera_frame::{self, FIELD_CAM_DEPTH, FIELD_H, FieldCam
 use legaia_engine_field::world_map_markers::{DISPLAY_H, DISPLAY_W, depth_toward};
 use legaia_render_kernels::screen_prim::{CornerDepth, FlatQuad, ScreenPrim};
 
+mod duel;
+
 /// The ball's radius, world units.
 pub const BALL_RADIUS: f32 = 11.0;
 /// The cup's radius on the ground, world units.
@@ -70,15 +72,23 @@ pub fn stage_view(world: &World, cam: &Camera, shot: &StageShot) -> FieldCameraV
     let [fx, fz] = shot.focus;
     let floor = world.sample_field_floor_height(fx as i32, fz as i32) as f32;
     FieldCameraView {
-        focus: [fx, floor, fz],
+        focus: [fx, floor - shot.lift, fz],
         pitch: to_rad(shot.pitch),
         yaw: shot_yaw_rad(shot.yaw),
         roll: 0.0,
         h: FIELD_H,
+        // A table shot (lifted off the floor) frames the table itself, so
+        // the follow camera's distance preset does not scale it.
         tr_eye: [
             0.0,
             0.0,
-            FIELD_CAM_DEPTH * cam.distance.scale() * shot.distance,
+            FIELD_CAM_DEPTH
+                * if shot.lift > 0.0 {
+                    1.0
+                } else {
+                    cam.distance.scale()
+                }
+                * shot.distance,
         ],
     }
 }
@@ -473,6 +483,9 @@ pub fn stage_prims(
 }
 
 fn stage_pieces(pr: &Projector<'_>, stage: &StageFrame) -> Vec<ScreenPrim> {
+    if let Some(d) = &stage.duel {
+        return duel::duel_pieces(pr, d);
+    }
     let mut out = Vec::new();
     for t in &stage.trails {
         trail(&mut out, pr, &t.points);

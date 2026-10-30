@@ -170,7 +170,10 @@ keeper's quests count wins at each by id:
 - **Tower High Table** (`tower-high-table`): six-seat no-limit Hold'em for
   gold, 5,000 buy-in, expert opponents, blinds doubling every eight hands.
 - **The Warden's Duel** (`wardens-duel`): a Grid Duel against the tower's
-  own breed, with elemental cells, chain captures and stakes.
+  own breed, with elemental cells, chain captures and stakes, played at the
+  card room's table on the 5F floor: the Warden's second across the board,
+  two regulars watching, the tower's card dealer beside them (talk to the
+  second to sit down).
 - **The Rebirth Links** (`rebirth-links`): six holes - bunkers guarding a
   green, a dogleg, an island green behind a bridge, stepped terraces
   (height grid), conveyor ramps round a wall (slope tiles), and a long par

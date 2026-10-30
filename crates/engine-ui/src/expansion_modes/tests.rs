@@ -87,15 +87,28 @@ fn poker_table_shows_the_menu_board_and_seats() {
 fn duel_board_shows_both_hands_and_the_score() {
     let m = build("builtin-duel");
     let s = strings(&m, false);
-    assert!(has(&s, "You 5  -  5 Rival"), "{s:?}");
-    // The player's first card name and a rival's card name.
-    assert!(has(&s, "Stone Im") || has(&s, "Ash Spri"));
+    for needle in ["You", "Rival", "5"] {
+        assert!(has(&s, needle), "`{needle}` missing from {s:?}");
+    }
+    assert!(
+        has(&s, "Your turn") || has(&s, "Rival is thinking"),
+        "{s:?}"
+    );
     let prims = mode_screen_prims(&ModeScreen::Playing {
         mode: &m,
         log: &[],
         quit_prompt: false,
     });
     on_stage(&prims);
+    // Every hand card is a face from the duel's card page.
+    let faces = prims
+        .iter()
+        .filter(|p| {
+            matches!(p, legaia_render_kernels::screen_prim::ScreenPrim::Textured(q)
+                if q.tpage == legaia_engine_modes::cards::table_art::tpage())
+        })
+        .count();
+    assert_eq!(faces, 10);
 }
 
 #[test]
@@ -159,6 +172,9 @@ fn quit_prompt_and_results_read() {
         granted: &granted,
         completed: true,
         local_seat: 0,
+        over_world: false,
+        holding: false,
+        banner: None,
     });
     for needle in ["Game over", "1st", "2nd", "7 strokes", "+40 coins"] {
         assert!(has(&s, needle), "`{needle}` missing from {s:?}");

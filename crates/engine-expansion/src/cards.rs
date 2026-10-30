@@ -111,6 +111,19 @@ pub struct CardRuntime {
     /// The open card screen.
     pub seat: Option<Box<CardSeat>>,
     pub portraits: PortraitCache,
+    /// The Grid Duel card page while a duel draws from it.
+    pub duel_page: DuelPage,
+}
+
+/// The Grid Duel's card page in VRAM
+/// (`legaia_engine_modes::cards::table_art`): what was written, and the
+/// words it covered, put back when the duel closes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DuelPage {
+    /// A digest of the hands and portraits last written.
+    pub key: Option<u64>,
+    /// The scene label and the covered words before the first write.
+    pub saved: Option<(String, Vec<u16>)>,
 }
 
 impl CardRuntime {

@@ -100,7 +100,9 @@ Circle backs out a stage and Start leaves from any; the header shows the purse a
 
 A card whose art is a retail monster shows that monster. The first time the card screen opens with a pack whose portraits are not built, the scene host renders one `64 x 48` RGBA image per monster off the player's own disc (`legaia_actor_formats::monster_portrait`): the battle mesh and texture pool staged as battle slot 0 (boss effect page included), posed in the idle action's first frame, drawn by the `mesh_raster` software rasteriser from a three-quarter view. The images stay in memory on the world (`ExpansionState::cards.portraits`); a pack carries only the monster id.
 
-The screen draws an image as flat stage-pixel runs of equal 15-bit colour, scaled nearest to its box, so it reaches both hosts through the ordinary screen-prim pass with no texture upload. Without a disc a card shows its element colour in the art box.
+The card screens draw an image as flat stage-pixel runs of equal 15-bit colour, scaled nearest to its box, so it reaches both hosts through the ordinary screen-prim pass with no texture upload. Without a disc a card shows its element colour in the art box.
+
+A Grid Duel draws its cards from a texture page instead ([The card page](#the-card-page)), and opening a duel builds the portraits as the card screen does.
 
 ### Grid Duel
 
@@ -113,6 +115,22 @@ The card battle. Two players, five cards each with both hands face up, a 3x3 gri
 - **Stakes** (optional). The winner takes one card of the loser's deck: picked with the pad, or the strongest for an AI winner. In a pack the card moves between collections ([The card economy](#the-card-economy)).
 
 The novice AI plays a random legal move; the regular maximises immediate captures while not exposing weak sides; the expert also subtracts the opponent's best reply.
+
+A duel with no table in the world draws as its 2D board: the grid on a gold-rimmed felt, each hand fanned down its side with the selected card slid out toward the board, the score plates, the turn line and the selected card's panel (its full name, rarity, the four strengths, and what the cursor's elemental cell does to it). A duel with a table is played in the world ([Grid Duel at a table](#grid-duel-at-a-table)).
+
+### The card page
+
+Every card the duel shows, on the 2D board and on the table alike, is a textured quad sampling one 15-bit texture page the world writes into VRAM while a duel is seated (`legaia_engine_modes::cards::table_art`, written by `World::step_duel_card_page` inside the field VRAM step both hosts run and re-upload after):
+
+| Slot | Texture |
+|---|---|
+| `0..=4` | Seat 0's five faces |
+| `5..=9` | Seat 1's five faces |
+| `10` | The card back: an indigo lattice under a gold sun emblem |
+
+A face is `52 x 72` texels: a bevelled frame in its rarity's metal (bronze, silver, blue steel, gold), the monster's portrait box-filtered into a window over a vignette in its element's colour, an element gem, the four strengths on a cross under the art, and rarity pips. The body under the strengths is transparent (texel `0`): the drawing puts a quad in the owner's colour under the face, so a captured card changes colour with no second texture. The art is built from the session's cards and the portraits the scene host rendered; no disc bytes are written.
+
+The page sits at `(0, 256)`, `208 x 216` halfwords, in retail's display-buffer band, which the port never draws a frame into; the pack-map VRAM allocator keeps the rectangle out of its free list (`expansion_map::vram_alloc::RESERVED`). The words it covers are kept on the first write and put back when the duel closes, and a rebuild of the scene's VRAM under a running duel is noticed (a probe row of the back) and written again.
 
 ## Golf
 
@@ -248,7 +266,7 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 |---|---|
 | Picker | Every instance with its mode kind, the cursor row, the last entry error |
 | Poker | Opponent plates along the far rail (chips or state, dealer button, card backs, street bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu with the raise size, the event log |
-| Grid Duel | The 3x3 grid with elemental cells, both hands down the sides (the selected card lifted), the score and turn line. A card shows its four side strengths, element strip, name and an art frame |
+| Grid Duel | The 3x3 grid on its board with elemental cells, both hands fanned down the sides (the selected card slid out), the score plates, the turn line and the selected card's panel. Cards are the card page's faces |
 | Golf | The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard |
 | Racing | A top-down track map with boost segments and the start line, every racer with its heading, and the lap / place / speed / boost / order panel. A functional view |
 | Prop hunt | A top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts. A functional view |
@@ -328,6 +346,73 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 - **Racer collision is the session's.** Racers keep to the track by its half-width, not by the map's walls, so a map draws its corridor to the track.
 - **The browser host enters no pack map** yet ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#gaps)); its draw path for the stage is in place for when it does.
 
+## Grid Duel at a table
+
+A duel that names a pack map and a table (`map`, `[card_duels.table]`, schema in the expansion-pack format page's `modes.toml` section) is played on a board laid on a table in the 3D field scene: the opponent seated across it, the party leader standing at the player's side, spectators around, and the camera taking its shots. As for golf and racing the session is unchanged and the only authority; the table reads its view each frame and feeds nothing back.
+
+| Piece | Where |
+|---|---|
+| The table on the map | `cards::table::DuelTableFrame`, built by `ActiveMode::build_with_maps` (`ActiveMode::duel_table`) |
+| The stage (card poses, flips, bursts, NPC moods, cues, the shot) | `legaia_engine_expansion::duel_stage::DuelStage`, inside `WorldStage` |
+| NPCs and sound cues | `World::stage_pack_mode` (`world::expansion_stage`) |
+| The card page | `World::step_duel_card_page` |
+| Drawing | `legaia_engine_world_views::pack_mode_world` (its `duel` module) |
+| HUD | `ModeScreen::InWorld` (`engine-ui` `duel::hud`) |
+
+### The layout
+
+The table is placed in its own axes: `across` from the player's seat toward the opponent's (the table's `facing`), `right` the player's right hand. Row 0 of the grid is the far row and column 0 the player's left, as the 2D board draws it. The layout is made from the **local** seat: each networked peer sits in the near seat and sees row 0 on the far side, so the D-pad moves the cursor the way it reads on that peer's screen and each player sees the table from their own chair.
+
+- **Cards.** A card is a quad `0.86` of a cell wide at the face's aspect. Each hand is fanned along its seat's edge of the board, tilted up toward its holder; the selected card rises and reaches toward the board, and a held card hovers face up over the cursor's cell. Grid cards lie flat, reading from the near seat.
+- **Faces and backs.** Whether a card shows its face or its back is the projected quad's winding: the near hand turns its faces to the camera, the far hand its backs, and a capture flip shows the back at its half turn.
+- **Seats.** The opponent NPC stands on its seat, `seat_distance` past the board's far edge; the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
+
+### The timeline
+
+The stage keeps its own frame clock; every tween is a pure function of it and of the views it has seen, so the timeline is deterministic and a peer that draws nothing agrees with one that draws everything.
+
+| Beat | What plays |
+|---|---|
+| Deal | The ten cards fly from the dealer's pile at the board's right into the hands, alternating seats, `6` frames apart, `16` frames each, with a deal cue apiece |
+| Place | A placed card slides from the hand (or its hover) in an arc and drops onto its cell over `22` frames; it lands with a dust ring and the place cue |
+| Capture | When the card lands, each card it captured turns over about its long axis in `20` frames, lifting off the board; the owner's colour changes at the half turn with the flip cue and a burst of sparks in the capturer's colour |
+| Chain | A capture that is not a neighbour of the placed card is a chain capture: it waits `12` frames more, bursts larger, and raises "Chain!" |
+| End | The last flips play out; the result cue and banner ("You win!", "You lose", "Draw"); the opponent cheers or slumps and the spectators the other way |
+
+A move that takes two or more cards raises a banner ("2 captured!") and sets the NPCs' moods: the spectators cheer for the player and slump against them, the opponent the reverse, each for `90` frames; the opponent plays its `think` clip while it is choosing. A mood plays the NPC's `cheer` / `slump` clip, and an NPC without one keeps its idle. Sound cues are retail cue ids pushed on the field's SFX ring (`World::push_sfx_cue`), the table's `sfx` or the menu cues.
+
+### The shots
+
+| Shot | When | Framing |
+|---|---|---|
+| Establishing | The first `120` frames, while the cards are dealt | Wide and high over the room, turning slowly in toward the player's side, then easing into the close shot |
+| Close | Play | Over the board from behind the player's seat (pitch `470`, `0.22` of the follow camera's eye depth), drifting slowly side to side |
+| Push in | The player is choosing a cell | Toward the cursor's cell, closer and steeper |
+| Opponent's turn | The rival is choosing | The focus moves toward the far seat |
+| Pull back | A capture or a chain | Wider and steeper while the flips play |
+| Reaction | The end, once the flips settle | Low across the board on the opponent's seat, for `150` frames |
+
+A table shot frames the table itself: it ignores the follow camera's distance preset. The shots work alike in the retail-faithful and the clean rasterisation; the card art is a 15-bit page, so PSX mode snaps and dithers it like the scene.
+
+The seat holds its results card until the reaction shot is over (`WorldStage::holds_results`; Cross does nothing meanwhile), and then draws it over the table rather than over a backdrop. Through the results stage the stage keeps stepping off the last view it saw (`WorldStage::step_after`), so the last flips and the reaction shot play under it.
+
+### Drawing it
+
+Everything is screen primitives projected through the stage's frame with per-corner scene depth, so an NPC or a wall in front of the table hides it.
+
+Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
+
+The HUD is the score plates, the turn prompt and the selected card's panel, clean of the table; it steps aside for the reaction shot, leaving the stage's banner.
+
+### Running it
+
+```bash
+legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
+    --expansion packs/rebirth --map rebirth_tower_5f --mode wardens-duel
+```
+
+The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
+
 ## Tests
 
 - **Rules.** Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.
@@ -338,6 +423,8 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 - **Seat.** `engine-modes` `active` builds every built-in instance and rolls a won mode's reward rules; `engine-expansion` `modes` drives the picker, the quit prompt and the results card.
 - **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
 - **In the world.** `engine-modes` `tests/map_modes.rs` lays the `links` test pack's course and track out on their maps (surfaces, walls, heights, tee and cup in their tiles, a putt holing inside the cup's tile). `engine-core` `tests/expansion_stage_world.rs` stands the map's field image under the session and plays a scripted golf round and a scripted race to their ends through `World::tick` (the leader at the ball and on the floor, the swing, the camera following the rolling ball, the chase camera), and runs both with and without the map, asserting the session's state hash matches frame for frame. The disc-gated `engine-scene-host` `expansion_stage_disc` enters both through the scene host over the retail `tower`.
+- **The duel table.** `engine-modes` `cards::table` and `cards::table_art` test the table's axes and seats and the card page's layout, transparency and portrait window. `engine-expansion` `duel_stage::tests` runs whole AI duels through the stage: the session's hashes match with the stage and without it, the same seed gives the same frames, the deal starts on the pile and ends in the hands, a full grid's cards sit on their cells, a capture's colour changes mid-flip lifted off the board, the far seat sees the table turned round, and the reaction shot holds the results.
+- **The duel table in the world.** `engine-core` `tests/expansion_duel_table_world.rs` plays the `duel_table` pack's duel to its end through `World::tick` on its map (the opponent seated, the leader on the near side, bursts and cues, the held results card, the NPC put back), checks the session's hashes against the 2D screen frame for frame, and checks the card page is written and put back. The disc-gated `engine-scene-host` `expansion_duel_table_disc` enters it through the scene host over the retail `tower` with its portraits built.
 - **Screens.** `engine-ui` `expansion_modes::tests` checks each screen's key labels and that every panel lies on the stage; `expansion_modes::binder` checks the card screens' labels, the portrait runs and the toast placement.
 - **Card economy.** `engine-modes` `cards::economy`, `cards::screen` and `cards::trade` test buying, opening (the same saved stream opens the same pack), selling at a dealer's rate, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. Further:
   - `engine-expansion` tests the grant drain, the battle sources, stakes, the toasts, and the save block's card record (round trip, and no record without card state).

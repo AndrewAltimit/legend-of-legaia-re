@@ -158,6 +158,138 @@ pub struct CardDuel {
     pub stakes: bool,
     /// Booster granted to the player on a win.
     pub win_booster: Option<String>,
+    /// A pack map (`maps/<id>.toml`) the duel is played on, at
+    /// [`Self::table`]: the board and cards are laid on a table in the 3D
+    /// field scene, with the opponent seated across it. Without a map (or a
+    /// table) the duel is its 2D screen.
+    pub map: Option<String>,
+    /// The spawn the map is entered at (its first when empty).
+    pub spawn: String,
+    /// Where the table stands on [`Self::map`] and who sits at it.
+    pub table: Option<DuelTable>,
+}
+
+/// A Grid Duel's table on a pack map.
+///
+/// ```toml
+/// [card_duels.table]
+/// tile = [4, 9]                 # the map tile the board sits over
+/// offset = [0, 0, 32]           # world units from the tile centre, y up
+/// facing = 4                    # compass sector the player looks across
+/// height = 64                   # the table top above the floor
+/// opponent = { npc = "warden", think = 2, win = 5, lose = 6 }
+/// spectators = [{ npc = "gambler", cheer = 3, slump = 4 }]
+/// sfx = { place = 32, flip = 33 }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DuelTable {
+    /// Map-local tile the board is centred over.
+    pub tile: [u16; 2],
+    /// World units from the tile centre `[x, y, z]`, y up; `y` raises the
+    /// whole table.
+    pub offset: [i32; 3],
+    /// The compass sector (`0..8`, a spawn's `facing` table) the player
+    /// looks in across the board, toward the opponent's seat.
+    pub facing: u8,
+    /// The table top's height above the floor, world units.
+    pub height: u16,
+    /// The board's side, world units.
+    pub board: u16,
+    /// How far each seat sits from the board's centre, world units.
+    pub seat_distance: u16,
+    /// Draw a table under the board (a wooden top on four legs). Leave it
+    /// off when a prop of the map already is the table.
+    pub draw_table: bool,
+    /// The map NPC seated across the board.
+    pub opponent: Option<DuelSeatNpc>,
+    /// Map NPCs watching from where they stand: each turns to the table and
+    /// reacts to big moves and the result.
+    pub spectators: Vec<DuelSeatNpc>,
+    /// The board's playing surface sampled from the scene's own VRAM (a
+    /// floor or cloth texture of the base scene), instead of the built-in
+    /// felt.
+    pub surface: Option<DuelSurface>,
+    /// Retail sound cue ids the table plays.
+    pub sfx: DuelSfx,
+}
+
+impl Default for DuelTable {
+    fn default() -> Self {
+        Self {
+            tile: [0, 0],
+            offset: [0, 0, 0],
+            facing: 0,
+            height: 64,
+            board: 132,
+            seat_distance: 120,
+            draw_table: true,
+            opponent: None,
+            spectators: Vec::new(),
+            surface: None,
+            sfx: DuelSfx::default(),
+        }
+    }
+}
+
+/// A map NPC at a duel table and the clips it reacts with (records of the
+/// base scene's ANM bundle, the [`crate::map::NpcDef::clip`] numbering).
+/// A clip left out keeps the NPC's idle.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DuelSeatNpc {
+    /// The map NPC id (`[[npcs]]` of the duel's map).
+    pub npc: String,
+    /// Played while the opponent thinks (the opponent only).
+    pub think: Option<u8>,
+    /// Played on a big capture by this NPC's side and on its win (a
+    /// spectator cheers for the player).
+    pub cheer: Option<u8>,
+    /// Played on a big loss and on its defeat.
+    pub slump: Option<u8>,
+}
+
+/// A duel table's playing surface: one texture rectangle of the map's base
+/// scene VRAM, tiled once per board cell.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DuelSurface {
+    /// GP0 texpage word (TSB) of the texture.
+    pub tpage: u16,
+    /// GP0 CLUT word (CBA).
+    pub clut: u16,
+    /// `[u, v, w, h]` inside the page.
+    pub uv: [u8; 4],
+}
+
+/// The retail sound cues a duel table plays (`docs/formats/sfx-table.md`
+/// ids). Each defaults to a menu cue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DuelSfx {
+    /// A card dealt or lifted from the hand.
+    pub deal: u16,
+    /// A card laid on a cell.
+    pub place: u16,
+    /// A captured card turning over.
+    pub flip: u16,
+    /// The player won.
+    pub win: u16,
+    /// The player lost or drew.
+    pub lose: u16,
+}
+
+impl Default for DuelSfx {
+    fn default() -> Self {
+        // The menu cursor, confirm and cancel cues (`menu_cues`).
+        Self {
+            deal: 0x21,
+            place: 0x20,
+            flip: 0x21,
+            win: 0x20,
+            lose: 0x37,
+        }
+    }
 }
 
 /// A mini-golf course.
@@ -508,6 +640,7 @@ fn instance_kind(s: &ModeSection, id: &str) -> Option<InstanceKind> {
 /// declared as pack-wide content ids.)
 impl crate::validate::SectionRules for ModeSection {
     fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        crate::validate::check_duel_tables(self, cx);
         let mut seen = std::collections::BTreeSet::new();
         for (i, n) in self.party_nights.iter().enumerate() {
             let at = format!("party_nights[{i}]");

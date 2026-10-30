@@ -23,12 +23,18 @@
 //!   behind the next ball to play, looking down its aim.
 //! - **Racing.** The leader is the player's racer, facing its heading, its
 //!   run clip at speed. The camera chases from behind on the heading.
+//! - **Grid Duel.** A duel at a table ([`crate::duel_stage`]): the leader
+//!   stands at the player's side, the cards and NPCs are the table's.
 
 use legaia_engine_modes::active::{ActiveMode, ModeView, seat_name_for};
+use legaia_engine_modes::cards::duel::DuelView;
+use legaia_engine_modes::cards::table::DuelTableFrame;
 use legaia_engine_modes::fixed::{ANGLE_TURN, FX_ONE};
 use legaia_engine_modes::golf::{GolfPhase, GolfView};
 use legaia_engine_modes::map_frame::MapFrame;
 use legaia_engine_modes::racing::{BOOST_SPEED, MAX_SPEED, RacePhase, RaceView};
+
+use crate::duel_stage::{DuelStage, DuelStageFrame};
 
 /// Frames the leader holds the swing clip after a strike.
 pub const SWING_FRAMES: u32 = 24;
@@ -120,6 +126,24 @@ pub struct StageShot {
     pub pitch: f32,
     /// Distance scale over the field follow camera's (`1` = the same).
     pub distance: f32,
+    /// The focus's height above the floor, world units (a duel table's
+    /// top; `0` on the ground).
+    pub lift: f32,
+}
+
+impl StageShot {
+    /// One step of an ease toward `target`: position, pitch, distance and
+    /// lift by `k` of the remaining distance, the yaw the short way round.
+    pub fn ease_to(&self, target: &Self, k: f32) -> Self {
+        let l = |a: f32, b: f32| a + (b - a) * k;
+        Self {
+            focus: ease(self.focus, target.focus, k),
+            yaw: ease_angle(self.yaw, target.yaw, k),
+            pitch: l(self.pitch, target.pitch),
+            distance: l(self.distance, target.distance),
+            lift: l(self.lift, target.lift),
+        }
+    }
 }
 
 /// The shots' pitches, 12-bit units: aiming looks down on the ball and its
@@ -141,6 +165,8 @@ pub struct StageFrame {
     pub trails: Vec<StageTrail>,
     pub shot: StageShot,
     pub banner: Option<String>,
+    /// A Grid Duel's table: cards, bursts, NPCs and cues.
+    pub duel: Option<DuelStageFrame>,
 }
 
 /// What the stage remembers between frames. Presentation only.
@@ -155,6 +181,8 @@ pub struct WorldStage {
     last_lap: Option<(u8, bool)>,
     banner: Option<(String, u32)>,
     trails: Vec<Vec<[f32; 2]>>,
+    /// A duel table's memory.
+    pub duel: DuelStage,
 }
 
 fn angle_rad(a: f32) -> f32 {
@@ -204,6 +232,10 @@ impl WorldStage {
         let mut out = match mode.view() {
             ModeView::Golf(v) => self.golf(&frame, &v, mode.local_seat),
             ModeView::Race(v) => self.race(&frame, &v, mode.local_seat),
+            ModeView::Duel(v) => {
+                let table = mode.duel_table()?;
+                return Some(self.duel_frame(table, &v, mode.local_seat));
+            }
             _ => return None,
         };
         if let Some((_, t)) = &mut self.banner {
@@ -218,6 +250,47 @@ impl WorldStage {
         Some(out)
     }
 
+    /// A duel table's frame off `view`.
+    fn duel_frame(&mut self, table: &DuelTableFrame, view: &DuelView, local: usize) -> StageFrame {
+        let duel = self.duel.step(table, view, local);
+        StageFrame {
+            frame: table.frame.clone(),
+            leader: Some(self.duel.leader(table)),
+            bodies: Vec::new(),
+            balls: Vec::new(),
+            cup: None,
+            aim: None,
+            trails: Vec::new(),
+            shot: duel.shot,
+            banner: duel.banner.clone(),
+            duel: Some(duel),
+        }
+    }
+
+    /// The stage after the session has left (the seat's results stage): a
+    /// duel table keeps playing its last moves and the reaction shot off
+    /// the last view. `None` for every other mode.
+    pub fn step_after(&mut self) -> Option<StageFrame> {
+        let table = self.duel.table()?.clone();
+        let view = self.duel.last_view()?.clone();
+        let local = self.duel.local();
+        Some(self.duel_frame(&table, &view, local))
+    }
+
+    /// Note `mode`'s last view as the session leaves play, so the results
+    /// stage plays out the move that ended it.
+    pub fn note_final(&mut self, mode: &ActiveMode) {
+        if let ModeView::Duel(v) = mode.view() {
+            self.duel.note_final(v);
+        }
+    }
+
+    /// Whether the results card waits for the stage (a duel's reaction
+    /// shot).
+    pub fn holds_results(&self) -> bool {
+        self.duel.holds_results()
+    }
+
     fn raise(&mut self, text: String) {
         self.banner = Some((text, BANNER_FRAMES));
     }
@@ -227,10 +300,8 @@ impl WorldStage {
         let s = match self.shot {
             None => target,
             Some(s) => StageShot {
-                focus: ease(s.focus, target.focus, FOCUS_EASE),
                 yaw: ease_angle(s.yaw, target.yaw, YAW_EASE),
-                pitch: s.pitch + (target.pitch - s.pitch) * FOCUS_EASE,
-                distance: s.distance + (target.distance - s.distance) * FOCUS_EASE,
+                ..s.ease_to(&target, FOCUS_EASE)
             },
         };
         self.shot = Some(s);
@@ -378,18 +449,21 @@ impl WorldStage {
                 yaw: f32::from(v.balls[seat].aim),
                 pitch: ROLL_PITCH,
                 distance: 0.75,
+                lift: 0.0,
             },
             (GolfPhase::Aim { seat } | GolfPhase::Power { seat, .. }, _) => StageShot {
                 focus: ahead(w(v.balls[seat].pos), f32::from(v.balls[seat].aim), 160.0),
                 yaw: f32::from(v.balls[seat].aim),
                 pitch: AIM_PITCH,
                 distance: 0.55,
+                lift: 0.0,
             },
             _ => StageShot {
                 focus: cup,
                 yaw: self.shot.map_or(0.0, |s| s.yaw),
                 pitch: CUP_PITCH,
                 distance: 0.8,
+                lift: 0.0,
             },
         };
         let shot = self.shoot(target);
@@ -403,6 +477,7 @@ impl WorldStage {
             trails: Vec::new(),
             shot,
             banner: None,
+            duel: None,
         }
     }
 
@@ -490,6 +565,7 @@ impl WorldStage {
                     yaw: f32::from(r.heading),
                     pitch: CHASE_PITCH,
                     distance: 0.5 * pull,
+                    lift: 0.0,
                 }
             }
             None => StageShot {
@@ -497,6 +573,7 @@ impl WorldStage {
                 yaw: 0.0,
                 pitch: CHASE_PITCH,
                 distance: 1.0,
+                lift: 0.0,
             },
         };
         let shot = self.shoot(target);
@@ -510,6 +587,7 @@ impl WorldStage {
             trails,
             shot,
             banner,
+            duel: None,
         }
     }
 }

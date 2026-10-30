@@ -176,7 +176,7 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 | Table | Keys (defaults) |
 |---|---|
 | `[[poker]]` | `seats` (4, `2..=6` with the player), `buy_in` (1000), `small_blind` (10), `big_blind` (20), `currency` (`gold` / `coins`), `chip_value` (1), `ai_tier` (`novice` / `regular` / `expert`), `max_hands`, `blind_double_every` |
-| `[[card_duels]]` | `deck` (the opponent's five `cards.toml` ids), `ai_tier`, `elemental_cells`, `chain`, `stakes`, `win_booster` |
+| `[[card_duels]]` | `deck` (the opponent's five `cards.toml` ids), `ai_tier`, `elemental_cells`, `chain`, `stakes`, `win_booster`, `map`, `spawn`, `[card_duels.table]` |
 | `[[golf]]` | `[[golf.holes]]`, each `par` (3), `rows` (tile strings), `heights` (digit strings of the same shape), `max_strokes` (0 = `par + 5`) |
 | `[[races]]` | `laps` (3), `points` (closed centerline, world units), `half_width` (64), `boost_segments`, `racers` (4), `ai_tier` |
 | `[[prop_hunt]]` | `props` (`id`, `mesh`, `radius`), `decoys` (`prop`, `x`, `y`), `bounds`, `blockers`, `rounds` (3), `hunters` (1), `players` (4), `hide_frames`, `round_frames`, `hunter_health` (100), `miss_penalty` (10), `ai_tier` |
@@ -186,7 +186,7 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 
 A golf hole's tile legend is one character per tile: `.` fairway, `,` rough, `s` sand, `w` water, `#` wall, space out of bounds, `T` tee, `O` cup, and `^` `v` `<` `>` fairway sloping downhill that way.
 
-The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards) and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
+The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards) and the duel tables (the `map` exists, the `tile` is on it, the `facing` is a compass sector, every NPC seated is one of the map's), and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
 
 A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
 
@@ -199,6 +199,24 @@ A golf course or a race may name a pack map, and is then played in the 3D field 
 | `area` | `[[golf.holes]]` | Inclusive map-tile rectangle `[col0, row0, col1, row1]` the hole plays in; the whole map when left out |
 | `waypoints` | `[[races]]` | The centerline as map tiles, in driving order, closing back on the first; replaces `points` |
 | `bodies` | `[[golf]]`, `[[races]]` | Map NPC ids (`[[npcs]]` of the map) that play the other seats, in seat order with the player's skipped |
+
+A Grid Duel may name a pack map and a table on it, and is then played on a board laid on that table in the 3D field scene ([Grid Duel at a table](../subsystems/expansion-modes.md#grid-duel-at-a-table)). `map` and `spawn` work as above; `[card_duels.table]` places the table:
+
+| Key (default) | Meaning |
+|---|---|
+| `tile` | Map tile `[column, row]` the board is centred over |
+| `offset` (`[0, 0, 0]`) | World units from the tile centre, `[x, y, z]`, y up; `y` raises the whole table |
+| `facing` (0) | Compass sector `0..8` (an NPC's facing table) the player looks across the board in |
+| `height` (64) | The table top above the floor, world units |
+| `board` (132) | The board's width, world units; its depth is 1.36 times that |
+| `seat_distance` (120) | Each seat's distance from the board's centre |
+| `draw_table` (true) | Draw the built-in wooden table under the board; off when a prop of the map is the table |
+| `opponent` | `{ npc, think, cheer, slump }`: the map NPC seated across the board and the clips it plays while thinking, on a win or a big capture, and on a loss |
+| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them |
+| `surface` | `{ tpage, clut, uv = [u, v, w, h] }`: a texture of the base scene's VRAM the board's cells sample instead of the built-in felt |
+| `sfx` | `{ deal, place, flip, win, lose }`: retail sound cue ids, menu cues by default |
+
+A table prop of the map should not be standable (`top`): the board sits `height` above the floor the sampler answers at the table's centre. Sample: the `duel_table` test pack, `crates/engine-modes/tests/fixtures/duel_table/`.
 
 A map hole needs no `rows`: its walls, void and heights are the map's tiles. A legend character missing from `surfaces` plays as the surface its style's `label` names (rough; sand or bunker; water or pond; lava, chasm or pit as out of bounds), else as fairway. A map race's `half_width` is in race units, two field world units each. Sample: the `links` test pack, `crates/engine-modes/tests/fixtures/links/`.
 

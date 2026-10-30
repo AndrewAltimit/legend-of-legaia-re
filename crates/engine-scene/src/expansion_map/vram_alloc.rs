@@ -23,10 +23,13 @@ use legaia_tim::vram::{VRAM_HEIGHT, VRAM_WIDTH};
 ///   pages beside them.
 /// - `(896, 0)-(960, 256)`: the dialog font's glyph page
 ///   (`docs/formats/dialog-font.md`).
+/// - `(0, 256)-(208, 472)`: the Grid Duel's card page, written while a duel
+///   is seated (`legaia_engine_modes::cards::table_art::PAGE_RECT`).
 ///
-/// Retail's display buffers (`x < 320`) are free here: the port presents
-/// from its own render target and never draws a frame into VRAM.
-pub const RESERVED: &[(u16, u16, u16, u16)] = &[(320, 0, 320, 512), (896, 0, 64, 256)];
+/// Retail's display buffers (`x < 320`) are otherwise free here: the port
+/// presents from its own render target and never draws a frame into VRAM.
+pub const RESERVED: &[(u16, u16, u16, u16)] =
+    &[(320, 0, 320, 512), (896, 0, 64, 256), (0, 256, 208, 216)];
 
 /// A rectangle of halfwords.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

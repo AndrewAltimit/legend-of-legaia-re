@@ -189,6 +189,7 @@ mod expansion_audio;
 mod expansion_boss;
 mod expansion_cards;
 mod expansion_cutscene;
+mod expansion_duel_page;
 mod expansion_hosts;
 mod expansion_items;
 mod expansion_map;

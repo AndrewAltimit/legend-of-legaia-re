@@ -88,6 +88,7 @@ mod effect_sprite_arm_carriers_real;
 mod effect_world_real_efect;
 mod escape_timer_world;
 mod expansion_cutscene_world;
+mod expansion_duel_table_world;
 mod expansion_modes_world;
 mod expansion_party_world;
 mod expansion_stage_world;

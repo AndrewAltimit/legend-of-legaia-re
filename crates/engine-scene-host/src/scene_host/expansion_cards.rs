@@ -40,15 +40,16 @@ pub fn render_portraits(archive: &[u8], ids: &BTreeSet<u16>) -> PortraitCache {
 }
 
 impl SceneHost {
-    /// Build the active pack's card portraits while the card screen is open
-    /// and the cache belongs to another pack (or none). One build per pack;
+    /// Build the active pack's card portraits while the card screen or a
+    /// Grid Duel is open and the cache belongs to another pack (or none). One build per pack;
     /// a disc without the monster archive leaves the cards on their element
     /// frames.
     pub(crate) fn ensure_card_portraits(&mut self) {
         let Some(pack) = self.world.expansion.pack.clone() else {
             return;
         };
-        if self.world.expansion.cards.seat.is_none()
+        let duel = self.world.duel_page_hands().is_some();
+        if (self.world.expansion.cards.seat.is_none() && !duel)
             || self.world.expansion.cards.portraits.pack_id == pack.manifest.id
         {
             return;

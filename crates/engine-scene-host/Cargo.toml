@@ -57,6 +57,7 @@ legaia-translate.workspace = true
 legaia-engine-battle-hud.workspace = true
 # Named only by tests: crates the disc-gated chains walk directly.
 legaia-engine-camera.workspace = true
+legaia-engine-modes.workspace = true
 legaia-disc-audit.workspace = true
 legaia-font.workspace = true
 legaia-gamedata.workspace = true

@@ -1,0 +1,80 @@
+# Ten cards: the player's five (the first five, dealt before a collection
+# exists) and the opponent's.
+[[cards]]
+id = "d-wisp"
+name = "Mist Wisp of the Long Fog"
+rarity = "common"
+element = "wind"
+sides = [2, 3, 1, 2]
+art = { kind = "monster", id = 1 }
+
+[[cards]]
+id = "d-pup"
+name = "Burrow Pup"
+rarity = "common"
+element = "earth"
+sides = [3, 1, 2, 2]
+art = { kind = "monster", id = 34 }
+
+[[cards]]
+id = "d-skim"
+name = "Reed Skimmer"
+rarity = "uncommon"
+element = "water"
+sides = [4, 2, 5, 3]
+art = { kind = "monster", id = 43 }
+
+[[cards]]
+id = "d-moth"
+name = "Ember Moth"
+rarity = "rare"
+element = "fire"
+sides = [6, 5, 3, 4]
+art = { kind = "monster", id = 9 }
+
+[[cards]]
+id = "d-crown"
+name = "Hollow Crown"
+rarity = "legendary"
+element = "dark"
+sides = [9, 6, 7, 10]
+art = { kind = "monster", id = 60 }
+
+[[cards]]
+id = "d-fen"
+name = "Fen Lurker"
+rarity = "common"
+element = "water"
+sides = [2, 4, 3, 1]
+art = { kind = "monster", id = 12 }
+
+[[cards]]
+id = "d-storm"
+name = "Storm Ram"
+rarity = "uncommon"
+element = "thunder"
+sides = [5, 3, 2, 4]
+art = { kind = "monster", id = 20 }
+
+[[cards]]
+id = "d-shell"
+name = "Hollow Shell"
+rarity = "common"
+sides = [1, 5, 4, 2]
+art = { kind = "monster", id = 27 }
+
+[[cards]]
+id = "d-ram"
+name = "Ironhide Brute"
+rarity = "rare"
+element = "earth"
+sides = [6, 2, 6, 3]
+art = { kind = "monster", id = 50 }
+
+[[cards]]
+id = "d-maw"
+name = "Frost Maw"
+rarity = "rare"
+element = "water"
+sides = [3, 7, 2, 6]
+art = { kind = "monster", id = 55 }

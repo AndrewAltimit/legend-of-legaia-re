@@ -170,7 +170,7 @@
 
   <h3 id="portraits">Portraits</h3>
   <p>A card whose art is a retail monster shows that monster. The first time the card screen opens with a pack whose portraits are not built, the scene host renders one <code>64 x 48</code> RGBA image per monster off the player's own disc (<code>legaia_actor_formats::monster_portrait</code>): the battle mesh and texture pool staged as battle slot 0 (boss effect page included), posed in the idle action's first frame, drawn by the <code>mesh_raster</code> software rasteriser from a three-quarter view. The images stay in memory on the world (<code>ExpansionState::cards.portraits</code>); a pack carries only the monster id.</p>
-  <p>The screen draws an image as flat stage-pixel runs of equal 15-bit colour, scaled nearest to its box, so it reaches both hosts through the ordinary screen-prim pass with no texture upload. Without a disc a card shows its element colour in the art box.</p>
+  <p>The card screens draw an image as flat stage-pixel runs of equal 15-bit colour, scaled nearest to its box, so it reaches both hosts through the ordinary screen-prim pass with no texture upload. Without a disc a card shows its element colour in the art box. A Grid Duel draws its cards from a texture page instead (below), and opening a duel builds the portraits as the card screen does.</p>
 
   <h3 id="grid-duel">Grid Duel</h3>
   <p>The card battle. Two players, five cards each with both hands face up, a 3x3 grid; a seeded coin flip picks who starts. Players alternate placing a card on an empty cell (the starter places five, the other four).</p>
@@ -182,6 +182,15 @@
     <li><strong>Stakes</strong> (optional). The winner takes one card of the loser's deck: picked with the pad, or the strongest for an AI winner. In a pack the card moves between collections.</li>
   </ul>
   <p>The novice AI plays a random legal move; the regular maximises immediate captures while not exposing weak sides; the expert also subtracts the opponent's best reply.</p>
+  <p>A duel with no table in the world draws as its 2D board: the grid on a gold-rimmed felt, each hand fanned down its side with the selected card slid out, the score plates, the turn line and the selected card's panel - its full name, rarity, the four strengths, and what the cursor's elemental cell does to it.</p>
+
+  <h3 id="the-card-page">The card page</h3>
+  <p>Every card a duel shows, on the 2D board and on the table alike, is a textured quad sampling one 15-bit texture page the world writes into VRAM while a duel is seated (<code>cards::table_art</code>, written by <code>World::step_duel_card_page</code> inside the field VRAM step both hosts already run and re-upload after): seat 0's five faces, seat 1's five, and the card back.</p>
+  <ul class="bullets">
+    <li><strong>A face</strong> is <code>52 x 72</code> texels: a bevelled frame in its rarity's metal (bronze, silver, blue steel, gold), the monster's portrait box-filtered into a window over a vignette in its element's colour, an element gem, the four strengths on a cross, and rarity pips.</li>
+    <li><strong>The owner's colour</strong> shows through the face's transparent body from a quad drawn under it, so a captured card changes colour with no second texture.</li>
+    <li><strong>Where it lives.</strong> <code>(0, 256)</code>, <code>208 x 216</code> halfwords, in retail's display-buffer band; the pack-map VRAM allocator keeps the rectangle out of its free list, and the words it covers are put back when the duel closes. No disc bytes are written.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="golf" data-doc="golf">
@@ -268,6 +277,20 @@
   <p>The party card is one <code>engine-ui</code> composition for both hosts: the intro card slides in with the round's kind, title, detail and tags over the standings; the scoreboard's rows step in with each player's last-round points; the podium raises 2nd / 1st / 3rd blocks with a figure in each player's colour under falling confetti.</p>
 </section>
 
+<section class="doc-section" id="grid-duel-at-a-table" data-doc="grid-duel-at-a-table">
+  <h2>Grid Duel at a table</h2>
+  <p>A duel that names a pack map and a table (<code>map</code> and <code>[card_duels.table]</code> in <code>modes.toml</code>) is played on a board laid on a table in the 3D field scene: the opponent seated across it, the party leader standing at the player's side, spectators around, and the camera taking its shots. The session is unchanged and the only authority; the table reads its view each frame and feeds nothing back.</p>
+  <ul class="bullets">
+    <li><strong>The layout.</strong> <code>DuelTableFrame</code> places the table in its own axes - across from the player's seat toward the opponent's, and the player's right hand. Each hand is fanned on its seat's edge of the board, tilted toward its holder: the player reads their faces, the opponent's show their backs (whether a card shows its face is the projected quad's winding). The layout is made from the local seat, so each networked peer sits in the near seat and sees the table from their own chair.</li>
+    <li><strong>The timeline</strong> (<code>duel_stage::DuelStage</code>, its own frame clock, deterministic): the deal flies the ten cards from the dealer's pile into the hands; a placed card slides from the hand in an arc and drops onto its cell with a dust ring; each captured card then turns over about its long axis, its owner's colour changing at the half turn with a burst of sparks; a chain capture follows a beat later with a larger burst and "Chain!"; at the end the last flips play out and the result banner goes up.</li>
+    <li><strong>The NPCs.</strong> The opponent stands on its seat facing the board and plays its <code>think</code> clip while choosing; spectators keep their tiles and turn to the board. A move taking two or more cards, and the result, set their moods: the spectators cheer for the player and slump against them, the opponent the reverse.</li>
+    <li><strong>The shots.</strong> An establishing shot of the room while the cards are dealt, easing into a close shot over the board from behind the player's seat that drifts slowly; a push in over the cell being chosen, a pull back while captures flip, and at the end a low reaction shot across the board on the opponent. The results card waits for it and then draws over the table.</li>
+    <li><strong>Sound.</strong> Retail cue ids for the deal, the place, the flip and the result, pushed on the field's SFX ring (the table's <code>sfx</code>, or menu cues).</li>
+    <li><strong>Drawing it.</strong> Depth-tested screen primitives in explicit ordering-table bands: a wooden table on four legs (or a prop of the map), the gold-rimmed felt board (or a texture of the base scene), pulsing rings on the elemental cells and the cursor's frame, the cards' shadows, the cards themselves (owner quad, face or back subdivided so the affine mapping bends with the card, a raised card's rim light) and additive sparks. The HUD is only the score plates, the turn prompt and the selected card's panel.</li>
+  </ul>
+  <p>The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor (<code>--expansion packs/rebirth --map rebirth_tower_5f --mode wardens-duel</code>); the <code>duel_table</code> test pack is the minimal case.</p>
+</section>
+
 <section class="doc-section" id="hosts" data-doc="hosts">
   <h2>Hosts</h2>
   <p>Both play hosts run the modes inside the running game, through one seat on the <code>World</code> and one screen composition.</p>
@@ -305,7 +328,7 @@
     <tbody>
       <tr><td>Picker</td><td>Every instance with its mode kind, the cursor row, the last entry error.</td></tr>
       <tr><td>Poker</td><td>Opponent plates along the far rail (chips, dealer button, card backs, bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu, the event log.</td></tr>
-      <tr><td>Grid Duel</td><td>The 3x3 grid with elemental cells, both hands down the sides (the selected card lifted), the score and turn line.</td></tr>
+      <tr><td>Grid Duel</td><td>The 3x3 grid on its board with elemental cells, both hands fanned down the sides, the score plates, the turn line and the selected card's panel; cards are the card page's faces.</td></tr>
       <tr><td>Golf</td><td>The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard.</td></tr>
       <tr><td>Racing</td><td>A functional top-down track map with boost segments and the start line, every racer, and the lap / place / speed / boost panel.</td></tr>
       <tr><td>Prop hunt</td><td>A functional top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts.</td></tr>
@@ -323,6 +346,7 @@
     <li><strong>Pack.</strong> <code>tests/rebirth_pack.rs</code> parses the Rebirth <code>cards.toml</code> / <code>modes.toml</code> and converts every instance into a session config.</li>
     <li><strong>Seat.</strong> <code>engine-modes</code> <code>active</code> builds every built-in instance and rolls a won mode's reward rules; <code>engine-expansion</code> <code>modes</code> drives the picker, the quit prompt and the results card.</li>
     <li><strong>World.</strong> <code>engine-core</code> <code>tests/expansion_modes_world.rs</code> enters each built-in instance from the field, drives it to its end through <code>World::tick</code>, and checks the coin bank, the pending card rewards and the restored field.</li>
+    <li><strong>The duel table.</strong> <code>engine-modes</code> <code>cards::table</code> and <code>cards::table_art</code> test the table's axes, seats and the card page; <code>engine-expansion</code> <code>duel_stage::tests</code> runs whole AI duels through the stage (session hashes unchanged, same seed same frames, the deal, cells, mid-flip colour change, the far seat's view, the held results); <code>engine-core</code> <code>tests/expansion_duel_table_world.rs</code> plays a duel to its end through <code>World::tick</code> at its table, checks its hashes against the 2D screen and the card page's write and restore; the disc-gated <code>engine-scene-host</code> <code>expansion_duel_table_disc</code> enters the test pack's duel and Rebirth's Warden's Duel through the scene host.</li>
     <li><strong>Screens.</strong> <code>engine-ui</code> <code>expansion_modes::tests</code> checks each screen's key labels and that every panel lies on the stage; <code>expansion_modes::binder</code> checks the card screens' labels, the portrait runs and the toast placement.</li>
     <li><strong>Card economy.</strong> <code>engine-modes</code> <code>cards::economy</code>, <code>cards::screen</code> and <code>cards::trade</code> test buying, opening (the same saved stream opens the same pack), selling, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. <code>engine-expansion</code> tests the grant drain, battle sources, stakes, toasts and the save block's card record; <code>engine-core</code> <code>world::tests::expansion_cards</code> checks that drops leave the retail spoils and RNG word untouched while crediting the collection; the disc-gated <code>engine-scene-host</code> <code>expansion_cards_disc</code> checks every Rebirth card's art against a real monster record and renders every portrait.</li>
   </ul>

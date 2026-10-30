@@ -1,7 +1,6 @@
-//! Card faces: the poker deck's playing cards and the Grid Duel's monster
-//! cards.
+//! Card faces: the poker deck's playing cards, and the colours the Grid
+//! Duel's cards share (owner, element, rarity).
 
-use legaia_engine_modes::cards::duel::DuelCard;
 use legaia_engine_modes::poker::hand::Card;
 use legaia_expansion_format::cards::{CardElement, Rarity};
 
@@ -108,10 +107,6 @@ pub fn card_slot(c: &mut Canvas, x: i32, y: i32) {
     c.outline(x, y, CARD_W, CARD_H, [60, 130, 90, 255]);
 }
 
-/// A Grid Duel card's size.
-pub const DUEL_W: i32 = 52;
-pub const DUEL_H: i32 = 52;
-
 /// The owner's frame colour.
 pub fn owner_color(seat: usize) -> [u8; 4] {
     if seat == 0 {
@@ -146,68 +141,4 @@ pub(crate) fn rarity_color(r: Rarity) -> [u8; 4] {
 /// A side strength as printed ("A" for 10, as the classic card game does).
 pub(crate) fn side_label(v: u8) -> String {
     if v >= 10 { "A".into() } else { v.to_string() }
-}
-
-/// A duel card at `(x, y)` owned by `owner`: the four side strengths on a
-/// cross, the art placeholder frame, the element strip and the name.
-pub fn duel_card(c: &mut Canvas, card: &DuelCard, name: &str, owner: usize, x: i32, y: i32) {
-    c.panel(x, y, DUEL_W, DUEL_H, owner_color(owner), [16, 16, 24, 255]);
-    // The art placeholder: a frame where the monster portrait goes.
-    c.panel(
-        x + 4,
-        y + 4,
-        DUEL_W - 8,
-        DUEL_H - 22,
-        [20, 24, 36, 255],
-        rarity_color(card.rarity),
-    );
-    c.rect(
-        x + 4,
-        y + DUEL_H - 17,
-        DUEL_W - 8,
-        3,
-        element_color(card.element),
-    );
-    let [top, right, bottom, left] = card.sides;
-    let cx = x + DUEL_W / 2;
-    c.text_centre(side_label(top), cx, y + 2, pen::WHITE);
-    c.text_centre(side_label(bottom), cx, y + 18, pen::WHITE);
-    c.text(side_label(left), x + 7, y + 10, pen::WHITE);
-    c.text_right(side_label(right), x + DUEL_W - 6, y + 10, pen::WHITE);
-    // The name on the strip below the art; long names are cut to fit.
-    let short: String = name.chars().take(7).collect();
-    c.text_centre(short, cx, y + DUEL_H - 15, pen::WHITE);
-}
-
-/// A hand row's size: hands list as rows rather than stacked cards, since a
-/// label in the text layer would show through any panel drawn over it.
-pub const ROW_W: i32 = 74;
-pub const ROW_H: i32 = 38;
-
-/// One hand card as a row: name, the four sides as `top-right-bottom-left`,
-/// the element strip and the rarity mark. `lit` frames the selected card.
-pub fn hand_row(
-    c: &mut Canvas,
-    card: &DuelCard,
-    name: &str,
-    owner: usize,
-    x: i32,
-    y: i32,
-    lit: bool,
-) {
-    let edge = if lit {
-        super::ink::HIGHLIGHT
-    } else {
-        [16, 16, 24, 255]
-    };
-    c.panel(x, y, ROW_W, ROW_H, owner_color(owner), edge);
-    if lit {
-        c.outline(x + 1, y + 1, ROW_W - 2, ROW_H - 2, super::ink::HIGHLIGHT);
-    }
-    c.rect(x + 3, y + 3, 3, ROW_H - 6, element_color(card.element));
-    c.dot(x + ROW_W - 6, y + 6, 2, rarity_color(card.rarity));
-    let short: String = name.chars().take(9).collect();
-    c.text(short, x + 9, y + 2, pen::WHITE);
-    let [t, r, b, l] = card.sides.map(side_label);
-    c.text(format!("{t}-{r}-{b}-{l}"), x + 9, y + 19, pen::GOLD);
 }

@@ -605,9 +605,64 @@ fn check_asset_budget(cx: &mut Checker<'_>) {
     }
 }
 
+/// `modes.toml`'s duel tables: a duel played at a table names a map the
+/// pack has, a table tile on it and NPCs of that map. Run from the
+/// section's rules (`modes.rs`).
+pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Checker<'_>) {
+    {
+        for (i, d) in modes.card_duels.iter().enumerate() {
+            let at = format!("card_duels[{i}]");
+            let Some(t) = &d.table else {
+                continue;
+            };
+            let Some(map_id) = &d.map else {
+                cx.warning(
+                    &format!("{at}.table"),
+                    "a table needs `map`; the duel plays as its 2D screen",
+                );
+                continue;
+            };
+            let Some(map) = cx.pack().maps.get(map_id) else {
+                cx.error(
+                    &format!("{at}.map"),
+                    format!("the pack has no map {map_id:?}"),
+                );
+                continue;
+            };
+            if let Ok(g) = map.tile_grid()
+                && (usize::from(t.tile[0]) >= g.width || usize::from(t.tile[1]) >= g.height)
+            {
+                cx.error(
+                    &format!("{at}.table.tile"),
+                    format!("tile {:?} is off map {map_id:?}", t.tile),
+                );
+            }
+            if t.facing >= 8 {
+                cx.error(&format!("{at}.table.facing"), "a compass sector is 0..8");
+            }
+            if t.board < 48 || t.height > 400 {
+                cx.warning(
+                    &format!("{at}.table"),
+                    "the board is under 48 units or the top over 400 units high",
+                );
+            }
+            let seats = t.opponent.iter().chain(&t.spectators);
+            for (k, n) in seats.enumerate() {
+                if !map.npcs.iter().any(|m| m.id == n.npc) {
+                    cx.error(
+                        &format!("{at}.table.npc[{k}]"),
+                        format!("map {map_id:?} has no NPC {:?}", n.npc),
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::modes;
     use crate::manifest::PackManifest;
 
     fn good_pack() -> ExpansionPack {
@@ -808,6 +863,48 @@ laps = 1
                 .iter()
                 .any(|i| i.path == "notes/todo.txt" && i.severity == Severity::Warning)
         );
+    }
+
+    #[test]
+    fn a_duel_table_names_its_map_and_its_npcs() {
+        let mut pack = good_pack();
+        let mut duel = modes::CardDuel {
+            id: "d".into(),
+            map: Some("room".into()),
+            table: Some(modes::DuelTable {
+                tile: [1, 1],
+                facing: 9,
+                opponent: Some(modes::DuelSeatNpc {
+                    npc: "nobody".into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        pack.modes.card_duels.push(duel.clone());
+        let e = errors(&validate(&pack));
+        assert!(e.iter().any(|m| m.contains("no map")), "{e:?}");
+        let map: crate::map::MapDef = toml::from_str(
+            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[npcs]]\nid = \"rival\"\ntile = [0, 0]\n",
+        )
+        .unwrap();
+        pack.maps.insert("room".into(), map);
+        let e = errors(&validate(&pack));
+        assert!(e.iter().any(|m| m.contains("compass")), "{e:?}");
+        assert!(e.iter().any(|m| m.contains("no NPC")), "{e:?}");
+        if let Some(t) = duel.table.as_mut() {
+            t.facing = 2;
+            t.tile = [7, 0];
+            t.opponent.as_mut().unwrap().npc = "rival".into();
+        }
+        pack.modes.card_duels = vec![duel.clone()];
+        let e = errors(&validate(&pack));
+        assert!(e.iter().any(|m| m.contains("off map")), "{e:?}");
+        duel.table.as_mut().unwrap().tile = [2, 1];
+        pack.modes.card_duels = vec![duel];
+        let e = errors(&validate(&pack));
+        assert!(!e.iter().any(|m| m.contains("card_duels")), "{e:?}");
     }
 
     #[test]

@@ -60,6 +60,11 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
                 log: &seat.log,
                 quit_prompt: *quit_prompt,
                 banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+                outro: seat
+                    .stage_frame
+                    .as_ref()
+                    .and_then(|f| f.duel.as_ref())
+                    .is_some_and(|d| d.outro),
             }
         }
         ModeStage::Playing { mode, quit_prompt } => ModeScreen::Playing {
@@ -81,6 +86,10 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
             granted,
             completed: *completed,
             local_seat: *local_seat,
+            // A duel at a table: the reaction shot, then the card over it.
+            over_world: seat.stage_frame.is_some(),
+            holding: seat.world_stage.holds_results(),
+            banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
         },
     })
 }

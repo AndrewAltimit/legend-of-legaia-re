@@ -20,6 +20,7 @@ use legaia_expansion_format::modes::ModeSection;
 
 use crate::cards::CardBook;
 use crate::cards::duel::{DuelConfig, DuelEvent, DuelSession, DuelView};
+use crate::cards::table::DuelTableFrame;
 use crate::golf::course::Course;
 use crate::golf::{GolfConfig, GolfEvent, GolfSession, GolfView};
 use crate::map_frame::MapFrame;
@@ -94,6 +95,13 @@ pub fn entries(section: &ModeSection) -> Vec<ModeEntry> {
 pub fn instance_map(section: &ModeSection, id: &str) -> Option<(String, String)> {
     if let Some(c) = section.golf.iter().find(|c| c.id == id) {
         return c.map.clone().map(|m| (m, c.spawn.clone()));
+    }
+    if let Some(d) = section.card_duels.iter().find(|d| d.id == id) {
+        return d
+            .table
+            .as_ref()
+            .and(d.map.clone())
+            .map(|m| (m, d.spawn.clone()));
     }
     let r = section.races.iter().find(|r| r.id == id)?;
     r.map.clone().map(|m| (m, r.spawn.clone()))
@@ -190,6 +198,8 @@ pub struct ActiveMode {
     book: CardBook,
     /// A race's placement on its pack map (golf keeps one per hole).
     race_frame: Option<MapFrame>,
+    /// A duel's table on its pack map.
+    duel_table: Option<DuelTableFrame>,
 }
 
 /// A view of whichever session is running. A per-frame snapshot, built
@@ -239,6 +249,7 @@ impl ActiveMode {
     ) -> Result<Self, BuildError> {
         let book = CardBook::new(cards.clone());
         let mut race_frame = None;
+        let mut duel_table = None;
         let invalid = |e: &dyn std::fmt::Debug| BuildError::Invalid(format!("{id}: {e:?}"));
         let (name, runner) = if let Some(t) = modes.poker.iter().find(|t| t.id == id) {
             let cfg = PokerConfig::from_table(t, seed);
@@ -249,6 +260,10 @@ impl ActiveMode {
                 None => cards.cards.iter().take(5).map(|c| c.id.clone()).collect(),
             };
             let cfg = DuelConfig::from_duel(d, &book, &deck, seed).map_err(|e| invalid(&e))?;
+            if let Some(map) = &d.map {
+                duel_table =
+                    DuelTableFrame::from_duel(d, maps.get(map), map).map_err(|e| invalid(&e))?;
+            }
             (&d.name, ModeRunner::Duel(Box::new(DuelSession::new(cfg))))
         } else if let Some(c) = modes.golf.iter().find(|c| c.id == id) {
             let cfg = match &c.map {
@@ -295,6 +310,7 @@ impl ActiveMode {
             remote_results: None,
             book,
             race_frame,
+            duel_table,
         })
     }
 
@@ -305,8 +321,19 @@ impl ActiveMode {
         match &self.runner {
             ModeRunner::Golf(s) => s.frame(),
             ModeRunner::Race(_) => self.race_frame.as_ref(),
+            ModeRunner::Duel(_) => self.duel_table.as_ref().map(|t| &t.frame),
             _ => None,
         }
+    }
+
+    /// A duel's table on its pack map, when it is played at one.
+    pub fn duel_table(&self) -> Option<&DuelTableFrame> {
+        self.duel_table.as_ref()
+    }
+
+    /// The card book the duel's hands come from (names, art).
+    pub fn book(&self) -> &CardBook {
+        &self.book
     }
 
     pub fn kind(&self) -> ModeKind {

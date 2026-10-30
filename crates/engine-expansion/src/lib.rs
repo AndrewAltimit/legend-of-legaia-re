@@ -16,6 +16,7 @@ pub mod boss_script;
 pub mod cards;
 pub mod cutscene;
 pub mod dialog;
+pub mod duel_stage;
 pub mod entrance;
 pub mod flags;
 pub mod item_screen;

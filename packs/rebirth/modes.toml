@@ -141,6 +141,17 @@ elemental_cells = true
 chain = true
 stakes = true
 win_booster = "mistborn"
+# Played at the card room's table on the Gambler's Rest floor, the
+# Warden's second across the board and two regulars looking on.
+map = "rebirth_tower_5f"
+spawn = "from_below"
+
+[card_duels.table]
+tile = [6, 7]
+offset = [0, 0, 64]
+facing = 6
+opponent = { npc = "duel_second" }
+spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
 
 # Six holes up the tower's side. Each is a real-looking golf hole in
 # miniature: bunkers guarding the green, a dogleg, an island green,

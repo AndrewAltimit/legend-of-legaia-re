@@ -10,6 +10,8 @@
 pub mod duel;
 pub mod economy;
 pub mod screen;
+pub mod table;
+pub mod table_art;
 pub mod trade;
 
 use std::collections::BTreeMap;

@@ -107,6 +107,9 @@ pub struct PackModeSeat {
     /// The map NPC slots the in-world stage drives as other seats' bodies,
     /// with the clip each stood in before (restored when the seat closes).
     pub body_idle: Vec<(u8, u8)>,
+    /// The headings of the NPCs a duel table turned to the board, restored
+    /// when the seat closes.
+    pub body_heading: Vec<(u8, i16)>,
 }
 
 /// A card grant waiting for the card economy.
@@ -149,6 +152,7 @@ impl PackModeSeat {
             stage_frame: None,
             player_return: None,
             body_idle: Vec::new(),
+            body_heading: Vec::new(),
             networked: false,
         }
     }
@@ -175,6 +179,7 @@ impl PackModeSeat {
             stage_frame: None,
             player_return: None,
             body_idle: Vec::new(),
+            body_heading: Vec::new(),
             networked: false,
         }
     }
@@ -287,6 +292,7 @@ impl PackModeSeat {
             ModeStage::Playing { mode, quit_prompt } => {
                 if *quit_prompt {
                     if pressed(PadButton::Cross) {
+                        self.world_stage.note_final(mode);
                         self.stage = ModeStage::Results {
                             name: mode.name.clone(),
                             kind: mode.kind(),
@@ -309,6 +315,7 @@ impl PackModeSeat {
                     // The driver ticks the session; the seat only notices
                     // its end. Nothing is granted online.
                     if let Some(results) = mode.results() {
+                        self.world_stage.note_final(mode);
                         self.stage = ModeStage::Results {
                             name: mode.name.clone(),
                             kind: mode.kind(),
@@ -330,6 +337,7 @@ impl PackModeSeat {
                 };
                 let rows = settlement.results.placements.clone();
                 let mode_id = mode.id.clone();
+                self.world_stage.note_final(mode);
                 self.stage = ModeStage::Results {
                     name: mode.name.clone(),
                     kind: mode.kind(),
@@ -344,6 +352,11 @@ impl PackModeSeat {
                 }
             }
             ModeStage::Results { .. } => {
+                // A duel table's reaction shot plays out before the card
+                // takes the pad.
+                if self.world_stage.holds_results() {
+                    return SeatStep::Stay;
+                }
                 if pressed(PadButton::Cross)
                     || pressed(PadButton::Circle)
                     || pressed(PadButton::Start)

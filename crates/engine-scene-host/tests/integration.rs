@@ -50,6 +50,7 @@ mod entry_install_slice_disc;
 mod expansion_boss_disc;
 mod expansion_cards_disc;
 mod expansion_cutscene_rebirth_disc;
+mod expansion_duel_table_disc;
 mod expansion_entrance_disc;
 mod expansion_items_disc;
 mod expansion_map_detail_disc;

@@ -440,6 +440,37 @@ choices = [
     { label = "Not now.", reply = "\"The cards will keep.\"" },
 ]
 
+# The card room's table (maps/rebirth_tower_5f.toml).
+[lines.duel_second_hello]
+speaker = "The Warden's Second"
+text = """
+Sit, if you have five cards and
+the nerve. The Warden's deck does
+not lose often."""
+choices = [
+    { label = "Deal me in.", mode = "wardens-duel" },
+    { label = "Not yet.", reply = "\"The table will wait.\"" },
+]
+
+[lines.duel_regular_hello]
+speaker = "Card-Room Regular"
+text = """
+Watch the corners. The second
+plays them like a fortress."""
+
+[lines.duel_watcher_hello]
+speaker = "Watching Gambler"
+text = """
+Two captures in one move and the
+whole room stands up. You will see."""
+
+[lines.card_room_dealer_hello]
+speaker = "Tower Card Dealer"
+text = """
+Boosters, singles, a fair price
+for what you would rather not
+keep."""
+
 [lines.rest_games]
 speaker = "Keeper Odalric"
 text = """

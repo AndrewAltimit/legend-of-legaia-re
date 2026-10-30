@@ -117,6 +117,7 @@ impl World {
         if let Some(seat) = self.expansion.mode_seat.take() {
             self.restore_pack_mode_player_from(seat.player_return);
             self.restore_pack_mode_bodies(&seat.body_idle);
+            self.restore_pack_mode_headings(&seat.body_heading);
         }
     }
 

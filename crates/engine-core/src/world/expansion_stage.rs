@@ -162,6 +162,82 @@ impl World {
         }
     }
 
+    /// Put back the headings of the NPCs a duel table turned to the board.
+    pub(in crate::world) fn restore_pack_mode_headings(&mut self, body_heading: &[(u8, i16)]) {
+        for &(slot, heading) in body_heading {
+            self.npcs.headings.insert(slot, heading);
+        }
+    }
+
+    /// Drive the NPCs a duel table names: the opponent onto its seat, every
+    /// one turned to the board, each playing its reaction clip or its idle,
+    /// and the table's sound cues. The NPCs' idle clips and headings are
+    /// noted on the seat the first frame, for the close.
+    fn stage_pack_mode_duel(&mut self, seat: &mut PackModeSeat) {
+        let Some(duel) = seat.stage_frame.as_ref().and_then(|f| f.duel.as_ref()) else {
+            return;
+        };
+        let cues = duel.cues.clone();
+        let poses = duel.npcs.clone();
+        for cue in cues {
+            self.push_sfx_cue(cue as i16);
+        }
+        let Some(map) = self.expansion.map.as_ref() else {
+            return;
+        };
+        let slots: Vec<(u8, Option<u8>)> = poses
+            .iter()
+            .map(|p| {
+                map.npcs()
+                    .find(|(_, d)| d.id == p.npc)
+                    .map_or((0, None), |(slot, d)| (slot, d.clip))
+            })
+            .collect();
+        for (pose, (slot, own_clip)) in poses.iter().zip(slots) {
+            if slot == 0 {
+                continue;
+            }
+            let idle = match seat.body_idle.iter().find(|(s, _)| *s == slot) {
+                Some(&(_, clip)) => clip,
+                None => {
+                    let current = self.npcs.clip_current.get(&slot).copied();
+                    let clip = own_clip.or(current).unwrap_or(0);
+                    seat.body_idle.push((slot, clip));
+                    if let Some(&h) = self.npcs.headings.get(&slot) {
+                        seat.body_heading.push((slot, h));
+                    }
+                    clip
+                }
+            };
+            let clamp = |v: f32| v.clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16;
+            let at = match pose.pos {
+                Some(p) => {
+                    let at = (clamp(p[0]), clamp(p[1]));
+                    self.npcs.positions.insert(slot, at);
+                    at
+                }
+                None => match self.npcs.positions.get(&slot) {
+                    Some(&at) => at,
+                    None => continue,
+                },
+            };
+            let (dx, dz) = (
+                pose.look_at[0] - f32::from(at.0),
+                pose.look_at[1] - f32::from(at.1),
+            );
+            if dx.abs() + dz.abs() > 1.0 {
+                let angle = (dz.atan2(dx) / std::f32::consts::TAU * 4096.0).rem_euclid(4096.0);
+                self.npcs
+                    .headings
+                    .insert(slot, mode_angle_to_heading(angle as u16));
+            }
+            let clip = pose.clip.unwrap_or(idle);
+            if self.npcs.clip_current.get(&slot) != Some(&clip) {
+                self.carry_npc_run_anim(slot, clip);
+            }
+        }
+    }
+
     /// Step the seat's in-world stage and move the leader onto it. The stage
     /// runs only while the session's map is the one the player is in.
     pub(in crate::world) fn stage_pack_mode(&mut self, seat: &mut PackModeSeat) {
@@ -170,16 +246,28 @@ impl World {
             .active()
             .and_then(|m| m.map_frame())
             .is_some_and(|f| Some(&f.map_id) == here.as_ref());
+        let after = matches!(
+            seat.stage,
+            legaia_engine_expansion::modes::ModeStage::Results { .. }
+        ) && seat.stage_frame.is_some();
         seat.stage_frame = None;
-        if !on_map {
-            return;
+        if after {
+            // The session has left; a duel table plays its last moves and
+            // the reaction shot under the results card.
+            seat.stage_frame = seat.world_stage.step_after();
+        } else {
+            if !on_map {
+                return;
+            }
+            let legaia_engine_expansion::modes::ModeStage::Playing { mode, .. } = &seat.stage
+            else {
+                return;
+            };
+            seat.stage_frame = seat.world_stage.step(mode);
+            let mode_id = mode.id.clone();
+            self.stage_pack_mode_bodies(seat, &mode_id);
         }
-        let legaia_engine_expansion::modes::ModeStage::Playing { mode, .. } = &seat.stage else {
-            return;
-        };
-        seat.stage_frame = seat.world_stage.step(mode);
-        let mode_id = mode.id.clone();
-        self.stage_pack_mode_bodies(seat, &mode_id);
+        self.stage_pack_mode_duel(seat);
         let Some(leader) = seat.stage_frame.as_ref().and_then(|f| f.leader) else {
             return;
         };

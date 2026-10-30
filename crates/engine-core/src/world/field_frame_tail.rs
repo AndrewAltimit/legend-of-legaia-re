@@ -139,7 +139,9 @@ impl World {
         let seeded = self.apply_vram_rect_seed(vram);
         // A pack map's animated materials (no-op off a map).
         let materials = self.step_expansion_materials(vram);
-        moved | copied | ambient | clut | seeded | materials
+        // A seated Grid Duel's card page (no-op without one).
+        let duel = self.step_duel_card_page(vram);
+        moved | copied | ambient | clut | seeded | materials | duel
     }
 
     /// Whether a host advances its field-NPC clip players this tick.

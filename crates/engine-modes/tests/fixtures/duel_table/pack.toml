@@ -1,0 +1,7 @@
+# A test pack for the Grid Duel played at a table in the world: one duel on
+# a small walled room over the retail `tower` scene, Noa across the board and
+# Gala watching. Every texture and model is a coordinate into the player's
+# own disc.
+id = "duel-table-test"
+name = "Duel table (test pack)"
+version = "1.0.0"
