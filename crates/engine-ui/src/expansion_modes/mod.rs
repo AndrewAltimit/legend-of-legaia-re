@@ -555,6 +555,7 @@ fn place_label(place: u8) -> String {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn results(
     c: &mut Canvas,
     name: &str,
