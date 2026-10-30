@@ -48,6 +48,10 @@ mod fishing_web;
 mod fishing_scene_web;
 mod muscle_web;
 
+// The port's own game modes (site/modes.html): a World-free seat, no disc.
+mod modes_page;
+pub use modes_page::LegaiaModes;
+
 mod baka_session;
 mod bgm;
 mod dance_session;

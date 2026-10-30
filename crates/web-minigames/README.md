@@ -4,7 +4,10 @@ The browser minigames page's runtime: `LegaiaMinigames`, the
 `#[wasm_bindgen]` class behind `site/minigames.html`. It is a thin JSON
 shell over the minigame rules engines (`engine-minigames`, `engine-fishing`,
 `engine-battle-menus`' Muscle Dome session) and holds no `World`: each game
-runs straight off the tables decoded from the visitor's own disc. Module by
+runs straight off the tables decoded from the visitor's own disc. It also carries
+`LegaiaModes` (`modes_page`), the game-modes page's runtime behind
+`site/modes.html`: the port's own modes on the mode seat
+(`engine-expansion`), with no disc at all. Module by
 module, the exports are in
 [`docs/subsystems/browser-host.md`](../../docs/subsystems/browser-host.md#playable-minigames-legaia-web-minigames).
 
@@ -16,6 +19,7 @@ module, the exports are in
 | Per-game sessions | `dance_session`, `baka_session`, `slot_session`, `fishing_web`, `muscle_web/` |
 | Presentation exports | `dance_presentation/`, `baka_presentation` (and its `duel_surface` reader), `slot_presentation`, `fishing_scene_web` |
 | Sound | `bgm` (`Music01Render`), `live_spu`, `slot_sound` |
+| The game-modes page | `modes_page` (`LegaiaModes`) |
 
 ## Who else uses it
 
