@@ -633,10 +633,12 @@ impl World {
     }
 
     /// The all-enemies Seru a pack spell of base `base` presents as when
-    /// its shape `target` widens the base's one-enemy shape: the player Seru
-    /// (`0x81..=0xA0`) of the base's element whose catalog shape is every
-    /// enemy, the nearest in MP to the base (then the lowest id). `None`
-    /// when the spell keeps its base's shape, or no Seru fits.
+    /// its shape `target` widens the base's one-enemy shape: a player Seru
+    /// (`0x81..=0xA0`) whose catalog shape is every enemy - one of the base's
+    /// element first, then an elementless one (the catalog files the
+    /// captured Seru as neutral), then any - the nearest in MP to the base,
+    /// then the lowest id. `None` when the spell keeps its base's shape, or
+    /// no Seru fits.
     pub(in crate::world) fn widened_presentation(
         &self,
         base: u8,
@@ -652,11 +654,20 @@ impl World {
             .filter_map(|id| self.tables.spell_catalog.get(id).map(|d| (id, d)))
             .filter(|(id, d)| {
                 d.target == SpellTarget::AllEnemies
-                    && d.element == b.element
+                    && d.mp_cost > 0
                     && self.spell_table_class(*id)
                         != Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
             })
-            .min_by_key(|(id, d)| (d.mp_cost.abs_diff(b.mp_cost), *id))
+            .min_by_key(|(id, d)| {
+                let kin = if d.element == b.element {
+                    0
+                } else if d.element == legaia_engine_battle::spells::SpellElement::Neutral {
+                    1
+                } else {
+                    2
+                };
+                (kin, d.mp_cost.abs_diff(b.mp_cost), *id)
+            })
             .map(|(id, _)| id)
     }
 
