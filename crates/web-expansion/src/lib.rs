@@ -17,6 +17,7 @@
 //! `docs/tooling/expansion-workbench.md`.
 
 pub mod catalog;
+pub mod npc_posture;
 pub mod session;
 pub mod wasm;
 pub mod xref;

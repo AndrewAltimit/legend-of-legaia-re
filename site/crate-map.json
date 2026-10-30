@@ -3090,6 +3090,7 @@
     "map_detail_rules",
     "map_rules",
     "modes",
+    "npc_postures",
     "progression",
     "quest",
     "refs",
@@ -4545,6 +4546,7 @@
    "lib": true,
    "modules": [
     "catalog",
+    "npc_posture",
     "session",
     "wasm",
     "xref"

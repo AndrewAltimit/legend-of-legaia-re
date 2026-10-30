@@ -258,3 +258,44 @@ event = {{ kind = "rest", cost = 100, save = true }}
     }
     assert!(!e.iter().any(|m| m.contains("errand")), "{e:#?}");
 }
+
+#[test]
+fn a_seated_clip_wants_a_seat_and_a_walk_clip_should_walk() {
+    // town01 placement 10 per the committed posture table: clip 18 seated,
+    // clip 15 standing, clip 44 walking.
+    let npc = r#"
+[[npcs]]
+id = "sitter"
+model = { kind = "npc", scene = "town01", index = 10 }
+tile = [3, 2]
+clip = 18
+patrol = [[1, 2]]
+walk_clip = 15
+line = "hello"
+"#;
+    let warnings = |map: &str| -> Vec<String> {
+        validate(&pack(map))
+            .into_iter()
+            .filter(|i| i.severity == Severity::Warning && i.path == "maps/hall.toml")
+            .map(|i| format!("{}: {}", i.field, i.message))
+            .collect()
+    };
+    let bare = warnings(&format!("{MAP}{npc}"));
+    assert!(
+        bare.iter()
+            .any(|w| w.starts_with("npcs[1].clip") && w.contains("seated")),
+        "{bare:#?}"
+    );
+    assert!(
+        bare.iter()
+            .any(|w| w.starts_with("npcs[1].walk_clip") && w.contains("standing")),
+        "{bare:#?}"
+    );
+    let seat = "\n[[decor]]\nmesh = { object = 3 }\ntile = [3, 2]\n";
+    let fixed = npc.replace("walk_clip = 15", "walk_clip = 44");
+    let seated = warnings(&format!("{MAP}{fixed}{seat}"));
+    assert!(
+        !seated.iter().any(|w| w.starts_with("npcs[1].")),
+        "{seated:#?}"
+    );
+}

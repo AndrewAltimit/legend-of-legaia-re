@@ -395,7 +395,11 @@ the cells the base scene's meshes sample (`scene_objects`' `cells`, labelled
 page, palette, cell and prim count), takes the three words by hand, and
 shows the page's 8 x 8 atlas as a grid of buttons, the sampled cells marked:
 a coordinate and a count, never a texel. An NPC's form has a **Scenery**
-checkbox (draws and plays its clip, no talk, no collision). The canvas draws
+checkbox (draws and plays its clip, no talk, no collision). Under its clip fields
+it lists the borrowed placement's clips by measured pose - standing,
+walking, seated (wants a seat under it), crouched - from `scene_npcs`'
+`postures`
+([NPC clip postures](../formats/expansion-pack-maps.md#npc-clip-postures)). The canvas draws
 every decoration (green dots) and decal (blue dots) where the map bakes it:
 `map_preview` expands the map's `decor`, `scatter`, `edges` and `decals` and
 returns the positions (`decor`), so a brush's coverage shows as it is

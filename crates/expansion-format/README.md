@@ -24,6 +24,7 @@ shareable language pack follows. The format reference is
 | `share` | The import gates a shared `.lxpack` passes, the library summary, the sources zip |
 | `diff` | Two versions of a pack compared entry by entry; the semver bump and changelog draft |
 | `battle`, `progression`, `quest`, `dialog`, `cards`, `cutscene`, `modes`, `items`, `arts`, `spells`, `map`, `terrain` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by; `arts` resolves a segment's retail art against `legaia_art`'s per-character tables) |
+| `npc_postures` | The committed table (`data/npc_postures.toml`) of each borrowed NPC placement's clips by measured pose, which the map validator reads to warn of a seated clip with no seat ([NPC clip postures](../../docs/formats/expansion-pack-maps.md#npc-clip-postures)) |
 | `audio`, `audio_clip` | `audio.toml` and map `[audio]` (`MusicRef`, `SoundRef`, tracks, sounds, zones, ambient sources), and the one WAV / Ogg Vorbis decoder and probe (`lewton` for Vorbis) the validator and both hosts run ([`expansion-pack-audio.md`](../../docs/formats/expansion-pack-audio.md)) |
 
 The core API takes and returns bytes, so it builds for `wasm32`; only

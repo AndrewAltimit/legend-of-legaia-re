@@ -258,9 +258,13 @@ impl DiscCatalog {
             .scene_facts(name)
             .npcs
             .with_context(|| format!("scene `{name}` has no NPC placements to read"))?;
+        let postures = crate::npc_posture::measure_scene(&self.index, name)
+            .map(|v| v.iter().map(|p| p.postures(name)).collect())
+            .unwrap_or_default();
         Ok(SceneNpcs {
             scene: name.to_string(),
             npcs: picks,
+            postures,
         })
     }
 
@@ -369,6 +373,9 @@ impl DiscCatalog {
 pub struct SceneNpcs {
     pub scene: String,
     pub npcs: Vec<NpcPick>,
+    /// Each posable placement's clips by measured pose
+    /// ([`crate::npc_posture`]): the NPC form's clip hint.
+    pub postures: Vec<legaia_expansion_format::npc_postures::PlacementPostures>,
 }
 
 /// A base scene's field map (`None` when it has none) and floor ladder.

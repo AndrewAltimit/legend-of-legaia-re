@@ -628,6 +628,11 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 "clip ids are 1-based (ANM record + 1); leave `clip` out for the placement's own",
             );
         }
+        if let Some(DiscRef::Npc { scene, index }) = &n.model
+            && !n.scenery
+        {
+            check_npc_postures(m, cx, &at, n, scene, *index);
+        }
         if let Some(g) = grid {
             for t in std::iter::once(&n.tile).chain(&n.patrol) {
                 if !standable(g, *t) {
@@ -687,6 +692,78 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 "the NPC says nothing, runs no shop and gives no quest",
             );
         }
+    }
+}
+
+/// The NPC's clips against the measured posture table
+/// ([`crate::npc_postures`]): a seated clip needs something to sit on - a
+/// decoration or a standable prop on the NPC's tile - a patrol's
+/// `walk_clip` should walk, and a `clip` must be one the model can play.
+/// Placements the table does not cover, and scenery NPCs (often not a
+/// figure at all: town01's windmill sails are a placement), are not
+/// checked.
+fn check_npc_postures(
+    m: &MapDef,
+    cx: &mut Checker<'_>,
+    at: &str,
+    n: &crate::map::NpcDef,
+    scene: &str,
+    index: u16,
+) {
+    use crate::npc_postures::{Posture, table};
+    let Some(row) = table().get(scene, index) else {
+        return;
+    };
+    let list = |p: Posture| {
+        let v = row.clips(p);
+        if v.is_empty() {
+            "none".to_string()
+        } else {
+            v.iter().map(u8::to_string).collect::<Vec<_>>().join(", ")
+        }
+    };
+    if let Some(c) = n.clip
+        && row.posture(Some(c)).is_none()
+    {
+        cx.warning(
+            &format!("{at}.clip"),
+            format!(
+                "clip {c} is not one `{scene}` placement {index}'s model can play (its bone \
+                 count differs); standing clips: {}",
+                list(Posture::Standing)
+            ),
+        );
+    }
+    let seat = m.decor.iter().any(|d| d.tile == n.tile)
+        || m.props.iter().any(|p| p.tile == n.tile && p.top.is_some());
+    if row.posture(n.clip) == Some(Posture::Seated) && !seat {
+        let which = n.clip.map_or_else(
+            || "the placement's own clip".to_string(),
+            |c| format!("clip {c}"),
+        );
+        cx.warning(
+            &format!("{at}.clip"),
+            format!(
+                "{which} is a seated pose with nothing under it: put a seat (a decoration or a \
+                 prop with a `top`) on tile {:?}, or pick a standing clip: {}",
+                n.tile,
+                list(Posture::Standing)
+            ),
+        );
+    }
+    if let Some(w) = n.walk_clip
+        && !n.patrol.is_empty()
+        && let Some(p) = row.posture(Some(w))
+        && p != Posture::Walking
+    {
+        cx.warning(
+            &format!("{at}.walk_clip"),
+            format!(
+                "walk clip {w} is a {} pose; walking clips: {}",
+                p.word(),
+                list(Posture::Walking)
+            ),
+        );
     }
 }
 

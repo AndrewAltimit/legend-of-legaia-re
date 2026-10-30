@@ -326,6 +326,46 @@ While its `requires` gate is shut the NPC says nothing and opens no shop
 off-map hide box (`World::expansion_hide_absent_npcs`) - until a cutscene's
 `show` step brings it on.
 
+### NPC clip postures
+
+A clip id says nothing about the pose it plays: a borrowed placement's ANM
+bundle holds standing idles, gestures, walk cycles and seated poses side by
+side, and a seated clip on a bare tile draws an NPC sitting on air (the
+`koin1` slot players' own clip is one). The posture table
+([`legaia_expansion_format::npc_postures`](../../crates/expansion-format/src/npc_postures.rs),
+`crates/expansion-format/data/npc_postures.toml`) lists, for each
+placement of the scenes it covers, every clip the model can play (bone
+count equal to the model's object count) under the pose it measures as.
+It holds disc coordinates and clip ids only.
+
+The measurement
+([`legaia_web_expansion::npc_posture`](../../crates/web-expansion/src/npc_posture.rs))
+poses each clip frame by frame through the placement's mesh the way both
+hosts draw it and reads three numbers off the posed vertices: the clip's
+mean height, how far its lowest point rises above the model's standing
+floor, and how far the lower body travels from frame 0. The model's
+standing height and floor are the upper quartile over its clips: a bundle
+mixes clips authored for other rigs of the same bone count, whose origins
+sit at other heights, so the reference is the model's own clips rather
+than the actor origin.
+
+| Pose | Rule |
+|---|---|
+| `seated` | Lowest point at least 20 units above the model's standing floor, height at most 0.85 of the standing height. |
+| `crouched` | Height at most 0.8 of the standing height, not lifted. |
+| `walking` | Lower body travels at least 25 units. |
+| `standing` | Everything else: idles and upper-body gestures. |
+
+The example `cargo run -p legaia-web-expansion --example npc_postures --
+extracted <scene>...` regenerates the table, and a disc-gated test checks
+the committed one against the disc. The validator reads it (rows below), and
+the workbench's NPC form lists the borrowed placement's clips by pose,
+measured live off the loaded disc. A pose the table names is the vertices'
+shape, not the animator's intent: a clip authored for another model of the
+same bone count is listed under whatever shape it gives this one, and a
+placement that is not a figure (town01's windmill sails) is classed all
+the same, which is why the validator skips `scenery` NPCs.
+
 ## Visible walls
 
 A legend style's `wall` draws on every tile of that style:
@@ -376,6 +416,7 @@ the sections it names, with or without a disc:
 | One prop and one NPC a tile; a style with both a `mesh` ground and a `wall` | error |
 | Wall box height `1..=512`; standable footprint `1..=1024` a side | error |
 | An NPC model from a scene other than the base scene | warning |
+| A seated clip with no decoration or standable prop on the NPC's tile; a patrol `walk_clip` that does not walk; a `clip` the model cannot play ([NPC clip postures](#npc-clip-postures)) | warning |
 | A spawn, NPC or waypoint on a void or fully walled tile; an NPC on a prop's tile | warning |
 | With a disc: a geometry-pack index (`{ object = N }` props, `mesh` grounds and walls) past the base scene's pack | error |
 | Decorations: brushes have meshes and a weight; the map expands within 8192 decorations and 32 a tile; rectangles on the map; scales positive | error |

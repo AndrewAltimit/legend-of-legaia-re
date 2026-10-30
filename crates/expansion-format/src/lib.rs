@@ -52,6 +52,7 @@ pub mod map_detail;
 pub mod map_detail_rules;
 pub mod map_rules;
 pub mod modes;
+pub mod npc_postures;
 pub mod progression;
 pub mod quest;
 pub mod refs;

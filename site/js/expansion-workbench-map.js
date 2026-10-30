@@ -870,6 +870,23 @@ function loadObjects(ctx, scene, done) {
   }, 30);
 }
 
+/** The borrowed placement's clips by measured pose (`scene_npcs`'
+ * `postures`, legaia_web_expansion::npc_posture): which ids stand, walk,
+ * sit (and need a seat under them) or crouch. Empty until the disc's list
+ * has loaded. */
+function clipPostureHint(model) {
+  const list = model && V.npcs[model.scene];
+  const row = list && (list.postures || []).find((r) => r.index === model.index);
+  const el = h('p', { class: 'xw-hint', 'data-path': 'clip-postures' });
+  if (!row) return el;
+  const part = (label, ids) => (ids && ids.length ? `${label}: ${ids.join(', ')}` : '');
+  const own = row.clip ? `own clip ${row.clip}` : 'no clip of its own';
+  const parts = [part('standing', row.standing), part('walking', row.walking),
+    part('seated (put a seat under it)', row.seated), part('crouched', row.crouched)].filter(Boolean);
+  el.textContent = `Clips by measured pose (${own}): ${parts.join('; ')}.`;
+  return el;
+}
+
 function loadNpcs(ctx, scene, done) {
   if (!scene || V.npcs[scene] || !ctx.cat) return;
   try {
@@ -1176,6 +1193,7 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'cutscene', t: 'oref', kind: 'cutscene', label: 'Plays (cutscene)', hint: 'in place of its line' },
       { k: 'scenery', t: 'bool', label: 'Scenery (plays its clip; no talk, no collision)' },
     ], p));
+    box.append(clipPostureHint(o.model));
     box.append(gateBox(mctx, o, 'requires', p, 'Talks when'));
     box.append(gateBox(mctx, o, 'after', p, 'After (switches to the second line)'));
     box.append(gateBox(mctx, o, 'present', p, 'Stands on the map when (else a cutscene brings it on)'));
