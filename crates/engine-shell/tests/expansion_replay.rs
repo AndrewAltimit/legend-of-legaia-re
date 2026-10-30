@@ -378,16 +378,17 @@ fn rebirth() -> Arc<ExpansionPack> {
     Arc::new(ExpansionPack::from_dir(&dir).expect("the Rebirth pack parses"))
 }
 
-/// Walk into the arena (away from the stair) from the entrance spawn with jumps every half second,
-/// action movement switched on at frame 1.
+/// Walk from 2F's lower stair with jumps every half second, action movement
+/// switched on at frame 1. 2F, not 1F: the Atrium's first entry plays the
+/// pack's unskippable `tower_intro` cutscene, which holds the pad.
 fn map_replay(with_action: bool) -> ReplayFile {
     let mut r = ReplayFile::new(ReplayMeta::new(480));
     r.push_switch(0, pack_switch(&rebirth()).unwrap());
     r.push_switch(
         0,
         SwitchChange::Map {
-            map: "rebirth_tower_1f".into(),
-            spawn: "entrance".into(),
+            map: "rebirth_tower_2f".into(),
+            spawn: "from_below".into(),
         },
     );
     if with_action {
@@ -426,7 +427,7 @@ fn a_pack_map_walk_with_action_jumps_replays_bit_identical() {
     assert_eq!(a, map_trace(&replay, &extracted), "two runs diverged");
     assert!(
         a.iter()
-            .all(|l| l.contains("map=Some(\"rebirth_tower_1f\")")),
+            .all(|l| l.contains("map=Some(\"rebirth_tower_2f\")")),
         "the walk stays on the pack map"
     );
     // The player left the floor: some frame stands higher (smaller Y) than
