@@ -41,6 +41,7 @@ import { createFind, locate } from './expansion-workbench-xref.js';
 import { renderFlow } from './expansion-workbench-graph.js';
 import { attachShare } from './expansion-workbench-share.js';
 import { addSectionHelp } from './expansion-workbench-help.js';
+import { authoringHints, hintScenes } from './expansion-workbench-hints.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -88,6 +89,8 @@ const S = {
   pack: null,        // the pack JSON being edited
   label: '',         // where the pack came from
   issues: [],
+  hints: [],         // authoring hints (expansion-workbench-hints.js), not checks
+  sceneObj: {},      // scene_objects per scene, shared by the painter and the hints
   tab: 'manifest',
   sel: {},           // split-editor selections, by file:path
   jump: null,        // { file, field } while jumping to an issue
@@ -240,7 +243,10 @@ const ctx = {
       return { error: errText(e) };
     }
   },
-  sceneObjects: (scene) => JSON.parse(S.wb.scene_objects(scene)),
+  sceneObjects: (scene) => {
+    if (!S.sceneObj[scene]) S.sceneObj[scene] = JSON.parse(S.wb.scene_objects(scene));
+    return S.sceneObj[scene];
+  },
   sceneNpcs: (scene) => JSON.parse(S.wb.scene_npcs(scene)),
   // The pack's assets/ (glTF models and their PNGs for map props).
   assetPaths: () => (S.wb.asset_paths ? JSON.parse(S.wb.asset_paths()) : []),
@@ -464,12 +470,42 @@ function jumpTo(issue) {
   rerender();
 }
 
+/* The authoring hints over the pack as it is: walk-through props and
+ * walk-on text. A walk-through judgement needs the base scene's geometry
+ * pack; one not built yet is built a scene at a time while the page is
+ * idle, and the hints redraw as each lands. */
+function computeHints() {
+  if (!S.pack) { S.hints = []; return; }
+  try {
+    S.hints = authoringHints(S.pack, (scene) => S.sceneObj[scene] || null);
+  } catch (e) {
+    S.hints = [];
+  }
+  if (!S.cat || !S.wb || S.hintLoad) return;
+  const todo = hintScenes(S.pack).filter((sc) => !S.sceneObj[sc]);
+  if (!todo.length) return;
+  // The worker builds it off this thread when it is up.
+  if (V.worker && V.ready) {
+    S.hintLoad = todo[0];
+    V.worker.postMessage({ type: 'scene_objects', scene: todo[0] });
+    return;
+  }
+  S.hintLoad = setTimeout(() => {
+    S.hintLoad = null;
+    try { S.sceneObj[todo[0]] = JSON.parse(S.wb.scene_objects(todo[0])); } catch (e) { S.sceneObj[todo[0]] = { scene: todo[0], objects: [] }; }
+    computeHints();
+    renderIssues();
+  }, 400);
+}
+
 function renderIssues() {
   const box = $('xw-issues');
   box.innerHTML = '';
   const errs = S.issues.filter((i) => i.severity === 'error').length;
   const warns = S.issues.length - errs;
-  $('xw-issue-sum').textContent = `${errs} error(s), ${warns} warning(s)${S.cat ? '' : ' - load a disc to check coordinates'}`;
+  const hints = S.hints || [];
+  $('xw-issue-sum').textContent = `${errs} error(s), ${warns} warning(s)${hints.length ? `, ${hints.length} hint(s)` : ''}${S.cat ? '' : ' - load a disc to check coordinates'}`;
+  if (hints.length) box.append(renderHints(hints));
   if (!S.issues.length) { box.append(h('div', { class: 'xw-ok' }, 'No issues: the pack loads.')); return; }
   const by = new Map();
   for (const i of S.issues) {
@@ -483,6 +519,26 @@ function renderIssues() {
         i.field ? h('code', {}, i.field + ' ') : null, i.message));
     }
   }
+}
+
+/* The hints as a fold under the checks: not errors, not warnings - a pack
+ * with hints exports and validates as it is. A click opens what it names
+ * (a prop, a trigger) selected in the painter. */
+function renderHints(hints) {
+  const walk = hints.filter((i) => i.kind === 'walk').length;
+  const text = hints.length - walk;
+  const det = h('details', { class: 'xw-hints' });
+  try { det.open = localStorage.getItem('xw-hints-open') !== '0'; } catch (e) { det.open = true; }
+  det.addEventListener('toggle', () => { try { localStorage.setItem('xw-hints-open', det.open ? '1' : '0'); } catch (e) { /* no storage */ } });
+  det.append(h('summary', {}, `Hints: ${[walk ? `${walk} walk-through` : '', text ? `${text} walk-on text` : ''].filter(Boolean).join(', ')}`,
+    h('span', { class: 'xw-hint' }, ' advice, not checks: the pack exports as it is')));
+  let path = null;
+  for (const i of hints) {
+    if (i.path !== path) { path = i.path; det.append(h('div', { class: 'xw-issue-file' }, path)); }
+    det.append(h('button', { type: 'button', class: 'xw-issue is-hint', 'data-kind': i.kind, onclick: () => jumpTo(i) },
+      i.field ? h('code', {}, i.field + ' ') : null, i.message));
+  }
+  return det;
 }
 
 // The path of the JSON value under character `at` of JSON.stringify(v): the
@@ -545,7 +601,7 @@ function placeParseError(issue) {
  * answer for a pack that has changed since is dropped (a newer one is on
  * its way). Without the worker (an older bundle, a worker that failed) it
  * runs here. An export or a hand-off still validates here, at once. */
-const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [] };
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [] };
 
 // Count every change to the session's own files (the loaded tree, assets,
 // documents), so the worker is handed them again before its next check.
@@ -562,6 +618,35 @@ function stopValidator() {
   if (V.worker) V.worker.terminate();
   V.worker = null;
   V.ready = false;
+  if (typeof S.hintLoad === 'string') S.hintLoad = null;
+  // A bundle still owed by the worker is built here instead.
+  const owed = [...V.bundles.values()];
+  V.bundles.clear();
+  for (const b of owed) {
+    try { b.res(S.wb.export_bundle(b.json)); } catch (e) { b.rej(e); }
+  }
+}
+
+/* Hand the worker the session's files when they changed since it had them. */
+function syncWorkerFiles() {
+  if (V.synced !== V.gen) {
+    V.worker.postMessage({ type: 'files', data: S.wb.session_files() });
+    V.synced = V.gen;
+  }
+}
+
+/* The `.lxpack` of the pack as it is now, built in the worker when it is
+ * up (the 3D preview's rebuilds; the page's thread is not held), else
+ * here. Rejects as `export_bundle` throws while the pack has an error. */
+function exportBundleAsync() {
+  const json = JSON.stringify(S.pack);
+  if (!V.worker || !V.ready) return new Promise((res) => res(S.wb.export_bundle(json)));
+  syncWorkerFiles();
+  const seq = ++V.bundleSeq;
+  return new Promise((res, rej) => {
+    V.bundles.set(seq, { res, rej, json });
+    V.worker.postMessage({ type: 'bundle', seq, json });
+  });
 }
 
 function startValidator(parts) {
@@ -589,6 +674,21 @@ function startValidator(parts) {
       // Stale when another check was asked for since (an edit came after).
       if (m.seq !== V.seq || V.edited) return;
       applyIssues(JSON.parse(m.issues));
+    } else if (m.type === 'scene_objects') {
+      if (!S.sceneObj[m.scene]) {
+        try { S.sceneObj[m.scene] = m.error ? { scene: m.scene, objects: [] } : JSON.parse(m.json); } catch (e) { S.sceneObj[m.scene] = { scene: m.scene, objects: [] }; }
+      }
+      S.hintLoad = null;
+      computeHints();
+      renderIssues();
+    } else if (m.type === 'bundle') {
+      const b = V.bundles.get(m.seq);
+      if (!b) return;
+      V.bundles.delete(m.seq);
+      if (m.error != null) { b.rej(new Error(m.error)); return; }
+      V.bundleMs.push(m.ms);
+      if (V.bundleMs.length > 20) V.bundleMs.shift();
+      b.res(m.bytes);
     } else if (m.type === 'error') {
       console.warn('expansion workbench: the validation worker stopped (' + m.message + '); validating on the page');
       stopValidator();
@@ -619,10 +719,7 @@ function scheduleValidate() {
 function validateSoon() {
   if (!S.wb || !S.pack) return;
   if (!V.worker || !V.ready) { runValidate(); return; }
-  if (V.synced !== V.gen) {
-    V.worker.postMessage({ type: 'files', data: S.wb.session_files() });
-    V.synced = V.gen;
-  }
+  syncWorkerFiles();
   V.edited = false;
   V.seq++;
   V.worker.postMessage({ type: 'validate', seq: V.seq, json: JSON.stringify(S.pack) });
@@ -647,6 +744,7 @@ function applyIssues(raw) {
   } catch (e) {
     S.issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
   }
+  computeHints();
   renderIssues();
   renderTabs();
   markFieldIssues();
@@ -1252,6 +1350,7 @@ function initRest() {
   S.preview = createPreview3d({
     pack: () => S.pack,
     exportBundle: () => S.wb.export_bundle(JSON.stringify(S.pack)),
+    exportBundleAsync,
     storePlay,
     playUrl: playLibUrl,
   });

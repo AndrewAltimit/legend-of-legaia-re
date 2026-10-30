@@ -28,6 +28,7 @@
  * after, which close the page history's step around it.
  */
 import { h } from './expansion-workbench-forms.js';
+import { layoutTools, layoutSummary } from './expansion-workbench-layout.js';
 
 const UNIT = 128;
 const TYPES = ['props', 'decor', 'npcs', 'spawns', 'lamps', 'emitters', 'triggers', 'exits', 'encounters'];
@@ -42,7 +43,38 @@ const G = {
   mode: 'view', tool: 'move', snap: 'tile', sel: [],
   brush: { kind: 'raise', radius: 2.5, height: 24, strength: 1, char: '' },
   api: null, sentTerrain: undefined, sentObjects: '', bar: null,
+  // The layout row's counts and steps (expansion-workbench-layout.js),
+  // shared with the painter's.
+  layout: {}, layoutMsg: '',
 };
+
+/** Run layout edit `fn(map, sel)` as one undo step over `sel`, through
+ * `api` (the editor's), and keep its account for the bar. */
+function runLayout(api, sel, fn) {
+  const map = api.map();
+  if (!map || !sel.length) return null;
+  api.snapshot();
+  const r = fn(map, sel);
+  G.sel = (r && r.sel) || sel;
+  G.layoutMsg = layoutSummary(r);
+  api.selected(G.sel);
+  api.refresh(true);
+  renderBar();
+  sync(true);
+  return r;
+}
+
+/** The layout row over the shared selection, for the painter's side
+ * (`sel` the painter's own when nothing is multi-selected; `painterApi`
+ * the painter's `{ map(), snapshot(), refresh(), selected(list) }`). */
+export function layoutRow(sel, painterApi) {
+  const api = painterApi || G.api;
+  if (!api) return null;
+  const list = G.sel.length ? G.sel : (sel || []);
+  const row = layoutTools(Object.assign(G.layout, { h, sel: () => list, run: (fn) => runLayout(api, list, fn) }));
+  if (G.layoutMsg) row.append(h('span', { class: 'xw-hint' }, ' ' + G.layoutMsg));
+  return row;
+}
 
 /** The list behind selection type `type` on `map` (created when asked). */
 export function listOf(map, type, make) {
@@ -263,6 +295,8 @@ export function selection() { return G.sel.slice(); }
 /** Set the selection (from the painter); the frame follows. */
 export function select(list) {
   G.sel = (list || []).filter((s) => s && TYPES.includes(s.type));
+  G.layoutMsg = '';
+  renderBar();
   sync(true);
 }
 
@@ -298,7 +332,9 @@ function onFrame(m) {
   if (!map) return;
   if (m.type === 'xw-select') {
     G.sel = (m.keys || []).map((k) => { const [type, i] = k.split(':'); return { type, i: +i }; });
+    G.layoutMsg = '';
     api.selected(G.sel);
+    renderBar();
   } else if (m.type === 'xw-transform') {
     api.snapshot();
     applyTransforms(map, m.edits || []);
@@ -387,6 +423,10 @@ function renderBar() {
       b('Duplicate', false, 'Copy the selection one tile over (Ctrl+D)', duplicateSel),
       b('Delete', false, 'Remove the selection (Delete)', removeSel),
       h('span', { class: 'xw-hint' }, ` ${G.sel.length ? `${G.sel.length} selected` : 'click an object; Shift adds'}; Shift while dragging places freely`));
+    if (G.sel.length) {
+      bar.append(layoutTools(Object.assign(G.layout, { h, sel: () => G.sel, run: (fn) => runLayout(api, G.sel, fn) })));
+      if (G.layoutMsg) bar.append(h('span', { class: 'xw-hint' }, ' ' + G.layoutMsg));
+    }
   } else if (G.mode === 'sculpt') {
     const kind = h('select', { 'aria-label': 'Brush' }, ...BRUSHES.map(([k, l]) => h('option', { value: k, selected: G.brush.kind === k }, l)));
     kind.addEventListener('change', () => { G.brush.kind = kind.value; sync(); });
@@ -444,4 +484,4 @@ export function setEditor(o) {
 }
 
 // Headless-verification hook.
-if (typeof window !== 'undefined') window.__xwEdit = { state: editorState, set: setEditor, select };
+if (typeof window !== 'undefined') window.__xwEdit = { state: editorState, set: setEditor, select, layout: (fn) => runLayout(G.api, G.sel, fn) };

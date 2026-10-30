@@ -25,7 +25,8 @@ import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-
 import { propMeshEditor, propDetail, renderDetail, entrancesEd } from './expansion-workbench-detail.js';
 import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
-import { mountMapEditor, editorChanged, select as editSelect, selection as editSelection, objectsIn, deleteObjects, duplicateObjects, drawSelection, clearSelection } from './expansion-workbench-gizmos.js';
+import { walkThrough, walkOnDialogs } from './expansion-workbench-hints.js';
+import { mountMapEditor, editorChanged, select as editSelect, selection as editSelection, objectsIn, deleteObjects, duplicateObjects, drawSelection, clearSelection, layoutRow } from './expansion-workbench-gizmos.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
@@ -39,7 +40,7 @@ const TOOLS = [
 
 // View state survives the tab re-rendering on every structural edit.
 const V = {
-  map: null, tool: 'paint', brush: '.', cell: 22, heights: true, sel: null,
+  map: null, tool: 'paint', brush: '.', cell: 22, heights: true, walk: true, sel: null,
   scroll: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null, pick: null,
   propObject: 0, drag: null, npcs: {}, npcModel: null,
 };
@@ -305,6 +306,7 @@ function draw(ctx, cv) {
     zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.08)', [2, 2]);
   }
   drawSelection(g, map, cs);
+  if (V.walk) drawWalkThrough(g, map, cs);
   // The tile last clicked here or in the 3D preview, with nothing selected.
   if (!V.sel && V.cursor && V.cursor.map === V.map) {
     const [c, r] = V.cursor.tile;
@@ -485,7 +487,8 @@ export function renderMaps(ctx, el) {
     h('button', { type: 'button', class: 'wb-mini', title: 'Zoom in', onclick: () => zoom(1) }, '+'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: !ctx.canUndo(), onclick: () => undo(ctx, -1) }, 'Undo'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: !ctx.canRedo(), onclick: () => undo(ctx, 1) }, 'Redo'),
-    h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'));
+    h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'),
+    walkToggle(redraw));
 
   const wrap = h('div', { class: 'xw-canvas-wrap', tabindex: '0' }, cv);
   const hover = h('div', { class: 'xw-hover' });
@@ -811,6 +814,47 @@ function schedulePreview(ctx, redraw) {
   }, 140);
 }
 
+/* The walk-through check (expansion-workbench-hints.js) on the canvas: a
+ * large prop or decoration the player walks through gets a red cross-hatched
+ * tile, and a walk-on dialog trigger an amber corner mark (a repeating one
+ * a filled mark). The same objects list as hints under the Checks. */
+function drawWalkThrough(g, map, cs) {
+  const bad = walkThrough(map, (sc) => V.objects[sc] || null);
+  g.save();
+  g.strokeStyle = '#ff4d4d';
+  g.lineWidth = 2;
+  for (const w of bad) {
+    const o = (w.type === 'props' ? map.props : map.decor)[w.i];
+    const off = o.offset || [0, 0, 0];
+    const x = (o.tile[0] + 0.5 + (off[0] || 0) / 128) * cs, y = (o.tile[1] + 0.5 + (off[2] || 0) / 128) * cs;
+    const r = cs * 0.42;
+    g.setLineDash([]);
+    g.strokeRect(x - r, y - r, 2 * r, 2 * r);
+    g.beginPath();
+    g.moveTo(x - r, y - r); g.lineTo(x + r, y + r);
+    g.moveTo(x + r, y - r); g.lineTo(x - r, y + r);
+    g.stroke();
+  }
+  for (const t of walkOnDialogs(map)) {
+    const q = map.triggers[t.i].rect || [0, 0, 0, 0];
+    const x = Math.min(q[0], q[2]) * cs, y = Math.min(q[1], q[3]) * cs;
+    const k = Math.max(6, cs * 0.35);
+    g.fillStyle = t.repeats ? 'rgba(255,190,60,0.95)' : 'rgba(255,190,60,0.45)';
+    g.beginPath();
+    g.moveTo(x, y); g.lineTo(x + k, y); g.lineTo(x, y + k);
+    g.closePath();
+    g.fill();
+  }
+  g.restore();
+}
+
+function walkToggle(redraw) {
+  const cb = h('input', { type: 'checkbox' });
+  cb.checked = V.walk;
+  cb.addEventListener('change', () => { V.walk = cb.checked; redraw(); });
+  return h('label', { class: 'xw-check xw-field', title: 'Mark large props and decorations the player walks through (red cross) and walk-on dialog triggers (amber corner; solid when it repeats on every visit). The Checks list them as hints.' }, cb, 'Walk-through');
+}
+
 function loadObjects(ctx, scene, done) {
   if (!scene || V.objects[scene] || !ctx.cat || V.objectsPending === scene) return;
   V.objectsPending = scene;
@@ -1010,6 +1054,15 @@ function renderSelection(ctx, mctx, side, map) {
   box.setAttribute('data-path', p);
   box.append(h('div', { class: 'xw-box-head' }, `${sel.type.replace(/s$/, '')} ${o.id || ''}`, h('span', { class: 'xw-sp' }),
     h('button', { type: 'button', class: 'wb-mini', onclick: () => { map[sel.type].splice(sel.i, 1); V.sel = null; ctx.changed(true); } }, 'Delete')));
+  // Snap, align, spread, repeat, fill between and mirror over the
+  // selection (the multi-selection when there is one).
+  const lay = layoutRow([sel], {
+    map: () => map,
+    snapshot: () => { if (ctx.commit) ctx.commit(); },
+    refresh: () => ctx.changed(true),
+    selected: (list) => { editSelect(list.length > 1 ? list : []); V.sel = list[0] || null; },
+  });
+  if (lay) box.append(lay);
   const rect = { k: 'rect', t: 'tuple', n: 4, label: 'Tiles', hint: '[col0, row0, col1, row1]' };
   if (sel.type === 'spawns') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },
@@ -1029,16 +1082,32 @@ function renderSelection(ctx, mctx, side, map) {
     } else {
       box.append(grid(mctx, to, [{ k: 'map', t: 'sel', opts: Object.keys(ctx.pack.maps), label: 'Map' }, { k: 'spawn', label: 'Spawn', ph: 'first' }], `${p}.to`));
     }
-    box.append(grid(mctx, o, [{ k: 'locked_line', t: 'oref', kind: 'line', label: 'Said while shut', hint: 'a sealed stair saying why' }, { k: 'locked_toast', t: 'bool', label: 'Say it as a toast (no dialog box)' }], p));
     box.append(gateBox(mctx, o, 'requires', p, 'Open when'));
+    box.append(h('div', { class: 'xw-box-head' }, 'While shut'));
+    box.append(grid(mctx, o, [
+      { k: 'locked_line', t: 'oref', kind: 'line', label: 'Says why', hint: 'on each step onto the shut exit: "The seal holds."' },
+      { k: 'locked_toast', t: 'bool', label: 'As a toast', hint: 'a one-row notice at the top; the player is not stopped' },
+    ], p));
+    box.append(h('p', { class: 'xw-note' }, !o.requires
+      ? 'The exit has no "Open when" gate, so it is never shut and this line is never said.'
+      : o.locked_line
+        ? (o.locked_toast ? 'A toast: the player reads why and keeps walking. Only the line\'s first page shows (40 characters).' : 'A dialog box: it stops the player on every step onto the exit. Tick As a toast for a lighter touch.')
+        : 'No line: the shut exit just does nothing when stepped on.'));
   } else if (sel.type === 'triggers') {
-    box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'once', t: 'bool', label: 'Once ever' }, { k: 'press', t: 'bool', label: 'On the action button (not on entry)' }], p));
+    box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect], p));
+    // How it fires: on entry, or as an examine (`press`).
+    const how = h('select', { 'aria-label': 'Fires' },
+      h('option', { value: 'walk', selected: !o.press }, 'when the player steps on it'),
+      h('option', { value: 'press', selected: !!o.press }, 'when the player examines it (action button)'));
+    how.addEventListener('change', () => { if (how.value === 'press') o.press = true; else delete o.press; ctx.changed(true); });
+    box.append(h('label', { class: 'xw-field', 'data-path': `${p}.press` }, h('span', {}, 'Fires', h('span', { class: 'xw-hint' }, ' an examine fires while standing on it or facing it from the next tile')), how));
+    box.append(grid(mctx, o, [{ k: 'once', t: 'bool', label: 'Once ever', hint: 'fires the first time only; a flag remembers it across visits and saves' }], p));
     const ev = o.event;
     const EVENTS = {
       battle: [{ k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' }],
       boss: [{ k: 'boss', t: 'ref', kind: 'boss', label: 'Boss' }],
-      dialog: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line' }],
-      toast: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'its first page, as a toast that stops nothing' }],
+      dialog: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'a dialog box: the player stops and reads' }],
+      toast: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'its first page as a one-row notice; the player keeps walking' }],
       talk: [{ k: 'npc', label: 'NPC id', hint: 'a quest giver / talk objective' }],
       start_quest: [{ k: 'quest', t: 'ref', kind: 'quest', label: 'Quest' }],
       set_flag: [{ k: 'flag', label: 'Pack flag' }],
@@ -1051,7 +1120,8 @@ function renderSelection(ctx, mctx, side, map) {
       cutscene: [{ k: 'cutscene', t: 'ref', kind: 'cutscene', label: 'Cutscene' }],
       sound: [{ k: 'sound', t: 'sound', label: 'Sound', hint: 'a retail cue or an audio.toml sound' }],
     };
-    const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, k.replace('_', ' '))));
+    const EVENT_LABEL = { dialog: 'dialog (a box that stops the player)', toast: 'toast (a notice that stops nothing)' };
+    const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, EVENT_LABEL[k] || k.replace('_', ' '))));
     kind.addEventListener('change', () => {
       const k = kind.value;
       const first = (kd) => ctx.ids(kd)[0] || '';
@@ -1063,6 +1133,17 @@ function renderSelection(ctx, mctx, side, map) {
     });
     box.append(h('label', { class: 'xw-field', 'data-path': `${p}.event` }, h('span', {}, 'Raises'), kind));
     box.append(grid(mctx, ev, EVENTS[ev.kind] || [], `${p}.event`));
+    // What the player meets, in a line: walk-on text is the thing to keep rare.
+    if (ev.kind === 'dialog' || ev.kind === 'toast') {
+      const say = ev.kind === 'toast'
+        ? (o.press ? 'Examined, it shows a toast: a light touch for flavour text.' : 'Stepping on it shows a toast: the player reads it in passing and keeps walking.')
+        : o.press
+          ? 'Examined, it opens a dialog box: the player asked for it, so it may run long.'
+          : o.once
+            ? 'Stepping on it opens a dialog box, the first time only: keep these for story beats.'
+            : 'Stepping on it opens a dialog box on every visit: that stops the player each time they pass. Make it an examine, a toast, or Once ever.';
+      box.append(h('p', { class: 'xw-note' + (ev.kind === 'dialog' && !o.press && !o.once ? ' is-warn' : '') }, say));
+    }
     box.append(gateBox(mctx, o, 'requires', p, 'Fires when'));
   } else if (sel.type === 'encounters') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'table', label: 'Encounter table' }], p));
