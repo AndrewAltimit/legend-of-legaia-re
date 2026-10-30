@@ -12,7 +12,8 @@ Field image builder: [`legaia_engine_scene::expansion_map`](../../crates/engine-
 Entry and per-tick step: `SceneHost::enter_expansion_map` in
 [`engine-scene-host`](../../crates/engine-scene-host/src/scene_host/expansion_map.rs);
 zone and NPC runtime: [`legaia_engine_expansion::map`](../../crates/engine-expansion/src/map.rs);
-validation: [`legaia_expansion_format::map_rules`](../../crates/expansion-format/src/map_rules.rs).
+validation: [`legaia_expansion_format::map_rules`](../../crates/expansion-format/src/map_rules.rs);
+the detail layer: [`legaia_expansion_format::map_detail`](../../crates/expansion-format/src/map_detail.rs).
 Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/rebirth_tower_1f.toml).
 
 ## File layout
@@ -33,6 +34,10 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `entrances` | Tile rectangles in retail field scenes that lead into the map. |
 | `bgm` | A `DiscRef::Bgm` (sound-test id). |
 | `camera` | `"default"`, `"retail"`, `"far"` or `"farther"` (the follow camera's distance presets). |
+| `decor`, `scatter`, `edges` | Decorations: any number of meshes a tile, placed one by one, by seeded brush, or along wall edges ([Decorations](#decorations)). |
+| `lighting` | Enhanced-lighting mood and placed lamps ([Lights](#lights)). |
+| `materials` | Animated texture words: palette cycling, hue cycling, texel scrolling ([Animated materials](#animated-materials)). |
+| `fog` | The retail field fog pool over tile regions ([Fog](#fog)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
 from the first character of the first row: column grows with world `+X`, row
@@ -145,12 +150,26 @@ top = 64                                    # standable: a floor 64 units up
 footprint = [128, 128]                      # the top's extent, world units
 ```
 
-`mesh` is either `{ object = N }` or `{ tmd = { kind = "tmd", prot = P, index = N } }`.
-A TMD coordinate resolves only when `P` is the PROT entry holding the base
-scene's geometry pack (its scene-asset bundle); anything else is refused at
-entry. `scale` folds into the prop's model matrix after its rotation, where a
+`mesh` takes four forms ([`PropMesh`](../../crates/expansion-format/src/map.rs)):
+
+| Form | Mesh |
+|---|---|
+| `{ object = N }` | Mesh `N` of the base scene's geometry pack. |
+| `{ scene = "town01", object = N }` | Mesh `N` of any field scene's geometry pack ([Meshes from other scenes](#meshes-from-other-scenes)). |
+| `{ tmd = { kind = "tmd", prot = P, index = N } }` | Mesh `N` of the geometry pack held in PROT entry `P`, whichever scene's block holds it. |
+| `{ asset = "models/x.glb", colors = 256 }` | A glTF model the pack carries ([Model assets](#model-assets)). |
+
+`scale` folds into the prop's model matrix after its rotation, where a
 retail placed object's render scale lands. Props carry no collision box of
 their own: `solid` closes the tile.
+
+`animate` is a list of procedural animators and `light` a light the prop
+carries ([Animated props](#animated-props), [Lights](#lights)). A prop
+standing on a tile whose cell already drew a mesh - a kept retail cell, a
+wall, a mesh ground - replaces that mesh (a cell names one record); the
+entry logs the tiles it happened to. A decoration bakes in beside a cell's
+mesh instead, which is how to dress a kept retail room without losing any
+of it.
 
 ### Standable props
 
@@ -279,6 +298,12 @@ the sections it names, with or without a disc:
 | An NPC model from a scene other than the base scene | warning |
 | A spawn, NPC or waypoint on a void or fully walled tile; an NPC on a prop's tile | warning |
 | With a disc: a geometry-pack index (`{ object = N }` props, `mesh` grounds and walls) past the base scene's pack | error |
+| Decorations: brushes have meshes and a weight; the map expands within 8192 decorations and 32 a tile; rectangles on the map; scales positive | error |
+| Decorations on a placed prop's tile (left out at load) | warning |
+| A model asset is in the pack, a glTF 2.0 binary or JSON, `colors` 16 or 256 | error |
+| Animator periods at least 1 (a spin may be negative); pulse amount `0..1`; light radius, flicker `0..=1` | error |
+| Materials: periods at least 1, palette ranges inside 256 entries | error |
+| A `{ scene, object = N }` mesh, with a disc: `N` past that scene's pack | error |
 
 ## Exits, triggers and encounter zones
 
@@ -450,11 +475,266 @@ scene build reads the map's ground, walls and props off the same `Scene`
 scene picker - leaves the map and drops its layer; a battle fought on the map
 returns to it. The map's `name` shows as the place-name banner on entry.
 
-## Gaps
+## Meshes from other scenes
 
-- **Props from other scenes.** A prop mesh must come from the base scene's
-  geometry pack; a TMD from another PROT entry (and the VRAM it samples) is not
-  loaded.
+A mesh named from another scene's pack samples that scene's VRAM, which the
+map does not load. At entry the engine builds the source scene's field
+resources, takes the mesh, and relocates what it samples
+([`expansion_map::detail`](../../crates/engine-scene/src/expansion_map/detail.rs)):
+
+1. For every texture page its primitives read, the bounding rectangle of
+   their UVs; for every palette, its 16 or 256 entries.
+2. Each that the map's VRAM already holds word for word stays put - the
+   boot-resident system UI, a page two scenes share.
+3. The rest are copied into rectangles of free VRAM
+   ([`VramAlloc`](../../crates/engine-scene/src/expansion_map/vram_alloc.rs)),
+   and the primitives' CLUT, page and UV words are rewritten to the copies.
+
+Free VRAM is what the base scene's build leaves unwritten - every TIM the
+scene uploads, the system UI, the effect-texture pool and the field
+character atlas the hosts layer with it count as written - minus the
+battle transition's capture pages (`320 <= x < 640`) and the dialog font's
+page (`(896, 0)`, `64 x 256`). Retail's display buffers (`x < 320`) are free:
+the port presents from its own render target. A texture rectangle stays inside one texture page
+and a palette starts on a 16-halfword boundary, which is all a primitive's
+words can address. All the meshes of one source scene relocate together, so
+a page they share is copied once.
+
+The copies are written by the scene's resource build after its own uploads
+(`SceneResources::build_targeted_with_options`), so both hosts, and every
+rebuild of the map's VRAM - the return from a battle included - carry them.
+The base scene's own words are never written. A map whose foreign meshes do
+not fit the free VRAM is refused at entry.
+
+## Model assets
+
+`{ asset = "path" }` names a glTF 2.0 file under the pack's `assets/` (a
+`.glb`, or a `.gltf` with its buffers and PNG textures beside it or in
+`data:` URIs). At entry it is converted into the renderer's form
+([`expansion_map::gltf`](../../crates/engine-scene/src/expansion_map/gltf.rs)):
+
+| Input | Output |
+|---|---|
+| The default scene's node tree (`matrix` or TRS) | Baked into the vertices. |
+| Triangle primitives: `POSITION`, `TEXCOORD_0`, `indices` | `Ft3` primitives (textured) or `G3` (no texture). |
+| A material's `baseColorTexture` (PNG) | Box-filtered to at most `256 x 256`, median-cut to `colors` (16 or 256), written into free VRAM as a 4bpp or 8bpp page with its palette. |
+| `baseColorFactor` with no texture | The flat colour of the `G3` primitives. |
+
+One glTF unit is `100` world units (a tile is `128`), `+Y` up; the
+conversion flips into the field frame's `Y` down and keeps each face's
+winding. A model converts at most `16384` triangles. Skins, morph targets,
+animations, normals and other texture channels are not read; a model
+animates through `animate` like any prop.
+
+A model is always palettised: there is no full-colour path. That keeps it
+inside the scene's one shading law - PSX mode snaps and dithers it like
+the disc's meshes, clean mode draws the same texels without the snap - and
+it is the honest look for a mesh standing beside retail art.
+
+The validator checks the file is in the pack, has the `glTF` version-2
+header (or is JSON for `.gltf`), and that `colors` is 16 or 256; the
+conversion's own checks run at entry. [`scripts/models/generate_ember_crystal.py`](../../scripts/models/generate_ember_crystal.py)
+writes the Rebirth pack's crystal and is a worked example of a model a
+modder builds.
+
+## Decorations
+
+A tile holds one prop, but any number of decorations. They have no
+collision and draw only. When the map loads, every decoration of a tile is
+baked with the tile's own cell mesh (if any) into one mesh
+([`tmd_ops::bake`](../../crates/engine-scene/src/expansion_map/tmd_ops.rs)),
+which the tile's cell draws through the ordinary decoration-cell path on
+both hosts. The bake keeps each part's primitive section byte for byte -
+the light-source rows included - and only moves its vertices, so a baked
+cell draws exactly as its parts would side by side.
+
+Three sections paint decorations, and all expand into one list
+(`MapDef::decorations`), deterministically: the same file yields the same
+decorations on every host, with or without a disc.
+
+```toml
+[[decor]]                                   # one at a time
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-30, 0, -36]                      # world units, y up
+rotation = [0.0, 20.0, 0.0]
+scale = 0.7
+
+[[scatter]]                                 # a seeded brush
+rect = [1, 1, 13, 11]
+on = ".,"                                   # legend chars painted; empty = every floor tile
+density = 0.45                              # expected meshes a tile
+seed = 1101
+jitter = 44                                 # world units off the tile centre
+yaw = [0.0, 360.0]
+scale = [0.25, 0.45]
+tilt = 0.0                                  # degrees off upright, pitch and roll
+keep_clear = true                           # skip spawns, exits, NPCs, patrols, props
+meshes = [
+  { mesh = { scene = "rugi", object = 18 }, weight = 2 },
+  { mesh = { object = 27 }, weight = 3, scale = [0.45, 0.7], y = 0 },
+]
+
+[[edges]]                                   # along wall edges
+mesh = { scene = "rugi", object = 15 }
+walls = "#"                                 # chars that count as wall; empty = void / fully walled
+on = ""                                     # floor chars; empty = every floor tile
+every = 3                                   # every third edge tile...
+phase = 0                                   # ...where (col + row + phase) % every == 0
+inset = 6                                   # world units from the wall face
+y = 120
+yaw = 0.0                                   # added to facing into the room
+```
+
+A brush's draw for a tile is a pure function of its `seed`, its index and
+the tile, so editing one brush never reshuffles another. An edge copy is
+pushed against the walled side and turned to face into the room (a mesh
+whose front faces `+Z` needs no `yaw`); a corner tile gets one copy per
+walled side.
+
+| Limit | Value |
+|---|---|
+| Decorations a map | 8192 |
+| Decorations a tile | 32 |
+| A decorated tile's records | One a tile, out of the map's 511 |
+
+A map decorated on more tiles than it has free records bakes **cells of
+`c x c` tiles**: each cell's decorations move onto one anchor tile (offset by
+the tile distance, lifted by the floor tiers' difference), the smallest `c`
+that fits. The draw is the same; a baked cell is culled with its anchor
+tile, so on a very large map a decoration at a cell's far edge can drop out
+a frame early at the view's rim. Decorations on a placed prop's tile are
+left out (the prop's record is placed, the bake is a decoration cell) and
+the validator warns.
+
+## Animated props
+
+```toml
+animate = [
+  { kind = "spin", axis = "y", period = 300 },          # a turn every 300 frames; negative turns back
+  { kind = "bob", amplitude = 10, period = 150, phase = 0.25 },
+  { kind = "sway", axis = "z", degrees = 8.0, period = 90 },
+  { kind = "orbit", radius = 70, period = 240 },
+  { kind = "pulse", amount = 0.1, period = 60 },
+]
+```
+
+Each animator is a pure function of `World::frame`
+([`legaia_engine_expansion::map_detail::pose`](../../crates/engine-expansion/src/map_detail.rs));
+`phase` is a fraction of the period. A prop's animators compose in list
+order. The pose reaches both hosts through the placed-draw tables they
+already fold in every frame - `World::object_draw_turn_matrices` (turn about
+the draw's origin) and `World::object_draw_displacements` (move) - under a
+record key of the prop's own (`expansion_map::PROP_RECORD_BASE + n`, past
+every retail bind record), which the hosts give the prop's draw from
+`SceneOverride::prop_records`. Animation is draw only: a solid prop's tile
+and a standable top stay where the prop rests, and nothing animated is
+saved or replayed.
+
+Disc ANM clips do not play on a prop: a retail scene's animated scene props
+are bound to their scene's MAN actors and ANM bank, which a pack map does
+not run. A prop animates procedurally or not at all.
+
+## Lights
+
+Enhanced lighting (`render-kernels::scene_lighting`, default-on on both
+hosts) lights a pack map as it lights a retail scene: from the emitter
+primitives of the meshes it draws - an additive flame on a torch from
+another scene, baked into a decoration, lights the wall it hangs on - plus
+the map's own lights:
+
+```toml
+[lighting]
+mood = "cave"                               # day, dusk, night, cave; omit for the base scene's
+lamps = [{ tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 }]
+
+[[props]]
+light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, period = 18 }
+```
+
+`mood` stands in for the base scene's mood while the time of day is
+`Auto`; a time the player picks (`F8`) still wins. A lamp sits at its tile
+centre plus `offset` above the floor; a prop's light rides the prop's
+animated move. `flicker` is the depth of a flame-like waver
+(`map_detail::flicker_gain`), deterministic per lamp. Both hosts read the
+mood and the lights through one kernel (`engine-screens::field_frame`), and
+the nearest lights to the player shade each frame, as in a retail scene.
+
+With enhanced lighting off the map renders retail-faithful: baked texel
+colours through the depth cue, no light at all. Placed lamps then draw
+nothing; a torch's flame still reads because its glow is in the art.
+
+## Animated materials
+
+```toml
+[[materials]]
+kind = "cycle"                              # palette cycling
+clut = 32576
+start = 1
+count = 6
+period = 8
+reverse = false
+
+[[materials]]
+kind = "hsv"                                # hue and brightness cycling
+clut = 32592
+start = 0
+count = 16
+period = 240
+hue = 360.0                                 # degrees a period; 0 pulses brightness only
+value = 32                                  # brightness swing
+
+[[materials]]
+kind = "scroll"                             # texel scrolling
+cell = { tpage = 28, clut = 32576, tile = 0 }
+dx = 1
+dy = 0
+period = 8
+```
+
+A material rewrites words of the scene's VRAM each frame
+(`World::step_expansion_materials`, inside the field VRAM step both hosts
+already run and re-upload after), from a capture of the words it first
+found. Every primitive that samples them animates: ground tiles, wall
+boxes, the base scene's own meshes. `cycle` rotates palette entries
+(water, lava, conveyor lights); `hsv` runs the entries through the retail
+mode-3 HSV cell kernel (`FUN_80019D50`'s port,
+`engine-field::clut_cell_fx::apply_hsv_cell`); `scroll` rotates an atlas
+cell's texels by whole texels, wrapping, at any page depth. The words named
+are the base scene's VRAM - a palette or cell of a mesh carried in from
+another scene sits at an address chosen at entry and cannot be named.
+
+## Fog
+
+```toml
+[fog]
+regions = [{ rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 }]
+```
+
+Arms the retail field fog pool over the map
+([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)): each region
+becomes a MAN-section-4 region record (`render-kernels::fog_volume::FogRegion`,
+its open bounds one tile outside the rectangle), and the ambient particle
+gate a scene's script raises goes up (`World::arm_expansion_fog`). The
+wisps are the pool's own: they drift at `speed` toward `angle` (degrees,
+`0` = `+Z`) within `spread`, and both hosts draw them through
+`World::fog_render_step`. The pool draws from the world's random stream, as
+retail's does, so a fogged map's rolls differ from an unfogged one's -
+deterministically.
+
+## How large a map can be
+
+One map is one field grid: at most `120 x 120` tiles of `128` world units
+(`MAX_MAP_TILES`; the grid is `128` a side and the map keeps a margin row
+below it), about 15,000 units a side - larger than any retail room. Two
+budgets bound how much it can hold: `511` object records (ground textures,
+walls, props and decorated cells share them; decorations fall back to
+baked cells when they run out) and the VRAM the base scene leaves free for
+foreign meshes and model textures. A world larger than one grid is several
+maps joined by `exits` with `to = { kind = "map" }`; a map exit enters at
+once, with no streaming.
+
+## Gaps
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
   preset applies on a host's direct entry (`--map`, the play page's

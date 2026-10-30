@@ -466,11 +466,13 @@ pub(crate) fn check_animators(
     for (i, a) in anims.iter().enumerate() {
         let at = format!("{at}[{i}]");
         let p = a.period();
-        let spin = matches!(a, Animator::Spin { .. });
-        if p == 0 || (!spin && p < 0) {
+        let turns = matches!(a, Animator::Spin { .. } | Animator::Orbit { .. });
+        if p == 0 || (!turns && p < 0) {
             cx.error(
                 &format!("{at}.period"),
-                format!("period {p} frames; it must be at least 1 (a spin may be negative)"),
+                format!(
+                    "period {p} frames; it must be at least 1 (a spin or orbit may be negative)"
+                ),
             );
         }
         if let Animator::Pulse { amount, .. } = a

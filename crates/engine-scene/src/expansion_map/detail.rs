@@ -505,7 +505,7 @@ mod tests {
             .collect();
         src.write_block(704, 0, 64, 32, &words);
         let pal: Vec<u8> = (0..16u16)
-            .flat_map(|i| (0x4000 | i * 3).to_le_bytes())
+            .flat_map(|i| (0x4000 | (i * 3)).to_le_bytes())
             .collect();
         src.write_block(0, 480, 16, 1, &pal);
         let tsb = 0x000B; // 4bpp page (704, 0)
@@ -551,7 +551,7 @@ mod tests {
     fn shared_vram_is_not_copied() {
         let mut src = Vram::new();
         src.write_block(960, 256, 16, 16, &vec![7u8; 16 * 16 * 2]);
-        src.write_block(0, 510, 16, 1, &vec![9u8; 32]);
+        src.write_block(0, 510, 16, 1, &[9u8; 32]);
         let base = src.clone();
         let mut alloc = VramAlloc::from_vram(&base);
         let tsb = 0x001F; // 4bpp page (960, 256)

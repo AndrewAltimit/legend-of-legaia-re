@@ -245,11 +245,14 @@ impl World {
     }
 }
 
+/// A VRAM rect `(x, y, w, h)` in halfwords.
+type VramRect = (u16, u16, u16, u16);
+
 /// The VRAM rect `(x, y, w, h)` a material animates, and for a texel scroll
 /// the texels a halfword holds.
 fn material_rect(
     fx: &legaia_expansion_format::map_detail::MaterialFx,
-) -> Option<((u16, u16, u16, u16), Option<u16>)> {
+) -> Option<(VramRect, Option<u16>)> {
     use legaia_expansion_format::map_detail::MaterialFx;
     let clut_xy = |cba: u16| ((cba & 0x3F) * 16, (cba >> 6) & 0x1FF);
     match *fx {
@@ -315,40 +318,6 @@ fn scroll_texels(src: &[u16], w: u16, h: u16, tpw: u16, step: u64, dx: i8, dy: i
     out
 }
 
-#[cfg(test)]
-mod detail_tests {
-    use super::*;
-
-    #[test]
-    fn a_texel_scroll_wraps_by_texel_not_by_word() {
-        // One 4bpp row of 8 texels: 0..8.
-        let src = [0x3210u16, 0x7654];
-        let out = scroll_texels(&src, 2, 1, 4, 1, 1, 0);
-        assert_eq!(out, vec![0x2107, 0x6543]);
-        assert_eq!(scroll_texels(&src, 2, 1, 4, 8, 1, 0), src.to_vec());
-    }
-
-    #[test]
-    fn a_scroll_cell_is_its_atlas_rect() {
-        use legaia_expansion_format::map_detail::{AtlasCell, MaterialFx};
-        let fx = MaterialFx::Scroll {
-            cell: AtlasCell {
-                tpage: 28,
-                clut: 0,
-                tile: 9,
-            },
-            dx: 1,
-            dy: 0,
-            period: 2,
-        };
-        // Page 28 = (768, 256), 4bpp; tile 9 = column 1, row 1 of the atlas.
-        assert_eq!(
-            material_rect(&fx),
-            Some(((768 + 8, 256 + 32, 8, 32), Some(4)))
-        );
-    }
-}
-
 impl World {
     /// Arm the retail field fog pool over the active map's `[fog]` regions:
     /// the regions a scene's MAN section 4 would install, and the ambient
@@ -388,5 +357,39 @@ impl World {
             })
             .collect();
         self.set_ambient_particles_enabled(true);
+    }
+}
+
+#[cfg(test)]
+mod detail_tests {
+    use super::*;
+
+    #[test]
+    fn a_texel_scroll_wraps_by_texel_not_by_word() {
+        // One 4bpp row of 8 texels: 0..8.
+        let src = [0x3210u16, 0x7654];
+        let out = scroll_texels(&src, 2, 1, 4, 1, 1, 0);
+        assert_eq!(out, vec![0x2107, 0x6543]);
+        assert_eq!(scroll_texels(&src, 2, 1, 4, 8, 1, 0), src.to_vec());
+    }
+
+    #[test]
+    fn a_scroll_cell_is_its_atlas_rect() {
+        use legaia_expansion_format::map_detail::{AtlasCell, MaterialFx};
+        let fx = MaterialFx::Scroll {
+            cell: AtlasCell {
+                tpage: 28,
+                clut: 0,
+                tile: 9,
+            },
+            dx: 1,
+            dy: 0,
+            period: 2,
+        };
+        // Page 28 = (768, 256), 4bpp; tile 9 = column 1, row 1 of the atlas.
+        assert_eq!(
+            material_rect(&fx),
+            Some(((768 + 8, 256 + 32, 8, 32), Some(4)))
+        );
     }
 }

@@ -143,6 +143,12 @@ impl SceneHost {
                 image.dropped_decorations
             );
         }
+        if !image.covered_cells.is_empty() {
+            log::warn!(
+                "expansion: map '{map_id}': props replace the cell mesh of tiles {:?}",
+                image.covered_cells
+            );
+        }
         if image.decoration_chunk > 1 {
             log::info!(
                 "expansion: map '{map_id}' bakes its decorations in {0} x {0} tile cells",

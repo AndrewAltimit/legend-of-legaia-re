@@ -387,7 +387,7 @@ pub fn load_model(
                 None => (0..pos.len() as u32).collect(),
             };
             let material = prim["material"].as_u64().map(|m| m as usize);
-            for t in idx.chunks_exact(3) {
+            for t in idx.as_chunks::<3>().0 {
                 let corner = |k: usize| -> Result<([f32; 3], [f32; 2])> {
                     let i = t[k] as usize;
                     let p = pos.get(i).context("an index past the positions")?;
@@ -570,10 +570,7 @@ fn fit(w: usize, h: usize, rgba: Vec<u8>) -> (usize, usize, Vec<u8>) {
 /// pixel, index `0` is the transparent word `0x0000` and the colours take the
 /// rest.
 pub fn quantise(rgba: &[u8], n: usize) -> (Vec<u16>, Vec<u8>) {
-    let px: Vec<[u8; 4]> = rgba
-        .chunks_exact(4)
-        .map(|p| [p[0], p[1], p[2], p[3]])
-        .collect();
+    let px: Vec<[u8; 4]> = rgba.as_chunks::<4>().0.to_vec();
     let clear = px.iter().any(|p| p[3] < 128);
     let slots = if clear { n - 1 } else { n };
     let mut boxes: Vec<Vec<[u8; 3]>> = vec![

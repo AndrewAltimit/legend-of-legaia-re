@@ -244,6 +244,10 @@ pub struct FieldImage {
     /// The decoration cell size the bake settled on, in tiles a side
     /// (`1` = one baked mesh a tile; see [`write_decorations`]).
     pub decoration_chunk: usize,
+    /// Map tiles whose cell drew a mesh (a kept retail cell, a wall, a mesh
+    /// ground) that a placed prop replaced: a cell names one record, so the
+    /// earlier mesh no longer draws.
+    pub covered_cells: Vec<[u16; 2]>,
 }
 
 /// Build the synthetic field image of `def` (whose resolved tiles are
@@ -291,7 +295,7 @@ pub fn build_field_image(
         len: base.geometry_len,
         meshes: Vec::new(),
     };
-    let mut free = write_objects(&mut img, def, grid, base, keep, &mut added)?;
+    let (mut free, covered_cells) = write_objects(&mut img, def, grid, base, keep, &mut added)?;
     let (dropped, chunk) = write_decorations(&mut img, def, grid, base, &mut added, &mut free)?;
     write_empty_trigger_block(&mut img);
     Ok(FieldImage {
@@ -299,6 +303,7 @@ pub fn build_field_image(
         added_tmds: added.meshes,
         dropped_decorations: dropped,
         decoration_chunk: chunk,
+        covered_cells,
     })
 }
 
@@ -447,7 +452,8 @@ fn mesh_index(
 
 /// The `+0x0000` records and `+0x8000` cells for the map's ground, walls
 /// and props. Adds the generated wall boxes and carried-in prop meshes to
-/// `added`; returns the record slots still free.
+/// `added`; returns the record slots still free and the tiles whose cell
+/// mesh a prop replaced ([`FieldImage::covered_cells`]).
 fn write_objects(
     img: &mut [u8],
     def: &MapDef,
@@ -455,7 +461,7 @@ fn write_objects(
     base: BaseInputs<'_>,
     keep: bool,
     added: &mut Added,
-) -> Result<Vec<usize>> {
+) -> Result<(Vec<usize>, Vec<[u16; 2]>)> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     // Record 0 is the empty slot every unnamed cell points at. In a kept
@@ -581,6 +587,7 @@ fn write_objects(
     // carries the tile's ground texture too, so the ground under it still
     // draws (the cell names one record).
     let mut prop_tiles: Vec<(u16, u16)> = Vec::new();
+    let mut covered = Vec::new();
     for prop in &def.props {
         let [col, row] = prop.tile;
         if usize::from(col) >= grid.width || usize::from(row) >= grid.height {
@@ -595,6 +602,17 @@ fn write_objects(
         prop_tiles.push((col, row));
         let mesh = mesh_index(&prop.mesh, &base, added, &format!("prop {:?}", prop.id))?;
         let tex = tile_texture[usize::from(row) * grid.width + usize::from(col)];
+        // The cell names one record: a mesh the cell drew before (a kept
+        // retail cell, a wall, a mesh ground) gives way to the prop.
+        {
+            let (gc, gr) = grid_tile(def, col, row);
+            let o = cell_off(gc, gr);
+            let prev = usize::from(u16::from_le_bytes([img[o], img[o + 1]]) & OBJECT_INDEX_MASK);
+            let r = &img[prev * OBJECT_RECORD_STRIDE..];
+            if prev != 0 && u16::from_le_bytes([r[0x12], r[0x13]]) & 0x2 != 0 {
+                covered.push([col, row]);
+            }
+        }
         let s = alloc("a prop")?;
         let flags = if tex.is_some() {
             FLAGS_PROP | FLAGS_GROUND
@@ -619,7 +637,7 @@ fn write_objects(
             img[b] |= 0xF0;
         }
     }
-    Ok(free)
+    Ok((free, covered))
 }
 
 /// Bake the map's decorations ([`MapDef::decorations`]) into its object
@@ -738,10 +756,23 @@ fn write_decorations(
                 offset: [0.0; 3],
                 rotation: [0.0; 3],
                 scale: 1.0,
+                frame: None,
             });
         }
+        // The record's own offset and angles move the whole cell mesh; the
+        // decorations go through their inverse so they land where placed.
+        let word = |o: usize| i16::from_le_bytes([record[o], record[o + 1]]);
+        let rec_off = [f32::from(word(0)), f32::from(word(2)), -f32::from(word(4))];
+        let rec_rot = [8, 10, 12].map(|o| f32::from(word(o) as u16 & 0x0FFF) * 360.0 / 4096.0);
+        let frame = (rec_off != [0.0; 3] || rec_rot != [0.0; 3]).then(|| {
+            let r = tmd_ops::rotation_deg(rec_rot);
+            let inv: tmd_ops::Mat3 = std::array::from_fn(|i| std::array::from_fn(|j| r[j][i]));
+            (inv, rec_off)
+        });
         let h0 = tier_height(anchor[0], anchor[1]);
-        let mut owned: Vec<(Vec<u8>, [f32; 3], [f32; 3], f32)> = Vec::new();
+        // (bytes, offset, rotation, scale) of each decoration.
+        type Part = (Vec<u8>, [f32; 3], [f32; 3], f32);
+        let mut owned: Vec<Part> = Vec::new();
         for d in list {
             let raw = lib
                 .raw(&d.mesh)
@@ -765,6 +796,7 @@ fn write_decorations(
                     offset: *offset,
                     rotation: *rotation,
                     scale: *scale,
+                    frame,
                 }),
         );
         let baked =

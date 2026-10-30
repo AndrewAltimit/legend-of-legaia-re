@@ -136,6 +136,22 @@ impl Core {
         self.staged.insert(path.to_string(), bytes);
     }
 
+    /// Add (or replace) a file under the pack's `assets/` - a glTF model or
+    /// a PNG the page imported. `path` is relative to `assets/`. Carried
+    /// with the pack's other extras into validation and export.
+    pub fn add_asset(&mut self, path: &str, bytes: Vec<u8>) {
+        self.extras.insert(format!("assets/{path}"), bytes);
+    }
+
+    /// The paths (relative to `assets/`) of the pack's asset files.
+    pub fn asset_paths(&self) -> Vec<String> {
+        self.extras
+            .keys()
+            .filter_map(|p| p.strip_prefix("assets/"))
+            .map(str::to_string)
+            .collect()
+    }
+
     /// Load the staged tree. See [`Self::load_files`].
     pub fn finish_files(&mut self) -> Value {
         let files = std::mem::take(&mut self.staged);
@@ -384,10 +400,15 @@ impl Core {
             }
         }
         for prop in &mut probe.props {
-            if matches!(prop.mesh, PropMesh::Tmd { .. }) {
+            if !matches!(prop.mesh, PropMesh::Object { .. }) {
                 prop.mesh = PropMesh::Object { object: 0 };
             }
         }
+        // Decorations draw only, and bake from mesh bytes the preview does
+        // not load.
+        probe.decor.clear();
+        probe.scatter.clear();
+        probe.edges.clear();
         let img = build_field_map_image(
             &probe,
             &grid,
@@ -397,6 +418,7 @@ impl Core {
                 // Wall boxes do not touch the collision grid; any pack
                 // length places them.
                 geometry_len: Some(0),
+                library: None,
             },
         )?;
         let ladder = floor_lut(&def, base_lut);

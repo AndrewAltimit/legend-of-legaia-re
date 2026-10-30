@@ -65,6 +65,17 @@ impl ExpansionWorkbench {
         self.core.add_file(path, bytes);
     }
 
+    /// Import a file into the pack's `assets/` (`path` relative to it): a
+    /// glTF model for a prop's `{ asset = ... }` mesh, or its PNG texture.
+    pub fn add_asset(&mut self, path: &str, bytes: Vec<u8>) {
+        self.core.add_asset(path, bytes);
+    }
+
+    /// The pack's asset paths, as a JSON array.
+    pub fn asset_paths(&self) -> String {
+        serde_json::to_string(&self.core.asset_paths()).unwrap_or_else(|_| "[]".into())
+    }
+
     /// Load the handed-over tree: `{ pack, files, issues }`.
     pub fn finish_files(&mut self) -> String {
         self.core.finish_files().to_string()

@@ -259,7 +259,17 @@ scale = 0.75                                # uniform; 1 when left out
 solid = true                                # close the prop's tile
 top = 64                                    # standable: a floor 64 units up
 footprint = [128, 128]                      # the top's extent, world units</code></pre>
-  <p><code>mesh</code> is either <code>{ object = N }</code> or <code>{ tmd = { kind = "tmd", prot = P, index = N } }</code>. A TMD coordinate resolves only when <code>P</code> is the PROT entry holding the base scene's geometry pack (its scene-asset bundle); anything else is refused at entry. <code>scale</code> folds into the prop's model matrix after its rotation, where a retail placed object's render scale lands. Props carry no collision box of their own: <code>solid</code> closes the tile.</p>
+  <p><code>mesh</code> takes four forms:</p>
+  <table>
+    <thead><tr><th>Form</th><th>Mesh</th></tr></thead>
+    <tbody>
+      <tr><td><code>{ object = N }</code></td><td>Mesh <code>N</code> of the base scene's geometry pack.</td></tr>
+      <tr><td><code>{ scene = "town01", object = N }</code></td><td>Mesh <code>N</code> of any field scene's pack (<a href="#meshes-from-other-scenes">meshes from other scenes</a>).</td></tr>
+      <tr><td><code>{ tmd = { kind = "tmd", prot = P, index = N } }</code></td><td>Mesh <code>N</code> of the pack held in PROT entry <code>P</code>, whichever scene's block holds it.</td></tr>
+      <tr><td><code>{ asset = "models/x.glb", colors = 256 }</code></td><td>A glTF model the pack carries (<a href="#model-assets">model assets</a>).</td></tr>
+    </tbody>
+  </table>
+  <p><code>scale</code> folds into the prop's model matrix after its rotation, where a retail placed object's render scale lands. Props carry no collision box of their own: <code>solid</code> closes the tile. <code>animate</code> and <code>light</code> are the prop's <a href="#animated-props">animators</a> and <a href="#lights">light</a>. A prop on a tile whose cell already drew a mesh (a kept retail cell, a wall, a mesh ground) replaces that mesh - a cell names one record - and the entry logs the tiles; a decoration bakes in beside a cell's mesh instead, which is how to dress a kept retail room without losing any of it.</p>
   <h3 id="standable-props">Standable props</h3>
   <p>A prop with a <code>top</code> is a floor box: a flat surface <code>top</code> world units up (the <code>floor_heights</code> convention) over its <code>footprint</code>, centred on the tile centre plus <code>offset</code>, the whole tile when the footprint is left out. It does not close its tile, so <code>solid</code> is unread.</p>
   <p>The floor sampler (<code>World::sample_field_floor_height</code>, the <code>FUN_80019278</code> port, and its camera-ladder sibling) answers the higher of the grid floor and the top inside the box. The tier grid is untouched: a top is not a corner height, so it neither slopes into its neighbours nor bends the ground mesh around it, which is why it is a separate surface rather than a raised tier. The prop's mesh draws on the tile's floor as before; matching <code>top</code> to the mesh's visible height is the modder's call.</p>
@@ -308,6 +318,90 @@ shop = "tower_dealer"                           # optional: a cards.toml dealer<
   </ul>
   <p>The box is built when the map loads (<code>expansion_map::wall_box_tmd</code>): the pack carries the five numbers, and the engine runs them through the Legaia TMD encoder. The scene's resource build appends each distinct box to the base scene's geometry pack after the pack's own meshes, so box <code>k</code> is pack mesh <code>geometry_len + k</code>, where <code>geometry_len</code> is the pack's length as the field load's descriptor walk registers it (<code>scene_resources::field_geometry_pack</code>). Each wall tile is a decoration cell naming that mesh, which both hosts draw through the ordinary decoration-cell path.</p>
   <p>A scene whose geometry the descriptor walk cannot enumerate has no length to append to, and a box on it is refused at entry. A tile holds one cell mesh, so a style cannot carry both a <code>mesh</code> ground and a <code>wall</code>.</p>
+</section>
+
+<section class="doc-section" id="meshes-from-other-scenes" data-doc="meshes-from-other-scenes">
+  <h2>Meshes from other scenes</h2>
+  <p>A mesh from another scene's pack samples that scene's VRAM, which the map does not load. At entry the engine builds the source scene's field resources, takes the mesh and relocates what it samples (<code>expansion_map::detail</code>):</p>
+  <ol class="bullets">
+    <li>For every texture page its primitives read, the bounding rectangle of their UVs; for every palette, its 16 or 256 entries.</li>
+    <li>Each the map's VRAM already holds word for word stays put - the boot-resident system UI, a page two scenes share.</li>
+    <li>The rest are copied into free VRAM (<code>VramAlloc</code>) and the primitives' CLUT, page and UV words are rewritten to the copies.</li>
+  </ol>
+  <p>Free VRAM is what the base scene's build leaves unwritten (its TIMs, the system UI, the effect-texture pool and the field character atlas count as written), minus the battle transition's capture pages (<code>320 &lt;= x &lt; 640</code>) and the dialog font's page. A texture rectangle stays inside one page and a palette starts on a 16-halfword boundary. The copies are written by the scene's resource build after its own uploads, so both hosts and every rebuild - a battle's return included - carry them, and the base scene's own words are never written.</p>
+</section>
+
+<section class="doc-section" id="model-assets" data-doc="model-assets">
+  <h2>Model assets</h2>
+  <p><code>{ asset = "path" }</code> names a glTF 2.0 file under the pack's <code>assets/</code>, converted at entry (<code>expansion_map::gltf</code>): the default scene's node tree is baked into the vertices, triangle primitives (<code>POSITION</code>, <code>TEXCOORD_0</code>, <code>indices</code>) become <code>Ft3</code> primitives, and a material's PNG <code>baseColorTexture</code> is box-filtered to at most <code>256 x 256</code>, median-cut to <code>colors</code> (16 or 256) and written into free VRAM as a 4bpp or 8bpp page. One glTF unit is <code>100</code> world units, <code>+Y</code> up; at most <code>16384</code> triangles. Skins, morph targets and animations are not read.</p>
+  <p>A model is always palettised: there is no full-colour path, which keeps it inside the scene's one shading law - PSX mode snaps and dithers it like the disc's meshes, clean mode draws the same texels without the snap. <code>scripts/models/generate_ember_crystal.py</code> writes the Rebirth pack's crystal as a worked example.</p>
+</section>
+
+<section class="doc-section" id="decorations" data-doc="decorations">
+  <h2>Decorations</h2>
+  <p>A tile holds one prop but any number of decorations. They draw only. When the map loads, every decoration of a tile is baked with the tile's own cell mesh into one mesh (<code>tmd_ops::bake</code>, each part's primitives byte for byte, only its vertices moved), drawn through the ordinary decoration-cell path on both hosts. Three sections paint them, expanding deterministically into one list:</p>
+<pre><code>[[decor]]                                   # one at a time
+mesh = { scene = "town01", object = 34 }
+tile = [1, 9]
+offset = [-30, 0, -36]
+
+[[scatter]]                                 # a seeded brush
+rect = [1, 1, 13, 11]
+on = ".,"
+density = 0.45                              # expected meshes a tile
+seed = 1101
+jitter = 44
+scale = [0.5, 0.9]
+meshes = [{ mesh = { scene = "rugi", object = 18 }, weight = 2 }, { mesh = { object = 27 } }]
+
+[[edges]]                                   # along wall edges
+mesh = { scene = "rugi", object = 15 }
+walls = "#"
+every = 3
+inset = 6
+y = 120</code></pre>
+  <p>A brush's draw for a tile is a pure function of its seed, its index and the tile; an edge copy is pushed against the walled side and turned to face the room. Limits: 8192 decorations a map, 32 a tile. A map decorated on more tiles than it has free records (of 511) bakes cells of <code>c x c</code> tiles onto one anchor tile each. Decorations on a placed prop's tile are left out, with a validator warning.</p>
+</section>
+
+<section class="doc-section" id="animated-props" data-doc="animated-props">
+  <h2>Animated props</h2>
+<pre><code>animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.25 }]
+# also: sway (axis, degrees), orbit (radius), pulse (amount)</code></pre>
+  <p>Each animator is a pure function of <code>World::frame</code>; <code>phase</code> is a fraction of the period, and a prop's animators compose in list order. The pose reaches both hosts through the placed-draw tables they already fold in each frame - <code>World::object_draw_turn_matrices</code> and <code>object_draw_displacements</code> - under a record key of the prop's own (<code>PROP_RECORD_BASE + n</code>). Animation is draw only: collision and standable tops stay where the prop rests. Disc ANM clips do not play on props: retail scene props are bound to their scene's MAN actors, which a pack map does not run.</p>
+</section>
+
+<section class="doc-section" id="lights" data-doc="lights">
+  <h2>Lights</h2>
+<pre><code>[lighting]
+mood = "cave"                               # day, dusk, night, cave
+lamps = [{ tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 }]
+
+[[props]]
+light = { color = [255, 150, 70], radius = 560, flicker = 0.25, period = 18 }</code></pre>
+  <p>Enhanced lighting lights a pack map as it lights a retail scene - from the emitter primitives of the meshes it draws, so a torch carried in from another scene lights its wall - plus the map's lamps and prop lights. <code>mood</code> stands in for the base scene's under the time of day <code>Auto</code>. Both hosts read mood and lights through one kernel (<code>engine-screens::field_frame</code>). With enhanced lighting off the map renders retail-faithful: baked colours, no lamps.</p>
+</section>
+
+<section class="doc-section" id="animated-materials" data-doc="animated-materials">
+  <h2>Animated materials</h2>
+<pre><code>[[materials]]
+kind = "cycle"        # palette cycling: clut, start, count, period, reverse
+[[materials]]
+kind = "hsv"          # hue / brightness: clut, start, count, period, hue, value
+[[materials]]
+kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, period</code></pre>
+  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>scroll</code> rotates an atlas cell by whole texels. Only the base scene's VRAM can be named: a carried-in mesh's copies sit at addresses chosen at entry.</p>
+</section>
+
+<section class="doc-section" id="fog" data-doc="fog">
+  <h2>Fog</h2>
+<pre><code>[fog]
+regions = [{ rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 }]</code></pre>
+  <p>Arms the retail field fog pool over the map: each region becomes a MAN-section-4 region record and the ambient particle gate goes up (<code>World::arm_expansion_fog</code>). The wisps are the pool's own, drawn by both hosts through <code>World::fog_render_step</code>; the pool draws from the world's random stream as retail's does.</p>
+</section>
+
+<section class="doc-section" id="how-large-a-map-can-be" data-doc="how-large-a-map-can-be">
+  <h2>How large a map can be</h2>
+  <p>One map is one field grid: at most <code>120 x 120</code> tiles of <code>128</code> world units, about 15,000 units a side - larger than any retail room. Two budgets bound what it holds: 511 object records (ground textures, walls, props and decorated cells share them) and the VRAM the base scene leaves free for foreign meshes and model textures. A larger world is several maps joined by map exits, which enter at once with no streaming.</p>
 </section>
 
 <section class="doc-section" id="validation" data-doc="validation">
@@ -448,7 +542,6 @@ requires = { min_level = 30 }</code></pre>
 <section class="doc-section" id="gaps" data-doc="gaps">
   <h2>Gaps</h2>
   <ul class="bullets">
-    <li><strong>Props from other scenes.</strong> A prop mesh must come from the base scene's geometry pack; a TMD from another PROT entry, and the VRAM it samples, is not loaded.</li>
     <li><strong>Camera preset on an in-world entry.</strong> A map entered through an entrance or a Travel pick keeps the follow camera's distance; the map's <code>camera</code> preset applies on a host's direct entry (<code>--map</code>, the play page's <em>Enter map</em>).</li>
     <li><strong>NPC clips.</strong> A patrolling NPC keeps <code>walk_clip</code> (or its idle clip) at the ends of its legs; nothing cues the idle clip back between legs.</li>
   </ul>

@@ -22,6 +22,7 @@
  */
 
 import { h, field, grid, freshId, gateBox } from './expansion-workbench-forms.js';
+import { propMeshEditor, propDetail, renderDetail } from './expansion-workbench-detail.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
@@ -418,6 +419,7 @@ export function renderMaps(ctx, el) {
 
   renderPalette(ctx, mctx, side, map);
   renderSelection(ctx, mctx, side, map);
+  renderDetail(ctx, mctx, side, map);
 
   function zoom(d) {
     const sizes = [6, 8, 10, 14, 18, 22, 28, 36, 48];
@@ -866,8 +868,7 @@ function renderSelection(ctx, mctx, side, map) {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'table', label: 'Encounter table' }], p));
   } else if (sel.type === 'props') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' }], p));
-    if (o.mesh && o.mesh.object != null) box.append(meshPicker(mctx, o.mesh, 'object', `${p}.mesh`, map));
-    else box.append(grid(mctx, o.mesh.tmd, [{ k: 'prot', t: 'int', label: 'TMD PROT entry' }, { k: 'index', t: 'int', label: 'TMD index' }], `${p}.mesh.tmd`));
+    box.append(propMeshEditor(ctx, mctx, o, p, (m, k) => meshPicker(mctx, m, k, `${p}.mesh`, map)));
     box.append(grid(mctx, o, [
       { k: 'offset', t: 'tuple', n: 3, label: 'Offset', hint: 'x y z, y up' },
       { k: 'rotation', t: 'tuple', n: 3, float: true, label: 'Rotation (deg)', hint: 'y is the yaw' },
@@ -876,6 +877,7 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'top', t: 'oint', label: 'Standable top', hint: 'world units up; action movement stands on it' },
       { k: 'footprint', t: 'tuple', n: 2, label: 'Top footprint', hint: '[x, z] world units; untouched = the tile' },
     ], p));
+    box.append(propDetail(mctx, o, p));
   } else if (sel.type === 'npcs') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id', hint: 'the quest talk key' }, { k: 'label', label: 'Label' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },
       { k: 'facing', t: 'sel', num: true, opts: Array.from({ length: 8 }, (_, i) => [String(i), `sector ${i} (${i * 45} deg)`]), label: 'Facing' }], p));

@@ -160,6 +160,9 @@ const ctx = {
   },
   sceneObjects: (scene) => JSON.parse(S.wb.scene_objects(scene)),
   sceneNpcs: (scene) => JSON.parse(S.wb.scene_npcs(scene)),
+  // The pack's assets/ (glTF models and their PNGs for map props).
+  assetPaths: () => (S.wb.asset_paths ? JSON.parse(S.wb.asset_paths()) : []),
+  addAsset: (path, bytes) => { S.wb.add_asset(path, bytes); scheduleValidate(); scheduleSave(); },
 };
 
 function setStatus(msg, kind, id) {

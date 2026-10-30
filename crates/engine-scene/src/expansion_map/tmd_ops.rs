@@ -102,6 +102,11 @@ pub struct Placed<'a> {
     /// Rotation, degrees (`Rx * Ry * Rz`).
     pub rotation: [f32; 3],
     pub scale: f32,
+    /// A frame to carry the placed part into afterwards: `m * (p - t)`. A
+    /// decoration baked into a cell whose record carries its own offset and
+    /// angles goes through that record's inverse, so it lands where it was
+    /// placed rather than where the record moves it.
+    pub frame: Option<(Mat3, [f32; 3])>,
 }
 
 /// Bake `parts` into one TMD: every object of every part, its vertices
@@ -150,7 +155,11 @@ pub fn bake(parts: &[Placed<'_>]) -> Result<Vec<u8>> {
                         &rot,
                         [f32::from(v.x), f32::from(v.y), f32::from(v.z)].map(|c| c * part.scale),
                     );
-                    let w = [0, 1, 2].map(|i| (p[i] + part.offset[i]).round());
+                    let mut w = [0, 1, 2].map(|i| p[i] + part.offset[i]);
+                    if let Some((m, t)) = &part.frame {
+                        w = apply(m, [0, 1, 2].map(|i| w[i] - t[i]));
+                    }
+                    let w = w.map(f32::round);
                     if w.iter().any(|c| !(-32768.0..=32767.0).contains(c)) {
                         bail!("part {pi} object {oi}: a vertex lands outside the i16 range");
                     }
@@ -161,7 +170,10 @@ pub fn bake(parts: &[Placed<'_>]) -> Result<Vec<u8>> {
                 .normals
                 .iter()
                 .map(|n| {
-                    let p = apply(&rot, [f32::from(n.x), f32::from(n.y), f32::from(n.z)]);
+                    let mut p = apply(&rot, [f32::from(n.x), f32::from(n.y), f32::from(n.z)]);
+                    if let Some((m, _)) = &part.frame {
+                        p = apply(m, p);
+                    }
                     p.map(|c| c.round().clamp(-32768.0, 32767.0) as i16)
                 })
                 .collect();
@@ -273,12 +285,14 @@ mod tests {
                 offset: [0.0; 3],
                 rotation: [0.0; 3],
                 scale: 1.0,
+                frame: None,
             },
             Placed {
                 raw: &b,
                 offset: [40.0, -8.0, 0.0],
                 rotation: [0.0, 90.0, 0.0],
                 scale: 2.0,
+                frame: None,
             },
         ])
         .unwrap();
@@ -299,6 +313,7 @@ mod tests {
             offset: [0.0; 3],
             rotation: [0.0; 3],
             scale: 1.0,
+            frame: None,
         }])
         .unwrap();
     }
@@ -312,6 +327,7 @@ mod tests {
                 offset: [32760.0, 0.0, 0.0],
                 rotation: [0.0; 3],
                 scale: 1.0,
+                frame: None,
             }])
             .is_err()
         );

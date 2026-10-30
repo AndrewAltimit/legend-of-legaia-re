@@ -82,6 +82,20 @@ pub(crate) fn check_detail(
             Ok(_) => {}
             Err(e) => cx.error("decor", format!("{e:#}")),
         }
+        if let Ok(d) = m.decorations() {
+            let props: std::collections::BTreeSet<[u16; 2]> =
+                m.props.iter().map(|p| p.tile).collect();
+            let on_props = d.iter().filter(|d| props.contains(&d.tile)).count();
+            if on_props > 0 {
+                cx.warning(
+                    "decor",
+                    format!(
+                        "{on_props} decorations stand on placed props' tiles and are left out \
+                         (a cell draws one record)"
+                    ),
+                );
+            }
+        }
     }
     for (i, l) in m.lighting.lamps.iter().enumerate() {
         let at = format!("lighting.lamps[{i}]");

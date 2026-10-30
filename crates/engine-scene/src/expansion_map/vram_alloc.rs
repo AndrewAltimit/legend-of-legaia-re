@@ -17,12 +17,16 @@ use legaia_tim::vram::{VRAM_HEIGHT, VRAM_WIDTH};
 /// VRAM the runtime writes after the scene build, so never handed out:
 /// `(x, y, w, h)` in halfwords.
 ///
-/// - `(0, 0)-(640, 512)`: the two display buffers and the field capture
-///   pages the battle transition renders into (`FIELD_CAPTURE_ROWS` /
-///   `FIELD_CAPTURE_COLS`, VRAM columns `320..=639`).
+/// - `(320, 0)-(640, 512)`: the field capture pages the battle transition
+///   renders into and samples (`render-kernels::vram_capture`,
+///   `FIELD_CAPTURE_ROWS` / `FIELD_CAPTURE_COLS`), and the effect pool's
+///   pages beside them.
 /// - `(896, 0)-(960, 256)`: the dialog font's glyph page
 ///   (`docs/formats/dialog-font.md`).
-pub const RESERVED: &[(u16, u16, u16, u16)] = &[(0, 0, 640, 512), (896, 0, 64, 256)];
+///
+/// Retail's display buffers (`x < 320`) are free here: the port presents
+/// from its own render target and never draws a frame into VRAM.
+pub const RESERVED: &[(u16, u16, u16, u16)] = &[(320, 0, 320, 512), (896, 0, 64, 256)];
 
 /// A rectangle of halfwords.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -211,7 +215,7 @@ mod tests {
         vram.write_block(960, 0, 64, 256, &vec![1u8; 64 * 256 * 2]);
         let mut a = VramAlloc::from_vram(&vram);
         let (r, (px, py)) = a.alloc_texture(16, 32, 4, 1).unwrap();
-        assert!(r.x >= 640, "outside the reserved display / capture pages");
+        assert!(!(320..640).contains(&r.x), "outside the capture pages");
         assert!(!(r.x >= 960 && r.y < 256), "not over the written page");
         assert!(r.x >= px && r.x + r.w <= px + 64 && r.y >= py && r.y + r.h <= py + 256);
         // A second rectangle does not overlap the first.

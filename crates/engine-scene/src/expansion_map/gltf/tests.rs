@@ -38,7 +38,7 @@ pub(crate) fn quad_glb(nodes_scale: f32) -> Vec<u8> {
     }
     let png_at = bin.len();
     bin.extend_from_slice(&png);
-    while bin.len() % 4 != 0 {
+    while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
     let json = format!(
@@ -62,7 +62,7 @@ pub(crate) fn quad_glb(nodes_scale: f32) -> Vec<u8> {
         bin_len = bin.len()
     );
     let mut json = json.into_bytes();
-    while json.len() % 4 != 0 {
+    while !json.len().is_multiple_of(4) {
         json.push(b' ');
     }
     let total = 12 + 8 + json.len() + 8 + bin.len();

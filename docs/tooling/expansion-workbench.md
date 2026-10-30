@@ -12,6 +12,7 @@ tab, and nothing is uploaded.
 | App, state, persistence, export | `site/js/expansion-workbench-app.js` |
 | Form kit and section editors | `site/js/expansion-workbench-forms.js` |
 | Tile painter | `site/js/expansion-workbench-map.js` |
+| Map detail layer (prop sources, animators, lights, decorations) | `site/js/expansion-workbench-detail.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
 | Example pack | `site/packs/rebirth.json`, written by `site/_gen.py` from [`packs/rebirth/`](../../packs/rebirth/README.md) |
 
@@ -97,6 +98,21 @@ standable `top` and footprint, and a legend entry its visible `wall` (a box or
 a base-scene mesh). Each stroke is one undo step (`Ctrl+Z` / `Ctrl+Y`); `Ctrl+wheel`
 zooms; a right or middle drag, or Space with a drag, pans. A placed prop draws
 as its mesh's footprint, rotated by its yaw.
+
+A selected prop's **mesh source** is the base scene's pack (the mesh list),
+another scene's pack (`{ scene, object }`), a PROT coordinate, or a glTF model
+in the pack's `assets/`; **Import glTF** reads a `.glb`, `.gltf` or `.png`
+from the user's machine into `assets/models/` (`ExpansionWorkbench::add_asset`,
+kept in the session's extras with the pack's other files and exported with
+it - nothing is uploaded). The prop's animators are a JSON list and its light
+a form. The **Detail layer** box under the selection holds the map's
+`decor`, `scatter`, `edges`, `lighting`, `materials` and `fog` as JSON
+editors, each parsed on change with the error shown in place, plus quick adds
+for a scatter brush over the whole map and a lamp at its centre
+([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#decorations)).
+The painter's canvas does not draw decorations; the play page and
+`play-window` do. `map_preview` drops decorations and every non-base prop
+mesh (they do not touch the collision grid it reads).
 
 The **Heights** overlay is read back from `map_preview`, which builds the
 synthetic field image the engine enters

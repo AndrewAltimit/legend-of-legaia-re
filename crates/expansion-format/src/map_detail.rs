@@ -230,7 +230,7 @@ pub enum Animator {
         phase: f32,
     },
     /// Circle `radius` world units about the rest position, in the floor
-    /// plane.
+    /// plane; a negative period circles the other way.
     Orbit {
         radius: i16,
         period: i32,
@@ -395,9 +395,11 @@ pub enum MaterialFx {
         #[serde(default = "full_turn")]
         hue: f32,
     },
-    /// Texel scrolling: rotate an atlas cell's texels `dx` / `dy` texels
-    /// every `period` frames, through the retail mode-4 strip rotator
-    /// (`FUN_80021DF4`) - flowing water, a moving energy floor.
+    /// Texel scrolling: rotate an atlas cell's texels `dx` / `dy` whole
+    /// texels every `period` frames, wrapping - flowing water, a moving
+    /// energy floor. (Retail's mode-4 rotator `FUN_80021DF4` moves halfword
+    /// strips; this moves texels, so a 4bpp cell scrolls one texel at a
+    /// time.)
     Scroll {
         cell: AtlasCell,
         #[serde(default)]
@@ -624,7 +626,7 @@ impl crate::map::MapDef {
                     {
                         continue;
                     }
-                    if (col as u32 + row as u32 + u32::from(edge.phase)) % every != 0 {
+                    if !(col as u32 + row as u32 + u32::from(edge.phase)).is_multiple_of(every) {
                         continue;
                     }
                     let (c, r) = (col as isize, row as isize);
