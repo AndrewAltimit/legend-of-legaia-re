@@ -397,7 +397,8 @@ enhancements.
 | Player | The field camera: the follow view the game draws the map with, on the player. |
 | Fit map | Back to the whole map in the orbit camera. |
 | Walk from selection | Stands the player on the selected tile (`expansion_seat_player`) and switches to the field camera; the arrow keys walk in the picture. |
-| Layers | Walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props: translucent volumes over the picture. |
+| 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview. |
+| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props: translucent volumes over the picture. |
 
 **Orientation.** The game draws the world with screen X mirrored (the
 retail horizontal flip, `buildWorldOrbitVp`), so its picture of a map seen
@@ -412,6 +413,18 @@ camera is never flipped.
 (`LegaiaRuntime::expansion_set_quiet_arrivals`), so an entry skips the map's
 `enter_cutscenes` and its place-name balloon; a player's entry, and the
 preview with *Arrival* ticked, play both.
+
+**Layouts.** The frame never moves in the page (moving an iframe reloads
+it): Split and 3D are classes on the page (`xw-view-split`, `xw-view-3d`)
+whose rules `expansion-workbench-preview3d.js` installs, and the framed page
+resizes its canvas to the width it is shown at (4:3, 320 to 960 wide).
+
+**The grid.** The Grid layer draws each tile's edges at its four corner
+heights, and fills a cell whose corners disagree - a ramp, by the
+[corner rule](../formats/expansion-pack-maps.md#tiers-are-corner-heights).
+The heights are `map_preview`'s `corners` (the synthetic field image's
+tiers), or on a terrain map its heightfield sampled at each tile corner, so
+the grid is the one the Heights overlay shades in 2D.
 
 The volumes are read back from the engine, not from the editor:
 `expansion_overlay_json` is the definition the engine runs, with each tile's
@@ -429,6 +442,16 @@ a fight is armed or running in the frame the reload answers busy and is
 retried (the frame closes a card binder it opened itself first). What
 is not an edit rebuilds nothing: the selection, the layers, the camera and a
 cutscene's path are messages to the frame.
+
+**Drafts.** Between rebuilds the volumes follow the editor at once: each
+`map_preview` the painter computes (a moment after an edit) goes to the
+frame with the map's object lists (`xw-overlay` `grid` and `defs`), and the
+frame draws that draft - spawns, exits, triggers, encounter zones, props
+and NPCs, and each tile whose walls, void or corner heights differ from the
+`map_preview` of the pack the last rebuild was sent (its floor the mean of
+its corners) - in place of its reading of the last build. Tiles the edit
+left alone keep the engine's reading. The rebuild's own reading replaces the draft when it lands. A
+draft of a map of another size than the built one waits for the rebuild.
 
 **Selection runs both ways.** A click in the picture ray-casts the frame's
 own view-projection against the tile floors and selects that tile in the
@@ -483,9 +506,10 @@ drag that starts on nothing in **Select** turns it too.
 
 The editor belongs to the Maps tab: on the Cutscenes, Battle and Cards tabs
 the frame drops to **View** and the bar hides (`suspendEdit`), and back on
-Maps both return as they were. While a mode other than **View** is on, the
-field HUD - the party readout and the passive-ability badges - stays off
-the frame (`set_editor_hud_hidden`), so it never covers the map being edited.
+Maps both return as they were. While a mode other than **View** is on, and
+under the Orbit camera in any mode, the field HUD - the party readout and
+the passive-ability badges - stays off the frame (`set_editor_hud_hidden`),
+so it never covers the map being edited; the Player camera shows it.
 
 | Mode | Does |
 |---|---|

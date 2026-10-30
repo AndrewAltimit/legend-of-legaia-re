@@ -398,7 +398,13 @@ export function renderMaps(ctx, el) {
     if (o && o.tile) return { tile: o.tile };
     return V.cursor && V.cursor.map === V.map ? { tile: V.cursor.tile } : null;
   };
-  const redraw = () => { draw(ctx, cv); if (pv) pv.select(selShape()); editorChanged(); };
+  // It also takes each map_preview the painter computes: the tile grid and a
+  // draft of the edit, drawn at once while the rebuild runs.
+  const redraw = () => {
+    draw(ctx, cv);
+    if (pv) { pv.select(selShape()); if (pv.setMapPreview) pv.setMapPreview(map, V.preview[V.map]); }
+    editorChanged();
+  };
   // Edits from the side forms redraw the canvas without a re-render.
   const mctx = Object.create(ctx);
   mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx, redraw); redraw(); } };

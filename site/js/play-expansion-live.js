@@ -120,11 +120,14 @@
        * the picture is a panel in the editor, and the fill is the cost. */
       if (!v._xwSized && !v.psxRender) {
         v._xwSized = true;
-        for (const c of [v.canvas, v.menuOverlay].filter(Boolean)) {
-          const w = Math.max(320, Math.min(960, Math.round(c.clientWidth || 640)));
-          c.width = w;
-          c.height = Math.round(w * 3 / 4);
-        }
+        sizeCanvas(v);
+        /* The workbench's view switch resizes the frame (a dock, a split
+         * column, the whole view): follow it, a moment after it settles. */
+        let t = null;
+        window.addEventListener('resize', () => {
+          clearTimeout(t);
+          t = setTimeout(() => sizeCanvas(v), 150);
+        });
       }
       if (!v._xwFrameHooked) {
         /* Frame cost: the CPU time of each `_frame`, averaged over a second,
@@ -163,8 +166,21 @@
       return v;
     }
 
+    /* The canvas resolution: the width the frame shows it at (4:3, 320 to
+     * 960 wide), so the fill is what is seen. */
+    function sizeCanvas(v) {
+      if (v.psxRender) return;
+      for (const c of [v.canvas, v.menuOverlay].filter(Boolean)) {
+        const w = Math.max(320, Math.min(960, Math.round(c.clientWidth || 640)));
+        if (c.width === w) continue;
+        c.width = w;
+        c.height = Math.round(w * 3 / 4);
+      }
+    }
+
     function applyCamera(v) {
       v.debugCamera = wantOrbit;
+      if (typeof v.syncEditorHud === 'function') v.syncEditorHud();
       /* Match painter: the orbit sits on the map's high-Z side
        * (`focusEditorTile`, yaw pi) and the canvas is mirrored, so screen
        * right is +X and the painter's row 0 is the far edge at the top. The

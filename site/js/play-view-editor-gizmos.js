@@ -223,11 +223,18 @@ void main() {
       }
       // Fresh objects from the workbench supersede the drag's proxy poses.
       if (msg.objects !== undefined) E.poses = null;
-      // The party HUD stays off the frame while an edit mode is on.
-      if (this.rt && typeof this.rt.set_editor_hud_hidden === 'function') {
-        try { this.rt.set_editor_hud_hidden(E.mode !== 'view'); } catch (_) { /* no runtime yet */ }
-      }
+      this.syncEditorHud();
       this._edDirty = true;
+    }
+
+    /* The party HUD stays off the frame while an edit mode is on, and
+     * under the orbit camera (the editor's view of the map, not the
+     * player's); the field camera shows it as the game does. */
+    syncEditorHud() {
+      const E = this._ed;
+      if (this.rt && typeof this.rt.set_editor_hud_hidden === 'function') {
+        try { this.rt.set_editor_hud_hidden(!!this.debugCamera || !!(E && E.mode !== 'view')); } catch (_) { /* no runtime yet */ }
+      }
     }
 
     /* The map was rebuilt: what the proxy stood in for now draws itself. */
