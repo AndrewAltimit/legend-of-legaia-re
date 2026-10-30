@@ -95,6 +95,9 @@ or cpal, so it builds for native and `wasm32` alike.
   modulation and the dialog font CLUTs' own shadow colours.
 - `bloom` - the bloom enhancement's response (not retail): threshold and
   strength per enhanced-lighting mood; the passes are host code.
+- `ssao` - the ambient-occlusion enhancement's constants and per-sample
+  law (not retail): view-space reconstruction, sample spiral, Alchemy term,
+  depth-aware blur; the pre-pass and passes are host code.
 
 This crate depends on `legaia-engine-camera` (the GTE camera and projection
 constants) and `legaia-engine-vm` (`move_ext_strip`, `field_actor_billboard`

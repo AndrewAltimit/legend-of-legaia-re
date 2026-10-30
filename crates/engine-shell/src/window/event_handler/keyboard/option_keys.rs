@@ -26,6 +26,12 @@ impl PlayWindowApp {
         if state != ElementState::Pressed {
             return false;
         }
+        if code == KeyCode::Home {
+            if !repeat {
+                self.key_ssao();
+            }
+            return true;
+        }
         let Some(hotkey) = HostHotkey::from_dom_code(&format!("{code:?}")) else {
             return false;
         };
@@ -229,6 +235,19 @@ impl PlayWindowApp {
                 "off"
             }
         );
+    }
+
+    /// `Home`: toggle the screen-space ambient occlusion enhancement (the
+    /// `--no-ssao` flag's runtime twin). The persisted `OptionsState::ssao`;
+    /// pure renderer state. A native-window key outside the shared hotkey
+    /// table until the play page carries the pass: a table row with no page
+    /// action would be swallowed there.
+    fn key_ssao(&mut self) {
+        self.options_state.ssao = !self.options_state.ssao;
+        self.persist_and_apply_options();
+        let state = if self.options_state.ssao { "on" } else { "off" };
+        log::info!("render: ambient occlusion {state}");
+        self.show_notice(format!("Ambient occlusion: {state}"));
     }
 
     fn key_light_shadows(&mut self) {

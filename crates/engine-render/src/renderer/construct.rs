@@ -18,6 +18,9 @@ mod screen_overlay;
 mod surface;
 mod text;
 
+pub(in crate::renderer) use mesh::{vram_vertex_attributes, vram_vertex_layout};
+pub(in crate::renderer) use scene::{color_mesh_vertex_attributes, color_mesh_vertex_layout};
+
 /// Builds a static-offset uniform bind group: a one-entry `BindGroupLayout`,
 /// a `create_buffer_init` buffer, and the matching one-entry bind group.
 /// Shared by the quad (`uniforms_*`) and mesh (`mesh_uniforms_*`) setups,
@@ -191,6 +194,12 @@ impl Renderer {
             fog_volume_active: std::cell::Cell::new(false),
             bloom_pass: std::cell::RefCell::new(None),
             bloom_on: std::cell::Cell::new(false),
+            ssao_pass: std::cell::RefCell::new(None),
+            ssao_on: std::cell::Cell::new(false),
+            ssao_camera: std::cell::Cell::new(None),
+            ssao_params: std::cell::Cell::new(ssao::SsaoParams::default()),
+            ssao_debug: std::cell::Cell::new(false),
+            scene_lights_bgl: light_layer.bgl,
             surface,
             device,
             queue,

@@ -678,6 +678,7 @@ pub enum OptionRow {
     SeeThroughWalls,
     GroundFog,
     Bloom,
+    AmbientOcclusion,
     PsxRender,
     CameraDistance,
     PreciseMovement,
@@ -710,7 +711,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 36] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 37] = [
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -719,6 +720,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 36] = [
     (None, OptionRow::TimeOfDay),
     (None, OptionRow::LampShadows),
     (None, OptionRow::Bloom),
+    (None, OptionRow::AmbientOcclusion),
     (None, OptionRow::GroundFog),
     (None, OptionRow::SeeThroughWalls),
     (None, OptionRow::EntryPulse),
@@ -818,6 +820,7 @@ impl OptionRow {
             Self::SeeThroughWalls => "See-through walls",
             Self::GroundFog => "Ground fog",
             Self::Bloom => "Bloom",
+            Self::AmbientOcclusion => "Ambient occlusion",
             Self::PsxRender => "PlayStation pixel look",
             Self::CameraDistance => "Camera distance",
             Self::PreciseMovement => "Free-angle movement",
@@ -874,6 +877,10 @@ impl OptionRow {
             }
             Self::GroundFog => "A low drifting mist in misty and night scenes. In game: F9.",
             Self::Bloom => "Bright lights and lit windows glow softly. In game: F10.",
+            Self::AmbientOcclusion => {
+                "Soft contact shadows where walls meet floors and under characters. \
+                 In game: Home."
+            }
             Self::PsxRender => {
                 "The PlayStation's own 320x240 picture, magnified, with its wobbling \
                  vertices and dithering. Off draws clean edges."
@@ -1037,6 +1044,7 @@ impl OptionRow {
             Self::SeeThroughWalls => on_off(opts.occlusion_fade),
             Self::GroundFog => on_off(opts.volumetric_fog),
             Self::Bloom => on_off(opts.bloom),
+            Self::AmbientOcclusion => on_off(opts.ssao),
             Self::PsxRender => on_off(s.switches.psx_render),
             Self::CameraDistance => capitalise(opts.camera_distance.label()),
             Self::PreciseMovement => on_off(opts.precise_movement),
@@ -1173,6 +1181,7 @@ impl OptionRow {
             Self::SeeThroughWalls => opts.occlusion_fade = o.occlusion_fade,
             Self::GroundFog => opts.volumetric_fog = o.volumetric_fog,
             Self::Bloom => opts.bloom = o.bloom,
+            Self::AmbientOcclusion => opts.ssao = o.ssao,
             Self::PsxRender => w.psx_render = d.psx_render,
             Self::CameraDistance => opts.camera_distance = o.camera_distance,
             Self::PreciseMovement => opts.precise_movement = o.precise_movement,
@@ -1252,6 +1261,7 @@ impl OptionRow {
             Self::SeeThroughWalls => opts.occlusion_fade ^= true,
             Self::GroundFog => opts.volumetric_fog ^= true,
             Self::Bloom => opts.bloom ^= true,
+            Self::AmbientOcclusion => opts.ssao ^= true,
             Self::PsxRender => s.switches.psx_render ^= true,
             Self::CameraDistance => {
                 // A three-step cycle: back one is forward two.
@@ -1880,6 +1890,8 @@ mod tests {
             SeeThroughWalls => "play-see-through",
             GroundFog => "play-ground-fog",
             Bloom => "play-bloom",
+            // The play page's twin arrives with its WebGL2 pass.
+            AmbientOcclusion => return None,
             PsxRender => "play-psx-render",
             CameraDistance => "play-camera-distance",
             PreciseMovement => "play-precise-move",

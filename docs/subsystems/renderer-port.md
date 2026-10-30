@@ -430,6 +430,83 @@ requires them to agree.
 sixteenth of the pixels; on the page, one extra resolve blit. Nothing on the
 CPU beyond two uniform writes a frame.
 
+## Screen-space ambient occlusion (enhancement, NOT retail)
+
+`Renderer::set_ssao(true)` plus a per-frame `Renderer::set_ssao_camera`
+(the scene's world-to-clip) darkens opaque scene geometry where other
+geometry closes over it: the foot of a wall, the floor under a table or an
+eave, the ground at a character's feet. **Off by default in the renderer,
+and off IS the frame without it**: no pass is encoded, no pipeline is built,
+and the scene shaders' own sources carry no SSAO code. `play-window` turns it
+on from the persisted `ssao` option (`Home` toggles, `--no-ssao` forces it
+off; `--retail` pins it off, so every retail-compare tier and every replay
+renders without it). Retail has no ambient term to occlude - the field path
+draws baked colour words with no light source - so the AO multiplies the
+finished opaque colour.
+
+It is not a deferred renderer. Shading stays forward; a thin G-buffer
+pre-pass exists only to feed the screen-space pass:
+
+1. **pre-pass** (`renderer/ssao.rs`) - the scene's textured and untextured
+   draws again, under the same uniform slots and the same `vs_main` as the
+   main pass, into one `Rgba32Float` target: `rgb` the view-space normal,
+   `a` the linear view depth (clip `w`). The same vertex entry under the
+   same depth test means the same fragment wins every pixel, and the
+   fragment entries (`fs_ssao_prepass`) repeat the opaque entries' discards
+   - effect clip, NCLIP, double-sided copies, the occlusion fade's screen
+   door, transparent texels and the STP texels a semi prim defers - so the
+   G-buffer covers exactly the opaque fragments the frame shows. It borrows
+   the main depth target, which the main pass clears again.
+2. **AO** - per pixel, twelve samples on a golden-angle spiral rotated by
+   interleaved gradient noise, scored with the Alchemy estimator and faded
+   to zero at the world radius, which is what keeps a far wall from haloing
+   a silhouette in front of it.
+3. **blur** - one horizontal and one vertical pass, each tap weighted by a
+   Gaussian, the relative depth difference and the normals' agreement, so the
+   noise smooths without bleeding across a silhouette or a crease.
+4. **apply** - a full-screen triangle inside the main pass right after the
+   opaque draws, blending `framebuffer * ao`. The semi-transparency blend
+   pass, the glow sprites, the fog, the bloom and every screen-space layer
+   draw after it, so water, glass, halos, sprites, effects and the HUD never
+   darken; pixels the pre-pass left empty (sky, backdrops, the letterbox)
+   take `1`.
+
+**Normals.** The TMDs author normals only on their lit rows, so every
+fragment takes the flat face normal: the cross product of the screen
+derivatives of its reconstructed view position, turned toward the camera.
+On this low-polygon geometry flat normals are what the faces are, and they
+cost no vertex data. Clip `w` is the one depth that survives retail's
+draw-order tricks - the far-bucket and sorted-cell depths move clip `z`
+only - so the reconstruction sees true geometry.
+
+**Resolution.** AO runs at full resolution up to a 540-row target, which
+includes the native `320 x 240` frame: a half-resolution texel there would
+span two stage pixels, and PSX mode's snapped edges walking across it read
+as shimmer. Larger targets run AO and the blur at half resolution on each
+axis and upsample with a joint-bilateral blend (bilinear weights times the
+blur's depth and normal terms). The AO is applied after the PSX dither, so in
+PSX mode it is a smooth term over the 15-bit frame.
+
+**The browser twin** (a WebGL2 pass on the play page) must replicate, from
+`legaia_render_kernels::ssao`: `SsaoParams` and its `shader_words`
+packing; `view_scale` (the reconstruction factors from the view-projection)
+and `view_position` with this NDC convention (pixel centres, `y` up, over
+the scene viewport); `radius_px`; `spin`; `sample_offset`;
+`occlusion_term`; `ao_from_sum`; `blur_weight`; and `ao_downscale`. It must
+also keep the order - pre-pass over opaque draws with the same discards,
+apply before the semi-transparent and screen-space layers - and store clip
+`w`, not the depth buffer's `z`, as the depth. WebGL2 renders to
+`RGBA32F` only with `EXT_color_buffer_float`; without it a
+`RGBA16F` G-buffer (`EXT_color_buffer_half_float`) holds the normal and
+depth at a precision the radius tolerates.
+
+`LEGAIA_SSAO_VIEW=1` in `play-window` draws the AO term alone in place of the
+opaque colour - a tuning view.
+
+**Cost.** One extra draw of the opaque scene into the G-buffer, then three
+full-screen passes over the AO target; the frame profiler banks their
+encoding as `ssao`. Nothing reaches the simulation.
+
 ## Screen-space overlay pass
 
 **One stage for every window size.** Every 2D draw and the 3D pass's
@@ -676,6 +753,8 @@ scene draw list), then the renderer's own `acquire` (swapchain wait),
 `uniforms` (per-draw uniform staging), `encode`, `submit` and `present`.
 `draws N+M` is the scene's textured + untextured draw-call count, so the
 `encode` cost is attributable per draw.
+With SSAO on, `ssao` banks encoding its pre-pass and passes, which `encode`
+then excludes.
 
 Two companion knobs make it a repeatable benchmark:
 

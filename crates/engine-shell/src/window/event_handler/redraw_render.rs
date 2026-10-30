@@ -46,6 +46,21 @@ impl PlayWindowApp {
         ) else {
             unreachable!("render gate checked above");
         };
+        // SSAO reconstructs view space from this frame's scene camera
+        // (inert while the enhancement is off), in the units the scene is
+        // authored in: a battle's stage and bodies draw through the battle
+        // stage model, so its radius is in battle units there.
+        // `LEGAIA_SSAO_VIEW=1` draws the AO term alone, a tuning view.
+        let ssao_cam = if self.session.host.world.mode == SceneMode::Battle {
+            cam * Self::battle_stage_model()
+        } else {
+            cam
+        };
+        r.set_ssao_camera(Some(ssao_cam));
+        r.set_ssao_debug_view(ssao_debug_view());
+        if let Some(p) = ssao_tuning() {
+            r.set_ssao_params(p);
+        }
         // A live Baka duel draws against its own VRAM.
         // So does the dance venue - the hall's own upload, never the
         // walked-in scene's.
@@ -333,4 +348,39 @@ impl PlayWindowApp {
         );
         self.present_frame(r, &scene, &screen_prims, &light_prims);
     }
+}
+
+/// `LEGAIA_SSAO_VIEW=1`: draw the SSAO term alone. Read once.
+fn ssao_debug_view() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("LEGAIA_SSAO_VIEW").is_some_and(|v| v != "0"))
+}
+
+/// `LEGAIA_SSAO_TUNE=radius,bias,intensity,power,min_ao`: replace the SSAO
+/// response's first five constants (a tuning knob; the shipped values are
+/// `legaia_render_kernels::ssao`'s). Read once.
+fn ssao_tuning() -> Option<legaia_render_kernels::ssao::SsaoParams> {
+    static P: std::sync::OnceLock<Option<legaia_render_kernels::ssao::SsaoParams>> =
+        std::sync::OnceLock::new();
+    *P.get_or_init(|| {
+        let v: Vec<f32> = std::env::var("LEGAIA_SSAO_TUNE")
+            .ok()?
+            .split(',')
+            .map(|x| x.trim().parse().ok())
+            .collect::<Option<_>>()?;
+        let mut p = legaia_render_kernels::ssao::SsaoParams::default();
+        for (dst, src) in [
+            &mut p.radius,
+            &mut p.bias,
+            &mut p.intensity,
+            &mut p.power,
+            &mut p.min_ao,
+        ]
+        .into_iter()
+        .zip(v)
+        {
+            *dst = src;
+        }
+        Some(p)
+    })
 }

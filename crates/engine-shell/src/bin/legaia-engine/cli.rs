@@ -1409,6 +1409,14 @@ pub(crate) enum Cmd {
         /// with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
+        /// Disable the screen-space ambient occlusion ENHANCEMENT for this
+        /// session, whatever the options file says. On by default: opaque
+        /// scene geometry darkens softly where other geometry closes over it
+        /// (a wall's foot, the floor under a table, a character's feet).
+        /// Pure presentation. Toggle (and persist) at runtime with the
+        /// `Home` key.
+        #[arg(long, default_value_t = false)]
+        no_ssao: bool,
         /// Start in PSX-faithful rasterisation: the whole frame drawn at the
         /// display's own 320x240 and magnified nearest-neighbour, with the
         /// vertex snap, the GPU's fill rule and 15-bit ordered dithering (the
@@ -1442,7 +1450,7 @@ pub(crate) enum Cmd {
             long,
             default_value_t = false,
             conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
-                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
+                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
                 "arts_saved_list",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
