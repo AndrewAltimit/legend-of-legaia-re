@@ -142,19 +142,29 @@ table = "tower_4f"
 
 # ---------------------------------------------------------------------------
 # Detail: the vault drips and grows. Water falls from the broken colonnade,
-# motes and spores drift over the court, and a ring of green light hangs
-# over the sunken court where the Colossus sleeps.
+# motes and spores drift over the court, and a ring of green light turns
+# on the floor of the sunken court where the Colossus sleeps, the vault's
+# heart hanging over it.
 # ---------------------------------------------------------------------------
 
 [[props]]
 id = "verdant_ring"
 mesh = { object = 127 }
 tile = [16, 13]
-offset = [0, 160, 0]
+offset = [0, 24, 0]
 rotation = [90.0, 0.0, 0.0]
-scale = 0.25
-animate = [{ kind = "spin", period = -720 }, { kind = "pulse", amount = 0.06, period = 120 }]
-light = { color = [120, 255, 150], radius = 900, height = 0, flicker = 0.1, period = 50 }
+scale = 0.75
+animate = [{ kind = "spin", period = -720 }, { kind = "pulse", amount = 0.08, period = 120 }]
+light = { color = [120, 255, 150], radius = 1300, height = 40, flicker = 0.12, period = 50 }
+
+[[props]]
+id = "vault_heart"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [16, 12]
+offset = [0, 170, 64]
+scale = 2.2
+animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 18, period = 200 }]
+light = { color = [120, 255, 140], radius = 1000, height = 0, flicker = 0.12, period = 40 }
 
 [[emitters]]
 kind = "drips"

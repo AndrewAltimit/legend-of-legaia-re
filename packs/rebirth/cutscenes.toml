@@ -257,11 +257,14 @@ line = "sovereign_rises_reply"
 do = "start_quest"
 quest = "tower_sovereign"
 
+# The shot turns round to look up the carpet from behind the party at the
+# throne, which faces the approach (8F `hollow_throne_seat`).
 [[cutscenes.sovereign_rises.tracks.shot.steps]]
 do = "camera"
-focus = { tile = [8, 1] }
-pitch = -16.0
-zoom = 0.8
+focus = { tile = [8, 2] }
+yaw = 180.0
+pitch = -12.0
+zoom = 0.85
 frames = 160
 
 # After the superboss falls (`tower_sovereign`'s `complete_cutscene`): the

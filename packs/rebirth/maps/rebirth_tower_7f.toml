@@ -121,27 +121,27 @@ id = "echo_1"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [11, 10]
 offset = [0, 140, 0]
-scale = 1.2
-animate = [{ kind = "orbit", radius = 110, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
-light = { color = [120, 170, 255], radius = 600, flicker = 0.15, period = 30 }
+scale = 2.0
+animate = [{ kind = "orbit", radius = 140, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
+light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
 
 [[props]]
 id = "echo_2"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [11, 11]
 offset = [0, 140, -128]
-scale = 1.2
-animate = [{ kind = "orbit", radius = 110, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
-light = { color = [120, 170, 255], radius = 600, flicker = 0.15, period = 30 }
+scale = 2.0
+animate = [{ kind = "orbit", radius = 140, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
+light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
 
 [[props]]
 id = "echo_3"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [10, 10]
 offset = [128, 140, 0]
-scale = 1.2
-animate = [{ kind = "orbit", radius = 110, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
-light = { color = [120, 170, 255], radius = 600, flicker = 0.15, period = 30 }
+scale = 2.0
+animate = [{ kind = "orbit", radius = 140, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
+light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
 
 [[emitters]]
 kind = "sparkles"

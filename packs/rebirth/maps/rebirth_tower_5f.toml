@@ -17,7 +17,7 @@ rows = [
   "      #..#",
   "#cccccc..cccccc#",
   "#..............#",
-  "#..............#",
+  "#...u..v...w...#",
   "#..............#",
   "#.b#.......##.##",
   "#.b#.......##.#",
@@ -31,6 +31,14 @@ rows = [
 "." = { label = "floor" }
 "b" = { label = "wall edge", walls = ["tr", "br"] }
 "c" = { label = "wall edge", walls = ["tl", "tr"] }
+# The lobby's overhead boards (koin1 records 0x813 / 0x817, meshes 96 and
+# 106, the far-sorted decoration cells over the counter row) hang between
+# the follow camera and the room the Rest's arrivals stand in, and cover
+# half the screen. These three cells keep their own floor texture and drop
+# the boards (docs/subsystems/renderer.md, the decoration cell's 0x800 flag).
+"u" = { label = "floor (boards cleared)", ground = { kind = "base_cell", cell = [66, 61] } }
+"v" = { label = "floor (boards cleared)", ground = { kind = "base_cell", cell = [69, 61] } }
+"w" = { label = "floor (boards cleared)", ground = { kind = "base_cell", cell = [73, 61] } }
 
 [[spawns]]
 id = "from_below"

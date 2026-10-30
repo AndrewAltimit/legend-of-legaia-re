@@ -98,19 +98,19 @@ table = "tower_3f"
 
 # ---------------------------------------------------------------------------
 # Detail: the garden in late summer. Leaves fall from the terraces' trees,
-# fireflies hang over the lower garden, and a ring of cloud turns slowly
-# over the sundial. The garden's own animated scenery plays (`scenery`).
+# fireflies hang over the lower garden, and a shard of sky-glass turns
+# slowly over the sundial. The garden's own animated scenery plays (`scenery`).
 # All of it draws only.
 # ---------------------------------------------------------------------------
 
 [[props]]
-id = "cloud_ring"
-mesh = { object = 3 }
+id = "sky_glass"
+mesh = { asset = "models/ember_crystal.glb" }
 tile = [12, 11]
-offset = [0, 230, 0]
-scale = 0.45
-animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 12, period = 240 }]
-light = { color = [200, 230, 255], radius = 700, height = 0 }
+offset = [0, 150, 0]
+scale = 2.4
+animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 16, period = 240 }]
+light = { color = [170, 220, 255], radius = 1200, height = 0, flicker = 0.08, period = 90 }
 
 # Young trees in clumps on the lower garden.
 [[scatter]]

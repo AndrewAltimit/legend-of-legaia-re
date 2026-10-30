@@ -125,25 +125,37 @@ table = "tower_6f"
 
 # ---------------------------------------------------------------------------
 # Detail: the engine runs. Sparks spray from the Regent's alcove and the
-# gauntlet lever, steam rolls along both tracks, and the fortress's own
-# machinery turns (`scenery`). Cold lamps light the hall.
+# gauntlet lever, steam rolls along both tracks, the fortress's own
+# machinery turns (`scenery`), and a furnace core burns over the north track. Cold lamps light the hall.
 # ---------------------------------------------------------------------------
 
 [[props]]
 id = "flywheel_n"
 mesh = { object = 31 }
 tile = [8, 8]
-offset = [0, 40, 0]
-scale = 0.7
+offset = [0, 80, 0]
+scale = 2.0
 animate = [{ kind = "spin", period = 240 }]
+light = { color = [255, 170, 90], radius = 760, height = 80, flicker = 0.3, period = 9 }
 
 [[props]]
 id = "flywheel_s"
 mesh = { object = 31 }
 tile = [8, 25]
-offset = [0, 40, 0]
-scale = 0.7
+offset = [0, 80, 0]
+scale = 2.0
 animate = [{ kind = "spin", period = -240 }]
+light = { color = [255, 170, 90], radius = 760, height = 80, flicker = 0.3, period = 11 }
+
+# The furnace core over the north track: the engine's heart, white-hot.
+[[props]]
+id = "furnace_core"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [9, 9]
+offset = [-64, 160, 0]
+scale = 2.0
+animate = [{ kind = "spin", period = 140 }, { kind = "pulse", amount = 0.1, period = 30 }]
+light = { color = [255, 150, 60], radius = 1000, height = 0, flicker = 0.35, period = 7 }
 
 [[emitters]]
 kind = "embers"
