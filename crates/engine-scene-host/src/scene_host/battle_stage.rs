@@ -180,6 +180,18 @@ impl SceneHost {
     ///
     /// REF: FUN_800513F0, FUN_801D9E1C
     pub fn battle_stage_entry(&self) -> Option<u32> {
+        // An expansion pack's fight names its own stage by coordinate: the
+        // `index`-th stage stream of a block, or the block's own pick.
+        if let Some(st) = self.pack_stage_resolved() {
+            return match st.index {
+                Some(i) => self
+                    .index
+                    .battle_stage_entries(&st.scene)
+                    .get(usize::from(i))
+                    .copied(),
+                None => self.index.battle_stage_entry_for_scene(&st.scene),
+            };
+        }
         let variant = self.world.encounters.region_setup.map(|s| s.stage_variant);
         let (scene, variant) = match self.battle_stage_scene() {
             // A Muscle Dome leg's battle: the arena's fight start leaves the
@@ -206,6 +218,10 @@ impl SceneHost {
         if self.world.muscle_leg_in_battle() {
             return Some(ARENA_STAGE_SCENE);
         }
+        if let Some(st) = self.pack_stage_resolved() {
+            return Some(st.scene.as_str())
+                .filter(|name| self.scene.as_ref().is_none_or(|s| s.name != *name));
+        }
         let define = self.world.encounters.battle_map_define?;
         self.index
             .block_name_for_define(u32::from(define))
@@ -218,11 +234,34 @@ impl SceneHost {
     /// `0x80051ABC`). `false` - the drop - until a long-layout region says
     /// otherwise.
     pub fn battle_stage_keeps_object_1(&self) -> bool {
+        if let Some(st) = self.pack_stage_resolved() {
+            return st.keep_object_1;
+        }
         self.world
             .encounters
             .region_setup
             .and_then(|s| s.keep_backdrop_object_1)
             .unwrap_or(false)
+    }
+
+    /// The pack's stage for the fight under way when it names a stage stream
+    /// on this disc ([`legaia_engine_core::world::World::expansion_battle_stage`]);
+    /// a coordinate that names none leaves the room's own stage standing.
+    pub fn pack_stage_resolved(&self) -> Option<&legaia_expansion_format::battle::BattleStageRef> {
+        let st = self.world.expansion_battle_stage()?;
+        let entries = self.index.battle_stage_entries(&st.scene);
+        let ok = match st.index {
+            Some(i) => usize::from(i) < entries.len(),
+            None => !entries.is_empty(),
+        };
+        ok.then_some(st)
+    }
+
+    /// The stage tint the pack names for the fight under way
+    /// ([`legaia_expansion_format::battle::BattleStageRef::tint`]); `None`
+    /// with no pack stage or no tint.
+    pub fn battle_stage_tint(&self) -> Option<[u8; 3]> {
+        self.pack_stage_resolved()?.tint
     }
 
     /// The backdrop TMD objects the two stage actors draw right now, in draw

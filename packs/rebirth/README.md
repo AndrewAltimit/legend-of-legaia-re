@@ -135,6 +135,15 @@ flashes the keeper's colour and its title banner rises. Each phase change
 rings the phase shimmer under the script's banner line, and a won fight
 closes back on the floor (`outro`) on the falling knell and a banner of
 what is left.
+Each tower boss fights on a retail stage of its own picking (`battle.toml`
+`stage`), not the stage under its floor's room: the Warden on Bio Castle's
+lava floor (`jouinc`), the Colossus in Mt. Letona's wood (`retona`), the
+Regent in Sol Tower's machine hall (`korb3`, its second stage), the Seraph
+under the moonlit pillars of Noa's Conkram dream (`urudre2`), the Sovereign
+under the Mist's violet sky (`jou`), the Echo in Dohati's hall (`dohaty`)
+drained violet by a stage `tint`, and the First Breath on Uru Mais's
+storm-swept peak (`uru`). The night and Mist stages carry a lifting `tint`
+so the phase shades still read.
 
 Every boss fights with a boss script (`[monsters.<key>.script]` in
 `battle.toml`) instead of its base monster's retail AI. Each move is the base

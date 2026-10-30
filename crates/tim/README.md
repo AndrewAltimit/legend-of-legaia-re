@@ -77,6 +77,10 @@ Pixel widths in real pixels:
   `import_png`, which recognises which of those shapes a PNG is and writes it
   back into the original layout with every untouched palette byte-identical.
   Workflow: [`textures-and-fonts.md`](../../docs/tooling/translation/textures-and-fonts.md#multi-palette-textures).
+- `tint::tint_bgr555(word, [r, g, b])` - a per-channel multiply over one
+  BGR555 palette word (`128` unchanged), keeping STP and the transparent
+  `0x0000`: the recolour behind an expansion pack's battle-stage `tint` and
+  map `tint` materials.
 
 ## CLI
 

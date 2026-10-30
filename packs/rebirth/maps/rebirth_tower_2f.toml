@@ -262,6 +262,35 @@ sides = 16
 color = [110, 110, 110]
 yaw = [0.0, 0.0]
 
+# The hall's own torch flames burn the Rogue's Tower's violet and its flame
+# ring burns blue; the Ember Stair's burn its fire's amber. The torches
+# draw through the violet ramps 32384 / 32385 (row 506), the ring through
+# the blue flame ramps 32257 / 32258 (row 504): each turned round the hue
+# circle and warmed, once on entry.
+[[materials]]
+kind = "tint"
+clut = 32384
+hue = 125.0
+color = [255, 150, 90]
+
+[[materials]]
+kind = "tint"
+clut = 32385
+hue = 125.0
+color = [255, 150, 90]
+
+[[materials]]
+kind = "tint"
+clut = 32257
+hue = 150.0
+color = [220, 140, 100]
+
+[[materials]]
+kind = "tint"
+clut = 32258
+hue = 150.0
+color = [220, 140, 100]
+
 # Sound: the four ember braziers roar as the party passes them.
 [[audio.ambient]]
 id = "ember_nw"

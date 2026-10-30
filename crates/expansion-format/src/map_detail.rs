@@ -908,6 +908,30 @@ pub enum MaterialFx {
         #[serde(default = "full_turn")]
         hue: f32,
     },
+    /// A standing recolour of palette entries, applied once: a static hue
+    /// turn and brightness shift through the same HSV kernel as
+    /// [`MaterialFx::Hsv`], then a per-channel multiply `color` (`128` =
+    /// unchanged, `255` about doubles). Re-colours a retail mesh's art to
+    /// the map's mood - a kept room's torch flames, a carried-in crystal.
+    Tint {
+        clut: u16,
+        /// As [`MaterialFx::Cycle`]'s `from`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+        #[serde(default)]
+        start: u8,
+        #[serde(default = "sixteen")]
+        count: u16,
+        /// Hue turn in degrees.
+        #[serde(default)]
+        hue: f32,
+        /// Brightness shift, `-255..=255`.
+        #[serde(default)]
+        value: i16,
+        /// Per-channel multiply `[r, g, b]`, `128` = unchanged.
+        #[serde(default = "neutral_tint")]
+        color: [u8; 3],
+    },
     /// Texel scrolling: rotate an atlas cell's texels `dx` / `dy` whole
     /// texels every `period` frames, wrapping - flowing water, a moving
     /// energy floor. (Retail's mode-4 rotator `FUN_80021DF4` moves halfword
@@ -940,13 +964,19 @@ fn full_turn() -> f32 {
     360.0
 }
 
+fn neutral_tint() -> [u8; 3] {
+    [128; 3]
+}
+
 impl MaterialFx {
-    /// The effect's period in frames.
+    /// The effect's period in frames; a standing [`MaterialFx::Tint`]
+    /// has none and reports `1`.
     pub fn period(&self) -> i32 {
         match *self {
             Self::Cycle { period, .. } | Self::Hsv { period, .. } | Self::Scroll { period, .. } => {
                 period
             }
+            Self::Tint { .. } => 1,
         }
     }
 }

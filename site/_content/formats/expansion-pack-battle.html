@@ -164,6 +164,15 @@ reward_items = [{ item = { kind = "item", id = 233 }, count = 1 }]
 reward_gold = 50000
 once = true</code></pre>
   <p>A boss is a formation plus staging. <code>no_escape</code> marks its formation scripted. <code>music</code> replaces the battle track for this fight (when the host's battle-music swap is on). <code>reward_items</code> and <code>reward_gold</code> pay on victory on top of the formation's spoils, and land in the spoils' drops and gold. A <code>once</code> boss refuses a second start after a victory (<code>World::expansion_boss_cleared</code>).</p>
+  <h3 id="battle-stage">Battle stage</h3>
+<pre><code>[bosses.ash_king]
+formation = "ash_court"
+stage = { scene = "jou", index = 1, tint = [150, 110, 170] }
+
+[formations.ash_court]
+stage = { scene = "rikuroa" }        # the block's own pick</code></pre>
+  <p>A fight is fought on the retail stage of the room it starts in. <code>stage</code> names another by coordinate, on a boss or a formation, and a boss's own wins: <code>scene</code> is a CDNAME block, <code>index</code> the block's <code>index</code>-th battle-stage stream in bundle-slot order (left out, the block's own pick). The stream brings the whole stage - the backdrop shell drawn twice, its second-copy transform and outdoor class, and the ground-grid tile (<a href="../subsystems/battle-stage-camera.html">battle stage</a>).</p>
+  <p><code>keep_object_1</code> keeps the shell object battle init otherwise drops. <code>tint</code> multiplies the stage's own palettes per channel (<code>128</code> unchanged, <code>255</code> about double): the textured shell and the ground tile take it, the shell's untextured panels do not. The tint is applied as the stage stream re-uploads on the battle edge (<code>resolve_battle_stage</code>), so both hosts draw one VRAM. With a disc the validator checks the index against the block's stage streams; at run time a coordinate that names none leaves the room's stage standing. With no pack the pick is retail's.</p>
   <p>Quests and maps start fights through two <code>World</code> entry points: <code>start_expansion_battle(formation)</code> and <code>start_expansion_boss(boss)</code>. Both go through the ordinary encounter path - transition, battle music, <code>begin_encounter_battle</code> - as <code>World::force_encounter</code> does.</p>
 </section>
 

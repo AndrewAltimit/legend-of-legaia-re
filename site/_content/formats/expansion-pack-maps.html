@@ -406,8 +406,10 @@ kind = "cycle"        # palette cycling: clut, start, count, period, reverse
 [[materials]]
 kind = "hsv"          # hue / brightness: clut, start, count, period, hue, value
 [[materials]]
+kind = "tint"         # standing recolour: clut, start, count, hue, value, color = [r, g, b]
+[[materials]]
 kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, period</code></pre>
-  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>scroll</code> rotates an atlas cell by whole texels. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
+  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>tint</code> recolours entries once and holds them (a static hue turn and brightness shift through that kernel, then a per-channel multiply, <code>128</code> unchanged), so a kept room's art takes the map's mood; <code>scroll</code> rotates an atlas cell by whole texels. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
 </section>
 
 <section class="doc-section" id="fog" data-doc="fog">

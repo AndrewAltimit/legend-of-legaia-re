@@ -133,6 +133,13 @@ pub trait DiscResolver {
     fn scene_geometry_len(&self, _scene: &str) -> Option<usize> {
         None
     }
+
+    /// How many battle-stage streams scene `scene`'s block carries - the
+    /// index space of a `stage = { scene, index }`. `None` when the
+    /// resolver cannot tell, which skips the check.
+    fn battle_stage_count(&self, _scene: &str) -> Option<usize> {
+        None
+    }
 }
 
 #[cfg(test)]

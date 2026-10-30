@@ -507,7 +507,7 @@ line = "sovereign_hollow"
 sound = { kind = "sound", id = "sting_phase" }
 # The shell cracks: a red flash, the throne room bleeds red.
 flash = { color = [220, 40, 40], frames = 40 }
-tint = { color = [0, 44, 44], frames = 60, mode = "subtract" }
+tint = { color = [0, 22, 22], frames = 60, mode = "subtract" }
 # The shell cracks and the music turns: "Apocalypse" (61).
 music = { kind = "bgm", id = 61 }
 attack = { mul = 1.2 }
@@ -524,7 +524,7 @@ line = "sovereign_unmade"
 speed = { mul = 1.2 }
 # Unmade: white, then the dark of the hollow.
 flash = { color = [255, 255, 255], frames = 50 }
-tint = { color = [40, 60, 30], frames = 60, mode = "subtract" }
+tint = { color = [18, 28, 14], frames = 60, mode = "subtract" }
 # The pack's own chime (assets/audio/chime.wav) rings as it is unmade, and
 # again on every Grand Beam telegraph.
 sound = { kind = "sound", id = "chime" }
@@ -880,6 +880,8 @@ reward_gold = 20000
 once = true
 intro = "warden_intro"
 outro = "warden_fallen"
+# The Warden burns on Bio Castle's lava floor.
+stage = { scene = "jouinc", index = 0 }
 
 [bosses.verdant_colossus]
 no_escape = true
@@ -890,6 +892,8 @@ reward_gold = 30000
 once = true
 intro = "colossus_intro"
 outro = "colossus_fallen"
+# The Colossus stands in Mt. Letona's deep wood.
+stage = { scene = "retona", index = 0 }
 
 [bosses.iron_regent]
 no_escape = true
@@ -900,6 +904,9 @@ reward_gold = 40000
 once = true
 intro = "regent_intro"
 outro = "regent_fallen"
+# The Regent holds court among Sol Tower's machine halls, lit a shade
+# brighter so its iron phase's drain still reads.
+stage = { scene = "korb3", index = 1, tint = [150, 150, 150] }
 
 [bosses.azure_seraph]
 no_escape = true
@@ -910,6 +917,9 @@ reward_gold = 50000
 once = true
 intro = "seraph_intro"
 outro = "seraph_fallen"
+# The Seraph sings under the moonlit pillars of Noa's Conkram dream, the
+# night lifted a little so the storm phase reads.
+stage = { scene = "urudre2", index = 0, tint = [156, 156, 168] }
 
 [bosses.hollow_sovereign]
 no_escape = true
@@ -923,6 +933,9 @@ reward_items = [
 reward_gold = 100000
 once = true
 intro = "sovereign_intro"
+# The Sovereign rules under the Mist's violet sky over the Juggernaut,
+# lifted so the phases' red bleed and grey drain still read.
+stage = { scene = "jou", tint = [150, 140, 156] }
 
 # Not once: the echo can be fought again and again for its spoils.
 [bosses.throne_echo]
@@ -933,6 +946,8 @@ reward_gold = 20000
 once = false
 intro = "echo_intro"
 outro = "echo_fallen"
+# The echo haunts Dohati's hall, drained to a ghostly violet.
+stage = { scene = "dohaty", index = 0, tint = [150, 120, 190] }
 
 [bosses.first_breath]
 no_escape = true
@@ -943,6 +958,9 @@ reward_gold = 150000
 once = true
 intro = "breath_intro"
 outro = "breath_fallen"
+# The Breath of fire, wind and thunder meets the party on Uru Mais's
+# storm-swept peak.
+stage = { scene = "uru" }
 
 # --- The Rebirth Isles (party level 30-40) -----------------------------------
 #

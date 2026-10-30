@@ -200,6 +200,21 @@ impl World {
         true
     }
 
+    /// The retail battle stage the pack names for the fight under way
+    /// (`battle.toml` `stage` on its boss or its formation), which the scene
+    /// host's stage pick takes in place of the room's. `None` with no pack,
+    /// outside a pack fight, or when the fight names no stage.
+    pub fn expansion_battle_stage(
+        &self,
+    ) -> Option<&legaia_expansion_format::battle::BattleStageRef> {
+        let c = self.expansion.battle.compiled.as_ref()?;
+        let formation = self.battle.active_formation.as_ref()?;
+        c.battle_stage(
+            formation.formation_id,
+            self.expansion.battle.active_boss.as_deref(),
+        )
+    }
+
     /// Whether once-only boss `boss` has been beaten.
     pub fn expansion_boss_cleared(&self, boss: &str) -> bool {
         let Some(c) = self.expansion.battle.compiled.as_ref() else {

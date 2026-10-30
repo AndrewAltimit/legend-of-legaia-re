@@ -846,6 +846,15 @@ hue = 360.0                                 # degrees a period; 0 pulses brightn
 value = 32                                  # brightness swing
 
 [[materials]]
+kind = "tint"                               # a standing recolour, applied once
+clut = 32448
+start = 0
+count = 16
+hue = 30.0                                  # degrees turned
+value = 0                                   # brightness shift
+color = [255, 150, 80]                      # per-channel multiply, 128 = unchanged
+
+[[materials]]
 kind = "scroll"                             # texel scrolling
 cell = { tpage = 28, clut = 32576, tile = 0 }
 dx = 1
@@ -860,7 +869,10 @@ found. Every primitive that samples them animates: ground tiles, wall
 boxes, the base scene's own meshes. `cycle` rotates palette entries
 (water, lava, conveyor lights); `hsv` runs the entries through the retail
 mode-3 HSV cell kernel (`FUN_80019D50`'s port,
-`engine-field::clut_cell_fx::apply_hsv_cell`); `scroll` rotates an atlas
+`engine-field::clut_cell_fx::apply_hsv_cell`); `tint` recolours entries once and holds them: a
+static hue turn and brightness shift through the same kernel, then a
+per-channel multiply (`legaia_tim::tint::tint_bgr555`), so a kept room's
+art takes the map's mood; `scroll` rotates an atlas
 cell's texels by whole texels, wrapping, at any page depth. The words named
 are the base scene's VRAM, unless the material says `from`:
 

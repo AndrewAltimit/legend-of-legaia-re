@@ -236,6 +236,26 @@ fn the_dressed_rebirth_floors_enter() {
         for _ in 0..30 {
             host.tick().expect("tick");
         }
+        if map == "rebirth_tower_2f" {
+            // The Ember Stair's torches: the violet ramp turns amber once
+            // and then holds.
+            let mut vram = field_resources(&host.index, host.scene.as_ref().unwrap())
+                .unwrap()
+                .vram;
+            let row = |v: &legaia_tim::Vram| (0..16).map(|x| v.pixel(x, 506)).collect::<Vec<_>>();
+            let before = row(&vram);
+            let rgb = |w: u16| (w & 31, (w >> 5) & 31, (w >> 10) & 31);
+            let (r, _, b) = rgb(before[14]);
+            assert!(b > r, "the retail ramp is violet: {:?}", rgb(before[14]));
+            assert!(host.world.step_expansion_materials(&mut vram));
+            let after = row(&vram);
+            let (r, _, b) = rgb(after[14]);
+            assert!(r > b, "the tinted ramp is warm: {:?}", rgb(after[14]));
+            assert!(
+                !host.world.step_expansion_materials(&mut vram),
+                "a tint holds"
+            );
+        }
     }
 }
 

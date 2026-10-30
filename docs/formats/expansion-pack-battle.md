@@ -142,6 +142,24 @@ A boss is a formation plus staging. `no_escape` marks its formation scripted. `m
 
 `intro` and `outro` stage the fight on the field. An intro is a [cutscene](expansion-pack-cutscenes.md) played when anything calls the fight - a dialogue choice, a quest start, a trigger, a cutscene's `boss` step - and the fight starts when it ends or is skipped (`World::start_expansion_boss` starts the cutscene and keeps the boss, the cutscene's end queues the fight). An intro bound to another map, or one that cannot start, gives way: the fight starts at once. An outro is queued as the won fight pays out and plays back on the field once the results and the quest's own lines are done. Neither may hold a `battle` or `boss` step. The fight's own moments - a phase's banner, music and sound - are the [boss script's](#phases).
 
+### Battle stage
+
+```toml
+[bosses.ash_king]
+formation = "ash_court"
+stage = { scene = "jou", index = 1, tint = [150, 110, 170] }
+
+[formations.ash_court]
+monsters = ["ashen_caruban"]
+stage = { scene = "rikuroa" }              # the block's own pick
+```
+
+A fight is fought on the retail stage of the room it starts in: the stage stream the room's region names ([stage stream selection](../subsystems/battle-stage-camera.md#stage-stream-selection)). `stage` names another by coordinate, on a boss or a formation; a boss's own wins over its formation's. `scene` is a CDNAME block and `index` the block's `index`-th battle-stage stream (`scene_tmd_stream`) in bundle-slot order, `0` the first; left out, the stream a fight in that block takes when no region names one (`ProtIndex::battle_stage_entry_for_scene`). The stream brings the whole stage: the backdrop shell drawn twice, its second-copy transform and outdoor class from the stage tables, and the ground-grid tile, whose page and palette every stage stream carries at the grid's fixed address.
+
+`keep_object_1` keeps the shell's object 1, which battle init drops unless the room's region says otherwise (nilboa's horizon ribbon is one such object). `tint` multiplies the stage's own palettes per channel, `128` unchanged and `255` about double (`legaia_tim::tint::tint_bgr555`): the textured shell and the ground tile take it; the shell's untextured `F*` / `G*` panels keep their colours. The stage's palettes are tinted as the stage stream re-uploads them on the battle edge (`resolve_battle_stage`), so both hosts draw the same stage from one VRAM.
+
+The validator checks the block against the disc and, with a disc resolver, the index against the block's stage streams (`DiscResolver::battle_stage_count`). At run time a coordinate that names no stage stream leaves the room's own stage standing. With no pack the pick is retail's.
+
 Quests and maps start fights through two `World` entry points: `start_expansion_battle(formation)` and `start_expansion_boss(boss)`. Both go through the ordinary encounter path - transition, battle music, `begin_encounter_battle` - as `World::force_encounter` does.
 
 ## Boss scripts
@@ -301,6 +319,7 @@ Enemy scaling multiplies HP, MP, ATK, both defences, INT and SPD, and EXP and go
 | Level-up rewards | `World::apply_battle_xp` |
 | Steal override | the death-spoils steal in `battle/steal_attack.rs` |
 | Boss track | `World::swap_to_battle_bgm` |
+| Battle stage, stage tint | `World::expansion_battle_stage`, read by `SceneHost::battle_stage_entry` / `battle_stage_scene` / `battle_stage_keeps_object_1` / `battle_stage_tint`; the tint lands in `battle_stage::resolve_battle_stage` |
 | Boss script pick | `World::expansion_boss_pick`, the top of `World::pick_monster_action`; a swing stream through `World::arm_monster_strike_budget` |
 | Boss phase checks, summons | `World::expansion_boss_round_start`, from `World::begin_battle_round`; a mid-round summon from `World::cycle_battle_turn` |
 | Last stand | `World::expansion_survives_lethal`, from `apply_battle_hp_delta` and `apply_combo_total` |

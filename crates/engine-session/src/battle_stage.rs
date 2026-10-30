@@ -90,10 +90,13 @@ pub fn resolve_battle_stage(host: &SceneHost, scus: Option<&[u8]>) -> Option<Bat
     // DMA-every-TIM build leaves whichever sibling was written last holding
     // them. Retail only ever has the recorded stream resident.
     let mut vram = res.vram.clone();
-    let restored_tims = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
+    // An expansion pack's stage tint rides the stage's own palettes, so the
+    // shell and the ground tile take it on both hosts alike.
+    let restored_tims = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram_tinted(
         scene,
         stage_entry,
         &mut vram,
+        host.battle_stage_tint(),
     );
     // Which transform retail gives the SECOND backdrop copy: a half turn
     // about Y, or an X mirror on the stages the `DAT_80078B50` table names.
@@ -146,6 +149,15 @@ pub fn stage_battle_world(
     archive: Option<&[u8]>,
 ) -> Option<BattleStage> {
     let stage = resolve_battle_stage(host, scus);
+    if let Some(st) = host.pack_stage_resolved() {
+        log::info!(
+            "battle stage: pack stage {:?} index {:?} -> entry {:?}{}",
+            st.scene,
+            st.index,
+            stage.as_ref().map(|s| s.stage_entry),
+            if st.tint.is_some() { " (tinted)" } else { "" }
+        );
+    }
     host.world.battle.stage_outdoor = stage.as_ref().is_some_and(|s| s.outdoor);
     host.world.fog_volume.battle_luma = stage.as_ref().and_then(|s| {
         let (tmd, raw) = &s.dome;

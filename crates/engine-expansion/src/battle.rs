@@ -60,6 +60,9 @@ pub struct CompiledFormation {
     /// The boss scripts of the fight, by the base id their monster fights
     /// under.
     pub scripts: BTreeMap<u16, Arc<crate::boss_script::CompiledScript>>,
+    /// The retail battle stage the fight is fought on, when the formation
+    /// names one.
+    pub stage: Option<fmt::BattleStageRef>,
 }
 
 impl CompiledFormation {
@@ -102,6 +105,8 @@ pub struct CompiledBoss {
     pub reward_items: Vec<(ItemRef, u8)>,
     pub reward_gold: u32,
     pub once: bool,
+    /// The retail battle stage the boss is fought on, when it names one.
+    pub stage: Option<fmt::BattleStageRef>,
 }
 
 /// A pack's `battle.toml`, resolved to engine ids.
@@ -124,6 +129,21 @@ pub fn item_id(r: &ItemRef) -> Option<u8> {
 }
 
 impl CompiledBattle {
+    /// The retail battle stage a fight on engine formation `formation_id`
+    /// is fought on: boss `boss`'s own when it names one and fights that
+    /// formation, else the formation's. `None` - the room's own stage.
+    pub fn battle_stage(
+        &self,
+        formation_id: u16,
+        boss: Option<&str>,
+    ) -> Option<&fmt::BattleStageRef> {
+        let boss_stage = boss
+            .and_then(|k| self.bosses.get(k))
+            .filter(|b| b.formation_id == formation_id)
+            .and_then(|b| b.stage.as_ref());
+        boss_stage.or_else(|| self.formation(formation_id)?.stage.as_ref())
+    }
+
     /// Resolve `section` for pack `pack_id`. Fails with the section's
     /// [`BattleSection::problems`] when there are any.
     pub fn compile(pack_id: &str, section: &BattleSection) -> Result<Self, Vec<String>> {
@@ -236,6 +256,7 @@ impl CompiledBattle {
                 waves,
                 summons,
                 scripts,
+                stage: f.stage.clone(),
             });
         }
         for e in &section.encounters {
@@ -277,6 +298,7 @@ impl CompiledBattle {
                         .collect(),
                     reward_gold: b.reward_gold,
                     once: b.once,
+                    stage: b.stage.clone(),
                 },
             );
         }
@@ -639,6 +661,29 @@ reward_items = [{ item = { kind = "item", id = 5 }, count = 2 }]
 "#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_boss_stage_wins_over_its_formations_only_on_its_own_formation() {
+        let mut sec = section();
+        let stage = |scene: &str| fmt::BattleStageRef {
+            scene: scene.into(),
+            index: None,
+            keep_object_1: false,
+            tint: None,
+        };
+        sec.formations.get_mut("b_court").unwrap().stage = Some(stage("jou"));
+        sec.bosses.get_mut("king").unwrap().stage = Some(stage("map01"));
+        let c = CompiledBattle::compile("rebirth", &sec).unwrap();
+        let court = c.formation_id("b_court").unwrap();
+        let pair = c.formation_id("a_pair").unwrap();
+        let at = |f: u16, b: Option<&str>| c.battle_stage(f, b).map(|s| s.scene.clone());
+        assert_eq!(at(court, Some("king")).as_deref(), Some("map01"));
+        assert_eq!(at(court, None).as_deref(), Some("jou"));
+        // A boss that is not fighting this formation names nothing for it.
+        assert_eq!(at(pair, Some("king")), None);
+        assert_eq!(at(pair, None), None);
+        assert_eq!(at(7, None), None, "a retail formation");
     }
 
     #[test]

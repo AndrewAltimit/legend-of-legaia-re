@@ -193,6 +193,50 @@ pub struct FormationDef {
     /// The battle ends in victory once the last of them is down.
     #[serde(default)]
     pub waves: Vec<WaveDef>,
+    /// The retail battle stage the fight is fought on, in place of the one
+    /// the room it starts in names ([`BattleStageRef`]). A boss's own
+    /// [`BossDef::stage`] wins over its formation's.
+    #[serde(default)]
+    pub stage: Option<BattleStageRef>,
+}
+
+/// A retail battle stage named by coordinate: the `index`-th battle-stage
+/// stream (`scene_tmd_stream`) of CDNAME block `scene`, in bundle-slot
+/// order - the backdrop shell and the ground-grid tile the fight is fought
+/// on. See `docs/subsystems/battle-stage-camera.md`, "Stage stream
+/// selection".
+///
+/// ```toml
+/// stage = { scene = "jou", index = 1, tint = [150, 110, 170] }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BattleStageRef {
+    /// The CDNAME block the stage stream lives in.
+    pub scene: String,
+    /// Which of the block's stage streams, `0` = the first. Left out: the
+    /// one a fight in that scene uses when no region names another.
+    #[serde(default)]
+    pub index: Option<u8>,
+    /// Keep the shell's object 1, which battle init drops unless the room
+    /// says otherwise (a horizon ribbon on some stages).
+    #[serde(default)]
+    pub keep_object_1: bool,
+    /// A per-channel multiplier over the stage's own palettes,
+    /// `128` = unchanged: `[r, g, b]`, `0..=255`. It tints
+    /// the textured shell and the ground tile; the shell's untextured
+    /// panels keep their colours.
+    #[serde(default)]
+    pub tint: Option<[u8; 3]>,
+}
+
+impl BattleStageRef {
+    /// The stage's own block as a disc coordinate, for the resolver.
+    pub fn scene_ref(&self) -> DiscRef {
+        DiscRef::Scene {
+            name: self.scene.clone(),
+        }
+    }
 }
 
 /// When a wave's monsters take their seats.
@@ -346,6 +390,10 @@ pub struct BossDef {
     /// fight, once the results and any quest lines are done.
     #[serde(default)]
     pub outro: Option<String>,
+    /// The retail battle stage the boss is fought on; its formation's
+    /// [`FormationDef::stage`], else the room's own, when left out.
+    #[serde(default)]
+    pub stage: Option<BattleStageRef>,
 }
 
 fn yes() -> bool {
@@ -766,6 +814,21 @@ impl crate::validate::SectionRules for BattleSection {
                 }
             }
         }
+        let stages = self
+            .formations
+            .iter()
+            .map(|(k, f)| (format!("formations.{k}.stage"), &f.stage))
+            .chain(
+                self.bosses
+                    .iter()
+                    .map(|(k, b)| (format!("bosses.{k}.stage"), &b.stage)),
+            );
+        for (field, stage) in stages {
+            if let Some(st) = stage {
+                cx.disc_ref(&field, &st.scene_ref());
+                cx.battle_stage(&field, &st.scene, st.index);
+            }
+        }
         for (key, b) in &self.bosses {
             if let Some(m) = &b.music {
                 crate::audio::check_music(cx, &format!("bosses.{key}.music"), m);
@@ -820,6 +883,39 @@ once = true
         assert!(b.no_escape && b.once);
         assert_eq!(b.reward_items[0].count, 1);
         assert_eq!(s.problems("rebirth"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_stage_names_a_retail_stage_on_a_boss_or_a_formation() {
+        let src = format!("{SAMPLE}\n[formations.court.stage]\nscene = \"jou\"\nindex = 1\n");
+        let mut s: BattleSection = toml::from_str(&src).unwrap();
+        let f = s.formations["court"].stage.clone().unwrap();
+        assert_eq!(
+            (f.scene.as_str(), f.index, f.keep_object_1, f.tint),
+            ("jou", Some(1), false, None)
+        );
+        let b: BossDef = toml::from_str(
+            "formation = \"court\"\nstage = { scene = \"map01\", tint = [200, 96, 64], keep_object_1 = true }",
+        )
+        .unwrap();
+        let st = b.stage.clone().unwrap();
+        assert_eq!(
+            (st.index, st.tint, st.keep_object_1),
+            (None, Some([200, 96, 64]), true)
+        );
+        assert_eq!(
+            st.scene_ref(),
+            DiscRef::Scene {
+                name: "map01".into()
+            }
+        );
+        s.bosses.insert("sky".into(), b);
+        assert_eq!(s.problems("rebirth"), Vec::<String>::new());
+        // An unknown key is refused.
+        assert!(toml::from_str::<BattleStageRef>("scene = \"jou\"\nvariant = 2").is_err());
+        // Without a stage the field stays out of the written form's meaning.
+        let plain: BattleSection = toml::from_str(SAMPLE).unwrap();
+        assert!(plain.bosses["king"].stage.is_none());
     }
 
     #[test]

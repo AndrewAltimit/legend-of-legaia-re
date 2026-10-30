@@ -76,6 +76,12 @@ clut = 32592
 period = 240
 value = 32
 
+[[materials]]
+kind = "tint"
+clut = 32384
+hue = 125.0
+color = [255, 150, 90]
+
 [fog]
 regions = [{ rect = [1, 1, 5, 3], speed = 16 }]
 "########;
@@ -110,11 +116,17 @@ fn every_detail_section_parses() {
         [0, 96, 0],
         "lamp default height"
     );
-    assert_eq!(m.materials.len(), 3);
+    assert_eq!(m.materials.len(), 4);
     assert!(matches!(
         m.materials[2],
         MaterialFx::Hsv { count: 16, hue, .. } if hue == 360.0
     ));
+    assert!(matches!(
+        m.materials[3],
+        MaterialFx::Tint { clut: 32384, start: 0, count: 16, value: 0, color: [255, 150, 90], hue, .. }
+            if hue == 125.0
+    ));
+    assert_eq!(m.materials[3].period(), 1, "a standing tint has no period");
     assert_eq!(m.fog.regions[0].speed, 16);
     // Round trip.
     let text = toml::to_string(&m).unwrap();

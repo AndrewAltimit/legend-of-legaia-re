@@ -827,6 +827,7 @@ pub fn resolve_materials(def: &mut MapDef, lib: &MeshLibrary, base_scene: &str) 
         let from = match fx {
             MaterialFx::Cycle { from, .. }
             | MaterialFx::Hsv { from, .. }
+            | MaterialFx::Tint { from, .. }
             | MaterialFx::Scroll { from, .. } => from.clone(),
         };
         let Some(scene) = from.filter(|s| s != base_scene) else {
@@ -839,7 +840,9 @@ pub fn resolve_materials(def: &mut MapDef, lib: &MeshLibrary, base_scene: &str) 
             continue;
         };
         match fx {
-            MaterialFx::Cycle { clut, .. } | MaterialFx::Hsv { clut, .. } => {
+            MaterialFx::Cycle { clut, .. }
+            | MaterialFx::Hsv { clut, .. }
+            | MaterialFx::Tint { clut, .. } => {
                 if let Some(&c) = r.cluts.get(clut) {
                     *clut = c;
                 }

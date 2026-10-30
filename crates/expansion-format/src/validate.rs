@@ -102,6 +102,9 @@ pub struct Checker<'a> {
     /// Every declaration and reference as `(kind, id, file, field)`, kept
     /// for [`declarations_and_references`].
     trace: Vec<(&'static str, String, String, String)>,
+    /// `(file, field, scene, stage index)`: battle stages to check against
+    /// the block's stage streams once a resolver is supplied.
+    stage_refs: Vec<(String, String, String, u8)>,
 }
 
 impl<'a> Checker<'a> {
@@ -115,6 +118,7 @@ impl<'a> Checker<'a> {
             disc_refs: Vec::new(),
             geometry_refs: Vec::new(),
             trace: Vec::new(),
+            stage_refs: Vec::new(),
         }
     }
 
@@ -230,6 +234,19 @@ impl<'a> Checker<'a> {
         ));
     }
 
+    /// Record that `field` names battle stage `index` of scene `scene`
+    /// (`None` = the scene's own pick): checked against the block's stage
+    /// streams when the resolver knows them
+    /// ([`DiscResolver::battle_stage_count`]).
+    pub fn battle_stage(&mut self, field: &str, scene: &str, index: Option<u8>) {
+        self.stage_refs.push((
+            self.file.clone(),
+            field.to_string(),
+            scene.to_string(),
+            index.unwrap_or(0),
+        ));
+    }
+
     fn resolve_references(&mut self) {
         let own = self.pack.manifest.id.clone();
         let requires: BTreeSet<&str> = self
@@ -291,6 +308,25 @@ impl<'a> Checker<'a> {
                     &field,
                     format!("scene `{scene}`'s geometry pack has {len} meshes; mesh {index} is past the last"),
                 );
+            }
+        }
+        for (path, field, scene, index) in std::mem::take(&mut self.stage_refs) {
+            match resolver.battle_stage_count(&scene) {
+                Some(0) => self.push(
+                    Severity::Error,
+                    &path,
+                    &field,
+                    format!("scene `{scene}` carries no battle stage"),
+                ),
+                Some(n) if usize::from(index) >= n => self.push(
+                    Severity::Error,
+                    &path,
+                    &field,
+                    format!(
+                        "scene `{scene}` carries {n} battle stages; index {index} is past the last"
+                    ),
+                ),
+                _ => {}
             }
         }
     }
@@ -1348,5 +1384,32 @@ laps = 1
                 "q.toml:g",
             ]
         );
+    }
+
+    #[test]
+    fn a_battle_stage_index_is_checked_against_the_blocks_stage_streams() {
+        struct Stages;
+        impl DiscResolver for Stages {
+            fn resolve(&self, _r: &DiscRef) -> Result<(), String> {
+                Ok(())
+            }
+            fn battle_stage_count(&self, scene: &str) -> Option<usize> {
+                match scene {
+                    "town01" => Some(4),
+                    "nostage" => Some(0),
+                    _ => None,
+                }
+            }
+        }
+        let pack = good_pack();
+        let mut cx = Checker::new(&pack);
+        cx.file = "battle.toml".into();
+        cx.battle_stage("a", "town01", Some(3));
+        cx.battle_stage("b", "town01", Some(4));
+        cx.battle_stage("c", "nostage", None);
+        cx.battle_stage("d", "unknown", Some(9));
+        cx.resolve_disc(&Stages);
+        let fields: Vec<&str> = cx.issues.iter().map(|i| i.field.as_str()).collect();
+        assert_eq!(fields, ["b", "c"]);
     }
 }

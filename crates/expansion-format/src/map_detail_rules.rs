@@ -116,7 +116,9 @@ pub(crate) fn check_detail(
             );
         }
         match fx {
-            MaterialFx::Cycle { start, count, .. } | MaterialFx::Hsv { start, count, .. } => {
+            MaterialFx::Cycle { start, count, .. }
+            | MaterialFx::Hsv { start, count, .. }
+            | MaterialFx::Tint { start, count, .. } => {
                 if *count == 0 || usize::from(*start) + usize::from(*count) > 256 {
                     cx.error(
                         &format!("{at}.count"),
@@ -128,6 +130,20 @@ pub(crate) fn check_detail(
                 }
                 if matches!(fx, MaterialFx::Cycle { .. }) && *count < 2 {
                     cx.warning(&format!("{at}.count"), "a cycle of one entry never moves");
+                }
+                if let MaterialFx::Tint {
+                    hue, value, color, ..
+                } = fx
+                {
+                    if !hue.is_finite() {
+                        cx.error(&format!("{at}.hue"), "the hue turn must be a number");
+                    }
+                    if !(-255..=255).contains(value) {
+                        cx.error(&format!("{at}.value"), "value is outside -255..=255");
+                    }
+                    if *hue == 0.0 && *value == 0 && *color == [128; 3] {
+                        cx.warning(&at, "a tint with no hue, value or colour changes nothing");
+                    }
                 }
             }
             MaterialFx::Scroll { dx, dy, .. } => {

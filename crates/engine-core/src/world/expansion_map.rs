@@ -230,6 +230,32 @@ impl World {
                         },
                     )
                 }
+                MaterialFx::Tint {
+                    hue, value, color, ..
+                } => {
+                    // A standing recolour: the same words every frame, so
+                    // the write below lands once.
+                    let shifted = legaia_engine_field::clut_cell_fx::apply_hsv_cell(
+                        &src,
+                        &legaia_engine_field::clut_cell_fx::ClutCellFx {
+                            rect,
+                            h_add: (hue.rem_euclid(360.0)).round() as i16,
+                            s_add: 0,
+                            v_add: value,
+                            mode: 0,
+                            white: 0,
+                        },
+                    );
+                    let turned = if hue == 0.0 && value == 0 {
+                        src.clone()
+                    } else {
+                        shifted
+                    };
+                    turned
+                        .iter()
+                        .map(|&w| legaia_tim::tint::tint_bgr555(w, color))
+                        .collect()
+                }
                 MaterialFx::Scroll { dx, dy, .. } => {
                     let Some(tpw) = texels else { continue };
                     scroll_texels(&src, rect.2, rect.3, tpw, step, dx, dy)
@@ -278,6 +304,9 @@ fn material_rect(
             clut, start, count, ..
         }
         | MaterialFx::Hsv {
+            clut, start, count, ..
+        }
+        | MaterialFx::Tint {
             clut, start, count, ..
         } => {
             let (x, y) = clut_xy(clut);

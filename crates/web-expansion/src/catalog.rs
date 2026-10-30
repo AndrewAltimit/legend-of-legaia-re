@@ -517,6 +517,11 @@ impl DiscResolver for DiscCatalog {
     fn scene_geometry_len(&self, scene: &str) -> Option<usize> {
         self.scene_facts(scene).geometry_len
     }
+
+    fn battle_stage_count(&self, scene: &str) -> Option<usize> {
+        self.index.cdname_map()?;
+        Some(self.index.battle_stage_entries(scene).len())
+    }
 }
 
 /// The `arts.toml` key of an art-table character.
