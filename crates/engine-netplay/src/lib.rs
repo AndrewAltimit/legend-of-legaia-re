@@ -18,6 +18,8 @@
 //!   join);
 //! - [`screens`] - the room screen and roaming panel off a controller, as
 //!   `legaia_engine_ui` draw lists;
+//! - [`party`] - party night: a playlist of short rounds with one
+//!   scoreboard every peer computes and agrees on;
 //! - [`trade`] - card trades between two players, settled by the host;
 //! - [`avatar_pose`] - the pose a remote avatar is drawn in.
 //!
@@ -28,6 +30,7 @@ pub mod avatar_pose;
 pub mod connect;
 pub mod field_hunt;
 pub mod mode_net;
+pub mod party;
 pub mod roam;
 pub mod room;
 pub mod screens;

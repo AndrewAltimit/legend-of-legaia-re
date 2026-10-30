@@ -80,3 +80,45 @@ decoys = [
   { prop = "barrel", x = 520, y = 90 },
   { prop = "crate", x = 120, y = 400 },
 ]
+
+# The built-in party night: a short playlist of the practice instances,
+# offered to a room with no pack. Every round is cut to a few minutes.
+[[party_nights]]
+id = "builtin-party"
+name = "Practice Night"
+points = [10, 6, 4, 2]
+double_final = true
+rivals = ["Gala", "Noa", "Terra"]
+ai_tier = "novice"
+
+[[party_nights.rounds]]
+mode = "builtin-golf"
+name = "Practice Green"
+holes = [1]
+
+[[party_nights.rounds]]
+mode = "builtin-poker"
+name = "Quick Hold'em"
+hands = 2
+stack = 200
+wager = 25
+
+[[party_nights.rounds]]
+mode = "builtin-race"
+laps = 1
+
+[[party_nights.rounds]]
+mode = "builtin-duel"
+
+[[party_nights.prizes]]
+place = 1
+gold = 300
+boosters = ["builtin-booster"]
+
+[[party_nights.prizes]]
+place = 2
+gold = 150
+
+[[party_nights.prizes]]
+place = 3
+gold = 50

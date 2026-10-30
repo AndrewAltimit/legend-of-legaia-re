@@ -10,6 +10,12 @@ use legaia_engine_ui::expansion_modes::netplay::{
     net_panel_prims, net_panel_strings, net_panel_texts, net_screen_prims, net_screen_strings,
     net_screen_texts,
 };
+use legaia_engine_ui::expansion_modes::netplay::{
+    net_reaction_prims, net_reaction_strings, net_reaction_texts,
+};
+use legaia_engine_ui::expansion_modes::party::{
+    PartyCard, party_prims, party_strings, party_texts,
+};
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
 use crate::room::NetPlay;
@@ -23,14 +29,24 @@ enum Overlay {
     Screen,
     Panel,
     Hunt(crate::room::HuntHud),
+    /// A party night's card between rounds.
+    Party(PartyCard),
+    /// Quick reactions floating over a game in play.
+    Reactions,
 }
 
 fn overlay(net: &NetPlay) -> Overlay {
     if let Some(h) = net.hunt_hud() {
         Overlay::Hunt(h)
+    } else if net.in_mode() && !net.reactions.is_empty() {
+        Overlay::Reactions
     } else if net.in_mode() {
         Overlay::None
-    } else if net.screen_open || net.draft.is_some() || net.closed {
+    } else if net.screen_open || net.draft.is_some() {
+        Overlay::Screen
+    } else if let Some(card) = net.party_card() {
+        Overlay::Party(card)
+    } else if net.closed {
         Overlay::Screen
     } else {
         Overlay::Panel
@@ -38,18 +54,23 @@ fn overlay(net: &NetPlay) -> Overlay {
 }
 
 /// Run `f` over the frame's screen or panel.
+#[allow(clippy::too_many_arguments)]
 fn with_overlay<R>(
     net: &NetPlay,
     world: &World,
     screen: impl FnOnce(&NetScreen<'_>) -> R,
     panel: impl FnOnce(&NetPanel<'_>) -> R,
     hunt: impl FnOnce(&NetHuntHud<'_>) -> R,
+    party: impl FnOnce(&PartyCard) -> R,
+    reactions: impl FnOnce(&[(String, u32)]) -> R,
     none: R,
 ) -> R {
     let title = net.title();
     let players = net.player_rows();
     match overlay(net) {
         Overlay::None => none,
+        Overlay::Party(card) => party(&card),
+        Overlay::Reactions => reactions(&net.reactions),
         Overlay::Hunt(h) => hunt(&NetHuntHud {
             phase: h.phase,
             seconds: h.seconds,
@@ -84,10 +105,10 @@ fn with_overlay<R>(
     }
 }
 
-/// Whether the room screen owns the frame (the host draws nothing of the
-/// field's HUD over it).
+/// Whether the room screen (or a party card) owns the frame (the host
+/// draws nothing of the field's HUD over it).
 pub fn screen_owns_frame(net: &NetPlay) -> bool {
-    matches!(overlay(net), Overlay::Screen)
+    matches!(overlay(net), Overlay::Screen | Overlay::Party(_))
 }
 
 /// The overlay's flat prims, in stage pixels.
@@ -98,6 +119,12 @@ pub fn net_overlay_prims(net: &NetPlay, world: &World) -> Vec<ScreenPrim> {
         net_screen_prims,
         net_panel_prims,
         net_hunt_prims,
+        |c| {
+            let mut v = party_prims(c);
+            v.extend(net_reaction_prims(&net.reactions));
+            v
+        },
+        net_reaction_prims,
         Vec::new(),
     )
 }
@@ -114,6 +141,12 @@ pub fn net_overlay_stage_texts(
         |s| net_screen_texts(font, s),
         |p| net_panel_texts(font, p),
         |h| net_hunt_texts(font, h),
+        |c| {
+            let mut v = party_texts(font, c);
+            v.extend(net_reaction_texts(font, &net.reactions));
+            v
+        },
+        |r| net_reaction_texts(font, r),
         Vec::new(),
     )
 }
@@ -126,6 +159,12 @@ pub fn net_overlay_strings(net: &NetPlay, world: &World) -> Vec<String> {
         net_screen_strings,
         net_panel_strings,
         net_hunt_strings,
+        |c| {
+            let mut v = party_strings(c);
+            v.extend(net_reaction_strings(&net.reactions));
+            v
+        },
+        net_reaction_strings,
         Vec::new(),
     )
 }

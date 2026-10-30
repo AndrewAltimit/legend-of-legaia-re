@@ -7,6 +7,7 @@
 mod field_hunt;
 mod harness;
 mod modes;
+mod party;
 mod roaming;
 mod sockets;
 mod trades;

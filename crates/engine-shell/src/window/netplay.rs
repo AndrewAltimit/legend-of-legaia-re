@@ -213,6 +213,21 @@ impl PlayWindowApp {
         if state != ElementState::Pressed || self.boot_ui.is_active() {
             return false;
         }
+        // In a room, the number keys 1-5 not bound to a pad button send a
+        // quick reaction (`EMOTES`), mid-game too.
+        let reaction = match code {
+            KeyCode::Digit1 => Some(0),
+            KeyCode::Digit2 => Some(1),
+            KeyCode::Digit3 => Some(2),
+            KeyCode::Digit4 => Some(3),
+            KeyCode::Digit5 => Some(4),
+            _ => None,
+        }
+        .filter(|_| {
+            self.mapping
+                .pad_button_for_key(super::launch_options::keycode_to_name(code))
+                .is_none()
+        });
         let Some(nh) = self.netplay.as_mut() else {
             // Offline, Tab opens (or closes) the Multiplayer screen.
             if code == KeyCode::Tab {
@@ -224,6 +239,12 @@ impl PlayWindowApp {
             }
             return false;
         };
+        if let Some(i) = reaction
+            && nh.net.draft.is_none()
+        {
+            nh.net.emote(i);
+            return true;
+        }
         match code {
             KeyCode::Tab | KeyCode::Backquote if !nh.net.in_mode() => {
                 nh.net.toggle_screen();

@@ -192,6 +192,7 @@ mod expansion_items;
 mod expansion_map;
 mod expansion_map_npcs;
 mod expansion_modes;
+mod expansion_party;
 mod expansion_quests;
 pub mod expansion_stage;
 pub use encounters::FieldBossStager;

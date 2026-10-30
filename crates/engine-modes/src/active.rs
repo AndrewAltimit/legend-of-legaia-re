@@ -29,7 +29,9 @@ use crate::racing::{RaceConfig, RaceEvent, RaceSession, RaceView, Track};
 use crate::session::{AiTier, ModeResults, ModeRng, ModeSession, PadWord, Reward, SeatKind};
 
 /// Which rules engine an instance runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub enum ModeKind {
     Poker,
     CardDuel,

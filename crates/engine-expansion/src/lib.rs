@@ -24,6 +24,7 @@ pub mod map;
 pub mod map_detail;
 pub mod mode_stage;
 pub mod modes;
+pub mod party;
 pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
@@ -51,6 +52,9 @@ pub struct ExpansionState {
     /// The game-mode seat while a mode screen owns the frame
     /// (`SceneMode::Expansion`).
     pub mode_seat: Option<Box<modes::PackModeSeat>>,
+    /// A party night played alone, while one runs (its rounds play on
+    /// [`Self::mode_seat`]).
+    pub party: Option<Box<party::LocalNight>>,
     /// Card grants won in modes, waiting for the card economy.
     pub pending_card_rewards: Vec<modes::PendingCardReward>,
     /// The card economy's notices, screen and portraits; the cards

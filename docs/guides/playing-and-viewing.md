@@ -569,6 +569,20 @@ needs the relay behind a TLS proxy; a page served locally over `http://`
 reaches `ws://` directly. A standalone `legaia-relay --bind 0.0.0.0:7462`
 hosts rooms without a game window.
 
+**Party night.** The host's Game row lists party nights first
+(**Practice Night** with no pack, **Tower Game Night** with Rebirth): a
+playlist of short rounds - a golf hole, a few poker hands, one lap, a Grid
+Duel ladder, a prop hunt round - scored by placement on one scoreboard.
+Between rounds a card shows the next round, the standings and the last
+round's points; the last round scores double, a wager round puts a share
+of everyone's points in a pot, and with some nights last place picks the
+next game. The podium hands out each player's prize in their own game
+(gold, boosters). A player who drops keeps their score; a round that
+desyncs is void and the night goes on. The number keys `1` to `5` send a
+quick reaction (wave, cheer, bow, dance, laugh) even mid-round. Played
+alone, Rebirth's 5F games-room table runs Tower Game Night against the
+keeper and two regulars.
+
 Everyone in a room runs the same engine build and the same expansion pack
 (or none); the relay turns a mismatch away. Each player's world is their
 own: only avatars are shared, so battles, doors and story progress are

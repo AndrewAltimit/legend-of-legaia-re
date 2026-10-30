@@ -231,6 +231,62 @@
   <p>The limits, by design: nothing but avatars is shared. Each world runs its own scripts, encounters, doors, dialogue and battles, so two players see each other walk but not each other's fights or story state; there is no collision between avatars. A remote player is drawn as the local party leader (posed with the local leader's clips at the reported frame), since a field scene loads only its own leader's rig. Emotes are chat lines (<code>* Vahn waves</code>), not animations. Prop hunt runs on the mode's own arena and pad movement, not on a field map.</p>
 </section>
 
+<section class="doc-section" id="party-night" data-doc="party-night">
+  <h2>Party night</h2>
+  <p>A party night chains short rounds of the modes - a few poker hands, a golf hole, a lap, a prop hunt round, a Grid Duel ladder - into one points-based evening with a scoreboard between rounds and prizes at the end. The night's rules are a <code>World</code>-free kernel, <code>legaia_engine_modes::party</code> (<a href="expansion-modes.html#party-night">expansion game modes</a>); here is how a room plays one (<code>engine-netplay</code> <code>party</code>, driven from <code>room::NetPlay</code>).</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The round cycle. The host's night shows an intro card, guests ready up, the host sends a party start order and every peer builds the round from its own copy of the night. The round plays under lockstep or the view stream. Its results stand three seconds, the host ends the session and sends the placements with the night's hash; every guest applies them and compares hashes. The scoreboard follows, then the next intro or the podium.">
+      <defs><marker id="pn-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="150" height="56" rx="4"/>
+      <text class="dg-label" x="85" y="44">Intro card</text><text class="dg-sub" x="85" y="62">guests ready up</text>
+      <rect class="dg-node-accent" x="190" y="20" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="270" y="44">Round</text><text class="dg-sub" x="270" y="62">start id party:&lt;night&gt;:...</text>
+      <rect class="dg-node" x="380" y="20" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="460" y="44">Results, 3 s</text><text class="dg-sub" x="460" y="62">host ends the session</text>
+      <rect class="dg-node-accent" x="570" y="20" width="140" height="56" rx="4"/>
+      <text class="dg-label" x="640" y="44">PartyEvent</text><text class="dg-sub" x="640" y="62">placements + hash</text>
+      <rect class="dg-node" x="380" y="104" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="460" y="128">Scoreboard</text><text class="dg-sub" x="460" y="146">guests verify the hash</text>
+      <rect class="dg-node" x="190" y="104" width="160" height="56" rx="4"/>
+      <text class="dg-label" x="270" y="128">Pick / podium</text><text class="dg-sub" x="270" y="146">last place picks; prizes</text>
+      <path class="dg-edge" d="M160,48 L188,48" marker-end="url(#pn-arrow)"/>
+      <path class="dg-edge" d="M350,48 L378,48" marker-end="url(#pn-arrow)"/>
+      <path class="dg-edge" d="M540,48 L568,48" marker-end="url(#pn-arrow)"/>
+      <path class="dg-edge" d="M640,76 L640,132 L542,132" marker-end="url(#pn-arrow)"/>
+      <path class="dg-edge" d="M380,132 L352,132" marker-end="url(#pn-arrow)"/>
+      <path class="dg-edge" d="M190,132 L85,132 L85,78" marker-end="url(#pn-arrow)"/>
+    </svg>
+  </figure>
+  <table>
+    <thead><tr><th>Question</th><th>Answer</th></tr></thead>
+    <tbody>
+      <tr><td>Who plays</td><td>Every seated room member when the host starts it, in seat order; anyone else watches.</td></tr>
+      <tr><td>Where it runs</td><td>The room's lobby. Between rounds everyone is back in their own field under the party card; a round is an ordinary networked start.</td></tr>
+      <tr><td>Round models</td><td>The same as a picked game: lockstep for golf, racing and prop hunt, the view stream for poker and Grid Duel.</td></tr>
+      <tr><td>Who directs</td><td>The room's host: its copy of the night moves on, the others run only the timers down and verify.</td></tr>
+      <tr><td>Messages</td><td><code>Event</code> (host to room) and <code>Action</code> (a guest's pick) with payload tag <code>0x04</code>; no new wire message.</td></tr>
+      <tr><td>Prizes</td><td>Each machine grants its own player's prize from the shared scoreboard. Nothing about a prize travels.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="party-rounds">Starting and the rounds</h3>
+  <p>The room screen's Game row lists the active pack's nights by name ahead of the single games - the built-in <strong>Practice Night</strong> with no pack. Start needs every seated guest ready, as a game does. A round's start order carries the instance id <code>party:&lt;night&gt;:&lt;round&gt;:&lt;match&gt;</code>, and every peer builds the round from its own copy of the night: <code>party::round_section</code> cuts the base instance short and widens a table, a grid or an arena to the room's seats; a seat with no player is the AI. A Grid Duel match seats its two ladder players and streams the table to everyone else. Guests ready themselves when an intro card comes up; the world's own pad is withheld through a round, so no player can close it under the others - the host holds the results three seconds, ends the session, scores the placements and sends the night on.</p>
+  <h3 id="party-scoreboard">One scoreboard</h3>
+  <p>Every change the host makes travels as a <code>PartyEvent</code>: the operation (a round's placements, a duel's winner, a void, a player leaving, a pick, the end) and the whole night after it, with the scoreboard hash in the event's <code>hash_after</code>. A guest applies the operation to its own copy and compares hashes, so the scoreboard each player sees is one their machine computed; a copy that misses the hash, or a late joiner with none, adopts the host's night. Placements are re-ranked among the night's players, so an AI seat that beats a player takes no place of theirs.</p>
+  <h3 id="party-trouble">When something goes wrong</h3>
+  <table>
+    <thead><tr><th>Event</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>A player drops mid-round</td><td>The AI plays their seat out; they leave the night before its placements count. Their total stands; no prize.</td></tr>
+      <tr><td>A desync in a lockstep round</td><td>The round ends for everyone; the host records it void (no points, no stakes) and the night goes on.</td></tr>
+      <tr><td>The host leaves between rounds or in a lockstep round</td><td>The relay migrates the room; the new host directs from its own copy.</td></tr>
+      <tr><td>The host leaves during a view-stream round</td><td>The room closes: every copy ends early on the standings so far, no prizes.</td></tr>
+      <tr><td>A player joins mid-night</td><td>Admitted between rounds, moved off the seats and sent the night: they watch to the end.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="party-reactions">Reactions</h3>
+  <p>Emotes reach everyone as chat lines and also float over a game in play and over the party card. They are sent from the room screen's Emote row, the native window's number keys <code>1</code> to <code>5</code> (when not bound to a pad button; mid-game too) and the browser page's emote buttons.</p>
+</section>
+
 <section class="doc-section" id="tests" data-doc="tests">
   <h2>Tests</h2>
   <p><code>crates/netplay/tests/</code> is disc-free, all of it:</p>
@@ -246,6 +302,7 @@
     <li><code>modes.rs</code> - two poker hands over the view stream, the guest never holding the host's hole cards before a showdown; a golf round and a prop hunt match in lockstep with every shared frame's hash equal and one result; a desync caught on both peers, both back in the lobby and able to start again; a racer who leaves handing the seat to the AI while the rest race on.</li>
     <li><code>roaming.rs</code> - a guest walking moves its avatar on the host, trailing it and never backwards; chat and emotes reach the room.</li>
     <li><code>sockets.rs</code> - a host and a guest on the threaded relay over real TCP on an ephemeral port play poker frames; the port is closed after shutdown.</li>
+    <li><code>party.rs</code> - the built-in night end to end: four peers through golf, poker, a race and the Grid Duel ladder ending on one scoreboard hash, every guest verifying every round, each world granted its own prize; a player dropping mid-round; a desynced golf round voided while the night goes on; a late joiner watching to the end.</li>
   </ul>
   <div class="see-also"><span class="see-also-label">See also</span> <a href="expansion-modes.html">Expansion game modes</a> <a href="../guides/playing-online.html">Playing online</a> <a href="../guides/expansion-packs.html">Expansion packs</a> <a href="../tooling/determinism-replay.html">Determinism replay</a></div>
 </section>

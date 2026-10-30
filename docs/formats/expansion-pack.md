@@ -178,10 +178,13 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 | `[[golf]]` | `[[golf.holes]]`, each `par` (3), `rows` (tile strings), `heights` (digit strings of the same shape), `max_strokes` (0 = `par + 5`) |
 | `[[races]]` | `laps` (3), `points` (closed centerline, world units), `half_width` (64), `boost_segments`, `racers` (4), `ai_tier` |
 | `[[prop_hunt]]` | `props` (`id`, `mesh`, `radius`), `decoys` (`prop`, `x`, `y`), `bounds`, `blockers`, `rounds` (3), `hunters` (1), `players` (4), `hide_frames`, `round_frames`, `hunter_health` (100), `miss_penalty` (10), `ai_tier` |
+| `[[party_nights]]` | `order` (`fixed` / `shuffle`), `points` ([10, 6, 4, 2]), `last_place_picks` (false), `double_final` (true), `players` (4, a night alone's seats), `rivals` (names), `ai_tier`, `[[party_nights.rounds]]`, `[[party_nights.prizes]]` |
+| `[[party_nights.rounds]]` | `mode` (an instance id), `name`, `hands`, `stack` (poker), `holes` (golf, 1-based), `laps` (race), `rounds` (prop hunt), `double`, `wager` (0..=50 percent) |
+| `[[party_nights.prizes]]` | `place` (1-based), `gold`, `coins`, `boosters`, `cards` |
 
 A golf hole's tile legend is one character per tile: `.` fairway, `,` rough, `s` sand, `w` water, `#` wall, space out of bounds, `T` tee, `O` cup, and `^` `v` `<` `>` fairway sloping downhill that way.
 
-The validator parses the section and runs no checks of its own on it. An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
+The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards) and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
 
 A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
 

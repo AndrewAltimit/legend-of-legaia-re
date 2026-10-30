@@ -143,7 +143,9 @@ impl LegaiaRuntime {
     }
 
     /// The room as
-    /// `{"joined", "room", "connected", "in_mode", "screen", "notice", "chat": [...], "players": [{"name", "seat", "ready", "host", "you"}]}`;
+    /// `{"joined", "room", "connected", "in_mode", "screen", "notice", "chat": [...], "players": [{"name", "seat", "ready", "host", "you"}], "party"}`,
+    /// `party` being `null` or the night in progress as
+    /// `{"name", "round", "total", "over", "scores": [{"name", "score", "place", "left"}]}`;
     /// `{"joined": false}` outside a room.
     pub fn play_net_state_json(&self) -> String {
         let Some(net) = &self.netplay else {
@@ -167,6 +169,18 @@ impl LegaiaRuntime {
             "notice": net.notice,
             "chat": net.chat,
             "players": players,
+            "party": net.party().map(|p| {
+                let n = &p.night;
+                serde_json::json!({
+                    "name": n.name,
+                    "round": n.round_number(),
+                    "total": n.total_rounds(),
+                    "over": n.is_over(),
+                    "scores": n.standings().into_iter().map(|s| serde_json::json!({
+                        "name": s.name, "score": s.score, "place": s.place, "left": s.left,
+                    })).collect::<Vec<_>>(),
+                })
+            }),
         })
         .to_string()
     }

@@ -24,6 +24,7 @@ use legaia_engine_expansion::modes::{ModeSource, ModeStage};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_modes::cards::CardBook;
 use legaia_engine_ui::TextDraw;
+use legaia_engine_ui::expansion_modes::party::{PartyCard, party_card, party_prims, party_texts};
 use legaia_engine_ui::expansion_modes::{
     CardScreenView, ItemCompareView, ItemMemberView, ItemRowView, ItemScreenView, ModeScreen,
     PortraitRef, card_screen_prims, card_screen_texts, card_toast_texts, item_screen_prims,
@@ -156,6 +157,21 @@ pub fn item_screen_view(world: &World) -> Option<ItemScreenView> {
     })
 }
 
+/// A night played alone's party card, between its rounds (while no round
+/// sits on the seat).
+pub fn local_party_card(world: &World) -> Option<PartyCard> {
+    if world.mode != SceneMode::Expansion || world.expansion.mode_seat.is_some() {
+        return None;
+    }
+    let lp = world.local_party()?;
+    Some(party_card(
+        &lp.night,
+        Some(0),
+        lp.granted.as_deref(),
+        lp.frame,
+    ))
+}
+
 /// The seat's flat prims in display space; empty unless it owns the frame.
 pub fn pack_mode_prims(world: &World) -> Vec<ScreenPrim> {
     if let Some(v) = item_screen_view(world) {
@@ -163,6 +179,9 @@ pub fn pack_mode_prims(world: &World) -> Vec<ScreenPrim> {
     }
     if let Some(p) = with_card_screen(world, card_screen_prims) {
         return p;
+    }
+    if let Some(card) = local_party_card(world) {
+        return party_prims(&card);
     }
     pack_mode_screen(world)
         .map(|s| mode_screen_prims(&s))
@@ -176,6 +195,7 @@ pub fn pack_mode_stage_texts(world: &World, font: &legaia_font::Font) -> Vec<Tex
     let mut out = item_screen_view(world)
         .map(|v| item_screen_texts(font, &v))
         .or_else(|| with_card_screen(world, |v| card_screen_texts(font, v)))
+        .or_else(|| local_party_card(world).map(|c| party_texts(font, &c)))
         .or_else(|| pack_mode_screen(world).map(|s| mode_screen_texts(font, &s)))
         .unwrap_or_default();
     // The card screen marks new cards itself; its toasts wait out unseen.

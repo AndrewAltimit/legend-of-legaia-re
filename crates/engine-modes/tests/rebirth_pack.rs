@@ -115,3 +115,39 @@ fn rebirth_map_courses_build_from_their_maps() {
         .unwrap_or_else(|e| panic!("{id}: {e}"));
     }
 }
+
+/// Tower Game Night: every round resolves against Rebirth's instances and
+/// builds (its map rounds on the tower's maps), for a night alone and for a
+/// full room.
+#[test]
+fn rebirth_tower_game_night_builds_every_round() {
+    use legaia_engine_modes::active::{ActiveMode, BuildOptions, ModeKind};
+    use legaia_engine_modes::party::{PartyNight, round_section, solo_players};
+    let pack = legaia_expansion_format::ExpansionPack::from_dir(&crate::common::pack_dir())
+        .expect("the Rebirth pack parses");
+    let def = pack
+        .modes
+        .party_night("tower-game-night")
+        .expect("Rebirth hosts a party night");
+    let players = solo_players(def, "You");
+    assert_eq!(players.len(), 4);
+    assert_eq!(players[1].1, "Keeper Odalric");
+    let night = PartyNight::new(def, &pack.modes, &players, 5).unwrap();
+    assert_eq!(night.total_rounds(), 6);
+    let kinds: BTreeSet<ModeKind> = night.infos.iter().map(|i| i.kind).collect();
+    assert_eq!(kinds.len(), 5, "every kind of game: {kinds:?}");
+    for seats in [2, 4] {
+        for r in &night.rounds {
+            let section = round_section(&pack.modes, r, seats).unwrap();
+            ActiveMode::build_with_maps(
+                &section,
+                &pack.cards,
+                &pack.maps,
+                &r.mode,
+                1,
+                &BuildOptions::default(),
+            )
+            .unwrap_or_else(|e| panic!("{} for {seats}: {e}", r.mode));
+        }
+    }
+}

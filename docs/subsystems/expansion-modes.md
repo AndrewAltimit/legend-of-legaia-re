@@ -12,8 +12,8 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | Contract | `session::ModeSession`: `tick(&[PadWord]) -> Vec<Event>`, `view()`, `state_hash()`, `is_finished()`, `results()` |
 | Math | `fixed`: 20.12 fixed point, 12-bit angles, table sine, integer `atan2` and square root |
 | RNG | `session::ModeRng` (SplitMix64), one per session, seeded from the config |
-| Modes | `poker`, `cards` + `cards::duel` (and the economy: `cards::economy`, `cards::screen`, `cards::trade`), `golf`, `racing`, `prop_hunt` |
-| Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
+| Modes | `poker`, `cards` + `cards::duel` (and the economy: `cards::economy`, `cards::screen`, `cards::trade`), `golf`, `racing`, `prop_hunt`; `party` chains them into a party night |
+| Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]`, `[[party_nights]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
 | Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
 | Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
 | Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion` |
@@ -149,6 +149,61 @@ The round ends when every hider is found (hunters win), every hunter is out, or 
 
 AI hiders stand beside a decoy of their own prop (the expert picks the prop with the most decoys), and novices fidget and taunt. AI hunters inspect unchecked props nearest first; regulars and experts prefer a prop they saw move.
 
+## Party night
+
+`party::PartyNight` chains short rounds of the other modes into one
+points-based night: a round-intro card, a scoreboard after every round, a
+podium and prizes. It plays no round itself. A host ticks it once a frame;
+when it cues a round, the host builds the round from `party::round_section`
+(the base instance cut short by the round's knobs, widened to seat
+everyone), plays it, and reports the placements back. Two machines that
+build the night from the same definition, players and seed and report the
+same results hold the same scoreboard, which `scoreboard_hash` digests
+(timers excluded, so a copy that only runs its clock down still agrees).
+
+A night is a `[[party_nights]]` table in `modes.toml` (format in the
+[expansion pack reference](../formats/expansion-pack.md#modestoml)); the
+built-in set carries **Practice Night** (a golf hole, two poker hands with
+a wager, one lap, a Grid Duel ladder), so a night is playable with no pack.
+
+| Rule | How it scores |
+|---|---|
+| Placement | `points[place - 1]`, first place first; tied seats share a place and its points; a place past the table scores 0. |
+| Double points | A round marked `double`, and the final round when `double_final` is set (the default). |
+| Wager | Every player still in stakes `wager` percent of their points (rounded down, never below zero); the round's winners split the pot, the remainder to the earliest seated. Nobody placing first returns the stakes. |
+| Last place picks | With `last_place_picks`, before every round after the first the player in last place picks the next round from those left; an AI rival picks at once, and a pick not made in ten seconds takes the highlighted round. |
+| Grid Duel | King of the hill: the two lowest on the board duel first, the winner holds the hill against the next, the leader defends last; a draw keeps the king. Placement: the last king first, then the others in reverse order of falling. |
+| Void | A round that cannot finish scores nothing and takes no stakes; the night goes on. |
+| Leaving | A player who leaves keeps their total, scores nothing more and wins no prize. |
+| Prizes | `[[party_nights.prizes]]` by final place (tied players share it): gold, coins, boosters and cards. A night ended early, or one whose every round was void, grants none. |
+
+The round knobs are `hands` and `stack` (poker), `holes` (golf, 1-based),
+`laps` (race) and `rounds` (prop hunt). A party Grid Duel bets no card.
+
+### Played alone
+
+`World::enter_pack_mode` with a night's id (a map trigger's `mode` event, a
+dialogue choice's `mode`) opens the night against its AI rivals
+(`players` seats, named from `rivals`, playing at `ai_tier`): the world's
+`LocalNight` (`engine-expansion` `party`, `engine-core`
+`world/expansion_party.rs`) directs it under `SceneMode::Expansion`.
+Between rounds the seat is empty and the mode screen draws the party card;
+a round plays on the seat like any instance, settles nothing of its own (a
+poker round's chips are only points), and its results stand three seconds
+before the night scores them. A Grid Duel match between two rivals plays
+out at once, AI against AI. Start on a party card ends the night early;
+any button closes the finished podium. Online, the room's host directs one
+copy per player ([netplay.md](netplay.md#party-night)).
+
+The party card is `engine-ui` `expansion_modes::party`, projected for a
+night alone by `engine-screens` and for a room by `engine-netplay`
+`screens`, so both hosts draw one composition: the intro card slides in
+with the round's kind, title, detail and tags (double points, the wager,
+the duel match-up) over a strip of the standings; the scoreboard's rows
+step in with each player's last-round delta and the next round (or the
+pick); the podium raises 2nd / 1st / 3rd blocks with a figure in each
+player's colour, confetti and sparkles over a completed night.
+
 ## Hosts
 
 Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition.
@@ -278,7 +333,8 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 - **Rules.** Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.
 - **Determinism.** `tests/determinism.rs` runs each mode from the Rebirth pack twice with the same seed and the same scripted pad stream and asserts identical `state_hash` sequences and results, then asserts a different seed diverges so the hash cannot be vacuous.
 - **Soak.** `tests/soak.rs` drives every mode with random pads over many seeds (all-human poker tables included) and asserts no panic, termination within a frame bound, chip conservation, a full duel grid, a complete golf scorecard within the stroke cap, and no avatar inside a wall.
-- **Pack.** `tests/rebirth_pack.rs` parses the Rebirth `cards.toml` / `modes.toml` and converts every instance into a session config.
+- **Pack.** `tests/rebirth_pack.rs` parses the Rebirth `cards.toml` / `modes.toml`, converts every instance into a session config, and builds every round of Tower Game Night for a night alone and a full room.
+- **Party night.** `engine-modes` `party` tests the placement table with ties, double points, the wager pot, the duel ladder, voiding, leaving, the last-place pick (and an AI rival's), seed-determined shuffles, serde round trips and the prize rules; `engine-ui` `expansion_modes::party` checks the intro, scoreboard and podium labels and the confetti's motion; `engine-core` `tests/expansion_party_world.rs` plays the built-in night alone through `World::tick` to its prize, and ends one early.
 - **Seat.** `engine-modes` `active` builds every built-in instance and rolls a won mode's reward rules; `engine-expansion` `modes` drives the picker, the quit prompt and the results card.
 - **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
 - **In the world.** `engine-modes` `tests/map_modes.rs` lays the `links` test pack's course and track out on their maps (surfaces, walls, heights, tee and cup in their tiles, a putt holing inside the cup's tile). `engine-core` `tests/expansion_stage_world.rs` stands the map's field image under the session and plays a scripted golf round and a scripted race to their ends through `World::tick` (the leader at the ball and on the floor, the swing, the camera following the rolling ball, the chase camera), and runs both with and without the map, asserting the session's state hash matches frame for frame. The disc-gated `engine-scene-host` `expansion_stage_disc` enters both through the scene host over the retail `tower`.

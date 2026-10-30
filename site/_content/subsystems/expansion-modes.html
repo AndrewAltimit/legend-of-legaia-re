@@ -247,6 +247,27 @@
   </ul>
 </section>
 
+<section class="doc-section" id="party-night" data-doc="party-night">
+  <h2>Party night</h2>
+  <p><code>party::PartyNight</code> chains short rounds of the other modes into one points-based night: a round-intro card, a scoreboard after every round, a podium and prizes. It plays no round itself: a host ticks it once a frame, builds each cued round from <code>party::round_section</code> (the base instance cut short by the round's knobs, widened to seat everyone), plays it and reports the placements back. Two machines that build the night from the same definition, players and seed and report the same results hold the same scoreboard, which <code>scoreboard_hash</code> digests (timers excluded). A night is a <code>[[party_nights]]</code> table in <code>modes.toml</code>; the built-in set carries <strong>Practice Night</strong>, so a night is playable with no pack.</p>
+  <table>
+    <thead><tr><th>Rule</th><th>How it scores</th></tr></thead>
+    <tbody>
+      <tr><td>Placement</td><td><code>points[place - 1]</code>; tied seats share a place and its points; a place past the table scores 0.</td></tr>
+      <tr><td>Double points</td><td>A round marked <code>double</code>, and the final round with <code>double_final</code> (the default).</td></tr>
+      <tr><td>Wager</td><td>Every player still in stakes <code>wager</code> percent of their points; the round's winners split the pot.</td></tr>
+      <tr><td>Last place picks</td><td>Before every round after the first, last place picks the next from those left; an AI rival at once, a slow pick after ten seconds.</td></tr>
+      <tr><td>Grid Duel</td><td>King of the hill: the two lowest duel first, the winner holds the hill, the leader defends last; a draw keeps the king.</td></tr>
+      <tr><td>Void</td><td>A round that cannot finish scores nothing and takes no stakes; the night goes on.</td></tr>
+      <tr><td>Leaving</td><td>The total stands; nothing more is scored and no prize won.</td></tr>
+      <tr><td>Prizes</td><td>By final place: gold, coins, boosters, cards. None for a night ended early or one whose every round was void.</td></tr>
+    </tbody>
+  </table>
+  <h3 id="party-alone">Played alone</h3>
+  <p><code>World::enter_pack_mode</code> with a night's id (a map trigger's <code>mode</code> event, a dialogue choice) opens the night against its AI rivals under <code>SceneMode::Expansion</code>. Between rounds the mode screen draws the party card; a round plays on the seat like any instance but settles nothing of its own, and its results stand three seconds before the night scores them. A Grid Duel match between two rivals plays out at once. Start on a party card ends the night early; any button closes the podium. Online, the room's host directs one copy per player (<a href="netplay.html#party-night">netplay</a>).</p>
+  <p>The party card is one <code>engine-ui</code> composition for both hosts: the intro card slides in with the round's kind, title, detail and tags over the standings; the scoreboard's rows step in with each player's last-round points; the podium raises 2nd / 1st / 3rd blocks with a figure in each player's colour under falling confetti.</p>
+</section>
+
 <section class="doc-section" id="hosts" data-doc="hosts">
   <h2>Hosts</h2>
   <p>Both play hosts run the modes inside the running game, through one seat on the <code>World</code> and one screen composition.</p>

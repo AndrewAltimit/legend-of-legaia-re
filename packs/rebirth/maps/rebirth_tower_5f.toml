@@ -101,6 +101,14 @@ id = "armory"
 rect = [2, 6, 3, 6]
 event = { kind = "shop", shop = "tower_armory" }
 
+# The games-room table: Tower Game Night, six short rounds against the
+# keeper and two regulars (`modes.toml`, `tower-game-night`).
+[[triggers]]
+id = "game_night_table"
+rect = [8, 9, 8, 9]
+event = { kind = "mode", mode = "tower-game-night" }
+requires = { quests = ["gamblers_rest"] }
+
 # The Rest itself: the party recovers by the hearth, and may save.
 [[triggers]]
 id = "hearth"

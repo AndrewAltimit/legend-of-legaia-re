@@ -133,7 +133,8 @@ function idsOf(kind) {
     case 'item': return keys(p.items && p.items.items);
     case 'item_set': return keys(p.items && p.items.sets);
     case 'shop': return arr(p.items && p.items.shops);
-    case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
+    case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt', 'party_nights'].flatMap((k) => arr(p.modes[k]));
+    case 'instance': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
     case 'map': return keys(p.maps);
     case 'npc': return Object.values(p.maps || {}).flatMap((m) => arr(m.npcs));
     case 'cutscene': return keys(p.cutscenes && p.cutscenes.cutscenes);

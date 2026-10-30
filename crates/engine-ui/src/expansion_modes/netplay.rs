@@ -132,6 +132,51 @@ fn compose_hunt(h: &NetHuntHud<'_>) -> Canvas {
     c
 }
 
+/// Quick reactions ("* Noa cheers") floating over a networked game: a
+/// stack of small bubbles down the right edge, newest at the bottom, each
+/// fading as `age` (frames since it arrived, `0..REACTION_FRAMES`) runs out.
+pub fn net_reaction_prims(reactions: &[(String, u32)]) -> Vec<ScreenPrim> {
+    compose_reactions(reactions).prims
+}
+
+/// The reaction bubbles' labels, in stage pixels.
+pub fn net_reaction_texts(font: &legaia_font::Font, reactions: &[(String, u32)]) -> Vec<TextDraw> {
+    labels_to_draws(font, &compose_reactions(reactions).labels)
+}
+
+/// The reaction bubbles' labels as strings.
+pub fn net_reaction_strings(reactions: &[(String, u32)]) -> Vec<String> {
+    compose_reactions(reactions)
+        .labels
+        .into_iter()
+        .map(|l| l.text)
+        .collect()
+}
+
+/// Frames a quick reaction floats.
+pub const REACTION_FRAMES: u32 = 150;
+
+fn compose_reactions(reactions: &[(String, u32)]) -> Canvas {
+    let mut c = Canvas::default();
+    let shown = &reactions[reactions.len().saturating_sub(4)..];
+    let base = STAGE_H - 40 - shown.len() as i32 * 16;
+    for (i, (text, age)) in shown.iter().enumerate() {
+        // Each bubble rises a few pixels as it ages.
+        let rise = (*age as i32).min(REACTION_FRAMES as i32) / 30;
+        let y = base + i as i32 * 16 - rise;
+        let w = 132;
+        let x = STAGE_W - w - 4;
+        let alpha = if *age + 30 > REACTION_FRAMES {
+            140
+        } else {
+            210
+        };
+        c.panel(x, y, w, 15, [40, 26, 74, alpha], [228, 76, 160, 255]);
+        c.text(text.clone(), x + 4, y, pen::GOLD);
+    }
+    c
+}
+
 /// The room screen's flat prims, in stage pixels.
 pub fn net_screen_prims(s: &NetScreen<'_>) -> Vec<ScreenPrim> {
     compose_screen(s).prims

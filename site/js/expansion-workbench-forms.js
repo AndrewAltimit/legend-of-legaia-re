@@ -1326,6 +1326,54 @@ export function renderModes(ctx, el) {
       },
     });
   }
+  renderPartyNights(ctx, el, m);
+}
+
+// A party night: a playlist of short rounds of the instances above, scored by
+// placement (docs/subsystems/netplay.md, "Party night").
+function renderPartyNights(ctx, el, m) {
+  el.append(h('h4', { class: 'xw-sub' }, 'Party nights'));
+  el.append(h('p', { class: 'xw-note' }, 'A night chains short rounds of the instances above into one scoreboard: points by placement, catch-up rules, prizes for the top places. Played alone from a map trigger, or hosted for a room.'));
+  splitEd(ctx, el, m, 'party_nights', '', {
+    arrayId: true,
+    prefix: 'night',
+    add: 'party night',
+    make: () => ({ name: 'New night', order: 'fixed', rounds: [], points: [10, 6, 4, 2], last_place_picks: false, double_final: true, players: 4, rivals: [], ai_tier: 'regular', prizes: [] }),
+    render: (box, it, p) => {
+      box.append(grid(ctx, it, [
+        { k: 'name', label: 'Name' }, { k: 'location', t: 'oscene', label: 'Location' },
+        { k: 'order', t: 'sel', opts: ['fixed', 'shuffle'], label: 'Order' },
+        { k: 'points', t: 'csvint', label: 'Points by place', hint: '1st first' },
+        { k: 'last_place_picks', t: 'bool', label: 'Last place picks the next round' },
+        { k: 'double_final', t: 'bool', label: 'Final round scores double' },
+        { k: 'players', t: 'int', label: 'Seats played alone' },
+        { k: 'rivals', t: 'csv', label: 'Rival names' },
+        { k: 'ai_tier', t: 'sel', opts: AI_TIERS, label: 'Rival AI' },
+      ], p));
+      listEd(ctx, box, it, 'rounds', p, {
+        title: 'Rounds', add: 'Round',
+        make: () => ({ mode: ctx.ids('instance')[0] || '', name: '', holes: [], double: false, wager: 0 }),
+        label: (r, i) => `${i + 1}. ${r.name || r.mode}`,
+        render: (b2, r, p2) => b2.append(grid(ctx, r, [
+          { k: 'mode', t: 'ref', kind: 'instance', label: 'Instance' }, { k: 'name', label: 'Title' },
+          { k: 'hands', t: 'oint', label: 'Poker: hands' }, { k: 'stack', t: 'oint', label: 'Poker: stack' },
+          { k: 'holes', t: 'csvint', label: 'Golf: holes', hint: '1-based; empty plays all' },
+          { k: 'laps', t: 'oint', label: 'Race: laps' }, { k: 'rounds', t: 'oint', label: 'Prop hunt: rounds' },
+          { k: 'double', t: 'bool', label: 'Double points' }, { k: 'wager', t: 'int', label: 'Wager %', hint: '0..50' },
+        ], p2)),
+      });
+      listEd(ctx, box, it, 'prizes', p, {
+        title: 'Prizes', add: 'Prize',
+        make: () => ({ place: (it.prizes || []).length + 1, gold: 0, coins: 0, boosters: [], cards: [] }),
+        label: (z) => `place ${z.place}`,
+        render: (b2, z, p2) => b2.append(grid(ctx, z, [
+          { k: 'place', t: 'int', label: 'Place' }, { k: 'gold', t: 'int', label: 'Gold' }, { k: 'coins', t: 'int', label: 'Coins' },
+          { k: 'boosters', t: 'refs', kind: 'booster', label: 'Boosters', wide: true },
+          { k: 'cards', t: 'refs', kind: 'card', label: 'Cards', wide: true },
+        ], p2)),
+      });
+    },
+  });
 }
 
 function pointsField(ctx, it, p) {

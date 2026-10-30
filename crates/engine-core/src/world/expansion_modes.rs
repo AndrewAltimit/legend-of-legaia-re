@@ -34,7 +34,7 @@ pub(in crate::world) const GOLD_CEILING: i64 = 9_999_999;
 impl World {
     /// The sections the mode seat builds from, and where they came from:
     /// the active pack's when it defines any mode, else the built-in set.
-    fn mode_sections(&self) -> (ModeSource, &ModeSection, &CardSection) {
+    pub(in crate::world) fn mode_sections(&self) -> (ModeSource, &ModeSection, &CardSection) {
         if let Some(p) = self.expansion.pack.as_deref()
             && !entries(&p.modes).is_empty()
         {
@@ -77,7 +77,7 @@ impl World {
 
     /// A session seed: the frame counter and the world RNG mixed with the
     /// instance id, so two entries in one frame still differ by instance.
-    fn pack_mode_seed(&self, id: &str) -> u64 {
+    pub(in crate::world) fn pack_mode_seed(&self, id: &str) -> u64 {
         let mut h: u64 = 0xCBF2_9CE4_8422_2325;
         for b in id.bytes() {
             h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01B3);
@@ -87,7 +87,7 @@ impl World {
 
     /// The mode the seat returns to: the one running now, or the one a seat
     /// already open returns to.
-    fn pack_mode_return(&self) -> SceneMode {
+    pub(in crate::world) fn pack_mode_return(&self) -> SceneMode {
         match &self.expansion.mode_seat {
             Some(seat) if self.mode == SceneMode::Expansion => seat.return_mode,
             _ if self.mode == SceneMode::Expansion => SceneMode::Field,
@@ -106,8 +106,19 @@ impl World {
         self.mode = SceneMode::Expansion;
     }
 
-    /// Enter mode instance `id` directly, suspending the current mode.
+    /// Enter mode instance `id` directly, suspending the current mode. A
+    /// party night's id opens that night played alone
+    /// ([`Self::enter_party_night`]).
     pub fn enter_pack_mode(&mut self, id: &str) -> Result<(), BuildError> {
+        if self.is_party_night(id) {
+            return if self.enter_party_night(id) {
+                Ok(())
+            } else {
+                Err(BuildError::Invalid(format!(
+                    "party night `{id}` will not build"
+                )))
+            };
+        }
         let return_mode = self.pack_mode_return();
         let seed = self.pack_mode_seed(id);
         let opts = self.pack_mode_build_options();
@@ -130,6 +141,17 @@ impl World {
         }
         if self.expansion.cards.seat.is_some() {
             self.close_card_screen();
+            return;
+        }
+        if let Some(lp) = self.expansion.party.take() {
+            // A night played alone closes whole, its round forfeited.
+            if let Some(seat) = self.expansion.mode_seat.take() {
+                self.restore_pack_mode_player_from(seat.player_return);
+                self.restore_pack_mode_bodies(&seat.body_idle);
+            }
+            if self.mode == SceneMode::Expansion {
+                self.mode = lp.return_mode;
+            }
             return;
         }
         let Some(seat) = self.expansion.mode_seat.take() else {
@@ -165,6 +187,9 @@ impl World {
         }
         if self.expansion.cards.seat.is_some() {
             self.tick_card_seat();
+            return;
+        }
+        if self.tick_local_party() {
             return;
         }
         let Some(mut seat) = self.expansion.mode_seat.take() else {
@@ -207,10 +232,58 @@ impl World {
                 mode_id,
                 settlement,
             } => {
-                self.grant_pack_mode_rewards(&mode_id, &settlement.results.rewards);
+                // A party night's round settles nothing of its own: the
+                // night scores it.
+                if self.expansion.party.is_none() {
+                    self.grant_pack_mode_rewards(&mode_id, &settlement.results.rewards);
+                }
                 self.expansion.mode_seat = Some(seat);
             }
         }
+    }
+
+    /// Grant a party night prize to this world's own player: gold and coins
+    /// to their purses, boosters and cards into the card economy (only
+    /// while one is up - a night with no pack's cards grants its currency
+    /// alone). `won` (first place) also counts as winning mode `night_id`
+    /// for the pack's quests. Returns what was granted, one line each.
+    ///
+    /// Each machine of a networked night grants its own player's prize from
+    /// the shared scoreboard, so nothing about a prize travels.
+    pub fn grant_party_prize(
+        &mut self,
+        night_id: &str,
+        prize: &legaia_expansion_format::modes::PartyPrize,
+        won: bool,
+    ) -> Vec<String> {
+        let mut rewards = Vec::new();
+        let mut currency = |currency, amount: u32| {
+            if amount > 0 {
+                rewards.push(Reward::Currency {
+                    seat: 0,
+                    currency,
+                    amount: i64::from(amount),
+                });
+            }
+        };
+        currency(Currency::Gold, prize.gold);
+        currency(Currency::Coins, prize.coins);
+        if self.cards_available() {
+            rewards.extend(prize.boosters.iter().map(|b| Reward::Booster {
+                seat: 0,
+                booster: b.clone(),
+            }));
+            rewards.extend(prize.cards.iter().map(|c| Reward::Card {
+                seat: 0,
+                card: c.clone(),
+            }));
+        }
+        let lines = legaia_engine_expansion::modes::granted_lines(&rewards);
+        self.grant_pack_mode_rewards(night_id, &rewards);
+        if won {
+            self.expansion_mode_won(night_id);
+        }
+        lines
     }
 
     /// Credit seat 0's rewards: currency to its purse, cards to the pending

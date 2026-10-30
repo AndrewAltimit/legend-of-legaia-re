@@ -28,6 +28,8 @@ struct GuestSeat {
     held: PadWord,
     last_sent: Option<Vec<u8>>,
     pending_log: Vec<String>,
+    /// Holds no seat: watches the table (every hidden card stays hidden).
+    watcher: bool,
 }
 
 /// The hosting end.
@@ -55,6 +57,7 @@ impl ViewHost {
                     held: 0,
                     last_sent: None,
                     pending_log: Vec::new(),
+                    watcher: false,
                 }),
                 _ => None,
             })
@@ -66,6 +69,24 @@ impl ViewHost {
             outbox: Vec::new(),
             sent: 0,
         }
+    }
+
+    /// Stream the table to `player`, who holds no seat (a party night's
+    /// players outside a Grid Duel match, a late joiner). A watcher's view
+    /// is redacted as nobody's seat, and its pad reaches nothing.
+    pub fn watch(&mut self, player: PlayerId) {
+        if self.guests.iter().any(|g| g.player == player) {
+            return;
+        }
+        self.guests.push(GuestSeat {
+            seat: usize::MAX,
+            player,
+            queue: VecDeque::new(),
+            held: 0,
+            last_sent: None,
+            pending_log: Vec::new(),
+            watcher: true,
+        });
     }
 
     /// A guest's action. Returns `true` when it was a pad report.
@@ -86,7 +107,8 @@ impl ViewHost {
     /// to the AI through `ActiveMode::set_seat_kind`, which the caller does).
     pub fn drop_player(&mut self, player: PlayerId) -> Option<usize> {
         let i = self.guests.iter().position(|g| g.player == player)?;
-        Some(self.guests.remove(i).seat)
+        let g = self.guests.remove(i);
+        (!g.watcher).then_some(g.seat)
     }
 
     /// One frame: tick `mode` from the host's pad and each guest's, then
@@ -112,7 +134,9 @@ impl ViewHost {
             if let Some(p) = g.queue.pop_front() {
                 g.held = p;
             }
-            pads[g.seat] = g.held;
+            if let Some(slot) = pads.get_mut(g.seat) {
+                *slot = g.held;
+            }
         }
         let mut viewers: Vec<usize> = vec![mode.local_seat];
         viewers.extend(self.guests.iter().map(|g| g.seat));
@@ -160,6 +184,8 @@ impl ViewHost {
 /// The guest end.
 #[derive(Debug, Clone, Default)]
 pub struct ViewGuest {
+    /// Holds no seat: draws the table, reports no pad.
+    pub watching: bool,
     last_pad: Option<PadWord>,
     /// The newest frame number drawn.
     seq: u32,
@@ -173,9 +199,17 @@ impl ViewGuest {
         Self::default()
     }
 
+    /// A guest that watches the table from no seat.
+    pub fn watcher() -> Self {
+        Self {
+            watching: true,
+            ..Self::default()
+        }
+    }
+
     /// Report the local pad (only when it changed).
     pub fn push_pad(&mut self, pad: PadWord) {
-        if self.last_pad != Some(pad) {
+        if !self.watching && self.last_pad != Some(pad) {
             self.last_pad = Some(pad);
             self.outbox.push(Message::Action {
                 from: PlayerId(0),

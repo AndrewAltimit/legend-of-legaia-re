@@ -42,6 +42,12 @@ use legaia_engine_modes::cards::TradeOffer;
 use legaia_engine_modes::cards::trade::{TradeMsg, TradeSide};
 use legaia_engine_modes::prop_hunt::{HuntPhase, HuntView, Role};
 
+#[path = "room_party.rs"]
+mod party_drive;
+
+/// The id prefix of a party night's entry in the room's game list.
+pub const NIGHT_ENTRY_PREFIX: &str = "party-night:";
+
 /// Pad seats a hosted room offers.
 pub const ROOM_SEATS: u8 = 4;
 /// Chat and notice lines kept.
@@ -180,6 +186,8 @@ enum Row {
     Offer,
     Accept,
     Decline,
+    /// The host ends the party night in progress.
+    EndNight,
 }
 
 /// One player's netplay controller.
@@ -224,6 +232,14 @@ pub struct NetPlay {
     pub closed: bool,
     /// The scene id this frame (for drawing remote avatars).
     scene: u16,
+    /// The party night in progress (or just over), when one runs.
+    party: Option<Box<crate::party::PartyLink>>,
+    /// Players the relay reported gone, for the night to mark.
+    departed: Vec<PlayerId>,
+    /// Frames since the controller started (the party confetti's clock).
+    frames: u32,
+    /// Quick reactions (emotes) floating over a game, with their age.
+    pub reactions: Vec<(String, u32)>,
 }
 
 impl NetPlay {
@@ -257,6 +273,10 @@ impl NetPlay {
             scene_props: Vec::new(),
             closed: false,
             scene: NO_SCENE,
+            party: None,
+            departed: Vec::new(),
+            frames: 0,
+            reactions: Vec::new(),
         }
     }
 
@@ -300,7 +320,7 @@ impl NetPlay {
     /// Whether the room screen (or a chat line being typed) holds the pad:
     /// the world should see none.
     pub fn owns_pad(&self) -> bool {
-        (self.screen_open || self.draft.is_some()) && !self.in_mode()
+        ((self.screen_open || self.draft.is_some()) && !self.in_mode()) || self.party_holds_pad()
     }
 
     /// Whether a networked mode is in play.
@@ -437,12 +457,19 @@ impl NetPlay {
                     }
                     self.closed = true;
                     self.leave_mode(world, false);
+                    self.party_end_early();
                     break;
                 }
             }
         }
         let pressed = pad & !self.last_pad;
         self.last_pad = pad;
+        self.frames = self.frames.wrapping_add(1);
+        for r in &mut self.reactions {
+            r.1 += 1;
+        }
+        self.reactions
+            .retain(|r| r.1 < legaia_engine_ui::expansion_modes::netplay::REACTION_FRAMES);
         let owns_pad = (self.screen_open || self.draft.is_some()) && !self.in_mode();
         if owns_pad && self.draft.is_none() {
             self.screen_input(world, pressed);
@@ -450,7 +477,12 @@ impl NetPlay {
         if !self.closed {
             self.drive(world, pad);
         }
-        if owns_pad { 0 } else { pad }
+        self.party_frame(world, if owns_pad { 0 } else { pad });
+        if owns_pad || self.party_world_blocked() {
+            0
+        } else {
+            pad
+        }
     }
 
     fn drive(&mut self, world: &mut World, pad: u16) {
@@ -607,7 +639,7 @@ impl NetPlay {
             self.notice = Some(text.clone());
             self.note(text);
             self.leave_mode(world, true);
-            self.screen_open = true;
+            self.screen_open = self.party.is_none();
         }
     }
 
@@ -679,11 +711,17 @@ impl NetPlay {
                     Some(action) => format!("* {name} {action}"),
                     None => format!("{name}: {text}"),
                 };
+                if text.starts_with(EMOTE_PREFIX) {
+                    self.reactions.push((line.clone(), 0));
+                    let excess = self.reactions.len().saturating_sub(4);
+                    self.reactions.drain(..excess);
+                }
                 self.note(line);
             }
             Message::PlayerLeft { player, .. } => {
                 let name = self.name_of(player);
                 self.note(format!("{name} left"));
+                self.departed.push(player);
                 self.roam.forget(player);
                 self.trade_host.forget(player);
                 self.trades.holdings.remove(&player);
@@ -721,6 +759,12 @@ impl NetPlay {
             Message::HostChanged { host } => {
                 let name = self.name_of(host);
                 self.note(format!("{name} hosts now"));
+                if let Some(l) = self.lobby.as_mut() {
+                    l.host = host;
+                }
+                if Some(host) == self.me && self.party.is_some() {
+                    self.note("You direct the party night now".to_string());
+                }
             }
             Message::RoomClosed(reason) => {
                 let text = match reason {
@@ -730,11 +774,14 @@ impl NetPlay {
                 self.notice = Some(text.into());
                 self.note(text.into());
                 self.leave_mode(world, false);
+                self.party_end_early();
                 self.closed = true;
             }
             Message::Start(start) => self.start(world, start),
             Message::EndSession { by } => {
-                if self.in_mode() {
+                if self.in_mode() && self.party_round_live() {
+                    self.party_session_ended(world, by);
+                } else if self.in_mode() {
                     let hunt_done = matches!(&self.phase, Phase::FieldHunt(h)
                         if h.view.as_ref().is_some_and(|v| v.phase == HuntPhase::Finished));
                     let finished = hunt_done
@@ -752,6 +799,18 @@ impl NetPlay {
                 }
             }
             Message::Snapshot { tick, avatars } => self.roam.receive_snapshot(tick, &avatars),
+            Message::Action { from, payload }
+                if payload.first() == Some(&crate::mode_net::action_tag::PARTY) =>
+            {
+                self.party_action(from, &payload);
+            }
+            Message::Event {
+                payload,
+                hash_after,
+                ..
+            } if payload.first() == Some(&crate::mode_net::action_tag::PARTY) => {
+                self.party_event(world, &payload, hash_after);
+            }
             Message::Action { from, payload }
                 if payload.first() == Some(&crate::mode_net::action_tag::TRADE) =>
             {
@@ -830,6 +889,10 @@ impl NetPlay {
         };
         if start.mode == FIELD_HUNT_ID {
             self.start_field_hunt(world, &start, me, host);
+            return;
+        }
+        if start.mode.starts_with(crate::party::PARTY_PREFIX) {
+            self.start_party_round(world, start, me, host);
             return;
         }
         let maps = world.pack_mode_maps();
@@ -938,7 +1001,8 @@ impl NetPlay {
     /// The games the room screen offers: the world's mode list, plus a prop
     /// hunt in this scene while in the field with props to hide as.
     pub fn game_entries(&self, world: &World) -> Vec<ModeEntry> {
-        let mut out = world.pack_mode_entries();
+        let mut out = Self::night_entries(world);
+        out.extend(world.pack_mode_entries());
         if world.mode == SceneMode::Field && !self.scene_props.is_empty() {
             out.push(ModeEntry {
                 id: FIELD_HUNT_ID.to_string(),
@@ -955,6 +1019,9 @@ impl NetPlay {
     /// everyone picks a prop.
     pub fn world_pad_filter(&self) -> u16 {
         if self.owns_pad() {
+            return 0;
+        }
+        if self.party_world_blocked() {
             return 0;
         }
         let Phase::FieldHunt(h) = &self.phase else {
@@ -1063,6 +1130,11 @@ impl NetPlay {
     /// field (a card screen, a mode, a dialogue or a battle holds it): the
     /// guests would get the table while the host's screen kept the other.
     pub fn request_start(&mut self, world: &World, entry: &ModeEntry) {
+        if let Some(id) = entry.id.strip_prefix(NIGHT_ENTRY_PREFIX) {
+            let id = id.to_string();
+            self.begin_party(world, &id);
+            return;
+        }
         if !Self::world_free_to_start(world) {
             let why = "Close what is open first, then start".to_string();
             self.notice = Some(why.clone());
@@ -1133,7 +1205,10 @@ impl NetPlay {
 
     fn rows(&self, world: &World) -> Vec<Row> {
         let mut rows = Vec::new();
-        if self.is_host() {
+        let night_on = self.party.as_ref().is_some_and(|p| !p.night.is_over());
+        if self.is_host() && night_on {
+            rows.push(Row::EndNight);
+        } else if self.is_host() {
             rows.extend([Row::Game, Row::Start]);
         } else {
             rows.push(Row::Ready);
@@ -1342,6 +1417,7 @@ impl NetPlay {
             }
             Row::Accept => self.confirm_trade(world),
             Row::Decline => self.cancel_trade(world),
+            Row::EndNight => self.end_night(),
         }
     }
 
@@ -1439,6 +1515,11 @@ impl NetPlay {
                         "Decline"
                     },
                     None,
+                    true,
+                ),
+                Row::EndNight => row(
+                    "End the night",
+                    self.party.as_ref().map(|p| p.night.name.clone()),
                     true,
                 ),
             })

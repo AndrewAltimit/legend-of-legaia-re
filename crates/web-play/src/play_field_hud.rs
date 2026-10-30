@@ -52,7 +52,13 @@ impl LegaiaRuntime {
         // the readout must not sit over an in-game FMV.
         legaia_engine_world_views::world_map_panel_host::field_hud_suppressed(
             &h.world,
-            self.menu.is_open() || self.fmv.is_open(),
+            self.menu.is_open()
+                || self.fmv.is_open()
+                // The room screen or a party card owns the frame.
+                || self
+                    .netplay
+                    .as_ref()
+                    .is_some_and(legaia_engine_netplay::screens::screen_owns_frame),
         )
     }
 

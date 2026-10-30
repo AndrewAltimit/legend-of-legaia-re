@@ -56,6 +56,8 @@ pub struct ModeSection {
     pub golf: Vec<GolfCourse>,
     pub races: Vec<RaceTrack>,
     pub prop_hunt: Vec<PropHuntArena>,
+    /// Party nights: playlists of short rounds of the instances above.
+    pub party_nights: Vec<PartyNight>,
 }
 
 impl ModeSection {
@@ -67,6 +69,12 @@ impl ModeSection {
             || self.golf.iter().any(|m| m.id == id)
             || self.races.iter().any(|m| m.id == id)
             || self.prop_hunt.iter().any(|m| m.id == id)
+            || self.party_nights.iter().any(|m| m.id == id)
+    }
+
+    /// The party night `id`.
+    pub fn party_night(&self, id: &str) -> Option<&PartyNight> {
+        self.party_nights.iter().find(|n| n.id == id)
     }
 }
 
@@ -349,6 +357,276 @@ impl Default for PropHuntArena {
     }
 }
 
+/// A party night: an ordered (or shuffled) playlist of short rounds, each
+/// a variant of one of this section's instances, scored by placement into
+/// one points table, with prizes for the top places.
+///
+/// ```toml
+/// [[party_nights]]
+/// id = "game-night"
+/// name = "Game Night"
+/// points = [10, 6, 4, 2]
+/// double_final = true
+/// [[party_nights.rounds]]
+/// mode = "windmill-links"
+/// holes = [1]
+/// [[party_nights.rounds]]
+/// mode = "mist-lantern-table"
+/// hands = 3
+/// stack = 300
+/// [[party_nights.prizes]]
+/// place = 1
+/// gold = 500
+/// boosters = ["mistborn"]
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PartyNight {
+    pub id: String,
+    pub name: String,
+    /// Where the night is hosted (a scene or pack map), for the host.
+    pub location: Option<DiscRef>,
+    /// Play the rounds in file order, or shuffled by the night's seed.
+    pub order: PartyOrder,
+    pub rounds: Vec<PartyRound>,
+    /// Points by placement, first place first; a place past the end scores
+    /// nothing. Tied seats share a place and its points.
+    pub points: Vec<u32>,
+    /// Catch-up: before every round after the first, the player in last
+    /// place picks which of the remaining rounds comes next.
+    pub last_place_picks: bool,
+    /// Catch-up: the last round scores double.
+    pub double_final: bool,
+    /// Seats in a night played alone (the player and AI rivals), `2..=6`.
+    pub players: u8,
+    /// The AI rivals' names in a night played alone, in seat order.
+    pub rivals: Vec<String>,
+    /// How hard the rivals play.
+    pub ai_tier: AiTier,
+    pub prizes: Vec<PartyPrize>,
+}
+
+impl Default for PartyNight {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            location: None,
+            order: PartyOrder::Fixed,
+            rounds: Vec::new(),
+            points: vec![10, 6, 4, 2],
+            last_place_picks: false,
+            double_final: true,
+            players: 4,
+            rivals: Vec::new(),
+            ai_tier: AiTier::Regular,
+            prizes: Vec::new(),
+        }
+    }
+}
+
+/// How a party night orders its rounds.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PartyOrder {
+    #[default]
+    Fixed,
+    Shuffle,
+}
+
+/// One round of a party night: instance `mode`, cut short. A knob that does
+/// not fit the instance's kind is a validation error.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PartyRound {
+    /// The instance (`[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`
+    /// or `[[prop_hunt]]` id).
+    pub mode: String,
+    /// The round's title; the instance's name when empty.
+    pub name: String,
+    /// Poker: hands dealt.
+    pub hands: Option<u32>,
+    /// Poker: the stack every seat starts with.
+    pub stack: Option<u32>,
+    /// Golf: the holes played, 1-based, in order; every hole when empty.
+    pub holes: Vec<u8>,
+    /// Race: laps.
+    pub laps: Option<u8>,
+    /// Prop hunt: rounds (each player hunts at most once).
+    pub rounds: Option<u8>,
+    /// The round scores double.
+    pub double: bool,
+    /// A wager round: every player stakes this percentage (`0..=50`) of
+    /// their points into a pot the round's winners split.
+    pub wager: u8,
+}
+
+/// What a final place wins. Each player's own game grants its own prize.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PartyPrize {
+    /// 1-based final place; tied players share it.
+    pub place: u8,
+    pub gold: u32,
+    pub coins: u32,
+    /// `cards.toml` booster ids, one pack each.
+    pub boosters: Vec<String>,
+    /// `cards.toml` card ids, one copy each.
+    pub cards: Vec<String>,
+}
+
+/// The kind of instance `id` names in `s`, as the party rules read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InstanceKind {
+    Poker,
+    Duel,
+    Golf { holes: usize },
+    Race,
+    PropHunt,
+}
+
+fn instance_kind(s: &ModeSection, id: &str) -> Option<InstanceKind> {
+    if s.poker.iter().any(|m| m.id == id) {
+        Some(InstanceKind::Poker)
+    } else if s.card_duels.iter().any(|m| m.id == id) {
+        Some(InstanceKind::Duel)
+    } else if let Some(c) = s.golf.iter().find(|m| m.id == id) {
+        Some(InstanceKind::Golf {
+            holes: c.holes.len(),
+        })
+    } else if s.races.iter().any(|m| m.id == id) {
+        Some(InstanceKind::Race)
+    } else if s.prop_hunt.iter().any(|m| m.id == id) {
+        Some(InstanceKind::PropHunt)
+    } else {
+        None
+    }
+}
+
+/// `modes.toml`'s rules: the party nights. (Instance ids are the section's
+/// own, hyphenated ones included, so they are checked here rather than
+/// declared as pack-wide content ids.)
+impl crate::validate::SectionRules for ModeSection {
+    fn check(&self, cx: &mut crate::validate::Checker<'_>) {
+        let mut seen = std::collections::BTreeSet::new();
+        for (i, n) in self.party_nights.iter().enumerate() {
+            let at = format!("party_nights[{i}]");
+            if n.id.is_empty() || !seen.insert(n.id.as_str()) {
+                cx.error(
+                    &at,
+                    format!("party night id {:?} is empty or repeated", n.id),
+                );
+            }
+            if instance_kind(self, &n.id).is_some() {
+                cx.error(
+                    &format!("{at}.id"),
+                    format!("{:?} is already a mode instance's id", n.id),
+                );
+            }
+            if let Some(r) = &n.location {
+                cx.disc_ref(&format!("{at}.location"), r);
+            }
+            if n.rounds.is_empty() {
+                cx.error(
+                    &format!("{at}.rounds"),
+                    "a party night plays at least one round",
+                );
+            }
+            if n.points.iter().all(|&p| p == 0) {
+                cx.warning(&format!("{at}.points"), "no place scores any points");
+            }
+            if !(2..=6).contains(&n.players) {
+                cx.error(&format!("{at}.players"), "a night seats 2..=6 players");
+            }
+            if n.rivals.len() + 1 > usize::from(n.players.max(2)) {
+                cx.warning(
+                    &format!("{at}.rivals"),
+                    "more rival names than a night played alone seats",
+                );
+            }
+            for (j, r) in n.rounds.iter().enumerate() {
+                let at = format!("{at}.rounds[{j}]");
+                let Some(kind) = instance_kind(self, &r.mode) else {
+                    cx.error(
+                        &format!("{at}.mode"),
+                        format!(
+                            "no poker, duel, golf, race or prop hunt instance {:?}",
+                            r.mode
+                        ),
+                    );
+                    continue;
+                };
+                let mut misfit = |field: &str, set: bool, fits: bool| {
+                    if set && !fits {
+                        cx.error(
+                            &format!("{at}.{field}"),
+                            format!("`{field}` does not apply to instance {:?}", r.mode),
+                        );
+                    }
+                };
+                let poker = kind == InstanceKind::Poker;
+                misfit("hands", r.hands.is_some(), poker);
+                misfit("stack", r.stack.is_some(), poker);
+                misfit(
+                    "holes",
+                    !r.holes.is_empty(),
+                    matches!(kind, InstanceKind::Golf { .. }),
+                );
+                misfit("laps", r.laps.is_some(), kind == InstanceKind::Race);
+                misfit("rounds", r.rounds.is_some(), kind == InstanceKind::PropHunt);
+                if let InstanceKind::Golf { holes } = kind {
+                    for (k, &h) in r.holes.iter().enumerate() {
+                        if h == 0 || usize::from(h) > holes {
+                            cx.error(
+                                &format!("{at}.holes[{k}]"),
+                                format!("hole {h}: {:?} has holes 1..={holes}", r.mode),
+                            );
+                        }
+                    }
+                }
+                if r.hands == Some(0)
+                    || r.stack == Some(0)
+                    || r.laps == Some(0)
+                    || r.rounds == Some(0)
+                {
+                    cx.error(
+                        &at,
+                        "a round's hands, stack, laps and rounds are at least 1",
+                    );
+                }
+                if r.wager > 50 {
+                    cx.error(&format!("{at}.wager"), "a wager stakes 0..=50 percent");
+                }
+            }
+            for (j, p) in n.prizes.iter().enumerate() {
+                let at = format!("{at}.prizes[{j}]");
+                if p.place == 0 {
+                    cx.error(&format!("{at}.place"), "places count from 1");
+                }
+                let cards = &cx.pack().cards;
+                let missing_boosters: Vec<String> = p
+                    .boosters
+                    .iter()
+                    .filter(|b| cards.booster(b).is_none())
+                    .cloned()
+                    .collect();
+                let missing_cards: Vec<String> = p
+                    .cards
+                    .iter()
+                    .filter(|c| cards.card(c).is_none())
+                    .cloned()
+                    .collect();
+                for b in missing_boosters {
+                    cx.error(&format!("{at}.boosters"), format!("no booster {b:?}"));
+                }
+                for c in missing_cards {
+                    cx.error(&format!("{at}.cards"), format!("no card {c:?}"));
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -411,5 +689,34 @@ waypoints = [[2, 2], [12, 2], [12, 10], [2, 10]]
         assert!(g.holes[0].rows.is_empty());
         assert_eq!(s.races[0].waypoints.len(), 4);
         assert_eq!(s.races[0].map.as_deref(), Some("tower_ring"));
+    }
+
+    #[test]
+    fn parses_a_party_night_with_defaults() {
+        let text = r#"
+[[party_nights]]
+id = "night"
+[[party_nights.rounds]]
+mode = "links"
+holes = [2]
+[[party_nights.rounds]]
+mode = "table"
+hands = 3
+stack = 300
+wager = 25
+[[party_nights.prizes]]
+place = 1
+gold = 500
+boosters = ["b"]
+"#;
+        let s: ModeSection = toml::from_str(text).unwrap();
+        let n = s.party_night("night").unwrap();
+        assert_eq!(n.points, vec![10, 6, 4, 2]);
+        assert!(n.double_final && !n.last_place_picks);
+        assert_eq!(n.order, PartyOrder::Fixed);
+        assert_eq!(n.rounds[0].holes, vec![2]);
+        assert_eq!(n.rounds[1].wager, 25);
+        assert_eq!(n.prizes[0].boosters, vec!["b"]);
+        assert!(s.has_instance("night"));
     }
 }

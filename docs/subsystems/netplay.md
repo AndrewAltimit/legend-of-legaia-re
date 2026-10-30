@@ -100,6 +100,10 @@ no later message repeats it.
 | `0x33` | `StateBlob` | host to relay to one client | The state after the first `seq` events. |
 | `0x34` | `Snapshot` | host to relay to room | Avatar positions and animation state for shared-world roaming (lobby or host-authoritative session). |
 
+`Action` and `Event` payloads open with a tag byte that says what they carry:
+`0x01` a roaming avatar, `0x02` a pad word, `0x03` a card trade, `0x04` a
+party-night message ([Party night](#party-night)).
+
 ## Rooms and the lobby
 
 The first message on a connection is `Hello`. To **create** a room it names
@@ -416,6 +420,81 @@ button starts the game with that screen open (`play-window
 --multiplayer`). The browser page joins from its Online panel; it cannot
 host.
 
+## Party night
+
+A party night chains short rounds of the modes - a few poker hands, a
+golf hole, a lap, a prop hunt round, a Grid Duel ladder - into one
+points-based evening with a scoreboard between rounds and prizes at the
+end. The night's rules are a `World`-free kernel,
+`legaia_engine_modes::party` ([expansion-modes.md](expansion-modes.md#party-night));
+this section is how a room plays one
+([`crates/engine-netplay/src/party.rs`](../../crates/engine-netplay/src/party.rs),
+driven from `room::NetPlay`).
+
+| Question | Answer |
+|---|---|
+| Who plays | Every seated room member when the host starts it, in seat order; anyone else watches. |
+| Where it runs | The room's lobby. Between rounds everyone is back in their own field under the party card; a round is an ordinary networked start. |
+| Round models | The same as a picked game: lockstep for golf, racing and prop hunt, the view stream for poker and Grid Duel. |
+| Who directs | The room's host: its copy of the night moves on, the others run only the timers down and verify. |
+| Messages | `Event` (host to room) and `Action` (a guest's pick) with payload tag `0x04`; no new wire message. |
+| Prizes | Each machine grants its own player's prize from the shared scoreboard. Nothing about a prize travels. |
+
+### Starting and the rounds
+
+The room screen's Game row lists the active pack's nights by name
+ahead of the single games - the built-in **Practice Night** with no pack.
+Start needs every seated guest ready, as a game does. The host builds the
+night from the seated players and sends it to the room; from then on the
+party card holds every player's pad between rounds (the room screen still
+opens over it).
+
+A round's start order carries the instance id `party:<night>:<round>:<match>`.
+Every peer builds the round from its own copy of the night:
+`party::round_section` cuts the base instance short (hands and stack,
+holes, laps, rounds) and widens a table, a grid or an arena to the room's
+four seats; a seat with no player is the AI. A Grid Duel match seats its
+two ladder players and streams the table to everyone else, who watches.
+The room screen's own rows give way to **End the night** for the host.
+
+Guests ready themselves when an intro card comes up, and the host starts
+the round once the relay's lobby shows them ready (re-sending every second;
+a round nobody can start within 20 seconds is void). The world's own pad is
+withheld through a round, so no player can close it - or its results -
+under the others: the host holds the results three seconds, ends the
+session, scores the placements and sends the night on.
+
+### One scoreboard
+
+Every change the host makes travels as a `PartyEvent`: the operation (a
+round's placements, a duel's winner, a void, a player leaving, a pick, the
+end) and the whole night after it, with the night's scoreboard hash in the
+event's `hash_after`. A guest applies the operation to its own copy and
+compares hashes, so the scoreboard each player sees is one their machine
+computed; a guest whose copy does not reach the host's hash, or that has no
+copy (a late joiner), adopts the host's night and counts a resync. Placements
+are re-ranked among the night's players, so an AI seat that beats a player
+takes no place of theirs.
+
+### When something goes wrong
+
+| Event | What happens |
+|---|---|
+| A player drops mid-round | The AI plays their seat out (the relay's seat hand-over); they leave the night before the round's placements count, scoring nothing more. Their total stands on the board; they win no prize. |
+| A desync in a lockstep round | The round ends for everyone with the desync noted; the host records it void (no points, no wager stakes) and the night goes on. |
+| Someone ends a round early | The same: a round whose results never came up is void. |
+| The host leaves between rounds or during a lockstep round | The relay migrates the room; the new host directs from its own copy, marking the old host gone. |
+| The host leaves during a view-stream round | The room closes (the state lived on the host): every copy ends early on the standings so far, with no prizes. |
+| A player joins mid-night | The relay admits joiners between rounds only. The host moves them off the seats and sends them the night: they watch lockstep rounds as spectators and view-stream rounds as watchers (every hidden card stays hidden). |
+
+### Reactions
+
+Emotes reach everyone as chat lines and also float over a game in play and
+over the party card as small bubbles for a few seconds. They are sent from
+the room screen's Emote row, the native window's number keys `1` to `5`
+(when not bound to a pad button; mid-game too), and the browser page's
+emote buttons.
+
 ## Tests
 
 `crates/netplay/tests/` (disc-free, all of it):
@@ -449,3 +528,9 @@ its own `NetPlay`, through the relay core on loopback links:
   and never backwards; chat and emotes reach the room.
 - `sockets.rs` - a host and a guest on the threaded relay over real TCP on
   an ephemeral port play poker frames; the port is closed after shutdown.
+- `party.rs` - the built-in night end to end: four peers through golf,
+  poker, a race and the Grid Duel ladder ending on one scoreboard hash with
+  every guest verifying every round and each world granted its own prize; a
+  player dropping mid-round (total kept, nothing more scored, no prize); a
+  desynced golf round voided while the night goes on; a late joiner moved
+  off the seats and watching to the end.

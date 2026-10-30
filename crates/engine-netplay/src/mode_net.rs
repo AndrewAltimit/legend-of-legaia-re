@@ -277,6 +277,9 @@ pub mod action_tag {
     pub const PAD: u8 = 0x02;
     /// A card-trade message; body = [`crate::trade::TradeEnvelope`].
     pub const TRADE: u8 = 0x03;
+    /// A party-night message; body = [`crate::party::PartyEvent`] (host
+    /// event) or [`crate::party::PartyAction`] (guest action).
+    pub const PARTY: u8 = 0x04;
 }
 
 /// A pad-word action payload.

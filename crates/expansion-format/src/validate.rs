@@ -27,7 +27,7 @@ use crate::manifest::{
     SCHEMA_VERSION, SUPPORTED_DISC, is_valid_content_id, is_valid_pack_id, is_valid_semver,
 };
 use crate::refs::{DiscRef, DiscResolver};
-use crate::{ExpansionPack, PackFiles, modes};
+use crate::{ExpansionPack, PackFiles};
 
 /// How bad an issue is. An `Error` stops the engine loading the pack; a
 /// `Warning` does not.
@@ -604,9 +604,6 @@ fn check_asset_budget(cx: &mut Checker<'_>) {
     }
 }
 
-// Placeholder rules; see the module docs.
-impl SectionRules for modes::ModeSection {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -634,6 +631,56 @@ mod tests {
     #[test]
     fn a_clean_pack_has_no_issues() {
         assert_eq!(validate(&good_pack()), vec![]);
+    }
+
+    #[test]
+    fn party_night_rules() {
+        let mut p = good_pack();
+        p.modes = toml::from_str(
+            r#"
+[[golf]]
+id = "links"
+[[golf.holes]]
+rows = ['#####', '#T.O#', '#####']
+
+[[races]]
+id = "ring"
+points = [[0, 0], [100, 0], [100, 100]]
+
+[[party_nights]]
+id = "night"
+[[party_nights.rounds]]
+mode = "links"
+holes = [1]
+[[party_nights.rounds]]
+mode = "ring"
+laps = 1
+"#,
+        )
+        .unwrap();
+        assert_eq!(errors(&validate(&p)), Vec::<String>::new());
+        let n = &mut p.modes.party_nights[0];
+        n.rounds[0].holes = vec![2];
+        n.rounds[1].hands = Some(3);
+        n.rounds.push(crate::modes::PartyRound {
+            mode: "nope".into(),
+            wager: 80,
+            ..Default::default()
+        });
+        n.prizes.push(crate::modes::PartyPrize {
+            place: 1,
+            boosters: vec!["ghost".into()],
+            ..Default::default()
+        });
+        let e = errors(&validate(&p));
+        for needle in [
+            "holes[0]",
+            "rounds[1].hands",
+            "rounds[2].mode",
+            "no booster",
+        ] {
+            assert!(e.iter().any(|l| l.contains(needle)), "{needle}: {e:?}");
+        }
     }
 
     #[test]
