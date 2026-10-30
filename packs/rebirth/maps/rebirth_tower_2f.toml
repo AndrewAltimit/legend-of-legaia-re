@@ -5,7 +5,7 @@
 # way it looks. The Cinder Warden waits at the brazier in the middle.
 
 name = "Tower of Rebirth 2F - Ember Stair"
-base = { scene = { kind = "scene", name = "rugi" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "rugi" }, geometry = "keep", scenery = true }
 # Sound-test track 7, "The Fire Fortress".
 bgm = { kind = "bgm", id = 7 }
 camera = "default"
@@ -209,3 +209,47 @@ regions = [
   { rect = [1, 8, 6, 17], angle = 0.0, spread = 30.0, speed = 14 },
   { rect = [14, 4, 18, 21], angle = 180.0, spread = 30.0, speed = 14 },
 ]
+
+# Sparks climb from the brazier, embers drift up the aisles from the wall
+# torches, and smoke gathers under the ceiling by the stairs.
+[[emitters]]
+kind = "embers"
+rect = [9, 12, 11, 13]
+height = [10, 60]
+count = 40
+velocity = [0.0, 1.6, 0.0]
+seed = 201
+
+[[emitters]]
+kind = "embers"
+rect = [1, 8, 3, 17]
+count = 20
+color = [255, 120, 50]
+seed = 202
+
+[[emitters]]
+kind = "embers"
+rect = [17, 4, 19, 21]
+count = 20
+color = [255, 120, 50]
+seed = 203
+
+[[emitters]]
+kind = "smoke"
+rect = [8, 20, 12, 22]
+height = [40, 120]
+count = 14
+seed = 204
+
+# A rune circle (the Rogue's Tower's own, four atlas cells) glows on the
+# floor round the brazier.
+[[decals]]
+cell = { tpage = 10, clut = 32448, tile = 0 }
+span = 2
+tile = [10, 12]
+offset = [0, 3, 128]
+size = [300, 300]
+sides = 16
+color = [110, 110, 110]
+yaw = [0.0, 0.0]
+

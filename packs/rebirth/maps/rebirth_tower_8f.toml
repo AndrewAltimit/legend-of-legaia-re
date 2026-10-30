@@ -5,7 +5,7 @@
 # `hollow_throne`).
 
 name = "Tower of Rebirth 8F - Hollow Throne"
-base = { scene = { kind = "scene", name = "taiku2" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "taiku2" }, geometry = "keep", scenery = true }
 # Sound-test track 52, "Ominous Presence".
 bgm = { kind = "bgm", id = 52 }
 camera = "default"
@@ -88,3 +88,55 @@ requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"]
 id = "throne"
 rect = [5, 1, 11, 2]
 event = { kind = "talk", npc = "hollow_throne" }
+
+# ---------------------------------------------------------------------------
+# Detail: the Hollow Throne. Dust hangs over the long carpet, the pillar
+# lamps spit sparks, a dark haze sits on the floor, violet motes gather at
+# the throne, and the castle's own scenery moves (`scenery`).
+# ---------------------------------------------------------------------------
+
+[[emitters]]
+kind = "dust"
+rect = [3, 2, 13, 24]
+count = 70
+color = [200, 170, 230]
+seed = 801
+
+[[emitters]]
+kind = "sparkles"
+rect = [6, 1, 10, 4]
+height = [40, 240]
+count = 40
+color = [200, 120, 255]
+seed = 802
+
+[[emitters]]
+kind = "embers"
+rect = [2, 5, 2, 13]
+height = [140, 180]
+count = 18
+color = [255, 220, 140]
+seed = 803
+
+[[emitters]]
+kind = "embers"
+rect = [14, 5, 14, 13]
+height = [140, 180]
+count = 18
+color = [255, 220, 140]
+seed = 804
+
+[[emitters]]
+kind = "smoke"
+rect = [2, 3, 14, 24]
+height = [0, 10]
+count = 24
+velocity = [0.0, 0.1, 0.0]
+size = [60, 110]
+color = [70, 50, 90]
+color_end = [30, 20, 40]
+seed = 805
+
+[lighting]
+mood = "night"
+lamps = [{ id = "throne", tile = [8, 2], offset = [0, 160, 0], color = [190, 110, 255], radius = 900, flicker = 0.2, period = 35 }]

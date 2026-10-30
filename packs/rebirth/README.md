@@ -65,6 +65,17 @@ hall and adds the brazier's turning fire ring, two orbiting pyre wisps,
 embers on the middle pillars, stalagmites, rubble, red lamps and smoke down
 the aisles.
 
+The Atrium's pillars are decorations wearing octagonal stone decals over
+the retail mesh's black caps, moss and worn-stone decals break up its floor,
+embers rise from the crystals and sparks hang round the Warden's Stone. The
+floors above keep their retail rooms and play the rooms' own animated
+scenery (`base.scenery`), with a theme each: falling leaves, fireflies,
+flower beds and a turning cloud ring in the Hanging Garden; drips, spores
+and a green ring of light in the Verdant Vault; hearth smoke and sparks in
+the Gambler's Rest; spark showers, steam and two flywheels in the Engine
+Deep; three orbiting echo crystals and blue motes in the Sanctum; dust,
+violet motes and a low haze in the Hollow Throne.
+
 Each floor's stairs chain to the next (`exits` with `to = { kind = "map" }`);
 the 1F stair down leads to Rim Elm.
 

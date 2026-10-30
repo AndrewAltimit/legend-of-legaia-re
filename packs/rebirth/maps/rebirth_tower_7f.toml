@@ -4,7 +4,7 @@
 # hall.
 
 name = "Tower of Rebirth 7F - Sanctum of Echoes"
-base = { scene = { kind = "scene", name = "korb3" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "korb3" }, geometry = "keep", scenery = true }
 # Sound-test track 11, "The Profane Realm".
 bgm = { kind = "bgm", id = 11 }
 camera = "default"
@@ -109,3 +109,55 @@ table = "tower_7f"
 id = "east_ring"
 rect = [16, 5, 22, 16]
 table = "tower_7f"
+
+# ---------------------------------------------------------------------------
+# Detail: the Sanctum's echoes. Three crystals circle the inner hall's
+# heart, blue sparks hang in the vault, dust drifts round the ring, and the
+# Sol Tower's own scenery runs (`scenery`).
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "echo_1"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 10]
+offset = [0, 140, 0]
+scale = 1.2
+animate = [{ kind = "orbit", radius = 110, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
+light = { color = [120, 170, 255], radius = 600, flicker = 0.15, period = 30 }
+
+[[props]]
+id = "echo_2"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 11]
+offset = [0, 140, -128]
+scale = 1.2
+animate = [{ kind = "orbit", radius = 110, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
+light = { color = [120, 170, 255], radius = 600, flicker = 0.15, period = 30 }
+
+[[props]]
+id = "echo_3"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [10, 10]
+offset = [128, 140, 0]
+scale = 1.2
+animate = [{ kind = "orbit", radius = 110, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
+light = { color = [120, 170, 255], radius = 600, flicker = 0.15, period = 30 }
+
+[[emitters]]
+kind = "sparkles"
+rect = [7, 6, 15, 14]
+height = [30, 260]
+count = 48
+color = [130, 170, 255]
+seed = 701
+
+[[emitters]]
+kind = "dust"
+rect = [0, 0, 22, 21]
+count = 60
+color = [170, 190, 230]
+seed = 702
+
+[lighting]
+mood = "night"
+lamps = [{ id = "heart", tile = [11, 10], offset = [0, 120, 0], color = [100, 150, 255], radius = 1000, flicker = 0.1, period = 45 }]

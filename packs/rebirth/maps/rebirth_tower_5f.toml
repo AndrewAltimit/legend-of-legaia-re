@@ -4,7 +4,7 @@
 # (`modes.toml`), and their quests send the party to every one of them.
 
 name = "Tower of Rebirth 5F - Gambler's Rest"
-base = { scene = { kind = "scene", name = "koin1" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "koin1" }, geometry = "keep", scenery = true }
 # Sound-test track 24, "Where Everyone Drinks".
 bgm = { kind = "bgm", id = 24 }
 camera = "default"
@@ -114,3 +114,38 @@ requires = { quests = ["gamblers_rest"] }
 id = "hearth"
 rect = [13, 4, 14, 4]
 event = { kind = "rest", save = true }
+
+# ---------------------------------------------------------------------------
+# Detail: the Rest by lamplight. The hearth breathes smoke and sparks, the
+# lobby's air is full of the dust of a hundred card games, and the Sol
+# Tower's own animated fittings run (`scenery`).
+# ---------------------------------------------------------------------------
+
+[[emitters]]
+kind = "embers"
+rect = [13, 4, 14, 4]
+height = [0, 30]
+count = 18
+seed = 501
+
+[[emitters]]
+kind = "smoke"
+rect = [13, 4, 14, 4]
+height = [60, 120]
+count = 8
+color = [90, 85, 80]
+seed = 502
+
+[[emitters]]
+kind = "dust"
+rect = [1, 4, 14, 8]
+count = 50
+color = [255, 220, 170]
+seed = 503
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "hearth", tile = [13, 4], offset = [0, 60, 0], color = [255, 140, 60], radius = 700, flicker = 0.35, period = 10 },
+  { id = "keeper", tile = [5, 4], offset = [0, 160, 0], color = [255, 210, 150], radius = 600 },
+]

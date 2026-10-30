@@ -4,7 +4,7 @@
 # four waves in one battle, as often as the party asks for it.
 
 name = "Tower of Rebirth 3F - Hanging Garden"
-base = { scene = { kind = "scene", name = "teien" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "teien" }, geometry = "keep", scenery = true }
 # Sound-test track 12, "The Sacred Realm".
 bgm = { kind = "bgm", id = 12 }
 camera = "default"
@@ -95,3 +95,70 @@ table = "tower_3f"
 id = "lower_garden"
 rect = [2, 15, 20, 18]
 table = "tower_3f"
+
+# ---------------------------------------------------------------------------
+# Detail: the garden in late summer. Leaves fall from the terraces' trees,
+# fireflies hang over the lower garden, and a ring of cloud turns slowly
+# over the sundial. The garden's own animated scenery plays (`scenery`).
+# All of it draws only.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "cloud_ring"
+mesh = { object = 3 }
+tile = [12, 11]
+offset = [0, 230, 0]
+scale = 0.45
+animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 12, period = 240 }]
+light = { color = [200, 230, 255], radius = 700, height = 0 }
+
+# Young trees in clumps on the lower garden.
+[[scatter]]
+id = "saplings"
+rect = [2, 14, 20, 21]
+on = "."
+density = 0.5
+seed = 301
+jitter = 50
+scale = [0.4, 0.65]
+tilt = 4.0
+cluster = { centre = [6.0, 17.0], radius = 5.0, falloff = 1.5 }
+meshes = [{ mesh = { object = 5 }, weight = 3 }, { mesh = { object = 8 }, weight = 1 }]
+
+# Flower beds round the sundial (the garden's flowering grass).
+[[decals]]
+id = "flowers"
+cell = { tpage = 8, clut = 32512, tile = 0 }
+cells = [{ tpage = 8, clut = 32512, tile = 1 }, { tpage = 8, clut = 32512, tile = 8 }]
+rect = [8, 9, 16, 14]
+on = "."
+density = 0.5
+seed = 302
+size = [96, 96]
+size_jitter = 0.3
+sides = 10
+jitter = 40
+
+[[emitters]]
+kind = "leaves"
+rect = [2, 2, 21, 21]
+count = 36
+seed = 303
+
+[[emitters]]
+kind = "sparkles"
+rect = [3, 14, 20, 21]
+height = [20, 90]
+count = 36
+color = [210, 255, 120]
+seed = 304
+
+[[emitters]]
+kind = "dust"
+rect = [8, 9, 16, 14]
+count = 30
+color = [255, 240, 190]
+seed = 305
+
+[lighting]
+mood = "day"

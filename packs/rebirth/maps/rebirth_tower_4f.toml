@@ -6,7 +6,7 @@
 # sleeps in the sunken court.
 
 name = "Tower of Rebirth 4F - Verdant Vault"
-base = { scene = { kind = "scene", name = "concnow" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "concnow" }, geometry = "keep", scenery = true }
 # Sound-test track 8, "Call of the Ruins".
 bgm = { kind = "bgm", id = 8 }
 camera = "default"
@@ -139,3 +139,47 @@ table = "tower_4f"
 id = "east_terrace"
 rect = [24, 6, 29, 21]
 table = "tower_4f"
+
+# ---------------------------------------------------------------------------
+# Detail: the vault drips and grows. Water falls from the broken colonnade,
+# motes and spores drift over the court, and a ring of green light hangs
+# over the sunken court where the Colossus sleeps.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "verdant_ring"
+mesh = { object = 127 }
+tile = [16, 13]
+offset = [0, 160, 0]
+rotation = [90.0, 0.0, 0.0]
+scale = 0.25
+animate = [{ kind = "spin", period = -720 }, { kind = "pulse", amount = 0.06, period = 120 }]
+light = { color = [120, 255, 150], radius = 900, height = 0, flicker = 0.1, period = 50 }
+
+[[emitters]]
+kind = "drips"
+rect = [11, 8, 23, 21]
+count = 28
+seed = 401
+
+[[emitters]]
+kind = "dust"
+rect = [5, 6, 29, 21]
+count = 60
+color = [170, 210, 150]
+seed = 402
+
+[[emitters]]
+kind = "sparkles"
+rect = [11, 9, 22, 20]
+height = [10, 120]
+count = 30
+color = [140, 255, 150]
+seed = 403
+
+[lighting]
+mood = "dusk"
+lamps = [{ id = "court_glow", tile = [16, 15], offset = [0, 60, 0], color = [90, 220, 120], radius = 800, flicker = 0.15, period = 60 }]
+
+[fog]
+regions = [{ rect = [11, 9, 23, 20], angle = 0.0, spread = 180.0, speed = 8 }]

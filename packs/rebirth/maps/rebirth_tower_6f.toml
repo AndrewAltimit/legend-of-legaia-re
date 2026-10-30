@@ -4,7 +4,7 @@
 # battle that keeps feeding monsters into every seat that frees.
 
 name = "Tower of Rebirth 6F - Engine Deep"
-base = { scene = { kind = "scene", name = "chitei2" }, geometry = "keep" }
+base = { scene = { kind = "scene", name = "chitei2" }, geometry = "keep", scenery = true }
 # Sound-test track 13, "Bio-Castle".
 bgm = { kind = "bgm", id = 13 }
 camera = "default"
@@ -122,3 +122,78 @@ table = "tower_6f"
 id = "east_track"
 rect = [11, 2, 16, 27]
 table = "tower_6f"
+
+# ---------------------------------------------------------------------------
+# Detail: the engine runs. Sparks spray from the Regent's alcove and the
+# gauntlet lever, steam rolls along both tracks, and the fortress's own
+# machinery turns (`scenery`). Cold lamps light the hall.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "flywheel_n"
+mesh = { object = 31 }
+tile = [8, 8]
+offset = [0, 40, 0]
+scale = 0.7
+animate = [{ kind = "spin", period = 240 }]
+
+[[props]]
+id = "flywheel_s"
+mesh = { object = 31 }
+tile = [8, 25]
+offset = [0, 40, 0]
+scale = 0.7
+animate = [{ kind = "spin", period = -240 }]
+
+[[emitters]]
+kind = "embers"
+rect = [7, 11, 9, 12]
+height = [20, 80]
+count = 30
+velocity = [0.0, 2.2, 0.0]
+spread = [1.2, 0.8, 1.2]
+gravity = -0.05
+color = [255, 240, 170]
+color_end = [255, 90, 20]
+life = 60
+seed = 601
+
+[[emitters]]
+kind = "embers"
+rect = [7, 21, 9, 22]
+height = [20, 80]
+count = 24
+velocity = [0.0, 2.0, 0.0]
+spread = [1.0, 0.7, 1.0]
+gravity = -0.05
+color = [200, 230, 255]
+color_end = [60, 90, 255]
+life = 60
+seed = 602
+
+[[emitters]]
+kind = "smoke"
+rect = [1, 2, 5, 27]
+count = 16
+color = [130, 135, 140]
+seed = 603
+
+[[emitters]]
+kind = "smoke"
+rect = [11, 2, 16, 27]
+count = 16
+color = [130, 135, 140]
+seed = 604
+
+[[emitters]]
+kind = "drips"
+rect = [5, 13, 11, 20]
+count = 12
+seed = 605
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "regent", tile = [8, 11], offset = [0, 100, 0], color = [255, 200, 120], radius = 800, flicker = 0.4, period = 7 },
+  { id = "lever", tile = [8, 22], offset = [0, 100, 0], color = [140, 180, 255], radius = 700, flicker = 0.4, period = 9 },
+]
