@@ -21,13 +21,7 @@ use super::*;
 
 use legaia_engine_expansion::map::{ActiveMap, FiredTrigger};
 use legaia_engine_expansion::quest::QuestEvent;
-use legaia_engine_scene::expansion_map::detail::{
-    needs_library, resolve_materials, resolve_mesh_library,
-};
-use legaia_engine_scene::expansion_map::{
-    BaseInputs, SceneOverride, base_scenery, build_field_image, fill_borrowed_npc_clips, floor_lut,
-    prop_records_at, prop_scales_at, resolve_map_npcs, tile_centre_world,
-};
+use legaia_engine_scene::expansion_map::tile_centre_world;
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
 use legaia_expansion_format::refs::DiscRef;
@@ -61,12 +55,46 @@ impl SceneHost {
     /// can then be entered with [`Self::enter_expansion_map`]. Fails with the
     /// pack's own problem list, leaving no pack active.
     pub fn activate_expansion_pack(&mut self, pack: Arc<ExpansionPack>) -> Result<()> {
+        // Maps prepared from the pack this one replaces are stale.
+        self.expansion_preload.clear();
+        self.expansion_entry_build = None;
         self.world.activate_expansion(pack).map_err(|problems| {
             anyhow::anyhow!(
                 "the expansion pack does not activate: {}",
                 problems.join("; ")
             )
         })
+    }
+
+    /// The resource build of the pack map the player is on, before the
+    /// effect-texture underlay: what [`crate::scene_host::field_scene_build`]
+    /// makes of the base scene with the map's override seated. The native
+    /// play window starts its own scene build from it instead of building
+    /// the same scene again. `None` off a pack map.
+    pub fn expansion_entry_build(
+        &self,
+    ) -> Option<&Arc<legaia_engine_scene::scene_resources::SceneResources>> {
+        self.expansion_entry_build.as_ref()
+    }
+
+    /// Turn the background preparation of the maps an entered pack map's
+    /// exits lead to on or off (`crate::expansion_preload`). Off, a map is
+    /// still cached once entered.
+    pub fn set_expansion_preload(&mut self, on: bool) {
+        self.expansion_preload.enabled = on;
+    }
+
+    /// Move finished background preparations into the cache and, where no
+    /// worker thread runs them (the browser build), run one phase of the
+    /// next. `true` while stepped work remains. The play page calls it on
+    /// idle frames; it reads nothing of the world.
+    pub fn step_expansion_preload(&mut self) -> bool {
+        self.expansion_preload.drain();
+        let Some(pack) = self.world.expansion.pack.clone() else {
+            return false;
+        };
+        let index = self.index.clone();
+        self.expansion_preload.step(&index, &pack)
     }
 
     /// The id of the pack map the player is in, if any.
@@ -141,130 +169,52 @@ impl SceneHost {
             .maps
             .get(map_id)
             .with_context(|| format!("pack '{}' has no map '{map_id}'", pack.manifest.id))?;
-        let grid = def
-            .tile_grid()
-            .with_context(|| format!("map '{map_id}' tiles"))?;
-        let base_name = def
-            .base
-            .scene_name()
-            .with_context(|| format!("map '{map_id}' names no base scene"))?
-            .to_string();
         let point = def
             .spawn(spawn)
             .with_context(|| format!("map '{map_id}' has no spawn {spawn:?}"))?
             .clone();
-        // The base scene's own field layer, read before the override hides
-        // it: its map (a kept geometry layer, a borrowed ground cell), its
-        // floor ladder (a map that names none), and the entry holding its
-        // geometry pack (a prop named by TMD coordinate).
-        let base = Scene::load(&self.index, &base_name)?;
-        let base_map = base.field_map_bytes(&self.index)?;
-        let base_lut = base.field_floor_height_lut(&self.index)?;
-        let geometry_entry =
-            legaia_engine_scene::scene_bundle::find_bundle(&base).map(|b| b.entry_idx());
-        // The geometry pack as the field load registers it: where generated
-        // wall boxes join it.
-        let geometry = legaia_engine_scene::scene_resources::field_geometry_pack(&base);
-        // Meshes from other scenes, model assets and decorations resolve
-        // against the disc and the pack's assets before the image is built.
-        let library = if needs_library(def, geometry.map(|(e, _)| e)) {
-            Some(
-                resolve_mesh_library(
-                    &self.index,
-                    def,
-                    &pack.assets,
-                    &base,
-                    geometry.map(|(e, _)| e),
-                )
-                .with_context(|| format!("map '{map_id}' meshes"))?,
-            )
-        } else {
-            None
-        };
-        let image = build_field_image(
-            def,
-            &grid,
-            BaseInputs {
-                base_map: base_map.as_deref(),
-                geometry_entry,
-                geometry_len: geometry.map(|(_, n)| n),
-                library: library.as_ref(),
-            },
-        )
-        .with_context(|| format!("map '{map_id}' field image"))?;
-        drop(base);
-        // Materials naming another scene's VRAM point at the copies the
-        // library made; the map runtime animates the resolved list.
-        let particle_sheet = library.as_ref().and_then(|l| l.particle_sheet);
-        let foam_cluts = library.as_ref().and_then(|l| l.foam_sheet).map(|f| f.cluts);
-        let mut live_def = def.clone();
-        if let Some(lib) = library.as_ref() {
-            for p in resolve_materials(&mut live_def, lib, &base_name) {
-                log::warn!("expansion: map '{map_id}': {p}");
-            }
+        // Everything the entry builds before it touches the world: from the
+        // cache when the map was entered before or prepared from a
+        // neighbour, else built here (`crate::expansion_preload`).
+        #[cfg(not(target_arch = "wasm32"))]
+        let started = std::time::Instant::now();
+        self.expansion_preload.drain();
+        let was_ready = self.expansion_preload.ready_maps().contains(&map_id);
+        let was_pending = self.expansion_preload.pending_maps().contains(&map_id);
+        let index = self.index.clone();
+        let prepared = self
+            .expansion_preload
+            .obtain(&index, &pack, map_id)
+            .with_context(|| format!("map '{map_id}'"))?;
+        for (level, note) in &prepared.notes {
+            log::log!(*level, "{note}");
         }
-        if image.dropped_decorations > 0 {
-            log::warn!(
-                "expansion: map '{map_id}': {} decorations on placed props' tiles left out",
-                image.dropped_decorations
-            );
-        }
-        if !image.covered_cells.is_empty() {
-            log::warn!(
-                "expansion: map '{map_id}': props replace the cell mesh of tiles {:?}",
-                image.covered_cells
-            );
-        }
-        if !image.open_large_props.is_empty() {
-            log::warn!(
-                "expansion: map '{map_id}': props {:?} draw more than a tile and a half across but close no ground (set `solid`)",
-                image.open_large_props
-            );
-        }
-        if image.decoration_chunk > 1 {
-            log::info!(
-                "expansion: map '{map_id}' bakes its decorations in {0} x {0} tile cells",
-                image.decoration_chunk
-            );
-        }
-        // Borrowed NPCs rest and walk in the clips their retail streams
-        // name, where the pack names none.
-        fill_borrowed_npc_clips(&self.index, &mut live_def)
-            .with_context(|| format!("map '{map_id}' NPC clips"))?;
-        let mut npcs = resolve_map_npcs(&self.index, &live_def, &base_name)
-            .with_context(|| format!("map '{map_id}' NPCs"))?;
-        // The base scene's own animated props, as scenery after the NPCs.
-        let scenery_props = base_scenery(&self.index, def, &base_name, 1 + def.npcs.len())
-            .with_context(|| format!("map '{map_id}' base scenery"))?;
-        let n_scenery = scenery_props.len();
-        npcs.extend(scenery_props);
-        self.expansion_collision = Some((map_id.to_string(), image.collision));
-        let overrides = SceneOverride {
-            map_id: map_id.to_string(),
-            field_map: image.image,
-            floor_lut: floor_lut(def, base_lut),
-            prop_scales: prop_scales_at(def, &image.prop_anchors),
-            npcs,
-            added_tmds: image.added_tmds,
-            geometry_entry: geometry.map(|(e, _)| e),
-            vram_patches: library.map(|l| l.vram_patches).unwrap_or_default(),
-            prop_records: prop_records_at(def, &image.prop_anchors),
-        };
+        let grid = &prepared.grid;
+        let base_name = prepared.base_name.clone();
+        let n_scenery = prepared.n_scenery;
+        self.expansion_collision = Some((map_id.to_string(), (*prepared.collision).clone()));
         let (sx, sz) = match seat {
             Some((x, z, _)) => (x, z),
             None => tile_centre_world(def, point.tile[0], point.tile[1]),
         };
         let seat_tile = def
-            .tile_at_world(&grid, i32::from(sx), i32::from(sz))
+            .tile_at_world(grid, i32::from(sx), i32::from(sz))
             .unwrap_or((point.tile[0], point.tile[1]));
-        self.pending_scene_override = Some(Arc::new(overrides));
+        self.pending_scene_override = Some(prepared.overrides.clone());
+        self.pending_scene_build = prepared
+            .build
+            .clone()
+            .map(|b| (prepared.overrides.clone(), b));
         self.set_entry_seat(sx, sz);
         self.world.arm_arrival_facing(point.facing);
         if let Err(e) = self.enter_field_scene(&base_name, 0) {
             self.pending_scene_override = None;
+            self.pending_scene_build = None;
             self.disarm_entry_seat();
             return Err(e);
         }
+        self.pending_scene_build = None;
+        self.expansion_entry_build = prepared.build.clone();
         // The base scene has no MAN under the override, so the entry fell
         // back to running its event-script record 0 as field bytecode; a pack
         // map runs no retail script at all.
@@ -317,12 +267,16 @@ impl SceneHost {
         // The pack's saved flags answer which `once` triggers have fired.
         self.world.expansion.quests.sync_pack(&pack);
         let flags = &self.world.expansion.quests.progress.flags;
-        let active = ActiveMap::new(map_id, Arc::new(live_def), Arc::new(grid), seat_tile, |f| {
-            flags.is_set(f)
-        });
+        let active = ActiveMap::new(
+            map_id,
+            prepared.live_def.clone(),
+            prepared.grid.clone(),
+            seat_tile,
+            |f| flags.is_set(f),
+        );
         let mut active = active;
-        active.particle_sheet = particle_sheet;
-        active.foam_cluts = foam_cluts;
+        active.particle_sheet = prepared.particle_sheet;
+        active.foam_cluts = prepared.foam_cluts;
         self.world.expansion.map = Some(active);
         // The map's fog pool and its gate (no-op without `[fog]`).
         self.world.arm_expansion_fog();
@@ -354,6 +308,23 @@ impl SceneHost {
             point.id,
             point.tile
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        log::info!(
+            "expansion: map '{map_id}' entered in {:.1} ms ({})",
+            started.elapsed().as_secs_f64() * 1e3,
+            if was_ready {
+                "prepared ahead"
+            } else if was_pending {
+                "waited for its preparation"
+            } else {
+                "built on entry"
+            }
+        );
+        #[cfg(target_arch = "wasm32")]
+        let _ = (was_ready, was_pending);
+        // The maps this one's exits lead to start preparing now, so the
+        // step through an exit swaps in a ready map.
+        self.expansion_preload.request_neighbours(&pack, map_id);
         Ok(())
     }
 

@@ -621,6 +621,40 @@ scene build reads the map's ground, walls and props off the same `Scene`
 scene picker - leaves the map and drops its layer; a battle fought on the map
 returns to it. The map's `name` shows as the place-name banner on entry.
 
+### Entry cost and preparing ahead
+
+Most of a map's entry depends only on the disc and the pack: the mesh
+library, the synthetic field image (terrain tile meshes and baked decoration
+cells are the bulk of it), the NPC and scenery placements, and the base
+scene's resource build with the map's layer seated. A terrain-heavy island
+map spends several hundred milliseconds there on a native release build; a
+tower floor over a kept room, tens. `legaia_engine_scene_host::expansion_preload`
+splits that half off as a `PreparedMap`, which the entry then seats on the
+running world.
+
+`SceneHost` keeps prepared maps in a small least-recently-used cache, bounded
+by count and by footprint (a terrain map prepares to tens of MiB, a tower
+floor to one or two). Every entry fills it, so walking back to a map just
+left swaps it in. With preloading on (`SceneHost::set_expansion_preload`,
+which both play hosts set), entering a map also starts preparing every map
+its exits lead to: on a worker thread natively, and on the browser page a
+phase per tick once the player has stood idle on the field for half a second
+(the wasm build has no threads). Natively the requests start on the frame
+after the entry, once the window's own rebuild of the entered map is done. An exit taken while its map is still
+preparing waits for that preparation rather than starting another. The
+native window also starts its own render build of the map from the entry's,
+rather than building the same scene a second time, and its scene upload (any
+scene's, retail included) builds the CPU half of each environment mesh, and
+the coplanar offsets, occluder set and fog ground field, in parallel - the
+same products in the same order as a serial build.
+
+The preparation reads only the `ProtIndex` and the pack - no `World` state,
+no RNG - and its product is what the entry would build itself, so an entry
+from the cache plays bit-identically to a cold one
+(`crates/engine-scene-host/tests/expansion_map_preload_disc.rs`). A pack
+activation, a hot reload included, empties the cache. Retail scene entry is
+untouched.
+
 ## Meshes from other scenes
 
 A mesh named from another scene's pack samples that scene's VRAM, which the

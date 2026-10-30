@@ -58,6 +58,9 @@ impl SceneHost {
             pending_entry_seat: None,
             pending_scene_override: None,
             failed_pack_mode_map: None,
+            pending_scene_build: None,
+            expansion_entry_build: None,
+            expansion_preload: Default::default(),
             quiet_expansion_arrivals: false,
             expansion_collision: None,
             arrival_catalog: None,
@@ -188,6 +191,7 @@ impl SceneHost {
         // Any scene load leaves the pack map the player was in; an
         // expansion-map entry seats the next one after its load.
         self.world.expansion.map = None;
+        self.expansion_entry_build = None;
         let overrides = self.pending_scene_override.take();
         let mut scene = Scene::load(&self.index, name)?;
         scene.overrides = overrides;

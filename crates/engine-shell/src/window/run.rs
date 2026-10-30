@@ -230,6 +230,10 @@ fn enter_launch_scene(
     // below, play with it (a save made on one of its maps returns to that
     // map). Without a save, `--map` is the launch scene: its base scene
     // loads under it, so the render build draws it like any field scene.
+    // A pack map's exits prepare the maps they lead to on a worker thread,
+    // so stepping through one swaps in a ready map
+    // (`legaia_engine_scene_host::expansion_preload`).
+    session.host.set_expansion_preload(true);
     if let Some(launch) = debug_seeds.expansion.as_ref() {
         let pack = launch.load()?;
         log::info!(

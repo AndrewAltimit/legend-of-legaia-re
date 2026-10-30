@@ -2501,6 +2501,7 @@
    "lib": true,
    "modules": [
     "disc_readers",
+    "expansion_preload",
     "fishing_venue",
     "place_name_banner",
     "resume",
