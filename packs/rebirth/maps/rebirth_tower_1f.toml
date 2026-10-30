@@ -10,7 +10,7 @@ size = [15, 13]
 base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
 # Sound-test track 45, "The Sol Tower".
 bgm = { kind = "bgm", id = 45 }
-camera = "far"
+camera = "default"
 # Tier 0 is the arena floor, tier 1 the dais.
 floor_heights = [0, 48]
 

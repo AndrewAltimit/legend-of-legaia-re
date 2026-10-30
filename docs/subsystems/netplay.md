@@ -455,6 +455,7 @@ driven from `room::NetPlay`).
 | Who directs | The room's host: its copy of the night moves on, the others run only the timers down and verify. |
 | Messages | `Event` (host to room) and `Action` (a guest's pick) with payload tag `0x04`; no new wire message. |
 | Prizes | Each machine grants its own player's prize from the shared scoreboard. Nothing about a prize travels. |
+| The podium | A night whose pack names a `podium` ends on it in every player's world, each peer raising it from its own verified copy at the pack's anchor and standing its own leader on its block; the others are their roaming avatars ([expansion-modes.md](expansion-modes.md#the-podium-online)). Nothing about it travels either. |
 
 ### Starting and the rounds
 

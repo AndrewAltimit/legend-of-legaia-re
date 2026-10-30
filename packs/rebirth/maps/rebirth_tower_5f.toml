@@ -156,6 +156,8 @@ mood = "dusk"
 lamps = [
   { id = "hearth", tile = [13, 4], offset = [0, 60, 0], color = [255, 140, 60], radius = 700, flicker = 0.35, period = 10 },
   { id = "keeper", tile = [5, 4], offset = [0, 160, 0], color = [255, 210, 150], radius = 600 },
+  # The game-night table under its own lamp: the room's centre of play.
+  { id = "game_table", tile = [8, 9], offset = [0, 180, 0], color = [255, 225, 160], radius = 420, flicker = 0.08, period = 30 },
 ]
 
 # Sound: the Rest plays the bar's tune (`bgm` above); the games room on the

@@ -397,6 +397,32 @@ impl ScreenLayer {
         out
     }
 
+    /// Flash `color`, fading out over `frames`.
+    pub fn start_flash(&mut self, color: [u8; 3], frames: u32) {
+        self.flash = color;
+        self.flash_frames = frames;
+        self.flash_t = 0;
+    }
+
+    /// Ramp the held tint to `color` over `frames` (`[0, 0, 0]` clears it).
+    /// A change of mode ramps from clear, not from the other mode's colour.
+    pub fn start_tint(&mut self, color: [u8; 3], frames: u32, mode: TintMode) {
+        self.tint_from = if mode == self.tint_mode {
+            self.tint()
+        } else {
+            [0, 0, 0]
+        };
+        self.tint_to = color;
+        self.tint_frames = frames;
+        self.tint_t = 0;
+        self.tint_mode = mode;
+    }
+
+    /// Advance the layer's ramps by `frames`.
+    pub fn tick(&mut self, frames: u32) {
+        self.advance(frames);
+    }
+
     /// The quads this frame, in draw order: the tint, the flash, the fade.
     pub fn quads(&self) -> Vec<ScreenQuad> {
         let mut out = Vec::new();

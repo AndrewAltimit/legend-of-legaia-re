@@ -71,6 +71,7 @@ impl World {
         b.boss_runs.clear();
         b.pending_summons.clear();
         b.boss_banners.clear();
+        b.phase_screen = Default::default();
         b.boss_round = 0;
         b.forced_strike = None;
         b.boss_layout = formation.slots.len().clamp(1, 4) as u8;
@@ -83,6 +84,7 @@ impl World {
         b.boss_runs.clear();
         b.pending_summons.clear();
         b.boss_banners.clear();
+        b.phase_screen = Default::default();
         b.boss_round = 0;
         b.forced_strike = None;
     }
@@ -266,6 +268,13 @@ impl World {
             self.boss_banner(t);
         }
         self.expansion_phase_audio(p.music.as_ref(), p.sound.as_ref());
+        let screen = &mut self.expansion.battle.phase_screen;
+        if let Some(t) = p.tint {
+            screen.start_tint(t.color, t.frames, t.mode);
+        }
+        if let Some(f) = p.flash {
+            screen.start_flash(f.color, f.frames);
+        }
     }
 
     /// A round opens: the round count moves on, every scripted seat runs
@@ -494,6 +503,8 @@ impl World {
     /// the status word's bits), and a scripted monster driven to 0 HP by a
     /// writer outside the HP-delta path gets its last stand.
     pub(in crate::world) fn expansion_boss_frame(&mut self) {
+        let frames = u32::from(self.clock.display_frame_step.max(1));
+        self.expansion.battle.phase_screen.tick(frames);
         if self.expansion.battle.boss_runs.is_empty() {
             return;
         }

@@ -234,6 +234,15 @@ count = 20
 color = [255, 120, 50]
 seed = 203
 
+# Warm ash drifts down through the whole stair hall.
+[[emitters]]
+kind = "dust"
+rect = [4, 3, 16, 22]
+height = [60, 260]
+count = 40
+color = [255, 170, 110]
+seed = 205
+
 [[emitters]]
 kind = "smoke"
 rect = [8, 20, 12, 22]

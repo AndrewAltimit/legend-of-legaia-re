@@ -666,17 +666,54 @@ impl NetPlay {
         }
     }
 
+    /// Raise a completed night's podium in this player's world, or take it
+    /// down once the night closes. Every peer raises it from its own copy
+    /// of the night (host-directed, hash-verified) at the pack's podium
+    /// anchor, so the blocks and who stands on them agree everywhere; each
+    /// peer stands its own leader, and the others are its roaming avatars
+    /// (or stand-in figures where it does not see them).
+    pub(super) fn sync_net_podium(&mut self, world: &mut World) {
+        let up = match (self.me, self.party.as_deref()) {
+            (Some(me), Some(p)) if p.night.completed() && !self.in_mode() => {
+                Some((p.night.id.clone(), p.night.standings(), key(me)))
+            }
+            _ => None,
+        };
+        self.podium_in_world = match up {
+            Some((id, standings, me)) => {
+                let shown = self
+                    .remote_avatars()
+                    .iter()
+                    .map(|a| key(a.player))
+                    .collect();
+                world.show_net_podium(&id, standings, me, shown)
+                    && world.net_podium().is_some_and(|p| p.stage.is_some())
+            }
+            None => {
+                if world.net_podium().is_some() {
+                    world.clear_net_podium();
+                }
+                false
+            }
+        };
+    }
+
     /// The party card to draw this frame, while one shows.
     pub fn party_card(&self) -> Option<PartyCard> {
         let p = self.party.as_deref()?;
         if self.in_mode() {
             return None;
         }
-        Some(party_card(
+        let mut card = party_card(
             &p.night,
             self.me.map(key),
             p.granted.as_deref(),
             self.frames,
-        ))
+        );
+        // A podium standing in the world is a caption over the field.
+        if let PartyCard::Podium { in_world, .. } = &mut card {
+            *in_world = self.podium_in_world;
+        }
+        Some(card)
     }
 }

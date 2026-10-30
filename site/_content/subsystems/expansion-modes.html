@@ -275,6 +275,7 @@
   <h3 id="party-alone">Played alone</h3>
   <p><code>World::enter_pack_mode</code> with a night's id (a map trigger's <code>mode</code> event, a dialogue choice) opens the night against its AI rivals under <code>SceneMode::Expansion</code>. Between rounds the mode screen draws the party card; a round plays on the seat like any instance but settles nothing of its own, and its results stand three seconds before the night scores them. A Grid Duel match between two rivals plays out at once. Start on a party card ends the night early; any button closes the podium. Online, the room's host directs one copy per player (<a href="netplay.html#party-night">netplay</a>).</p>
   <p>The party card is one <code>engine-ui</code> composition for both hosts: the intro card slides in with the round's kind, title, detail and tags over the standings; the scoreboard's rows step in with each player's last-round points; the podium raises 2nd / 1st / 3rd blocks with a figure in each player's colour under falling confetti.</p>
+  <p>A night whose pack names a <code>podium</code> ends on it in the world, alone or online. Online every peer raises it from its own verified copy of the night at the pack's anchor (<code>World::show_net_podium</code>), so the blocks agree everywhere; each peer stands its own leader on its block, and the others are their roaming avatars, or stand-ins where they are not in view. Nothing about it travels.</p>
 </section>
 
 <section class="doc-section" id="grid-duel-at-a-table" data-doc="grid-duel-at-a-table">

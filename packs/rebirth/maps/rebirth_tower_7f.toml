@@ -160,7 +160,11 @@ seed = 702
 
 [lighting]
 mood = "night"
-lamps = [{ id = "heart", tile = [11, 10], offset = [0, 120, 0], color = [100, 150, 255], radius = 1000, flicker = 0.1, period = 45 }]
+lamps = [
+  { id = "heart", tile = [11, 10], offset = [0, 120, 0], color = [100, 150, 255], radius = 1000, flicker = 0.1, period = 45 },
+  # The rest alcove keeps a warm candle: the one safe light on the floor.
+  { id = "rest_candle", tile = [16, 19], offset = [0, 90, 0], color = [255, 190, 120], radius = 420, flicker = 0.2, period = 17 },
+]
 
 # Sound: inside the Sanctum's inner ring the floor's music gives way to the
 # tower's echo, the pack's own drone (`audio.toml` `tracks.echo_drone`).

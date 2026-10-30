@@ -62,6 +62,9 @@ pub struct ExpansionState {
     /// A party night played alone, while one runs (its rounds play on
     /// [`Self::mode_seat`]).
     pub party: Option<Box<party::LocalNight>>,
+    /// A networked party night's podium, while it stands
+    /// ([`party::NetPodium`]); the night itself is the netplay room's.
+    pub net_podium: Option<Box<party::NetPodium>>,
     /// Card grants won in modes, waiting for the card economy.
     pub pending_card_rewards: Vec<modes::PendingCardReward>,
     /// The card economy's notices, screen and portraits; the cards

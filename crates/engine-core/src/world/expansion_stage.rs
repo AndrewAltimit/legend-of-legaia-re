@@ -39,7 +39,14 @@ impl World {
     /// runs on that map.
     pub fn pack_mode_stage(&self) -> Option<&StageFrame> {
         if self.mode != SceneMode::Expansion {
-            return None;
+            // A networked night's podium stands over the field.
+            return self
+                .expansion
+                .net_podium
+                .as_deref()
+                .filter(|_| matches!(self.mode, SceneMode::Field))?
+                .stage
+                .as_ref();
         }
         match self.expansion.mode_seat.as_deref() {
             Some(seat) => seat.stage_frame.as_ref(),
@@ -59,7 +66,10 @@ impl World {
     /// player is not on it yet - the scene host enters it.
     pub fn pack_mode_wants_map(&self) -> Option<(String, String)> {
         if self.mode != SceneMode::Expansion {
-            return None;
+            return match self.mode {
+                SceneMode::Field => self.net_podium_wants_map(),
+                _ => None,
+            };
         }
         let Some(seat) = self.expansion.mode_seat.as_deref() else {
             return self.party_podium_wants_map();

@@ -244,9 +244,28 @@ so both frame its shot and draw its blocks, stand-ins and confetti through
 caption over the field (the title strip, the top three left to right with
 their scores, the prize). Closing the night takes the blocks down and puts
 the player and the bodies back (`World::take_down_party_podium`). The
-podium is presentation: the night never reads it. A room's night keeps the
-flat podium. For a capture, `--mode <night>:podium` plays a night's rounds
+podium is presentation: the night never reads it. For a capture, `--mode <night>:podium` plays a night's rounds
 out at once and lands on the podium (`World::debug_play_out_party_night`).
+
+### The podium online
+
+A room's night ends on the same podium. Each peer raises it from its own
+copy of the night (`NetPlay::sync_net_podium` -> `World::show_net_podium`,
+then `World::clear_net_podium` as the night closes): the copy is the
+host's, verified by every guest's scoreboard hash
+([netplay.md](netplay.md#party-night)), so the standings agree, and the
+anchor is the pack's `podium` (map, tile, facing), so every peer stands the
+same blocks in the same place. Nothing about the podium crosses the wire.
+
+| Piece | Online |
+|---|---|
+| Where | The scene host enters the podium's map from the field (`World::pack_mode_wants_map`); the world stays in `SceneMode::Field`, under the room's party card, which holds the pad. |
+| This player | Its own party leader on its block, as alone. |
+| The others | Their roaming avatars: each peer stands its own leader on its block, so the avatar it reports stands there for everyone. A player this peer does not see as an avatar (another scene, gone) stands as a stand-in figure in its standings colour instead. |
+| Caption | The room's party card is the caption over the field, as alone. |
+
+A podium the room stops raising (the controller dropped) comes down by
+itself a few frames later (`World::age_net_podium`).
 
 ## Hosts
 

@@ -75,6 +75,10 @@ pub struct CompiledPhase {
     pub music: Option<legaia_expansion_format::audio::MusicRef>,
     /// A sound played as it begins.
     pub sound: Option<legaia_expansion_format::audio::SoundRef>,
+    /// A screen flash as it begins.
+    pub flash: Option<legaia_expansion_format::boss_script::PhaseFlash>,
+    /// The battle tint from this phase on.
+    pub tint: Option<legaia_expansion_format::boss_script::PhaseTint>,
 }
 
 /// One compiled script.
@@ -137,6 +141,8 @@ impl CompiledScript {
                 summon: p.summon.iter().filter_map(&mut summon_id).collect(),
                 music: p.music.clone(),
                 sound: p.sound.clone(),
+                flash: p.flash,
+                tint: p.tint,
             }
         };
         CompiledScript {

@@ -130,9 +130,9 @@ facing = 4
 # far end, pulling back as it rises.
 [[cutscenes.tower_intro.tracks.crane.steps]]
 do = "camera"
-focus = { tile = [7, 1] }
-pitch = 22.0
-zoom = 2.3
+focus = { tile = [7, 3] }
+pitch = 24.0
+zoom = 1.6
 frames = 300
 
 # --- 5F: the hollow stirs ----------------------------------------------------
@@ -409,7 +409,9 @@ title = "The Iron Regent"
 map = "rebirth_tower_6f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 11] }, pitch = 6.0, zoom = 1.15, frames = 70 },
+    # From the hall, high and back, down into the alcove's mouth: the
+    # alcove's own walls would fill a closer shot.
+    { do = "camera", focus = { tile = [8, 13] }, pitch = 22.0, zoom = 1.4, frames = 70 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 10, frames = 40 },
     { do = "flash", color = [255, 200, 120], frames = 30 },
@@ -424,7 +426,7 @@ title = "The Engine Is Still"
 map = "rebirth_tower_6f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 11] }, pitch = 4.0, zoom = 1.2, frames = 60 },
+    { do = "camera", focus = { tile = [8, 13] }, pitch = 18.0, zoom = 1.3, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "shake", amplitude = 8, frames = 60 },
     { do = "flash", color = [255, 240, 220], frames = 50 },
@@ -497,8 +499,10 @@ title = "The Echo Fades"
 map = "rebirth_tower_8f"
 letterbox = true
 steps = [
+    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [230, 220, 255], frames = 40 },
     { do = "banner", line = "fallen_throne_echo" },
     { do = "wait", frames = 120 },
+    { do = "camera_reset", frames = 50 },
 ]

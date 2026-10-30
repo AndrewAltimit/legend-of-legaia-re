@@ -299,9 +299,13 @@ impl SceneHost {
             return None;
         }
         let seat = self.world.expansion.mode_seat.take();
+        // A networked night's podium asks from the field and stays there.
+        let was = self.world.mode;
         let entered = self.enter_expansion_map(&map, &spawn);
         self.world.expansion.mode_seat = seat;
-        self.world.mode = legaia_engine_mode::mode::SceneMode::Expansion;
+        if was == legaia_engine_mode::mode::SceneMode::Expansion {
+            self.world.mode = legaia_engine_mode::mode::SceneMode::Expansion;
+        }
         if let Err(e) = entered {
             log::warn!("expansion: mode map '{map}' did not enter: {e:#}");
             self.failed_pack_mode_map = Some(map);

@@ -311,6 +311,7 @@ impl World {
         // a loaded save names a pack that is not loaded shows without one.
         let frames = self.clock.display_frame_step.max(1);
         self.expansion.toasts.tick(frames);
+        self.age_net_podium();
         if !self.expansion.is_active() {
             return;
         }

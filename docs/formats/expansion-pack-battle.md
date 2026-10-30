@@ -205,6 +205,10 @@ Phases run forward only: a monster healed back above a threshold stays in its ph
 | `heal_pct` | Restores this percent of maximum HP. |
 | `summon` | Monsters seated into free monster seats at the next turn boundary. |
 | `music`, `sound` | Music that cross-fades in as the phase begins, and a sound played then ([audio](expansion-pack-audio.md#boss-music-phases-and-telegraphs)). |
+| `flash` | `{ color, frames }`: a full-screen flash of `color` fading out over `frames` (default `30`). |
+| `tint` | `{ color, frames, mode }`: a colour held over the battle from this phase on, ramped in over `frames` (default `40`), added (`mode = "add"`, a glow) or taken off (`"subtract"`, a shade); `[0, 0, 0]` clears an earlier phase's. |
+
+The flash and the tint are the battle's own screen layer (`BattleRuntime::phase_screen`, the cutscene screen layer's type), drawn by both hosts with a cutscene's under the battle HUD text (`World::expansion_cutscene_screen`); the fight's end clears them. A flash is `1..=600` frames and not black, a tint ramp at most `600` frames (validator errors).
 
 ### Picks, targets and telegraphs
 

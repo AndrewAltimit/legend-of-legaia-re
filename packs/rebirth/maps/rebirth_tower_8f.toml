@@ -141,13 +141,13 @@ seed = 805
 # 69, the one the retail hall seats at the south end of the carpet) raised
 # again, larger, at the carpet's north end, turned to face the approach,
 # where the talk zone and the `sovereign_rises` shot look. The hall's floor
-# stands 224 units above the grid's tier 0 (its retail records carry the
-# same lift), so the props here do too.
+# is the floor the player walks, so the props stand at 0; only the retail
+# dais at the south end steps up (its own floor records).
 [[props]]
 id = "hollow_throne_seat"
 mesh = { object = 69 }
 tile = [8, 1]
-offset = [0, 224, -60]
+offset = [0, 0, -60]
 rotation = [0.0, 180.0, 0.0]
 scale = 1.3
 solid = true
@@ -160,7 +160,7 @@ light = { color = [200, 120, 255], radius = 640, height = 120, flicker = 0.15, p
 id = "throne_lamp_west"
 mesh = { object = 70 }
 tile = [7, 1]
-offset = [0, 224, 0]
+offset = [0, 0, 0]
 solid = true
 light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, period = 40 }
 
@@ -168,17 +168,19 @@ light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, pe
 id = "throne_lamp_east"
 mesh = { object = 70 }
 tile = [9, 1]
-offset = [0, 224, 0]
+offset = [0, 0, 0]
 solid = true
 light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, period = 44 }
 
 [lighting]
 mood = "night"
 lamps = [
-  { id = "throne", tile = [8, 2], offset = [0, 160, 0], color = [190, 110, 255], radius = 900, flicker = 0.2, period = 35 },
+  { id = "throne", tile = [8, 1], offset = [0, 160, 0], color = [190, 110, 255], radius = 560, flicker = 0.2, period = 35 },
   { id = "throne_west", tile = [6, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 21 },
   { id = "throne_east", tile = [10, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 23 },
-  { id = "carpet_head", tile = [8, 5], offset = [0, 140, 0], color = [170, 120, 220], radius = 600 },
+  # The carpet's head burns warm between the braziers, so they read as fire
+  # rather than taking the throne's violet.
+  { id = "carpet_head", tile = [8, 5], offset = [0, 140, 0], color = [255, 160, 90], radius = 520, flicker = 0.25, period = 13 },
 ]
 
 # Sound: the throne's two standing lamps spit and crackle.
@@ -208,7 +210,7 @@ volume = 0.5
 id = "brazier_west"
 mesh = { asset = "models/brazier.glb" }
 tile = [5, 4]
-offset = [0, 224, 0]
+offset = [0, 0, 0]
 scale = 1.2
 solid = true
 light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 9 }
@@ -217,7 +219,7 @@ light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, per
 id = "brazier_east"
 mesh = { asset = "models/brazier.glb" }
 tile = [11, 4]
-offset = [0, 224, 0]
+offset = [0, 0, 0]
 scale = 1.2
 solid = true
 light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 11 }

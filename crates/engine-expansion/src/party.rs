@@ -10,7 +10,7 @@
 //! it, and a completed night grants the player its prize.
 
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_modes::party::{PartyNight, PlayerKey};
+use legaia_engine_modes::party::{PartyNight, PlayerKey, Standing};
 
 /// One night played alone.
 #[derive(Debug, Clone)]
@@ -64,4 +64,35 @@ impl LocalNight {
             podium_return: None,
         }
     }
+}
+
+/// A networked party night's podium in the world: the night is the
+/// room's (`engine-netplay`), directed by its host and verified by every
+/// guest, so the standings are the same on every peer; the podium's
+/// placement is the pack's `modes.toml` `podium`, the same anchor on every
+/// peer. Each peer stands its own leader on its block; the other players
+/// are their roaming avatars where this peer sees them, and stand-in
+/// figures where it does not.
+#[derive(Debug, Clone)]
+pub struct NetPodium {
+    /// The night's definition id.
+    pub night_id: String,
+    pub podium: legaia_expansion_format::modes::PartyPodium,
+    /// The night's final standings, in place order.
+    pub standings: Vec<Standing>,
+    /// This peer's player.
+    pub me: PlayerKey,
+    /// The players this peer draws as avatars (no stand-in figure).
+    pub shown: Vec<PlayerKey>,
+    /// Frames since the podium was raised.
+    pub frame: u32,
+    /// World ticks since the room last raised it: a podium the room stops
+    /// raising (the controller dropped) comes down on its own.
+    pub idle: u32,
+    /// The podium's stage this frame, while it stands on its map.
+    pub stage: Option<crate::mode_stage::StageFrame>,
+    /// The frame the in-world podium came up.
+    pub since: Option<u32>,
+    /// What the podium moved, to put back as it comes down.
+    pub ret: Option<PodiumReturn>,
 }

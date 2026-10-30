@@ -326,3 +326,145 @@ fn a_late_joiner_watches_the_rest_of_the_night() {
     let row = lobby.players.iter().find(|p| p.id == late).unwrap();
     assert_eq!(row.seat, None, "moved off the seats");
 }
+
+/// A pack of the built-in modes whose night ends on a podium on a small
+/// pack map, every peer standing on that map.
+fn podium_world(w: &mut legaia_engine_core::world::World) {
+    use legaia_engine_expansion::map::ActiveMap;
+    use legaia_expansion_format::modes::PartyPodium;
+    use std::sync::Arc;
+    let mut files = legaia_expansion_format::PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"id = \"podium-test\"\nname = \"Podium test\"\nversion = \"1.0.0\"\n".to_vec(),
+    );
+    files.insert(
+        "maps/hall.toml".into(),
+        br#"name = "Hall"
+base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
+[tiles]
+origin = [16, 16]
+rows = ["WWWWWWWWWW", "W........W", "W........W", "W........W", "W........W", "WWWWWWWWWW"]
+[tiles.legend]
+"W" = { label = "wall", walls = "all" }
+"." = { label = "floor" }
+"#
+        .to_vec(),
+    );
+    let mut pack = legaia_expansion_format::ExpansionPack::from_files(&files).expect("parses");
+    let (modes, cards) = legaia_engine_modes::active::builtin_sections();
+    pack.modes = modes.clone();
+    pack.cards = cards.clone();
+    for n in &mut pack.modes.party_nights {
+        n.podium = Some(PartyPodium {
+            map: "hall".into(),
+            tile: [5, 3],
+            facing: 4,
+            bodies: Vec::new(),
+        });
+    }
+    let pack = Arc::new(pack);
+    w.activate_expansion(pack.clone()).expect("activates");
+    let def = pack.maps["hall"].clone();
+    let grid = def.tile_grid().unwrap();
+    w.expansion.map = Some(ActiveMap::new(
+        "hall",
+        Arc::new(def),
+        Arc::new(grid),
+        (2, 2),
+        |_| false,
+    ));
+}
+
+#[test]
+fn an_online_night_ends_on_one_podium_in_every_world() {
+    let mut room = Room::open(3, lan(), 21);
+    for p in &mut room.peers {
+        podium_world(&mut p.world);
+    }
+    begin(&mut room);
+    assert!(
+        play(&mut room, 60 * 60 * 30, |_, _| {}),
+        "{:?}",
+        room.peers[0].net.chat
+    );
+    // A few frames for the blocks to rise and the avatars to report.
+    for _ in 0..90 {
+        room.step_with(&mut |_, _| 0);
+    }
+    let standings = room.peers[0].net.party().unwrap().night.standings();
+    let mut anchors = Vec::new();
+    for (i, p) in room.peers.iter().enumerate() {
+        let me = p.net.me.unwrap().0;
+        let np = p.world.net_podium().expect("the podium stands");
+        assert_eq!(np.standings, standings, "peer {i}: one set of standings");
+        let stage = p.world.pack_mode_stage().expect("drawn over the field");
+        let pod = stage.podium.as_ref().unwrap();
+        // The shared anchor: the same blocks in the same place everywhere.
+        let blocks: Vec<_> = pod.blocks.iter().map(|b| (b.place, b.centre)).collect();
+        anchors.push(blocks);
+        // This peer's leader stands on its own block.
+        let fig = pod
+            .figures
+            .iter()
+            .find(|f| f.key == me)
+            .expect("placed top three");
+        let a = &p.world.actors[usize::from(p.world.player_actor_slot.unwrap())].move_state;
+        assert_eq!(
+            (a.world_x, a.world_z),
+            (fig.pos[0] as i16, fig.pos[1] as i16)
+        );
+        // The others are its avatars where it sees them, stand-ins where not:
+        // never both, never this peer.
+        let shown: Vec<u32> = p.net.remote_avatars().iter().map(|a| a.player.0).collect();
+        for f in pod.figures.iter().filter(|f| f.key != me) {
+            let stand_in = stage.bodies.iter().any(|b| b.pos == f.pos);
+            assert_ne!(
+                stand_in,
+                shown.contains(&f.key),
+                "peer {i} figure {}",
+                f.key
+            );
+        }
+        assert!(stage.bodies.iter().all(|b| b.pos != fig.pos));
+        // The party card is the podium's caption, not a flat podium.
+        assert!(matches!(
+            p.net.party_card(),
+            Some(
+                legaia_engine_ui::expansion_modes::party::PartyCard::Podium { in_world: true, .. }
+            )
+        ));
+    }
+    assert!(anchors.windows(2).all(|w| w[0] == w[1]), "{anchors:?}");
+    // Each remote avatar a peer draws stands where its owner put it: on
+    // its block.
+    let p = &room.peers[1];
+    let pod = p.world.pack_mode_stage().unwrap().podium.clone().unwrap();
+    assert_eq!(p.net.remote_avatars().len(), 2, "the other two roam here");
+    for a in p.net.remote_avatars() {
+        let f = pod.figures.iter().find(|f| f.key == a.player.0).unwrap();
+        assert!((a.pos[0] - f.pos[0] as i32).abs() <= 1 && (a.pos[2] - f.pos[1] as i32).abs() <= 1);
+    }
+    // A press closes the night (once it is over) and takes the podium down.
+    let mut closed = false;
+    for f in 0..60 * 60u32 {
+        room.step_with(&mut |_, _| {
+            if f % 2 == 0 {
+                PadButton::Cross.mask()
+            } else {
+                0
+            }
+        });
+        if room.peers.iter().all(|p| p.net.party().is_none()) {
+            closed = true;
+            break;
+        }
+    }
+    assert!(closed, "the podium closes on a press");
+    room.step_with(&mut |_, _| 0);
+    for p in &room.peers {
+        assert!(p.net.party().is_none());
+        assert!(p.world.net_podium().is_none());
+        assert!(p.world.pack_mode_stage().is_none());
+    }
+}

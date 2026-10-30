@@ -100,6 +100,28 @@ placed objects, decoration cells and ground draw under the map (a retail room
 re-purposed with new walls and zones); with `"none"` only the map's own ground
 and props draw.
 
+### A kept room's floor
+
+Many retail rooms raise no floor through the tier grid at all (the tower
+floors' bases `teien`, `taiku2`, `korb3` and `chitei2` hold tier `0` on every
+tile): their stairs, daises and terraces stand on cells flagged `0x800` whose kind-2 trigger records give the step
+([`field-locomotion.md`](../subsystems/field-locomotion.md#floor-height-two-models)).
+The step is built into the room's own meshes, so a kept room
+(`geometry = "keep"`) walks right only with the records. The image keeps
+them: the base map's kind-2 records whose tile lies on the pack map go into
+the image's trigger block, the copied cells keep their `0x800` bit (a pack
+record written over one keeps it), and the floor sampler steps the player
+up the retail stair as it does in the retail room.
+
+The same step lifts what stands on the tile. A prop, a decoration, a
+scattered mesh and a decal on a flagged tile stand on its tier height plus
+the record's step at their own position
+(`legaia_engine_scene::expansion_map::KeptFloor`), so `offset[1] = 0` is
+the floor the player walks everywhere, on a kept room as on a map of its
+own. The workbench's map preview reads the result back: its `floor` array
+is each tile's walk height at its centre and `kept_steps` the records the
+room carries.
+
 ## The synthetic field image
 
 The engine bakes the tile layer into a `.MAP`-shaped image in the layout of
@@ -112,7 +134,7 @@ unchanged. The image is the modder's layout run through the documented format.
 | `+0x04000` collision grid | Tile `(c, r)`'s tier in byte `(c, r)`'s low nibble; its wall quarters in byte `(c, r + 1)`'s high nibble. Everything off the map is wall. |
 | `+0x00000` object records | One record per distinct ground texture, decoration mesh and prop. |
 | `+0x08000` object cells | Each tile's record index; the draw gates are derived by the grid-mark refresh. |
-| `+0x10000` trigger block | The empty four-table header chain. |
+| `+0x10000` trigger block | The four-table header chain: empty, except that a kept room carries its base map's kind-2 elevation records ([A kept room's floor](#a-kept-rooms-floor)). |
 | `+0x12000` fallback window | Zeros (no `.PCH` triggers). |
 
 The one-row shift of the wall nibble is the wall probe's `+2` Z bias
@@ -180,10 +202,10 @@ style's, or, on a kept map whose style names none, the texture the cell's
 retail record already drew, so a prop on a kept floor leaves no hole. The
 builder never writes records `1..=3`: those object ids name the
 protagonist and NPC meshes, which the field draw never takes from the
-scene pack. A prop's `offset[1]` is from tier `0` of the pack's grid, not
-from the base room's floor: a kept room whose floor stands above tier `0`
-(its own records carry the lift in their `+0x02` word) needs the same lift
-on the prop.
+scene pack. A prop's `offset[1]` is from the floor the player walks on its
+tile: its tier, plus in a kept room the retail floor step there
+([A kept room's floor](#a-kept-rooms-floor)). `0` stands the mesh's origin
+on the floor.
 
 ### Standable props
 

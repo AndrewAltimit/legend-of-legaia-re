@@ -208,6 +208,9 @@ mood = "night"
 lamps = [
   { id = "regent", tile = [8, 11], offset = [0, 100, 0], color = [255, 200, 120], radius = 800, flicker = 0.4, period = 7 },
   { id = "lever", tile = [8, 22], offset = [0, 100, 0], color = [140, 180, 255], radius = 700, flicker = 0.4, period = 9 },
+  # Work lamps along the raised tracks, so the walkways read in the dark.
+  { id = "track_w", tile = [3, 14], offset = [0, 140, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 50 },
+  { id = "track_e", tile = [13, 14], offset = [0, 140, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 53 },
 ]
 
 # ---------------------------------------------------------------------------

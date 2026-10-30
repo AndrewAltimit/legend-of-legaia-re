@@ -189,7 +189,11 @@ seed = 403
 
 [lighting]
 mood = "dusk"
-lamps = [{ id = "court_glow", tile = [16, 15], offset = [0, 60, 0], color = [90, 220, 120], radius = 800, flicker = 0.15, period = 60 }]
+lamps = [
+  { id = "court_glow", tile = [16, 15], offset = [0, 60, 0], color = [90, 220, 120], radius = 800, flicker = 0.15, period = 60 },
+  # A pale shaft over the heart, so the vault is not one green.
+  { id = "heart_shaft", tile = [16, 12], offset = [0, 320, 0], color = [235, 245, 210], radius = 520, flicker = 0.05, period = 90 },
+]
 
 [fog]
 regions = [{ rect = [11, 9, 23, 20], angle = 0.0, spread = 180.0, speed = 8 }]

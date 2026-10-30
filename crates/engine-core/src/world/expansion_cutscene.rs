@@ -821,10 +821,21 @@ impl World {
     /// The cutscene's screen layer this frame: its full-screen quads (tint,
     /// flash, fade) and the letterbox bar height in display scanlines. Empty
     /// with no run.
+    ///
+    /// In battle the boss phases' own layer (a phase's flash and held
+    /// tint, `expansion.battle.phase_screen`) draws under the cutscene's.
     pub fn expansion_cutscene_screen(&self) -> (Vec<ScreenQuad>, i16) {
+        let mut quads = if matches!(self.mode, SceneMode::Battle) {
+            self.expansion.battle.phase_screen.quads()
+        } else {
+            Vec::new()
+        };
         match self.expansion.cutscene.run.as_ref() {
-            Some(r) => (r.screen.quads(), r.screen.letterbox_lines()),
-            None => (Vec::new(), 0),
+            Some(r) => {
+                quads.extend(r.screen.quads());
+                (quads, r.screen.letterbox_lines())
+            }
+            None => (quads, 0),
         }
     }
 }

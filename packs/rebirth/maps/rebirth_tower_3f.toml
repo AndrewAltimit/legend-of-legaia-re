@@ -78,7 +78,7 @@ once = true
 
 [[triggers]]
 id = "sundial"
-rect = [10, 12, 15, 12]
+rect = [10, 12, 15, 13]
 event = { kind = "dialog", line = "sundial_offer" }
 
 [[encounters]]
@@ -106,8 +106,8 @@ table = "tower_3f"
 [[props]]
 id = "sky_glass"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [12, 10]
-offset = [0, 400, 64]
+tile = [12, 12]
+offset = [0, 250, 128]
 scale = 2.4
 animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 16, period = 240 }]
 light = { color = [170, 220, 255], radius = 1200, height = 0, flicker = 0.08, period = 90 }
@@ -190,18 +190,20 @@ volume = 0.5
 [[props]]
 id = "sundial"
 mesh = { asset = "models/sundial.glb" }
-tile = [12, 11]
-# The garden's terraces stand about 150 units over the grid's tier 0 (the
-# kept retail floor), so the set pieces here carry that lift.
-offset = [0, 150, 64]
+# Two rows south of the terrace hedge, so the follow camera (which looks
+# south across the garden) sees it over the hedge.
+tile = [12, 13]
+# A prop's height counts from the floor the player walks (on a kept room,
+# its retail floor steps included), so the plinth stands at 0.
+offset = [0, 0, 0]
 scale = 1.7
 light = { color = [255, 230, 170], radius = 520, height = 100, flicker = 0.05, period = 80 }
 
 [[props]]
 id = "sundial_ring"
 mesh = { asset = "models/armillary_ring.glb" }
-tile = [13, 11]
-offset = [-64, 380, 64]
+tile = [13, 13]
+offset = [-128, 230, 0]
 scale = 0.9
 animate = [{ kind = "spin", axis = "y", period = 600 }, { kind = "sway", axis = "x", degrees = 24.0, period = 420 }]
 
@@ -209,7 +211,7 @@ animate = [{ kind = "spin", axis = "y", period = 600 }, { kind = "sway", axis = 
 id = "fountain_west"
 mesh = { asset = "models/fountain.glb" }
 tile = [8, 15]
-offset = [0, 150, 0]
+offset = [0, 0, 0]
 scale = 1.1
 solid = true
 light = { color = [170, 220, 255], radius = 420, height = 90, flicker = 0.08, period = 50 }
@@ -218,7 +220,7 @@ light = { color = [170, 220, 255], radius = 420, height = 90, flicker = 0.08, pe
 [[emitters]]
 kind = "drips"
 rect = [8, 15, 8, 15]
-height = [230, 260]
+height = [80, 110]
 count = 16
 velocity = [0.0, 1.2, 0.0]
 spread = [0.9, 0.4, 0.9]

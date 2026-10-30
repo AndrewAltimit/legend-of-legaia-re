@@ -213,6 +213,50 @@ pub struct PhaseDef {
     /// A sound played as the phase begins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sound: Option<crate::audio::SoundRef>,
+    /// A screen flash as the phase begins: `color` fading out over
+    /// `frames`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flash: Option<PhaseFlash>,
+    /// A colour held over the battle from this phase on (ramped in over
+    /// `frames`); `color = [0, 0, 0]` clears an earlier phase's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tint: Option<PhaseTint>,
+}
+
+/// A phase's screen flash (`flash = { color = [255, 120, 40], frames = 30 }`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PhaseFlash {
+    pub color: [u8; 3],
+    #[serde(default = "flash_frames")]
+    pub frames: u32,
+}
+
+/// A phase's held battle tint (`tint = { color = [40, 0, 0], frames = 40 }`),
+/// added to the frame (a glow) or, with `mode = "subtract"`, taken off it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PhaseTint {
+    pub color: [u8; 3],
+    #[serde(default = "tint_frames")]
+    pub frames: u32,
+    #[serde(default)]
+    pub mode: crate::cutscene::TintMode,
+}
+
+/// Frames a phase flash takes to fade when `frames` is left out.
+pub const PHASE_FLASH_FRAMES: u32 = 30;
+/// Frames a phase tint takes to ramp in when `frames` is left out.
+pub const PHASE_TINT_FRAMES: u32 = 40;
+/// The longest phase flash or tint ramp, frames.
+pub const PHASE_FX_MAX_FRAMES: u32 = 600;
+
+fn flash_frames() -> u32 {
+    PHASE_FLASH_FRAMES
+}
+
+fn tint_frames() -> u32 {
+    PHASE_TINT_FRAMES
 }
 
 /// The once-per-fight survival of a lethal blow.
@@ -407,6 +451,21 @@ fn phase_problems(field: &str, ph: &PhaseDef) -> Vec<String> {
     if ph.heal_pct.is_some_and(|h| h == 0 || h > 100) {
         out.push(format!("{field}: heal_pct must be 1..=100"));
     }
+    if let Some(f) = ph.flash {
+        if f.frames == 0 || f.frames > PHASE_FX_MAX_FRAMES {
+            out.push(format!(
+                "{field}.flash: frames must be 1..={PHASE_FX_MAX_FRAMES}"
+            ));
+        }
+        if f.color == [0, 0, 0] {
+            out.push(format!("{field}.flash: a black flash shows nothing"));
+        }
+    }
+    if ph.tint.is_some_and(|t| t.frames > PHASE_FX_MAX_FRAMES) {
+        out.push(format!(
+            "{field}.tint: frames must be 0..={PHASE_FX_MAX_FRAMES}"
+        ));
+    }
     if ph.summon.len() > MAX_FORMATION_SLOTS {
         out.push(format!(
             "{field} summons {}, the monster block holds {MAX_FORMATION_SLOTS}",
@@ -462,6 +521,8 @@ moves = [{ attack = 0, weight = 3 }, { spell = 0x25 }]
 
 [[monsters.warden.script.phases]]
 when = { hp_below_pct = 50 }
+flash = { color = [255, 120, 40] }
+tint = { color = [40, 10, 0], mode = "add" }
 summon = ["guard"]
 moves = [{ spell = 0x46, charge = true, cooldown = 2 }]
 
@@ -479,6 +540,14 @@ monsters = ["warden"]
         let script = s.monsters["warden"].script.as_ref().unwrap();
         assert_eq!(script.phases.len(), 2);
         assert_eq!(script.summons().count(), 1);
+        assert_eq!(
+            script.phases[1].flash.map(|f| f.frames),
+            Some(super::PHASE_FLASH_FRAMES)
+        );
+        assert_eq!(
+            script.phases[1].tint.map(|t| t.frames),
+            Some(super::PHASE_TINT_FRAMES)
+        );
         // The formation's fight takes in the summon.
         let f = &s.formations["hall"];
         assert_eq!(s.fight_monsters("p", f).len(), 2);
@@ -500,6 +569,15 @@ monsters = ["warden"]
             .push(crate::battle::MonsterRef::Pack("ghost".into()));
         script.enrage.as_mut().unwrap().when.hp_below_pct = Some(10);
         script.immune.push(super::StatusName::Sleep);
+        script.phases[1].flash = Some(super::PhaseFlash {
+            color: [0, 0, 0],
+            frames: 0,
+        });
+        script.phases[1].tint = Some(super::PhaseTint {
+            color: [9, 9, 9],
+            frames: 900,
+            mode: Default::default(),
+        });
         // A second Caruban variant in the fight: the summon.
         s.monsters.insert(
             "ghost".into(),
@@ -515,6 +593,9 @@ monsters = ["warden"]
         assert!(has("charge_line needs charge"), "{p:?}");
         assert!(has("enrage is keyed on `when.round` alone"), "{p:?}");
         assert!(has("immunity Sleep twice"), "{p:?}");
+        assert!(has("flash: frames must be"), "{p:?}");
+        assert!(has("a black flash shows nothing"), "{p:?}");
+        assert!(has("tint: frames must be"), "{p:?}");
         assert!(has("two different versions of retail monster 172"), "{p:?}");
     }
 

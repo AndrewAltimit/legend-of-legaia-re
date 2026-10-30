@@ -240,6 +240,9 @@ pub struct NetPlay {
     frames: u32,
     /// Quick reactions (emotes) floating over a game, with their age.
     pub reactions: Vec<(String, u32)>,
+    /// A finished night's podium stands in this player's world
+    /// ([`World::show_net_podium`]): the party card is its caption.
+    podium_in_world: bool,
 }
 
 impl NetPlay {
@@ -277,6 +280,7 @@ impl NetPlay {
             departed: Vec::new(),
             frames: 0,
             reactions: Vec::new(),
+            podium_in_world: false,
         }
     }
 
@@ -488,6 +492,7 @@ impl NetPlay {
             self.drive(world, pad);
         }
         self.party_frame(world, if owns_pad { 0 } else { pad });
+        self.sync_net_podium(world);
         if owns_pad || self.party_world_blocked() {
             0
         } else {

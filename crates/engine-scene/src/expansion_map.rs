@@ -89,6 +89,98 @@ fn cell_gates(flags: u16) -> u16 {
     ((flags & 1) << 12) | ((flags & 2) << 12)
 }
 
+/// Write cell word `value` at `o`, keeping the cell's elevation-override bit
+/// (`0x800`, a kept retail stair or raised floor) so the floor sampler still
+/// reads the tile's kind-2 record.
+fn set_cell(img: &mut [u8], o: usize, value: u16) {
+    let old = u16::from_le_bytes([img[o], img[o + 1]]);
+    let v = value | (old & CELL_ELEVATION_OVERRIDE);
+    img[o..o + 2].copy_from_slice(&v.to_le_bytes());
+}
+
+use legaia_engine_field::field_elevation::{
+    CELL_ELEVATION_OVERRIDE, ElevationOverride, lookup_elevation_override,
+    parse_elevation_overrides,
+};
+
+/// A kept room's own floor steps: the base scene's kind-2 elevation
+/// records ([`legaia_engine_field::field_elevation`]) on the cells that
+/// carry the `0x800` bit. Retail raises a stair, a dais or a terrace this
+/// way rather than through the tier grid, so a kept room's walkable floor
+/// is the pack's tier height **plus** the retail step on those tiles: the
+/// image carries the records (the player walks the retail floor) and props
+/// and decorations stand on it (a prop's `offset[1]` is always from the
+/// floor the player walks).
+#[derive(Debug, Clone, Default)]
+pub struct KeptFloor {
+    records: Vec<ElevationOverride>,
+    /// The base map's cell words (`+0x8000`), for the `0x800` bit.
+    cells: Vec<u16>,
+}
+
+impl KeptFloor {
+    /// The kept floor of `def` over `base_map` (the base scene's `.MAP`);
+    /// empty unless the map keeps the base geometry.
+    pub fn new(def: &MapDef, grid: &TileGrid, base_map: Option<&[u8]>) -> Self {
+        let Some(map) = base_map.filter(|_| def.base.geometry == BaseGeometry::Keep) else {
+            return Self::default();
+        };
+        let cells: Vec<u16> = map
+            .get(OBJECT_GRID_OFFSET..OBJECT_GRID_OFFSET + GRID_DIM * GRID_DIM * 2)
+            .map(|b| {
+                b.as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_le_bytes(*c))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let [ox, oy] = def.tiles.origin.map(usize::from);
+        let inside = |r: &ElevationOverride| {
+            let (x, z) = (usize::from(r.tile_x), usize::from(r.tile_z));
+            (ox..ox + grid.width).contains(&x) && (oy..oy + grid.height).contains(&z)
+        };
+        let records = map
+            .get(TRIGGER_BLOCK_OFFSET..)
+            .map(parse_elevation_overrides)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(inside)
+            .collect();
+        Self { records, cells }
+    }
+
+    /// The kind-2 records the image carries.
+    pub fn records(&self) -> &[ElevationOverride] {
+        &self.records
+    }
+
+    /// The retail step at world `(x, z)`, world units up: the kind-2
+    /// record's whole-tile and sub-cell steps on a flagged cell, `0`
+    /// elsewhere (the tier grid alone).
+    pub fn step_up_at(&self, x: i32, z: i32) -> i32 {
+        if self.records.is_empty() || x < 0 || z < 0 {
+            return 0;
+        }
+        let (tx, tz) = (x >> 7, z >> 7);
+        let flagged = self
+            .cells
+            .get(tz as usize * GRID_DIM + tx as usize)
+            .is_some_and(|c| c & CELL_ELEVATION_OVERRIDE != 0);
+        if !flagged || tx > 0xFF || tz > 0xFF {
+            return 0;
+        }
+        lookup_elevation_override(&self.records, tx as u8, tz as u8)
+            .map_or(0, |r| -r.delta_at(x, z))
+    }
+
+    /// [`Self::step_up_at`] at map tile `(col, row)`'s centre plus `(dx, dz)`.
+    pub fn step_up_on(&self, def: &MapDef, col: u16, row: u16, dx: i32, dz: i32) -> i32 {
+        let (cx, cz) = def.tile_centre(col, row);
+        self.step_up_at(cx + dx, cz + dz)
+    }
+}
+
 /// What a pack map puts in place of its base scene's field layer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SceneOverride {
@@ -385,7 +477,10 @@ pub fn build_field_image(
         surface.as_ref(),
         cell_items,
     )?;
-    write_empty_trigger_block(&mut img);
+    // A kept room keeps its own floor steps (`KeptFloor`).
+    let kept = KeptFloor::new(def, grid, base.base_map);
+    let records: Vec<ElevationOverride> = kept.records().iter().copied().take(0x7F0).collect();
+    write_trigger_block(&mut img, &records);
     Ok(FieldImage {
         image: img,
         added_tmds: added.meshes,
@@ -577,6 +672,7 @@ fn write_objects(
     cell_items: &mut Vec<Item>,
 ) -> Result<WrittenObjects> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
+    let kept = KeptFloor::new(def, grid, base.base_map.filter(|_| keep));
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     // Record 0 is the empty slot every unnamed cell points at, and object
     // ids 1..=3 name the protagonist / NPC meshes, which the field draw never
@@ -733,7 +829,7 @@ fn write_objects(
                 continue;
             };
             let o = cell_off(ox + col, oy + row);
-            img[o..o + 2].copy_from_slice(&(slot as u16 | cell_gates(flags)).to_le_bytes());
+            set_cell(img, o, slot as u16 | cell_gates(flags));
         }
     }
     // Props: one placed record each, standing on its tile's cell. The record
@@ -834,7 +930,16 @@ fn write_objects(
                     )
                     .unwrap_or(0)
             }
-            None => i32::from(tier(col, row)) - i32::from(tier(anchor.0, anchor.1)),
+            None => {
+                i32::from(tier(col, row)) - i32::from(tier(anchor.0, anchor.1))
+                    + kept.step_up_on(
+                        def,
+                        col,
+                        row,
+                        i32::from(prop.offset[0]),
+                        i32::from(prop.offset[2]),
+                    )
+            }
         };
         let offset = [
             shift(prop.offset[0], (i32::from(col) - i32::from(anchor.0)) * 128),
@@ -858,7 +963,7 @@ fn write_objects(
         );
         let (ac, ar) = grid_tile(def, anchor.0, anchor.1);
         let o = cell_off(ac, ar);
-        img[o..o + 2].copy_from_slice(&(s as u16 | cell_gates(flags)).to_le_bytes());
+        set_cell(img, o, s as u16 | cell_gates(flags));
         let (gc, gr) = grid_tile(def, col, row);
         if prop.solid && prop.top.is_none() {
             // Close the prop's tile: its wall quarters sit one byte row down.
@@ -1027,6 +1132,7 @@ fn write_decorations(
     cell_items: Vec<Item>,
 ) -> Result<(usize, usize)> {
     use legaia_scene_formats::field_objects::FLAG_PLACED;
+    let kept = KeptFloor::new(def, grid, base.base_map);
     // Decorations name their meshes; decals are meshes built here.
     let mut decos: Vec<Item> = cell_items;
     decos.extend(def.decorations()?.into_iter().map(|d| Item {
@@ -1103,7 +1209,16 @@ fn write_decorations(
                     )
                     .unwrap_or(0) as f32
             }
-            None => tier_height(d.tile[0], d.tile[1]),
+            None => {
+                tier_height(d.tile[0], d.tile[1])
+                    + kept.step_up_on(
+                        def,
+                        d.tile[0],
+                        d.tile[1],
+                        d.offset[0].round() as i32,
+                        d.offset[2].round() as i32,
+                    ) as f32
+            }
         }
     };
     let placed_at = |img: &[u8], c: u16, r: u16| -> bool {
@@ -1300,22 +1415,30 @@ fn write_decorations(
         record[0x12..0x14].copy_from_slice(&flags.to_le_bytes());
         img[slot * OBJECT_RECORD_STRIDE..(slot + 1) * OBJECT_RECORD_STRIDE]
             .copy_from_slice(&record);
-        img[o..o + 2].copy_from_slice(&(slot as u16 | cell_gates(flags)).to_le_bytes());
+        set_cell(img, o, slot as u16 | cell_gates(flags));
     }
     Ok((dropped, usize::from(chunk)))
 }
 
-/// The `+0x10000` block's header chain with all four sub-tables empty:
-/// `offset[0] = 0x12`, each next offset the previous end plus the 2-byte gap,
-/// and the leading `u16` the last end plus 2 (`docs/formats/field-map.md`,
-/// "Trigger block").
-fn write_empty_trigger_block(img: &mut [u8]) {
-    let b = &mut img[TRIGGER_BLOCK_OFFSET..TRIGGER_BLOCK_OFFSET + 0x12];
+/// The `+0x10000` block's header chain: `offset[0] = 0x12`, each next
+/// offset the previous body's end plus the 2-byte gap, and the leading `u16`
+/// the last end plus 2 (`docs/formats/field-map.md`, "Trigger block"). The
+/// kind-2 sub-table holds `elevation` (a kept room's floor steps); the other
+/// three are empty.
+fn write_trigger_block(img: &mut [u8], elevation: &[ElevationOverride]) {
+    let b = &mut img[TRIGGER_BLOCK_OFFSET..TRIGGER_BLOCK_OFFSET + 0x2000];
     let mut off: u16 = 0x12;
     for k in 0..4 {
+        let n = if k == 2 { elevation.len() } else { 0 };
         b[2 + k * 4..4 + k * 4].copy_from_slice(&off.to_le_bytes());
-        b[4 + k * 4..6 + k * 4].copy_from_slice(&0u16.to_le_bytes());
-        off += 2;
+        b[4 + k * 4..6 + k * 4].copy_from_slice(&(n as u16).to_le_bytes());
+        if k == 2 {
+            for (i, r) in elevation.iter().enumerate() {
+                let at = usize::from(off) + i * 4;
+                b[at..at + 4].copy_from_slice(&[r.tile_x, r.tile_z, r.coarse as u8, r.quads]);
+            }
+        }
+        off += (n * 4) as u16 + 2;
     }
     b[0..2].copy_from_slice(&off.to_le_bytes());
 }

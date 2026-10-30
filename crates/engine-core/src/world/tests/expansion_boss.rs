@@ -54,6 +54,8 @@ moves = [{ attack = 0 }]
 when = { hp_below_pct = 50 }
 line = "howl"
 attack = { mul = 2.0 }
+flash = { color = [255, 0, 0], frames = 10 }
+tint = { color = [0, 0, 40], frames = 4 }
 summon = [{ kind = "monster", id = 10 }]
 
 [[monsters.dread_wolf.script.phases]]
@@ -247,6 +249,34 @@ fn phase_changes_scale_live_stats_and_queue_the_summon() {
         MonsterAction::Physical { .. }
     ));
     assert_eq!(w.expansion.battle.forced_strike, Some(vec![7, 7]));
+}
+
+#[test]
+fn a_phase_flashes_and_holds_its_tint_for_the_fight() {
+    let mut w = world();
+    w.activate_expansion(pack()).unwrap();
+    assert!(w.start_expansion_battle("den"));
+    enter(&mut w);
+    assert_eq!(w.mode, SceneMode::Battle);
+    assert!(
+        w.expansion_cutscene_screen().0.is_empty(),
+        "nothing before the phase"
+    );
+    w.actors[2].battle.hp = 290;
+    let _ = w.pick_monster_action(2);
+    let (quads, _) = w.expansion_cutscene_screen();
+    // The flash at full strength, added; the tint not yet ramped in.
+    assert!(quads.contains(&(0xFF0000, 1)), "{quads:?}");
+    for _ in 0..20 {
+        w.expansion_boss_frame();
+    }
+    // The flash is spent; the tint holds, added.
+    assert_eq!(w.expansion_cutscene_screen().0, vec![(0x000028, 1)]);
+    w.expansion_boss_end();
+    assert!(
+        w.expansion_cutscene_screen().0.is_empty(),
+        "the fight's end clears it"
+    );
 }
 
 #[test]

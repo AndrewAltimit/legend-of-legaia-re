@@ -289,7 +289,7 @@ gold = 30000
 # swings); spells are spell-table ids (0x25 Fire Breath, 0x46 Lava Breath).
 [monsters.cinder_warden.script]
 immune = ["sleep", "confuse", "stone"]
-enrage = { when = { round = 15 }, line = "warden_inferno", attack = { mul = 1.25 } }
+enrage = { when = { round = 15 }, line = "warden_inferno", attack = { mul = 1.25 }, flash = { color = [255, 90, 20], frames = 40 }, tint = { color = [80, 24, 0], frames = 60 } }
 
 [[monsters.cinder_warden.script.phases]]
 moves = [
@@ -302,6 +302,9 @@ moves = [
 when = { hp_below_pct = 50 }
 line = "warden_rage"
 sound = { kind = "sound", id = "sting_phase" }
+# Its armour splits: a white-hot flash, and the fight burns orange from here.
+flash = { color = [255, 120, 40], frames = 36 }
+tint = { color = [44, 14, 0], frames = 50 }
 attack = { mul = 1.3 }
 speed = { mul = 1.25 }
 moves = [
@@ -337,6 +340,9 @@ moves = [
 when = { hp_below_pct = 60 }
 line = "colossus_roots"
 sound = { kind = "sound", id = "sting_phase" }
+# The moss comes back: a green flash, the light under the canopy.
+flash = { color = [90, 255, 120], frames = 36 }
+tint = { color = [0, 28, 8], frames = 60 }
 heal_pct = 15
 defence = { mul = 1.3 }
 summon = ["moss_grude"]
@@ -350,6 +356,8 @@ moves = [
 when = { hp_below_pct = 25 }
 line = "colossus_bloom"
 sound = { kind = "sound", id = "sting_phase" }
+flash = { color = [220, 255, 150], frames = 40 }
+tint = { color = [24, 40, 0], frames = 40 }
 element = 0
 attack = { mul = 1.3 }
 
@@ -381,6 +389,9 @@ moves = [
 when = { hp_below_pct = 66 }
 line = "regent_guard"
 sound = { kind = "sound", id = "sting_phase" }
+# The engine stokes: a furnace flash and a warm glow.
+flash = { color = [255, 200, 120], frames = 30 }
+tint = { color = [36, 22, 0], frames = 50 }
 summon = ["brass_sentinel", "brass_sentinel"]
 moves = [
     { attack = 2, hits = 2, weight = 2 },
@@ -392,6 +403,9 @@ moves = [
 when = { hp_below_pct = 33 }
 line = "regent_iron"
 sound = { kind = "sound", id = "sting_phase" }
+# Turned to iron: the colour drains toward a cold grey-gold.
+flash = { color = [255, 255, 230], frames = 30 }
+tint = { color = [10, 26, 44], frames = 50, mode = "subtract" }
 summon = ["brass_sentinel", "brass_sentinel"]
 defence = { mul = 1.4 }
 moves = [
@@ -417,7 +431,7 @@ gold = 50000
 # 0x71 Water Hazard, 0x75 Paralyzing Wave, 0x77 Thunder Storm.
 [monsters.azure_seraph.script]
 immune = ["sleep", "confuse", "curse"]
-enrage = { when = { round = 14 }, line = "seraph_storm", intelligence = { mul = 1.2 }, moves = [
+enrage = { when = { round = 14 }, line = "seraph_storm", intelligence = { mul = 1.2 }, flash = { color = [255, 255, 255], frames = 20 }, tint = { color = [12, 20, 64], frames = 30 }, moves = [
     { spell = 0x77, weight = 1, cooldown = 1 },
     { attack = 1, hits = 3, weight = 1 },
 ] }
@@ -433,6 +447,9 @@ moves = [
 when = { hp_below_pct = 50 }
 line = "seraph_tide"
 sound = { kind = "sound", id = "sting_phase" }
+# The tide rises: a blue flash, the sanctum under water.
+flash = { color = [140, 190, 255], frames = 40 }
+tint = { color = [0, 14, 44], frames = 60 }
 element = 4
 moves = [
     { spell = 0x71, weight = 2, charge = true, ignore_mp = true, charge_line = "seraph_tide_charge", cooldown = 3 },
@@ -473,7 +490,7 @@ drop = { item = { kind = "item", id = 237 }, chance_pct = 100 }
 [monsters.hollow_sovereign.script]
 immune = ["sleep", "confuse", "numb", "stone", "curse"]
 last_stand = { line = "sovereign_last" }
-enrage = { when = { round = 20 }, line = "sovereign_end", attack = { mul = 1.5 } }
+enrage = { when = { round = 20 }, line = "sovereign_end", attack = { mul = 1.5 }, flash = { color = [255, 30, 30], frames = 30 } }
 
 [[monsters.hollow_sovereign.script.phases]]
 moves = [
@@ -486,6 +503,9 @@ moves = [
 when = { hp_below_pct = 66 }
 line = "sovereign_hollow"
 sound = { kind = "sound", id = "sting_phase" }
+# The shell cracks: a red flash, the throne room bleeds red.
+flash = { color = [220, 40, 40], frames = 40 }
+tint = { color = [0, 44, 44], frames = 60, mode = "subtract" }
 # The shell cracks and the music turns: "Apocalypse" (61).
 music = { kind = "bgm", id = 61 }
 attack = { mul = 1.2 }
@@ -500,6 +520,9 @@ moves = [
 when = { hp_below_pct = 33 }
 line = "sovereign_unmade"
 speed = { mul = 1.2 }
+# Unmade: white, then the dark of the hollow.
+flash = { color = [255, 255, 255], frames = 50 }
+tint = { color = [40, 60, 30], frames = 60, mode = "subtract" }
 # The pack's own chime (assets/audio/chime.wav) rings as it is unmade, and
 # again on every Grand Beam telegraph.
 sound = { kind = "sound", id = "chime" }
@@ -532,6 +555,8 @@ last_stand = { line = "unbound_last" }
 [[monsters.sovereign_unbound.script.phases]]
 # The unbound form arrives to the Wild Arms battle theme (73).
 music = { kind = "bgm", id = 73 }
+# It arrives in violet.
+tint = { color = [26, 0, 36], frames = 90 }
 moves = [
     { attack = 0, weight = 2 },
     { attack = 3, weight = 2 },
@@ -542,6 +567,8 @@ moves = [
 when = { hp_below_pct = 50 }
 line = "unbound_break"
 sound = { kind = "sound", id = "sting_phase" }
+flash = { color = [180, 120, 255], frames = 40 }
+tint = { color = [44, 0, 60], frames = 50 }
 attack = { mul = 1.2 }
 moves = [
     { spell = 0x74, weight = 2, charge = true, ignore_mp = true, charge_line = "unbound_charge", cooldown = 3 },
@@ -958,6 +985,8 @@ moves = [
 [[monsters.isles_hive_queen.script.phases]]
 when = { hp_below_pct = 50 }
 line = "isles_queen_rage"
+flash = { color = [255, 230, 120], frames = 30 }
+tint = { color = [30, 24, 0], frames = 50 }
 attack = { mul = 1.2 }
 speed = { mul = 1.2 }
 moves = [

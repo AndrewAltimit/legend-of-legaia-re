@@ -27,7 +27,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use legaia_engine_expansion::progression::{enemy_scaling_permille, xp_table};
-use legaia_engine_scene::expansion_map::{BaseInputs, build_field_map_image, floor_lut};
+use legaia_engine_scene::expansion_map::{BaseInputs, KeptFloor, build_field_map_image, floor_lut};
 use legaia_expansion_format::dialog::{self, DialogLine, ROW_WARN_CHARS};
 use legaia_expansion_format::manifest::PackManifest;
 use legaia_expansion_format::map::{BaseGeometry, FLOOR_TIERS, Ground, MapDef, PropMesh};
@@ -728,6 +728,9 @@ impl Core {
             },
         )?;
         let ladder = floor_lut(&def, base_lut);
+        // A kept room's own floor steps (stairs, a dais, terraces): the
+        // floor the player walks there and a prop's `offset[1]` stands on.
+        let kept = KeptFloor::new(&def, &grid, base_map.as_deref());
         let [ox, oy] = def.tiles.origin.map(usize::from);
         let byte = |c: usize, r: usize| img[COLLISION_GRID_OFFSET + (oy + r) * GRID_DIM + ox + c];
         let (w, h) = (grid.width, grid.height);
@@ -736,6 +739,7 @@ impl Core {
         let mut void = Vec::with_capacity(w * h);
         let mut corners = Vec::with_capacity(w * h);
         let mut flat = Vec::with_capacity(w * h);
+        let mut floor = Vec::with_capacity(w * h);
         for r in 0..h {
             for c in 0..w {
                 let t = grid.get(c, r).expect("in range");
@@ -756,6 +760,15 @@ impl Core {
                     byte(c + 1, r + 1) & 0x0F,
                 ];
                 flat.push(k.iter().all(|&x| x == k[0]));
+                let t0 = if terrain_walls.is_some() {
+                    0
+                } else {
+                    byte(c, r) & 0x0F
+                };
+                floor.push(
+                    i32::from(ladder[usize::from(t0)])
+                        + kept.step_up_on(&def, c as u16, r as u16, 0, 0),
+                );
                 corners.push(k.map(|n| ladder[usize::from(n)]));
             }
         }
@@ -772,6 +785,11 @@ impl Core {
             "void": void,
             "corners": corners,
             "flat": flat,
+            // The floor at each tile's centre, world units up: its tier
+            // plus, in a kept room, the retail floor step there - what the
+            // player stands on and what a prop's `offset[1]` counts from.
+            "floor": floor,
+            "kept_steps": kept.records().len(),
             "ladder": ladder.to_vec(),
             "ladder_from_base": def.floor_heights.is_empty() && base_lut.is_some(),
             "tiers": FLOOR_TIERS,

@@ -576,6 +576,73 @@ fn a_prop_on_a_kept_retail_floor_keeps_its_ground() {
 }
 
 #[test]
+fn a_kept_room_keeps_its_floor_steps_and_props_stand_on_them() {
+    // A retail dais on map tile (1, 1): its cell flagged 0x800, its kind-2
+    // record two whole steps up (64 units) - the way retail rooms raise a
+    // floor without a tier.
+    let mut def: MapDef = toml::from_str(&MAP.replace(
+        "base = { scene = { kind = \"scene\", name = \"dolk\" } }",
+        "base = { scene = { kind = \"scene\", name = \"dolk\" }, geometry = \"keep\" }",
+    ))
+    .unwrap();
+    def.props.truncate(1);
+    def.props[0].tile = [1, 1];
+    def.props[0].offset = [0, 10, 0];
+    def.props[0].solid = false;
+    let grid = def.tile_grid().unwrap();
+    let (gc, gr) = grid_tile(&def, 1, 1);
+    let mut base = vec![0u8; 0x12000];
+    let o = OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
+    base[o..o + 2].copy_from_slice(&CELL_ELEVATION_OVERRIDE.to_le_bytes());
+    // Trigger block: kind 2 holds the dais and one record off the map.
+    let b = TRIGGER_BLOCK_OFFSET;
+    let words: [u16; 9] = [0x24, 0x12, 0, 0x14, 0, 0x16, 2, 0x20, 0];
+    for (i, w) in words.iter().enumerate() {
+        base[b + i * 2..b + i * 2 + 2].copy_from_slice(&w.to_le_bytes());
+    }
+    base[b + 0x16..b + 0x1A].copy_from_slice(&[gc as u8, gr as u8, 2, 0]);
+    base[b + 0x1A..b + 0x1E].copy_from_slice(&[100, 100, 5, 0]);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: Some(&base),
+            geometry_entry: Some(99),
+            geometry_len: Some(20),
+            library: None,
+        },
+    )
+    .unwrap();
+    // The image carries the dais's record, not the off-map one.
+    let recs = parse_elevation_overrides(&out.image[TRIGGER_BLOCK_OFFSET..]);
+    assert_eq!(
+        recs,
+        [ElevationOverride {
+            tile_x: gc as u8,
+            tile_z: gr as u8,
+            coarse: 2,
+            quads: 0,
+        }]
+    );
+    // The prop's record took the cell, and the cell kept its flag.
+    assert_ne!(cell(&out.image, gc, gr) & CELL_ELEVATION_OVERRIDE, 0);
+    // The prop stands on the dais: 64 up plus its own 10 (y down).
+    let c = usize::from(cell(&out.image, gc, gr) & OBJECT_INDEX_MASK);
+    let r = &out.image[c * OBJECT_RECORD_STRIDE..];
+    assert_eq!(i16::from_le_bytes([r[0x02], r[0x03]]), -74);
+    // A map that does not keep the room carries nothing.
+    let kept = KeptFloor::new(&def, &grid, Some(&base));
+    assert_eq!(kept.step_up_on(&def, 1, 1, 0, 0), 64);
+    assert_eq!(kept.step_up_on(&def, 2, 1, 0, 0), 0);
+    def.base.geometry = BaseGeometry::None;
+    assert!(
+        KeptFloor::new(&def, &grid, Some(&base))
+            .records()
+            .is_empty()
+    );
+}
+
+#[test]
 fn no_mesh_record_takes_a_protagonist_object_id() {
     // Object ids 1..=3 never draw from the scene pack, so every record the
     // builder writes sits at 4 or past.

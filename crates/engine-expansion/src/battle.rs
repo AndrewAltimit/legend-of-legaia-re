@@ -588,6 +588,9 @@ pub struct BattleRuntime {
     /// Boss banner lines waiting for the battle's message line to clear
     /// (a phase change and a charge on one turn show one after the other).
     pub boss_banners: std::collections::VecDeque<String>,
+    /// The boss phases' screen layer this fight: a phase's flash and its
+    /// held tint (`[[...script.phases]]` `flash` / `tint`).
+    pub phase_screen: crate::cutscene::ScreenLayer,
 }
 
 #[cfg(test)]
