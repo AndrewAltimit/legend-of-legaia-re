@@ -1215,7 +1215,6 @@ div.play-vis-head { cursor: default; }
   let pickerPack = null;
   /* The pack map running now (its id), from the entry's state. */
   let activePackMap = null;
-  const escHtml = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
   function renderList(filter) {
     const f = (filter || '').trim().toLowerCase();
@@ -1224,12 +1223,12 @@ div.play-vis-head { cursor: default; }
       const maps = pickerPack.maps
         .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f));
       if (maps.length) {
-        parts.push(`<div class="play-scene-group is-pack">${escHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack</span></div>`);
+        parts.push(`<div class="play-scene-group is-pack">${window.escapeHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack</span></div>`);
         for (const m of maps) {
           const cls = m.id === activePackMap ? 'play-scene-item is-pack is-active' : 'play-scene-item is-pack';
           parts.push(
-            `<button class="${cls}" type="button" data-pack-map="${escHtml(m.id)}">` +
-            `<span>${escHtml(m.name || m.id)}</span><span class="play-scene-code">${escHtml(m.id)}</span></button>`);
+            `<button class="${cls}" type="button" data-pack-map="${window.escapeHtml(m.id)}">` +
+            `<span>${window.escapeHtml(m.name || m.id)}</span><span class="play-scene-code">${window.escapeHtml(m.id)}</span></button>`);
         }
       }
     }
