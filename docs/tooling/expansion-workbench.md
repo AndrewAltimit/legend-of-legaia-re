@@ -13,7 +13,10 @@ tab, and nothing is uploaded.
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
 | Form kit and section editors | `site/js/expansion-workbench-forms.js` |
 | Tile painter | `site/js/expansion-workbench-map.js` |
-| Map detail layer (prop sources, animators, lights, decorations, entrances) | `site/js/expansion-workbench-detail.js` |
+| Map detail layer (prop sources, lights, fog, emitters, entrances) | `site/js/expansion-workbench-detail.js` |
+| Map detail list forms (decorations, brushes, edge runs, decals, animated materials, animators, the texture-cell picker) | `site/js/expansion-workbench-detail-forms.js` |
+| Point lists with a 2D pad (race centre lines, prop-hunt blockers) | `site/js/expansion-workbench-points.js` |
+| Contextual help (the "?" per tab and section) | `site/js/expansion-workbench-help.js` |
 | Sharing: import gates, drop, Share panel | `site/js/expansion-workbench-share.js` |
 | Pack library (shared with the play page) | `site/js/play-pack-library.js` |
 | 3D preview and Play here | `site/js/expansion-workbench-preview3d.js`; on the play page `site/js/play-expansion-live.js` and `site/js/play-view-editor-overlay.js` |
@@ -49,7 +52,7 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `map_preview(map)` | Per tile the floor tier and wall quarters, per cell the four corner heights and whether they agree. |
 | `cutscene_timeline(pack, id, picks)` | A cutscene played on the engine's sequencer against a stand-in world (`legaia_engine_expansion::cutscene::preview`): each executed step with its frame and track, the frame it ends on, the flags it raises and the fight it ends on. `picks` is the option taken at each menu. |
 | `asset_bytes(path)` / `audio_info(path)` | An asset's bytes (an audio preview) and an audio file's probe: `{ rate, channels, frames, seconds, loop }` or `{ error }`. |
-| `scene_objects(scene)` | A base scene's geometry pack: per mesh its primitive count, extent, how often the retail scene places it, and its footprint seen from above. |
+| `scene_objects(scene)` | A base scene's geometry pack: per mesh its primitive count, extent, how often the retail scene places it, and its footprint seen from above; and `cells`, every texture cell (`tpage`, `clut`, `tile`) the pack's textured prims sample, most used first. |
 
 A file the editor left unchanged exports as the bytes it was loaded from:
 `pack_files` compares each file's canonical form (what `to_files` writes for
@@ -91,7 +94,7 @@ content offer only ids the pack defines.
 | Tab | Edits |
 |---|---|
 | Manifest | `pack.toml`. |
-| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses. |
+| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses (music, intro and outro cutscenes, rewards). |
 | Progression | Multipliers, the curve (retail, scaled, banded, explicit) with a live chart against retail, enemy scaling, level-up rewards. |
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
 | Dialog | Lines with a per-row check under the text: the 36-character row warning and any markup with no glyph. |
@@ -100,7 +103,7 @@ content offer only ids the pack defines.
 | Items | Pack items (kind, look, prices, the effect of a consumable, the stats, passives, element and set of equipment), sets and their tiers, shops and their gated stock. Every item picker elsewhere (drops, steals, rewards, collect objectives) offers retail and pack items together. |
 | Arts | Pack arts: the command string from arrow buttons labelled with the hero's arm mapping, checked against the disc's arts-name table (a combo equal to or containing a retail one is flagged); the segment list, each a retail clip of the hero picked by name, with its power bytes and beats; a damage preview through the retail melee kernel for an ATK and DEF; rider, learn conditions; chains and their finisher. |
 | Spells | Pack Seru: the base Seru (named from the disc), MP, power and growth with the per-level table, element, target, rider, who learns it, and the learn conditions with the captured pack monster. |
-| Modes | Poker tables, card duels (on a map: the table, its opponent, spectators, surface and sounds), golf courses and race tracks (on a map: spawn, surfaces, waypoints, the NPCs in the other seats), prop hunt arenas, party nights. |
+| Modes | Poker tables, card duels (on a map: the table, its opponent, spectators, surface and sounds), golf courses and race tracks (on a map: spawn, surfaces, waypoints, the NPCs in the other seats), prop hunt arenas, party nights (rounds, prizes, and a podium in the world: its map, block tile, facing and the NPCs that stand in for the rivals). A centre line and a set of blockers are point lists on a 2D pad (below). |
 | Audio | `audio.toml`: tracks and sounds (file, gain, normalisation, loop; an import into `assets/audio/`, a Play button through the browser's own decoder, the validator's probe of rate, length and the file's own loop), the battle / boss / victory picks and the music per mode kind or instance. Every music field picks retail cues by sound-test name or a pack track. |
 | Maps | The tile painter; map settings with arrival cutscenes and the entrances from retail scenes; the detail layer; a Sound box for the map's `[audio]`: map music, the zone fade, music zones and ambient sources. |
 | Files | Each exported file, to copy or download on its own. |
@@ -108,8 +111,9 @@ content offer only ids the pack defines.
 ## Coverage
 
 Every part of the pack format against what edits it on the page. **Form**
-is typed fields with pack and disc pickers; **text list** a typed text box
-parsed on every change (`x, z` per line); **JSON** a JSON box parsed on
+is typed fields with pack and disc pickers; a **list** form adds, removes,
+duplicates and reorders its items; a **point list** is a list of rows beside
+a 2D pad that a click adds to and a drag moves; **JSON** a JSON box parsed on
 change with the error shown in place. Every row's fields carry their
 validator path, so a check clicks through to the field.
 
@@ -120,23 +124,24 @@ validator path, so a check clicks through to the field.
 | `battle.toml` | Boss script: phases, moves, summons, immunities, last stand | Form (phase list) |
 | `battle.toml` | Formations, seats | Form |
 | `battle.toml` | Formation waves (`wipe` / `refill`, count, max standing) | Form (wave list) |
-| `battle.toml` | Encounter overrides, bosses, reward items | Form |
+| `battle.toml` | Encounter overrides, bosses (intro / outro cutscenes), reward items | Form |
 | `progression.toml` | Multipliers, XP curve, enemy scaling, level rewards | Form, live chart |
 | `quests.toml` | Quests, prerequisites, objectives, rewards, repeat | Form |
 | `quests.toml` | Challenges: rules, score, rewards | Form |
 | `dialog.toml` | Lines, choices | Form, per-row check |
-| `cutscenes.toml` | Cutscenes, main and named tracks, steps | Form (step list), timeline |
+| `cutscenes.toml` | Cutscenes, main and named tracks, steps (the `banner` step among them) | Form (step list), timeline |
 | `cards.toml` | Cards, boosters, sell prices, drop rules (monster, formation, boss, mode) | Form |
 | `cards.toml` | Starter deck | Form (ordered list) |
 | `cards.toml` | Dealers | Form |
 | `items.toml` | Items, effects, equipment, sets, shops, gated stock | Form |
 | `arts.toml` | Arts, segments, learn conditions, chains | Form, damage preview |
 | `spells.toml` | Pack Seru, growth, learn conditions | Form |
-| `modes.toml` | Poker, on a map with a table (players, spectators, surface, sounds); prop hunt; party nights | Form |
+| `modes.toml` | Poker, on a map with a table (players, spectators, surface, sounds); prop hunt; party nights and their podium | Form |
 | `modes.toml` | Card duels, on a map with a table (opponent, spectators, surface, sounds) | Form |
 | `modes.toml` | Golf: hole grids, or a map course (spawn, surfaces, golfers, tee, cup, area) | Form |
-| `modes.toml` | Races: centre-line points, or a map race (spawn, waypoints, racers) | Text list / Form |
-| `modes.toml` | Prop hunt blockers | Text list |
+| `modes.toml` | Races: centre-line points, or a map race (spawn, waypoints over the map's tiles, racers) | Point list / Form |
+| `modes.toml` | Prop hunt blockers (drawn on the pad among the decoys) | Point list |
+| `modes.toml` | Table seats: NPC, name, clips side by side | Form |
 | `audio.toml` | Tracks, sounds, music picks | Form, playback |
 | `maps/<id>.toml` | Settings, base, arrival cutscenes | Form |
 | `maps/<id>.toml` | Entrances from retail scenes | Form (list) |
@@ -146,14 +151,14 @@ validator path, so a check clicks through to the field.
 | `maps/<id>.toml` | Prop mesh source and light | Form |
 | `maps/<id>.toml` | Terrain: sculpt strokes, resolution and settings | Sculpt tool, form |
 | `maps/<id>.toml` | Terrain materials, cliff, water table, horizon, shape list | JSON |
-| `maps/<id>.toml` | Decorations, scatter brushes, edge runs, animated materials, decals, prop animators | JSON |
+| `maps/<id>.toml` | Decorations, scatter brushes (meshes, cluster), edge runs, decals, animated materials, prop animators | Form (lists), tile and rectangle Pick on the painter, texture-cell picker |
 | `assets/` | glTF models, audio | Import only |
 | `README.md`, licences | Documentation | Carried unchanged |
 
 What is not on the page: the run rules (difficulty, New Game+, ironman,
 randomizer, Boss Rush) are a New Game screen choice of the player
 ([`run-rules.md`](../subsystems/run-rules.md)), not pack content, and the
-JSON rows stay JSON while the map editor's 3D and brush tools are built.
+terrain's tables stay JSON while the terrain editor's own tools are built.
 
 ## The page
 
@@ -173,6 +178,12 @@ coordinate's users; anything else is a text search. Empty, it lists the
 pack's flags and counters with their set and read counts, flagging one read
 and never set.
 
+**Help.** Each tab opens with the file it edits and a **?** to the format
+reference's section for it, and each section heading with a reference
+section of its own carries one too (the map detail boxes, a prop's
+animators, the battle, quests, cards, items, arts, modes and audio
+sections). The links open the site's format pages in a new tab.
+
 The pack bar shows **unsaved changes** while the pack differs from what was
 loaded or last downloaded, and the autosave's state (saved at a time, or
 unavailable without browser storage). `Ctrl+S` downloads the `.lxpack`, `F8`
@@ -186,6 +197,20 @@ over the disc's first scene), or as a **clone of Rebirth** under the
 modder's id, name and version 0.1.0; the clone's other files are Rebirth's
 own bytes until edited.
 
+## Point lists
+
+A race's centre line (`points`, in the race's own units, or `waypoints`, the
+tiles of its map) and a prop-hunt arena's `blockers` are rows of typed
+numbers beside a 2D pad. The pad fits the arena's `bounds` (a race off a map
+fits its points; a map race draws the map's tiles in the painter's
+colours). A click on empty pad adds a point into the leg of the loop it
+lengthens least (the end, while there are two points or fewer; a race's
+`boost_segments` count legs, so check them after) and a drag draws a
+blocker; a drag on a point or a blocker moves it; the row being edited is
+outlined. Each row moves up and down, duplicates and removes, and its
+validator path (`races[0].points[3]`) takes a check's click. A drag is one
+step of the page's undo.
+
 ## Round trip
 
 `crates/web-expansion/tests/rebirth_round_trip.rs` pins the export:
@@ -195,7 +220,11 @@ own bytes until edited.
 - an edit and its revert, in the manifest, a section, a cutscene and a map,
   export the loaded bytes again;
 - every section file the page edits exports its edit;
-- a shop row in either spelling (bare or `{ item }`) is the same row.
+- a shop row in either spelling (bare or `{ item }`) is the same row;
+- opening every map's detail forms and the modes point lists, which fill an
+  absent list with `[]` and the lighting and fog boxes with their defaults,
+  exports the loaded bytes; so does a Duplicate and its Remove, a reorder
+  and its reverse, and a material's kind switched and switched back.
 
 A file keeps its loaded bytes while its canonical form (`to_files` of the
 edited pack) equals the loaded pack's. An edited file is re-serialised
@@ -213,7 +242,7 @@ zone, prop and NPC. An NPC's model picker lists the base scene's retail
 placements by the first line each one says (the only name retail gives an
 NPC) and stores only the `npc` coordinate; a selected prop edits its
 standable `top` and footprint, and a legend entry its visible `wall` (a box or
-a base-scene mesh). Each stroke is one step of the page's undo (`Ctrl+Z` / `Ctrl+Y`); `Ctrl+wheel`
+a base-scene mesh). Each stroke is one step of the page's undo (`Ctrl+Z` / `Ctrl+Y`; the painter keeps no history of its own); `Ctrl+wheel`
 zooms; a right or middle drag, or Space with a drag, pans. A placed prop draws
 as its mesh's footprint, rotated by its yaw.
 
@@ -222,20 +251,33 @@ another scene's pack (`{ scene, object }`), a PROT coordinate, or a glTF model
 in the pack's `assets/`; **Import glTF** reads a `.glb`, `.gltf` or `.png`
 from the user's machine into `assets/models/` (`ExpansionWorkbench::add_asset`,
 kept in the session's extras with the pack's other files and exported with
-it - nothing is uploaded). The prop's animators are a JSON list and its light
-a form. The **Detail layer** box under the selection holds the map's
-`lighting` (mood and lamps), `fog` regions and particle `emitters` as forms,
-and its `decor`, `scatter`, `edges` and `materials` as JSON editors, each parsed on change with the error shown in place, plus quick adds
-for a scatter brush over the whole map and a lamp at its centre
+it - nothing is uploaded). The prop's **animators** (spin, sway, bob, orbit,
+pulse, each with its period and phase) are a list form, and its light a form.
+
+The **Detail layer** box under the selection holds the map's `decor`,
+`scatter`, `edges`, `decals` and `materials` as list forms, then its
+`lighting` (mood and lamps), `fog` regions and particle `emitters`, plus
+quick adds for a scatter brush over the whole map and a lamp at its centre
 ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#decorations)).
-The `decals` section has its own JSON editor there, and
-an NPC's form has a **Scenery** checkbox (draws and plays its clip, no talk,
-no collision). The canvas draws every decoration (green dots) and decal
-(blue dots) where the map bakes it: `map_preview` expands the map's
-`decor`, `scatter`, `edges` and `decals` and returns the positions
-(`decor`), so a brush's coverage shows as it is edited. It builds the field
-image without decorations and with every non-base prop mesh as mesh `0`
-(neither touches the collision grid it reads).
+Every item adds, duplicates (a fresh id), moves up and down and removes;
+every field is the TOML key with its validator path. A decoration, brush,
+edge run or decal names its mesh with the prop's mesh-source editor. A
+tile or rectangle field has a **Pick** button: the painter shows a prompt and
+the next click (a drag, for a rectangle) on the canvas fills the field
+(`Esc` cancels). A decal is placed once on a tile or brushed over a
+rectangle, with its further `cells`; a material switches between palette
+cycle, hue cycle and texel scroll, and its palette picks from the palettes
+the base scene samples. A **texture cell** (a decal's, a scroll's) picks from
+the cells the base scene's meshes sample (`scene_objects`' `cells`, labelled
+page, palette, cell and prim count), takes the three words by hand, and
+shows the page's 8 x 8 atlas as a grid of buttons, the sampled cells marked:
+a coordinate and a count, never a texel. An NPC's form has a **Scenery**
+checkbox (draws and plays its clip, no talk, no collision). The canvas draws
+every decoration (green dots) and decal (blue dots) where the map bakes it:
+`map_preview` expands the map's `decor`, `scatter`, `edges` and `decals` and
+returns the positions (`decor`), so a brush's coverage shows as it is
+edited. It builds the field image without decorations and with every
+non-base prop mesh as mesh `0` (neither touches the collision grid it reads).
 
 The **Terrain** box turns a map's `[terrain]` on and holds its knobs, the
 water level, and the `materials`, `cliff`, `water`, `sky` and `shapes`

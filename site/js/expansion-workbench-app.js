@@ -39,6 +39,7 @@ import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
 import { createFind } from './expansion-workbench-xref.js';
 import { attachShare } from './expansion-workbench-share.js';
+import { addSectionHelp } from './expansion-workbench-help.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -255,6 +256,7 @@ function rerender() {
   const tab = TABS.find((t) => t[0] === S.tab);
   try {
     tab[3](ctx, panel);
+    addSectionHelp(tab[0], tab[2], panel);
   } catch (e) {
     panel.append(h('div', { class: 'wb-status is-err' }, 'Editor error: ' + errText(e)));
     console.error(e);

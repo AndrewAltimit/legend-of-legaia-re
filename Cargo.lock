@@ -3290,6 +3290,7 @@ dependencies = [
  "legaia-gamedata",
  "legaia-iso",
  "legaia-scene-formats",
+ "legaia-tmd",
  "serde",
  "serde_json",
  "wasm-bindgen",

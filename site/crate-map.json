@@ -1612,10 +1612,13 @@
     "mode_stage",
     "modes",
     "party",
+    "podium_stage",
+    "poker_stage",
     "progression",
     "quest",
     "quest_challenge",
     "quest_save",
+    "save_compat",
     "spells",
     "toast"
    ],
@@ -3070,6 +3073,7 @@
     "cards",
     "cutscene",
     "dialog",
+    "diff",
     "items",
     "manifest",
     "map",
@@ -3080,8 +3084,12 @@
     "progression",
     "quest",
     "refs",
+    "share",
     "spells",
-    "validate"
+    "terrain",
+    "terrain_rules",
+    "validate",
+    "version"
    ],
    "band": "families",
    "track": "patcher",
@@ -4360,6 +4368,7 @@
     "patcher",
     "render-kernels",
     "scene-formats",
+    "web-expansion",
     "web-minigames",
     "web-play",
     "web-viewer"
@@ -4516,7 +4525,8 @@
     "game-tables",
     "gamedata",
     "iso",
-    "scene-formats"
+    "scene-formats",
+    "tmd"
    ],
    "dev_deps": [],
    "bins": [],
@@ -4706,6 +4716,7 @@
     "play_dev_menu",
     "play_dialog",
     "play_expansion",
+    "play_expansion_live",
     "play_field_fx",
     "play_field_hud",
     "play_fishing",

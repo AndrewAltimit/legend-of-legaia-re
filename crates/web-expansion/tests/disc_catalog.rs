@@ -55,6 +55,12 @@ fn catalog_and_rebirth_against_the_disc() {
     let n = objs["objects"].as_array().unwrap().len();
     assert!(n > 19, "tower has {n} pack meshes");
     assert!(objs["entry"].is_u64());
+    // The texture-cell picker's list: the cells the pack's meshes sample,
+    // most used first, each a valid atlas cell.
+    let cells = objs["cells"].as_array().unwrap();
+    assert!(cells.len() > 4, "tower samples {} cells", cells.len());
+    assert!(cells.iter().all(|c| c["tile"].as_u64().unwrap() < 64));
+    assert!(cells[0]["prims"].as_u64() >= cells[cells.len() - 1]["prims"].as_u64());
     let map = &loaded["pack"]["maps"]["rebirth_tower_1f"];
     let p = core.map_preview(&map.to_string());
     assert!(p["error"].is_null(), "{p}");

@@ -4,12 +4,16 @@
  * pack's assets/), its animators and light, and the map's decorations,
  * brushes, edge runs, lighting, animated materials and fog.
  *
- * The fields are the TOML of docs/formats/expansion-pack-maps.md one to one:
- * a prop's mesh and light as forms, the list sections as JSON editors
- * (parsed on every change, the error shown in place), so whatever a modder
- * writes by hand round-trips through the page.
+ * The fields are the TOML of docs/formats/expansion-pack-maps.md one to one,
+ * all as forms: a prop's mesh and light here, the list sections (decorations,
+ * brushes, edge runs, decals, animated materials, a prop's animators) in
+ * expansion-workbench-detail-forms.js. A field the form never touches keeps
+ * the value it was loaded with, so whatever a modder writes by hand
+ * round-trips through the page.
  */
 import { h, grid, listEd, gateBox } from './expansion-workbench-forms.js';
+import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd } from './expansion-workbench-detail-forms.js';
+import { helpLink } from './expansion-workbench-help.js';
 
 const MESH_KINDS = [
   ['object', 'base scene mesh'],
@@ -70,29 +74,10 @@ export function propMeshEditor(ctx, mctx, prop, path, basePicker) {
   return box;
 }
 
-/** A JSON editor for `owner[key]` (a list or table section). */
-function jsonEditor(mctx, owner, key, label, hint, empty) {
-  const ta = h('textarea', { rows: 6, spellcheck: 'false', class: 'xw-json', 'aria-label': label });
-  ta.value = JSON.stringify(owner[key] == null ? empty : owner[key], null, 1);
-  const err = h('div', { class: 'xw-note' });
-  ta.addEventListener('change', () => {
-    try {
-      const v = JSON.parse(ta.value || 'null');
-      if (v == null || (Array.isArray(v) && !v.length)) delete owner[key];
-      else owner[key] = v;
-      err.textContent = '';
-      mctx.changed(false);
-    } catch (e) {
-      err.textContent = 'Not JSON: ' + (e && e.message ? e.message : e);
-    }
-  });
-  return h('div', { class: 'xw-field is-wide', 'data-path': key }, h('span', {}, label, h('span', { class: 'xw-hint' }, ' ' + hint)), ta, err);
-}
-
 /** A prop's animators and light. */
 export function propDetail(mctx, prop, path) {
   const box = h('div', { 'data-path': path });
-  box.append(jsonEditor(mctx, prop, 'animate', 'Animators', 'spin / sway / bob / orbit / pulse, e.g. [{"kind":"spin","period":300}]', []));
+  animatorsEd(mctx, box, prop, path);
   const on = h('input', { type: 'checkbox' });
   on.checked = !!prop.light;
   on.addEventListener('change', () => {
@@ -113,16 +98,18 @@ export function propDetail(mctx, prop, path) {
   return box;
 }
 
-/** The map's detail sections, and quick adds for a brush and a lamp. */
-export function renderDetail(ctx, mctx, side, map) {
+/** The map's detail sections, and quick adds for a brush and a lamp.
+ * `tools`: the painter's `meshEditor(owner, path)`, `pickTile({ rect, done })`
+ * and `cells()` (the texture cells the base scene samples). */
+export function renderDetail(ctx, mctx, side, map, tools) {
   const old = side.querySelector('.xw-detailbox');
   if (old) old.remove();
   const box = h('div', { class: 'xw-box xw-detailbox' });
   const [w, hgt] = [Math.max(0, ...map.tiles.rows.map((r) => [...r].length)), map.tiles.rows.length];
-  box.append(h('div', { class: 'xw-box-head' }, 'Detail layer', h('span', { class: 'xw-sp' }),
+  box.append(h('div', { class: 'xw-box-head' }, 'Detail layer', helpLink('../formats/expansion-pack-maps.html#decorations', 'the detail layer'), h('span', { class: 'xw-sp' }),
     h('button', {
       type: 'button', class: 'wb-mini', onclick: () => {
-        (map.scatter = map.scatter || []).push({ id: `brush_${map.scatter.length + 1}`, rect: [0, 0, Math.max(0, w - 1), Math.max(0, hgt - 1)], density: 0.3, seed: Date.now() % 100000, jitter: 40, scale: [0.6, 1.0], meshes: [{ mesh: { object: 0 }, weight: 1 }] });
+        (map.scatter = map.scatter || []).push({ id: `brush_${map.scatter.length + 1}`, rect: [0, 0, Math.max(0, w - 1), Math.max(0, hgt - 1)], density: 0.3, seed: Date.now() % 100000, jitter: 40, yaw: [0, 360], scale: [0.6, 1.0], tilt: 0, on: '', keep_clear: true, cluster: null, meshes: [{ mesh: { object: 0 }, weight: 1, scale: null, y: 0 }] });
         ctx.changed(true);
       },
     }, '+ Scatter brush'),
@@ -134,11 +121,12 @@ export function renderDetail(ctx, mctx, side, map) {
       },
     }, '+ Lamp')));
   box.append(h('p', { class: 'xw-note' }, 'Decorations draw only and stack any number a tile; they bake into one mesh per tile when the map loads. A brush is seeded, so the same file paints the same floor.'));
-  box.append(jsonEditor(mctx, map, 'decor', 'Decorations', '[{mesh, tile, offset, rotation, scale}]', []));
-  box.append(jsonEditor(mctx, map, 'scatter', 'Scatter brushes', '[{rect, meshes, density, seed, jitter, yaw, scale, tilt, on, keep_clear, cluster}]', []));
-  box.append(jsonEditor(mctx, map, 'edges', 'Edge runs', '[{mesh, walls, on, every, phase, inset, y, yaw, scale, jitter, yaw_jitter, scale_range, seed}]', []));
-  box.append(jsonEditor(mctx, map, 'materials', 'Animated materials', '[{kind: cycle|hsv|scroll, ...}]', []));
-  box.append(jsonEditor(mctx, map, 'decals', 'Decals', '[{cell, tile | rect, density, size, sides, span, yaw, color}]', []));
+  const dctx = Object.assign(Object.create(mctx), tools || {});
+  decorEd(dctx, box, map);
+  scatterEd(dctx, box, map);
+  edgesEd(dctx, box, map);
+  decalsEd(dctx, box, map);
+  materialsEd(dctx, box, map);
   lightingEd(mctx, box, map);
   fogEd(mctx, box, map);
   emittersEd(mctx, box, map);
@@ -155,7 +143,7 @@ const RECT = { k: 'rect', t: 'tuple', n: 4, names: ['col0', 'row0', 'col1', 'row
 function lightingEd(mctx, box, map) {
   const lt = map.lighting || (map.lighting = { mood: null, lamps: [] });
   const sec = h('details', { class: 'xw-box', 'data-path': 'lighting', open: (lt.lamps || []).length ? true : null },
-    h('summary', { class: 'xw-box-head' }, `Lighting (${(lt.lamps || []).length} lamp(s))`, h('span', { class: 'xw-hint' }, ' enhanced lighting only; the faithful mode draws baked colours')));
+    h('summary', { class: 'xw-box-head' }, `Lighting (${(lt.lamps || []).length} lamp(s))`, h('span', { class: 'xw-hint' }, ' enhanced lighting only; the faithful mode draws baked colours')), helpLink('../formats/expansion-pack-maps.html#lights', 'lights'));
   sec.append(grid(mctx, lt, [
     { k: 'mood', t: 'osel', opts: ['day', 'dusk', 'night', 'cave'], label: 'Mood', none: '(the base scene\'s)' },
   ], 'lighting'));
@@ -180,7 +168,7 @@ function lightingEd(mctx, box, map) {
 function fogEd(mctx, box, map) {
   const fg = map.fog || (map.fog = { regions: [] });
   const sec = h('details', { class: 'xw-box', 'data-path': 'fog', open: (fg.regions || []).length ? true : null },
-    h('summary', { class: 'xw-box-head' }, `Fog (${(fg.regions || []).length} region(s))`, h('span', { class: 'xw-hint' }, ' drifting wisps, the retail fog pool')));
+    h('summary', { class: 'xw-box-head' }, `Fog (${(fg.regions || []).length} region(s))`, h('span', { class: 'xw-hint' }, ' drifting wisps, the retail fog pool')), helpLink('../formats/expansion-pack-maps.html#fog', 'fog'));
   listEd(mctx, sec, fg, 'regions', 'fog', {
     add: 'Region',
     make: () => ({ rect: [0, 0, 3, 3], angle: 0, spread: 90, speed: 24 }),
@@ -198,7 +186,7 @@ function fogEd(mctx, box, map) {
 /** `[[emitters]]`: particle emitters; every field past the kind overrides its preset. */
 function emittersEd(mctx, box, map) {
   const sec = h('details', { class: 'xw-box', 'data-path': 'emitters', open: (map.emitters || []).length ? true : null },
-    h('summary', { class: 'xw-box-head' }, `Particle emitters (${(map.emitters || []).length})`, h('span', { class: 'xw-hint' }, ' a kind is a preset; a field left empty keeps it')));
+    h('summary', { class: 'xw-box-head' }, `Particle emitters (${(map.emitters || []).length})`, h('span', { class: 'xw-hint' }, ' a kind is a preset; a field left empty keeps it')), helpLink('../formats/expansion-pack-maps.html#particles', 'particles'));
   listEd(mctx, sec, map, 'emitters', '', {
     add: 'Emitter',
     make: () => ({ id: '', kind: 'embers', rect: [0, 0, 1, 1], seed: Date.now() % 100000 }),

@@ -16,6 +16,8 @@
  * the names it shows come from the user's disc and stay in this tab.
  */
 
+import { pointListEd, mapBackground } from './expansion-workbench-points.js';
+
 const esc = window.escapeHtml;
 
 export const ELEMENTS = ['Earth', 'Water', 'Fire', 'Wind', 'Thunder', 'Light', 'Dark', 'Neutral'];
@@ -374,18 +376,36 @@ export function listEd(ctx, parent, owner, key, path, o) {
   const p = joinPath(path, key);
   const wrap = h('div', { 'data-path': p });
   if (o.title) wrap.append(h('h4', { class: 'xw-sub' }, o.title, o.hint ? h('span', { class: 'xw-hint' }, ` ${o.hint}`) : null));
+  // `o.fold`: each item is a fold, shut but for the one opened, added, or
+  // holding a pending jump (the page opens a jump's folds), so a long list
+  // reads as its labels.
+  const opened = ctx.sel ? (ctx.sel.__open = ctx.sel.__open || {}) : {};
   arr.forEach((item, i) => {
     const ip = joinPath(p, i);
-    const box = h('div', { class: 'xw-box', 'data-path': ip });
-    const head = h('div', { class: 'xw-box-head' }, o.label ? o.label(item, i) : `#${i + 1}`, h('span', { class: 'xw-sp' }));
+    const box = h(o.fold ? 'details' : 'div', { class: 'xw-box' + (o.fold ? ' xw-fold' : ''), 'data-path': ip, open: o.fold && opened[ip] ? true : null });
+    if (o.fold) box.addEventListener('toggle', () => { if (box.open) opened[ip] = true; else delete opened[ip]; });
+    const head = h(o.fold ? 'summary' : 'div', { class: 'xw-box-head' }, o.label ? o.label(item, i) : `#${i + 1}`, h('span', { class: 'xw-sp' }));
     if (i > 0) head.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move up', onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↑'));
+    if (o.dup && i < arr.length - 1) head.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move down', onclick: () => { arr.splice(i + 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↓'));
+    // `o.dup`: a Duplicate button; a function also fixes up the copy (a fresh id).
+    if (o.dup) {
+      head.append(h('button', {
+        type: 'button', class: 'wb-mini', title: 'Duplicate', onclick: () => {
+          const copy = JSON.parse(JSON.stringify(item));
+          if (typeof o.dup === 'function') o.dup(copy, arr);
+          arr.splice(i + 1, 0, copy);
+          if (o.fold) opened[joinPath(p, i + 1)] = true;
+          ctx.changed(true);
+        },
+      }, 'Duplicate'));
+    }
     head.append(h('button', { type: 'button', class: 'wb-mini', onclick: () => { arr.splice(i, 1); ctx.changed(true); } }, 'Remove'));
     box.append(head);
     o.render(box, item, ip, i);
     wrap.append(box);
   });
   if (!(o.max && arr.length >= o.max)) {
-    wrap.append(h('button', { type: 'button', class: 'wb-mini', onclick: () => { arr.push(o.make()); ctx.changed(true); } }, `+ ${o.add || 'Add'}`));
+    wrap.append(h('button', { type: 'button', class: 'wb-mini', onclick: () => { arr.push(o.make()); if (o.fold) opened[joinPath(p, arr.length - 1)] = true; ctx.changed(true); } }, `+ ${o.add || 'Add'}`));
   }
   parent.append(wrap);
 }
@@ -866,6 +886,8 @@ export function renderBattle(ctx, el) {
       box.append(grid(ctx, bo, [
         { k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' },
         { k: 'music', t: 'omusic', label: 'Music', hint: 'retail or a pack track; audio.toml music.boss when unset' },
+        { k: 'intro', t: 'oref', kind: 'cutscene', label: 'Intro cutscene', hint: 'plays as the fight is called; the fight starts as it ends', none: '(none: the fight at once)' },
+        { k: 'outro', t: 'oref', kind: 'cutscene', label: 'Outro cutscene', hint: 'plays on the field after a win', none: '(none)' },
         { k: 'reward_gold', t: 'int', label: 'Reward gold' },
         { k: 'no_escape', t: 'bool', label: 'No escape' },
         { k: 'once', t: 'bool', label: 'Once only (recorded in the save)' },
@@ -1498,10 +1520,18 @@ export function renderModes(ctx, el) {
         }
         if (key === 'races') {
           if (onMap) {
-            box.append(grid(ctx, it, [{ k: 'waypoints', t: 'tiles', label: 'Centre line (map tiles)', hint: 'c,r c,r ... in driving order; closes on the first', wide: true }], p));
+            pointListEd(ctx, box, it, 'waypoints', p, {
+              title: 'Centre line (map tiles)', hint: 'in driving order; closes on the first', tiles: true, names: ['col', 'row'],
+              bounds: () => { const rows = (onMap.tiles && onMap.tiles.rows) || []; return [0, 0, Math.max(1, ...rows.map((r) => [...r].length)) - 1, Math.max(1, rows.length) - 1]; },
+              background: mapBackground(onMap),
+              make: () => (it.waypoints && it.waypoints.length ? it.waypoints[it.waypoints.length - 1].slice() : [1, 1]),
+            });
             refListEd(ctx, box, it, 'bodies', p, { title: 'Other racers', hint: 'map NPCs, in seat order (the player\'s seat skipped)', add: 'Racer', none: 'the map has no NPCs', opts: () => npcOpts(onMap) });
           } else {
-            box.append(pointsField(ctx, it, p));
+            pointListEd(ctx, box, it, 'points', p, {
+              title: 'Centre-line points', hint: 'x, z in the race\'s own units, a closed loop',
+              make: () => (it.points && it.points.length ? it.points[it.points.length - 1].map((x) => x + 100) : [0, 0]),
+            });
           }
         }
         if (key === 'prop_hunt') {
@@ -1517,7 +1547,19 @@ export function renderModes(ctx, el) {
             label: (d) => `${d.prop} at ${d.x}, ${d.y}`,
             render: (b2, d, p2) => b2.append(grid(ctx, d, [{ k: 'prop', t: 'sel', opts: it.props.map((pr) => pr.id), label: 'Prop' }, { k: 'x', t: 'int', label: 'X' }, { k: 'y', t: 'int', label: 'Y' }], p2)),
           });
-          box.append(blockersField(ctx, it, p));
+          pointListEd(ctx, box, it, 'blockers', p, {
+            title: 'Blockers', hint: 'rectangles inside the bounds; drag on the pad to draw one', kind: 'rect',
+            bounds: () => it.bounds || [0, 0, 2048, 2048],
+            make: () => { const b = it.bounds || [0, 0, 2048, 2048]; const cx = (b[0] + b[2]) >> 1, cy = (b[1] + b[3]) >> 1; return [cx - 60, cy - 60, cx + 60, cy + 60]; },
+            decor: (g, v) => {
+              // Decoys as dots, so a blocker is drawn around them.
+              for (const d of it.decoys || []) {
+                const [x, y] = v.toPx(d.x, d.y);
+                g.fillStyle = '#9b6cf0';
+                g.beginPath(); g.arc(x, y, 4, 0, Math.PI * 2); g.fill();
+              }
+            },
+          });
         }
       },
     });
@@ -1565,15 +1607,22 @@ function tableEd(ctx, box, it, p, map, poker) {
       { k: 'draw_table', t: 'dbool', label: 'Draw a table (off when a prop is the table)' },
     ]), tp));
     const npcs = npcOpts(map);
-    const seatEd = (b2, seat, p2, role) => b2.append(grid(ctx, seat, [
-      { k: 'npc', t: 'sel', opts: npcs.length ? npcs : [['', '(the map has no NPCs)']], label: 'NPC' },
-      { k: 'name', t: 'otext', label: 'Name shown', ph: 'the NPC id' },
-    ].concat(role === 'opponent' || role === 'player' ? [{ k: 'think', t: 'oint', label: 'Think clip' }] : [])
-      .concat(role === 'player' ? [{ k: 'fold', t: 'oint', label: 'Fold clip' }, { k: 'all_in', t: 'oint', label: 'All-in clip' }] : [])
-      .concat([
-        { k: 'cheer', t: 'oint', label: 'Cheer clip' },
-        { k: 'slump', t: 'oint', label: 'Slump clip' },
-      ]), p2));
+    // A seat: who sits there, then its clips side by side (short number
+    // boxes in one row, so a seat stays a few lines tall on a phone).
+    const seatEd = (b2, seat, p2, role) => {
+      const who = grid(ctx, seat, [
+        { k: 'npc', t: 'sel', opts: npcs.length ? npcs : [['', '(the map has no NPCs)']], label: 'NPC' },
+        { k: 'name', t: 'otext', label: 'Name shown', ph: 'the NPC id' },
+      ], p2);
+      who.classList.add('xw-seat-who');
+      b2.append(who);
+      const clips = [].concat(role === 'opponent' || role === 'player' ? [{ k: 'think', t: 'oint', label: 'Think' }] : [])
+        .concat(role === 'player' ? [{ k: 'fold', t: 'oint', label: 'Fold' }, { k: 'all_in', t: 'oint', label: 'All-in' }] : [])
+        .concat([{ k: 'cheer', t: 'oint', label: 'Cheer' }, { k: 'slump', t: 'oint', label: 'Slump' }]);
+      const row = h('div', { class: 'xw-clips' });
+      for (const c of clips) row.append(field(ctx, seat, Object.assign({ ph: 'idle' }, c), p2));
+      b2.append(h('div', { class: 'xw-clips-head xw-hint' }, 'Clips'), row);
+    };
     const clipHint = 'clips are the base scene\'s ANM records; empty keeps the idle';
     if (poker) {
       listEd(ctx, tb, t, 'players', tp, {
@@ -1633,6 +1682,32 @@ function golfSurfacesEd(ctx, box, it, p, map) {
   box.append(h('div', { class: 'xw-box', 'data-path': sp }, h('div', { class: 'xw-box-head' }, 'Surfaces', h('span', { class: 'xw-hint' }, ' per legend entry of the map')), g));
 }
 
+// A party night's podium in the world (`podium`): the map it stands on, the
+// first-place block's tile, the way it faces and the map NPCs that stand in
+// for the rivals. Without one the night ends on the party card's flat podium.
+function podiumEd(ctx, box, it, p) {
+  const pp = joinPath(p, 'podium');
+  const pb = h('div', { class: 'xw-box', 'data-path': pp });
+  const on = h('input', { type: 'checkbox' });
+  on.checked = it.podium != null;
+  on.addEventListener('change', () => {
+    it.podium = on.checked ? { map: ctx.ids('map')[0] || '', tile: [0, 0], facing: 0, bodies: [] } : null;
+    ctx.changed(true);
+  });
+  pb.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, on, 'A podium in the world'), h('span', { class: 'xw-hint' }, 'blocks on a pack map for the top three; else the party card\'s flat podium')));
+  const pd = it.podium;
+  if (pd) {
+    const map = ctx.pack.maps && ctx.pack.maps[pd.map];
+    pb.append(grid(ctx, pd, [
+      { k: 'map', t: 'ref', kind: 'map', label: 'Map', structural: true },
+      { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'First-place block', hint: 'map tile' },
+      { k: 'facing', t: 'sel', num: true, opts: Array.from({ length: 8 }, (_, i) => [String(i), `sector ${i} (${i * 45} deg)`]), label: 'Faces', hint: 'the camera looks back along it' },
+    ], pp));
+    refListEd(ctx, pb, pd, 'bodies', pp, { title: 'Rival bodies', hint: 'map NPCs, in rival order; a rival with none is a stand-in figure', add: 'Body', none: 'the map has no NPCs', opts: () => (map ? npcOpts(map) : []) });
+  }
+  box.append(pb);
+}
+
 // A party night: a playlist of short rounds of the instances above, scored by
 // placement (docs/subsystems/netplay.md, "Party night").
 function renderPartyNights(ctx, el, m) {
@@ -1654,6 +1729,7 @@ function renderPartyNights(ctx, el, m) {
         { k: 'rivals', t: 'csv', label: 'Rival names' },
         { k: 'ai_tier', t: 'sel', opts: AI_TIERS, label: 'Rival AI' },
       ], p));
+      podiumEd(ctx, box, it, p);
       listEd(ctx, box, it, 'rounds', p, {
         title: 'Rounds', add: 'Round',
         make: () => ({ mode: ctx.ids('instance')[0] || '', name: '', holes: [], double: false, wager: 0 }),
@@ -1678,26 +1754,6 @@ function renderPartyNights(ctx, el, m) {
       });
     },
   });
-}
-
-function pointsField(ctx, it, p) {
-  const ta = h('textarea', { rows: 6, spellcheck: 'false' });
-  ta.value = (it.points || []).map((q) => q.join(', ')).join('\n');
-  ta.addEventListener('input', () => {
-    it.points = ta.value.split('\n').map((l) => l.split(',').map((x) => intOr(x.trim(), NaN))).filter((q) => q.length === 2 && q.every(Number.isFinite));
-    ctx.changed();
-  });
-  return h('label', { class: 'xw-field is-wide', 'data-path': `${p}.points` }, h('span', {}, 'Centre-line points', h('span', { class: 'xw-hint' }, ' one "x, z" per line, a closed loop')), ta);
-}
-
-function blockersField(ctx, it, p) {
-  const ta = h('textarea', { rows: 4, spellcheck: 'false' });
-  ta.value = (it.blockers || []).map((q) => q.join(', ')).join('\n');
-  ta.addEventListener('input', () => {
-    it.blockers = ta.value.split('\n').map((l) => l.split(',').map((x) => intOr(x.trim(), NaN))).filter((q) => q.length === 4 && q.every(Number.isFinite));
-    ctx.changed();
-  });
-  return h('label', { class: 'xw-field is-wide', 'data-path': `${p}.blockers` }, h('span', {}, 'Blockers', h('span', { class: 'xw-hint' }, ' one "x0, y0, x1, y1" per line')), ta);
 }
 
 export { esc };

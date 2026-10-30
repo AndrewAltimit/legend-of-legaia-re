@@ -4,13 +4,89 @@
   <p class="lede">A pack is a folder of TOML files, so any text editor makes one. The <a href="../tooling/expansion-workbench.html">expansion workbench</a> makes it easier: it reads your disc for the pickers, re-checks the pack after every edit, paints maps tile by tile and exports the shareable <code>.lxpack</code> - all in the browser, with nothing uploaded. Either way the result is the same files, and the same checks decide whether the engine will load it.</p>
 </header>
 
-<section class="doc-section" id="workbench" data-doc="-">
+<section class="doc-section" id="first-pack" data-doc="your-first-expansion-pack">
+  <h2>Your first expansion pack</h2>
+  <p>A walk through the workbench from nothing to a shared <code>.lxpack</code>: a small harbour map with a character who talks, a quest, a monster and a boss, a trading card, the checks, a play test and the export. It takes a disc image and a browser; nothing is installed. The screenshots show only the workbench's own forms and the painter's colours - names and textures from the disc stay in your tab.</p>
+
+  <h3 id="first-template">1. Start from the template</h3>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/01-new-pack.png" width="1030" height="401" alt="The workbench's New pack box: pack id harbor_tales, name Harbor Tales, and Start from set to the minimal template, with Create and Cancel buttons" loading="lazy">
+    <figcaption><strong>New pack ...</strong>: an id, a name, and what to start from.</figcaption>
+  </figure>
+  <p>Pick your disc, then <strong>New pack ...</strong>. Give the pack an id (<code>harbor_tales</code>) and a name, and start from the <strong>minimal template</strong>: one of everything a first pack wires together - a monster made from a retail one, a fight of it, a line of dialogue, a quest to win the fight, and an 11 x 6 map whose two trigger zones show the line and start the fight.</p>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/02-template.png" width="1440" height="860" alt="The new pack open: the pack bar with Undo, Redo, Download .lxpack, Play in browser and Play here; the section tabs with the Manifest tab open and its format-reference link; the checks panel listing three warnings" loading="lazy">
+    <figcaption>The pack bar, one tab per file, and the checks on the right. Each tab opens with a <strong>?</strong> to the format reference for the file it edits.</figcaption>
+  </figure>
+  <p>The checks list the pack's three warnings (no description, authors or licence); the Manifest tab fixes them.</p>
+
+  <h3 id="first-map">2. Paint the map and place a character</h3>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/03-map.png" width="659" height="358" alt="The tile painter: a tool bar (paint, fill, pick, select, spawn, exit, trigger, encounters, prop, NPC, sculpt) above an 11 by 6 grid of green floor tiles inside a dark wall ring, two wall pillars, the spawn as a green circle, two orange trigger zones and a purple NPC square" loading="lazy">
+    <figcaption>The painter: floor tiles in the legend's colours, walls dark, the spawn green, trigger zones orange, the NPC purple.</figcaption>
+  </figure>
+  <p>On the <strong>Maps</strong> tab open <em>Map settings</em> and pick a base scene: the map borrows its textures, meshes and characters, and the floor stays yours. Paint with the legend's characters (<code>#</code> wall, <code>.</code> floor), then pick the <strong>NPC</strong> tool and click a tile. The NPC's form picks its model from the base scene's characters, its line (<code>welcome</code>) and its id (<code>harbor_master</code>, the key a quest's talk objective names).</p>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/04-dialog.png" width="676" height="541" alt="The Dialog tab: the line welcome with its speaker and text, and under it the row check showing each text-box row as the game draws it" loading="lazy">
+    <figcaption>The <strong>Dialog</strong> tab: a line and its row check. No retail text box wraps, so a row past 36 characters is flagged.</figcaption>
+  </figure>
+
+  <h3 id="first-quest">3. Write a quest</h3>
+  <p>The <strong>Quests</strong> tab holds the template's quest: an objective (win <code>first_fight</code>), a reward (100 gold) and whether it starts by itself. Add a talk objective on <code>harbor_master</code> and the quest asks the player to speak to your NPC first.</p>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/05-quest.png" width="676" height="2018" alt="The Quests tab: the quest list beside the selected quest's form - title, description, start and complete hooks, prerequisites, an objective to defeat first_fight, and a 100 gold reward" loading="lazy">
+    <figcaption>Every picker offers only the ids the pack defines.</figcaption>
+  </figure>
+
+  <h3 id="first-battle">4. Make a monster and a boss</h3>
+  <p>On the <strong>Battle</strong> tab a monster is a retail one with new numbers: each stat is the base's, a value, or a multiplier, with the retail number beside it, read from your disc. <strong>+ Boss</strong> turns a formation into a once-only boss fight with its own music, an intro and outro cutscene and rewards; <strong>Boss script</strong> on its monster gives it phases. <strong>Fight in 3D</strong> starts the fight in the preview.</p>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/06-boss.png" width="652" height="421" alt="The Bosses section of the Battle tab: a boss over first_fight with its music, intro and outro cutscene pickers, reward gold, no escape and once only, and a Fight in 3D button" loading="lazy">
+    <figcaption>A boss: its formation, music, intro and outro cutscenes and rewards.</figcaption>
+  </figure>
+
+  <h3 id="first-card">5. Add a card</h3>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/07-card.png" width="676" height="951" alt="The Cards tab: sell prices per rarity, a new card with its name, rarity, element, art and four sides, and the Boosters, Drops, Starter deck and Dealers sections" loading="lazy">
+    <figcaption><strong>+ Card</strong>: four sides, an element, a rarity and a retail monster as its art.</figcaption>
+  </figure>
+  <p>Boosters, drop rules and a dealer make the card collectable; <strong>Card faces in 3D</strong> shows them as the engine draws them.</p>
+
+  <h3 id="first-checks">6. Read the checks</h3>
+  <div class="shot-pair">
+    <figure class="screenshot">
+      <img src="../img/guides/expansion/08-checks.png" width="342" height="595" alt="The checks panel after the fight was renamed: errors under quests.toml and the map file naming a formation that is not there, beside the three manifest warnings" loading="lazy">
+      <figcaption>Renaming the fight breaks the quest's objective and the map's trigger.</figcaption>
+    </figure>
+    <figure class="screenshot">
+      <img src="../img/guides/expansion/09-jump.png" width="424" height="324" alt="The quest's objective opened by clicking the error: kind defeat_formation, its formation shown as first_fight (not defined), the box outlined" loading="lazy">
+      <figcaption>Clicking the check opens the Quests tab on the objective it names; its formation reads <em>not defined</em>.</figcaption>
+    </figure>
+  </div>
+  <p>Every edit re-runs the validator with your disc resolving each coordinate. A check names its file and field; clicking it opens the tab, selects the item and focuses the field, and <kbd>F8</kbd> steps through them. A pack with an error does not export.</p>
+
+  <h3 id="first-play">7. Play it</h3>
+  <p><strong>Play here</strong> opens the play page on the map the Maps tab is on; while that tab is open, the next Play here (or <strong>Live</strong>, every edit) reloads the pack in place with the player where they stand. <strong>Open 3D preview</strong> draws the map the way the engine builds it, above the painter, with walls, zones and NPCs as see-through volumes. Both draw your disc's textures, so they are not pictured here.</p>
+
+  <h3 id="first-share">8. Export and share</h3>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/10-packbar.png" width="1030" height="92" alt="The pack bar after a download: Harbor Tales, version 0.1.0, autosaved, with Download .lxpack, TOML files, Share, Play in browser and Play here" loading="lazy">
+    <figcaption>The pack bar: download, the TOML files, Share, and the two ways to play.</figcaption>
+  </figure>
+  <p><strong>Download .lxpack</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) writes the bundle - this one is under 2 KB, because it holds no game data. Anyone with their own disc opens it on the play page (<em>Load expansion</em>) or in the native port with <code>--expansion</code>. <strong>Share</strong> sets a cover, compares against an older <code>.lxpack</code> for a changelog and a version bump, downloads the editable sources as a zip, and adds the pack to the play page's library. The <strong>Files</strong> tab gives each TOML file on its own, for a pack kept as a folder.</p>
+  <figure class="screenshot">
+    <img src="../img/guides/expansion/11-files.png" width="676" height="914" alt="The Files tab listing the exported battle.toml, cards.toml, dialog.toml, maps/first_map.toml, pack.toml and quests.toml with their sizes, the map file open on its TOML: its name, floor heights and base scene town01" loading="lazy">
+    <figcaption>What the bundle holds: TOML that names disc content by number.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="workbench" data-doc="on-the-workbench">
   <h2>On the workbench</h2>
   <ol class="steps steps-vertical">
     <li><b>Pick your disc</b><span>The workbench reads its monsters, items, scenes and music for the pickers. Nothing is uploaded, and no name from the disc is written into the pack: a picker writes the coordinate (<code>{ kind = "monster", id = 109 }</code>), never the name beside it.</span></li>
-    <li><b>Start from something</b><span>Load the <strong>Rebirth example</strong> (the project's own flagship pack), a <code>.lxpack</code>, a pack folder of your own, or start fresh with only a manifest.</span></li>
-    <li><b>Edit section by section</b><span>One tab per file. The checks panel re-runs the validator after every edit with your disc resolving every coordinate; clicking an issue opens its tab and focuses the field.</span></li>
-    <li><b>Lay out a map</b><span>On the <strong>Maps</strong> tab: paint tiles from the legend, place spawns, exits, trigger and encounter zones, props and NPCs, and turn on <strong>Heights</strong> to see which cells the floor slopes across. For an outdoor map, open the <strong>Terrain</strong> box and sculpt with the <strong>Sculpt</strong> tool (K): hills, ridges, levelled pads, a shoreline under water (<a href="../formats/expansion-pack-maps.html#terrain">terrain</a>).</span></li>
+    <li><b>Start from something</b><span>Load the <strong>Rebirth example</strong> (the project's own flagship pack), a <code>.lxpack</code>, a pack folder of your own, or start a new pack: empty, from the minimal template, or as a clone of Rebirth.</span></li>
+    <li><b>Edit section by section</b><span>One tab per file. The checks panel re-runs the validator after every edit with your disc resolving every coordinate; clicking an issue opens its tab and focuses the field. Undo and redo cover the whole pack, and <strong>Find</strong> lists every place an id or a retail coordinate is used.</span></li>
+    <li><b>Lay out a map</b><span>On the <strong>Maps</strong> tab: paint tiles from the legend, place spawns, exits, trigger and encounter zones, props and NPCs, and turn on <strong>Heights</strong> to see which cells the floor slopes across. The <strong>Detail layer</strong> under the painter dresses the floor - decorations, scatter brushes, edge runs, decals, animated materials, lights, fog and particles - each a list form whose tile fields pick on the canvas. For an outdoor map, open the <strong>Terrain</strong> box and sculpt with the <strong>Sculpt</strong> tool (K): hills, ridges, levelled pads, a shoreline under water (<a href="../formats/expansion-pack-maps.html#terrain">terrain</a>).</span></li>
     <li><b>See it in 3D</b><span><strong>Open 3D preview</strong> above the painter draws the map the way the engine builds it - props, decorations, lights, fog and all - with walls, zones, triggers, spawns and NPCs as see-through volumes you can toggle. It rebuilds a moment after each edit; a click in 3D selects the tile in the painter, and <strong>Walk from selection</strong> drops you onto it with the game's camera. A cutscene's timeline draws its camera path there, scrubbed frame by frame.</span></li>
     <li><b>Try it</b><span><strong>Play here</strong> opens the play page on the map you are editing; while that tab is open, Play here again (or <strong>Live</strong>) reloads your edits into it in place, with the player where they stand. <strong>Play in browser</strong> opens the play page with the pack loaded, from the start.</span></li>
     <li><b>Share it</b><span><strong>Download .lxpack</strong>, or take the TOML files one at a time on the Files tab for a pack kept as a folder.</span></li>
@@ -18,7 +94,7 @@
   <p>The working pack autosaves in the browser, so closing the tab loses nothing; a returning visitor who loads the disc is offered to resume. A file you did not edit exports as the bytes it was loaded from, comments included. Page reference: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/expansion-workbench.md" target="_blank" rel="noopener">expansion-workbench.md</a>.</p>
 </section>
 
-<section class="doc-section" id="by-hand" data-doc="-">
+<section class="doc-section" id="by-hand" data-doc="by-hand">
   <h2>By hand</h2>
   <p>The smallest pack is a manifest. Each section is a file of its own, and everything in it is optional:</p>
 <pre><code># pack.toml
@@ -59,7 +135,7 @@ formations = [{ formation = "ogre_pack", weight = 1 }]</code></pre>
   <p class="callout callout-warn">Ids are lowercase <code>[a-z0-9_]</code> (cards and mode instances may use <code>-</code>), unique within their kind across the pack, and never carry a <code>:</code> where they are defined. A file under <code>assets/</code> must be a PNG, glTF, Ogg, WAV or text file - nothing taken from the disc (<a href="../formats/expansion-pack.html#the-no-disc-bytes-rule">the rule</a>).</p>
 </section>
 
-<section class="doc-section" id="cli" data-doc="-">
+<section class="doc-section" id="cli" data-doc="check-and-bundle-from-the-command-line">
   <h2>Check and bundle from the command line</h2>
 <pre><code>asset expansion validate my-pack            # every issue, with file and field
 asset expansion validate my-pack --strict   # warnings fail too
@@ -69,12 +145,13 @@ asset expansion unbundle my-pack.lxpack -o my-pack-copy/</code></pre>
   <p>None of these reads a disc, so they range-check coordinates without confirming them; the engine and the workbench check them against a real disc. Then play it: <code>legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --expansion my-pack</code>, adding <code>--map &lt;id&gt;</code> to walk straight onto a map (<a href="playing-expansion-packs.html">playing a pack</a>).</p>
 </section>
 
-<section class="doc-section" id="tips" data-doc="-">
+<section class="doc-section" id="tips" data-doc="things-that-catch-people-out">
   <h2>Things that catch people out</h2>
   <ul class="bullets">
     <li><strong>One version of each base monster per fight.</strong> A pack monster fights under its base monster's id, so a formation cannot hold a pack variant beside the retail monster it is built on (<a href="../formats/expansion-pack-battle.html">battles</a>).</li>
     <li><strong>Four monsters at once.</strong> A battle has four monster seats; more enemies come in <a href="../formats/expansion-pack-battle.html#waves">waves</a>.</li>
     <li><strong>Heights are corner heights.</strong> A raised block of tiles slopes down along its high-X and high-Z edges; turn on the workbench's <em>Heights</em> overlay to see where (<a href="../formats/expansion-pack-maps.html#the-tile-layer">tiers</a>).</li>
+    <li><strong>An NPC needs a base scene with characters.</strong> Its model is one of the base scene's placements; a base scene with none is a check on the NPC.</li>
     <li><strong>An entrance needs a free tile.</strong> Pick a rectangle the retail walk reaches and no retail door shares, and give it a <code>requires</code> gate if it should open later in the game (<a href="../formats/expansion-pack-maps.html#entrances">entrances</a>).</li>
     <li><strong>Dialogue rows are short.</strong> No retail text box wraps; keep a row within 36 characters, and the workbench's dialog check shows every row page by page.</li>
   </ul>

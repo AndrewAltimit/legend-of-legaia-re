@@ -25,6 +25,7 @@ legaia-game-tables.workspace = true
 legaia-gamedata.workspace = true
 legaia-iso.workspace = true
 legaia-scene-formats.workspace = true
+legaia-tmd.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -440,3 +440,142 @@ fn the_diff_panel_reads_an_older_bundle() {
     assert_eq!(s["compatible"], true);
     assert!(s["cover_bytes"].as_u64().unwrap() > 0);
 }
+
+/// What the map detail forms and the modes point lists write when they only
+/// draw: an absent list as `[]`, an absent prop `animate` as `[]`, a decal's
+/// absent `cells` as `[]`, the lighting and fog boxes' defaults, every list
+/// item's fields as the form reads them back. Opening every map and the
+/// modes tab without an edit exports the loaded bytes.
+fn as_the_forms_draw_it(pack: &mut Value) {
+    let ensure = |o: &mut Value, k: &str, v: Value| {
+        if o.get(k).is_none_or(Value::is_null) {
+            o[k] = v;
+        }
+    };
+    for (_, map) in pack["maps"].as_object_mut().unwrap() {
+        for k in [
+            "decor",
+            "scatter",
+            "edges",
+            "decals",
+            "materials",
+            "emitters",
+        ] {
+            ensure(map, k, serde_json::json!([]));
+        }
+        ensure(
+            map,
+            "lighting",
+            serde_json::json!({ "mood": null, "lamps": [] }),
+        );
+        ensure(map, "fog", serde_json::json!({ "regions": [] }));
+        for prop in map["props"].as_array_mut().unwrap() {
+            ensure(prop, "animate", serde_json::json!([]));
+        }
+        for d in map["decals"].as_array_mut().unwrap() {
+            ensure(d, "cells", serde_json::json!([]));
+        }
+        for s in map["scatter"].as_array_mut().unwrap() {
+            ensure(s, "meshes", serde_json::json!([]));
+        }
+    }
+    for k in ["races", "prop_hunt"] {
+        for it in pack["modes"][k].as_array_mut().into_iter().flatten() {
+            for list in ["points", "waypoints", "blockers"] {
+                if k == "races" && list == "blockers" || k == "prop_hunt" && list != "blockers" {
+                    continue;
+                }
+                ensure(it, list, serde_json::json!([]));
+            }
+        }
+    }
+}
+
+#[test]
+fn the_detail_forms_open_without_an_edit() {
+    let mut core = Core::new();
+    let (files, mut pack) = load(&mut core);
+    let cli = bundle::write_bundle(&files).unwrap();
+    // Rebirth uses every list the forms replace, so the test is not vacuous.
+    let maps = pack["maps"].as_object().unwrap();
+    for k in ["decor", "scatter", "edges", "decals", "materials"] {
+        assert!(
+            maps.values()
+                .any(|m| m[k].as_array().is_some_and(|a| !a.is_empty())),
+            "Rebirth has no {k}"
+        );
+    }
+    assert!(maps.values().any(|m| {
+        m["props"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["animate"].as_array().is_some_and(|a| !a.is_empty()))
+    }));
+    assert!(pack["modes"]["races"][0]["points"].as_array().is_some());
+    as_the_forms_draw_it(&mut pack);
+    assert_eq!(core.export_bundle(&pack.to_string()).unwrap(), cli);
+
+    // A Duplicate and its Remove, a reorder and its reverse: the loaded bytes.
+    let mut edited = pack.clone();
+    let map = &mut edited["maps"]["rebirth_tower_1f"];
+    let decals = map["decals"].as_array_mut().unwrap();
+    let copy = decals[0].clone();
+    decals.insert(1, copy);
+    let blockers = &mut edited["modes"]["prop_hunt"][0]["blockers"];
+    let b = blockers.as_array_mut().unwrap();
+    b.swap(0, 1);
+    let bytes = core.export_bundle(&edited.to_string()).unwrap();
+    let back = bundle::read_bundle(&bytes).unwrap();
+    for (path, body) in &back {
+        let touched = path == "maps/rebirth_tower_1f.toml" || path == "modes.toml";
+        assert_eq!(files.get(path) != Some(body), touched, "{path}");
+    }
+    edited["maps"]["rebirth_tower_1f"]["decals"]
+        .as_array_mut()
+        .unwrap()
+        .remove(1);
+    edited["modes"]["prop_hunt"][0]["blockers"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+
+    // The material kind switch rebuilds the item: a scroll turned into a
+    // cycle and back keeps the cell only if the form carries it, so the
+    // revert is the loaded scroll exactly.
+    let mut edited = pack.clone();
+    let m = &mut edited["maps"]["rebirth_tower_1f"]["materials"][0];
+    let before = m.clone();
+    assert_eq!(before["kind"], "scroll");
+    *m = serde_json::json!({ "kind": "cycle", "clut": before["cell"]["clut"], "start": 0, "count": 16, "period": 8, "reverse": false });
+    assert!(
+        core.validate(&edited.to_string())
+            .iter()
+            .all(|i| i.severity != "error")
+    );
+    edited["maps"]["rebirth_tower_1f"]["materials"][0] = before;
+    assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+
+    // The podium box and the boss cutscene pickers: unticked / cleared and
+    // put back, the loaded bytes.
+    let mut edited = pack.clone();
+    let night = &mut edited["modes"]["party_nights"][0];
+    let podium = night["podium"].clone();
+    assert!(podium.is_object(), "Rebirth's night has a podium");
+    night["podium"] = Value::Null;
+    let key = pack["battle"]["bosses"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find(|(_, b)| b["intro"].is_string())
+        .map(|(k, _)| k.clone())
+        .expect("a Rebirth boss with an intro");
+    let intro = edited["battle"]["bosses"][&key]["intro"].clone();
+    edited["battle"]["bosses"][&key]["intro"] = Value::Null;
+    let bytes = core.export_bundle(&edited.to_string()).unwrap();
+    assert_ne!(bytes, cli);
+    edited["modes"]["party_nights"][0]["podium"] = podium;
+    edited["battle"]["bosses"][&key]["intro"] = intro;
+    assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+}

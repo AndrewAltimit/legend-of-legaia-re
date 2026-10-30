@@ -39,7 +39,7 @@ const TOOLS = [
 // View state survives the tab re-rendering on every structural edit.
 const V = {
   map: null, tool: 'paint', brush: '.', cell: 22, heights: true, sel: null,
-  scroll: {}, undo: {}, redo: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null,
+  scroll: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null, pick: null,
   propObject: 0, drag: null, npcs: {}, npcModel: null,
 };
 
@@ -89,30 +89,10 @@ function wallMask(st) {
   return (st.walls || []).reduce((m, q) => m | (QBIT[q] || 0), 0);
 }
 
-function snapshot(ctx, id) {
-  (V.undo[id] = V.undo[id] || []).push(JSON.stringify(ctx.pack.maps[id]));
-  if (V.undo[id].length > 200) V.undo[id].shift();
-  V.redo[id] = [];
-}
-
-function restore(ctx, id, json) {
-  const m = ctx.pack.maps[id];
-  for (const k of Object.keys(m)) delete m[k];
-  Object.assign(m, JSON.parse(json));
-}
-
+// Every edit, a stroke included, is a step of the page's own history.
 function undo(ctx, dir) {
-  // The page's own history holds every edit, strokes included.
-  if (ctx.undo) { V.sel = null; if (dir < 0) ctx.undo(); else ctx.redo(); return; }
-  const id = V.map;
-  const from = dir < 0 ? V.undo : V.redo;
-  const to = dir < 0 ? V.redo : V.undo;
-  const s = (from[id] || []).pop();
-  if (!s) return;
-  (to[id] = to[id] || []).push(JSON.stringify(ctx.pack.maps[id]));
-  restore(ctx, id, s);
   V.sel = null;
-  ctx.changed(true);
+  if (dir < 0) ctx.undo(); else ctx.redo();
 }
 
 function objectsAt(map, c, r) {
@@ -434,7 +414,6 @@ export function renderMaps(ctx, el) {
     type: 'button', class: 'wb-mini', onclick: () => {
       const nw = Math.max(1, Math.min(120, parseInt(rw.value, 10) || w));
       const nh = Math.max(1, Math.min(120, parseInt(rh.value, 10) || ht));
-      snapshot(ctx, V.map);
       const rows = [];
       for (let r = 0; r < nh; r++) {
         const row = [...(map.tiles.rows[r] || '')].slice(0, nw);
@@ -464,20 +443,35 @@ export function renderMaps(ctx, el) {
   tools.append(h('span', { class: 'xw-sep' }),
     h('button', { type: 'button', class: 'wb-mini', title: 'Zoom out', onclick: () => zoom(-1) }, '−'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Zoom in', onclick: () => zoom(1) }, '+'),
-    h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: ctx.canUndo ? !ctx.canUndo() : !(V.undo[V.map] || []).length, onclick: () => undo(ctx, -1) }, 'Undo'),
-    h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: ctx.canRedo ? !ctx.canRedo() : !(V.redo[V.map] || []).length, onclick: () => undo(ctx, 1) }, 'Redo'),
+    h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: !ctx.canUndo(), onclick: () => undo(ctx, -1) }, 'Undo'),
+    h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: !ctx.canRedo(), onclick: () => undo(ctx, 1) }, 'Redo'),
     h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'));
 
   const wrap = h('div', { class: 'xw-canvas-wrap', tabindex: '0' }, cv);
   const hover = h('div', { class: 'xw-hover' });
   const note = h('p', { class: 'xw-note' }, 'Heights: the number is each tile\'s floor tier; lighter is higher. The floor reads a tile\'s tier at its top-left corner (low X, low Z) and slopes across the cell to its neighbours\' corners, so a cell is flat only where its four corners agree. Hatched cells slope: along a raised block\'s top and left edges the cell outside it ramps up onto it, and along its bottom and right edges its own last row and column ramp down. Drag with the right or middle button (or hold Space) to pan; Ctrl+wheel zooms.');
-  const left = h('div', {}, tools, wrap, hover, note);
+  const pickBar = V.pick ? h('div', { class: 'xw-pickbar', role: 'status' }, V.pick.rect ? 'Drag a rectangle on the map to fill the field.' : 'Click a tile on the map to fill the field.',
+    h('button', { type: 'button', class: 'wb-mini', onclick: () => { V.pick = null; ctx.rerender(); } }, 'Cancel (Esc)')) : null;
+  const left = h('div', {}, tools, pickBar, wrap, hover, note);
   const side = h('div', {});
   el.append(h('div', { class: 'xw-painter' }, left, side));
+  // The detail layer's list forms are wide: they sit under the painter.
+  const below = h('div', { class: 'xw-below' });
+  el.append(below);
 
   renderPalette(ctx, mctx, side, map);
   renderSelection(ctx, mctx, side, map);
-  renderDetail(ctx, mctx, side, map);
+  renderDetail(ctx, mctx, below, map, {
+    meshEditor: (owner, p) => propMeshEditor(ctx, mctx, owner, p, (m, k) => meshPicker(mctx, m, k, `${p}.mesh`, map)),
+    cells: () => { const o = V.objects[baseScene(map)]; return o && !o.error ? (o.cells || []) : null; },
+    // A detail form's Pick: the next click (a drag for a rectangle) on the canvas.
+    pickTile: (req) => {
+      V.pick = req;
+      ctx.rerender();
+      const w2 = document.querySelector('.xw-canvas-wrap');
+      if (w2) w2.scrollIntoView({ block: 'nearest' });
+    },
+  });
   renderTerrain(ctx, mctx, side, map);
   renderMapAudio(ctx, mctx, side, map);
 
@@ -511,10 +505,16 @@ export function renderMaps(ctx, el) {
     const { w: mw, h: mh } = dims(map);
     if (c < 0 || r < 0 || c >= mw || r >= mh) return;
     V.cursor = { map: V.map, tile: [c, r] };
+    if (V.pick) {
+      if (V.pick.rect) { V.drag = { rect: [c, r, c, r], pick: V.pick }; redraw(); return; }
+      const req = V.pick;
+      V.pick = null;
+      req.done([c, r]);
+      return;
+    }
     if (pv) pv.hold(true);
     const t = V.tool;
     if (t === 'paint') {
-      snapshot(ctx, V.map);
       V.drag = { paint: true };
       if (setChar(map, c, r, V.brush)) { syncSize(map); mctx.changed(); }
     } else if (t === 'sculpt') {
@@ -529,17 +529,15 @@ export function renderMaps(ctx, el) {
     } else if (t === 'select') {
       const hit = objectsAt(map, c, r);
       V.sel = hit.length ? hit[0] : null;
-      if (V.sel) { snapshot(ctx, V.map); V.drag = { move: true, from: [c, r] }; }
+      if (V.sel) { V.drag = { move: true, from: [c, r] }; }
       renderSelection(ctx, mctx, side, map);
       redraw();
     } else if (t === 'spawn') {
-      snapshot(ctx, V.map);
       map.spawns.push({ id: freshId('spawn', map.spawns.map((s) => s.id)), tile: [c, r], facing: 0 });
       V.sel = { type: 'spawns', i: map.spawns.length - 1 };
       V.tool = 'select';
       ctx.changed(true);
     } else if (t === 'npc') {
-      snapshot(ctx, V.map);
       const scene = baseScene(map) || 'town01';
       const model = V.npcModel && V.npcModel.scene === scene ? V.npcModel : { kind: 'npc', scene, index: 1 };
       map.npcs.push({ id: freshId('npc', ctx.ids('npc')), tile: [c, r], facing: 0, model: { ...model }, line: ctx.ids('line')[0] || '', patrol: [] });
@@ -547,7 +545,6 @@ export function renderMaps(ctx, el) {
       V.tool = 'select';
       ctx.changed(true);
     } else if (t === 'prop') {
-      snapshot(ctx, V.map);
       map.props.push({ id: freshId('prop', map.props.map((p) => p.id)), mesh: { object: V.propObject }, tile: [c, r], offset: [0, 0, 0], rotation: [0, 0, 0], scale: null, solid: false });
       V.sel = { type: 'props', i: map.props.length - 1 };
       ctx.changed(true);
@@ -592,14 +589,13 @@ export function renderMaps(ctx, el) {
     wrap.classList.remove('is-panning');
     if (!d) return;
     if (d.sculpt) {
-      snapshot(ctx, V.map);
       if (sculptUp(map, d)) ctx.changed(true);
       return;
     }
     if (d.rect) {
       const [c0, r0, c1, r1] = d.rect;
       const q = [Math.min(c0, c1), Math.min(r0, r1), Math.max(c0, c1), Math.max(r0, r1)];
-      snapshot(ctx, V.map);
+      if (d.pick) { V.pick = null; d.pick.done(q); return; }
       if (d.kind === 'rect') {
         for (let r = q[1]; r <= q[3]; r++) for (let c = q[0]; c <= q[2]; c++) setChar(map, c, r, V.brush);
         syncSize(map);
@@ -628,11 +624,9 @@ export function renderMaps(ctx, el) {
     const t = ev.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const k = ev.key.toLowerCase();
-    if (!ctx.undo && (ev.ctrlKey || ev.metaKey) && k === 'z') { ev.preventDefault(); undo(ctx, ev.shiftKey ? 1 : -1); return; }
-    if (!ctx.undo && (ev.ctrlKey || ev.metaKey) && k === 'y') { ev.preventDefault(); undo(ctx, 1); return; }
+    if (k === 'escape' && V.pick) { V.pick = null; ctx.rerender(); return; }
     if ((k === 'delete' || k === 'backspace') && V.sel) {
       ev.preventDefault();
-      snapshot(ctx, V.map);
       map[V.sel.type].splice(V.sel.i, 1);
       V.sel = null;
       ctx.changed(true);
@@ -800,7 +794,6 @@ function renderPalette(ctx, mctx, side, map) {
     keyIn.addEventListener('change', () => {
       const nv = [...keyIn.value][0];
       if (!nv || nv === ch || legend[nv] || nv === ' ') { keyIn.value = ch; return; }
-      snapshot(ctx, V.map);
       legend[nv] = st;
       delete legend[ch];
       map.tiles.rows = map.tiles.rows.map((row) => [...row].map((x) => (x === ch ? nv : x)).join(''));
@@ -810,8 +803,7 @@ function renderPalette(ctx, mctx, side, map) {
     ed.append(h('div', { class: 'xw-tools' }, h('span', { class: 'wb-label' }, 'Character'), keyIn,
       h('button', {
         type: 'button', class: 'wb-mini', onclick: () => {
-          snapshot(ctx, V.map);
-          delete legend[ch];
+              delete legend[ch];
           map.tiles.rows = map.tiles.rows.map((row) => [...row].map((x) => (x === ch ? ' ' : x)).join(''));
           V.brush = ' ';
           ctx.changed(true);
@@ -906,7 +898,7 @@ function renderSelection(ctx, mctx, side, map) {
   const p = `${sel.type}[${sel.i}]`;
   box.setAttribute('data-path', p);
   box.append(h('div', { class: 'xw-box-head' }, `${sel.type.replace(/s$/, '')} ${o.id || ''}`, h('span', { class: 'xw-sp' }),
-    h('button', { type: 'button', class: 'wb-mini', onclick: () => { snapshot(ctx, V.map); map[sel.type].splice(sel.i, 1); V.sel = null; ctx.changed(true); } }, 'Delete')));
+    h('button', { type: 'button', class: 'wb-mini', onclick: () => { map[sel.type].splice(sel.i, 1); V.sel = null; ctx.changed(true); } }, 'Delete')));
   const rect = { k: 'rect', t: 'tuple', n: 4, label: 'Tiles', hint: '[col0, row0, col1, row1]' };
   if (sel.type === 'spawns') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },

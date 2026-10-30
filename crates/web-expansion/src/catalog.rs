@@ -272,6 +272,32 @@ impl DiscCatalog {
             .env_tmds
             .first()
             .map(|&i| assembled.res.tmds[i].entry_idx);
+        let mut cells: BTreeMap<(u8, u16, u8), u32> = BTreeMap::new();
+        for &i in &assembled.env_tmds {
+            let t = &assembled.res.tmds[i];
+            for o in &t.tmd.objects {
+                let groups = legaia_tmd::legaia_prims::iter_groups_lenient(
+                    &t.raw,
+                    o.primitives_byte_offset,
+                    o.primitives_byte_size,
+                );
+                for p in groups.iter().flat_map(|g| &g.prims) {
+                    if let Some(key) = atlas_cell(p.tsb, p.cba, &p.uvs) {
+                        *cells.entry(key).or_default() += 1;
+                    }
+                }
+            }
+        }
+        let mut cells: Vec<SceneCell> = cells
+            .into_iter()
+            .map(|((tpage, clut, tile), prims)| SceneCell {
+                tpage,
+                clut,
+                tile,
+                prims,
+            })
+            .collect();
+        cells.sort_by_key(|c| std::cmp::Reverse(c.prims));
         let objects = assembled
             .env_tmds
             .iter()
@@ -310,6 +336,7 @@ impl DiscCatalog {
             scene: name.to_string(),
             entry,
             objects,
+            cells,
         })
     }
 
@@ -375,6 +402,33 @@ pub struct SceneObjects {
     /// The PROT extraction entry holding the pack (what a `tmd` prop names).
     pub entry: Option<u32>,
     pub objects: Vec<SceneObject>,
+    /// The texture cells the pack's meshes sample, most used first: what a
+    /// decal, an animated material or a ground texture can name.
+    pub cells: Vec<SceneCell>,
+}
+
+/// One `32 x 32` atlas cell of a texture page through a palette, in the
+/// three words an `AtlasCell` carries, with how many textured prims of the
+/// scene's geometry pack sample it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct SceneCell {
+    /// The texpage word's low byte without its blend bits (`tsb & 0x9F`).
+    pub tpage: u8,
+    pub clut: u16,
+    /// `0..64`: column `u / 32`, row `v / 32` of the page's `8 x 8` atlas.
+    pub tile: u8,
+    pub prims: u32,
+}
+
+/// The atlas cell a textured prim samples: the cell under its UV box's
+/// low corner. `None` for an untextured prim.
+fn atlas_cell(tsb: u16, cba: u16, uvs: &[(u8, u8)]) -> Option<(u8, u16, u8)> {
+    if uvs.is_empty() || (tsb == 0 && cba == 0) {
+        return None;
+    }
+    let u = uvs.iter().map(|q| q.0).min()?;
+    let v = uvs.iter().map(|q| q.1).min()?;
+    Some(((tsb & 0x9F) as u8, cba, (v / 32) * 8 + u / 32))
 }
 
 /// Andrew's monotone chain; the hull is counter-clockwise, without repeats.
@@ -498,6 +552,17 @@ pub fn art_clips() -> Vec<ArtClipRow> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn atlas_cell_of_a_textured_prim() {
+        // Page 12, blend bits dropped; UVs from (70, 40): column 2, row 1.
+        assert_eq!(
+            atlas_cell(0x2C, 0x7C40, &[(70, 40), (100, 40), (70, 60)]),
+            Some((0x0C, 0x7C40, 10))
+        );
+        assert_eq!(atlas_cell(0x8C, 1, &[(255, 255)]), Some((0x8C, 1, 63)));
+        assert_eq!(atlas_cell(0x0C, 0x7C40, &[]), None);
+    }
 
     #[test]
     fn hull_of_a_square_with_an_inner_point() {

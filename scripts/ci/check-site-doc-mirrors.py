@@ -150,6 +150,8 @@ MIRRORS = [
      "site/_content/formats/dialog-font.html"),
     ("docs/formats/monster-animation.md",
      "site/_content/formats/monster-animation.html"),
+    ("docs/guides/making-expansion-packs.md",
+     "site/_content/guides/making-expansion-packs.html"),
     ("docs/formats/expansion-pack.md",
      "site/_content/formats/expansion-pack.html"),
     ("docs/formats/expansion-pack-battle.md",

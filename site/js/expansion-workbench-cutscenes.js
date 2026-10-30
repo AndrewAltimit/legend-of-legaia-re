@@ -19,6 +19,7 @@ const joinPath = (base, k) => (base ? (typeof k === 'number' ? `${base}[${k}]` :
 const STEP_KINDS = {
   wait: [{ k: 'frames', t: 'int', label: 'Frames', hint: '60 a second' }],
   say: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line' }, { k: 'on_choice', t: 'csv', label: 'Option labels', hint: 'a label per option, in order; empty goes on' }],
+  banner: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'its first page in the place-name banner; does not wait; about 40 characters' }],
   move: [{ k: 'actor', t: 'actor', label: 'Actor' }, { k: 'path', t: 'tiles', label: 'Path', hint: 'c,r c,r ... walked in order' }, { k: 'speed', t: 'oint', label: 'Speed', hint: 'world units a frame; empty = its own' }, { k: 'run', t: 'bool', label: 'Run' }, { k: 'clip', t: 'oint', label: 'Walk clip' }, { k: 'wait', t: 'bool', label: 'Wait for it' }],
   face: [{ k: 'actor', t: 'actor', label: 'Actor' }, { k: 'facing', t: 'oint', label: 'Sector', hint: '0..7; or toward' }, { k: 'toward', t: 'oactor', label: 'Toward' }],
   clip: [{ k: 'actor', t: 'actor', label: 'Actor' }, { k: 'clip', t: 'int', label: 'Clip' }, { k: 'frames', t: 'oint', label: 'Hold frames', hint: 'then the idle clip' }],
