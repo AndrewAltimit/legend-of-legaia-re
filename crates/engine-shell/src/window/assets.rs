@@ -143,19 +143,10 @@ impl PlayWindowApp {
         let world_map_slot4_lines = world_map_slot4_lines(&res);
 
         // Draw lists. Cross-draw coplanar offsets are computed over the
-        // combined terrain + placed EnvDraw lists BEFORE the resolvers run,
-        // so every resolver (textured / colour / posed bridges) finds its
-        // draw's offset by identity lookup and the layers stay mutually
-        // consistent.
-        self.coplanar_env_offsets = self.compute_coplanar_env_offsets(&res);
-        // Occlusion-fade visibility gate: the static scene's world-space
-        // triangle set, ray-cast per field frame (eye -> player samples) so
-        // the see-through fade arms only when the character is completely
-        // hidden. Same static draw list as the coplanar pass above.
-        self.field_occluders = self.build_field_occluders(&res);
-        // Volumetric fog: where the ground is, so the bank lies on it and
-        // spills off its rims (an enhancement; nothing reads it back).
-        self.install_fog_ground(&res);
+        // combined terrain + placed EnvDraw lists BEFORE the resolvers run;
+        // the occlusion-fade gate's occluders and the volumetric fog's
+        // ground field come off the same static draw list.
+        self.build_static_env_products(&res);
         let draws = self.resolve_field_draws(&res, &geo, scene_bundle.as_ref());
         let light_samples = static_layer_light_samples(&geo, &draws);
         let world_map = self.resolve_world_map_draws(&res, &geo);

@@ -2652,6 +2652,7 @@ dependencies = [
  "libc",
  "log",
  "png",
+ "rayon",
  "rfd",
  "serde",
  "serde_json",

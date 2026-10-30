@@ -6,6 +6,80 @@ use super::*;
 use legaia_engine_render::Renderer;
 use legaia_engine_scene::scene_resources::ResolvedTmd;
 
+/// The CPU half of one env mesh's build in [`PlayWindowApp::upload_env_meshes`]:
+/// everything before its GPU upload, a function of the TMD and the scene
+/// VRAM alone.
+struct EnvMeshPrep {
+    cmesh: legaia_tmd::mesh::ColorMesh,
+    vmesh: legaia_tmd::mesh::VramMesh,
+    lit_vertices: Vec<Option<legaia_tmd::mesh::LitVertex>>,
+    /// `resolve_hybrid`'s (double-sided pairs, nudged prims).
+    hybrid: (usize, usize),
+    curated: Option<legaia_render_kernels::scene_lighting::CuratedHit>,
+    color_emitters: Vec<legaia_render_kernels::scene_lighting::EmitterSample>,
+    vram_emitters: Vec<legaia_render_kernels::scene_lighting::EmitterSample>,
+}
+
+impl EnvMeshPrep {
+    fn build(rtmd: &ResolvedTmd, vram: &legaia_tim::Vram) -> Self {
+        // Build this mesh's untextured (F*/G*) vertex-colour primitives.
+        // `tmd_to_color_mesh` skips textured groups, so these are DISJOINT
+        // from the VRAM-mesh primitives below: a mesh carrying both textured
+        // and untextured primitives renders BOTH halves. A mesh whose only
+        // textured prims reference missing CLUTs yields an empty colour mesh
+        // AND an empty filtered VRAM mesh, so it correctly stays dropped.
+        let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+        // Use the VRAM-aware filter so prims whose CBA / TSB sample
+        // un-uploaded regions get dropped at mesh-build time (no "flat
+        // green CLUT[0]" shells over correctly-textured geometry).
+        let (mut vmesh, lit_vertices) = rtmd.build_filtered_vram_mesh_lit_vertices(vram);
+        // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`): flag
+        // double-sided prim pairs for the shaders' per-prim facing discard
+        // (retail NCLIP keeps only the camera-facing copy), then nudge
+        // distinct coplanar decal layers half a unit toward their visible
+        // side. Both halves go through ONE stream (`resolve_hybrid`): the
+        // baked floor shadows / wall paintings are untextured colour prims
+        // lying on textured bases (koin4 shop-floor shadows).
+        let hybrid = legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+        // Enhanced lighting: tag the emissive prims (TSB / blend bit 13) -
+        // the shared `scene_lighting` rule the browser page's mesh build
+        // runs too. Inert unless the enhancement is on.
+        let curated = legaia_render_kernels::scene_lighting::tag_emissive_meshes(
+            &rtmd.raw, &mut vmesh, &mut cmesh, vram,
+        );
+        let color_emitters = if cmesh.is_empty() {
+            Vec::new()
+        } else {
+            legaia_render_kernels::scene_lighting::color_mesh_emitters(
+                &cmesh.positions,
+                &cmesh.colors,
+                &cmesh.blend,
+                &cmesh.indices,
+            )
+        };
+        let vram_emitters = if vmesh.indices.is_empty() {
+            Vec::new()
+        } else {
+            legaia_render_kernels::scene_lighting::vram_mesh_emitters(
+                &vmesh.positions,
+                &vmesh.cba_tsb,
+                &vmesh.colors,
+                &vmesh.indices,
+                Some((vram, &vmesh.uvs)),
+            )
+        };
+        Self {
+            cmesh,
+            vmesh,
+            lit_vertices,
+            hybrid,
+            curated,
+            color_emitters,
+            vram_emitters,
+        }
+    }
+}
+
 /// What the geometry stages of [`PlayWindowApp::upload_assets`] accumulate:
 /// the uploaded meshes of both pipelines, the bridges from an uploaded slot
 /// back to its `res.tmds` index, and the per-mesh records the draw resolvers
@@ -185,59 +259,34 @@ impl PlayWindowApp {
             lit_sources,
             ..
         } = geo;
-        for (src_i, rtmd) in res.tmds.iter().enumerate() {
-            // Build this mesh's untextured (F*/G*) vertex-colour primitives
-            // and upload them to the colour pipeline. `tmd_to_color_mesh`
-            // skips textured groups, so these are DISJOINT from the VRAM-mesh
-            // primitives below: a mesh carrying both textured and untextured
-            // primitives now renders BOTH halves rather than only the
-            // textured one (the old code built the colour mesh only when the
-            // textured build came back empty, silently dropping the
-            // untextured half of a mixed mesh). A mesh whose only textured
-            // prims reference missing CLUTs yields an empty colour mesh AND
-            // an empty filtered VRAM mesh, so it correctly stays dropped.
-            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
-
-            // Use the VRAM-aware filter so prims whose CBA / TSB sample
-            // un-uploaded regions get dropped at mesh-build time. This
-            // matches the asset-viewer's cleanup and avoids the "flat
-            // green CLUT[0]" shells over correctly-textured geometry
-            // that the unfiltered builder produces.
-            let (mut vmesh, lit_vertices) = rtmd.build_filtered_vram_mesh_lit_vertices(&res.vram);
-            // Coplanar z-fight resolution (`legaia_tmd::mesh::coplanar`):
-            // flag double-sided prim pairs for the shaders' per-prim
-            // facing discard (retail NCLIP keeps only the camera-facing
-            // copy), then nudge distinct coplanar decal layers half a
-            // unit toward their visible side so the depth buffer resolves
-            // them deterministically instead of per-pixel fighting. Both
-            // halves go through ONE stream (`resolve_hybrid`): the baked
-            // floor shadows / wall paintings are untextured colour prims
-            // lying on textured bases, pairs neither single-mesh pass
-            // sees - running the passes on the textured half alone left
-            // every such decal fighting (koin4 shop-floor shadows).
-            {
-                let (ds, nudged) = legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
-                if ds + nudged > 0 {
-                    log::debug!(
-                        "play-window: mesh res {src_i}: {ds} double-sided pairs flagged, \
-                         {nudged} coplanar prims nudged"
-                    );
-                }
+        // The CPU half of every mesh's build runs in parallel - each reads
+        // only its own TMD and the scene VRAM - and the GPU uploads follow
+        // in `res.tmds` order, so the upload sequence (and every index the
+        // later stages key on) is the serial build's.
+        use rayon::prelude::*;
+        let preps: Vec<EnvMeshPrep> = res
+            .tmds
+            .par_iter()
+            .map(|rtmd| EnvMeshPrep::build(rtmd, &res.vram))
+            .collect();
+        for (src_i, (rtmd, prep)) in res.tmds.iter().zip(preps).enumerate() {
+            let EnvMeshPrep {
+                cmesh,
+                vmesh,
+                lit_vertices,
+                hybrid: (ds, nudged),
+                curated,
+                color_emitters,
+                vram_emitters,
+            } = prep;
+            if ds + nudged > 0 {
+                log::debug!(
+                    "play-window: mesh res {src_i}: {ds} double-sided pairs flagged, \
+                     {nudged} coplanar prims nudged"
+                );
             }
-            // Enhanced lighting: tag the emissive prims (TSB / blend bit
-            // 13) - the shared `scene_lighting` rule the browser page's
-            // mesh build runs too. Inert unless the enhancement is on.
-            let curated = legaia_render_kernels::scene_lighting::tag_emissive_meshes(
-                &rtmd.raw, &mut vmesh, &mut cmesh, &res.vram,
-            );
             if !cmesh.is_empty() {
-                tmd_color_emitters[src_i] =
-                    legaia_render_kernels::scene_lighting::color_mesh_emitters(
-                        &cmesh.positions,
-                        &cmesh.colors,
-                        &cmesh.blend,
-                        &cmesh.indices,
-                    );
+                tmd_color_emitters[src_i] = color_emitters;
                 match r.upload_color_mesh_blended(
                     &cmesh.positions,
                     &cmesh.colors,
@@ -269,13 +318,7 @@ impl PlayWindowApp {
             {
                 log_kept_mesh_textures(src_i, rtmd, &vmesh);
             }
-            tmd_vram_emitters[src_i] = legaia_render_kernels::scene_lighting::vram_mesh_emitters(
-                &vmesh.positions,
-                &vmesh.cba_tsb,
-                &vmesh.colors,
-                &vmesh.indices,
-                Some((&res.vram, &vmesh.uvs)),
-            );
+            tmd_vram_emitters[src_i] = vram_emitters;
             // A curated emissive mesh (the Genesis Tree) casts one strong
             // light from its centre.
             if let Some(hit) = curated {
