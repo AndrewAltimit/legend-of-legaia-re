@@ -174,7 +174,7 @@
       value = 'builtin';
     }
     $('gm-rules').value = value;
-    store(RULES_KEY, value === 'builtin' ? null : value);
+    store(RULES_KEY, value === 'rebirth' ? null : value);
     listModes();
     const info = JSON.parse(rt.modes_json());
     const from = info.source === 'pack' ? info.pack : 'the practice set';
@@ -197,21 +197,86 @@
     status(`${info.modes.length} modes from ${info.pack}. Pick one and press Play.`);
   }
 
-  /* The play page's deep link that seats instance `m` in the world, in 3D
-   * (`play.html?expansion=1&lib=<pack>&map=<map>&mode=<id>`): only for an
-   * instance laid out on a map of a pack the play page can open - Rebirth,
-   * built in, or one installed in the browser's pack library. */
-  function play3d(m) {
+  /* ---------------- play in 3D ---------------- */
+
+  /* Whether the site's disc cache holds a disc (js/rom-cache.js): the
+   * framed play page boots off it. */
+  let discReady = false;
+
+  /* The pack id the play page opens these rules as: Rebirth (built in) or
+   * a pack installed in the browser's library; '' for the practice set or
+   * a picked file, which the play page cannot open. */
+  function playLib() {
     const rules = $('gm-rules').value;
-    const lib = rules === 'rebirth' ? 'rebirth' : (rules.startsWith('lib:') ? rules.slice(4) : '');
-    if (!m.map || !lib) return '';
-    const href = 'play.html?expansion=1&lib=' + encodeURIComponent(lib)
-      + '&map=' + encodeURIComponent(m.map) + '&mode=' + encodeURIComponent(m.id);
-    return `<a class="gm-btn" href="${esc(href)}" title="Open the play page with your disc and play this at its table in the world">Play in 3D</a>`;
+    return rules === 'rebirth' ? 'rebirth' : (rules.startsWith('lib:') ? rules.slice(4) : '');
+  }
+
+  function list3d() {
+    const host = $('gm-3d-cards');
+    const lib = playLib();
+    const world = lib ? modes.filter((m) => m.map) : [];
+    if (!world.length) {
+      host.innerHTML = `<p class="gm-hint">${lib
+        ? 'These rules lay no game out on a map.'
+        : 'The practice set has no games in the world. Choose Rebirth (or an installed pack) as the rules below.'}</p>`;
+      return;
+    }
+    host.innerHTML = world.map((m) => {
+      const h = HOWTO[m.kind] || { blurb: '' };
+      return `<div class="gm-card" data-id="${esc(m.id)}">
+        <span class="gm-kind">${esc(m.kind)}</span>
+        <h3>${esc(m.name)}</h3>
+        <p>${esc(h.blurb)}</p>
+        <p class="gm-map">At its place on <code>${esc(m.map)}</code>.</p>
+        <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play3d="${esc(m.id)}"
+          ${discReady ? '' : 'disabled title="Load your disc above first"'}>Play in 3D</button></div>
+      </div>`;
+    }).join('');
+    host.querySelectorAll('[data-play3d]').forEach((b) => {
+      b.addEventListener('click', () => enter3d(b.dataset.play3d));
+    });
+  }
+
+  function enter3d(id) {
+    const m = modes.find((x) => x.id === id);
+    const lib = playLib();
+    if (!m || !m.map || !lib || !discReady) return;
+    leave();
+    const frame = $('gm-3d-frame');
+    const q = new URLSearchParams({ embed: '1', expansion: '1', lib, map: m.map, mode: m.id });
+    frame.src = 'play.html?' + q.toString();
+    frame.hidden = false;
+    $('gm-3d-bar').hidden = false;
+    $('gm-3d-now').innerHTML = `Playing <b>${esc(m.name)}</b> in 3D. Click the picture for the keys; Start asks to leave.`;
+    document.querySelectorAll('#gm-3d-cards .gm-card').forEach((c) => c.classList.toggle('is-live', c.dataset.id === id));
+    frame.addEventListener('load', () => { try { frame.focus(); } catch (e) {} }, { once: true });
+    frame.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  /* Closing the frame frees its engine and its copy of the disc. */
+  function leave3d() {
+    const frame = $('gm-3d-frame');
+    if (frame.getAttribute('src')) frame.removeAttribute('src');
+    frame.hidden = true;
+    $('gm-3d-bar').hidden = true;
+    document.querySelectorAll('#gm-3d-cards .gm-card').forEach((c) => c.classList.remove('is-live'));
+  }
+
+  function wireDisc() {
+    $('gm-3d-leave').addEventListener('click', leave3d);
+    if (!window.RomCache) return;
+    window.RomCache.attach($('gm-file'), {
+      onLoad: (src) => {
+        discReady = true;
+        $('gm-disc-status').textContent = `Disc ready: ${src && src.name ? src.name : 'your image'}. Pick a game below to play it in 3D.`;
+        list3d();
+      },
+    });
   }
 
   function listModes() {
     modes = JSON.parse(rt.modes_json()).modes || [];
+    list3d();
     const host = $('gm-cards');
     host.innerHTML = modes.map((m) => {
       const h = HOWTO[m.kind] || { blurb: '', controls: [] };
@@ -221,8 +286,8 @@
         <h3>${esc(m.name)}</h3>
         <p>${esc(h.blurb)}</p>
         <ul>${lines.map((l) => `<li>${controlLine(l)}</li>`).join('')}</ul>
-        ${m.map ? `<p class="gm-map">Played in 3D at its table or course on the pack map <code>${esc(m.map)}</code>; this page draws it flat, with no disc.</p>` : ''}
-        <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play="${esc(m.id)}">Play</button>${play3d(m)}</div>
+        ${m.map ? `<p class="gm-map">Also in 3D above, at its place on <code>${esc(m.map)}</code>.</p>` : ''}
+        <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play="${esc(m.id)}">Play flat</button></div>
       </div>`;
     }).join('');
     host.querySelectorAll('[data-play]').forEach((b) => {
@@ -233,6 +298,7 @@
   /* ---------------- the seat ---------------- */
 
   function enter(id) {
+    leave3d();
     const err = rt.enter(id);
     if (err) { status(err, true); return false; }
     live = id;
@@ -386,9 +452,12 @@
     $('gm-keys').innerHTML = `Keyboard: arrows move, ${button('Cross')}, ${button('Circle')}, `
       + `${button('Square')}, ${button('Triangle')}, ${button('R1')}, ${button('Start')}. A controller works too.`;
     wirePad();
+    wireDisc();
     await addInstalledOptions();
     const q = new URLSearchParams(location.search);
-    let rules = q.get('rules') || recall(RULES_KEY) || 'builtin';
+    /* Rebirth by default: its games are the ones laid out in the world,
+     * which the page leads with. */
+    let rules = q.get('rules') || recall(RULES_KEY) || 'rebirth';
     if (![...$('gm-rules').options].some((o) => o.value === rules)) rules = 'builtin';
     await useRules(rules);
     const want = q.get('mode');

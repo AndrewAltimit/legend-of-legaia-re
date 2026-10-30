@@ -1179,7 +1179,9 @@ Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
 
 ## The game-modes page (`modes_page`)
 
-`LegaiaModes` runs the port's own game modes for `site/modes.html` with no disc and no `World`. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own. The screen is the one projection every host draws, `legaia_engine_ui::expansion_modes::seat_screen`; `frame_json` hands its flat quads (in draw order) and its labels unmeasured (`mode_screen_labels`), and the page fills the quads and sets the labels in a web font, since the dialog font is disc data.
+`LegaiaModes` runs the port's own game modes flat for `site/modes.html`, with no disc and no `World`. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own. The screen is the one projection every host draws, `legaia_engine_ui::expansion_modes::seat_screen`; `frame_json` hands its flat quads (in draw order) and its labels unmeasured (`mode_screen_labels`), and the page fills the quads and sets the labels in a web font, since the dialog font is disc data.
+
+The page's 3D section is not this class: it frames the play page (`play.html?embed=1&expansion=1&lib=<pack>&map=<map>&mode=<id>`), whose `LegaiaRuntime` boots off the site's disc cache and seats the instance at its table or course (`World::enter_pack_mode`, the scene host entering the mode's map); the pack report's `world_modes` lists which instances have one.
 
 | Export | Does |
 |---|---|

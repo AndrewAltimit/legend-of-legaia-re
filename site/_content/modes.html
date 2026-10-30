@@ -40,6 +40,16 @@ kbd.gm-key {
   border: 1px solid var(--border); border-radius: 3px; background: var(--bg-code); color: var(--text);
 }
 
+/* Play in 3D: the play page's runtime framed here (play.html ?embed=1),
+ * reading the disc this page cached, seated at the mode's table. */
+.gm-3d-frame {
+  display: block; width: 100%; max-width: 960px; margin: 0.9rem auto 0.4rem;
+  aspect-ratio: 4 / 3; border: 1px solid var(--border); border-radius: 4px; background: #000;
+}
+.gm-3d-frame[hidden], .gm-3d-bar[hidden] { display: none; }
+.gm-3d-bar { width: 100%; max-width: 960px; margin: 0 auto 0.9rem; }
+.gm-card.is-flat-only { opacity: 0.7; }
+
 .gm-stage-wrap { display: flex; flex-direction: column; gap: 0.6rem; align-items: center; margin: 0 0 1.2rem; scroll-margin-top: 4.5rem; }
 .gm-stage-wrap[hidden] { display: none; }
 .gm-stage {
@@ -85,20 +95,39 @@ kbd.gm-key {
   <p class="lede">
     The port has game modes the 1998 game never had: <strong>Texas Hold'em, the Grid Duel card
     game, mini-golf, checkpoint racing and prop hunt</strong>. Pick one below and play it right
-    here. No disc needed: the rules are the port's own, and they run as the same WebAssembly
-    the <a href="play.html">play page</a> runs.
+    here. The rules are the port's own, and they run as the same WebAssembly the
+    <a href="play.html">play page</a> runs.
   </p>
   <p>
-    Here the games are drawn flat. To play them in 3D, at a table in the tower with the cards,
-    chips and players in the world, or on a course laid out on the map, choose
-    <strong>Rebirth</strong> as the rules and press <strong>Play in 3D</strong> on a mode. That
-    opens the play page with your disc, which draws the world. On the play page itself, the same
-    list is under <em>Game modes in 3D</em> in the scene picker once Rebirth is loaded.
+    The games Rebirth lays out in the world - at a table in the tower, or on a course built on
+    the map - play <strong>in 3D</strong> first below, from your disc. Every game also plays
+    <strong>flat</strong> further down, with no disc at all.
   </p>
 </header>
 
+<div class="disc-bar">
+  <label for="gm-file">Disc:</label>
+  <input type="file" id="gm-file" accept=".bin,.DAT,.dat">
+  <span class="gm-status" id="gm-disc-status">No disc loaded. Provide your <code>.bin</code> Mode2/2352 image to play the games in 3D. Nothing is uploaded.</span>
+</div>
+
+<section class="doc-section" id="in-3d">
+  <h2>Play in 3D</h2>
+  <p>
+    The games laid out in the world: at a table in the tower, with the cards, chips and players
+    around it, or on a course built on the map. They run in the play page's engine, framed here,
+    and draw from your disc.
+  </p>
+  <div class="gm-cards" id="gm-3d-cards"></div>
+  <div class="gm-bar gm-3d-bar" id="gm-3d-bar" hidden>
+    <span id="gm-3d-now">-</span>
+    <button class="gm-btn" id="gm-3d-leave" type="button">Leave</button>
+  </div>
+  <iframe id="gm-3d-frame" class="gm-3d-frame" hidden allow="autoplay; fullscreen" title="Game mode in 3D"></iframe>
+</section>
+
 <section class="doc-section" id="play">
-  <h2>Play</h2>
+  <h2>Play flat, without a disc</h2>
   <div class="gm-rules">
     <label for="gm-rules">Rules from</label>
     <select id="gm-rules">
@@ -186,6 +215,7 @@ kbd.gm-key {
   </ul>
 </section>
 
+<script src="js/rom-cache.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/play-pack-library.js"></script>
 <script src="js/modes-app.js"></script>
