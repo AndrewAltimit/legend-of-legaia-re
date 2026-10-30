@@ -89,6 +89,12 @@ rect = [7, 9, 7, 9]
 event = { kind = "mode", mode = "tower-high-table" }
 requires = { quests = ["gamblers_rest"] }
 
+# The Tower Armory (items.toml): its stock grows as the bosses fall.
+[[triggers]]
+id = "armory"
+rect = [2, 6, 3, 6]
+event = { kind = "shop", shop = "tower_armory" }
+
 # The Rest itself: the party recovers by the hearth, and may save.
 [[triggers]]
 id = "hearth"

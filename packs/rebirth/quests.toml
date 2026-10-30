@@ -178,7 +178,7 @@ objectives = [
     { kind = "enter_scene", scene = "rebirth_tower_8f", text = "The Hollow Throne" },
 ]
 complete_dialog = "every_floor_done"
-rewards = { gold = 20000, cards = ["sky-sovereign"] }
+rewards = { gold = 20000, items = [{ item = "mist_lantern" }], cards = ["sky-sovereign"] }
 
 [[quests]]
 id = "bounty_ironhide"
@@ -207,7 +207,7 @@ objectives = [
     { kind = "talk", npc = "tower_guide", text = "Bring them to the Warden's Stone" },
 ]
 complete_dialog = "remedy_done"
-rewards = { items = [{ item = 248, count = 1 }, { item = 249, count = 1 }] }
+rewards = { items = [{ item = 248, count = 1 }, { item = 249, count = 1 }, { item = "phoenix_plume", count = 2 }] }
 
 [[quests]]
 id = "gilded_hunt"

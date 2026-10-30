@@ -35,6 +35,7 @@ Rebirth is built for the climb from there to 99.
 | `dialog.toml` | Every line the pack says. |
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
+| `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
 
 ### The tower
 
@@ -156,6 +157,28 @@ the 1F floor round the dais; both open from the mode picker.
 
 The earlier village instances (`mist-lantern-table`, `rim-elm-duel`,
 `windmill-links`, `drake-circuit`, `storehouse`) stay as the gentler set.
+
+### Gear
+
+`items.toml` is the gear worth chasing between 60 and 99 (the format is
+[`expansion-pack-items.md`](../../docs/formats/expansion-pack-items.md)).
+Retail's best is the Ra-Seru set; the Rebirth set sits about 12-15% above
+it a piece and rewards wearing it together.
+
+| Where | What |
+|---|---|
+| 5F Tower Armory, from the start | Tower Draught (2,500 HP), Mist Tonic (300 MP), Phoenix Plume (party revive at 50%), Healing Berry, the Warden Mail / Robe / Plate (body armour between Triumph and Ra-Seru) |
+| Armory, after the Verdant Colossus | Sovereign Nectar (full HP, party), Ysolde's Seal (Master Guard + HP Boost 1) |
+| Armory, after the Engine Deep | Tower Sigil (AP Boost 2 + HP After) |
+| Armory, after the Iron Regent | Rebirth Mail / Robe / Plate (UDF/LDF 86-96 against Ra-Seru's 75-84) and the Rebirth Crown (UDF 71, INT 70) |
+| Armory, after the Azure Seraph | Rebirth Greaves (ATK 98, LDF 70, SPD 35 against Ra-Seru Thongs 88/64/32) |
+| Boss rewards | Cinder Warden: Ember Heart (Fire Guard, +15 ATK). Verdant Colossus: Rebirth Maul (Gala, ATK 114 against the Ra-Seru Club's 100). Iron Regent: Rebirth Blade (Vahn, 112 against 98). Azure Seraph: Rebirth Talon (Noa, 110 against 96). Hollow Sovereign: Sovereign's Eye (Attack x2 + Arts Power). |
+| Quests and drops | Every Floor: the Mist Lantern (EXP Boost + Items Up, for the climb to 99). A Remedy for Stone: two Phoenix Plumes. Throne Heralds drop Phoenix Plumes; Storm Giliums can be robbed of Mist Tonics. |
+
+The Rebirth set (each hero's weapon and body armour, the crown, the greaves)
+adds +10 ATK at two pieces, +12 UDF and LDF at three and All Guard at four.
+Open the bag from the Journal's Items page; the Gear tab shows each stat
+before and after a piece goes on.
 
 ## Levelling to 99: the numbers
 

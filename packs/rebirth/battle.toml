@@ -256,6 +256,8 @@ attack = 560
 defence = 265
 exp = 16800
 gold = 9200
+# A pack item (items.toml): steal the tower's MP restore.
+steal = { item = "mist_tonic", chance_pct = 12 }
 
 [monsters.prism_topaz]
 base = { kind = "monster", id = 112 }
@@ -442,6 +444,8 @@ attack = 700
 defence = 270
 exp = 20000
 gold = 10000
+# A pack item (items.toml): the tower's party revive.
+drop = { item = "phoenix_plume", chance_pct = 8 }
 
 [monsters.hollow_sovereign]
 base = { kind = "monster", id = 138 }
@@ -749,28 +753,28 @@ formations = [
 [bosses.cinder_warden]
 formation = "ember_throne"
 music = { kind = "bgm", id = 28 }
-reward_items = [{ item = { kind = "item", id = 223 }, count = 1 }]
+reward_items = [{ item = { kind = "item", id = 223 }, count = 1 }, { item = "ember_heart" }]
 reward_gold = 20000
 once = true
 
 [bosses.verdant_colossus]
 formation = "verdant_heart"
 music = { kind = "bgm", id = 32 }
-reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }]
+reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }, { item = "rebirth_maul" }]
 reward_gold = 30000
 once = true
 
 [bosses.iron_regent]
 formation = "regent_hall"
 music = { kind = "bgm", id = 31 }
-reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }]
+reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }, { item = "rebirth_blade" }]
 reward_gold = 40000
 once = true
 
 [bosses.azure_seraph]
 formation = "sanctum_seraph"
 music = { kind = "bgm", id = 29 }
-reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }]
+reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }, { item = "rebirth_talon" }]
 reward_gold = 50000
 once = true
 
@@ -780,6 +784,7 @@ music = { kind = "bgm", id = 61 }
 reward_items = [
     { item = { kind = "item", id = 233 }, count = 1 },
     { item = { kind = "item", id = 250 }, count = 2 },
+    { item = "sovereign_eye" },
 ]
 reward_gold = 100000
 once = true

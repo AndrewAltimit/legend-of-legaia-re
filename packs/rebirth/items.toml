@@ -1,0 +1,262 @@
+# Legend of Legaia: Rebirth - the tower's gear.
+#
+# Retail's best gear is the Ra-Seru set the story hands out near the end,
+# and nothing past it is worth chasing between level 60 and 99. These items
+# sit one step above it. Every number below is set against the retail
+# equipment stat table (`DAT_80074F68`, docs/formats/equipment-table.md):
+#
+#   Weapons   Ra-Seru Blade 98 (Vahn), Ra-Seru Fangs 96 (Noa),
+#             Ra-Seru Club 100 (Gala); shop best Chaos Breaker 72,
+#             Golden Claw 86, Great Axe 88.
+#   Armour    Ra-Seru Armor 83/82, Ra-Seru Robe 84/78, Ra-Seru Plate 75/84
+#             (UDF/LDF); shop best Triumph Armor 70/69 (50,000 G).
+#   Head      Ra-Seru Seal / Plume / Helmet: UDF 62-64, INT 60-64.
+#   Feet      Ra-Seru Boots / Shoes / Thongs: ATK 86-90, LDF 60-64, SPD 28-32.
+#
+# The Warden tier (sold from the start of the climb) lands between the shop
+# best and the Ra-Seru set; the Rebirth set beats Ra-Seru by about 12-15%
+# a piece and adds set bonuses for wearing it together. A weapon swings at
+# half its ATK per hit (the retail per-slot fold), so +14 weapon ATK is +7
+# damage before defence - meaningful, not a one-shot.
+#
+# Accessories combine two retail passives each (the 64-slot passive index
+# space, docs/formats/accessory-passive-table.md) at the price of the pair.
+
+# --- Consumables -------------------------------------------------------------
+
+[items.tower_draught]
+name = "Tower Draught"
+description = "Recover 2500 HP. Ally."
+kind = "consumable"
+icon = { kind = "item", id = 0x78 }
+# Healing Flower: 800 HP for 400 G. Healing Berry: full HP for 3000 G.
+price = 1200
+effect = { kind = "heal_hp", amount = 2500 }
+
+[items.mist_tonic]
+name = "Mist Tonic"
+description = "Recover 300 MP. Ally."
+kind = "consumable"
+icon = { kind = "item", id = 0x7D }
+# Magic Fruit: 200 MP for 5000 G.
+price = 7000
+effect = { kind = "heal_mp", amount = 300 }
+
+[items.phoenix_plume]
+name = "Phoenix Plume"
+description = "Revive every fallen|ally at half HP."
+kind = "consumable"
+icon = { kind = "item", id = 0x80 }
+# Phoenix revives one ally for 1600 G.
+price = 12000
+effect = { kind = "revive", percent = 50 }
+all_party = true
+
+[items.sovereign_nectar]
+name = "Sovereign Nectar"
+description = "Recover max HP.|All allies."
+kind = "consumable"
+icon = { kind = "item", id = 0x7B }
+# Healing Fruit: 800 HP to every ally for 2400 G.
+price = 15000
+effect = { kind = "heal_hp", full = true }
+all_party = true
+
+# --- Weapons: boss rewards ---------------------------------------------------
+
+[items.rebirth_blade]
+name = "Rebirth Blade"
+description = "Forged where the Mist|was torn away."
+kind = "weapon"
+icon = { kind = "item", id = 0x27 }
+characters = ["vahn"]
+attack = 112
+set = "rebirth"
+
+[items.rebirth_talon]
+name = "Rebirth Talon"
+description = "Light as breath and|twice as sharp."
+kind = "weapon"
+icon = { kind = "item", id = 0x2D }
+characters = ["noa"]
+attack = 110
+set = "rebirth"
+
+[items.rebirth_maul]
+name = "Rebirth Maul"
+description = "The Colossus's heartwood,|bound in iron."
+kind = "weapon"
+icon = { kind = "item", id = 0x33 }
+characters = ["gala"]
+attack = 114
+set = "rebirth"
+
+# --- Armour: the Warden tier (sold from the start) ---------------------------
+
+[items.warden_mail]
+name = "Warden Mail"
+description = "The tower guard's mail."
+kind = "armor"
+icon = { kind = "item", id = 0x4A }
+price = 62000
+characters = ["vahn"]
+defence = 77
+
+[items.warden_robe]
+name = "Warden Robe"
+description = "The tower guard's robe."
+kind = "armor"
+icon = { kind = "item", id = 0x50 }
+price = 58000
+characters = ["noa"]
+udf = 76
+ldf = 70
+
+[items.warden_plate]
+name = "Warden Plate"
+description = "The tower guard's plate."
+kind = "armor"
+icon = { kind = "item", id = 0x56 }
+price = 60000
+characters = ["gala"]
+udf = 69
+ldf = 76
+
+# --- The Rebirth set (sold once the Iron Regent falls) -----------------------
+
+[items.rebirth_mail]
+name = "Rebirth Mail"
+description = "Mail of the reborn."
+kind = "armor"
+icon = { kind = "item", id = 0x4A }
+price = 120000
+characters = ["vahn"]
+defence = 94
+set = "rebirth"
+
+[items.rebirth_robe]
+name = "Rebirth Robe"
+description = "Robe of the reborn."
+kind = "armor"
+icon = { kind = "item", id = 0x50 }
+price = 118000
+characters = ["noa"]
+udf = 95
+ldf = 88
+set = "rebirth"
+
+[items.rebirth_plate]
+name = "Rebirth Plate"
+description = "Plate of the reborn."
+kind = "armor"
+icon = { kind = "item", id = 0x56 }
+price = 120000
+characters = ["gala"]
+udf = 86
+ldf = 96
+set = "rebirth"
+
+[items.rebirth_crown]
+name = "Rebirth Crown"
+description = "A crown for whoever|climbs the whole tower."
+kind = "helmet"
+icon = { kind = "item", id = 0x3D }
+price = 90000
+udf = 71
+intelligence = 70
+set = "rebirth"
+
+[items.rebirth_greaves]
+name = "Rebirth Greaves"
+description = "Stride over the Mist."
+kind = "boots"
+icon = { kind = "item", id = 0x5E }
+price = 95000
+attack = 98
+ldf = 70
+speed = 35
+set = "rebirth"
+
+[sets.rebirth]
+name = "Rebirth"
+# Two pieces: +10 ATK. Three: +12 UDF and LDF. All four a hero can wear
+# (weapon, armour, crown, greaves): All Guard (passive 0x24, the Rainbow
+# Jewel's), freeing a Goods slot.
+bonuses = [
+    { pieces = 2, attack = 10 },
+    { pieces = 3, defence = 12 },
+    { pieces = 4, passives = [0x24] },
+]
+
+# --- Accessories -------------------------------------------------------------
+
+[items.ember_heart]
+name = "Ember Heart"
+description = "Still warm. Guards|against fire."
+kind = "accessory"
+icon = { kind = "item", id = 0xDF }
+# The Burning Jewel (Fire Guard) sells for 2000 G; this adds +15 ATK.
+price = 0
+element = 2
+attack = 15
+
+[items.ysoldes_seal]
+name = "Ysolde's Seal"
+description = "Nullify all status;|max HP +10%."
+kind = "accessory"
+icon = { kind = "item", id = 0xDC }
+# Wonder Amulet (Master Guard) 50,000 G + Life Ring (HP Boost 1) 9500 G.
+price = 60000
+passives = [0x1C, 0x00]
+
+[items.tower_sigil]
+name = "Tower Sigil"
+description = "AP accrual +25%;|recover HP each turn."
+kind = "accessory"
+icon = { kind = "item", id = 0xE9 }
+# Mettle Armband (AP Boost 2) 40,000 G + Life Grail (HP After) 40,000 G.
+price = 80000
+passives = [0x29, 0x25]
+
+[items.mist_lantern]
+name = "Mist Lantern"
+description = "More EXP and more|items after battle."
+kind = "accessory"
+icon = { kind = "item", id = 0xEF }
+# Crimson Book (EXP Boost) 65,000 G + Bronze Book (Items Up) 8000 G; a
+# quest reward only, for the climb from 60 to 99.
+price = 0
+passives = [0x2F, 0x31]
+
+[items.sovereign_eye]
+name = "Sovereign's Eye"
+description = "Attack twice;|arts power up."
+kind = "accessory"
+icon = { kind = "item", id = 0xCD }
+# War God Icon (Attack x2) 60,000 G + War Soul (Arts Power) 60,000 G; the
+# Hollow Sovereign's reward only.
+price = 0
+passives = [0x0D, 0x2C]
+
+# --- The Tower Armory (5F, the Gambler's Rest) -------------------------------
+
+[[shops]]
+id = "tower_armory"
+name = "Tower Armory"
+stock = [
+    "tower_draught",
+    "mist_tonic",
+    "phoenix_plume",
+    0x79,
+    "warden_mail",
+    "warden_robe",
+    "warden_plate",
+    { item = "sovereign_nectar", requires = { bosses = ["verdant_colossus"] } },
+    { item = "ysoldes_seal", requires = { bosses = ["verdant_colossus"] } },
+    { item = "tower_sigil", requires = { quests = ["engine_deep"] } },
+    { item = "rebirth_mail", requires = { bosses = ["iron_regent"] } },
+    { item = "rebirth_robe", requires = { bosses = ["iron_regent"] } },
+    { item = "rebirth_plate", requires = { bosses = ["iron_regent"] } },
+    { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } },
+    { item = "rebirth_greaves", requires = { bosses = ["azure_seraph"] } },
+]

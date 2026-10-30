@@ -1588,6 +1588,7 @@
    "modules": [
     "battle",
     "battle_waves",
+    "boss_script",
     "cards",
     "dialog",
     "entrance",
@@ -3002,6 +3003,7 @@
    "lib": true,
    "modules": [
     "battle",
+    "boss_script",
     "bundle",
     "cards",
     "dialog",
