@@ -13,7 +13,9 @@
  * the frame, which hot-reloads it (`LegaiaRuntime::reload_expansion`: the
  * same activation, the map re-entered with the player where they stood).
  * What is not an edit stays a message and rebuilds nothing: the selection,
- * the overlay layers, the camera, a cutscene's path.
+ * the overlay layers, the camera, a cutscene's path. An edit that only
+ * moved or turned props and NPCs is sent as moves (`xw-move`) and rebuilds
+ * nothing either (moveObjects below).
  *
  * Between rebuilds the volumes follow the editor at once: the painter hands
  * over each `map_preview` it computes (`setMapPreview`), and the frame draws
@@ -49,12 +51,21 @@ const VIEWS = [
   ['3d', '3D', 'The 3D view as large as the window allows; the painter\'s canvas is put away and its forms sit under the picture'],
 ];
 const VIEW_KEY = 'legaia-xw-view';
+// The Split view's picture column, as a share of the editor's width.
+const SPLIT_KEY = 'legaia-xw-split';
+const SPLIT_MIN = 0.25, SPLIT_MAX = 0.75;
 
 /* The layouts of the view switch. The page's own style (the HTML) sizes
  * the dock for 2D; these rules only rearrange it, so the page keeps one
  * place for its look. */
 const VIEW_CSS = `
-body.xw-view-split .xw-edpane { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 0.6rem; align-items: start; }
+body.xw-view-split .xw-edpane { display: grid; grid-template-columns: minmax(0, 1fr) var(--xw-split-col, minmax(0, 1.3fr)); column-gap: 0.6rem; align-items: start; }
+.xw-split-handle { display: none; }
+body.xw-view-split .xw-edpane > .xw-split-handle { display: block; grid-column: 2; grid-row: 2; justify-self: start; align-self: start; position: sticky; top: calc(var(--topbar-h, 0px) + 0.4rem); z-index: 3; width: 0.6rem; margin-left: -0.6rem; height: calc(100vh - var(--topbar-h, 0px) - 0.8rem); max-height: 40rem; cursor: col-resize; touch-action: none; background: none; border: 0; padding: 0; }
+.xw-split-handle::after { content: ''; position: absolute; left: calc(50% - 1px); top: 35%; height: 30%; width: 3px; border-radius: 2px; background: var(--border-hi); }
+.xw-split-handle:hover::after, .xw-split-handle:focus-visible::after, .xw-split-handle.is-drag::after { background: var(--accent); }
+body.xw-split-drag, body.xw-split-drag * { cursor: col-resize !important; user-select: none; }
+body.xw-split-drag .xw-3d-frame { pointer-events: none; }
 body.xw-view-split .xw-edpane > .xw-tabs { grid-column: 1 / -1; }
 body.xw-view-split .xw-edpane > .xw-panel { grid-column: 1; grid-row: 2; min-width: 0; }
 body.xw-view-split .xw-edpane > .xw-3d:not([hidden]) { grid-column: 2; grid-row: 2; position: sticky; top: calc(var(--topbar-h, 0px) + 0.4rem); z-index: 2; max-height: calc(100vh - var(--topbar-h, 0px) - 0.8rem); overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
@@ -131,6 +142,55 @@ export function draftDefs(map, pv, built) {
   return d;
 }
 
+/* Object-only edits. The pack as JSON with the open map's object poses
+ * blanked - each prop's tile, offset and turn, each NPC's tile and facing:
+ * two packs that differ only in those give the same text, and the
+ * preview moves the drawn objects instead of rebuilding the map. */
+export function strippedJson(pack, mapId) {
+  const m = pack && pack.maps && pack.maps[mapId];
+  if (!m) return JSON.stringify(pack);
+  const props = m.props, npcs = m.npcs;
+  m.props = (props || []).map((p) => Object.assign({}, p, { tile: null, offset: p.offset ? [0, p.offset[1] || 0, 0] : null, rotation: p.rotation ? [p.rotation[0] || 0, 0, p.rotation[2] || 0] : null }));
+  m.npcs = (npcs || []).map((n) => Object.assign({}, n, { tile: null, facing: null }));
+  try { return JSON.stringify(pack); } finally { m.props = props; m.npcs = npcs; }
+}
+
+/* Each prop's and NPC's pose on `map`, in the terms a move is sent in. */
+export function objectPoses(map) {
+  const o0 = (map.tiles && map.tiles.origin) || [0, 0];
+  const world = (t, off) => [(o0[0] + t[0]) * 128 + 64 + ((off && off[0]) || 0), (o0[1] + t[1]) * 128 + 64 + ((off && off[2]) || 0)];
+  return {
+    props: (map.props || []).map((p) => ({ tile: p.tile || [0, 0], at: world(p.tile || [0, 0], p.offset), yaw: (p.rotation || [0, 0, 0])[1] || 0 })),
+    npcs: (map.npcs || []).map((n) => ({ tile: n.tile || [0, 0], facing: n.facing || 0 })),
+  };
+}
+
+/* The moves from poses `a` to `b` (same lists): props by world position,
+ * turn and the floor's rise between their tiles (`grid`, the corner
+ * heights the frame's tile grid draws), NPCs by tile and facing. `null`
+ * when a prop changes tile with no grid to lift it by. */
+export function objectMoves(a, b, grid) {
+  const props = [];
+  const npcs = [];
+  const floor = (t) => {
+    const q = grid.corners[t[1] * grid.width + t[0]];
+    return q ? (q[0] + q[1] + q[2] + q[3]) / 4 : 0;
+  };
+  for (let i = 0; i < b.props.length; i++) {
+    const p = a.props[i], q = b.props[i];
+    if (p.at[0] === q.at[0] && p.at[1] === q.at[1] && p.yaw === q.yaw) continue;
+    const moved = p.tile[0] !== q.tile[0] || p.tile[1] !== q.tile[1];
+    if (moved && !grid) return null;
+    props.push({ i, from: p.at, to: q.at, turn: q.yaw - p.yaw, dy: moved ? Math.round(floor(q.tile) - floor(p.tile)) : 0 });
+  }
+  for (let n = 0; n < b.npcs.length; n++) {
+    const p = a.npcs[n], q = b.npcs[n];
+    if (p.tile[0] === q.tile[0] && p.tile[1] === q.tile[1] && p.facing === q.facing) continue;
+    npcs.push({ n, tile: q.tile, facing: q.facing });
+  }
+  return { props, npcs };
+}
+
 export function createPreview3d(env) {
   // env: { exportBundle() -> Uint8Array (throws on errors), pack(), storePlay(bytes, map) -> Promise, playUrl(map) }
   const P = {
@@ -156,6 +216,61 @@ export function createPreview3d(env) {
   status.className = 'xw-3d-status';
   el.append(head, body);
 
+  /* The Split view's divider: drag it (or arrow keys on it) to give the
+   * picture or the forms more room; double-click resets. The share is
+   * kept per browser. It sits in the editor's grid beside the picture -
+   * the frame itself never moves. */
+  const handle = document.createElement('button');
+  handle.type = 'button';
+  handle.className = 'xw-split-handle';
+  handle.title = 'Drag to resize the 3D view (arrow keys too; double-click resets)';
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-orientation', 'vertical');
+  handle.setAttribute('aria-label', 'Resize the 3D view');
+  let split = null;
+  try { const f = parseFloat(localStorage.getItem(SPLIT_KEY)); if (f >= SPLIT_MIN && f <= SPLIT_MAX) split = f; } catch (e) { split = null; }
+  function applySplit() {
+    const pane = el.parentElement;
+    if (!pane) return;
+    if (split == null) pane.style.removeProperty('--xw-split-col');
+    else pane.style.setProperty('--xw-split-col', `${(split * 100).toFixed(1)}%`);
+    handle.setAttribute('aria-valuenow', String(Math.round((split == null ? 0.565 : split) * 100)));
+    if (handle.parentElement !== pane) el.before(handle);
+  }
+  function setSplit(f, keep) {
+    split = f == null ? null : Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, f));
+    applySplit();
+    if (keep) { try { if (split == null) localStorage.removeItem(SPLIT_KEY); else localStorage.setItem(SPLIT_KEY, split.toFixed(3)); } catch (e) { /* no storage */ } }
+  }
+  handle.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('is-drag');
+    document.body.classList.add('xw-split-drag');
+  });
+  handle.addEventListener('pointermove', (e) => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    const r = el.parentElement.getBoundingClientRect();
+    setSplit((r.right - e.clientX) / Math.max(1, r.width), false);
+  });
+  const endDrag = (e) => {
+    if (!handle.classList.contains('is-drag')) return;
+    handle.classList.remove('is-drag');
+    document.body.classList.remove('xw-split-drag');
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+    setSplit(split, true);
+  };
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+  handle.addEventListener('dblclick', () => setSplit(null, true));
+  handle.addEventListener('keydown', (e) => {
+    const d = e.key === 'ArrowLeft' ? 0.03 : e.key === 'ArrowRight' ? -0.03 : 0;
+    if (!d) return;
+    e.preventDefault();
+    setSplit((split == null ? 0.565 : split) + d, true);
+  });
+
   const btn = (label, title, fn) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -175,10 +290,11 @@ export function createPreview3d(env) {
   const walkBtn = btn('Walk from selection', 'Stand the player on the selected tile and switch to the field camera: walk with the arrow keys in the picture', () => {
     const t = selTile();
     if (!t) return;
+    rebuildIfStale();
     post({ type: 'xw-seat', tile: t });
     setMode('player');
   });
-  const reloadBtn = btn('Reload', 'Rebuild the map from the pack now', () => { P.dirty = true; flush(); });
+  const reloadBtn = btn('Reload', 'Rebuild the map from the pack now', () => { P.dirty = true; P.forceFull = true; flush(); });
   const layerBox = document.createElement('span');
   layerBox.className = 'xw-3d-layers';
   for (const [k, label] of LAYERS) {
@@ -281,6 +397,7 @@ export function createPreview3d(env) {
 
   function setMode(mode, refit) {
     P.mode = mode;
+    if (mode === 'player') rebuildIfStale();
     orbitBtn.classList.toggle('is-on', mode === 'orbit');
     playerBtn.classList.toggle('is-on', mode === 'player');
     if (!refit) post({ type: 'xw-camera', mode, painter: P.painter });
@@ -295,10 +412,12 @@ export function createPreview3d(env) {
     try { localStorage.setItem(VIEW_KEY, view); } catch (e) { /* no storage */ }
     if (view !== '2d' && !P.open) setOpen(true);
     applyView();
+    if (P.onView) P.onView(view);
     if (view !== '2d' && P.open) el.scrollIntoView({ block: 'nearest' });
   }
   function applyView() {
     const on = P.visible && P.mapsTab !== false;
+    applySplit();
     document.body.classList.toggle('xw-view-split', on && P.view === 'split');
     document.body.classList.toggle('xw-view-3d', on && P.view === '3d');
     for (const [k, b] of Object.entries(viewBtns)) b.classList.toggle('is-on', k === P.view);
@@ -342,6 +461,9 @@ export function createPreview3d(env) {
     clearTimeout(P.timer);
     if (!P.open || !P.ready || !P.visible || !P.map || !pack()) return;
     if (!pack().maps || !pack().maps[P.map]) { setStatus(`No map ${P.map} in the pack.`, true); return; }
+    // A forced rebuild (Reload, a move the frame refused) stays forced
+    // until it is sent.
+    if (!P.forceFull && moveObjects()) return;
     /* The painter's preview of the edit is still to come: let its draft
      * reach the frame first (the rebuild then holds the thread for a
      * while), once. */
@@ -359,6 +481,7 @@ export function createPreview3d(env) {
       return;
     }
     const first = !P.sent;
+    P.forceFull = false;
     P.sent = { map: P.map };
     // The tiles the draft compares against are this build's: the latest
     // preview when no edit came after it, else the next one to arrive.
@@ -371,7 +494,45 @@ export function createPreview3d(env) {
     P.t0 = performance.now();
     setStatus(first ? `Entering ${P.map} ...` : `Rebuilding ${P.map} ...`);
     P.lastKind = first ? 'xw-load' : 'xw-reload';
+    // What an object-only edit is measured against: this build.
+    P.sentStripped = strippedJson(pack(), P.map);
+    P.shown = objectPoses(def);
+    P.stale = false;
     post({ type: P.lastKind, id: pack().manifest.id, map: P.map, spawn: P.spawn, bytes }, [bytes.buffer]);
+  }
+
+  /* An edit since the last build that only moved or turned props and NPCs
+   * of the open map goes to the frame as moves (`xw-move`): the drawn
+   * objects move at once and nothing is rebuilt. The engine's own copy of
+   * a moved prop - its collision box, a standable top - stays where the
+   * build put it until the next rebuild: an edit of anything else, Reload,
+   * or the Player camera / Walk (which rebuild first). True when the edit
+   * was handled here (or there was none). */
+  function moveObjects() {
+    if (!P.sent || P.sent.map !== P.map || !P.shown || !P.sentStripped) return false;
+    const def = pack().maps[P.map];
+    if (strippedJson(pack(), P.map) !== P.sentStripped) return false;
+    const now = objectPoses(def);
+    if (now.props.length !== P.shown.props.length || now.npcs.length !== P.shown.npcs.length) return false;
+    const mv = objectMoves(P.shown, now, P.grid);
+    if (!mv) return false;
+    P.dirty = false;
+    if (!mv.props.length && !mv.npcs.length) return true;
+    P.shown = now;
+    if (mv.props.length) P.stale = true;
+    P.moveSeq = (P.moveSeq || 0) + 1;
+    P.moveT0 = performance.now();
+    post({ type: 'xw-move', seq: P.moveSeq, props: mv.props, npcs: mv.npcs });
+    return true;
+  }
+
+  /* Rebuild now if props were moved in place since the last build: the
+   * player is about to walk among them. */
+  function rebuildIfStale() {
+    if (!P.stale) return;
+    P.forceFull = true;
+    P.dirty = true;
+    flush();
   }
 
   /* The rebuild runs on this page's main thread, so a map that takes a
@@ -379,6 +540,12 @@ export function createPreview3d(env) {
    * with the last build's time. With Auto off only Reload rebuilds. */
   function schedule() {
     clearTimeout(P.timer);
+    // An object-only edit costs nothing to show: send it at once, Auto or not.
+    const def = P.map && pack() && pack().maps && pack().maps[P.map];
+    if (P.sent && P.shown && def && P.sent.map === P.map && strippedJson(pack(), P.map) === P.sentStripped) {
+      P.timer = setTimeout(flush, 30);
+      return;
+    }
     if (!P.auto && P.sent) return;
     // The last hot reload's time (a first entry builds more and says
     // nothing about the next edit).
@@ -422,6 +589,16 @@ export function createPreview3d(env) {
       post({ type: 'xw-camera', mode: P.mode, painter: P.painter });
       syncRun();
       if (m.ok && P.pending) sendPending();
+    } else if (m.type === 'xw-moved') {
+      P.lastMove = { ok: !!m.ok, ms: Math.round(performance.now() - (P.moveT0 || performance.now())), props: m.props || 0, npcs: m.npcs || 0, seq: m.seq };
+      if (!m.ok) {
+        // The frame could not place them: rebuild.
+        P.forceFull = true;
+        P.dirty = true;
+        flush();
+      } else {
+        setStatus(`${P.map}: moved ${(m.props || 0) + (m.npcs || 0)} object(s) in place in ${P.lastMove.ms} ms, no rebuild.${P.stale ? ' A moved prop\'s collision updates on the next rebuild (Reload, Player or Walk).' : ''}`);
+      }
     } else if (m.type === 'xw-pick') {
       P.select = { tile: m.tile };
       if (P.onPick) P.onPick(m.tile[0], m.tile[1]);
@@ -627,6 +804,8 @@ export function createPreview3d(env) {
       if (P.ready) sendEdit();
     },
     onEdit(fn) { P.onEdit = fn; },
+    /* The view switch moved (the 3D editor picks its mode by it). */
+    onView(fn) { P.onView = fn; },
     setEditBar(bar) {
       if (bar && bar.parentNode !== editSlot) { editSlot.innerHTML = ''; editSlot.append(bar); }
       editSlot.hidden = !bar || !P.open || !!P.editOff;
@@ -637,6 +816,7 @@ export function createPreview3d(env) {
     setLive(on) { P.live = !!on; pushLive(); },
     /* Headless-verification hook. */
     setView,
-    state: () => ({ view: P.view, open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
+    setSplit: (f) => setSplit(f, true),
+    state: () => ({ split, lastMove: P.lastMove, stale: !!P.stale, view: P.view, open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
   };
 }

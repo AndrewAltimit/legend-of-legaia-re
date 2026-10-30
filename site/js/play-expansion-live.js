@@ -15,7 +15,8 @@
  *     a pack and enter a map, reload it after an edit, set the editor
  *     overlay (play-view-editor-overlay.js), switch between the free orbit
  *     camera and the player's follow camera, stand the player on a tile,
- *     play a cutscene. A click in the picture answers with the map tile under
+ *     play a cutscene, move props and NPCs in place after an object-only
+ *     edit (`xw-move`). A click in the picture answers with the map tile under
  *     it, and the preview reports its frame cost once a second.
  *
  * Messages, both directions, are `{ type, ... }` objects; the channel ones
@@ -254,6 +255,38 @@
       return Math.round(performance.now() - t0);
     }
 
+    /* An object-only edit from the workbench, applied to the running map:
+     *  - a prop's draw is found by where it stands now (its placed draw at
+     *    `from`, world x / z) and moved to `to`, turned by `turn` degrees and
+     *    raised by `dy` (the floor's change between the two tiles, up);
+     *  - an NPC goes through `expansion_place_npc` (its anchor and heading).
+     * A prop with no single plain placed draw at `from` (a tilted or a
+     * script-moved one, two draws on one spot) or an NPC the engine refuses
+     * answers `ok: false`, and the workbench rebuilds instead. Nothing is
+     * half-applied: the props are matched before any moves. */
+    function moveInPlace(rt, v, m) {
+      if (!rt || !v || !v.staticDraws) return { ok: false, why: 'no map' };
+      const picks = [];
+      for (const p of m.props || []) {
+        const hits = v.staticDraws.filter((d) => d.placeIdx !== undefined
+          && Math.abs(d.baseX - p.from[0]) <= 2 && Math.abs(d.baseZ - p.from[1]) <= 2);
+        if (hits.length !== 1 || hits[0].model || hits[0].liveModel) return { ok: false, why: `prop at ${p.from} has ${hits.length} draw(s)` };
+        picks.push([hits[0], p]);
+      }
+      if ((m.npcs || []).length && typeof rt.expansion_place_npc !== 'function') return { ok: false, why: 'no in-place NPC move in this bundle' };
+      for (const [d, p] of picks) {
+        const dx = p.to[0] - p.from[0], dz = p.to[1] - p.from[1];
+        d.x += dx; d.z += dz; d.baseX += dx; d.baseZ += dz;
+        if (p.dy) { d.y += p.dy; if (d.baseY !== undefined) d.baseY += p.dy; }
+        if (p.turn) d.rotY -= p.turn * Math.PI / 180;
+      }
+      for (const nv of m.npcs || []) {
+        if (!rt.expansion_place_npc(nv.n, nv.tile[0], nv.tile[1], nv.facing || 0)) return { ok: false, why: `npc ${nv.n} refused`, partial: true };
+      }
+      if (typeof v.refreshEditorOverlay === 'function') v.refreshEditorOverlay();
+      return { ok: true, props: picks.length, npcs: (m.npcs || []).length };
+    }
+
     window.addEventListener('message', (ev) => {
       if (ev.origin !== location.origin || ev.source !== parentWin) return;
       const m = ev.data || {};
@@ -292,6 +325,10 @@
           errors: r.errors || [], engineMs: r.ms != null ? r.ms : null,
           ms: Math.round(performance.now() - t0),
         });
+      } else if (m.type === 'xw-move') {
+        /* Object-only edit: move the drawn props and the NPCs where they
+         * stand, without rebuilding the map (moveInPlace). */
+        post(Object.assign({ type: 'xw-moved', seq: m.seq }, moveInPlace(rt, v, m)));
       } else if (m.type === 'xw-edit') {
         if (v && typeof v.setEditorEdit === 'function') v.setEditorEdit(m);
         else pendingEdit = Object.assign(pendingEdit || {}, m);

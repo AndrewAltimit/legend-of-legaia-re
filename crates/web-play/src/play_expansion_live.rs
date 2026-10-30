@@ -71,6 +71,17 @@ impl LegaiaRuntime {
         self.expansion_seat_player_core(col, row)
     }
 
+    /// Move pack NPC `n` of the active map to map-local tile `(col, row)`,
+    /// facing compass sector `facing`, without rebuilding the map: the
+    /// anchor the draw, the collision box and the talk probe read, and its
+    /// heading - what the workbench's 3D preview does for a moved NPC.
+    /// `false` (the caller rebuilds instead) off a pack map, off its
+    /// rectangle, for a scenery NPC or one that patrols (its walk legs are
+    /// built from its tile at entry).
+    pub fn expansion_place_npc(&mut self, n: u32, col: u32, row: u32, facing: u32) -> bool {
+        self.expansion_place_npc_core(n, col, row, facing)
+    }
+
     /// Play cutscene `id` of the active pack now (the workbench's timeline
     /// "Play in 3D"), through the trigger path a map zone takes.
     pub fn expansion_preview_cutscene(&mut self, id: &str) -> bool {
@@ -253,6 +264,54 @@ impl LegaiaRuntime {
             "npcs": def.npcs.iter().map(|n| json!({ "id": n.id, "tile": n.tile, "scenery": n.scenery, "patrol": n.patrol })).collect::<Vec<_>>(),
             "player": player,
         })
+    }
+
+    /// Body of [`Self::expansion_place_npc`].
+    pub(crate) fn expansion_place_npc_core(
+        &mut self,
+        n: u32,
+        col: u32,
+        row: u32,
+        facing: u32,
+    ) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let w = &mut host.world;
+        let Some(active) = w.expansion.map.as_mut() else {
+            return false;
+        };
+        let (Ok(n), Ok(c), Ok(r)) = (usize::try_from(n), u16::try_from(col), u16::try_from(row))
+        else {
+            return false;
+        };
+        if usize::from(c) >= active.grid.width || usize::from(r) >= active.grid.height {
+            return false;
+        }
+        let Some(npc) = active.def.npcs.get(n) else {
+            return false;
+        };
+        if npc.scenery || !npc.patrol.is_empty() {
+            return false;
+        }
+        let Some(slot) = legaia_expansion_format::map::npc_slot(n) else {
+            return false;
+        };
+        let (x, z) = active.def.tile_centre(c, r);
+        let (Ok(x), Ok(z)) = (i16::try_from(x), i16::try_from(z)) else {
+            return false;
+        };
+        let facing = (facing & 7) as u8;
+        // The definition the overlay and the talk read follows the move.
+        let def = std::sync::Arc::make_mut(&mut active.def);
+        def.npcs[n].tile = [c, r];
+        def.npcs[n].facing = facing;
+        w.npcs.positions.insert(slot, (x, z));
+        w.npcs.entry_positions.insert(slot, (x, z));
+        w.npcs
+            .headings
+            .insert(slot, (i16::from(facing) * 0x200 + 0x800) & 0x0FFF);
+        true
     }
 
     /// Body of [`Self::expansion_seat_player`].
@@ -443,6 +502,82 @@ mod tests {
         let r = rt.reload_expansion_core(&bundle(&broken.to_files().unwrap()));
         assert_eq!(r["ok"], false);
         assert_eq!(rt.expansion_overlay()["map"], map);
+    }
+
+    /// Disc-gated: an NPC moved in place stands where a rebuild with the
+    /// edited definition puts it - the anchor and the heading - and one
+    /// that patrols is refused (the caller rebuilds).
+    #[test]
+    fn npc_moved_in_place_matches_a_rebuild() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let files = rebirth_files();
+        let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
+        // A map with a standing (no patrol, not scenery) NPC.
+        let (map, n) = pack
+            .maps
+            .iter()
+            .find_map(|(id, m)| {
+                m.npcs
+                    .iter()
+                    .position(|x| !x.scenery && x.patrol.is_empty())
+                    .map(|n| (id.clone(), n))
+            })
+            .expect("a standing NPC in Rebirth");
+        let def = &pack.maps[&map];
+        let [c, r] = def.npcs[n].tile;
+        // One tile over, inside the rectangle.
+        let w = def
+            .tiles
+            .rows
+            .iter()
+            .map(|r| r.chars().count())
+            .max()
+            .unwrap() as u16;
+        let to = [if c + 1 < w { c + 1 } else { c - 1 }, r];
+        let facing = (def.npcs[n].facing + 3) & 7;
+        let slot = legaia_expansion_format::map::npc_slot(n).unwrap();
+        let read = |rt: &LegaiaRuntime| {
+            let w = &rt.scene_host.host().unwrap().world;
+            (
+                w.npcs.positions.get(&slot).copied(),
+                w.npcs.headings.get(&slot).copied(),
+            )
+        };
+
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let _ = rt.load_expansion_core(&bundle(&files));
+        rt.enter_expansion_map_core(&map, "").expect("enter");
+        assert!(rt.expansion_place_npc_core(
+            n as u32,
+            u32::from(to[0]),
+            u32::from(to[1]),
+            u32::from(facing)
+        ));
+        let moved = read(&rt);
+        assert_eq!(rt.expansion_overlay()["npcs"][n]["tile"], json!(to));
+
+        let mut edited = pack.clone();
+        let e = &mut edited.maps.get_mut(&map).unwrap().npcs[n];
+        e.tile = to;
+        e.facing = facing;
+        let r = rt.reload_expansion_core(&bundle(&edited.to_files().unwrap()));
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(read(&rt), moved, "in place == rebuilt");
+
+        // Off the rectangle and a patrolling NPC are refused.
+        assert!(!rt.expansion_place_npc_core(n as u32, 999, 0, 0));
+        if let Some(p) = edited.maps[&map]
+            .npcs
+            .iter()
+            .position(|x| !x.patrol.is_empty())
+        {
+            assert!(!rt.expansion_place_npc_core(p as u32, 0, 0, 0));
+        }
     }
 
     /// Disc-gated, ignored (a measurement, not a check): what a hot reload

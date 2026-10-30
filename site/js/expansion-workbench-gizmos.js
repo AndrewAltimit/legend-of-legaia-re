@@ -363,7 +363,7 @@ function renderBar() {
   bar.innerHTML = '';
   const map = api.map();
   const b = (label, on, title, fn) => h('button', { type: 'button', class: 'wb-mini' + (on ? ' is-on' : ''), title, onclick: fn }, label);
-  const setMode = (m) => { G.mode = m; renderBar(); sync(); };
+  const setMode = (m) => { G.mode = m; G.picked = true; renderBar(); sync(); };
   bar.append(h('span', { class: 'wb-label' }, 'Edit'),
     b('View', G.mode === 'view', 'The picture is only looked at: a click picks a tile', () => setMode('view')),
     b('Select', G.mode === 'select', 'Pick, move, turn and scale props, decorations, NPCs, spawns, lamps, emitters and zones', () => setMode('select')));
@@ -411,6 +411,18 @@ export function mountMapEditor(api) {
   if (!G.bar) G.bar = h('div', { class: 'xw-tools xw-3d-edit', role: 'toolbar', 'aria-label': '3D editing' });
   api.preview.onEdit(onFrame);
   api.preview.setEditBar(G.bar);
+  /* Split and 3D are for working in the picture: they open in Select
+   * (unless a mode was picked by hand), 2D in View as before. */
+  if (api.preview.onView) {
+    const byView = (view) => {
+      if (G.picked || view === '2d' || G.mode !== 'view') return;
+      G.mode = 'select';
+      renderBar();
+      sync(true);
+    };
+    api.preview.onView(byView);
+    byView(api.preview.state().view);
+  }
   renderBar();
   sync(true);
   return G.bar;
