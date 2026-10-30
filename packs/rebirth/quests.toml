@@ -430,7 +430,7 @@ rewards = { gold = 8000, items = [{ item = 121, count = 3 }] }
 [[quests]]
 id = "isles_thornwood"
 title = "The Thornwood Queen"
-description = "The path inland is choked with thorn and wasps. The hermit at the ruins says the hive's queen has grown into the old gate itself."
+description = "The path inland is choked with thorn and wasps. The hermit camped below the ruins says the hive's queen has grown into the old gate itself."
 giver = "isles_elder"
 prerequisites = { quests = ["isles_landfall"], min_level = 35 }
 start_dialog = "isles_elder_thorns"
@@ -438,7 +438,7 @@ active_dialog = "isles_elder_thorns_active"
 objectives = [
     { kind = "enter_scene", scene = "isles_thornwood", text = "Follow the Thornwood path to the ruins" },
     { kind = "win_boss", boss = "isles_hive_queen", text = "Defeat the Thornwood Queen" },
-    { kind = "talk", npc = "isles_hermit", text = "Speak with the hermit at the gate" },
+    { kind = "talk", npc = "isles_hermit", text = "Tell the hermit at his camp by the fire" },
 ]
 complete_dialog = "isles_hermit_done"
 rewards = { gold = 15000, set_flags = ["isles_gate_open"] }

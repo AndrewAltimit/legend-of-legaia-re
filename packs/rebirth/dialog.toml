@@ -646,8 +646,8 @@ text = """
 The Thornwood swallowed our path
 east, and a hive queen rules it.
 
-The hermit at the ruins knows
-more. Will you go?"""
+A hermit camps below the ruins.
+He knows more. Will you go?"""
 
 [lines.isles_elder_thorns_active]
 speaker = "Elder Tolva"
