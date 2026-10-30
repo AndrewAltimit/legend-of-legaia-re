@@ -1601,6 +1601,7 @@
     "cards",
     "cutscene",
     "dialog",
+    "duel_stage",
     "entrance",
     "flags",
     "item_screen",
@@ -2165,7 +2166,8 @@
     "engine-expansion",
     "engine-netplay",
     "engine-screens",
-    "engine-ui"
+    "engine-ui",
+    "engine-world-views"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
   },
@@ -2473,6 +2475,7 @@
     "engine-battle-hud",
     "engine-battle-loop",
     "engine-camera",
+    "engine-modes",
     "font",
     "gamedata",
     "lzs",
@@ -2997,8 +3000,10 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-scene",
     "engine-system",
+    "expansion-format",
     "render-kernels",
     "scene-formats",
     "tmd",
@@ -3092,6 +3097,7 @@
     "engine-session",
     "engine-shell",
     "engine-ui",
+    "engine-world-views",
     "web-expansion",
     "web-play"
    ],

@@ -43,6 +43,11 @@ pub struct NgPlusSnapshot {
     /// The pack store: trading cards, pack items and worn pack gear.
     pub pack_cards: Option<legaia_engine_modes::cards::economy::CardProgress>,
     pub pack_items: Option<legaia_engine_expansion::items::ItemProgress>,
+    /// The pack's learned arts and spells (`World::expansion_learned`).
+    pub pack_learned: Option<(
+        legaia_engine_expansion::arts::ArtsProgress,
+        legaia_engine_expansion::spells::SpellProgress,
+    )>,
     /// The source's own New Game+ cycle.
     pub cycle: u8,
 }
@@ -326,6 +331,7 @@ impl World {
             money: self.party.money,
             pack_cards: has_pack.then(|| p.cards.clone()),
             pack_items: has_pack.then(|| p.items.clone()),
+            pack_learned: has_pack.then(|| self.expansion_learned()),
             cycle: self.run_rules.rules.ng_plus_cycle(),
         }
     }
@@ -416,6 +422,19 @@ impl World {
             if carry.equipment {
                 progress.items.worn = items.worn;
             }
+        }
+        // The pack's learned arts (with the arts part) and spells (with the
+        // Seru part), through the pack's own carry, which drops what the
+        // pack no longer defines.
+        if let Some((arts, spells)) = snap.pack_learned {
+            self.expansion_carry_learned(
+                if carry.arts { arts } else { Default::default() },
+                if carry.seru {
+                    spells
+                } else {
+                    Default::default()
+                },
+            );
         }
         // Vahn's live mirror off the merged record.
         if let Some(rec) = self.party.roster.members.first() {

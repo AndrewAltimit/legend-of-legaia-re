@@ -48,7 +48,7 @@ The carry is lifted by loading the source save into the world (`load_full`, so i
 - members the story has not introduced yet (Noa, Gala, Terra) are written into the roster without joining the party, so the story's join keeps the carried record (the join only seeds an empty slot);
 - the bag carries without its quest and key items (the priced-zero items), so no story gate opens early;
 - the per-character Seru capture log, learned arts and saved chains carry with their parts;
-- an active pack's store carries too: its cards, its items and its worn gear.
+- an active pack's store carries too: its cards, its items and its worn gear, and its learned arts and spells (with the arts and Seru parts, through `World::expansion_carry_learned`).
 
 Enemies scale on a curve over the cycle and the party's strongest level (`scaling::ng_plus_permille`): `1000 + 250 * cycle + 12 * (level - 1)` permille for an ordinary monster, `20` per level for a story boss, capped at `5x`, so a set piece stays a fight at a cleared game's levels. The curve multiplies the preset's enemy scale.
 
