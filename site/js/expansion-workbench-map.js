@@ -1029,15 +1029,16 @@ function renderSelection(ctx, mctx, side, map) {
     } else {
       box.append(grid(mctx, to, [{ k: 'map', t: 'sel', opts: Object.keys(ctx.pack.maps), label: 'Map' }, { k: 'spawn', label: 'Spawn', ph: 'first' }], `${p}.to`));
     }
-    box.append(grid(mctx, o, [{ k: 'locked_line', t: 'oref', kind: 'line', label: 'Said while shut', hint: 'a sealed stair saying why' }], p));
+    box.append(grid(mctx, o, [{ k: 'locked_line', t: 'oref', kind: 'line', label: 'Said while shut', hint: 'a sealed stair saying why' }, { k: 'locked_toast', t: 'bool', label: 'Say it as a toast (no dialog box)' }], p));
     box.append(gateBox(mctx, o, 'requires', p, 'Open when'));
   } else if (sel.type === 'triggers') {
-    box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'once', t: 'bool', label: 'Once per visit' }], p));
+    box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'once', t: 'bool', label: 'Once ever' }, { k: 'press', t: 'bool', label: 'On the action button (not on entry)' }], p));
     const ev = o.event;
     const EVENTS = {
       battle: [{ k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' }],
       boss: [{ k: 'boss', t: 'ref', kind: 'boss', label: 'Boss' }],
       dialog: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line' }],
+      toast: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'its first page, as a toast that stops nothing' }],
       talk: [{ k: 'npc', label: 'NPC id', hint: 'a quest giver / talk objective' }],
       start_quest: [{ k: 'quest', t: 'ref', kind: 'quest', label: 'Quest' }],
       set_flag: [{ k: 'flag', label: 'Pack flag' }],

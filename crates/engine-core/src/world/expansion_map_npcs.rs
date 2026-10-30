@@ -104,6 +104,54 @@ impl World {
         true
     }
 
+    /// The action button on a pack map with no NPC or prop under the probe:
+    /// fire the map's `press` triggers on the tile the player faces (one
+    /// tile ahead along the retail facing probe's compass point) or, failing
+    /// that, the tile they stand on. The fired events run on the map's next
+    /// step (`SceneHost::step_expansion_map`). Returns whether one fired;
+    /// `false` with no pack map active.
+    pub(in crate::world) fn expansion_press_triggers(&mut self) -> bool {
+        let Some(slot) = self.player_actor_slot.map(usize::from) else {
+            return false;
+        };
+        let Some(actor) = self.actors.get(slot).filter(|a| a.active) else {
+            return false;
+        };
+        let ms = &actor.move_state;
+        let (x, z) = (i32::from(ms.world_x), i32::from(ms.world_z));
+        let sector = (((i32::from(ms.render_26) + 0x800) & 0xfff) >> 9) as usize;
+        // The probe point is 64 units ahead; a pack tile is wider, so look a
+        // full tile ahead to reach the next one.
+        let (dx, dz) = super::config::FIELD_FACING_PROBES[sector];
+        let (ax, az) = (x + 2 * i32::from(dx), z - 2 * i32::from(dz));
+        let Some(mut map) = self.expansion.map.take() else {
+            return false;
+        };
+        let tiles: Vec<(u16, u16)> = [map.tile_at_world(ax, az), map.tile_at_world(x, z)]
+            .into_iter()
+            .flatten()
+            .collect();
+        let fired = map.press_gated(&tiles, |p| self.expansion_prerequisites_hold(p));
+        self.expansion.map = Some(map);
+        fired
+    }
+
+    /// Show pack line `line_id` as a toast: its first page on one row
+    /// (`boss_script::banner_text`). Returns whether the line resolved.
+    pub fn expansion_toast_line(&mut self, line_id: &str) -> bool {
+        let Some(text) = self
+            .expansion
+            .pack
+            .as_ref()
+            .and_then(|p| p.dialog.lines.get(line_id))
+            .map(legaia_engine_expansion::boss_script::banner_text)
+        else {
+            return false;
+        };
+        self.expansion.toasts.push(text);
+        true
+    }
+
     /// One tick of the pack NPCs' patrols: each patrolling NPC with no walk
     /// leg in flight starts the next one, toward the next stop of its loop.
     /// Nobody sets out while a dialogue holds the field, so the NPC being

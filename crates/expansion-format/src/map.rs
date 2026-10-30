@@ -566,6 +566,11 @@ pub struct ExitDef {
     /// shut (a sealed stair saying why). Optional.
     #[serde(default)]
     pub locked_line: Option<String>,
+    /// Show [`Self::locked_line`] as a toast (its first page on one row)
+    /// instead of a dialog box: the player learns why without being
+    /// stopped on every step onto the shut exit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked_toast: bool,
 }
 
 /// Where an exit leads.
@@ -656,6 +661,12 @@ pub struct TriggerZone {
     /// the zone quiet on every later visit.
     #[serde(default)]
     pub once: bool,
+    /// Fire on the action button instead of on entry: walking onto the zone
+    /// does nothing, and pressing Cross while the player stands on it or
+    /// faces it fires it - an object the player chooses to examine (a
+    /// brazier, a notice board), not a tile that talks at every passer-by.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub press: bool,
     /// What must hold for the zone to fire: the quest prerequisite shape.
     /// A shut zone fires nothing and spends no `once`; it fires on the
     /// first entry after it opens. Empty is always open.
@@ -684,6 +695,10 @@ pub enum MapEvent {
     Boss { boss: String },
     /// Show a pack dialogue line (`dialog.toml`).
     Dialog { line: String },
+    /// Show a pack dialogue line as a toast: its first page on one row
+    /// ([`crate::boss_script::banner_text`]), on the toast rows, taking no
+    /// input and stopping nothing - a cue in place of a dialog box.
+    Toast { line: String },
     /// Count as talking to the pack NPC `npc` (a quest's talk objective).
     Talk { npc: String },
     /// Start a pack quest (`quests.toml`).

@@ -410,6 +410,11 @@ impl SceneHost {
                     log::warn!("expansion: map trigger line `{line}`: {e:?}");
                 }
             }
+            MapEvent::Toast { line } => {
+                if !w.expansion_toast_line(line) {
+                    log::warn!("expansion: map trigger toast `{line}` did not resolve");
+                }
+            }
             MapEvent::Talk { npc } => w.expansion_talked(npc),
             MapEvent::StartQuest { quest } => {
                 if !w.expansion_start_quest(quest) {

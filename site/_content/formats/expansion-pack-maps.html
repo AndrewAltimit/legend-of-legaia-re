@@ -504,6 +504,7 @@ sky = { tpage = 10, clut = 31104, radius = 6 }</code></pre>
       <tr><td><code>{ kind = "battle", formation = F }</code></td><td><code>World::start_expansion_battle(F)</code> - a <code>battle.toml</code> formation (<a href="expansion-pack-battle.html">battles</a>)</td></tr>
       <tr><td><code>{ kind = "boss", boss = B }</code></td><td><code>World::start_expansion_boss(B)</code> - a <code>battle.toml</code> boss</td></tr>
       <tr><td><code>{ kind = "dialog", line = L }</code></td><td><code>World::expansion_say(L)</code> - a <code>dialog.toml</code> line</td></tr>
+      <tr><td><code>{ kind = "toast", line = L }</code></td><td>Shows line <code>L</code>'s first page as one toast row - a cue that takes no input and stops nothing</td></tr>
       <tr><td><code>{ kind = "talk", npc = N }</code></td><td><code>World::expansion_talked(N)</code> - a quest's talk objective</td></tr>
       <tr><td><code>{ kind = "start_quest", quest = Q }</code></td><td><code>World::expansion_start_quest(Q)</code></td></tr>
       <tr><td><code>{ kind = "set_flag", flag = X }</code></td><td>Raises pack flag <code>X</code></td></tr>
@@ -516,6 +517,7 @@ sky = { tpage = 10, clut = 31104, radius = 6 }</code></pre>
   </table>
   <p>A map's <code>[[enter_cutscenes]]</code> (<code>cutscene</code>, <code>requires</code>, <code>repeat</code>) plays on arrival: the first entry whose gate holds and whose cutscene is unseen, or any with <code>repeat = true</code>. While a cutscene runs, the map's zones and exits fire nothing.</p>
   <p><code>once = true</code> fires a trigger once <strong>ever</strong>: firing raises the pack flag <code>map.&lt;map id&gt;.&lt;trigger id&gt;</code> (<code>map.&lt;map id&gt;.&lt;index&gt;</code> for a trigger with no id), which saves with the pack's progress, and a trigger whose flag is up stays quiet on every later visit. Quests can read the flag like any other.</p>
+  <p><code>press = true</code> makes a trigger something the player examines: walking onto it fires nothing, and the action button fires it while the player stands on it or faces it from the next tile. Use it for objects (a brazier, a bell, a notice board) and quest givers that are not NPCs, and keep walk-on triggers for what must happen as the player arrives. A line the player did not ask for is best a <code>toast</code>.</p>
   <h3 id="encounter-zones">Encounter zones</h3>
   <p>A zone's <code>table</code> names a <code>battle.toml</code> <code>[[encounters]]</code> entry by its <code>scene</code> key - a free string, so a pack map's tables sit beside the retail scenes' overrides:</p>
 <pre><code># battle.toml

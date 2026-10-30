@@ -329,7 +329,7 @@ the sections it names, with or without a disc:
 | Every spawn, exit, zone, prop, NPC tile and patrol waypoint lies on the grid | error |
 | The map has a spawn; spawn, exit, trigger, encounter and prop ids are unique in the map | error |
 | NPC ids are unique across the pack | error |
-| A trigger's `battle` / `boss` / `dialog` / `start_quest` / `card_dealer` / `shop` names a defined formation, boss, line, quest, dealer, shop | error |
+| A trigger's `battle` / `boss` / `dialog` / `toast` / `start_quest` / `card_dealer` / `shop` names a defined formation, boss, line, quest, dealer, shop | error |
 | A trigger's `challenge` / `mode` names a defined challenge and mode instance; `start = true` on a challenge with no formation | error |
 | An NPC's `line`, `line_after` and `shop`, and an exit's `locked_line`, name a defined line and an item shop or dealer | error |
 | A gate's quests and bosses are defined; no empty pack flag id; `min_level` in `1..=99` | error |
@@ -337,6 +337,7 @@ the sections it names, with or without a disc:
 | An encounter zone's `table` is a `battle.toml` `[[encounters]]` `scene` | error |
 | ... whose table has no `steps` (it can never roll on a map) | warning |
 | A `talk` trigger's NPC id that no quest gives from or talks to | warning |
+| A `toast` line whose first page runs past 40 characters (one toast row) | warning |
 | An exit to another map names a map of the pack and a spawn it has | error |
 | Facings are sectors `0..8`; a retail exit's tile is on the `128 x 128` grid | error |
 | Disc refs: the base scene, retail exit scenes, NPC models, BGM, prop TMDs (range rules, then the disc when one is loaded) | error |
@@ -373,7 +374,8 @@ fires nothing, and the spawn tile does not fire on arrival.
 
 An exit with a `requires` gate leads nowhere while the gate is shut, and
 says its optional `locked_line` (a `dialog.toml` line) on each step onto it
-instead.
+instead - as a toast rather than a dialog box with `locked_toast = true`, so
+the player learns why without being stopped on every step.
 
 ### Triggers
 
@@ -385,6 +387,7 @@ hands it to that section's runtime the tick it fires:
 | `{ kind = "battle", formation = F }` | `World::start_expansion_battle(F)` - a `battle.toml` formation |
 | `{ kind = "boss", boss = B }` | `World::start_expansion_boss(B)` - a `battle.toml` boss |
 | `{ kind = "dialog", line = L }` | `World::expansion_say(L)` - a `dialog.toml` line |
+| `{ kind = "toast", line = L }` | `World::expansion_toast_line(L)` - line `L`'s first page as one toast row (`boss_script::banner_text`); takes no input, stops nothing |
 | `{ kind = "talk", npc = N }` | `World::expansion_talked(N)` - a quest's talk objective |
 | `{ kind = "start_quest", quest = Q }` | `World::expansion_start_quest(Q)` |
 | `{ kind = "set_flag", flag = X }` | raises pack flag `X` |
@@ -406,6 +409,15 @@ cutscene runs, the map's zones and exits fire nothing (`ActiveMap::observe`).
 `map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),
 which saves with the pack's progress, and a trigger whose flag is up stays
 quiet on every later visit. Quests can read the flag like any other.
+
+`press = true` makes a trigger something the player examines rather than
+a tile that fires on entry: walking onto it fires nothing, and the action
+button fires it while the player stands on it or faces it from the next tile
+(`ActiveMap::press_gated`, asked by the field interaction probe once no NPC
+or prop answers the press, `World::expansion_press_triggers`). Objects (a
+brazier, a bell, a notice board) and quest givers that are not NPCs want
+it; walk-on triggers are for what has to happen as the player arrives, and
+a line the player did not ask for reads best as a `toast`.
 
 A trigger with a `requires` gate fires only while it holds; a shut trigger
 fires nothing and spends no `once`, so it fires on the first entry after it

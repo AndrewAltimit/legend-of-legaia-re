@@ -637,6 +637,12 @@ impl World {
             && self.start_prop_interaction(anchor)
         {
             self.dialog.input_consumed = true;
+            return;
+        }
+        // A pack map's examine zones (`press = true` triggers): the
+        // identity with no pack map active.
+        if self.expansion_press_triggers() {
+            self.dialog.input_consumed = true;
         }
     }
 

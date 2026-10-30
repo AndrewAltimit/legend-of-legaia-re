@@ -180,23 +180,12 @@ impl ActiveMap {
         let (c, r) = tile?;
         let was_in = |rect| prev.is_some_and(|(pc, pr)| rect_contains(rect, pc, pr));
         self.encounter = self.encounter_zone_at((c, r));
-        for (i, t) in self.def.triggers.iter().enumerate() {
-            if !rect_contains(&t.rect, c, r) || was_in(&t.rect) {
+        let def = Arc::clone(&self.def);
+        for (i, t) in def.triggers.iter().enumerate() {
+            if t.press || !rect_contains(&t.rect, c, r) || was_in(&t.rect) {
                 continue;
             }
-            if t.once && self.fired.contains(&i) {
-                continue;
-            }
-            if !t.requires.is_empty() && !open(&t.requires) {
-                continue;
-            }
-            if t.once {
-                self.fired.insert(i);
-            }
-            self.events.push(FiredTrigger {
-                event: t.event.clone(),
-                once_flag: t.once.then(|| once_flag(&self.map_id, t, i)),
-            });
+            self.fire(i, &open);
         }
         let exit = self
             .def
@@ -205,14 +194,65 @@ impl ActiveMap {
             .find(|e| rect_contains(&e.rect, c, r) && !was_in(&e.rect))?;
         if !exit.requires.is_empty() && !open(&exit.requires) {
             if let Some(line) = &exit.locked_line {
+                let line = line.clone();
                 self.events.push(FiredTrigger {
-                    event: MapEvent::Dialog { line: line.clone() },
+                    event: if exit.locked_toast {
+                        MapEvent::Toast { line }
+                    } else {
+                        MapEvent::Dialog { line }
+                    },
                     once_flag: None,
                 });
             }
             return None;
         }
         Some(exit.to.clone())
+    }
+
+    /// Fire trigger `i` when its `once` is unspent and its gate is open:
+    /// queue its event and spend the `once`. Returns whether it fired.
+    fn fire(&mut self, i: usize, open: &impl Fn(&Prerequisites) -> bool) -> bool {
+        let t = &self.def.triggers[i];
+        if t.once && self.fired.contains(&i) {
+            return false;
+        }
+        if !t.requires.is_empty() && !open(&t.requires) {
+            return false;
+        }
+        let event = FiredTrigger {
+            event: t.event.clone(),
+            once_flag: t.once.then(|| once_flag(&self.map_id, t, i)),
+        };
+        if t.once {
+            self.fired.insert(i);
+        }
+        self.events.push(event);
+        true
+    }
+
+    /// The action button pressed on the field: fire the `press` triggers
+    /// under the first of `tiles` (the tile the player faces, then the one
+    /// they stand on) that holds any open one. Walk-on triggers are not
+    /// asked. Returns whether anything fired, so the press is spent and the
+    /// retail probe does not also run.
+    pub fn press_gated(
+        &mut self,
+        tiles: &[(u16, u16)],
+        open: impl Fn(&Prerequisites) -> bool,
+    ) -> bool {
+        let def = Arc::clone(&self.def);
+        for &(c, r) in tiles {
+            let mut fired = false;
+            for (i, t) in def.triggers.iter().enumerate() {
+                if t.press && rect_contains(&t.rect, c, r) {
+                    fired |= self.fire(i, &open);
+                }
+            }
+            if fired {
+                return true;
+            }
+        }
+        false
     }
 
     /// Note the player on map-local `tile` without firing anything: a
@@ -463,6 +503,63 @@ table = "west"
         assert!(m.take_events().is_empty());
     }
 
+    const PRESS_MAP: &str = r######"
+[tiles]
+rows = ["......", "......"]
+[tiles.legend]
+"." = {}
+
+[[triggers]]
+id = "board"
+rect = [2, 0, 2, 0]
+event = { kind = "dialog", line = "board" }
+press = true
+
+[[triggers]]
+id = "note"
+rect = [4, 1, 4, 1]
+event = { kind = "toast", line = "note" }
+press = true
+once = true
+requires = { flags = ["open"] }
+"######;
+
+    #[test]
+    fn a_press_trigger_fires_on_the_button_not_on_entry() {
+        let def: MapDef = toml::from_str(PRESS_MAP).unwrap();
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("m", Arc::new(def), Arc::new(grid), (0, 0), |_| false);
+        // Walking across the board says nothing.
+        for c in 1..=3 {
+            m.step(Some((c, 0)));
+        }
+        assert!(m.pending_events().is_empty());
+        // Facing it (first tile) fires it; the standing tile is the fallback.
+        assert!(m.press_gated(&[(2, 0), (3, 0)], |_| true));
+        assert!(m.press_gated(&[(5, 0), (2, 0)], |_| true));
+        assert!(!m.press_gated(&[(5, 0), (3, 0)], |_| true));
+        let board = MapEvent::Dialog {
+            line: "board".into(),
+        };
+        let ev = m.take_events();
+        assert_eq!(ev.len(), 2);
+        assert!(ev.iter().all(|e| e.event == board && e.once_flag.is_none()));
+        // A gated once press: shut, it fires nothing and spends nothing;
+        // open, it fires once ever.
+        assert!(!m.press_gated(&[(4, 1)], |_| false));
+        assert!(m.press_gated(&[(4, 1)], |_| true));
+        assert!(!m.press_gated(&[(4, 1)], |_| true));
+        assert_eq!(
+            m.take_events(),
+            vec![FiredTrigger {
+                event: MapEvent::Toast {
+                    line: "note".into()
+                },
+                once_flag: Some("map.m.note".into()),
+            }]
+        );
+    }
+
     const NPC_MAP: &str = r######"
 [tiles]
 origin = [10, 20]
@@ -578,6 +675,28 @@ requires = { quests = ["intro"] }
             Some(ExitTarget::Map { .. })
         ));
         assert!(m.take_events().is_empty());
+    }
+
+    #[test]
+    fn a_locked_toast_exit_says_its_line_as_a_toast() {
+        let toml = GATED_MAP.replace(
+            "locked_line = \"sealed\"",
+            "locked_line = \"sealed\"\nlocked_toast = true",
+        );
+        let def: MapDef = toml::from_str(&toml).unwrap();
+        assert!(def.exits[0].locked_toast);
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("g", Arc::new(def), Arc::new(grid), (0, 0), |_| false);
+        assert_eq!(m.step_gated(Some((5, 0)), flags(&[])), None);
+        assert_eq!(
+            m.take_events(),
+            [FiredTrigger {
+                event: MapEvent::Toast {
+                    line: "sealed".into()
+                },
+                once_flag: None
+            }]
+        );
     }
 
     #[test]

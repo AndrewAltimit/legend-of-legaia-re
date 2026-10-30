@@ -251,6 +251,24 @@ fn check_exits(m: &MapDef, cx: &mut Checker<'_>) {
                     "the exit has no `requires`, so it is never shut",
                 );
             }
+            let long = cx.pack().dialog.lines.get(l).map(|line| {
+                crate::boss_script::banner_text(line).chars().count()
+                    > crate::boss_script::BANNER_WARN_CHARS
+            });
+            if e.locked_toast && long == Some(true) {
+                cx.warning(
+                    &format!("exits[{i}].locked_line"),
+                    format!(
+                        "a toast shows one row; line `{l}`'s first page runs past {} characters",
+                        crate::boss_script::BANNER_WARN_CHARS
+                    ),
+                );
+            }
+        } else if e.locked_toast {
+            cx.warning(
+                &format!("exits[{i}].locked_toast"),
+                "`locked_toast` with no `locked_line` shows nothing",
+            );
         }
         let at = format!("exits[{i}].to");
         match &e.to {
@@ -311,6 +329,22 @@ fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
             }
             MapEvent::Boss { boss } => cx.reference("boss", boss, &format!("{at}.boss")),
             MapEvent::Dialog { line } => cx.reference("line", line, &format!("{at}.line")),
+            MapEvent::Toast { line } => {
+                cx.reference("line", line, &format!("{at}.line"));
+                let long = cx.pack().dialog.lines.get(line).map(|l| {
+                    crate::boss_script::banner_text(l).chars().count()
+                        > crate::boss_script::BANNER_WARN_CHARS
+                });
+                if long == Some(true) {
+                    cx.warning(
+                        &format!("{at}.line"),
+                        format!(
+                            "a toast shows one row; line `{line}`'s first page runs past {} characters",
+                            crate::boss_script::BANNER_WARN_CHARS
+                        ),
+                    );
+                }
+            }
             MapEvent::StartQuest { quest } => cx.reference("quest", quest, &format!("{at}.quest")),
             MapEvent::Talk { npc } => {
                 if !talk_key_is_used(cx, npc) {
