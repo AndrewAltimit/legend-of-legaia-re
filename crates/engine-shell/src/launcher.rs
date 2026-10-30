@@ -562,18 +562,66 @@ pub fn scan_packs(dir: &Path) -> Vec<std::result::Result<ExpansionInfo, (PathBuf
         .collect()
 }
 
+/// The packs that ship with the game: the release archive's `packs/`
+/// folder beside it (`legaia_app_theme::release_layout::find_bundled_packs`,
+/// walked up from the running executable). A `cargo build` finds the
+/// checkout's own `packs/`. `None` when there is none.
+pub fn bundled_packs_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe = exe.canonicalize().unwrap_or(exe);
+    legaia_app_theme::release_layout::find_bundled_packs(&exe)
+}
+
+/// Every folder packs are found in, most personal first: the installed
+/// packs folder ([`packs_dir`]), then the bundled one
+/// ([`bundled_packs_dir`]). A folder named twice is listed once.
+pub fn pack_dirs() -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for d in [packs_dir(), bundled_packs_dir()].into_iter().flatten() {
+        if !out.contains(&d) {
+            out.push(d);
+        }
+    }
+    out
+}
+
+/// Every pack in `dirs` ([`scan_packs`] over each, in order). A pack id
+/// found in an earlier folder hides the same id in a later one, so an
+/// installed copy of a pack outranks the copy the game ships with.
+pub fn discover_packs(
+    dirs: &[PathBuf],
+) -> Vec<std::result::Result<ExpansionInfo, (PathBuf, String)>> {
+    let mut seen: Vec<String> = Vec::new();
+    let mut out = Vec::new();
+    for d in dirs {
+        for r in scan_packs(d) {
+            if let Ok(info) = &r {
+                if seen.contains(&info.id) {
+                    continue;
+                }
+                seen.push(info.id.clone());
+            }
+            out.push(r);
+        }
+    }
+    out
+}
+
 /// What `--expansion NAME` names: the path itself when it exists, else the
-/// installed pack in `dir` whose manifest id is `NAME` (or whose file or
+/// pack in the first of `dirs` whose manifest id is `NAME` (or whose file or
 /// folder is called `NAME` / `NAME.lxpack`). `None` when nothing matches.
-pub fn resolve_pack(name: &Path, dir: Option<&Path>) -> Option<PathBuf> {
+pub fn resolve_pack(name: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
     if name.exists() {
         return Some(name.to_path_buf());
     }
-    let dir = dir?;
     let id = name.to_str()?;
     if !legaia_expansion_format::manifest::is_valid_pack_id(id) {
         return None;
     }
+    dirs.iter().find_map(|dir| resolve_in(id, dir))
+}
+
+fn resolve_in(id: &str, dir: &Path) -> Option<PathBuf> {
     for candidate in [dir.join(id), dir.join(format!("{id}.lxpack"))] {
         if candidate.exists() && expansion_pack_path(&candidate).is_some() {
             return Some(candidate);
@@ -1543,12 +1591,53 @@ mod tests {
         assert_eq!((ok.id.as_str(), ok.schema), ("rebirth", 2));
         assert_eq!(ok.cover.as_deref(), Some("assets/cover.png"));
         assert!(ok.playable(), "{:?}", ok.errors);
+        let dirs = [tmp.clone()];
         assert_eq!(
-            resolve_pack(Path::new("rebirth"), Some(&tmp)),
+            resolve_pack(Path::new("rebirth"), &dirs),
             Some(tmp.join("renamed.lxpack"))
         );
-        assert_eq!(resolve_pack(Path::new("nope"), Some(&tmp)), None);
+        assert_eq!(resolve_pack(Path::new("nope"), &dirs), None);
         assert!(scan_packs(&tmp.join("absent")).is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// The installed packs folder and the bundled one are searched in that
+    /// order: the game's own Rebirth resolves by id with nothing installed,
+    /// and an installed copy of the same id hides it.
+    #[test]
+    fn bundled_packs_resolve_behind_installed_ones() {
+        let tmp = std::env::temp_dir().join(format!("legaia-packdirs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let (installed, bundled) = (tmp.join("installed"), tmp.join("bundled"));
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::create_dir_all(&bundled).unwrap();
+        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        let files = legaia_expansion_format::read_dir_files(rebirth).unwrap();
+        let bundle = legaia_expansion_format::bundle::write_bundle(&files).unwrap();
+        std::fs::write(bundled.join("rebirth.lxpack"), &bundle).unwrap();
+        let dirs = [installed.clone(), bundled.clone()];
+        assert_eq!(
+            resolve_pack(Path::new("rebirth"), &dirs),
+            Some(bundled.join("rebirth.lxpack"))
+        );
+        let list = discover_packs(&dirs);
+        assert_eq!(list.len(), 1);
+        assert_eq!(
+            list[0].as_ref().unwrap().path,
+            bundled.join("rebirth.lxpack")
+        );
+
+        std::fs::write(installed.join("mine.lxpack"), &bundle).unwrap();
+        assert_eq!(
+            resolve_pack(Path::new("rebirth"), &dirs),
+            Some(installed.join("mine.lxpack"))
+        );
+        let list = discover_packs(&dirs);
+        assert_eq!(list.len(), 1, "the bundled copy is hidden");
+        assert_eq!(
+            list[0].as_ref().unwrap().path,
+            installed.join("mine.lxpack")
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

@@ -26,6 +26,9 @@
 # Every archive carries every binary. Its top folder holds only the game
 # ("Legend of Legaia") and Legaia Explorer plus README-PLAY.txt; every
 # command-line program, legaia-engine included, is in command-line-tools/.
+# packs/rebirth.lxpack, bundled from packs/rebirth/ by release-build.sh, is
+# the Rebirth expansion pack the launcher lists (no game data: it validates
+# under the format's no-disc-bytes rule or the build fails).
 # The x86_64 Linux GUI binaries link cpal -> alsa-sys against a hand-unpacked
 # amd64 ALSA sysroot (setup-cross-toolchain.sh). docs/tooling/releases.md
 # covers the reasoning and the runner provisioning.

@@ -1266,12 +1266,14 @@ pub(crate) enum Cmd {
         /// the launch's flags.
         #[arg(long, value_name = "ID", requires = "expansion")]
         play_cutscene: Option<String>,
-        /// Load an expansion pack (a pack directory or an `.lxpack` bundle)
-        /// before anything else runs: New Game, Continue and `--resume-save`
+        /// Load an expansion pack (a pack directory or an `.lxpack` bundle,
+        /// or the id of an installed or bundled pack: `--expansion rebirth`
+        /// finds the Rebirth the release archive ships) before anything else
+        /// runs: New Game, Continue and `--resume-save`
         /// all play with it (a save made on a pack map returns there). With
         /// `--map`, boot straight into one of its maps in place of the
         /// `--scene` entry.
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH|ID")]
         expansion: Option<PathBuf>,
         /// Watch the `--expansion` pack (its folder, or the `.lxpack` file)
         /// and reload it in place whenever a file in it changes, the player
@@ -1493,13 +1495,14 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = 480)]
         height: u32,
     },
-    /// List the installed expansion packs: every `.lxpack` and pack folder
-    /// in the packs folder (`packs/` under the data directory), with its
-    /// version, authors, pack format and whether it plays on this engine.
-    /// `play-window --expansion <id>` plays one by its id.
+    /// List the expansion packs: every `.lxpack` and pack folder in the
+    /// packs folder (`packs/` under the data directory) and in the `packs/`
+    /// folder the game ships beside it (the release archive's Rebirth), with
+    /// its version, authors, pack format and whether it plays on this
+    /// engine. `play-window --expansion <id>` plays one by its id.
     #[command(display_order = 5)]
     Packs {
-        /// The folder to list instead of the packs folder.
+        /// The folder to list instead of the packs folders.
         #[arg(long)]
         dir: Option<PathBuf>,
         /// Print JSON instead of text.

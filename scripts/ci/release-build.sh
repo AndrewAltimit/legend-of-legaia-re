@@ -27,6 +27,13 @@
 #     Windows   "Legend of Legaia.exe" (the stub), "Legaia Explorer.exe"
 #     macOS     "Legend of Legaia.app", "Legaia Explorer.app"
 #
+# packs/rebirth.lxpack beside them is the Rebirth expansion pack, bundled
+# from packs/rebirth/ by `asset expansion bundle` (deterministic, and refused
+# unless the pack validates - the validator's no-disc-bytes rule included,
+# so it carries disc coordinates and the pack's own art and audio only). The
+# game lists it in the launcher and `--expansion rebirth` resolves it
+# (legaia_app_theme::release_layout::find_bundled_packs).
+#
 # Every command-line program - legaia-engine itself, asset-viewer and the
 # format tools - sits in command-line-tools/ with its own README.txt. The
 # stub and Explorer's Play button find legaia-engine there
@@ -38,7 +45,8 @@
 # runner, for universal-apple-darwin). Kept to bash 3.2 + BSD userland on
 # the macOS path: no GNU-only tar flags, no sha256sum assumption.
 #
-# Contents are exclusively our own compiled binaries plus our own text files.
+# Contents are exclusively our own compiled binaries, our own text files and
+# the project's own expansion pack.
 # No disc image is read and no game data is packaged -- this repo ships no
 # Sony-owned bytes, and nothing here should ever change that.
 
@@ -75,8 +83,11 @@ GUI_BINS=(legaia-engine asset-viewer legaia-explorer)
 # "Legend of Legaia"); macOS opens the .app bundle instead.
 STUB_BIN=legaia-launch
 
-# Where every command-line program goes, and the icon sources.
+# Where every command-line program goes, where the bundled expansion packs
+# go, and the icon sources.
 TOOLS_DIR="command-line-tools"
+PACKS_DIR="packs"
+BUNDLED_PACKS=(rebirth)
 ICONS="crates/app-theme/icons"
 
 # Oldest glibc the cross-built x86_64 Linux binaries must run against.
@@ -374,6 +385,22 @@ if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
     log "smoke: $("$EXPLORER_RUN" --version)"
 fi
 
+# The bundled expansion packs: packs/<id>.lxpack at the top level. The
+# bundler must run on this host, so a cross target bundles with a host build
+# of `asset` (the bytes are the same on every host: the writer is
+# deterministic and target-independent).
+mkdir -p "$STAGE/$PACKS_DIR"
+if [[ "$TARGET" == "$HOST_TRIPLE" || "$BUILD_MODE" == "universal" ]]; then
+    BUNDLER=("${BUILT}/asset${BIN_EXT}")
+else
+    log "building a host asset binary to bundle the expansion packs"
+    cargo build --release --locked -p legaia-asset --bin asset
+    BUNDLER=("target/release/asset")
+fi
+for pack in "${BUNDLED_PACKS[@]}"; do
+    "${BUNDLER[@]}" expansion bundle --out "$STAGE/$PACKS_DIR/${pack}.lxpack" "packs/${pack}"
+done
+
 cp LICENSE "$STAGE/LICENSE"
 cp LICENSE-MIT "$STAGE/LICENSE-MIT"
 
@@ -445,6 +472,17 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'Arrow keys move, Left / Right change an option, Esc quits. If the game\n'
     printf 'stops with an error, the launcher comes back and shows it; the full\n'
     printf 'log is legaia-engine-game.log in the saves folder.\n\n'
+    printf 'EXPANSION PACK\n\n'
+    printf 'The %s folder holds Legend of Legaia: Rebirth (rebirth.lxpack), an\n' "$PACKS_DIR"
+    printf 'expansion pack made for the port: a new tower to climb past level 60,\n'
+    printf 'quests, bosses and game modes. In the launcher, click the Expansion\n'
+    printf 'pack button (or select it and press Enter) to play with it; New Game\n'
+    printf 'and Continue then use it. Delete (or a right-click) on the button goes\n'
+    printf 'back to the game as it shipped. From a terminal:\n'
+    printf '    %s/legaia-engine play-window --disc <disc.bin> --boot-ui --expansion rebirth\n' "$TOOLS_DIR"
+    printf 'Other packs (.lxpack files) can be dropped in the same folder, or in\n'
+    printf 'the packs folder of your saves folder, and show up the same way.\n'
+    printf 'The pack holds no game data either: it points at the disc you supply.\n\n'
     printf 'NO GAME DATA IS INCLUDED. The engine reads the disc you supply and\n'
     printf 'nothing else; dump your own copy of the game.\n\n'
     printf 'Settings, key bindings, options and saves live in your per-user\n'

@@ -34,7 +34,7 @@ use commands::{
     cmd_title,
 };
 use legaia_engine_shell::window::{self, cmd_play_str, cmd_play_window, cmd_record};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The subcommands behind the `oracles` feature, named so a build without it
 /// says what to rebuild instead of clap's bare "unrecognized subcommand".
@@ -750,15 +750,19 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
     Ok(decoded)
 }
 
-/// `legaia-engine packs`: the installed expansion packs with their metadata.
+/// `legaia-engine packs`: the installed and bundled expansion packs with
+/// their metadata.
 fn cmd_packs(dir: Option<&Path>, json: bool) -> Result<()> {
     use legaia_engine_shell::launcher;
-    let dir = match dir {
-        Some(d) => d.to_path_buf(),
-        None => launcher::packs_dir()
-            .ok_or_else(|| anyhow::anyhow!("no data directory is known; pass --dir"))?,
+    let dirs: Vec<PathBuf> = match dir {
+        Some(d) => vec![d.to_path_buf()],
+        None => launcher::pack_dirs(),
     };
-    let list = launcher::scan_packs(&dir);
+    anyhow::ensure!(
+        !dirs.is_empty(),
+        "no data directory is known and no bundled packs folder was found; pass --dir"
+    );
+    let list = launcher::discover_packs(&dirs);
     if json {
         let rows: Vec<serde_json::Value> = list
             .iter()
@@ -775,16 +779,18 @@ fn cmd_packs(dir: Option<&Path>, json: bool) -> Result<()> {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "dir": dir,
+                "dir": dirs[0],
+                "dirs": dirs,
                 "engine": legaia_expansion_format::manifest::ENGINE_VERSION,
                 "packs": rows,
             }))?
         );
         return Ok(());
     }
+    let shown: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
     println!(
         "Expansion packs in {} (engine {}):",
-        dir.display(),
+        shown.join(" and "),
         legaia_expansion_format::manifest::ENGINE_VERSION
     );
     if list.is_empty() {

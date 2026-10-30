@@ -537,7 +537,7 @@ impl ExpansionLaunch {
     /// (`legaia_expansion_format::read_files`).
     ///
     /// A `pack` that is not a path names an installed pack by id, looked up
-    /// in the packs folder (`crate::launcher::resolve_pack`).
+    /// an installed or bundled pack (`crate::launcher::resolve_pack`).
     pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
         let path = self.resolve_path()?;
         legaia_expansion_format::read_files(&path)
@@ -546,15 +546,20 @@ impl ExpansionLaunch {
     }
 
     /// The pack folder or `.lxpack` file `pack` names: a path, or the id of
-    /// an installed pack in the packs folder (`crate::launcher::resolve_pack`).
+    /// an installed or bundled pack (`crate::launcher::resolve_pack`).
     pub fn resolve_path(&self) -> Result<std::path::PathBuf> {
-        let dir = crate::launcher::packs_dir();
-        crate::launcher::resolve_pack(&self.pack, dir.as_deref()).with_context(|| {
+        let dirs = crate::launcher::pack_dirs();
+        crate::launcher::resolve_pack(&self.pack, &dirs).with_context(|| {
+            let searched: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
             format!(
-                "--expansion {}: no such file or folder, and no installed pack has that id{}",
+                "--expansion {}: no such file or folder, and no installed or bundled pack has \
+                 that id{}",
                 self.pack.display(),
-                dir.map(|d| format!(" (packs folder {})", d.display()))
-                    .unwrap_or_default()
+                if searched.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (searched {})", searched.join(", "))
+                }
             )
         })
     }
