@@ -238,6 +238,7 @@ impl SceneHost {
             .with_context(|| format!("map '{map_id}' base scenery"))?;
         let n_scenery = scenery_props.len();
         npcs.extend(scenery_props);
+        self.expansion_collision = Some((map_id.to_string(), image.collision));
         let overrides = SceneOverride {
             map_id: map_id.to_string(),
             field_map: image.image,

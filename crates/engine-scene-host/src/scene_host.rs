@@ -289,6 +289,11 @@ pub struct SceneHost {
     /// The expansion workbench's 3D preview sets it, so an edit-and-look
     /// entry shows the map rather than its story beat; play leaves it off.
     pub quiet_expansion_arrivals: bool,
+    /// The pack map last entered and what its collision grid was built from
+    /// past its definition ([`legaia_engine_scene::expansion_map::CollisionInputs`]):
+    /// the workbench's 3D preview re-derives the grid from it when it moves
+    /// a prop in place.
+    pub expansion_collision: Option<(String, legaia_engine_scene::expansion_map::CollisionInputs)>,
     /// The disc's inbound door / warp arrivals keyed by destination
     /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
     /// first scene-picker entry that asks for it and kept for the session.

@@ -522,7 +522,7 @@ offset) is the text the build was sent - goes to the frame at once as
 
 | Object | In the frame | In the engine |
 |---|---|---|
-| Prop | Its placed draw, found by where it stands, moves to its new world position, turns, and rises by the floor's change between the two tiles (the grid's corner heights). | `expansion_place_prop`: the definition (what the overlay, the prop's light and the floor read); a standable top follows (`ActiveMap::refresh_floor_tops`); a solid prop's closed tile moves in the collision grid - the tile it left takes back its style's walls and the terrain's, unless another solid prop stands there. |
+| Prop | Its placed draw, found by where it stands, moves to its new world position, turns, and rises by the floor's change between the two tiles (the grid's corner heights). | `expansion_place_prop`: the definition (what the overlay, the prop's light and the floor read); a standable top follows (`ActiveMap::refresh_floor_tops`); for a solid prop the collision grid is written again by the build's own code (`expansion_map::collision_grid`, from the `CollisionInputs` the entry kept: the terrain's walls and each solid mesh's bytes), so its tile and its mesh's footprint move and turn with it. |
 | NPC | - | `expansion_place_npc`: its anchor (what the draw, the collision box and the talk probe read), heading and definition. |
 | Spawn | - | `expansion_place_spawn`: the definition the overlay and the next arrival read. |
 | Lamp | - | `expansion_place_lamp`: the definition, which the scene's lights read every frame. |

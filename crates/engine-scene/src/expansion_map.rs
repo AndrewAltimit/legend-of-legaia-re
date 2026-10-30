@@ -373,6 +373,123 @@ pub struct FieldImage {
     pub open_large_props: Vec<String>,
     /// How many `solid` decorations closed their footprint.
     pub solid_decorations: usize,
+    /// What the image's collision grid was built from, kept so an edit that
+    /// moves a prop in place re-derives the grid as this build did
+    /// ([`collision_grid`]).
+    pub collision: CollisionInputs,
+}
+
+/// The inputs of a map's collision grid past its definition: the walls a
+/// terrain adds per tile (`None` on a tier-floored map) and the mesh bytes
+/// of every solid prop and decoration, whose footprints close the ground.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CollisionInputs {
+    pub terrain_walls: Option<Vec<u8>>,
+    pub solid_meshes: Vec<(PropMesh, Vec<u8>)>,
+}
+
+impl CollisionInputs {
+    fn raw(&self, mesh: &PropMesh) -> Option<&[u8]> {
+        self.solid_meshes
+            .iter()
+            .find(|(m, _)| m == mesh)
+            .map(|(_, r)| r.as_slice())
+    }
+}
+
+/// The `GRID_DIM x GRID_DIM` collision grid of `def` (the field image's
+/// `+0x4000` region) from `inputs`: what [`build_field_image`] writes, by
+/// the same code. A prop moved in place takes its footprint along by
+/// rebuilding this region alone.
+pub fn collision_grid(def: &MapDef, grid: &TileGrid, inputs: &CollisionInputs) -> Vec<u8> {
+    let mut img = vec![0u8; COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM];
+    write_solid_collision(&mut img, def, grid, inputs.terrain_walls.as_deref(), &|m| {
+        inputs.raw(m)
+    });
+    img.split_off(COLLISION_GRID_OFFSET)
+}
+
+/// The tile walls ([`write_collision_grid`]), then every solid prop with no
+/// standable top closing its own tile and its mesh's footprint, then every
+/// solid decoration closing its footprint. `raw` gives a mesh's bytes.
+/// Returns how many solid decorations closed their footprint.
+fn write_solid_collision<'r>(
+    img: &mut [u8],
+    def: &MapDef,
+    grid: &TileGrid,
+    terrain_walls: Option<&[u8]>,
+    raw: &dyn Fn(&PropMesh) -> Option<&'r [u8]>,
+) -> usize {
+    write_collision_grid(img, def, grid, terrain_walls);
+    for prop in def.props.iter().filter(|p| p.solid && p.top.is_none()) {
+        let [col, row] = prop.tile;
+        if usize::from(col) >= grid.width || usize::from(row) >= grid.height {
+            continue;
+        }
+        // Close the prop's tile: its wall quarters sit one byte row down.
+        let (gc, gr) = grid_tile(def, col, row);
+        img[COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc] |= 0xF0;
+        if let Some(f) = raw(&prop.mesh)
+            .and_then(|r| footprint::footprint(r, prop.rotation, prop.scale.unwrap_or(1.0)))
+        {
+            let (wx, wz) = tile_centre_world(def, col, row);
+            footprint::close_hull(
+                img,
+                &f.hull,
+                f32::from(wx) + f32::from(prop.offset[0]),
+                f32::from(wz) + f32::from(prop.offset[2]),
+            );
+        }
+    }
+    let mut solid_decorations = 0;
+    for d in def
+        .decorations()
+        .unwrap_or_default()
+        .iter()
+        .filter(|d| d.solid)
+    {
+        let Some(h) = raw(&d.mesh).and_then(|r| footprint::base_hull(r, d.rotation, d.scale))
+        else {
+            continue;
+        };
+        let (x, z) = tile_centre_world(def, d.tile[0], d.tile[1]);
+        footprint::close_hull(
+            img,
+            &h,
+            f32::from(x) + d.offset[0],
+            f32::from(z) + d.offset[2],
+        );
+        solid_decorations += 1;
+    }
+    solid_decorations
+}
+
+/// [`CollisionInputs::solid_meshes`] of `def` from the mesh library.
+fn solid_meshes(def: &MapDef, lib: Option<&MeshLibrary>) -> Result<Vec<(PropMesh, Vec<u8>)>> {
+    let Some(lib) = lib else {
+        return Ok(Vec::new());
+    };
+    let mut out: Vec<(PropMesh, Vec<u8>)> = Vec::new();
+    let meshes = def
+        .props
+        .iter()
+        .filter(|p| p.solid && p.top.is_none())
+        .map(|p| p.mesh.clone())
+        .chain(
+            def.decorations()?
+                .into_iter()
+                .filter(|d| d.solid)
+                .map(|d| d.mesh),
+        );
+    for m in meshes {
+        if out.iter().any(|(k, _)| *k == m) {
+            continue;
+        }
+        if let Some(r) = solid_mesh_raw(lib, &m) {
+            out.push((m, r.to_vec()));
+        }
+    }
+    Ok(out)
 }
 
 /// Build the synthetic field image of `def` (whose resolved tiles are
@@ -437,7 +554,17 @@ pub fn build_field_image(
         Some(_) => Some(def.terrain_walls(grid)?),
         None => None,
     };
-    write_collision_grid(&mut img, def, grid, terrain_walls.as_deref());
+    // The decorations are expanded once more below; an error stops the
+    // build there, as it did before.
+    def.decorations()?;
+    let solid_decorations =
+        write_solid_collision(&mut img, def, grid, terrain_walls.as_deref(), &|m| {
+            base.library.and_then(|lib| solid_mesh_raw(lib, m))
+        });
+    let collision = CollisionInputs {
+        terrain_walls,
+        solid_meshes: solid_meshes(def, base.library)?,
+    };
     let mut added = Added {
         len: base.geometry_len,
         meshes: Vec::new(),
@@ -486,25 +613,6 @@ pub fn build_field_image(
     let (dropped, chunk) = write_decorations(
         &mut img, def, grid, base, &mut added, &mut free, surface, cell_items,
     )?;
-    // Solid decorations close the ground under their meshes.
-    let mut solid_decorations = 0;
-    if let Some(lib) = base.library {
-        for d in def.decorations()?.iter().filter(|d| d.solid) {
-            let Some(h) = solid_mesh_raw(lib, &d.mesh)
-                .and_then(|raw| footprint::base_hull(raw, d.rotation, d.scale))
-            else {
-                continue;
-            };
-            let (x, z) = tile_centre_world(def, d.tile[0], d.tile[1]);
-            footprint::close_hull(
-                &mut img,
-                &h,
-                f32::from(x) + d.offset[0],
-                f32::from(z) + d.offset[2],
-            );
-            solid_decorations += 1;
-        }
-    }
     // A kept room keeps its own floor steps (`KeptFloor`).
     let kept = KeptFloor::new(def, grid, base.base_map);
     let records: Vec<ElevationOverride> = kept.records().iter().copied().take(0x7F0).collect();
@@ -518,6 +626,7 @@ pub fn build_field_image(
         prop_anchors: anchors,
         open_large_props,
         solid_decorations,
+        collision,
     })
 }
 
@@ -1011,28 +1120,14 @@ fn write_objects(
         let (ac, ar) = grid_tile(def, anchor.0, anchor.1);
         let o = cell_off(ac, ar);
         set_cell(img, o, s as u16 | cell_gates(flags));
-        let (gc, gr) = grid_tile(def, col, row);
-        // The mesh's footprint ([`footprint`]): what a solid prop closes
-        // past its own tile, and what flags a large prop left open.
-        let fp = base
-            .library
-            .and_then(|lib| solid_mesh_raw(lib, &prop.mesh))
-            .and_then(|raw| footprint::footprint(raw, prop.rotation, prop.scale.unwrap_or(1.0)));
-        let (wx, wz) = tile_centre_world(def, col, row);
-        let (wx, wz) = (
-            f32::from(wx) + f32::from(prop.offset[0]),
-            f32::from(wz) + f32::from(prop.offset[2]),
-        );
-        if prop.solid && prop.top.is_none() {
-            // Close the prop's tile: its wall quarters sit one byte row down.
-            let b = COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc;
-            img[b] |= 0xF0;
-            if let Some(f) = &fp {
-                footprint::close_hull(img, &f.hull, wx, wz);
-            }
-        } else if prop.top.is_none()
-            && fp
-                .as_ref()
+        // A solid prop's tile and footprint close in
+        // [`write_solid_collision`]; a large one left open is flagged.
+        if !prop.solid
+            && prop.top.is_none()
+            && base
+                .library
+                .and_then(|lib| solid_mesh_raw(lib, &prop.mesh))
+                .and_then(|raw| footprint::footprint(raw, prop.rotation, prop.scale.unwrap_or(1.0)))
                 .is_some_and(|f| f.is_large_obstacle(f32::from(prop.offset[1])))
         {
             open_large.push(prop.id.clone());

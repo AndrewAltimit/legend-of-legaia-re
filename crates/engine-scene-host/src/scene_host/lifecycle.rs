@@ -59,6 +59,7 @@ impl SceneHost {
             pending_scene_override: None,
             failed_pack_mode_map: None,
             quiet_expansion_arrivals: false,
+            expansion_collision: None,
             arrival_catalog: None,
             pending_picker_arrivals: None,
             picker_seat: None,

@@ -368,7 +368,6 @@ impl LegaiaRuntime {
         oz: i32,
         yaw: f32,
     ) -> bool {
-        use legaia_scene_formats::field_objects::GRID_DIM;
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
@@ -384,56 +383,41 @@ impl LegaiaRuntime {
         if usize::from(c) >= gw || usize::from(r) >= gh || i >= active.def.props.len() {
             return false;
         }
+        let p = &active.def.props[i];
+        let closes = p.solid && p.top.is_none();
+        // A solid prop's footprint is re-derived from what the entry built
+        // the grid from; without it (another map's inputs) the caller
+        // rebuilds instead.
+        let inputs = match &host.expansion_collision {
+            Some((id, inputs)) if *id == active.map_id => Some(inputs),
+            _ => None,
+        };
+        if closes && inputs.is_none() {
+            return false;
+        }
         let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
         let def = std::sync::Arc::make_mut(&mut active.def);
-        let old = def.props[i].tile;
         let p = &mut def.props[i];
         p.tile = [c, r];
         p.offset[0] = clamp(ox);
         p.offset[2] = clamp(oz);
         p.rotation[1] = yaw;
-        let (solid, top) = (p.solid, p.top.is_some());
-        if top {
+        if p.top.is_some() {
             active.refresh_floor_tops();
         }
-        if !solid || top || old == [c, r] {
-            return true;
-        }
-        // The closed tile follows the prop: the tile it left takes its own
-        // walls back (its style's and the terrain's) unless another solid
-        // prop still stands there, the tile it reaches is closed. The wall
-        // quarters of tile `(gc, gr)` sit one byte row down.
-        let def = &active.def;
-        let grid = &active.grid;
-        let cg = &mut w.terrain.collision_grid;
-        let mut terrain: Option<Vec<u8>> = None;
-        for t in [old, [c, r]] {
-            let (tc, tr) = (usize::from(t[0]), usize::from(t[1]));
-            if tc >= gw || tr >= gh {
-                continue;
-            }
-            let closed = def
-                .props
-                .iter()
-                .any(|p| p.tile == t && p.solid && p.top.is_none());
-            let walls = if closed {
-                0xF
-            } else {
-                let extra = if def.terrain.is_some() {
-                    let tw = terrain.get_or_insert_with(|| {
-                        def.terrain_walls(grid).unwrap_or_else(|_| vec![0; gw * gh])
-                    });
-                    tw[tr * gw + tc]
-                } else {
-                    0
-                };
-                grid.tiles[tr * gw + tc].walls | extra
-            };
-            let gc = usize::from(def.tiles.origin[0]) + tc;
-            let gr = usize::from(def.tiles.origin[1]) + tr;
-            if let Some(b) = cg.get_mut((gr + 1) * GRID_DIM + gc) {
-                *b = (walls << 4) | (*b & 0x0F);
-            }
+        if let (true, Some(inputs)) = (closes, inputs) {
+            // The grid as the build writes it (`collision_grid`, the same
+            // code): the tiles' walls, then every solid prop's tile and mesh
+            // footprint and every solid decoration's, the moved prop at its
+            // new pose.
+            let g = legaia_engine_scene::expansion_map::collision_grid(
+                &active.def,
+                &active.grid,
+                inputs,
+            );
+            let cg = &mut w.terrain.collision_grid;
+            let n = g.len().min(cg.len());
+            cg[..n].copy_from_slice(&g[..n]);
         }
         true
     }

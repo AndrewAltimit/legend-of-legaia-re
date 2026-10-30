@@ -116,6 +116,32 @@ fn a_solid_prop_closes_its_tile() {
     assert_eq!(byte(&img, 13, 22) >> 4, 0xF);
 }
 
+/// `collision_grid` is the build's grid region, and a solid prop moved to
+/// another tile takes its closed tile with it.
+#[test]
+fn the_collision_grid_rebuilds_alone_as_the_build_writes_it() {
+    let mut d = def();
+    let grid = d.tile_grid().unwrap();
+    let base = || BaseInputs {
+        base_map: None,
+        geometry_entry: Some(99),
+        geometry_len: Some(20),
+        library: None,
+    };
+    let out = build_field_image(&d, &grid, base()).unwrap();
+    let region = &out.image[COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM];
+    assert_eq!(collision_grid(&d, &grid, &out.collision), region);
+    let i = d.props.iter().position(|p| p.solid).unwrap();
+    d.props[i].tile = [1, 1];
+    let moved = collision_grid(&d, &grid, &out.collision);
+    let rebuilt = build_field_image(&d, &grid, base()).unwrap();
+    assert_eq!(
+        moved,
+        &rebuilt.image[COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM]
+    );
+    assert_ne!(moved, region, "the closed tile moved");
+}
+
 #[test]
 fn props_come_back_as_placements_at_their_tiles() {
     let img = image(&def());
