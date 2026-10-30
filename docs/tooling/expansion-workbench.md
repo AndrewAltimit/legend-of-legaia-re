@@ -75,7 +75,7 @@ content offer only ids the pack defines.
 | Tab | Edits |
 |---|---|
 | Manifest | `pack.toml`. |
-| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells), formations as four seats of pack or retail monsters, encounter overrides per scene, bosses. |
+| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers), formations as four seats of pack or retail monsters, encounter overrides per scene, bosses. |
 | Progression | Multipliers, the curve (retail, scaled, banded, explicit) with a live chart against retail, enemy scaling, level-up rewards. |
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
 | Dialog | Lines with a per-row check under the text: the 36-character row warning and any markup with no glyph. |

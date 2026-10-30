@@ -444,6 +444,167 @@ function monsterRefSlot(ctx, f, i, path) {
   return h('label', { class: 'xw-field', 'data-path': `${path}.monsters[${i}]` }, h('span', {}, `Seat ${i + 1}`), sel);
 }
 
+// --- Boss scripts ---------------------------------------------------------------------------
+// `[monsters.<key>.script]`: the phase editor. Moves pick among the base
+// monster's own swings (`attack = n`, its attack list) and spell-table ids;
+// docs/formats/expansion-pack-battle.md#boss-scripts.
+const TARGET_RULES = [['random', 'Random'], ['lowest_hp', 'Lowest HP'], ['highest_attack', 'Highest attack'], ['healer', 'Healer first']];
+const STATUS_NAMES = ['venom', 'toxic', 'numb', 'sleep', 'confuse', 'rot', 'curse', 'stone'];
+const PHASE_STATS = ['attack', 'defence', 'agility', 'speed', 'intelligence'];
+
+function spellName(ctx, id) {
+  const s = catList(ctx, 'spells').find((x) => x.id === id);
+  return s ? s.name : null;
+}
+
+// One move: a swing of the base's or a spell, and how it is picked.
+function moveEd(ctx, box, mv, p, base) {
+  const kind = h('select', {}, h('option', { value: 'attack' }, 'Swing (base attack)'), h('option', { value: 'spell' }, 'Spell'));
+  kind.value = mv.spell != null ? 'spell' : 'attack';
+  kind.addEventListener('change', () => {
+    if (kind.value === 'spell') { delete mv.attack; delete mv.hits; mv.spell = mv.spell || 0x81; } else { delete mv.spell; mv.attack = 0; }
+    ctx.changed(true);
+  });
+  const row = h('div', { class: 'xw-grid' }, h('label', { class: 'xw-field' }, h('span', {}, 'Move'), kind));
+  if (kind.value === 'attack') {
+    const swings = (base && base.swings) || [];
+    if (swings.length) {
+      row.append(field(ctx, mv, { k: 'attack', t: 'sel', num: true, label: 'Swing', opts: swings.map((c, i) => [String(i), `swing ${i} (AGL ${c})`]) }, p));
+    } else row.append(field(ctx, mv, { k: 'attack', t: 'int', label: 'Swing', hint: 'index into the base attack list' }, p));
+    row.append(field(ctx, mv, { k: 'hits', t: 'oint', label: 'Hits', hint: '1..8', ph: '1' }, p));
+  } else if (catList(ctx, 'spells').length) {
+    row.append(field(ctx, mv, { k: 'spell', t: 'sel', num: true, label: 'Spell', opts: catList(ctx, 'spells').filter((x) => x.id > 0).map((x) => [String(x.id), `0x${x.id.toString(16).toUpperCase().padStart(2, '0')} ${x.name}`]) }, p));
+  } else row.append(field(ctx, mv, { k: 'spell', t: 'int', label: 'Spell id' }, p));
+  row.append(
+    field(ctx, mv, { k: 'weight', t: 'int', label: 'Weight' }, p),
+    field(ctx, mv, { k: 'target', t: 'osel', label: 'Target', none: '(phase rule)', opts: TARGET_RULES }, p),
+    field(ctx, mv, { k: 'cooldown', t: 'int', label: 'Cooldown', hint: 'own turns' }, p),
+    field(ctx, mv, { k: 'charge', t: 'bool', label: 'Telegraphed (charges a turn first)' }, p),
+  );
+  if (mv.charge) row.append(field(ctx, mv, { k: 'charge_line', t: 'oref', kind: 'line', label: 'Charge banner', none: '(gathering power)' }, p));
+  box.append(row);
+}
+
+// Summons: pack monsters or retail ones, into free monster seats.
+function summonEd(ctx, box, ph, p) {
+  if (!Array.isArray(ph.summon)) ph.summon = [];
+  const seats = h('div', { class: 'xw-grid', 'data-path': `${p}.summon` });
+  const n = Math.min(4, ph.summon.length + 1);
+  for (let i = 0; i < n; i++) {
+    const cur = ph.summon[i];
+    const sel = h('select', {});
+    const opts = [['', i < ph.summon.length ? '(remove)' : '(none)']];
+    for (const id of ctx.ids('monster')) opts.push([`p:${id}`, `${id} (pack)`]);
+    for (const m of catList(ctx, 'monsters')) opts.push([`d:${m.id}`, `#${m.id} ${m.name} (retail)`]);
+    const val = cur == null ? '' : (typeof cur === 'string' ? `p:${cur}` : `d:${cur.id}`);
+    for (const [v, l] of opts) sel.append(h('option', { value: v, selected: v === val }, l));
+    sel.addEventListener('change', () => {
+      const v = sel.value;
+      if (!v) ph.summon.splice(i, 1);
+      else ph.summon[i] = v.startsWith('p:') ? v.slice(2) : { kind: 'monster', id: intOr(v.slice(2), 1) };
+      ctx.changed(true);
+    });
+    seats.append(h('label', { class: 'xw-field', 'data-path': `${p}.summon[${i}]` }, h('span', {}, `Summon ${i + 1}`), sel));
+  }
+  box.append(h('h4', { class: 'xw-sub' }, 'Summons', h('span', { class: 'xw-hint' }, ' seated as the next round opens')), seats);
+}
+
+// One phase (or the enrage): when it begins, what changes, its moves.
+function phaseEd(ctx, box, ph, p, base, opts) {
+  const when = ph.when || (ph.when = {});
+  const wp = `${p}.when`;
+  if (opts.enrage) box.append(grid(ctx, when, [{ k: 'round', t: 'oint', label: 'Enrage at round', hint: 'the first round is 1' }], wp));
+  else if (!opts.first) {
+    box.append(h('p', { class: 'xw-hint' }, 'Begins when any condition set holds.'));
+    box.append(grid(ctx, when, [
+      { k: 'hp_below_pct', t: 'oint', label: 'HP below %' },
+      { k: 'round', t: 'oint', label: 'At round' },
+      { k: 'allies_down', t: 'oint', label: 'Allies down' },
+    ], wp));
+  }
+  box.append(grid(ctx, ph, [
+    { k: 'line', t: 'oref', kind: 'line', label: 'Banner line', none: '(none)' },
+    { k: 'target', t: 'osel', label: 'Targeting', none: '(script rule)', opts: TARGET_RULES },
+    { k: 'element', t: 'osel', label: 'Element', none: '(keep)', opts: ELEMENTS.map((n, i) => [String(i), n]), num: true },
+    { k: 'heal_pct', t: 'oint', label: 'Heal % of max HP' },
+  ], p));
+  if (!opts.first) {
+    const g = h('div', { class: 'xw-grid' });
+    for (const st of PHASE_STATS) g.append(field(ctx, ph, { k: st, t: 'stat', label: st }, p));
+    box.append(h('h4', { class: 'xw-sub' }, 'Stat changes', h('span', { class: 'xw-hint' }, ' on the live stat as the phase begins')), g);
+    summonEd(ctx, box, ph, p);
+  }
+  listEd(ctx, box, ph, 'moves', p, {
+    title: 'Moves',
+    hint: opts.first ? 'picked by weight each turn' : 'empty keeps the moves before',
+    add: 'Move',
+    max: 12,
+    make: () => ({ attack: 0, weight: 1, charge: false, cooldown: 0 }),
+    label: (mv) => (mv.spell != null ? `spell ${spellName(ctx, mv.spell) || mv.spell}` : `swing ${mv.attack}${mv.hits > 1 ? ' x' + mv.hits : ''}`) + (mv.charge ? ' (telegraphed)' : ''),
+    render: (b2, mv, p2) => moveEd(ctx, b2, mv, p2, base),
+  });
+}
+
+function bossScriptEd(ctx, box, m, p, base) {
+  const sp = `${p}.script`;
+  const wrap = h('div', { class: 'xw-box', 'data-path': sp });
+  const on = h('input', { type: 'checkbox' });
+  on.checked = m.script != null;
+  on.addEventListener('change', () => {
+    m.script = on.checked ? { target: 'random', phases: [{ when: {}, moves: [{ attack: 0, weight: 1, charge: false, cooldown: 0 }], summon: [] }], immune: [] } : null;
+    ctx.changed(true);
+  });
+  wrap.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, on, 'Boss script'), h('span', { class: 'xw-hint' }, ' its own AI: phases, telegraphs, summons')));
+  const sc = m.script;
+  if (!sc) { box.append(wrap); return; }
+  wrap.append(grid(ctx, sc, [{ k: 'target', t: 'sel', label: 'Targeting', opts: TARGET_RULES }], sp));
+  // Immunities.
+  const have = new Set(sc.immune || []);
+  const imm = h('div', { class: 'xw-inline wb-inline', 'data-path': `${sp}.immune` });
+  for (const st of STATUS_NAMES) {
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = have.has(st);
+    cb.addEventListener('change', () => {
+      if (cb.checked) have.add(st); else have.delete(st);
+      sc.immune = STATUS_NAMES.filter((x) => have.has(x));
+      ctx.changed();
+    });
+    imm.append(h('label', { class: 'xw-check xw-field' }, cb, st));
+  }
+  wrap.append(h('h4', { class: 'xw-sub' }, 'Immune to'), imm);
+  // Last stand.
+  const ls = h('input', { type: 'checkbox' });
+  ls.checked = sc.last_stand != null;
+  ls.addEventListener('change', () => { sc.last_stand = ls.checked ? {} : null; ctx.changed(true); });
+  wrap.append(h('label', { class: 'xw-check xw-field' }, ls, 'Last stand (survives one lethal blow at 1 HP)'));
+  if (sc.last_stand) wrap.append(grid(ctx, sc.last_stand, [{ k: 'line', t: 'oref', kind: 'line', label: 'Last-stand banner', none: '(default)' }], `${sp}.last_stand`));
+  listEd(ctx, wrap, sc, 'phases', sp, {
+    title: 'Phases',
+    hint: 'in order; the first opens the fight',
+    add: 'Phase',
+    max: 8,
+    make: () => ({ when: { hp_below_pct: 50 }, moves: [], summon: [] }),
+    label: (ph, i) => {
+      if (i === 0) return 'Phase 1 (opening)';
+      const w = ph.when || {};
+      const c = [w.hp_below_pct != null ? `HP < ${w.hp_below_pct}%` : null, w.round != null ? `round ${w.round}` : null, w.allies_down != null ? `${w.allies_down} allies down` : null].filter(Boolean);
+      return `Phase ${i + 1}${c.length ? ' - ' + c.join(' or ') : ''}`;
+    },
+    render: (b2, ph, p2, i) => phaseEd(ctx, b2, ph, p2, base, { first: i === 0 }),
+  });
+  // The enrage timer.
+  const en = h('input', { type: 'checkbox' });
+  en.checked = sc.enrage != null;
+  en.addEventListener('change', () => { sc.enrage = en.checked ? { when: { round: 12 }, moves: [], summon: [] } : null; ctx.changed(true); });
+  wrap.append(h('label', { class: 'xw-check xw-field' }, en, 'Enrage timer'));
+  if (sc.enrage) {
+    const eb = h('div', { class: 'xw-box', 'data-path': `${sp}.enrage` });
+    phaseEd(ctx, eb, sc.enrage, `${sp}.enrage`, base, { enrage: true });
+    wrap.append(eb);
+  }
+  box.append(wrap);
+}
+
 export function renderBattle(ctx, el) {
   const b = ctx.pack.battle;
   el.append(h('p', { class: 'xw-note' }, 'battle.toml: monsters derived from a retail record, formations of up to four, per-scene encounter overrides and bosses. A derived monster keeps its base\'s mesh, animation and attacks; only the numbers change.'));
@@ -466,6 +627,7 @@ export function renderBattle(ctx, el) {
       box.append(h('h4', { class: 'xw-sub' }, 'Stats'), g);
       itemChanceEd(ctx, box, m, 'drop', p, 'Drop');
       itemChanceEd(ctx, box, m, 'steal', p, 'Steal');
+      bossScriptEd(ctx, box, m, p, base);
     },
   });
 

@@ -81,6 +81,23 @@ The first five are `once = true`: their gold and item rewards pay out on the
 first victory and the boss refuses a second start. The Echo is the
 repeatable endgame fight.
 
+Every boss fights with a boss script (`[monsters.<key>.script]` in
+`battle.toml`) instead of its base monster's retail AI. Each move is the base
+monster's own swing or a spell-table id, so damage and animation are the
+disc's:
+
+| Boss | Script |
+|---|---|
+| Cinder Warden | Below half its armour splits: attack x1.3, speed x1.25, Lava Breath and a double swing at the weakest member. Enrages at round 15. |
+| Verdant Colossus | Below 60% it heals 15%, hardens, calls a Moss Grude back and telegraphs Earthquake; below 25% it turns to earth and rages. |
+| Iron Regent | Strikes whoever hits hardest; at two thirds and one third it summons two Brass Sentinels into empty seats, and its last phase telegraphs Hyper Crush. |
+| Azure Seraph | Below half turns to thunder and telegraphs Water Hazard; from round 14 the sky opens: Thunder Storm and triple swings. |
+| Hollow Sovereign | Three phases: at two thirds it calls a herald, at one third it is unmade and telegraphs Grand Beam. A last stand, and an enrage at round 20. |
+| Sovereign Unbound | Chaos Flare from the start; below half a telegraphed Thunder Burst. A last stand of its own. |
+
+Their banner lines are the `warden_*`, `colossus_*`, `regent_*`, `seraph_*`,
+`sovereign_*` and `unbound_*` lines in `dialog.toml`.
+
 ### Quests
 
 The main chain climbs the tower: **A Tower Wakes** (starts on its own at

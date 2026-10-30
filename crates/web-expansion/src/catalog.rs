@@ -43,6 +43,9 @@ pub struct MonsterRow {
     pub drop_item: u8,
     pub drop_chance_pct: u8,
     pub spells: Vec<u8>,
+    /// The AGL cost of each of the record's swings, in attack-list order:
+    /// what a boss script's `attack = n` indexes.
+    pub swings: Vec<u8>,
 }
 
 /// One named id (an item, a spell, a music cue).
@@ -127,6 +130,12 @@ impl DiscCatalog {
                 drop_item: r.drop_item,
                 drop_chance_pct: r.drop_chance_pct,
                 spells: r.magic_attacks.clone(),
+                swings: r
+                    .spells
+                    .iter()
+                    .filter(|s| s.is_castable())
+                    .map(|s| s.agl_cost)
+                    .collect(),
             });
         }
 

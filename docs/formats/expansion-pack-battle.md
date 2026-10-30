@@ -36,6 +36,7 @@ A pack monster is always **derived** from a retail one. It keeps the base monste
 | `drop`, `steal` | The victory drop and the Evil God Icon steal, item and percent. |
 | `element` | Element id `0..=7` (`7` neutral). |
 | `spells` | Spell ids the monster AI may cast, at most three; replaces the base's. |
+| `script` | The monster's own battle AI in place of the base's retail picks ([boss scripts](#boss-scripts)). |
 
 The battle stats are **record** values, not what the fight installs. The battle loader boosts the record by the fight's class exactly as it does a retail one: a scripted fight installs ATK `x5/4` and both defences `x2`, a random encounter defences `x7/4` and INT `x5/4` (`MonsterDef::installed_stats`, [`battle.md`](../subsystems/battle.md)). Record stats clamp to `0x3FFF` so the scripted doubling cannot wrap 16 bits.
 
@@ -139,6 +140,95 @@ A boss is a formation plus staging. `no_escape` marks its formation scripted. `m
 
 Quests and maps start fights through two `World` entry points: `start_expansion_battle(formation)` and `start_expansion_boss(boss)`. Both go through the ordinary encounter path - transition, battle music, `begin_encounter_battle` - as `World::force_encounter` does.
 
+## Boss scripts
+
+```toml
+[monsters.cinder_warden.script]
+target = "random"
+immune = ["sleep", "confuse", "stone"]
+last_stand = { line = "warden_last" }
+enrage = { when = { round = 15 }, line = "warden_inferno", attack = { mul = 1.25 } }
+
+[[monsters.cinder_warden.script.phases]]      # phase 1 opens the fight
+moves = [
+    { attack = 0, weight = 3 },               # the base monster's first swing
+    { spell = 0x25, weight = 1, cooldown = 2 },
+]
+
+[[monsters.cinder_warden.script.phases]]
+when = { hp_below_pct = 50 }
+line = "warden_rage"
+attack = { mul = 1.3 }
+summon = ["pyre_wisp"]
+moves = [
+    { attack = 2, hits = 2, weight = 3, target = "lowest_hp" },
+    { spell = 0x46, weight = 2, charge = true, charge_line = "warden_charge" },
+]
+```
+
+A pack monster with a `script` table fights with the script's AI in place of its base monster's retail AI: on each of its turns the script, not the retail picker, chooses the action and the target. A pack monster without one keeps the base's AI, and a fight with no scripted monster in it never reaches the script runtime.
+
+The parser is `legaia_expansion_format::boss_script`; the kernel `legaia_engine_expansion::boss_script`; the `World` hooks `crates/engine-core/src/world/expansion_boss.rs`.
+
+### Moves are disc content
+
+A move names retail content by index and never carries a number of its own:
+
+- `attack = n` is the `n`th (0-based) swing of the base monster's attack list: its archive swing records, the entries the retail picker rolls over (tags `0x0C..=0x1F` with an AGL cost, listed by `asset monster-archive --id N` and by the workbench's swing picker). The move stages that entry through the ordinary attack band, so the clip, the hit events and the swing's power byte are the disc's. `hits` chains the swing up to eight times in one turn.
+- `spell = id` is a spell-table id, cast through the retail cast path as a pack monster's `spells` list is: MP debit, cast band, the move-power record and impact status. A capture-class special (a streamed cast module) resolves off the disc table as the retail monster AI's own scripted casts do. A cast the monster cannot afford from its live MP falls back to a physical strike, as in retail.
+
+A swing index past the base's list, or a spell id the disc does not hold, makes that turn fall back to the retail pick; the disc-gated test `expansion_boss_script_disc` checks every Rebirth move against the disc.
+
+### Phases
+
+`phases` is an ordered list. The first opens the fight and takes no `when`. Each later one begins when any condition its `when` sets holds:
+
+| `when` | Holds when |
+|---|---|
+| `hp_below_pct` | The monster's HP is below this percent of its maximum. |
+| `round` | The battle has reached this round (the first is `1`). |
+| `allies_down` | At least this many monsters of the fight have fallen. |
+
+Phases run forward only: a monster healed back above a threshold stays in its phase. The checks run as each round opens and at the top of each of the monster's turns, and one check may begin several phases in order. A phase applies its changes once, as it begins:
+
+| Field | Effect |
+|---|---|
+| `line` | A pack dialog line shown as the battle banner. |
+| `moves` | The weighted move list; a phase that lists none keeps the moves before it. |
+| `target` | The phase's targeting rule. |
+| `attack`, `defence`, `agility`, `speed`, `intelligence` | Set or scale (`{ mul = x }`) the monster's live battle stat and its base half. |
+| `element` | The monster's element (`0..=7`); the affinity matrix reads it as attacker and defender, so it changes what the monster resists. |
+| `heal_pct` | Restores this percent of maximum HP. |
+| `summon` | Monsters seated into free monster seats as the next round opens. |
+
+### Picks, targets and telegraphs
+
+Each turn draws once from the battle RNG over the standing moves' `weight`s (no draw when only one move is ready), so a fight replays bit for bit. `cooldown` keeps a move out of the draw for that many of the monster's own turns; with every move cooling, the one nearest ready is used.
+
+`target` picks among the living party: `random` (one draw), `lowest_hp`, `highest_attack`, and `healer` (a member who knows an ally-side spell, the most MP first; with none, the most MP). A move's own rule comes first, then the phase's, then the script's (`random` by default). A spell whose shape is not one enemy - the whole party, an ally - keeps its shape's targets.
+
+A move with `charge = true` is telegraphed: the turn it is picked the monster only gathers power and `charge_line` (or a generic "gathering power" line) stands as the banner; on its next turn the move lands with no draw.
+
+### Enrage, immunities, last stand
+
+- `enrage` is a phase keyed on `when.round` alone that applies over whatever phase stands, once; its `moves`, when set, replace the phases' for the rest of the fight. With no `line` its banner reads "<name> is enraged!".
+- `immune` lists statuses that never take hold (`venom`, `toxic`, `numb`, `sleep`, `confuse`, `rot`, `curse`, `stone`): every battle frame strips them, tracker entry and status-word bits, before anything reads them.
+- `last_stand` holds the first lethal blow of the fight at 1 HP, with its `line` (or "<name> refuses to fall!") as the banner. The next lethal blow kills.
+
+### Banners
+
+Every line shows on the battle's timed-message line, the one the wave banner uses, for its hold (about two seconds). A banner raised while another stands queues behind it, so a phase change and a charge on one turn read one after the other. A banner is one row: the line's first page, rows joined, and the validator warns past 40 characters.
+
+### Summons
+
+A summon takes a free monster seat - one whose monster has fallen, or one the layout has not yet used - as the next round opens, through the wave seating path, so it acts in that round, its mesh binds on both hosts and it joins the fight's spoils. When the summons need more seats than the layout has, the monster block widens and the standing monsters move to the wider layout's seats. A summon with no free seat (four standing) is dropped.
+
+Summons fight in the same battle, so they count toward the [one-version rule](#one-version-of-each-base-monster) with the formation's waves.
+
+### Validation
+
+`BattleSection::problems` refuses: a first phase with a `when` or no moves, a later phase with none, `hp_below_pct` thresholds that do not fall phase by phase, a move with both or neither of `attack` and `spell`, `hits` outside `1..=8` or without `attack`, a zero `weight`, a `charge_line` without `charge`, an enrage keyed on anything but `round`, an unknown summon, more than four summons in one phase, more than eight phases or twelve moves, and a duplicated immunity. Every `line` and `charge_line` must name a dialog line of the pack.
+
 ## Progression
 
 ```toml
@@ -187,5 +277,9 @@ Enemy scaling multiplies HP, MP, ATK, both defences, INT and SPD, and EXP and go
 | Level-up rewards | `World::apply_battle_xp` |
 | Steal override | the death-spoils steal in `battle/steal_attack.rs` |
 | Boss track | `World::swap_to_battle_bgm` |
+| Boss script pick | `World::expansion_boss_pick`, the top of `World::pick_monster_action`; a swing stream through `World::arm_monster_strike_budget` |
+| Boss phase checks, summons | `World::expansion_boss_round_start`, from `World::begin_battle_round` |
+| Last stand | `World::expansion_survives_lethal`, from `apply_battle_hp_delta` and `apply_combo_total` |
+| Immunities, banner queue | `World::expansion_boss_frame`, ahead of the battle frame's dead-marking sweep |
 
 A boss's `once` record lives in the runtime (`BattleRuntime::cleared_bosses`) and is saved as tail record 1 of the save's expansion block ([`expansion-pack-quests.md`](expansion-pack-quests.md#saves)), so a beaten once-only boss stays beaten across a Load.

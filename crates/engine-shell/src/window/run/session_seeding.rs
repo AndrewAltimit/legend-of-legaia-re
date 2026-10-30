@@ -167,12 +167,15 @@ pub(super) fn enter_debug_pack_mode(session: &mut NativeSession, seeds: &super::
 /// the scene registered that carries monsters", or a formation cell no row
 /// carries (`cell:[s:]id,...`, hex ids, `s:` = scripted), registered as a
 /// formation of its own the way the retail comparison's headless seed does
-/// (`legaia_engine_capture::formation_cell`).
+/// (`legaia_engine_capture::formation_cell`); or, with `--expansion`, an
+/// active pack's boss (`boss:KEY`) or formation (`pack:KEY`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::window) enum BattleEntry {
     Row(u16),
     First,
     Cell(legaia_engine_capture::formation_cell::FormationCell),
+    PackBoss(String),
+    PackFormation(String),
 }
 
 impl BattleEntry {
@@ -181,12 +184,19 @@ impl BattleEntry {
         if t.eq_ignore_ascii_case("first") {
             return Ok(Self::First);
         }
+        if let Some(k) = t.strip_prefix("boss:") {
+            return Ok(Self::PackBoss(k.to_string()));
+        }
+        if let Some(k) = t.strip_prefix("pack:") {
+            return Ok(Self::PackFormation(k.to_string()));
+        }
         if let Some(cell) = legaia_engine_capture::formation_cell::FormationCell::parse_spec(t) {
             return Ok(Self::Cell(cell));
         }
         t.parse::<u16>().map(Self::Row).map_err(|_| {
             anyhow::anyhow!(
-                "--battle wants a formation row index, `first` or `cell:[s:]id,...`, got {spec:?}"
+                "--battle wants a formation row index, `first`, `cell:[s:]id,...`, `boss:KEY` or \
+                 `pack:KEY`, got {spec:?}"
             )
         })
     }
@@ -204,6 +214,8 @@ impl BattleEntry {
                 let index = &session.host.index;
                 cell.register(world, &scene, || index.entry_bytes_extended(867).ok())
             }
+            // Started through the pack's own entry points instead.
+            Self::PackBoss(_) | Self::PackFormation(_) => None,
         }
     }
 }
@@ -223,6 +235,20 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             return;
         }
     };
+    // A pack fight starts through the pack's own entry points, which arm
+    // the boss staging (music, reward, script) the way a map trigger does.
+    if let BattleEntry::PackBoss(key) | BattleEntry::PackFormation(key) = &entry {
+        let world = &mut session.host.world;
+        world.toggles.live_gameplay_loop = true;
+        let started = match &entry {
+            BattleEntry::PackBoss(_) => world.start_expansion_boss(key),
+            _ => world.start_expansion_battle(key),
+        };
+        if !started {
+            log::error!("play-window: --battle {spec}: no such fight in the active pack");
+        }
+        return;
+    }
     let resolved = entry.resolve(session);
     let world = &mut session.host.world;
     let Some(row) = resolved else {
