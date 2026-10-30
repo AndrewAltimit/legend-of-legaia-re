@@ -20,7 +20,8 @@
 //!    (`field_far_bucket_depth` and kin) move clip `z`, never `w`;
 //! 2. **AO** - the Alchemy estimator over a golden-angle spiral at full
 //!    resolution up to a 540-row output (the native 320 x 240 target), half
-//!    above it;
+//!    above it, times the contact-shadow march toward enhanced lighting's
+//!    key light (inert while enhanced lighting is off);
 //! 3. **blur** - one separable depth- and normal-aware pass pair;
 //! 4. **apply** - inside the main pass, right after the opaque draws: a
 //!    full-screen triangle that multiplies the framebuffer by the AO (a
@@ -58,6 +59,11 @@ struct SsaoFrame {
     // xy = the blur axis (AO texels), z = the AO downscale, w = 1 for the
     // apply pass's AO-only debug view.
     pass_info: vec4<f32>,
+    // (contact_length, contact_thickness, contact_steps, contact_bias).
+    p3: vec4<f32>,
+    // `legaia_render_kernels::ssao::contact_light`: the key light's view
+    // direction and the contact-shadow strength (0 = no march).
+    light: vec4<f32>,
 };
 
 // A target pixel's view-space position in world units from its linear
@@ -228,6 +234,34 @@ fn blur_weight(t: f32, z0: f32, z: f32, n0: vec3<f32>, n: vec3<f32>) -> f32 {
     return g * dw * nw;
 }
 
+// A view-space point's target pixel (`view_to_ndc` in the kernel, then the
+// viewport with y down).
+fn view_to_px(q: vec3<f32>) -> vec2<f32> {
+    let w = q.z / f.view_k.z;
+    let ndc = vec2<f32>(q.x / (w * f.view_k.x), q.y / (w * f.view_k.y));
+    return vec2<f32>(
+        f.viewport.x + (ndc.x * 0.5 + 0.5) * f.viewport.z,
+        f.viewport.y + (0.5 - ndc.y * 0.5) * f.viewport.w,
+    );
+}
+
+fn contact_hit(ray_z: f32, scene_z: f32) -> f32 {
+    let dz = ray_z - scene_z;
+    if (dz > f.p3.w * ray_z && dz < f.p3.y) {
+        return 1.0;
+    }
+    return 0.0;
+}
+
+fn contact_fade(t: f32) -> f32 {
+    return clamp(1.0 - t / max(f.p3.x, 1e-3), 0.0, 1.0);
+}
+
+fn contact_from_hit(hit: f32, ndl: f32, strength: f32) -> f32 {
+    let facing = clamp(ndl * 4.0, 0.0, 1.0);
+    return 1.0 - strength * clamp(hit, 0.0, 1.0) * facing;
+}
+
 fn gbuf_dims() -> vec2<i32> {
     return vec2<i32>(textureDimensions(t_gbuf));
 }
@@ -269,7 +303,39 @@ fn fs_ao(in: VOut) -> @location(0) vec4<f32> {
         let v = ssao_view_pos(f, vec2<f32>(q) + vec2<f32>(0.5), gq.w) - p;
         sum = sum + occlusion_term(v, n, p.z);
     }
-    return vec4<f32>(ao_from_sum(sum, ns));
+    return vec4<f32>(max(ao_from_sum(sum, ns) * contact_shadow(p, n, s), f.p1.x));
+}
+
+// The contact-shadow march toward the key light from view point `p` with
+// normal `n`, its start jittered by `s` of a step; 1.0 is unshadowed.
+fn contact_shadow(p: vec3<f32>, n: vec3<f32>, s: f32) -> f32 {
+    let strength = f.light.w;
+    let l = f.light.xyz;
+    let ndl = dot(n, l);
+    if (strength <= 0.0 || ndl <= 0.0) {
+        return 1.0;
+    }
+    let steps = u32(f.p3.z);
+    let origin = p + n * (f.p3.w * p.z);
+    let hi = gbuf_dims() - vec2<i32>(1);
+    var hit = 0.0;
+    for (var i = 0u; i < steps; i = i + 1u) {
+        let t = (f32(i) + s) / f32(max(steps, 1u)) * f.p3.x;
+        let q = origin + l * t;
+        if (q.z <= 0.0) {
+            break;
+        }
+        let px = vec2<i32>(floor(view_to_px(q)));
+        if (any(px < vec2<i32>(0)) || any(px > hi)) {
+            break;
+        }
+        let gq = textureLoad(t_gbuf, px, 0);
+        if (gq.w <= 0.0) {
+            continue;
+        }
+        hit = max(hit, contact_hit(q.z, gq.w * f.view_k.z) * contact_fade(t));
+    }
+    return contact_from_hit(hit, ndl, strength);
 }
 
 @fragment
@@ -369,6 +435,8 @@ struct SsaoFrameUniform {
     p1: [f32; 4],
     p2: [f32; 4],
     pass_info: [f32; 4],
+    p3: [f32; 4],
+    light: [f32; 4],
 }
 
 /// The size-dependent half: the G-buffer, the two AO ping-pong targets and
@@ -717,6 +785,15 @@ impl Renderer {
         self.ssao_camera.set(world_to_clip);
     }
 
+    /// Which frame the staged SSAO camera takes points in: `false` (the
+    /// default) the Y-up render frame the field and world-map cameras use,
+    /// `true` retail's Y-down one (a battle camera composed with the battle
+    /// stage model). Only the contact-shadow march reads it, to aim at the
+    /// mood's key light (`legaia_render_kernels::ssao::contact_light`).
+    pub fn set_ssao_camera_y_down(&self, y_down: bool) {
+        self.ssao_camera_y_down.set(y_down);
+    }
+
     /// Replace the SSAO response (the shared defaults otherwise).
     pub fn set_ssao_params(&self, params: SsaoParams) {
         self.ssao_params.set(params);
@@ -741,7 +818,19 @@ impl Renderer {
         pass.ensure_targets(&self.device, w, h);
         let d = pass.targets.as_ref().map_or(1, |t| t.downscale) as f32;
         let (vx, vy, vw, vh) = scene_vp.unwrap_or((0, 0, w, h));
-        let [p0, p1, p2] = legaia_render_kernels::ssao::shader_words(&self.ssao_params.get());
+        let params = self.ssao_params.get();
+        let [p0, p1, p2, p3] = legaia_render_kernels::ssao::shader_words(&params);
+        let mood = self.lighting_mood.get();
+        let light = self.ssao_camera.get().map_or([0.0; 4], |cam| {
+            legaia_render_kernels::ssao::contact_light(
+                &params,
+                &cam.to_cols_array(),
+                mood.key_dir,
+                mood.key_rgb,
+                self.ssao_camera_y_down.get(),
+                self.dyn_lighting.get(),
+            )
+        });
         let base = SsaoFrameUniform {
             view_k: [k[0], k[1], k[2], 0.0],
             viewport: [vx as f32, vy as f32, vw as f32, vh as f32],
@@ -749,6 +838,8 @@ impl Renderer {
             p1,
             p2,
             pass_info: [0.0, 0.0, d, 0.0],
+            p3,
+            light,
         };
         let debug = if self.ssao_debug.get() { 1.0 } else { 0.0 };
         let blocks = [
@@ -916,7 +1007,7 @@ mod tests {
 
     #[test]
     fn frame_block_matches_the_wgsl_struct() {
-        assert_eq!(std::mem::size_of::<SsaoFrameUniform>(), 6 * 16);
+        assert_eq!(std::mem::size_of::<SsaoFrameUniform>(), 8 * 16);
     }
 
     /// The pre-pass shares the scene shaders' vertex entry and appends to

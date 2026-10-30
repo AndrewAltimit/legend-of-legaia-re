@@ -44,6 +44,9 @@ pub struct Renderer {
     /// The scene camera SSAO reconstructs view space from
     /// ([`Renderer::set_ssao_camera`]); `None` leaves the pass inert.
     pub(super) ssao_camera: std::cell::Cell<Option<Mat4>>,
+    /// Whether that camera takes retail Y-down points
+    /// ([`Renderer::set_ssao_camera_y_down`]).
+    pub(super) ssao_camera_y_down: std::cell::Cell<bool>,
     /// The SSAO response ([`Renderer::set_ssao_params`]).
     pub(super) ssao_params: std::cell::Cell<ssao::SsaoParams>,
     /// SSAO's AO-only tuning view ([`Renderer::set_ssao_debug_view`]).

@@ -1121,6 +1121,7 @@ impl OptionRow {
             H::CameraDistance => Self::CameraDistance,
             H::PreciseMovement => Self::PreciseMovement,
             H::Bloom => Self::Bloom,
+            H::AmbientOcclusion => Self::AmbientOcclusion,
             H::DiagRows
             | H::AudioMute
             | H::DebugCamera
@@ -1890,8 +1891,7 @@ mod tests {
             SeeThroughWalls => "play-see-through",
             GroundFog => "play-ground-fog",
             Bloom => "play-bloom",
-            // The play page's twin arrives with its WebGL2 pass.
-            AmbientOcclusion => return None,
+            AmbientOcclusion => "play-ssao",
             PsxRender => "play-psx-render",
             CameraDistance => "play-camera-distance",
             PreciseMovement => "play-precise-move",

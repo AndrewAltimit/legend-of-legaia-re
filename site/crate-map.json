@@ -4760,6 +4760,7 @@
     "play_run_rules",
     "play_sfx",
     "play_shop",
+    "play_ssao",
     "play_tile_board",
     "play_toggles",
     "play_world_map_markers",

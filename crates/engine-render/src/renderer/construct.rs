@@ -197,6 +197,7 @@ impl Renderer {
             ssao_pass: std::cell::RefCell::new(None),
             ssao_on: std::cell::Cell::new(false),
             ssao_camera: std::cell::Cell::new(None),
+            ssao_camera_y_down: std::cell::Cell::new(false),
             ssao_params: std::cell::Cell::new(ssao::SsaoParams::default()),
             ssao_debug: std::cell::Cell::new(false),
             scene_lights_bgl: light_layer.bgl,

@@ -556,6 +556,11 @@ div.play-vis-head { cursor: default; }
                 <span class="play-vis-tag is-enh">Enhancement</span></label>
               <p class="play-vis-desc">Bright lamps, lit windows and sunlit sky bleed a soft glow into their surroundings.</p>
             </li>
+            <li class="play-vis-row" title="Ambient occlusion: soft contact shadows where walls meet floors, under tables and eaves and at characters' feet, plus - with enhanced lighting on - a short shadow each character and prop casts from the mood's sun or moon right where it meets the ground (the native window's Home, persisted). Not retail - the game has no light source to occlude. Presentation only.">
+              <label class="play-vis-head"><input type="checkbox" id="play-ssao" checked> <span class="play-vis-name">Ambient occlusion</span> <kbd>Home</kbd>
+                <span class="play-vis-tag is-enh">Enhancement</span></label>
+              <p class="play-vis-desc">Soft contact shadows where walls meet floors and under characters and props.</p>
+            </li>
             <li class="play-vis-row" title="Ground fog: a low drifting mist bank over the scenes that read as misty or night (Rim Elm under the Mist, Drake Castle, the Voz forests, the Ravine, and any scene whose own fog puffs are live), parted by every character walking through it; a battle inherits its scene's bank (the native window's F9, persisted like its other options). Not retail - the game draws only its fog puffs. Presentation only.">
               <label class="play-vis-head"><input type="checkbox" id="play-ground-fog"> <span class="play-vis-name">Ground fog</span> <kbd>F9</kbd>
                 <span class="play-vis-tag is-enh">Enhancement</span></label>
@@ -1101,6 +1106,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/webgl-fog-volume.js"></script>
 <script src="js/webgl-bloom.js"></script>
+<script src="js/webgl-ssao.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/field-actors.js"></script>
 <script src="js/play-view-constants.js"></script>
@@ -2991,6 +2997,7 @@ div.play-vis-head { cursor: default; }
   const timeOfDayEl = document.getElementById('play-time-of-day');
   const dynShadowsEl = document.getElementById('play-dyn-shadows');
   const bloomEl = document.getElementById('play-bloom');
+  const ssaoEl = document.getElementById('play-ssao');
   function applyRenderToggles() {
     const rt = window.__playRuntime;
     if (rt && typeof rt.set_enhanced_lighting === 'function') {
@@ -2999,6 +3006,7 @@ div.play-vis-head { cursor: default; }
         timeOfDayEl.value = rt.set_lighting_time_of_day(timeOfDayEl.value);
         if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
         if (typeof rt.set_bloom === 'function') rt.set_bloom(!!bloomEl.checked);
+        if (typeof rt.set_ssao === 'function') rt.set_ssao(!!ssaoEl.checked);
       } catch (e) {}
     }
     /* PSX rasterisation is a remembered launch switch (the launcher's PSX
@@ -3011,6 +3019,7 @@ div.play-vis-head { cursor: default; }
     view.setDynamicLighting(!!dynLightEl.checked);
     view.setDynShadows(!!dynShadowsEl.checked);
     if (view.setBloom) view.setBloom(!!bloomEl.checked);
+    if (view.setSsao) view.setSsao(!!ssaoEl.checked);
   }
   function syncRenderToggles() {
     const rt = window.__playRuntime;
@@ -3020,6 +3029,7 @@ div.play-vis-head { cursor: default; }
         timeOfDayEl.value = rt.lighting_time_of_day();
         if (typeof rt.light_shadows === 'function') dynShadowsEl.checked = !!rt.light_shadows();
         if (typeof rt.bloom === 'function') bloomEl.checked = !!rt.bloom();
+        if (typeof rt.ssao === 'function') ssaoEl.checked = !!rt.ssao();
         if (typeof rt.occlusion_fade === 'function') seeThroughEl.checked = !!rt.occlusion_fade();
       } catch (e) {}
     }
@@ -3029,6 +3039,7 @@ div.play-vis-head { cursor: default; }
   timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynShadowsEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   bloomEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  ssaoEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   window.__playApplyRenderToggles = applyRenderToggles;
   window.__playSyncRenderToggles = syncRenderToggles;
 
@@ -3768,6 +3779,7 @@ div.play-vis-head { cursor: default; }
     enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
     light_shadows: () => { syncRenderToggles(); applyRenderToggles(); },
     bloom: () => { syncRenderToggles(); applyRenderToggles(); },
+    ssao: () => { syncRenderToggles(); applyRenderToggles(); },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
     /* `End`: reload the active pack from the library's copy - the one the

@@ -19,7 +19,25 @@
 //! * [`occlusion_term`] / [`ao_from_sum`] - the per-sample law (the
 //!   "Alchemy" estimator, McGuire et al. 2011) and its resolve;
 //! * [`blur_weight`] / [`ao_downscale`] - the depth-aware blur and the AO
-//!   resolution rule.
+//!   resolution rule;
+//! * [`contact_light`] / [`view_to_ndc`] / [`contact_hit`] /
+//!   [`contact_fade`] / [`contact_from_hit`] - the **contact shadows** the
+//!   same pass marches toward enhanced lighting's key light (below).
+//!
+//! # Contact shadows
+//!
+//! Folded into the AO term, under the same toggle: while enhanced lighting
+//! is on, each AO texel also marches a short ray from its surface toward the
+//! mood's key light ([`crate::scene_lighting::LightingMood::key_dir`])
+//! through the same G-buffer, and darkens where the ray passes behind
+//! nearer geometry - the sliver of shadow a character, a crate or an eave
+//! casts right where it meets the ground, which a mood light with no shadow
+//! map cannot draw. The result multiplies into the AO texel before the blur,
+//! so the blur that removes the AO's noise removes the march's jitter too,
+//! and the apply that darkens the opaque frame applies both. No extra pass
+//! and no extra target: the cost is [`CONTACT_STEPS`] more G-buffer reads
+//! per AO texel. With enhanced lighting off there is no key light to cast
+//! from, and the strength word is zero ([`contact_light`]).
 //!
 //! Every function here is the CPU mirror of a WGSL helper of the same name
 //! in `engine-render`'s `SSAO_SHADER_SRC`; the tests below pin the shapes
@@ -57,6 +75,20 @@ pub struct SsaoParams {
     pub blur_depth_sigma: f32,
     /// Exponent on the normals' dot product in the blur weight.
     pub blur_normal_power: f32,
+    /// Contact-shadow ray length in world units.
+    pub contact_length: f32,
+    /// How far behind the G-buffer surface a ray sample may sit and still
+    /// count as shadowed, in world units - what keeps a ray that passes far
+    /// behind a thin silhouette from shadowing the ground beyond it.
+    pub contact_thickness: f32,
+    /// Ray steps per AO texel.
+    pub contact_steps: u32,
+    /// Depth-proportional start offset along the normal and hit bias (as
+    /// [`Self::bias`]), against a surface shadowing itself.
+    pub contact_bias: f32,
+    /// Darkest a full-strength key light's contact shadow multiplies by is
+    /// `1 - contact_strength`.
+    pub contact_strength: f32,
 }
 
 /// Sampling radius in world units.
@@ -81,6 +113,19 @@ pub const BLUR_RADIUS: u32 = 4;
 pub const BLUR_DEPTH_SIGMA: f32 = 0.03;
 /// See [`SsaoParams::blur_normal_power`].
 pub const BLUR_NORMAL_POWER: f32 = 8.0;
+/// See [`SsaoParams::contact_length`].
+pub const CONTACT_LENGTH: f32 = 72.0;
+/// See [`SsaoParams::contact_thickness`].
+pub const CONTACT_THICKNESS: f32 = 56.0;
+/// See [`SsaoParams::contact_steps`].
+pub const CONTACT_STEPS: u32 = 8;
+/// See [`SsaoParams::contact_bias`].
+pub const CONTACT_BIAS: f32 = 0.006;
+/// See [`SsaoParams::contact_strength`].
+pub const CONTACT_STRENGTH: f32 = 0.5;
+/// The key-light luminance a mood casts contact shadows at full strength
+/// from (daylight's); a dimmer key casts proportionally fainter ones.
+pub const CONTACT_FULL_KEY_LUMA: f32 = 0.42;
 /// Gaussian width of the blur, in AO texels.
 pub const BLUR_SIGMA: f32 = 2.5;
 /// Golden angle in radians, the spiral step between samples.
@@ -104,6 +149,11 @@ impl Default for SsaoParams {
             blur_radius: BLUR_RADIUS,
             blur_depth_sigma: BLUR_DEPTH_SIGMA,
             blur_normal_power: BLUR_NORMAL_POWER,
+            contact_length: CONTACT_LENGTH,
+            contact_thickness: CONTACT_THICKNESS,
+            contact_steps: CONTACT_STEPS,
+            contact_bias: CONTACT_BIAS,
+            contact_strength: CONTACT_STRENGTH,
         }
     }
 }
@@ -214,8 +264,9 @@ pub fn blur_weight(p: &SsaoParams, t: f32, z0: f32, z: f32, n0: [f32; 3], n: [f3
 
 /// As the four `vec4`s the shaders read: `(radius, bias, intensity,
 /// power)`, `(min_ao, max_radius_frac, min_radius_px, samples)`,
-/// `(blur_radius, blur_depth_sigma, blur_normal_power, blur_sigma)`.
-pub fn shader_words(p: &SsaoParams) -> [[f32; 4]; 3] {
+/// `(blur_radius, blur_depth_sigma, blur_normal_power, blur_sigma)`,
+/// `(contact_length, contact_thickness, contact_steps, contact_bias)`.
+pub fn shader_words(p: &SsaoParams) -> [[f32; 4]; 4] {
     [
         [p.radius, p.bias, p.intensity, p.power],
         [
@@ -230,7 +281,88 @@ pub fn shader_words(p: &SsaoParams) -> [[f32; 4]; 3] {
             p.blur_normal_power,
             BLUR_SIGMA,
         ],
+        [
+            p.contact_length,
+            p.contact_thickness,
+            p.contact_steps as f32,
+            p.contact_bias,
+        ],
     ]
+}
+
+/// The frame's contact-shadow word `(light_view.xyz, strength)`.
+///
+/// `key_dir` is the mood's key light (the direction *toward* the light, in
+/// the retail Y-down frame, so "from above" is `-Y`). `camera_y_down` says
+/// which frame the staged camera takes points in: the field and world-map
+/// cameras take the Y-up render frame, a battle's camera composed with the
+/// battle stage model takes retail's Y-down one. The direction goes to view
+/// space through the same rows [`view_scale`] measures, so it lands in the
+/// frame [`view_position`] reconstructs. `strength` is
+/// [`SsaoParams::contact_strength`] scaled by the key light's luminance
+/// against [`CONTACT_FULL_KEY_LUMA`]; zero while `enhanced` (enhanced
+/// lighting) is off, which turns the march off.
+pub fn contact_light(
+    p: &SsaoParams,
+    view_proj: &[f32; 16],
+    key_dir: [f32; 3],
+    key_rgb: [f32; 3],
+    camera_y_down: bool,
+    enhanced: bool,
+) -> [f32; 4] {
+    let k = view_scale(view_proj);
+    let d = [
+        key_dir[0],
+        if camera_y_down {
+            key_dir[1]
+        } else {
+            -key_dir[1]
+        },
+        key_dir[2],
+    ];
+    let row = |r: usize| view_proj[r] * d[0] + view_proj[4 + r] * d[1] + view_proj[8 + r] * d[2];
+    let v = [row(0) * k[0], row(1) * k[1], row(3) * k[2]];
+    let len = dot(v, v).sqrt();
+    if !enhanced || len < 1e-6 {
+        return [0.0; 4];
+    }
+    let luma = 0.299 * key_rgb[0] + 0.587 * key_rgb[1] + 0.114 * key_rgb[2];
+    let strength = p.contact_strength * (luma / CONTACT_FULL_KEY_LUMA).clamp(0.0, 1.0);
+    [v[0] / len, v[1] / len, v[2] / len, strength]
+}
+
+/// The NDC of a view-space point: the inverse of [`view_position`].
+pub fn view_to_ndc(q: [f32; 3], k: [f32; 3]) -> [f32; 2] {
+    let w = q[2] / k[2];
+    [q[0] / (w * k[0]), q[1] / (w * k[1])]
+}
+
+/// Whether a ray sample at view depth `ray_z` sits behind the G-buffer
+/// surface at `scene_z` (both world units along the view axis): further
+/// than the bias and nearer than the thickness. `1.0` shadowed, `0.0` not.
+pub fn contact_hit(p: &SsaoParams, ray_z: f32, scene_z: f32) -> f32 {
+    let dz = ray_z - scene_z;
+    if dz > p.contact_bias * ray_z && dz < p.contact_thickness {
+        1.0
+    } else {
+        0.0
+    }
+}
+
+/// A hit's weight at distance `t` along the ray: full at the surface,
+/// fading to zero at [`SsaoParams::contact_length`], so the shadow is a
+/// soft-ended contact sliver rather than a hard-edged cast shadow.
+pub fn contact_fade(p: &SsaoParams, t: f32) -> f32 {
+    (1.0 - t / p.contact_length.max(1e-3)).clamp(0.0, 1.0)
+}
+
+/// The multiplier a march leaves: `hit` the strongest faded hit, `ndl` the
+/// surface normal's dot product with the light (a face turned from the
+/// light is the baked shading's, and takes none), `strength` the frame's
+/// [`contact_light`] strength.
+pub fn contact_from_hit(hit: f32, ndl: f32, strength: f32) -> f32 {
+    let facing = (ndl * 4.0).clamp(0.0, 1.0);
+    1.0 - strength * hit.clamp(0.0, 1.0) * facing
 }
 
 #[cfg(test)]
@@ -343,6 +475,59 @@ mod tests {
         assert!(step < 1e-6);
         assert_eq!(crease, 0.0);
         assert_eq!(blur_weight(&p, 0.0, 500.0, 0.0, UP, UP), 0.0);
+    }
+
+    #[test]
+    fn contact_light_points_up_in_view_space_and_is_off_without_lighting() {
+        use glam::{Mat4, Vec3};
+        let proj = glam::camera::rh::proj::directx::perspective(0.9, 4.0 / 3.0, 1.0, 10_000.0);
+        // A Y-up camera looking down at the origin from above and behind.
+        let view =
+            glam::camera::rh::view::look_at_mat4(Vec3::new(0.0, 800.0, 900.0), Vec3::ZERO, Vec3::Y);
+        let vp = (proj * view).to_cols_array();
+        let p = SsaoParams::default();
+        let sun = [0.0, -1.0, 0.0];
+        let l = contact_light(&p, &vp, sun, [0.45, 0.42, 0.36], false, true);
+        // Straight up in the world is up on screen (+y) and toward the
+        // camera's eye (-z, since view z grows away from the eye).
+        assert!(l[1] > 0.5 && l[2] < 0.0, "{l:?}");
+        assert!((l[3] - CONTACT_STRENGTH).abs() < 0.02, "{l:?}");
+        // The same light through a Y-down camera input (a battle's camera
+        // composed with the stage model's Y flip) is the same view vector.
+        let flip = (proj * view * Mat4::from_scale(Vec3::new(1.0, -1.0, 1.0))).to_cols_array();
+        let l2 = contact_light(&p, &flip, sun, [0.45, 0.42, 0.36], true, true);
+        for i in 0..3 {
+            assert!((l[i] - l2[i]).abs() < 1e-5);
+        }
+        assert_eq!(
+            contact_light(&p, &vp, sun, [0.45; 3], false, false),
+            [0.0; 4]
+        );
+    }
+
+    #[test]
+    fn view_to_ndc_inverts_view_position() {
+        let k = [0.0021, 0.0027, 0.166];
+        let q = view_position([0.3, -0.6], 900.0, k);
+        let n = view_to_ndc(q, k);
+        assert!((n[0] - 0.3).abs() < 1e-5 && (n[1] + 0.6).abs() < 1e-5);
+    }
+
+    #[test]
+    fn contact_hits_only_inside_the_thickness_and_fade() {
+        let p = SsaoParams::default();
+        assert_eq!(
+            contact_hit(&p, 500.0, 520.0),
+            0.0,
+            "in front of the surface"
+        );
+        assert_eq!(contact_hit(&p, 520.0, 500.0), 1.0, "just behind it");
+        assert_eq!(contact_hit(&p, 500.0 + CONTACT_THICKNESS * 2.0, 500.0), 0.0);
+        assert_eq!(contact_fade(&p, 0.0), 1.0);
+        assert_eq!(contact_fade(&p, CONTACT_LENGTH), 0.0);
+        assert_eq!(contact_from_hit(1.0, -0.5, 0.5), 1.0, "a face turned away");
+        assert_eq!(contact_from_hit(1.0, 1.0, 0.5), 0.5);
+        assert_eq!(contact_from_hit(0.0, 1.0, 0.5), 1.0);
     }
 
     #[test]

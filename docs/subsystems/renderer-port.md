@@ -435,12 +435,14 @@ CPU beyond two uniform writes a frame.
 `Renderer::set_ssao(true)` plus a per-frame `Renderer::set_ssao_camera`
 (the scene's world-to-clip) darkens opaque scene geometry where other
 geometry closes over it: the foot of a wall, the floor under a table or an
-eave, the ground at a character's feet. **Off by default in the renderer,
-and off IS the frame without it**: no pass is encoded, no pipeline is built,
-and the scene shaders' own sources carry no SSAO code. `play-window` turns it
-on from the persisted `ssao` option (`Home` toggles, `--no-ssao` forces it
-off; `--retail` pins it off, so every retail-compare tier and every replay
-renders without it). Retail has no ambient term to occlude - the field path
+eave, the ground at a character's feet - and, with enhanced lighting on,
+adds the contact shadows below. **Off by default in the renderer, and off
+IS the frame without it**: no pass is encoded, no pipeline is built, and the
+scene shaders' own sources carry no SSAO code. `play-window` and the play
+page turn it on from the persisted `ssao` option (`Home` toggles on both
+hosts, the page's "Ambient occlusion" box, `--no-ssao` forces it off;
+`--retail` and Retail-faithful pin it off, so every retail-compare tier and
+every replay renders without it). Retail has no ambient term to occlude - the field path
 draws baked colour words with no light source - so the AO multiplies the
 finished opaque colour.
 
@@ -487,25 +489,51 @@ axis and upsample with a joint-bilateral blend (bilinear weights times the
 blur's depth and normal terms). The AO is applied after the PSX dither, so in
 PSX mode it is a smooth term over the 15-bit frame.
 
-**The browser twin** (a WebGL2 pass on the play page) must replicate, from
-`legaia_render_kernels::ssao`: `SsaoParams` and its `shader_words`
-packing; `view_scale` (the reconstruction factors from the view-projection)
-and `view_position` with this NDC convention (pixel centres, `y` up, over
-the scene viewport); `radius_px`; `spin`; `sample_offset`;
-`occlusion_term`; `ao_from_sum`; `blur_weight`; and `ao_downscale`. It must
-also keep the order - pre-pass over opaque draws with the same discards,
-apply before the semi-transparent and screen-space layers - and store clip
-`w`, not the depth buffer's `z`, as the depth. WebGL2 renders to
-`RGBA32F` only with `EXT_color_buffer_float`; without it a
-`RGBA16F` G-buffer (`EXT_color_buffer_half_float`) holds the normal and
-depth at a precision the radius tolerates.
+**Contact shadows.** Folded into the AO term under the same toggle: while
+enhanced lighting is on, each AO texel also marches eight steps toward the
+mood's key light (`LightingMood::key_dir`) through the same G-buffer, up to
+72 world units, and darkens where the ray passes up to 56 units behind
+nearer geometry - the short shadow a character, a crate or an eave casts
+where it meets the ground, which a mood light without a shadow map cannot
+draw. A hit fades with distance along the ray, so the shadow is a soft-ended
+sliver, not a cast silhouette; a face turned from the light takes none (the
+baked shading owns it); the strength scales with the key light's luminance.
+The march multiplies into the AO texel before the blur, so the blur that
+smooths the AO's noise smooths the march's per-pixel jitter too, and no
+extra pass or target exists. One knob covers both because they are one
+term over one pre-pass, applied by one multiply: a separate toggle would
+add a key and a row for no independent cost. The key light is aimed through
+`contact_light`, which needs to know the frame the staged camera takes
+points in - the field and world-map cameras take the Y-up render frame, a
+battle's camera composed with the stage model takes retail's Y-down one
+(`Renderer::set_ssao_camera_y_down`). With enhanced lighting off the
+strength word is zero and the march does not run.
+
+**The browser twin** is `site/js/webgl-ssao.js`, driven from the scene pass
+(`renderAssembled` in `webgl-tmd-assembled-scene.js`): the opaque draws run
+a second time, through the scene program itself with its `u_gbuf` switch
+on, into an `RGBA32F` G-buffer with its own depth buffer, so the vertex
+stage and every discard are the program's own and every colour exit of
+`main()` writes the G-buffer word instead (`emit`, `gbuf_word` in
+`webgl-shaders.js`); then the AO, blur and apply passes run, before the
+scene's blend pass. The numbers arrive from the engine
+(`LegaiaRuntime::play_ssao_frame`: view scale, `shader_words`,
+`contact_light`, with a battle camera composed with the stage model as the
+native window stages it), and the GLSL helpers transcribe the WGSL ones
+name for name; `ssao_parity` evaluates both texts against
+`legaia_render_kernels::ssao`. GL's window `y` runs up, which the page's
+`ssao_view_pos` and `view_to_px` absorb. The pass needs
+`EXT_color_buffer_float`; a driver without it turns the pass off for the
+session, as it does for one that cannot link it. It stays out of a WebXR
+session, whose eyes draw into their own framebuffer.
 
 `LEGAIA_SSAO_VIEW=1` in `play-window` draws the AO term alone in place of the
 opaque colour - a tuning view.
 
 **Cost.** One extra draw of the opaque scene into the G-buffer, then three
-full-screen passes over the AO target; the frame profiler banks their
-encoding as `ssao`. Nothing reaches the simulation.
+full-screen passes over the AO target (the AO pass reading twelve samples
+plus eight march steps per texel); the frame profiler banks their encoding
+as `ssao`. Nothing reaches the simulation.
 
 ## Screen-space overlay pass
 

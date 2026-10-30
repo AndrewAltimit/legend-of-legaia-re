@@ -51,12 +51,16 @@ impl PlayWindowApp {
         // authored in: a battle's stage and bodies draw through the battle
         // stage model, so its radius is in battle units there.
         // `LEGAIA_SSAO_VIEW=1` draws the AO term alone, a tuning view.
-        let ssao_cam = if self.session.host.world.mode == SceneMode::Battle {
+        let battle = self.session.host.world.mode == SceneMode::Battle;
+        let ssao_cam = if battle {
             cam * Self::battle_stage_model()
         } else {
             cam
         };
         r.set_ssao_camera(Some(ssao_cam));
+        // The stage model's Y flip hands the camera retail Y-down points,
+        // which the contact shadows' key-light aim needs to know.
+        r.set_ssao_camera_y_down(battle);
         r.set_ssao_debug_view(ssao_debug_view());
         if let Some(p) = ssao_tuning() {
             r.set_ssao_params(p);

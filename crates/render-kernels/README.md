@@ -97,7 +97,10 @@ or cpal, so it builds for native and `wasm32` alike.
   strength per enhanced-lighting mood; the passes are host code.
 - `ssao` - the ambient-occlusion enhancement's constants and per-sample
   law (not retail): view-space reconstruction, sample spiral, Alchemy term,
-  depth-aware blur; the pre-pass and passes are host code.
+  depth-aware blur, and the contact-shadow march toward enhanced
+  lighting's key light folded into it; the pre-pass and passes are host
+  code (`engine-render`'s `renderer/ssao.rs`, the play page's
+  `site/js/webgl-ssao.js`).
 
 This crate depends on `legaia-engine-camera` (the GTE camera and projection
 constants) and `legaia-engine-vm` (`move_ext_strip`, `field_actor_billboard`
