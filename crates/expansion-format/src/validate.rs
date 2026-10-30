@@ -662,8 +662,8 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modes;
     use crate::manifest::PackManifest;
+    use crate::modes;
 
     fn good_pack() -> ExpansionPack {
         let mut manifest = PackManifest::new("test", "Test", "0.1.0");

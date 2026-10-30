@@ -259,15 +259,13 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
 
 /// The selected card's panel bottom-left and the controls bottom-right.
 fn bottom_bar(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, me: usize) {
-    card_panel(c, mode, v, me, 4, STAGE_H - 36, 182);
+    card_panel(c, mode, v, me, 4, STAGE_H - 36, 168);
     let (a, b) = match v.phase {
-        DuelPhase::PickCell { seat, .. } if seat == me => {
-            ("D-pad: cell  Cross: place", "Circle: back")
-        }
+        DuelPhase::PickCell { seat, .. } if seat == me => ("D-pad: cell", "Cross: place"),
         DuelPhase::Spoils { winner } if winner == me => ("Left/Right: card", "Cross: take"),
         _ => ("Left/Right: card", "Cross: choose"),
     };
-    let (x, w) = (STAGE_W - 4 - 126, 126);
+    let (x, w) = (STAGE_W - 4 - 140, 140);
     c.panel(x, STAGE_H - 36, w, 34, [8, 12, 20, 170], ink::PANEL_EDGE);
     c.text_right(a, x + w - 5, STAGE_H - 35, pen::DIM);
     c.text_right(b, x + w - 5, STAGE_H - 20, pen::DIM);
