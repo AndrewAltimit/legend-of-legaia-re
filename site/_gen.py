@@ -76,6 +76,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "characters": "Legend of Legaia Characters - Field & Battle Models",
     "npcs": "Legend of Legaia NPCs - Every Townsperson in 3D",
     "minigames": "Play Legend of Legaia Minigames in the Browser",
+    "modes": "Legend of Legaia Port Game Modes - Hold'em, Grid Duel, Golf, Racing & Prop Hunt in the Browser",
     "world": "Legend of Legaia World Guide - Towns, Enemies, Shops & Fishing",
     "world-overview": "Legend of Legaia World Map in 3D - WebGL Viewer",
     "disc-map": "Legend of Legaia Disc Map - Every Sector, File and PROT.DAT Entry",
@@ -128,6 +129,11 @@ DESCRIPTIONS: dict[str, str] = {
         "Play Legend of Legaia's minigames in the browser: the casino slot "
         "machine, Noa's dance, and Baka Fighter - with the retail step "
         "charts, odds, and payout tables read from your disc."
+    ),
+    "modes": (
+        "Play the Legend of Legaia port's own game modes in your browser, no "
+        "disc needed: Texas Hold'em, the Grid Duel card game, mini-golf, "
+        "checkpoint racing and prop hunt, from the practice set or the Rebirth pack."
     ),
     "world": (
         "Town-by-town guide to Legend of Legaia's world, assembled from the "
@@ -217,7 +223,7 @@ DESCRIPTIONS: dict[str, str] = {
 # Pages that are interactive WASM/WebGL applications rather than articles -
 # they get WebApplication JSON-LD and og:type=website.
 APP_PAGE_KEYS: set[str] = {
-    "play", "viewer", "media", "minigames", "monsters", "characters",
+    "play", "viewer", "media", "minigames", "modes", "monsters", "characters",
     "npcs", "world-overview", "disc-map", "tooling/rom-patcher",
     "tooling/translation-workbench", "tooling/expansion-workbench",
 }
@@ -402,6 +408,7 @@ WIDE_PAGES: set[str] = {
     "shops",
     "world",
     "minigames",
+    "modes",
     "arts",
     "magic",
     "monsters",
@@ -589,6 +596,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("world.html",                 "Game world",                    "world",                      "world.html"),
     ("shops.html",                 "Shops & vendors",               "shops",                      "shops.html"),
     ("minigames.html",             "Minigames",                     "minigames",                  "minigames.html"),
+    ("modes.html",                 "Game modes",                    "modes",                      "modes.html"),
     ("arts.html",                  "Tactical Arts",                 "arts",                       "arts.html"),
     ("magic.html",                 "Seru Magic & Summons",          "magic",                      "magic.html"),
     ("monsters.html",              "Enemy table (WASM)",            "monsters",                   "monsters.html"),

@@ -16,8 +16,8 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]`, `[[party_nights]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
 | Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
 | Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
-| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion` |
-| Screens | `legaia_engine_ui::expansion_modes`, projected by `legaia_engine_screens::expansion_modes` |
+| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion`; the World-free modes page holds one directly |
+| Screens | `legaia_engine_ui::expansion_modes`; `seat_screen` projects a seat, `legaia_engine_screens::expansion_modes` the world's |
 | Tests | per-module rule tests; `crates/engine-modes/tests/` determinism, random-pad soak and Rebirth conversion |
 
 ## The session contract
@@ -269,7 +269,7 @@ itself a few frames later (`World::age_net_podium`).
 
 ## Hosts
 
-Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition.
+Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page runs the same seat with no `World` and no disc, and draws the same composition through `seat_screen`.
 
 ### The seat
 
@@ -289,6 +289,7 @@ When a session finishes, the seat settles it: the session's own rewards, plus, w
 |---|---|
 | Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
 | Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
+| Browser modes page | `site/modes.html`: a card per instance with its controls and a Play button, over the practice set, Rebirth, an installed pack or a picked `.lxpack`; no disc and no `World` (`LegaiaModes`, [`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)) |
 | Card screens | Native: `\` (backslash) opens the card menu and closes it; `--mode cards`, `--mode cards-binder` and `--mode cards-dealer[:ID]` open a card screen at launch. Browser: `play_cards_open("menu" / "binder" / "dealer:ID")`, `play_cards_close`, with `play_cards_json` (counts, completion) and `play_card_notices_json`. A pack map opens a dealer through its `card_dealer` trigger |
 
 ### Controls
