@@ -322,6 +322,9 @@ function draw(ctx, cv) {
  * `mapId` and make the next click on its canvas call `req.done([c, r])`;
  * `req.cancel()` runs on Cancel / Esc. The caller switches to the Maps tab.
  */
+/** The map the tab has open (null before it first draws). */
+export function openMapId() { return V.map || null; }
+
 export function armPick(mapId, req) {
   V.map = mapId;
   V.sel = null;

@@ -34,6 +34,34 @@ impl ExpansionWorkbench {
         Ok(self.core.catalog_json())
     }
 
+    /// [`Self::open_disc`], keeping the disc files the catalog reads for
+    /// [`Self::take_disc_parts`] (the page's validation worker opens its own
+    /// session from them, without the image).
+    pub fn open_disc_keep(&mut self, image: Vec<u8>) -> Result<String, JsValue> {
+        self.core.open_disc_owned(image, true).map_err(err)?;
+        Ok(self.core.catalog_json())
+    }
+
+    /// The disc files [`Self::open_disc_keep`] kept, once (empty after).
+    pub fn take_disc_parts(&mut self) -> Vec<u8> {
+        self.core.take_disc_parts().unwrap_or_default()
+    }
+
+    /// Open the disc from [`Self::take_disc_parts`]'s bytes.
+    pub fn open_disc_parts(&mut self, parts: Vec<u8>) -> Result<(), JsValue> {
+        self.core.open_disc_parts(&parts).map_err(err)
+    }
+
+    /// The session's loaded files, canonical forms, assets and documents,
+    /// for [`Self::set_session_files`] on a second session.
+    pub fn session_files(&self) -> Vec<u8> {
+        self.core.session_files()
+    }
+
+    pub fn set_session_files(&mut self, data: Vec<u8>) -> Result<(), JsValue> {
+        self.core.set_session_files(&data).map_err(err)
+    }
+
     pub fn has_disc(&self) -> bool {
         self.core.has_disc()
     }

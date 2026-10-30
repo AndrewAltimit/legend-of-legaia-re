@@ -2,4 +2,5 @@
 
 mod disc_catalog;
 mod rebirth_round_trip;
+mod worker_session;
 mod xref_page;

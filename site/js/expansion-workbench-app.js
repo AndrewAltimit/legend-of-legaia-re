@@ -32,7 +32,7 @@ import {
   h, renderManifest, renderBattle, renderProgression, drawXpChart, renderQuests,
   renderDialog, renderCards, renderItems, renderModes,
 } from './expansion-workbench-forms.js';
-import { renderMaps, armPick } from './expansion-workbench-map.js';
+import { renderMaps, armPick, openMapId } from './expansion-workbench-map.js';
 import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
@@ -192,7 +192,8 @@ const ctx = {
   redo: () => stepHistory(1),
   // Close the pending history step now: a 3D edit is one step of its own.
   commit: () => commitHistory(),
-  canUndo: () => S.hist.past.length > 0 || pendingEdit(),
+  // An edit still coalescing (the commit timer runs) is undoable as it is.
+  canUndo: () => S.hist.past.length > 0 || S.hist.timer != null || pendingEdit(),
   canRedo: () => S.hist.future.length > 0,
   find: (q) => S.find && S.find.find(q),
   jump: (at) => jumpTo(at),
@@ -221,6 +222,8 @@ const ctx = {
     if (msg) setStatus(msg, 'ok', 'xw-export-status');
   },
   rerender: () => rerender(),
+  // A fold built late (listEd's lazy body) takes the checks on its fields.
+  markIssues: () => markFieldIssues(),
   checkDialog: (line) => {
     try { return JSON.parse(S.wb.check_dialog(JSON.stringify(line))); } catch (e) { return null; }
   },
@@ -339,13 +342,14 @@ function commitHistory() {
   if (!S.pack) return;
   const now = JSON.stringify(S.pack);
   const H = S.hist;
-  if (H.cur == null) { H.cur = now; return; }
-  if (now === H.cur) return;
+  if (H.cur == null) { H.cur = now; updateDirty(); return; }
+  if (now === H.cur) { updateDirty(); return; }
   H.past.push(H.cur);
   H.bytes += H.cur.length;
   H.cur = now;
   H.future = [];
   while (H.past.length > HIST_STEPS || (H.bytes > HIST_BYTES && H.past.length > 1)) H.bytes -= H.past.shift().length;
+  updateDirty();
 }
 
 function resetHistory() {
@@ -378,7 +382,10 @@ function stepHistory(dir) {
 function updateDirty() {
   const el = $('xw-dirty');
   if (!el || !S.pack) return;
-  const dirty = S.clean != null && JSON.stringify(S.pack) !== S.clean;
+  // While a burst of typing coalesces the pack is not serialised on every
+  // key (a few hundred kilobytes of JSON): an edit underway counts as a
+  // change, and the commit that closes the burst decides.
+  const dirty = S.clean != null && (S.hist.timer != null || JSON.stringify(S.pack) !== S.clean);
   el.hidden = !dirty;
   const u = $('xw-undo');
   const r = $('xw-redo');
@@ -398,14 +405,16 @@ function updateDirty() {
 // Each check on the open tab marks the field it names (the longest
 // data-path that contains its field) until it is fixed: a red edge and the
 // message under the field, so a jump's flash is not the only sign.
-// The Maps tab is left out: its panel shows one map of several.
+// On the Maps tab the open map's checks are marked (its panel shows one
+// map of several; the others' stay in the Checks list).
 function markFieldIssues() {
   const panel = $('xw-panel');
   if (!panel) return;
   for (const e of panel.querySelectorAll('.xw-has-issue')) e.classList.remove('xw-has-issue', 'is-warning');
   for (const e of panel.querySelectorAll('.xw-issue-msg')) e.remove();
-  const file = fileOfTab(S.tab);
-  if (!file || file === 'maps/') return;
+  let file = fileOfTab(S.tab);
+  if (file === 'maps/') file = openMapId() ? `maps/${openMapId()}.toml` : null;
+  if (!file) return;
   const els = [...panel.querySelectorAll('[data-path]')].map((e) => [e, e.getAttribute('data-path')]).filter(([, p]) => p);
   for (const i of S.issues) {
     if (i.path !== file || !i.field) continue;
@@ -529,15 +538,112 @@ function placeParseError(issue) {
   return { severity: 'error', path: at.file, field: at.field, message: `not a value this field takes: ${why}` };
 }
 
+/* The validator runs a moment after each edit. It costs a few hundred
+ * milliseconds on a pack of Rebirth's size, so it runs in a worker
+ * (expansion-workbench-validate-worker.js) on a second session built from
+ * this one's disc files and pack files: typing never waits for it. An
+ * answer for a pack that has changed since is dropped (a newer one is on
+ * its way). Without the worker (an older bundle, a worker that failed) it
+ * runs here. An export or a hand-off still validates here, at once. */
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [] };
+
+// Count every change to the session's own files (the loaded tree, assets,
+// documents), so the worker is handed them again before its next check.
+function trackSession(wb) {
+  for (const k of ['begin_files', 'add_file', 'finish_files', 'load_bundle', 'import_bundle', 'start_fresh', 'add_asset', 'set_doc']) {
+    const f = wb[k];
+    if (typeof f !== 'function') continue;
+    wb[k] = function (...a) { V.gen++; return f.apply(wb, a); };
+  }
+  return wb;
+}
+
+function stopValidator() {
+  if (V.worker) V.worker.terminate();
+  V.worker = null;
+  V.ready = false;
+}
+
+function startValidator(parts) {
+  stopValidator();
+  if (typeof Worker !== 'function' || !parts || !parts.length) return;
+  let w;
+  try {
+    w = new Worker(new URL('./expansion-workbench-validate-worker.js', import.meta.url), { type: 'module' });
+  } catch (e) {
+    return;
+  }
+  V.worker = w;
+  V.synced = -1;
+  const v = window.LEGAIA_WASM_V || '0';
+  w.onmessage = (ev) => {
+    const m = ev.data || {};
+    if (w !== V.worker) return;
+    if (m.type === 'disc') {
+      V.ready = true;
+      // Anything edited while the worker was starting.
+      if (S.pack) scheduleValidate();
+    } else if (m.type === 'issues') {
+      V.ms.push(m.ms);
+      if (V.ms.length > 20) V.ms.shift();
+      // Stale when another check was asked for since (an edit came after).
+      if (m.seq !== V.seq || V.edited) return;
+      applyIssues(JSON.parse(m.issues));
+    } else if (m.type === 'error') {
+      console.warn('expansion workbench: the validation worker stopped (' + m.message + '); validating on the page');
+      stopValidator();
+      if (S.pack) scheduleValidate();
+    }
+  };
+  w.onerror = (e) => {
+    if (w !== V.worker) return;
+    console.warn('expansion workbench: the validation worker failed to start; validating on the page', e.message || '');
+    stopValidator();
+    if (S.pack) scheduleValidate();
+  };
+  w.postMessage({
+    type: 'init',
+    glue: new URL('../wasm/legaia_web_viewer.js?v=' + v, import.meta.url).href,
+    bin: new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, import.meta.url).href,
+  });
+  w.postMessage({ type: 'disc', parts: parts.buffer }, [parts.buffer]);
+}
+
 let validateTimer = null;
 function scheduleValidate() {
+  V.edited = true;
   clearTimeout(validateTimer);
-  validateTimer = setTimeout(runValidate, 250);
+  validateTimer = setTimeout(validateSoon, 250);
 }
+
+function validateSoon() {
+  if (!S.wb || !S.pack) return;
+  if (!V.worker || !V.ready) { runValidate(); return; }
+  if (V.synced !== V.gen) {
+    V.worker.postMessage({ type: 'files', data: S.wb.session_files() });
+    V.synced = V.gen;
+  }
+  V.edited = false;
+  V.seq++;
+  V.worker.postMessage({ type: 'validate', seq: V.seq, json: JSON.stringify(S.pack) });
+}
+
 function runValidate() {
   if (!S.wb || !S.pack) return;
+  // A worker answer still on its way is for this pack or an older one.
+  V.seq++;
+  let issues;
   try {
-    S.issues = JSON.parse(S.wb.validate(JSON.stringify(S.pack))).map(placeParseError);
+    issues = JSON.parse(S.wb.validate(JSON.stringify(S.pack)));
+  } catch (e) {
+    issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
+  }
+  applyIssues(issues);
+}
+
+function applyIssues(raw) {
+  try {
+    S.issues = raw.map(placeParseError);
   } catch (e) {
     S.issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
   }
@@ -661,8 +767,12 @@ async function openDisc(file) {
     setStatus('Reading the monster archive, names and scenes on your disc ...');
     await tick();
     if (S.wb) { try { S.wb.free(); } catch (e) { /* already freed */ } }
-    S.wb = new mod.ExpansionWorkbench();
-    S.cat = JSON.parse(S.wb.open_disc(buf));
+    S.wb = trackSession(new mod.ExpansionWorkbench());
+    // The validation worker opens its own session from the disc files this
+    // one keeps (an older bundle has no worker: validation stays here).
+    const keep = typeof S.wb.open_disc_keep === 'function';
+    S.cat = JSON.parse(keep ? S.wb.open_disc_keep(buf) : S.wb.open_disc(buf));
+    if (keep) startValidator(S.wb.take_disc_parts());
     S.discName = file.name;
     setStatus(`Disc read: ${file.name} - ${S.cat.monsters.length} monsters, ${S.cat.items.length} items, ${S.cat.scenes.length} scenes.${S.pack ? '' : ' Pick a starting point below.'}`, 'ok');
     updateStart();
@@ -1119,7 +1229,22 @@ function onShortcut(ev) {
   if (k === 'escape') { $('xw-keyhelp').hidden = true; }
 }
 
+// The pack bar's More menu (a phone folds the secondary buttons into it):
+// a press inside runs the button and closes the menu, as does a press
+// outside or Escape.
+function setupMoreMenu() {
+  const btn = $('xw-more');
+  const box = $('xw-more-items');
+  if (!btn || !box) return;
+  const set = (on) => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', (ev) => { ev.stopPropagation(); set(!box.classList.contains('is-open')); });
+  box.addEventListener('click', (ev) => { if (ev.target.closest('button')) set(false); });
+  document.addEventListener('click', (ev) => { if (!box.contains(ev.target) && ev.target !== btn) set(false); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') set(false); });
+}
+
 function initRest() {
+  setupMoreMenu();
   $('xw-toml').addEventListener('click', () => { S.tab = 'files'; rerender(); });
   $('xw-play').addEventListener('click', playInBrowser);
   $('xw-play-here').addEventListener('click', playHere);
@@ -1150,5 +1275,7 @@ else init();
 
 // Headless-verification hook: the page state (no disc bytes).
 window.__xwState = S;
+// ... the validation worker's state (headless checks: `__xwValidator.ready`, `.ms`).
+window.__xwValidator = V;
 // ... and the editors' context: `__xwCtx.changed(true)` after a scripted edit.
 window.__xwCtx = ctx;

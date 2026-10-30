@@ -81,13 +81,16 @@
         <div class="wb-actions">
           <button type="button" id="xw-undo" class="wb-mini" title="Undo (Ctrl+Z)" disabled>Undo</button>
           <button type="button" id="xw-redo" class="wb-mini" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
-          <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys</button>
           <button type="button" id="xw-dl" class="wb-button">Download .lxpack</button>
-          <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
           <button type="button" id="xw-play" class="wb-button wb-button-ghost">Play in browser</button>
-          <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map the Maps tab is on, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play here</button>
-          <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
-          <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play here</strong> puts you on the map you are editing. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p></span></span>
+          <button type="button" id="xw-more" class="wb-mini xw-more-btn" aria-expanded="false" aria-controls="xw-more-items" title="Keys, the TOML files, Share, Play here and Live">More</button>
+          <span id="xw-more-items" class="xw-more-items">
+            <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys</button>
+            <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
+            <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map the Maps tab is on, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play here</button>
+            <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
+            <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play here</strong> puts you on the map you are editing. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p></span></span>
+          </span>
         </div>
       </div>
       <div id="xw-keyhelp" class="xw-keyhelp" hidden>
@@ -349,6 +352,10 @@
   .xw-points .xw-list-row input[type=number] { flex: 1 1 3.5rem; min-width: 0; width: 3.5rem; }
   .xw-list-row.is-on { outline: 1px solid var(--accent); border-radius: 3px; }
 
+  /* The pack bar's secondary buttons: inline on a wide screen, folded
+     under More on a phone (the rule below). */
+  .xw-more-btn { display: none; }
+  .xw-more-items { display: contents; }
   @media (max-width: 68rem) {
     .xw-work { grid-template-columns: minmax(0, 1fr); }
     .xw-issues { position: static; max-height: 20rem; }
@@ -361,6 +368,11 @@
     .xw-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
     .xw-tab { flex: none; }
     .wb-toolbar-pack { padding: 0.4rem 0.5rem; }
+    .wb-toolbar-pack .wb-actions { position: relative; }
+    .xw-more-btn { display: inline-block; align-self: stretch; }
+    .xw-more-items { display: none; }
+    .xw-more-items.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; position: absolute; z-index: 30; right: 0; top: calc(100% + 0.3rem); min-width: 12rem; padding: 0.5rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
+    .xw-more-items.is-open .info-tip { align-self: flex-start; }
     .xw-box { padding: 0.45rem 0.4rem; }
     .xw-stat { grid-template-columns: 4.5rem minmax(0, 1fr); }
   }

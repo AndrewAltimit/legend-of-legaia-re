@@ -447,11 +447,25 @@ export function listEd(ctx, parent, owner, key, path, o) {
   // `o.fold`: each item is a fold, shut but for the one opened, added, or
   // holding a pending jump (the page opens a jump's folds), so a long list
   // reads as its labels.
+  // A shut fold builds its body when it is first opened: a boss's phases
+  // and moves are hundreds of fields, most never looked at.
   const opened = ctx.sel ? (ctx.sel.__open = ctx.sel.__open || {}) : {};
+  const jf = (ctx.jumpField && ctx.jumpField()) || '';
   arr.forEach((item, i) => {
     const ip = joinPath(p, i);
+    if (o.fold && jf && (jf === ip || jf.startsWith(ip + '.') || jf.startsWith(ip + '['))) opened[ip] = true;
     const box = h(o.fold ? 'details' : 'div', { class: 'xw-box' + (o.fold ? ' xw-fold' : ''), 'data-path': ip, open: o.fold && opened[ip] ? true : null });
-    if (o.fold) box.addEventListener('toggle', () => { if (box.open) opened[ip] = true; else delete opened[ip]; });
+    let built = !o.fold || !!opened[ip];
+    if (o.fold) {
+      box.addEventListener('toggle', () => {
+        if (box.open) opened[ip] = true; else delete opened[ip];
+        if (box.open && !built) {
+          built = true;
+          o.render(box, item, ip, i);
+          if (ctx.markIssues) ctx.markIssues();
+        }
+      });
+    }
     const head = h(o.fold ? 'summary' : 'div', { class: 'xw-box-head' }, o.label ? o.label(item, i) : `#${i + 1}`, h('span', { class: 'xw-sp' }));
     if (i > 0) head.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move up', onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↑'));
     if (o.dup && i < arr.length - 1) head.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move down', onclick: () => { arr.splice(i + 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↓'));
@@ -469,7 +483,7 @@ export function listEd(ctx, parent, owner, key, path, o) {
     }
     head.append(h('button', { type: 'button', class: 'wb-mini', onclick: () => { arr.splice(i, 1); ctx.changed(true); } }, 'Remove'));
     box.append(head);
-    o.render(box, item, ip, i);
+    if (built) o.render(box, item, ip, i);
     wrap.append(box);
   });
   if (!(o.max && arr.length >= o.max)) {
@@ -837,6 +851,7 @@ function phaseEd(ctx, box, ph, p, base, opts) {
   listEd(ctx, box, ph, 'moves', p, {
     title: 'Moves',
     hint: opts.first ? 'picked by weight each turn' : 'empty keeps the moves before',
+    fold: true,
     add: 'Move',
     max: 12,
     make: () => ({ attack: 0, weight: 1, charge: false, cooldown: 0 }),
@@ -905,6 +920,7 @@ function bossScriptEd(ctx, box, m, p, base) {
   listEd(ctx, wrap, sc, 'phases', sp, {
     title: 'Phases',
     hint: 'in order; the first opens the fight',
+    fold: true,
     add: 'Phase',
     max: 8,
     make: () => ({ when: { hp_below_pct: 50 }, moves: [], summon: [] }),
@@ -1033,8 +1049,9 @@ export function renderBattle(ctx, el) {
     title: 'Encounter overrides',
     hint: 'per retail scene',
     add: 'Encounter override',
+    fold: true,
     make: () => ({ scene: (catList(ctx, 'scenes')[0] || { name: 'town01' }).name, formations: [], retail_weight: 0 }),
-    label: (e) => e.scene,
+    label: (e) => `${e.scene}: ${(e.formations || []).length} formation(s)${e.retail_weight ? `, retail weight ${e.retail_weight}` : ''}`,
     render: (box, e, p) => {
       box.append(grid(ctx, e, [
         { k: 'scene', t: 'scenename', label: 'Scene' },

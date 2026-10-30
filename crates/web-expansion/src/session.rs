@@ -79,6 +79,43 @@ pub struct Core {
     staged: PackFiles,
     /// Base-scene geometry packs already assembled, by scene name.
     objects: HashMap<String, SceneObjects>,
+    /// The disc files the catalog was built from, kept by
+    /// [`Self::open_disc_owned`] until [`Self::take_disc_parts`] hands them
+    /// to a second session (the page's validation worker).
+    disc_parts: Option<Vec<u8>>,
+}
+
+/// One length-prefixed blob of the session encodings (`u32::MAX` for none).
+fn put_part(out: &mut Vec<u8>, part: Option<&[u8]>) {
+    match part {
+        Some(b) => {
+            out.extend_from_slice(&(b.len() as u32).to_le_bytes());
+            out.extend_from_slice(b);
+        }
+        None => out.extend_from_slice(&u32::MAX.to_le_bytes()),
+    }
+}
+
+fn take_u32(at: &mut &[u8]) -> Result<u32> {
+    let (head, rest) = at
+        .split_first_chunk::<4>()
+        .context("truncated session data")?;
+    *at = rest;
+    Ok(u32::from_le_bytes(*head))
+}
+
+fn take_part(at: &mut &[u8]) -> Result<Option<Vec<u8>>> {
+    let n = take_u32(at)?;
+    if n == u32::MAX {
+        return Ok(None);
+    }
+    let n = n as usize;
+    if at.len() < n {
+        bail!("truncated session data");
+    }
+    let (b, rest) = at.split_at(n);
+    *at = rest;
+    Ok(Some(b.to_vec()))
 }
 
 /// The longest timeline preview, in frames (ten minutes).
@@ -94,6 +131,96 @@ impl Core {
     pub fn open_disc(&mut self, image: &[u8]) -> Result<()> {
         self.catalog = Some(DiscCatalog::open(image)?);
         self.objects.clear();
+        Ok(())
+    }
+
+    /// [`Self::open_disc`] over an image the session may consume; with
+    /// `keep_parts` the three disc files the catalog reads (`PROT.DAT`,
+    /// `CDNAME.TXT`, `SCUS_942.54`) are kept, encoded, for
+    /// [`Self::take_disc_parts`]. The image is dropped before the copy, so
+    /// the copy reuses its memory.
+    pub fn open_disc_owned(&mut self, image: Vec<u8>, keep_parts: bool) -> Result<()> {
+        let prot = legaia_iso::image::extract_prot_dat(&image)
+            .context("PROT.DAT not found in the disc image (is it a Mode 2/2352 .bin?)")?;
+        let cdname = legaia_iso::image::extract_cdname_txt(&image);
+        let scus = legaia_iso::image::extract_scus(&image);
+        drop(image);
+        self.disc_parts = keep_parts.then(|| {
+            let mut out = Vec::with_capacity(prot.len() + 0x8_0000);
+            put_part(&mut out, Some(&prot));
+            put_part(&mut out, cdname.as_deref().map(str::as_bytes));
+            put_part(&mut out, scus.as_deref());
+            out
+        });
+        self.open_disc_files(prot, cdname.as_deref(), scus.as_deref())
+    }
+
+    fn open_disc_files(
+        &mut self,
+        prot: Vec<u8>,
+        cdname: Option<&str>,
+        scus: Option<&[u8]>,
+    ) -> Result<()> {
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, cdname)
+            .context("PROT index")?;
+        self.catalog = Some(DiscCatalog::from_parts(index, scus)?);
+        self.objects.clear();
+        Ok(())
+    }
+
+    /// The disc files [`Self::open_disc_owned`] kept, once.
+    pub fn take_disc_parts(&mut self) -> Option<Vec<u8>> {
+        self.disc_parts.take()
+    }
+
+    /// Open the disc from [`Self::take_disc_parts`]'s bytes: the same
+    /// catalog, without the image.
+    pub fn open_disc_parts(&mut self, parts: &[u8]) -> Result<()> {
+        let mut at = parts;
+        let prot = take_part(&mut at)?.context("the disc parts hold no PROT.DAT")?;
+        let cdname = take_part(&mut at)?
+            .map(String::from_utf8)
+            .transpose()
+            .context("CDNAME.TXT")?;
+        let scus = take_part(&mut at)?;
+        self.open_disc_files(prot, cdname.as_deref(), scus.as_deref())
+    }
+
+    /// The session's files besides the pack JSON - the loaded tree, its
+    /// canonical form, the assets and documentation - encoded for
+    /// [`Self::set_session_files`] on a second session, which then
+    /// validates exactly as this one does.
+    pub fn session_files(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for set in [&self.original, &self.original_canonical, &self.extras] {
+            out.extend_from_slice(&(set.len() as u32).to_le_bytes());
+            for (path, bytes) in set {
+                put_part(&mut out, Some(path.as_bytes()));
+                put_part(&mut out, Some(bytes));
+            }
+        }
+        out
+    }
+
+    /// Take over [`Self::session_files`] from another session.
+    pub fn set_session_files(&mut self, data: &[u8]) -> Result<()> {
+        let mut at = data;
+        let mut sets: [PackFiles; 3] = Default::default();
+        for set in &mut sets {
+            let n = take_u32(&mut at)?;
+            for _ in 0..n {
+                let path = take_part(&mut at)?.context("a session file without a path")?;
+                let bytes = take_part(&mut at)?.unwrap_or_default();
+                set.insert(
+                    String::from_utf8(path).context("a session file path")?,
+                    bytes,
+                );
+            }
+        }
+        let [original, canonical, extras] = sets;
+        self.original = original;
+        self.original_canonical = canonical;
+        self.extras = extras;
         Ok(())
     }
 
