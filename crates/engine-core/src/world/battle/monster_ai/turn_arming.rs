@@ -97,6 +97,9 @@ impl World {
                 self.roll_counterattack(slot, target);
                 self.maybe_confuse_retarget(slot);
             }
+            // A scripted boss charging: the turn passes with no action
+            // armed, as a blocked actor's does (`active_actor` is set).
+            MonsterAction::Wait => {}
             MonsterAction::Flee => {
                 // The picker's flee checkpoint fired: arm the Run band
                 // (category 5). The action SM's seed routes a monster-slot
@@ -399,6 +402,13 @@ impl World {
     ///
     /// PORT: FUN_801E9FD4
     pub(in crate::world) fn arm_monster_strike_budget(&mut self, slot: u8) {
+        // An expansion boss script's swing stream stands in for the budget
+        // roll (never without a pack).
+        if let Some(entries) = self.expansion.battle.forced_strike.take() {
+            self.battle.monster_strike_budget = (entries.len() as u8).max(1);
+            self.battle.monster_strike_entries = entries;
+            return;
+        }
         let (catalog_agl, costs, entries) = self
             .actors
             .get(slot as usize)

@@ -1304,7 +1304,12 @@ impl World {
             0
         };
         if a.battle.max_hp > 0 && a.battle.hp == 0 {
-            a.battle.liveness = 0;
+            // An expansion boss script's last stand (never without a pack).
+            if before > 0 && self.expansion_survives_lethal(usize::from(target)) {
+                self.actors[usize::from(target)].battle.hp = 1;
+                return;
+            }
+            self.actors[usize::from(target)].battle.liveness = 0;
         }
     }
 

@@ -157,6 +157,10 @@ pub struct MonsterDef {
     /// physical attacker only.
     #[serde(default)]
     pub spells: Option<Vec<u8>>,
+    /// The monster's own battle AI, replacing its base monster's retail
+    /// picks ([`crate::boss_script`]).
+    #[serde(default)]
+    pub script: Option<crate::boss_script::BossScript>,
 }
 
 /// A slot in a formation: a pack monster by key, or a retail monster as it
@@ -229,6 +233,34 @@ impl FormationDef {
         self.monsters
             .iter()
             .chain(self.waves.iter().flat_map(|w| w.monsters.iter()))
+    }
+}
+
+impl BattleSection {
+    /// Every monster a fight on `formation` can seat: its waves' slots, then
+    /// whatever the scripted pack monsters among them summon, each new one
+    /// once, summons of summons included.
+    pub fn fight_monsters<'a>(
+        &'a self,
+        pack_id: &str,
+        formation: &'a FormationDef,
+    ) -> Vec<&'a MonsterRef> {
+        let mut out: Vec<&MonsterRef> = formation.all_monsters().collect();
+        let mut i = 0;
+        while i < out.len() {
+            if let MonsterRef::Pack(k) = out[i]
+                && let Some(m) = local_key(pack_id, k).and_then(|k| self.monsters.get(k))
+                && let Some(script) = &m.script
+            {
+                for r in script.summons() {
+                    if !out.contains(&r) {
+                        out.push(r);
+                    }
+                }
+            }
+            i += 1;
+        }
+        out
     }
 }
 
@@ -356,6 +388,20 @@ impl BattleSection {
             if m.spells.as_ref().is_some_and(|s| s.len() > 3) {
                 out.push(format!("monster `{key}`: at most three spells"));
             }
+            if let Some(script) = &m.script {
+                out.extend(script.problems(key));
+                for r in script.summons() {
+                    match r {
+                        MonsterRef::Pack(k) if monster(k).is_none() => out.push(format!(
+                            "monster `{key}`: script summons unknown monster `{k}`"
+                        )),
+                        MonsterRef::Disc(d) if !matches!(d, DiscRef::Monster { .. }) => {
+                            out.push(format!("monster `{key}`: script summons must be monsters"))
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
         for (key, f) in &self.formations {
             if f.monsters.is_empty() {
@@ -421,8 +467,10 @@ impl BattleSection {
             // what keys the disc mesh and animation), so one formation - all
             // of its waves together, since one catalog swap covers the whole
             // battle - can hold one version of each base monster.
+            // A scripted monster's summons join the same fight, so they
+            // count too.
             let mut bases: BTreeMap<u16, Option<&str>> = BTreeMap::new();
-            for r in f.all_monsters() {
+            for r in self.fight_monsters(pack_id, f) {
                 let (base, variant) = match r {
                     MonsterRef::Pack(k) => match monster(k) {
                         Some(m) => match m.base {
@@ -516,6 +564,43 @@ impl crate::validate::SectionRules for BattleSection {
         }
         for (key, m) in &self.monsters {
             cx.disc_ref(&format!("monsters.{key}.base"), &m.base);
+            if let Some(script) = &m.script {
+                for (field, line) in script.lines() {
+                    let at = format!("monsters.{key}.script.{field}");
+                    cx.reference("line", line, &at);
+                    let text = local_key(&pack_id, line)
+                        .and_then(|k| cx.pack().dialog.lines.get(k))
+                        .map(crate::boss_script::banner_text);
+                    if let Some(t) = text
+                        && t.chars().count() > crate::boss_script::BANNER_WARN_CHARS
+                    {
+                        cx.warning(
+                            &at,
+                            format!(
+                                "line `{line}` reads {} characters as a battle banner; the \
+                                 banner holds about {} on its one row",
+                                t.chars().count(),
+                                crate::boss_script::BANNER_WARN_CHARS
+                            ),
+                        );
+                    }
+                }
+                for (i, r) in script.summons().enumerate() {
+                    if let MonsterRef::Disc(d) = r {
+                        cx.disc_ref(&format!("monsters.{key}.script.summon[{i}]"), d);
+                    }
+                }
+                if script.phases.iter().all(|p| p.moves.is_empty())
+                    && script.enrage.as_ref().is_none_or(|e| e.moves.is_empty())
+                    && script.immune.is_empty()
+                    && script.last_stand.is_none()
+                {
+                    cx.warning(
+                        &format!("monsters.{key}.script"),
+                        "the script changes nothing: no moves, immunities or last stand",
+                    );
+                }
+            }
             for (what, chance) in [("drop", &m.drop), ("steal", &m.steal)] {
                 if let Some(c) = chance {
                     cx.disc_ref(&format!("monsters.{key}.{what}.item"), &c.item);

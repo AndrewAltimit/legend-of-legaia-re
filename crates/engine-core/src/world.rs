@@ -184,6 +184,7 @@ pub use effects::{
 };
 mod encounters;
 mod expansion;
+mod expansion_boss;
 mod expansion_cards;
 mod expansion_hosts;
 mod expansion_map;

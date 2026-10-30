@@ -383,6 +383,15 @@ impl StatusEffectTracker {
         cleared
     }
 
+    /// Remove `kind` from `slot` without queueing a [`StatusEvent::Cleared`]:
+    /// the status never took hold (an immune actor). `true` when it stood.
+    pub fn strip(&mut self, slot: u8, kind: StatusKind) -> bool {
+        let v = self.slots_mut(slot);
+        let before = v.len();
+        v.retain(|s| s.kind != kind);
+        v.len() != before
+    }
+
     /// Forget every status on `slot` without queueing a
     /// [`StatusEvent::Cleared`] - the slot's combatant is gone (a battle's
     /// monster seat at the battle's end), so nothing is cured and nothing

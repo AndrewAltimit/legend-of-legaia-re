@@ -280,6 +280,33 @@ intelligence = { mul = 1.5 }
 exp = 40000
 gold = 30000
 
+# The Warden's script: swings and Fire Breath, then below half its armour
+# splits - harder, faster, Lava Breath and a double swing at whoever is
+# weakest. Past round 15 it only burns hotter.
+# Swing indices are the base monster's own attack list (Caruban $3: three
+# swings); spells are spell-table ids (0x25 Fire Breath, 0x46 Lava Breath).
+[monsters.cinder_warden.script]
+immune = ["sleep", "confuse", "stone"]
+enrage = { when = { round = 15 }, line = "warden_inferno", attack = { mul = 1.25 } }
+
+[[monsters.cinder_warden.script.phases]]
+moves = [
+    { attack = 0, weight = 3 },
+    { attack = 1, weight = 2 },
+    { spell = 0x25, weight = 1, cooldown = 2 },
+]
+
+[[monsters.cinder_warden.script.phases]]
+when = { hp_below_pct = 50 }
+line = "warden_rage"
+attack = { mul = 1.3 }
+speed = { mul = 1.25 }
+moves = [
+    { attack = 2, hits = 2, weight = 3, target = "lowest_hp" },
+    { spell = 0x46, weight = 2, cooldown = 1 },
+    { attack = 0, weight = 1 },
+]
+
 [monsters.verdant_colossus]
 base = { kind = "monster", id = 174 }
 name = "Verdant Colossus"
@@ -290,6 +317,37 @@ defence = 255
 exp = 48000
 gold = 36000
 
+# The Colossus heals itself and calls the moss back once below 60%, then
+# telegraphs Earthquake; below a quarter it turns to earth and rages.
+# Berserker $3 has four swings; 0x4F Spore Gas, 0x4A Earthquake.
+[monsters.verdant_colossus.script]
+immune = ["sleep", "numb"]
+
+[[monsters.verdant_colossus.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 2 },
+    { spell = 0x4F, weight = 1, target = "healer", cooldown = 2 },
+]
+
+[[monsters.verdant_colossus.script.phases]]
+when = { hp_below_pct = 60 }
+line = "colossus_roots"
+heal_pct = 15
+defence = { mul = 1.3 }
+summon = ["moss_grude"]
+moves = [
+    { spell = 0x4A, weight = 2, charge = true, charge_line = "colossus_quake", cooldown = 3 },
+    { attack = 3, weight = 2 },
+    { attack = 1, weight = 2 },
+]
+
+[[monsters.verdant_colossus.script.phases]]
+when = { hp_below_pct = 25 }
+line = "colossus_bloom"
+element = 0
+attack = { mul = 1.3 }
+
 [monsters.iron_regent]
 base = { kind = "monster", id = 170 }
 name = "Iron Regent"
@@ -299,6 +357,40 @@ attack = 620
 defence = 270
 exp = 56000
 gold = 42000
+
+# The Regent goes for whoever hits hardest and calls fresh guards into any
+# empty seat at two thirds and one third; its last phase telegraphs
+# Hyper Crush. Jette has four swings; 0x4C Hyper Lightning, 0x4B Hyper Crush.
+[monsters.iron_regent.script]
+target = "highest_attack"
+immune = ["sleep", "numb", "stone"]
+
+[[monsters.iron_regent.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 2 },
+    { attack = 3, weight = 1 },
+]
+
+[[monsters.iron_regent.script.phases]]
+when = { hp_below_pct = 66 }
+line = "regent_guard"
+summon = ["brass_sentinel", "brass_sentinel"]
+moves = [
+    { attack = 2, hits = 2, weight = 2 },
+    { attack = 0, weight = 2 },
+    { spell = 0x4C, weight = 1, target = "lowest_hp", cooldown = 1 },
+]
+
+[[monsters.iron_regent.script.phases]]
+when = { hp_below_pct = 33 }
+line = "regent_iron"
+summon = ["brass_sentinel", "brass_sentinel"]
+defence = { mul = 1.4 }
+moves = [
+    { spell = 0x4B, weight = 2, charge = true, charge_line = "regent_crush", cooldown = 3 },
+    { attack = 3, hits = 3, weight = 3 },
+]
 
 [monsters.azure_seraph]
 base = { kind = "monster", id = 167 }
@@ -311,6 +403,34 @@ defence = 300
 intelligence = 900
 exp = 62000
 gold = 50000
+
+# The Seraph turns to storm below half (thunder element, a telegraphed
+# Water Hazard); from round 14 the sky opens and Thunder Storm is all she
+# casts between triple swings. Lapis has two swings; 0x54 Water Column,
+# 0x71 Water Hazard, 0x75 Paralyzing Wave, 0x77 Thunder Storm.
+[monsters.azure_seraph.script]
+immune = ["sleep", "confuse", "curse"]
+enrage = { when = { round = 14 }, line = "seraph_storm", intelligence = { mul = 1.2 }, moves = [
+    { spell = 0x77, weight = 1, cooldown = 1 },
+    { attack = 1, hits = 3, weight = 1 },
+] }
+
+[[monsters.azure_seraph.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 1 },
+    { spell = 0x54, weight = 2, target = "healer" },
+]
+
+[[monsters.azure_seraph.script.phases]]
+when = { hp_below_pct = 50 }
+line = "seraph_tide"
+element = 4
+moves = [
+    { spell = 0x71, weight = 2, charge = true, charge_line = "seraph_tide_charge", cooldown = 3 },
+    { spell = 0x75, weight = 1, cooldown = 2 },
+    { attack = 1, hits = 2, weight = 2 },
+]
 
 # --- 8F, the Hollow Throne (party level 95-99) -------------------------------
 
@@ -336,6 +456,43 @@ exp = 65000
 gold = 60000
 drop = { item = { kind = "item", id = 237 }, chance_pct = 100 }
 
+# The superboss's first form: three phases. At two thirds the shell calls
+# a herald back; at one third it is unmade and telegraphs Grand Beam, its
+# ultimate. It survives the first killing blow once. Dohati has three
+# swings; 0x6A Astral Wave, 0x58 Cross Beam, 0x53 Curse All, 0x63 Grand Beam.
+[monsters.hollow_sovereign.script]
+immune = ["sleep", "confuse", "numb", "stone", "curse"]
+last_stand = { line = "sovereign_last" }
+enrage = { when = { round = 20 }, line = "sovereign_end", attack = { mul = 1.5 } }
+
+[[monsters.hollow_sovereign.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 1, weight = 2 },
+    { spell = 0x6A, weight = 1 },
+]
+
+[[monsters.hollow_sovereign.script.phases]]
+when = { hp_below_pct = 66 }
+line = "sovereign_hollow"
+attack = { mul = 1.2 }
+summon = ["throne_herald"]
+moves = [
+    { attack = 2, hits = 2, weight = 2 },
+    { spell = 0x58, weight = 2, target = "healer" },
+    { spell = 0x53, weight = 1, cooldown = 3 },
+]
+
+[[monsters.hollow_sovereign.script.phases]]
+when = { hp_below_pct = 33 }
+line = "sovereign_unmade"
+speed = { mul = 1.2 }
+moves = [
+    { spell = 0x63, weight = 2, charge = true, charge_line = "sovereign_ultimate", cooldown = 3 },
+    { attack = 0, hits = 3, weight = 2, target = "lowest_hp" },
+    { spell = 0x58, weight = 1 },
+]
+
 [monsters.sovereign_unbound]
 base = { kind = "monster", id = 179 }
 name = "Sovereign Unbound"
@@ -348,6 +505,30 @@ intelligence = { mul = 1.5 }
 exp = 65000
 gold = 60000
 drop = { item = { kind = "item", id = 236 }, chance_pct = 100 }
+
+# What the Sovereign hid: Chaos Flare from the start, then below half a
+# telegraphed Thunder Burst; a last stand of its own. Songi has five
+# swings; 0x36 Chaos Flare, 0x74 Thunder Burst.
+[monsters.sovereign_unbound.script]
+immune = ["sleep", "confuse", "numb", "stone", "curse"]
+last_stand = { line = "unbound_last" }
+
+[[monsters.sovereign_unbound.script.phases]]
+moves = [
+    { attack = 0, weight = 2 },
+    { attack = 3, weight = 2 },
+    { spell = 0x36, weight = 1, cooldown = 1 },
+]
+
+[[monsters.sovereign_unbound.script.phases]]
+when = { hp_below_pct = 50 }
+line = "unbound_break"
+attack = { mul = 1.2 }
+moves = [
+    { spell = 0x74, weight = 2, charge = true, charge_line = "unbound_charge", cooldown = 3 },
+    { spell = 0x36, weight = 2, cooldown = 1 },
+    { attack = 2, hits = 2, weight = 2 },
+]
 
 # --- Formations: field encounters --------------------------------------------
 

@@ -53,6 +53,12 @@ pub struct CompiledFormation {
     /// The waves after the first ([`crate::battle_waves`]); empty for a
     /// single-wave formation.
     pub waves: Vec<CompiledWave>,
+    /// Base ids the scripted monsters of the fight may summon that no wave
+    /// seats ([`crate::boss_script`]).
+    pub summons: Vec<u16>,
+    /// The boss scripts of the fight, by the base id their monster fights
+    /// under.
+    pub scripts: BTreeMap<u16, Arc<crate::boss_script::CompiledScript>>,
 }
 
 impl CompiledFormation {
@@ -66,6 +72,8 @@ impl CompiledFormation {
                 .iter()
                 .flat_map(|w| w.monsters.iter().map(|&id| FormationSlot::new(id))),
         );
+        def.slots
+            .extend(self.summons.iter().map(|&id| FormationSlot::new(id)));
         def
     }
 }
@@ -154,7 +162,7 @@ impl CompiledBattle {
                 .iter()
                 .map(|r| FormationSlot::new(base_of(r)))
                 .collect();
-            let waves = f
+            let waves: Vec<CompiledWave> = f
                 .waves
                 .iter()
                 .map(|w| {
@@ -175,6 +183,43 @@ impl CompiledBattle {
                     }
                 })
                 .collect();
+            // What the fight's scripted monsters may summon joins its
+            // catalog swap, and each pack monster's script comes along.
+            let mut summons = Vec::new();
+            let seated: BTreeSet<u16> = slots
+                .iter()
+                .map(|s| s.monster_id)
+                .chain(
+                    waves
+                        .iter()
+                        .flat_map(|w: &CompiledWave| w.monsters.iter().copied()),
+                )
+                .collect();
+            for r in section.fight_monsters(pack_id, f) {
+                let id = base_of(r);
+                if !seated.contains(&id) && !summons.contains(&id) {
+                    summons.push(id);
+                }
+            }
+            let mut scripts = BTreeMap::new();
+            for (&id, k) in &variants {
+                if let Some(script) = &section.monsters[k.as_str()].script {
+                    let compiled = crate::boss_script::CompiledScript::compile(script, |r| {
+                        Some(match r {
+                            MonsterRef::Pack(k) => {
+                                let k = local_key(pack_id, k).unwrap_or(k);
+                                match section.monsters.get(k)?.base {
+                                    DiscRef::Monster { id } => id,
+                                    _ => return None,
+                                }
+                            }
+                            MonsterRef::Disc(DiscRef::Monster { id }) => *id,
+                            MonsterRef::Disc(_) => return None,
+                        })
+                    });
+                    scripts.insert(id, Arc::new(compiled));
+                }
+            }
             let label = if f.label.is_empty() {
                 key.clone()
             } else {
@@ -188,6 +233,8 @@ impl CompiledBattle {
                     .with_header_flags(u8::from(scripted)),
                 variants,
                 waves,
+                summons,
+                scripts,
             });
         }
         for e in &section.encounters {
@@ -490,6 +537,25 @@ pub struct BattleRuntime {
     /// looked: their battle meshes need binding
     /// (`World::take_expansion_reseated_monsters`).
     pub reseated: Vec<usize>,
+    /// The current fight's boss scripts, by the base id each scripted
+    /// monster fights under ([`CompiledFormation::scripts`]).
+    pub fight_scripts: BTreeMap<u16, Arc<crate::boss_script::CompiledScript>>,
+    /// The script state of each scripted seat: actor slot -> `(monster id,
+    /// run)`. A seat a wave or a summon re-seats starts a fresh run.
+    pub boss_runs: BTreeMap<usize, (u16, crate::boss_script::BossRun)>,
+    /// Monsters a script summoned, seated as the next round opens.
+    pub pending_summons: Vec<u16>,
+    /// The current fight's round, the first being `1` (`0` before it opens).
+    pub boss_round: u16,
+    /// A scripted swing stream for the turn being armed: archive entry
+    /// indices that replace the AGL budget's picks.
+    pub forced_strike: Option<Vec<u8>>,
+    /// The monster block's seat layout count for a fight with no waves
+    /// (a waved fight's is [`crate::battle_waves::WaveRun::layout`]).
+    pub boss_layout: u8,
+    /// Boss banner lines waiting for the battle's message line to clear
+    /// (a phase change and a charge on one turn show one after the other).
+    pub boss_banners: std::collections::VecDeque<String>,
 }
 
 #[cfg(test)]

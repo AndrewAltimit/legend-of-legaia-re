@@ -511,3 +511,66 @@ speaker = "Warden Ysolde"
 text = """
 (You have stood on every floor of
 the tower. Not many can say that.)"""
+
+# --- Boss battle lines ---------------------------------------------------------
+#
+# Each of these shows as the battle banner, one row, when a boss script
+# changes phase, charges a telegraphed move, enrages or makes its last
+# stand (battle.toml, `[monsters.<key>.script]`). Keep them to one short row.
+
+[lines.warden_rage]
+text = "The Warden's armour splits in fire!"
+
+[lines.warden_inferno]
+text = "The Warden burns hotter and hotter!"
+
+[lines.colossus_roots]
+text = "Roots knot the Colossus whole again!"
+
+[lines.colossus_quake]
+text = "The Colossus raises both fists..."
+
+[lines.colossus_bloom]
+text = "The Colossus blooms into rage!"
+
+[lines.regent_guard]
+text = "\"Guards! To your Regent!\""
+
+[lines.regent_iron]
+text = "\"Kneel. All of you. KNEEL.\""
+
+[lines.regent_crush]
+text = "The Regent raises its iron fist..."
+
+[lines.seraph_tide]
+text = "The Seraph's wings turn to storm!"
+
+[lines.seraph_tide_charge]
+text = "The sea itself rises behind her..."
+
+[lines.seraph_storm]
+text = "The sky splits above the Seraph!"
+
+[lines.sovereign_hollow]
+text = "\"You fight a shell. I am beneath.\""
+
+[lines.sovereign_unmade]
+text = "The Sovereign's mask falls away..."
+
+[lines.sovereign_ultimate]
+text = "Light gathers in the hollow crown..."
+
+[lines.sovereign_end]
+text = "\"Enough. This tower ends with you.\""
+
+[lines.sovereign_last]
+text = "\"Not yet... I am not finished!\""
+
+[lines.unbound_break]
+text = "The Unbound tears its chains apart!"
+
+[lines.unbound_charge]
+text = "Thunder pours into the Unbound..."
+
+[lines.unbound_last]
+text = "\"I was the Mist's last dream!\""

@@ -83,6 +83,12 @@ impl World {
             }
         }
 
+        // An expansion boss script picks for a scripted pack monster in
+        // place of the retail AI (never without a pack).
+        if let Some(action) = self.expansion_boss_pick(slot) {
+            return action;
+        }
+
         // --- generic decision core ---
         // The monster's own castable global magic ids (parser already drops the
         // empty `<= 1` slots, so every entry is "live").

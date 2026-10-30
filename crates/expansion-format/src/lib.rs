@@ -30,6 +30,7 @@
 #![forbid(unsafe_code)]
 
 pub mod battle;
+pub mod boss_script;
 pub mod bundle;
 pub mod cards;
 pub mod dialog;

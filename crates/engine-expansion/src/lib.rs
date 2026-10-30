@@ -11,6 +11,7 @@
 
 pub mod battle;
 pub mod battle_waves;
+pub mod boss_script;
 pub mod cards;
 pub mod dialog;
 pub mod entrance;

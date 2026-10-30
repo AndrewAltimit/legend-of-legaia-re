@@ -30,18 +30,25 @@ impl World {
     ///
     /// REF: FUN_801EC3E4 (the accumulating seed this uses)
     pub(in crate::world) fn apply_battle_hp_delta(&mut self, slot: usize, delta: i32) -> i32 {
-        let Some(a) = self.actors.get_mut(slot) else {
+        let Some(a) = self.actors.get(slot) else {
             return 0;
         };
-        a.battle.arm_hp_bar();
         let before = a.battle.hp;
-        a.battle.hp = if delta >= 0 {
+        let mut hp = if delta >= 0 {
             before.saturating_sub(delta.min(i32::from(u16::MAX)) as u16)
         } else {
             before
                 .saturating_add((-delta).min(i32::from(u16::MAX)) as u16)
                 .min(a.battle.max_hp)
         };
+        // An expansion boss script's last stand holds the first lethal blow
+        // at 1 HP (never without a pack).
+        if hp == 0 && before > 0 && a.battle.max_hp > 0 && self.expansion_survives_lethal(slot) {
+            hp = 1;
+        }
+        let a = &mut self.actors[slot];
+        a.battle.arm_hp_bar();
+        a.battle.hp = hp;
         let moved = i32::from(before) - i32::from(a.battle.hp);
         a.battle.accumulate_hp_bar(moved);
         // `hp == 0 -> liveness = 0` holds for **present** actors only - the
@@ -672,6 +679,9 @@ impl World {
             }
         }
 
+        // Expansion boss scripts: immunities and the last stand's
+        // catch-all, ahead of the dead-marking (never without a pack).
+        self.expansion_boss_frame();
         // Mark the dead so the SM's liveness scan resolves the wipe.
         for a in self.actors.iter_mut() {
             if a.battle.max_hp > 0 && a.battle.hp == 0 {

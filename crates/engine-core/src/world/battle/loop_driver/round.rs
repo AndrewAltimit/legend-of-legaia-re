@@ -171,6 +171,10 @@ impl World {
         // as the round opens, ahead of the sweep and the initiative seed so
         // the arrivals take their turns this round (never without a pack).
         self.expansion_seat_wave(legaia_engine_expansion::battle_waves::Moment::RoundStart);
+        // Expansion boss scripts check their phases as the round opens and
+        // seat what they summon, ahead of the initiative seed (never
+        // without a scripted pack monster in the fight).
+        self.expansion_boss_round_start();
         self.battle.round_flow.flat_walk_last = None;
         // The actor sweep (`FUN_801D88CC`): action-gauge restore, the
         // `+0x1DF` action-stream clear, and the party band's stale-target

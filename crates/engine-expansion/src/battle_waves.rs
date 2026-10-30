@@ -184,6 +184,12 @@ impl WaveRun {
         out
     }
 
+    /// Record a layout change made outside the run (a boss summon widened
+    /// the monster block).
+    pub fn note_layout(&mut self, layout: u8) {
+        self.layout = layout.clamp(1, MAX_FORMATION_SLOTS as u8);
+    }
+
     fn set_layout(&mut self, layout: u8, out: &mut Arrivals) {
         if layout != self.layout {
             self.layout = layout;
