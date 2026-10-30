@@ -534,6 +534,18 @@ GPU draws the same 1152 draws in a few milliseconds.
 `play_expansion_live::tests::big_map_reload_cost` (ignored, disc-gated)
 builds the same map natively and splits the reload into the engine's map
 entry and the page's scene build.
+`isles_map_entry_cost` does the same for Rebirth's Isles maps, with a hash of
+the arrays the page uploads, which the grouped pass leaves unchanged on every
+map. The pass's share of each entry:
+
+| Map | Coplanar pass, bucket walk | Grouped | Page build after |
+|---|---|---|---|
+| Thornwood (262 087 planes) | 4.9 s | 1.1 s | 3.1 s |
+| Village, beach, grotto | 0.7 - 0.9 s | 0.2 - 0.3 s | 0.8 - 0.9 s |
+
+On Thornwood what remains of the build is spread out: the plane summaries
+(0.7 s, the meshes' own planes), the rest of the scene build (1.4 s) and the
+uploaded arrays (1.5 s), beside 0.8 s of engine map entry.
 
 ## Sharing
 

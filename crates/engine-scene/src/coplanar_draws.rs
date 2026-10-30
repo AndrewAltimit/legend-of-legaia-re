@@ -659,13 +659,16 @@ fn grouped_pair_hits(world: &[WorldPlane], draws: &[EnvDraw]) -> Vec<PairHit> {
                             continue;
                         }
                     }
-                    if seen.contains(&(i, j)) {
-                        continue;
-                    }
+                    // The pure tests first: a pair met again under another key
+                    // gives the same answer, and only a recorded one is kept
+                    // in `seen` (most candidates are not, and hashing each
+                    // one cost more than the tests).
                     let Some(abutment) = classify_pair(world, draws, i as usize, j as usize) else {
                         continue;
                     };
-                    seen.insert((i, j));
+                    if !seen.insert((i, j)) {
+                        continue;
+                    }
                     hits.push(PairHit {
                         key: normal | (dp.max(dq) - 1).clamp(0, D_MASK as i64) as u64,
                         i,
