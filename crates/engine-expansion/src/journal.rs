@@ -4,7 +4,8 @@
 //! [`journal_view`] projects the pack and its [`QuestRuntime`] into plain
 //! rows - quests (active first, then completed) with their objectives and
 //! rewards, challenges with their best scores, the trading-card collection
-//! and the pack's maps - and [`JournalSession`] is the cursor over them. Both are
+//! and the pack's maps the party has been to - and [`JournalSession`] is the
+//! cursor over them. Both are
 //! `World`-free; the menu dispatcher seats the session as a pause-menu
 //! sub-screen and the draw layer takes the rows as text.
 //!
@@ -60,6 +61,18 @@ pub struct ChallengeRow {
     pub armed: bool,
 }
 
+/// The pack flag that records a visit to pack map `map_id`: raised by
+/// [`QuestRuntime::handle`] when the party first enters the map, carried by
+/// the save with the other pack flags, and read by the Travel page. The `@`
+/// keeps it apart from every flag a pack can name (a pack flag id has the
+/// syntax of a pack id).
+pub fn visited_flag(map_id: &str) -> String {
+    format!("{VISITED_FLAG_PREFIX}{map_id}")
+}
+
+/// The prefix of [`visited_flag`].
+pub const VISITED_FLAG_PREFIX: &str = "@visited:";
+
 /// One map the Travel page can enter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TravelRow {
@@ -113,8 +126,12 @@ pub struct JournalView {
     pub cards_unseen: usize,
     /// Unopened boosters.
     pub boosters: u32,
-    /// The pack's maps, in id order.
+    /// The pack's maps the Travel page offers, in id order: the ones the
+    /// party has been to, or every map when Travel is unlocked.
     pub maps: Vec<TravelRow>,
+    /// How many maps the pack defines (so an empty Travel page can say
+    /// whether the pack has none or none has been visited yet).
+    pub maps_total: usize,
     /// The pack defines items (the Items page opens the item screen).
     pub has_items: bool,
     /// The pack items held or worn, consumables first.
@@ -140,7 +157,11 @@ impl JournalView {
 }
 
 /// Project `pack` and its progress into the Journal's rows.
-pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime) -> JournalView {
+///
+/// The Travel page lists the maps the party has entered on this save
+/// ([`visited_flag`]); `all_maps` lists every map instead (the "Unlock
+/// Travel" cheat, for testing a map whose entrance is out of reach).
+pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime, all_maps: bool) -> JournalView {
     let mut quests: Vec<QuestRow> = rt
         .journal(&pack.quests)
         .into_iter()
@@ -196,11 +217,13 @@ pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime) -> JournalView {
         maps: pack
             .maps
             .iter()
+            .filter(|(id, _)| all_maps || rt.progress.flags.is_set(&visited_flag(id)))
             .map(|(id, m)| TravelRow {
                 map_id: id.clone(),
                 name: non_empty(&m.name, id),
             })
             .collect(),
+        maps_total: pack.maps.len(),
         has_items: !pack.items.items.is_empty(),
         items: item_rows(pack, &rt.progress.items),
         has_arts: !pack.arts.arts.is_empty() || !pack.spells.spells.is_empty(),
@@ -393,8 +416,8 @@ pub enum JournalPage {
     /// The trading-card collection; Cross opens the card menu (binder,
     /// boosters, sell, deck).
     Cards,
-    /// Enter one of the pack's maps directly - the testing fallback for a
-    /// map whose entrance is out of reach.
+    /// Enter one of the pack's maps the party has been to directly (every
+    /// map under the "Unlock Travel" cheat).
     Travel,
     /// The pack items held and worn; Cross opens the pack item screen.
     Items,
@@ -583,7 +606,7 @@ title = "Chal"
                 clears: 2,
             },
         );
-        let v = journal_view(&p, &rt);
+        let v = journal_view(&p, &rt, false);
         assert_eq!(v.pack_authors, "A, B");
         let ids: Vec<_> = v.quests.iter().map(|q| q.id.as_str()).collect();
         assert_eq!(ids, ["two", "one"]);
@@ -597,8 +620,45 @@ title = "Chal"
     }
 
     #[test]
+    fn travel_lists_the_maps_the_party_has_entered() {
+        let mut p = pack();
+        for id in ["a_map", "b_map"] {
+            p.maps.insert(id.into(), Default::default());
+        }
+        let w = crate::quest::StaticQuestWorld::default();
+        let mut rt = QuestRuntime::default();
+        rt.sync_pack(&p);
+        let v = journal_view(&p, &rt, false);
+        assert!(v.maps.is_empty(), "nothing visited yet");
+        assert_eq!(v.maps_total, 2);
+        // A retail scene is not a pack map; a pack map entered is recorded.
+        rt.handle(
+            &p,
+            &w,
+            crate::quest::QuestEvent::SceneEntered("town01".into()),
+        );
+        rt.handle(
+            &p,
+            &w,
+            crate::quest::QuestEvent::SceneEntered("b_map".into()),
+        );
+        let ids: Vec<_> = journal_view(&p, &rt, false)
+            .maps
+            .into_iter()
+            .map(|m| m.map_id)
+            .collect();
+        assert_eq!(ids, ["b_map"]);
+        assert!(!rt.progress.flags.is_set(&visited_flag("town01")));
+        // The visit survives the save block.
+        let back = crate::quest_save::ExpansionProgress::decode(&rt.progress.encode()).unwrap();
+        assert!(back.flags.is_set(&visited_flag("b_map")));
+        // Unlocked, every map is offered.
+        assert_eq!(journal_view(&p, &rt, true).maps.len(), 2);
+    }
+
+    #[test]
     fn the_session_pages_and_picks() {
-        let mut v = journal_view(&pack(), &QuestRuntime::default());
+        let mut v = journal_view(&pack(), &QuestRuntime::default(), false);
         v.maps.push(TravelRow {
             map_id: "m".into(),
             name: "M".into(),

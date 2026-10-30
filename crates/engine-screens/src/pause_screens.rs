@@ -353,8 +353,11 @@ pub fn journal_draws(
             "This pack has no trading cards.",
             "Cross: open the card menu   Circle: back",
         ),
+        JournalPage::Travel if view.maps_total == 0 => {
+            ("This pack has no maps.", "Left/Right: page   Circle: back")
+        }
         JournalPage::Travel => (
-            "This pack has no maps.",
+            "Maps you visit are listed here to travel back to.",
             "Cross: travel there   Circle: back",
         ),
         JournalPage::Items => (

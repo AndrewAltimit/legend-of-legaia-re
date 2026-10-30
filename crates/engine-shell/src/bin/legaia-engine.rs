@@ -467,6 +467,7 @@ fn main() -> Result<()> {
             cheat_arts,
             cheat_max_items,
             cheat_noclip,
+            cheat_travel,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -577,6 +578,7 @@ fn main() -> Result<()> {
                     arts: cheat_arts,
                     max_items: cheat_max_items,
                     noclip: cheat_noclip,
+                    travel: cheat_travel,
                 }),
         ),
         Cmd::Save {

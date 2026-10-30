@@ -663,6 +663,14 @@ impl WorldCheats for World {
                     "Walls are solid again.".to_string()
                 }
             }
+            PlayerCheat::UnlockTravel(on) => {
+                self.toggles.travel_all_maps = *on;
+                if *on {
+                    "Travel lists every pack map.".to_string()
+                } else {
+                    "Travel lists the pack maps visited.".to_string()
+                }
+            }
         }
     }
 }
@@ -749,12 +757,16 @@ pub enum PlayerCheat {
     /// ignores walls, bodies and props
     /// (`legaia_engine_core::world::FieldLocomotion::walk_through_walls`).
     WalkThroughWalls(bool),
+    /// The expansion Journal's Travel page lists every map of the active
+    /// pack (`true`), not only the ones the party has entered
+    /// (`legaia_engine_core::world::WorldToggles::travel_all_maps`).
+    UnlockTravel(bool),
 }
 
 /// The cheat list as `(key, label)` rows, in panel order: the native flag is
 /// `--cheat-<key>`, the page's control carries the label. A host test pins
 /// that each row has a control on both hosts.
-pub const PLAYER_CHEAT_LIST: [(&str, &str); 11] = [
+pub const PLAYER_CHEAT_LIST: [(&str, &str); 12] = [
     ("level", "Level"),
     ("restore", "Restore HP/MP"),
     ("max-ap", "Max AP"),
@@ -766,6 +778,7 @@ pub const PLAYER_CHEAT_LIST: [(&str, &str); 11] = [
     ("item", "Item"),
     ("encounters", "No encounters"),
     ("noclip", "Walk through walls"),
+    ("travel", "Unlock all Travel maps"),
 ];
 
 impl PlayerCheat {
@@ -783,6 +796,7 @@ impl PlayerCheat {
             PlayerCheat::GiveItem { .. } => "item",
             PlayerCheat::RandomEncounters(_) => "encounters",
             PlayerCheat::WalkThroughWalls(_) => "noclip",
+            PlayerCheat::UnlockTravel(_) => "travel",
         }
     }
 
@@ -843,6 +857,7 @@ mod tests {
             PlayerCheat::give_item_spec("healing-leaf:5"),
             PlayerCheat::RandomEncounters(false),
             PlayerCheat::WalkThroughWalls(true),
+            PlayerCheat::UnlockTravel(true),
         ];
         let keys: Vec<&str> = cheats.iter().map(PlayerCheat::key).collect();
         let listed: Vec<&str> = PLAYER_CHEAT_LIST.iter().map(|(k, _)| *k).collect();

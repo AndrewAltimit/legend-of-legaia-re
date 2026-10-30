@@ -563,7 +563,7 @@ requires = { min_level = 30 }</code></pre>
       <text class="dg-label" x="95" y="42">Retail field scene</text><text class="dg-sub" x="95" y="60">the player walks</text>
       <text class="dg-label" x="270" y="42">Entrance rect</text><text class="dg-sub" x="270" y="60">field-grid tiles</text>
       <text class="dg-label" x="450" y="42">EntranceWatch</text><text class="dg-sub" x="450" y="60">step on, gate holds</text>
-      <text class="dg-label" x="95" y="152">Journal: Travel</text><text class="dg-sub" x="95" y="170">any map of the pack</text>
+      <text class="dg-label" x="95" y="152">Journal: Travel</text><text class="dg-sub" x="95" y="170">maps visited</text>
       <text class="dg-label" x="270" y="152">--map / scene list</text><text class="dg-sub" x="270" y="170">direct entry</text>
       <text class="dg-label" x="450" y="152">enter_expansion_map</text><text class="dg-sub" x="450" y="170">SceneHost</text>
       <text class="dg-label" x="635" y="152">Pack map</text><text class="dg-sub" x="635" y="170">base scene + layer</text>
@@ -587,7 +587,7 @@ requires = { min_level = 30 }</code></pre>
     <p class="callout-title">Picking a rectangle</p>
     <p>Pick tiles the scene's walk reaches and that no retail trigger shares: a retail door's walk-on tile fires its own record on the same step. The validator checks the scene coordinate, the tile range, the spawn and the quests <code>requires</code> names; it cannot see the scene's walls without the disc.</p>
   </div>
-  <p>The pause menu's <strong>Travel</strong> page (the Journal, Select on the root list) enters any of the pack's maps directly, which is the way in for testing a map whose entrance is out of reach (<a href="../subsystems/field-menu.html">field menu</a>).</p>
+  <p>The pause menu's <strong>Travel</strong> page (the Journal, Select on the root list) enters a pack map the party has been to on this save directly; the <em>Unlock all Travel maps</em> cheat (<code>--cheat-travel</code>, the play page's Cheats panel) lists every map, which is the way in for testing a map whose entrance is out of reach (<a href="../subsystems/field-menu.html">field menu</a>).</p>
 </section>
 
 <section class="doc-section" id="saving-on-a-map" data-doc="saving-on-a-map">

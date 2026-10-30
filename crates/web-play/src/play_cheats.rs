@@ -27,6 +27,7 @@ fn cheat_from_key(key: &str, n: f64, text: &str) -> Option<PlayerCheat> {
         },
         "encounters" => PlayerCheat::RandomEncounters(n != 0.0),
         "noclip" => PlayerCheat::WalkThroughWalls(n != 0.0),
+        "travel" => PlayerCheat::UnlockTravel(n != 0.0),
         _ => return None,
     })
 }
@@ -46,7 +47,7 @@ impl LegaiaRuntime {
     /// Apply one cheat from the shared list
     /// ([`legaia_engine_cheats::cheats::PLAYER_CHEAT_LIST`]) by key, with a
     /// numeric operand `n` (level, Seru level, gold, coins, quantity; `1` /
-    /// `0` for the encounters and walk-through-walls switches) and a text operand `text` (the item
+    /// `0` for the encounters, walk-through-walls and Travel switches) and a text operand `text` (the item
     /// query). Returns the one-line outcome the native window logs for the
     /// same cheat. Unknown keys return a reason.
     pub fn cheat_apply(&mut self, key: &str, n: f64, text: &str) -> String {

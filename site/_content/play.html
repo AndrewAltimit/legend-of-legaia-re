@@ -823,6 +823,9 @@ div.play-vis-head { cursor: default; }
             <label title="Walk through walls, people and props on the field and the world map. Doors still open when you walk into them.">
               <input type="checkbox" id="play-cheat-noclip"> Walk through walls
             </label>
+            <label title="With an expansion pack loaded: the Journal's Travel page (Select on the pause menu) lists every map of the pack, not only the ones you have been to.">
+              <input type="checkbox" id="play-cheat-travel"> Unlock all Travel maps
+            </label>
           </div>
           <div class="play-btn-row">
             <label title="Gold (capped at 9,999,999).">
@@ -3612,6 +3615,9 @@ div.play-vis-head { cursor: default; }
     if (cheatNoclipEl.checked) {
       try { window.__playRuntime.cheat_apply('noclip', 1, ''); } catch (e) { /* no runtime */ }
     }
+    if (cheatTravelEl.checked) {
+      try { window.__playRuntime.cheat_apply('travel', 1, ''); } catch (e) { /* no runtime */ }
+    }
     const who = (st.party || []).map((m) =>
       `${m.name} Lv ${m.level} - HP ${m.hp}/${m.hp_max}, MP ${m.mp}/${m.mp_max}, AP ${m.ap}`);
     cheatPartyEl.textContent = (who.length ? who.join(' · ') : 'No party.')
@@ -3653,6 +3659,10 @@ div.play-vis-head { cursor: default; }
   const cheatNoclipEl = document.getElementById('play-cheat-noclip');
   cheatNoclipEl.addEventListener('change', () => {
     runCheat((rt) => cheat(rt, 'noclip', cheatNoclipEl.checked ? 1 : 0));
+  });
+  const cheatTravelEl = document.getElementById('play-cheat-travel');
+  cheatTravelEl.addEventListener('change', () => {
+    runCheat((rt) => cheat(rt, 'travel', cheatTravelEl.checked ? 1 : 0));
   });
   document.getElementById('play-cheat-max-ap').addEventListener('click', () => {
     runCheat((rt) => cheat(rt, 'max-ap'));

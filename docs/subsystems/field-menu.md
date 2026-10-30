@@ -2175,8 +2175,8 @@ under the hand (`FieldMenuSession::suspend_at_cursor`) and resumes there.
 
 | Piece | Owner |
 |---|---|
-| Content: quests (active first, then completed) with objectives, progress and rewards; challenges with best scores; the card collection (owned, new, boosters); the pack's maps | `legaia_engine_expansion::journal::journal_view`, read through `World::expansion_journal` |
-| Cursor: five pages - Quests, Challenges, Cards, Travel, Items (Left / Right or L1 / R1) - rows (Up / Down), Cross, Circle | `journal::JournalSession` |
+| Content: quests (active first, then completed) with objectives, progress and rewards; challenges with best scores; the card collection (owned, new, boosters); the pack maps the party has entered | `legaia_engine_expansion::journal::journal_view`, read through `World::expansion_journal` |
+| Cursor: six pages - Quests, Challenges, Cards, Travel, Items, Arts (Left / Right or L1 / R1) - rows (Up / Down), Cross, Circle | `journal::JournalSession` |
 | Open and fold | `field_menu_dispatch::journal_on_select` + `open_journal`; `FieldMenuSubsession::Journal`; `apply_journal_outcome` from `finish_subsession` |
 | Draw | `engine-screens::pause_screens::journal_draws` over `engine-ui::journal_draws_for`, in the generic sub-window frame |
 
@@ -2193,7 +2193,12 @@ tick after it. A Cross on a
 **Challenges** row arms that challenge for its next battle
 (`World::expansion_arm_challenge`; a refusal comes back as a toast). A Cross
 on a **Travel** row closes the menu and asks the scene host for the map
-(`World::request_expansion_travel`), which enters it on its next tick - the
+(`World::request_expansion_travel`), which enters it on its next tick. The
+page lists the maps the party has entered on this save: the quest runtime
+raises the pack flag `@visited:<map>` (`journal::visited_flag`) on the first
+entry, by any route, and the save's expansion block carries it with the other
+pack flags. A player cannot skip an entrance's gate through it. The *Unlock
+all Travel maps* cheat (`WorldToggles::travel_all_maps`) lists every map - the
 way onto a map whose entrance is out of reach
 ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#entrances)). The **Items** page lists the pack
 items the party holds and wears; a Cross closes the menu and opens the pack

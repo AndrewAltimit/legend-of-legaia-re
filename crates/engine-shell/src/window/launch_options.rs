@@ -606,6 +606,8 @@ pub struct PlayCheats {
     pub max_items: bool,
     /// `--cheat-noclip`: walk through walls.
     pub noclip: bool,
+    /// `--cheat-travel`: the Journal's Travel page lists every pack map.
+    pub travel: bool,
 }
 
 impl PlayCheats {
@@ -631,6 +633,9 @@ impl PlayCheats {
         }
         if self.noclip {
             out.push(PlayerCheat::WalkThroughWalls(true));
+        }
+        if self.travel {
+            out.push(PlayerCheat::UnlockTravel(true));
         }
         out.extend(self.gold.map(|g| PlayerCheat::Gold(i64::from(g))));
         out.extend(self.coins.map(|c| PlayerCheat::Coins(u64::from(c))));

@@ -330,7 +330,8 @@ In play, the tower is entered from the retail game: once the party reaches
 level 30, the tiles behind the woodpile by Rim Elm's south gate (`town01`,
 field-grid tiles 17-18 x 43) lead up into the Atrium - the 1F map's
 `[[entrances]]` table - and the Atrium's stair down returns beside them. The
-Journal's Travel page enters the tower from anywhere once it is open.
+Journal's Travel page returns to any of the pack's maps the party has been
+to, from anywhere (`--cheat-travel` lists every map, for testing).
 
 ```bash
 # Validate (no disc needed)

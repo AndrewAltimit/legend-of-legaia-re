@@ -1383,6 +1383,11 @@ pub(crate) enum Cmd {
         /// walls, bodies and props (doors still trigger when walked into).
         #[arg(long)]
         cheat_noclip: bool,
+        /// Cheat: the expansion Journal's Travel page (Select on the pause
+        /// menu) lists every map of the active pack, not only the ones the
+        /// party has been to.
+        #[arg(long)]
+        cheat_travel: bool,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around

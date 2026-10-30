@@ -166,7 +166,7 @@ impl World {
         let pack = self.expansion.pack.as_deref()?;
         let mut rt = self.expansion.quests.clone();
         rt.sync_pack(pack);
-        Some(journal_view(pack, &rt))
+        Some(journal_view(pack, &rt, self.toggles.travel_all_maps))
     }
 
     /// The quest toast on screen, if any.

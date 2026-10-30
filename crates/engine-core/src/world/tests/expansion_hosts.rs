@@ -169,8 +169,8 @@ fn a_retail_npc_talk_and_a_mode_win_reach_the_quests_and_toast() {
     );
 }
 
-/// The Rebirth journal follows the pack's own content: every challenge and
-/// map listed, the auto-start quest opening on its level, and its talk
+/// The Rebirth journal follows the pack's own content: every challenge
+/// listed, every map behind the Travel gate, the auto-start quest opening on its level, and its talk
 /// opening the quest that names it as a prerequisite. Derived from the pack
 /// files, so the content can grow without the test pinning its shape.
 #[test]
@@ -191,9 +191,16 @@ fn the_rebirth_journal_lists_its_chain_and_challenge() {
         .collect();
     assert_eq!(titles, want);
     assert!(empty.challenges.iter().all(|c| c.best.is_none()));
+    // Travel offers no map before the party has been on one; the Unlock
+    // Travel cheat lists them all.
+    assert!(empty.maps.is_empty(), "no map visited yet");
+    assert_eq!(empty.maps_total, pack.maps.len());
+    w.toggles.travel_all_maps = true;
+    let unlocked = w.expansion_journal().unwrap();
     for id in pack.maps.keys() {
-        assert!(empty.maps.iter().any(|m| m.map_id == *id), "map {id}");
+        assert!(unlocked.maps.iter().any(|m| m.map_id == *id), "map {id}");
     }
+    w.toggles.travel_all_maps = false;
 
     // The first auto-start quest the party's level opens, and its talk.
     let first = pack
