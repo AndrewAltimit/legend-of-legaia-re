@@ -162,3 +162,20 @@ seed = 305
 
 [lighting]
 mood = "day"
+
+# Sound: water runs in the garden's two channels.
+[[audio.ambient]]
+id = "upper_channel"
+sound = { kind = "sound", id = "water" }
+tile = [12, 7]
+radius = 640
+inner = 128
+volume = 0.5
+
+[[audio.ambient]]
+id = "lower_channel"
+sound = { kind = "sound", id = "water" }
+tile = [11, 20]
+radius = 640
+inner = 128
+volume = 0.5

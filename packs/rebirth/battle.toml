@@ -479,6 +479,8 @@ moves = [
 [[monsters.hollow_sovereign.script.phases]]
 when = { hp_below_pct = 66 }
 line = "sovereign_hollow"
+# The shell cracks and the music turns: "Apocalypse" (61).
+music = { kind = "bgm", id = 61 }
 attack = { mul = 1.2 }
 summon = ["throne_herald"]
 moves = [
@@ -491,8 +493,11 @@ moves = [
 when = { hp_below_pct = 33 }
 line = "sovereign_unmade"
 speed = { mul = 1.2 }
+# The pack's own chime (assets/audio/chime.wav) rings as it is unmade, and
+# again on every Grand Beam telegraph.
+sound = { kind = "sound", id = "chime" }
 moves = [
-    { spell = 0x63, weight = 2, charge = true, charge_line = "sovereign_ultimate", cooldown = 3 },
+    { spell = 0x63, weight = 2, charge = true, charge_line = "sovereign_ultimate", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
     { attack = 0, hits = 3, weight = 2, target = "lowest_hp" },
     { spell = 0x58, weight = 1 },
 ]
@@ -518,6 +523,8 @@ immune = ["sleep", "confuse", "numb", "stone", "curse"]
 last_stand = { line = "unbound_last" }
 
 [[monsters.sovereign_unbound.script.phases]]
+# The unbound form arrives to the Wild Arms battle theme (73).
+music = { kind = "bgm", id = 73 }
 moves = [
     { attack = 0, weight = 2 },
     { attack = 3, weight = 2 },
@@ -748,7 +755,10 @@ formations = [
 # --- Bosses ------------------------------------------------------------------
 
 # Sound-test cues: 28 "Attack!" (boss theme 1), 32 "Apostles of the Mist"
-# (boss theme 2), 31 "Cort's War", 29 "The Cold Koru", 61 "Apocalypse".
+# (boss theme 2), 31 "Cort's War", 29 "The Cold Koru", 61 "Apocalypse",
+# 73 the Wild Arms battle theme. The Hollow Sovereign opens on 32 and its
+# script's phases change the music as it falls (audio.toml, the format page
+# docs/formats/expansion-pack-audio.md).
 
 [bosses.cinder_warden]
 formation = "ember_throne"
@@ -780,7 +790,7 @@ once = true
 
 [bosses.hollow_sovereign]
 formation = "hollow_throne"
-music = { kind = "bgm", id = 61 }
+music = { kind = "bgm", id = 32 }
 reward_items = [
     { item = { kind = "item", id = 233 }, count = 1 },
     { item = { kind = "item", id = 250 }, count = 2 },
@@ -792,6 +802,6 @@ once = true
 # Not once: the echo can be fought again and again for its spoils.
 [bosses.throne_echo]
 formation = "throne_echo"
-music = { kind = "bgm", id = 61 }
+music = { kind = "bgm", id = 73 }
 reward_gold = 20000
 once = false

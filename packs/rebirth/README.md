@@ -37,6 +37,8 @@ Rebirth is built for the climb from there to 99.
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
+| `audio.toml` | The pack's own drone track and four sounds, the tower bosses' victory music, the mode music at the Rest's tables. |
+| `assets/audio/` | Four WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
 
 ### The tower
 
@@ -324,6 +326,23 @@ beside each field. Bases were checked in a battle screenshot before use
 (`play-window --battle cell:s:<hex id>`): the Juggernaut-form Cort (181)
 draws nothing on an ordinary stage, so the superboss's second phase is built
 on Songi (179) instead.
+
+**Sound.** Every floor keeps a retail track by its sound-test id; the
+map `[audio]` tables add the rest
+([`expansion-pack-audio.md`](../../docs/formats/expansion-pack-audio.md)).
+5F's games room is a music zone on the Sol casino's "Wild Declaration", so
+the bar tune cross-fades into it at the door; 7F's inner sanctum hands the
+music to the pack's own drone, a six-second loop of whole-cycle sine partials
+that carries its loop in its WAV `smpl` chunk. The ember crystals (1F), the
+braziers and the fire at their middle (2F), the Rest's hearth (5F) and the
+throne's standing lamps (8F) crackle, the Warden's Stone hums and
+water runs in the garden's channels (3F), each a positional source heard by
+distance and panned across the view. The Hollow Sovereign opens on "Apostles
+of the Mist", turns to "Apocalypse" as its shell cracks, rings a chime as it
+is unmade and on every Grand Beam telegraph, and its unbound form arrives to
+the Wild Arms battle theme. The four WAV files are synthesised from sine
+partials and seeded noise by `scripts/models/generate_rebirth_audio.py`; no
+disc audio is copied.
 
 ## No game data
 

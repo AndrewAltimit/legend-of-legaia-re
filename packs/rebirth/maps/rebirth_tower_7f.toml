@@ -161,3 +161,13 @@ seed = 702
 [lighting]
 mood = "night"
 lamps = [{ id = "heart", tile = [11, 10], offset = [0, 120, 0], color = [100, 150, 255], radius = 1000, flicker = 0.1, period = 45 }]
+
+# Sound: inside the Sanctum's inner ring the floor's music gives way to the
+# tower's echo, the pack's own drone (`audio.toml` `tracks.echo_drone`).
+[audio]
+fade_frames = 90
+
+[[audio.zones]]
+id = "inner_sanctum"
+rect = [9, 6, 15, 13]
+music = { kind = "track", id = "echo_drone" }

@@ -179,3 +179,20 @@ lamps = [
   { id = "throne_east", tile = [10, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 23 },
   { id = "carpet_head", tile = [8, 5], offset = [0, 140, 0], color = [170, 120, 220], radius = 600 },
 ]
+
+# Sound: the throne's two standing lamps spit and crackle.
+[[audio.ambient]]
+id = "throne_lamp_west"
+sound = { kind = "sound", id = "torch" }
+tile = [7, 1]
+radius = 448
+inner = 64
+volume = 0.5
+
+[[audio.ambient]]
+id = "throne_lamp_east"
+sound = { kind = "sound", id = "torch" }
+tile = [9, 1]
+radius = 448
+inner = 64
+volume = 0.5

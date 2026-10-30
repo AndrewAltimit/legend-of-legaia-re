@@ -253,3 +253,44 @@ sides = 16
 color = [110, 110, 110]
 yaw = [0.0, 0.0]
 
+# Sound: the four ember braziers roar as the party passes them.
+[[audio.ambient]]
+id = "ember_nw"
+sound = { kind = "sound", id = "torch" }
+tile = [8, 11]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "ember_ne"
+sound = { kind = "sound", id = "torch" }
+tile = [12, 11]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "ember_sw"
+sound = { kind = "sound", id = "torch" }
+tile = [8, 15]
+radius = 512
+inner = 96
+volume = 0.6
+
+[[audio.ambient]]
+id = "ember_se"
+sound = { kind = "sound", id = "torch" }
+tile = [12, 15]
+radius = 512
+inner = 96
+volume = 0.6
+
+# The fire in the middle roars loudest.
+[[audio.ambient]]
+id = "brazier_fire"
+sound = { kind = "sound", id = "torch" }
+tile = [10, 13]
+radius = 768
+inner = 160
+volume = 0.85

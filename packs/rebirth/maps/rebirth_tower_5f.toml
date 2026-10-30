@@ -149,3 +149,22 @@ lamps = [
   { id = "hearth", tile = [13, 4], offset = [0, 60, 0], color = [255, 140, 60], radius = 700, flicker = 0.35, period = 10 },
   { id = "keeper", tile = [5, 4], offset = [0, 160, 0], color = [255, 210, 150], radius = 600 },
 ]
+
+# Sound: the Rest plays the bar's tune (`bgm` above); the games room on the
+# east side has the Sol casino's "Wild Declaration" (18), cross-fading as the
+# party walks through its door.
+[audio]
+fade_frames = 40
+
+[[audio.zones]]
+id = "games_room"
+rect = [8, 7, 14, 10]
+music = { kind = "bgm", id = 18 }
+
+[[audio.ambient]]
+id = "hearth"
+sound = { kind = "sound", id = "torch" }
+tile = [13, 4]
+radius = 512
+inner = 96
+volume = 0.5

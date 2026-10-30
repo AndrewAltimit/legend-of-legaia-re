@@ -526,3 +526,48 @@ height = [60, 220]
 count = 24
 color = [140, 180, 255]
 seed = 16
+
+# ---------------------------------------------------------------------------
+# Sound: each ember crystal crackles, and the Warden's Stone hums under the
+# floor's music. Pack sounds (`audio.toml`), heard by distance and panned
+# across the camera's view.
+# ---------------------------------------------------------------------------
+[[audio.ambient]]
+id = "crystal_nw"
+sound = { kind = "sound", id = "torch" }
+tile = [3, 4]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "crystal_ne"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 4]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "crystal_sw"
+sound = { kind = "sound", id = "torch" }
+tile = [3, 8]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "crystal_se"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 8]
+radius = 448
+inner = 64
+volume = 0.45
+
+[[audio.ambient]]
+id = "warden_stone"
+sound = { kind = "sound", id = "drone" }
+tile = [7, 6]
+radius = 640
+inner = 128
+volume = 0.35
