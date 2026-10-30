@@ -15,7 +15,8 @@
 # the Warden's familiar pads down off the dais to meet the party, and
 # Ysolde's voice calls them to the stone. It leaves the party where it
 # arrived, so stepping toward the dais still raises the stone's own talk
-# (`tower_rumour`).
+# (`tower_rumour`). One line is said: the shot and the familiar carry the
+# rest.
 [cutscenes.tower_intro]
 title = "The Tower Wakes"
 map = "rebirth_tower_1f"
@@ -43,10 +44,6 @@ track = "crane"
 [[cutscenes.tower_intro.steps]]
 do = "wait"
 frames = 150
-
-[[cutscenes.tower_intro.steps]]
-do = "say"
-line = "intro_hall"
 
 [[cutscenes.tower_intro.steps]]
 do = "join"
@@ -89,10 +86,6 @@ toward = "player"
 do = "face"
 actor = "player"
 toward = "warden_familiar"
-
-[[cutscenes.tower_intro.steps]]
-do = "say"
-line = "intro_familiar"
 
 [[cutscenes.tower_intro.steps]]
 do = "camera"
@@ -185,10 +178,6 @@ do = "camera_reset"
 frames = 80
 
 [[cutscenes.hollow_stirs.steps]]
-do = "say"
-line = "hollow_stirs_reply"
-
-[[cutscenes.hollow_stirs.steps]]
 do = "set_flag"
 flag = "hollow_heard"
 
@@ -248,10 +237,6 @@ frames = 30
 [[cutscenes.sovereign_rises.steps]]
 do = "camera_reset"
 frames = 60
-
-[[cutscenes.sovereign_rises.steps]]
-do = "say"
-line = "sovereign_rises_reply"
 
 [[cutscenes.sovereign_rises.steps]]
 do = "start_quest"

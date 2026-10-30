@@ -14,88 +14,35 @@
 [lines.guide_intro]
 speaker = "Warden Ysolde"
 text = """
-...So the stone wakes, and someone
-stands before it at last.
+...So the stone wakes. I am
+Ysolde. I kept this tower's seal.
 
-I am Ysolde. I kept the seal of
-this tower, long before the Mist.
-
-When the Mist was torn away, it
-did not simply vanish. What it
-had swallowed came here.
-
-Every place it smothered is
-remembered inside these walls.
-Every beast it twisted, too.
-
-Will you hear what the tower asks
-of those who climb it?"""
-choices = [
-    { label = "Tell me." },
-    { label = "Who are you, really?", reply = "A voice with no body left.\nA warden with nothing to guard.\n\nListen, then." },
-]
+What the Mist swallowed is here
+now. Will you hear what it asks?"""
 
 [lines.guide_trial]
 speaker = "Warden Ysolde"
 text = """
-The tower will not open its stair
-to the weak. It would only eat you.
+Win three battles and reach
+level 40. Then come back to me.
 
-Win three battles. Grow until you
-stand at level 40.
-
-The sea gate in the west wall is
-open to you. The isles beyond it
-are kinder than this hall.
-
-Then come back to the stone, and
-I will unseal the way up."""
+The sea gate in the west wall
+leads to gentler isles."""
 
 [lines.guide_trial_active]
 speaker = "Warden Ysolde"
 text = """
 Three battles, and level 40.
-
-If this hall is too much, take
-the sea gate west. The isles will
-make you stronger.
-
-The tower is patient. It has
-waited longer than you have
-lived."""
+The sea gate west will help."""
 
 [lines.guide_done]
 speaker = "Warden Ysolde"
 text = """
-Yes... you will do.
+Yes... you will do. The seal is
+lifted, and eight floors await.
 
-The seal is lifted. Eight floors
-rise above us, each one a memory
-the Mist would not let go.
-
-A fire keeps watch on the second
-floor. Do not wake its keeper
-before you stand at level 50.
-
-At the top sits the thing that
-gathered them. Climb, and do not
-let the Seru beside you falter."""
-
-[lines.guide_rebirth]
-speaker = "Warden Ysolde"
-text = """
-The throne is empty, and still
-you climb these floors.
-
-Then reach the very peak of
-yourself. Level 99, and nothing
-less.
-
-The throne's echo, the trials and
-the old breeds will take you there.
-
-Come back to the stone when there
-is nothing left in you to grow."""
+The fire on the second floor
+wakes at level 50. Climb well."""
 
 [lines.guide_rebirth_done]
 speaker = "Warden Ysolde"
@@ -103,27 +50,15 @@ text = """
 There is nothing more the tower
 can teach you.
 
-The memories are at rest. And now
-I can tell you what I could not
-before.
-
-The seal was never on the stair.
-It is on this stone. Under it is
-the first breath of the Mist.
-
-I held it here alone, all this
-time. I am so tired. Will you
-help me let it go?"""
+The true seal is on this stone:
+the Mist's first breath. I held
+it alone. Help me let it go?"""
 
 [lines.gauntlet_offer]
 speaker = "The Bell"
 text = """
-A bronze bell hangs over the back
-of the dais. Its rope is warm.
-
-Ring it, and the tower will send
-its first breed against you, wave
-after wave."""
+A bronze bell. Ring it, and the
+tower sends its first breed."""
 choices = [
     { label = "Ring the bell.", battle = "tower_gauntlet" },
     { label = "Leave it.", reply = "The bell sways, and is still." },
@@ -134,14 +69,8 @@ choices = [
 [lines.breath_offer]
 speaker = "Warden Ysolde"
 text = """
-Stand on the stone, all of you.
-
-When I lift the seal, it will
-come up all at once - everything
-the Mist was before it had a name.
-
-I cannot hold it and fight it.
-That part is yours."""
+When I lift the seal, it comes
+up all at once. That is yours."""
 choices = [
     { label = "Lift the seal.", boss = "first_breath" },
     { label = "Not yet.", reply = "Then I hold it a little longer.\nI am good at that." },
@@ -150,14 +79,8 @@ choices = [
 [lines.breath_done]
 speaker = "Warden Ysolde"
 text = """
-...It is gone. I can feel the
-stone go light under me.
-
-The memories are at rest. The
-seal can sleep, and so can I.
-
-Thank you. Whatever you face out
-there, you face it reborn."""
+...It is gone. The stone is light.
+Thank you. Go on, reborn."""
 
 [lines.breath_wind]
 text = "The Breath turns to a howling gale!"
@@ -175,124 +98,77 @@ text = "The stone shudders under it!"
 text = "It will not be held. It will not!"
 
 # --- Floor arrivals ----------------------------------------------------------
+#
+# One short page each, said once on a floor's first arrival. Joined, each
+# also fits one toast row (a map trigger `kind = "toast"`), so a floor can
+# announce itself without stopping the player.
 
 [lines.floor_2f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Ember Stair. Can you feel the
-heat? The Mist burned here once.
-
-Something tends the brazier at the
-heart of this hall. It will not
-rise for anyone below level 50.)"""
+The Ember Stair.
+Its keeper wakes at Lv 50."""
 
 [lines.floor_3f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Hanging Garden. Pretty, isn't
-it? Nothing grows here that does
-not bite.
-
-The sundial on the middle terrace
-counts out the garden's trial.)"""
+The Hanging Garden.
+Turn the sundial."""
 
 [lines.floor_4f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Verdant Vault. A palace court
-the green swallowed whole.
-
-Something vast sleeps in the
-sunken court. It stirs for no one
-below level 60.)"""
+The Verdant Vault.
+It stirs at Lv 60."""
 
 [lines.floor_5f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Gambler's Rest. No beast will
-follow you this high.
-
-Catch your breath. The keeper here
-plays for stakes, not for blood.)"""
+The Gambler's Rest.
+No beast hunts here."""
 
 [lines.floor_6f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Engine Deep. The Mist built
-machines once. They remember how
-to run.
-
-Their master waits in the upper
-alcove, and receives no one below
-level 70. The lever below starts
-something that does not stop.)"""
+The Engine Deep.
+Its master waits: Lv 70."""
 
 [lines.floor_7f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Sanctum of Echoes. Every
-prayer the Mist drowned is still
-whispering in these walls.
-
-The voice in the inner hall is
-not one of them. It will not sing
-to anyone below level 80.)"""
+The Sanctum of Echoes.
+It sings at Lv 80."""
 
 [lines.floor_8f_intro]
 speaker = "Warden Ysolde"
 text = """
-(The Hollow Throne.
-
-This is where it all gathered.
-Whatever sits up there, it has
-been waiting for you.
-
-Do not climb the last steps below
-level 88. It would only keep you.)"""
+The Hollow Throne.
+Climb at Lv 88."""
 
 # --- Floor trials ------------------------------------------------------------
 
 [lines.sundial_offer]
 speaker = "The Sundial"
 text = """
-The sundial's shadow points at no
-hour you know.
-
-Turn the dial, and the garden will
-test you four times over."""
+Turn the dial, and the garden
+tests you four times over."""
 choices = [
     { label = "Turn the dial.", battle = "garden_gauntlet" },
     { label = "Race the shadow.", challenge = "garden_sprint", battle = "garden_gauntlet" },
     { label = "Not now.", reply = "The shadow creeps back to where\nit started." },
 ]
 
-[lines.garden_hint]
-speaker = "Warden Ysolde"
-text = """
-(The Hanging Garden waits above.
-
-Turn its sundial and outlast what
-comes. The stair beyond answers
-only to those who do.)"""
-
 [lines.garden_done]
 speaker = "Warden Ysolde"
 text = """
-(The garden is quiet. Even the
-thorns are watching you now.
-
-The vault above is breathing in
-its sleep. Wake it at level 60,
-not before.)"""
+(The garden is quiet. The vault
+above wakes at level 60.)"""
 
 [lines.engine_offer]
 speaker = "The Lever"
 text = """
-A great iron lever, worn smooth by
-hands that are long gone.
-
-Pull it, and the engine will feed
-you everything it has."""
+A great iron lever. Pull it, and
+the engine sends all it has."""
 choices = [
     { label = "Pull the lever.", battle = "engine_gauntlet" },
     { label = "Vahn pulls alone.", challenge = "lone_fist", battle = "engine_gauntlet" },
@@ -302,12 +178,8 @@ choices = [
 [lines.challenge_board]
 speaker = "The Trial Stone"
 text = """
-A plain stone, carved with the
-tower's old trials. One glows.
-
-BARE HANDS: win the next battle
-in ten rounds, with no items and
-no Ra-Seru magic."""
+BARE HANDS: win the next battle in
+ten rounds, no items, no magic."""
 choices = [
     { label = "Take the trial.", challenge = "bare_hands" },
     { label = "Not today.", reply = "The glow fades back into\nthe stone." },
@@ -318,12 +190,8 @@ choices = [
 [lines.ember_offer]
 speaker = "The Brazier"
 text = """
-The brazier flares. A shape of ash
-and cinder rises out of it, and
-turns its burning face to you.
-
-It has kept this fire since the
-Mist first came."""
+A shape of ash rises from the
+brazier and turns to face you."""
 choices = [
     { label = "Face the Warden.", boss = "cinder_warden" },
     { label = "Step back.", reply = "The flame sinks, but does not\ngo out." },
@@ -332,13 +200,8 @@ choices = [
 [lines.ember_done]
 speaker = "Warden Ysolde"
 text = """
-(The fire is out. For the first
-time in an age, the stair is
-cold.
-
-The garden above felt it die. Its
-sundial is turning. Go and see
-what it counts out.)"""
+(The fire is out. The garden's
+sundial above is turning.)"""
 
 [lines.vault_offer]
 speaker = "The Sunken Court"
@@ -354,12 +217,8 @@ choices = [
 [lines.vault_done]
 speaker = "Warden Ysolde"
 text = """
-(It sleeps for good now. Let the
-green have the rest of it.
-
-Above is a hall where nothing
-hunts. Rest there. And listen -
-the tower sounds different now.)"""
+(It sleeps for good. Above is a
+hall where nothing hunts.)"""
 
 [lines.regent_offer]
 speaker = "The Iron Regent"
@@ -377,12 +236,8 @@ choices = [
 [lines.regent_done]
 speaker = "Warden Ysolde"
 text = """
-(The engine is winding down. You
-can hear the tower breathe again.
-
-Can you hear the singing above?
-Every prayer the Mist drowned. Go
-up when you stand at level 80.)"""
+(The engine winds down. The
+sanctum above sings at level 80.)"""
 
 [lines.seraph_offer]
 speaker = "The Azure Seraph"
@@ -402,23 +257,13 @@ choices = [
 speaker = "Warden Ysolde"
 text = """
 (The sanctum is silent. Only the
-throne is left above you.
-
-It took a voice from every one of
-those prayers. It will want yours.
-Be level 88 before you answer.)"""
+throne is left. Be level 88.)"""
 
 [lines.guide_sovereign]
 speaker = "The Hollow Throne"
 text = """
-The throne at the top is not empty.
-Something hollow sits there, made
-of everything the Mist took.
-
-It knows your names. It has been
-saying them for a long time.
-
-Will you climb the last steps?"""
+Something hollow sits on the
+throne. It knows your names."""
 choices = [
     { label = "Climb.", boss = "hollow_sovereign" },
     { label = "Not yet.", reply = "The throne will wait. It has\nnothing else to do." },
@@ -427,11 +272,8 @@ choices = [
 [lines.guide_sovereign_done]
 speaker = "Warden Ysolde"
 text = """
-The throne is empty at last. The
-memories are drifting home.
-
-You did what no one before you
-could. The tower is yours now."""
+The throne is empty at last. Come
+back to the stone at level 99."""
 
 [lines.echo_offer]
 speaker = "The Hollow Throne"
@@ -477,52 +319,29 @@ own steps."""
 [lines.keeper_welcome]
 speaker = "Keeper Odalric"
 text = """
-Well now! Visitors who climbed all
-the way up here. Sit, sit.
+Visitors, this high up! I am
+Odalric. I keep the tables here.
 
-I am Odalric. I kept the dice when
-this was a gambling hall, and I
-see no reason to stop now.
-
-Cards, golf, a race, a game of
-hide and seek. Win my tables and
-I will make it worth your while.
-
-The engine floor above? Its Regent
-sees no one under level 70. Play
-a hand while you grow."""
+Win one of each, and I will make
+it worth your while."""
 
 [lines.keeper_tables]
 speaker = "Keeper Odalric"
 text = """
-Every table in the tower is open
-to you now. The card room is by
-the bar, the games room past it.
-
-Win one of each, and come back to
-tell me about it."""
+The card room is by the bar, the
+games room past it. Win them all."""
 
 [lines.keeper_done]
 speaker = "Keeper Odalric"
 text = """
-Ha! Every table, beaten.
-
-I have not lost like this since
-before the Mist. Take this, and
-come back any time."""
+Ha! Every table, beaten. Take
+this, and come back any time."""
 
 [lines.rest_board]
 speaker = "The Notice Board"
 text = """
-THE GAMBLER'S REST
-
-Hold'em at the Tower High Table.
-The Warden's Duel, cards on view.
-
-The Rebirth Links, six holes up
-the tower's side. The Spiral
-Circuit. And hide and seek in the
-Old Vault."""
+THE GAMBLER'S REST: Hold'em, the
+Duel, golf, a race, hide and seek."""
 
 [lines.rest_cards]
 speaker = "Keeper Odalric"
@@ -621,76 +440,32 @@ choices = [
 [lines.bounty_ogres_start]
 speaker = "Warden Ysolde"
 text = """
-The Ironhide breed is spreading
-out of the tower and into the
-fortress below.
-
-Thin them out. Six packs will do,
-for now."""
+The Ironhide breed is spreading.
+Thin out six packs for me."""
 
 [lines.bounty_ogres_done]
 speaker = "Warden Ysolde"
 text = """
-Six packs fewer. They will breed,
-of course. Come back when they
-do."""
+Six packs fewer. Come back when
+they breed again."""
 
 [lines.remedy_start]
 speaker = "Warden Ysolde"
 text = """
-I need a remedy for the stone. It
-cracks a little more each day.
-
-Bring me five Healing Fruit, and I
-will share what the seal kept for
-me."""
+The stone is cracking. Bring me
+five Healing Fruit."""
 
 [lines.remedy_done]
 speaker = "Warden Ysolde"
 text = """
-Thank you. The cracks are already
-closing.
-
-Take these. I have no use for a
-body's strength anymore."""
+The cracks are closing. Take
+these, with my thanks."""
 
 [lines.sentinel_hunt_start]
 speaker = "Warden Ysolde"
 text = """
-(The Brass Sentinels keep marching
-out of the Engine Deep.
-
-Break eight of their lines, and
-the engine will run slower.)"""
-
-[lines.sentinel_hunt_done]
-speaker = "Warden Ysolde"
-text = """
-(Eight sentinel lines broken. The
-engine stutters. Well done.)"""
-
-[lines.bounty_board_done]
-speaker = "Warden Ysolde"
-text = """
-Four bounties. The old breeds are
-thinner than they have been since
-the Mist came.
-
-Take these. The seal kept them
-for hunters like you."""
-
-[lines.echo_breaker_done]
-speaker = "Warden Ysolde"
-text = """
-(Five times broken. Listen - the
-echo has no voice left. Only
-yours comes back from the throne.)"""
-
-[lines.every_floor_done]
-speaker = "Warden Ysolde"
-text = """
-(You have stood on every floor of
-the tower. Not many can say that.)"""
+(Break eight Brass Sentinel lines
+marching out of the Engine Deep.)"""
 
 # --- Boss battle lines ---------------------------------------------------------
 #
@@ -757,37 +532,11 @@ text = "\"I was the Mist's last dream!\""
 
 # --- Cutscenes (cutscenes.toml) ----------------------------------------------
 
-[lines.intro_hall]
-speaker = "Narration"
-text = """
-(The hall rises further than the
-tower stood tall from outside.
-
-Dust hangs in the air without
-falling, as if time stopped here
-when the Mist came.)"""
-
-[lines.intro_familiar]
-speaker = "The Warden's familiar"
-text = """
-Rrrowww...
-
-(A grey shape pads down from the
-dais and circles you once.
-
-Then it looks back at the great
-stone behind it, and waits.)"""
-
 [lines.intro_voice]
 speaker = "Warden Ysolde"
 text = """
-(A voice, faint as settling dust:
-
-...You came. After so long, the
-stair has a sound on it again.
-
-Come to the stone. I will tell
-you what this tower keeps.)"""
+(A voice, faint as dust: ...You
+came. Come to the stone.)"""
 
 [lines.familiar_purr]
 speaker = "The Warden's familiar"
@@ -798,11 +547,7 @@ Rrrowww...
 
 [lines.stair_sealed]
 text = """
-(The stair rises into a seal of
-pale light. It does not give.
-
-The Warden's Stone waits behind
-you.)"""
+(Pale light seals the stair.)"""
 
 [lines.familiar_rest]
 speaker = "The Warden's familiar"
@@ -816,48 +561,18 @@ lifted from under it.)"""
 [lines.hollow_stirs_voice]
 speaker = "The Hollow Voice"
 text = """
-...I hear you.
-
-Every step up my tower, I hear
-you. Every Seru beside you, I
-hear it breathing.
+...I hear you. Every step up my
+tower, I hear you.
 
 Climb, then. I am so tired of
 being only what I took."""
 
-[lines.hollow_stirs_reply]
-speaker = "Warden Ysolde"
-text = """
-(Do not answer it.
-
-That is the thing on the throne.
-It has never spoken before.
-
-It is afraid of you. Remember
-that when you reach the top.)"""
-
 [lines.sovereign_rises]
 speaker = "The Hollow Sovereign"
 text = """
-So the little lights climbed all
-the way to me.
-
 I am every voice the Mist ever
-swallowed. I am Rim Elm's lost
-children. I am the Seru that
-never woke.
-
-Take my throne, if you think a
-throne is something you can take."""
-
-[lines.sovereign_rises_reply]
-speaker = "Warden Ysolde"
-text = """
-(Steady. It is only as strong as
-what it holds on to.
-
-Break its grip, and everything it
-took can finally go home.)"""
+swallowed. Take my throne, if you
+think a throne can be taken."""
 
 [lines.sovereign_falls]
 speaker = "The Hollow Sovereign"
@@ -870,43 +585,28 @@ to let go."""
 [lines.sovereign_falls_after]
 speaker = "Narration"
 text = """
-(The throne cracks down the middle.
-Light pours up out of it, then out
-of the walls, then out of the
-floor beneath your feet.
-
-Somewhere far below, a bell that
-has not rung in a hundred years
-rings once.)"""
+(The throne cracks. Light pours
+out of the walls, and far below,
+an old bell rings once.)"""
 
 # --- The Rebirth Isles -------------------------------------------------------
 
 [lines.isles_sea_gate]
 text = """
-(Salt wind blows through a crack
-in the west wall. Beyond it, a
-stair runs down to the sea.)
-"""
+(Salt wind blows from the west.)"""
 
 [lines.isles_beach_intro]
 text = """
-(White sand, a ruined jetty and
-the sound of surf. The tower is
-nowhere to be seen behind you.)
-"""
+(White sand, surf.
+The tower is gone.)"""
 
 [lines.isles_ferry_hello]
 speaker = "Ferrywoman Maro"
 text = """
-You came down the old sea stair?
-Then the tower let you go. Good.
-
 These are the Rebirth Isles. The
-Mist sat on them longest of all.
+village is up over the dunes.
 
-The village is up over the dunes.
-Tell the elder Maro sent you.
-"""
+Tell the elder Maro sent you."""
 
 [lines.isles_ferry_active]
 speaker = "Ferrywoman Maro"
@@ -943,13 +643,11 @@ remember.
 [lines.isles_elder_thorns]
 speaker = "Elder Tolva"
 text = """
-Our path inland is lost under the
-Thornwood. Wasps nest in the old
-ruins, and something rules them.
+The Thornwood swallowed our path
+east, and a hive queen rules it.
 
-The hermit at the ruins' gate has
-watched it grow. Will you go?
-"""
+The hermit at the ruins knows
+more. Will you go?"""
 
 [lines.isles_elder_thorns_active]
 speaker = "Elder Tolva"
@@ -961,12 +659,8 @@ lodge, to the east.
 [lines.isles_fisher_offer]
 speaker = "Fisher Dunn"
 text = """
-Every net torn to rags by dawn.
-It's the reef beasts - they wade
-right up onto the sand at night.
-
-Thin them out for me, would you?
-"""
+Reef beasts shred my nets every
+night. Thin them out for me?"""
 
 [lines.isles_fisher_active]
 speaker = "Fisher Dunn"
@@ -1019,16 +713,13 @@ Then it rolled into the sea.
 
 [lines.isles_thornwood_intro]
 text = """
-(Thorns close overhead. Somewhere
-ahead, a deep, steady humming.)
-"""
+(Thorns close overhead.
+Something hums.)"""
 
 [lines.isles_ruins_intro]
 text = """
-(Old stones under the vines - a
-gate, and a hive grown through
-it like a second wall.)
-"""
+(A gate, grown through
+with a hive.)"""
 
 [lines.isles_hermit_hello]
 speaker = "Hermit Ost"
@@ -1055,10 +746,8 @@ there has waited a long time.
 
 [lines.isles_grotto_intro]
 text = """
-(Water drips in the dark. Light
-moves on the walls, as if the
-cave were breathing.)
-"""
+(Water drips. The cave
+breathes.)"""
 
 [lines.isles_pearl_done]
 speaker = "The Pearl"
@@ -1079,8 +768,8 @@ grotto, and the water glows.)
 
 [lines.isles_queen_rage]
 text = """
-The hive shrieks!
-"""
+Quiet. The queen sleeps
+in the gate."""
 
 # --- Boss beats (cutscenes.toml `*_intro` / `*_fallen`) ----------------------
 # Each floor keeper is announced by a title banner as the fight is called,

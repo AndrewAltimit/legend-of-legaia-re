@@ -1,7 +1,10 @@
 # Legend of Legaia: Rebirth - quests and challenges.
 #
 # The main chain climbs the Tower of Rebirth floor by floor; side quests
-# hang off the floors' NPCs. Every NPC here is a talk zone on a pack map
+# hang off the floors' NPCs. Dialogue is kept for what the player asks for
+# and for story beats: a quest that starts or completes on its own (an
+# auto-started quest, a count or a floor reached in the field) says nothing,
+# and its quest toast and Journal entry carry it. Every NPC here is a talk zone on a pack map
 # (`[[triggers]] event = { kind = "talk", npc = ... }`), so "talking to"
 # the Warden's Stone or the 2F brazier is stepping up to it. Pack flags
 # and counters are the pack's own and never touch a retail story flag.
@@ -66,7 +69,6 @@ title = "The Hanging Garden"
 description = "The third floor's sundial counts out a trial of four waves. Outlast the garden."
 auto_start = true
 prerequisites = { quests = ["ember_stair"] }
-start_dialog = "garden_hint"
 objectives = [
     { kind = "defeat_formation", formation = "garden_gauntlet", text = "Clear the Garden Gauntlet" },
 ]
@@ -154,7 +156,6 @@ description = "The throne is empty. Warden Ysolde asks one last thing: reach the
 auto_start = true
 # After the ending cutscene, not under it.
 prerequisites = { quests = ["tower_sovereign"], flags = ["throne_broken"] }
-start_dialog = "guide_rebirth"
 objectives = [
     { kind = "reach_level", level = 99, text = "Reach level 99" },
     { kind = "counter", counter = "bosses_felled", at_least = 5, text = "Fell the tower's five keepers" },
@@ -195,7 +196,6 @@ objectives = [
     { kind = "enter_scene", scene = "rebirth_tower_7f", text = "The Sanctum of Echoes" },
     { kind = "enter_scene", scene = "rebirth_tower_8f", text = "The Hollow Throne" },
 ]
-complete_dialog = "every_floor_done"
 rewards = { gold = 20000, items = [{ item = "mist_lantern" }], cards = ["sky-sovereign"] }
 
 [[quests]]
@@ -248,7 +248,6 @@ start_dialog = "sentinel_hunt_start"
 objectives = [
     { kind = "defeat_monster", monster = 129, count = 8, text = "Win eight fights against Brass Sentinels" },
 ]
-complete_dialog = "sentinel_hunt_done"
 rewards = { gold = 40000, items = [{ item = 131, count = 2 }], counters = [{ counter = "bounties" }] }
 repeat = { repeatable = true, cooldown_seconds = 3600 }
 
@@ -286,7 +285,6 @@ prerequisites = { flags = ["tower_open"] }
 objectives = [
     { kind = "counter", counter = "bounties", at_least = 4, text = "Complete four tower bounties" },
 ]
-complete_dialog = "bounty_board_done"
 rewards = { gold = 60000, items = [{ item = 0x86, count = 2 }] }
 
 [[quests]]
@@ -298,7 +296,6 @@ prerequisites = { flags = ["throne_broken"] }
 objectives = [
     { kind = "counter", counter = "echoes_broken", at_least = 5, text = "Break the Echo five times" },
 ]
-complete_dialog = "echo_breaker_done"
 rewards = { xp = 60000, items = [{ item = 0x8E, count = 3 }] }
 
 # --- The keeper's tables (5F) ------------------------------------------------
