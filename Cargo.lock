@@ -3412,6 +3412,7 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-modes",
  "legaia-engine-netplay",
  "legaia-engine-save-state",
  "legaia-engine-scene",

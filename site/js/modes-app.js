@@ -197,6 +197,19 @@
     status(`${info.modes.length} modes from ${info.pack}. Pick one and press Play.`);
   }
 
+  /* The play page's deep link that seats instance `m` in the world, in 3D
+   * (`play.html?expansion=1&lib=<pack>&map=<map>&mode=<id>`): only for an
+   * instance laid out on a map of a pack the play page can open - Rebirth,
+   * built in, or one installed in the browser's pack library. */
+  function play3d(m) {
+    const rules = $('gm-rules').value;
+    const lib = rules === 'rebirth' ? 'rebirth' : (rules.startsWith('lib:') ? rules.slice(4) : '');
+    if (!m.map || !lib) return '';
+    const href = 'play.html?expansion=1&lib=' + encodeURIComponent(lib)
+      + '&map=' + encodeURIComponent(m.map) + '&mode=' + encodeURIComponent(m.id);
+    return `<a class="gm-btn" href="${esc(href)}" title="Open the play page with your disc and play this at its table in the world">Play in 3D</a>`;
+  }
+
   function listModes() {
     modes = JSON.parse(rt.modes_json()).modes || [];
     const host = $('gm-cards');
@@ -208,8 +221,8 @@
         <h3>${esc(m.name)}</h3>
         <p>${esc(h.blurb)}</p>
         <ul>${lines.map((l) => `<li>${controlLine(l)}</li>`).join('')}</ul>
-        ${m.map ? `<p class="gm-map">Laid out on the pack map <code>${esc(m.map)}</code>: walked in the game, drawn top-down here.</p>` : ''}
-        <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play="${esc(m.id)}">Play</button></div>
+        ${m.map ? `<p class="gm-map">Played in 3D at its table or course on the pack map <code>${esc(m.map)}</code>; this page draws it flat, with no disc.</p>` : ''}
+        <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play="${esc(m.id)}">Play</button>${play3d(m)}</div>
       </div>`;
     }).join('');
     host.querySelectorAll('[data-play]').forEach((b) => {

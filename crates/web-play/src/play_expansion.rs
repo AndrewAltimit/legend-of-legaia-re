@@ -41,6 +41,15 @@ fn info_json(pack: Option<&ExpansionPack>, errors: &[String], warnings: &[String
             "min_engine": p.manifest.min_engine,
             "cover": p.manifest.cover,
             "maps": p.maps.iter().map(|(id, m)| json!({ "id": id, "name": m.name })).collect::<Vec<_>>(),
+            // The instances played in the world - at a table or on a
+            // course of one of the pack's maps - for the page's 3D list.
+            "world_modes": legaia_engine_modes::active::entries(&p.modes)
+                .into_iter()
+                .filter_map(|e| {
+                    let (map, _) = legaia_engine_modes::active::instance_map(&p.modes, &e.id)?;
+                    Some(json!({ "id": e.id, "name": e.name, "kind": e.kind.label(), "map": map }))
+                })
+                .collect::<Vec<_>>(),
             "quests": p.quests.quests.len(),
             "challenges": p.quests.challenges.len(),
         })

@@ -32,6 +32,7 @@
   padding: 0.4rem 0.85rem; font-family: var(--font-mono); font-size: 0.82rem; cursor: pointer; border-radius: 3px;
 }
 .gm-btn:hover:not([disabled]) { border-color: var(--accent); }
+a.gm-btn { display: inline-block; text-decoration: none; }
 .gm-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
 .gm-btn.gm-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
 kbd.gm-key {
@@ -86,6 +87,13 @@ kbd.gm-key {
     game, mini-golf, checkpoint racing and prop hunt</strong>. Pick one below and play it right
     here. No disc needed: the rules are the port's own, and they run as the same WebAssembly
     the <a href="play.html">play page</a> runs.
+  </p>
+  <p>
+    Here the games are drawn flat. To play them in 3D, at a table in the tower with the cards,
+    chips and players in the world, or on a course laid out on the map, choose
+    <strong>Rebirth</strong> as the rules and press <strong>Play in 3D</strong> on a mode. That
+    opens the play page with your disc, which draws the world. On the play page itself, the same
+    list is under <em>Game modes in 3D</em> in the scene picker once Rebirth is loaded.
   </p>
 </header>
 

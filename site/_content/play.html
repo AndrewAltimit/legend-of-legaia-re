@@ -1255,6 +1255,20 @@ div.play-vis-head { cursor: default; }
             `<span>${window.escapeHtml(m.name || m.id)}</span><span class="play-scene-code">${window.escapeHtml(m.id)}</span></button>`);
         }
       }
+      /* The pack's game modes played in the world: at a table or on a
+       * course of one of its maps, in 3D. The modes page draws the same
+       * games flat without a disc. */
+      const wm = (pickerPack.modes || [])
+        .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f)
+          || (m.kind || '').toLowerCase().includes(f));
+      if (wm.length) {
+        parts.push('<div class="play-scene-group is-pack">Game modes in 3D <span class="play-scene-pack-tag">played at their tables and courses</span></div>');
+        for (const m of wm) {
+          parts.push(
+            `<button class="play-scene-item is-pack" type="button" data-pack-mode="${window.escapeHtml(m.id)}" data-mode-map="${window.escapeHtml(m.map)}">` +
+            `<span>${window.escapeHtml(m.name || m.id)}</span><span class="play-scene-code">${window.escapeHtml(m.kind || '')}</span></button>`);
+        }
+      }
     }
     for (const g of GROUPS) {
       const items = scenes
@@ -1277,7 +1291,8 @@ div.play-vis-head { cursor: default; }
   listEl.addEventListener('click', (e) => {
     const b = e.target.closest('.play-scene-item');
     if (!b) return;
-    if (b.dataset.packMap) expansionEnterMap(b.dataset.packMap, '');
+    if (b.dataset.packMode) expansionEnterMode(b.dataset.packMode, b.dataset.modeMap);
+    else if (b.dataset.packMap) expansionEnterMap(b.dataset.packMap, '');
     else enter(b.dataset.scene);
   });
 
@@ -1411,7 +1426,7 @@ div.play-vis-head { cursor: default; }
   function expansionShow(info) {
     const pack = info && info.pack;
     const ok = !!(info && info.ok && pack);
-    pickerPack = ok ? { name: pack.name || pack.id, maps: pack.maps || [] } : null;
+    pickerPack = ok ? { name: pack.name || pack.id, maps: pack.maps || [], modes: pack.world_modes || [] } : null;
     if (!ok) activePackMap = null;
     renderList(searchEl.value);
     expansionUnloadBtn.disabled = !ok;
@@ -1509,7 +1524,37 @@ div.play-vis-head { cursor: default; }
     }
     /* `&map=<id>` (the workbench's Play here): straight onto that map,
      * at `&spawn=<id>` or its first spawn. */
-    if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
+    /* `&mode=<id>` (the modes page's Play in 3D): seat that game mode at
+     * its table or course, entering `&map` first. */
+    if (expansionBytes && q.get('mode')) expansionEnterMode(q.get('mode'), q.get('map') || '');
+    else if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
+  }
+
+  /* Seat the pack's game mode `id` in the world. The engine walks the
+   * party onto the mode's map itself (`World::pack_mode_wants_map`), but it
+   * needs a running scene to start from: with none, enter `map` first and
+   * seat the mode once the session is up. */
+  function expansionEnterMode(id, map) {
+    if (!runtime || !id) return;
+    const seat = () => {
+      let err = '';
+      try { err = runtime.play_pack_mode_enter(id); } catch (e) { err = 'This page build has no game modes yet.'; }
+      if (err) statusEl.textContent = err;
+      return !err;
+    };
+    let hasScene = false;
+    try { hasScene = JSON.parse(runtime.play_pack_modes_json()).modes.length > 0; } catch (e) { hasScene = false; }
+    if (hasScene && view) { showStage(); seat(); return; }
+    if (map) expansionEnterMap(map, '');
+    let tries = 0;
+    const wait = setInterval(() => {
+      let up = false;
+      try { up = JSON.parse(runtime.play_pack_modes_json()).modes.some(m => m.id === id); } catch (e) { up = false; }
+      if (up) { clearInterval(wait); seat(); } else if (++tries > 240) {
+        clearInterval(wait);
+        statusEl.textContent = 'The game mode did not start: its map never finished loading.';
+      }
+    }, 250);
   }
 
   /* Enter map `id` of the active pack through the page's ordinary entry. */

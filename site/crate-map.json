@@ -2179,7 +2179,8 @@
     "engine-screens",
     "engine-ui",
     "engine-world-views",
-    "web-minigames"
+    "web-minigames",
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
   },
@@ -4681,6 +4682,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-netplay",
     "engine-save-state",
     "engine-scene",
