@@ -133,14 +133,13 @@ fn every_building_on_the_rebirth_maps_blocks_the_player() {
     let measured = measure(&host, &pack);
     assert!(!measured.is_empty());
 
-    // Large props are solid. The Rebirth Isles maps are held to it; the
-    // rest are reported.
+    // Large props are solid, on every map of the pack.
     let open: Vec<(bool, String)> = measured
         .iter()
         .filter(|m| !m.solid && m.large)
         .map(|m| {
             (
-                m.map.starts_with("isles_"),
+                true,
                 format!("{}:{} {:?}", m.map, m.id, hull_extent(&m.hull)),
             )
         })

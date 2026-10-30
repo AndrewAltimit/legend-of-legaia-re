@@ -78,7 +78,7 @@ to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_below" }
 [[triggers]]
 id = "arrival"
 rect = [8, 20, 12, 21]
-event = { kind = "dialog", line = "floor_2f_intro" }
+event = { kind = "toast", line = "floor_2f_intro" }
 once = true
 
 # The brazier between the middle pillars: the Cinder Warden's quest giver.
@@ -86,12 +86,14 @@ once = true
 id = "brazier"
 rect = [9, 12, 11, 13]
 event = { kind = "talk", npc = "ember_brazier" }
+press = true
 
 # Once the Warden has fallen the brazier is only ash.
 [[triggers]]
 id = "brazier_cold"
 rect = [9, 12, 11, 13]
 event = { kind = "dialog", line = "ember_after" }
+press = true
 requires = { bosses = ["cinder_warden"] }
 once = true
 

@@ -98,7 +98,7 @@ to = { kind = "map", map = "rebirth_tower_8f", spawn = "from_below" }
 [[triggers]]
 id = "arrival"
 rect = [12, 4, 20, 4]
-event = { kind = "dialog", line = "floor_7f_intro" }
+event = { kind = "toast", line = "floor_7f_intro" }
 once = true
 
 # The foot of the heart, inside the sanctum's door: the Azure Seraph's
@@ -107,11 +107,13 @@ once = true
 id = "inner_hall"
 rect = [15, 16, 17, 16]
 event = { kind = "talk", npc = "sanctum_echo" }
+press = true
 
 [[triggers]]
 id = "inner_hall_silent"
 rect = [15, 16, 17, 16]
 event = { kind = "dialog", line = "seraph_after" }
+press = true
 requires = { bosses = ["azure_seraph"] }
 once = true
 

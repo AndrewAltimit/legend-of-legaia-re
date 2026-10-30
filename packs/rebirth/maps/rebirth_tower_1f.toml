@@ -129,6 +129,7 @@ rect = [0, 6, 0, 6]
 to = { kind = "map", map = "isles_beach", spawn = "sea_stair" }
 requires = { flags = ["tower_heard"] }
 locked_line = "isles_sea_gate"
+locked_toast = true
 
 # The stair up is the seal Ysolde lifts: shut until the Warden's Trial.
 [[exits]]
@@ -137,6 +138,7 @@ rect = [7, 0, 7, 0]
 to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_below" }
 requires = { flags = ["tower_open"] }
 locked_line = "stair_sealed"
+locked_toast = true
 
 # Stepping onto the dais wakes the floor's guardian - once, ever, and only
 # once the seal is lifted (a party fresh from Rim Elm meets the Warden
@@ -148,13 +150,6 @@ event = { kind = "battle", formation = "forge_guard" }
 once = true
 requires = { flags = ["tower_open"] }
 
-# Inside the entrance the Warden's voice first reaches the party: this
-# counts as talking to the guide (`tower_guide`) for `tower_rumour`.
-[[triggers]]
-id = "entrance_guide"
-rect = [6, 9, 8, 9]
-event = { kind = "talk", npc = "tower_guide" }
-once = true
 
 # The card dealer keeps a stall against the Hall of Trials' south wall:
 # step up to its counter to buy boosters or sell cards (`cards.toml`
@@ -171,6 +166,7 @@ event = { kind = "card_dealer", dealer = "tower" }
 id = "warden_stone"
 rect = [7, 8, 7, 8]
 event = { kind = "talk", npc = "tower_guide" }
+press = true
 
 # The bell in the Hall of Trials' niche offers the training gauntlet, as
 # often as wanted: the tile under it, at the top of the niche, is a dead
@@ -179,6 +175,7 @@ event = { kind = "talk", npc = "tower_guide" }
 id = "gauntlet_bell"
 rect = [23, 1, 23, 1]
 event = { kind = "dialog", line = "gauntlet_offer" }
+press = true
 
 # The trial obelisk in the middle of the Hall of Trials arms the Bare
 # Hands challenge once the Warden's Trial is done: step up to its south
@@ -187,6 +184,7 @@ event = { kind = "dialog", line = "gauntlet_offer" }
 id = "trial_stone"
 rect = [23, 7, 23, 7]
 event = { kind = "dialog", line = "challenge_board" }
+press = true
 requires = { quests = ["tower_trial"] }
 
 # The landing by the stair down is a rest point: the party recovers, and

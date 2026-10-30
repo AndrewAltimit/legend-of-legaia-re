@@ -74,6 +74,7 @@ to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_below" }
 id = "sundial"
 rect = [10, 12, 15, 13]
 event = { kind = "dialog", line = "sundial_offer" }
+press = true
 
 [[encounters]]
 id = "west_terrace"
@@ -191,6 +192,9 @@ tile = [12, 13]
 # its retail floor steps included), so the plinth stands at 0.
 offset = [0, 0, 0]
 scale = 1.7
+# The plinth is a thing to walk round, not through: it closes the ground
+# its base covers.
+solid = true
 light = { color = [255, 230, 170], radius = 520, height = 100, flicker = 0.05, period = 80 }
 
 [[props]]

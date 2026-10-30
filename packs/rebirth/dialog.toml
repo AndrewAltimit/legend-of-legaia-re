@@ -106,7 +106,7 @@ text = "It will not be held. It will not!"
 [lines.floor_2f_intro]
 speaker = "Warden Ysolde"
 text = """
-The Ember Stair.
+Ember Stair.
 Its keeper wakes at Lv 50."""
 
 [lines.floor_3f_intro]
@@ -130,13 +130,13 @@ No beast hunts here."""
 [lines.floor_6f_intro]
 speaker = "Warden Ysolde"
 text = """
-The Engine Deep.
+Engine Deep.
 Its master waits: Lv 70."""
 
 [lines.floor_7f_intro]
 speaker = "Warden Ysolde"
 text = """
-The Sanctum of Echoes.
+Sanctum of Echoes.
 It sings at Lv 80."""
 
 [lines.floor_8f_intro]

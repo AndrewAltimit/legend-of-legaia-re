@@ -115,7 +115,7 @@ to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_below" }
 [[triggers]]
 id = "arrival"
 rect = [12, 24, 20, 25]
-event = { kind = "dialog", line = "floor_4f_intro" }
+event = { kind = "toast", line = "floor_4f_intro" }
 once = true
 
 # The sunken court: the Verdant Colossus's quest giver.
@@ -123,11 +123,13 @@ once = true
 id = "sunken_court"
 rect = [14, 15, 18, 15]
 event = { kind = "talk", npc = "vault_heart" }
+press = true
 
 [[triggers]]
 id = "sunken_court_still"
 rect = [14, 15, 18, 15]
 event = { kind = "dialog", line = "vault_after" }
+press = true
 requires = { bosses = ["verdant_colossus"] }
 once = true
 

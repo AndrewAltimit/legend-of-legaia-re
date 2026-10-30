@@ -95,7 +95,7 @@ to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_above" }
 [[triggers]]
 id = "arrival"
 rect = [10, 2, 20, 3]
-event = { kind = "dialog", line = "floor_8f_intro" }
+event = { kind = "toast", line = "floor_8f_intro" }
 once = true
 
 # The foot of the dais, once the Sanctum is silent and while the Sovereign
@@ -113,6 +113,7 @@ requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"]
 id = "throne"
 rect = [13, 32, 17, 33]
 event = { kind = "talk", npc = "hollow_throne" }
+press = true
 
 # The nave rolls the throne's honour guard (`battle.toml`, `scene =
 # "tower_8f"`): the top table for the last levels. The chapels are quiet.

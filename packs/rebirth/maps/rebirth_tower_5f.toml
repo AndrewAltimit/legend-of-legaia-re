@@ -70,6 +70,7 @@ to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_below" }
 id = "keeper"
 rect = [5, 4, 6, 5]
 event = { kind = "talk", npc = "rest_keeper" }
+press = true
 
 # The notice board by the west wall lists the tables: read once, on the
 # first walk past it.
@@ -77,6 +78,7 @@ event = { kind = "talk", npc = "rest_keeper" }
 id = "table_board"
 rect = [1, 4, 1, 6]
 event = { kind = "dialog", line = "rest_board" }
+press = true
 once = true
 
 # The keeper's tables open once he has welcomed the party: the card room
@@ -85,12 +87,14 @@ once = true
 id = "card_room"
 rect = [4, 8, 5, 8]
 event = { kind = "dialog", line = "rest_cards" }
+press = true
 requires = { flags = ["rest_open"] }
 
 [[triggers]]
 id = "games_room"
 rect = [9, 8, 10, 8]
 event = { kind = "dialog", line = "rest_games" }
+press = true
 requires = { flags = ["rest_open"] }
 
 # The High Table's empty seat: sitting down deals in.

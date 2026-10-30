@@ -102,7 +102,7 @@ to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_below" }
 [[triggers]]
 id = "arrival"
 rect = [13, 3, 21, 3]
-event = { kind = "dialog", line = "floor_6f_intro" }
+event = { kind = "toast", line = "floor_6f_intro" }
 once = true
 
 # The foot of the Regent's step, on his dais.
@@ -110,6 +110,7 @@ once = true
 id = "regent_alcove"
 rect = [17, 31, 17, 31]
 event = { kind = "talk", npc = "regent_seat" }
+press = true
 
 # The Regent's challenge: offered while he stands, so a won fight is not
 # offered again while the gauntlet is still to clear.
@@ -117,12 +118,14 @@ event = { kind = "talk", npc = "regent_seat" }
 id = "regent_challenge"
 rect = [17, 31, 17, 31]
 event = { kind = "dialog", line = "regent_offer" }
+press = true
 requires = { quests = ["gamblers_rest"], min_level = 70, bosses_unbeaten = ["iron_regent"] }
 
 [[triggers]]
 id = "regent_seat_cold"
 rect = [17, 31, 17, 31]
 event = { kind = "dialog", line = "regent_after" }
+press = true
 requires = { bosses = ["iron_regent"] }
 once = true
 
@@ -131,6 +134,7 @@ once = true
 id = "gauntlet_lever"
 rect = [2, 18, 2, 18]
 event = { kind = "dialog", line = "engine_offer" }
+press = true
 
 [[encounters]]
 id = "west_track"
@@ -149,7 +153,8 @@ table = "tower_6f"
 
 # ---------------------------------------------------------------------------
 # The Regent's end: the fortress's flywheels (`chitei2` mesh 31) turn on
-# their plinths either side of the dais, red banners hang over his step, and
+# their plinths either side of the dais, edge-on to the hall and solid (the
+# plinth and the wheel's run along it close the floor under them), red banners hang over his step, and
 # the dais is lit warm against the cold hall.
 # ---------------------------------------------------------------------------
 
@@ -158,7 +163,9 @@ id = "flywheel_w"
 mesh = { object = 31 }
 tile = [12, 30]
 offset = [0, 150, 0]
+rotation = [0.0, 90.0, 0.0]
 scale = 1.4
+solid = true
 animate = [{ kind = "spin", period = 240 }]
 light = { color = [255, 170, 90], radius = 640, height = 0, flicker = 0.3, period = 9 }
 
@@ -167,7 +174,9 @@ id = "flywheel_e"
 mesh = { object = 31 }
 tile = [22, 30]
 offset = [0, 150, 0]
+rotation = [0.0, 90.0, 0.0]
 scale = 1.4
+solid = true
 animate = [{ kind = "spin", period = -240 }]
 light = { color = [255, 170, 90], radius = 640, height = 0, flicker = 0.3, period = 11 }
 
@@ -196,41 +205,46 @@ scale = 1.6
 animate = [{ kind = "spin", axis = "z", period = 300 }]
 light = { color = [255, 200, 120], radius = 700, height = 0, flicker = 0.35, period = 7 }
 
-# Cogs turn on the hall's side walls above the walkways, two a side.
+# Cogs turn set into the hall's side walls above the walkways, two a side:
+# solid, their footprint inside the wall they turn in.
 [[props]]
 id = "cog_nw"
 mesh = { asset = "models/cog.glb" }
 tile = [7, 10]
-offset = [-60, 200, 0]
+offset = [-110, 200, 0]
 rotation = [0.0, 0.0, 90.0]
 scale = 1.2
+solid = true
 animate = [{ kind = "spin", axis = "x", period = 300 }]
 
 [[props]]
 id = "cog_ne"
 mesh = { asset = "models/cog.glb" }
 tile = [27, 10]
-offset = [60, 200, 0]
+offset = [110, 200, 0]
 rotation = [0.0, 0.0, 90.0]
 scale = 1.2
+solid = true
 animate = [{ kind = "spin", axis = "x", period = -300 }]
 
 [[props]]
 id = "cog_sw"
 mesh = { asset = "models/cog.glb" }
 tile = [7, 28]
-offset = [-60, 200, 0]
+offset = [-110, 200, 0]
 rotation = [0.0, 0.0, 90.0]
 scale = 1.2
+solid = true
 animate = [{ kind = "spin", axis = "x", period = -260 }]
 
 [[props]]
 id = "cog_se"
 mesh = { asset = "models/cog.glb" }
 tile = [27, 28]
-offset = [60, 200, 0]
+offset = [110, 200, 0]
 rotation = [0.0, 0.0, 90.0]
 scale = 1.2
+solid = true
 animate = [{ kind = "spin", axis = "x", period = 260 }]
 
 # The control room: the gauntlet lever's housing glows blue, sparks

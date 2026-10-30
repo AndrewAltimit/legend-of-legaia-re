@@ -1,12 +1,14 @@
-//! Disc-gated: every solid thing on every Rebirth floor stops the party.
+//! Disc-gated: every solid thing on every Rebirth tower floor stops the
+//! party.
 //!
 //! A pack prop carries no collision box of its own (`solid` closes its
 //! tile), and a free-standing pier is a fully walled tile with open floor
 //! either side: both are things a player sees and expects to bump into. For
 //! each, the walk starts two tiles to its north on open floor and holds the
 //! pad toward it (`Up` walks south, `+Z`); the party must stop at the tile's
-//! north face. A walk a trigger or a fight cuts short proves nothing, so it
-//! is counted apart rather than passed. Skips when `LEGAIA_DISC_BIN` is
+//! north face or skid round it (retail's wall-slide resolver); standing
+//! inside the tile's span is the failure. A walk a trigger or a fight cuts
+//! short proves nothing, so it is counted apart rather than passed. Skips when `LEGAIA_DISC_BIN` is
 //! unset.
 
 use std::sync::Arc;
@@ -89,7 +91,12 @@ fn every_solid_prop_and_pier_on_the_rebirth_floors_blocks_the_walk() {
     }
     let (mut blocked, mut inconclusive) = (0usize, Vec::new());
     let mut walked_through = Vec::new();
-    for (id, def) in &pack.maps {
+    // The tower floors: the isles maps are held by `expansion_solid_props_disc`.
+    for (id, def) in pack
+        .maps
+        .iter()
+        .filter(|(id, _)| id.starts_with("rebirth_tower_"))
+    {
         let grid = def.tile_grid().expect("grid");
         for (what, col, row) in obstacles(def, &grid) {
             let (c, r) = (i32::from(col), i32::from(row));
@@ -136,7 +143,10 @@ fn every_solid_prop_and_pier_on_the_rebirth_floors_blocks_the_walk() {
                 // Inside the obstacle's tile, not slid off round its side.
                 let ms = &host.world.actors[0].move_state;
                 let (px, pz) = (i32::from(ms.world_x), i32::from(ms.world_z));
-                if pz > face + 16 && (px - i32::from(x)).abs() < 48 {
+                // The wall-slide resolver skids the party round a lone pier
+                // and back onto its line once past: only a point inside
+                // the tile's own span is a walk through it.
+                if pz > face + 16 && pz < face + 128 - 16 && (px - i32::from(x)).abs() < 48 {
                     through = true;
                     walked_through.push(format!("{label}: reached ({px}, {pz}), face z {face}"));
                     break;
