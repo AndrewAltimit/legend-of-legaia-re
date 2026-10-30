@@ -198,12 +198,12 @@ track = "shot"
 [[cutscenes.sovereign_rises.steps]]
 do = "move"
 actor = "player"
-to = [8, 4]
+to = [15, 30]
 
 [[cutscenes.sovereign_rises.steps]]
 do = "face"
 actor = "player"
-facing = 0
+facing = 4
 
 [[cutscenes.sovereign_rises.steps]]
 do = "join"
@@ -242,12 +242,11 @@ frames = 60
 do = "start_quest"
 quest = "tower_sovereign"
 
-# The shot turns round to look up the carpet from behind the party at the
-# throne, which faces the approach (8F `hollow_throne_seat`).
+# The shot looks up the dais from behind the party at the throne, which
+# faces the approach (8F `hollow_throne_seat`).
 [[cutscenes.sovereign_rises.tracks.shot.steps]]
 do = "camera"
-focus = { tile = [8, 2] }
-yaw = 180.0
+focus = { tile = [15, 33] }
 pitch = -12.0
 zoom = 0.85
 frames = 160
@@ -266,7 +265,7 @@ to = "white"
 
 [[cutscenes.sovereign_falls.steps]]
 do = "camera"
-focus = { tile = [8, 2] }
+focus = { tile = [15, 33] }
 pitch = -8.0
 zoom = 1.1
 
@@ -396,7 +395,7 @@ letterbox = true
 steps = [
     # From the hall, high and back, down into the alcove's mouth: the
     # alcove's own walls would fill a closer shot.
-    { do = "camera", focus = { tile = [8, 13] }, pitch = 22.0, zoom = 1.4, frames = 70 },
+    { do = "camera", focus = { tile = [17, 31] }, pitch = 22.0, zoom = 1.4, frames = 70 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 10, frames = 40 },
     { do = "flash", color = [255, 200, 120], frames = 30 },
@@ -411,7 +410,7 @@ title = "The Engine Is Still"
 map = "rebirth_tower_6f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 13] }, pitch = 18.0, zoom = 1.3, frames = 60 },
+    { do = "camera", focus = { tile = [17, 31] }, pitch = 18.0, zoom = 1.3, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "shake", amplitude = 8, frames = 60 },
     { do = "flash", color = [255, 240, 220], frames = 50 },
@@ -425,7 +424,7 @@ title = "The Azure Seraph"
 map = "rebirth_tower_7f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [11, 10] }, pitch = 14.0, zoom = 0.8, frames = 90 },
+    { do = "camera", focus = { tile = [16, 19] }, pitch = 14.0, zoom = 0.8, frames = 90 },
     { do = "sound", sound = { kind = "sound", id = "chime" } },
     { do = "wait", frames = 30 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
@@ -441,7 +440,7 @@ title = "The Sanctum Falls Silent"
 map = "rebirth_tower_7f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [11, 10] }, pitch = 10.0, zoom = 1.0, frames = 60 },
+    { do = "camera", focus = { tile = [16, 19] }, pitch = 10.0, zoom = 1.0, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [220, 235, 255], frames = 60 },
     { do = "banner", line = "fallen_azure_seraph" },
@@ -457,7 +456,7 @@ title = "The Hollow Sovereign"
 map = "rebirth_tower_8f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -16.0, zoom = 0.7, frames = 60 },
+    { do = "camera", focus = { tile = [15, 33] }, pitch = -16.0, zoom = 0.7, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 20, frames = 60 },
     { do = "flash", color = [200, 30, 30], frames = 40 },
@@ -472,7 +471,7 @@ title = "Echo of the Throne"
 map = "rebirth_tower_8f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -10.0, zoom = 0.8, frames = 50 },
+    { do = "camera", focus = { tile = [15, 33] }, pitch = -10.0, zoom = 0.8, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "chime" } },
     { do = "flash", color = [160, 120, 255], frames = 30 },
     { do = "banner", line = "banner_throne_echo" },
@@ -484,7 +483,7 @@ title = "The Echo Fades"
 map = "rebirth_tower_8f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },
+    { do = "camera", focus = { tile = [15, 33] }, pitch = -6.0, zoom = 0.85, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [230, 220, 255], frames = 40 },
     { do = "banner", line = "fallen_throne_echo" },

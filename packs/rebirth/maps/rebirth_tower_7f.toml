@@ -1,152 +1,302 @@
-# Tower of Rebirth, seventh floor: the Sanctum of Echoes. The octagonal
-# vault at the bottom of the retail Sol Tower (`korb3`), kept whole, its
-# ring corridor re-traced tile by tile. The Azure Seraph keeps the inner
-# hall.
+# Tower of Rebirth, seventh floor: the Sanctum of Echoes. Laid out from
+# scratch (`geometry = "none"`) out of the retail Sol Tower vault's
+# (`korb3`) pale stone and blue steel: an octagonal ring corridor runs round
+# a walled inner sanctum, where the Azure Seraph keeps the raised heart. The
+# stair from below opens on a landing at the ring's north point, with a
+# quiet rest alcove off it; four echo shrines stand in the ring's diagonal
+# bays; the stair up leaves from the ring's south point.
+#
+# The follow camera looks south from the north side: the outer ring's north
+# walls and the sanctum's north wall are low, so the camera sees into the
+# rooms over them; the sanctum's south wall is half height, so the camera
+# keeps the party in view walking the south arc behind it.
 
 name = "Tower of Rebirth 7F - Sanctum of Echoes"
-base = { scene = { kind = "scene", name = "korb3" }, geometry = "keep", scenery = true }
+size = [33, 34]
+base = { scene = { kind = "scene", name = "korb3" }, geometry = "none" }
 # Sound-test track 11, "The Profane Realm".
 bgm = { kind = "bgm", id = 11 }
-camera = "default"
+camera = "far"
+# Tier 0 is the ring, tier 1 the sanctum, tier 2 the heart.
+floor_heights = [0, 32, 72]
 
 [tiles]
-origin = [26, 17]
+origin = [20, 20]
 rows = [
-  "    ab.....c.....de",
-  "   ab...ccc#ccc...de",
-  "  ab...fgh###hij...de",
-  " ab...fg.......ij...de",
-  "ab...fg..#k.l#..ij...de",
-  "b...fg..##k.l#j..ij...d",
-  "...fg..#b.....hj..i#...",
-  "..lg..fh.......ij..dk..",
-  "..#..#k..a###e..ij..#..",
-  "..ih.ih..#   #..##.hg..",
-  ".........#   #..##.....",
-  "..ac.ac..#   #..##.ce..",
-  "..#..le..i# #g..ab..#..",
-  "..le..de..ihg..ab..a#..",
-  "...#e..#e.....ab..a#...",
-  "j...de.##e###ab..ab...f",
-  "ij...d#######b..ab...fg",
-  " ij...# h......ab...fg",
-  "  ij..# e.###.ab...fg",
-  "   i####hhh#hhh...fg",
-  "      #g...h.....fg",
-  "      j.........fg",
+  "            ____>____ ______     ",
+  "           #,,,,,,,,,#rrrrrr#    ",
+  "           #,,,,,,,,,rrrrrrr#    ",
+  "           #,,,,,,,,,rrrrrrr#    ",
+  "           #,,,,,,,,,#rrrrrr#    ",
+  "      ______,,,,,,,,,########    ",
+  "     __...................__     ",
+  "    __.....................__    ",
+  "   __.......................__   ",
+  "  __.........................__  ",
+  " __..s.....................s..__ ",
+  "__.............................__",
+  "_.........iiiii:::iiiii........._",
+  "#........ii:::::::::::ii........#",
+  "#.......ii:::::::::::::ii.......#",
+  "#......ii:::::::::::::::ii......#",
+  "#......i:::o:::::::::o:::i......#",
+  "#......i:::::::AAA:::::::i......#",
+  "#......i::::::AAAAA::::::i......#",
+  "#......I::::::AAAAA::::::I......#",
+  "#......I::::::AAAAA::::::I......#",
+  "#......I:::::::AAA:::::::I......#",
+  "#......I:::o:::::::::o:::I......#",
+  "#......II:::::::::::::::II......#",
+  "#.......II:::::::::::::II.......#",
+  "#........II:::::::::::II........#",
+  "#.........IIIIIIIIIIIII.........#",
+  "##.............................##",
+  " ##..s.....................s..## ",
+  "  ##.........................##  ",
+  "   ##.......................##   ",
+  "    ##.....................##    ",
+  "     ##...................##     ",
+  "      #######%%%<%%%#######      ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
-"." = { label = "floor" }
-"a" = { label = "wall corner", walls = ["br"] }
-"b" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
-"c" = { label = "wall edge", walls = ["bl", "br"] }
-"d" = { label = "wall nook", walls = ["tl", "tr", "br"] }
-"e" = { label = "wall corner", walls = ["bl"] }
-"f" = { label = "wall nook", walls = ["tr", "bl", "br"] }
-"g" = { label = "wall corner", walls = ["tl"] }
-"h" = { label = "wall edge", walls = ["tl", "tr"] }
-"i" = { label = "wall corner", walls = ["tr"] }
-"j" = { label = "wall nook", walls = ["tl", "bl", "br"] }
-"k" = { label = "wall edge", walls = ["tl", "bl"] }
-"l" = { label = "wall edge", walls = ["tr", "br"] }
+"#" = { label = "outer wall", walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30976, tile = 30 } }
+"_" = { label = "outer parapet", walls = "all", wall = { kind = "box", height = 64, tpage = 8, clut = 30976, tile = 38 } }
+"%" = { label = "outer wall (stair)", walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30976, tile = 30 } }
+"i" = { label = "sanctum parapet", height = 1, walls = "all", wall = { kind = "box", height = 48, tpage = 8, clut = 30849, tile = 42 } }
+"I" = { label = "sanctum wall", height = 1, walls = "all", wall = { kind = "box", height = 160, tpage = 8, clut = 30849, tile = 42 } }
+"." = { label = "ring floor (steel)", ground = { kind = "texture", tpage = 8, clut = 30976, tile = 39 } }
+":" = { label = "sanctum floor", height = 1, ground = { kind = "texture", tpage = 23, clut = 31681, tile = 4 } }
+"A" = { label = "the heart", height = 2, ground = { kind = "texture", tpage = 8, clut = 30979, tile = 60 } }
+"," = { label = "landing planks", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
+"r" = { label = "rest alcove", ground = { kind = "texture", tpage = 8, clut = 30850, tile = 4 } }
+# Echo shrines and the sanctum's obelisk bases: solid.
+"s" = { label = "echo shrine", walls = "all", wall = { kind = "box", height = 40, tpage = 8, clut = 30849, tile = 42 } }
+"o" = { label = "obelisk base", height = 1, walls = "all", ground = { kind = "texture", tpage = 23, clut = 31681, tile = 4 } }
+">" = { label = "stair down", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
+"<" = { label = "stair up", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
 
 [[spawns]]
 id = "from_below"
-tile = [9, 20]
+tile = [16, 2]
 facing = 4
 
 [[spawns]]
 id = "from_above"
-tile = [7, 1]
+tile = [16, 31]
 
 [[exits]]
 id = "stair_down"
-rect = [9, 21, 13, 21]
+rect = [16, 0, 16, 0]
 to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
-rect = [6, 0, 10, 0]
+rect = [16, 33, 16, 33]
 to = { kind = "map", map = "rebirth_tower_8f", spawn = "from_below" }
 
 [[triggers]]
 id = "arrival"
-rect = [12, 20, 16, 20]
+rect = [12, 4, 20, 4]
 event = { kind = "dialog", line = "floor_7f_intro" }
 once = true
 
+# The foot of the heart, inside the sanctum's door: the Azure Seraph's
+# quest giver.
 [[triggers]]
 id = "inner_hall"
-rect = [10, 7, 12, 7]
+rect = [15, 16, 17, 16]
 event = { kind = "talk", npc = "sanctum_echo" }
 
 [[triggers]]
 id = "inner_hall_silent"
-rect = [10, 7, 12, 7]
+rect = [15, 16, 17, 16]
 event = { kind = "dialog", line = "seraph_after" }
 requires = { bosses = ["azure_seraph"] }
 once = true
 
-# A quiet alcove by the stair from below: the last rest point under the
-# throne.
+# The rest alcove off the landing: the last rest point under the throne.
 [[triggers]]
 id = "rest_alcove"
-rect = [15, 19, 17, 19]
+rect = [24, 2, 26, 3]
 event = { kind = "rest", save = true }
 
 [[encounters]]
 id = "north_ring"
-rect = [0, 0, 22, 4]
+rect = [1, 6, 31, 11]
 table = "tower_7f"
 
 [[encounters]]
 id = "west_ring"
-rect = [0, 5, 6, 16]
+rect = [1, 12, 7, 32]
 table = "tower_7f"
 
 [[encounters]]
 id = "east_ring"
-rect = [16, 5, 22, 16]
+rect = [25, 12, 31, 32]
+table = "tower_7f"
+
+[[encounters]]
+id = "south_ring"
+rect = [8, 27, 24, 32]
 table = "tower_7f"
 
 # ---------------------------------------------------------------------------
-# Detail: the Sanctum's echoes. Three crystals circle the inner hall's
-# heart, blue sparks hang in the vault, dust drifts round the ring, and the
-# Sol Tower's own scenery runs (`scenery`).
+# The heart: three crystals circle it and a brass ring turns over it; four
+# dark obelisks banded with blue runes stand at the sanctum's corners.
 # ---------------------------------------------------------------------------
 
 [[props]]
 id = "echo_1"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [11, 10]
-offset = [0, 140, 0]
+tile = [16, 19]
+offset = [0, 150, 0]
 scale = 2.0
-animate = [{ kind = "orbit", radius = 140, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
-light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
+animate = [{ kind = "orbit", radius = 150, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
+light = { color = [120, 170, 255], radius = 640, flicker = 0.15, period = 30 }
 
 [[props]]
 id = "echo_2"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [11, 11]
-offset = [0, 140, -128]
+tile = [16, 18]
+offset = [0, 150, 128]
 scale = 2.0
-animate = [{ kind = "orbit", radius = 140, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
-light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
+animate = [{ kind = "orbit", radius = 150, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
+light = { color = [120, 170, 255], radius = 640, flicker = 0.15, period = 30 }
 
 [[props]]
 id = "echo_3"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [10, 10]
-offset = [128, 140, 0]
+tile = [16, 20]
+offset = [0, 150, -128]
 scale = 2.0
-animate = [{ kind = "orbit", radius = 140, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
-light = { color = [120, 170, 255], radius = 950, flicker = 0.15, period = 30 }
+animate = [{ kind = "orbit", radius = 150, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
+light = { color = [120, 170, 255], radius = 640, flicker = 0.15, period = 30 }
+
+[[props]]
+id = "heart_ring"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [15, 19]
+offset = [128, 280, 0]
+scale = 1.8
+animate = [{ kind = "spin", axis = "y", period = 720 }, { kind = "sway", axis = "z", degrees = 18.0, period = 360 }]
+
+[[props]]
+id = "obelisk_nw"
+mesh = { asset = "models/obelisk.glb" }
+tile = [11, 16]
+scale = 1.3
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 60 }
+
+[[props]]
+id = "obelisk_ne"
+mesh = { asset = "models/obelisk.glb" }
+tile = [21, 16]
+scale = 1.3
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 64 }
+
+[[props]]
+id = "obelisk_sw"
+mesh = { asset = "models/obelisk.glb" }
+tile = [11, 22]
+scale = 1.3
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 58 }
+
+[[props]]
+id = "obelisk_se"
+mesh = { asset = "models/obelisk.glb" }
+tile = [21, 22]
+scale = 1.3
+solid = true
+light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 62 }
+
+# ---------------------------------------------------------------------------
+# The echo shrines: in each of the ring's diagonal bays a crystal hangs over
+# a walled plinth, humming, and sparks of its light drift down the ring.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "shrine_nw"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [5, 10]
+offset = [0, 110, 0]
+scale = 1.2
+animate = [{ kind = "spin", period = 240 }, { kind = "bob", amplitude = 10, period = 120 }]
+light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, period = 37 }
+
+[[props]]
+id = "shrine_ne"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [27, 10]
+offset = [0, 110, 0]
+scale = 1.2
+animate = [{ kind = "spin", period = -240 }, { kind = "bob", amplitude = 10, period = 120, phase = 0.25 }]
+light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, period = 41 }
+
+[[props]]
+id = "shrine_sw"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [5, 28]
+offset = [0, 110, 0]
+scale = 1.2
+animate = [{ kind = "spin", period = -240 }, { kind = "bob", amplitude = 10, period = 120, phase = 0.5 }]
+light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, period = 39 }
+
+[[props]]
+id = "shrine_se"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [27, 28]
+offset = [0, 110, 0]
+scale = 1.2
+animate = [{ kind = "spin", period = 240 }, { kind = "bob", amplitude = 10, period = 120, phase = 0.75 }]
+light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, period = 43 }
+
+# The landing: braziers flank the stair down, a lantern hangs over the rest
+# alcove, and a pair of braziers stands at the stair up, the warm lights
+# either end of a cold floor.
+[[props]]
+id = "brazier_stair_down_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [14, 1]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 11 }
+
+[[props]]
+id = "brazier_stair_down_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [18, 1]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 13 }
+
+[[props]]
+id = "brazier_stair_up_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [14, 31]
+solid = true
+light = { color = [255, 150, 70], radius = 520, height = 140, flicker = 0.35, period = 9 }
+
+[[props]]
+id = "brazier_stair_up_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [18, 31]
+solid = true
+light = { color = [255, 150, 70], radius = 520, height = 140, flicker = 0.35, period = 12 }
+
+[[props]]
+id = "rest_lantern"
+mesh = { asset = "models/lantern.glb" }
+tile = [25, 2]
+offset = [0, 220, 64]
+scale = 1.3
+animate = [{ kind = "sway", axis = "z", degrees = 4.0, period = 180 }]
+light = { color = [255, 190, 120], radius = 460, height = 0, flicker = 0.15, period = 17 }
 
 [[emitters]]
 kind = "sparkles"
-rect = [7, 6, 15, 14]
+rect = [8, 13, 24, 25]
 height = [30, 260]
 count = 48
 color = [130, 170, 255]
@@ -154,122 +304,121 @@ seed = 701
 
 [[emitters]]
 kind = "dust"
-rect = [0, 0, 22, 21]
+rect = [1, 6, 31, 32]
 count = 60
 color = [170, 190, 230]
 seed = 702
 
-[lighting]
-mood = "night"
-lamps = [
-  { id = "heart", tile = [11, 10], offset = [0, 120, 0], color = [100, 150, 255], radius = 1000, flicker = 0.1, period = 45 },
-  # The rest alcove keeps a warm candle: the one safe light on the floor.
-  { id = "rest_candle", tile = [16, 19], offset = [0, 90, 0], color = [255, 190, 120], radius = 420, flicker = 0.2, period = 17 },
-]
-
-# Sound: inside the Sanctum's inner ring the floor's music gives way to the
-# tower's echo, the pack's own drone (`audio.toml` `tracks.echo_drone`).
-[audio]
-fade_frames = 90
-
-[[audio.zones]]
-id = "inner_sanctum"
-rect = [9, 6, 15, 13]
-music = { kind = "track", id = "echo_drone" }
-
-# ---------------------------------------------------------------------------
-# The four obelisks: dark stones banded with blue runes stand at the inner
-# hall's corners (`assets/models/obelisk.glb`), each lit from within, and a
-# brass ring turns over the heart where the echoes circle.
-# ---------------------------------------------------------------------------
-
-[[props]]
-id = "obelisk_nw"
-mesh = { asset = "models/obelisk.glb" }
-tile = [8, 7]
-solid = true
-light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 60 }
-
-[[props]]
-id = "obelisk_ne"
-mesh = { asset = "models/obelisk.glb" }
-tile = [14, 7]
-solid = true
-light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 64 }
-
-[[props]]
-id = "obelisk_sw"
-mesh = { asset = "models/obelisk.glb" }
-tile = [9, 14]
-solid = true
-light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 58 }
-
-[[props]]
-id = "obelisk_se"
-mesh = { asset = "models/obelisk.glb" }
-tile = [13, 14]
-solid = true
-light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, period = 62 }
-
-[[props]]
-id = "heart_ring"
-mesh = { asset = "models/armillary_ring.glb" }
-tile = [12, 10]
-offset = [-128, 260, 0]
-scale = 1.8
-animate = [{ kind = "spin", axis = "y", period = 720 }, { kind = "sway", axis = "z", degrees = 18.0, period = 360 }]
-
-# Motes rise off each obelisk's runes.
 [[emitters]]
 kind = "sparkles"
-rect = [8, 7, 8, 7]
-height = [40, 230]
-count = 10
-velocity = [0.0, 0.5, 0.0]
+rect = [4, 9, 6, 11]
+height = [40, 200]
+count = 12
+velocity = [0.0, -0.3, 0.0]
 color = [140, 190, 255]
 seed = 703
 
 [[emitters]]
 kind = "sparkles"
-rect = [14, 7, 14, 7]
-height = [40, 230]
-count = 10
-velocity = [0.0, 0.5, 0.0]
+rect = [26, 9, 28, 11]
+height = [40, 200]
+count = 12
+velocity = [0.0, -0.3, 0.0]
 color = [140, 190, 255]
 seed = 704
 
 [[emitters]]
 kind = "sparkles"
-rect = [9, 14, 9, 14]
-height = [40, 230]
-count = 10
-velocity = [0.0, 0.5, 0.0]
+rect = [4, 27, 6, 29]
+height = [40, 200]
+count = 12
+velocity = [0.0, -0.3, 0.0]
 color = [140, 190, 255]
 seed = 705
 
 [[emitters]]
 kind = "sparkles"
-rect = [13, 14, 13, 14]
-height = [40, 230]
-count = 10
-velocity = [0.0, 0.5, 0.0]
+rect = [26, 27, 28, 29]
+height = [40, 200]
+count = 12
+velocity = [0.0, -0.3, 0.0]
 color = [140, 190, 255]
 seed = 706
 
-# Sound: the ring corridor breathes the tower's drone, faintly, so the
-# walk round to the inner hall is never silent between the music zones.
+[[decals]]
+id = "worn"
+cell = { tpage = 8, clut = 30976, tile = 38 }
+rect = [1, 6, 31, 32]
+on = "."
+density = 0.15
+seed = 7101
+size = [80, 80]
+size_jitter = 0.35
+sides = 8
+jitter = 40
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "heart", tile = [16, 19], offset = [0, 140, 0], color = [100, 150, 255], radius = 800, flicker = 0.1, period = 45 },
+  # The rest alcove keeps a warm candle: the one safe light on the floor.
+  { id = "rest_candle", tile = [25, 3], offset = [0, 90, 0], color = [255, 190, 120], radius = 420, flicker = 0.2, period = 17 },
+  # A cold wash round the ring's south arc and over the landing.
+  { id = "ring_south", tile = [16, 29], offset = [0, 260, 0], color = [140, 160, 230], radius = 900 },
+  { id = "landing", tile = [16, 6], offset = [0, 260, 0], color = [150, 170, 230], radius = 800 },
+]
+
+[fog]
+regions = [{ rect = [8, 13, 24, 25], angle = 0.0, spread = 180.0, speed = 6 }]
+
+# Sound: inside the sanctum the floor's music gives way to the tower's echo,
+# the pack's own drone (`audio.toml` `tracks.echo_drone`).
+[audio]
+fade_frames = 90
+
+[[audio.zones]]
+id = "inner_sanctum"
+rect = [9, 13, 23, 25]
+music = { kind = "track", id = "echo_drone" }
+
+# The ring breathes the drone faintly, from each shrine, so the walk round
+# to the sanctum's door is never silent between the music zones.
 [[audio.ambient]]
-id = "ring_hum_n"
+id = "shrine_nw"
 sound = { kind = "sound", id = "drone" }
-tile = [11, 2]
-radius = 900
-inner = 300
-volume = 0.2
+tile = [5, 10]
+radius = 640
+inner = 128
+volume = 0.25
 
 [[audio.ambient]]
-id = "ring_hum_s"
+id = "shrine_ne"
 sound = { kind = "sound", id = "drone" }
-tile = [11, 18]
-radius = 900
-inner = 300
-volume = 0.2
+tile = [27, 10]
+radius = 640
+inner = 128
+volume = 0.25
+
+[[audio.ambient]]
+id = "shrine_sw"
+sound = { kind = "sound", id = "drone" }
+tile = [5, 28]
+radius = 640
+inner = 128
+volume = 0.25
+
+[[audio.ambient]]
+id = "shrine_se"
+sound = { kind = "sound", id = "drone" }
+tile = [27, 28]
+radius = 640
+inner = 128
+volume = 0.25
+
+[[audio.ambient]]
+id = "stair_braziers"
+sound = { kind = "sound", id = "torch" }
+tile = [16, 31]
+radius = 512
+inner = 96
+volume = 0.45

@@ -1,166 +1,283 @@
-# Tower of Rebirth, sixth floor: the Engine Deep. The oval transport hall
-# of the retail Jette's Fortress (`chitei2`), kept whole. The Iron Regent
-# holds the upper alcove; the lower one starts the Engine Gauntlet, a
-# battle that keeps feeding monsters into every seat that frees.
+# Tower of Rebirth, sixth floor: the Engine Deep. Laid out from scratch
+# (`geometry = "none"`) out of the retail Jette's Fortress (`chitei2`)
+# marble, riveted plate and machinery: a long engine hall whose sunken floor
+# runs between two raised walkways, crossed by two bridges and ringed with
+# railings. Off the walkways' middle, the control room (west), where the
+# lever starts the Engine Gauntlet, and the furnace room (east). The Iron
+# Regent holds the raised dais at the hall's far end, his flywheels turning
+# either side of it; the stair up leaves from the end of the east walkway.
+#
+# The follow camera looks south from the north side: the hall's and the side
+# rooms' north walls are low, so the camera sees in over them.
 
 name = "Tower of Rebirth 6F - Engine Deep"
-base = { scene = { kind = "scene", name = "chitei2" }, geometry = "keep", scenery = true }
+size = [35, 37]
+base = { scene = { kind = "scene", name = "chitei2" }, geometry = "none" }
 # Sound-test track 13, "Bio-Castle".
 bgm = { kind = "bgm", id = 13 }
-camera = "default"
+camera = "far"
+# Tier 0 is the engine floor, tier 1 the walkways, bridges, side rooms and
+# the Regent's dais, tier 2 the Regent's own step.
+floor_heights = [0, 64, 112]
 
 [tiles]
-origin = [42, 7]
+origin = [20, 20]
 rows = [
-  "      #...#",
-  "  #####...#####",
-  " #a...........a#",
-  " b.............c",
-  " d.............e",
-  " #.............#",
-  " #....f###f....#",
-  " #...c#   #b...#",
-  "#b...c     b...c#",
-  "#....#     #....#",
-  "#....# ### #....#",
-  "#....# b.c #....#",
-  "#b...##b.c##...c#",
-  " b....ag.ha....c",
-  " b.............c",
-  " b.............c",
-  " b.............c",
-  " b.............c",
-  " b.............c",
-  " b.............c",
-  " b....fi.jf....c",
-  "#b...##b.c##...c#",
-  "#....# b.c #....#",
-  "#....# ### #....#",
-  "#....#     #....#",
-  "#b...c     b...c#",
-  " #...c#   #b...#",
-  " #....a###a....#",
-  " #.............#",
-  " k.............l",
-  " b.............c",
-  " #f...........f#",
-  "  #####...#####",
-  "      #b.c#",
+  "             ____>____             ",
+  "            #wwwwwwwww#            ",
+  "            #wwwwwwwww#            ",
+  "            #wwwwwwwww#            ",
+  "      _____wwwwwwwwwwwww_____      ",
+  "      #wwww.............wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww...o.....o...wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwwwbbbbbbbbbbbbbwwww#      ",
+  "_______wwwwbbbbbbbbbbbbbwwww_______",
+  "#ccccc#wwww|...........|wwww#ccccc#",
+  "#occcc#wwww|...........|wwww#cccco#",
+  "#ccccccwwww|...........|wwwwcccccc#",
+  "#Lcccccwwww|...........|wwwwcccccF#",
+  "#ccccccwwww|...........|wwwwcccccc#",
+  "#occcccwwww...o.....o...wwwwccccco#",
+  "#ccccc#wwww|...........|wwww#ccccc#",
+  "#ccccc#wwww|...........|wwww#ccccc#",
+  "#######wwww|...........|wwww#######",
+  "      #wwww|...........|wwww#      ",
+  "      #wwwwbbbbbbbbbbbbbwwww#      ",
+  "      #wwwwbbbbbbbbbbbbbwwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww|...........|wwww#      ",
+  "      #wwww|.^^^^^^^^^.|wwww#      ",
+  "      #wwww|o^^^^^^^^^o|wwww#      ",
+  "      #wwww..^^^^^^^^^..wwww#      ",
+  "      #wwww|.^^RRRRR^^.|wwww#      ",
+  "      #wwww|.^^RRRRR^^.|wwww#      ",
+  "      #wwww|.^^RRRRR^^.|wwww#      ",
+  "      #wwww..^^RRRRR^^..wwww#      ",
+  "      ######%%%%%%%%%%%###<##      ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
-"." = { label = "floor" }
-"a" = { label = "wall edge", walls = ["tl", "tr"] }
-"b" = { label = "wall edge", walls = ["tl", "bl"] }
-"c" = { label = "wall edge", walls = ["tr", "br"] }
-"d" = { label = "wall nook", walls = ["tl", "bl", "br"] }
-"e" = { label = "wall nook", walls = ["tr", "bl", "br"] }
-"f" = { label = "wall edge", walls = ["bl", "br"] }
-"g" = { label = "wall corner", walls = ["tl"] }
-"h" = { label = "wall corner", walls = ["tr"] }
-"i" = { label = "wall corner", walls = ["bl"] }
-"j" = { label = "wall corner", walls = ["br"] }
-"k" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
-"l" = { label = "wall nook", walls = ["tl", "tr", "br"] }
+"#" = { label = "wall", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30979, tile = 27 } }
+"%" = { label = "wall (dais)", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30979, tile = 27 } }
+"_" = { label = "parapet", height = 1, walls = "all", wall = { kind = "box", height = 48, tpage = 25, clut = 31174, tile = 6 } }
+"|" = { label = "railing", height = 1, walls = "all", wall = { kind = "box", height = 40, tpage = 25, clut = 31174, tile = 6 } }
+"." = { label = "engine floor", ground = { kind = "texture", tpage = 9, clut = 31110, tile = 19 } }
+"w" = { label = "walkway", height = 1, ground = { kind = "texture", tpage = 25, clut = 31174, tile = 6 } }
+"b" = { label = "bridge", height = 1, ground = { kind = "texture", tpage = 25, clut = 31179, tile = 36 } }
+"c" = { label = "side room", height = 1, ground = { kind = "texture", tpage = 8, clut = 30979, tile = 35 } }
+"^" = { label = "dais", height = 1, ground = { kind = "texture", tpage = 25, clut = 31179, tile = 36 } }
+"R" = { label = "the Regent's step", height = 2, ground = { kind = "texture", tpage = 26, clut = 31300, tile = 6 } }
+# Piers, flywheel plinths and the side rooms' machine cabinets: solid.
+"o" = { label = "pier", walls = "all", wall = { kind = "box", height = 288, tpage = 9, clut = 31176, tile = 3 } }
+"L" = { label = "lever", height = 1, walls = "all", wall = { kind = "box", height = 96, tpage = 25, clut = 31174, tile = 6 } }
+"F" = { label = "furnace", height = 1, walls = "all", wall = { kind = "box", height = 160, tpage = 9, clut = 31176, tile = 3 } }
+">" = { label = "stair down", height = 1, ground = { kind = "texture", tpage = 25, clut = 31174, tile = 6 } }
+"<" = { label = "stair up", height = 1, ground = { kind = "texture", tpage = 25, clut = 31174, tile = 6 } }
 
 [[spawns]]
 id = "from_below"
-tile = [8, 31]
+tile = [17, 2]
 facing = 4
 
 [[spawns]]
 id = "from_above"
-tile = [8, 2]
+tile = [26, 34]
 
 [[exits]]
 id = "stair_down"
-rect = [8, 33, 8, 33]
+rect = [17, 0, 17, 0]
 to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
-rect = [7, 0, 9, 0]
+rect = [26, 36, 26, 36]
 to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_below" }
 
 [[triggers]]
 id = "arrival"
-rect = [6, 28, 10, 30]
+rect = [13, 3, 21, 3]
 event = { kind = "dialog", line = "floor_6f_intro" }
 once = true
 
+# The foot of the Regent's step, on his dais.
 [[triggers]]
 id = "regent_alcove"
-rect = [8, 11, 8, 11]
+rect = [17, 31, 17, 31]
 event = { kind = "talk", npc = "regent_seat" }
 
 # The Regent's challenge: offered while he stands, so a won fight is not
 # offered again while the gauntlet is still to clear.
 [[triggers]]
 id = "regent_challenge"
-rect = [8, 11, 8, 11]
+rect = [17, 31, 17, 31]
 event = { kind = "dialog", line = "regent_offer" }
 requires = { quests = ["gamblers_rest"], min_level = 70, bosses_unbeaten = ["iron_regent"] }
 
 [[triggers]]
 id = "regent_seat_cold"
-rect = [8, 11, 8, 11]
+rect = [17, 31, 17, 31]
 event = { kind = "dialog", line = "regent_after" }
 requires = { bosses = ["iron_regent"] }
 once = true
 
+# The control room's lever: stepping up to it offers the Engine Gauntlet.
 [[triggers]]
 id = "gauntlet_lever"
-rect = [8, 22, 8, 22]
+rect = [2, 18, 2, 18]
 event = { kind = "dialog", line = "engine_offer" }
 
 [[encounters]]
 id = "west_track"
-rect = [1, 2, 5, 27]
+rect = [7, 6, 10, 35]
 table = "tower_6f"
 
 [[encounters]]
 id = "east_track"
-rect = [11, 2, 16, 27]
+rect = [24, 6, 27, 35]
+table = "tower_6f"
+
+[[encounters]]
+id = "engine_floor"
+rect = [12, 6, 22, 24]
 table = "tower_6f"
 
 # ---------------------------------------------------------------------------
-# Detail: the engine runs. Sparks spray from the Regent's alcove and the
-# gauntlet lever, steam rolls along both tracks, the fortress's own
-# machinery turns (`scenery`), and a furnace core burns over the north track. Cold lamps light the hall.
+# The Regent's end: the fortress's flywheels (`chitei2` mesh 31) turn on
+# their plinths either side of the dais, red banners hang over his step, and
+# the dais is lit warm against the cold hall.
 # ---------------------------------------------------------------------------
 
 [[props]]
-id = "flywheel_n"
+id = "flywheel_w"
 mesh = { object = 31 }
-tile = [8, 8]
-offset = [0, 80, 0]
-scale = 2.0
+tile = [12, 30]
+offset = [0, 150, 0]
+scale = 1.4
 animate = [{ kind = "spin", period = 240 }]
-light = { color = [255, 170, 90], radius = 760, height = 80, flicker = 0.3, period = 9 }
+light = { color = [255, 170, 90], radius = 640, height = 0, flicker = 0.3, period = 9 }
 
 [[props]]
-id = "flywheel_s"
+id = "flywheel_e"
 mesh = { object = 31 }
-tile = [8, 25]
-offset = [0, 80, 0]
-scale = 2.0
+tile = [22, 30]
+offset = [0, 150, 0]
+scale = 1.4
 animate = [{ kind = "spin", period = -240 }]
-light = { color = [255, 170, 90], radius = 760, height = 80, flicker = 0.3, period = 11 }
+light = { color = [255, 170, 90], radius = 640, height = 0, flicker = 0.3, period = 11 }
 
-# The furnace core over the north track: the engine's heart, white-hot.
+[[props]]
+id = "regent_banner_w"
+mesh = { asset = "models/banner_red.glb" }
+tile = [15, 35]
+offset = [0, 60, 40]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 140 }]
+
+[[props]]
+id = "regent_banner_e"
+mesh = { asset = "models/banner_red.glb" }
+tile = [19, 35]
+offset = [0, 60, 40]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 150, phase = 0.5 }]
+
+[[props]]
+id = "regent_cog"
+mesh = { asset = "models/cog.glb" }
+tile = [17, 35]
+offset = [0, 220, 40]
+scale = 1.6
+animate = [{ kind = "spin", axis = "z", period = 300 }]
+light = { color = [255, 200, 120], radius = 700, height = 0, flicker = 0.35, period = 7 }
+
+# Cogs turn on the hall's side walls above the walkways, two a side.
+[[props]]
+id = "cog_nw"
+mesh = { asset = "models/cog.glb" }
+tile = [7, 10]
+offset = [-60, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = 300 }]
+
+[[props]]
+id = "cog_ne"
+mesh = { asset = "models/cog.glb" }
+tile = [27, 10]
+offset = [60, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = -300 }]
+
+[[props]]
+id = "cog_sw"
+mesh = { asset = "models/cog.glb" }
+tile = [7, 28]
+offset = [-60, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = -260 }]
+
+[[props]]
+id = "cog_se"
+mesh = { asset = "models/cog.glb" }
+tile = [27, 28]
+offset = [60, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = 260 }]
+
+# The control room: the gauntlet lever's housing glows blue, sparks
+# spraying off it.
+[[props]]
+id = "lever_light"
+mesh = { asset = "models/lantern.glb" }
+tile = [2, 16]
+offset = [0, 220, 64]
+scale = 1.2
+light = { color = [140, 180, 255], radius = 560, height = 0, flicker = 0.4, period = 9 }
+
+# The furnace room: the engine's heart burns white-hot over the furnace.
 [[props]]
 id = "furnace_core"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [9, 9]
-offset = [-64, 160, 0]
+tile = [32, 18]
+offset = [64, 220, 0]
 scale = 2.0
 animate = [{ kind = "spin", period = 140 }, { kind = "pulse", amount = 0.1, period = 30 }]
-light = { color = [255, 150, 60], radius = 1000, height = 0, flicker = 0.35, period = 7 }
+light = { color = [255, 150, 60], radius = 800, height = 0, flicker = 0.35, period = 7 }
+
+# Braziers flank the stair down and the stair up.
+[[props]]
+id = "brazier_stair_down_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [15, 1]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 10 }
+
+[[props]]
+id = "brazier_stair_down_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [19, 1]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 12 }
+
+[[props]]
+id = "brazier_stair_up"
+mesh = { asset = "models/brazier.glb" }
+tile = [27, 35]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 11 }
 
 [[emitters]]
 kind = "embers"
-rect = [7, 11, 9, 12]
+rect = [16, 30, 18, 32]
 height = [20, 80]
 count = 30
 velocity = [0.0, 2.2, 0.0]
@@ -173,8 +290,8 @@ seed = 601
 
 [[emitters]]
 kind = "embers"
-rect = [7, 21, 9, 22]
-height = [20, 80]
+rect = [1, 17, 3, 19]
+height = [40, 120]
 count = 24
 velocity = [0.0, 2.0, 0.0]
 spread = [1.0, 0.7, 1.0]
@@ -186,104 +303,85 @@ seed = 602
 
 [[emitters]]
 kind = "smoke"
-rect = [1, 2, 5, 27]
+rect = [7, 5, 10, 35]
 count = 16
 color = [130, 135, 140]
 seed = 603
 
 [[emitters]]
 kind = "smoke"
-rect = [11, 2, 16, 27]
+rect = [24, 5, 27, 35]
 count = 16
 color = [130, 135, 140]
 seed = 604
 
 [[emitters]]
+kind = "smoke"
+rect = [12, 6, 22, 28]
+height = [0, 20]
+count = 20
+velocity = [0.0, 0.2, 0.0]
+size = [60, 110]
+color = [120, 120, 130]
+color_end = [60, 60, 70]
+seed = 606
+
+[[emitters]]
+kind = "embers"
+rect = [30, 16, 33, 20]
+height = [40, 200]
+count = 30
+velocity = [0.0, 1.8, 0.0]
+color = [255, 220, 140]
+color_end = [255, 80, 20]
+seed = 607
+
+[[emitters]]
 kind = "drips"
-rect = [5, 13, 11, 20]
+rect = [12, 6, 22, 28]
 count = 12
 seed = 605
+
+# The engine floor is patched with cobble and poured stone where the plates
+# have worn through.
+[[decals]]
+id = "patches"
+cell = { tpage = 26, clut = 31305, tile = 37 }
+cells = [{ tpage = 8, clut = 30979, tile = 35 }, { tpage = 9, clut = 31110, tile = 27 }]
+rect = [12, 5, 22, 28]
+on = "."
+density = 0.3
+seed = 6101
+size = [90, 90]
+size_jitter = 0.4
+sides = 6
+jitter = 40
 
 [lighting]
 mood = "night"
 lamps = [
-  { id = "regent", tile = [8, 11], offset = [0, 100, 0], color = [255, 200, 120], radius = 800, flicker = 0.4, period = 7 },
-  { id = "lever", tile = [8, 22], offset = [0, 100, 0], color = [140, 180, 255], radius = 700, flicker = 0.4, period = 9 },
-  # Work lamps along the raised tracks, so the walkways read in the dark.
-  { id = "track_w", tile = [3, 14], offset = [0, 140, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 50 },
-  { id = "track_e", tile = [13, 14], offset = [0, 140, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 53 },
+  { id = "regent", tile = [17, 32], offset = [0, 140, 0], color = [255, 200, 120], radius = 800, flicker = 0.4, period = 7 },
+  { id = "lever", tile = [2, 18], offset = [0, 120, 0], color = [140, 180, 255], radius = 600, flicker = 0.4, period = 9 },
+  # Work lamps along the raised walkways, so they read in the dark.
+  { id = "track_w", tile = [8, 12], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 50 },
+  { id = "track_e", tile = [26, 12], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 53 },
+  { id = "track_w2", tile = [8, 26], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 47 },
+  { id = "track_e2", tile = [26, 26], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 51 },
+  { id = "furnace", tile = [31, 18], offset = [0, 140, 0], color = [255, 140, 60], radius = 640, flicker = 0.35, period = 6 },
 ]
-
-# ---------------------------------------------------------------------------
-# The Regent's banners and the engine's cogs: red banners hang at the
-# alcove's mouth, four iron cogs turn against the hall's walls in mesh
-# (`assets/models/cog.glb`, `banner_red.glb`), and the whole floor hums.
-# ---------------------------------------------------------------------------
-
-[[props]]
-id = "regent_banner_w"
-mesh = { asset = "models/banner_red.glb" }
-tile = [7, 12]
-offset = [0, 40, 0]
-scale = 1.2
-animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 140 }]
-
-[[props]]
-id = "regent_banner_e"
-mesh = { asset = "models/banner_red.glb" }
-tile = [9, 12]
-offset = [0, 40, 0]
-scale = 1.2
-animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 150, phase = 0.5 }]
-
-[[props]]
-id = "cog_nw"
-mesh = { asset = "models/cog.glb" }
-tile = [2, 6]
-offset = [-40, 150, 0]
-rotation = [0.0, 0.0, 90.0]
-scale = 1.2
-animate = [{ kind = "spin", axis = "x", period = 300 }]
-
-[[props]]
-id = "cog_ne"
-mesh = { asset = "models/cog.glb" }
-tile = [14, 6]
-offset = [40, 150, 0]
-rotation = [0.0, 0.0, 90.0]
-scale = 1.2
-animate = [{ kind = "spin", axis = "x", period = -300 }]
-
-[[props]]
-id = "cog_sw"
-mesh = { asset = "models/cog.glb" }
-tile = [2, 27]
-offset = [-40, 150, 0]
-rotation = [0.0, 0.0, 90.0]
-scale = 1.2
-animate = [{ kind = "spin", axis = "x", period = -260 }]
-
-[[props]]
-id = "cog_se"
-mesh = { asset = "models/cog.glb" }
-tile = [14, 27]
-offset = [40, 150, 0]
-rotation = [0.0, 0.0, 90.0]
-scale = 1.2
-animate = [{ kind = "spin", axis = "x", period = 260 }]
 
 [[audio.ambient]]
 id = "engine_north"
 sound = { kind = "sound", id = "engine" }
-tile = [8, 8]
+tile = [17, 10]
 radius = 900
 inner = 200
-volume = 0.55
+volume = 0.5
 
 [[audio.ambient]]
 id = "engine_south"
 sound = { kind = "sound", id = "engine" }
-tile = [8, 25]
+tile = [17, 30]
 radius = 900
 inner = 200
 volume = 0.55
@@ -291,7 +389,7 @@ volume = 0.55
 [[audio.ambient]]
 id = "furnace"
 sound = { kind = "sound", id = "torch" }
-tile = [9, 9]
+tile = [32, 18]
 radius = 600
 inner = 96
 volume = 0.5

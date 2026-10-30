@@ -1,141 +1,383 @@
-# Tower of Rebirth, eighth floor: the Hollow Throne. The pillared throne
-# hall of the retail Zora's Floating Castle (`taiku2`), kept whole. No
-# encounters: the long walk up the carpet is the floor's only fight's
-# build-up. The superboss fights in two waves (battle.toml,
-# `hollow_throne`).
+# Tower of Rebirth, eighth floor: the Hollow Throne. The summit is laid out
+# from scratch (`geometry = "none"`) out of the retail Zora's Floating
+# Castle's (`taiku2`) stone, carpet and carved throne: the stair from below
+# opens on a landing, a narthex runs the width of the tower, and a pillared
+# nave climbs the long red carpet to the throne on its two-step dais at the
+# far end. Off the nave's middle, two chapels: the Hall of Fallen Crowns to
+# the west, its obelisks dark, and the Broken Gallery to the east, its outer
+# wall gone and the wind coming through. No encounters on the landing: the
+# long walk up the carpet is the build-up to the floor's only fight, the
+# superboss in two waves (battle.toml, `hollow_throne`).
+#
+# The follow camera looks south from the north side, so every room's north
+# edge (the side the camera stands on) is a low parapet and its south and
+# side walls stand full height; the throne sits at the south end, ahead of
+# the party all the way up the nave.
 
 name = "Tower of Rebirth 8F - Hollow Throne"
-base = { scene = { kind = "scene", name = "taiku2" }, geometry = "keep", scenery = true }
+size = [31, 36]
+base = { scene = { kind = "scene", name = "taiku2" }, geometry = "none" }
 # Sound-test track 52, "Ominous Presence".
 bgm = { kind = "bgm", id = 52 }
-camera = "default"
+camera = "far"
+# Tier 0 is the hall floor, tier 1 the dais and the chapels, tier 2 the
+# throne's own step. Tiers are corner heights, so each raised block's edge
+# cells are its steps.
+floor_heights = [0, 40, 80]
 
 [tiles]
-origin = [46, 3]
+origin = [20, 20]
 rows = [
-  "    ###...###",
-  "  #cd.......ef#",
-  " #c...........f#",
-  "#c.............fi",
-  "#...............#",
-  "#j.#.........#.h#",
-  "#...............#",
-  "#.#...........#.#",
-  "#...............#",
-  "#j.#.........#.h#",
-  "#...............#",
-  "#.#...........#.#",
-  "#...............#",
-  "#j.#.........#.h#",
-  "#...............#",
-  "#.#....k.g....#.#",
-  "#....c.h.j.f....#",
-  "###...kc.fg...###",
-  "  #..bc...fi..#",
-  "  ###l..a..l###",
-  "  #.....#.....#",
-  "  #...#...#...#",
-  "  #...........#",
-  "  ##.........##",
-  "   ##.#...#.##",
-  "    #a##.##a#",
-  "       #a#",
+  "         ______>______         ",
+  "         #....===....#         ",
+  "         #....===....#         ",
+  "         #....===....#         ",
+  "         #....===....#         ",
+  "__________....===....__________",
+  "#.............===.............#",
+  "#.............===.............#",
+  "#.............===.............#",
+  "#.............===.............#",
+  "____________O.===.O____________",
+  "      #.......===.......#      ",
+  "      #.......===.......#      ",
+  "_______....o..===..o...._______",
+  "#:::::#.......===.......#:::::_",
+  "#:::::#.......===.......#:::::_",
+  "#:::::#....o..===..o....#:::::_",
+  "#:::::........===........:::::_",
+  "#:::::........===........:::::_",
+  "#:::::.....o..===..o.....:::::_",
+  "#:::::........===........:::::_",
+  "#:::::#.......===.......#:::::_",
+  "#:::::#....o..===..o....#:::::_",
+  "#:::::#.......===.......#:::::_",
+  "#######.......===.......#######",
+  "      #....o..===..o....#      ",
+  "      #.......===.......#      ",
+  "      #.......===.......#      ",
+  "      #...^^^^^^^^^^^...#      ",
+  "      #...^^^^^^^^^^^...#      ",
+  "      #...^^^^^^^^^^^...#      ",
+  "      #...^^AAAAAAA^^...#      ",
+  "      #...^^AAAAAAA^^...#      ",
+  "      #...^^AAAAAAA^^...#      ",
+  "      #...^^AAAAAAA^^...#      ",
+  "       %%%%%%%%%%%%%%%%%       ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
-"." = { label = "floor" }
-"a" = { label = "wall edge", walls = ["bl", "br"] }
-"b" = { label = "wall nook", walls = ["tr", "bl", "br"] }
-"c" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
-"d" = { label = "wall corner", walls = ["tl"] }
-"e" = { label = "wall corner", walls = ["tr"] }
-"f" = { label = "wall nook", walls = ["tl", "tr", "br"] }
-"g" = { label = "wall corner", walls = ["bl"] }
-"h" = { label = "wall edge", walls = ["tr", "br"] }
-"i" = { label = "wall nook", walls = ["tl", "bl", "br"] }
-"j" = { label = "wall edge", walls = ["tl", "bl"] }
-"k" = { label = "wall corner", walls = ["br"] }
-"l" = { label = "wall edge", walls = ["tl", "tr"] }
+# Full-height castle stone on the side and far walls; a low parapet of the
+# same stone on every camera-side edge, so the camera sees over it.
+"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
+"%" = { label = "wall (throne)", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
+"_" = { label = "parapet", walls = "all", wall = { kind = "box", height = 64, tpage = 24, clut = 31168, tile = 1 } }
+"." = { label = "flagstones", ground = { kind = "texture", tpage = 24, clut = 31170, tile = 3 } }
+"=" = { label = "carpet", ground = { kind = "texture", tpage = 25, clut = 31235, tile = 28 } }
+":" = { label = "chapel floor", height = 1, ground = { kind = "texture", tpage = 25, clut = 31234, tile = 4 } }
+"^" = { label = "dais", height = 1, ground = { kind = "texture", tpage = 10, clut = 31105, tile = 20 } }
+"A" = { label = "throne step", height = 2, ground = { kind = "texture", tpage = 25, clut = 31244, tile = 45 } }
+# Square stone piers down the nave and either side of its door: solid.
+"o" = { label = "pier", walls = "all", wall = { kind = "box", height = 288, tpage = 24, clut = 31168, tile = 2 } }
+"O" = { label = "door pier", walls = "all", wall = { kind = "box", height = 288, tpage = 24, clut = 31168, tile = 2 } }
+">" = { label = "stair down", ground = { kind = "texture", tpage = 25, clut = 31235, tile = 28 } }
 
 [[spawns]]
 id = "from_below"
-tile = [8, 23]
+tile = [15, 2]
 facing = 4
 
 [[exits]]
 id = "stair_down"
-rect = [8, 25, 8, 25]
+rect = [15, 0, 15, 0]
 to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_above" }
 
 [[triggers]]
 id = "arrival"
-rect = [5, 20, 11, 22]
+rect = [10, 2, 20, 3]
 event = { kind = "dialog", line = "floor_8f_intro" }
 once = true
 
-# The approach to the throne, once the Sanctum is silent and while the
-# Sovereign stands: it rises and speaks (`cutscenes.toml`
-# `sovereign_rises`), and the Hollow Throne quest's offer follows.
+# The foot of the dais, once the Sanctum is silent and while the Sovereign
+# stands: it rises and speaks (`cutscenes.toml` `sovereign_rises`), and the
+# Hollow Throne quest's offer follows.
 [[triggers]]
 id = "throne_approach"
-rect = [4, 6, 12, 6]
+rect = [7, 27, 23, 27]
 event = { kind = "cutscene", cutscene = "sovereign_rises" }
 once = true
 requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"], min_level = 88 }
 
+# The throne's own step, in front of the seat.
 [[triggers]]
 id = "throne"
-rect = [5, 1, 11, 2]
+rect = [13, 32, 17, 33]
 event = { kind = "talk", npc = "hollow_throne" }
 
-# The long carpet below the throne rolls the throne's honour guard
-# (`battle.toml`, `scene = "tower_8f"`): the top table for the last levels.
+# The nave rolls the throne's honour guard (`battle.toml`, `scene =
+# "tower_8f"`): the top table for the last levels. The chapels are quiet.
 [[encounters]]
 id = "long_carpet"
-rect = [3, 8, 13, 19]
+rect = [7, 11, 23, 26]
 table = "tower_8f"
 
 # ---------------------------------------------------------------------------
-# Detail: the Hollow Throne. Dust hangs over the long carpet, the pillar
-# lamps spit sparks, a dark haze sits on the floor, violet motes gather at
-# the throne, and the castle's own scenery moves (`scenery`).
+# The throne: the castle's own carved seat (`taiku2` mesh 69), raised large
+# on the top step and facing the nave, its standing lamps (mesh 70) either
+# side. Braziers flank the dais's foot, the nave's door and the stair.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "hollow_throne_seat"
+mesh = { object = 69 }
+tile = [15, 34]
+offset = [0, 0, 20]
+scale = 1.4
+solid = true
+light = { color = [200, 120, 255], radius = 700, height = 120, flicker = 0.15, period = 50 }
+
+[[props]]
+id = "throne_lamp_west"
+mesh = { object = 70 }
+tile = [13, 34]
+solid = true
+light = { color = [255, 200, 120], radius = 560, height = 200, flicker = 0.1, period = 40 }
+
+[[props]]
+id = "throne_lamp_east"
+mesh = { object = 70 }
+tile = [17, 34]
+solid = true
+light = { color = [255, 200, 120], radius = 560, height = 200, flicker = 0.1, period = 44 }
+
+[[props]]
+id = "brazier_dais_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [9, 28]
+scale = 1.2
+solid = true
+light = { color = [255, 130, 50], radius = 640, height = 140, flicker = 0.4, period = 9 }
+
+[[props]]
+id = "brazier_dais_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [21, 28]
+scale = 1.2
+solid = true
+light = { color = [255, 130, 50], radius = 640, height = 140, flicker = 0.4, period = 11 }
+
+[[props]]
+id = "brazier_door_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [12, 9]
+solid = true
+light = { color = [255, 140, 60], radius = 520, height = 140, flicker = 0.35, period = 10 }
+
+[[props]]
+id = "brazier_door_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [18, 9]
+solid = true
+light = { color = [255, 140, 60], radius = 520, height = 140, flicker = 0.35, period = 12 }
+
+[[props]]
+id = "brazier_stair_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [13, 1]
+solid = true
+light = { color = [255, 140, 60], radius = 460, height = 140, flicker = 0.35, period = 13 }
+
+[[props]]
+id = "brazier_stair_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [17, 1]
+solid = true
+light = { color = [255, 140, 60], radius = 460, height = 140, flicker = 0.35, period = 8 }
+
+# Red banners hang on the nave's piers, on the face the party walks up to,
+# so the walk up the carpet passes between them.
+[[decor]]
+mesh = { asset = "models/banner_red.glb" }
+tile = [11, 13]
+offset = [0, 60, -70]
+scale = 1.1
+
+[[decor]]
+mesh = { asset = "models/banner_red.glb" }
+tile = [19, 13]
+offset = [0, 60, -70]
+scale = 1.1
+
+[[decor]]
+mesh = { asset = "models/banner_red.glb" }
+tile = [11, 19]
+offset = [0, 60, -70]
+scale = 1.1
+
+[[decor]]
+mesh = { asset = "models/banner_red.glb" }
+tile = [19, 19]
+offset = [0, 60, -70]
+scale = 1.1
+
+[[decor]]
+mesh = { asset = "models/banner_red.glb" }
+tile = [11, 25]
+offset = [0, 60, -70]
+scale = 1.1
+
+[[decor]]
+mesh = { asset = "models/banner_red.glb" }
+tile = [19, 25]
+offset = [0, 60, -70]
+scale = 1.1
+
+# ---------------------------------------------------------------------------
+# The Hall of Fallen Crowns (west chapel): four dark obelisks stand in two
+# rows down the chapel, the old kings' stones, a cold violet light between
+# them.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "crown_obelisk_nw"
+mesh = { asset = "models/obelisk.glb" }
+scale = 1.4
+tile = [2, 15]
+solid = true
+light = { color = [170, 110, 255], radius = 420, height = 180, flicker = 0.1, period = 60 }
+
+[[props]]
+id = "crown_obelisk_ne"
+mesh = { asset = "models/obelisk.glb" }
+scale = 1.4
+tile = [4, 15]
+solid = true
+
+[[props]]
+id = "crown_obelisk_sw"
+mesh = { asset = "models/obelisk.glb" }
+scale = 1.4
+tile = [2, 22]
+solid = true
+light = { color = [170, 110, 255], radius = 420, height = 180, flicker = 0.1, period = 64 }
+
+[[props]]
+id = "crown_obelisk_se"
+mesh = { asset = "models/obelisk.glb" }
+scale = 1.4
+tile = [4, 22]
+solid = true
+
+[[props]]
+id = "crown_relic"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [2, 18]
+offset = [64, 120, 64]
+scale = 1.6
+animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 12, period = 180 }]
+light = { color = [190, 120, 255], radius = 600, height = 0, flicker = 0.15, period = 40 }
+
+# ---------------------------------------------------------------------------
+# The Broken Gallery (east chapel): the outer wall is down to a parapet and
+# the sky shows through. A brass ring turns over the gap, and two braziers
+# fight the wind either side of it.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "gallery_ring"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [27, 18]
+offset = [0, 220, 64]
+scale = 1.6
+animate = [{ kind = "spin", axis = "y", period = 600 }, { kind = "sway", axis = "z", degrees = 14.0, period = 300 }]
+
+[[props]]
+id = "gallery_brazier_n"
+mesh = { asset = "models/brazier.glb" }
+tile = [28, 15]
+solid = true
+light = { color = [255, 130, 50], radius = 520, height = 140, flicker = 0.5, period = 7 }
+
+[[props]]
+id = "gallery_brazier_s"
+mesh = { asset = "models/brazier.glb" }
+tile = [28, 22]
+solid = true
+light = { color = [255, 130, 50], radius = 520, height = 140, flicker = 0.5, period = 9 }
+
+# Lanterns hang down the narthex, two to a side of the nave's door.
+[[props]]
+id = "narthex_lantern_1"
+mesh = { asset = "models/lantern.glb" }
+tile = [4, 7]
+offset = [0, 230, 64]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 170 }]
+light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, period = 27 }
+
+[[props]]
+id = "narthex_lantern_2"
+mesh = { asset = "models/lantern.glb" }
+tile = [9, 7]
+offset = [0, 230, 64]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 190, phase = 0.4 }]
+light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, period = 31 }
+
+[[props]]
+id = "narthex_lantern_3"
+mesh = { asset = "models/lantern.glb" }
+tile = [21, 7]
+offset = [0, 230, 64]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 180, phase = 0.7 }]
+light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, period = 29 }
+
+[[props]]
+id = "narthex_lantern_4"
+mesh = { asset = "models/lantern.glb" }
+tile = [26, 7]
+offset = [0, 230, 64]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 160, phase = 0.2 }]
+light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, period = 33 }
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "throne", tile = [15, 33], offset = [0, 180, 0], color = [190, 110, 255], radius = 760, flicker = 0.2, period = 35 },
+  # The carpet's head burns warm between the dais braziers.
+  { id = "carpet_head", tile = [15, 27], offset = [0, 160, 0], color = [255, 160, 90], radius = 620, flicker = 0.25, period = 13 },
+  # A cold wash down the nave, so the bays read between the braziers.
+  { id = "nave_mid", tile = [15, 19], offset = [0, 320, 0], color = [150, 140, 220], radius = 900 },
+  # Moonlight through the Broken Gallery's open wall.
+  { id = "gallery_moon", tile = [30, 18], offset = [-40, 200, 0], color = [150, 190, 255], radius = 700, flicker = 0.05, period = 90 },
+]
+
+# ---------------------------------------------------------------------------
+# Detail: dust hangs over the carpet, a dark haze sits on the floor, violet
+# motes gather at the throne, sparks climb off the braziers, and worn and
+# cracked flagstones break up the floor.
 # ---------------------------------------------------------------------------
 
 [[emitters]]
 kind = "dust"
-rect = [3, 2, 13, 24]
+rect = [7, 11, 23, 34]
 count = 70
 color = [200, 170, 230]
 seed = 801
 
 [[emitters]]
 kind = "sparkles"
-rect = [6, 1, 10, 4]
-height = [40, 240]
+rect = [12, 30, 18, 34]
+height = [40, 260]
 count = 40
 color = [200, 120, 255]
 seed = 802
 
 [[emitters]]
-kind = "embers"
-rect = [2, 5, 2, 13]
-height = [140, 180]
-count = 18
-color = [255, 220, 140]
-seed = 803
-
-[[emitters]]
-kind = "embers"
-rect = [14, 5, 14, 13]
-height = [140, 180]
-count = 18
-color = [255, 220, 140]
-seed = 804
-
-[[emitters]]
 kind = "smoke"
-rect = [2, 3, 14, 24]
+rect = [7, 11, 23, 34]
 height = [0, 10]
 count = 24
 velocity = [0.0, 0.1, 0.0]
@@ -144,137 +386,102 @@ color = [70, 50, 90]
 color_end = [30, 20, 40]
 seed = 805
 
-# The Hollow Throne itself: the castle's own carved throne (`taiku2` mesh
-# 69, the one the retail hall seats at the south end of the carpet) raised
-# again, larger, at the carpet's north end, turned to face the approach,
-# where the talk zone and the `sovereign_rises` shot look. The hall's floor
-# is the floor the player walks, so the props stand at 0; only the retail
-# dais at the south end steps up (its own floor records).
-[[props]]
-id = "hollow_throne_seat"
-mesh = { object = 69 }
-tile = [8, 1]
-offset = [0, 0, -60]
-rotation = [0.0, 180.0, 0.0]
-scale = 1.3
-solid = true
-light = { color = [200, 120, 255], radius = 640, height = 120, flicker = 0.15, period = 50 }
-
-# The hall's own standing lamps (`taiku2` mesh 70, the pair that light the
-# south dais) brought up to flank the throne, so its end of the carpet is the
-# brightest place in the hall.
-[[props]]
-id = "throne_lamp_west"
-mesh = { object = 70 }
-tile = [7, 1]
-offset = [0, 0, 0]
-solid = true
-light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, period = 40 }
-
-[[props]]
-id = "throne_lamp_east"
-mesh = { object = 70 }
-tile = [9, 1]
-offset = [0, 0, 0]
-solid = true
-light = { color = [255, 200, 120], radius = 620, height = 200, flicker = 0.1, period = 44 }
-
-[lighting]
-mood = "night"
-lamps = [
-  { id = "throne", tile = [8, 1], offset = [0, 160, 0], color = [190, 110, 255], radius = 560, flicker = 0.2, period = 35 },
-  { id = "throne_west", tile = [6, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 21 },
-  { id = "throne_east", tile = [10, 2], offset = [0, 120, 0], color = [255, 150, 90], radius = 520, flicker = 0.3, period = 23 },
-  # The carpet's head burns warm between the braziers, so they read as fire
-  # rather than taking the throne's violet.
-  { id = "carpet_head", tile = [8, 5], offset = [0, 140, 0], color = [255, 160, 90], radius = 520, flicker = 0.25, period = 13 },
-]
-
-# Sound: the throne's two standing lamps spit and crackle.
-[[audio.ambient]]
-id = "throne_lamp_west"
-sound = { kind = "sound", id = "torch" }
-tile = [7, 1]
-radius = 448
-inner = 64
-volume = 0.5
-
-[[audio.ambient]]
-id = "throne_lamp_east"
-sound = { kind = "sound", id = "torch" }
-tile = [9, 1]
-radius = 448
-inner = 64
-volume = 0.5
-
-# ---------------------------------------------------------------------------
-# The open top: the wind howls through the hall from the broken roof, and
-# two iron braziers (`assets/models/brazier.glb`) burn either side of the
-# carpet's head, their sparks pulled upward.
-# ---------------------------------------------------------------------------
-
-[[props]]
-id = "brazier_west"
-mesh = { asset = "models/brazier.glb" }
-tile = [5, 4]
-offset = [0, 0, 0]
-scale = 1.2
-solid = true
-light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 9 }
-
-[[props]]
-id = "brazier_east"
-mesh = { asset = "models/brazier.glb" }
-tile = [11, 4]
-offset = [0, 0, 0]
-scale = 1.2
-solid = true
-light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 11 }
-
 [[emitters]]
 kind = "embers"
-rect = [5, 4, 5, 4]
+rect = [9, 28, 9, 28]
 height = [130, 170]
-count = 24
-velocity = [0.3, 1.6, 0.0]
+count = 20
+velocity = [0.2, 1.6, 0.0]
 seed = 811
 
 [[emitters]]
 kind = "embers"
-rect = [11, 4, 11, 4]
+rect = [21, 28, 21, 28]
 height = [130, 170]
-count = 24
-velocity = [0.3, 1.6, 0.0]
+count = 20
+velocity = [0.2, 1.6, 0.0]
 seed = 812
 
+[[emitters]]
+kind = "embers"
+rect = [28, 15, 28, 22]
+height = [130, 170]
+count = 24
+velocity = [-1.2, 1.2, 0.0]
+seed = 813
+
+[[emitters]]
+kind = "sparkles"
+rect = [1, 14, 5, 23]
+height = [20, 220]
+count = 24
+color = [170, 120, 255]
+seed = 814
+
+[[decals]]
+id = "worn"
+cell = { tpage = 24, clut = 31170, tile = 4 }
+cells = [{ tpage = 24, clut = 31170, tile = 11 }]
+rect = [1, 1, 29, 27]
+on = "."
+density = 0.2
+seed = 8101
+size = [80, 80]
+size_jitter = 0.35
+sides = 6
+jitter = 40
+
+[fog]
+regions = [
+  { rect = [25, 14, 29, 23], angle = 270.0, spread = 50.0, speed = 22 },
+]
+
+# Sound: the throne's lamps and the braziers crackle; the wind howls in
+# through the Broken Gallery.
 [[audio.ambient]]
-id = "brazier_west"
+id = "throne_lamp_west"
 sound = { kind = "sound", id = "torch" }
-tile = [5, 4]
+tile = [13, 34]
+radius = 448
+inner = 64
+volume = 0.5
+
+[[audio.ambient]]
+id = "throne_lamp_east"
+sound = { kind = "sound", id = "torch" }
+tile = [17, 34]
+radius = 448
+inner = 64
+volume = 0.5
+
+[[audio.ambient]]
+id = "brazier_dais_w"
+sound = { kind = "sound", id = "torch" }
+tile = [9, 28]
 radius = 512
 inner = 96
 volume = 0.55
 
 [[audio.ambient]]
-id = "brazier_east"
+id = "brazier_dais_e"
 sound = { kind = "sound", id = "torch" }
-tile = [11, 4]
+tile = [21, 28]
 radius = 512
 inner = 96
 volume = 0.55
 
 [[audio.ambient]]
-id = "wind_north"
+id = "wind_gallery"
 sound = { kind = "sound", id = "wind" }
-tile = [8, 1]
-radius = 2600
-inner = 900
-volume = 0.55
+tile = [29, 18]
+radius = 2200
+inner = 600
+volume = 0.6
 
 [[audio.ambient]]
-id = "wind_south"
-sound = { kind = "sound", id = "wind" }
-tile = [8, 22]
-radius = 1600
-inner = 500
-volume = 0.35
+id = "crowns_hum"
+sound = { kind = "sound", id = "drone" }
+tile = [3, 18]
+radius = 700
+inner = 160
+volume = 0.3
