@@ -580,3 +580,118 @@ fn the_detail_forms_open_without_an_edit() {
     edited["battle"]["bosses"][&key]["intro"] = intro;
     assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
 }
+
+/// The battle stage editor and the tint material form, as the page drives
+/// them: opened, ticked and unticked, re-tinted and put back, the loaded
+/// bytes; a real edit touches only its own file.
+#[test]
+fn the_stage_and_tint_forms_round_trip() {
+    let mut core = Core::new();
+    let (files, pack) = load(&mut core);
+    let cli = bundle::write_bundle(&files).unwrap();
+    let bosses = pack["battle"]["bosses"].as_object().unwrap();
+    // Rebirth uses both fields, so the test is not vacuous.
+    let (staged, stage) = bosses
+        .iter()
+        .find(|(_, b)| b["stage"]["tint"].is_array())
+        .map(|(k, b)| (k.clone(), b["stage"].clone()))
+        .expect("a Rebirth boss on a tinted stage");
+    assert!(stage["scene"].is_string());
+    let plain = bosses
+        .iter()
+        .find(|(_, b)| b["stage"].is_null())
+        .map(|(k, _)| k.clone())
+        .expect("a Rebirth boss on the room's stage");
+    let map = "rebirth_tower_2f";
+    let tint_at = pack["maps"][map]["materials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|m| m["kind"] == "tint")
+        .expect("a Rebirth tint material");
+
+    // Opened without an edit: the forms write nothing.
+    assert_eq!(core.export_bundle(&pack.to_string()).unwrap(), cli);
+
+    // Unticked and ticked back; the tint box off and on with its values.
+    let mut edited = pack.clone();
+    edited["battle"]["bosses"][&staged]["stage"] = Value::Null;
+    assert_ne!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+    edited["battle"]["bosses"][&staged]["stage"] = stage.clone();
+    edited["battle"]["bosses"][&staged]["stage"]["tint"] = Value::Null;
+    assert_ne!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+    edited["battle"]["bosses"][&staged]["stage"]["tint"] = stage["tint"].clone();
+    assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+
+    // A fresh stage as the checkbox writes it, then unticked: the loaded bytes.
+    let mut edited = pack.clone();
+    edited["battle"]["bosses"][&plain]["stage"] =
+        serde_json::json!({ "scene": "jou", "index": null, "keep_object_1": false, "tint": null });
+    let bytes = core.export_bundle(&edited.to_string()).unwrap();
+    let back = bundle::read_bundle(&bytes).unwrap();
+    for (path, body) in &back {
+        assert_eq!(
+            files.get(path) != Some(body),
+            path == "battle.toml",
+            "{path}"
+        );
+    }
+    let text = String::from_utf8(back["battle.toml"].clone()).unwrap();
+    assert!(text.contains("scene = \"jou\""), "the new stage is written");
+    let reread = core.pack_from_json(&edited.to_string()).unwrap();
+    let st = reread.battle.bosses[&plain].stage.clone().unwrap();
+    assert_eq!(
+        (st.scene.as_str(), st.index, st.keep_object_1, st.tint),
+        ("jou", None, false, None)
+    );
+    edited["battle"]["bosses"][&plain]["stage"] = Value::Null;
+    assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+
+    // A formation's stage, index and keep box: battle.toml only.
+    let mut edited = pack.clone();
+    let fkey = pack["battle"]["formations"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .next()
+        .unwrap()
+        .clone();
+    edited["battle"]["formations"][&fkey]["stage"] = serde_json::json!({ "scene": "town01", "index": 1, "keep_object_1": true, "tint": [200, 128, 90] });
+    let reread = core.pack_from_json(&edited.to_string()).unwrap();
+    let st = reread.battle.formations[&fkey].stage.clone().unwrap();
+    assert_eq!(
+        (st.index, st.keep_object_1, st.tint),
+        (Some(1), true, Some([200, 128, 90]))
+    );
+
+    // The tint material: re-coloured and put back; switched to a cycle and
+    // back to the loaded item.
+    let mut edited = pack.clone();
+    let m = &mut edited["maps"][map]["materials"][tint_at];
+    let before = m.clone();
+    m["color"] = serde_json::json!([128, 128, 128]);
+    m["hue"] = serde_json::json!(0.0);
+    let bytes = core.export_bundle(&edited.to_string()).unwrap();
+    let back = bundle::read_bundle(&bytes).unwrap();
+    for (path, body) in &back {
+        let own = path == &format!("maps/{map}.toml");
+        assert_eq!(files.get(path) != Some(body), own, "{path}");
+    }
+    // A tint that changes nothing is a warning, not an error.
+    let issues = core.validate(&edited.to_string());
+    assert!(issues.iter().all(|i| i.severity != "error"), "{issues:#?}");
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.field == format!("materials[{tint_at}]") && i.severity == "warning"),
+        "{issues:#?}"
+    );
+    edited["maps"][map]["materials"][tint_at] = serde_json::json!({ "kind": "cycle", "clut": before["clut"], "start": 0, "count": 16, "period": 8, "reverse": false });
+    assert!(
+        core.validate(&edited.to_string())
+            .iter()
+            .all(|i| i.severity != "error")
+    );
+    edited["maps"][map]["materials"][tint_at] = before;
+    assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+}

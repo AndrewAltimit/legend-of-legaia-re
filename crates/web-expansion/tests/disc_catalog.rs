@@ -37,6 +37,32 @@ fn catalog_and_rebirth_against_the_disc() {
     }
     assert_eq!(cat["bgm"].as_array().unwrap().len(), 81);
 
+    // The stage picker's lists: each block's stage streams as the engine's
+    // own scan finds them, and the pick a fight there takes by default.
+    let prot = legaia_iso::image::extract_prot_dat(&image).unwrap();
+    let cdname = legaia_iso::image::extract_cdname_txt(&image);
+    let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, cdname.as_deref()).unwrap();
+    let mut staged = 0;
+    for s in scenes {
+        let name = s["name"].as_str().unwrap();
+        let stages: Vec<u32> = s["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_u64().unwrap() as u32)
+            .collect();
+        assert_eq!(stages, index.battle_stage_entries(name), "{name}");
+        if let Some(e) = index.battle_stage_entry_for_scene(name) {
+            staged += 1;
+            assert_eq!(
+                stages[s["stage_pick"].as_u64().unwrap() as usize],
+                e,
+                "{name}"
+            );
+        }
+    }
+    assert!(staged > 40, "{staged} blocks with a battle stage");
+
     // Rebirth resolves on the disc: no coordinate error.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
     let loaded = core.load_files(read_dir_files(&root).unwrap());

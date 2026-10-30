@@ -11,7 +11,7 @@
  * meshes sample (`dctx.cells()`, from `scene_objects`): the picker writes the
  * three words of the coordinate and never a texel.
  */
-import { h, grid, field, listEd } from './expansion-workbench-forms.js';
+import { h, grid, field, listEd, tintField } from './expansion-workbench-forms.js';
 import { helpLink } from './expansion-workbench-help.js';
 
 const MAPS_DOC = '../formats/expansion-pack-maps.html';
@@ -297,19 +297,20 @@ export function decalsEd(dctx, box, map) {
 const MATERIAL_MAKE = {
   cycle: (c) => ({ kind: 'cycle', clut: c.clut || 0, start: 0, count: 16, period: 8, reverse: false }),
   hsv: (c) => ({ kind: 'hsv', clut: c.clut || 0, start: 0, count: 16, period: 120, value: 0, hue: 360 }),
+  tint: (c) => ({ kind: 'tint', clut: c.clut || 0, start: 0, count: 16, hue: 0, value: 0, color: [128, 128, 128] }),
   scroll: (c) => ({ kind: 'scroll', cell: { tpage: c.tpage || 0, clut: c.clut || 0, tile: c.tile || 0 }, dx: 1, dy: 0, period: 8 }),
 };
 
 /** The map's `[[materials]]` (animated texture words; the terrain's own
  * materials are the Terrain box's). */
 export function materialsEd(dctx, box, map) {
-  const sec = section(box, 'materials', 'Animated materials', 'palette cycling, hue cycling, texel scrolling', (map.materials || []).length, 'animated-materials');
+  const sec = section(box, 'materials', 'Animated materials', 'palette cycling, hue cycling, a standing tint, texel scrolling', (map.materials || []).length, 'animated-materials');
   listEd(dctx, sec, map, 'materials', '', {
     add: 'Material', fold: true, dup: true,
     make: () => MATERIAL_MAKE.cycle(((dctx.cells && dctx.cells()) || [])[0] || {}),
-    label: (m, i) => `${i + 1}. ${m.kind}${m.kind === 'scroll' ? '' : ` palette ${hex(m.clut)}`}, every ${m.period} frames`,
+    label: (m, i) => `${i + 1}. ${m.kind}${m.kind === 'scroll' ? '' : ` palette ${hex(m.clut)}`}${m.kind === 'tint' ? ', once on entry' : `, every ${m.period} frames`}`,
     render: (b, m, p) => {
-      const kind = h('select', { 'aria-label': 'Kind' }, ...[['cycle', 'palette cycle'], ['hsv', 'hue and brightness cycle'], ['scroll', 'texel scroll']].map(([k, l]) => h('option', { value: k, selected: m.kind === k }, l)));
+      const kind = h('select', { 'aria-label': 'Kind' }, ...[['cycle', 'palette cycle'], ['hsv', 'hue and brightness cycle'], ['tint', 'standing tint'], ['scroll', 'texel scroll']].map(([k, l]) => h('option', { value: k, selected: m.kind === k }, l)));
       kind.addEventListener('change', () => {
         const fresh = MATERIAL_MAKE[kind.value](m.cell || m);
         for (const k of Object.keys(m)) delete m[k];
@@ -327,6 +328,17 @@ export function materialsEd(dctx, box, map) {
           period, from,
           { k: 'rect', t: 'otuple', n: 4, names: ['x', 'y', 'w', 'h'], label: 'VRAM rectangle', hint: 'halfwords; empty: the cell\'s' },
         ], p));
+      } else if (m.kind === 'tint') {
+        const g = grid(dctx, m, [
+          { k: 'start', t: 'int', label: 'First entry' },
+          { k: 'count', t: 'int', label: 'Entries' },
+          { k: 'hue', t: 'float', label: 'Hue turn (deg)', hint: 'turned once' },
+          { k: 'value', t: 'int', label: 'Brightness shift', hint: '-255..255' },
+          from,
+        ], p);
+        g.prepend(clutField(dctx, m, p));
+        g.append(tintField(dctx, m, { k: 'color', label: 'Colour multiply', hint: 'after the turn; 128 = unchanged, 255 about doubles' }, p));
+        b.append(g);
       } else {
         const g = grid(dctx, m, [
           { k: 'start', t: 'int', label: 'First entry' },

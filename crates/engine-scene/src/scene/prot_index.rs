@@ -329,6 +329,16 @@ impl ProtIndex {
             .collect()
     }
 
+    /// The position in [`Self::battle_stage_entries`] a fight in
+    /// `scene_name` takes when no region names a stream, where retail pins
+    /// one other than the first; `None` means the first.
+    pub fn battle_stage_pinned_slot(scene_name: &str) -> Option<usize> {
+        BATTLE_STAGE_SLOT
+            .iter()
+            .find(|(name, _)| *name == scene_name)
+            .map(|(_, n)| *n)
+    }
+
     /// The PROT entry a battle fought in `scene_name` uses as its stage
     /// backdrop: the entry whose stream the retail scene loader leaves in
     /// `_DAT_8007B864` (the type-`0x01` chunk walker `FUN_8001FE70`'s last
@@ -351,11 +361,7 @@ impl ProtIndex {
     /// See [`docs/subsystems/battle.md`] "Battle background".
     pub fn battle_stage_entry_for_scene(&self, scene_name: &str) -> Option<u32> {
         let stages = self.battle_stage_entries(scene_name);
-        let pinned = BATTLE_STAGE_SLOT
-            .iter()
-            .find(|(name, _)| *name == scene_name)
-            .map(|(_, n)| *n);
-        match pinned {
+        match Self::battle_stage_pinned_slot(scene_name) {
             Some(n) => stages.get(n).or_else(|| stages.first()).copied(),
             None => stages.first().copied(),
         }

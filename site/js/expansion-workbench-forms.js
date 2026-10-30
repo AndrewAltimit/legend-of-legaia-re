@@ -17,6 +17,7 @@
  */
 
 import { pointListEd, mapBackground } from './expansion-workbench-points.js';
+import { helpLink } from './expansion-workbench-help.js';
 
 const esc = window.escapeHtml;
 
@@ -359,6 +360,51 @@ export function field(ctx, obj, spec, path) {
       input = h('span', {}, `?${t}`);
   }
   wrap.append(label, input);
+  return wrap;
+}
+
+/**
+ * A per-channel palette multiply `[r, g, b]` at `obj[spec.k]`, `128` =
+ * unchanged and `255` about double (`legaia_tim::tint::tint_bgr555`): three
+ * boxes, a colour swatch that is also a picker (the colour a mid-grey texel
+ * takes, so neutral reads as grey) and a Neutral button. `spec.opt`: a
+ * checkbox; unticked writes `null` (no tint at all).
+ */
+export function tintField(ctx, obj, spec, path) {
+  const p = joinPath(path, spec.k);
+  const wrap = h('div', { class: 'xw-field is-wide xw-tint', 'data-path': p });
+  const cur = obj[spec.k];
+  const on = spec.opt ? h('input', { type: 'checkbox', 'aria-label': spec.label }) : null;
+  const label = h('span', {}, on, spec.label, h('span', { class: 'xw-hint' }, ` ${spec.hint || 'per channel, 128 = unchanged, 255 about doubles'}`));
+  wrap.append(on ? h('label', { class: 'xw-check' }, label) : label);
+  if (on) {
+    on.checked = Array.isArray(cur);
+    on.addEventListener('change', () => { obj[spec.k] = on.checked ? [128, 128, 128] : null; ctx.changed(true); });
+    if (!on.checked) return wrap;
+  }
+  const vals = Array.isArray(cur) ? cur.slice() : [128, 128, 128];
+  const clamp = (v) => Math.max(0, Math.min(255, intOr(v, 128)));
+  const hex = () => '#' + vals.map((v) => v.toString(16).padStart(2, '0')).join('');
+  const row = h('div', { class: 'xw-row2 xw-tint-row' });
+  const swatch = h('input', { type: 'color', value: hex(), class: 'xw-tint-swatch', title: 'The colour a mid-grey texel takes (pick to set all three)', 'aria-label': `${spec.label}: swatch` });
+  const boxes = ['r', 'g', 'b'].map((n, i) => {
+    const box = h('input', { type: 'number', min: 0, max: 255, step: 1, value: vals[i], title: n, 'aria-label': `${spec.label}: ${n}` });
+    box.addEventListener('input', () => { vals[i] = clamp(box.value); write(); });
+    return box;
+  });
+  function write() {
+    obj[spec.k] = vals.slice();
+    swatch.value = hex();
+    ctx.changed();
+  }
+  swatch.addEventListener('input', () => {
+    const v = swatch.value;
+    for (let i = 0; i < 3; i++) { vals[i] = parseInt(v.slice(1 + 2 * i, 3 + 2 * i), 16); boxes[i].value = vals[i]; }
+    write();
+  });
+  const neutral = h('button', { type: 'button', class: 'wb-mini', title: 'Every channel back to 128 (unchanged)', onclick: () => { vals.fill(128); boxes.forEach((b) => { b.value = 128; }); write(); } }, 'Neutral');
+  row.append(...boxes, swatch, neutral);
+  wrap.append(row);
   return wrap;
 }
 
@@ -862,6 +908,52 @@ function preview3dButton(ctx, label, title, run) {
   }, label));
 }
 
+// A fight's battle stage (`stage = { scene, index, keep_object_1, tint }` on a
+// formation or a boss; docs/formats/expansion-pack-battle.md#battle-stage):
+// absent until ticked, so an opened fight writes nothing. The scene picker
+// lists the blocks the disc carries stage streams in, the index picker that
+// block's streams; `kind` / `id` name the fight its "Fight in 3D" starts.
+function stageEd(ctx, box, owner, p, kind, id) {
+  const sp = `${p}.stage`;
+  // A check on the stage (`bosses.<id>.stage`) lands on the box, or, with a
+  // stage set, on its fields so the click-through focuses the scene picker.
+  const wrap = h('div', { class: 'xw-box xw-stage', 'data-path': owner.stage != null ? null : sp });
+  const staged = catList(ctx, 'scenes').filter((s) => (s.stages || []).length);
+  const on = h('input', { type: 'checkbox' });
+  on.checked = owner.stage != null;
+  on.addEventListener('change', () => {
+    owner.stage = on.checked ? { scene: (staged[0] || { name: 'town01' }).name, index: null, keep_object_1: false, tint: null } : null;
+    ctx.changed(true);
+  });
+  const hint = kind === 'boss' ? 'wins over its formation\'s; off: the formation\'s, else the room\'s' : 'off: the stage of the room the fight starts in';
+  wrap.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, on, 'Battle stage'), h('span', { class: 'xw-hint' }, ' ' + hint), h('span', { class: 'xw-sp' }),
+    helpLink('../formats/expansion-pack-battle.html#battle-stage', 'battle stages')));
+  const st = owner.stage;
+  if (st) {
+    const row = staged.find((s) => s.name === st.scene);
+    const specs = [];
+    if (staged.length) {
+      specs.push({ k: 'scene', t: 'sel', structural: true, label: 'Scene', hint: 'the blocks with battle stages', opts: staged.map((s) => [s.name, `${s.name} - ${s.display} (${s.stages.length})`]) });
+      const n = row ? row.stages.length : 0;
+      specs.push({
+        k: 'index', t: 'osel', num: true, label: 'Stage', hint: 'the block\'s stage streams in bundle-slot order',
+        none: row ? `(the scene's own: stage ${row.stage_pick})` : '(the scene\'s own)',
+        opts: Array.from({ length: n }, (_, i) => [String(i), `stage ${i} (PROT ${row.stages[i]})`]),
+      });
+    } else {
+      specs.push({ k: 'scene', t: 'text', label: 'Scene', hint: 'a CDNAME block; load your disc to pick', ph: 'jou' });
+      specs.push({ k: 'index', t: 'oint', label: 'Stage', hint: '0 = the first; empty: the scene\'s own', ph: '(the scene\'s own)' });
+    }
+    specs.push({ k: 'keep_object_1', t: 'bool', label: 'Keep shell object 1', hint: 'battle init drops it (a horizon ribbon on some stages)' });
+    const g = grid(ctx, st, specs, sp);
+    g.setAttribute('data-path', sp);
+    g.append(tintField(ctx, st, { k: 'tint', opt: true, label: 'Tint the stage', hint: 'multiplies its palettes: shell and ground tile; 128 = unchanged' }, sp));
+    wrap.append(g);
+    wrap.append(preview3dButton(ctx, 'Fight on this stage in 3D', `Start this ${kind === 'boss' ? 'boss fight' : 'fight'} in the 3D preview (above), on the stage set here`, (pv) => pv.fight(kind, id)));
+  }
+  box.append(wrap);
+}
+
 export function renderBattle(ctx, el) {
   const b = ctx.pack.battle;
   el.append(h('p', { class: 'xw-note' }, 'battle.toml: monsters derived from a retail record, formations of up to four, per-scene encounter overrides and bosses. A derived monster keeps its base\'s mesh, animation and attacks; only the numbers change.'));
@@ -901,6 +993,7 @@ export function renderBattle(ctx, el) {
       for (let i = 0; i < n; i++) seats.append(monsterRefSlot(ctx, f, i, p));
       box.append(seats);
       wavesEd(ctx, box, f, p);
+      stageEd(ctx, box, f, p, 'formation', id);
       box.append(preview3dButton(ctx, 'Fight in 3D', 'Start this fight in the 3D preview (above): the monsters as the engine draws and runs them', (pv) => pv.fight('formation', id)));
     },
   });
@@ -942,6 +1035,7 @@ export function renderBattle(ctx, el) {
         { k: 'no_escape', t: 'bool', label: 'No escape' },
         { k: 'once', t: 'bool', label: 'Once only (recorded in the save)' },
       ], p));
+      stageEd(ctx, box, bo, p, 'boss', id);
       listEd(ctx, box, bo, 'reward_items', p, {
         title: 'Reward items',
         add: 'Item',

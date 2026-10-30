@@ -100,7 +100,7 @@ content offer only ids the pack defines.
 | Tab | Edits |
 |---|---|
 | Manifest | `pack.toml`. |
-| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers and each phase's screen flash and tint), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses (music, intro and outro cutscenes, rewards). |
+| Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers and each phase's screen flash and tint), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses (music, intro and outro cutscenes, rewards), and a formation's or a boss's battle stage. |
 | Progression | Multipliers, the curve (retail, scaled, banded, explicit) with a live chart against retail, enemy scaling, level-up rewards. |
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
 | Dialog | Lines with a per-row check under the text: the 36-character row warning and any markup with no glyph. |
@@ -132,6 +132,7 @@ validator path, so a check clicks through to the field.
 | `battle.toml` | Formations, seats | Form |
 | `battle.toml` | Formation waves (`wipe` / `refill`, count, max standing) | Form (wave list) |
 | `battle.toml` | Encounter overrides, bosses (intro / outro cutscenes), reward items | Form |
+| `battle.toml` | Battle stage on a formation or a boss (scene, stage index, `keep_object_1`, tint) | Form: disc stage pickers, tint swatch, Fight in 3D |
 | `progression.toml` | Multipliers, XP curve, enemy scaling, level rewards | Form, live chart |
 | `quests.toml` | Quests, prerequisites, objectives, rewards, repeat | Form |
 | `quests.toml` | Challenges: rules, score, rewards | Form |
@@ -158,7 +159,7 @@ validator path, so a check clicks through to the field.
 | `maps/<id>.toml` | Prop mesh source and light | Form |
 | `maps/<id>.toml` | Terrain: sculpt strokes, resolution and settings | Sculpt tool, form |
 | `maps/<id>.toml` | Terrain materials, cliff, water table, horizon, shape list | JSON |
-| `maps/<id>.toml` | Decorations, scatter brushes (meshes, cluster), edge runs, decals, animated materials, prop animators | Form (lists), tile and rectangle Pick on the painter, texture-cell picker |
+| `maps/<id>.toml` | Decorations, scatter brushes (meshes, cluster), edge runs, decals, animated materials (cycle, hsv, tint, scroll), prop animators | Form (lists), tile and rectangle Pick on the painter, texture-cell picker |
 | `assets/` | glTF models, audio | Import only |
 | `README.md`, licences | Documentation | Carried unchanged |
 
@@ -257,7 +258,11 @@ step of the page's undo.
 - opening every map's detail forms and the modes point lists, which fill an
   absent list with `[]` and the lighting and fog boxes with their defaults,
   exports the loaded bytes; so does a Duplicate and its Remove, a reorder
-  and its reverse, and a material's kind switched and switched back.
+  and its reverse, and a material's kind switched and switched back;
+- a battle stage unticked and ticked back, its tint box off and on, a fresh
+  stage ticked and unticked, and a tint material re-coloured or switched to
+  a cycle and put back, export the loaded bytes; each real edit touches its
+  own file only.
 
 A file keeps its loaded bytes while its canonical form (`to_files` of the
 edited pack) equals the loaded pack's. An edited file is re-serialised
@@ -301,7 +306,8 @@ the next click (a drag, for a rectangle) on the canvas fills the field
 the Modes tab: its Pick opens the podium's map in the painter and comes back
 once the tile is clicked. A decal is placed once on a tile or brushed over a
 rectangle, with its further `cells`; a material switches between palette
-cycle, hue cycle and texel scroll, and its palette picks from the palettes
+cycle, hue cycle, standing tint (hue turn, brightness shift and a
+per-channel multiply with a swatch) and texel scroll, and its palette picks from the palettes
 the base scene samples. A **texture cell** (a decal's, a scroll's) picks from
 the cells the base scene's meshes sample (`scene_objects`' `cells`, labelled
 page, palette, cell and prim count), takes the three words by hand, and
@@ -400,7 +406,14 @@ the engine (`expansion_preview_cutscene`, the trigger path).
 map. A formation's or a boss's **Fight in 3D** starts that fight in the frame
 (`expansion_preview_fight`, the path a map trigger's `battle` / `boss` event
 takes), so the monsters are the engine's battle models with their
-animations, and a boss runs its script, music and phases. **Card faces in
+animations, and a boss runs its script, music and phases. A fight's
+**Battle stage** box (absent until ticked) picks the scene from the disc's
+blocks that carry battle-stage streams and the stage from that block's
+streams (the catalog's `stages` per scene, listed without filling the PROT
+entry cache, and `stage_pick`, the one left-out `index` means), with the
+`keep_object_1` box and a tint: three channels, `128` neutral, and a swatch
+that is also a picker (the colour a mid-grey texel takes). Its **Fight on
+this stage in 3D** starts the fight on the stage as set. **Card faces in
 3D** on the Cards tab puts one of each pack card into the frame's collection
 and opens the binder (`expansion_preview_cards`): the card faces the engine
 draws, portraits included. The frame's world is the workbench's own, never a

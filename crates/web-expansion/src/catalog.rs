@@ -65,6 +65,13 @@ pub struct SceneRow {
     pub display: String,
     /// `town` / `field` / `world_map` / ... (empty when unknown).
     pub category: String,
+    /// The block's battle-stage streams (`scene_tmd_stream` entries), as
+    /// extraction PROT entries in bundle-slot order: a `stage.index` names
+    /// one by position. Empty for a block a fight cannot be staged on.
+    pub stages: Vec<u32>,
+    /// The position in [`Self::stages`] a fight in the block takes when no
+    /// region names one (`stage.index` left out).
+    pub stage_pick: usize,
 }
 
 /// One retail art a pack art's segment may borrow the clip of: a character's
@@ -205,10 +212,16 @@ impl DiscCatalog {
         let db = legaia_gamedata::Database::load();
         for name in index.cdname_scene_names() {
             let row = db.scene_by_id(&name);
+            let stages = battle_stage_entries(&index, &name);
+            let stage_pick = ProtIndex::battle_stage_pinned_slot(&name)
+                .filter(|&n| n < stages.len())
+                .unwrap_or(0);
             lists.scenes.push(SceneRow {
                 display: row.map_or_else(|| name.clone(), |r| r.name.clone()),
                 category: row.map(|r| r.category.clone()).unwrap_or_default(),
                 name,
+                stages,
+                stage_pick,
             });
         }
         lists.bgm = bgm_list(&db);
@@ -519,9 +532,40 @@ impl DiscResolver for DiscCatalog {
     }
 
     fn battle_stage_count(&self, scene: &str) -> Option<usize> {
-        self.index.cdname_map()?;
-        Some(self.index.battle_stage_entries(scene).len())
+        let row = self.lists.scenes.iter().find(|s| s.name == scene)?;
+        Some(row.stages.len())
     }
+}
+
+/// [`ProtIndex::battle_stage_entries`] without filling the index's entry
+/// cache: the catalog lists every block's stages once at open, and caching
+/// each block's entries would hold most of PROT in memory. An entry is read
+/// whole only when its first words are a TMD-prefixed stream's.
+fn battle_stage_entries(index: &ProtIndex, scene: &str) -> Vec<u32> {
+    let Some((start, end)) = index.block_range_extraction(scene) else {
+        return Vec::new();
+    };
+    (start..end)
+        .filter(|&idx| {
+            let Some(e) = index.entries().get(idx as usize) else {
+                return false;
+            };
+            let Ok(len) = usize::try_from(e.size_bytes) else {
+                return false;
+            };
+            let head = index.prot_dat_raw_bytes(e.byte_offset, len.min(16));
+            let tmd_head = head.is_ok_and(|h| {
+                h.len() == 16
+                    && h[3] == 0
+                    && h[4..8] == 0x8000_0002u32.to_le_bytes()
+                    && h[8..12] == [0; 4]
+            });
+            tmd_head
+                && index
+                    .prot_dat_raw_bytes(e.byte_offset, len)
+                    .is_ok_and(|b| legaia_scene_formats::scene_tmd_stream::is_scene_tmd_stream(&b))
+        })
+        .collect()
 }
 
 /// The `arts.toml` key of an art-table character.
