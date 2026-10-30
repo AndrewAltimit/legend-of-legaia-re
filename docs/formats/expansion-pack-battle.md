@@ -199,7 +199,7 @@ Phases run forward only: a monster healed back above a threshold stays in its ph
 | `attack`, `defence`, `agility`, `speed`, `intelligence` | Set or scale (`{ mul = x }`) the monster's live battle stat and its base half. |
 | `element` | The monster's element (`0..=7`); the affinity matrix reads it as attacker and defender, so it changes what the monster resists. |
 | `heal_pct` | Restores this percent of maximum HP. |
-| `summon` | Monsters seated into free monster seats as the next round opens. |
+| `summon` | Monsters seated into free monster seats at the next turn boundary. |
 | `music`, `sound` | Music that cross-fades in as the phase begins, and a sound played then ([audio](expansion-pack-audio.md#boss-music-phases-and-telegraphs)). |
 
 ### Picks, targets and telegraphs
@@ -209,6 +209,8 @@ Each turn draws once from the battle RNG over the standing moves' `weight`s (no 
 `target` picks among the living party: `random` (one draw), `lowest_hp`, `highest_attack`, and `healer` (a member who knows an ally-side spell, the most MP first; with none, the most MP). A move's own rule comes first, then the phase's, then the script's (`random` by default). A spell whose shape is not one enemy - the whole party, an ally - keeps its shape's targets.
 
 A move with `charge = true` is telegraphed: the turn it is picked the monster only gathers power and `charge_line` (or a generic "gathering power" line) stands as the banner, and `charge_sound` plays; on its next turn the move lands with no draw.
+
+A spell move casts through the retail cast path, which turns a cast the monster cannot afford into a swing. `ignore_mp = true` casts it whatever MP is left and spends none (the pick tops the monster's MP up by the spell's cost, which the cast band's debit takes back), so a scripted signature spell always lands; the validator refuses it on a swing.
 
 ### Enrage, immunities, last stand
 
@@ -220,15 +222,28 @@ A move with `charge = true` is telegraphed: the turn it is picked the monster on
 
 Every line shows on the battle's timed-message line, the one the wave banner uses, for its hold (about two seconds). A banner raised while another stands queues behind it, so a phase change and a charge on one turn read one after the other. A banner is one row: the line's first page, rows joined, and the validator warns past 40 characters.
 
+The three stock banners - an enrage with no `line`, a charge with no `charge_line`, a last stand with no `line` - read the pack's own `dialog.toml` lines when it has them, so a pack written in another language words them its way; without them the engine's English wording stands. In each, `<name>` reads as the boss's name.
+
+| Dialog line | Engine wording |
+|---|---|
+| `boss_enraged` | `<name> is enraged!` |
+| `boss_charging` | `<name> is gathering power!` |
+| `boss_last_stand` | `<name> refuses to fall!` |
+
+```toml
+[lines.boss_last_stand]
+text = "<name> ne tombe pas !"
+```
+
 ### Summons
 
-A summon takes a free monster seat - one whose monster has fallen, or one the layout has not yet used - as the next round opens, through the wave seating path, so it acts in that round, its mesh binds on both hosts and it joins the fight's spoils. When the summons need more seats than the layout has, the monster block widens and the standing monsters move to the wider layout's seats. A summon with no free seat (four standing) is dropped.
+A summon takes a free monster seat - one whose monster has fallen, or one the layout has not yet used - through the wave seating path, at the next safe point: a phase that changes as a round opens seats it before the initiative seed, so it acts in that round; a phase that changes on the boss's own turn mid-round seats it as that turn ends, before the next actor is picked (the seam a wipe's wave arrives on), and it first acts the round after. Either way its mesh binds on both hosts and it joins the fight's spoils. When the summons need more seats than the layout has, the monster block widens and the standing monsters move to the wider layout's seats. A summon with no free seat (four standing) is dropped.
 
 Summons fight in the same battle, so they count toward the [one-version rule](#one-version-of-each-base-monster) with the formation's waves.
 
 ### Validation
 
-`BattleSection::problems` refuses: a first phase with a `when` or no moves, a later phase with none, `hp_below_pct` thresholds that do not fall phase by phase, a move with both or neither of `attack` and `spell`, `hits` outside `1..=8` or without `attack`, a zero `weight`, a `charge_line` without `charge`, an enrage keyed on anything but `round`, an unknown summon, more than four summons in one phase, more than eight phases or twelve moves, and a duplicated immunity. Every `line` and `charge_line` must name a dialog line of the pack.
+`BattleSection::problems` refuses: a first phase with a `when` or no moves, a later phase with none, `hp_below_pct` thresholds that do not fall phase by phase, a move with both or neither of `attack` and `spell`, `hits` outside `1..=8` or without `attack`, a zero `weight`, a `charge_line` without `charge`, an `ignore_mp` without `spell`, an enrage keyed on anything but `round`, an unknown summon, more than four summons in one phase, more than eight phases or twelve moves, and a duplicated immunity. Every `line` and `charge_line` must name a dialog line of the pack.
 
 ## Progression
 
@@ -279,7 +294,7 @@ Enemy scaling multiplies HP, MP, ATK, both defences, INT and SPD, and EXP and go
 | Steal override | the death-spoils steal in `battle/steal_attack.rs` |
 | Boss track | `World::swap_to_battle_bgm` |
 | Boss script pick | `World::expansion_boss_pick`, the top of `World::pick_monster_action`; a swing stream through `World::arm_monster_strike_budget` |
-| Boss phase checks, summons | `World::expansion_boss_round_start`, from `World::begin_battle_round` |
+| Boss phase checks, summons | `World::expansion_boss_round_start`, from `World::begin_battle_round`; a mid-round summon from `World::cycle_battle_turn` |
 | Last stand | `World::expansion_survives_lethal`, from `apply_battle_hp_delta` and `apply_combo_total` |
 | Immunities, banner queue | `World::expansion_boss_frame`, ahead of the battle frame's dead-marking sweep |
 

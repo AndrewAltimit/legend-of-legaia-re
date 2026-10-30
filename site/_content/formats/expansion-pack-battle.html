@@ -225,12 +225,13 @@ moves = [
       <tr><td><code>attack</code>, <code>defence</code>, <code>agility</code>, <code>speed</code>, <code>intelligence</code></td><td>Set or scale (<code>{ mul = x }</code>) the live battle stat and its base half.</td></tr>
       <tr><td><code>element</code></td><td>The monster's element; the affinity matrix reads it both ways, so it changes what the monster resists.</td></tr>
       <tr><td><code>heal_pct</code></td><td>Restores this percent of maximum HP.</td></tr>
-      <tr><td><code>summon</code></td><td>Monsters seated into free monster seats as the next round opens.</td></tr>
+      <tr><td><code>summon</code></td><td>Monsters seated into free monster seats at the next turn boundary.</td></tr>
     </tbody>
   </table>
 
   <h3 id="boss-picks">Picks, targets and telegraphs</h3>
   <p>Each turn draws once from the battle RNG over the standing moves' weights (none when one move is ready), so a fight replays bit for bit. <code>cooldown</code> keeps a move out of the draw for that many of the monster's own turns. <code>target</code> is <code>random</code>, <code>lowest_hp</code>, <code>highest_attack</code> or <code>healer</code> (a member who knows an ally-side spell, the most MP first); the move's rule wins over the phase's, the phase's over the script's. A spell whose shape is not one enemy keeps its shape's targets.</p>
+  <p>A spell move the monster cannot afford becomes a swing on the retail cast path; <code>ignore_mp = true</code> casts it whatever MP is left and spends none.</p>
   <p>A move with <code>charge = true</code> is telegraphed: the turn it is picked the monster only gathers power under <code>charge_line</code> (or a generic line), and the move lands on its next turn.</p>
 
   <h3 id="boss-enrage">Enrage, immunities, last stand</h3>
@@ -242,10 +243,11 @@ moves = [
 
   <h3 id="boss-banners">Banners and summons</h3>
   <p>Every line shows on the battle's timed-message line, the one the wave banner uses, for about two seconds; a banner raised while another stands queues behind it. A banner is one row (the line's first page, rows joined), and the validator warns past 40 characters.</p>
-  <p>A summon takes a free monster seat as the next round opens, through the wave seating path: it acts that round, its mesh binds on both hosts and it joins the spoils. When the seats laid out are full the block widens and the standing monsters move; with four standing the summon is dropped. Summons count toward the one-version rule with the formation's waves.</p>
+  <p>The three stock banners (an enrage with no <code>line</code>, a charge with no <code>charge_line</code>, a last stand with no <code>line</code>) read the pack's own <code>dialog.toml</code> lines <code>boss_enraged</code>, <code>boss_charging</code> and <code>boss_last_stand</code> when it has them, so a pack in another language words them its way; without them the engine's English wording stands ("&lt;name&gt; is enraged!", "&lt;name&gt; is gathering power!", "&lt;name&gt; refuses to fall!"). <code>&lt;name&gt;</code> reads as the boss's name.</p>
+  <p>A summon takes a free monster seat through the wave seating path at the next safe point: one raised as a round opens is seated before the initiative seed and acts that round; one raised on the boss's own turn mid-round is seated as that turn ends and first acts the round after. Its mesh binds on both hosts and it joins the spoils. When the seats laid out are full the block widens and the standing monsters move; with four standing the summon is dropped. Summons count toward the one-version rule with the formation's waves.</p>
 
   <h3 id="boss-validation">Validation</h3>
-  <p>Refused: a first phase with a <code>when</code> or no moves, a later phase without one, HP thresholds that do not fall phase by phase, a move with both or neither of <code>attack</code> and <code>spell</code>, <code>hits</code> outside 1..8 or without <code>attack</code>, a zero weight, a <code>charge_line</code> without <code>charge</code>, an enrage keyed on anything but <code>round</code>, an unknown summon, more than four summons in a phase, more than eight phases or twelve moves, a duplicated immunity. Every line must name a dialog line of the pack.</p>
+  <p>Refused: a first phase with a <code>when</code> or no moves, a later phase without one, HP thresholds that do not fall phase by phase, a move with both or neither of <code>attack</code> and <code>spell</code>, <code>hits</code> outside 1..8 or without <code>attack</code>, a zero weight, a <code>charge_line</code> without <code>charge</code>, an <code>ignore_mp</code> without <code>spell</code>, an enrage keyed on anything but <code>round</code>, an unknown summon, more than four summons in a phase, more than eight phases or twelve moves, a duplicated immunity. Every line must name a dialog line of the pack.</p>
   <p class="hint">The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s battle tab edits scripts phase by phase, with the base monster's swings and the disc's spells in the move pickers.</p>
 </section>
 

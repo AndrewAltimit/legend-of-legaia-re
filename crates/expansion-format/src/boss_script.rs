@@ -155,6 +155,11 @@ pub struct MoveDef {
     /// The sound the charge turn plays: the telegraph's cue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub charge_sound: Option<crate::audio::SoundRef>,
+    /// `spell` only: cast whatever MP the monster has left, spending none
+    /// (the retail cast path otherwise turns an unaffordable cast into a
+    /// swing).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ignore_mp: bool,
 }
 
 fn one() -> u32 {
@@ -432,6 +437,9 @@ fn phase_problems(field: &str, ph: &PhaseDef) -> Vec<String> {
         if m.charge_line.is_some() && !m.charge {
             out.push(format!("{mf}: charge_line needs charge = true"));
         }
+        if m.ignore_mp && m.spell.is_none() {
+            out.push(format!("{mf}: ignore_mp needs a spell"));
+        }
     }
     out
 }
@@ -530,5 +538,19 @@ when = { hp_below_pct = 60 }
             p.iter().any(|l| l.contains("not below the phase before")),
             "{p:?}"
         );
+    }
+
+    #[test]
+    fn ignore_mp_needs_a_spell() {
+        let s: super::BossScript =
+            toml::from_str("[[phases]]\nmoves = [{ attack = 0, ignore_mp = true }]").unwrap();
+        assert!(
+            s.problems("t").iter().any(|p| p.contains("ignore_mp")),
+            "{:?}",
+            s.problems("t")
+        );
+        let s: super::BossScript =
+            toml::from_str("[[phases]]\nmoves = [{ spell = 0x51, ignore_mp = true }]").unwrap();
+        assert!(s.problems("t").is_empty(), "{:?}", s.problems("t"));
     }
 }

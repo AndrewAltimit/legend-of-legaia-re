@@ -183,6 +183,13 @@ impl World {
         pack.dialog.lines.get(key).map(bs::banner_text)
     }
 
+    /// A stock boss banner ([`bs::stock_banner`]): the pack's own dialog
+    /// line `key` when it words one, else the engine's.
+    fn boss_stock_banner(&self, key: &str, slot: usize) -> String {
+        let dialog = self.expansion.pack.as_ref().map(|p| &p.dialog);
+        bs::stock_banner(dialog, key, &self.boss_name(slot))
+    }
+
     /// Raise a boss banner on the battle's timed-message line, or queue it
     /// behind the banner standing there ([`Self::expansion_boss_frame`]
     /// shows it once the line clears).
@@ -252,7 +259,7 @@ impl World {
             .extend(p.summon.iter().copied());
         let text = match (&p.line, c) {
             (Some(l), _) => self.boss_line_text(l),
-            (None, Change::Enrage) => Some(format!("{} is enraged!", self.boss_name(slot))),
+            (None, Change::Enrage) => Some(self.boss_stock_banner(bs::BANNER_ENRAGED, slot)),
             (None, Change::Phase(_)) => None,
         };
         if let Some(t) = text {
@@ -398,7 +405,7 @@ impl World {
                     .charge_line
                     .as_deref()
                     .and_then(|l| self.boss_line_text(l))
-                    .unwrap_or_else(|| format!("{} is gathering power!", self.boss_name(s)));
+                    .unwrap_or_else(|| self.boss_stock_banner(bs::BANNER_CHARGING, s));
                 self.boss_banner(text);
                 return Some(MonsterAction::Wait);
             }
@@ -448,6 +455,12 @@ impl World {
                 if let Some(a) = self.actors.get_mut(s) {
                     a.battle.action_category = 2;
                     a.battle.params[0] = spell_id;
+                    // `ignore_mp`: the band's `0x28` debit takes back what
+                    // this adds, so the cast always goes and spends nothing
+                    // (the retail-compare cast seed's own top-up).
+                    if m.ignore_mp {
+                        a.battle.mp = a.battle.mp.saturating_add(u16::from(def.mp_cost));
+                    }
                 }
                 Some(MonsterAction::Cast { spell_id, targets })
             }
@@ -471,7 +484,7 @@ impl World {
         let text = line
             .as_deref()
             .and_then(|l| self.boss_line_text(l))
-            .unwrap_or_else(|| format!("{} refuses to fall!", self.boss_name(slot)));
+            .unwrap_or_else(|| self.boss_stock_banner(bs::BANNER_LAST_STAND, slot));
         self.boss_banner(text);
         true
     }

@@ -45,6 +45,8 @@ pub struct CompiledMove {
     pub cooldown: u8,
     /// The telegraph's sound, played on the charge turn.
     pub charge_sound: Option<legaia_expansion_format::audio::SoundRef>,
+    /// A spell cast whatever the monster's MP, spending none.
+    pub ignore_mp: bool,
 }
 
 /// The stat changes a phase makes.
@@ -118,6 +120,7 @@ impl CompiledScript {
                                 charge_line: m.charge_line.clone(),
                                 cooldown: m.cooldown,
                                 charge_sound: m.charge_sound.clone(),
+                                ignore_mp: m.ignore_mp,
                             })
                         })
                         .collect()
@@ -408,6 +411,47 @@ pub fn banner_text(line: &legaia_expansion_format::dialog::DialogLine) -> String
     fmt::banner_text(line)
 }
 
+/// The token a stock banner reads as the boss's name.
+pub const NAME_TOKEN: &str = "<name>";
+/// The dialog line a pack words the stock enrage banner with.
+pub const BANNER_ENRAGED: &str = "boss_enraged";
+/// The dialog line for the stock charge (telegraph) banner.
+pub const BANNER_CHARGING: &str = "boss_charging";
+/// The dialog line for the stock last-stand banner.
+pub const BANNER_LAST_STAND: &str = "boss_last_stand";
+
+/// The engine's own wording of the stock banners, for a pack that does not
+/// word them: an enrage with no `line`, a charge with no `charge_line`, a
+/// last stand with no `line`.
+pub const DEFAULT_BANNERS: [(&str, &str); 3] = [
+    (BANNER_ENRAGED, "<name> is enraged!"),
+    (BANNER_CHARGING, "<name> is gathering power!"),
+    (BANNER_LAST_STAND, "<name> refuses to fall!"),
+];
+
+/// Stock banner `key` for boss `name`: the pack's dialog line `key` when
+/// `dialog` has one with text (a pack in another language words them its
+/// own way), else the engine's [`DEFAULT_BANNERS`] wording; `<name>` reads
+/// as `name`.
+pub fn stock_banner(
+    dialog: Option<&legaia_expansion_format::dialog::DialogSection>,
+    key: &str,
+    name: &str,
+) -> String {
+    let template = dialog
+        .and_then(|d| d.lines.get(key))
+        .map(banner_text)
+        .filter(|t| !t.trim().is_empty())
+        .or_else(|| {
+            DEFAULT_BANNERS
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, t)| t.to_string())
+        })
+        .unwrap_or_default();
+    template.replace(NAME_TOKEN, name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,5 +653,26 @@ moves = [{ attack = 1, hits = 3 }, { spell = 0x63, charge = true, charge_line = 
         let l: legaia_expansion_format::dialog::DialogLine =
             toml::from_str("text = \"The forge\\nwakes!\\n\\nSecond page.\"").unwrap();
         assert_eq!(banner_text(&l), "The forge wakes!");
+    }
+
+    #[test]
+    fn stock_banners_read_the_packs_wording_first() {
+        assert_eq!(
+            stock_banner(None, BANNER_ENRAGED, "Warden"),
+            "Warden is enraged!"
+        );
+        let d: legaia_expansion_format::dialog::DialogSection = toml::from_str(
+            "[lines.boss_last_stand]\ntext = \"<name> ne tombe pas !\"\n[lines.boss_charging]\ntext = \"\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            stock_banner(Some(&d), BANNER_LAST_STAND, "Warden"),
+            "Warden ne tombe pas !"
+        );
+        // An empty line falls back to the engine's wording.
+        assert_eq!(
+            stock_banner(Some(&d), BANNER_CHARGING, "Warden"),
+            "Warden is gathering power!"
+        );
     }
 }

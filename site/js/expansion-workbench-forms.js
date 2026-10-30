@@ -544,7 +544,7 @@ function moveEd(ctx, box, mv, p, base) {
   const kind = h('select', {}, h('option', { value: 'attack' }, 'Swing (base attack)'), h('option', { value: 'spell' }, 'Spell'));
   kind.value = mv.spell != null ? 'spell' : 'attack';
   kind.addEventListener('change', () => {
-    if (kind.value === 'spell') { delete mv.attack; delete mv.hits; mv.spell = mv.spell || 0x81; } else { delete mv.spell; mv.attack = 0; }
+    if (kind.value === 'spell') { delete mv.attack; delete mv.hits; mv.spell = mv.spell || 0x81; } else { delete mv.spell; delete mv.ignore_mp; mv.attack = 0; }
     ctx.changed(true);
   });
   const row = h('div', { class: 'xw-grid' }, h('label', { class: 'xw-field' }, h('span', {}, 'Move'), kind));
@@ -557,6 +557,7 @@ function moveEd(ctx, box, mv, p, base) {
   } else if (catList(ctx, 'spells').length) {
     row.append(field(ctx, mv, { k: 'spell', t: 'sel', num: true, label: 'Spell', opts: catList(ctx, 'spells').filter((x) => x.id > 0).map((x) => [String(x.id), `0x${x.id.toString(16).toUpperCase().padStart(2, '0')} ${x.name}`]) }, p));
   } else row.append(field(ctx, mv, { k: 'spell', t: 'int', label: 'Spell id' }, p));
+  if (kind.value === 'spell') row.append(field(ctx, mv, { k: 'ignore_mp', t: 'bool', label: 'Ignore MP (always casts, spends none)' }, p));
   row.append(
     field(ctx, mv, { k: 'weight', t: 'int', label: 'Weight' }, p),
     field(ctx, mv, { k: 'target', t: 'osel', label: 'Target', none: '(phase rule)', opts: TARGET_RULES }, p),
@@ -591,7 +592,7 @@ function summonEd(ctx, box, ph, p) {
     });
     seats.append(h('label', { class: 'xw-field', 'data-path': `${p}.summon[${i}]` }, h('span', {}, `Summon ${i + 1}`), sel));
   }
-  box.append(h('h4', { class: 'xw-sub' }, 'Summons', h('span', { class: 'xw-hint' }, ' seated as the next round opens')), seats);
+  box.append(h('h4', { class: 'xw-sub' }, 'Summons', h('span', { class: 'xw-hint' }, ' seated at the next turn boundary')), seats);
 }
 
 // One phase (or the enrage): when it begins, what changes, its moves.

@@ -339,7 +339,7 @@ heal_pct = 15
 defence = { mul = 1.3 }
 summon = ["moss_grude"]
 moves = [
-    { spell = 0x4A, weight = 2, charge = true, charge_line = "colossus_quake", cooldown = 3 },
+    { spell = 0x4A, weight = 2, charge = true, ignore_mp = true, charge_line = "colossus_quake", cooldown = 3 },
     { attack = 3, weight = 2 },
     { attack = 1, weight = 2 },
 ]
@@ -390,7 +390,7 @@ line = "regent_iron"
 summon = ["brass_sentinel", "brass_sentinel"]
 defence = { mul = 1.4 }
 moves = [
-    { spell = 0x4B, weight = 2, charge = true, charge_line = "regent_crush", cooldown = 3 },
+    { spell = 0x4B, weight = 2, charge = true, ignore_mp = true, charge_line = "regent_crush", cooldown = 3 },
     { attack = 3, hits = 3, weight = 3 },
 ]
 
@@ -429,7 +429,7 @@ when = { hp_below_pct = 50 }
 line = "seraph_tide"
 element = 4
 moves = [
-    { spell = 0x71, weight = 2, charge = true, charge_line = "seraph_tide_charge", cooldown = 3 },
+    { spell = 0x71, weight = 2, charge = true, ignore_mp = true, charge_line = "seraph_tide_charge", cooldown = 3 },
     { spell = 0x75, weight = 1, cooldown = 2 },
     { attack = 1, hits = 2, weight = 2 },
 ]
@@ -497,7 +497,7 @@ speed = { mul = 1.2 }
 # again on every Grand Beam telegraph.
 sound = { kind = "sound", id = "chime" }
 moves = [
-    { spell = 0x63, weight = 2, charge = true, charge_line = "sovereign_ultimate", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
+    { spell = 0x63, weight = 2, charge = true, ignore_mp = true, charge_line = "sovereign_ultimate", cooldown = 3, charge_sound = { kind = "sound", id = "chime" } },
     { attack = 0, hits = 3, weight = 2, target = "lowest_hp" },
     { spell = 0x58, weight = 1 },
 ]
@@ -536,7 +536,7 @@ when = { hp_below_pct = 50 }
 line = "unbound_break"
 attack = { mul = 1.2 }
 moves = [
-    { spell = 0x74, weight = 2, charge = true, charge_line = "unbound_charge", cooldown = 3 },
+    { spell = 0x74, weight = 2, charge = true, ignore_mp = true, charge_line = "unbound_charge", cooldown = 3 },
     { spell = 0x36, weight = 2, cooldown = 1 },
     { attack = 2, hits = 2, weight = 2 },
 ]

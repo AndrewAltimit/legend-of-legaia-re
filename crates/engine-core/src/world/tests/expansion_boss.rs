@@ -331,3 +331,59 @@ fn a_retail_fight_with_a_scripted_pack_active_is_the_retail_fight() {
     assert_eq!(retail_trace(&mut active), retail);
     assert!(active.expansion.battle.boss_runs.is_empty());
 }
+
+#[test]
+fn a_mid_round_summon_takes_its_seat_at_the_next_turn() {
+    use legaia_engine_battle_loop::round_flow::RoundPhase;
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    let mut w = world();
+    w.activate_expansion(pack()).unwrap();
+    assert!(w.start_expansion_battle("den"));
+    enter(&mut w);
+    // The wolf's own turn, below half: the howl queues the Rat.
+    w.actors[2].battle.hp = 290;
+    let _ = w.pick_monster_action(2);
+    assert_eq!(w.expansion.battle.pending_summons, [10]);
+    // The wolf's action ends mid-round: the next turn's dispatch seats the
+    // Rat before it picks who acts.
+    w.battle.round_flow.phase = RoundPhase::Execute;
+    w.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
+    w.cycle_battle_turn();
+    assert!(w.expansion.battle.pending_summons.is_empty());
+    assert_eq!(w.actors[3].battle_monster_id, Some(10));
+    assert!(w.take_expansion_reseated_monsters().contains(&3));
+}
+
+#[test]
+fn an_ignore_mp_spell_casts_dry_and_spends_nothing() {
+    let battle = BATTLE_TOML.replace(
+        "moves = [{ attack = 0 }]",
+        "moves = [{ spell = 0x51, ignore_mp = true }]",
+    );
+    let mut files = PackFiles::new();
+    files.insert("pack.toml".into(), PACK_TOML.as_bytes().to_vec());
+    files.insert("battle.toml".into(), battle.into_bytes());
+    files.insert("dialog.toml".into(), DIALOG_TOML.as_bytes().to_vec());
+    let pack = Arc::new(ExpansionPack::from_files(&files).expect("pack parses"));
+    let mut w = world();
+    w.tables
+        .spell_catalog
+        .insert(legaia_engine_battle::spells::SpellDef {
+            id: 0x51,
+            name: "Bolt".into(),
+            mp_cost: 5,
+            target: legaia_engine_battle::spells::SpellTarget::OneEnemy,
+            ..Default::default()
+        });
+    w.activate_expansion(pack).unwrap();
+    assert!(w.start_expansion_battle("den"));
+    enter(&mut w);
+    w.actors[2].battle.mp = 0;
+    let action = w.pick_monster_action(2);
+    assert!(
+        matches!(action, MonsterAction::Cast { spell_id: 0x51, .. }),
+        "{action:?}"
+    );
+    // Topped up by the cost the band's debit takes back.
+    assert_eq!(w.actors[2].battle.mp, 5);
+}

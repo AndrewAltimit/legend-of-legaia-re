@@ -132,6 +132,8 @@ disc's:
 
 Their banner lines are the `warden_*`, `colossus_*`, `regent_*`, `seraph_*`,
 `sovereign_*` and `unbound_*` lines in `dialog.toml`.
+Every telegraphed spell is `ignore_mp`: once a boss has charged it, it lands
+whatever MP the boss has left.
 
 ### Quests
 

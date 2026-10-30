@@ -61,6 +61,12 @@ impl World {
             // the first round start.
             RoundPhase::Open => self.begin_battle_round(),
             RoundPhase::Execute => {
+                // A summon a boss's mid-round phase change raised takes its
+                // seat here, between two actors' turns - the same seam a
+                // wipe's wave arrives on - rather than at the next round's
+                // start. It holds no initiative key, so it first acts next
+                // round (never without a scripted pack monster).
+                self.expansion_seat_summons();
                 let pick = if std::mem::take(&mut self.battle.round_flow.leader_first) {
                     self.leader_first_combatant()
                 } else {
