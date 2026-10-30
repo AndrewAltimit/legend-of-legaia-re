@@ -258,12 +258,18 @@
     /* An object-only edit from the workbench, applied to the running map:
      *  - a prop's draw is found by where it stands now (its placed draw at
      *    `from`, world x / z) and moved to `to`, turned by `turn` degrees and
-     *    raised by `dy` (the floor's change between the two tiles, up);
-     *  - an NPC goes through `expansion_place_npc` (its anchor and heading).
+     *    raised by `dy` (the floor's change between the two tiles, up); the
+     *    engine's copy (`expansion_place_prop`: its closed tile in the
+     *    collision grid, its standable top, its light) takes `tile`,
+     *    `offset` and `yaw`;
+     *  - an NPC goes through `expansion_place_npc` (its anchor and heading);
+     *  - a spawn through `expansion_place_spawn`, a lamp through
+     *    `expansion_place_lamp` (the light is read every frame).
      * A prop with no single plain placed draw at `from` (a tilted or a
-     * script-moved one, two draws on one spot) or an NPC the engine refuses
-     * answers `ok: false`, and the workbench rebuilds instead. Nothing is
-     * half-applied: the props are matched before any moves. */
+     * script-moved one, two draws on one spot) or an object the engine
+     * refuses answers `ok: false`, and the workbench rebuilds instead. The
+     * props are matched before anything moves. `collision` is false when
+     * the bundle cannot move a prop's engine copy (an older wasm). */
     function moveInPlace(rt, v, m) {
       if (!rt || !v || !v.staticDraws) return { ok: false, why: 'no map' };
       const picks = [];
@@ -273,18 +279,31 @@
         if (hits.length !== 1 || hits[0].model || hits[0].liveModel) return { ok: false, why: `prop at ${p.from} has ${hits.length} draw(s)` };
         picks.push([hits[0], p]);
       }
-      if ((m.npcs || []).length && typeof rt.expansion_place_npc !== 'function') return { ok: false, why: 'no in-place NPC move in this bundle' };
+      const has = (f) => typeof rt[f] === 'function';
+      if ((m.npcs || []).length && !has('expansion_place_npc')) return { ok: false, why: 'no in-place NPC move in this bundle' };
+      if (((m.spawns || []).length && !has('expansion_place_spawn')) || ((m.lamps || []).length && !has('expansion_place_lamp'))) return { ok: false, why: 'no in-place spawn / lamp move in this bundle' };
+      const collision = has('expansion_place_prop');
       for (const [d, p] of picks) {
         const dx = p.to[0] - p.from[0], dz = p.to[1] - p.from[1];
         d.x += dx; d.z += dz; d.baseX += dx; d.baseZ += dz;
         if (p.dy) { d.y += p.dy; if (d.baseY !== undefined) d.baseY += p.dy; }
         if (p.turn) d.rotY -= p.turn * Math.PI / 180;
+        if (collision && p.tile && !rt.expansion_place_prop(p.i, p.tile[0], p.tile[1], (p.offset && p.offset[0]) || 0, (p.offset && p.offset[2]) || 0, p.yaw || 0)) {
+          return { ok: false, why: `prop ${p.i} refused`, partial: true };
+        }
       }
       for (const nv of m.npcs || []) {
         if (!rt.expansion_place_npc(nv.n, nv.tile[0], nv.tile[1], nv.facing || 0)) return { ok: false, why: `npc ${nv.n} refused`, partial: true };
       }
+      for (const s of m.spawns || []) {
+        if (!rt.expansion_place_spawn(s.n, s.tile[0], s.tile[1], s.facing || 0)) return { ok: false, why: `spawn ${s.n} refused`, partial: true };
+      }
+      for (const l of m.lamps || []) {
+        const o = l.offset || [0, 96, 0];
+        if (!rt.expansion_place_lamp(l.n, l.tile[0], l.tile[1], o[0] || 0, o[1] || 0, o[2] || 0)) return { ok: false, why: `lamp ${l.n} refused`, partial: true };
+      }
       if (typeof v.refreshEditorOverlay === 'function') v.refreshEditorOverlay();
-      return { ok: true, props: picks.length, npcs: (m.npcs || []).length };
+      return { ok: true, collision, props: picks.length, npcs: (m.npcs || []).length, spawns: (m.spawns || []).length, lamps: (m.lamps || []).length };
     }
 
     window.addEventListener('message', (ev) => {

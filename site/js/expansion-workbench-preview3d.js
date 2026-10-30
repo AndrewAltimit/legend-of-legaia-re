@@ -149,46 +149,61 @@ export function draftDefs(map, pv, built) {
 export function strippedJson(pack, mapId) {
   const m = pack && pack.maps && pack.maps[mapId];
   if (!m) return JSON.stringify(pack);
-  const props = m.props, npcs = m.npcs;
+  const props = m.props, npcs = m.npcs, spawns = m.spawns, lighting = m.lighting;
   m.props = (props || []).map((p) => Object.assign({}, p, { tile: null, offset: p.offset ? [0, p.offset[1] || 0, 0] : null, rotation: p.rotation ? [p.rotation[0] || 0, 0, p.rotation[2] || 0] : null }));
   m.npcs = (npcs || []).map((n) => Object.assign({}, n, { tile: null, facing: null }));
-  try { return JSON.stringify(pack); } finally { m.props = props; m.npcs = npcs; }
+  m.spawns = (spawns || []).map((n) => Object.assign({}, n, { tile: null, facing: null }));
+  if (lighting && lighting.lamps) m.lighting = Object.assign({}, lighting, { lamps: lighting.lamps.map((l) => Object.assign({}, l, { tile: null, offset: null })) });
+  try { return JSON.stringify(pack); } finally { m.props = props; m.npcs = npcs; m.spawns = spawns; m.lighting = lighting; }
 }
 
-/* Each prop's and NPC's pose on `map`, in the terms a move is sent in. */
+/* Each prop's, NPC's, spawn's and lamp's pose on `map`, in the terms a
+ * move is sent in. */
 export function objectPoses(map) {
   const o0 = (map.tiles && map.tiles.origin) || [0, 0];
   const world = (t, off) => [(o0[0] + t[0]) * 128 + 64 + ((off && off[0]) || 0), (o0[1] + t[1]) * 128 + 64 + ((off && off[2]) || 0)];
   return {
-    props: (map.props || []).map((p) => ({ tile: p.tile || [0, 0], at: world(p.tile || [0, 0], p.offset), yaw: (p.rotation || [0, 0, 0])[1] || 0 })),
+    props: (map.props || []).map((p) => ({ tile: p.tile || [0, 0], offset: p.offset || [0, 0, 0], at: world(p.tile || [0, 0], p.offset), yaw: (p.rotation || [0, 0, 0])[1] || 0 })),
     npcs: (map.npcs || []).map((n) => ({ tile: n.tile || [0, 0], facing: n.facing || 0 })),
+    spawns: (map.spawns || []).map((n) => ({ tile: n.tile || [0, 0], facing: n.facing || 0 })),
+    lamps: ((map.lighting && map.lighting.lamps) || []).map((l) => ({ tile: l.tile || [0, 0], offset: l.offset || [0, 96, 0] })),
   };
 }
 
 /* The moves from poses `a` to `b` (same lists): props by world position,
  * turn and the floor's rise between their tiles (`grid`, the corner
- * heights the frame's tile grid draws), NPCs by tile and facing. `null`
- * when a prop changes tile with no grid to lift it by. */
+ * heights the frame's tile grid draws), with the new tile and offset the
+ * engine's copy takes; NPCs and spawns by tile and facing; lamps by tile
+ * and offset. `null` when a prop changes tile with no grid to lift it by. */
 export function objectMoves(a, b, grid) {
   const props = [];
   const npcs = [];
+  const spawns = [];
+  const lamps = [];
   const floor = (t) => {
     const q = grid.corners[t[1] * grid.width + t[0]];
     return q ? (q[0] + q[1] + q[2] + q[3]) / 4 : 0;
   };
+  const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
   for (let i = 0; i < b.props.length; i++) {
     const p = a.props[i], q = b.props[i];
     if (p.at[0] === q.at[0] && p.at[1] === q.at[1] && p.yaw === q.yaw) continue;
     const moved = p.tile[0] !== q.tile[0] || p.tile[1] !== q.tile[1];
     if (moved && !grid) return null;
-    props.push({ i, from: p.at, to: q.at, turn: q.yaw - p.yaw, dy: moved ? Math.round(floor(q.tile) - floor(p.tile)) : 0 });
+    props.push({ i, from: p.at, to: q.at, turn: q.yaw - p.yaw, dy: moved ? Math.round(floor(q.tile) - floor(p.tile)) : 0, tile: q.tile, offset: q.offset, yaw: q.yaw });
   }
   for (let n = 0; n < b.npcs.length; n++) {
     const p = a.npcs[n], q = b.npcs[n];
     if (p.tile[0] === q.tile[0] && p.tile[1] === q.tile[1] && p.facing === q.facing) continue;
     npcs.push({ n, tile: q.tile, facing: q.facing });
   }
-  return { props, npcs };
+  for (let n = 0; n < (b.spawns || []).length; n++) {
+    if (!same(a.spawns[n], b.spawns[n])) spawns.push({ n, tile: b.spawns[n].tile, facing: b.spawns[n].facing });
+  }
+  for (let n = 0; n < (b.lamps || []).length; n++) {
+    if (!same(a.lamps[n], b.lamps[n])) lamps.push({ n, tile: b.lamps[n].tile, offset: b.lamps[n].offset });
+  }
+  return { props, npcs, spawns, lamps };
 }
 
 export function createPreview3d(env) {
@@ -473,56 +488,80 @@ export function createPreview3d(env) {
       return;
     }
     P.deferred = false;
-    let bytes;
-    try {
-      bytes = env.exportBundle();
-    } catch (e) {
+    /* The bytes are built off this thread when the page can
+     * (`exportBundleAsync`, the validation worker); a build already being
+     * made takes this edit as its next. */
+    if (P.building) { P.dirty = true; return; }
+    const seq = (P.buildSeq || 0) + 1;
+    P.buildSeq = seq;
+    P.building = true;
+    const tb = performance.now();
+    const fail = (e) => {
+      P.building = false;
       setStatus(`Showing the last good build: the pack has errors (${String(e && e.message ? e.message : e).split('\n')[0]}).`, true);
-      return;
-    }
-    const first = !P.sent;
-    P.forceFull = false;
-    P.sent = { map: P.map };
-    // The tiles the draft compares against are this build's: the latest
-    // preview when no edit came after it, else the next one to arrive.
-    P.builtEdits = P.edits;
-    P.pvBuilt = P.pvNow && P.pvNowEdits === P.edits ? P.pvNow : null;
-    // The draft sent with the overlay after the build: nothing beyond it.
-    const def = pack().maps[P.map];
-    if (P.pvBuilt && def) P.defs = draftDefs(def, P.pvNow, P.pvBuilt);
-    P.dirty = false;
-    P.t0 = performance.now();
-    setStatus(first ? `Entering ${P.map} ...` : `Rebuilding ${P.map} ...`);
-    P.lastKind = first ? 'xw-load' : 'xw-reload';
-    // What an object-only edit is measured against: this build.
-    P.sentStripped = strippedJson(pack(), P.map);
-    P.shown = objectPoses(def);
-    P.stale = false;
-    post({ type: P.lastKind, id: pack().manifest.id, map: P.map, spawn: P.spawn, bytes }, [bytes.buffer]);
+    };
+    let made;
+    try {
+      made = env.exportBundleAsync ? env.exportBundleAsync() : Promise.resolve(env.exportBundle());
+    } catch (e) { fail(e); return; }
+    // What the build is measured against: the pack as it is now.
+    const snap = { map: P.map, edits: P.edits, stripped: strippedJson(pack(), P.map), shown: objectPoses(pack().maps[P.map]) };
+    made.then((bytes) => {
+      if (seq !== P.buildSeq) return;
+      P.building = false;
+      P.bundleMs = Math.round(performance.now() - tb);
+      sendBuild(bytes, snap);
+      // An edit that came while the bytes were made.
+      if (P.dirty) schedule();
+    }, fail);
   }
 
-  /* An edit since the last build that only moved or turned props and NPCs
-   * of the open map goes to the frame as moves (`xw-move`): the drawn
-   * objects move at once and nothing is rebuilt. The engine's own copy of
-   * a moved prop - its collision box, a standable top - stays where the
-   * build put it until the next rebuild: an edit of anything else, Reload,
-   * or the Player camera / Walk (which rebuild first). True when the edit
-   * was handled here (or there was none). */
+  function sendBuild(bytes, snap) {
+    if (!P.open || !P.ready || !P.frame) return;
+    const first = !P.sent;
+    P.forceFull = false;
+    P.sent = { map: snap.map };
+    // The tiles the draft compares against are this build's: the latest
+    // preview when no edit came after it, else the next one to arrive.
+    P.builtEdits = snap.edits;
+    P.pvBuilt = P.pvNow && P.pvNowEdits === snap.edits ? P.pvNow : null;
+    // The draft sent with the overlay after the build: nothing beyond it.
+    const def = pack().maps[snap.map];
+    if (P.pvBuilt && def) P.defs = draftDefs(def, P.pvNow, P.pvBuilt);
+    // An edit after the snapshot the bytes were made from stays dirty.
+    P.dirty = P.edits !== snap.edits;
+    P.t0 = performance.now();
+    setStatus(first ? `Entering ${snap.map} ...` : `Rebuilding ${snap.map} ...`);
+    P.lastKind = first ? 'xw-load' : 'xw-reload';
+    // What an object-only edit is measured against: this build.
+    P.sentStripped = snap.stripped;
+    P.shown = snap.shown;
+    P.stale = false;
+    post({ type: P.lastKind, id: pack().manifest.id, map: snap.map, spawn: P.spawn, bytes }, [bytes.buffer]);
+  }
+
+  /* An edit since the last build that only moved or turned props, NPCs,
+   * spawns and lamps of the open map goes to the frame as moves
+   * (`xw-move`): the drawn objects move at once, the engine's copy of each
+   * (a prop's closed tile and standable top, a lamp's light, a spawn)
+   * follows, and nothing is rebuilt. A frame whose bundle cannot move the
+   * engine's copy of a prop says so (`collision: false`) and the Player
+   * camera / Walk rebuild first. True when the edit was handled here (or
+   * there was none). */
   function moveObjects() {
-    if (!P.sent || P.sent.map !== P.map || !P.shown || !P.sentStripped) return false;
+    if (P.building || !P.sent || P.sent.map !== P.map || !P.shown || !P.sentStripped) return false;
     const def = pack().maps[P.map];
     if (strippedJson(pack(), P.map) !== P.sentStripped) return false;
     const now = objectPoses(def);
-    if (now.props.length !== P.shown.props.length || now.npcs.length !== P.shown.npcs.length) return false;
+    for (const k of ['props', 'npcs', 'spawns', 'lamps']) if (now[k].length !== P.shown[k].length) return false;
     const mv = objectMoves(P.shown, now, P.grid);
     if (!mv) return false;
     P.dirty = false;
-    if (!mv.props.length && !mv.npcs.length) return true;
+    if (!mv.props.length && !mv.npcs.length && !mv.spawns.length && !mv.lamps.length) return true;
     P.shown = now;
-    if (mv.props.length) P.stale = true;
     P.moveSeq = (P.moveSeq || 0) + 1;
     P.moveT0 = performance.now();
-    post({ type: 'xw-move', seq: P.moveSeq, props: mv.props, npcs: mv.npcs });
+    post({ type: 'xw-move', seq: P.moveSeq, props: mv.props, npcs: mv.npcs, spawns: mv.spawns, lamps: mv.lamps });
     return true;
   }
 
@@ -590,14 +629,18 @@ export function createPreview3d(env) {
       syncRun();
       if (m.ok && P.pending) sendPending();
     } else if (m.type === 'xw-moved') {
-      P.lastMove = { ok: !!m.ok, ms: Math.round(performance.now() - (P.moveT0 || performance.now())), props: m.props || 0, npcs: m.npcs || 0, seq: m.seq };
+      P.lastMove = { ok: !!m.ok, ms: Math.round(performance.now() - (P.moveT0 || performance.now())), props: m.props || 0, npcs: m.npcs || 0, spawns: m.spawns || 0, lamps: m.lamps || 0, collision: !!m.collision, seq: m.seq };
       if (!m.ok) {
         // The frame could not place them: rebuild.
         P.forceFull = true;
         P.dirty = true;
         flush();
       } else {
-        setStatus(`${P.map}: moved ${(m.props || 0) + (m.npcs || 0)} object(s) in place in ${P.lastMove.ms} ms, no rebuild.${P.stale ? ' A moved prop\'s collision updates on the next rebuild (Reload, Player or Walk).' : ''}`);
+        // A bundle without the engine's prop move leaves a moved prop's
+        // collision where the build put it: rebuild before the player walks.
+        if (m.props && !m.collision) P.stale = true;
+        const n = (m.props || 0) + (m.npcs || 0) + (m.spawns || 0) + (m.lamps || 0);
+        setStatus(`${P.map}: moved ${n} object(s) in place in ${P.lastMove.ms} ms, no rebuild.${P.stale ? ' A moved prop\'s collision updates on the next rebuild (Reload, Player or Walk).' : (m.props ? ' Its collision moved with it.' : '')}`);
       }
     } else if (m.type === 'xw-pick') {
       P.select = { tile: m.tile };
@@ -680,9 +723,9 @@ export function createPreview3d(env) {
     clearTimeout(P.liveTimer);
     if (!P.live || !channel || !pack()) return;
     P.liveTimer = setTimeout(() => {
-      let bytes;
-      try { bytes = env.exportBundle(); } catch (e) { return; }
-      channel.postMessage({ type: 'reload', nonce: 'live', id: pack().manifest.id, map: P.map, bytes });
+      let made;
+      try { made = env.exportBundleAsync ? env.exportBundleAsync() : Promise.resolve(env.exportBundle()); } catch (e) { return; }
+      made.then((bytes) => channel.postMessage({ type: 'reload', nonce: 'live', id: pack().manifest.id, map: P.map, bytes }), () => {});
     }, RELOAD_MS * 2);
   }
 
@@ -817,6 +860,6 @@ export function createPreview3d(env) {
     /* Headless-verification hook. */
     setView,
     setSplit: (f) => setSplit(f, true),
-    state: () => ({ split, lastMove: P.lastMove, stale: !!P.stale, view: P.view, open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
+    state: () => ({ split, lastMove: P.lastMove, bundleMs: P.bundleMs, building: !!P.building, stale: !!P.stale, view: P.view, open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
   };
 }
