@@ -37,6 +37,7 @@ import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
+import { createFind } from './expansion-workbench-xref.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -89,6 +90,11 @@ const S = {
   jump: null,        // { file, field } while jumping to an issue
   chart: null,
   objects: {},
+  // Page-wide history: the pack JSON at each committed step. `cur` is the
+  // committed present; an edit not yet committed is S.pack itself.
+  hist: { past: [], future: [], cur: null, timer: null, bytes: 0 },
+  clean: null,      // the pack JSON as last loaded or downloaded
+  saved: { at: 0, state: 'none' },
 };
 
 const TABS = [
@@ -172,8 +178,15 @@ const ctx = {
     scheduleValidate();
     scheduleSave();
     if (S.preview) S.preview.changed();
-    if (structural) rerender();
+    if (structural) { commitHistory(); rerender(); } else scheduleCommit();
+    updateDirty();
   },
+  // Page-wide undo / redo (the painter's buttons and keys come here too).
+  undo: () => stepHistory(-1),
+  redo: () => stepHistory(1),
+  canUndo: () => S.hist.past.length > 0 || pendingEdit(),
+  canRedo: () => S.hist.future.length > 0,
+  find: (q) => S.find && S.find.find(q),
   rerender: () => rerender(),
   checkDialog: (line) => {
     try { return JSON.parse(S.wb.check_dialog(JSON.stringify(line))); } catch (e) { return null; }
@@ -226,6 +239,8 @@ function renderTabs() {
 
 function rerender() {
   if (!S.pack) return;
+  commitHistory();
+  const wasClean = S.clean != null && S.hist.cur === S.clean;
   const m = S.pack.manifest;
   $('xw-pack-title').textContent = m.name || '(unnamed pack)';
   $('xw-pack-id').textContent = m.id || '';
@@ -246,6 +261,88 @@ function rerender() {
   if (S.tab === 'progression') updateChart();
   if (S.jump) finishJump(panel);
   else window.scrollTo(0, y);
+  // An editor may fill in a default as it draws (an empty gate box): that is
+  // not an edit, so the committed present absorbs it.
+  S.hist.cur = JSON.stringify(S.pack);
+  if (wasClean) S.clean = S.hist.cur;
+  updateDirty();
+  if (S.find) S.find.refresh();
+}
+
+// --- History, dirty state ---------------------------------------------------------------
+const HIST_STEPS = 200;
+const HIST_BYTES = 96 * 1024 * 1024;
+
+function pendingEdit() {
+  return S.pack != null && S.hist.cur != null && JSON.stringify(S.pack) !== S.hist.cur;
+}
+
+// Typing coalesces: a burst of input events is one step.
+function scheduleCommit() {
+  clearTimeout(S.hist.timer);
+  S.hist.timer = setTimeout(commitHistory, 600);
+}
+
+function commitHistory() {
+  clearTimeout(S.hist.timer);
+  S.hist.timer = null;
+  if (!S.pack) return;
+  const now = JSON.stringify(S.pack);
+  const H = S.hist;
+  if (H.cur == null) { H.cur = now; return; }
+  if (now === H.cur) return;
+  H.past.push(H.cur);
+  H.bytes += H.cur.length;
+  H.cur = now;
+  H.future = [];
+  while (H.past.length > HIST_STEPS || (H.bytes > HIST_BYTES && H.past.length > 1)) H.bytes -= H.past.shift().length;
+}
+
+function resetHistory() {
+  S.hist.past = [];
+  S.hist.future = [];
+  S.hist.bytes = 0;
+  S.hist.cur = S.pack ? JSON.stringify(S.pack) : null;
+  S.clean = S.hist.cur;
+}
+
+function stepHistory(dir) {
+  if (!S.pack) return false;
+  commitHistory();
+  const H = S.hist;
+  const from = dir < 0 ? H.past : H.future;
+  const to = dir < 0 ? H.future : H.past;
+  if (!from.length) return false;
+  to.push(H.cur);
+  H.cur = from.pop();
+  H.bytes = H.past.reduce((n, x) => n + x.length, 0);
+  S.pack = JSON.parse(H.cur);
+  scheduleValidate();
+  scheduleSave();
+  if (S.preview) S.preview.changed();
+  rerender();
+  setStatus(dir < 0 ? `Undone (${H.past.length} more to undo).` : `Redone (${H.future.length} more to redo).`, 'ok', 'xw-export-status');
+  return true;
+}
+
+function updateDirty() {
+  const el = $('xw-dirty');
+  if (!el || !S.pack) return;
+  const dirty = S.clean != null && JSON.stringify(S.pack) !== S.clean;
+  el.hidden = !dirty;
+  const u = $('xw-undo');
+  const r = $('xw-redo');
+  if (u) u.disabled = !ctx.canUndo();
+  if (r) r.disabled = !ctx.canRedo();
+  const sv = $('xw-saved');
+  if (sv) {
+    const st = S.saved;
+    sv.textContent = st.state === 'saving' ? 'Autosaving ...'
+      : st.state === 'saved' ? `Autosaved in this browser ${new Date(st.at).toLocaleTimeString()}`
+        : st.state === 'failed' ? 'Autosave unavailable (no browser storage): download the .lxpack to keep your work'
+          : '';
+    sv.className = 'xw-saved' + (st.state === 'failed' ? ' is-err' : '');
+  }
 }
 
 function finishJump(panel) {
@@ -261,6 +358,7 @@ function finishJump(panel) {
     }
   }
   if (!best) return;
+  for (let d = best.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
   best.scrollIntoView({ block: 'center' });
   best.classList.add('xw-flash');
   setTimeout(() => best.classList.remove('xw-flash'), 1600);
@@ -351,9 +449,15 @@ function renderFiles(c, el) {
 let saveTimer = null;
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
+  if (S.saved.state !== 'failed') { S.saved.state = 'saving'; updateDirty(); }
+  saveTimer = setTimeout(async () => {
     if (!S.pack) return;
-    savePut('current', { json: JSON.stringify(S.pack), label: S.label, savedAt: Date.now() });
+    const at = Date.now();
+    let ok = null;
+    try { ok = await savePut('current', { json: JSON.stringify(S.pack), label: S.label, savedAt: at }); } catch (e) { ok = null; }
+    // A put resolves `undefined`-ish on success (the key), null on failure.
+    S.saved = ok === null ? { at, state: 'failed' } : { at, state: 'saved' };
+    updateDirty();
   }, 700);
 }
 
@@ -428,8 +532,11 @@ function showPack(pack, label, msg) {
   S.sel = {};
   ctx.sel = S.sel;
   $('xw-main').hidden = false;
+  $('xw-empty').hidden = true;
+  resetHistory();
   runValidate();
   rerender();
+  resetHistory();
   setStatus(msg, 'ok');
   scheduleSave();
 }
@@ -454,7 +561,7 @@ async function loadTree(tree, label) {
   await loadResult(JSON.parse(S.wb.finish_files()), label, tree);
 }
 
-async function loadRebirth() {
+async function loadRebirth(as) {
   if (needDisc()) return;
   setStatus('Fetching the Rebirth example ...');
   try {
@@ -466,7 +573,20 @@ async function loadRebirth() {
     for (const f of doc.files) {
       tree[f.path] = f.text != null ? enc.encode(f.text) : Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0));
     }
-    await loadTree(tree, 'Rebirth example');
+    await loadTree(tree, as && as.id ? `clone of Rebirth` : 'Rebirth example');
+    if (as && as.id && S.pack) {
+      // A clone: the same content as a pack of the modder's own.
+      Object.assign(S.pack.manifest, { id: as.id, name: as.name, version: '0.1.0' });
+      ctx.changed(true);
+      // A clone has never been downloaded: it starts unsaved, and its first
+      // step (the new manifest) is not an undo back into Rebirth.
+      S.hist.past = [];
+      S.hist.bytes = 0;
+      S.clean = '';
+      S.label = 'clone of Rebirth';
+      updateDirty();
+      setStatus(`Started ${as.name} as a clone of Rebirth: every section is Rebirth's, the manifest is yours. Unchanged files keep Rebirth's comments.`, 'ok');
+    }
   } catch (e) {
     setStatus('Error: ' + errText(e), 'err');
   }
@@ -550,7 +670,7 @@ function init() {
       if (f) openDisc(f);
     });
   }
-  $('xw-rebirth').addEventListener('click', loadRebirth);
+  $('xw-rebirth').addEventListener('click', () => loadRebirth());
   $('xw-bundle-file').addEventListener('change', async (ev) => {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
@@ -577,21 +697,140 @@ function init() {
     await loadTree(tree, `folder ${root}`);
   });
   $('xw-fresh').addEventListener('click', () => {
-    if (needDisc()) return;
-    const pack = JSON.parse(S.wb.start_fresh('my_pack', 'My expansion'));
-    saveDel('source');
-    showPack(pack, 'new pack', 'Started an empty pack: set its id and name on the Manifest tab.');
+    const box = $('xw-new');
+    box.hidden = !box.hidden;
+    if (!box.hidden) $('xw-new-id').focus();
   });
-  $('xw-dl').addEventListener('click', async () => {
-    try {
-      const bytes = await exportBundle();
-      const name = `${S.pack.manifest.id || 'pack'}.lxpack`;
-      downloadFile(new Blob([bytes], { type: 'application/octet-stream' }), name);
-      setStatus(`Downloaded ${name} (${bytes.length} bytes). It holds no game data: share it freely.`, 'ok', 'xw-export-status');
-    } catch (e) {
-      setStatus('Not exported: ' + errText(e), 'err', 'xw-export-status');
-    }
+  $('xw-new-go').addEventListener('click', newPack);
+  $('xw-new-cancel').addEventListener('click', () => { $('xw-new').hidden = true; });
+  $('xw-dl').addEventListener('click', downloadBundle);
+  $('xw-undo').addEventListener('click', () => stepHistory(-1));
+  $('xw-redo').addEventListener('click', () => stepHistory(1));
+  $('xw-keys').addEventListener('click', () => { $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; });
+  S.find = createFind($('xw-findbox'), { pack: () => S.pack, jump: jumpTo });
+  document.addEventListener('keydown', onShortcut);
+  window.addEventListener('beforeunload', (ev) => {
+    // The autosave keeps the work; warn only when it could not.
+    if (S.pack && S.saved.state === 'failed' && S.clean != null && JSON.stringify(S.pack) !== S.clean) { ev.preventDefault(); ev.returnValue = ''; }
   });
+  initRest();
+}
+
+async function downloadBundle() {
+  try {
+    const bytes = await exportBundle();
+    const name = `${S.pack.manifest.id || 'pack'}.lxpack`;
+    downloadFile(new Blob([bytes], { type: 'application/octet-stream' }), name);
+    setStatus(`Downloaded ${name} (${bytes.length} bytes). It holds no game data: share it freely.`, 'ok', 'xw-export-status');
+    S.clean = JSON.stringify(S.pack);
+    updateDirty();
+  } catch (e) {
+    setStatus('Not exported: ' + errText(e), 'err', 'xw-export-status');
+  }
+}
+
+// --- New pack from a template ----------------------------------------------------------------
+// The minimal template: one of everything a first pack wires together - a
+// derived monster in a formation, a dialogue line, a quest to win that
+// fight, and a small map whose trigger zones show the line and start the
+// fight. Every id is the template's own; the disc supplies the base scene.
+function minimalPack(pack) {
+  const cat = S.cat || {};
+  const mon = (cat.monsters && cat.monsters[0]) || { id: 1 };
+  const scene = (cat.scenes && cat.scenes[0] && cat.scenes[0].name) || 'town01';
+  pack.battle.monsters = { first_monster: { base: { kind: 'monster', id: mon.id }, name: 'First Monster', hp: { mul: 1.5 } } };
+  pack.battle.formations = { first_fight: { label: 'First Fight', monsters: ['first_monster'] } };
+  pack.dialog.lines = { welcome: { speaker: 'Guide', text: 'Welcome to my expansion.\nStep onto the red tiles to fight.' } };
+  pack.quests.quests = [{
+    id: 'first_quest', title: 'First Quest', description: 'Win the first fight.', auto_start: true, ordered: true,
+    objectives: [{ kind: 'defeat_formation', formation: 'first_fight', count: 1, text: 'Win the first fight' }],
+    rewards: { gold: 100 },
+  }];
+  pack.maps = {
+    first_map: {
+      name: 'First Map', size: null,
+      base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },
+      floor_heights: [0, 64],
+      tiles: {
+        origin: [16, 16],
+        rows: ['###########', '#.........#', '#.........#', '#.........#', '#.........#', '###########'],
+        legend: { '#': { label: 'wall', walls: 'all', height: 0, ground: null }, '.': { label: 'floor', height: 0, ground: null } },
+      },
+      props: [], npcs: [], exits: [], encounters: [],
+      spawns: [{ id: 'start', tile: [2, 2], facing: 0 }],
+      triggers: [
+        { id: 'greeting', rect: [3, 2, 3, 2], event: { kind: 'dialog', line: 'welcome' }, once: true },
+        { id: 'fight', rect: [7, 2, 8, 3], event: { kind: 'battle', formation: 'first_fight' } },
+      ],
+      bgm: null, camera: 'default',
+    },
+  };
+  return pack;
+}
+
+async function newPack() {
+  if (needDisc()) return;
+  const id = ($('xw-new-id').value.trim() || 'my_pack').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  const name = $('xw-new-name').value.trim() || 'My expansion';
+  const tpl = $('xw-new-tpl').value;
+  $('xw-new').hidden = true;
+  if (tpl === 'rebirth') {
+    await loadRebirth({ id, name });
+    return;
+  }
+  let pack = JSON.parse(S.wb.start_fresh(id, name));
+  if (tpl === 'minimal') pack = minimalPack(pack);
+  saveDel('source');
+  showPack(pack, 'new pack', tpl === 'minimal'
+    ? `Started ${name} from the minimal template: a monster, a fight, a line, a quest and a map that ties them together.`
+    : `Started ${name}, an empty pack: add content tab by tab.`);
+}
+
+// --- Keyboard shortcuts --------------------------------------------------------------------------
+const TEXT_INPUT = (t) => t && ((t.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'range', 'file'].includes(t.type)) || t.tagName === 'TEXTAREA' || t.isContentEditable);
+
+function jumpIssue(dir) {
+  const list = S.issues.filter((i) => i.severity === 'error').concat(S.issues.filter((i) => i.severity !== 'error'));
+  if (!list.length) return;
+  S.issueAt = ((S.issueAt == null ? (dir > 0 ? -1 : 0) : S.issueAt) + dir + list.length) % list.length;
+  jumpTo(list[S.issueAt]);
+}
+
+function onShortcut(ev) {
+  if (!S.pack || $('xw-main').hidden) return;
+  const k = ev.key.toLowerCase();
+  const mod = ev.ctrlKey || ev.metaKey;
+  // Undo / redo: a text field keeps the browser's own while it has focus.
+  if (mod && (k === 'z' || k === 'y') && !TEXT_INPUT(ev.target)) {
+    ev.preventDefault();
+    stepHistory(k === 'y' || ev.shiftKey ? 1 : -1);
+    return;
+  }
+  if (mod && k === 's') { ev.preventDefault(); downloadBundle(); return; }
+  if ((mod && k === 'k') || (k === '/' && !TEXT_INPUT(ev.target))) {
+    ev.preventDefault();
+    S.find.input.focus();
+    S.find.input.select();
+    return;
+  }
+  if (k === 'f8') { ev.preventDefault(); jumpIssue(ev.shiftKey ? -1 : 1); return; }
+  if (ev.altKey && !mod && /^[0-9]$/.test(ev.key)) {
+    const i = ev.key === '0' ? 9 : parseInt(ev.key, 10) - 1;
+    if (TABS[i]) { ev.preventDefault(); S.tab = TABS[i][0]; rerender(); }
+    return;
+  }
+  if (ev.altKey && !mod && (ev.key === '[' || ev.key === ']')) {
+    ev.preventDefault();
+    const i = TABS.findIndex((t) => t[0] === S.tab);
+    S.tab = TABS[(i + (ev.key === ']' ? 1 : -1) + TABS.length) % TABS.length][0];
+    rerender();
+    return;
+  }
+  if (k === '?' && !TEXT_INPUT(ev.target)) { ev.preventDefault(); $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; return; }
+  if (k === 'escape') { $('xw-keyhelp').hidden = true; }
+}
+
+function initRest() {
   $('xw-toml').addEventListener('click', () => { S.tab = 'files'; rerender(); });
   $('xw-play').addEventListener('click', playInBrowser);
   $('xw-play-here').addEventListener('click', playHere);

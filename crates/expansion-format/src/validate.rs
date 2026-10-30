@@ -648,11 +648,20 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
                     "the board is under 48 units or the top over 400 units high",
                 );
             }
-            let seats = t.opponent.iter().chain(&t.spectators);
-            for (k, n) in seats.enumerate() {
+            let seats = t
+                .opponent
+                .iter()
+                .map(|n| ("opponent".to_string(), n))
+                .chain(
+                    t.spectators
+                        .iter()
+                        .enumerate()
+                        .map(|(k, n)| (format!("spectators[{k}]"), n)),
+                );
+            for (seat, n) in seats {
                 if !map.npcs.iter().any(|m| m.id == n.npc) {
                     cx.error(
-                        &format!("{at}.table.npc[{k}]"),
+                        &format!("{at}.table.{seat}.npc"),
                         format!("map {map_id:?} has no NPC {:?}", n.npc),
                     );
                 }
@@ -694,10 +703,21 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
                     "more players than the table's other seats; the rest stand by",
                 );
             }
-            for (k, n) in t.players.iter().chain(&t.spectators).enumerate() {
+            let seats = t
+                .players
+                .iter()
+                .enumerate()
+                .map(|(k, n)| (format!("players[{k}]"), n))
+                .chain(
+                    t.spectators
+                        .iter()
+                        .enumerate()
+                        .map(|(k, n)| (format!("spectators[{k}]"), n)),
+                );
+            for (seat, n) in seats {
                 if !map.npcs.iter().any(|m| m.id == n.npc) {
                     cx.error(
-                        &format!("{at}.table.npc[{k}]"),
+                        &format!("{at}.table.{seat}.npc"),
                         format!("map {map_id:?} has no NPC {:?}", n.npc),
                     );
                 }
@@ -729,6 +749,54 @@ mod tests {
             .filter(|i| i.severity == Severity::Error)
             .map(ToString::to_string)
             .collect()
+    }
+
+    /// A battle or progression problem names the field it is about, so the
+    /// workbench can go to it.
+    #[test]
+    fn section_problems_name_their_field() {
+        let mut p = good_pack();
+        p.battle = toml::from_str(
+            r#"
+[monsters.ogre]
+base = { kind = "monster", id = 12 }
+element = 9
+
+[formations.pair]
+monsters = ["ogre"]
+
+[[formations.pair.waves]]
+monsters = ["ghost"]
+
+[bosses.big]
+formation = "nope"
+"#,
+        )
+        .unwrap();
+        p.progression = toml::from_str(
+            r#"
+[[level_rewards]]
+level = 1
+items = []
+"#,
+        )
+        .unwrap();
+        let fields: Vec<(String, String)> = validate(&p)
+            .into_iter()
+            .filter(|i| i.severity == Severity::Error)
+            .map(|i| (i.path, i.field))
+            .collect();
+        for want in [
+            ("battle.toml", "monsters.ogre.element"),
+            ("battle.toml", "formations.pair.waves[0].monsters[0]"),
+            ("battle.toml", "bosses.big.formation"),
+            ("progression.toml", "level_rewards[0]"),
+        ] {
+            assert!(
+                fields.iter().any(|(p, f)| p == want.0 && f == want.1),
+                "{want:?} not in {fields:?}"
+            );
+        }
     }
 
     #[test]

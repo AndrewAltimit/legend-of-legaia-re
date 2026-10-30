@@ -14,7 +14,11 @@
 //! - **original**: the files the pack was loaded from. A file whose parsed
 //!   value the editor left unchanged exports as its original bytes, so an
 //!   unedited section keeps its comments and layout; an edited one is
-//!   re-serialised.
+//!   re-serialised. "Unchanged" is decided on the canonical form: the file
+//!   [`ExpansionPack::to_files`] writes for the edited pack against the one
+//!   it writes for the loaded pack, so every section (and every section a
+//!   later format adds) is covered by the one test, and an edit that is
+//!   reverted exports the loaded bytes again.
 
 use std::collections::HashMap;
 
@@ -68,8 +72,9 @@ pub struct Core {
     extras: PackFiles,
     /// The files the pack was loaded from.
     original: PackFiles,
-    /// The pack `original` parses to, for the unchanged-file test.
-    original_pack: Option<ExpansionPack>,
+    /// The canonical files (`to_files`) of the pack `original` parses to,
+    /// for the unchanged-file test.
+    original_canonical: PackFiles,
     /// Files handed over one by one before [`Self::finish_files`].
     staged: PackFiles,
     /// Base-scene geometry packs already assembled, by scene name.
@@ -206,14 +211,15 @@ impl Core {
             .map(|(p, b)| json!({ "path": p, "size": b.len() }))
             .collect();
         match ExpansionPack::from_files(&files) {
-            Ok(pack) => {
+            Ok(mut pack) => {
+                canonicalise(&mut pack);
+                self.original_canonical = pack.to_files().unwrap_or_default();
                 self.extras = files
                     .iter()
                     .filter(|(p, _)| p.starts_with("assets/") || is_doc(p))
                     .map(|(p, b)| (p.clone(), b.clone()))
                     .collect();
                 self.original = files;
-                self.original_pack = Some(pack.clone());
                 json!({ "pack": pack, "files": list, "issues": issues })
             }
             Err(_) => json!({ "pack": Value::Null, "files": list, "issues": issues }),
@@ -224,7 +230,7 @@ impl Core {
     pub fn start_fresh(&mut self, id: &str, name: &str) -> Value {
         self.extras.clear();
         self.original.clear();
-        self.original_pack = None;
+        self.original_canonical.clear();
         let pack = ExpansionPack {
             manifest: PackManifest::new(id, name, "0.1.0"),
             ..Default::default()
@@ -239,6 +245,7 @@ impl Core {
     pub fn pack_from_json(&self, pack_json: &str) -> Result<ExpansionPack> {
         let mut pack: ExpansionPack =
             serde_json::from_str(pack_json).context("the editor's pack does not parse")?;
+        canonicalise(&mut pack);
         for (path, bytes) in &self.extras {
             if let Some(rel) = path.strip_prefix("assets/") {
                 pack.assets.insert(rel.to_string(), bytes.clone());
@@ -254,13 +261,17 @@ impl Core {
     pub fn pack_files(&self, pack_json: &str) -> Result<PackFiles> {
         let pack = self.pack_from_json(pack_json)?;
         let mut files = pack.to_files()?;
-        if let Some(orig) = &self.original_pack {
-            for (path, bytes) in files.iter_mut() {
-                if let Some(o) = self.original.get(path)
-                    && unchanged(path, &pack, orig)
-                {
-                    bytes.clone_from(o);
-                }
+        for (path, bytes) in files.iter_mut() {
+            // Assets and documentation are carried, never edited.
+            if path.starts_with("assets/")
+                || legaia_expansion_format::DOC_FILES.contains(&path.as_str())
+            {
+                continue;
+            }
+            if let Some(o) = self.original.get(path)
+                && self.original_canonical.get(path) == Some(bytes)
+            {
+                bytes.clone_from(o);
             }
         }
         Ok(files)
@@ -663,27 +674,24 @@ fn is_doc(path: &str) -> bool {
     legaia_expansion_format::DOC_FILES.contains(&path)
 }
 
-/// Whether the file at `path` holds the same value in `a` and `b`.
-fn unchanged(path: &str, a: &ExpansionPack, b: &ExpansionPack) -> bool {
-    match path {
-        "pack.toml" => a.manifest == b.manifest,
-        "battle.toml" => a.battle == b.battle,
-        "progression.toml" => a.progression == b.progression,
-        "quests.toml" => a.quests == b.quests,
-        "dialog.toml" => a.dialog == b.dialog,
-        "cards.toml" => a.cards == b.cards,
-        "modes.toml" => a.modes == b.modes,
-        "items.toml" => a.items == b.items,
-        "arts.toml" => a.arts == b.arts,
-        "spells.toml" => a.spells == b.spells,
-        _ => match path
-            .strip_prefix("maps/")
-            .and_then(|p| p.strip_suffix(".toml"))
-        {
-            Some(id) => a.maps.contains_key(id) && a.maps.get(id) == b.maps.get(id),
-            // Assets and documentation are carried, never edited.
-            None => true,
-        },
+/// The one form of a value the editor can spell two ways, so the
+/// unchanged-file test and the export agree whichever the page wrote: a shop
+/// row with no gate and no price of its own is a bare item reference (the
+/// Items tab edits every row as `{ item }`).
+fn canonicalise(pack: &mut ExpansionPack) {
+    use legaia_expansion_format::items::StockEntry;
+    for shop in &mut pack.items.shops {
+        for row in &mut shop.stock {
+            if let StockEntry::Gated {
+                item,
+                requires,
+                price: None,
+            } = row
+                && requires.is_empty()
+            {
+                *row = StockEntry::Item(item.clone());
+            }
+        }
     }
 }
 

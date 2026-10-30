@@ -22,7 +22,7 @@
  */
 
 import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-forms.js';
-import { propMeshEditor, propDetail, renderDetail } from './expansion-workbench-detail.js';
+import { propMeshEditor, propDetail, renderDetail, entrancesEd } from './expansion-workbench-detail.js';
 import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
 
@@ -102,6 +102,8 @@ function restore(ctx, id, json) {
 }
 
 function undo(ctx, dir) {
+  // The page's own history holds every edit, strokes included.
+  if (ctx.undo) { V.sel = null; if (dir < 0) ctx.undo(); else ctx.redo(); return; }
   const id = V.map;
   const from = dir < 0 ? V.undo : V.redo;
   const to = dir < 0 ? V.redo : V.undo;
@@ -331,7 +333,15 @@ export function renderMaps(ctx, el) {
   const maps = ctx.pack.maps || (ctx.pack.maps = {});
   const ids = Object.keys(maps);
   const jump = ctx.jumpFile();
-  if (jump && jump.startsWith('maps/')) V.map = jump.slice(5, -5);
+  if (jump && jump.startsWith('maps/')) {
+    V.map = jump.slice(5, -5);
+    // A jump to an object's field selects the object; to a legend entry's, the entry.
+    const f = ctx.jumpField() || '';
+    const o = f.match(/^(props|npcs|spawns|exits|triggers|encounters)\[(\d+)\]/);
+    if (o) V.sel = { type: o[1], i: parseInt(o[2], 10) };
+    const l = f.match(/^tiles\.legend\.(.)/u);
+    if (l) V.brush = l[1];
+  }
   if (!ids.includes(V.map)) V.map = ids[0] || null;
 
   // Map chooser.
@@ -416,6 +426,7 @@ export function renderMaps(ctx, el) {
       b.append(gateBox(ctx, e, 'requires', p2, 'Plays when'));
     },
   });
+  entrancesEd(ctx, settings, map);
   const { w, h: ht } = dims(map);
   const rw = h('input', { type: 'number', value: w, min: 1, max: 120, 'aria-label': 'Width' });
   const rh = h('input', { type: 'number', value: ht, min: 1, max: 120, 'aria-label': 'Height' });
@@ -453,8 +464,8 @@ export function renderMaps(ctx, el) {
   tools.append(h('span', { class: 'xw-sep' }),
     h('button', { type: 'button', class: 'wb-mini', title: 'Zoom out', onclick: () => zoom(-1) }, '−'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Zoom in', onclick: () => zoom(1) }, '+'),
-    h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: !(V.undo[V.map] || []).length, onclick: () => undo(ctx, -1) }, 'Undo'),
-    h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: !(V.redo[V.map] || []).length, onclick: () => undo(ctx, 1) }, 'Redo'),
+    h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: ctx.canUndo ? !ctx.canUndo() : !(V.undo[V.map] || []).length, onclick: () => undo(ctx, -1) }, 'Undo'),
+    h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: ctx.canRedo ? !ctx.canRedo() : !(V.redo[V.map] || []).length, onclick: () => undo(ctx, 1) }, 'Redo'),
     h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'));
 
   const wrap = h('div', { class: 'xw-canvas-wrap', tabindex: '0' }, cv);
@@ -617,8 +628,8 @@ export function renderMaps(ctx, el) {
     const t = ev.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const k = ev.key.toLowerCase();
-    if ((ev.ctrlKey || ev.metaKey) && k === 'z') { ev.preventDefault(); undo(ctx, ev.shiftKey ? 1 : -1); return; }
-    if ((ev.ctrlKey || ev.metaKey) && k === 'y') { ev.preventDefault(); undo(ctx, 1); return; }
+    if (!ctx.undo && (ev.ctrlKey || ev.metaKey) && k === 'z') { ev.preventDefault(); undo(ctx, ev.shiftKey ? 1 : -1); return; }
+    if (!ctx.undo && (ev.ctrlKey || ev.metaKey) && k === 'y') { ev.preventDefault(); undo(ctx, 1); return; }
     if ((k === 'delete' || k === 'backspace') && V.sel) {
       ev.preventDefault();
       snapshot(ctx, V.map);

@@ -52,7 +52,8 @@ impl SectionRules for MapDef {
         let base = check_base(self, cx);
         if let Some(g) = &grid {
             for (what, c, r) in self.off_grid_refs(g) {
-                cx.error("", format!("{what} names tile ({c}, {r}), off the map"));
+                let field = off_grid_field(self, &what, [c, r]);
+                cx.error(&field, format!("{what} names tile ({c}, {r}), off the map"));
             }
         }
         check_legend(self, cx, base.as_deref());
@@ -657,3 +658,32 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
 
 #[cfg(test)]
 mod tests;
+
+/// The field an [`MapDef::off_grid_refs`] entry is about: the spawn, prop
+/// or NPC it names by id whose tile (or patrol stop) is that tile; empty for
+/// the zones, whose rectangles the zone checks report on their own.
+fn off_grid_field(map: &MapDef, what: &str, tile: [u16; 2]) -> String {
+    let Some((kind, id)) = what.split_once(' ') else {
+        return String::new();
+    };
+    let id = id.trim_matches('"');
+    match kind {
+        "spawn" => map
+            .spawns
+            .iter()
+            .position(|s| s.id == id && s.tile == tile)
+            .map(|i| format!("spawns[{i}].tile")),
+        "prop" => map
+            .props
+            .iter()
+            .position(|p| p.id == id && p.tile == tile)
+            .map(|i| format!("props[{i}].tile")),
+        "npc" => map
+            .npcs
+            .iter()
+            .position(|n| n.id == id)
+            .map(|i| format!("npcs[{i}]")),
+        _ => None,
+    }
+    .unwrap_or_default()
+}

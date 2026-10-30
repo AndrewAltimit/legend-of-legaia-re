@@ -536,6 +536,115 @@ impl BattleSection {
     }
 }
 
+/// The text between the first pair of backticks in `s`, and what follows it.
+fn ticked(s: &str) -> Option<(&str, &str)> {
+    let (_, rest) = s.split_once('`')?;
+    rest.split_once('`')
+}
+
+impl BattleSection {
+    /// The field a [`Self::problems`] line is about, in the validator's
+    /// spelling (`formations.gauntlet.waves[0]`), so an editor can go to it.
+    /// Each line names its item first (`monster \`key\`: ...`); the rest of
+    /// the line names the field within it. Empty when nothing narrower fits.
+    pub fn problem_field(&self, line: &str) -> String {
+        let Some((kind, _)) = line.split_once(' ') else {
+            return String::new();
+        };
+        let Some((key, rest)) = ticked(line) else {
+            return String::new();
+        };
+        let rest = rest.trim_start_matches(':').trim_start();
+        match kind {
+            "monster" => {
+                let at = format!("monsters.{key}");
+                let sub = if let Some(s) = rest.strip_prefix("script ") {
+                    match s.split_once([':', ' ']) {
+                        Some((head, _)) if head.starts_with("phases[") || head == "enrage" => {
+                            format!(".script.{}", head.trim_end_matches(':'))
+                        }
+                        _ => ".script".to_string(),
+                    }
+                } else {
+                    [
+                        ("base", ".base"),
+                        ("drop", ".drop"),
+                        ("steal", ".steal"),
+                        ("element", ".element"),
+                        ("at most three spells", ".spells"),
+                    ]
+                    .iter()
+                    .find(|(w, _)| rest.starts_with(w))
+                    .map(|(_, f)| f.to_string())
+                    .unwrap_or_default()
+                };
+                at + &sub
+            }
+            "formation" => {
+                let at = format!("formations.{key}");
+                let Some(f) = self.formations.get(key) else {
+                    return at;
+                };
+                if let Some(n) = rest
+                    .strip_prefix("wave ")
+                    .and_then(|w| w.split(|c: char| !c.is_ascii_digit()).next())
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .filter(|n| *n >= 2)
+                {
+                    return format!("{at}.waves[{}]", n - 2);
+                }
+                if let Some((m, _)) = ticked(rest) {
+                    let named = |r: &MonsterRef| matches!(r, MonsterRef::Pack(k) if k == m);
+                    if let Some(i) = f.monsters.iter().position(named) {
+                        return format!("{at}.monsters[{i}]");
+                    }
+                    for (w, wave) in f.waves.iter().enumerate() {
+                        if let Some(i) = wave.monsters.iter().position(named) {
+                            return format!("{at}.waves[{w}].monsters[{i}]");
+                        }
+                    }
+                }
+                if rest.contains("monsters") {
+                    return format!("{at}.monsters");
+                }
+                if rest.contains("waves") {
+                    return format!("{at}.waves");
+                }
+                at
+            }
+            "encounters" => {
+                let Some(i) = self.encounters.iter().position(|e| e.scene == key) else {
+                    return String::new();
+                };
+                let at = format!("encounters[{i}]");
+                if let Some((f, _)) = ticked(rest)
+                    && let Some(j) = self.encounters[i]
+                        .formations
+                        .iter()
+                        .position(|w| w.formation == f)
+                {
+                    return format!("{at}.formations[{j}]");
+                }
+                if rest.starts_with("steps") {
+                    return format!("{at}.steps");
+                }
+                at
+            }
+            "boss" => {
+                let at = format!("bosses.{key}");
+                if rest.starts_with("unknown formation") {
+                    format!("{at}.formation")
+                } else if rest.starts_with("reward items") {
+                    format!("{at}.reward_items")
+                } else {
+                    at
+                }
+            }
+            _ => String::new(),
+        }
+    }
+}
+
 impl crate::validate::SectionRules for BattleSection {
     fn declare(&self, cx: &mut crate::validate::Checker<'_>) {
         for key in self.monsters.keys() {
@@ -552,7 +661,8 @@ impl crate::validate::SectionRules for BattleSection {
     fn check(&self, cx: &mut crate::validate::Checker<'_>) {
         let pack_id = cx.pack().manifest.id.clone();
         for p in self.problems(&pack_id) {
-            cx.error("", p);
+            let field = self.problem_field(&p);
+            cx.error(&field, p);
         }
         for (key, m) in &self.monsters {
             cx.disc_ref(&format!("monsters.{key}.base"), &m.base);

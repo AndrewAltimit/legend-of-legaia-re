@@ -9,7 +9,7 @@
  * (parsed on every change, the error shown in place), so whatever a modder
  * writes by hand round-trips through the page.
  */
-import { h, grid } from './expansion-workbench-forms.js';
+import { h, grid, listEd, gateBox } from './expansion-workbench-forms.js';
 
 const MESH_KINDS = [
   ['object', 'base scene mesh'],
@@ -137,14 +137,114 @@ export function renderDetail(ctx, mctx, side, map) {
   box.append(jsonEditor(mctx, map, 'decor', 'Decorations', '[{mesh, tile, offset, rotation, scale}]', []));
   box.append(jsonEditor(mctx, map, 'scatter', 'Scatter brushes', '[{rect, meshes, density, seed, jitter, yaw, scale, tilt, on, keep_clear, cluster}]', []));
   box.append(jsonEditor(mctx, map, 'edges', 'Edge runs', '[{mesh, walls, on, every, phase, inset, y, yaw, scale, jitter, yaw_jitter, scale_range, seed}]', []));
-  box.append(jsonEditor(mctx, map, 'lighting', 'Lighting', '{mood: day|dusk|night|cave, lamps: [...]}', {}));
   box.append(jsonEditor(mctx, map, 'materials', 'Animated materials', '[{kind: cycle|hsv|scroll, ...}]', []));
-  box.append(jsonEditor(mctx, map, 'fog', 'Fog', '{regions: [{rect, angle, spread, speed}]}', {}));
   box.append(jsonEditor(mctx, map, 'decals', 'Decals', '[{cell, tile | rect, density, size, sides, span, yaw, color}]', []));
-  box.append(jsonEditor(mctx, map, 'emitters', 'Particle emitters', '[{kind: embers|sparkles|dust|leaves|drips|smoke, rect, count, seed}]', []));
+  lightingEd(mctx, box, map);
+  fogEd(mctx, box, map);
+  emittersEd(mctx, box, map);
   if (ctx.assetPaths) {
     const paths = ctx.assetPaths();
     box.append(h('p', { class: 'xw-note' }, paths.length ? `Pack assets: ${paths.join(', ')}` : 'No pack assets yet: import a glTF model on a prop to add one.'));
   }
   side.append(box);
+}
+
+const RECT = { k: 'rect', t: 'tuple', n: 4, names: ['col0', 'row0', 'col1', 'row1'], label: 'Tiles', hint: '[col0, row0, col1, row1]' };
+
+/** `[lighting]`: the enhanced-lighting mood and the placed lamps. */
+function lightingEd(mctx, box, map) {
+  const lt = map.lighting || (map.lighting = { mood: null, lamps: [] });
+  const sec = h('details', { class: 'xw-box', 'data-path': 'lighting', open: (lt.lamps || []).length ? true : null },
+    h('summary', { class: 'xw-box-head' }, `Lighting (${(lt.lamps || []).length} lamp(s))`, h('span', { class: 'xw-hint' }, ' enhanced lighting only; the faithful mode draws baked colours')));
+  sec.append(grid(mctx, lt, [
+    { k: 'mood', t: 'osel', opts: ['day', 'dusk', 'night', 'cave'], label: 'Mood', none: '(the base scene\'s)' },
+  ], 'lighting'));
+  listEd(mctx, sec, lt, 'lamps', 'lighting', {
+    add: 'Lamp',
+    make: () => ({ id: '', tile: [0, 0], offset: [0, 96, 0], color: [255, 176, 96], radius: 640, flicker: 0, period: 24 }),
+    label: (l, i) => `${l.id || `lamp ${i + 1}`} at ${(l.tile || []).join(',')}`,
+    render: (b, l, p) => b.append(grid(mctx, l, [
+      { k: 'id', label: 'Id' },
+      { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'Tile' },
+      { k: 'offset', t: 'tuple', n: 3, names: ['x', 'y', 'z'], label: 'Offset', hint: 'world units, y up' },
+      { k: 'color', t: 'tuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour', hint: '0..255' },
+      { k: 'radius', t: 'int', label: 'Reach' },
+      { k: 'flicker', t: 'float', label: 'Flicker 0..1' },
+      { k: 'period', t: 'int', label: 'Flicker period (frames)' },
+    ], p)),
+  });
+  box.append(sec);
+}
+
+/** `[fog]`: the retail fog pool's spawn regions over the map. */
+function fogEd(mctx, box, map) {
+  const fg = map.fog || (map.fog = { regions: [] });
+  const sec = h('details', { class: 'xw-box', 'data-path': 'fog', open: (fg.regions || []).length ? true : null },
+    h('summary', { class: 'xw-box-head' }, `Fog (${(fg.regions || []).length} region(s))`, h('span', { class: 'xw-hint' }, ' drifting wisps, the retail fog pool')));
+  listEd(mctx, sec, fg, 'regions', 'fog', {
+    add: 'Region',
+    make: () => ({ rect: [0, 0, 3, 3], angle: 0, spread: 90, speed: 24 }),
+    label: (r, i) => `region ${i + 1}`,
+    render: (b, r, p) => b.append(grid(mctx, r, [
+      RECT,
+      { k: 'angle', t: 'float', label: 'Drift angle', hint: 'degrees, 0 = +Z' },
+      { k: 'spread', t: 'float', label: 'Spread', hint: 'degrees either side' },
+      { k: 'speed', t: 'int', label: 'Speed', hint: '0..255' },
+    ], p)),
+  });
+  box.append(sec);
+}
+
+/** `[[emitters]]`: particle emitters; every field past the kind overrides its preset. */
+function emittersEd(mctx, box, map) {
+  const sec = h('details', { class: 'xw-box', 'data-path': 'emitters', open: (map.emitters || []).length ? true : null },
+    h('summary', { class: 'xw-box-head' }, `Particle emitters (${(map.emitters || []).length})`, h('span', { class: 'xw-hint' }, ' a kind is a preset; a field left empty keeps it')));
+  listEd(mctx, sec, map, 'emitters', '', {
+    add: 'Emitter',
+    make: () => ({ id: '', kind: 'embers', rect: [0, 0, 1, 1], seed: Date.now() % 100000 }),
+    label: (e, i) => `${e.id || `emitter ${i + 1}`} - ${e.kind || 'embers'}`,
+    render: (b, e, p) => b.append(grid(mctx, e, [
+      { k: 'id', label: 'Id' },
+      { k: 'kind', t: 'sel', opts: ['embers', 'sparkles', 'dust', 'leaves', 'drips', 'smoke'], label: 'Kind' },
+      RECT,
+      { k: 'seed', t: 'int', label: 'Seed' },
+      { k: 'count', t: 'oint', label: 'Particles alive' },
+      { k: 'life', t: 'oint', label: 'Life (frames)' },
+      { k: 'height', t: 'otuple', n: 2, names: ['low', 'high'], label: 'Spawn height', hint: 'above the floor' },
+      { k: 'size', t: 'otuple', n: 2, names: ['birth', 'death'], label: 'Size' },
+      { k: 'velocity', t: 'otuple', n: 3, float: true, names: ['x', 'y', 'z'], label: 'Velocity', hint: 'a frame, y up' },
+      { k: 'spread', t: 'otuple', n: 3, float: true, names: ['x', 'y', 'z'], label: 'Velocity spread' },
+      { k: 'gravity', t: 'ofloat', label: 'Gravity', hint: 'negative falls' },
+      { k: 'sway', t: 'ofloat', label: 'Sway' },
+      { k: 'color', t: 'otuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour' },
+      { k: 'color_end', t: 'otuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour at death' },
+      { k: 'additive', t: 'osel', bool: true, opts: [['true', 'additive (glows)'], ['false', 'averaged']], label: 'Blend', none: '(the kind\'s)' },
+    ], p)),
+  });
+  box.append(sec);
+}
+
+/**
+ * A map's ways in from retail field scenes (`[[entrances]]`): a rectangle of
+ * the retail scene's field grid that enters this map at one of its spawns
+ * while the gate holds (docs/formats/expansion-pack-maps.md).
+ */
+export function entrancesEd(ctx, parent, map) {
+  const spawns = (map.spawns || []).map((s) => s.id).filter(Boolean);
+  listEd(ctx, parent, map, 'entrances', '', {
+    title: 'Entrances from retail scenes',
+    hint: 'stepping onto the rectangle in the retail scene enters this map',
+    add: 'Entrance',
+    make: () => ({ id: '', scene: { kind: 'scene', name: (ctx.cat && ctx.cat.scenes && ctx.cat.scenes[0] ? ctx.cat.scenes[0].name : 'town01') }, rect: [0, 0, 0, 0], spawn: '', requires: {} }),
+    label: (e) => `${e.id || '(no id)'} - ${e.scene && e.scene.name ? e.scene.name : '?'}`,
+    render: (b, e, p) => {
+      b.append(grid(ctx, e, [
+        { k: 'id', label: 'Id' },
+        { k: 'scene', t: 'scene', label: 'Retail scene' },
+        { k: 'rect', t: 'tuple', n: 4, label: 'Field tiles', hint: '[col0, row0, col1, row1] on the scene\'s 128x128 field grid' },
+        { k: 'spawn', t: 'sel', opts: [['', '(the first spawn)']].concat(spawns.map((x) => [x, x])), label: 'Arrives at' },
+      ], p));
+      b.append(gateBox(ctx, e, 'requires', p, 'Opens when'));
+    },
+  });
 }

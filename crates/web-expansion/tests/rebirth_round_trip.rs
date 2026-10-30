@@ -206,3 +206,126 @@ fn the_arts_preview_rolls_rebirths_arts() {
             .any(|c| c.character == "noa" && c.constant == 0x31 && c.name == "Love You")
     );
 }
+
+/// The workbench's `.lxpack` of an unedited Rebirth is the CLI's
+/// (`asset expansion bundle packs/rebirth`: every file of the tree through
+/// `write_bundle`), byte for byte.
+#[test]
+fn unedited_rebirth_bundle_is_the_cli_bundle() {
+    let mut core = Core::new();
+    let (files, pack) = load(&mut core);
+    let cli = bundle::write_bundle(&files).unwrap();
+    assert_eq!(core.export_bundle(&pack.to_string()).unwrap(), cli);
+}
+
+/// An edit and its revert export the loaded bytes again, in every section
+/// file and a map: the unchanged-file test is the canonical form, not the
+/// JSON spelling, so the comments come back with the value.
+#[test]
+fn an_edit_then_its_revert_exports_the_loaded_bytes() {
+    let mut core = Core::new();
+    let (files, pack) = load(&mut core);
+    let cli = bundle::write_bundle(&files).unwrap();
+    // One edit per section file, each to a field Rebirth sets.
+    let edits: &[(&str, &[&str])] = &[
+        ("pack.toml", &["manifest", "name"]),
+        (
+            "battle.toml",
+            &["battle", "monsters", "ironhide_ogre", "name"],
+        ),
+        ("dialog.toml", &["dialog", "lines", "guide_intro", "text"]),
+        (
+            "cutscenes.toml",
+            &["cutscenes", "cutscenes", "tower_intro", "title"],
+        ),
+        (
+            "maps/rebirth_tower_1f.toml",
+            &["maps", "rebirth_tower_1f", "name"],
+        ),
+    ];
+    for (file, path) in edits {
+        let mut edited = pack.clone();
+        let mut at = &mut edited;
+        for k in *path {
+            at = at.get_mut(*k).unwrap_or_else(|| panic!("{file}: no {k}"));
+        }
+        let before = at.clone();
+        *at = Value::String("edited".into());
+        let bytes = core.export_bundle(&edited.to_string()).unwrap();
+        let back = bundle::read_bundle(&bytes).unwrap();
+        assert_ne!(
+            back.get(*file),
+            files.get(*file),
+            "{file}: the edit is exported"
+        );
+        let mut at = &mut edited;
+        for k in *path {
+            at = at.get_mut(*k).unwrap();
+        }
+        *at = before;
+        assert_eq!(
+            core.export_bundle(&edited.to_string()).unwrap(),
+            cli,
+            "{file}: reverted"
+        );
+    }
+    // Every section the page edits is exported when edited (the audio and
+    // the cutscenes files once kept their loaded bytes through an edit).
+    for (file, section) in [
+        ("audio.toml", "audio"),
+        ("cutscenes.toml", "cutscenes"),
+        ("arts.toml", "arts"),
+        ("spells.toml", "spells"),
+        ("items.toml", "items"),
+        ("modes.toml", "modes"),
+        ("cards.toml", "cards"),
+        ("quests.toml", "quests"),
+        ("progression.toml", "progression"),
+    ] {
+        if !files.contains_key(file) {
+            continue;
+        }
+        let mut edited = pack.clone();
+        edited[section] = serde_json::to_value(empty_section(section)).unwrap();
+        // An emptied section may not validate (references into it); the
+        // files view has no error gate.
+        let view = core.files_view(&edited.to_string()).unwrap();
+        let kept = view
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["path"] == file)
+            .map(|f| f["text"].as_str().unwrap().as_bytes().to_vec());
+        assert_ne!(
+            kept.as_ref(),
+            files.get(file),
+            "{file}: an emptied section still exports its loaded bytes"
+        );
+    }
+}
+
+fn empty_section(section: &str) -> Value {
+    let pack = ExpansionPack::default();
+    serde_json::to_value(&pack).unwrap()[section].clone()
+}
+
+/// A shop row the Items tab rewrote as `{ item }` (it edits every row in
+/// that form) is the bare reference it was loaded as, so opening the tab
+/// leaves `items.toml` as loaded.
+#[test]
+fn a_shop_row_in_either_spelling_is_unchanged() {
+    let mut core = Core::new();
+    let (files, mut pack) = load(&mut core);
+    let cli = bundle::write_bundle(&files).unwrap();
+    let mut rewrote = 0;
+    for shop in pack["items"]["shops"].as_array_mut().unwrap() {
+        for row in shop["stock"].as_array_mut().unwrap() {
+            if !row.is_object() {
+                *row = serde_json::json!({ "item": row.clone(), "requires": {} });
+                rewrote += 1;
+            }
+        }
+    }
+    assert!(rewrote > 0, "Rebirth has bare shop rows");
+    assert_eq!(core.export_bundle(&pack.to_string()).unwrap(), cli);
+}

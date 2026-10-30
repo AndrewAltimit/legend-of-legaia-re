@@ -74,23 +74,26 @@ function discOptions(ctx, which) {
 // --- Fields ------------------------------------------------------------------------
 // spec: { k, label, t, opts, hint, wide, ph, kind, base }
 // t: text otext textarea otextarea int oint float ofloat bool sel osel csv
-//    csvint lines tuple monster omonster item oitem scene oscene bgm obgm
+//    csvint lines tuple otuple tiles monster omonster item oitem scene oscene bgm obgm
 //    monsterid itemid scenename ref oref refs stat music omusic sound osound
 export function field(ctx, obj, spec, path) {
   const p = joinPath(path, spec.k);
   const t = spec.t || 'text';
-  const wrap = h('label', { class: 'xw-field' + (spec.wide ? ' is-wide' : '') + (t === 'bool' ? ' xw-check' : ''), 'data-path': p });
+  const wrap = h('label', { class: 'xw-field' + (spec.wide ? ' is-wide' : '') + (t === 'bool' || t === 'dbool' ? ' xw-check' : ''), 'data-path': p });
   const set = (v, structural) => {
-    if (v === undefined) delete obj[spec.k];
+    if (v === undefined || (v === null && spec.drop)) delete obj[spec.k];
     else obj[spec.k] = v;
-    ctx.changed(structural);
+    ctx.changed(structural || spec.structural);
   };
   const cur = obj[spec.k];
   let input;
   const label = h('span', {}, spec.label || spec.k, spec.hint ? h('span', { class: 'xw-hint' }, ` ${spec.hint}`) : null);
 
   const numInput = (val, opt, isFloat) => {
-    input = h('input', { type: 'number', value: val == null ? '' : val, step: isFloat ? 'any' : '1', placeholder: spec.ph || '' });
+    // A float shows at f32 precision (the format stores f32s, which JSON
+    // spells as 0.3499999940395355); the value itself is untouched until edited.
+    const shown = val == null ? '' : isFloat && typeof val === 'number' ? Number(val.toPrecision(7)) : val;
+    input = h('input', { type: 'number', value: shown, step: isFloat ? 'any' : '1', placeholder: spec.ph || '' });
     input.addEventListener('input', () => {
       const v = input.value.trim();
       if (!v) set(opt ? null : 0);
@@ -145,7 +148,7 @@ export function field(ctx, obj, spec, path) {
       wrap.append(input, label);
       return wrap;
     case 'sel': case 'osel':
-      select(spec.opts.map((o) => (Array.isArray(o) ? o : [o, o])), cur, t === 'osel', (v) => set(v === '' ? null : (spec.num ? intOr(v, 0) : v)));
+      select(spec.opts.map((o) => (Array.isArray(o) ? o : [o, o])), cur, t === 'osel', (v) => set(v === '' ? null : (spec.num ? intOr(v, 0) : spec.bool ? v === 'true' : v)));
       break;
     case 'csv': case 'csvint':
       input = h('input', { type: 'text', value: (cur || []).join(', '), placeholder: spec.ph || '' });
@@ -170,6 +173,31 @@ export function field(ctx, obj, spec, path) {
         });
         input.append(box);
       }
+      break;
+    }
+    case 'otuple': {
+      // A tuple that may be left out: every box empty writes nothing.
+      input = h('div', { class: 'xw-row2' });
+      const arr = Array.isArray(cur) ? cur.slice() : new Array(spec.n).fill('');
+      const boxes = [];
+      for (let i = 0; i < spec.n; i++) {
+        const box = h('input', { type: 'number', value: arr[i] == null ? '' : arr[i], step: spec.float ? 'any' : '1', title: (spec.names || [])[i] || '', placeholder: (spec.names || [])[i] || '' });
+        box.addEventListener('input', () => {
+          const vals = boxes.map((b) => b.value.trim());
+          set(vals.every((v) => v === '') ? null : vals.map((v) => (spec.float ? floatOr(v, 0) : intOr(v, 0))));
+        });
+        boxes.push(box);
+        input.append(box);
+      }
+      break;
+    }
+    case 'tiles': {
+      // A list of map tiles, `c,r c,r ...`.
+      input = h('input', { type: 'text', value: (cur || []).map((q) => q.join(',')).join(' '), placeholder: spec.ph || 'c,r c,r ...', spellcheck: 'false' });
+      input.addEventListener('input', () => {
+        const out = input.value.split(/\s+/).filter(Boolean).map((x) => x.split(',').map((v) => parseInt(v, 10))).filter((q) => q.length === 2 && q.every(Number.isFinite));
+        set(out);
+      });
       break;
     }
     case 'monster': case 'omonster': discPicker('monsters', 'monster', t === 'omonster'); break;
@@ -362,6 +390,37 @@ export function listEd(ctx, parent, owner, key, path, o) {
   parent.append(wrap);
 }
 
+// An ordered list of ids (duplicates allowed: a starter deck holds a card
+// twice), one picker per row. `o.opts()` is `[[value, label]]`.
+export function refListEd(ctx, parent, owner, key, path, o) {
+  if (!Array.isArray(owner[key])) owner[key] = [];
+  const arr = owner[key];
+  const p = joinPath(path, key);
+  const wrap = h('div', { class: 'xw-field is-wide', 'data-path': p });
+  wrap.append(h('span', {}, o.title || key, o.hint ? h('span', { class: 'xw-hint' }, ` ${o.hint}`) : null));
+  const list = h('div', { class: 'xw-list-ed' });
+  const opts = o.opts();
+  arr.forEach((v, i) => {
+    const sel = h('select', { 'aria-label': `${o.title || key} ${i + 1}`, 'data-path': joinPath(p, i) });
+    let found = false;
+    for (const [val, label] of opts) {
+      const op = h('option', { value: val }, label);
+      if (String(val) === String(v)) { op.selected = true; found = true; }
+      sel.append(op);
+    }
+    if (!found) sel.append(h('option', { value: v, selected: true }, `${v} (not defined)`));
+    sel.addEventListener('change', () => { arr[i] = sel.value; ctx.changed(); });
+    const row = h('div', { class: 'xw-list-row' }, h('span', { class: 'xw-dim' }, `${i + 1}.`), sel);
+    if (i > 0) row.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move up', onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↑'));
+    row.append(h('button', { type: 'button', class: 'wb-mini', title: 'Remove', onclick: () => { arr.splice(i, 1); ctx.changed(true); } }, '×'));
+    list.append(row);
+  });
+  if (!opts.length) list.append(h('span', { class: 'xw-hint' }, o.none || 'nothing to pick yet'));
+  else list.append(h('div', {}, h('button', { type: 'button', class: 'wb-mini', onclick: () => { arr.push(opts[0][0]); ctx.changed(true); } }, `+ ${o.add || 'Add'}`)));
+  wrap.append(list);
+  parent.append(wrap);
+}
+
 // A keyed map (`monsters`, `lines`, ...) or an id-keyed array (`quests`), as a
 // list beside the selected item's form. `o.arrayId` marks an array whose items
 // carry their id in an `id` field.
@@ -407,7 +466,7 @@ export function splitEd(ctx, parent, owner, key, path, o) {
   const left = h('div', {}, list, add);
   const right = h('div', {});
   if (cur == null) {
-    right.append(h('div', { class: 'wb-empty' }, o.empty || 'Nothing here yet.'));
+    right.append(h('div', { class: 'wb-empty' }, o.empty || `No ${(o.add || 'item').toLowerCase()} yet: + ${o.add || 'Add'} makes one.`));
   } else {
     const ip = joinPath(p, cur);
     const item = coll[cur];
@@ -524,6 +583,34 @@ function monsterRefSlot(ctx, f, i, path) {
     ctx.changed(!v);
   });
   return h('label', { class: 'xw-field', 'data-path': `${path}.monsters[${i}]` }, h('span', {}, `Seat ${i + 1}`), sel);
+}
+
+// A formation's later waves (`[[formations.<key>.waves]]`): each a list of
+// pack or retail monsters that take the freed seats, all at once on a wipe
+// or one by one while fewer than `max_standing` stand
+// (docs/formats/expansion-pack-battle.md).
+function wavesEd(ctx, box, f, p) {
+  listEd(ctx, box, f, 'waves', p, {
+    title: 'Waves',
+    hint: 'after the first; the fight is won once the last is down',
+    add: 'Wave',
+    make: () => ({ monsters: [], arrival: 'wipe' }),
+    label: (w, i) => `wave ${i + 2}: ${(w.monsters || []).length} monster(s), ${w.arrival || 'wipe'}`,
+    render: (b2, w, p2) => {
+      w.monsters = w.monsters || [];
+      const refill = w.arrival === 'refill';
+      b2.append(grid(ctx, w, [
+        { k: 'arrival', t: 'sel', structural: true, opts: [['wipe', 'wipe: all at once when every monster is down'], ['refill', 'refill: one at a time into a freed seat']], label: 'Arrival' },
+      ].concat(refill ? [
+        { k: 'count', t: 'oint', label: 'Arrivals in all', hint: 'empty: one per monster listed' },
+        { k: 'max_standing', t: 'oint', label: 'No arrival while this many stand', hint: 'empty: 4' },
+      ] : []), p2));
+      const seats = h('div', { class: 'xw-grid', 'data-path': `${p2}.monsters` });
+      const n = refill ? w.monsters.length + 1 : Math.min(4, w.monsters.length + 1);
+      for (let i = 0; i < n; i++) seats.append(monsterRefSlot(ctx, w, i, p2));
+      b2.append(h('p', { class: 'xw-note' }, refill ? 'Sent in this order, cycling through the list.' : 'Up to four, seated together.'), seats);
+    },
+  });
 }
 
 // --- Boss scripts ---------------------------------------------------------------------------
@@ -741,6 +828,7 @@ export function renderBattle(ctx, el) {
       const n = Math.min(4, f.monsters.length + 1);
       for (let i = 0; i < n; i++) seats.append(monsterRefSlot(ctx, f, i, p));
       box.append(seats);
+      wavesEd(ctx, box, f, p);
       box.append(preview3dButton(ctx, 'Fight in 3D', 'Start this fight in the 3D preview (above): the monsters as the engine draws and runs them', (pv) => pv.fight('formation', id)));
     },
   });
@@ -1173,11 +1261,11 @@ export function renderCards(ctx, el) {
     label: (r) => `${r.source.kind} ${r.source.id}`,
     render: (box, r, p) => {
       const sp = joinPath(p, 'source');
-      const ks = h('select', {}, ...['monster', 'formation', 'mode'].map((k) => h('option', { value: k, selected: r.source.kind === k }, k)));
+      const ks = h('select', {}, ...['monster', 'formation', 'boss', 'mode'].map((k) => h('option', { value: k, selected: r.source.kind === k }, k)));
       ks.addEventListener('change', () => { r.source = ks.value === 'monster' ? { kind: 'monster', id: 1 } : { kind: ks.value, id: ctx.ids(ks.value)[0] || '' }; ctx.changed(true); });
       const src = r.source.kind === 'monster'
         ? field(ctx, r.source, { k: 'id', t: 'monsterid', label: 'Monster' }, sp)
-        : field(ctx, r.source, { k: 'id', t: 'ref', kind: r.source.kind, label: r.source.kind }, sp);
+        : field(ctx, r.source, { k: 'id', t: 'ref', kind: r.source.kind === 'mode' ? 'instance' : r.source.kind, label: r.source.kind }, sp);
       box.append(h('div', { class: 'xw-grid' }, h('label', { class: 'xw-field', 'data-path': sp }, h('span', {}, 'Source'), ks), src));
       box.append(grid(ctx, r, [
         { k: 'booster', t: 'oref', kind: 'booster', label: 'Booster' },
@@ -1186,6 +1274,21 @@ export function renderCards(ctx, el) {
         { k: 'count', t: 'int', label: 'Count' },
       ], p));
     },
+  });
+  el.append(h('h4', { class: 'xw-sub' }, 'Starter deck', h('span', { class: 'xw-hint' }, ' handed over the first time the collection opens')));
+  refListEd(ctx, el, c, 'starter', '', { title: 'Cards', add: 'Card', none: 'define a card first', opts: () => ctx.ids('card').map((id) => [id, id]) });
+  el.append(h('h4', { class: 'xw-sub' }, 'Dealers', h('span', { class: 'xw-hint' }, ' card shops a map trigger opens (event card_dealer)')));
+  splitEd(ctx, el, c, 'dealers', '', {
+    arrayId: true,
+    prefix: 'dealer',
+    add: 'Dealer',
+    make: () => ({ name: 'Card Dealer', stock: [], buys_cards: true, sell_percent: 100 }),
+    render: (box, d, p) => box.append(grid(ctx, d, [
+      { k: 'name', label: 'Name' },
+      { k: 'stock', t: 'refs', kind: 'booster', label: 'Boosters on sale (empty: every priced booster)', wide: true },
+      { k: 'buys_cards', t: 'dbool', label: 'Buys single cards' },
+      { k: 'sell_percent', t: 'int', label: 'Pays % of a card\'s sell value', ph: '100' },
+    ], p)),
   });
 }
 
@@ -1327,21 +1430,25 @@ export function renderModes(ctx, el) {
       { k: 'small_blind', t: 'int', label: 'Small blind' }, { k: 'big_blind', t: 'int', label: 'Big blind' },
       { k: 'currency', t: 'sel', opts: ['gold', 'coins'], label: 'Currency' }, { k: 'chip_value', t: 'int', label: 'Chip value' },
       ai, { k: 'max_hands', t: 'oint', label: 'Max hands' }, { k: 'blind_double_every', t: 'oint', label: 'Blinds double every' },
+      { k: 'map', t: 'oref', kind: 'map', label: 'Played on map', none: '(none: the 2D screen)', structural: true },
     ]],
     ['card_duels', 'Card duels', () => ({ name: 'New duel', deck: [], ai_tier: 'novice' }), [
       { k: 'name', label: 'Name' }, ai,
       { k: 'deck', t: 'refs', kind: 'card', label: 'Opponent deck', wide: true },
       { k: 'elemental_cells', t: 'bool', label: 'Elemental cells' }, { k: 'chain', t: 'bool', label: 'Chain captures' },
       { k: 'stakes', t: 'bool', label: 'Stakes (win a card)' }, { k: 'win_booster', t: 'oref', kind: 'booster', label: 'Win booster' },
+      { k: 'map', t: 'oref', kind: 'map', label: 'Played on map', none: '(none: the 2D screen)', structural: true },
     ]],
     ['golf', 'Golf courses', () => ({ name: 'New course', holes: [{ par: 2, rows: ['#####', '#T.O#', '#####'], heights: [], max_strokes: 10 }] }), [
       { k: 'name', label: 'Name' }, loc,
+      { k: 'map', t: 'oref', kind: 'map', label: 'Played on map', none: '(none: a hole grid each)', structural: true },
     ]],
     ['races', 'Race tracks', () => ({ name: 'New track', laps: 3, points: [[0, 0], [800, 0], [800, 800], [0, 800]], half_width: 90, boost_segments: [], racers: 4, ai_tier: 'regular' }), [
       { k: 'name', label: 'Name' }, loc,
       { k: 'laps', t: 'int', label: 'Laps' }, { k: 'racers', t: 'int', label: 'Racers' },
       { k: 'half_width', t: 'int', label: 'Half width' }, ai,
       { k: 'boost_segments', t: 'csvint', label: 'Boost segments' },
+      { k: 'map', t: 'oref', kind: 'map', label: 'Run on map', none: '(none: the points below)', structural: true },
     ]],
     ['prop_hunt', 'Prop hunt arenas', () => ({ name: 'New arena', props: [], decoys: [], bounds: [0, 0, 960, 640], blockers: [], rounds: 4, hunters: 1, players: 4, hide_frames: 1800, round_frames: 10800, hunter_health: 100, miss_penalty: 10, ai_tier: 'regular' }), [
       { k: 'name', label: 'Name' }, loc,
@@ -1361,19 +1468,40 @@ export function renderModes(ctx, el) {
       make,
       render: (box, it, p) => {
         box.append(grid(ctx, it, specs, p));
+        const onMap = it.map && ctx.pack.maps && ctx.pack.maps[it.map];
+        if (onMap && key !== 'prop_hunt') box.append(grid(ctx, it, [spawnSpec(onMap)], p));
+        if ((key === 'card_duels' || key === 'poker') && onMap) tableEd(ctx, box, it, p, onMap, key === 'poker');
         if (key === 'golf') {
-          box.append(h('p', { class: 'xw-note' }, 'A hole is a character grid: # wall, . fairway, , rough, s sand, w water, > slope, T tee, O cup. Heights are one digit per cell.'));
+          if (onMap) {
+            golfSurfacesEd(ctx, box, it, p, onMap);
+            refListEd(ctx, box, it, 'bodies', p, { title: 'Other golfers', hint: 'map NPCs, in seat order (the player\'s seat skipped)', add: 'Golfer', none: 'the map has no NPCs', opts: () => npcOpts(onMap) });
+            box.append(h('p', { class: 'xw-note' }, 'On a map course each hole is a stretch of the map: its tee, its cup, and the tiles it plays in (outside them is out of bounds).'));
+          } else {
+            box.append(h('p', { class: 'xw-note' }, 'A hole is a character grid: # wall, . fairway, , rough, s sand, w water, > slope, T tee, O cup. Heights are one digit per cell.'));
+          }
           listEd(ctx, box, it, 'holes', p, {
             add: 'Hole',
-            make: () => ({ par: 3, rows: ['#####', '#T.O#', '#####'], heights: [], max_strokes: 10 }),
+            make: () => (onMap ? { par: 3, rows: [], heights: [], max_strokes: 0, tee: [1, 1], cup: [3, 3] } : { par: 3, rows: ['#####', '#T.O#', '#####'], heights: [], max_strokes: 10 }),
             label: (hole, i) => `hole ${i + 1}, par ${hole.par}`,
             render: (b2, hole, p2) => b2.append(grid(ctx, hole, [
-              { k: 'par', t: 'int', label: 'Par' }, { k: 'max_strokes', t: 'int', label: 'Max strokes' },
+              { k: 'par', t: 'int', label: 'Par' }, { k: 'max_strokes', t: 'int', label: 'Max strokes', hint: '0: par + 5' },
+            ].concat(onMap ? [
+              { k: 'tee', t: 'otuple', n: 2, names: ['col', 'row'], label: 'Tee tile' },
+              { k: 'cup', t: 'otuple', n: 2, names: ['col', 'row'], label: 'Cup tile' },
+              { k: 'area', t: 'otuple', n: 4, names: ['col0', 'row0', 'col1', 'row1'], label: 'Plays in', hint: 'empty: the whole map' },
+            ] : [
               { k: 'rows', t: 'lines', label: 'Rows' }, { k: 'heights', t: 'lines', label: 'Heights' },
-            ], p2)),
+            ]), p2)),
           });
         }
-        if (key === 'races') box.append(pointsField(ctx, it, p));
+        if (key === 'races') {
+          if (onMap) {
+            box.append(grid(ctx, it, [{ k: 'waypoints', t: 'tiles', label: 'Centre line (map tiles)', hint: 'c,r c,r ... in driving order; closes on the first', wide: true }], p));
+            refListEd(ctx, box, it, 'bodies', p, { title: 'Other racers', hint: 'map NPCs, in seat order (the player\'s seat skipped)', add: 'Racer', none: 'the map has no NPCs', opts: () => npcOpts(onMap) });
+          } else {
+            box.append(pointsField(ctx, it, p));
+          }
+        }
         if (key === 'prop_hunt') {
           listEd(ctx, box, it, 'props', p, {
             title: 'Props', add: 'Prop',
@@ -1393,6 +1521,114 @@ export function renderModes(ctx, el) {
     });
   }
   renderPartyNights(ctx, el, m);
+}
+
+// A pack map's spawns and NPCs, for the in-world mode pickers.
+function spawnSpec(map) {
+  return { k: 'spawn', t: 'sel', opts: [['', '(the first spawn)']].concat((map.spawns || []).map((s) => [s.id, s.id])), label: 'Entered at' };
+}
+function npcOpts(map) {
+  return (map.npcs || []).map((n) => n.id).filter(Boolean).map((id) => [id, id]);
+}
+
+// A table on a pack map: a Grid Duel's (`[card_duels.table]`) or a poker
+// table's (`[poker.table]`) - where it stands, who sits at it, who watches,
+// its surface and sounds.
+function tableEd(ctx, box, it, p, map, poker) {
+  const tp = joinPath(p, 'table');
+  const tb = h('div', { class: 'xw-box', 'data-path': tp });
+  const on = h('input', { type: 'checkbox' });
+  on.checked = it.table != null;
+  const cue = (id) => ({ kind: 'sfx', id });
+  on.addEventListener('change', () => {
+    const base = { tile: [0, 0], offset: [0, 0, 0], facing: 0, height: 64, draw_table: true, spectators: [], surface: null, sfx: { deal: cue(0x21), place: cue(0x20), flip: cue(0x21), win: cue(0x20), lose: cue(0x37) } };
+    it.table = on.checked ? Object.assign(base, poker ? { radius: 130, players: [] } : { board: 132, seat_distance: 120, opponent: null }) : null;
+    ctx.changed(true);
+  });
+  tb.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, on, 'A table on the map'), h('span', { class: 'xw-hint' }, poker ? 'without one the table is its 2D screen' : 'without one the duel is its 2D screen')));
+  if (it.table) {
+    const t = it.table;
+    const facing = Array.from({ length: 8 }, (_, i) => [String(i), `sector ${i} (${i * 45} deg)`]);
+    tb.append(grid(ctx, t, [
+      { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: poker ? 'Table over tile' : 'Board over tile' },
+      { k: 'offset', t: 'tuple', n: 3, names: ['x', 'y', 'z'], label: 'Offset', hint: 'world units, y up' },
+      { k: 'facing', t: 'sel', num: true, opts: facing, label: 'Player looks' },
+      { k: 'height', t: 'int', label: 'Table height' },
+    ].concat(poker ? [
+      { k: 'radius', t: 'int', label: 'Seat radius' },
+    ] : [
+      { k: 'board', t: 'int', label: 'Board side' },
+      { k: 'seat_distance', t: 'int', label: 'Seat distance' },
+    ]).concat([
+      { k: 'draw_table', t: 'dbool', label: 'Draw a table (off when a prop is the table)' },
+    ]), tp));
+    const npcs = npcOpts(map);
+    const seatEd = (b2, seat, p2, role) => b2.append(grid(ctx, seat, [
+      { k: 'npc', t: 'sel', opts: npcs.length ? npcs : [['', '(the map has no NPCs)']], label: 'NPC' },
+      { k: 'name', t: 'otext', label: 'Name shown', ph: 'the NPC id' },
+    ].concat(role === 'opponent' || role === 'player' ? [{ k: 'think', t: 'oint', label: 'Think clip' }] : [])
+      .concat(role === 'player' ? [{ k: 'fold', t: 'oint', label: 'Fold clip' }, { k: 'all_in', t: 'oint', label: 'All-in clip' }] : [])
+      .concat([
+        { k: 'cheer', t: 'oint', label: 'Cheer clip' },
+        { k: 'slump', t: 'oint', label: 'Slump clip' },
+      ]), p2));
+    const clipHint = 'clips are the base scene\'s ANM records; empty keeps the idle';
+    if (poker) {
+      listEd(ctx, tb, t, 'players', tp, {
+        title: 'Players', hint: `the other seats, in order; ${clipHint}`, add: 'Player',
+        make: () => ({ npc: (npcs[0] || [''])[0] }),
+        label: (sp) => sp.npc || '(none)',
+        render: (b2, sp, p2) => seatEd(b2, sp, p2, 'player'),
+      });
+    } else {
+      const op = joinPath(tp, 'opponent');
+      const ob = h('div', { class: 'xw-box', 'data-path': op });
+      const has = h('input', { type: 'checkbox' });
+      has.checked = t.opponent != null;
+      has.addEventListener('change', () => { t.opponent = has.checked ? { npc: (npcs[0] || [''])[0] } : null; ctx.changed(true); });
+      ob.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, has, 'Opponent seated across'), h('span', { class: 'xw-hint' }, clipHint)));
+      if (t.opponent) seatEd(ob, t.opponent, op, 'opponent');
+      tb.append(ob);
+    }
+    listEd(ctx, tb, t, 'spectators', tp, {
+      title: 'Spectators', hint: 'turn to the table and react', add: 'Spectator',
+      make: () => ({ npc: (npcs[0] || [''])[0] }),
+      label: (sp) => sp.npc || '(none)',
+      render: (b2, sp, p2) => seatEd(b2, sp, p2, 'spectator'),
+    });
+    const sp = joinPath(tp, 'sfx');
+    t.sfx = t.sfx || {};
+    const sfx = h('div', { class: 'xw-grid' });
+    for (const [k, l] of [['deal', 'Deal'], ['place', 'Place'], ['flip', 'Flip'], ['win', 'Win'], ['lose', 'Lose']]) sfx.append(field(ctx, t.sfx, { k, t: 'sound', label: l }, sp));
+    tb.append(h('h4', { class: 'xw-sub' }, 'Sounds', h('span', { class: 'xw-hint' }, ' a retail cue or a pack sound each')), h('div', { 'data-path': sp }, sfx));
+    const sfp = joinPath(tp, 'surface');
+    const sb = h('div', { class: 'xw-box', 'data-path': sfp });
+    const hasS = h('input', { type: 'checkbox' });
+    hasS.checked = t.surface != null;
+    hasS.addEventListener('change', () => { t.surface = hasS.checked ? { tpage: 0, clut: 0, uv: [0, 0, 64, 64] } : null; ctx.changed(true); });
+    sb.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, hasS, poker ? 'Felt from the scene\'s VRAM' : 'Board surface from the scene\'s VRAM'), h('span', { class: 'xw-hint' }, 'else the built-in felt')));
+    if (t.surface) {
+      sb.append(grid(ctx, t.surface, [
+        { k: 'tpage', t: 'int', label: 'Texpage word (TSB)' }, { k: 'clut', t: 'int', label: 'CLUT word (CBA)' },
+        { k: 'uv', t: 'tuple', n: 4, names: ['u', 'v', 'w', 'h'], label: 'Rectangle in the page' },
+      ], sfp));
+    }
+    tb.append(sb);
+  }
+  box.append(tb);
+}
+
+// A map course's legend characters and the surface each plays as.
+const GOLF_SURFACES = ['fairway', 'rough', 'sand', 'water', 'wall', 'out'];
+function golfSurfacesEd(ctx, box, it, p, map) {
+  const sp = joinPath(p, 'surfaces');
+  it.surfaces = it.surfaces || {};
+  const g = h('div', { class: 'xw-grid' });
+  for (const ch of Object.keys((map.tiles && map.tiles.legend) || {})) {
+    const st = map.tiles.legend[ch];
+    g.append(field(ctx, it.surfaces, { k: ch, t: 'osel', opts: GOLF_SURFACES, label: `'${ch}' ${st.label || ''}`, none: '(by its label, else fairway)', drop: true }, sp));
+  }
+  box.append(h('div', { class: 'xw-box', 'data-path': sp }, h('div', { class: 'xw-box-head' }, 'Surfaces', h('span', { class: 'xw-hint' }, ' per legend entry of the map')), g));
 }
 
 // A party night: a playlist of short rounds of the instances above, scored by

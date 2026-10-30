@@ -204,10 +204,34 @@ impl ProgressionSection {
     }
 }
 
+impl ProgressionSection {
+    /// The field a [`Self::problems`] line is about: the key it opens with,
+    /// and for a level reward the reward at that level.
+    pub fn problem_field(&self, line: &str) -> String {
+        let head = line.split([':', ' ']).next().unwrap_or_default();
+        if head == "level_rewards" {
+            let level = line
+                .strip_prefix("level_rewards: level ")
+                .and_then(|r| r.split(' ').next())
+                .and_then(|n| n.parse::<u8>().ok());
+            if let Some(i) =
+                level.and_then(|l| self.level_rewards.iter().position(|r| r.level == l))
+            {
+                return format!("level_rewards[{i}]");
+            }
+        }
+        match head {
+            "xp_mul" | "gold_mul" | "xp_curve" | "enemy_scaling" | "level_rewards" => head.into(),
+            _ => String::new(),
+        }
+    }
+}
+
 impl crate::validate::SectionRules for ProgressionSection {
     fn check(&self, cx: &mut crate::validate::Checker<'_>) {
         for p in self.problems() {
-            cx.error("", p);
+            let field = self.problem_field(&p);
+            cx.error(&field, p);
         }
         for (i, r) in self.level_rewards.iter().enumerate() {
             for (k, item) in r.items.iter().enumerate() {
