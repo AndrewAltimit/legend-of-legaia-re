@@ -186,6 +186,8 @@ const ctx = {
   // Page-wide undo / redo (the painter's buttons and keys come here too).
   undo: () => stepHistory(-1),
   redo: () => stepHistory(1),
+  // Close the pending history step now: a 3D edit is one step of its own.
+  commit: () => commitHistory(),
   canUndo: () => S.hist.past.length > 0 || pendingEdit(),
   canRedo: () => S.hist.future.length > 0,
   find: (q) => S.find && S.find.find(q),

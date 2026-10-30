@@ -116,6 +116,29 @@ function jsonBox(mctx, owner, key, label, hint, empty) {
   return h('label', { class: 'xw-field' }, h('span', {}, label, h('span', { class: 'xw-hint' }, ` ${hint}`)), ta, err);
 }
 
+/** Import a grayscale PNG as a `heightmap` stroke: the file goes under
+ * `assets/terrain/`, the stroke names it, black at `Low` and white at
+ * `High`, stretched over the whole map. */
+function heightmapImport(ctx, mctx, t) {
+  const st = { lo: 0, hi: 160 };
+  const file = h('input', { type: 'file', accept: 'image/png', 'aria-label': 'Heightmap PNG' });
+  const note = h('span', { class: 'xw-hint' }, '');
+  file.addEventListener('change', async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const name = f.name.replace(/[^A-Za-z0-9._-]/g, '_').toLowerCase();
+    const path = `terrain/${name.endsWith('.png') ? name : name + '.png'}`;
+    if (mctx.snapshot) mctx.snapshot();
+    ctx.addAsset(path, bytes);
+    (t.shapes || (t.shapes = [])).push({ kind: 'heightmap', image: path, height: [st.lo, st.hi], strength: 1 });
+    note.textContent = ` added assets/${path}`;
+    ctx.changed(true);
+  });
+  return h('div', { class: 'xw-tools' }, h('span', { class: 'wb-label' }, 'Heightmap'), file,
+    num('Low', st.lo, (v) => { st.lo = v; }, { step: 8 }), num('High', st.hi, (v) => { st.hi = v; }, { step: 8 }), note);
+}
+
 /** The side panel: terrain on/off, the brush, the water level, the tables. */
 export function renderTerrain(ctx, mctx, side, map) {
   const box = h('details', { class: 'xw-box', open: map.terrain ? true : null });
@@ -151,6 +174,9 @@ export function renderTerrain(ctx, mctx, side, map) {
     num('Smooth passes', t.smooth, (v) => { t.smooth = Math.max(0, Math.round(v)); ctx.changed(true); }, { min: 0, max: 16 }),
     num('Walkable step', t.max_step, (v) => { t.max_step = Math.max(1, v); ctx.changed(true); }, { min: 1 }),
     num('Skirt (tiles)', t.skirt, (v) => { t.skirt = Math.max(0, Math.min(12, Math.round(v))); ctx.changed(true); }, { min: 0, max: 12 })));
+  box.append(h('div', { class: 'xw-tools' },
+    num('Boundary detail', t.detail || 1, (v) => { t.detail = [1, 2, 4].includes(v) ? v : 1; ctx.changed(true); }, { min: 1, max: 4, title: 'Sub-quads a side on a material boundary: 1, 2 or 4 (finer edges, more triangles)' })));
+  box.append(heightmapImport(ctx, mctx, t));
   const water = h('input', { type: 'checkbox' });
   water.checked = !!t.water;
   water.addEventListener('change', () => {

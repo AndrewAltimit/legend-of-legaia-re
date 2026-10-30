@@ -20,6 +20,7 @@ tab, and nothing is uploaded.
 | Sharing: import gates, drop, Share panel | `site/js/expansion-workbench-share.js` |
 | Pack library (shared with the play page) | `site/js/play-pack-library.js` |
 | 3D preview and Play here | `site/js/expansion-workbench-preview3d.js`; on the play page `site/js/play-expansion-live.js` and `site/js/play-view-editor-overlay.js` |
+| Editing in the 3D preview (gizmos, brushes, multi-select) | `site/js/expansion-workbench-gizmos.js`; on the play page `site/js/play-view-editor-gizmos.js` |
 | Map terrain (sculpt brush, materials, water, horizon) | `site/js/expansion-workbench-terrain.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
 | Example pack | `site/packs/rebirth.json`, written by `site/_gen.py` from [`packs/rebirth/`](../../packs/rebirth/README.md) |
@@ -286,6 +287,11 @@ tables as JSON editors
 **Sculpt** tool (`K`) writes strokes into `shapes`: a click stamps the
 brush (raise, lower, smooth, or flatten to the mean under it), a drag with
 raise or lower lays a ridge along it; **Remove last stroke** pops one. The
+3D preview's **Sculpt** and **Paint** modes are the full brush set
+([Editing in 3D](#editing-in-3d)). **Heightmap** imports a grayscale PNG
+into `assets/terrain/` and adds a `heightmap` stroke naming it, black at
+**Low** and white at **High** over the whole map; **Boundary detail** is
+the terrain's `detail`. The
 canvas shades the relief and the water from `map_preview`'s `terrain` - the
 heightfield the engine's floor sampler and meshes are built from - and the
 painter's wall quarters include the ones the terrain adds (too steep, too
@@ -380,6 +386,47 @@ and its canvas draws at the size the frame shows rather than the play
 page's 960 x 720. A rebuild waits for a pause in the editing that grows with
 the last build's time (450 ms at least, 5 s at most), and with **Auto**
 cleared only **Reload** rebuilds.
+
+### Editing in 3D
+
+The **Edit** bar under the preview's head turns the picture into an editor.
+**View** leaves it a picture (a click picks a tile, as above). The other
+modes take the left button; Alt with a drag still turns the camera, and a
+drag that starts on nothing in **Select** turns it too.
+
+| Mode | Does |
+|---|---|
+| Select | A click picks the object under it - a prop, decoration, NPC, spawn, lamp, emitter, trigger, exit or encounter zone; Shift or Ctrl adds or takes away. The selection gets a gizmo: **Move** (two arrows for one axis, a square for both; dragging an object moves it), **Rotate** (a ring: props and decorations in 15-degree steps, NPCs and spawns by facing sector), **Scale** (a corner handle: props and decorations; a zone's corner resizes it). A drag snaps to the tile or to the 32-unit sub-tile grid (**Snap**); Shift places freely. **Duplicate** (Ctrl+D) copies the selection one tile over (a prop to the nearest free tile); **Delete** removes it. |
+| Sculpt | A ring cursor of the brush's radius rides the ground, an inner ring at its strength; `[` and `]` size it. A drag lays one stroke: raise, lower, smooth and flatten write a `stroke` along the drag (a click writes the single-point shape), flatten levelling to the height where the drag starts; ridge and ramp drag from one point to another (a ramp from the ground under its start to the ground under its end plus **Height**); plateau and noise drag a rectangle. |
+| Paint | The tiles under the ring take a legend character: a terrain material's (named by the material) or any walkable style's. |
+
+Objects stand on the ground: the frame samples the heightfield `map_preview`
+returns (with the terrain map's `origin` and `step`) the way
+`Heightfield::sample_world` does, or a tile map's floors from the overlay.
+A prop moved onto a tile that holds another prop keeps its own tile and
+reaches over with its `offset` (one prop a tile); NPCs and spawns stand on
+whole tiles; zones move by whole tiles.
+
+**Nothing in the frame writes the pack.** A finished drag is a message to
+the workbench (`xw-transform` with each object's new world pose, `xw-sculpt`
+with the shape, `xw-paint` with the tiles), which writes the map definition
+the painter edits, one page-history step a drag (`ctx.commit` before and
+after it), so the edit shows in the painter, its forms and the TOML at
+once and `Ctrl+Z` takes it back from either view. The rebuild takes seconds on a big
+map, so the frame draws a **proxy** until it lands: the objects' boxes at
+their new poses (the start pose faint), the sculpted ground as a patch at
+its new heights - the stroke run over the frame's copy of the heightfield
+(`play-view-editor-gizmos.js` repeats the format's stroke kernels for this
+only), tinted by which way it moved - and the painted tiles tinted.
+
+The painter shares the selection: in its **Select** tool a drag on empty
+ground draws a box that selects what it holds, Shift adds, a drag on one
+object of several moves them all, and Delete and Ctrl+D act on the whole
+selection.
+
+The undo seam is `snapshot` and `refresh` in the editor's `api`
+(`expansion-workbench-gizmos.js`, `mountMapEditor`): they close the page
+history's step around each 3D edit (`ctx.commit`).
 
 ### Cost on a big map
 

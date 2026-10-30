@@ -94,6 +94,8 @@
     }
 
     if (!preview) return { reload };
+    // Headless-verification hook: the framed PlayView.
+    window.__xwView = () => api.view();
 
     /* --- The workbench's 3D preview --- */
     const parentWin = window.parent && window.parent !== window ? window.parent : null;
@@ -102,6 +104,7 @@
     };
     let wantOrbit = true;
     let focusTile = null;
+    let pendingEdit = null;
 
     function viewReady() {
       const v = api.view();
@@ -145,6 +148,12 @@
           return out;
         };
         attachPicking(v);
+      }
+      /* The map editor's layer (play-view-editor-gizmos.js): its pointer
+       * handlers go on first, so an edit drag is not also a camera turn. */
+      if (typeof v.attachEditorEditing === 'function') {
+        v.attachEditorEditing(post);
+        if (pendingEdit) { v.setEditorEdit(pendingEdit); pendingEdit = null; }
       }
       return v;
     }
@@ -234,12 +243,19 @@
           r = reload(m.bytes, `${m.id || 'pack'}.lxpack`);
         }
         const vv = viewReady();
-        if (vv) { vv.refreshEditorOverlay(); applyCamera(vv); }
+        if (vv) {
+          vv.refreshEditorOverlay();
+          if (r.ok && typeof vv.editorRebuilt === 'function') vv.editorRebuilt();
+          applyCamera(vv);
+        }
         post({
           type: 'xw-loaded', ok: !!r.ok, busy: !!r.busy, map: r.map || null, reentered: !!r.reentered,
           errors: r.errors || [], engineMs: r.ms != null ? r.ms : null,
           ms: Math.round(performance.now() - t0),
         });
+      } else if (m.type === 'xw-edit') {
+        if (v && typeof v.setEditorEdit === 'function') v.setEditorEdit(m);
+        else pendingEdit = Object.assign(pendingEdit || {}, m);
       } else if (m.type === 'xw-overlay') {
         if (v) v.setEditorOverlay(m);
       } else if (m.type === 'xw-camera') {

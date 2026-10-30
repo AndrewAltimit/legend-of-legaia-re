@@ -102,7 +102,11 @@ export function createPreview3d(env) {
   autoCb.addEventListener('change', () => { P.auto = autoCb.checked; if (P.auto && P.dirty) schedule(); });
   autoLab.append(autoCb, document.createTextNode('Auto'));
   ctrls.append(orbitBtn, playerBtn, fitBtn, walkBtn, reloadBtn, autoLab);
+  // The map editor's bar (expansion-workbench-gizmos.js), under the head.
+  const editSlot = document.createElement('div');
+  editSlot.className = 'xw-3d-editslot';
   head.append(title, toggleBtn, ctrls, layerBox, status);
+  body.before(editSlot);
   layerBox.hidden = true;
 
   /* The status line: the last build's or action's message, then the
@@ -146,6 +150,7 @@ export function createPreview3d(env) {
     toggleBtn.textContent = on ? 'Close 3D preview' : 'Open 3D preview';
     body.hidden = !on;
     ctrls.hidden = !on;
+    editSlot.hidden = !on || !editSlot.firstChild;
     layerBox.hidden = !on;
     if (on && !P.frame) {
       const f = document.createElement('iframe');
@@ -214,6 +219,7 @@ export function createPreview3d(env) {
       P.ready = true;
       P.sent = null;
       syncRun();
+      sendEdit();
       flush();
     } else if (m.type === 'xw-loaded') {
       const ms = Math.round(performance.now() - (P.t0 || performance.now()));
@@ -233,6 +239,7 @@ export function createPreview3d(env) {
         setStatus(`${m.map}: built in ${ms} ms${m.engineMs != null ? ` (engine ${m.engineMs} ms)` : ''}.`);
       }
       sendOverlay();
+      sendEdit();
       post({ type: 'xw-camera', mode: P.mode });
       syncRun();
       if (m.ok && P.pending) sendPending();
@@ -246,8 +253,17 @@ export function createPreview3d(env) {
     } else if (m.type === 'xw-stats') {
       P.stats = m;
       paintStatus();
+    } else if (/^xw-(select|transform|sculpt|paint|key)$/.test(m.type)) {
+      // The frame's editing layer answered (expansion-workbench-gizmos.js).
+      if (P.onEdit) P.onEdit(m);
     }
   });
+
+  /* The 3D editor's state for the frame (`xw-edit`): kept whole, so a new
+   * frame or a rebuilt map gets all of it again. */
+  function sendEdit() {
+    if (P.edit) post(Object.assign({ type: 'xw-edit' }, P.edit));
+  }
 
   /* An action for the frame's engine (a cutscene, a fight, the binder),
    * sent once the map it runs on is built. With no map chosen yet, the
@@ -381,6 +397,17 @@ export function createPreview3d(env) {
     fight(kind, id) { act({ type: 'xw-fight', kind, id }); },
     /* Every pack card into the frame's collection, and its binder open. */
     cards() { act({ type: 'xw-cards' }); },
+    /* The 3D editor: its state for the frame (merged), the handler of the
+     * frame's answers, and its bar. */
+    edit(msg) {
+      P.edit = Object.assign(P.edit || {}, msg);
+      if (P.ready) post(Object.assign({ type: 'xw-edit' }, msg));
+    },
+    onEdit(fn) { P.onEdit = fn; },
+    setEditBar(bar) {
+      if (bar && bar.parentNode !== editSlot) { editSlot.innerHTML = ''; editSlot.append(bar); }
+      editSlot.hidden = !bar || !P.open;
+    },
     isOpen: () => P.open,
     open: () => { if (!P.open) setOpen(true); },
     playHere,

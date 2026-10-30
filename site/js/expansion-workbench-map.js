@@ -25,6 +25,7 @@ import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-
 import { propMeshEditor, propDetail, renderDetail, entrancesEd } from './expansion-workbench-detail.js';
 import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
+import { mountMapEditor, editorChanged, select as editSelect, selection as editSelection, objectsIn, deleteObjects, duplicateObjects, drawSelection, clearSelection } from './expansion-workbench-gizmos.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
@@ -92,6 +93,7 @@ function wallMask(st) {
 // Every edit, a stroke included, is a step of the page's own history.
 function undo(ctx, dir) {
   V.sel = null;
+  clearSelection();
   if (dir < 0) ctx.undo(); else ctx.redo();
 }
 
@@ -297,6 +299,12 @@ function draw(ctx, cv) {
     const [c0, r0, c1, r1] = V.drag.rect;
     zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.15)', [3, 3]);
   }
+  // A box select being dragged, and a selection of several objects.
+  if (V.drag && V.drag.box) {
+    const [c0, r0, c1, r1] = V.drag.box;
+    zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.08)', [2, 2]);
+  }
+  drawSelection(g, map, cs);
   // The tile last clicked here or in the 3D preview, with nothing selected.
   if (!V.sel && V.cursor && V.cursor.map === V.map) {
     const [c, r] = V.cursor.tile;
@@ -326,7 +334,7 @@ export function renderMaps(ctx, el) {
 
   // Map chooser.
   const chooser = h('select', { 'aria-label': 'Map' }, ...ids.map((id) => h('option', { value: id, selected: id === V.map }, id)));
-  chooser.addEventListener('change', () => { V.map = chooser.value; V.sel = null; ctx.rerender(); });
+  chooser.addEventListener('change', () => { V.map = chooser.value; V.sel = null; clearSelection(); ctx.rerender(); });
   const addBtn = h('button', {
     type: 'button', class: 'wb-mini', onclick: () => {
       const id = freshId('map', ids);
@@ -369,10 +377,12 @@ export function renderMaps(ctx, el) {
     if (o && o.tile) return { tile: o.tile };
     return V.cursor && V.cursor.map === V.map ? { tile: V.cursor.tile } : null;
   };
-  const redraw = () => { draw(ctx, cv); if (pv) pv.select(selShape()); };
+  const redraw = () => { draw(ctx, cv); if (pv) pv.select(selShape()); editorChanged(); };
   // Edits from the side forms redraw the canvas without a re-render.
   const mctx = Object.create(ctx);
   mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx, redraw); redraw(); } };
+  // The side boxes' undo step (the terrain's heightmap import).
+  mctx.snapshot = () => { if (ctx.commit) ctx.commit(); };
 
   // Settings.
   const settings = h('details', { class: 'xw-box', open: ids.length === 1 && !(map.tiles.rows || []).length ? true : null });
@@ -528,8 +538,30 @@ export function renderMaps(ctx, el) {
       redraw();
     } else if (t === 'select') {
       const hit = objectsAt(map, c, r);
-      V.sel = hit.length ? hit[0] : null;
-      if (V.sel) { V.drag = { move: true, from: [c, r] }; }
+      if (ev.shiftKey || ev.ctrlKey || ev.metaKey) {
+        // Shift adds to (or takes from) the selection; on empty ground a
+        // drag adds a box.
+        if (hit.length) {
+          const cur = editSelection();
+          const k = cur.findIndex((x) => x.type === hit[0].type && x.i === hit[0].i);
+          if (k >= 0) cur.splice(k, 1); else cur.push(hit[0]);
+          editSelect(cur);
+          V.sel = cur[0] || null;
+        } else {
+          V.drag = { box: [c, r, c, r], add: true };
+        }
+      } else if (hit.length) {
+        const cur = editSelection();
+        const inSel = cur.some((x) => x.type === hit[0].type && x.i === hit[0].i);
+        V.sel = hit[0];
+        if (!inSel) editSelect([hit[0]]);
+        V.drag = { move: true, from: [c, r], group: inSel && cur.length > 1 ? cur : null };
+      } else {
+        // A drag on empty ground selects what its box holds.
+        V.sel = null;
+        editSelect([]);
+        V.drag = { box: [c, r, c, r] };
+      }
       renderSelection(ctx, mctx, side, map);
       redraw();
     } else if (t === 'spawn') {
@@ -571,12 +603,18 @@ export function renderMaps(ctx, el) {
     } else if (d.rect) {
       d.rect[2] = c; d.rect[3] = r;
       redraw();
+    } else if (d.box) {
+      d.box[2] = c; d.box[3] = r;
+      redraw();
     } else if (d.move && V.sel && (c !== d.from[0] || r !== d.from[1])) {
       const dc = c - d.from[0], dr = r - d.from[1];
-      const o = map[V.sel.type][V.sel.i];
-      if (o.tile) o.tile = [o.tile[0] + dc, o.tile[1] + dr];
-      if (o.patrol) o.patrol = o.patrol.map((t) => [t[0] + dc, t[1] + dr]);
-      if (o.rect) o.rect = [o.rect[0] + dc, o.rect[1] + dr, o.rect[2] + dc, o.rect[3] + dr];
+      for (const s of d.group || [V.sel]) {
+        const o = s.type === 'lamps' ? ((map.lighting || {}).lamps || [])[s.i] : (map[s.type] || [])[s.i];
+        if (!o) continue;
+        if (o.tile) o.tile = [o.tile[0] + dc, o.tile[1] + dr];
+        if (o.patrol) o.patrol = o.patrol.map((t) => [t[0] + dc, t[1] + dr]);
+        if (o.rect) o.rect = [o.rect[0] + dc, o.rect[1] + dr, o.rect[2] + dc, o.rect[3] + dr];
+      }
       d.from = [c, r];
       mctx.changed();
     }
@@ -590,6 +628,15 @@ export function renderMaps(ctx, el) {
     if (!d) return;
     if (d.sculpt) {
       if (sculptUp(map, d)) ctx.changed(true);
+      return;
+    }
+    if (d.box) {
+      const found = objectsIn(map, d.box);
+      const list = d.add ? editSelection().concat(found.filter((f) => !editSelection().some((x) => x.type === f.type && x.i === f.i))) : found;
+      editSelect(list);
+      V.sel = list[0] || null;
+      renderSelection(ctx, mctx, side, map);
+      redraw();
       return;
     }
     if (d.rect) {
@@ -625,10 +672,20 @@ export function renderMaps(ctx, el) {
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const k = ev.key.toLowerCase();
     if (k === 'escape' && V.pick) { V.pick = null; ctx.rerender(); return; }
-    if ((k === 'delete' || k === 'backspace') && V.sel) {
+    if ((k === 'delete' || k === 'backspace') && (V.sel || editSelection().length)) {
       ev.preventDefault();
-      map[V.sel.type].splice(V.sel.i, 1);
+      const many = editSelection();
+      if (many.length) deleteObjects(map, many); else map[V.sel.type].splice(V.sel.i, 1);
       V.sel = null;
+      editSelect([]);
+      ctx.changed(true);
+      return;
+    }
+    if ((ev.ctrlKey || ev.metaKey) && k === 'd' && (V.sel || editSelection().length)) {
+      ev.preventDefault();
+      const copies = duplicateObjects(map, editSelection().length ? editSelection() : [V.sel], ctx.ids('npc'));
+      editSelect(copies);
+      V.sel = copies[0] || null;
       ctx.changed(true);
       return;
     }
@@ -651,11 +708,35 @@ export function renderMaps(ctx, el) {
   // (as the Select tool picks), else the tile itself.
   if (pv) {
     pv.setMap(V.map, '');
+    // The 3D preview's editing layer (expansion-workbench-gizmos.js): its
+    // writes go through this painter's undo and redraw.
+    mountMapEditor({
+      preview: pv,
+      map: () => ctx.pack.maps[V.map],
+      mapPreview: () => V.preview[V.map],
+      // One undo step a 3D edit: the page history's (ctx.commit), and the
+      // painter's own stack where the page has none.
+      snapshot: () => { if (ctx.commit) ctx.commit(); },
+      refresh: (structural) => {
+        if (structural) { ctx.changed(true); return; }
+        mctx.changed();
+        if (ctx.commit) ctx.commit();
+        renderSelection(ctx, mctx, side, map);
+      },
+      undo: (dir) => undo(ctx, dir),
+      selected: (list) => {
+        V.sel = list[0] || null;
+        renderSelection(ctx, mctx, side, map);
+        draw(ctx, cv);
+      },
+      ids: () => ctx.ids('npc'),
+    });
     pv.onPick((c, r) => {
       if (!cv.isConnected) return;
       V.cursor = { map: V.map, tile: [c, r] };
       const hit = objectsAt(map, c, r);
       V.sel = hit.length ? hit[0] : null;
+      editSelect(V.sel ? [V.sel] : []);
       hover.textContent = describe(ctx, map, c, r);
       renderSelection(ctx, mctx, side, map);
       redraw();
