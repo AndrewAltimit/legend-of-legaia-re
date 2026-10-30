@@ -12,7 +12,7 @@
  * round-trips through the page.
  */
 import { h, grid, listEd, gateBox } from './expansion-workbench-forms.js';
-import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd } from './expansion-workbench-detail-forms.js';
+import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd, tileField } from './expansion-workbench-detail-forms.js';
 import { helpLink } from './expansion-workbench-help.js';
 
 const MESH_KINDS = [
@@ -127,7 +127,7 @@ export function renderDetail(ctx, mctx, side, map, tools) {
   edgesEd(dctx, box, map);
   decalsEd(dctx, box, map);
   materialsEd(dctx, box, map);
-  lightingEd(mctx, box, map);
+  lightingEd(dctx, box, map);
   fogEd(mctx, box, map);
   emittersEd(mctx, box, map);
   if (ctx.assetPaths) {
@@ -151,9 +151,8 @@ function lightingEd(mctx, box, map) {
     add: 'Lamp',
     make: () => ({ id: '', tile: [0, 0], offset: [0, 96, 0], color: [255, 176, 96], radius: 640, flicker: 0, period: 24 }),
     label: (l, i) => `${l.id || `lamp ${i + 1}`} at ${(l.tile || []).join(',')}`,
-    render: (b, l, p) => b.append(grid(mctx, l, [
+    render: (b, l, p) => b.append(tileField(mctx, l, { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'Tile' }, p), grid(mctx, l, [
       { k: 'id', label: 'Id' },
-      { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'Tile' },
       { k: 'offset', t: 'tuple', n: 3, names: ['x', 'y', 'z'], label: 'Offset', hint: 'world units, y up' },
       { k: 'color', t: 'tuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour', hint: '0..255' },
       { k: 'radius', t: 'int', label: 'Reach' },

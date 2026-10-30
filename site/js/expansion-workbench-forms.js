@@ -444,6 +444,19 @@ export function refListEd(ctx, parent, owner, key, path, o) {
 // A keyed map (`monsters`, `lines`, ...) or an id-keyed array (`quests`), as a
 // list beside the selected item's form. `o.arrayId` marks an array whose items
 // carry their id in an `id` field.
+// The id kind a split editor's collection defines (`file:path`), for the
+// rename with references.
+const ID_KIND = {
+  'battle.toml:monsters': 'monster', 'battle.toml:formations': 'formation', 'battle.toml:bosses': 'boss',
+  'dialog.toml:lines': 'line', 'quests.toml:quests': 'quest', 'quests.toml:challenges': 'challenge',
+  'items.toml:items': 'item', 'items.toml:sets': 'item_set', 'items.toml:shops': 'shop',
+  'cards.toml:cards': 'card', 'cards.toml:boosters': 'booster', 'cards.toml:dealers': 'dealer',
+  'arts.toml:arts': 'art', 'arts.toml:chains': 'art_chain', 'spells.toml:spells': 'spell',
+  'cutscenes.toml:cutscenes': 'cutscene', 'audio.toml:tracks': 'track', 'audio.toml:sounds': 'sound',
+  'modes.toml:poker': 'mode', 'modes.toml:card_duels': 'mode', 'modes.toml:golf': 'mode',
+  'modes.toml:races': 'mode', 'modes.toml:prop_hunt': 'mode', 'modes.toml:party_nights': 'mode',
+};
+
 export function splitEd(ctx, parent, owner, key, path, o) {
   const isArr = !!o.arrayId;
   if (owner[key] == null) owner[key] = isArr ? [] : {};
@@ -493,9 +506,21 @@ export function splitEd(ctx, parent, owner, key, path, o) {
     const box = h('div', { 'data-path': ip });
     // Id / key editor.
     const idIn = h('input', { type: 'text', value: idOf(cur), spellcheck: 'false' });
+    const idKind = ID_KIND[`${ctx.file()}:${p}`];
+    const idMsg = h('span', { class: 'xw-hint', 'aria-live': 'polite' });
     idIn.addEventListener('change', () => {
       const nv = idIn.value.trim();
       if (!nv || nv === idOf(cur)) return;
+      // A defined id renames with every reference to it, as one undo step
+      // (the reference model, expansion-workbench-rename.js).
+      if (idKind && ctx.renameApply && !(isArr && !item.id)) {
+        let res;
+        try { res = ctx.renameApply(idKind, idOf(cur), nv); } catch (e) { res = { ok: false, error: { message: String(e && e.message ? e.message : e) } }; }
+        if (!res.ok) { idIn.value = idOf(cur); idMsg.textContent = res.error.message; return; }
+        if (!isArr) ctx.sel[selKey] = nv;
+        ctx.replacePack(res.pack, `Renamed ${idOf(cur)} to ${nv}: ${res.changes.length} field(s).`);
+        return;
+      }
       if (isArr) { item.id = nv; } else {
         if (coll[nv]) { idIn.value = cur; return; }
         // Keep the key order: rebuild the map with the renamed key in place.
@@ -503,7 +528,6 @@ export function splitEd(ctx, parent, owner, key, path, o) {
         for (const k2 of Object.keys(coll)) delete coll[k2];
         for (const [k2, v2] of entries) coll[k2 === cur ? nv : k2] = v2;
         ctx.sel[selKey] = nv;
-        if (o.onRename) o.onRename(cur, nv);
       }
       ctx.changed(true);
     });
@@ -512,7 +536,8 @@ export function splitEd(ctx, parent, owner, key, path, o) {
       class: 'wb-mini',
       onclick: () => { if (isArr) coll.splice(cur, 1); else delete coll[cur]; ctx.changed(true); },
     }, 'Delete');
-    box.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-field', 'data-path': isArr ? joinPath(ip, 'id') : ip }, h('span', {}, o.idLabel || 'Id'), idIn), h('span', { class: 'xw-sp' }), del));
+    const refs = idKind && ctx.find ? h('button', { type: 'button', class: 'wb-mini', title: 'List every place that names this id (Find), with a previewed Rename', onclick: () => ctx.find(String(idOf(cur))) }, 'References') : null;
+    box.append(h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-field', 'data-path': isArr ? joinPath(ip, 'id') : ip }, h('span', {}, o.idLabel || 'Id'), idIn), refs, idMsg, h('span', { class: 'xw-sp' }), del));
     o.render(box, item, ip, cur);
     right.append(box);
   }
@@ -1178,7 +1203,6 @@ export function renderDialog(ctx, el) {
     idLabel: 'Line id',
     make: () => ({ text: 'Hello.', choices: [] }),
     label: (l, id) => `${id}${l.speaker ? ' (' + l.speaker + ')' : ''}`,
-    onRename: (from, to) => renameRefs(ctx.pack, 'line', from, to),
     render: (box, line, p) => {
       box.append(grid(ctx, line, [{ k: 'speaker', t: 'otext', label: 'Speaker' }], p));
       const tf = field(ctx, line, { k: 'text', t: 'textarea', label: 'Text', wide: true, rows: 7 }, p);
@@ -1219,21 +1243,6 @@ export function renderDialog(ctx, el) {
       });
     },
   });
-}
-
-// Rename a dialogue line's references across the pack (quests, choices, map
-// triggers), so renaming in the editor does not strand them.
-function renameRefs(pack, kind, from, to) {
-  if (kind !== 'line') return;
-  for (const q of (pack.quests && pack.quests.quests) || []) {
-    for (const k of ['start_dialog', 'active_dialog', 'complete_dialog']) if (q[k] === from) q[k] = to;
-  }
-  for (const l of Object.values((pack.dialog && pack.dialog.lines) || {})) {
-    for (const c of l.choices || []) if (c.next === from) c.next = to;
-  }
-  for (const m of Object.values(pack.maps || {})) {
-    for (const t of m.triggers || []) if (t.event && t.event.kind === 'dialog' && t.event.line === from) t.event.line = to;
-  }
 }
 
 // --- Cards ---------------------------------------------------------------------------------
@@ -1703,6 +1712,12 @@ function podiumEd(ctx, box, it, p) {
       { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'First-place block', hint: 'map tile' },
       { k: 'facing', t: 'sel', num: true, opts: Array.from({ length: 8 }, (_, i) => [String(i), `sector ${i} (${i * 45} deg)`]), label: 'Faces', hint: 'the camera looks back along it' },
     ], pp));
+    if (ctx.pickOnMap && map) {
+      pb.append(h('button', {
+        type: 'button', class: 'wb-mini', title: 'Click the first-place block on the podium map in the painter',
+        onclick: () => ctx.pickOnMap(pd.map, 'Click the tile of the podium\'s first-place block.', (q) => { pd.tile = [q[0], q[1]]; ctx.changed(true); }),
+      }, 'Pick tile on the map'));
+    }
     refListEd(ctx, pb, pd, 'bodies', pp, { title: 'Rival bodies', hint: 'map NPCs, in rival order; a rival with none is a stand-in figure', add: 'Body', none: 'the map has no NPCs', opts: () => (map ? npcOpts(map) : []) });
   }
   box.append(pb);

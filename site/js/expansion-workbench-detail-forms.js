@@ -30,7 +30,7 @@ function pickButton(dctx, owner, key, rect) {
 }
 
 /** A tile / rectangle field with its Pick button beside it. */
-function tileField(dctx, owner, spec, path) {
+export function tileField(dctx, owner, spec, path) {
   const f = field(dctx, owner, spec, path);
   const b = pickButton(dctx, owner, spec.k, spec.n === 4);
   if (b) f.append(b);

@@ -44,6 +44,7 @@ pub mod cards;
 pub mod cutscene;
 pub mod dialog;
 pub mod diff;
+pub mod flow;
 pub mod items;
 pub mod manifest;
 pub mod map;
@@ -60,6 +61,7 @@ pub mod terrain;
 pub mod terrain_rules;
 pub mod validate;
 pub mod version;
+pub mod xref;
 
 use std::collections::BTreeMap;
 use std::path::Path;

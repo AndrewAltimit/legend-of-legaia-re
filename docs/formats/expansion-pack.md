@@ -329,6 +329,15 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Any [no-disc-bytes](#the-no-disc-bytes-rule) violation | error |
 | Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a schema-2 key in a schema-1 manifest | warning |
 | A file outside the [layout](#layout) | warning |
+| A [flow lint](#flow-lints): a pack flag or counter read and never written, or written and never read; a map, quest or challenge the player cannot reach; a quest prerequisite cycle; a card, booster or pack item nothing (reachable) grants | warning |
+
+### Flow lints
+
+The flow lints (`flow::lint`) run over the pack's reference model (`xref`): one walk over the pack's JSON form that records every place a pack id is defined, written, read or used, the nearest definition holding each place (the quest a reward is in, the map a trigger is on, the line a choice is in) and the gates on its way down. The model follows engine flags named after an id (`cutscene.<id>`, `map.<id>.<trigger>`) to that id, and is checked against every declaration and reference the section rules resolve.
+
+Reachability starts at the maps with an entrance from a retail scene and the `auto_start` quests, and repeats until nothing changes: a place takes effect once its holder is reached and its gates hold, and then reaches what it names; a `talk` event counts as talking to its NPC, so it offers that giver's quests. A gate holds once the quests and bosses it needs are reached and its flags are written by something reached; what it needs clear holds from the start.
+
+The pass is optimistic (a reached quest is taken as completed, a reached boss as beaten), so what it reports unreachable is unreachable on every route. A booster with an empty pool grants every card. A flag or counter written and never read is one warning per id, at its first writer; one read and never written is a warning at each reader.
 
 ### Adding a section's checks
 

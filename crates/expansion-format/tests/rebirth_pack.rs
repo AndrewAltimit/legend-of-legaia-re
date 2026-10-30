@@ -5,7 +5,8 @@
 use std::path::PathBuf;
 
 use legaia_expansion_format::bundle::{read_bundle, write_bundle};
-use legaia_expansion_format::validate::{validate, validate_files};
+use legaia_expansion_format::flow;
+use legaia_expansion_format::validate::{Severity, validate, validate_files};
 use legaia_expansion_format::{ExpansionPack, read_dir_files};
 
 fn rebirth_dir() -> PathBuf {
@@ -15,13 +16,18 @@ fn rebirth_dir() -> PathBuf {
 #[test]
 fn rebirth_loads_and_validates_clean() {
     let files = read_dir_files(&rebirth_dir()).unwrap();
-    let issues = validate_files(&files, None);
-    assert!(issues.is_empty(), "{issues:#?}");
     let pack = ExpansionPack::from_files(&files).unwrap();
+    // Every issue is a flow lint (a warning the content still owes, see
+    // `flow::lint`); nothing else is reported.
+    let lints = flow::lint(&pack);
+    assert!(lints.iter().all(|i| i.severity == Severity::Warning));
+    let issues = validate_files(&files, None);
+    let other: Vec<_> = issues.iter().filter(|i| !lints.contains(i)).collect();
+    assert!(other.is_empty(), "{other:#?}");
     assert_eq!(pack.manifest.id, "rebirth");
     assert_eq!(pack.manifest.name, "Legend of Legaia: Rebirth");
     assert!(pack.docs.contains_key("README.md"));
-    assert!(validate(&pack).is_empty());
+    assert_eq!(validate(&pack).len(), lints.len());
 }
 
 #[test]
@@ -40,7 +46,9 @@ fn rebirth_round_trips_through_to_files() {
     let exported = pack.to_files().unwrap();
     assert_eq!(ExpansionPack::from_files(&exported).unwrap(), pack);
     assert_eq!(pack.to_files().unwrap(), exported, "deterministic");
-    assert!(validate_files(&exported, None).is_empty());
+    assert!(!legaia_expansion_format::validate::has_errors(
+        &validate_files(&exported, None)
+    ));
 }
 
 /// The share path end to end: the directory bundles, the bundle imports

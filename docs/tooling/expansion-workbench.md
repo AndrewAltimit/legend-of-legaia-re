@@ -11,6 +11,8 @@ tab, and nothing is uploaded.
 | Page | `site/_content/tooling/expansion-workbench.html` |
 | App, state, history, persistence, shortcuts, templates, export | `site/js/expansion-workbench-app.js` |
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
+| Rename with references | `site/js/expansion-workbench-rename.js` |
+| Flow tab (the progression graph) | `site/js/expansion-workbench-graph.js` |
 | Form kit and section editors | `site/js/expansion-workbench-forms.js` |
 | Tile painter | `site/js/expansion-workbench-map.js` |
 | Map detail layer (prop sources, lights, fog, emitters, entrances) | `site/js/expansion-workbench-detail.js` |
@@ -53,6 +55,9 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `map_preview(map)` | Per tile the floor tier and wall quarters, per cell the four corner heights and whether they agree. |
 | `cutscene_timeline(pack, id, picks)` | A cutscene played on the engine's sequencer against a stand-in world (`legaia_engine_expansion::cutscene::preview`): each executed step with its frame and track, the frame it ends on, the flags it raises and the fight it ends on. `picks` is the option taken at each menu. |
 | `asset_bytes(path)` / `audio_info(path)` | An asset's bytes (an audio preview) and an audio file's probe: `{ rate, channels, frames, seconds, loop }` or `{ error }`. |
+| `xref_sites(pack)` | The reference model (`legaia_expansion_format::xref`): every site of every pack id, `{ kind, id, role, file, field, key, owner }`. |
+| `rename_plan(pack, kind, old, new)` / `rename_id(...)` | A rename's changes (`{ file, field, role, key, before, after }`), or the pack with them made: `{ ok, pack, changes }`, or `{ ok: false, error }`. |
+| `flow_graph(pack)` | The flow graph (`flow::graph`): nodes with their place, reachability and findings, and edges by role. |
 | `scene_objects(scene)` | A base scene's geometry pack: per mesh its primitive count, extent, how often the retail scene places it, and its footprint seen from above; and `cells`, every texture cell (`tpage`, `clut`, `tile`) the pack's textured prims sample, most used first. |
 
 A file the editor left unchanged exports as the bytes it was loaded from:
@@ -107,6 +112,7 @@ content offer only ids the pack defines.
 | Modes | Poker tables, card duels (on a map: the table, its opponent, spectators, surface and sounds), golf courses and race tracks (on a map: spawn, surfaces, waypoints, the NPCs in the other seats), prop hunt arenas, party nights (rounds, prizes, and a podium in the world: its map, block tile, facing and the NPCs that stand in for the rivals). A centre line and a set of blockers are point lists on a 2D pad (below). |
 | Audio | `audio.toml`: tracks and sounds (file, gain, normalisation, loop; an import into `assets/audio/`, a Play button through the browser's own decoder, the validator's probe of rate, length and the file's own loop), the battle / boss / victory picks and the music per mode kind or instance. Every music field picks retail cues by sound-test name or a pack track. |
 | Maps | The tile painter; map settings with arrival cutscenes and the entrances from retail scenes; the detail layer; a Sound box for the map's `[audio]`: map music, the zone fade, music zones and ambient sources. |
+| Flow | No file: the progression graph over the whole pack, with the flow lints on it (below). |
 | Files | Each exported file, to copy or download on its own. |
 
 ## Coverage
@@ -169,15 +175,41 @@ in a text box the box's own undo runs first). The history holds up to 200
 steps of the pack's JSON. An editor that fills in a default as it draws
 (an empty gate box) is not an edit and makes no step.
 
-**Find** (the box above the checks, `Ctrl+K` or `/`) walks the pack's JSON
-and lists every place a value sits, as `file` and validator field path, so
-a hit is a jump target exactly as a check is. An id lists where it is
-defined, set, read and referenced (a flag under `set_flags` or a
-`set_flag` step is set, one under a gate or `flags` is read);
-`monster:109`, `item:5`, `scene:town01` or `bgm:12` list a retail
+**Find** (the box above the checks, `Ctrl+K` or `/`) lists every place a
+value sits, as `file` and validator field path, so a hit is a jump target
+exactly as a check is. An id lists, per kind, where it is defined, set, read
+and referenced, from the format crate's reference model (`xref_sites`) - the
+model the rename, the Flow tab and the validator's
+[flow lints](../formats/expansion-pack.md#flow-lints) use, so the four
+agree. `monster:109`, `item:5`, `scene:town01` or `bgm:12` list a retail
 coordinate's users; anything else is a text search. Empty, it lists the
 pack's flags and counters with their set and read counts, flagging one read
 and never set.
+
+**Rename.** Each kind an id has in Find carries a **Rename**: typing the new
+id lists every field the rename rewrites (file, field, old and new value,
+each a jump) before **Rename** applies it, as one step of the undo. The
+definition, every reference and the engine flags named after the id
+(`cutscene.<id>`, `map.<id>.<trigger>`) change together; a qualified
+reference keeps its `pack:` prefix, and a taken or malformed id is refused.
+Changing an id in a tab's own Id box (a monster, a quest, a line, a mode, a
+map's file name) runs the same rename; **References** beside it opens Find
+on the id. Rebirth's tests rename ids of every kind and check that the pack
+still validates, that exactly the planned files export changed, and that
+renaming back gives the pack again.
+
+**Flow.** The Flow tab draws the pack's progression as a node graph: an entry
+node for the retail game, the maps, quests, challenges, bosses, cutscenes and
+modes, and the pack flags and counters between them. Edges are an entrance,
+a lead (an exit, a trigger, a choice, a hook, a start), a write, a read (a
+gate, an objective) and a giver offering its quest; lines, NPCs, formations
+and the like fold into the node that holds them. The layout is longest-path
+layers from the entry node with back edges set aside and barycentre sweeps
+within a layer, drawn as SVG. A node the player cannot reach is dashed, one
+with a flow lint finding is outlined with its count, and a click opens the
+node's field; the findings are also listed under the graph. Chips hide a
+kind, **findings only** fades the rest, and the zoom fits the graph to the
+width.
 
 **Help.** Each tab opens with the file it edits and a **?** to the format
 reference's section for it, and each section heading with a reference
@@ -265,7 +297,9 @@ every field is the TOML key with its validator path. A decoration, brush,
 edge run or decal names its mesh with the prop's mesh-source editor. A
 tile or rectangle field has a **Pick** button: the painter shows a prompt and
 the next click (a drag, for a rectangle) on the canvas fills the field
-(`Esc` cancels). A decal is placed once on a tile or brushed over a
+(`Esc` cancels). A lamp's tile has one, and so does a party night's podium on
+the Modes tab: its Pick opens the podium's map in the painter and comes back
+once the tile is clicked. A decal is placed once on a tile or brushed over a
 rectangle, with its further `cells`; a material switches between palette
 cycle, hue cycle and texel scroll, and its palette picks from the palettes
 the base scene samples. A **texture cell** (a decal's, a scroll's) picks from

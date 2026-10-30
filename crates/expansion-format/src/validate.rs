@@ -99,6 +99,9 @@ pub struct Checker<'a> {
     /// `(file, field, scene, mesh index)`: geometry-pack indices to check
     /// against the scene's pack once a resolver is supplied.
     geometry_refs: Vec<(String, String, String, u16)>,
+    /// Every declaration and reference as `(kind, id, file, field)`, kept
+    /// for [`declarations_and_references`].
+    trace: Vec<(&'static str, String, String, String)>,
 }
 
 impl<'a> Checker<'a> {
@@ -111,6 +114,7 @@ impl<'a> Checker<'a> {
             pending: Vec::new(),
             disc_refs: Vec::new(),
             geometry_refs: Vec::new(),
+            trace: Vec::new(),
         }
     }
 
@@ -155,6 +159,8 @@ impl<'a> Checker<'a> {
     /// definition of the same kind uses it. Declared ids are local; the
     /// pack id is their namespace.
     pub fn declare(&mut self, kind: &'static str, id: &str, field: &str) {
+        self.trace
+            .push((kind, id.to_string(), self.file.clone(), field.to_string()));
         if id.contains(':') {
             self.error(
                 field,
@@ -191,6 +197,8 @@ impl<'a> Checker<'a> {
     /// pack; `other:id` must name a pack listed in `requires`, and is
     /// resolved by the engine once that pack is loaded.
     pub fn reference(&mut self, kind: &'static str, id: &str, field: &str) {
+        self.trace
+            .push((kind, id.to_string(), self.file.clone(), field.to_string()));
         self.pending.push(PendingRef {
             kind,
             id: id.to_string(),
@@ -322,7 +330,32 @@ pub fn validate_with(pack: &ExpansionPack, resolver: Option<&dyn DiscResolver>) 
     if let Some(resolver) = resolver {
         cx.resolve_disc(resolver);
     }
+    // The progression lints over the reference model (warnings only).
+    cx.issues.extend(crate::flow::lint(pack));
     cx.issues
+}
+
+/// Every content id the section rules declare or reference, as `(kind,
+/// id, file, field)`: what the validator resolves. The reference model
+/// ([`crate::xref`]) is checked against it, so the two cannot drift apart.
+pub fn declarations_and_references(
+    pack: &ExpansionPack,
+) -> Vec<(&'static str, String, String, String)> {
+    let mut cx = Checker::new(pack);
+    for name in pack.maps.keys() {
+        cx.file = format!("maps/{name}.toml");
+        cx.declare("map", name, "");
+    }
+    let sections = sections(pack);
+    for (file, rules) in &sections {
+        cx.file.clone_from(file);
+        rules.declare(&mut cx);
+    }
+    for (file, rules) in &sections {
+        cx.file.clone_from(file);
+        rules.check(&mut cx);
+    }
+    cx.trace
 }
 
 /// Validate a raw pack tree: file layout and names, parsing, then

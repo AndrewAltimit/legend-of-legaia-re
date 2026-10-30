@@ -32,12 +32,13 @@ import {
   h, renderManifest, renderBattle, renderProgression, drawXpChart, renderQuests,
   renderDialog, renderCards, renderItems, renderModes,
 } from './expansion-workbench-forms.js';
-import { renderMaps } from './expansion-workbench-map.js';
+import { renderMaps, armPick } from './expansion-workbench-map.js';
 import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
 import { createFind } from './expansion-workbench-xref.js';
+import { renderFlow } from './expansion-workbench-graph.js';
 import { attachShare } from './expansion-workbench-share.js';
 import { addSectionHelp } from './expansion-workbench-help.js';
 
@@ -113,6 +114,7 @@ const TABS = [
   ['modes', 'Modes', 'modes.toml', renderModes],
   ['audio', 'Audio', 'audio.toml', renderAudio],
   ['maps', 'Maps', 'maps/', renderMaps],
+  ['flow', 'Flow', 'flow:', renderFlow],
   ['files', 'Files', null, renderFiles],
 ];
 
@@ -191,6 +193,31 @@ const ctx = {
   canUndo: () => S.hist.past.length > 0 || pendingEdit(),
   canRedo: () => S.hist.future.length > 0,
   find: (q) => S.find && S.find.find(q),
+  jump: (at) => jumpTo(at),
+  // A tile Pick on map `map` from another tab: the Maps tab opens on that
+  // map, the next click calls `done([c, r])`, and the page comes back.
+  pickOnMap: (map, prompt, done) => {
+    const back = S.tab;
+    armPick(map, { rect: false, prompt, done: (q) => { S.tab = back; done(q); }, cancel: () => { S.tab = back; rerender(); } });
+    S.tab = 'maps';
+    rerender();
+  },
+  // The reference model (expansion-workbench-xref.js, -rename.js, -graph.js).
+  xrefSites: () => xrefSites(),
+  flowGraph: () => JSON.parse(S.wb.flow_graph(JSON.stringify(S.pack))),
+  renamePlan: (kind, old, next) => JSON.parse(S.wb.rename_plan(JSON.stringify(S.pack), kind, old, next)),
+  renameApply: (kind, old, next) => JSON.parse(S.wb.rename_id(JSON.stringify(S.pack), kind, old, next)),
+  // A rename's result replaces the pack as one undo step.
+  replacePack: (pack, msg) => {
+    commitHistory();
+    S.pack = pack;
+    commitHistory();
+    scheduleValidate();
+    scheduleSave();
+    if (S.preview) S.preview.changed();
+    rerender();
+    if (msg) setStatus(msg, 'ok', 'xw-export-status');
+  },
   rerender: () => rerender(),
   checkDialog: (line) => {
     try { return JSON.parse(S.wb.check_dialog(JSON.stringify(line))); } catch (e) { return null; }
@@ -272,6 +299,17 @@ function rerender() {
   if (wasClean) S.clean = S.hist.cur;
   updateDirty();
   if (S.find) S.find.refresh();
+}
+
+// The reference model's sites for the pack as it stands, cached per pack JSON.
+let xrefCache = { json: null, sites: [] };
+function xrefSites() {
+  if (!S.wb || !S.pack || !S.wb.xref_sites) return [];
+  const json = JSON.stringify(S.pack);
+  if (xrefCache.json !== json) {
+    try { xrefCache = { json, sites: JSON.parse(S.wb.xref_sites(json)).sites }; } catch (e) { xrefCache = { json, sites: [] }; }
+  }
+  return xrefCache.sites;
 }
 
 // --- History, dirty state ---------------------------------------------------------------
@@ -710,7 +748,12 @@ function init() {
   $('xw-undo').addEventListener('click', () => stepHistory(-1));
   $('xw-redo').addEventListener('click', () => stepHistory(1));
   $('xw-keys').addEventListener('click', () => { $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; });
-  S.find = createFind($('xw-findbox'), { pack: () => S.pack, jump: jumpTo });
+  S.find = createFind($('xw-findbox'), {
+    pack: () => S.pack,
+    sites: () => xrefSites(),
+    jump: jumpTo,
+    rename: { plan: ctx.renamePlan, apply: ctx.renameApply, done: (res, msg) => ctx.replacePack(res.pack, msg) },
+  });
   document.addEventListener('keydown', onShortcut);
   window.addEventListener('beforeunload', (ev) => {
     // The autosave keeps the work; warn only when it could not.

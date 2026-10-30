@@ -19,6 +19,8 @@ shareable language pack follows. The format reference is
 | `refs` | `DiscRef` coordinates, their disc-free range checks, the `DiscResolver` trait |
 | `bundle` | The deterministic `.lxpack` single-file archive |
 | `validate` | The validator, the `SectionRules` extension trait, the no-disc-bytes rule, the import trust checks |
+| `xref` | The reference model: every place a pack id is defined, written, read or used, by kind, with its holder and gates; the rename with references |
+| `flow` | Reachability from the entry points, the flow lints the validator runs, and the flow graph the workbench draws |
 | `share` | The import gates a shared `.lxpack` passes, the library summary, the sources zip |
 | `diff` | Two versions of a pack compared entry by entry; the semver bump and changelog draft |
 | `battle`, `progression`, `quest`, `dialog`, `cards`, `cutscene`, `modes`, `items`, `arts`, `spells`, `map`, `terrain` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by; `arts` resolves a segment's retail art against `legaia_art`'s per-character tables) |

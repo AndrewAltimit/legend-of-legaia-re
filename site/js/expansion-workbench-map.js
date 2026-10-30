@@ -317,7 +317,19 @@ function draw(ctx, cv) {
 }
 
 // --- The tab ------------------------------------------------------------------------
+/**
+ * Arm a Pick from another tab (a podium's tile on the Modes tab): select map
+ * `mapId` and make the next click on its canvas call `req.done([c, r])`;
+ * `req.cancel()` runs on Cancel / Esc. The caller switches to the Maps tab.
+ */
+export function armPick(mapId, req) {
+  V.map = mapId;
+  V.sel = null;
+  V.pick = req;
+}
+
 export function renderMaps(ctx, el) {
+  const cancelPick = () => { const req = V.pick; V.pick = null; if (req && req.cancel) req.cancel(); else ctx.rerender(); };
   const maps = ctx.pack.maps || (ctx.pack.maps = {});
   const ids = Object.keys(maps);
   const jump = ctx.jumpFile();
@@ -349,6 +361,15 @@ export function renderMaps(ctx, el) {
     ren.addEventListener('change', () => {
       const nv = ren.value.trim();
       if (!nv || nv === V.map || maps[nv]) { ren.value = V.map; return; }
+      // With every reference (exits, cutscenes, modes, objectives, engine
+      // flags), as one undo step: the reference model's rename.
+      if (ctx.renameApply) {
+        const res = ctx.renameApply('map', V.map, nv);
+        if (!res.ok) { ren.value = V.map; ren.title = res.error.message; return; }
+        V.map = nv;
+        ctx.replacePack(res.pack, `Renamed map to ${nv}: ${res.changes.length} field(s).`);
+        return;
+      }
       maps[nv] = maps[V.map];
       delete maps[V.map];
       for (const m of Object.values(maps)) for (const e of m.exits || []) if (e.to && e.to.kind === 'map' && e.to.map === V.map) e.to.map = nv;
@@ -460,8 +481,8 @@ export function renderMaps(ctx, el) {
   const wrap = h('div', { class: 'xw-canvas-wrap', tabindex: '0' }, cv);
   const hover = h('div', { class: 'xw-hover' });
   const note = h('p', { class: 'xw-note' }, 'Heights: the number is each tile\'s floor tier; lighter is higher. The floor reads a tile\'s tier at its top-left corner (low X, low Z) and slopes across the cell to its neighbours\' corners, so a cell is flat only where its four corners agree. Hatched cells slope: along a raised block\'s top and left edges the cell outside it ramps up onto it, and along its bottom and right edges its own last row and column ramp down. Drag with the right or middle button (or hold Space) to pan; Ctrl+wheel zooms.');
-  const pickBar = V.pick ? h('div', { class: 'xw-pickbar', role: 'status' }, V.pick.rect ? 'Drag a rectangle on the map to fill the field.' : 'Click a tile on the map to fill the field.',
-    h('button', { type: 'button', class: 'wb-mini', onclick: () => { V.pick = null; ctx.rerender(); } }, 'Cancel (Esc)')) : null;
+  const pickBar = V.pick ? h('div', { class: 'xw-pickbar', role: 'status' }, V.pick.prompt || (V.pick.rect ? 'Drag a rectangle on the map to fill the field.' : 'Click a tile on the map to fill the field.'),
+    h('button', { type: 'button', class: 'wb-mini', onclick: cancelPick }, 'Cancel (Esc)')) : null;
   const left = h('div', {}, tools, pickBar, wrap, hover, note);
   const side = h('div', {});
   el.append(h('div', { class: 'xw-painter' }, left, side));
@@ -671,7 +692,7 @@ export function renderMaps(ctx, el) {
     const t = ev.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const k = ev.key.toLowerCase();
-    if (k === 'escape' && V.pick) { V.pick = null; ctx.rerender(); return; }
+    if (k === 'escape' && V.pick) { cancelPick(); return; }
     if ((k === 'delete' || k === 'backspace') && (V.sel || editSelection().length)) {
       ev.preventDefault();
       const many = editSelection();

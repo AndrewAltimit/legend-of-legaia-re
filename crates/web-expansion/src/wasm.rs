@@ -206,6 +206,43 @@ impl ExpansionWorkbench {
             .map_err(err)
     }
 
+    /// Every site of every pack id (`xref::sites`): Find's index.
+    pub fn xref_sites(&self, pack: &str) -> Result<String, JsValue> {
+        crate::xref::sites(pack).map(|v| v.to_string()).map_err(err)
+    }
+
+    /// What renaming `kind` `old` to `new` would change (`xref::rename_plan`).
+    pub fn rename_plan(
+        &self,
+        pack: &str,
+        kind: &str,
+        old: &str,
+        new: &str,
+    ) -> Result<String, JsValue> {
+        crate::xref::rename_plan(pack, kind, old, new)
+            .map(|v| v.to_string())
+            .map_err(err)
+    }
+
+    /// Rename an id with every reference (`xref::rename`): `{ ok, pack,
+    /// changes }` or `{ ok: false, error }`.
+    pub fn rename_id(
+        &self,
+        pack: &str,
+        kind: &str,
+        old: &str,
+        new: &str,
+    ) -> Result<String, JsValue> {
+        crate::xref::rename(pack, kind, old, new)
+            .map(|v| v.to_string())
+            .map_err(err)
+    }
+
+    /// The pack's flow graph and lint findings (`xref::graph`).
+    pub fn flow_graph(&self, pack: &str) -> Result<String, JsValue> {
+        crate::xref::graph(pack).map(|v| v.to_string()).map_err(err)
+    }
+
     /// The engine's reading of a map's tile layer (or `{ error }`).
     pub fn map_preview(&self, map: &str) -> String {
         self.core.map_preview(map).to_string()
