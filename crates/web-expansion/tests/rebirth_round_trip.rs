@@ -122,8 +122,9 @@ fn xp_chart_and_dialog_check() {
     let packed = chart["pack"].as_array().unwrap();
     assert_eq!(retail.len(), 98);
     assert_eq!(packed.len(), 98);
-    // Banded from level 60: the same through 59, cheaper after.
-    assert_eq!(retail[57], packed[57]);
+    // Banded from level 40: the same through 39, cheaper after.
+    assert_eq!(retail[37], packed[37]);
+    assert!(packed[38].as_u64() < retail[38].as_u64());
     assert!(packed[97].as_u64() < retail[97].as_u64());
 
     let line = &pack["dialog"]["lines"]["guide_intro"];
