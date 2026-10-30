@@ -47,6 +47,33 @@ export function h(tag, attrs, ...kids) {
 
 const joinPath = (base, k) => (base ? (typeof k === 'number' ? `${base}[${k}]` : `${base}.${k}`) : String(k));
 
+// A picker's <option>s, built once per distinct list and cloned after: a tab
+// holds dozens of pickers over the same few hundred disc names, and building
+// each option afresh was most of a tab switch's time.
+const OPTION_CACHE = new Map();
+export function fillOptions(sel, opts, val) {
+  const key = opts.map((o) => `${o[0]}\u0001${o[1]}`).join('\u0002');
+  let tpl = OPTION_CACHE.get(key);
+  if (!tpl) {
+    if (OPTION_CACHE.size > 96) OPTION_CACHE.clear();
+    tpl = document.createDocumentFragment();
+    for (const [v, l] of opts) {
+      const o = document.createElement('option');
+      o.value = String(v);
+      o.textContent = l;
+      tpl.append(o);
+    }
+    OPTION_CACHE.set(key, tpl);
+  }
+  sel.append(tpl.cloneNode(true));
+  if (val == null) return false;
+  const want = String(val);
+  for (const o of sel.options) {
+    if (o.value === want) { o.selected = true; return true; }
+  }
+  return false;
+}
+
 function intOr(v, dflt) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : dflt;
@@ -106,12 +133,7 @@ export function field(ctx, obj, spec, path) {
   const select = (opts, val, opt, onSet) => {
     input = h('select', {});
     if (opt) input.append(h('option', { value: '' }, spec.none || '(none)'));
-    let found = false;
-    for (const [v, l] of opts) {
-      const o = h('option', { value: v }, l);
-      if (String(val) === String(v)) { o.selected = true; found = true; }
-      input.append(o);
-    }
+    const found = fillOptions(input, opts, val);
     if (val != null && val !== '' && !found) {
       input.append(h('option', { value: String(val), selected: true }, `${val} (not defined)`));
     }
@@ -468,12 +490,7 @@ export function refListEd(ctx, parent, owner, key, path, o) {
   const opts = o.opts();
   arr.forEach((v, i) => {
     const sel = h('select', { 'aria-label': `${o.title || key} ${i + 1}`, 'data-path': joinPath(p, i) });
-    let found = false;
-    for (const [val, label] of opts) {
-      const op = h('option', { value: val }, label);
-      if (String(val) === String(v)) { op.selected = true; found = true; }
-      sel.append(op);
-    }
+    const found = fillOptions(sel, opts, v);
     if (!found) sel.append(h('option', { value: v, selected: true }, `${v} (not defined)`));
     sel.addEventListener('change', () => { arr[i] = sel.value; ctx.changed(); });
     const row = h('div', { class: 'xw-list-row' }, h('span', { class: 'xw-dim' }, `${i + 1}.`), sel);
@@ -542,7 +559,26 @@ export function splitEd(ctx, parent, owner, key, path, o) {
       ctx.changed(true);
     },
   }, `+ ${o.add || 'Add'}`);
-  const left = h('div', {}, list, add);
+  // A long list gets a filter over its labels; the text survives re-renders.
+  let filter = null;
+  if (keys.length > 12) {
+    const qKey = `${selKey}:filter`;
+    filter = h('input', { type: 'search', class: 'xw-list-filter', placeholder: `Filter ${keys.length} ...`, 'aria-label': `Filter ${key}`, value: ctx.sel[qKey] || '' });
+    const apply = () => {
+      const q = filter.value.trim().toLowerCase();
+      ctx.sel[qKey] = filter.value;
+      for (const b of list.children) b.hidden = !!q && !b.textContent.toLowerCase().includes(q) && !b.classList.contains('is-active');
+    };
+    filter.addEventListener('input', apply);
+    filter.addEventListener('keydown', (ev) => {
+      // Enter opens the first match.
+      if (ev.key !== 'Enter') return;
+      const first = [...list.children].find((b) => !b.hidden && !b.classList.contains('is-active'));
+      if (first) { ev.preventDefault(); first.click(); }
+    });
+    if (filter.value) queueMicrotask(apply);
+  }
+  const left = h('div', {}, filter, list, add);
   const right = h('div', {});
   if (cur == null) {
     right.append(h('div', { class: 'wb-empty' }, o.empty || `No ${(o.add || 'item').toLowerCase()} yet: + ${o.add || 'Add'} makes one.`));
@@ -662,12 +698,7 @@ function monsterRefSlot(ctx, f, i, path) {
   for (const id of ctx.ids('monster')) opts.push([`p:${id}`, `${id} (pack)`]);
   for (const m of catList(ctx, 'monsters')) opts.push([`d:${m.id}`, `#${m.id} ${m.name} (retail)`]);
   const val = cur == null ? '' : (typeof cur === 'string' ? `p:${cur}` : `d:${cur.id}`);
-  let found = false;
-  for (const [v, l] of opts) {
-    const o = h('option', { value: v }, l);
-    if (v === val) { o.selected = true; found = true; }
-    sel.append(o);
-  }
+  const found = fillOptions(sel, opts, val);
   if (!found && val) sel.append(h('option', { value: val, selected: true }, `${val.slice(2)} (not defined)`));
   sel.addEventListener('change', () => {
     const v = sel.value;
@@ -763,7 +794,7 @@ function summonEd(ctx, box, ph, p) {
     for (const id of ctx.ids('monster')) opts.push([`p:${id}`, `${id} (pack)`]);
     for (const m of catList(ctx, 'monsters')) opts.push([`d:${m.id}`, `#${m.id} ${m.name} (retail)`]);
     const val = cur == null ? '' : (typeof cur === 'string' ? `p:${cur}` : `d:${cur.id}`);
-    for (const [v, l] of opts) sel.append(h('option', { value: v, selected: v === val }, l));
+    fillOptions(sel, opts, val);
     sel.addEventListener('change', () => {
       const v = sel.value;
       if (!v) ph.summon.splice(i, 1);
