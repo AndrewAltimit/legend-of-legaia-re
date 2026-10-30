@@ -137,6 +137,10 @@ impl SceneHost {
         // SFX ring queue to the host's director, which keys the voices off.
         // REF: FUN_80017910, FUN_8001DCF8
         self.world.release_sustained_sfx();
+        // An expansion-pack cutscene ends at the door, and a pack map's hidden
+        // NPCs are that visit's own (the identity with no pack: nothing runs).
+        self.world.expansion.cutscene.clear();
+        self.world.expansion.cutscene.hidden.clear();
         // A scene load that lands while a battle is still up (a host's scene
         // picker, a debug seat) abandons that battle first, so its results
         // sequencer and field snapshot cannot ride into the next fight.

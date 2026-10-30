@@ -156,6 +156,8 @@ MIRRORS = [
      "site/_content/formats/expansion-pack-battle.html"),
     ("docs/formats/expansion-pack-quests.md",
      "site/_content/formats/expansion-pack-quests.html"),
+    ("docs/formats/expansion-pack-cutscenes.md",
+     "site/_content/formats/expansion-pack-cutscenes.html"),
     ("docs/formats/expansion-pack-maps.md",
      "site/_content/formats/expansion-pack-maps.html"),
     ("docs/formats/expansion-pack-items.md",

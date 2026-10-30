@@ -29,6 +29,7 @@ progression.toml   level curve, XP and rewards
 quests.toml        quests and challenges
 dialog.toml        dialogue lines
 cards.toml         trading cards
+cutscenes.toml     scripted scenes
 modes.toml         game modes
 items.toml         items, equipment, sets and shops
 maps/<id>.toml     one custom map per file; the file stem is the map id
@@ -113,6 +114,7 @@ Each content section is a TOML file whose type lives in its own module of `legai
 | `quests.toml` | `QuestSection` | `quest` |
 | `dialog.toml` | `DialogSection` | `dialog` |
 | `cards.toml` | `CardSection` | `cards` |
+| `cutscenes.toml` | `CutsceneSection` | `cutscene` |
 | `modes.toml` | `ModeSection` | `modes` |
 | `items.toml` | `ItemSection` | `items` |
 | `maps/<id>.toml` | `MapDef` | `map` |
@@ -132,6 +134,14 @@ Quests (giver, prerequisites keyed to retail system flags, party level and other
 ### dialog.toml
 
 Dialogue lines in the translation markup, as rows and pages, with two- to four-option menus that set pack flags, chain a line or start a fight. Every line is compiled at validation, so text with no glyph is an error. Declares `line` ids; references `line`, `formation` and `boss`. Reference: [`expansion-pack-quests.md`](expansion-pack-quests.md#dialogtoml).
+
+### cutscenes.toml
+
+Scripted scenes: step lists (walks, turns, clips, camera moves, fades, lines with branches on the option picked, flags, items, a closing fight) on a main track and named tracks beside it, run by the engine's own sequencer. A map trigger, a map's arrival list, a pack NPC or a quest's start or completion plays one; Start skips one already seen. Declares `cutscene` ids; references `line`, `formation`, `boss`, `quest` and `map`. Reference: [`expansion-pack-cutscenes.md`](expansion-pack-cutscenes.md).
+
+### cutscenes.toml
+
+Scripted scenes: step lists (walks, turns, clips, camera moves, fades, lines with branches on the option picked, flags, items, a closing fight) on a main track and named tracks beside it, run by the engine's own sequencer. A map trigger, a map's arrival list, a pack NPC or a quest's start or completion plays one; Start skips one already seen. Declares `cutscene` ids; references `line`, `formation`, `boss`, `quest` and `map`. Reference: [`expansion-pack-cutscenes.md`](expansion-pack-cutscenes.md).
 
 ### cards.toml
 

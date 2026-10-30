@@ -445,6 +445,7 @@ fn main() -> Result<()> {
             learn_spell,
             set_flag,
             play_record,
+            play_cutscene,
             expansion,
             map,
             spawn,
@@ -553,6 +554,7 @@ fn main() -> Result<()> {
             },
             window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?
                 .with_play_record(play_record.as_deref())?
+                .with_play_cutscene(play_cutscene)
                 .with_expansion(expansion, map, spawn)?
                 .with_pack_mode(pack_mode)
                 .with_netplay(window::NetLaunch {

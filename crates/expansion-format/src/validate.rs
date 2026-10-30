@@ -114,7 +114,7 @@ impl<'a> Checker<'a> {
     }
 
     /// The pack under validation.
-    pub fn pack(&self) -> &ExpansionPack {
+    pub fn pack(&self) -> &'a ExpansionPack {
         self.pack
     }
 
@@ -363,6 +363,7 @@ fn sections(pack: &ExpansionPack) -> Vec<(String, &dyn SectionRules)> {
         ("quests.toml".into(), &pack.quests),
         ("dialog.toml".into(), &pack.dialog),
         ("cards.toml".into(), &pack.cards),
+        ("cutscenes.toml".into(), &pack.cutscenes),
         ("modes.toml".into(), &pack.modes),
         ("items.toml".into(), &pack.items),
     ];

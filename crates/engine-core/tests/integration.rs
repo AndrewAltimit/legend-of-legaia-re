@@ -87,6 +87,7 @@ mod effect_script_table_clut_disc;
 mod effect_sprite_arm_carriers_real;
 mod effect_world_real_efect;
 mod escape_timer_world;
+mod expansion_cutscene_world;
 mod expansion_modes_world;
 mod expansion_stage_world;
 mod fatal_decision_icon_page_disc;

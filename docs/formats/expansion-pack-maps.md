@@ -209,6 +209,8 @@ shop = "tower_dealer"                           # optional: an items.toml shop o
 requires = { quests = ["tower_rumour"] }        # optional: silent until it holds
 line_after = "tower_guide_thanks"               # optional: said once `after` holds
 after = { bosses = ["cinder_warden"] }
+cutscene = "guide_story"                        # optional: played in place of the line
+present = { flags = ["cutscene.tower_intro"] }  # optional: off the map until it holds
 ```
 
 An NPC is not an asset: a retail NPC is one record of its scene's MAN actor
@@ -249,7 +251,12 @@ both opens the item shop. It says its `line` only when the counter cannot
 open.
 While its `requires` gate is shut the NPC says nothing and opens no shop
 (the talk still counts as `Talked(id)`); once its `after` gate holds it says
-`line_after` in place of `line` (`ActiveMap::talk_gated`).
+`line_after` in place of `line` (`ActiveMap::talk_gated`). An NPC with a
+`cutscene` plays that `cutscenes.toml` cutscene in place of its line
+([`expansion-pack-cutscenes.md`](expansion-pack-cutscenes.md)). One whose
+`present` gate is shut is off the map for the visit - parked on retail's
+off-map hide box (`World::expansion_hide_absent_npcs`) - until a cutscene's
+`show` step brings it on.
 
 ## Visible walls
 
@@ -347,6 +354,12 @@ hands it to that section's runtime the tick it fires:
 | `{ kind = "challenge", challenge = C, start = false }` | arms the `quests.toml` challenge `C` (`World::expansion_take_challenge`); `start = true` also starts the fight against its formation. A refusal (a party rule already broken) shows as a toast |
 | `{ kind = "mode", mode = M }` | enters the `modes.toml` instance `M` (`World::enter_pack_mode`) |
 | `{ kind = "rest", cost = 0, save = false }` | a rest point (below) |
+| `{ kind = "cutscene", cutscene = C }` | plays the `cutscenes.toml` cutscene `C` (`World::expansion_play_cutscene`) |
+
+A map's `[[enter_cutscenes]]` (`cutscene`, `requires`, `repeat`) plays on
+arrival: the first entry whose gate holds and whose cutscene is unseen, or
+any with `repeat = true`. A save resumed on the map plays none. While a
+cutscene runs, the map's zones and exits fire nothing (`ActiveMap::observe`).
 
 `once = true` fires a trigger once **ever**: firing raises the pack flag
 `map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),

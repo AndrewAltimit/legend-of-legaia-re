@@ -79,6 +79,8 @@ pub struct NpcTalk {
     pub line: Option<String>,
     /// The card dealer it runs.
     pub shop: Option<String>,
+    /// The cutscene it plays in place of its line.
+    pub cutscene: Option<String>,
 }
 
 impl ActiveMap {
@@ -194,6 +196,18 @@ impl ActiveMap {
         Some(exit.to.clone())
     }
 
+    /// Note the player on map-local `tile` without firing anything: a
+    /// cutscene moving the player keeps the zones quiet, and the tile it
+    /// leaves them on is the last one seen, so nothing fires as it ends.
+    pub fn observe(&mut self, tile: Option<(u16, u16)>) {
+        if tile != self.last_tile {
+            self.last_tile = tile;
+            if let Some(t) = tile {
+                self.encounter = self.encounter_zone_at(t);
+            }
+        }
+    }
+
     /// The pack encounter table of the zone the player stood in at the last
     /// step, `None` outside every zone (where the map rolls no encounters).
     /// The world's roll reads the zone under the player's live position
@@ -254,6 +268,7 @@ impl ActiveMap {
             npc: npc.id.clone(),
             line,
             shop: npc.shop.clone().filter(|_| !gated),
+            cutscene: npc.cutscene.clone().filter(|_| !gated),
         })
     }
 
@@ -348,6 +363,19 @@ table = "west"
         assert!(matches!(m.step(Some((5, 1))), Some(ExitTarget::Map { .. })));
         // Moving within the exit band is not a new entry.
         assert_eq!(m.step(Some((5, 2))), None);
+    }
+
+    #[test]
+    fn a_tile_observed_under_a_cutscene_fires_nothing_then_or_after() {
+        let mut m = active((0, 1));
+        // A cutscene walks the player across the once trigger and onto the
+        // exit: nothing fires, and the exit tile is the last one seen.
+        for c in 1..=5 {
+            m.observe(Some((c, 1)));
+        }
+        assert!(m.pending_events().is_empty());
+        assert_eq!(m.step(Some((5, 1))), None, "standing on, not entering");
+        assert!(m.pending_events().is_empty());
     }
 
     #[test]

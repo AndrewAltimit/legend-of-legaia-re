@@ -80,6 +80,7 @@ rewards = { gold = 10000, set_flags = ["tower_open"] }</code></pre>
       <tr><td><code>start_dialog</code>, <code>complete_dialog</code></td><td>Line ids shown on start and on completion.</td></tr>
       <tr><td><code>active_dialog</code></td><td>Line id shown when the player talks to the giver while the quest is active.</td></tr>
       <tr><td><code>start_battle</code>, <code>start_boss</code></td><td>A <code>battle.toml</code> formation or boss fought once the quest's start line is done.</td></tr>
+      <tr><td><code>start_cutscene</code>, <code>complete_cutscene</code></td><td>A <code>cutscenes.toml</code> cutscene played after the start or completion line, once the player is in the field (<a href="expansion-pack-cutscenes.html">cutscenes</a>).</td></tr>
     </tbody>
   </table>
   <p>A quest with neither <code>giver</code> nor <code>auto_start</code> starts only from a script (<code>World::expansion_start_quest</code>).</p>

@@ -754,6 +754,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("formats/expansion-pack.html", "Expansion packs: format",      "formats/expansion-pack",     "formats/expansion-pack.html"),
     ("formats/expansion-pack-battle.html", "Expansion packs: battles", "formats/expansion-pack-battle", "formats/expansion-pack-battle.html"),
     ("formats/expansion-pack-quests.html", "Expansion packs: quests", "formats/expansion-pack-quests", "formats/expansion-pack-quests.html"),
+    ("formats/expansion-pack-cutscenes.html", "Expansion packs: cutscenes", "formats/expansion-pack-cutscenes", "formats/expansion-pack-cutscenes.html"),
     ("formats/expansion-pack-maps.html", "Expansion packs: maps",   "formats/expansion-pack-maps", "formats/expansion-pack-maps.html"),
     ("formats/expansion-pack-items.html", "Expansion packs: items", "formats/expansion-pack-items", "formats/expansion-pack-items.html"),
     ("tooling/index.html",         "Tooling",                       "tooling/index",              "tooling/index.html"),
@@ -1862,6 +1863,15 @@ def build_rebirth_contents() -> str:
                           [[_esc(b.get("name", b["id"])), str(b.get("cards_per_pack", "")),
                             f"{b['price']:,} gold" if b.get("price") else "not sold"]
                            for b in cards.get("boosters", [])]))
+
+    # Cutscenes
+    scenes = _pack_toml("cutscenes.toml").get("cutscenes", {})
+    if scenes:
+        out.append('<h3 id="rebirth-cutscenes">Cutscenes</h3>')
+        out.append(_table(["Cutscene", "Plays on", "Steps"],
+                          [[_esc(c.get("title", cid)), _esc(c.get("map", "any scene")),
+                            str(len(c.get("steps", [])) + sum(len(t.get("steps", [])) for t in c.get("tracks", {}).values()))]
+                           for cid, c in scenes.items()]))
 
     # Modes
     out.append('<h3 id="rebirth-modes">Game modes</h3>')

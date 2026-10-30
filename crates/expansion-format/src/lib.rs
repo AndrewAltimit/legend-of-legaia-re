@@ -18,6 +18,7 @@
 //! quests.toml        quests and challenges       -> quest
 //! dialog.toml        dialogue lines              -> dialog
 //! cards.toml         trading cards               -> cards
+//! cutscenes.toml     scripted scenes             -> cutscene
 //! items.toml         items, equipment, shops     -> items
 //! modes.toml         game modes                  -> modes
 //! maps/<id>.toml     custom maps, one per file   -> map
@@ -34,6 +35,7 @@ pub mod battle;
 pub mod boss_script;
 pub mod bundle;
 pub mod cards;
+pub mod cutscene;
 pub mod dialog;
 pub mod items;
 pub mod manifest;
@@ -62,6 +64,7 @@ pub struct ExpansionPack {
     pub quests: quest::QuestSection,
     pub dialog: dialog::DialogSection,
     pub cards: cards::CardSection,
+    pub cutscenes: cutscene::CutsceneSection,
     pub modes: modes::ModeSection,
     /// New items, equipment, sets and shops.
     pub items: items::ItemSection,
@@ -84,6 +87,7 @@ pub const SECTION_FILES: &[&str] = &[
     "quests.toml",
     "dialog.toml",
     "cards.toml",
+    "cutscenes.toml",
     "modes.toml",
     "items.toml",
 ];
@@ -161,6 +165,7 @@ impl ExpansionPack {
             quests: section(files, "quests.toml")?,
             dialog: section(files, "dialog.toml")?,
             cards: section(files, "cards.toml")?,
+            cutscenes: section(files, "cutscenes.toml")?,
             modes: section(files, "modes.toml")?,
             items: section(files, "items.toml")?,
             maps,
@@ -194,6 +199,7 @@ impl ExpansionPack {
         put(&mut out, "quests.toml", &self.quests)?;
         put(&mut out, "dialog.toml", &self.dialog)?;
         put(&mut out, "cards.toml", &self.cards)?;
+        put(&mut out, "cutscenes.toml", &self.cutscenes)?;
         put(&mut out, "modes.toml", &self.modes)?;
         put(&mut out, "items.toml", &self.items)?;
         for (id, map) in &self.maps {

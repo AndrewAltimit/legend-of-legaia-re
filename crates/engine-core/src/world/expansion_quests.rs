@@ -177,6 +177,9 @@ impl World {
     pub fn expansion_load_block(&mut self, block: Option<&[u8]>) {
         let pack = self.expansion.pack.clone();
         self.expansion.quests.load_block(pack.as_deref(), block);
+        // A loaded save starts outside any cutscene.
+        self.expansion.cutscene.clear();
+        self.expansion.cutscene.hidden.clear();
         self.adopt_expansion_progress();
         self.expansion.toasts.clear();
         self.toast_dormant_pack();
@@ -322,6 +325,10 @@ impl World {
                 log::warn!("expansion line {next}: {e:?}");
             }
         }
+        // The cutscene in play (or the next queued one): after the line
+        // resolve above, so a `say` step sees its line's choice the tick the
+        // box closes.
+        self.tick_expansion_cutscene();
         // The Journal's Cards page: the card menu opens over the field once
         // the pause menu has closed.
         if self.expansion.open_cards
@@ -345,6 +352,7 @@ impl World {
         }
         // A queued fight starts once its lines are done and the player walks.
         if !self.expansion.quests.fights.is_empty()
+            && !self.expansion.cutscene.active()
             && self.expansion.quests.dialog.pending.is_none()
             && self.expansion.quests.dialog.queued.is_empty()
             && !self.dialogue_owns_input()
@@ -386,6 +394,10 @@ impl World {
             .pending
             .take()
             .expect("checked");
+        // The cutscene that said the line branches on its choice.
+        if self.expansion.cutscene.said.as_deref() == Some(pending.line.as_str()) {
+            self.expansion.cutscene.last_choice = pending.choice;
+        }
         let Some(pack) = self.expansion.pack.clone() else {
             return;
         };
@@ -449,6 +461,32 @@ impl World {
         }
         self.collect_card_grants();
         self.toast_expansion_notices(seen);
+        // A quest's start / completion cutscene plays after its line.
+        if let Some(pack) = self.expansion.pack.clone() {
+            let moments: Vec<String> = self
+                .expansion
+                .quests
+                .notices
+                .iter()
+                .skip(seen)
+                .filter_map(|n| {
+                    let (quest, start) = match n {
+                        QuestNotice::Started { quest, .. } => (quest, true),
+                        QuestNotice::Completed { quest, .. } => (quest, false),
+                        _ => return None,
+                    };
+                    let q = pack.quests.quests.iter().find(|q| q.id == *quest)?;
+                    if start {
+                        q.start_cutscene.clone()
+                    } else {
+                        q.complete_cutscene.clone()
+                    }
+                })
+                .collect();
+            for c in moments {
+                self.expansion_play_cutscene(&c);
+            }
+        }
         for n in self.expansion.quests.notices.iter().skip(seen) {
             if let QuestNotice::Started {
                 dialog: Some(line), ..

@@ -221,6 +221,32 @@ fn follow_view_with_knobs(
     })
 }
 
+/// An expansion-pack cutscene's shot
+/// (`World::expansion_cutscene_camera`): the follow camera's own view with
+/// the cutscene's pose laid over it - the focus moved toward the pose's
+/// point by its weight, its degrees added to the pitch and the yaw (the yaw
+/// in the compass sense, as the manual orbit is), the eye-space translation
+/// scaled by its zoom (the shot pulls straight back along its own line of
+/// sight), and the shake added to the focus. `None` while no cutscene moves
+/// the camera, so the follow frame is untouched.
+pub fn pack_cutscene_view(cam: &Camera, world: &World) -> Option<FieldCameraView> {
+    let (pose, shake) = world.expansion_cutscene_camera()?;
+    let base = field_follow_view(cam, world)?;
+    let w = pose.focus_weight.clamp(0.0, 1.0);
+    let mix = |a: f32, b: f32| a + (b - a) * w;
+    Some(FieldCameraView {
+        focus: [
+            mix(base.focus[0], pose.focus[0]) + shake[0],
+            base.focus[1],
+            mix(base.focus[2], pose.focus[1]) + shake[1],
+        ],
+        pitch: base.pitch + pose.pitch.to_radians(),
+        yaw: base.yaw - pose.yaw.to_radians(),
+        tr_eye: base.tr_eye.map(|c| c * pose.zoom),
+        ..base
+    })
+}
+
 /// Whether a scripted shot owns this frame's camera: a cutscene timeline is
 /// running **and** some op-`0x45` beat has staged a camera slot.
 ///
@@ -345,6 +371,11 @@ pub fn resolve_field_camera(
     // shot (behind the ball down the aim, chasing the racer).
     if let Some(frame) = crate::pack_mode_world::stage_frame(world, cam) {
         return frame;
+    }
+    // An expansion-pack cutscene's shot: the follow camera moved by the
+    // cutscene's pose.
+    if let Some(v) = pack_cutscene_view(cam, world) {
+        return FieldCameraFrame::Follow(v);
     }
     if world.mode == SceneMode::WorldMap {
         let (az, zoom, px, pz, top_view) = world

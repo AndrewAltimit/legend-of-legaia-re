@@ -13,7 +13,8 @@
  *     coordinate;
  *   - `export_bundle(pack)` / `files_view(pack)` for the `.lxpack` and the
  *     per-file TOML (a file left unedited keeps its original bytes);
- *   - `xp_chart`, `check_dialog`, `map_preview`, `scene_objects` for previews.
+ *   - `xp_chart`, `check_dialog`, `map_preview`, `scene_objects` and
+ *     `cutscene_timeline` for previews.
  *
  * Persistence (IndexedDB, a per-viewer convenience; every access is wrapped):
  * the working pack JSON autosaves under `legaia-expansion-workbench` /
@@ -32,6 +33,7 @@ import {
   renderDialog, renderCards, renderItems, renderModes,
 } from './expansion-workbench-forms.js';
 import { renderMaps } from './expansion-workbench-map.js';
+import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -92,6 +94,7 @@ const TABS = [
   ['progression', 'Progression', 'progression.toml', renderProgression],
   ['quests', 'Quests', 'quests.toml', renderQuests],
   ['dialog', 'Dialog', 'dialog.toml', renderDialog],
+  ['cutscenes', 'Cutscenes', 'cutscenes.toml', renderCutscenes],
   ['cards', 'Cards', 'cards.toml', renderCards],
   ['items', 'Items', 'items.toml', renderItems],
   ['modes', 'Modes', 'modes.toml', renderModes],
@@ -133,6 +136,7 @@ function idsOf(kind) {
     case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
     case 'map': return keys(p.maps);
     case 'npc': return Object.values(p.maps || {}).flatMap((m) => arr(m.npcs));
+    case 'cutscene': return keys(p.cutscenes && p.cutscenes.cutscenes);
     default: return [];
   }
 }
@@ -161,6 +165,13 @@ const ctx = {
   },
   mapPreview: (map) => {
     try { return JSON.parse(S.wb.map_preview(JSON.stringify(map))); } catch (e) { return { error: String(e) }; }
+  },
+  cutsceneTimeline: (id, picks) => {
+    try {
+      return JSON.parse(S.wb.cutscene_timeline(JSON.stringify(S.pack), id, new Uint32Array(picks || [])));
+    } catch (e) {
+      return { error: errText(e) };
+    }
   },
   sceneObjects: (scene) => JSON.parse(S.wb.scene_objects(scene)),
   sceneNpcs: (scene) => JSON.parse(S.wb.scene_npcs(scene)),

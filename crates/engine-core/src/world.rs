@@ -186,6 +186,7 @@ mod encounters;
 mod expansion;
 mod expansion_boss;
 mod expansion_cards;
+mod expansion_cutscene;
 mod expansion_hosts;
 mod expansion_items;
 mod expansion_map;

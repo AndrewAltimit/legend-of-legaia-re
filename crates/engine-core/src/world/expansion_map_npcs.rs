@@ -63,19 +63,25 @@ impl World {
         else {
             return false;
         };
+        // A cutscene NPC plays its cutscene in place of its line.
+        let played = talk
+            .cutscene
+            .as_deref()
+            .is_some_and(|c| self.expansion_play_cutscene(c));
         // A shop NPC opens its counter (an item shop before a card dealer
         // of the same id); its line is the fallback.
-        let opened = talk.shop.as_deref().is_some_and(|d| {
-            let ok = if self.has_item_shop(d) {
-                self.open_item_shop(d)
-            } else {
-                self.open_card_dealer(d)
-            };
-            if !ok {
-                log::warn!("expansion: npc `{}` dealer `{d}` did not open", talk.npc);
-            }
-            ok
-        });
+        let opened = played
+            || talk.shop.as_deref().is_some_and(|d| {
+                let ok = if self.has_item_shop(d) {
+                    self.open_item_shop(d)
+                } else {
+                    self.open_card_dealer(d)
+                };
+                if !ok {
+                    log::warn!("expansion: npc `{}` dealer `{d}` did not open", talk.npc);
+                }
+                ok
+            });
         if !opened
             && let Some(line) = &talk.line
             && let Err(e) = self.expansion_say(line)
@@ -94,7 +100,8 @@ impl World {
     /// Nobody sets out while a dialogue holds the field, so the NPC being
     /// talked to stays put.
     pub fn step_expansion_npc_patrols(&mut self) {
-        if self.dialogue_owns_input() {
+        // A cutscene moves the NPCs itself.
+        if self.dialogue_owns_input() || self.expansion.cutscene.active() {
             return;
         }
         let Some(map) = self.expansion.map.as_ref() else {
@@ -107,7 +114,7 @@ impl World {
             .map(|(n, (slot, d))| (n, slot, d.walk_clip))
             .collect();
         for (n, slot, walk_clip) in walkers {
-            if self.npcs.motions.contains_key(&slot) {
+            if self.npcs.motions.contains_key(&slot) || self.expansion_npc_hidden(slot) {
                 continue;
             }
             let Some((x, z)) = self

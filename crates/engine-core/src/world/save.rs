@@ -550,7 +550,10 @@ impl World {
     /// state retail never writes - the flags past the `3E FF` without the
     /// fight - so a host refuses it until the battle has begun.
     pub fn host_save_allowed(&self) -> bool {
-        !self.field_scripts_held_for_battle()
+        // A pack cutscene is not a state a save resumes into: it is refused
+        // until the cutscene has ended (the pack's seen flags record what was
+        // watched).
+        !self.field_scripts_held_for_battle() && !self.expansion.cutscene.active()
     }
 
     /// The handler id the menu button's subsystem actor moves on to.

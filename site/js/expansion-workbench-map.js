@@ -21,7 +21,7 @@
  * "Tiers are corner heights").
  */
 
-import { h, field, grid, freshId, gateBox } from './expansion-workbench-forms.js';
+import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-forms.js';
 import { propMeshEditor, propDetail, renderDetail } from './expansion-workbench-detail.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
@@ -369,6 +369,21 @@ export function renderMaps(ctx, el) {
     { k: 'geometry', t: 'sel', opts: [['none', 'none (map ground only)'], ['keep', 'keep the base scene\'s geometry']], label: 'Base geometry' },
   ], 'base'));
   settings.append(grid(mctx, map.tiles, [{ k: 'origin', t: 'tuple', n: 2, label: 'Origin on the 128x128 field grid', hint: '[column, row]' }], 'tiles'));
+  // Arrival cutscenes (cutscenes.toml): the first unseen one whose gate holds plays.
+  listEd(ctx, settings, map, 'enter_cutscenes', path, {
+    title: 'Arrival cutscenes',
+    hint: 'the first unseen one whose gate holds plays on arrival',
+    add: 'Arrival cutscene',
+    make: () => ({ cutscene: ctx.ids('cutscene')[0] || '', requires: {}, repeat: false }),
+    label: (e) => e.cutscene || '(none)',
+    render: (b, e, p2) => {
+      b.append(grid(ctx, e, [
+        { k: 'cutscene', t: 'ref', kind: 'cutscene', label: 'Cutscene' },
+        { k: 'repeat', t: 'bool', label: 'Every arrival, not only until seen' },
+      ], p2));
+      b.append(gateBox(ctx, e, 'requires', p2, 'Plays when'));
+    },
+  });
   const { w, h: ht } = dims(map);
   const rw = h('input', { type: 'number', value: w, min: 1, max: 120, 'aria-label': 'Width' });
   const rh = h('input', { type: 'number', value: ht, min: 1, max: 120, 'aria-label': 'Height' });
@@ -851,6 +866,7 @@ function renderSelection(ctx, mctx, side, map) {
       challenge: [{ k: 'challenge', t: 'ref', kind: 'challenge', label: 'Challenge' }, { k: 'start', t: 'bool', label: 'Start its battle' }],
       mode: [{ k: 'mode', t: 'ref', kind: 'mode', label: 'Mode instance' }],
       rest: [{ k: 'cost', t: 'int', label: 'Gold cost' }, { k: 'save', t: 'bool', label: 'Then offer a save' }],
+      cutscene: [{ k: 'cutscene', t: 'ref', kind: 'cutscene', label: 'Cutscene' }],
     };
     const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, k.replace('_', ' '))));
     kind.addEventListener('change', () => {
@@ -893,9 +909,11 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'line', t: 'oref', kind: 'line', label: 'Says (dialog line)' },
       { k: 'shop', t: 'otext', label: 'Shop', hint: 'an items.toml shop or a cards.toml dealer id; talking opens its counter' },
       { k: 'line_after', t: 'oref', kind: 'line', label: 'Says instead, once "after" holds' },
+      { k: 'cutscene', t: 'oref', kind: 'cutscene', label: 'Plays (cutscene)', hint: 'in place of its line' },
     ], p));
     box.append(gateBox(mctx, o, 'requires', p, 'Talks when'));
     box.append(gateBox(mctx, o, 'after', p, 'After (switches to the second line)'));
+    box.append(gateBox(mctx, o, 'present', p, 'Stands on the map when (else a cutscene brings it on)'));
     const pat = h('input', { type: 'text', value: (o.patrol || []).map((t) => t.join(',')).join(' '), placeholder: 'c,r c,r ...', spellcheck: 'false', 'aria-label': 'Patrol waypoints' });
     pat.addEventListener('change', () => {
       o.patrol = pat.value.trim().split(/\s+/).filter(Boolean).map((t) => t.split(',').map((x) => parseInt(x, 10) || 0).slice(0, 2)).filter((t) => t.length === 2);

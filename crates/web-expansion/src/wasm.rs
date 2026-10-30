@@ -130,6 +130,21 @@ impl ExpansionWorkbench {
             .map_err(err)
     }
 
+    /// A cutscene's text timeline (`Core::cutscene_timeline`); `picks` is
+    /// the option taken at each menu, in order.
+    pub fn cutscene_timeline(
+        &self,
+        pack: &str,
+        id: &str,
+        picks: Vec<u32>,
+    ) -> Result<String, JsValue> {
+        let picks: Vec<usize> = picks.into_iter().map(|p| p as usize).collect();
+        self.core
+            .cutscene_timeline(pack, id, &picks)
+            .map(|v| v.to_string())
+            .map_err(err)
+    }
+
     /// The engine's reading of a map's tile layer (or `{ error }`).
     pub fn map_preview(&self, map: &str) -> String {
         self.core.map_preview(map).to_string()

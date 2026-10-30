@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs</div>
   <h1>Expansion packs: the format</h1>
-  <p class="lede">An expansion pack is a modder-authored bundle of new content for the port - custom maps, battles and bosses, a level curve, quests, dialogue, trading cards, game modes - that the engine loads beside the player's own disc. It is the port's own format, not a disc format, so nothing here is decoded from retail and the page carries no confidence labels: it is the specification. This page covers the pack's layout, the manifest, how a pack names disc content, the shareable <code>.lxpack</code> bundle and validation. The sections have pages of their own (<a href="expansion-pack-battle.html">battles</a>, <a href="expansion-pack-quests.html">quests</a>, <a href="expansion-pack-maps.html">maps</a>); the tour is the <a href="../guides/expansion-packs.html">expansion packs hub</a>.</p>
+  <p class="lede">An expansion pack is a modder-authored bundle of new content for the port - custom maps, battles and bosses, a level curve, quests, dialogue, trading cards, game modes - that the engine loads beside the player's own disc. It is the port's own format, not a disc format, so nothing here is decoded from retail and the page carries no confidence labels: it is the specification. This page covers the pack's layout, the manifest, how a pack names disc content, the shareable <code>.lxpack</code> bundle and validation. The sections have pages of their own (<a href="expansion-pack-battle.html">battles</a>, <a href="expansion-pack-quests.html">quests</a>, <a href="expansion-pack-cutscenes.html">cutscenes</a>, <a href="expansion-pack-maps.html">maps</a>); the tour is the <a href="../guides/expansion-packs.html">expansion packs hub</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
@@ -31,6 +31,7 @@
   quests.toml        quests and challenges
   dialog.toml        dialogue lines
   cards.toml         trading cards
+  cutscenes.toml     scripted scenes
   modes.toml         game modes
   items.toml         items, equipment, sets and shops
   maps/
@@ -137,6 +138,7 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
       <tr><td><code>quests.toml</code></td><td><code>QuestSection</code></td><td><code>quest</code>, <code>challenge</code></td><td><a href="expansion-pack-quests.html">quests</a></td></tr>
       <tr><td><code>dialog.toml</code></td><td><code>DialogSection</code></td><td><code>line</code></td><td><a href="expansion-pack-quests.html#dialogtoml">dialogue</a></td></tr>
       <tr><td><code>cards.toml</code></td><td><code>CardSection</code></td><td>its own card, booster and dealer ids</td><td><a href="#cards-toml">below</a></td></tr>
+      <tr><td><code>cutscenes.toml</code></td><td><code>CutsceneSection</code></td><td><code>cutscene</code></td><td><a href="expansion-pack-cutscenes.html">cutscenes</a></td></tr>
       <tr><td><code>modes.toml</code></td><td><code>ModeSection</code></td><td>its own instance ids</td><td><a href="#modes-toml">below</a></td></tr>
       <tr><td><code>items.toml</code></td><td><code>ItemSection</code></td><td><code>item</code>, <code>item_set</code>, <code>shop</code></td><td><a href="expansion-pack-items.html">items</a></td></tr>
       <tr><td><code>maps/&lt;id&gt;.toml</code></td><td><code>MapDef</code></td><td><code>map</code>, <code>npc</code></td><td><a href="expansion-pack-maps.html">maps</a></td></tr>
@@ -147,6 +149,7 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
     <li><strong>progression.toml</strong> - the XP curve (retail, scaled, banded or explicit), EXP and gold multipliers, enemy level scaling and level-up item rewards.</li>
     <li><strong>quests.toml</strong> - quests (giver, prerequisites keyed to retail system flags, party level and other quests, ordered or unordered objectives, rewards, repeat rules) and challenges (rule sets over one battle with a score).</li>
     <li><strong>dialog.toml</strong> - lines in the translation markup, as rows and pages, with two- to four-option menus that set pack flags, chain a line or start a fight. Every line is compiled at validation, so text with no glyph is an error.</li>
+    <li><strong>cutscenes.toml</strong> - scripted scenes: step lists (walks, turns, camera moves, fades, lines that branch on the option picked, flags, items, a closing fight) on a main track and named tracks beside it, run on the engine's own sequencer and played by a map trigger, an arrival, an NPC or a quest moment.</li>
     <li><strong>maps/&lt;id&gt;.toml</strong> - a tile grid with walls and floor tiers over a retail base scene, props, NPCs borrowed from retail placements, spawns, exits, trigger and encounter zones, and the entrances that lead in from the retail game.</li>
   </ul>
 

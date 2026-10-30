@@ -76,6 +76,9 @@ pub struct Core {
     objects: HashMap<String, SceneObjects>,
 }
 
+/// The longest timeline preview, in frames (ten minutes).
+const TIMELINE_CAP: u32 = 36_000;
+
 impl Core {
     pub fn new() -> Self {
         Self::default()
@@ -363,6 +366,38 @@ impl Core {
             "row_limit": ROW_WARN_CHARS,
             "bytes": compiled.as_ref().map(Vec::len).ok(),
             "error": compiled.err().map(|e| e.to_string()),
+        }))
+    }
+
+    /// The text timeline of cutscene `id` of `pack_json`, played on the
+    /// engine's sequencer against a stand-in world
+    /// (`legaia_engine_expansion::cutscene::preview`): `{ rows: [{ frame,
+    /// seconds, track, step, kind, text }], frames, ended, fight, flags }`.
+    /// `picks` is the option taken at each menu, in order.
+    pub fn cutscene_timeline(&self, pack_json: &str, id: &str, picks: &[usize]) -> Result<Value> {
+        let pack = self.pack_from_json(pack_json)?;
+        let v = legaia_engine_expansion::cutscene::preview::preview(&pack, id, picks, TIMELINE_CAP)
+            .with_context(|| format!("no cutscene {id:?}"))?;
+        let rows: Vec<Value> = v
+            .rows
+            .iter()
+            .map(|r| {
+                json!({
+                    "frame": r.frame,
+                    "seconds": f64::from(r.frame) / 60.0,
+                    "track": r.track,
+                    "step": r.step,
+                    "kind": r.kind,
+                    "text": r.text,
+                })
+            })
+            .collect();
+        Ok(json!({
+            "rows": rows,
+            "frames": v.frames,
+            "ended": v.ended,
+            "fight": v.fight,
+            "flags": v.flags,
         }))
     }
 

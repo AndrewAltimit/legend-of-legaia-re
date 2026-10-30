@@ -64,12 +64,40 @@ impl SectionRules for MapDef {
         crate::map_detail_rules::check_detail(self, cx, base.as_deref(), grid.as_ref());
         check_npcs(self, cx, base.as_deref(), grid.as_ref());
         check_entrances(self, cx);
+        check_enter_cutscenes(self, cx);
         if let Some(bgm) = &self.bgm {
             if matches!(bgm, DiscRef::Bgm { .. }) {
                 cx.disc_ref("bgm", bgm);
             } else {
                 cx.error("bgm", format!("{bgm} is not a bgm ref"));
             }
+        }
+    }
+}
+
+/// Arrival cutscenes: each names a cutscene, and one bound to another map
+/// would never play here.
+fn check_enter_cutscenes(m: &MapDef, cx: &mut Checker<'_>) {
+    for (i, e) in m.enter_cutscenes.iter().enumerate() {
+        let at = format!("enter_cutscenes[{i}]");
+        e.requires.check(cx, &format!("{at}.requires"));
+        cx.reference("cutscene", &e.cutscene, &format!("{at}.cutscene"));
+        let bound = cx
+            .pack()
+            .cutscenes
+            .get(&e.cutscene)
+            .and_then(|c| c.map.clone());
+        let here = cx
+            .file()
+            .strip_prefix("maps/")
+            .and_then(|f| f.strip_suffix(".toml"));
+        if let (Some(b), Some(h)) = (bound, here)
+            && b != h
+        {
+            cx.error(
+                &format!("{at}.cutscene"),
+                format!("cutscene `{}` plays on map `{b}`, not this one", e.cutscene),
+            );
         }
     }
 }
@@ -349,6 +377,9 @@ fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
                 }
             }
             MapEvent::Rest { .. } => {}
+            MapEvent::Cutscene { cutscene } => {
+                cx.reference("cutscene", cutscene, &format!("{at}.cutscene"))
+            }
         }
     }
 }
@@ -575,6 +606,10 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
         }
         n.requires.check(cx, &format!("{at}.requires"));
         n.after.check(cx, &format!("{at}.after"));
+        n.present.check(cx, &format!("{at}.present"));
+        if let Some(c) = &n.cutscene {
+            cx.reference("cutscene", c, &format!("{at}.cutscene"));
+        }
         if !n.line_after.is_empty() {
             cx.reference("line", &n.line_after, &format!("{at}.line_after"));
             if n.after.is_empty() {
@@ -601,7 +636,11 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 _ => {}
             }
         }
-        if n.line.is_empty() && n.shop.is_none() && !talk_key_is_used(cx, &n.id) {
+        if n.line.is_empty()
+            && n.shop.is_none()
+            && n.cutscene.is_none()
+            && !talk_key_is_used(cx, &n.id)
+        {
             cx.warning(
                 &format!("{at}.line"),
                 "the NPC says nothing, runs no shop and gives no quest",

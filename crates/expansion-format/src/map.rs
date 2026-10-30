@@ -116,6 +116,28 @@ pub struct MapDef {
     pub materials: Vec<crate::map_detail::MaterialFx>,
     /// The retail field fog pool over the map ([`crate::map_detail::MapFog`]).
     pub fog: crate::map_detail::MapFog,
+    /// Cutscenes the map plays on arrival (`cutscenes.toml`): the first
+    /// whose gate holds and that has not been seen (unless `repeat`) plays
+    /// once the player stands on the map.
+    pub enter_cutscenes: Vec<EnterCutscene>,
+}
+
+/// A cutscene a map plays on arrival.
+///
+/// ```toml
+/// [[enter_cutscenes]]
+/// cutscene = "tower_intro"
+/// requires = { quests = ["tower_rumour"] }
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EnterCutscene {
+    /// The `cutscenes.toml` id.
+    pub cutscene: String,
+    /// What must hold for it to play: the quest prerequisite shape.
+    pub requires: crate::quest::Prerequisites,
+    /// Play on every arrival, not only until it has been seen once.
+    pub repeat: bool,
 }
 
 /// The retail scene a map borrows from.
@@ -412,6 +434,14 @@ pub struct NpcDef {
     /// names both opens the item shop. Its `line` is said only when the
     /// counter cannot open.
     pub shop: Option<String>,
+    /// A `cutscenes.toml` cutscene talking to the NPC plays instead of its
+    /// line (its `requires` still gates it; the talk still counts as
+    /// `Talked(id)`).
+    pub cutscene: Option<String>,
+    /// What must hold for the NPC to stand on the map at all: shut, it is
+    /// absent on arrival (neither drawn, talked to nor in the way) until a
+    /// cutscene's `show` step brings it on. Empty is always present.
+    pub present: crate::quest::Prerequisites,
 }
 
 /// Where a prop's (or a decoration's) mesh comes from.
@@ -659,6 +689,8 @@ pub enum MapEvent {
     },
     /// Enter a `modes.toml` instance (a poker table, a duel, a course).
     Mode { mode: String },
+    /// Play a `cutscenes.toml` cutscene.
+    Cutscene { cutscene: String },
     /// A rest point: every party member's HP and MP to full for `cost` gold
     /// (refused, with a notice, when the purse is short), then with `save`
     /// the save screen, as a retail save point opens it.

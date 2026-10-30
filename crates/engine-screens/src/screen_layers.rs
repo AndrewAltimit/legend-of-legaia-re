@@ -257,6 +257,10 @@ pub fn compose_screen_prims(
             under.push(p);
         }
     }
+    // An expansion-pack cutscene's letterbox, tint, flash and fade, all
+    // under the text so its dialogue box reads over a black screen and
+    // between the bars.
+    under.extend(expansion_cutscene_prims(world));
     // A shop opening's fade to black, then the pause menu's wipe.
     if let Some(level) = menu.shop_fade_level() {
         over.push(level_fade(level));
@@ -315,6 +319,36 @@ pub fn compose_screen_prims(
         over.retain(keep);
     }
     (under, over)
+}
+
+/// The screen layer of the expansion-pack cutscene in play
+/// (`World::expansion_cutscene_screen`): its letterbox bars and its
+/// full-screen quads (tint, flash, fade). Empty with no cutscene.
+///
+/// Everything sits in the text's own bucket, so the dialogue box reads over
+/// it. Within a bucket the later-linked primitive draws first, so the bars go
+/// in ahead of the quads: they draw over the fade, and a flash or a fade to
+/// white leaves them black.
+pub fn expansion_cutscene_prims(world: &World) -> Vec<ScreenPrim> {
+    let (quads, bars) = world.expansion_cutscene_screen();
+    let ot = screen_prim::TEXT_OT_BUCKET as u32;
+    let mut out: Vec<ScreenPrim> =
+        screen_prim::cinematic_bar_prims(bars, screen_prim::PSX_DISPLAY_H)
+            .into_iter()
+            .map(|p| match p {
+                ScreenPrim::Flat(mut q) => {
+                    q.ot_index = ot;
+                    ScreenPrim::Flat(q)
+                }
+                other => other,
+            })
+            .collect();
+    out.extend(
+        quads
+            .into_iter()
+            .map(|(rgb, abr)| screen_prim::fade_prim(rgb, abr, ot)),
+    );
+    out
 }
 
 #[cfg(test)]

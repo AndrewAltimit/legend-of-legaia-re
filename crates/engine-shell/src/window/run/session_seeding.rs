@@ -117,6 +117,28 @@ pub(super) fn install_debug_play_record(
     );
 }
 
+/// `--play-cutscene ID`: queue the active pack's cutscene `ID` once the
+/// launch scene is entered (`World::expansion_play_cutscene`); it starts on
+/// the first free field frame. A DEBUG affordance for reaching a pack's
+/// scripted beat without playing up to it.
+pub(super) fn install_debug_play_cutscene(
+    session: &mut NativeSession,
+    seeds: &super::super::DebugSeeds,
+) {
+    let Some(id) = seeds.play_cutscene.as_deref() else {
+        return;
+    };
+    let ok = session.host.world.expansion_play_cutscene(id);
+    log::info!(
+        "play-window: --play-cutscene {id} {}",
+        if ok {
+            "queued"
+        } else {
+            "is not a cutscene of the active pack"
+        }
+    );
+}
+
 // --- expansion game modes (`--mode`) ---
 /// `--mode <INSTANCE>`: enter an expansion game mode (or, for `picker`, open
 /// the mode picker) over the entered scene. Leaving it returns to the scene.

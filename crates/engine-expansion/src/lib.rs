@@ -13,6 +13,7 @@ pub mod battle;
 pub mod battle_waves;
 pub mod boss_script;
 pub mod cards;
+pub mod cutscene;
 pub mod dialog;
 pub mod entrance;
 pub mod flags;
@@ -72,6 +73,9 @@ pub struct ExpansionState {
     /// The pack's compiled items, this fight's item aliases and the item
     /// screen; the items held are `quests.progress.items`.
     pub items: items::ItemRuntime,
+    /// The cutscene in play and the ones queued
+    /// ([`cutscene::CutsceneRuntime`]).
+    pub cutscene: cutscene::CutsceneRuntime,
 }
 
 impl ExpansionState {

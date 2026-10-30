@@ -37,6 +37,7 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `xp_chart(progression)` | Cumulative XP per level, retail and the pack's, and the enemy scaling per party level. |
 | `check_dialog(line)` | A line's rows page by page: length, the row warning, markup that does not encode, the compiled size. |
 | `map_preview(map)` | Per tile the floor tier and wall quarters, per cell the four corner heights and whether they agree. |
+| `cutscene_timeline(pack, id, picks)` | A cutscene played on the engine's sequencer against a stand-in world (`legaia_engine_expansion::cutscene::preview`): each executed step with its frame and track, the frame it ends on, the flags it raises and the fight it ends on. `picks` is the option taken at each menu. |
 | `scene_objects(scene)` | A base scene's geometry pack: per mesh its primitive count, extent, how often the retail scene places it, and its footprint seen from above. |
 
 A file the editor left unchanged exports as the bytes it was loaded from:
@@ -79,6 +80,7 @@ content offer only ids the pack defines.
 | Progression | Multipliers, the curve (retail, scaled, banded, explicit) with a live chart against retail, enemy scaling, level-up rewards. |
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
 | Dialog | Lines with a per-row check under the text: the 36-character row warning and any markup with no glyph. |
+| Cutscenes | Cutscenes: the step list of the main track and each named track, a form per step following its `do` key, and the timeline preview (`cutscene_timeline`) with the menu picks to play it with. |
 | Cards | Cards, boosters, sell prices, drop rules. |
 | Items | Pack items (kind, look, prices, the effect of a consumable, the stats, passives, element and set of equipment), sets and their tiers, shops and their gated stock. Every item picker elsewhere (drops, steals, rewards, collect objectives) offers retail and pack items together. |
 | Modes | Poker tables, card duels, golf courses, race tracks, prop hunt arenas. |

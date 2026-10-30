@@ -1258,6 +1258,14 @@ pub(crate) enum Cmd {
         /// look at. The record runs against the launch's flags and seats.
         #[arg(long, value_name = "P:R")]
         play_record: Option<String>,
+        /// DEBUG affordance, not a player surface: once the scene (or
+        /// `--map`) is entered, play the active expansion pack's cutscene
+        /// `ID` (`cutscenes.toml`), the way a trigger, an arrival or a quest
+        /// starts one - e.g. `--expansion packs/rebirth --map
+        /// rebirth_tower_8f --play-cutscene sovereign_falls`. It runs against
+        /// the launch's flags.
+        #[arg(long, value_name = "ID", requires = "expansion")]
+        play_cutscene: Option<String>,
         /// Load an expansion pack (a pack directory or an `.lxpack` bundle)
         /// before anything else runs: New Game, Continue and `--resume-save`
         /// all play with it (a save made on a pack map returns there). With

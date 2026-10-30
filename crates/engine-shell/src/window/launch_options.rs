@@ -501,6 +501,9 @@ pub struct DebugSeeds {
     /// `--play-record P:R`: a scene MAN record installed as a cutscene
     /// timeline once the scene is entered.
     pub play_record: Option<(usize, usize)>,
+    /// `--play-cutscene ID`: an expansion-pack cutscene played once the
+    /// scene is entered.
+    pub play_cutscene: Option<String>,
     /// `--expansion PATH [--map ID [--spawn ID]]`: the expansion pack every
     /// entry plays with, and the pack map entered in place of the `--scene`
     /// door entry.
@@ -623,6 +626,12 @@ impl DebugSeeds {
             self.play_record = Some((p, r));
         }
         Ok(self)
+    }
+
+    /// Attach the `--play-cutscene ID` operand.
+    pub fn with_play_cutscene(mut self, id: Option<String>) -> Self {
+        self.play_cutscene = id;
+        self
     }
 
     /// Attach the `--expansion` / `--map` / `--spawn` operands (clap makes

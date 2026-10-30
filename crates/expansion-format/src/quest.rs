@@ -91,6 +91,12 @@ pub struct QuestDef {
     /// A `battle.toml` boss fought when the quest starts (after its start
     /// line).
     pub start_boss: Option<String>,
+    /// A `cutscenes.toml` cutscene played when the quest starts (after its
+    /// start line).
+    pub start_cutscene: Option<String>,
+    /// A `cutscenes.toml` cutscene played when the quest completes (after
+    /// its completion line, once the player is back in the field).
+    pub complete_cutscene: Option<String>,
 }
 
 fn yes() -> bool {
@@ -413,6 +419,14 @@ impl crate::validate::SectionRules for QuestSection {
             }
             if let Some(b) = &q.start_boss {
                 cx.reference("boss", b, &format!("{at}.start_boss"));
+            }
+            for (key, c) in [
+                ("start_cutscene", &q.start_cutscene),
+                ("complete_cutscene", &q.complete_cutscene),
+            ] {
+                if let Some(c) = c {
+                    cx.reference("cutscene", c, &format!("{at}.{key}"));
+                }
             }
             if q.start_battle.is_some() && q.start_boss.is_some() {
                 cx.error(&at, "a quest starts a battle or a boss, not both");

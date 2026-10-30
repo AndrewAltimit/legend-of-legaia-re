@@ -15,6 +15,7 @@ battle-spoils steps. With no pack loaded every kernel is the identity.
 | `quest_challenge` | Challenge rule checks and scores. |
 | `flags` | The pack's own flags and counters. |
 | `dialog` | Pack lines compiled for the field VM's inline dialogue runner. |
+| `cutscene` | The cutscene sequencer (`CutsceneRun`): step tracks, waits, branches, skip, its camera pose and screen layer; `preview` plays one against a stand-in world for the workbench timeline. |
 | `quest_save` | The save's expansion block. |
 | `map` | The active pack map: zones, exits, trigger events, once flags, the save location. |
 | `cards` | The trading-card plumbing: grant drain, battle reward sources, stakes, card notices and toasts, the card screen seat, the monster portrait cache. The cards themselves are `quest_save::ExpansionProgress::cards`. |

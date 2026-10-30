@@ -595,6 +595,7 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
     }
     seed_demo_battle(&mut session, player_battle);
     install_debug_play_record(&mut session, &debug_seeds);
+    install_debug_play_cutscene(&mut session, &debug_seeds);
     enter_debug_pack_mode(&mut session, &debug_seeds);
 
     // Apply the cheat file (if any) to the live World before building

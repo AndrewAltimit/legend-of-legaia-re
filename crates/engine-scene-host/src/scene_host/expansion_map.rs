@@ -244,9 +244,28 @@ impl SceneHost {
         self.world.expansion.map = Some(active);
         // The map's fog pool and its gate (no-op without `[fog]`).
         self.world.arm_expansion_fog();
+        // NPCs whose `present` gate is shut are off the map this visit.
+        self.world.expansion_hide_absent_npcs();
         // Quests see the map as the scene entered.
         self.world
             .expansion_notify(QuestEvent::SceneEntered(map_id.to_string()));
+        // The first arrival cutscene whose gate holds and that is unseen (or
+        // repeats) plays once the field is free.
+        if seat.is_none()
+            && let Some(c) = def.enter_cutscenes.iter().find(|e| {
+                (e.repeat
+                    || !self
+                        .world
+                        .expansion
+                        .quests
+                        .progress
+                        .flags
+                        .is_set(&legaia_expansion_format::cutscene::seen_flag(&e.cutscene)))
+                    && self.world.expansion_prerequisites_hold(&e.requires)
+            })
+        {
+            self.world.expansion_play_cutscene(&c.cutscene);
+        }
         log::info!(
             "expansion: entered map '{map_id}' over '{base_name}' at spawn {:?} {:?}",
             point.id,
@@ -349,6 +368,11 @@ impl SceneHost {
             MapEvent::Rest { cost, save } => {
                 w.expansion_rest(*cost, *save);
             }
+            MapEvent::Cutscene { cutscene } => {
+                if !w.expansion_play_cutscene(cutscene) {
+                    log::warn!("expansion: map trigger cutscene `{cutscene}` did not play");
+                }
+            }
         }
         if let Some(flag) = trigger.once_flag {
             self.world.expansion_notify(QuestEvent::FlagSet(flag));
@@ -380,6 +404,13 @@ impl SceneHost {
             return Ok(None);
         };
         let tile = active.tile_at_world(x, z);
+        // A cutscene owns the map while it plays: the player it walks
+        // through a zone or onto an exit fires nothing, and no NPC patrols.
+        if self.world.expansion_cutscene_active() {
+            active.observe(tile);
+            self.world.expansion.map = Some(active);
+            return Ok(None);
+        }
         let exit = active.step_gated(tile, |p| self.world.expansion_prerequisites_hold(p));
         self.world.expansion.map = Some(active);
         self.world.step_expansion_npc_patrols();

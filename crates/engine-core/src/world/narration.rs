@@ -564,7 +564,11 @@ impl World {
         // drains the request into the hold, and in that gap the pad must not
         // open a talk with whoever stands by (`taiku` P2[15] ends beside the
         // NPC whose talk then rode the scene change into `map03`).
-        self.scene_transition_hold.is_some()
+        // An expansion-pack cutscene holds the player the same way, from
+        // its first frame to its last (`World::expansion_cutscene_locks_player`;
+        // never with no pack).
+        self.expansion.cutscene.locks_player()
+            || self.scene_transition_hold.is_some()
             || self.pending_named_scene_transition.is_some()
             || self.pending_scene_transition.is_some()
             || self.cutscene_timeline_active()

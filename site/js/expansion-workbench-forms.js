@@ -912,6 +912,8 @@ export function renderQuests(ctx, el) {
         { k: 'complete_dialog', t: 'oref', kind: 'line', label: 'Complete line' },
         { k: 'start_battle', t: 'oref', kind: 'formation', label: 'Start battle' },
         { k: 'start_boss', t: 'oref', kind: 'boss', label: 'Start boss' },
+        { k: 'start_cutscene', t: 'oref', kind: 'cutscene', label: 'Start cutscene' },
+        { k: 'complete_cutscene', t: 'oref', kind: 'cutscene', label: 'Complete cutscene' },
       ], p));
       box.append(gateBox(ctx, it, 'prerequisites', p, 'Prerequisites'));
       listEd(ctx, box, it, 'objectives', p, {
