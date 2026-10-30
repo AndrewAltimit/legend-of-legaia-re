@@ -195,6 +195,7 @@ impl World {
         self.expansion.quests.sync_pack(&pack);
         self.expansion.battle.cleared_bosses =
             self.expansion.quests.progress.cleared_bosses.clone();
+        self.expansion_refresh_learning(false);
     }
 
     /// Take the quest and challenge notices queued since the last call, for
@@ -462,6 +463,7 @@ impl World {
         }
         self.collect_card_grants();
         self.toast_expansion_notices(seen);
+        self.expansion_refresh_learning(true);
         // A quest's start / completion cutscene plays after its line.
         if let Some(pack) = self.expansion.pack.clone() {
             let moments: Vec<String> = self

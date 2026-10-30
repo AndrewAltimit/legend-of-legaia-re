@@ -34,6 +34,9 @@ impl World {
                 learned.push(sid);
             }
         }
+        // An expansion pack's spells the character knows, under their menu
+        // ids (catalog entries installed at the battle's entry).
+        learned.extend(self.expansion_pack_spell_ids(char_slot));
         let caster_mp = self
             .actors
             .get(caster as usize)

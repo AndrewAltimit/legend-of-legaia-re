@@ -34,18 +34,34 @@ pub fn battle_spell_menu_model(
         .iter()
         .map(|s| (s.name.clone(), s.affordable, ra_seru(s.id)))
         .collect();
+    // An expansion pack spell draws its base's icon, its own description
+    // (`|` breaks it) and its own magic level.
+    let pack = |id: u8| world.expansion_pack_spell(id);
     let icons = menu
         .spells
         .iter()
-        .map(|s| legaia_engine_menus::pause_screens::spell_icon(world.menu.text.as_ref(), s.id))
+        .map(|s| {
+            let id = pack(s.id).map_or(s.id, |p| p.base());
+            legaia_engine_menus::pause_screens::spell_icon(world.menu.text.as_ref(), id)
+        })
         .collect();
     let selected = menu.spells.get(cursor as usize);
-    let description = selected
-        .and_then(|s| world.menu.text.as_ref().and_then(|t| t.spell_desc(s.id)))
-        .map(|d| d.lines().map(str::to_string).collect())
-        .unwrap_or_default();
+    let description = match selected.and_then(|s| pack(s.id)) {
+        Some(p) => p.def.description.split('|').map(str::to_string).collect(),
+        None => selected
+            .and_then(|s| world.menu.text.as_ref().and_then(|t| t.spell_desc(s.id)))
+            .map(|d| d.lines().map(str::to_string).collect())
+            .unwrap_or_default(),
+    };
     let level_mp = selected.map(|s| {
         let char_slot = world.party_roster_slot(menu.actor as usize);
+        if let Some(p) = pack(s.id) {
+            let level = world
+                .pack_spell_progress()
+                .level(char_slot as u8, &p.key)
+                .map_or(1, |l| l.level);
+            return (level, u16::from(s.mp_cost));
+        }
         let level = world
             .party
             .roster

@@ -151,13 +151,16 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
         }
         let staged = usize::from(actor.battle.strike_index).min(actor.battle.params.len());
         let character = legaia_engine_battle::battle_arts::character_for_slot(a);
-        actor.battle.params[..staged]
-            .iter()
-            .rev()
-            .filter_map(|&b| legaia_art::ActionConstant::from_byte(b))
-            .find(|c| c.is_art())
-            .and_then(|c| legaia_art::tables::art_name(character, c))
-            .map(str::to_string)
+        // An expansion pack art's bytes name the pack art.
+        actor.battle.params[..staged].iter().rev().find_map(|&b| {
+            if let Some(name) = world.expansion_pack_art_name(a, b) {
+                return Some(name);
+            }
+            legaia_art::ActionConstant::from_byte(b)
+                .filter(|c| c.is_art())
+                .and_then(|c| legaia_art::tables::art_name(character, c))
+                .map(str::to_string)
+        })
     } else if cat == ActionCategory::Magic.as_byte() {
         // PROT 0954's arm 9 re-opens the label on the landed outcome's name
         // (`FUN_801D8DE8(0x4C, 0)` at `0x801F7CD4`, the string at
@@ -176,12 +179,14 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             use legaia_engine_cast::cast_module_camera::ModuleCaption;
             let id = actor.battle.params[0];
             return match world.casting.module_caption? {
-                ModuleCaption::SpellName => world
-                    .menu
-                    .text
-                    .as_ref()
-                    .and_then(|t| t.spell_name(id))
-                    .map(str::to_string),
+                ModuleCaption::SpellName => world.expansion_cast_name(id).or_else(|| {
+                    world
+                        .menu
+                        .text
+                        .as_ref()
+                        .and_then(|t| t.spell_name(id))
+                        .map(str::to_string)
+                }),
                 ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
                 ModuleCaption::Cleared => None,
                 ModuleCaption::ModuleString(va) => world.cast_module_string(id, va),

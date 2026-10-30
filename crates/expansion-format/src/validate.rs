@@ -367,6 +367,8 @@ fn sections(pack: &ExpansionPack) -> Vec<(String, &dyn SectionRules)> {
         ("modes.toml".into(), &pack.modes),
         ("items.toml".into(), &pack.items),
         ("audio.toml".into(), &pack.audio),
+        ("arts.toml".into(), &pack.arts),
+        ("spells.toml".into(), &pack.spells),
     ];
     for (name, map) in &pack.maps {
         out.push((format!("maps/{name}.toml"), map));

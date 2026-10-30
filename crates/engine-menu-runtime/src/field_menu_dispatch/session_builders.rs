@@ -34,6 +34,18 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
             let hms = member.hp_mp_sp();
             let list = member.spell_list();
             let n = list.count as usize;
+            // An expansion pack's spells the member knows, under their menu
+            // ids, after the record's own.
+            let mut spells = list.ids[..n].to_vec();
+            let mut spell_levels = list.levels[..n].to_vec();
+            for id in world.expansion_pack_spell_ids(i as u8) {
+                let level = world
+                    .expansion_pack_spell(id)
+                    .and_then(|s| world.pack_spell_progress().level(i as u8, &s.key))
+                    .map_or(1, |l| l.level);
+                spells.push(id);
+                spell_levels.push(level);
+            }
             SpellCasterSlot {
                 slot: i as u8,
                 name: names.get(i).cloned().unwrap_or_default(),
@@ -42,8 +54,8 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
                 hp_max: hms.hp_max,
                 mp_max: hms.mp_max,
                 level: member.magic_rank(),
-                spells: list.ids[..n].to_vec(),
-                spell_levels: list.levels[..n].to_vec(),
+                spells,
+                spell_levels,
                 // Per-caster MP-cost ability bits: retail's kernel reads the
                 // caster's own record `+0xF4` word (`0x800353B4`), so this is
                 // keyed by the roster record, not by battle ordinal (the

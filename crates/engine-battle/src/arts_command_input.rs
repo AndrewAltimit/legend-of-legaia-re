@@ -249,7 +249,8 @@ pub enum ArtsInputResolution {
 /// the first and only with six or more arts (`sltiu v1, 6`), to the third
 /// only from the second and only with eleven or more (`sltiu v0, 0xB`), and
 /// any other press closes it - so retail shows at most three pages of five,
-/// however many arts are learned.
+/// however many arts the record lists (retail never lists more than fifteen;
+/// an expansion pack's arts past that page on).
 ///
 /// PORT: overlay_battle_action_0898_801d3748
 pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
@@ -260,6 +261,9 @@ pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
         None => Some(0),
         Some(0) if learned >= 6 => Some(1),
         Some(1) if learned >= 11 => Some(2),
+        // Engine extension: past retail's fifteen (only an expansion pack's
+        // arts take a list there) the pages run on.
+        Some(p) if p >= 2 && usize::from(learned) > (usize::from(p) + 1) * 5 => Some(p + 1),
         Some(_) => None,
     }
 }
@@ -365,7 +369,8 @@ impl ArtsCommandInputSession {
             0 => 0,
             1..=5 => 1,
             6..=10 => 2,
-            _ => 3,
+            11..=15 => 3,
+            n => n.div_ceil(5),
         };
         self
     }

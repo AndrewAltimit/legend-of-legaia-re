@@ -108,7 +108,14 @@ impl World {
                 // special from a party seat included (a probe-injected `0x56`
                 // runs PROT 0946 from seat 0), so the party seam takes the
                 // same disc fallback the monster seam does.
-                match self.monster_cast_def(spell_id) {
+                // A pack spell's menu id casts its base
+                // (`World::expansion_begin_pack_cast`); any other cast ends the
+                // pack cast a previous turn left in flight.
+                self.expansion_end_pack_cast();
+                let def = self
+                    .expansion_begin_pack_cast(actor, spell_id)
+                    .or_else(|| self.monster_cast_def(spell_id));
+                match def {
                     Some(def) => {
                         let targets = self.spell_targets_for(&def, target_row, target_slot);
                         self.arm_player_cast(actor, &def, targets);

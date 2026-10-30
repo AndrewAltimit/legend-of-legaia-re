@@ -246,6 +246,10 @@ impl World {
         } else {
             gain
         };
+        // An expansion pack spell trains its own level, not the base's.
+        if self.expansion_cast_xp(caster, spell_id, gain) {
+            return;
+        }
         // Battle ordinal -> the occupying character's record (the XP holder).
         let char_slot = self.party_roster_slot(caster as usize);
         let thresholds = self.tables.magic_xp_thresholds;
@@ -302,6 +306,8 @@ impl World {
     /// any capture when the registry is empty, bank nothing.
     pub(super) fn resolve_captures(&mut self) {
         let captures = std::mem::take(&mut self.seru.battle_captures);
+        // A captured expansion pack monster teaches its pack spells instead.
+        let captures = self.expansion_capture_spells(captures);
         self.seru.last_capture_outcomes.clear();
         self.party.current_capture_banner = None;
         if captures.is_empty() || self.seru.registry.is_empty() {

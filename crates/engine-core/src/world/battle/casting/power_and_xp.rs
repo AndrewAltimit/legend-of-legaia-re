@@ -211,6 +211,10 @@ impl World {
     /// doesn't carry the spell - a fresh cast with no recorded level.
     pub(in crate::world) fn caster_magic_power_byte(&self, caster: u8, spell_id: u8) -> u8 {
         const RETAIL_SEARCH_BOUND: usize = 0x20;
+        // An expansion pack spell rolls at its own magic level.
+        if let Some(level) = self.expansion_cast_level(caster, spell_id) {
+            return level;
+        }
         // Battle ordinal -> the occupying character's record.
         let Some(record) = self
             .party

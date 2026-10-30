@@ -62,6 +62,7 @@ impl World {
         // follows the pack (adopting progress a save left dormant for it).
         self.adopt_expansion_progress();
         self.compile_expansion_items();
+        self.compile_expansion_arts();
         Ok(())
     }
 
@@ -73,6 +74,7 @@ impl World {
         }
         self.expansion_end_battle();
         self.expansion_release_item_aliases();
+        self.expansion_release_arts();
         if let Some(c) = self.expansion.battle.compiled.as_ref() {
             for f in &c.formations {
                 self.tables
@@ -210,6 +212,9 @@ impl World {
     /// stat is read.
     pub(in crate::world) fn expansion_prepare_battle(&mut self, formation: &FormationDef) {
         self.expansion_restore_catalog();
+        self.expansion.arts.playing.clear();
+        self.expansion_end_pack_cast();
+        self.expansion_install_spell_entries();
         let Some(c) = self.expansion.battle.compiled.clone() else {
             return;
         };
@@ -293,6 +298,8 @@ impl World {
         self.expansion.battle.waves = None;
         self.expansion.battle.reseated.clear();
         self.expansion_boss_end();
+        self.expansion.arts.playing.clear();
+        self.expansion_end_pack_cast();
         self.expansion.battle.active_boss = None;
         self.expansion.battle.battle_bgm = None;
     }

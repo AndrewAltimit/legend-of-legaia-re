@@ -117,6 +117,7 @@ impl World {
         targets: Vec<u8>,
     ) {
         let code = self.cast_target_code(def, &targets, slot);
+        self.expansion_end_pack_cast();
         let clip = self.monster_cast_clip(slot, def.id).unwrap_or(0xFF);
         // A table that was not read stages the terminator in the shot's
         // place, the stream the port carried before the shot existed.

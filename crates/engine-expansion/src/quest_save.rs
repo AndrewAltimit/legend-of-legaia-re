@@ -28,6 +28,9 @@
 //!              u16 count then str key + u8 count each (the bag), u16 count
 //!              then u8 roster slot + u8 equipment byte + str key each (the
 //!              worn gear)
+//!          5 = pack arts and spells (only once any is known): u16 count
+//!              then str art key each, u16 count then u8 roster slot + str
+//!              spell key + u8 magic level + u32 spell XP each
 //! ```
 //!
 //! `str` is a `u16` byte length then UTF-8. Integers are little-endian.
@@ -68,6 +71,11 @@ pub struct ExpansionProgress {
     pub cards: legaia_engine_modes::cards::economy::CardProgress,
     /// The pack items held and worn. Written only when it holds anything.
     pub items: crate::items::ItemProgress,
+    /// The pack arts known. Written only when it holds anything.
+    pub arts: crate::arts::ArtsProgress,
+    /// The pack spells known and their levels. Written only when it holds
+    /// anything.
+    pub spells: crate::spells::SpellProgress,
 }
 
 impl ExpansionProgress {
@@ -170,6 +178,20 @@ impl ExpansionProgress {
                 w.push(r);
                 w.push(i);
                 put_str(&mut w, k);
+            }
+        }
+        if !self.arts.learned.is_empty() || !self.spells.known.is_empty() {
+            w.push(TAIL_ARTS_SPELLS);
+            put_len(&mut w, self.arts.learned.len());
+            for k in self.arts.learned.iter().take(MAX_LEN) {
+                put_str(&mut w, k);
+            }
+            put_len(&mut w, self.spells.known.len());
+            for ((roster, k), lv) in self.spells.known.iter().take(MAX_LEN) {
+                w.push(*roster);
+                put_str(&mut w, k);
+                w.push(lv.level);
+                w.extend_from_slice(&lv.xp.to_le_bytes());
             }
         }
         w
@@ -282,6 +304,23 @@ impl ExpansionProgress {
                         it.worn.insert((roster, index), r.str()?);
                     }
                 }
+                TAIL_ARTS_SPELLS => {
+                    for _ in 0..r.u16()? {
+                        out.arts.learned.insert(r.str()?);
+                    }
+                    for _ in 0..r.u16()? {
+                        let roster = r.u8()?;
+                        let key = r.str()?;
+                        let level = r.u8()?;
+                        let xp = r.u32()?;
+                        if level == 0 || level > legaia_expansion_format::spells::MAX_LEVEL {
+                            return None;
+                        }
+                        out.spells
+                            .known
+                            .insert((roster, key), crate::spells::SpellLevel { level, xp });
+                    }
+                }
                 _ => return None,
             }
         }
@@ -315,6 +354,8 @@ const TAIL_MAP: u8 = 2;
 const TAIL_CARDS: u8 = 3;
 /// Tail record tag: the pack items held and worn.
 const TAIL_ITEMS: u8 = 4;
+/// Tail record tag: the pack arts and spells known.
+const TAIL_ARTS_SPELLS: u8 = 5;
 
 struct Reader<'a> {
     b: &'a [u8],
@@ -459,6 +500,41 @@ mod tests {
         assert_eq!(back.items.worn_at(0, 0), Some("rebirth_mail"));
         assert_eq!(back, p);
         assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
+    }
+
+    #[test]
+    fn the_arts_and_spells_record_round_trips_and_is_absent_without_any() {
+        let plain = sample().encode();
+        let mut p = sample();
+        assert_eq!(p.encode(), plain, "nothing known, no record");
+        p.arts.learned.insert("ember_cascade".into());
+        assert!(p.spells.learn(1, "cinder_wyrm"));
+        p.spells
+            .known
+            .get_mut(&(1, "cinder_wyrm".into()))
+            .unwrap()
+            .level = 3;
+        p.spells
+            .known
+            .get_mut(&(1, "cinder_wyrm".into()))
+            .unwrap()
+            .xp = 99;
+        let bytes = p.encode();
+        assert_eq!(&bytes[..plain.len()], &plain[..], "appended after the rest");
+        assert_eq!(bytes[plain.len()], 5, "tag 5");
+        let back = ExpansionProgress::decode(&bytes).unwrap();
+        assert_eq!(back, p);
+        assert_eq!(back.spells.level(1, "cinder_wyrm").unwrap().level, 3);
+        assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
+        // A level outside 1..=9 is a damaged block.
+        let mut bad = bytes.clone();
+        let n = bad.len();
+        bad[n - 5] = 0;
+        assert!(ExpansionProgress::decode(&bad).is_none());
+        // Items and arts together keep their tag order.
+        p.items.add("phoenix_plume", 2);
+        let both = p.encode();
+        assert_eq!(ExpansionProgress::decode(&both).unwrap(), p);
     }
 
     #[test]

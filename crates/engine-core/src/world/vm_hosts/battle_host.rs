@@ -132,6 +132,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// from ([`World::monster_cast_def`]): retail's state `0x28` reads the
     /// `+3` byte for every id, capture route included (`0x801E4500`).
     fn spell_mp_cost(&self, id: u8) -> u8 {
+        if let Some(mp) = self.world.expansion_cast_mp(id) {
+            return mp;
+        }
         if self.world.tables.spell_catalog.get(id).is_some() {
             return self.world.tables.spell_catalog.mp_cost(id);
         }

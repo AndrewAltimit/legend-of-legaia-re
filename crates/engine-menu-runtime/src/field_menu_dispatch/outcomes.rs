@@ -253,11 +253,13 @@ pub fn apply_spell_outcome(
         caster_slot,
         spell_id,
         target_slot,
-        outcome,
+        mut outcome,
     }) = session.outcome().cloned()
     else {
         return None;
     };
+    // An expansion pack spell restores its power percent at its level.
+    world.expansion_scale_field_cast(caster_slot, spell_id, &mut outcome);
     let def = session.catalog().get(spell_id).cloned();
     // Retail debits the **discounted** price: `jal 0x80035394` at
     // `0x801D93C0` (group cast: `0x801D972C`), then `record+0x10A -= v0`

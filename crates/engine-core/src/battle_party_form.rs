@@ -143,6 +143,7 @@ impl crate::world::World {
         }
         if let Some(character) = art_character(form.cslot) {
             self.install_art_bank_records(character, &form.art_records);
+            self.expansion_extend_art_bank(member, character);
         }
         // The seat's model table, fresh per fight (retail registers the
         // node and snapshots the pairs at every battle load). The draw set

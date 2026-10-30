@@ -33,6 +33,8 @@ cutscenes.toml     scripted scenes
 modes.toml         game modes
 items.toml         items, equipment, sets and shops
 audio.toml         music tracks, sounds, music picks
+arts.toml          Tactical Arts and their chains
+spells.toml        Seru magic
 maps/<id>.toml     one custom map per file; the file stem is the map id
 assets/...         the modder's own files (art, models, sound, text)
 README.md, LICENSE, LICENSE.md, LICENSE.txt, CHANGELOG.md
@@ -119,6 +121,8 @@ Each content section is a TOML file whose type lives in its own module of `legai
 | `modes.toml` | `ModeSection` | `modes` |
 | `items.toml` | `ItemSection` | `items` |
 | `audio.toml` | `AudioSection` | `audio` |
+| `arts.toml` | `ArtSection` | `arts` |
+| `spells.toml` | `SpellSection` | `spells` |
 | `maps/<id>.toml` | `MapDef` | `map` |
 
 ### battle.toml
@@ -227,6 +231,10 @@ New consumables and equipment beside the retail item id space, equipment sets wi
 ### audio.toml
 
 The pack's own music tracks and sounds (WAV / Ogg Vorbis under `assets/`, with loop points and normalisation) and its music picks: the battle and boss themes of its fights, victory music, the music of each game mode. A map's `[audio]` table adds its music, music zones and positional ambient sources. Declares `track` and `sound` ids. Reference: [`expansion-pack-audio.md`](expansion-pack-audio.md).
+
+### arts.toml and spells.toml
+
+New Tactical Arts, played with the hero's own retail art clips under the pack's power bytes, damage percent, element and status rider; chains that end a turn's arts in a pack finisher; and new Seru magic that casts as a retail Seru spell with the pack's MP, power, element, target shape and rider, learned by capturing a pack monster. Declare `art`, `art_chain` and `spell` ids. Reference: [`expansion-pack-arts.md`](expansion-pack-arts.md).
 
 ### maps/&lt;id&gt;.toml
 

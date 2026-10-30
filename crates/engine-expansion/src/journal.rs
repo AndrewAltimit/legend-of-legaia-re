@@ -81,6 +81,20 @@ pub struct ItemRow {
     pub worn: usize,
 }
 
+/// One pack art or spell a hero knows (the Arts page).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArtListRow {
+    /// `Vahn: Ember Cascade`.
+    pub title: String,
+    /// `30 AP`, `Lv 3`.
+    pub tag: String,
+    /// The arrows (`L R D U R`) or `chain finisher`, or the spell's MP and
+    /// description.
+    pub detail: String,
+    /// A spell row (an art row otherwise).
+    pub spell: bool,
+}
+
 /// The Journal's content.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct JournalView {
@@ -105,6 +119,10 @@ pub struct JournalView {
     pub has_items: bool,
     /// The pack items held or worn, consumables first.
     pub items: Vec<ItemRow>,
+    /// The pack defines arts or spells (the Arts page lists them).
+    pub has_arts: bool,
+    /// The pack arts and spells the heroes know: arts first.
+    pub arts: Vec<ArtListRow>,
 }
 
 impl JournalView {
@@ -116,6 +134,7 @@ impl JournalView {
             JournalPage::Cards => usize::from(self.has_cards),
             JournalPage::Travel => self.maps.len(),
             JournalPage::Items => self.items.len().max(usize::from(self.has_items)),
+            JournalPage::Arts => self.arts.len(),
         }
     }
 }
@@ -184,7 +203,60 @@ pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime) -> JournalView {
             .collect(),
         has_items: !pack.items.items.is_empty(),
         items: item_rows(pack, &rt.progress.items),
+        has_arts: !pack.arts.arts.is_empty() || !pack.spells.spells.is_empty(),
+        arts: art_rows(pack, &rt.progress),
     }
+}
+
+const HERO_NAMES: [&str; 3] = ["Vahn", "Noa", "Gala"];
+
+fn art_rows(
+    pack: &ExpansionPack,
+    progress: &crate::quest_save::ExpansionProgress,
+) -> Vec<ArtListRow> {
+    let mut rows: Vec<ArtListRow> = pack
+        .arts
+        .arts
+        .iter()
+        .filter(|(k, _)| progress.arts.learned.contains(*k))
+        .map(|(k, a)| {
+            let cmds = a.command_bytes().unwrap_or_default();
+            let arrows: Vec<String> = legaia_expansion_format::arts::commands_string(&cmds)
+                .chars()
+                .map(String::from)
+                .collect();
+            ArtListRow {
+                title: format!(
+                    "{}: {}",
+                    HERO_NAMES[usize::from(a.character.slot())],
+                    non_empty(&a.name, k)
+                ),
+                tag: format!("{} AP", a.ap),
+                detail: if arrows.is_empty() {
+                    "Chain finisher".to_string()
+                } else {
+                    arrows.join(" ")
+                },
+                spell: false,
+            }
+        })
+        .collect();
+    for ((roster, k), lv) in &progress.spells.known {
+        let Some(d) = pack.spells.spells.get(k) else {
+            continue;
+        };
+        let who = HERO_NAMES.get(usize::from(*roster)).copied().unwrap_or("?");
+        rows.push(ArtListRow {
+            title: format!("{who}: {}", non_empty(&d.name, k)),
+            tag: format!("Lv {}", lv.level),
+            detail: match d.mp {
+                Some(mp) => format!("{mp} MP. {}", d.description),
+                None => d.description.clone(),
+            },
+            spell: true,
+        });
+    }
+    rows
 }
 
 fn item_rows(pack: &ExpansionPack, progress: &crate::items::ItemProgress) -> Vec<ItemRow> {
@@ -326,15 +398,18 @@ pub enum JournalPage {
     Travel,
     /// The pack items held and worn; Cross opens the pack item screen.
     Items,
+    /// The pack arts and spells the heroes know.
+    Arts,
 }
 
 impl JournalPage {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Quests,
         Self::Challenges,
         Self::Cards,
         Self::Travel,
         Self::Items,
+        Self::Arts,
     ];
 
     pub fn label(self) -> &'static str {
@@ -344,6 +419,7 @@ impl JournalPage {
             Self::Cards => "Cards",
             Self::Travel => "Travel",
             Self::Items => "Items",
+            Self::Arts => "Arts",
         }
     }
 }
@@ -427,7 +503,7 @@ impl JournalSession {
                 JournalPage::Items => view.has_items.then(|| JournalOutcome::OpenItems {
                     gear: view.items.get(self.cursor).is_some_and(|i| i.equipment),
                 }),
-                JournalPage::Quests => None,
+                JournalPage::Quests | JournalPage::Arts => None,
             };
         }
         self.cursor = self.cursor.min(rows.saturating_sub(1));

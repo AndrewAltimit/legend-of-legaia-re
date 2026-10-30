@@ -1,0 +1,50 @@
+# Rebirth's Seru: four tower Seru, each taught by capturing its pack monster
+# once the floor's keeper is beaten. Each casts as the retail Seru it grew
+# from (its summon, creature and camera), with the pack's numbers.
+#
+# Balance (spell ids and MP from the disc's spell table, 0x800754C8): the
+# strongest retail capturable Seru is Gilium (0x95, 160 MP, all enemies);
+# the Ra-Seru evolutions Meta / Terra / Ozma cost 240. The tower Seru sit
+# between them: about twice their base's roll, for two to three times its MP.
+
+[spells.hearthfire]
+name = "Hearthfire"
+description = "Gola Gola, fed on|tower embers."
+base = 0x8C           # Gola Gola: 40 MP, all enemies, fire
+mp = 96
+power = 210
+growth = 8
+element = 2           # fire
+learn = { capture = "hearth_gola", requires = { bosses = ["cinder_warden"] } }
+
+[spells.verdant_bloom]
+name = "Verdant Bloom"
+description = "Iota's dimension,|overgrown."
+base = 0x93           # Iota: 90 MP, all enemies, earth
+mp = 140
+power = 180
+growth = 6
+element = 0           # earth
+status = { status = "numb", chance = 15 }
+learn = { capture = "verdant_iota", requires = { bosses = ["verdant_colossus"] } }
+
+[spells.grove_fang]
+name = "Grove Fang"
+description = "Kemaro's fangs, with|thorns."
+base = 0x90           # Kemaro: 72 MP, one enemy, earth
+mp = 100
+power = 240
+growth = 8
+element = 0
+status = { status = "venom", chance = 35 }
+learn = { capture = "grove_kemaro", requires = { bosses = ["verdant_colossus"] } }
+
+[spells.tempest_dive]
+name = "Tempest Dive"
+description = "Barra's dive from the|engine's height."
+base = 0x8F           # Barra: 85 MP, one enemy, wind
+mp = 125
+power = 260
+growth = 10
+element = 3           # wind
+learn = { capture = "storm_barra", requires = { bosses = ["iron_regent"] } }

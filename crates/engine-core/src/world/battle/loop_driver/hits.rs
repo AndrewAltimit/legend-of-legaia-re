@@ -241,6 +241,7 @@ impl World {
         if let Some(art) = art {
             self.apply_art_hit_side_data(attacker, target, art, hit.hit_index, dmg);
         }
+        self.expansion_art_hit_rider(attacker, target, dmg);
         if applied {
             self.apply_combo_total(target);
         }
@@ -711,6 +712,8 @@ impl World {
         if attacker < self.party.party_count {
             let clip = self.actors[attacker_i].battle.current_anim;
             raw = self.forced_melee_amount(target, clip, raw, kill_check);
+            // An expansion pack art's damage percent and element.
+            raw = self.expansion_scale_art_hit(attacker, target, raw);
         }
         let dmg = raw;
         // Spirit accrues from the pre-nullify hit: retail's finisher fills the

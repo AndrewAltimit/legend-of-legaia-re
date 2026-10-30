@@ -20,6 +20,8 @@
 //! cards.toml         trading cards               -> cards
 //! cutscenes.toml     scripted scenes             -> cutscene
 //! items.toml         items, equipment, shops     -> items
+//! arts.toml          Tactical Arts, chains       -> arts
+//! spells.toml        Seru magic                  -> spells
 //! modes.toml         game modes                  -> modes
 //! audio.toml         music tracks, sounds, music picks -> audio
 //! maps/<id>.toml     custom maps, one per file   -> map
@@ -32,6 +34,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod arts;
 pub mod audio;
 pub mod audio_clip;
 pub mod battle;
@@ -50,6 +53,7 @@ pub mod modes;
 pub mod progression;
 pub mod quest;
 pub mod refs;
+pub mod spells;
 pub mod validate;
 
 use std::collections::BTreeMap;
@@ -73,6 +77,10 @@ pub struct ExpansionPack {
     pub items: items::ItemSection,
     /// The pack's own music and sounds, and its music picks.
     pub audio: audio::AudioSection,
+    /// New Tactical Arts and chains.
+    pub arts: arts::ArtSection,
+    /// New Seru magic.
+    pub spells: spells::SpellSection,
     /// Custom maps keyed by map id (the `maps/<id>.toml` file stem).
     pub maps: BTreeMap<String, map::MapDef>,
     /// The modder's own files under `assets/`, keyed by their path relative
@@ -96,6 +104,8 @@ pub const SECTION_FILES: &[&str] = &[
     "modes.toml",
     "items.toml",
     "audio.toml",
+    "arts.toml",
+    "spells.toml",
 ];
 
 /// Documentation files a pack may carry at its root.
@@ -175,6 +185,8 @@ impl ExpansionPack {
             modes: section(files, "modes.toml")?,
             items: section(files, "items.toml")?,
             audio: section(files, "audio.toml")?,
+            arts: section(files, "arts.toml")?,
+            spells: section(files, "spells.toml")?,
             maps,
             assets,
             docs,
@@ -210,6 +222,8 @@ impl ExpansionPack {
         put(&mut out, "modes.toml", &self.modes)?;
         put(&mut out, "items.toml", &self.items)?;
         put(&mut out, "audio.toml", &self.audio)?;
+        put(&mut out, "arts.toml", &self.arts)?;
+        put(&mut out, "spells.toml", &self.spells)?;
         for (id, map) in &self.maps {
             let name = format!("maps/{id}.toml");
             let text = toml::to_string(map).with_context(|| format!("writing {name}"))?;

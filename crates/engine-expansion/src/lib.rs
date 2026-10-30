@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod arts;
 pub mod audio;
 pub mod battle;
 pub mod battle_waves;
@@ -31,6 +32,7 @@ pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
 pub mod quest_save;
+pub mod spells;
 pub mod toast;
 
 use std::sync::Arc;
@@ -84,6 +86,12 @@ pub struct ExpansionState {
     pub cutscene: cutscene::CutsceneRuntime,
     /// The pack's soundscape: music picks, raised sounds, ambient levels.
     pub audio: audio::AudioRuntime,
+    /// The pack's compiled arts and the clips playing; the arts known are
+    /// `quests.progress.arts`.
+    pub arts: arts::ArtsRuntime,
+    /// The pack's compiled spells and the cast in flight; the spells known
+    /// are `quests.progress.spells`.
+    pub spells: spells::SpellRuntime,
 }
 
 impl ExpansionState {

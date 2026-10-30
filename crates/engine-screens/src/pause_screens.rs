@@ -295,6 +295,18 @@ pub fn journal_draws(
                 reward: String::new(),
             })
             .collect(),
+        JournalPage::Arts => view
+            .arts
+            .iter()
+            .map(|a| Row {
+                title: a.title.clone(),
+                tag: a.tag.clone(),
+                done: a.spell,
+                detail: a.detail.clone(),
+                objectives: Vec::new(),
+                reward: String::new(),
+            })
+            .collect(),
     };
     let objectives: Vec<Vec<ui::JournalObjectiveView<'_>>> = rows
         .iter()
@@ -343,6 +355,14 @@ pub fn journal_draws(
         JournalPage::Items => (
             "This pack has no items.",
             "Cross: open the item screen   Circle: back",
+        ),
+        JournalPage::Arts if view.has_arts => (
+            "No pack art or spell is known yet.",
+            "Left/Right: page   Circle: back",
+        ),
+        JournalPage::Arts => (
+            "This pack has no arts or spells.",
+            "Left/Right: page   Circle: back",
         ),
     };
     let args = ui::JournalDrawArgs {

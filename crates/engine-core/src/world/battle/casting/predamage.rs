@@ -381,7 +381,9 @@ impl World {
             agl: creature.installed_stats(self.battle.scripted_fight)[4],
             ..Default::default()
         };
-        let summon_element = creature.element;
+        let summon_element = self
+            .expansion_cast_element(spell_id)
+            .unwrap_or(creature.element);
         let caster_agl = self
             .battle
             .accuracy
