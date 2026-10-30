@@ -87,6 +87,7 @@ id = "inner_hall_silent"
 rect = [10, 7, 12, 7]
 event = { kind = "dialog", line = "seraph_after" }
 requires = { bosses = ["azure_seraph"] }
+once = true
 
 # A quiet alcove by the stair from below: the last rest point under the
 # throne.

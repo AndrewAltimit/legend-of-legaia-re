@@ -107,6 +107,7 @@ id = "regent_seat_cold"
 rect = [8, 11, 8, 11]
 event = { kind = "dialog", line = "regent_after" }
 requires = { bosses = ["iron_regent"] }
+once = true
 
 [[triggers]]
 id = "gauntlet_lever"

@@ -129,6 +129,7 @@ id = "sunken_court_still"
 rect = [14, 15, 18, 15]
 event = { kind = "dialog", line = "vault_after" }
 requires = { bosses = ["verdant_colossus"] }
+once = true
 
 [[encounters]]
 id = "west_terrace"

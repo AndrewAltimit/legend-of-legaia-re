@@ -71,12 +71,6 @@ rect = [8, 0, 15, 0]
 to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_below" }
 
 [[triggers]]
-id = "arrival"
-rect = [9, 19, 14, 20]
-event = { kind = "dialog", line = "floor_3f_intro" }
-once = true
-
-[[triggers]]
 id = "sundial"
 rect = [10, 12, 15, 13]
 event = { kind = "dialog", line = "sundial_offer" }

@@ -93,6 +93,7 @@ id = "brazier_cold"
 rect = [9, 12, 11, 13]
 event = { kind = "dialog", line = "ember_after" }
 requires = { bosses = ["cinder_warden"] }
+once = true
 
 [[encounters]]
 id = "west_aisle"
@@ -175,21 +176,89 @@ every = 2
 inset = 40
 scale = 0.6
 
-# Fallen rock across the floor (`rugi` meshes 18..20, the cave's boulders).
+# Iron braziers (`assets/models/brazier.glb`) flank the mouth of each
+# stair, so the way on reads from across the hall.
+[[props]]
+id = "brazier_up_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [7, 3]
+scale = 1.1
+solid = true
+light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 9 }
+
+[[props]]
+id = "brazier_up_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [13, 3]
+scale = 1.1
+solid = true
+light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 11 }
+
+[[props]]
+id = "brazier_down_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [7, 22]
+scale = 1.1
+solid = true
+light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 10 }
+
+[[props]]
+id = "brazier_down_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [13, 22]
+scale = 1.1
+solid = true
+light = { color = [255, 120, 50], radius = 560, height = 140, flicker = 0.4, period = 12 }
+
+[[emitters]]
+kind = "embers"
+rect = [7, 3, 13, 3]
+height = [130, 170]
+count = 18
+velocity = [0.0, 1.5, 0.0]
+seed = 206
+
+[[emitters]]
+kind = "embers"
+rect = [7, 22, 13, 22]
+height = [130, 170]
+count = 18
+velocity = [0.0, 1.5, 0.0]
+seed = 207
+
+# Fallen rock heaps in two of the hall's corners, where the ceiling
+# gave way: the cave's boulders (`rugi` meshes 17..20), piled.
 [[scatter]]
-id = "rubble"
+id = "rubble_heaps"
 rect = [0, 3, 21, 22]
 on = "."
-density = 0.22
-seed = 2202
-jitter = 48
-scale = [0.25, 0.5]
-tilt = 8.0
+density = 2.5
+seed = 2203
+jitter = 50
+scale = [0.3, 0.55]
+tilt = 10.0
+cluster = { centre = [3.0, 4.0], radius = 2.2, falloff = 1.0 }
 meshes = [
+  { mesh = { object = 17 }, scale = [0.3, 0.45] },
   { mesh = { object = 18 } },
   { mesh = { object = 19 } },
   { mesh = { object = 20 } },
+]
+
+[[scatter]]
+rect = [0, 3, 21, 22]
+on = "."
+density = 2.5
+seed = 2204
+jitter = 50
+scale = [0.3, 0.55]
+tilt = 10.0
+cluster = { centre = [17.0, 21.0], radius = 2.2, falloff = 1.0 }
+meshes = [
   { mesh = { object = 17 }, scale = [0.3, 0.45] },
+  { mesh = { object = 18 } },
+  { mesh = { object = 19 } },
+  { mesh = { object = 20 } },
 ]
 
 [lighting]

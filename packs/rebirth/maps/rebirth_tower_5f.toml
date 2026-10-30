@@ -65,22 +65,19 @@ id = "stair_up"
 rect = [8, 0, 9, 0]
 to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_below" }
 
-[[triggers]]
-id = "arrival"
-rect = [9, 4, 12, 6]
-event = { kind = "dialog", line = "floor_5f_intro" }
-once = true
-
 # The keeper's counter: every table quest is given here.
 [[triggers]]
 id = "keeper"
 rect = [5, 4, 6, 5]
 event = { kind = "talk", npc = "rest_keeper" }
 
+# The notice board by the west wall lists the tables: read once, on the
+# first walk past it.
 [[triggers]]
 id = "table_board"
 rect = [1, 4, 1, 6]
 event = { kind = "dialog", line = "rest_board" }
+once = true
 
 # The keeper's tables open once he has welcomed the party: the card room
 # on the west side, the games room on the east.
@@ -187,7 +184,7 @@ volume = 0.5
 [[npcs]]
 id = "duel_second"
 label = "the Warden's second"
-model = { kind = "npc", scene = "koin1", index = 11 }
+model = { kind = "npc", scene = "koin1", index = 18 }
 tile = [8, 8]
 facing = 6
 line = "duel_second_hello"
@@ -217,7 +214,7 @@ after = { flags = ["hollow_heard"] }
 [[npcs]]
 id = "card_room_dealer"
 label = "the tower's card dealer"
-model = { kind = "npc", scene = "koin1", index = 13 }
+model = { kind = "npc", scene = "koin1", index = 5 }
 tile = [4, 7]
 facing = 2
 line = "card_room_dealer_hello"
@@ -230,7 +227,7 @@ shop = "tower"
 [[npcs]]
 id = "high_table_odile"
 label = "Odile, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 15 }
+model = { kind = "npc", scene = "koin1", index = 16 }
 tile = [8, 4]
 facing = 2
 line = "high_table_hello"
@@ -238,7 +235,7 @@ line = "high_table_hello"
 [[npcs]]
 id = "high_table_brann"
 label = "Brann, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 16 }
+model = { kind = "npc", scene = "koin1", index = 15 }
 tile = [9, 4]
 facing = 4
 line = "high_table_hello"
@@ -266,6 +263,12 @@ model = { kind = "npc", scene = "koin1", index = 11 }
 tile = [12, 6]
 facing = 6
 line = "high_table_hello"
+
+# Old Mott's placement is a koin1 slot player, posed seated: he waits on
+# one of the Sol Tower's own stools (koin1 mesh 76) rather than on air.
+[[decor]]
+mesh = { object = 76 }
+tile = [12, 6]
 
 # --- The Rest by lantern-light ------------------------------------------------
 # Paper lanterns hang over the hall, swaying a little in the hearth's draught
