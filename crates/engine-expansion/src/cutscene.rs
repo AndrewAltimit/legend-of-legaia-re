@@ -116,6 +116,12 @@ pub enum Command {
     StartQuest(String),
     Sfx(u16),
     Bgm(DiscRef),
+    /// A retail cue or pack sound (`World::expansion_play_sound`).
+    Sound(legaia_expansion_format::audio::SoundRef),
+    /// A held music pick and its fade (`World::expansion_set_music`).
+    Music(legaia_expansion_format::audio::MusicRef, u16),
+    /// Release the held music pick.
+    MusicRelease,
     /// Lock or unlock the player.
     Lock(bool),
     /// The cutscene ends on this fight; the world starts it once the
@@ -1003,6 +1009,13 @@ impl CutsceneRun {
                 }
             }
             Step::Bgm { bgm } => out.push(Command::Bgm(bgm.clone())),
+            Step::Sound { sound } => {
+                if !skipping {
+                    out.push(Command::Sound(sound.clone()));
+                }
+            }
+            Step::Music { music, fade } => out.push(Command::Music(music.clone(), *fade)),
+            Step::MusicRelease => out.push(Command::MusicRelease),
             Step::End => self.end(),
         }
     }

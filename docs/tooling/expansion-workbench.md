@@ -38,6 +38,7 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `check_dialog(line)` | A line's rows page by page: length, the row warning, markup that does not encode, the compiled size. |
 | `map_preview(map)` | Per tile the floor tier and wall quarters, per cell the four corner heights and whether they agree. |
 | `cutscene_timeline(pack, id, picks)` | A cutscene played on the engine's sequencer against a stand-in world (`legaia_engine_expansion::cutscene::preview`): each executed step with its frame and track, the frame it ends on, the flags it raises and the fight it ends on. `picks` is the option taken at each menu. |
+| `asset_bytes(path)` / `audio_info(path)` | An asset's bytes (an audio preview) and an audio file's probe: `{ rate, channels, frames, seconds, loop }` or `{ error }`. |
 | `scene_objects(scene)` | A base scene's geometry pack: per mesh its primitive count, extent, how often the retail scene places it, and its footprint seen from above. |
 
 A file the editor left unchanged exports as the bytes it was loaded from:
@@ -84,7 +85,8 @@ content offer only ids the pack defines.
 | Cards | Cards, boosters, sell prices, drop rules. |
 | Items | Pack items (kind, look, prices, the effect of a consumable, the stats, passives, element and set of equipment), sets and their tiers, shops and their gated stock. Every item picker elsewhere (drops, steals, rewards, collect objectives) offers retail and pack items together. |
 | Modes | Poker tables, card duels, golf courses, race tracks, prop hunt arenas. |
-| Maps | The tile painter. |
+| Audio | `audio.toml`: tracks and sounds (file, gain, normalisation, loop; an import into `assets/audio/`, a Play button through the browser's own decoder, the validator's probe of rate, length and the file's own loop), the battle / boss / victory picks and the music per mode kind or instance. Every music field picks retail cues by sound-test name or a pack track. |
+| Maps | The tile painter, with a Sound box for the map's `[audio]`: map music, the zone fade, music zones and ambient sources. |
 | Files | Each exported file, to copy or download on its own. |
 
 ## The tile painter

@@ -375,6 +375,7 @@ A map's `[[enter_cutscenes]]` (`cutscene`, `requires`, `repeat`) plays on
 arrival: the first entry whose gate holds and whose cutscene is unseen, or
 any with `repeat = true`. A save resumed on the map plays none. While a
 cutscene runs, the map's zones and exits fire nothing (`ActiveMap::observe`).
+| `{ kind = "sound", sound = S }` | plays a retail cue or a pack sound (`World::expansion_play_sound`; [audio](expansion-pack-audio.md#map-sound-triggers)) |
 
 `once = true` fires a trigger once **ever**: firing raises the pack flag
 `map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),

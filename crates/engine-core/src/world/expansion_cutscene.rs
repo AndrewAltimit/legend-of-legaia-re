@@ -447,6 +447,19 @@ impl World {
                 );
             }
             Command::Bgm(other) => log::warn!("expansion: cutscene bgm {other} is not a bgm"),
+            Command::Sound(s) => {
+                if !self.expansion_play_sound(&s) {
+                    log::warn!("expansion: cutscene sound {s} did not play");
+                }
+            }
+            Command::Music(m, fade) => {
+                if !self.expansion_set_music(Some(&m), fade) {
+                    log::warn!("expansion: cutscene music {m} is not in the pack");
+                }
+            }
+            Command::MusicRelease => {
+                self.expansion_set_music(None, 0);
+            }
             Command::Lock(_) => {}
             Command::Fight(f) => self.expansion.cutscene.fight = Some(f),
         }

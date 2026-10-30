@@ -32,6 +32,7 @@ cards.toml         trading cards
 cutscenes.toml     scripted scenes
 modes.toml         game modes
 items.toml         items, equipment, sets and shops
+audio.toml         music tracks, sounds, music picks
 maps/<id>.toml     one custom map per file; the file stem is the map id
 assets/...         the modder's own files (art, models, sound, text)
 README.md, LICENSE, LICENSE.md, LICENSE.txt, CHANGELOG.md
@@ -117,6 +118,7 @@ Each content section is a TOML file whose type lives in its own module of `legai
 | `cutscenes.toml` | `CutsceneSection` | `cutscene` |
 | `modes.toml` | `ModeSection` | `modes` |
 | `items.toml` | `ItemSection` | `items` |
+| `audio.toml` | `AudioSection` | `audio` |
 | `maps/<id>.toml` | `MapDef` | `map` |
 
 ### battle.toml
@@ -203,6 +205,10 @@ A map hole needs no `rows`: its walls, void and heights are the map's tiles. A l
 ### items.toml
 
 New consumables and equipment beside the retail item id space, equipment sets with tiered bonuses, and the pack's shops. A consumable runs one of the retail item handlers; worn gear folds into the battle seed like retail gear; a drop, steal, reward or shop row names a retail id or a pack item key. Declares `item`, `item_set` and `shop` ids. Reference: [`expansion-pack-items.md`](expansion-pack-items.md).
+
+### audio.toml
+
+The pack's own music tracks and sounds (WAV / Ogg Vorbis under `assets/`, with loop points and normalisation) and its music picks: the battle and boss themes of its fights, victory music, the music of each game mode. A map's `[audio]` table adds its music, music zones and positional ambient sources. Declares `track` and `sound` ids. Reference: [`expansion-pack-audio.md`](expansion-pack-audio.md).
 
 ### maps/&lt;id&gt;.toml
 

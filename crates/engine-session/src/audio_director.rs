@@ -36,6 +36,7 @@ use legaia_seq::Seq;
 
 mod bgm_playback;
 mod command_log;
+mod pack_audio;
 mod sfx_banks;
 mod sfx_fire;
 mod xa_clips;
@@ -191,6 +192,9 @@ pub struct AudioDirector<S: AudioSink> {
     cd_reverb: bool,
     /// The command record ([`Self::commands`]).
     commands: AudioCommandLog,
+    /// An expansion pack's decoded clips and the deferred faded start
+    /// ([`pack_audio`]).
+    pack: pack_audio::PackAudioState,
 }
 
 /// `_DAT_8007B910`'s reference value (`0xD7`, `FUN_8001FFA4`): the un-ducked
@@ -257,6 +261,7 @@ impl<S: AudioSink> AudioDirector<S> {
             sfx_in_battle: None,
             cd_reverb: false,
             commands: AudioCommandLog::default(),
+            pack: Default::default(),
         }
     }
 

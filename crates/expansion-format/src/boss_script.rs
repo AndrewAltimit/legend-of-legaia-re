@@ -152,6 +152,9 @@ pub struct MoveDef {
     /// The monster's own turns before the move may be picked again.
     #[serde(default)]
     pub cooldown: u8,
+    /// The sound the charge turn plays: the telegraph's cue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charge_sound: Option<crate::audio::SoundRef>,
 }
 
 fn one() -> u32 {
@@ -199,6 +202,12 @@ pub struct PhaseDef {
     /// Monsters seated into free monster seats as the next round opens.
     #[serde(default)]
     pub summon: Vec<MonsterRef>,
+    /// The battle music from this phase on (a cross-fade as it begins).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub music: Option<crate::audio::MusicRef>,
+    /// A sound played as the phase begins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sound: Option<crate::audio::SoundRef>,
 }
 
 /// The once-per-fight survival of a lethal blow.
@@ -243,6 +252,42 @@ impl BossScript {
     /// Every monster the script may summon.
     pub fn summons(&self) -> impl Iterator<Item = &MonsterRef> {
         self.all_phases().flat_map(|p| p.summon.iter())
+    }
+
+    /// Every music change the script makes, with the field naming it.
+    pub fn music(&self) -> Vec<(String, &crate::audio::MusicRef)> {
+        let named = self
+            .phases
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (format!("phases[{i}]"), p))
+            .chain(self.enrage.iter().map(|e| ("enrage".to_string(), e)));
+        named
+            .filter_map(|(f, p)| p.music.as_ref().map(|m| (format!("{f}.music"), m)))
+            .collect()
+    }
+
+    /// Every sound the script plays (phase sounds, charge telegraphs), with
+    /// the field naming it.
+    pub fn sounds(&self) -> Vec<(String, &crate::audio::SoundRef)> {
+        let mut out = Vec::new();
+        let named = self
+            .phases
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (format!("phases[{i}]"), p))
+            .chain(self.enrage.iter().map(|e| ("enrage".to_string(), e)));
+        for (f, p) in named {
+            if let Some(s) = &p.sound {
+                out.push((format!("{f}.sound"), s));
+            }
+            for (j, m) in p.moves.iter().enumerate() {
+                if let Some(s) = &m.charge_sound {
+                    out.push((format!("{f}.moves[{j}].charge_sound"), s));
+                }
+            }
+        }
+        out
     }
 
     /// Every dialog line the script names, with the field naming it.

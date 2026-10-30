@@ -149,7 +149,7 @@ fn hall_world() -> World {
         world_z: gz as i16,
         script_pc0: 0,
     };
-    w.install_expansion_npcs(&[guide], &[0]);
+    w.install_expansion_npcs(&[guide], &[0], &[false]);
     w.expansion_hide_absent_npcs();
     w
 }

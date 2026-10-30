@@ -551,6 +551,7 @@ impl<S: AudioSink> AudioDirector<S> {
     pub fn tick_audio_frame(&mut self, configured_level: i32) -> SfxFrameReport {
         self.set_duck_reference(configured_level);
         self.tick_duck();
+        self.tick_pack_deferred();
         self.tick_sfx_frame()
     }
 

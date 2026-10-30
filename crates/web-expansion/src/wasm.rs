@@ -76,6 +76,19 @@ impl ExpansionWorkbench {
         serde_json::to_string(&self.core.asset_paths()).unwrap_or_else(|_| "[]".into())
     }
 
+    /// The bytes of asset `path` (empty when absent), for an audio preview.
+    pub fn asset_bytes(&self, path: &str) -> Vec<u8> {
+        self.core
+            .asset_bytes(path)
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default()
+    }
+
+    /// An audio asset's rate, channels, length and own loop (JSON).
+    pub fn audio_info(&self, path: &str) -> String {
+        self.core.audio_info(path).to_string()
+    }
+
     /// Load the handed-over tree: `{ pack, files, issues }`.
     pub fn finish_files(&mut self) -> String {
         self.core.finish_files().to_string()

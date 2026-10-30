@@ -21,6 +21,7 @@
 //! cutscenes.toml     scripted scenes             -> cutscene
 //! items.toml         items, equipment, shops     -> items
 //! modes.toml         game modes                  -> modes
+//! audio.toml         music tracks, sounds, music picks -> audio
 //! maps/<id>.toml     custom maps, one per file   -> map
 //! assets/...         the modder's own files
 //! README.md, LICENSE, CHANGELOG.md   the pack's own documentation
@@ -31,6 +32,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audio;
+pub mod audio_clip;
 pub mod battle;
 pub mod boss_script;
 pub mod bundle;
@@ -68,6 +71,8 @@ pub struct ExpansionPack {
     pub modes: modes::ModeSection,
     /// New items, equipment, sets and shops.
     pub items: items::ItemSection,
+    /// The pack's own music and sounds, and its music picks.
+    pub audio: audio::AudioSection,
     /// Custom maps keyed by map id (the `maps/<id>.toml` file stem).
     pub maps: BTreeMap<String, map::MapDef>,
     /// The modder's own files under `assets/`, keyed by their path relative
@@ -90,6 +95,7 @@ pub const SECTION_FILES: &[&str] = &[
     "cutscenes.toml",
     "modes.toml",
     "items.toml",
+    "audio.toml",
 ];
 
 /// Documentation files a pack may carry at its root.
@@ -168,6 +174,7 @@ impl ExpansionPack {
             cutscenes: section(files, "cutscenes.toml")?,
             modes: section(files, "modes.toml")?,
             items: section(files, "items.toml")?,
+            audio: section(files, "audio.toml")?,
             maps,
             assets,
             docs,
@@ -202,6 +209,7 @@ impl ExpansionPack {
         put(&mut out, "cutscenes.toml", &self.cutscenes)?;
         put(&mut out, "modes.toml", &self.modes)?;
         put(&mut out, "items.toml", &self.items)?;
+        put(&mut out, "audio.toml", &self.audio)?;
         for (id, map) in &self.maps {
             let name = format!("maps/{id}.toml");
             let text = toml::to_string(map).with_context(|| format!("writing {name}"))?;

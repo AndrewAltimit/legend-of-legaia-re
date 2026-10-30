@@ -42,6 +42,13 @@ pub enum AudioCommand {
     /// The CD input's reverb send turned on or off (`SPUCNT` bit 2), logged
     /// on the edge.
     CdReverb(bool),
+    /// An expansion pack's own track started: `(music id, fade frames)`.
+    PackTrack(u16, u16),
+    /// A retail track started cross-fading (a pack's music zone):
+    /// `(id, fade frames)`.
+    BgmFade(u16, u16),
+    /// An expansion pack's sound played, by a hash of its key.
+    PackSound(u64),
 }
 
 /// How many recent commands [`AudioCommandLog::recent`] keeps for a report.

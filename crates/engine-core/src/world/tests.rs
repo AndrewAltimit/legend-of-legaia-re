@@ -331,6 +331,7 @@ mod counterattack;
 mod dialogue_runner_fx;
 mod effects_actors;
 mod encounters;
+mod expansion_audio;
 mod expansion_battle;
 mod expansion_boss;
 mod expansion_cards;

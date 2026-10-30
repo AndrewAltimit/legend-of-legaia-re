@@ -312,6 +312,7 @@ impl World {
             return;
         }
         self.expansion.cards.tick_toasts();
+        self.tick_expansion_audio();
         self.resolve_expansion_line();
         if !matches!(self.mode, SceneMode::Battle) {
             self.expansion_notify(QuestEvent::Refresh);

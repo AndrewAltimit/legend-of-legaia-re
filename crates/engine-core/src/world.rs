@@ -95,9 +95,10 @@ mod world_toggles;
 
 pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
 pub use audio_state::{
-    ARENA_SIDE_BAND_REQUEST, AudioState, BGM_PARK_SENTINEL, BGM_SUB_OP_ENGINE_FIELD_CLOSE,
-    BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP, FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK,
-    SideBandBank, VAB_01_RAW_BASE, runtime_sfx_descriptor_in, side_band_bank_for_request,
+    ARENA_SIDE_BAND_REQUEST, AudioState, BGM_PARK_SENTINEL, BGM_SUB_OP_ENGINE_FADE,
+    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
+    FIELD_INIT_SIDE_BAND_REQUEST, SIDE_BAND_PARK, SideBandBank, VAB_01_RAW_BASE,
+    runtime_sfx_descriptor_in, side_band_bank_for_request,
 };
 pub use config::*;
 pub use cutscene_state::{CappedTimeline, CutsceneState};
@@ -184,6 +185,7 @@ pub use effects::{
 };
 mod encounters;
 mod expansion;
+mod expansion_audio;
 mod expansion_boss;
 mod expansion_cards;
 mod expansion_cutscene;

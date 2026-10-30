@@ -99,7 +99,8 @@ pub struct MapDef {
     /// Ways in from retail field scenes: a tile rectangle in a retail scene
     /// that enters this map when the player steps onto it.
     pub entrances: Vec<EntranceDef>,
-    /// The music cue the map plays ([`DiscRef::Bgm`]). `None` keeps silence.
+    /// The music cue the map plays ([`DiscRef::Bgm`]). `None` keeps silence;
+    /// `[audio] music` wins over it and may name a pack track.
     pub bgm: Option<DiscRef>,
     /// Follow-camera framing.
     pub camera: CameraPreset,
@@ -124,6 +125,9 @@ pub struct MapDef {
     /// whose gate holds and that has not been seen (unless `repeat`) plays
     /// once the player stands on the map.
     pub enter_cutscenes: Vec<EnterCutscene>,
+    /// Music, music zones and ambient sources ([`crate::audio::MapAudio`]).
+    #[serde(skip_serializing_if = "crate::audio::MapAudio::is_empty")]
+    pub audio: crate::audio::MapAudio,
 }
 
 /// A cutscene a map plays on arrival.
@@ -718,6 +722,8 @@ pub enum MapEvent {
         #[serde(default)]
         save: bool,
     },
+    /// Play a sound: a retail cue or a pack sound (`audio.toml`).
+    Sound { sound: crate::audio::SoundRef },
 }
 
 fn one_i64() -> i64 {

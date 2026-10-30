@@ -185,6 +185,10 @@ fn one_i64() -> i64 {
     1
 }
 
+fn default_music_fade() -> u16 {
+    30
+}
+
 /// One step. The `do` key selects the variant.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "do", rename_all = "snake_case")]
@@ -365,6 +369,18 @@ pub enum Step {
     Sfx { id: u16 },
     /// Switch the music to a sound-test track ([`DiscRef::Bgm`]).
     Bgm { bgm: DiscRef },
+    /// Play a retail cue or a pack sound (`audio.toml`,
+    /// `docs/formats/expansion-pack-audio.md`).
+    Sound { sound: crate::audio::SoundRef },
+    /// Cross-fade to a retail cue, a pack track or silence over `fade`
+    /// frames, held over the map's music zones until a `music_release`.
+    Music {
+        music: crate::audio::MusicRef,
+        #[serde(default = "default_music_fade")]
+        fade: u16,
+    },
+    /// Hand the music back to the map and its zones.
+    MusicRelease,
     /// End the cutscene here.
     End,
 }
@@ -418,6 +434,9 @@ impl Step {
             Self::StartQuest { .. } => "start_quest",
             Self::Sfx { .. } => "sfx",
             Self::Bgm { .. } => "bgm",
+            Self::Sound { .. } => "sound",
+            Self::Music { .. } => "music",
+            Self::MusicRelease => "music_release",
             Self::End => "end",
         }
     }
@@ -902,7 +921,20 @@ fn check_step(
             }
         }
         Step::StartQuest { quest } => cx.reference("quest", quest, &format!("{at}.quest")),
-        Step::Sfx { .. } => {}
+        Step::Sfx { .. } | Step::MusicRelease => {}
+        Step::Sound { sound } => crate::audio::check_sound(cx, &format!("{at}.sound"), sound),
+        Step::Music { music, fade } => {
+            crate::audio::check_music(cx, &format!("{at}.music"), music);
+            if *fade > crate::audio::MAX_FADE_FRAMES {
+                cx.error(
+                    &format!("{at}.fade"),
+                    format!(
+                        "a fade runs at most {} frames",
+                        crate::audio::MAX_FADE_FRAMES
+                    ),
+                );
+            }
+        }
         Step::Bgm { bgm } => {
             if matches!(bgm, DiscRef::Bgm { .. }) {
                 cx.disc_ref(&format!("{at}.bgm"), bgm);

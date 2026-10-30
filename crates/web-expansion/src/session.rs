@@ -155,6 +155,32 @@ impl Core {
             .collect()
     }
 
+    /// The bytes of asset `path` (relative to `assets/`), for the page to
+    /// preview: an audio file plays through the browser's own decoder.
+    pub fn asset_bytes(&self, path: &str) -> Option<&[u8]> {
+        self.extras
+            .get(&format!("assets/{path}"))
+            .map(Vec::as_slice)
+    }
+
+    /// What audio asset `path` is: `{ rate, channels, frames, seconds,
+    /// loop }` from the same probe the validator runs, or `{ error }`.
+    pub fn audio_info(&self, path: &str) -> Value {
+        let Some(bytes) = self.asset_bytes(path) else {
+            return json!({ "error": format!("assets/{path} is not in the pack") });
+        };
+        match legaia_expansion_format::audio_clip::probe(bytes) {
+            Ok(i) => json!({
+                "rate": i.sample_rate,
+                "channels": i.channels,
+                "frames": i.frames,
+                "seconds": i.seconds(),
+                "loop": i.loop_points.map(|(s, e)| [s, e]),
+            }),
+            Err(e) => json!({ "error": format!("{e:#}") }),
+        }
+    }
+
     /// Load the staged tree. See [`Self::load_files`].
     pub fn finish_files(&mut self) -> Value {
         let files = std::mem::take(&mut self.staged);

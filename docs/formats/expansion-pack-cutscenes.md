@@ -88,6 +88,9 @@ Each step is a table whose `do` key names it. Frames are display frames, 60 a se
 | `start_quest` | `quest` | Starts a quest (its start line and fight follow as usual). |
 | `sfx` | `id` | A sound effect from the static table ([`sfx-table.md`](sfx-table.md)). |
 | `bgm` | `bgm` | Switches the music (`{ kind = "bgm", id = N }`). |
+| `sound` | `sound` | A retail cue or a pack sound ([`expansion-pack-audio.md`](expansion-pack-audio.md)). |
+| `music` | `music`, `fade` (30) | Cross-fades to a retail cue, a pack track or silence, held over the map's music zones (`World::expansion_set_music`). |
+| `music_release` | - | Hands the music back to the map and its zones. |
 | `end` | - | Ends the cutscene. |
 
 ### Actors

@@ -481,6 +481,7 @@ seed = 11
       <tr><td><code>{ kind = "card_dealer", dealer = D }</code></td><td>Opens the <code>cards.toml</code> dealer <code>D</code>'s counter (<code>World::open_card_dealer</code>; empty = the first dealer)</td></tr>
       <tr><td><code>{ kind = "shop", shop = S }</code></td><td>Opens the <code>items.toml</code> shop <code>S</code>'s counter (<code>World::open_item_shop</code>; empty = the first shop)</td></tr>
       <tr><td><code>{ kind = "cutscene", cutscene = C }</code></td><td>Plays the <code>cutscenes.toml</code> cutscene <code>C</code> (<a href="expansion-pack-cutscenes.html">cutscenes</a>)</td></tr>
+      <tr><td><code>{ kind = "sound", sound = S }</code></td><td>Plays a retail cue or a pack sound (<a href="expansion-pack-audio.html">audio</a>)</td></tr>
     </tbody>
   </table>
   <p>A map's <code>[[enter_cutscenes]]</code> (<code>cutscene</code>, <code>requires</code>, <code>repeat</code>) plays on arrival: the first entry whose gate holds and whose cutscene is unseen, or any with <code>repeat = true</code>. While a cutscene runs, the map's zones and exits fire nothing.</p>

@@ -29,6 +29,7 @@ use native_out::pcm_to_silence_padded_adpcm;
 pub mod bgm_tail;
 pub mod duck;
 pub mod note_trace;
+pub mod pcm_bus;
 pub mod seq_calc;
 pub mod seq_events;
 pub mod seq_slots;
@@ -51,6 +52,7 @@ pub use battle_voice::{
     BattleVoiceAction, BattleVoiceCtx, BattleVoiceStep, BattleVoiceTables, NO_CLIP,
     battle_voice_step,
 };
+pub use pcm_bus::{PcmBus, PcmBusKind, PcmClip};
 pub use seq_calc::{
     SeqCalcState, SeqCall, SeqChannel, SlideDir, SlideTick, TempoTick, TrackEnd, dispatch_channel,
     seq_calc, tempo_slide_tick, tick_budget, track_end, volume_slide_tick,
@@ -387,6 +389,12 @@ pub struct StreamResampler {
     /// Optional active XA streaming voice. Mixed into the SPU output at
     /// SPU rate (44.1 kHz) before the host-rate resample.
     xa: Option<XaPlayback>,
+    /// Decoded expansion-pack clips ([`pcm_bus`]); empty, and skipped,
+    /// with no pack sounding.
+    pcm: PcmBus,
+    /// Drop the sequencer once the master fade reaches silence, then bring
+    /// the master back to full ([`AudioSink::fade_out_sequencer`]).
+    detach_at_silence: bool,
     /// Host full-mono downmix (the engine-only `downmix_mono` option; retail
     /// has no equivalent): when set, [`Self::next_frame`] averages L/R into
     /// both channels, XA included. Not the options screen's "Sound:
@@ -430,6 +438,8 @@ impl StreamResampler {
             fade_target: 1.0,
             fade_step: 0.0,
             xa: None,
+            pcm: PcmBus::new(),
+            detach_at_silence: false,
             downmix: false,
             muted: false,
             master_gain: 1.0,
@@ -483,6 +493,13 @@ impl StreamResampler {
             if let Some(xa_sample) = xa_sample {
                 sample = mix_stereo(sample, xa_sample);
             }
+            // The pack's own clips; skipped while the bus is empty, so the
+            // retail mix is untouched.
+            if !self.pcm.is_empty() {
+                let (l, r) = self.pcm.tick(self.spu.bus_gain, self.spu.mono);
+                let c = |v: i32| v.clamp(i16::MIN as i32, i16::MAX as i32) as i16;
+                sample = mix_stereo(sample, (c(l), c(r)));
+            }
             self.cur = sample;
             self.phase -= 1.0;
         }
@@ -532,7 +549,17 @@ impl StreamResampler {
         // Reached target
         if (self.master_fade - self.fade_target).abs() < 1e-6 {
             self.master_fade = self.fade_target;
-            if self.master_fade == 0.0 {
+            if self.master_fade == 0.0 && self.detach_at_silence {
+                // A fade-out with nothing to follow: drop the track and
+                // give the SFX voices their master back.
+                self.detach_at_silence = false;
+                if let Some(mut old) = self.sequencer.take() {
+                    old.stop(&mut self.spu);
+                }
+                self.master_fade = 1.0;
+                self.fade_target = 1.0;
+                self.fade_step = 0.0;
+            } else if self.master_fade == 0.0 {
                 // Fade-out done: swap in pending sequencer if present.
                 if let Some(mut old) = self.sequencer.take() {
                     old.stop(&mut self.spu);
@@ -565,6 +592,7 @@ impl StreamResampler {
     /// ever rises toward full - never toward zero - the incoming track is
     /// audible from the first sample. Pass `0` for a true hard cut.
     fn swap_bgm(&mut self, new_seq: Sequencer, fade_in_samples: u32) {
+        self.detach_at_silence = false;
         if let Some(mut prev) = self.sequencer.take() {
             prev.stop(&mut self.spu);
         }
@@ -587,6 +615,7 @@ impl StreamResampler {
     /// Install `seq` immediately, key-offing whatever the previous sequencer
     /// had running and cancelling any in-progress crossfade.
     fn attach_sequencer(&mut self, seq: Sequencer) {
+        self.detach_at_silence = false;
         if let Some(mut prev) = self.sequencer.take() {
             prev.stop(&mut self.spu);
         }
@@ -621,8 +650,23 @@ impl StreamResampler {
         }
     }
 
+    /// Fade the SPU master to silence over `samples`, then drop the
+    /// sequencer and restore the master; at once with no sequencer or
+    /// `samples == 0`.
+    fn fade_out_sequencer(&mut self, samples: u32) {
+        if samples == 0 || self.sequencer.is_none() {
+            self.detach_sequencer();
+            return;
+        }
+        self.pending_seq = None;
+        self.detach_at_silence = true;
+        self.fade_target = 0.0;
+        self.fade_step = self.master_fade.max(1e-3) / samples as f32;
+    }
+
     /// Drop the active sequencer and key-off its notes.
     fn detach_sequencer(&mut self) {
+        self.detach_at_silence = false;
         if let Some(mut seq) = self.sequencer.take() {
             seq.stop(&mut self.spu);
         }
@@ -635,6 +679,7 @@ impl StreamResampler {
     /// Cross-fade to `new_seq` over `fade_samples` SPU-rate samples, or attach
     /// immediately when nothing is playing / `fade_samples == 0`.
     fn crossfade_to(&mut self, new_seq: Sequencer, fade_samples: u32) {
+        self.detach_at_silence = false;
         if fade_samples == 0 || self.sequencer.is_none() {
             self.attach_sequencer(new_seq);
         } else {

@@ -260,6 +260,42 @@ impl SceneHost {
         let mut started_this_drain = false;
         for ev in self.world.drain_field_events() {
             match ev {
+                // An expansion pack's start: a pack track (resolved against
+                // the pack, never the music bank), or a retail track that
+                // cross-fades. Only a pack raises either.
+                legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op }
+                    if matches!(sub_op, 1 | super::BGM_SUB_OP_ENGINE_FADE)
+                        && (sub_op == super::BGM_SUB_OP_ENGINE_FADE
+                            || legaia_engine_expansion::audio::is_pack_track(text_id)) =>
+                {
+                    let fade = if sub_op == super::BGM_SUB_OP_ENGINE_FADE {
+                        self.world.expansion.audio.fade_frames
+                    } else {
+                        0
+                    };
+                    self.bgm_track_word = Some(text_id);
+                    self.pending_bgm_swap = None;
+                    self.bgm_latched = None;
+                    if legaia_engine_expansion::audio::is_pack_track(text_id) {
+                        let pack = self.world.expansion.pack.clone();
+                        let clip = pack
+                            .as_deref()
+                            .and_then(|p| legaia_engine_expansion::audio::track_clip(p, text_id));
+                        match clip {
+                            Some(clip) => director.start_pack_track(text_id, clip, fade),
+                            None => {
+                                log::warn!("expansion: no pack track for music id {text_id:#06x}")
+                            }
+                        }
+                    } else if let Some(entry) =
+                        self.music_bank_entry_bytes(super::bgm_bank_id(text_id))?
+                    {
+                        director.start_owned_vab_faded(text_id, &entry, fade);
+                        self.bgm_ending_source = false;
+                    }
+                    started_this_drain = true;
+                    acted += 1;
+                }
                 legaia_engine_field::field_events::FieldEvent::Bgm { text_id, sub_op } => {
                     match sub_op {
                         // A start under sound-flag bit 2: the poller latches

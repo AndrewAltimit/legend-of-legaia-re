@@ -98,6 +98,24 @@ pub trait BgmDirector {
     /// sub-op 2 with sub-op `0xA`. Default is a no-op for stub directors
     /// with no pause latch to clear.
     fn unhalt_pause(&mut self) {}
+    /// Start an expansion pack's own track (a decoded WAV / Ogg file, not a
+    /// SEQ): music id `bgm_id` in the pack-track range, its clip, and the
+    /// frames to cross-fade from what plays now (`0` cuts). A director with
+    /// no PCM path ignores it.
+    fn start_pack_track(
+        &mut self,
+        bgm_id: u16,
+        clip: legaia_engine_expansion::audio::PackClip<'_>,
+        fade_frames: u16,
+    ) {
+        let _ = (bgm_id, clip, fade_frames);
+    }
+    /// [`BgmDirector::start_owned_vab`] cross-fading over `fade_frames`
+    /// (an expansion pack's music zone). The default cuts.
+    fn start_owned_vab_faded(&mut self, bgm_id: u16, entry_bytes: &[u8], fade_frames: u16) {
+        let _ = fade_frames;
+        self.start_owned_vab(bgm_id, entry_bytes);
+    }
 }
 
 /// PORT: FUN_80019898
@@ -161,7 +179,8 @@ pub fn bgm_bank_id(bgm_id: u16) -> u16 {
 }
 
 use legaia_engine_core::world::{
-    BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,
+    BGM_SUB_OP_ENGINE_FADE, BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH,
+    BGM_SUB_OP_ENGINE_STOP,
 };
 
 /// Discards every BGM event. Useful for tests + engines that haven't wired

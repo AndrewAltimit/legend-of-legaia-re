@@ -28,6 +28,16 @@ master gate that zeroes the rendered frames while the sequencer, SPU
 voices, XA stream and fade engine all keep ticking, so unmuting resumes
 playback in sync without tearing down the stream.
 
+The **PCM bus** (`pcm_bus`) mixes decoded clips beside the SPU - an
+expansion pack's own tracks (one music slot that cross-fades, loop points,
+the battle duck), one-shot sounds and positional ambient loops, each on the
+BGM or SFX volume bus. An empty bus is skipped, so a session with no pack
+renders bit-identical output
+([`expansion-pack-audio.md`](../../docs/formats/expansion-pack-audio.md)).
+`AudioSink::fade_out_sequencer` fades the SPU master to silence, drops the
+sequencer and restores the master - a score leaving with nothing in its
+place.
+
 The `audio-webaudio` cargo feature (off by default) adds `WebAudioOut`, a
 `ScriptProcessorNode`-backed twin of the `AudioOut` API for `wasm32` targets.
 It must be opened from inside a user-gesture handler; the browser play page

@@ -32,11 +32,6 @@ use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
 use legaia_expansion_format::refs::DiscRef;
 
-/// The global BGM id of sound-test track `n`: the global pool is the
-/// `music_01` bank in sound-test order, addressed from `2000`
-/// (`docs/subsystems/script-vm.md`, "BGM lookup").
-const GLOBAL_BGM_BASE: u16 = 2000;
-
 impl SceneHost {
     /// Make `pack` the world's active expansion pack through the one
     /// activation path, [`legaia_engine_core::world::World::activate_expansion`]
@@ -242,14 +237,9 @@ impl SceneHost {
         if let Some(banner) = crate::place_name_banner::man_load_banner(def.name.as_bytes(), true) {
             self.world.cutscene.text_balloon = Some(banner);
         }
-        if let Some(DiscRef::Bgm { id }) = def.bgm {
-            self.world.pending_field_events.push(
-                legaia_engine_field::field_events::FieldEvent::Bgm {
-                    text_id: GLOBAL_BGM_BASE + id,
-                    sub_op: 1,
-                },
-            );
-        }
+        // The map's music (its `bgm`, its `[audio]` music or the zone at
+        // the seat) starts from the world's soundscape step on the next tick
+        // (`World::tick_expansion_audio`), which sees the map as new.
         // The pack's saved flags answer which `once` triggers have fired.
         self.world.expansion.quests.sync_pack(&pack);
         let flags = &self.world.expansion.quests.progress.flags;
@@ -388,6 +378,11 @@ impl SceneHost {
             MapEvent::Cutscene { cutscene } => {
                 if !w.expansion_play_cutscene(cutscene) {
                     log::warn!("expansion: map trigger cutscene `{cutscene}` did not play");
+                }
+            }
+            MapEvent::Sound { sound } => {
+                if !w.expansion_play_sound(sound) {
+                    log::warn!("expansion: map trigger sound {sound} did not play");
                 }
             }
         }

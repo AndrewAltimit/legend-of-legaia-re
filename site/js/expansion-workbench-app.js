@@ -34,6 +34,7 @@ import {
 } from './expansion-workbench-forms.js';
 import { renderMaps } from './expansion-workbench-map.js';
 import { renderCutscenes } from './expansion-workbench-cutscenes.js';
+import { renderAudio } from './expansion-workbench-audio.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -98,6 +99,7 @@ const TABS = [
   ['cards', 'Cards', 'cards.toml', renderCards],
   ['items', 'Items', 'items.toml', renderItems],
   ['modes', 'Modes', 'modes.toml', renderModes],
+  ['audio', 'Audio', 'audio.toml', renderAudio],
   ['maps', 'Maps', 'maps/', renderMaps],
   ['files', 'Files', null, renderFiles],
 ];
@@ -135,6 +137,8 @@ function idsOf(kind) {
     case 'shop': return arr(p.items && p.items.shops);
     case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt', 'party_nights'].flatMap((k) => arr(p.modes[k]));
     case 'instance': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
+    case 'track': return keys(p.audio && p.audio.tracks);
+    case 'sound': return keys(p.audio && p.audio.sounds);
     case 'map': return keys(p.maps);
     case 'npc': return Object.values(p.maps || {}).flatMap((m) => arr(m.npcs));
     case 'cutscene': return keys(p.cutscenes && p.cutscenes.cutscenes);
@@ -179,6 +183,10 @@ const ctx = {
   // The pack's assets/ (glTF models and their PNGs for map props).
   assetPaths: () => (S.wb.asset_paths ? JSON.parse(S.wb.asset_paths()) : []),
   addAsset: (path, bytes) => { S.wb.add_asset(path, bytes); scheduleValidate(); scheduleSave(); },
+  // An asset's bytes (an audio preview plays them through the browser's own
+  // decoder) and an audio file's probe ({ rate, channels, frames, seconds, loop }).
+  assetBytes: (path) => (S.wb.asset_bytes ? S.wb.asset_bytes(path) : new Uint8Array(0)),
+  audioInfo: (path) => { try { return JSON.parse(S.wb.audio_info(path)); } catch (e) { return { error: String(e) }; } },
 };
 
 function setStatus(msg, kind, id) {

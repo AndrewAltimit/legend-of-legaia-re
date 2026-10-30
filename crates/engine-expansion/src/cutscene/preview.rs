@@ -302,6 +302,9 @@ pub fn describe(step: &Step) -> String {
         Step::StartQuest { quest } => format!("start quest {quest}"),
         Step::Sfx { id } => format!("sound effect {id}"),
         Step::Bgm { bgm } => format!("music {bgm}"),
+        Step::Sound { sound } => format!("sound {sound}"),
+        Step::Music { music, fade } => format!("music {music} (fade {fade})"),
+        Step::MusicRelease => "music back to the map".to_string(),
         Step::End => "end".to_string(),
     }
 }

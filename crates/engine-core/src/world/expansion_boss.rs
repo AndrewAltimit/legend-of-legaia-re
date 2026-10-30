@@ -258,6 +258,7 @@ impl World {
         if let Some(t) = text {
             self.boss_banner(t);
         }
+        self.expansion_phase_audio(p.music.as_ref(), p.sound.as_ref());
     }
 
     /// A round opens: the round count moves on, every scripted seat runs
@@ -390,6 +391,9 @@ impl World {
         let m = match pick {
             Pick::Retail => return None,
             Pick::Charge(m) => {
+                if let Some(s) = &m.charge_sound {
+                    self.expansion_play_sound(s);
+                }
                 let text = m
                     .charge_line
                     .as_deref()

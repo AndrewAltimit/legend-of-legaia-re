@@ -65,6 +65,7 @@ impl SectionRules for MapDef {
         check_npcs(self, cx, base.as_deref(), grid.as_ref());
         check_entrances(self, cx);
         check_enter_cutscenes(self, cx);
+        crate::audio::check_map_audio(&self.audio, cx, grid.as_ref());
         if let Some(bgm) = &self.bgm {
             if matches!(bgm, DiscRef::Bgm { .. }) {
                 cx.disc_ref("bgm", bgm);
@@ -379,6 +380,9 @@ fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
             MapEvent::Rest { .. } => {}
             MapEvent::Cutscene { cutscene } => {
                 cx.reference("cutscene", cutscene, &format!("{at}.cutscene"))
+            }
+            MapEvent::Sound { sound } => {
+                crate::audio::check_sound(cx, &format!("{at}.sound"), sound);
             }
         }
     }

@@ -23,6 +23,7 @@
 
 import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-forms.js';
 import { propMeshEditor, propDetail, renderDetail } from './expansion-workbench-detail.js';
+import { renderMapAudio } from './expansion-workbench-audio.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
@@ -369,7 +370,7 @@ export function renderMaps(ctx, el) {
   settings.append(grid(mctx, map, [
     { k: 'name', label: 'Name' },
     { k: 'camera', t: 'sel', opts: ['default', 'retail', 'far', 'farther'], label: 'Camera' },
-    { k: 'bgm', t: 'obgm', label: 'Music' },
+    { k: 'bgm', t: 'obgm', label: 'Music', hint: 'the Sound box below may name a pack track and zones' },
     { k: 'floor_heights', t: 'csvint', label: 'Floor heights', hint: 'tier 0, 1, ... world units up; empty takes the base scene\'s' },
   ], path));
   const base = map.base || (map.base = { scene: { kind: 'scene', name: '' }, geometry: 'none' });
@@ -446,6 +447,7 @@ export function renderMaps(ctx, el) {
   renderPalette(ctx, mctx, side, map);
   renderSelection(ctx, mctx, side, map);
   renderDetail(ctx, mctx, side, map);
+  renderMapAudio(ctx, mctx, side, map);
 
   function zoom(d) {
     const sizes = [6, 8, 10, 14, 18, 22, 28, 36, 48];
@@ -878,6 +880,7 @@ function renderSelection(ctx, mctx, side, map) {
       mode: [{ k: 'mode', t: 'ref', kind: 'mode', label: 'Mode instance' }],
       rest: [{ k: 'cost', t: 'int', label: 'Gold cost' }, { k: 'save', t: 'bool', label: 'Then offer a save' }],
       cutscene: [{ k: 'cutscene', t: 'ref', kind: 'cutscene', label: 'Cutscene' }],
+      sound: [{ k: 'sound', t: 'sound', label: 'Sound', hint: 'a retail cue or an audio.toml sound' }],
     };
     const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, k.replace('_', ' '))));
     kind.addEventListener('change', () => {
@@ -885,7 +888,7 @@ function renderSelection(ctx, mctx, side, map) {
       const first = (kd) => ctx.ids(kd)[0] || '';
       o.event = { kind: k };
       for (const f of EVENTS[k]) {
-        o.event[f.k] = f.t === 'ref' ? first(f.kind) : f.t === 'bool' ? false : f.t === 'int' ? (f.k === 'cost' ? 0 : 1) : (k === 'talk' ? first('npc') : '');
+        o.event[f.k] = f.t === 'ref' ? first(f.kind) : f.t === 'bool' ? false : f.t === 'int' ? (f.k === 'cost' ? 0 : 1) : f.t === 'sound' ? { kind: 'sfx', id: 0x21 } : (k === 'talk' ? first('npc') : '');
       }
       ctx.changed(true);
     });

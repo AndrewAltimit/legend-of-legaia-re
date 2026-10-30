@@ -136,7 +136,7 @@ reward_gold = 50000
 once = true
 ```
 
-A boss is a formation plus staging. `no_escape` marks its formation scripted. `music` replaces the battle track for this fight (when the host's battle-music swap is on). `reward_items` and `reward_gold` pay on victory on top of the formation's spoils, and land in the spoils' drops and gold; a reward item may be a pack item, which lands in the pack bag with a toast ([items](expansion-pack-items.md)). A `once` boss refuses a second start after a victory (`World::expansion_boss_cleared`).
+A boss is a formation plus staging. `no_escape` marks its formation scripted. `music` replaces the battle track for this fight (when the host's battle-music swap is on): a retail cue or a pack track, with `audio.toml`'s `music.boss` standing in when it is unset ([audio](expansion-pack-audio.md#boss-music-phases-and-telegraphs)). `reward_items` and `reward_gold` pay on victory on top of the formation's spoils, and land in the spoils' drops and gold; a reward item may be a pack item, which lands in the pack bag with a toast ([items](expansion-pack-items.md)). A `once` boss refuses a second start after a victory (`World::expansion_boss_cleared`).
 
 Quests and maps start fights through two `World` entry points: `start_expansion_battle(formation)` and `start_expansion_boss(boss)`. Both go through the ordinary encounter path - transition, battle music, `begin_encounter_battle` - as `World::force_encounter` does.
 
@@ -200,6 +200,7 @@ Phases run forward only: a monster healed back above a threshold stays in its ph
 | `element` | The monster's element (`0..=7`); the affinity matrix reads it as attacker and defender, so it changes what the monster resists. |
 | `heal_pct` | Restores this percent of maximum HP. |
 | `summon` | Monsters seated into free monster seats as the next round opens. |
+| `music`, `sound` | Music that cross-fades in as the phase begins, and a sound played then ([audio](expansion-pack-audio.md#boss-music-phases-and-telegraphs)). |
 
 ### Picks, targets and telegraphs
 
@@ -207,7 +208,7 @@ Each turn draws once from the battle RNG over the standing moves' `weight`s (no 
 
 `target` picks among the living party: `random` (one draw), `lowest_hp`, `highest_attack`, and `healer` (a member who knows an ally-side spell, the most MP first; with none, the most MP). A move's own rule comes first, then the phase's, then the script's (`random` by default). A spell whose shape is not one enemy - the whole party, an ally - keeps its shape's targets.
 
-A move with `charge = true` is telegraphed: the turn it is picked the monster only gathers power and `charge_line` (or a generic "gathering power" line) stands as the banner; on its next turn the move lands with no draw.
+A move with `charge = true` is telegraphed: the turn it is picked the monster only gathers power and `charge_line` (or a generic "gathering power" line) stands as the banner, and `charge_sound` plays; on its next turn the move lands with no draw.
 
 ### Enrage, immunities, last stand
 

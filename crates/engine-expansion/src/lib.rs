@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audio;
 pub mod battle;
 pub mod battle_waves;
 pub mod boss_script;
@@ -80,6 +81,8 @@ pub struct ExpansionState {
     /// The cutscene in play and the ones queued
     /// ([`cutscene::CutsceneRuntime`]).
     pub cutscene: cutscene::CutsceneRuntime,
+    /// The pack's soundscape: music picks, raised sounds, ambient levels.
+    pub audio: audio::AudioRuntime,
 }
 
 impl ExpansionState {

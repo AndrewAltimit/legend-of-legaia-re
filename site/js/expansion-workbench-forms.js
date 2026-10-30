@@ -75,7 +75,7 @@ function discOptions(ctx, which) {
 // spec: { k, label, t, opts, hint, wide, ph, kind, base }
 // t: text otext textarea otextarea int oint float ofloat bool sel osel csv
 //    csvint lines tuple monster omonster item oitem scene oscene bgm obgm
-//    monsterid itemid scenename ref oref refs stat
+//    monsterid itemid scenename ref oref refs stat music omusic sound osound
 export function field(ctx, obj, spec, path) {
   const p = joinPath(path, spec.k);
   const t = spec.t || 'text';
@@ -176,6 +176,53 @@ export function field(ctx, obj, spec, path) {
     case 'item': case 'oitem': discPicker('items', 'item', t === 'oitem'); break;
     case 'scene': case 'oscene': discPicker('scenes', 'scene', t === 'oscene'); break;
     case 'bgm': case 'obgm': discPicker('bgm', 'bgm', t === 'obgm'); break;
+    case 'music': case 'omusic': {
+      // A retail cue by its sound-test name, a pack track, or silence
+      // (audio.toml; docs/formats/expansion-pack-audio.md).
+      const tracks = Object.keys((ctx.pack.audio && ctx.pack.audio.tracks) || {});
+      const opts = [['silence', '(silence)']].concat(tracks.map((k) => ['t:' + k, `${k} (pack track)`]));
+      const retail = discOptions(ctx, 'bgm');
+      for (const [v, l] of retail) opts.push(['b:' + v, l]);
+      const val = cur == null ? '' : cur.kind === 'track' ? 't:' + cur.id : cur.kind === 'silence' ? 'silence' : 'b:' + cur.id;
+      if (val.startsWith('b:') && !retail.length) opts.push([val, `sound-test ${val.slice(2)}`]);
+      select(opts, val, t === 'omusic', (v) => {
+        if (!v) set(null);
+        else if (v === 'silence') set({ kind: 'silence' });
+        else if (v.startsWith('t:')) set({ kind: 'track', id: v.slice(2) });
+        else set({ kind: 'bgm', id: intOr(v.slice(2), 0) });
+      });
+      if (!retail.length) {
+        // No disc: a sound-test id by hand.
+        const wrapIn = h('div', { class: 'xw-row2' }, input);
+        const num = h('input', { type: 'number', min: 0, max: 80, placeholder: 'sound-test id', value: cur && cur.kind === 'bgm' ? cur.id : '' });
+        num.addEventListener('input', () => { if (num.value !== '') set({ kind: 'bgm', id: intOr(num.value, 0) }); });
+        wrapIn.append(num);
+        input = wrapIn;
+      }
+      break;
+    }
+    case 'sound': case 'osound': {
+      // A retail cue id or a pack sound.
+      const sounds = Object.keys((ctx.pack.audio && ctx.pack.audio.sounds) || {});
+      input = h('div', { class: 'xw-row2' });
+      const kind = h('select', { 'aria-label': 'Sound kind' });
+      if (t === 'osound') kind.append(h('option', { value: '' }, '(none)'));
+      kind.append(h('option', { value: 'sfx' }, 'retail cue'));
+      for (const k of sounds) kind.append(h('option', { value: 's:' + k }, `${k} (pack sound)`));
+      kind.value = cur == null ? '' : cur.kind === 'sound' ? 's:' + cur.id : 'sfx';
+      const num = h('input', { type: 'text', placeholder: 'cue id, e.g. 0x21', value: cur && cur.kind === 'sfx' ? '0x' + cur.id.toString(16).toUpperCase() : '' });
+      num.disabled = !(cur && cur.kind === 'sfx');
+      const parse = () => { const v = num.value.trim(); return v ? (v.toLowerCase().startsWith('0x') ? parseInt(v, 16) : parseInt(v, 10)) || 0 : 0x21; };
+      kind.addEventListener('change', () => {
+        const v = kind.value;
+        if (!v) set(null, true);
+        else if (v === 'sfx') set({ kind: 'sfx', id: parse() }, true);
+        else set({ kind: 'sound', id: v.slice(2) }, true);
+      });
+      num.addEventListener('input', () => set({ kind: 'sfx', id: parse() }));
+      input.append(kind, num);
+      break;
+    }
     case 'anyitem': case 'anyitemid': {
       // A retail item or a pack item: a pack key is a string, a retail item
       // a coordinate (`anyitem`) or a bare id (`anyitemid`).
@@ -516,7 +563,10 @@ function moveEd(ctx, box, mv, p, base) {
     field(ctx, mv, { k: 'cooldown', t: 'int', label: 'Cooldown', hint: 'own turns' }, p),
     field(ctx, mv, { k: 'charge', t: 'bool', label: 'Telegraphed (charges a turn first)' }, p),
   );
-  if (mv.charge) row.append(field(ctx, mv, { k: 'charge_line', t: 'oref', kind: 'line', label: 'Charge banner', none: '(gathering power)' }, p));
+  if (mv.charge) {
+    row.append(field(ctx, mv, { k: 'charge_line', t: 'oref', kind: 'line', label: 'Charge banner', none: '(gathering power)' }, p));
+    row.append(field(ctx, mv, { k: 'charge_sound', t: 'osound', label: 'Charge sound', hint: 'the telegraph\'s cue' }, p));
+  }
   box.append(row);
 }
 
@@ -562,6 +612,8 @@ function phaseEd(ctx, box, ph, p, base, opts) {
     { k: 'target', t: 'osel', label: 'Targeting', none: '(script rule)', opts: TARGET_RULES },
     { k: 'element', t: 'osel', label: 'Element', none: '(keep)', opts: ELEMENTS.map((n, i) => [String(i), n]), num: true },
     { k: 'heal_pct', t: 'oint', label: 'Heal % of max HP' },
+    { k: 'music', t: 'omusic', label: 'Music from here', hint: 'cross-fades as the phase begins' },
+    { k: 'sound', t: 'osound', label: 'Sound', hint: 'played as it begins' },
   ], p));
   if (!opts.first) {
     const g = h('div', { class: 'xw-grid' });
@@ -710,7 +762,7 @@ export function renderBattle(ctx, el) {
     render: (box, bo, p) => {
       box.append(grid(ctx, bo, [
         { k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' },
-        { k: 'music', t: 'obgm', label: 'Music' },
+        { k: 'music', t: 'omusic', label: 'Music', hint: 'retail or a pack track; audio.toml music.boss when unset' },
         { k: 'reward_gold', t: 'int', label: 'Reward gold' },
         { k: 'no_escape', t: 'bool', label: 'No escape' },
         { k: 'once', t: 'bool', label: 'Once only (recorded in the save)' },

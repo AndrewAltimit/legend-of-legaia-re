@@ -93,8 +93,11 @@ pub struct CompiledEncounter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledBoss {
     pub formation_id: u16,
-    /// Global BGM id of the battle track.
+    /// Global BGM id of the battle track, when it is a retail cue.
     pub bgm: Option<u16>,
+    /// The battle track as written: a retail cue or a pack track
+    /// (`crate::audio::music_id` resolves it against `audio.toml`).
+    pub music: Option<legaia_expansion_format::audio::MusicRef>,
     /// `(item, count)`: retail ids and pack items.
     pub reward_items: Vec<(ItemRef, u8)>,
     pub reward_gold: u32,
@@ -260,9 +263,12 @@ impl CompiledBattle {
                 CompiledBoss {
                     formation_id,
                     bgm: b.music.as_ref().and_then(|m| match m {
-                        DiscRef::Bgm { id } => Some(BGM_GLOBAL_BASE.saturating_add(*id)),
+                        legaia_expansion_format::audio::MusicRef::Bgm { id } => {
+                            Some(BGM_GLOBAL_BASE.saturating_add(*id))
+                        }
                         _ => None,
                     }),
+                    music: b.music.clone(),
                     reward_items: b
                         .reward_items
                         .iter()

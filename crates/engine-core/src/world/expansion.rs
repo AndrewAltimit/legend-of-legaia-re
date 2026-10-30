@@ -166,7 +166,7 @@ impl World {
             return false;
         }
         self.expansion.battle.active_boss = Some(key.to_string());
-        self.expansion.battle.battle_bgm = b.bgm;
+        self.expansion.battle.battle_bgm = self.expansion_boss_track(b.music.as_ref()).or(b.bgm);
         true
     }
 
@@ -180,9 +180,13 @@ impl World {
     }
 
     /// The battle track the next fight's music swap plays in place of the
-    /// configured one: the active boss's.
+    /// configured one: the active boss's, else `audio.toml`'s `music.battle`
+    /// for a fight on one of the pack's maps.
     pub(in crate::world) fn expansion_battle_bgm(&self) -> Option<u16> {
-        self.expansion.battle.battle_bgm
+        self.expansion
+            .battle
+            .battle_bgm
+            .or_else(|| self.expansion_map_battle_track())
     }
 
     /// The strongest present member's level: what enemy scaling reads.

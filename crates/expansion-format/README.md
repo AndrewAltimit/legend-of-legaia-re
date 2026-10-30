@@ -19,6 +19,7 @@ shareable language pack follows. The format reference is
 | `bundle` | The deterministic `.lxpack` single-file archive |
 | `validate` | The validator, the `SectionRules` extension trait, the no-disc-bytes rule |
 | `battle`, `progression`, `quest`, `dialog`, `cards`, `cutscene`, `modes`, `items`, `map` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by) |
+| `audio`, `audio_clip` | `audio.toml` and map `[audio]` (`MusicRef`, `SoundRef`, tracks, sounds, zones, ambient sources), and the one WAV / Ogg Vorbis decoder and probe (`lewton` for Vorbis) the validator and both hosts run ([`expansion-pack-audio.md`](../../docs/formats/expansion-pack-audio.md)) |
 
 The core API takes and returns bytes, so it builds for `wasm32`; only
 `from_dir` / `read_files` touch the file system. The command line is

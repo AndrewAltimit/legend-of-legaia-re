@@ -50,6 +50,9 @@ const STEP_KINDS = {
   start_quest: [{ k: 'quest', t: 'ref', kind: 'quest', label: 'Quest' }],
   sfx: [{ k: 'id', t: 'int', label: 'Sound effect id' }],
   bgm: [{ k: 'bgm', t: 'bgm', label: 'Music' }],
+  sound: [{ k: 'sound', t: 'sound', label: 'Sound', hint: 'a retail cue or an audio.toml sound' }],
+  music: [{ k: 'music', t: 'music', label: 'Music', hint: 'held over the map\'s zones until a music release' }, { k: 'fade', t: 'int', label: 'Fade (frames)' }],
+  music_release: [],
   end: [],
 };
 
@@ -59,7 +62,7 @@ function makeStep(ctx, kind) {
   const first = (k) => ctx.ids(k)[0] || '';
   for (const f of STEP_KINDS[kind]) {
     switch (f.t) {
-      case 'int': s[f.k] = f.k === 'count' ? 1 : (f.k === 'frames' ? 30 : 0); break;
+      case 'int': s[f.k] = f.k === 'count' ? 1 : (f.k === 'frames' || f.k === 'fade' ? 30 : 0); break;
       case 'bool': s[f.k] = f.k === 'wait'; break;
       case 'ref': s[f.k] = first(f.kind); break;
       case 'actor': s[f.k] = 'player'; break;
@@ -71,6 +74,8 @@ function makeStep(ctx, kind) {
       case 'sel': s[f.k] = f.opts[0]; break;
       case 'track': s[f.k] = ''; break;
       case 'bgm': s[f.k] = { kind: 'bgm', id: 0 }; break;
+      case 'sound': s[f.k] = { kind: 'sfx', id: 0x21 }; break;
+      case 'music': s[f.k] = { kind: 'silence' }; break;
       case 'itemid': s[f.k] = 1; break;
       case 'text': s[f.k] = ''; break;
       default: break;

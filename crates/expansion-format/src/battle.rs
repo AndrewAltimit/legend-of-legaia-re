@@ -322,10 +322,11 @@ pub struct BossDef {
     /// [`FormationDef::scripted`]).
     #[serde(default = "yes")]
     pub no_escape: bool,
-    /// The battle track (a [`DiscRef::Bgm`]); the retail battle theme when
-    /// left out.
+    /// The battle track: a retail cue (`{ kind = "bgm", id = 28 }`) or a
+    /// pack track (`{ kind = "track", id = "..." }`). `audio.toml`'s
+    /// `music.boss`, else the retail battle theme, when left out.
     #[serde(default)]
-    pub music: Option<DiscRef>,
+    pub music: Option<crate::audio::MusicRef>,
     /// Items granted on victory, beside the formation's own spoils.
     #[serde(default)]
     pub reward_items: Vec<ItemReward>,
@@ -527,12 +528,6 @@ impl BattleSection {
             if formation(&b.formation).is_none() {
                 out.push(format!("boss `{key}`: unknown formation `{}`", b.formation));
             }
-            if b.music
-                .as_ref()
-                .is_some_and(|m| !matches!(m, DiscRef::Bgm { .. }))
-            {
-                out.push(format!("boss `{key}`: music must be a bgm ref"));
-            }
             if b.reward_items.iter().any(|r| !r.item.is_item()) {
                 out.push(format!("boss `{key}`: reward items must be item refs"));
             }
@@ -582,6 +577,12 @@ impl crate::validate::SectionRules for BattleSection {
                         );
                     }
                 }
+                for (field, m) in script.music() {
+                    crate::audio::check_music(cx, &format!("monsters.{key}.script.{field}"), m);
+                }
+                for (field, s) in script.sounds() {
+                    crate::audio::check_sound(cx, &format!("monsters.{key}.script.{field}"), s);
+                }
                 for (i, r) in script.summons().enumerate() {
                     if let MonsterRef::Disc(d) = r {
                         cx.disc_ref(&format!("monsters.{key}.script.summon[{i}]"), d);
@@ -620,7 +621,7 @@ impl crate::validate::SectionRules for BattleSection {
         }
         for (key, b) in &self.bosses {
             if let Some(m) = &b.music {
-                cx.disc_ref(&format!("bosses.{key}.music"), m);
+                crate::audio::check_music(cx, &format!("bosses.{key}.music"), m);
             }
             for (i, r) in b.reward_items.iter().enumerate() {
                 r.item.check(cx, &format!("bosses.{key}.reward_items[{i}]"));

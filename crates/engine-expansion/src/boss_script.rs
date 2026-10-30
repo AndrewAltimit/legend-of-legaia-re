@@ -43,6 +43,8 @@ pub struct CompiledMove {
     pub charge: bool,
     pub charge_line: Option<String>,
     pub cooldown: u8,
+    /// The telegraph's sound, played on the charge turn.
+    pub charge_sound: Option<legaia_expansion_format::audio::SoundRef>,
 }
 
 /// The stat changes a phase makes.
@@ -67,6 +69,10 @@ pub struct CompiledPhase {
     pub heal_pct: Option<u8>,
     /// Base monster ids to seat as the next round opens.
     pub summon: Vec<u16>,
+    /// The battle music from this phase on.
+    pub music: Option<legaia_expansion_format::audio::MusicRef>,
+    /// A sound played as it begins.
+    pub sound: Option<legaia_expansion_format::audio::SoundRef>,
 }
 
 /// One compiled script.
@@ -111,6 +117,7 @@ impl CompiledScript {
                                 charge: m.charge,
                                 charge_line: m.charge_line.clone(),
                                 cooldown: m.cooldown,
+                                charge_sound: m.charge_sound.clone(),
                             })
                         })
                         .collect()
@@ -125,6 +132,8 @@ impl CompiledScript {
                 element: p.element,
                 heal_pct: p.heal_pct,
                 summon: p.summon.iter().filter_map(&mut summon_id).collect(),
+                music: p.music.clone(),
+                sound: p.sound.clone(),
             }
         };
         CompiledScript {

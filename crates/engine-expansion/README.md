@@ -25,6 +25,7 @@ battle-spoils steps. With no pack loaded every kernel is the identity.
 | `entrance` | Retail-scene entrances into the pack's maps (`EntranceWatch`). |
 | `journal` | The pause menu's Journal: content (`journal_view`) and cursor (`JournalSession`). |
 | `toast` | Quest notices as one-line toasts (`notice_text`, `ToastQueue`). |
+| `audio` | The soundscape kernels: pack track music ids (`0xE000 + n`), the music a map or zone plays, `AudioRuntime` (applied music, script pick, raised sounds, ambient levels, keyed retail cues), the positional law `ambient_level`. Presentation only. |
 | `mode_stage` | `WorldStage`: a golf round or race played on a pack map, mapped onto the field each frame (leader pose and clip, balls, aim arrow, bodies, boost trails, camera shot, banner). Presentation only. |
 
 Format and engine wiring: [`expansion-pack-battle.md`](../../docs/formats/expansion-pack-battle.md), [`expansion-pack-quests.md`](../../docs/formats/expansion-pack-quests.md).
