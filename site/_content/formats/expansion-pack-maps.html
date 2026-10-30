@@ -269,7 +269,7 @@ footprint = [128, 128]                      # the top's extent, world units</cod
       <tr><td><code>{ asset = "models/x.glb", colors = 256 }</code></td><td>A glTF model the pack carries (<a href="#model-assets">model assets</a>).</td></tr>
     </tbody>
   </table>
-  <p><code>scale</code> folds into the prop's model matrix after its rotation, where a retail placed object's render scale lands. Props carry no collision box of their own: <code>solid</code> closes the tile. <code>animate</code> and <code>light</code> are the prop's <a href="#animated-props">animators</a> and <a href="#lights">light</a>. A prop on a tile whose cell already drew a mesh (a kept retail cell, a wall, a mesh ground) replaces that mesh - a cell names one record - and the entry logs the tiles; a decoration bakes in beside a cell's mesh instead, which is how to dress a kept retail room without losing any of it.</p>
+  <p><code>scale</code> folds into the prop's model matrix after its rotation, where a retail placed object's render scale lands. Props carry no collision box of their own: <code>solid</code> closes the tile. <code>animate</code> and <code>light</code> are the prop's <a href="#animated-props">animators</a> and <a href="#lights">light</a>. A cell names one record, so a prop whose tile's cell already draws a mesh (a kept retail cell, a wall, a mesh ground) anchors its record on the nearest free tile within three, its offset carrying the draw back; only with none in reach does it replace the mesh, and the entry logs it.</p>
   <h3 id="standable-props">Standable props</h3>
   <p>A prop with a <code>top</code> is a floor box: a flat surface <code>top</code> world units up (the <code>floor_heights</code> convention) over its <code>footprint</code>, centred on the tile centre plus <code>offset</code>, the whole tile when the footprint is left out. It does not close its tile, so <code>solid</code> is unread.</p>
   <p>The floor sampler (<code>World::sample_field_floor_height</code>, the <code>FUN_80019278</code> port, and its camera-ladder sibling) answers the higher of the grid floor and the top inside the box. The tier grid is untouched: a top is not a corner height, so it neither slopes into its neighbours nor bends the ground mesh around it, which is why it is a separate surface rather than a raised tier. The prop's mesh draws on the tile's floor as before; matching <code>top</code> to the mesh's visible height is the modder's call.</p>
@@ -360,14 +360,27 @@ walls = "#"
 every = 3
 inset = 6
 y = 120</code></pre>
-  <p>A brush's draw for a tile is a pure function of its seed, its index and the tile; an edge copy is pushed against the walled side and turned to face the room. Limits: 8192 decorations a map, 32 a tile. A map decorated on more tiles than it has free records (of 511) bakes cells of <code>c x c</code> tiles onto one anchor tile each. Decorations on a placed prop's tile are left out, with a validator warning.</p>
+  <p>A brush's draw for a tile is a pure function of its seed, its index and the tile; an edge copy is pushed against the walled side and turned to face the room. Limits: 8192 decorations a map, 32 a tile. A map decorated on more tiles than it has free records (of 511) bakes cells of <code>c x c</code> tiles onto one anchor tile each. Decorations on the tile a placed prop's record anchors on are left out, with a validator warning.</p>
+  <h3 id="organic-placement">Organic placement</h3>
+  <p>Scatter brushes jitter, turn, scale and tilt each mesh, and a <code>cluster = { centre, radius, falloff }</code> thins a brush from a dense centre to a sparse rim. Edge runs take <code>jitter</code>, <code>yaw_jitter</code>, <code>scale_range</code> and a <code>seed</code>; decal brushes jitter position, yaw and size.</p>
+  <h3 id="decals">Decals</h3>
+<pre><code>[[decals]]
+cell = { tpage = 28, clut = 32577, tile = 4 }
+rect = [1, 1, 6, 5]      # a brush; or tile = [c, r]
+density = 0.9
+size = [90, 90]
+sides = 9                # 4 = rectangle, 3..=16 a polygon
+span = 1                 # atlas cells a side</code></pre>
+  <p>A decal is a flat textured polygon in the floor plane - crack, moss, stain, rune - built at load and baked into its tile's cell like any decoration. It also caps a mesh: the Sky Gardens Tower's pillar tops are authored as untextured black <code>G4</code> faces (the tower's ceiling hides them from the retail camera), so the Atrium's pillars wear octagonal stone decals at their tops.</p>
 </section>
 
 <section class="doc-section" id="animated-props" data-doc="animated-props">
   <h2>Animated props</h2>
 <pre><code>animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.25 }]
 # also: sway (axis, degrees), orbit (radius), pulse (amount)</code></pre>
-  <p>Each animator is a pure function of <code>World::frame</code>; <code>phase</code> is a fraction of the period, and a prop's animators compose in list order. The pose reaches both hosts through the placed-draw tables they already fold in each frame - <code>World::object_draw_turn_matrices</code> and <code>object_draw_displacements</code> - under a record key of the prop's own (<code>PROP_RECORD_BASE + n</code>). Animation is draw only: collision and standable tops stay where the prop rests. Disc ANM clips do not play on props: retail scene props are bound to their scene's MAN actors, which a pack map does not run.</p>
+  <p>Each animator is a pure function of <code>World::frame</code>; <code>phase</code> is a fraction of the period, and a prop's animators compose in list order. The pose reaches both hosts through the placed-draw tables they already fold in each frame - <code>World::object_draw_turn_matrices</code> and <code>object_draw_displacements</code> - under a record key of the prop's own (<code>PROP_RECORD_BASE + n</code>). Animation is draw only: collision and standable tops stay where the prop rests. </p>
+  <h3 id="disc-animation-clips">Disc animation clips</h3>
+  <p>A disc-animated object is a scene actor in retail, a MAN placement with a clip. A pack map gets one as an <code>[[npcs]]</code> entry with <code>scenery = true</code> - drawn and clip-played by both hosts' NPC draw, with no anchor (nothing collides with it, nothing talks to it) - or by <code>base = { ..., scenery = true }</code>, which seats every animated, non-talking, non-door placement of the base scene's MAN where its header places it. A kept retail room otherwise stands still, since a pack map runs no MAN.</p>
 </section>
 
 <section class="doc-section" id="lights" data-doc="lights">
@@ -389,7 +402,7 @@ kind = "cycle"        # palette cycling: clut, start, count, period, reverse
 kind = "hsv"          # hue / brightness: clut, start, count, period, hue, value
 [[materials]]
 kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, period</code></pre>
-  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>scroll</code> rotates an atlas cell by whole texels. Only the base scene's VRAM can be named: a carried-in mesh's copies sit at addresses chosen at entry.</p>
+  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>scroll</code> rotates an atlas cell by whole texels. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
 </section>
 
 <section class="doc-section" id="fog" data-doc="fog">
@@ -397,6 +410,19 @@ kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, p
 <pre><code>[fog]
 regions = [{ rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 }]</code></pre>
   <p>Arms the retail field fog pool over the map: each region becomes a MAN-section-4 region record and the ambient particle gate goes up (<code>World::arm_expansion_fog</code>). The wisps are the pool's own, drawn by both hosts through <code>World::fog_render_step</code>; the pool draws from the world's random stream as retail's does.</p>
+</section>
+
+<section class="doc-section" id="particles" data-doc="particles">
+  <h2>Particles</h2>
+<pre><code>[[emitters]]
+kind = "embers"          # embers, sparkles, dust, leaves, drips, smoke
+rect = [3, 4, 3, 4]
+height = [40, 90]
+count = 14
+seed = 11
+# optional over the kind's preset: life, velocity, spread, gravity, sway,
+# size, color, color_end, additive</code></pre>
+  <p>Each particle is a camera-facing sprite drawn through the field screen-effect pass the retail fog sheets use (<code>HostView::fog_prims</code>, both hosts), projected by the same view. Its whole life is a pure function of the seed, its index and <code>World::frame</code> - no state, no random stream - so it is the same on both hosts and in every run. The sprites are the engine's own (a soft dot, a spark, a leaf, a drop, drawn at load into free VRAM), additive for the glowing kinds, opaque for leaves.</p>
 </section>
 
 <section class="doc-section" id="how-large-a-map-can-be" data-doc="how-large-a-map-can-be">

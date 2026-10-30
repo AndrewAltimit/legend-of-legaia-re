@@ -107,6 +107,10 @@ fn the_tower_map_previews_with_the_corner_rule() {
     assert_eq!(at("flat", 9, 5), false);
     assert_eq!(at("flat", 6, 8), false);
     assert_eq!(at("corners", 9, 5), serde_json::json!([48, 0, 48, 0]));
+    // The painter draws the floor's decorations and decals where they bake.
+    let decor = p["decor"].as_array().unwrap();
+    assert!(decor.len() > 50, "{} decorations", decor.len());
+    assert!(decor.iter().any(|d| d[2] == 1), "decals among them");
 }
 
 #[test]

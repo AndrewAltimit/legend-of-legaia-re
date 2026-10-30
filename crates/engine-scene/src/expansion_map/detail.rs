@@ -106,6 +106,23 @@ pub struct MeshLibrary {
     pub base_raw: Vec<Vec<u8>>,
     /// The VRAM the carried-in meshes sample.
     pub vram_patches: Vec<VramPatch>,
+    /// Where each source scene's textures went, by scene name: what a
+    /// material naming that scene's VRAM (`from = "..."`) resolves through
+    /// ([`resolve_materials`]).
+    pub relocations: BTreeMap<String, Relocation>,
+    /// The particle sprites a map with emitters draws from
+    /// ([`particle_sheet`]), written through [`Self::vram_patches`].
+    pub particle_sheet: Option<legaia_expansion_format::map_detail::ParticleSheet>,
+}
+
+/// One source scene's relocated pages and palettes.
+#[derive(Debug, Clone, Default)]
+pub struct Relocation {
+    /// `(source rect, destination origin)` of each copied texture
+    /// rectangle, in halfwords.
+    pub rects: Vec<(Rect, (u16, u16))>,
+    /// Source CLUT word to the copy's.
+    pub cluts: BTreeMap<u16, u16>,
 }
 
 impl MeshLibrary {
@@ -157,6 +174,8 @@ pub fn needs_library(def: &MapDef, base_entry: Option<u32>) -> bool {
     !def.decor.is_empty()
         || !def.scatter.is_empty()
         || !def.edges.is_empty()
+        || !def.decals.is_empty()
+        || !def.emitters.is_empty()
         || def.mesh_refs().iter().any(|m| match m {
             PropMesh::Object { .. } => false,
             PropMesh::Tmd {
@@ -239,6 +258,11 @@ pub fn resolve_mesh_library(
         base_raw,
         ..Default::default()
     };
+    if !def.emitters.is_empty() {
+        lib.particle_sheet = Some(
+            particle_sheet(&mut alloc, &mut lib.vram_patches).context("the particle sprites")?,
+        );
+    }
     // Group the carried-in meshes by source scene so each scene relocates
     // once.
     let mut by_scene: BTreeMap<String, Vec<(PropMesh, u16)>> = BTreeMap::new();
@@ -314,7 +338,7 @@ pub fn resolve_mesh_library(
             })?;
             raws.push(raw.clone());
         }
-        relocate(
+        let moved = relocate(
             &mut raws,
             &src_res.vram,
             &base_vram,
@@ -322,6 +346,7 @@ pub fn resolve_mesh_library(
             &mut lib.vram_patches,
         )
         .with_context(|| format!("textures of scene `{scene_name}`"))?;
+        lib.relocations.insert(scene_name.clone(), moved);
         for ((mesh, _), raw) in meshes.into_iter().zip(raws) {
             lib.added.push(raw);
             lib.entries
@@ -329,6 +354,111 @@ pub fn resolve_mesh_library(
         }
     }
     Ok(lib)
+}
+
+/// The particle sprite sheet: four `16 x 16` 4bpp sprites side by side -
+/// a soft dot, a four-point spark, a leaf, a drop
+/// ([`legaia_expansion_format::map_detail::SPRITE_DOT`] ..), each texel's
+/// index its brightness - drawn here, so the sheet is the engine's own art,
+/// and two 16-entry grey ramps: one with the STP bit on every entry (the
+/// glowing kinds blend) and one without (leaves draw opaque).
+pub fn particle_sheet(
+    alloc: &mut VramAlloc,
+    patches: &mut Vec<VramPatch>,
+) -> Result<legaia_expansion_format::map_detail::ParticleSheet> {
+    const S: usize = 16;
+    let sprite = |k: usize, x: usize, y: usize| -> u16 {
+        let (fx, fy) = (
+            x as f32 + 0.5 - S as f32 / 2.0,
+            y as f32 + 0.5 - S as f32 / 2.0,
+        );
+        let r = fx.hypot(fy) / (S as f32 / 2.0);
+        let v = match k {
+            // Soft dot.
+            0 => (1.0 - r).max(0.0).powf(1.6),
+            // Spark: a bright core and four rays.
+            1 => {
+                let ray = (1.0 - fx.abs().min(fy.abs()) / 1.2).max(0.0) * (1.0 - r).max(0.0);
+                ((1.0 - r * 2.2).max(0.0) + ray).min(1.0)
+            }
+            // Leaf: an ellipse along the diagonal with a darker midrib.
+            2 => {
+                let (a, b) = ((fx + fy) / 1.414, (fx - fy) / 1.414);
+                let e = (a / 7.0).powi(2) + (b / 3.4).powi(2);
+                if e > 1.0 {
+                    0.0
+                } else if b.abs() < 0.6 {
+                    0.55
+                } else {
+                    0.75 + 0.25 * (1.0 - e)
+                }
+            }
+            // Drop: round below, pointed above.
+            _ => {
+                let w = if fy > 0.0 {
+                    4.5
+                } else {
+                    4.5 * (1.0 + fy / 7.5).max(0.0)
+                };
+                let d = (fx.abs() / w.max(0.01)).powi(2) + (fy / 7.0).powi(2);
+                if d > 1.0 { 0.0 } else { 1.0 - 0.5 * d }
+            }
+        };
+        (v * 15.0).round().clamp(0.0, 15.0) as u16
+    };
+    let w_words = S * 4 / 4;
+    let (rect, (px, py)) = alloc
+        .alloc_texture(w_words as u16, S as u16, 4, 1)
+        .context("no free VRAM for the particle sprites")?;
+    let mut words = vec![0u16; w_words * S];
+    for k in 0..4 {
+        for y in 0..S {
+            for x in 0..S {
+                let u = k * S + x;
+                words[y * w_words + u / 4] |= sprite(k, x, y) << ((u % 4) * 4);
+            }
+        }
+    }
+    patches.push(VramPatch {
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h,
+        words,
+    });
+    let ramp = |stp: u16| -> Vec<u16> {
+        (0..16u16)
+            .map(|i| {
+                if i == 0 {
+                    0
+                } else {
+                    let c = (i * 31 / 15).max(1);
+                    stp | c | (c << 5) | (c << 10)
+                }
+            })
+            .collect()
+    };
+    let mut cluts = [0u16; 2];
+    for (n, stp) in [0x8000u16, 0].into_iter().enumerate() {
+        let c = alloc
+            .alloc_clut(16)
+            .context("no free VRAM for a particle palette")?;
+        patches.push(VramPatch {
+            x: c.x,
+            y: c.y,
+            w: 16,
+            h: 1,
+            words: ramp(stp),
+        });
+        cluts[n] = cba_word(c.x, c.y);
+    }
+    Ok(legaia_expansion_format::map_detail::ParticleSheet {
+        tpage: (px / 64) | ((py / 256) << 4),
+        clut_glow: cluts[0],
+        clut_solid: cluts[1],
+        u0: ((rect.x - px) * 4) as u8,
+        v0: (rect.y - py) as u8,
+    })
 }
 
 /// Texels a halfword holds at each page depth.
@@ -359,7 +489,8 @@ pub fn relocate(
     base: &Vram,
     alloc: &mut VramAlloc,
     patches: &mut Vec<VramPatch>,
-) -> Result<()> {
+) -> Result<Relocation> {
+    let mut moved = Relocation::default();
     // Pass 1: the UV box of each page (keyed by its position and depth) and
     // the palette size each CLUT is read at.
     let mut pages: BTreeMap<u16, [u8; 4]> = BTreeMap::new();
@@ -414,6 +545,7 @@ pub fn relocate(
             );
         };
         patches.push(VramPatch::read(src, r).moved(dst));
+        moved.rects.push((r, (dst.x, dst.y)));
         page_moves.insert(
             key,
             PageMove {
@@ -440,6 +572,7 @@ pub fn relocate(
         };
         patches.push(VramPatch::read(src, r).moved(dst));
         clut_moves.insert(cba, cba_word(dst.x, dst.y));
+        moved.cluts.insert(cba, cba_word(dst.x, dst.y));
     }
     // Pass 2: point the primitives at the copies.
     for raw in raws.iter_mut() {
@@ -456,7 +589,75 @@ pub fn relocate(
             (cba, tsb)
         })?;
     }
-    Ok(())
+    Ok(moved)
+}
+
+/// Resolve the materials of `def` that name another scene's VRAM
+/// (`from = "scene"`) to the copies the map's load made
+/// ([`MeshLibrary::relocations`]): a palette to its copy's CLUT word, a
+/// scrolled cell to the VRAM rectangle its texels now sit at. A material
+/// naming the base scene, or a palette / page the load did not move (the
+/// base scene already held it), keeps its words. Returns what did not
+/// resolve - a scene none of the map's meshes came from, a cell outside
+/// every copied rectangle - for the host to log.
+pub fn resolve_materials(def: &mut MapDef, lib: &MeshLibrary, base_scene: &str) -> Vec<String> {
+    use legaia_expansion_format::map_detail::MaterialFx;
+    let mut problems = Vec::new();
+    for (i, fx) in def.materials.iter_mut().enumerate() {
+        let from = match fx {
+            MaterialFx::Cycle { from, .. }
+            | MaterialFx::Hsv { from, .. }
+            | MaterialFx::Scroll { from, .. } => from.clone(),
+        };
+        let Some(scene) = from.filter(|s| s != base_scene) else {
+            continue;
+        };
+        let Some(r) = lib.relocations.get(&scene) else {
+            problems.push(format!(
+                "materials[{i}]: no mesh of the map comes from `{scene}`"
+            ));
+            continue;
+        };
+        match fx {
+            MaterialFx::Cycle { clut, .. } | MaterialFx::Hsv { clut, .. } => {
+                if let Some(&c) = r.cluts.get(clut) {
+                    *clut = c;
+                }
+            }
+            MaterialFx::Scroll { cell, rect, .. } => {
+                let (px, py, depth) = tsb_page(u16::from(cell.tpage));
+                let tpw = texels_per_word(depth);
+                let side = legaia_scene_formats::field_objects::GROUND_ATLAS_TILE_PX as u16;
+                let axis = legaia_scene_formats::field_objects::GROUND_ATLAS_AXIS as u16;
+                let (col, row) = (
+                    u16::from(cell.tile) % axis,
+                    u16::from(cell.tile) / axis % axis,
+                );
+                let src = Rect {
+                    x: px + col * side / tpw,
+                    y: py + row * side,
+                    w: side / tpw,
+                    h: side,
+                };
+                // The copied rectangle holding the cell, clipped to it.
+                let hit = r.rects.iter().find_map(|(from, (dx, dy))| {
+                    let x0 = src.x.max(from.x);
+                    let y0 = src.y.max(from.y);
+                    let x1 = (src.x + src.w).min(from.x + from.w);
+                    let y1 = (src.y + src.h).min(from.y + from.h);
+                    (x0 < x1 && y0 < y1)
+                        .then(|| [dx + (x0 - from.x), dy + (y0 - from.y), x1 - x0, y1 - y0])
+                });
+                match hit {
+                    Some(h) => *rect = Some(h),
+                    None => problems.push(format!(
+                        "materials[{i}]: no copied texture of `{scene}` covers the cell"
+                    )),
+                }
+            }
+        }
+    }
+    problems
 }
 
 #[cfg(test)]

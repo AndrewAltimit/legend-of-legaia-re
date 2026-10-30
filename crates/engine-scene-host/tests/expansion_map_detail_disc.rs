@@ -238,3 +238,119 @@ fn the_dressed_rebirth_floors_enter() {
         }
     }
 }
+
+/// The first textured primitive's CLUT word of `scene`'s geometry-pack mesh
+/// `n`.
+fn mesh_clut(host: &SceneHost, scene: &str, n: usize) -> u16 {
+    let s = Scene::load(&host.index, scene).unwrap();
+    let res = field_resources(&host.index, &s).unwrap();
+    let env = legaia_engine_scene::field_env::env_pack_tmd_indices(&s, &res);
+    let r = &res.tmds[env[n]];
+    for o in &r.tmd.objects {
+        for g in legaia_tmd::legaia_prims::iter_groups(
+            &r.raw,
+            o.primitives_byte_offset,
+            o.primitives_byte_size,
+        )
+        .unwrap()
+        {
+            if let Some(p) = g.prims.iter().find(|p| !p.uvs.is_empty()) {
+                return p.cba;
+            }
+        }
+    }
+    panic!("no textured prim");
+}
+
+#[test]
+fn round_two_layers_resolve_on_the_disc() {
+    let Some(mut host) = host() else { return };
+    let torch_clut = mesh_clut(&host, "rugi", 15);
+    let extra = format!(
+        r#"
+[[decals]]
+cell = {{ tpage = 28, clut = 32577, tile = 4 }}
+rect = [1, 1, 7, 4]
+density = 0.5
+seed = 1
+sides = 8
+
+[[emitters]]
+kind = "embers"
+rect = [2, 2, 6, 3]
+count = 20
+
+[[materials]]
+kind = "cycle"
+from = "rugi"
+clut = {torch_clut}
+start = 1
+count = 6
+period = 4
+
+[[npcs]]
+id = "scenery_actor"
+model = {{ kind = "npc", scene = "tower", index = 3 }}
+tile = [6, 1]
+scenery = true
+"#
+    );
+    let mut files = PackFiles::default();
+    files.insert("pack.toml".into(), PACK.as_bytes().to_vec());
+    files.insert(
+        format!("maps/{MAP_ID}.toml"),
+        format!("{MAP}{extra}").into_bytes(),
+    );
+    files.insert("assets/models/ember_crystal.glb".into(), crystal());
+    let pack = ExpansionPack::from_files(&files).expect("parses");
+    let issues = validate(&pack);
+    assert!(!has_errors(&issues), "{issues:#?}");
+    host.activate_expansion_pack(Arc::new(pack))
+        .expect("activates");
+    host.enter_expansion_map(MAP_ID, "").expect("enters");
+    let map = host.world.expansion.map.as_ref().unwrap();
+    // The particle sprites have a home.
+    assert!(map.particle_sheet.is_some());
+    // The torch's palette resolved to the copy the load made.
+    let resolved = match map.def.materials.last().unwrap() {
+        legaia_expansion_format::map_detail::MaterialFx::Cycle { clut, .. } => *clut,
+        _ => unreachable!(),
+    };
+    assert_ne!(resolved, torch_clut, "the cycle follows the copied palette");
+    // The scenery actor draws (it is in the override's placements) but
+    // takes no anchor: nothing collides with it and the talk probe skips it.
+    let o = host.scene.as_ref().unwrap().overrides.clone().unwrap();
+    let slot = legaia_expansion_format::map::npc_slot(0).unwrap();
+    assert!(o.npcs.iter().any(|p| p.index == usize::from(slot)));
+    assert!(!host.world.npcs.positions.contains_key(&slot));
+    assert!(
+        host.world
+            .expansion
+            .map
+            .as_ref()
+            .unwrap()
+            .talk(slot)
+            .is_none()
+    );
+}
+
+#[test]
+fn a_kept_room_seats_its_animated_scenery() {
+    let Some(mut host) = host() else { return };
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("Rebirth loads");
+    host.activate_expansion_pack(Arc::new(pack))
+        .expect("activates");
+    host.enter_expansion_map("rebirth_tower_2f", "")
+        .expect("2F enters");
+    let o = host.scene.as_ref().unwrap().overrides.clone().unwrap();
+    // rugi's animated scene props, after the map's own NPCs, each with a
+    // clip and none anchored.
+    let n_npcs = host.world.expansion.map.as_ref().unwrap().def.npcs.len();
+    let scenery: Vec<_> = o.npcs.iter().filter(|p| p.index > n_npcs).collect();
+    assert!(!scenery.is_empty(), "rugi has animated props");
+    for p in scenery {
+        assert_ne!(p.anim_id, 0);
+        assert!(!host.world.npcs.positions.contains_key(&(p.index as u8)));
+    }
+}

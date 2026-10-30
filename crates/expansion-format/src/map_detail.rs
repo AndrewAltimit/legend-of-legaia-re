@@ -87,6 +87,33 @@ pub struct ScatterBrush {
     /// Leave the tiles a player needs clear: spawns, exit tiles, NPC tiles
     /// and patrol stops, and placed props.
     pub keep_clear: bool,
+    /// Thin the brush away from a centre: dense in the middle, sparse at
+    /// the rim ([`Cluster`]). `None` paints the rectangle evenly.
+    pub cluster: Option<Cluster>,
+}
+
+/// A [`ScatterBrush`]'s falloff: the density at a tile `d` tiles from
+/// `centre` is `density * (1 - d / radius) ^ falloff`, nothing past
+/// `radius`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Cluster {
+    /// Map-local tile coordinates (fractional allowed); `None` is the
+    /// rectangle's centre.
+    pub centre: Option<[f32; 2]>,
+    /// Tiles; `0` reaches the rectangle's farthest corner.
+    pub radius: f32,
+    pub falloff: f32,
+}
+
+impl Default for Cluster {
+    fn default() -> Self {
+        Self {
+            centre: None,
+            radius: 0.0,
+            falloff: 2.0,
+        }
+    }
 }
 
 impl Default for ScatterBrush {
@@ -103,6 +130,7 @@ impl Default for ScatterBrush {
             tilt: 0.0,
             on: String::new(),
             keep_clear: true,
+            cluster: None,
         }
     }
 }
@@ -163,6 +191,14 @@ pub struct EdgeDecor {
     /// front faces `+Z` needs none.
     pub yaw: f32,
     pub scale: Option<f32>,
+    /// Organic placement: each copy slides up to `jitter` world units along
+    /// its wall and a quarter of that toward the room, turns up to
+    /// `yaw_jitter` degrees either way and scales inside `scale_range`
+    /// (overriding `scale`), seeded by `seed` and the tile.
+    pub jitter: u16,
+    pub yaw_jitter: f32,
+    pub scale_range: Option<[f32; 2]>,
+    pub seed: u64,
 }
 
 impl Default for EdgeDecor {
@@ -179,6 +215,399 @@ impl Default for EdgeDecor {
             y: 0,
             yaw: 0.0,
             scale: None,
+            jitter: 0,
+            yaw_jitter: 0.0,
+            scale_range: None,
+            seed: 0,
+        }
+    }
+}
+
+/// A decal: a flat textured polygon lying on the floor - a crack, a moss
+/// patch, a stain, a rune - cut from one `32 x 32` atlas cell of the base
+/// scene's VRAM. A decal is a decoration (baked into its tile's cell mesh),
+/// so it draws only.
+///
+/// With a `tile` the decal is placed once; with a `rect` it is a brush,
+/// scattered like a [`ScatterBrush`] at `density` a tile.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DecalDef {
+    pub id: String,
+    /// The texture (the three words a ground texture carries).
+    pub cell: AtlasCell,
+    /// Further cells a brush picks from at random, beside `cell`.
+    pub cells: Vec<AtlasCell>,
+    /// Atlas cells a side the texture spans, from `cell` right and down
+    /// (`2` maps a `64 x 64` texel square - a rune circle drawn over four
+    /// cells).
+    pub span: u8,
+    pub tile: Option<[u16; 2]>,
+    pub rect: Option<TileRect>,
+    pub density: f32,
+    pub seed: u64,
+    /// Legend characters a brush paints on; empty is every floor tile.
+    pub on: String,
+    /// Offset from the tile centre, world units `[x, y, z]` (`y` up); a
+    /// brush jitters `x` / `z` by up to `jitter`.
+    pub offset: [i16; 3],
+    pub jitter: u16,
+    /// Width and depth, world units.
+    pub size: [u16; 2],
+    /// A brush scales each decal by `1 +- size_jitter`.
+    pub size_jitter: f32,
+    /// Yaw range in degrees (a single decal takes `yaw[0]`).
+    pub yaw: [f32; 2],
+    /// `4` is a rectangle; `5..=16` an inscribed polygon (a round stain, an
+    /// octagonal cap).
+    pub sides: u8,
+    /// Modulation colour: `[128, 128, 128]` draws the texel as it is.
+    pub color: [u8; 3],
+    /// Blend with the floor (the texture page's blend mode), for stains and
+    /// glows.
+    pub semi: bool,
+}
+
+impl Default for DecalDef {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            cell: AtlasCell::default(),
+            cells: Vec::new(),
+            span: 1,
+            tile: None,
+            rect: None,
+            density: 0.3,
+            seed: 0,
+            on: String::new(),
+            offset: [0, 2, 0],
+            jitter: 32,
+            size: [96, 96],
+            size_jitter: 0.0,
+            yaw: [0.0, 360.0],
+            sides: 4,
+            color: [128, 128, 128],
+            semi: false,
+        }
+    }
+}
+
+/// One decal as the engine bakes it ([`crate::map::MapDef::decals`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Decal {
+    pub tile: [u16; 2],
+    /// Offset from the tile centre (`y` up).
+    pub offset: [f32; 3],
+    pub yaw: f32,
+    pub size: [f32; 2],
+    pub sides: u8,
+    pub cell: AtlasCell,
+    /// Atlas cells a side ([`DecalDef::span`]).
+    pub span: u8,
+    pub color: [u8; 3],
+    pub semi: bool,
+}
+
+/// What a particle emitter throws ([`EmitterDef::kind`]); each kind is a
+/// preset of the emitter's other fields, any of which the file overrides.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParticleKind {
+    /// Glowing sparks rising and fading.
+    #[default]
+    Embers,
+    /// Twinkling points hanging in the air.
+    Sparkles,
+    /// Slow motes drifting in a beam of light.
+    Dust,
+    /// Tumbling leaves falling and swaying.
+    Leaves,
+    /// Drops falling straight down.
+    Drips,
+    /// Soft puffs rising and swelling.
+    Smoke,
+}
+
+/// A particle emitter: `count` particles live at once over a tile
+/// rectangle, each a camera-facing sprite drawn through the field
+/// screen-effect pass the fog sheets use. A particle's whole life is a pure
+/// function of `seed`, its index and the frame - no state, no random
+/// stream - so it is the same on both hosts and in every run.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EmitterDef {
+    pub id: String,
+    pub kind: ParticleKind,
+    /// Inclusive map-local tile rectangle particles spawn over.
+    pub rect: TileRect,
+    /// Spawn height range above the floor, world units.
+    pub height: Option<[i16; 2]>,
+    pub count: Option<u16>,
+    /// Frames a particle lives.
+    pub life: Option<i32>,
+    /// World units a frame, `y` up.
+    pub velocity: Option<[f32; 3]>,
+    /// Random part of the velocity, either way, per axis.
+    pub spread: Option<[f32; 3]>,
+    /// Added to the `y` velocity each frame (negative falls).
+    pub gravity: Option<f32>,
+    /// Side-to-side drift amplitude, world units.
+    pub sway: Option<f32>,
+    /// Sprite size at birth and death, world units.
+    pub size: Option<[u16; 2]>,
+    pub color: Option<[u8; 3]>,
+    /// Colour at death; `None` keeps `color`.
+    pub color_end: Option<[u8; 3]>,
+    /// Additive blend (glows); otherwise averaged with the scene.
+    pub additive: Option<bool>,
+    pub seed: u64,
+}
+
+/// An [`EmitterDef`] with its kind's preset filled in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Emitter {
+    pub kind: ParticleKind,
+    pub rect: TileRect,
+    pub height: [i16; 2],
+    pub count: u16,
+    pub life: i32,
+    pub velocity: [f32; 3],
+    pub spread: [f32; 3],
+    pub gravity: f32,
+    pub sway: f32,
+    pub size: [u16; 2],
+    pub color: [u8; 3],
+    pub color_end: [u8; 3],
+    pub additive: bool,
+    pub seed: u64,
+}
+
+/// Where a map's particle sprites sit in VRAM, written by the map's load
+/// (`legaia_engine_scene::expansion_map::detail::particle_sheet`): four
+/// `16 x 16` 4bpp sprites side by side from `(u0, v0)` of page `tpage`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParticleSheet {
+    /// TSB page bits (4bpp, blend mode clear).
+    pub tpage: u16,
+    /// The grey ramp with STP set: the sprite blends.
+    pub clut_glow: u16,
+    /// The grey ramp without STP: the sprite draws opaque.
+    pub clut_solid: u16,
+    pub u0: u8,
+    pub v0: u8,
+}
+
+/// The sprite column of each kind in a [`ParticleSheet`].
+pub const SPRITE_DOT: u8 = 0;
+pub const SPRITE_SPARK: u8 = 1;
+pub const SPRITE_LEAF: u8 = 2;
+pub const SPRITE_DROP: u8 = 3;
+
+impl ParticleKind {
+    /// The sprite the kind draws.
+    pub fn sprite(self) -> u8 {
+        match self {
+            Self::Embers | Self::Dust | Self::Smoke => SPRITE_DOT,
+            Self::Sparkles => SPRITE_SPARK,
+            Self::Leaves => SPRITE_LEAF,
+            Self::Drips => SPRITE_DROP,
+        }
+    }
+}
+
+/// One particle on one frame: where it is (map frame, `y` up above the
+/// spawn floor), how large, what colour and how bright.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ParticleState {
+    /// World `x` / `z` and the height above the floor at its spawn point.
+    pub pos: [f32; 3],
+    pub size: f32,
+    pub color: [u8; 3],
+}
+
+impl Emitter {
+    /// Particle `i` of emitter number `e` on `frame`, or `None` while it is
+    /// not alive (the first life of each particle starts at a staggered
+    /// frame so the emitter does not breathe in step). `centre` maps a
+    /// map-local tile to its world centre.
+    pub fn particle(
+        &self,
+        e: usize,
+        i: u16,
+        frame: u64,
+        centre: impl Fn(u16, u16) -> (i32, i32),
+    ) -> Option<ParticleState> {
+        let life = self.life.max(1) as u64;
+        let stagger = splitmix64(self.seed ^ ((e as u64) << 40) ^ u64::from(i)) % life;
+        let t = frame + stagger;
+        let cycle = t / life;
+        let age = (t % life) as f32;
+        let mut r = TileRng::new(
+            self.seed ^ cycle.wrapping_mul(0x2545_F491_4F6C_DD1D),
+            e,
+            i,
+            0x7A11,
+        );
+        let (c0, c1) = (
+            self.rect[0].min(self.rect[2]),
+            self.rect[0].max(self.rect[2]),
+        );
+        let (r0, r1) = (
+            self.rect[1].min(self.rect[3]),
+            self.rect[1].max(self.rect[3]),
+        );
+        let (x0, z0) = centre(c0, r0);
+        let (x1, z1) = centre(c1, r1);
+        let x = r.range(x0 as f32 - 64.0, x1 as f32 + 64.0);
+        let z = r.range(z0 as f32 - 64.0, z1 as f32 + 64.0);
+        let y = r.range(f32::from(self.height[0]), f32::from(self.height[1]));
+        let v = [0, 1, 2].map(|k| self.velocity[k] + r.range(-self.spread[k], self.spread[k]));
+        let ph = r.range(0.0, std::f32::consts::TAU);
+        let sway = self.sway * (age * 0.045 + ph).sin();
+        let sway_z = self.sway * (age * 0.037 + ph * 1.3).cos() * 0.6;
+        let pos = [
+            x + v[0] * age + sway,
+            y + v[1] * age + 0.5 * self.gravity * age * age,
+            z + v[2] * age + sway_z,
+        ];
+        let f = age / life as f32;
+        let lerp = |a: f32, b: f32| a + (b - a) * f;
+        // Glows fade in and out; solid particles hold their colour.
+        let fade = if self.additive {
+            (f * std::f32::consts::PI).sin()
+        } else {
+            1.0
+        };
+        let color = [0, 1, 2].map(|k| {
+            (lerp(f32::from(self.color[k]), f32::from(self.color_end[k])) * fade).round() as u8
+        });
+        Some(ParticleState {
+            pos,
+            size: lerp(f32::from(self.size[0]), f32::from(self.size[1])),
+            color,
+        })
+    }
+}
+
+/// The most particles one emitter keeps alive.
+pub const MAX_PARTICLES: u16 = 512;
+
+impl EmitterDef {
+    /// The emitter with its kind's preset under the file's own values.
+    pub fn resolved(&self) -> Emitter {
+        use ParticleKind::*;
+        // (height, count, life, velocity, spread, gravity, sway, size, color, end, additive)
+        type Preset = (
+            [i16; 2],
+            u16,
+            i32,
+            [f32; 3],
+            [f32; 3],
+            f32,
+            f32,
+            [u16; 2],
+            [u8; 3],
+            [u8; 3],
+            bool,
+        );
+        let p: Preset = match self.kind {
+            Embers => (
+                [0, 48],
+                40,
+                110,
+                [0.0, 1.1, 0.0],
+                [0.4, 0.5, 0.4],
+                0.0,
+                10.0,
+                [16, 6],
+                [255, 150, 60],
+                [160, 30, 10],
+                true,
+            ),
+            Sparkles => (
+                [24, 180],
+                32,
+                70,
+                [0.0, 0.15, 0.0],
+                [0.15, 0.15, 0.15],
+                0.0,
+                4.0,
+                [16, 16],
+                [170, 200, 255],
+                [170, 200, 255],
+                true,
+            ),
+            Dust => (
+                [16, 200],
+                48,
+                260,
+                [0.0, 0.05, 0.0],
+                [0.25, 0.1, 0.25],
+                0.0,
+                14.0,
+                [9, 9],
+                [190, 180, 150],
+                [190, 180, 150],
+                true,
+            ),
+            Leaves => (
+                [220, 320],
+                18,
+                300,
+                [0.2, -0.8, 0.1],
+                [0.3, 0.2, 0.3],
+                0.0,
+                40.0,
+                [14, 14],
+                [150, 170, 70],
+                [170, 120, 50],
+                false,
+            ),
+            Drips => (
+                [260, 320],
+                16,
+                70,
+                [0.0, -2.5, 0.0],
+                [0.0, 0.5, 0.0],
+                -0.08,
+                0.0,
+                [6, 6],
+                [140, 180, 220],
+                [140, 180, 220],
+                true,
+            ),
+            Smoke => (
+                [0, 24],
+                20,
+                220,
+                [0.0, 0.6, 0.0],
+                [0.3, 0.2, 0.3],
+                0.0,
+                18.0,
+                [40, 110],
+                [60, 58, 54],
+                [24, 23, 22],
+                true,
+            ),
+        };
+        let color = self.color.unwrap_or(p.8);
+        Emitter {
+            kind: self.kind,
+            rect: self.rect,
+            height: self.height.unwrap_or(p.0),
+            count: self.count.unwrap_or(p.1).min(MAX_PARTICLES),
+            life: self.life.unwrap_or(p.2).max(1),
+            velocity: self.velocity.unwrap_or(p.3),
+            spread: self.spread.unwrap_or(p.4),
+            gravity: self.gravity.unwrap_or(p.5),
+            sway: self.sway.unwrap_or(p.6),
+            size: self.size.unwrap_or(p.7),
+            color,
+            color_end: self
+                .color_end
+                .unwrap_or(if self.color.is_some() { color } else { p.9 }),
+            additive: self.additive.unwrap_or(p.10),
+            seed: self.seed,
         }
     }
 }
@@ -376,6 +805,11 @@ pub enum MaterialFx {
         period: i32,
         #[serde(default)]
         reverse: bool,
+        /// Name the palette in this scene's VRAM instead of the base
+        /// scene's: a palette a mesh carried in from that scene samples,
+        /// resolved to where the map's load copied it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
     },
     /// Hue and brightness cycling of palette entries, through the retail
     /// mode-3 HSV cell kernel (`FUN_80019D50`): the hue turns a full circle
@@ -383,6 +817,9 @@ pub enum MaterialFx {
     /// either side of the art.
     Hsv {
         clut: u16,
+        /// As [`MaterialFx::Cycle`]'s `from`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
         #[serde(default)]
         start: u8,
         #[serde(default = "sixteen")]
@@ -407,6 +844,15 @@ pub enum MaterialFx {
         #[serde(default)]
         dy: i8,
         period: i32,
+        /// Name the cell in this scene's VRAM instead of the base scene's
+        /// (a texture a carried-in mesh samples, resolved to its copy).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<String>,
+        /// An explicit VRAM rectangle `[x, y, w, h]` in halfwords, standing in
+        /// for `cell`'s; the map's load writes it for a `from` cell. The page
+        /// depth stays `cell.tpage`'s.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rect: Option<[u16; 4]>,
     },
 }
 
@@ -476,6 +922,28 @@ pub struct Decoration {
     /// Degrees `[x, y, z]`.
     pub rotation: [f32; 3],
     pub scale: f32,
+}
+
+/// A [`Cluster`]'s density factor at map-local tile `(col, row)` of a
+/// brush over `rect`.
+pub fn cluster_weight(k: &Cluster, rect: &TileRect, col: u16, row: u16) -> f32 {
+    let (c0, c1) = (
+        f32::from(rect[0].min(rect[2])),
+        f32::from(rect[0].max(rect[2])),
+    );
+    let (r0, r1) = (
+        f32::from(rect[1].min(rect[3])),
+        f32::from(rect[1].max(rect[3])),
+    );
+    let [cx, cz] = k.centre.unwrap_or([(c0 + c1) / 2.0, (r0 + r1) / 2.0]);
+    let radius = if k.radius > 0.0 {
+        k.radius
+    } else {
+        let far = |a: f32, b: f32, c: f32| (a - c).abs().max((b - c).abs());
+        far(c0, c1, cx).hypot(far(r0, r1, cz)) + 0.5
+    };
+    let d = (f32::from(col) - cx).hypot(f32::from(row) - cz);
+    (1.0 - d / radius).max(0.0).powf(k.falloff.max(0.0))
 }
 
 /// SplitMix64: the brush's deterministic stream. One step of it is a full
@@ -567,6 +1035,10 @@ impl crate::map::MapDef {
                         continue;
                     }
                     let mut rng = TileRng::new(brush.seed, b, col, row);
+                    let density = match &brush.cluster {
+                        None => density,
+                        Some(k) => density * cluster_weight(k, &brush.rect, col, row),
+                    };
                     let n = density.trunc() as u32 + u32::from(rng.unit() < density.fract());
                     let jitter = f32::from(brush.jitter.min(256));
                     for _ in 0..n {
@@ -602,7 +1074,7 @@ impl crate::map::MapDef {
                 }
             }
         }
-        for edge in &self.edges {
+        for (e, edge) in self.edges.iter().enumerate() {
             let every = u32::from(edge.every.max(1));
             let wall = |c: isize, r: isize| -> bool {
                 if c < 0 || r < 0 {
@@ -638,16 +1110,30 @@ impl crate::map::MapDef {
                         ((c + 1, r), [1.0, 0.0], 270.0),
                     ];
                     let reach = 64.0 - f32::from(edge.inset);
+                    let mut rng = TileRng::new(edge.seed, usize::MAX - e, mc, mr);
+                    let j = f32::from(edge.jitter);
                     for ((nc, nr), [px, pz], yaw) in sides {
                         if !wall(nc, nr) {
                             continue;
                         }
+                        // Along the wall is the axis the push is not on.
+                        let along = rng.range(-j, j);
+                        let inward = rng.range(0.0, j / 4.0);
+                        let turn = rng.range(-edge.yaw_jitter, edge.yaw_jitter);
+                        let scale = match edge.scale_range {
+                            Some([a, b]) => rng.range(a, b),
+                            None => edge.scale.unwrap_or(1.0),
+                        };
                         out.push(Decoration {
                             mesh: edge.mesh.clone(),
                             tile: [mc, mr],
-                            offset: [px * reach, f32::from(edge.y), pz * reach],
-                            rotation: [0.0, (yaw + edge.yaw).rem_euclid(360.0), 0.0],
-                            scale: edge.scale.unwrap_or(1.0),
+                            offset: [
+                                px * (reach - inward) + pz.abs() * along,
+                                f32::from(edge.y),
+                                pz * (reach - inward) + px.abs() * along,
+                            ],
+                            rotation: [0.0, (yaw + edge.yaw + turn).rem_euclid(360.0), 0.0],
+                            scale,
                         });
                     }
                 }
@@ -668,6 +1154,69 @@ impl crate::map::MapDef {
                     "tile {:?} carries more than {MAX_DECORATIONS_PER_TILE} decorations",
                     d.tile
                 );
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every decal the map draws: single `[[decals]]` with a `tile`, then
+    /// each brush's tiles. A pure function of the file, like
+    /// [`Self::decorations`].
+    pub fn decals(&self) -> anyhow::Result<Vec<Decal>> {
+        let grid = self.tile_grid()?;
+        let clear = self.clear_tiles();
+        let mut out = Vec::new();
+        for (i, d) in self.decals.iter().enumerate() {
+            let sides = d.sides.clamp(3, 16);
+            let base =
+                |tile: [u16; 2], offset: [f32; 3], yaw: f32, k: f32, cell: AtlasCell| Decal {
+                    tile,
+                    offset,
+                    yaw,
+                    size: [f32::from(d.size[0]) * k, f32::from(d.size[1]) * k],
+                    sides,
+                    cell,
+                    span: d.span.clamp(1, 8),
+                    color: d.color,
+                    semi: d.semi,
+                };
+            if let Some(tile) = d.tile {
+                out.push(base(tile, d.offset.map(f32::from), d.yaw[0], 1.0, d.cell));
+            }
+            let Some(rect) = d.rect else {
+                continue;
+            };
+            let (c0, c1) = (rect[0].min(rect[2]), rect[0].max(rect[2]));
+            let (r0, r1) = (rect[1].min(rect[3]), rect[1].max(rect[3]));
+            let cells: Vec<AtlasCell> = std::iter::once(d.cell)
+                .chain(d.cells.iter().copied())
+                .collect();
+            for row in r0..=r1 {
+                for col in c0..=c1 {
+                    let (c, r) = (usize::from(col), usize::from(row));
+                    let open = grid.get(c, r).is_some_and(|t| !t.void && t.walls != 0xF);
+                    let on =
+                        d.on.is_empty() || grid.char_at(c, r).is_some_and(|ch| d.on.contains(ch));
+                    if !open || !on || clear.contains(&[col, row]) {
+                        continue;
+                    }
+                    let mut rng = TileRng::new(d.seed, 0x4000 + i, col, row);
+                    let density = d.density.max(0.0);
+                    let n = density.trunc() as u32 + u32::from(rng.unit() < density.fract());
+                    let j = f32::from(d.jitter);
+                    for _ in 0..n {
+                        let cell = cells
+                            [((rng.unit() * cells.len() as f32) as usize).min(cells.len() - 1)];
+                        let offset = [
+                            f32::from(d.offset[0]) + rng.range(-j, j),
+                            f32::from(d.offset[1]),
+                            f32::from(d.offset[2]) + rng.range(-j, j),
+                        ];
+                        let yaw = rng.range(d.yaw[0], d.yaw[1]);
+                        let k = 1.0 + rng.range(-d.size_jitter, d.size_jitter);
+                        out.push(base([col, row], offset, yaw, k.max(0.1), cell));
+                    }
+                }
             }
         }
         Ok(out)

@@ -22,7 +22,7 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 |---|---|
 | `name` | Display name. |
 | `size` | Optional `[width, height]` in tiles; must match `tiles.rows`. |
-| `base` | `scene` (a `DiscRef::Scene`) and `geometry` (`"none"` or `"keep"`). |
+| `base` | `scene` (a `DiscRef::Scene`), `geometry` (`"none"` or `"keep"`) and `scenery` (seat the base scene's animated props, [Disc animation clips](#disc-animation-clips)). |
 | `floor_heights` | Up to 16 tier heights, world units, up positive. Empty takes the base scene's ladder. |
 | `tiles` | `origin`, `rows`, `legend` - the painter's grid, below. |
 | `props` | Placed meshes from the base scene's geometry pack; a prop with a `top` is standable. |
@@ -38,6 +38,8 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `lighting` | Enhanced-lighting mood and placed lamps ([Lights](#lights)). |
 | `materials` | Animated texture words: palette cycling, hue cycling, texel scrolling ([Animated materials](#animated-materials)). |
 | `fog` | The retail field fog pool over tile regions ([Fog](#fog)). |
+| `decals` | Flat textured floor polygons, one by one or by brush ([Decals](#decals)). |
+| `emitters` | Particle emitters ([Particles](#particles)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
 from the first character of the first row: column grows with world `+X`, row
@@ -164,12 +166,13 @@ retail placed object's render scale lands. Props carry no collision box of
 their own: `solid` closes the tile.
 
 `animate` is a list of procedural animators and `light` a light the prop
-carries ([Animated props](#animated-props), [Lights](#lights)). A prop
-standing on a tile whose cell already drew a mesh - a kept retail cell, a
-wall, a mesh ground - replaces that mesh (a cell names one record); the
-entry logs the tiles it happened to. A decoration bakes in beside a cell's
-mesh instead, which is how to dress a kept retail room without losing any
-of it.
+carries ([Animated props](#animated-props), [Lights](#lights)). A cell
+names one record, so a prop whose tile's cell already draws a mesh - a kept
+retail cell, a wall, a mesh ground - anchors its record on the nearest tile
+within three whose cell draws none, its offset carrying the draw back to
+where it was placed (`FieldImage::prop_anchors`); the mesh keeps drawing.
+Only with no free tile in reach does the prop replace it, and the entry
+logs the tiles that happened to. Its solid tile is always its own.
 
 ### Standable props
 
@@ -315,6 +318,8 @@ the sections it names, with or without a disc:
 | Animator periods at least 1 (a spin may be negative); pulse amount `0..1`; light radius, flicker `0..=1` | error |
 | Materials: periods at least 1, palette ranges inside 256 entries | error |
 | A `{ scene, object = N }` mesh, with a disc: `N` past that scene's pack | error |
+| Decals: `tile` / `rect` on the map, `sides` `3..=16`, size `1..=1024`, density `0..=8`; a decal placing nothing | error / warning |
+| Emitters: rectangle on the map, at most 512 particles, life at least 1 frame | error |
 
 ## Exits, triggers and encounter zones
 
@@ -621,9 +626,54 @@ A map decorated on more tiles than it has free records bakes **cells of
 the tile distance, lifted by the floor tiers' difference), the smallest `c`
 that fits. The draw is the same; a baked cell is culled with its anchor
 tile, so on a very large map a decoration at a cell's far edge can drop out
-a frame early at the view's rim. Decorations on a placed prop's tile are
-left out (the prop's record is placed, the bake is a decoration cell) and
-the validator warns.
+a frame early at the view's rim. Decorations on the tile a placed prop's
+record anchors on are left out (that record is placed, the bake is a
+decoration cell); the validator warns of decorations on a prop's tile.
+
+### Organic placement
+
+Nothing has to sit on the grid:
+
+| Knob | Effect |
+|---|---|
+| `[[scatter]]` `jitter`, `yaw`, `scale`, `tilt` | Each mesh off its tile centre, turned, scaled and tilted inside the ranges. |
+| `[[scatter]]` `cluster = { centre, radius, falloff }` | Density falls from the centre (map-local tiles, the rectangle's centre when left out) as `(1 - d / radius) ^ falloff`: a dense clump, a sparse rim. |
+| `[[edges]]` `jitter`, `yaw_jitter`, `scale_range`, `seed` | Each copy slides along its wall (and a quarter of `jitter` toward the room), turns and scales, seeded per tile. |
+| `[[decals]]` brushes | Jitter, yaw range and `size_jitter` per decal. |
+
+### Decals
+
+```toml
+[[decals]]
+cell = { tpage = 28, clut = 32577, tile = 4 }      # a base-scene atlas cell
+cells = [{ tpage = 28, clut = 32577, tile = 5 }]   # more a brush picks from
+span = 1                                           # cells a side the texture spans
+rect = [1, 1, 6, 5]                                # a brush; or `tile = [c, r]` for one
+density = 0.9
+seed = 3101
+size = [90, 90]
+size_jitter = 0.35
+sides = 9                                          # 4 = rectangle, 3..=16 a polygon
+offset = [0, 2, 0]                                 # lifted off the floor (y up)
+jitter = 40
+yaw = [0.0, 360.0]
+color = [128, 128, 128]                            # modulation; 128 is the texel
+semi = false                                       # blend with the floor
+```
+
+A decal is a flat textured polygon in the floor plane - a crack, a moss
+patch, a stain, a rune - built when the map loads
+(`expansion_map::decal_tmd`) and baked into its tile's cell like any
+decoration, both windings so it reads from any side. A rectangle maps the
+whole span of cells; a polygon maps the span's inscribed circle. Its words
+name the base scene's VRAM. A decal also caps a mesh: the Atrium's pillars
+carry octagonal stone decals at their tops.
+
+The Sky Gardens Tower's pillars are an example of why: their top faces are
+authored as untextured `G4` primitives with colour `[0, 0, 0]` (the tower's
+pillars run up into a dark ceiling the retail camera never sees over), so
+from the far camera they read as black discs. That is the mesh, not a
+draw fault; a decal over the cap is the fix.
 
 ## Animated props
 
@@ -649,9 +699,26 @@ every retail bind record), which the hosts give the prop's draw from
 and a standable top stay where the prop rests, and nothing animated is
 saved or replayed.
 
-Disc ANM clips do not play on a prop: a retail scene's animated scene props
-are bound to their scene's MAN actors and ANM bank, which a pack map does
-not run. A prop animates procedurally or not at all.
+### Disc animation clips
+
+A prop's mesh is a placed object and plays no clip. A disc-animated object
+- a flickering brazier, a turning wheel, a waving banner - is a scene
+**actor** in retail: a MAN placement whose clip the scene's ANM bundle
+holds. A pack map gets one two ways, both through the field NPC draw both
+hosts run (the base scene's ANM bundle, the hosts' clip players):
+
+- `[[npcs]]` with `scenery = true`: the placement draws and plays its clip
+  (or `clip`) on its tile, takes no anchor in the NPC position table - so
+  nothing collides with it and the talk probe never finds it - and needs no
+  line (`World::install_expansion_npcs`). Its model is the base scene's, as
+  any pack NPC's.
+- `base = { ..., scenery = true }`: every placement of the base scene's MAN
+  that neither talks nor leads anywhere and carries a clip is seated as
+  scenery where its MAN header places it
+  (`expansion_map::base_scenery`), in placement slots after the map's own
+  NPCs. A kept retail room otherwise stands still, since a pack map runs no
+  MAN. Spawn scripts do not run, so a prop a retail script moves stands at
+  its header position, facing sector 0.
 
 ## Lights
 
@@ -719,8 +786,26 @@ boxes, the base scene's own meshes. `cycle` rotates palette entries
 mode-3 HSV cell kernel (`FUN_80019D50`'s port,
 `engine-field::clut_cell_fx::apply_hsv_cell`); `scroll` rotates an atlas
 cell's texels by whole texels, wrapping, at any page depth. The words named
-are the base scene's VRAM - a palette or cell of a mesh carried in from
-another scene sits at an address chosen at entry and cannot be named.
+are the base scene's VRAM, unless the material says `from`:
+
+```toml
+[[materials]]
+kind = "cycle"
+from = "rugi"            # the palette's address in rugi's VRAM
+clut = 32448
+start = 1
+count = 8
+period = 6
+```
+
+`from = "scene"` names the palette or atlas cell in that scene's VRAM, and
+the map's load resolves it to the copy it made for a mesh carried in from
+that scene (`detail::resolve_materials`, through
+`MeshLibrary::relocations`): a palette to its copy's CLUT word, a scrolled
+cell to the VRAM rectangle (`rect`) its texels now occupy, clipped to the
+copied rectangle. A palette or page the base scene already held is not
+copied and keeps its address. A scene none of the map's meshes came from,
+or a cell outside every copy, logs a warning and animates nothing.
 
 ## Fog
 
@@ -739,6 +824,44 @@ wisps are the pool's own: they drift at `speed` toward `angle` (degrees,
 `World::fog_render_step`. The pool draws from the world's random stream, as
 retail's does, so a fogged map's rolls differ from an unfogged one's -
 deterministically.
+
+## Particles
+
+```toml
+[[emitters]]
+kind = "embers"          # embers, sparkles, dust, leaves, drips, smoke
+rect = [3, 4, 3, 4]      # map-local tiles they spawn over
+height = [40, 90]        # spawn height above the floor
+count = 14               # alive at once (at most 512)
+seed = 11
+# optional, over the kind's preset:
+life = 110
+velocity = [0.0, 1.1, 0.0]
+spread = [0.4, 0.5, 0.4]
+gravity = 0.0
+sway = 10.0
+size = [10, 4]
+color = [255, 150, 60]
+color_end = [160, 30, 10]
+additive = true
+```
+
+Each particle is a camera-facing sprite drawn through the field
+screen-effect pass the retail fog sheets go through
+(`HostView::fog_prims`, which both hosts call), projected by the same
+field view (`World::expansion_particle_quads`). Its whole life is a pure
+function of the emitter's seed, its index and `World::frame`
+(`map_detail::Emitter::particle`): no state, no random stream, so particles
+draw the same on both hosts and in every run, and a replay never sees them.
+The kinds are presets of the other fields - embers rise and fade, sparkles
+hang and twinkle, dust drifts, leaves fall and sway, drips fall, smoke
+swells - any of which the file overrides.
+
+The sprites are the engine's own: four `16 x 16` 4bpp shapes (a soft dot, a
+spark, a leaf, a drop) drawn at load into free VRAM
+(`detail::particle_sheet`) with two grey ramps, one whose entries carry the
+STP bit (the glowing kinds and smoke blend additively, ABR 1)
+and one without (leaves draw opaque). The packet colour tints them.
 
 ## How large a map can be
 

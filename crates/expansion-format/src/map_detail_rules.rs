@@ -137,6 +137,65 @@ pub(crate) fn check_detail(
             }
         }
     }
+    for (i, d) in m.decals.iter().enumerate() {
+        let at = format!("decals[{i}]");
+        if d.tile.is_none() && d.rect.is_none() {
+            cx.warning(&at, "a decal with neither `tile` nor `rect` places nothing");
+        }
+        if let Some(t) = d.tile
+            && !on(t)
+        {
+            cx.error(&format!("{at}.tile"), format!("tile {t:?} is off the map"));
+        }
+        if let Some(r) = d.rect
+            && (!on([r[0], r[1]]) || !on([r[2], r[3]]))
+        {
+            cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
+        }
+        if !(3..=16).contains(&d.sides) {
+            cx.error(
+                &format!("{at}.sides"),
+                format!("sides {} is outside 3..=16", d.sides),
+            );
+        }
+        if d.size[0] == 0 || d.size[1] == 0 || d.size[0] > 1024 || d.size[1] > 1024 {
+            cx.error(
+                &format!("{at}.size"),
+                "a decal is 1..=1024 world units a side",
+            );
+        }
+        if !(d.density.is_finite() && (0.0..=8.0).contains(&d.density)) {
+            cx.error(
+                &format!("{at}.density"),
+                format!("density {} is outside 0..=8", d.density),
+            );
+        }
+    }
+    if grid.is_some()
+        && let Err(e) = m.decals()
+    {
+        cx.error("decals", format!("{e:#}"));
+    }
+    for (i, e) in m.emitters.iter().enumerate() {
+        let at = format!("emitters[{i}]");
+        if !on([e.rect[0], e.rect[1]]) || !on([e.rect[2], e.rect[3]]) {
+            cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
+        }
+        if let Some(c) = e.count
+            && c > crate::map_detail::MAX_PARTICLES
+        {
+            cx.error(
+                &format!("{at}.count"),
+                format!(
+                    "{c} particles; an emitter keeps at most {}",
+                    crate::map_detail::MAX_PARTICLES
+                ),
+            );
+        }
+        if e.life.is_some_and(|l| l < 1) {
+            cx.error(&format!("{at}.life"), "a particle lives at least 1 frame");
+        }
+    }
     for (i, f) in m.fog.regions.iter().enumerate() {
         let at = format!("fog.regions[{i}]");
         if !on([f.rect[0], f.rect[1]]) || !on([f.rect[2], f.rect[3]]) {

@@ -267,7 +267,7 @@ fn material_rect(
             let w = count.min(1024u16.saturating_sub(x));
             (w > 0).then_some(((x, y, w, 1), None))
         }
-        MaterialFx::Scroll { cell, .. } => {
+        MaterialFx::Scroll { cell, rect, .. } => {
             let tsb = u16::from(cell.tpage);
             let (px, py) = ((tsb & 0xF) * 64, ((tsb >> 4) & 1) * 256);
             let tpw: u16 = match (tsb >> 7) & 3 {
@@ -275,6 +275,11 @@ fn material_rect(
                 1 => 2,
                 _ => 1,
             };
+            // An explicit rectangle (a carried-in texture's copy) stands in
+            // for the cell's.
+            if let Some([x, y, w, h]) = rect {
+                return (w > 0 && h > 0).then_some(((x, y, w, h), Some(tpw)));
+            }
             let axis = legaia_scene_formats::field_objects::GROUND_ATLAS_AXIS as u16;
             let px_cell = legaia_scene_formats::field_objects::GROUND_ATLAS_TILE_PX as u16;
             let (col, row) = (
@@ -319,6 +324,94 @@ fn scroll_texels(src: &[u16], w: u16, h: u16, tpw: u16, step: u64, dx: i8, dy: i
 }
 
 impl World {
+    /// This frame's pack-map particles ([`legaia_expansion_format::map_detail::EmitterDef`])
+    /// as camera-facing sheets through `view`, in the form the fog pool's
+    /// sheets take, so both hosts draw them through the same field
+    /// screen-effect pass. Empty off a map, outside the field, or for a map
+    /// with no emitters. Each particle is a pure function of the frame
+    /// (`Emitter::particle`).
+    pub fn expansion_particle_quads(
+        &self,
+        view: &legaia_engine_field::fog_particles::FogView,
+    ) -> Vec<legaia_engine_field::fog_particles::FogQuad> {
+        let Some(map) = self.expansion.map.as_ref() else {
+            return Vec::new();
+        };
+        let Some(sheet) = map.particle_sheet else {
+            return Vec::new();
+        };
+        if self.mode != legaia_engine_mode::mode::SceneMode::Field {
+            return Vec::new();
+        }
+        let def = &map.def;
+        let centre = |c: u16, r: u16| def.tile_centre(c, r);
+        let mut out = Vec::new();
+        for (e, emitter) in def.emitters.iter().enumerate() {
+            let em = emitter.resolved();
+            // ABR 1 (additive) for the glowing kinds; a solid one (leaves)
+            // draws through the STP-less ramp, opaque.
+            let abr: u16 = u16::from(em.additive);
+            let clut = if em.additive {
+                sheet.clut_glow
+            } else {
+                sheet.clut_solid
+            };
+            let tpage = sheet.tpage | (abr << 5);
+            let su = sheet.u0 + em.kind.sprite() * 16;
+            for i in 0..em.count {
+                let Some(p) = em.particle(e, i, self.frame, centre) else {
+                    continue;
+                };
+                if p.color == [0, 0, 0] {
+                    continue;
+                }
+                let (x, z) = (p.pos[0] as i32, p.pos[2] as i32);
+                let floor = self.sample_field_floor_height(x, z);
+                let world = [x, floor - p.pos[1] as i32, z];
+                let Some((sx, sy, sz)) = view.project(world) else {
+                    continue;
+                };
+                // The sprite's screen half-size: a world-space offset of its
+                // size, projected.
+                let half = (p.size / 2.0).max(1.0) as i32;
+                let side = view.project([world[0] + half, world[1], world[2]]);
+                let up = view.project([world[0], world[1] - half, world[2]]);
+                let r = [side, up]
+                    .iter()
+                    .flatten()
+                    .map(|&(ax, ay, _)| (ax - sx).abs().max((ay - sy).abs()))
+                    .max()
+                    .unwrap_or(1)
+                    .clamp(1, 96);
+                if sx + r < -16 || sx - r > 336 || sy + r < -16 || sy - r > 256 {
+                    continue;
+                }
+                let px = |v: i32| v.clamp(-1024, 1023) as i16;
+                out.push(legaia_engine_field::fog_particles::FogQuad {
+                    xy: [
+                        (px(sx - r), px(sy - r)),
+                        (px(sx + r), px(sy - r)),
+                        (px(sx - r), px(sy + r)),
+                        (px(sx + r), px(sy + r)),
+                    ],
+                    uv: [
+                        (su, sheet.v0),
+                        (su + 15, sheet.v0),
+                        (su, sheet.v0 + 15),
+                        (su + 15, sheet.v0 + 15),
+                    ],
+                    clut,
+                    tpage,
+                    rgb: p.color,
+                    ot_index: (sz.max(0) as u32) >> 5,
+                    sz: sz as f32,
+                    depth: view.ndc_depth(world),
+                });
+            }
+        }
+        out
+    }
+
     /// Arm the retail field fog pool over the active map's `[fog]` regions:
     /// the regions a scene's MAN section 4 would install, and the ambient
     /// particle gate a scene's script would raise. No-op off a map or for a
@@ -385,11 +478,33 @@ mod detail_tests {
             dx: 1,
             dy: 0,
             period: 2,
+            from: None,
+            rect: None,
         };
         // Page 28 = (768, 256), 4bpp; tile 9 = column 1, row 1 of the atlas.
         assert_eq!(
             material_rect(&fx),
             Some(((768 + 8, 256 + 32, 8, 32), Some(4)))
         );
+        // A resolved copy's rectangle stands in for the cell's.
+        let MaterialFx::Scroll {
+            cell,
+            dx,
+            dy,
+            period,
+            ..
+        } = fx
+        else {
+            unreachable!()
+        };
+        let moved = MaterialFx::Scroll {
+            cell,
+            dx,
+            dy,
+            period,
+            from: Some("rugi".into()),
+            rect: Some([100, 200, 8, 32]),
+        };
+        assert_eq!(material_rect(&moved), Some(((100, 200, 8, 32), Some(4))));
     }
 }

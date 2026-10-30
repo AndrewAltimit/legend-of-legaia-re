@@ -135,11 +135,13 @@ export function renderDetail(ctx, mctx, side, map) {
     }, '+ Lamp')));
   box.append(h('p', { class: 'xw-note' }, 'Decorations draw only and stack any number a tile; they bake into one mesh per tile when the map loads. A brush is seeded, so the same file paints the same floor.'));
   box.append(jsonEditor(mctx, map, 'decor', 'Decorations', '[{mesh, tile, offset, rotation, scale}]', []));
-  box.append(jsonEditor(mctx, map, 'scatter', 'Scatter brushes', '[{rect, meshes, density, seed, jitter, yaw, scale, tilt, on, keep_clear}]', []));
-  box.append(jsonEditor(mctx, map, 'edges', 'Edge runs', '[{mesh, walls, on, every, phase, inset, y, yaw, scale}]', []));
+  box.append(jsonEditor(mctx, map, 'scatter', 'Scatter brushes', '[{rect, meshes, density, seed, jitter, yaw, scale, tilt, on, keep_clear, cluster}]', []));
+  box.append(jsonEditor(mctx, map, 'edges', 'Edge runs', '[{mesh, walls, on, every, phase, inset, y, yaw, scale, jitter, yaw_jitter, scale_range, seed}]', []));
   box.append(jsonEditor(mctx, map, 'lighting', 'Lighting', '{mood: day|dusk|night|cave, lamps: [...]}', {}));
   box.append(jsonEditor(mctx, map, 'materials', 'Animated materials', '[{kind: cycle|hsv|scroll, ...}]', []));
   box.append(jsonEditor(mctx, map, 'fog', 'Fog', '{regions: [{rect, angle, spread, speed}]}', {}));
+  box.append(jsonEditor(mctx, map, 'decals', 'Decals', '[{cell, tile | rect, density, size, sides, span, yaw, color}]', []));
+  box.append(jsonEditor(mctx, map, 'emitters', 'Particle emitters', '[{kind: embers|sparkles|dust|leaves|drips|smoke, rect, count, seed}]', []));
   if (ctx.assetPaths) {
     const paths = ctx.assetPaths();
     box.append(h('p', { class: 'xw-note' }, paths.length ? `Pack assets: ${paths.join(', ')}` : 'No pack assets yet: import a glTF model on a prop to add one.'));

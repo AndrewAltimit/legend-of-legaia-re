@@ -21,10 +21,12 @@ use super::*;
 
 use legaia_engine_expansion::map::{ActiveMap, FiredTrigger};
 use legaia_engine_expansion::quest::QuestEvent;
-use legaia_engine_scene::expansion_map::detail::{needs_library, resolve_mesh_library};
+use legaia_engine_scene::expansion_map::detail::{
+    needs_library, resolve_materials, resolve_mesh_library,
+};
 use legaia_engine_scene::expansion_map::{
-    BaseInputs, SceneOverride, build_field_image, floor_lut, prop_records, prop_scales,
-    resolve_map_npcs, tile_centre_world,
+    BaseInputs, SceneOverride, base_scenery, build_field_image, floor_lut, prop_records_at,
+    prop_scales_at, resolve_map_npcs, tile_centre_world,
 };
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::{ExitTarget, MapEvent};
@@ -137,6 +139,15 @@ impl SceneHost {
         )
         .with_context(|| format!("map '{map_id}' field image"))?;
         drop(base);
+        // Materials naming another scene's VRAM point at the copies the
+        // library made; the map runtime animates the resolved list.
+        let particle_sheet = library.as_ref().and_then(|l| l.particle_sheet);
+        let mut live_def = def.clone();
+        if let Some(lib) = library.as_ref() {
+            for p in resolve_materials(&mut live_def, lib, &base_name) {
+                log::warn!("expansion: map '{map_id}': {p}");
+            }
+        }
         if image.dropped_decorations > 0 {
             log::warn!(
                 "expansion: map '{map_id}': {} decorations on placed props' tiles left out",
@@ -155,18 +166,23 @@ impl SceneHost {
                 image.decoration_chunk
             );
         }
-        let npcs = resolve_map_npcs(&self.index, def, &base_name)
+        let mut npcs = resolve_map_npcs(&self.index, def, &base_name)
             .with_context(|| format!("map '{map_id}' NPCs"))?;
+        // The base scene's own animated props, as scenery after the NPCs.
+        let scenery_props = base_scenery(&self.index, def, &base_name, 1 + def.npcs.len())
+            .with_context(|| format!("map '{map_id}' base scenery"))?;
+        let n_scenery = scenery_props.len();
+        npcs.extend(scenery_props);
         let overrides = SceneOverride {
             map_id: map_id.to_string(),
             field_map: image.image,
             floor_lut: floor_lut(def, base_lut),
-            prop_scales: prop_scales(def),
+            prop_scales: prop_scales_at(def, &image.prop_anchors),
             npcs,
             added_tmds: image.added_tmds,
             geometry_entry: geometry.map(|(e, _)| e),
             vram_patches: library.map(|l| l.vram_patches).unwrap_or_default(),
-            prop_records: prop_records(def),
+            prop_records: prop_records_at(def, &image.prop_anchors),
         };
         let (sx, sz) = match seat {
             Some((x, z, _)) => (x, z),
@@ -210,8 +226,11 @@ impl SceneHost {
             .and_then(|s| s.overrides.as_ref())
             .map(|o| o.npcs.clone())
             .unwrap_or_default();
-        let facings: Vec<u8> = def.npcs.iter().map(|n| n.facing).collect();
-        self.world.install_expansion_npcs(&npcs, &facings);
+        let mut facings: Vec<u8> = def.npcs.iter().map(|n| n.facing).collect();
+        let mut scenery: Vec<bool> = def.npcs.iter().map(|n| n.scenery).collect();
+        facings.resize(facings.len() + n_scenery, 0);
+        scenery.resize(scenery.len() + n_scenery, true);
+        self.world.install_expansion_npcs(&npcs, &facings, &scenery);
         if let Some((_, _, facing)) = seat
             && let Some(player) = self.world.actors.first_mut()
         {
@@ -234,13 +253,11 @@ impl SceneHost {
         // The pack's saved flags answer which `once` triggers have fired.
         self.world.expansion.quests.sync_pack(&pack);
         let flags = &self.world.expansion.quests.progress.flags;
-        let active = ActiveMap::new(
-            map_id,
-            Arc::new(def.clone()),
-            Arc::new(grid),
-            seat_tile,
-            |f| flags.is_set(f),
-        );
+        let active = ActiveMap::new(map_id, Arc::new(live_def), Arc::new(grid), seat_tile, |f| {
+            flags.is_set(f)
+        });
+        let mut active = active;
+        active.particle_sheet = particle_sheet;
         self.world.expansion.map = Some(active);
         // The map's fog pool and its gate (no-op without `[fog]`).
         self.world.arm_expansion_fog();

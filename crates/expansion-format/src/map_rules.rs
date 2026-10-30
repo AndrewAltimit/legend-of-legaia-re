@@ -636,7 +636,8 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 _ => {}
             }
         }
-        if n.line.is_empty()
+        if !n.scenery
+            && n.line.is_empty()
             && n.shop.is_none()
             && n.cutscene.is_none()
             && !talk_key_is_used(cx, &n.id)

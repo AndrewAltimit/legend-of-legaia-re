@@ -209,3 +209,109 @@ fn the_tile_stream_is_stable() {
     assert_eq!(first, second);
     assert_eq!(splitmix64(0), 0xE220_A839_7B1D_CDAF);
 }
+
+#[test]
+fn a_cluster_thins_toward_its_rim() {
+    let k = Cluster {
+        centre: Some([5.0, 5.0]),
+        radius: 4.0,
+        falloff: 2.0,
+    };
+    let r = [0, 0, 10, 10];
+    assert_eq!(cluster_weight(&k, &r, 5, 5), 1.0);
+    assert!(cluster_weight(&k, &r, 7, 5) < 0.3);
+    assert_eq!(cluster_weight(&k, &r, 10, 10), 0.0);
+}
+
+#[test]
+fn edge_jitter_moves_copies_along_the_wall_only() {
+    let mut m = parse(HALL);
+    m.decor.clear();
+    m.scatter.clear();
+    m.edges[0].every = 1;
+    m.edges[0].jitter = 30;
+    m.edges[0].yaw_jitter = 10.0;
+    m.edges[0].seed = 5;
+    let d = m.decorations().unwrap();
+    assert_eq!(d.len(), 16);
+    let north: Vec<_> = d.iter().filter(|x| x.offset[2] < -40.0).collect();
+    assert!(
+        north.iter().any(|x| x.offset[0] != 0.0),
+        "slid along the wall"
+    );
+    assert!(
+        north.iter().all(|x| x.offset[2] <= -52.0),
+        "still against it"
+    );
+    assert!(
+        north
+            .iter()
+            .all(|x| x.rotation[1] <= 10.0 || x.rotation[1] >= 350.0)
+    );
+    assert_eq!(m.decorations().unwrap(), d, "seeded");
+}
+
+#[test]
+fn decals_place_once_or_by_brush() {
+    let mut m = parse(HALL);
+    m.decals = vec![
+        DecalDef {
+            tile: Some([2, 2]),
+            sides: 8,
+            ..Default::default()
+        },
+        DecalDef {
+            rect: Some([1, 1, 5, 3]),
+            density: 1.0,
+            cells: vec![AtlasCell {
+                tpage: 28,
+                clut: 1,
+                tile: 3,
+            }],
+            ..Default::default()
+        },
+    ];
+    let d = m.decals().unwrap();
+    assert_eq!(d[0].tile, [2, 2]);
+    assert_eq!(d[0].sides, 8);
+    // 15 floor tiles less the spawn and the prop's.
+    assert_eq!(d.len(), 1 + 13);
+    assert_eq!(m.decals().unwrap(), d);
+}
+
+#[test]
+fn emitter_presets_fill_what_the_file_leaves_out() {
+    let e = EmitterDef {
+        kind: ParticleKind::Drips,
+        count: Some(5000),
+        color: Some([1, 2, 3]),
+        ..Default::default()
+    }
+    .resolved();
+    assert_eq!(e.count, MAX_PARTICLES);
+    assert!(e.velocity[1] < 0.0, "drips fall");
+    assert_eq!(e.color_end, [1, 2, 3], "a file colour holds to the end");
+}
+
+#[test]
+fn a_particle_is_a_pure_function_of_the_frame() {
+    let e = EmitterDef {
+        kind: ParticleKind::Embers,
+        rect: [1, 1, 3, 3],
+        seed: 9,
+        ..Default::default()
+    }
+    .resolved();
+    let centre = |c: u16, r: u16| (i32::from(c) * 128 + 64, i32::from(r) * 128 + 64);
+    let a = e.particle(0, 3, 500, centre).unwrap();
+    assert_eq!(e.particle(0, 3, 500, centre), Some(a));
+    // It rises over its life and stays over the rectangle (plus jitter and sway).
+    let b = e.particle(0, 3, 501, centre).unwrap();
+    assert_ne!(a, b);
+    for f in 0..400 {
+        let p = e.particle(0, 5, f, centre).unwrap();
+        assert!((60.0..=580.0).contains(&p.pos[0]), "{p:?}");
+    }
+    // Two particles of one emitter differ.
+    assert_ne!(e.particle(0, 1, 500, centre), e.particle(0, 2, 500, centre));
+}

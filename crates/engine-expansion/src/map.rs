@@ -68,6 +68,9 @@ pub struct ActiveMap {
     /// frame it applies (`World::step_expansion_materials`), keyed by its
     /// index in `def.materials`.
     pub material_captures: std::collections::BTreeMap<usize, Vec<u16>>,
+    /// Where the map's particle sprites sit in VRAM, set by the map's load
+    /// when it has emitters.
+    pub particle_sheet: Option<legaia_expansion_format::map_detail::ParticleSheet>,
 }
 
 /// What talking to a pack NPC does ([`ActiveMap::talk`]).
@@ -112,6 +115,7 @@ impl ActiveMap {
             patrol_next: Vec::new(),
             floor_tops: Vec::new(),
             material_captures: Default::default(),
+            particle_sheet: None,
         };
         m.patrol_next = vec![0; m.def.npcs.len()];
         m.floor_tops = m.def.floor_tops();
@@ -254,7 +258,7 @@ impl ActiveMap {
     /// `open`: shut, it says nothing and opens no shop; past `after`, it says
     /// `line_after`.
     pub fn talk_gated(&self, slot: u8, open: impl Fn(&Prerequisites) -> bool) -> Option<NpcTalk> {
-        let npc = self.npc_at_slot(slot)?;
+        let npc = self.npc_at_slot(slot).filter(|n| !n.scenery)?;
         let gated = !npc.requires.is_empty() && !open(&npc.requires);
         let after = !npc.line_after.is_empty() && !npc.after.is_empty() && open(&npc.after);
         let line = if gated {

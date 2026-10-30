@@ -113,9 +113,14 @@ a form. The **Detail layer** box under the selection holds the map's
 editors, each parsed on change with the error shown in place, plus quick adds
 for a scatter brush over the whole map and a lamp at its centre
 ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#decorations)).
-The painter's canvas does not draw decorations; the play page and
-`play-window` do. `map_preview` drops decorations and every non-base prop
-mesh (they do not touch the collision grid it reads).
+The `decals` and `emitters` sections have their own JSON editors there, and
+an NPC's form has a **Scenery** checkbox (draws and plays its clip, no talk,
+no collision). The canvas draws every decoration (green dots) and decal
+(blue dots) where the map bakes it: `map_preview` expands the map's
+`decor`, `scatter`, `edges` and `decals` and returns the positions
+(`decor`), so a brush's coverage shows as it is edited. It builds the field
+image without decorations and with every non-base prop mesh as mesh `0`
+(neither touches the collision grid it reads).
 
 The **Heights** overlay is read back from `map_preview`, which builds the
 synthetic field image the engine enters

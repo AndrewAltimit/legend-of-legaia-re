@@ -116,6 +116,10 @@ pub struct MapDef {
     pub materials: Vec<crate::map_detail::MaterialFx>,
     /// The retail field fog pool over the map ([`crate::map_detail::MapFog`]).
     pub fog: crate::map_detail::MapFog,
+    /// Flat textured floor decals ([`crate::map_detail::DecalDef`]).
+    pub decals: Vec<crate::map_detail::DecalDef>,
+    /// Particle emitters ([`crate::map_detail::EmitterDef`]).
+    pub emitters: Vec<crate::map_detail::EmitterDef>,
     /// Cutscenes the map plays on arrival (`cutscenes.toml`): the first
     /// whose gate holds and that has not been seen (unless `repeat`) plays
     /// once the player stands on the map.
@@ -151,6 +155,14 @@ pub struct MapBase {
     /// Whether the base scene's own environment geometry (its placed
     /// objects, decoration cells and ground) is drawn under the map.
     pub geometry: BaseGeometry,
+    /// Seat the base scene's own animated scene props - its MAN
+    /// placements that neither talk nor lead anywhere and carry a clip (a
+    /// flickering brazier, a turning wheel, a swaying banner) - as scenery
+    /// ([`NpcDef::scenery`]) where its MAN places them, playing their own
+    /// clips. A pack map runs no MAN, so without this a kept retail room
+    /// stands still.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub scenery: bool,
 }
 
 impl Default for MapBase {
@@ -160,6 +172,7 @@ impl Default for MapBase {
                 name: String::new(),
             },
             geometry: BaseGeometry::None,
+            scenery: false,
         }
     }
 }
@@ -442,6 +455,11 @@ pub struct NpcDef {
     /// absent on arrival (neither drawn, talked to nor in the way) until a
     /// cutscene's `show` step brings it on. Empty is always present.
     pub present: crate::quest::Prerequisites,
+    /// Scenery: the placement draws and plays its clip - a waving banner,
+    /// a flickering brazier, a resting beast - but nothing collides with it
+    /// and nothing talks to it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub scenery: bool,
 }
 
 /// Where a prop's (or a decoration's) mesh comes from.

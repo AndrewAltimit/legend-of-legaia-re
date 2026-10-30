@@ -226,6 +226,17 @@ function draw(ctx, cv) {
     for (const [c0, r0, c1, r1] of pv.tops) g.strokeRect(c0 * cs + 0.5, r0 * cs + 0.5, (c1 - c0) * cs - 1, (r1 - r0) * cs - 1);
     g.setLineDash([]);
   }
+  // Decorations and decals as the map bakes them (from the preview's
+  // expansion of every decor / scatter / edges / decals entry).
+  if (good && pv.decor && pv.decor.length) {
+    for (const [dx, dz, kind] of pv.decor) {
+      g.fillStyle = kind ? 'rgba(150,200,255,0.55)' : 'rgba(120,220,140,0.75)';
+      const r = Math.max(1.5, cs * (kind ? 0.12 : 0.08));
+      g.beginPath();
+      g.arc(dx * cs, dz * cs, r, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
   const objs = V.objects[baseScene(map)];
   (map.props || []).forEach((p, i) => {
     const cx = (p.tile[0] + 0.5) * cs + ((p.offset || [0])[0] / 128) * cs;
@@ -910,6 +921,7 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'shop', t: 'otext', label: 'Shop', hint: 'an items.toml shop or a cards.toml dealer id; talking opens its counter' },
       { k: 'line_after', t: 'oref', kind: 'line', label: 'Says instead, once "after" holds' },
       { k: 'cutscene', t: 'oref', kind: 'cutscene', label: 'Plays (cutscene)', hint: 'in place of its line' },
+      { k: 'scenery', t: 'bool', label: 'Scenery (plays its clip; no talk, no collision)' },
     ], p));
     box.append(gateBox(mctx, o, 'requires', p, 'Talks when'));
     box.append(gateBox(mctx, o, 'after', p, 'After (switches to the second line)'));

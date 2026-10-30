@@ -25,8 +25,15 @@ impl World {
     /// left (a pack map runs no MAN, so the scene entry installs none) and
     /// stand each placement on its tile, facing its compass sector. The
     /// placements are [`legaia_engine_scene::expansion_map::SceneOverride::npcs`];
-    /// `facings` is parallel to them.
-    pub fn install_expansion_npcs(&mut self, npcs: &[ActorPlacement], facings: &[u8]) {
+    /// `facings` and `scenery` are parallel to them. A scenery placement
+    /// (`NpcDef::scenery`) takes no anchor: it draws and plays its clip from
+    /// its spawn, but nothing collides with it or talks to it.
+    pub fn install_expansion_npcs(
+        &mut self,
+        npcs: &[ActorPlacement],
+        facings: &[u8],
+        scenery: &[bool],
+    ) {
         let n = &mut self.npcs;
         n.dialog.clear();
         n.dialog_prologue.clear();
@@ -38,11 +45,13 @@ impl World {
         n.motions.clear();
         n.glide_speeds.clear();
         self.props.walk_touch.clear();
-        for (p, &facing) in npcs.iter().zip(facings) {
+        for (k, (p, &facing)) in npcs.iter().zip(facings).enumerate() {
             let Ok(slot) = u8::try_from(p.index) else {
                 continue;
             };
-            self.npcs.positions.insert(slot, (p.world_x, p.world_z));
+            if !scenery.get(k).copied().unwrap_or(false) {
+                self.npcs.positions.insert(slot, (p.world_x, p.world_z));
+            }
             self.npcs
                 .headings
                 .insert(slot, (i16::from(facing & 7) * 0x200 + 0x800) & 0x0FFF);

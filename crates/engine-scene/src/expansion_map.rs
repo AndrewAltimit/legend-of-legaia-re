@@ -163,11 +163,19 @@ impl SceneOverride {
 /// The `scale` of every prop that sets one, keyed by its field-grid tile -
 /// [`SceneOverride::prop_scales`].
 pub fn prop_scales(def: &MapDef) -> Vec<((u8, u8), f32)> {
+    let anchors: Vec<(u16, u16)> = def.props.iter().map(|p| (p.tile[0], p.tile[1])).collect();
+    prop_scales_at(def, &anchors)
+}
+
+/// [`prop_scales`] keyed by each prop's record anchor
+/// ([`FieldImage::prop_anchors`]).
+pub fn prop_scales_at(def: &MapDef, anchors: &[(u16, u16)]) -> Vec<((u8, u8), f32)> {
     def.props
         .iter()
-        .filter_map(|p| {
+        .zip(anchors)
+        .filter_map(|(p, &(ac, ar))| {
             let s = p.scale.filter(|s| s.is_finite() && *s > 0.0 && *s != 1.0)?;
-            let (c, r) = grid_tile(def, p.tile[0], p.tile[1]);
+            let (c, r) = grid_tile(def, ac, ar);
             Some(((u8::try_from(c).ok()?, u8::try_from(r).ok()?), s))
         })
         .collect()
@@ -180,12 +188,20 @@ pub const PROP_RECORD_BASE: usize = 0x1_0000;
 /// The draw-record key of every prop that animates, keyed by its field-grid
 /// tile - [`SceneOverride::prop_records`].
 pub fn prop_records(def: &MapDef) -> Vec<((u8, u8), usize)> {
+    let anchors: Vec<(u16, u16)> = def.props.iter().map(|p| (p.tile[0], p.tile[1])).collect();
+    prop_records_at(def, &anchors)
+}
+
+/// [`prop_records`] keyed by each prop's record anchor
+/// ([`FieldImage::prop_anchors`]).
+pub fn prop_records_at(def: &MapDef, anchors: &[(u16, u16)]) -> Vec<((u8, u8), usize)> {
     def.props
         .iter()
+        .zip(anchors)
         .enumerate()
-        .filter(|(_, p)| !p.animate.is_empty())
-        .filter_map(|(i, p)| {
-            let (c, r) = grid_tile(def, p.tile[0], p.tile[1]);
+        .filter(|(_, (p, _))| !p.animate.is_empty())
+        .filter_map(|(i, (_, &(ac, ar)))| {
+            let (c, r) = grid_tile(def, ac, ar);
             Some((
                 (u8::try_from(c).ok()?, u8::try_from(r).ok()?),
                 PROP_RECORD_BASE + i,
@@ -248,6 +264,11 @@ pub struct FieldImage {
     /// ground) that a placed prop replaced: a cell names one record, so the
     /// earlier mesh no longer draws.
     pub covered_cells: Vec<[u16; 2]>,
+    /// The map tile each prop's record anchors on, parallel to `def.props`:
+    /// its own tile, or the nearest tile without a cell mesh when its own
+    /// tile already draws one. The keys [`prop_scales_at`] and
+    /// [`prop_records_at`] take.
+    pub prop_anchors: Vec<(u16, u16)>,
 }
 
 /// Build the synthetic field image of `def` (whose resolved tiles are
@@ -295,7 +316,8 @@ pub fn build_field_image(
         len: base.geometry_len,
         meshes: Vec::new(),
     };
-    let (mut free, covered_cells) = write_objects(&mut img, def, grid, base, keep, &mut added)?;
+    let (mut free, covered_cells, anchors) =
+        write_objects(&mut img, def, grid, base, keep, &mut added)?;
     let (dropped, chunk) = write_decorations(&mut img, def, grid, base, &mut added, &mut free)?;
     write_empty_trigger_block(&mut img);
     Ok(FieldImage {
@@ -304,6 +326,7 @@ pub fn build_field_image(
         dropped_decorations: dropped,
         decoration_chunk: chunk,
         covered_cells,
+        prop_anchors: anchors,
     })
 }
 
@@ -389,6 +412,10 @@ fn psx_angle(deg: f32) -> u16 {
     ((deg / 360.0 * 4096.0).round() as i32).rem_euclid(4096) as u16
 }
 
+/// What [`write_objects`] leaves: the record slots still free, the tiles
+/// whose cell mesh a prop replaced, and each prop's record anchor.
+type WrittenObjects = (Vec<usize>, Vec<[u16; 2]>, Vec<(u16, u16)>);
+
 /// The meshes a map image adds past the base pack, deduplicated by bytes:
 /// added mesh `k` is pack index `len + k`.
 struct Added {
@@ -461,7 +488,7 @@ fn write_objects(
     base: BaseInputs<'_>,
     keep: bool,
     added: &mut Added,
-) -> Result<(Vec<usize>, Vec<[u16; 2]>)> {
+) -> Result<WrittenObjects> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     // Record 0 is the empty slot every unnamed cell points at. In a kept
@@ -586,33 +613,79 @@ fn write_objects(
     // Props: one placed record each, standing on its tile's cell. The record
     // carries the tile's ground texture too, so the ground under it still
     // draws (the cell names one record).
-    let mut prop_tiles: Vec<(u16, u16)> = Vec::new();
+    let prop_tiles: Vec<(u16, u16)> = def.props.iter().map(|p| (p.tile[0], p.tile[1])).collect();
+    let mut placed_tiles: Vec<(u16, u16)> = Vec::new();
+    let mut anchors_taken: Vec<(u16, u16)> = Vec::new();
     let mut covered = Vec::new();
     for prop in &def.props {
         let [col, row] = prop.tile;
         if usize::from(col) >= grid.width || usize::from(row) >= grid.height {
             bail!("prop {:?} at ({col}, {row}) is off the map", prop.id);
         }
-        if prop_tiles.contains(&(col, row)) {
+        if placed_tiles.contains(&(col, row)) {
             bail!(
                 "prop {:?}: tile ({col}, {row}) already holds a prop (one per tile)",
                 prop.id
             );
         }
-        prop_tiles.push((col, row));
+        placed_tiles.push((col, row));
         let mesh = mesh_index(&prop.mesh, &base, added, &format!("prop {:?}", prop.id))?;
-        let tex = tile_texture[usize::from(row) * grid.width + usize::from(col)];
-        // The cell names one record: a mesh the cell drew before (a kept
-        // retail cell, a wall, a mesh ground) gives way to the prop.
-        {
-            let (gc, gr) = grid_tile(def, col, row);
+        // The cell names one record. A cell that already draws a mesh (a
+        // kept retail cell, a wall, a mesh ground) keeps it: the prop's
+        // record moves to the nearest tile whose cell draws none, its offset
+        // carrying it back to where it was placed. Only when no such tile
+        // lies within three tiles does the prop replace the mesh.
+        let draws_mesh = |img: &[u8], c: u16, r: u16| {
+            let (gc, gr) = grid_tile(def, c, r);
             let o = cell_off(gc, gr);
             let prev = usize::from(u16::from_le_bytes([img[o], img[o + 1]]) & OBJECT_INDEX_MASK);
-            let r = &img[prev * OBJECT_RECORD_STRIDE..];
-            if prev != 0 && u16::from_le_bytes([r[0x12], r[0x13]]) & 0x2 != 0 {
-                covered.push([col, row]);
+            let rec = &img[prev * OBJECT_RECORD_STRIDE..];
+            prev != 0 && u16::from_le_bytes([rec[0x12], rec[0x13]]) & 0x2 != 0
+        };
+        let mut anchor = (col, row);
+        if draws_mesh(img, col, row) {
+            let mut best: Option<(i32, (u16, u16))> = None;
+            for dr in -3i32..=3 {
+                for dc in -3i32..=3 {
+                    let (c, r) = (i32::from(col) + dc, i32::from(row) + dr);
+                    if c < 0 || r < 0 || c as usize >= grid.width || r as usize >= grid.height {
+                        continue;
+                    }
+                    let t = (c as u16, r as u16);
+                    let d = dc * dc + dr * dr;
+                    if prop_tiles.contains(&t)
+                        || anchors_taken.contains(&t)
+                        || draws_mesh(img, t.0, t.1)
+                        || best.is_some_and(|(bd, _)| bd <= d)
+                    {
+                        continue;
+                    }
+                    best = Some((d, t));
+                }
+            }
+            match best {
+                Some((_, t)) => anchor = t,
+                None => covered.push([col, row]),
             }
         }
+        anchors_taken.push(anchor);
+        let tex = tile_texture[usize::from(anchor.1) * grid.width + usize::from(anchor.0)];
+        // The offset that carries the record from its anchor tile back to the
+        // prop's own; the floor tiers' difference with it.
+        let ladder = def.floor_ladder().unwrap_or([0; FLOOR_TIERS]);
+        let tier = |c: u16, r: u16| {
+            grid.get(usize::from(c), usize::from(r))
+                .map_or(0, |t| ladder[usize::from(t.tier)])
+        };
+        let shift = |v: i16, d: i32| (i32::from(v) + d).clamp(-32768, 32767) as i16;
+        let offset = [
+            shift(prop.offset[0], (i32::from(col) - i32::from(anchor.0)) * 128),
+            shift(
+                prop.offset[1],
+                i32::from(tier(col, row)) - i32::from(tier(anchor.0, anchor.1)),
+            ),
+            shift(prop.offset[2], (i32::from(row) - i32::from(anchor.1)) * 128),
+        ];
         let s = alloc("a prop")?;
         let flags = if tex.is_some() {
             FLAGS_PROP | FLAGS_GROUND
@@ -622,22 +695,109 @@ fn write_objects(
         put_record(
             img,
             s,
-            prop.offset,
+            offset,
             prop.rotation.map(psx_angle),
             mesh,
             flags,
             tex,
         );
-        let (gc, gr) = grid_tile(def, col, row);
-        let o = cell_off(gc, gr);
+        let (ac, ar) = grid_tile(def, anchor.0, anchor.1);
+        let o = cell_off(ac, ar);
         img[o..o + 2].copy_from_slice(&(s as u16 | cell_gates(flags)).to_le_bytes());
+        let (gc, gr) = grid_tile(def, col, row);
         if prop.solid && prop.top.is_none() {
             // Close the prop's tile: its wall quarters sit one byte row down.
             let b = COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc;
             img[b] |= 0xF0;
         }
     }
-    Ok((free, covered))
+    Ok((free, covered, anchors_taken))
+}
+
+/// One part a decorated cell bakes: a decoration's mesh or a decal's.
+struct Item {
+    tile: [u16; 2],
+    src: ItemSrc,
+    /// Map frame, `y` up.
+    offset: [f32; 3],
+    rotation: [f32; 3],
+    scale: f32,
+}
+
+enum ItemSrc {
+    Mesh(PropMesh),
+    Raw(Vec<u8>),
+}
+
+/// A decal's mesh ([`legaia_expansion_format::map_detail::Decal`]): a flat
+/// polygon `size` wide in the floor plane at its origin, textured with its
+/// atlas cell (a rectangle maps the whole cell, an `n`-gon the cell's
+/// inscribed circle), both windings so it reads from any side.
+pub fn decal_tmd(d: &legaia_expansion_format::map_detail::Decal) -> Result<Vec<u8>> {
+    use legaia_tmd::descriptor::PacketShape;
+    use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
+    let px = f32::from(legaia_scene_formats::field_objects::GROUND_ATLAS_TILE_PX);
+    let axis = legaia_scene_formats::field_objects::GROUND_ATLAS_AXIS;
+    let u0 = ((usize::from(d.cell.tile) % axis) as f32 * px).min(224.0);
+    let v0 = ((usize::from(d.cell.tile) / axis % axis) as f32 * px).min(224.0);
+    let (hw, hd) = (d.size[0] / 2.0, d.size[1] / 2.0);
+    // The texture spans `span` cells a side, clamped to the page.
+    let side = f32::from(d.span.max(1)) * px;
+    let (su, sv) = ((256.0 - u0).min(side), (256.0 - v0).min(side));
+    let uv = |fu: f32, fv: f32| -> (u8, u8) {
+        (
+            (u0 + fu * (su - 1.0)).round() as u8,
+            (v0 + fv * (sv - 1.0)).round() as u8,
+        )
+    };
+    let mut vertices: Vec<[i16; 3]> = Vec::new();
+    let mut prims = Vec::new();
+    let mut tri = |a: ([f32; 2], (u8, u8)), b: ([f32; 2], (u8, u8)), c: ([f32; 2], (u8, u8))| {
+        let base = vertices.len() as u16;
+        for p in [a.0, b.0, c.0] {
+            vertices.push([p[0].round() as i16, 0, p[1].round() as i16]);
+        }
+        for order in [[0u16, 1, 2], [0, 2, 1]] {
+            let uvs = [a.1, b.1, c.1];
+            prims.push(ModelPrim {
+                vertices: order.iter().map(|k| base + k).collect(),
+                uvs: order.iter().map(|&k| uvs[usize::from(k)]).collect(),
+                cba: d.cell.clut,
+                tsb: u16::from(d.cell.tpage),
+                colors: vec![d.color],
+            });
+        }
+    };
+    if d.sides == 4 {
+        let c = [
+            ([-hw, -hd], uv(0.0, 0.0)),
+            ([hw, -hd], uv(1.0, 0.0)),
+            ([hw, hd], uv(1.0, 1.0)),
+            ([-hw, hd], uv(0.0, 1.0)),
+        ];
+        tri(c[0], c[1], c[2]);
+        tri(c[0], c[2], c[3]);
+    } else {
+        let n = usize::from(d.sides.clamp(3, 16));
+        let centre = ([0.0, 0.0], uv(0.5, 0.5));
+        let rim = |k: usize| {
+            let a = k as f32 / n as f32 * std::f32::consts::TAU;
+            let (s, c) = a.sin_cos();
+            ([c * hw, s * hd], uv(0.5 + c * 0.5, 0.5 + s * 0.5))
+        };
+        for k in 0..n {
+            tri(centre, rim(k), rim((k + 1) % n));
+        }
+    }
+    encode(&[ModelObject {
+        vertices,
+        groups: vec![ModelGroup {
+            shape: PacketShape::Ft3,
+            semi_transparent: d.semi,
+            prims,
+        }],
+        scale: LEGAIA_OBJECT_SCALE,
+    }])
 }
 
 /// Bake the map's decorations ([`MapDef::decorations`]) into its object
@@ -665,7 +825,27 @@ fn write_decorations(
     free: &mut Vec<usize>,
 ) -> Result<(usize, usize)> {
     use legaia_scene_formats::field_objects::FLAG_PLACED;
-    let decos = def.decorations()?;
+    // Decorations name their meshes; decals are meshes built here.
+    let mut decos: Vec<Item> = def
+        .decorations()?
+        .into_iter()
+        .map(|d| Item {
+            tile: d.tile,
+            src: ItemSrc::Mesh(d.mesh),
+            offset: d.offset,
+            rotation: d.rotation,
+            scale: d.scale,
+        })
+        .collect();
+    for d in def.decals()? {
+        decos.push(Item {
+            tile: d.tile,
+            src: ItemSrc::Raw(decal_tmd(&d)?),
+            offset: d.offset,
+            rotation: [0.0, d.yaw, 0.0],
+            scale: 1.0,
+        });
+    }
     if decos.is_empty() {
         return Ok((0, 1));
     }
@@ -680,15 +860,13 @@ fn write_decorations(
             .map_or(0, |t| usize::from(t.tier));
         f32::from(ladder[t])
     };
-    let prop_tiles: std::collections::BTreeSet<[u16; 2]> =
-        def.props.iter().map(|p| p.tile).collect();
+    // A placed prop's anchor cell names its placed record; decorations
+    // there are left out below (`FLAG_PLACED`).
     let mut dropped = 0;
     let decos: Vec<_> = decos
         .into_iter()
         .filter(|d| {
-            let keep = !prop_tiles.contains(&d.tile)
-                && usize::from(d.tile[0]) < grid.width
-                && usize::from(d.tile[1]) < grid.height;
+            let keep = usize::from(d.tile[0]) < grid.width && usize::from(d.tile[1]) < grid.height;
             dropped += usize::from(!keep);
             keep
         })
@@ -703,10 +881,7 @@ fn write_decorations(
     let chunk = (1..=8u16)
         .find(|&c| cells_at(c).len() <= free.len())
         .context("the map's decorations need more object records than a map has")?;
-    let mut groups: std::collections::BTreeMap<
-        [u16; 2],
-        Vec<&legaia_expansion_format::map_detail::Decoration>,
-    > = Default::default();
+    let mut groups: std::collections::BTreeMap<[u16; 2], Vec<&Item>> = Default::default();
     for d in &decos {
         groups
             .entry([d.tile[0] / chunk, d.tile[1] / chunk])
@@ -774,9 +949,12 @@ fn write_decorations(
         type Part = (Vec<u8>, [f32; 3], [f32; 3], f32);
         let mut owned: Vec<Part> = Vec::new();
         for d in list {
-            let raw = lib
-                .raw(&d.mesh)
-                .with_context(|| format!("decoration mesh {:?} did not resolve", d.mesh))?;
+            let raw: &[u8] = match &d.src {
+                ItemSrc::Mesh(m) => lib
+                    .raw(m)
+                    .with_context(|| format!("decoration mesh {m:?} did not resolve"))?,
+                ItemSrc::Raw(r) => r,
+            };
             let dx = (f32::from(d.tile[0]) - f32::from(anchor[0])) * 128.0;
             let dz = (f32::from(d.tile[1]) - f32::from(anchor[1])) * 128.0;
             let lift = tier_height(d.tile[0], d.tile[1]) - h0;
@@ -961,6 +1139,55 @@ pub fn resolve_map_npcs(
             world_x: wx,
             world_z: wz,
             script_pc0: 0,
+        });
+    }
+    Ok(out)
+}
+
+/// The base scene's animated scene props as scenery placements
+/// ([`legaia_expansion_format::map::MapBase::scenery`]): every placement of
+/// its MAN that is neither a talker nor a door, carries a clip and draws
+/// from the scene's own pool, at the position its MAN header gives, in
+/// placement slots from `first_slot` up (after the map's own NPCs). Empty
+/// when the map does not ask for them.
+pub fn base_scenery(
+    index: &ProtIndex,
+    def: &MapDef,
+    base_scene: &str,
+    first_slot: usize,
+) -> Result<Vec<ActorPlacement>> {
+    if !def.base.scenery {
+        return Ok(Vec::new());
+    }
+    let picks =
+        crate::npc_catalog::scene_npc_picks(index, base_scene).map_err(anyhow::Error::msg)?;
+    let s = Scene::load(index, base_scene)?;
+    let man = s
+        .field_man_payload(index)?
+        .with_context(|| format!("scene `{base_scene}` has no MAN"))?;
+    let mf = legaia_scene_formats::man_section::parse(&man)?;
+    let placements = mf.actor_placements(&man);
+    let mut out = Vec::new();
+    for pick in picks
+        .iter()
+        .filter(|p| p.kind == "prop" && !p.special && p.anim_id != 0)
+    {
+        let Some(src) = placements
+            .iter()
+            .find(|p| p.index == usize::from(pick.index))
+        else {
+            continue;
+        };
+        let slot = first_slot + out.len();
+        if slot >= 0xF0 {
+            break;
+        }
+        out.push(ActorPlacement {
+            index: slot,
+            record_offset: 0,
+            local_count: 0,
+            script_pc0: 0,
+            ..src.clone()
         });
     }
     Ok(out)

@@ -439,3 +439,92 @@ fn decorations_on_a_prop_tile_are_dropped() {
     .unwrap();
     assert_eq!(out.dropped_decorations, 1);
 }
+
+#[test]
+fn decals_bake_as_flat_polygons_in_their_cell() {
+    use legaia_expansion_format::map_detail::{AtlasCell, DecalDef};
+    let mut def = def();
+    def.props.clear();
+    def.decals = vec![DecalDef {
+        tile: Some([1, 1]),
+        cell: AtlasCell {
+            tpage: 28,
+            clut: 32576,
+            tile: 9,
+        },
+        size: [100, 60],
+        sides: 8,
+        ..Default::default()
+    }];
+    let grid = def.tile_grid().unwrap();
+    let pack = plate_pack(4);
+    let lib = MeshLibrary::from_base_pack(pack.clone(), &def);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(pack.len()),
+            library: Some(&lib),
+        },
+    )
+    .unwrap();
+    assert_eq!(out.added_tmds.len(), 1);
+    let raw = &out.added_tmds[0];
+    let tmd = legaia_tmd::parse(raw).unwrap();
+    let o = &tmd.objects[0];
+    // Lifted 2 units off the floor (Y down), 50 x 30 half extents.
+    assert!(o.vertices.iter().all(|v| v.y == -2));
+    assert_eq!(o.vertices.iter().map(|v| v.x).max(), Some(50));
+    let g = legaia_tmd::legaia_prims::iter_groups(
+        raw,
+        o.primitives_byte_offset,
+        o.primitives_byte_size,
+    )
+    .unwrap();
+    // Eight fan triangles, both windings, inside atlas cell 9 (u 32..63, v 32..63).
+    assert_eq!(g[0].prims.len(), 16);
+    assert!(
+        g[0].prims
+            .iter()
+            .flat_map(|p| &p.uvs)
+            .all(|&(u, v)| (32..=63).contains(&u) && (32..=63).contains(&v))
+    );
+}
+
+#[test]
+fn a_prop_on_a_mesh_cell_anchors_beside_it() {
+    // Tile (2, 2) is a mesh ground ('d'): its cell keeps the mesh, and the
+    // prop's record anchors on the nearest free tile with an offset back.
+    let mut def = def();
+    def.props.truncate(1);
+    def.props[0].tile = [2, 2];
+    def.props[0].offset = [0, 0, 0];
+    def.props[0].solid = false;
+    let grid = def.tile_grid().unwrap();
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(20),
+            library: None,
+        },
+    )
+    .unwrap();
+    assert!(out.covered_cells.is_empty());
+    let anchor = out.prop_anchors[0];
+    assert_ne!(anchor, (2, 2));
+    let placed = parse_placements(&out.image);
+    let p = placed.iter().find(|p| p.pack_index == Some(7)).unwrap();
+    // The draw lands on tile (2, 2)'s centre all the same.
+    let (cx, cz) = tile_centre_world(&def, 2, 2);
+    assert_eq!((p.world_x, p.world_z), (i32::from(cx), i32::from(cz)));
+    // The mesh ground still draws from its own cell.
+    let (gc, gr) = grid_tile(&def, 2, 2);
+    let c = cell(&out.image, gc, gr) & OBJECT_INDEX_MASK;
+    let r = &out.image[usize::from(c) * OBJECT_RECORD_STRIDE..];
+    assert_eq!(u16::from_le_bytes([r[0x10], r[0x11]]), 4);
+}

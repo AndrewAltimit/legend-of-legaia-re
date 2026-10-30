@@ -444,6 +444,8 @@ impl Core {
         probe.decor.clear();
         probe.scatter.clear();
         probe.edges.clear();
+        probe.decals.clear();
+        probe.emitters.clear();
         let img = build_field_map_image(
             &probe,
             &grid,
@@ -515,6 +517,30 @@ impl Core {
                     ])
                 })
                 .collect::<Vec<_>>(),
+            // Every decoration and decal at its position, map-local tiles
+            // `[x, z, kind]` (`0` a decoration, `1` a decal), so the painter
+            // draws what the map bakes; empty when a brush does not expand.
+            "decor": def
+                .decorations()
+                .map(|d| {
+                    d.iter()
+                        .map(|x| {
+                            json!([
+                                f64::from(x.tile[0]) + 0.5 + f64::from(x.offset[0]) / 128.0,
+                                f64::from(x.tile[1]) + 0.5 + f64::from(x.offset[2]) / 128.0,
+                                0
+                            ])
+                        })
+                        .chain(def.decals().unwrap_or_default().iter().map(|x| {
+                            json!([
+                                f64::from(x.tile[0]) + 0.5 + f64::from(x.offset[0]) / 128.0,
+                                f64::from(x.tile[1]) + 0.5 + f64::from(x.offset[2]) / 128.0,
+                                1
+                            ])
+                        }))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
         }))
     }
 }
