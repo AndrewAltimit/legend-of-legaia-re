@@ -681,3 +681,206 @@ floor beneath your feet.
 Somewhere far below, a bell that
 has not rung in a hundred years
 rings once.)"""
+
+# --- The Rebirth Isles -------------------------------------------------------
+
+[lines.isles_sea_gate]
+text = """
+(Salt wind blows through a crack
+in the west wall. Beyond it, a
+stair runs down to the sea.)
+"""
+
+[lines.isles_beach_intro]
+text = """
+(White sand, a ruined jetty and
+the sound of surf. The tower is
+nowhere to be seen behind you.)
+"""
+
+[lines.isles_ferry_hello]
+speaker = "Ferrywoman Maro"
+text = """
+You came down the old sea stair?
+Then the tower let you go. Good.
+
+These are the Rebirth Isles. The
+Mist sat on them longest of all.
+
+The village is up over the dunes.
+Tell the elder Maro sent you.
+"""
+
+[lines.isles_ferry_active]
+speaker = "Ferrywoman Maro"
+text = """
+Over the dunes, to the north-east.
+Follow the lanterns.
+"""
+
+[lines.isles_ferry_idle]
+speaker = "Ferrywoman Maro"
+text = """
+The tide is kind tonight. Mind
+the gulls; they bite.
+"""
+
+[lines.isles_elder_hello]
+speaker = "Elder Tolva"
+text = """
+Strangers! From the tower, Maro
+says. Then the old stair is open.
+
+Rest at the lodge, and buy what
+Pell can spare. You are welcome.
+"""
+
+[lines.isles_elder_idle]
+speaker = "Elder Tolva"
+text = """
+The isles remember the Mist, but
+we will not let it be all they
+remember.
+"""
+
+[lines.isles_elder_thorns]
+speaker = "Elder Tolva"
+text = """
+Our path inland is lost under the
+Thornwood. Wasps nest in the old
+ruins, and something rules them.
+
+The hermit at the ruins' gate has
+watched it grow. Will you go?
+"""
+
+[lines.isles_elder_thorns_active]
+speaker = "Elder Tolva"
+text = """
+The Thornwood path starts past the
+lodge, to the east.
+"""
+
+[lines.isles_fisher_offer]
+speaker = "Fisher Dunn"
+text = """
+Every net torn to rags by dawn.
+It's the reef beasts - they wade
+right up onto the sand at night.
+
+Thin them out for me, would you?
+"""
+
+[lines.isles_fisher_active]
+speaker = "Fisher Dunn"
+text = """
+Down on the beach. You'll hear
+them before you see them.
+"""
+
+[lines.isles_fisher_done]
+speaker = "Fisher Dunn"
+text = """
+Not a tear in a week! Here, take
+these. Fresh from the smokehouse.
+"""
+
+[lines.isles_shop_keeper]
+speaker = "Trader Pell"
+text = """
+Not much comes over the sea, but
+what does, I keep for travellers.
+"""
+
+[lines.isles_lodge]
+text = """
+(The lodge fire is warm. The
+party rests.)
+"""
+
+[lines.isles_villager_a]
+speaker = "Islander"
+text = """
+My grandmother says the tower
+used to ring like a bell.
+"""
+
+[lines.isles_villager_b]
+speaker = "Islander"
+text = """
+Don't go into the Thornwood
+after dark. The wasps don't
+sleep.
+"""
+
+[lines.isles_child]
+speaker = "Child"
+text = """
+I found a pearl once! It sang.
+Then it rolled into the sea.
+"""
+
+[lines.isles_thornwood_intro]
+text = """
+(Thorns close overhead. Somewhere
+ahead, a deep, steady humming.)
+"""
+
+[lines.isles_ruins_intro]
+text = """
+(Old stones under the vines - a
+gate, and a hive grown through
+it like a second wall.)
+"""
+
+[lines.isles_hermit_hello]
+speaker = "Hermit Ost"
+text = """
+Quiet. She can hear you. The
+queen sleeps in the gate itself.
+"""
+
+[lines.isles_hermit_done]
+speaker = "Hermit Ost"
+text = """
+The hum is gone. Do you hear the
+other sound now, under the
+stones? The sea, singing.
+"""
+
+[lines.isles_hermit_grotto]
+speaker = "Hermit Ost"
+text = """
+The stair past the gate runs down
+to the grotto. Whatever sings
+there has waited a long time.
+"""
+
+[lines.isles_grotto_intro]
+text = """
+(Water drips in the dark. Light
+moves on the walls, as if the
+cave were breathing.)
+"""
+
+[lines.isles_pearl_done]
+speaker = "The Pearl"
+text = """
+...You are not the Mist. Then I
+may sing again.
+
+Take my voice back to the tower.
+The isles are awake.
+"""
+
+[lines.isles_pearl_idle]
+speaker = "The Pearl"
+text = """
+(A soft note rings through the
+grotto, and the water glows.)
+"""
+
+[lines.isles_queen_rage]
+text = """
+The hive shrieks!
+"""

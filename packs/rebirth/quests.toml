@@ -349,3 +349,74 @@ formation = "throne_echo"
 rules = { turn_limit = 15, enemy_scale_permille = 1500 }
 score = { base = 10000, turn_bonus = 500 }
 rewards = { gold = 100000, items = [{ item = 235, count = 1 }], counters = [{ counter = "challenges_cleared" }] }
+
+# --- The Rebirth Isles -------------------------------------------------------
+#
+# Past the tower's sea gate (1F west wall) lies the region the Mist hid
+# longest. NPC ids and where they stand:
+#   isles_ferrywoman  isles_beach    by the sea gate's landing
+#   isles_elder       isles_village  the elder's porch
+#   isles_fisher      isles_village  the jetty
+#   isles_hermit      isles_thornwood  the ruins at the path's end
+#   isles_pearl       isles_grotto   the pool at the grotto's heart
+
+[[quests]]
+id = "isles_landfall"
+title = "Landfall"
+description = "A ferry nobody remembers rowing has left the party on an island beach. The ferrywoman says the village up the dunes has not seen a stranger in an age."
+giver = "isles_ferrywoman"
+prerequisites = { quests = ["tower_trial"] }
+start_dialog = "isles_ferry_hello"
+active_dialog = "isles_ferry_active"
+objectives = [
+    { kind = "enter_scene", scene = "isles_village", text = "Climb the dunes to the village" },
+    { kind = "talk", npc = "isles_elder", text = "Speak with the village elder" },
+]
+complete_dialog = "isles_elder_hello"
+rewards = { gold = 5000, set_flags = ["isles_welcome"] }
+
+[[quests]]
+id = "isles_nets"
+title = "Torn Nets"
+description = "Something in the shallows shreds the fishers' nets every night. Clear the shore of the beasts that wade in from the reef."
+giver = "isles_fisher"
+prerequisites = { quests = ["isles_landfall"] }
+start_dialog = "isles_fisher_offer"
+active_dialog = "isles_fisher_active"
+objectives = [
+    { kind = "defeat_formation", formation = "isles_shore", count = 3, text = "Rout the shoreline beasts three times" },
+    { kind = "talk", npc = "isles_fisher", text = "Tell the fisher on the jetty" },
+]
+complete_dialog = "isles_fisher_done"
+rewards = { gold = 8000, items = [{ item = 121, count = 3 }] }
+
+[[quests]]
+id = "isles_thornwood"
+title = "The Thornwood Queen"
+description = "The path inland is choked with thorn and wasps. The hermit at the ruins says the hive's queen has grown into the old gate itself."
+giver = "isles_elder"
+prerequisites = { quests = ["isles_landfall"], min_level = 35 }
+start_dialog = "isles_elder_thorns"
+active_dialog = "isles_elder_thorns_active"
+objectives = [
+    { kind = "enter_scene", scene = "isles_thornwood", text = "Follow the Thornwood path to the ruins" },
+    { kind = "win_boss", boss = "isles_hive_queen", text = "Defeat the Thornwood Queen" },
+    { kind = "talk", npc = "isles_hermit", text = "Speak with the hermit at the gate" },
+]
+complete_dialog = "isles_hermit_done"
+rewards = { gold = 15000, set_flags = ["isles_gate_open"] }
+
+[[quests]]
+id = "isles_pearl"
+title = "The Pearl Below"
+description = "Under the ruins a stair runs down to a grotto where the sea still sings. Something there remembers the islands before the Mist."
+giver = "isles_hermit"
+prerequisites = { quests = ["isles_thornwood"] }
+start_dialog = "isles_hermit_grotto"
+active_dialog = "isles_hermit_grotto"
+objectives = [
+    { kind = "enter_scene", scene = "isles_grotto", text = "Descend into the grotto" },
+    { kind = "talk", npc = "isles_pearl", text = "Find what sings in the grotto" },
+]
+complete_dialog = "isles_pearl_done"
+rewards = { gold = 20000, items = [{ item = 125, count = 2 }], set_flags = ["isles_pearl_heard"] }

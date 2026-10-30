@@ -1,0 +1,284 @@
+# Rebirth Isles: the arrival beach. Laid out from scratch over Rim Elm's
+# (`town01`) grass, sand and water textures: dune grass under a cliff line
+# to the north, a long white beach, the surf, and a ruined jetty running out
+# into the sea. The sea stair from the tower's west wall lands on the stone
+# platform at the west end; the dune path climbs north-east to the village.
+# Palms and ferns are the West Voz Forest's (`vell`), the boats, crates and
+# driftwood Rim Elm's.
+
+name = "Rebirth Isles - Saltwind Beach"
+size = [64, 36]
+base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
+# Sound-test track 6, "Rim Elm" - the sea wind over the old village tune.
+bgm = { kind = "bgm", id = 6 }
+camera = "far"
+floor_heights = [0, 24]
+
+[tiles]
+origin = [4, 4]
+rows = [
+  "################################g###############################",
+  "##############################gggg##############################",
+  "####################ggg##GGgggGgggg####GGg####################d>",
+  "##################gggggGGGgggGGg.gggGGGGGgggGGGggggg########ddd>",
+  "###############ggggggggGGGgggg....gggGGGGgggGGGggggggG####ddddd>",
+  "#g###########GggggGG...GG.sss......gggG...ggGGGGGGGgggggddddd###",
+  "#gggggG##gGGGGgggG......sssss.............ssss......ggdddddg####",
+  "#ggggggggggGGGg.......sssssss.............ssss......sddddggGGgg#",
+  "#sGGgggggggggs........sssssss.............sss......dddddgggGGGg#",
+  "#.ss...ggsss..ss......sssss.......ss......ss......dddd......GGg#",
+  "#.ss....sss...sss.....ssss.......ssss..........ssdddds.....ssss#",
+  "#..s.....sss..........ssss........sss...........ddd.........sss#",
+  "#........sssss.....rrr...s.....................ddd............s#",
+  "#........sssss.....rrr...s....................ddd.........r...s#",
+  "#ppppp...sss.......rrr............ss.........ddds........rrrs..#",
+  "#ppppp..sss...ss...sss............sss...s...dddss.........rsss.#",
+  "<ppppp........sss..sss............sss......dddssss.........sss.#",
+  "<ppppp......ssssssssss..sssss...sss..ss.....d..ssssrrr....sssss#",
+  "#ppppp......ssssssssss..sssssr..ss...ss.jj.....ssssrrr....sssss#",
+  "#ppppp......ss...ss....ssss.rrr.....sss,jj......sssrrr.........#",
+  "#sssss......r....ss...ssss...,,,,,,,,,,,jj.....................#",
+  "#ssss......rrr.............,,,,,,,,,,,,,jj,....ssss............#",
+  "#sss...sssssrsss....s....,,,,,~~~~~,,~~~jj,,..ssssss........ss.#",
+  "#sss...sssssssss....,,,,,,,~~~~~~~~~~~~~jj~,,.ssssss.......sss.#",
+  "#ss....sssssssss...,,,,,,,~~~~~~~~~~~~~~jj~~,,,sssss...s...sss.#",
+  "#,,,...ss,,sssss.,,,~~~~~~~~~~~~~~~~~~~~jj~~~,,,,sss...sssssss,#",
+  "#,,,,,,,,,,,,,s,,,,~~~~~~~~~~~~~~~~~~~~~jj~~~~~,,,,....sssss,,,#",
+  "~~~,,,,,,,,,,,,,,,~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~,,,,,....ss,,,~~",
+  "~~~~~~~~~~~~~,,,~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~,,,...,,,,~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~,,,,,,,~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~,,,~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+]
+
+[tiles.legend]
+"#" = { label = "cliff", walls = "all", wall = { kind = "box", height = 288, tpage = 12, clut = 32006, tile = 36 } }
+"r" = { label = "rock outcrop", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 13 } }
+"g" = { label = "dune grass", height = 1, ground = { kind = "texture", tpage = 12, clut = 32000, tile = 9 } }
+"G" = { label = "dune grass (thick)", height = 1, ground = { kind = "texture", tpage = 12, clut = 32001, tile = 1 } }
+"." = { label = "sand", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 38 } }
+"s" = { label = "sand (pale)", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 30 } }
+"," = { label = "wet sand", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
+"~" = { label = "sea", walls = "all", ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
+"j" = { label = "jetty", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
+"p" = { label = "landing", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+"d" = { label = "dune path", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+"<" = { label = "sea stair", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+">" = { label = "to the village", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+
+[[spawns]]
+id = "sea_stair"
+tile = [3, 16]
+facing = 2
+
+[[spawns]]
+id = "from_village"
+tile = [60, 4]
+facing = 6
+
+[[exits]]
+id = "sea_stair_up"
+rect = [0, 16, 0, 17]
+to = { kind = "map", map = "rebirth_tower_1f", spawn = "from_sea" }
+
+[[exits]]
+id = "dune_path"
+rect = [63, 2, 63, 4]
+to = { kind = "map", map = "isles_village", spawn = "from_beach" }
+
+[[triggers]]
+id = "arrival"
+rect = [2, 14, 5, 19]
+event = { kind = "dialog", line = "isles_beach_intro" }
+once = true
+
+[[npcs]]
+id = "isles_ferrywoman"
+label = "Ferrywoman Maro"
+model = { kind = "npc", scene = "town01", index = 36 }
+tile = [6, 18]
+facing = 6
+line = "isles_ferry_idle"
+
+[[encounters]]
+id = "east_strand"
+rect = [24, 8, 62, 26]
+table = "isles_beach"
+
+# The jetty's end: a beached boat, crates and a lantern post.
+[[props]]
+id = "boat"
+mesh = { scene = "town01", object = 48 }
+tile = [37, 30]
+rotation = [0.0, 70.0, 0.0]
+scale = 1.3
+solid = true
+
+[[props]]
+id = "boat_wreck"
+mesh = { scene = "town01", object = 47 }
+tile = [33, 20]
+rotation = [8.0, -35.0, 0.0]
+scale = 1.2
+
+[[props]]
+id = "jetty_lantern"
+mesh = { scene = "rugi", object = 15 }
+tile = [41, 32]
+offset = [40, 40, 0]
+light = { color = [255, 200, 130], radius = 520, height = 60, flicker = 0.25, period = 14 }
+
+[[props]]
+id = "landing_lantern"
+mesh = { scene = "rugi", object = 15 }
+tile = [5, 14]
+offset = [30, 40, -30]
+light = { color = [255, 210, 150], radius = 600, height = 60, flicker = 0.2, period = 17 }
+
+# A sea-glass shard on the landing - the tower's light, washed up.
+[[props]]
+id = "sea_glass"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [2, 19]
+offset = [0, 40, 0]
+scale = 1.1
+animate = [{ kind = "spin", period = 420 }, { kind = "bob", amplitude = 8, period = 160 }]
+light = { color = [120, 200, 255], radius = 420, height = 0, flicker = 0.1, period = 60 }
+
+[[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [40, 31]
+offset = [-20, 0, 10]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 34 }
+tile = [42, 31]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [43, 32]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [4, 15]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.8
+
+# Palms and ferns along the dunes, thickest round the path's foot.
+[[scatter]]
+id = "dune_palms"
+rect = [1, 2, 62, 14]
+on = "gG"
+density = 0.28
+seed = 4101
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.3, 0.45]
+meshes = [
+  { mesh = { scene = "vell", object = 12 }, weight = 3 },
+  { mesh = { scene = "vell", object = 15 }, weight = 3 },
+  { mesh = { scene = "vell", object = 13 }, weight = 2, scale = [0.35, 0.5] },
+]
+
+[[scatter]]
+id = "path_palms"
+rect = [38, 4, 62, 18]
+on = "gG.s"
+density = 0.5
+seed = 4102
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.35, 0.5]
+cluster = { centre = [48.0, 12.0], radius = 9.0, falloff = 1.5 }
+meshes = [
+  { mesh = { scene = "vell", object = 12 }, weight = 2 },
+  { mesh = { scene = "vell", object = 15 }, weight = 2 },
+  { mesh = { scene = "vell", object = 18 }, weight = 1, scale = [0.35, 0.5] },
+]
+
+[[scatter]]
+id = "beach_drift"
+rect = [6, 8, 62, 28]
+on = ".s,"
+density = 0.07
+seed = 4103
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.4, 0.8]
+meshes = [
+  { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.3, 0.5] },
+  { mesh = { scene = "vell", object = 10 }, weight = 2, scale = [0.3, 0.5] },
+  { mesh = { scene = "town01", object = 47 }, weight = 1, scale = [0.5, 0.8] },
+]
+
+[[scatter]]
+id = "outcrop_rocks"
+rect = [1, 1, 62, 30]
+on = "r"
+density = 1.0
+seed = 4104
+jitter = 20
+yaw = [0.0, 360.0]
+scale = [0.6, 0.9]
+meshes = [
+  { mesh = { scene = "vell", object = 22 }, weight = 1, scale = [0.6, 0.9] },
+]
+
+[[edges]]
+id = "cliff_ferns"
+mesh = { scene = "vell", object = 14 }
+walls = "#"
+every = 2
+inset = 24
+jitter = 40
+yaw_jitter = 180.0
+scale_range = [0.3, 0.5]
+seed = 4105
+
+[[emitters]]
+kind = "sparkles"
+rect = [2, 26, 62, 35]
+height = [0, 12]
+count = 60
+color = [220, 240, 255]
+seed = 4111
+
+[[emitters]]
+kind = "dust"
+rect = [2, 8, 62, 24]
+height = [0, 60]
+count = 40
+color = [255, 240, 210]
+seed = 4112
+
+[[emitters]]
+kind = "leaves"
+rect = [36, 2, 62, 16]
+count = 24
+color = [120, 190, 90]
+seed = 4113
+
+[[materials]]
+kind = "scroll"
+cell = { tpage = 9, clut = 31880, tile = 56 }
+dx = 1
+dy = 1
+period = 6
+
+[lighting]
+mood = "day"
+lamps = [
+  { id = "sun_glint", tile = [32, 30], offset = [0, 200, 0], color = [255, 240, 210], radius = 1400 },
+]
+
+[fog]
+regions = [
+  { rect = [2, 24, 62, 32], angle = 0.0, spread = 30.0, speed = 10 },
+]

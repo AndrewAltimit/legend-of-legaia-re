@@ -260,3 +260,16 @@ stock = [
     { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } },
     { item = "rebirth_greaves", requires = { bosses = ["azure_seraph"] } },
 ]
+
+# Trader Pell's stall in the Rebirth Isles village (maps/isles_village.toml).
+[[shops]]
+id = "isles_trader"
+name = "Pell's Trading Post"
+stock = [
+    "tower_draught",
+    "mist_tonic",
+    0x79,
+    0x7A,
+    0x7B,
+    { item = "phoenix_plume", requires = { quests = ["isles_nets"] } },
+]

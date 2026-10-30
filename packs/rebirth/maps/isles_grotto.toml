@@ -1,0 +1,190 @@
+# Rebirth Isles: the Singing Grotto, under the ruins. Laid out from scratch
+# over the Snowdrift Cave's (`cave01`) blue rock: a stair down from the
+# ruins' gate, a cavern of dripping stone and mushrooms, and a still pool at
+# its heart with an islet where the Pearl sings. Water light ripples on the
+# walls, crystals turn over the pool, and the drips never stop.
+
+name = "Rebirth Isles - The Singing Grotto"
+size = [40, 36]
+base = { scene = { kind = "scene", name = "cave01" }, geometry = "none" }
+# Sound-test track 20.
+bgm = { kind = "bgm", id = 20 }
+camera = "far"
+floor_heights = [0, 16]
+
+[tiles]
+origin = [4, 4]
+rows = [
+  "###################^^^##################",
+  "###################...##################",
+  "###################.....################",
+  "##################........##############",
+  "################,,,...,....#############",
+  "##########..,...,,,.........,.##########",
+  "#########......,,,.............#########",
+  "#########...........,.......,...########",
+  "########....,......,,.....,,,,.....#####",
+  "######,,,.......................,....###",
+  "####.#..,,,.....................,....###",
+  "###..#..,.#...........,......###......##",
+  "###,,...,###...,....,,,,.,,,.###..,...##",
+  "###,,,,,,.#....,,,.....,,,,..###..,...##",
+  "###,,,,,,......,,,,.....,,..........,,##",
+  "###...........,,,,,...~.........,...,,##",
+  "##............,,,,,~~~~~~~..,...,,,,,.##",
+  "##............,...~~~~~~~~~.....,,,...##",
+  "#.............,..~~~~~~~~~~~.....,,...##",
+  "##...............~~~~~~~~~~~.....,,,...#",
+  "####..,,,,,,,....~~~~iii~~~~.....,,,,,,#",
+  "#####,,,......bbbbbbbiii~~~~~..........#",
+  "#####,,,.........~~~~iii~~~~..........##",
+  "#####............~~~~~~~~~~~........####",
+  "######......,...,~~~~~~~~~~~..,,,.######",
+  "######..........,.~~~~~~~~~....,,.######",
+  "######..,..#....,,,~~~~~~~.....,########",
+  "####.##...###....,,,,,~.......##########",
+  "#######...,#,.....,,...,,,,,,,##########",
+  "#######....,,....,,,,,,,,...,.##########",
+  "########....,,,,,,,,,,,,,....###########",
+  "#########...,,,,,...,,,......###########",
+  "############,,.......,,...##############",
+  "##############........,..###############",
+  "###############...,...,#################",
+  "########################################",
+]
+
+[tiles.legend]
+"#" = { label = "cave rock", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32454, tile = 41 } }
+"." = { label = "cave floor", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
+"," = { label = "cave floor (wet)", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
+"~" = { label = "pool", walls = "all", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 40 } }
+"i" = { label = "islet", height = 1, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
+"b" = { label = "stepping stones", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
+"^" = { label = "stair up", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
+
+[[spawns]]
+id = "from_ruins"
+tile = [20, 2]
+facing = 4
+
+[[exits]]
+id = "stair_up"
+rect = [19, 0, 21, 0]
+to = { kind = "map", map = "isles_thornwood", spawn = "from_grotto" }
+
+[[triggers]]
+id = "grotto_intro"
+rect = [18, 1, 22, 4]
+event = { kind = "dialog", line = "isles_grotto_intro" }
+once = true
+
+# Wading out to the islet is talking to the Pearl.
+[[triggers]]
+id = "pearl"
+rect = [21, 20, 23, 22]
+event = { kind = "talk", npc = "isles_pearl" }
+
+[[triggers]]
+id = "pearl_song"
+rect = [21, 20, 23, 22]
+event = { kind = "dialog", line = "isles_pearl_idle" }
+requires = { quests = ["isles_pearl"] }
+
+[[encounters]]
+id = "cavern"
+rect = [1, 5, 38, 34]
+table = "isles_grotto"
+
+# The Pearl: a crystal over the islet, turning and breathing light.
+[[props]]
+id = "pearl"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [22, 21]
+offset = [0, 90, 0]
+scale = 2.0
+animate = [{ kind = "spin", period = 360 }, { kind = "bob", amplitude = 16, period = 180 }, { kind = "pulse", amount = 0.08, period = 90 }]
+light = { color = [140, 220, 255], radius = 1100, height = 0, flicker = 0.15, period = 45 }
+
+[[props]]
+id = "pool_crystal_w"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [17, 18]
+offset = [0, 60, 0]
+animate = [{ kind = "orbit", radius = 40, period = 400 }, { kind = "bob", amplitude = 10, period = 150 }]
+light = { color = [120, 160, 255], radius = 420, height = 0 }
+
+[[props]]
+id = "pool_crystal_e"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [27, 24]
+offset = [0, 60, 0]
+animate = [{ kind = "orbit", radius = 40, period = -400 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.5 }]
+light = { color = [120, 160, 255], radius = 420, height = 0 }
+
+[[scatter]]
+id = "mushrooms"
+rect = [1, 1, 38, 34]
+on = ".,"
+density = 0.12
+seed = 4401
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.3, 0.5]
+meshes = [
+  { mesh = { object = 40 }, weight = 3 },
+  { mesh = { object = 47 }, weight = 2, scale = [0.8, 1.2] },
+]
+
+[[edges]]
+id = "wall_crystals"
+mesh = { asset = "models/ember_crystal.glb" }
+walls = "#"
+every = 4
+inset = 30
+jitter = 40
+yaw_jitter = 180.0
+scale_range = [0.6, 1.0]
+seed = 4402
+
+[[emitters]]
+kind = "drips"
+rect = [2, 2, 37, 33]
+count = 60
+color = [170, 210, 255]
+seed = 4411
+
+[[emitters]]
+kind = "sparkles"
+rect = [16, 15, 28, 27]
+height = [0, 220]
+count = 60
+color = [150, 220, 255]
+seed = 4412
+
+[[emitters]]
+kind = "dust"
+rect = [2, 2, 37, 33]
+height = [0, 160]
+count = 40
+color = [140, 170, 230]
+seed = 4413
+
+[[materials]]
+kind = "scroll"
+cell = { tpage = 11, clut = 32454, tile = 40 }
+dx = 1
+dy = 1
+period = 10
+
+[lighting]
+mood = "cave"
+lamps = [
+  { id = "stair_light", tile = [20, 2], offset = [0, 120, 0], color = [200, 220, 255], radius = 600 },
+  { id = "cavern_w", tile = [10, 22], offset = [0, 160, 0], color = [90, 140, 255], radius = 700, flicker = 0.1, period = 70 },
+  { id = "cavern_e", tile = [32, 20], offset = [0, 160, 0], color = [90, 140, 255], radius = 700, flicker = 0.1, period = 80 },
+]
+
+[fog]
+regions = [
+  { rect = [14, 14, 30, 28], angle = 0.0, spread = 60.0, speed = 6 },
+]

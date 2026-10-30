@@ -805,3 +805,214 @@ formation = "throne_echo"
 music = { kind = "bgm", id = 73 }
 reward_gold = 20000
 once = false
+
+# --- The Rebirth Isles (party level 35-45) -----------------------------------
+#
+# An outdoor region past the tower's sea gate (maps/isles_*.toml): a beach,
+# a fishing village, the Thornwood and its ruins, and a grotto under the
+# cliffs. Beach and grotto beasts are water-aligned, the Thornwood's are
+# earth and wind. The Thornwood's mini-boss guards the ruins' gate.
+
+[monsters.isles_spikefish]
+base = { kind = "monster", id = 70 }
+name = "Tide Spikefish"
+hp = 3200
+attack = 300
+defence = 150
+speed = { mul = 1.2 }
+exp = 3900
+gold = 2400
+element = 1
+
+[monsters.isles_gel_frog]
+base = { kind = "monster", id = 44 }
+name = "Surf Frog"
+hp = 3600
+attack = 290
+defence = 160
+exp = 4100
+gold = 2500
+element = 1
+drop = { item = { kind = "item", id = 121 }, chance_pct = 15 }
+
+[monsters.isles_gull]
+base = { kind = "monster", id = 71 }
+name = "Squall Gull"
+hp = 2900
+attack = 320
+defence = 140
+speed = { mul = 1.35 }
+exp = 3800
+gold = 2300
+element = 3
+
+[monsters.isles_mushrin]
+base = { kind = "monster", id = 24 }
+name = "Thorncap"
+hp = 3800
+attack = 300
+defence = 170
+exp = 4300
+gold = 2700
+element = 0
+steal = { item = { kind = "item", id = 122 }, chance_pct = 20 }
+
+[monsters.isles_mantis]
+base = { kind = "monster", id = 53 }
+name = "Bramble Mantis"
+hp = 4200
+attack = 330
+defence = 165
+speed = { mul = 1.2 }
+exp = 4600
+gold = 2900
+element = 3
+
+[monsters.isles_wolf]
+base = { kind = "monster", id = 41 }
+name = "Thornwood Wolf"
+hp = 4000
+attack = 340
+defence = 160
+speed = { mul = 1.25 }
+exp = 4500
+gold = 2800
+element = 0
+
+[monsters.isles_bee]
+base = { kind = "monster", id = 62 }
+name = "Ruin Wasp"
+hp = 2600
+attack = 310
+defence = 150
+speed = { mul = 1.3 }
+exp = 3600
+gold = 2200
+element = 3
+
+[monsters.isles_slime]
+base = { kind = "monster", id = 9 }
+name = "Grotto Ooze"
+hp = 4400
+attack = 300
+defence = 190
+exp = 4800
+gold = 3000
+element = 1
+drop = { item = { kind = "item", id = 123 }, chance_pct = 15 }
+
+[monsters.isles_nighto]
+base = { kind = "monster", id = 51 }
+name = "Pearl Wisp"
+hp = 3400
+mp = 400
+attack = 280
+defence = 170
+intelligence = { mul = 1.4 }
+exp = 4700
+gold = 3100
+element = 5
+
+# The Thornwood's mini-boss: the hive queen grown into the ruins' gate.
+# Queen Bee keeps her own swings; 0x13 is the base's sting spell row.
+[monsters.isles_hive_queen]
+base = { kind = "monster", id = 63 }
+name = "Thornwood Queen"
+hp = 18000
+mp = 900
+attack = 400
+defence = 210
+speed = { mul = 1.2 }
+exp = 22000
+gold = 15000
+element = 3
+
+[monsters.isles_hive_queen.script]
+immune = ["sleep", "confuse"]
+
+[[monsters.isles_hive_queen.script.phases]]
+moves = [
+    { attack = 0, weight = 3 },
+    { attack = 1, weight = 2 },
+]
+
+[[monsters.isles_hive_queen.script.phases]]
+when = { hp_below_pct = 50 }
+line = "isles_queen_rage"
+attack = { mul = 1.2 }
+speed = { mul = 1.2 }
+moves = [
+    { attack = 1, hits = 2, weight = 3, target = "lowest_hp" },
+    { attack = 0, weight = 1 },
+]
+
+[formations.isles_shore]
+label = "Shoreline"
+monsters = ["isles_spikefish", "isles_gel_frog", "isles_spikefish"]
+
+[formations.isles_squall]
+label = "Squall Gulls"
+monsters = ["isles_gull", "isles_gull", "isles_gel_frog"]
+
+[formations.isles_thicket]
+label = "Thornwood Thicket"
+monsters = ["isles_mushrin", "isles_mantis", "isles_mushrin"]
+
+[formations.isles_pack]
+label = "Thornwood Pack"
+monsters = ["isles_wolf", "isles_wolf", "isles_bee"]
+
+[formations.isles_ruin_swarm]
+label = "Ruin Swarm"
+monsters = ["isles_bee", "isles_bee", "isles_mantis", "isles_bee"]
+
+[formations.isles_grotto]
+label = "Grotto Ooze"
+monsters = ["isles_slime", "isles_nighto", "isles_slime"]
+
+[formations.isles_pearl]
+label = "Pearl Wisps"
+monsters = ["isles_nighto", "isles_nighto", "isles_nighto"]
+
+[formations.isles_queen]
+label = "Thornwood Queen"
+monsters = ["isles_hive_queen", "isles_bee", "isles_bee"]
+
+[[encounters]]
+scene = "isles_beach"
+steps = [16, 30]
+formations = [
+    { formation = "isles_shore", weight = 3 },
+    { formation = "isles_squall", weight = 2 },
+]
+
+[[encounters]]
+scene = "isles_thornwood"
+steps = [12, 24]
+formations = [
+    { formation = "isles_thicket", weight = 3 },
+    { formation = "isles_pack", weight = 2 },
+]
+
+[[encounters]]
+scene = "isles_ruins"
+steps = [12, 22]
+formations = [
+    { formation = "isles_ruin_swarm", weight = 3 },
+    { formation = "isles_pack", weight = 1 },
+]
+
+[[encounters]]
+scene = "isles_grotto"
+steps = [14, 26]
+formations = [
+    { formation = "isles_grotto", weight = 3 },
+    { formation = "isles_pearl", weight = 1 },
+]
+
+[bosses.isles_hive_queen]
+formation = "isles_queen"
+music = { kind = "bgm", id = 28 }
+reward_items = [{ item = { kind = "item", id = 125 }, count = 3 }]
+reward_gold = 12000
+once = true

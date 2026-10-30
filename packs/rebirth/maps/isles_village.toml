@@ -1,0 +1,412 @@
+# Rebirth Isles: Tolva's village at dusk. Laid out from scratch over Rim
+# Elm's (`town01`) grass and earth: a green in the middle with the well and
+# the windmill, thatched huts round it, the lodge to the east, the trading
+# post by the south lane, and the jetty out over the bay. Lanterns burn on
+# the lanes, smoke rises from the huts, and the village's beasts wander
+# (Rim Elm's own animated scenery, `scenery = true` NPCs).
+
+name = "Rebirth Isles - Tolva's Haven"
+size = [52, 42]
+base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
+# Sound-test track 6, "Rim Elm".
+bgm = { kind = "bgm", id = 6 }
+camera = "far"
+floor_heights = [0, 16]
+
+[tiles]
+origin = [4, 4]
+rows = [
+  "####################################################",
+  "####################################################",
+  "#ggggggggggggggGGGGGGGGGGGggggGGGGgggggggggGGGGGGGg#",
+  "#gggggggggggggGGGGGGGGGGGGGGGGGGGGgggggggggGGGGGGGG#",
+  "#gggggggggggggGGGGGGGGGGGGGGGGGGGGGggggggggGGGGGGGG#",
+  "#ggggggggggggggHHHGGGGGGGGGGGGGGGGGggggggggGGGGGGGG#",
+  "#ggggggggggggggHHHGgggGGGGGGGddGHHHGGggggggGGGGgggG#",
+  "#GgggggGGGgggggHHHggggGGGGGddddGHHHGGGgggggGGGggggg#",
+  "#GgggggGHHHggggggggggggGGGdddgGGHHHGGGgggggGGGggggg#",
+  "#GgggggGHHHggggggggggggGddddggGGGGGGGGgHHHggGGggggg#",
+  "#gggggggHHHggggggggggggGddGgggggggGGGGgHHHggggggggg#",
+  "#ggggggggggggggggggggggGdGGggggggggGGGgHHHggggggggG#",
+  "#ggggggggggggggggggggggGdGGggggggggGGGggggggggggGGG#",
+  "#ggggggggggggggggggggggGdGGggggggggGGGggggggggggGGG>",
+  "#ggggggggggggggGGGGGGGGGdggggggggggGGGgggggggggGGdd>",
+  "#ggggggggggggGGGGGGGGGGgdgggggggggggggggggggggddddd>",
+  "#gGGGgggggggGGGGGGGGGGGgdggggggggggggggggggggddddGG#",
+  "#ggggggggHHHGGGGGGGGGGgpppgggggggggggggggggddddGGGg#",
+  "#ggggggggHHHGGGGGGGgggpppppgggggGGGGGGGGGddddgggggg#",
+  "#ggggggGGHHHGGGGGGgggpppppppgggGGGGGGGGGdddgggggggg#",
+  "#gggggGGGGGGGGGGGggggpppppppgggGGGGGGGddddgLLLLLggg#",
+  "#ggggggGGGGGGGGGGggggpppppppggggGGGGddddGGGLLLLLggg#",
+  "#ggggggggggggggGGgddddpppppdddddddddddGGGGGLLLLLggg#",
+  "#gggggggggggdddddddddddpppggggggggggdGGGGGGLLLLLggg#",
+  "#ggggggggggddddddddggggddggggggggggggggGGGGGGGggggg#",
+  "#ggggggHHHdddggggggggggddgggggggggggggGGGGGGGGggggg#",
+  "#ggggggHHHdggggggggggggddggggggggggGGGGGGGGGGGggggg#",
+  "#GgggggHHHgggggggggGGGGdGGGGGGGgggGGGHHHGGGGGGggggg#",
+  "#GggggdddggggggggggGGGddGGGGGGGGGGGGGHHHGGGGGgggggg#",
+  "<GggdddggggggggggggGGGddGGGGGGGgggGGGHHHGGGGGgggggg#",
+  "<ggdddgggggggTTTggggGGddGGGGGGggggggggggggggggggggg#",
+  "<gggdggGGGgggTTTggggggddGGGGGHHHggggggggggggggggggg#",
+  "#gggggGGGGgggTTTgggggddGGGGGGHHHggggggggggggggggggg#",
+  "#gggggGGGGgggggggggggddGGGGGGHHHggggggggggggggggggg#",
+  "#gggGGGGGggggggggggGGdGGGGggggggggggggggggggggggggg#",
+  "#ggGGGGggggGGggggggGdd,,,,,,gggGGGGgggggggggggggggg,",
+  ",,,,GGggggGGG,,,,,,jj~~~~~~~,,,,,,,,gggggggg,,,,,,,~",
+  "~~~~,,,,,,,,,~~~~~~jj~~~~~~~~~~~~~~~,,,,,,,,~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+]
+
+[tiles.legend]
+"#" = { label = "stone wall", walls = "all", wall = { kind = "box", height = 160, tpage = 12, clut = 32006, tile = 36 } }
+"g" = { label = "grass", ground = { kind = "texture", tpage = 12, clut = 32003, tile = 0 } }
+"G" = { label = "grass (long)", ground = { kind = "texture", tpage = 12, clut = 32001, tile = 9 } }
+"d" = { label = "lane", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+"p" = { label = "village green", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
+"," = { label = "shingle", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
+"~" = { label = "bay", walls = "all", ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
+"j" = { label = "jetty", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
+"H" = { label = "hut", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+"L" = { label = "lodge", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+"T" = { label = "trading post", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+"<" = { label = "to the beach", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+">" = { label = "to the Thornwood", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
+
+[[spawns]]
+id = "from_beach"
+tile = [2, 30]
+facing = 2
+
+[[spawns]]
+id = "from_thornwood"
+tile = [49, 14]
+facing = 6
+
+[[exits]]
+id = "to_beach"
+rect = [0, 29, 0, 31]
+to = { kind = "map", map = "isles_beach", spawn = "from_village" }
+
+[[exits]]
+id = "to_thornwood"
+rect = [51, 13, 51, 15]
+to = { kind = "map", map = "isles_thornwood", spawn = "from_village" }
+requires = { quests = ["isles_landfall"] }
+locked_line = "isles_elder_thorns_active"
+
+# The lodge's hearth: the party rests, and may save.
+[[triggers]]
+id = "lodge"
+rect = [42, 21, 42, 22]
+event = { kind = "rest", save = true }
+
+# Pell's stall: stepping up to the counter opens the shop.
+[[triggers]]
+id = "trading_post"
+rect = [16, 30, 16, 32]
+event = { kind = "shop", shop = "isles_trader" }
+
+[[npcs]]
+id = "isles_elder"
+label = "Elder Tolva"
+model = { kind = "npc", scene = "town01", index = 43 }
+tile = [24, 17]
+facing = 0
+line = "isles_elder_idle"
+
+[[npcs]]
+id = "isles_fisher"
+label = "Fisher Dunn"
+model = { kind = "npc", scene = "town01", index = 10 }
+tile = [20, 38]
+facing = 4
+line = "isles_fisher_active"
+line_after = "isles_fisher_done"
+after = { quests = ["isles_nets"] }
+
+[[npcs]]
+id = "isles_trader_pell"
+label = "Trader Pell"
+model = { kind = "npc", scene = "town01", index = 33 }
+tile = [17, 31]
+facing = 6
+line = "isles_shop_keeper"
+shop = "isles_trader"
+
+[[npcs]]
+id = "isles_villager_a"
+label = "Islander"
+model = { kind = "npc", scene = "town01", index = 13 }
+tile = [28, 24]
+patrol = [[28, 24], [34, 22], [28, 24], [24, 26]]
+line = "isles_villager_a"
+
+[[npcs]]
+id = "isles_villager_b"
+label = "Islander"
+model = { kind = "npc", scene = "town01", index = 25 }
+tile = [12, 14]
+facing = 2
+line = "isles_villager_b"
+
+[[npcs]]
+id = "isles_child"
+label = "Child"
+model = { kind = "npc", scene = "town01", index = 37 }
+tile = [26, 21]
+patrol = [[26, 21], [22, 19], [26, 18], [27, 21]]
+line = "isles_child"
+
+[[npcs]]
+id = "isles_hen_a"
+label = "hen"
+model = { kind = "npc", scene = "town01", index = 6 }
+tile = [30, 14]
+scenery = true
+
+[[npcs]]
+id = "isles_hen_b"
+label = "hen"
+model = { kind = "npc", scene = "town01", index = 7 }
+tile = [31, 16]
+scenery = true
+
+[[npcs]]
+id = "isles_mill"
+label = "windmill sails"
+model = { kind = "npc", scene = "town01", index = 5 }
+tile = [20, 13]
+scenery = true
+
+[[props]]
+id = "hut_0"
+mesh = { scene = "town01", object = 42 }
+tile = [9, 9]
+rotation = [0.0, 0.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_1"
+mesh = { scene = "town01", object = 43 }
+tile = [16, 6]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_2"
+mesh = { scene = "town01", object = 50 }
+tile = [33, 7]
+rotation = [0.0, 200.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_3"
+mesh = { scene = "town01", object = 43 }
+tile = [40, 10]
+rotation = [0.0, 300.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_4"
+mesh = { scene = "town01", object = 50 }
+tile = [10, 18]
+rotation = [0.0, 45.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_5"
+mesh = { scene = "town01", object = 42 }
+tile = [38, 28]
+rotation = [0.0, 160.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_6"
+mesh = { scene = "town01", object = 43 }
+tile = [30, 32]
+rotation = [0.0, 260.0, 0.0]
+scale = 0.75
+solid = true
+
+[[props]]
+id = "hut_7"
+mesh = { scene = "town01", object = 42 }
+tile = [8, 26]
+rotation = [0.0, 120.0, 0.0]
+scale = 0.75
+solid = true
+
+
+[[props]]
+id = "lodge"
+mesh = { scene = "town01", object = 50 }
+tile = [45, 21]
+rotation = [0.0, 270.0, 0.0]
+scale = 0.9
+solid = true
+light = { color = [255, 170, 90], radius = 700, height = 100, flicker = 0.3, period = 11 }
+
+[[props]]
+id = "trading_post"
+mesh = { scene = "town01", object = 50 }
+tile = [14, 31]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.55
+solid = true
+
+[[props]]
+id = "well"
+mesh = { scene = "town01", object = 28 }
+tile = [24, 20]
+solid = true
+
+[[props]]
+id = "windmill"
+mesh = { scene = "town01", object = 13 }
+tile = [20, 12]
+scale = 1.2
+solid = true
+
+[[props]]
+id = "great_tree"
+mesh = { scene = "town01", object = 65 }
+tile = [31, 17]
+scale = 0.18
+solid = true
+animate = [{ kind = "sway", axis = "x", degrees = 1.5, period = 260 }]
+
+[[edges]]
+id = "lane_lanterns"
+mesh = { scene = "rugi", object = 15 }
+walls = "HLT"
+every = 4
+inset = 8
+y = 90
+seed = 4201
+
+[[edges]]
+id = "wall_bushes"
+mesh = { scene = "town01", object = 88 }
+walls = "#"
+every = 3
+inset = 40
+jitter = 40
+yaw_jitter = 180.0
+scale_range = [0.12, 0.18]
+seed = 4202
+
+[[scatter]]
+id = "garden_flowers"
+rect = [2, 2, 49, 35]
+on = "gG"
+density = 0.06
+seed = 4203
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.6, 1.0]
+meshes = [
+  { mesh = { scene = "town01", object = 80 }, weight = 2 },
+  { mesh = { scene = "vell", object = 13 }, weight = 3, scale = [0.25, 0.4] },
+  { mesh = { scene = "vell", object = 10 }, weight = 3, scale = [0.3, 0.5] },
+]
+
+[[scatter]]
+id = "yard_clutter"
+rect = [2, 2, 49, 35]
+on = "gGd"
+density = 0.03
+seed = 4204
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.7, 0.9]
+meshes = [
+  { mesh = { scene = "town01", object = 34 }, weight = 2 },
+  { mesh = { scene = "town01", object = 46 }, weight = 2 },
+  { mesh = { scene = "town01", object = 83 }, weight = 1 },
+  { mesh = { scene = "town01", object = 81 }, weight = 1 },
+]
+
+[[scatter]]
+id = "orchard"
+rect = [2, 2, 14, 14]
+on = "gG"
+density = 0.35
+seed = 4205
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.8, 1.2]
+cluster = { radius = 8.0, falloff = 1.2 }
+keep_clear = true
+meshes = [
+  { mesh = { scene = "town01", object = 65 }, weight = 1, scale = [0.12, 0.16] },
+  { mesh = { scene = "town01", object = 88 }, weight = 2, scale = [0.14, 0.2] },
+]
+
+[[decor]]
+mesh = { scene = "town01", object = 30 }
+tile = [44, 25]
+
+[[emitters]]
+kind = "smoke"
+rect = [9, 9, 9, 9]
+height = [150, 200]
+count = 10
+color = [70, 64, 60]
+seed = 4211
+
+[[emitters]]
+kind = "smoke"
+rect = [33, 7, 33, 7]
+height = [150, 200]
+count = 10
+color = [70, 64, 60]
+seed = 4212
+
+[[emitters]]
+kind = "embers"
+rect = [43, 21, 44, 22]
+height = [60, 120]
+count = 14
+seed = 4213
+
+[[emitters]]
+kind = "sparkles"
+rect = [4, 26, 40, 36]
+height = [40, 160]
+count = 40
+color = [255, 230, 120]
+seed = 4214
+
+[[emitters]]
+kind = "leaves"
+rect = [24, 14, 36, 22]
+count = 20
+color = [200, 150, 60]
+seed = 4215
+
+[[materials]]
+kind = "scroll"
+cell = { tpage = 9, clut = 31880, tile = 56 }
+dx = 1
+dy = 0
+period = 8
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "green", tile = [24, 20], offset = [0, 200, 0], color = [255, 190, 120], radius = 900, flicker = 0.1, period = 30 },
+  { id = "post", tile = [16, 31], offset = [0, 140, 0], color = [255, 200, 140], radius = 520, flicker = 0.2, period = 13 },
+  { id = "jetty", tile = [20, 39], offset = [0, 120, 0], color = [255, 210, 150], radius = 520, flicker = 0.2, period = 15 },
+  { id = "huts_nw", tile = [12, 10], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 9 },
+  { id = "huts_ne", tile = [37, 9], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 10 },
+  { id = "huts_s", tile = [34, 30], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 12 },
+]

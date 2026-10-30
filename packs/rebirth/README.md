@@ -81,6 +81,24 @@ violet motes and a low haze in the Hollow Throne.
 Each floor's stairs chain to the next (`exits` with `to = { kind = "map" }`);
 the 1F stair down leads to Rim Elm.
 
+### The Rebirth Isles
+
+Past a sea gate in the Atrium's west wall (open once the Warden's Trial is
+done) lies an outdoor region of four maps, each laid out from scratch at
+the field grid's larger sizes and dressed with the detail layer:
+
+| Map | Base | Size | What is there |
+|---|---|---|---|
+| `isles_beach` Saltwind Beach | `town01` | 64 x 36 | The sea-stair landing, dunes and palms, surf, a ruined jetty, the ferrywoman; shore encounters |
+| `isles_village` Tolva's Haven | `town01` | 52 x 42 | Huts, the well and windmill, the lodge (`rest`), Pell's Trading Post (`shop` `isles_trader`), villagers; a dusk mood |
+| `isles_thornwood` The Thornwood | `vell` | 88 x 34 | A forest path walled by trees, three clearings, the ruined court, the hermit's camp and the Thornwood Queen (`isles_hive_queen`) in the gate |
+| `isles_grotto` The Singing Grotto | `cave01` | 40 x 36 | A cavern under the ruins, its pool and the Pearl |
+
+The region's monsters, formations, encounter tables and mini-boss are
+`isles_*` entries in `battle.toml`; its four quests (`isles_landfall`,
+`isles_nets`, `isles_thornwood`, `isles_pearl`) and their lines are in
+`quests.toml` and `dialog.toml`.
+
 ### Bosses
 
 | Boss | Floor | Built on | Music | Formation |

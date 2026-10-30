@@ -23,7 +23,7 @@ rows = [
   "#.............#",
   "#,...^^^^^...,#",
   "#....^^^^^....#",
-  "#,.o.^^^^^.o.,#",
+  "w,.o.^^^^^.o.,#",
   "#....^^^^^....#",
   "#,...^^^^^...,#",
   "#.............#",
@@ -47,6 +47,9 @@ rows = [
 "=" = { label = "stair landing", ground = { kind = "base_cell", cell = [8, 11] } }
 ">" = { label = "stair down", ground = { kind = "base_cell", cell = [8, 11] } }
 "<" = { label = "stair up", ground = { kind = "base_cell", cell = [8, 11] } }
+# The sea gate: a crack in the west wall, salt wind and a stair down to
+# the Rebirth Isles (maps/isles_beach.toml).
+"w" = { label = "sea gate", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
 
 [[spawns]]
 id = "entrance"
@@ -59,6 +62,12 @@ tile = [7, 2]
 # Facing the room, so the follow camera frames it over the low south
 # parapet rather than from behind the tall north wall.
 facing = 4
+
+# Inside the sea gate, back up from the Rebirth Isles.
+[[spawns]]
+id = "from_sea"
+tile = [1, 6]
+facing = 2
 
 # On the dais beside the Warden's Stone: where the Journal's Travel lands.
 [[spawns]]
@@ -87,6 +96,14 @@ scene = { kind = "scene", name = "town01" }
 rect = [17, 43, 18, 43]
 spawn = "entrance"
 requires = { min_level = 30 }
+
+# The sea gate in the west wall opens once the Warden's Trial is done.
+[[exits]]
+id = "sea_gate"
+rect = [0, 6, 0, 6]
+to = { kind = "map", map = "isles_beach", spawn = "sea_stair" }
+requires = { quests = ["tower_trial"] }
+locked_line = "isles_sea_gate"
 
 [[exits]]
 id = "stair_up"
@@ -323,6 +340,8 @@ lamps = [
   { id = "stone", tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 },
   # Daylight spilling down the stair from Rim Elm.
   { id = "stair_light", tile = [7, 11], offset = [0, 80, 40], color = [255, 230, 190], radius = 620 },
+  # Sea light through the west wall's crack.
+  { id = "sea_gate", tile = [0, 6], offset = [40, 120, 0], color = [120, 200, 255], radius = 520, flicker = 0.15, period = 70 },
 ]
 
 # The dais's flagstones drift: its atlas cell scrolls a texel every eighth
@@ -571,3 +590,11 @@ tile = [7, 6]
 radius = 640
 inner = 128
 volume = 0.35
+# The sea gate glows faintly blue, and sea mist curls in through it.
+[[emitters]]
+kind = "sparkles"
+rect = [0, 5, 1, 7]
+height = [20, 200]
+count = 20
+color = [120, 190, 255]
+seed = 171
