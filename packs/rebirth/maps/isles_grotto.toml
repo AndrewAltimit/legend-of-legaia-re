@@ -769,41 +769,42 @@ meshes = [
   { mesh = { object = 30 }, weight = 2, scale = [0.4, 0.8] },
 ]
 
-[[scatter]]
-id = "cave_caps"
-rect = [1, 1, 70, 58]
-on = ".,"
-density = 0.06
-seed = 4403
+# Stalagmites and cave caps grow out of the rock along the walls, and a
+# little fallen rubble lies by them; the chambers' floors stay open.
+[[edges]]
+id = "wall_stalagmites"
+mesh = { object = 44 }
+walls = "#"
+every = 2
+phase = 1
+inset = 30
 jitter = 50
-yaw = [0.0, 360.0]
-scale = [0.6, 0.9]
-meshes = [
-  { mesh = { object = 47 }, weight = 1 },
-]
-
-[[scatter]]
-id = "stalagmites"
-rect = [1, 1, 70, 58]
-on = ".,"
-density = 0.08
+yaw_jitter = 180.0
+scale_range = [0.8, 1.5]
 seed = 4404
-jitter = 50
-yaw = [0.0, 360.0]
-scale = [0.8, 1.6]
-meshes = [
-  { mesh = { object = 44 }, weight = 1 },
-]
+
+[[edges]]
+id = "wall_caps"
+mesh = { object = 47 }
+walls = "#"
+every = 5
+phase = 3
+inset = 40
+jitter = 40
+yaw_jitter = 180.0
+scale_range = [0.6, 0.9]
+seed = 4403
 
 [[scatter]]
 id = "rubble"
 rect = [1, 1, 70, 58]
 on = ".,"
-density = 0.1
+density = 0.03
 seed = 4405
 jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.2, 0.35]
+keep_clear = true
 meshes = [
   { mesh = { scene = "rugi", object = 17 }, weight = 2 },
   { mesh = { scene = "rugi", object = 19 }, weight = 2 },
