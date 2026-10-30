@@ -22,29 +22,30 @@ A pack art therefore lives on the queue bytes above them. Each **segment** of ea
 
 The commit latches `+0x1DB` with the **retail constant** the segment borrows, not the pack byte. Every reader of the latch - the per-art attack camera ([battle-attack-camera-table.md](battle-attack-camera-table.md)), the art record's side data, the slow-motion arms - therefore treats a pack segment as the retail art whose clip it plays. The pack art itself is remembered per actor (`ArtsRuntime::playing`) for the label and the hit seams below.
 
-### Matching: one more record at the end of the bank
+### Matching: a second walk after retail's
 
-The queue builder `FUN_801EED1C` normalises the entered arrows with one walk over the character's bank ([`legaia_art::tokenize_bank`](../../crates/art/src/tokenize.rs)): for each start position from the tail, every record from `0x1B` up is tried, and a normal record's match writes the `0x19` starter over the run's last arrow and its constant after it. A known pack art is one more **normal** record, at the row of its first byte, past retail's 24. So at every start each retail record is tried before any pack one, and the walk is retail's own whenever no pack art matches.
+The queue builder `FUN_801EED1C` normalises the entered arrows with one walk over the character's bank ([`legaia_art::tokenize_bank`](../../crates/art/src/tokenize.rs)): for each start position from the tail, every record from `0x1B` up is tried, and a normal record's match writes the `0x19` starter over the run's last arrow and its constant after it. A full match of a one-arrow record ends the walk at that start (`0x801EF420`), and every Super Art record on the disc carries a one-arrow stub combo (`Down` for all of Vahn's) - so a record placed after them would be cut off by any input holding that arrow.
 
-A pack art's further segments are inserted behind its first byte after the retail finish (Miracle replacement, Super tail-replace). `R U R D U` for Rebirth's Ember Cascade on Vahn:
+Known pack arts therefore walk **second** (`legaia_art::tokenize_bank_over`): the same walk, over the queue the retail walk produced, with a bank whose retail rows are blank and whose pack rows sit at the index of each art's first byte, past retail's 24. Only arrows the retail walk left can match, so a retail art matches exactly as without a pack, and with no pack art known the second pass does not run. A pack art's further segments are inserted behind its first byte after the retail finish (Miracle replacement, Super tail-replace). `R U R D U` for Rebirth's Ember Cascade on Vahn:
 
 ```text
 entered     R  U  R  D  U
 swings      0D 0F 0D 0E 0F
-bank walk   0D 0F 0D 0E 19 33          starter over the last arrow, first byte
+retail walk 0D 0F 0D 0E 0F             no retail art
+pack walk   0D 0F 0D 0E 19 33          starter over the last arrow, first byte
 segments    0D 0F 0D 0E 19 33 34 00    second segment (Somersault's clip)
 ```
 
-Two rules follow from the walk's order, which the validator cannot check without the disc's combos:
+Two rules follow from the order, which the validator cannot check without the disc's combos:
 
-- A pack art whose commands equal a retail art's never fires: the retail record matches first.
-- A pack combo that **contains** a retail combo loses those arrows to the retail art (later starts are walked first). Rebirth's combos avoid every retail combo of their hero as a substring.
+- A pack art whose commands equal a retail art's never fires: the retail walk takes the arrows first.
+- A pack combo that **contains** a retail combo loses those arrows to the retail art. Rebirth's combos avoid every retail combo of their hero as a substring.
 
-The proof is `world::tests::expansion_arts`: every retail combo, alone and behind a leading arrow, builds the same queue, starter marks and art list with the pack active and its arts known as with no pack.
+The proof is `world::tests::expansion_arts`: every retail combo, alone and behind a leading arrow, builds the same queue, starter marks and art list with the pack active and its arts known as with no pack, over a bank shaped as the disc's (the Super stubs included); `expansion_arts_disc` runs the same build on the disc's own bank in a real battle.
 
 ### Chains
 
-`[chains.<key>]` is the pack's Super Art: when the arts a turn performs (retail constants and pack arts, in queue order) **end with** the chain's `arts`, the queue gets `0x1A` and the finisher's segment bytes appended. The `0x1A` carries the Super tail-replace's starter mark (`4`), so its commit raises the same `SUPER` banner and freeze a retail Super Art does. The pass runs after the retail finish, so a retail Super Art resolves first and a chain reads what it left; the longest matching chain wins. The Rebirth chain on Vahn, `R U R D U` then `L R U` (Hyper Elbow):
+`[chains.<key>]` is the pack's Super Art: when the arts a turn performs (retail constants and pack arts, in queue order) **end with** the chain's `arts`, the queue gets `0x1A` and the finisher's segment bytes appended. The `0x1A` carries the Super tail-replace's starter mark (`4`), so its commit raises the same `SUPER` banner and freeze a retail Super Art does. The pass runs after the retail finish, so a retail Super Art resolves first and a chain reads what it left; the longest matching chain wins. The Rebirth chain on Vahn, `R U R D U` then `L R L` (Hyper Elbow), Hyper Elbow already known:
 
 ```text
 0D 0F 0D 0E 19 33 34 0C 0D 19 29 1A 35 00

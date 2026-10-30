@@ -1,0 +1,140 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs: arts and Seru</div>
+  <h1>Expansion packs: Tactical Arts and Seru magic</h1>
+  <p class="lede"><code>arts.toml</code> adds new Tactical Arts to an <a href="expansion-pack.html">expansion pack</a>, and chains that end a turn's arts in a pack finisher; <code>spells.toml</code> adds new Seru magic. Every hook is the identity with no pack active: the arts input walks retail's bank alone, the art bank gets no extra clip, the spell catalog no extra id, and a save carries no arts record.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
+  <h2>At a glance</h2>
+  <dl class="kv">
+    <dt>Files</dt><dd><code>arts.toml</code>, <code>spells.toml</code> at the pack root; both optional. Declare <code>art</code>, <code>art_chain</code> and <code>spell</code> ids.</dd>
+    <dt>Parser</dt><dd><code>legaia_expansion_format::{arts, spells}</code>.</dd>
+    <dt>Runtime</dt><dd><code>legaia_engine_expansion::{arts, spells}</code>; <code>engine-core</code>'s <code>world::expansion_arts</code> wires them to the <code>World</code>.</dd>
+    <dt>Animation</dt><dd>The hero's own retail art clips, by action constant or name. No animation data is carried.</dd>
+    <dt>Shown in</dt><dd>The battle arts list (Triangle), the battle label, the battle and field Magic lists, the Journal's Arts page.</dd>
+    <dt>Save</dt><dd>Tail record <code>5</code> of the pack's <code>LXP1</code> expansion block.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="how-a-pack-art-runs" data-doc="how-a-pack-art-runs">
+  <h2>How a pack art runs</h2>
+  <p>Retail's arts queue holds direction swings <code>0x0C..0x0F</code>, the starters <code>0x19</code> / <code>0x1A</code> and the character's art constants <code>0x1B..0x32</code>, and the anim commit turns any byte <code>&gt;= 0x10</code> into art-bank record <code>byte - 0x10</code>. Noa uses all 24 constants, so a pack art cannot take one. Each <strong>segment</strong> of a pack art takes a byte from <code>0x33</code> up instead (77 per character), and at battle entry the hero's art bank gains, at that record, a copy of the segment's retail clip with the pack's power bytes and beats over the clip's own entry head.</p>
+  <p>The commit latches the <strong>retail constant</strong> the segment borrows, so the per-art attack camera, the art record's side data and the slow-motion arms all treat the segment as the retail art whose clip it plays.</p>
+  <h3>Matching</h3>
+  <p>A known pack art is a <strong>normal</strong> record of a second bank walk (<code>FUN_801EED1C</code>'s walk, run again over the queue the retail walk left, with the retail rows blank), so only arrows no retail art took can match it and a retail art matches exactly as without the pack. A second pass and not one longer walk because every Super Art record carries a one-arrow stub combo, and a one-arrow match ends the walk at that start. Its further segments are inserted after the retail finish. Vahn's Ember Cascade, <code>R U R D U</code>:</p>
+<pre><code>swings      0D 0F 0D 0E 0F
+bank walk   0D 0F 0D 0E 19 33          starter over the last arrow, first byte
+segments    0D 0F 0D 0E 19 33 34 00    the second segment</code></pre>
+  <p>A pack combo equal to a retail one never fires, and one that contains a retail combo loses those arrows to it. The workbench's Arts tab checks both against the disc's arts table.</p>
+  <h3>Chains</h3>
+  <p>A chain is the pack's Super Art: when the arts a turn performs end with its links, the queue gets <code>0x1A</code> (carrying the Super starter mark, so the <code>SUPER</code> banner and freeze play) and the finisher's bytes. It runs after the retail Super tail-replace.</p>
+<pre><code>0D 0F 0D 0E 19 33 34 0C 0D 19 29 1A 35 00
+               Ember Cascade  Hyper Elbow  Rebirth Blaze</code></pre>
+  <h3>Cost and damage</h3>
+  <p>Retail computes an art's Spirit cost; a pack art states it (<code>ap</code>), halved under AP Used Down. Its hits use the retail power-byte encoding (<code>U12..U28</code> upper, <code>L12..L28</code> lower, <a href="art-data.html">art data</a>) through the retail damage kernel, then the pack's <code>damage_pct</code>, its element through the affinity matrix, and a status rider rolled per damaging hit.</p>
+</section>
+
+<section class="doc-section" id="artstoml" data-doc="artstoml">
+  <h2><code>arts.toml</code></h2>
+<pre><code>[arts.ember_cascade]
+character = "vahn"
+name = "Ember Cascade"
+commands = "RURDU"
+ap = 30
+segments = [
+    { art = "Pyro Pummel", power = ["U22", "L22"] },
+    { art = "Somersault", power = ["L28"] },
+]
+element = 2
+learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
+
+[chains.rebirth_blaze]
+character = "vahn"
+arts = ["ember_cascade", 0x29]
+finisher = "rebirth_blaze"</code></pre>
+  <table class="data">
+    <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>character</code></td><td><code>vahn</code>, <code>noa</code> or <code>gala</code></td></tr>
+      <tr><td><code>name</code>, <code>description</code></td><td>Label and list name (20 characters); the Journal line</td></tr>
+      <tr><td><code>commands</code></td><td>2-9 arrows <code>L R U D</code>; empty for a chain-only finisher</td></tr>
+      <tr><td><code>ap</code></td><td>Spirit cost, 0-100</td></tr>
+      <tr><td><code>segments</code></td><td>1-8 retail clips: <code>{ art, power, beats }</code></td></tr>
+      <tr><td><code>damage_pct</code>, <code>element</code>, <code>rider</code></td><td>Hit percent (1-400), element 0-6, <code>{ status, chance }</code></td></tr>
+      <tr><td><code>learn</code></td><td>Level, pack gate, item held</td></tr>
+    </tbody>
+  </table>
+  <p>A chain lists <code>character</code>, one to six <code>arts</code> (a retail constant or a pack art key) and a <code>finisher</code> pack art.</p>
+</section>
+
+<section class="doc-section" id="spellstoml" data-doc="spellstoml">
+  <h2><code>spells.toml</code></h2>
+<pre><code>[spells.hearthfire]
+name = "Hearthfire"
+base = 0x8C
+mp = 96
+power = 210
+growth = 8
+element = 2
+learn = { capture = "hearth_gola", requires = { bosses = ["cinder_warden"] } }</code></pre>
+  <p>A pack spell is cast <strong>as its base</strong> retail Seru (<code>0x81..0xA0</code>): the Magic band, the summon module, its creature, camera and effects run unchanged. The pack's numbers enter where the cast takes a number: the MP debit, the magic level the roll scales by (the pack spell's own), the summon element, the magnitude (<code>power + growth x (level - 1)</code> percent of the roll), a status rider, the spell XP (the pack spell's level, on the base's thresholds) and the label.</p>
+  <p>The Magic lists list spells by id, so each pack spell has a menu id from <code>0xC0</code> up (above the spell table's last record), with a catalog entry cloned from its base. Capturing a pack monster a spell's <code>learn.capture</code> names teaches it to every present member who may learn it, and takes the capture out of the retail registry's list.</p>
+</section>
+
+<section class="doc-section" id="learning" data-doc="learning">
+  <h2>Learning</h2>
+  <p><code>learn</code> takes the hero's own <code>level</code>, the pack's <code>requires</code> gate and an <code>item</code> held; every set condition must hold, and an empty <code>learn</code> is known from the start. The engine re-checks after every quest step and battle and at activation and load, with a toast for each newly learned art or spell. A pack art matches the arts input only once known; the battle arts list shows the known ones after the hero's retail arts.</p>
+</section>
+
+<section class="doc-section" id="saves" data-doc="saves">
+  <h2>Saves</h2>
+<pre><code>5      tag
+u16    learned art count, then str key each
+u16    known spell count, then u8 roster slot + str key + u8 level + u32 XP each</code></pre>
+  <p>Written only once an art or spell is known. A New Game starts them over; a New Game+ carries them through <code>World::expansion_learned</code> and <code>World::expansion_carry_learned</code>.</p>
+</section>
+
+<section class="doc-section" id="validation" data-doc="validation">
+  <h2>Validation</h2>
+  <p>Errors: a bad name, commands outside <code>L R U D</code> or of the wrong length, two arts with one combo, AP over 100, a segment that is not the hero's retail art, a bad power byte or beat list, a damage percent out of range, a chain whose links or finisher are another hero's or undefined, a spell base outside the player Seru ids, power outside 1-500, a capture naming no pack monster. Warnings: an unreachable finisher, a spell known from the start.</p>
+</section>
+
+<section class="doc-section" id="limits" data-doc="limits">
+  <h2>Limits</h2>
+  <ul class="bullets">
+    <li>A pack art plays retail clips only.</li>
+    <li>The validator cannot see retail combos; the disc-backed workbench can.</li>
+    <li>A pack spell keeps its base's presentation, its module's aim included.</li>
+    <li>The retail Status page lists no pack art; the Journal's Arts page does.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="rebirths-arts-and-seru" data-doc="rebirths-arts-and-seru">
+  <h2>Rebirth's arts and Seru</h2>
+  <table class="data">
+    <thead><tr><th>Hero</th><th>Art (level 55, after the Cinder Warden)</th><th>Finisher (level 80, after the Azure Seraph)</th></tr></thead>
+    <tbody>
+      <tr><td>Vahn</td><td>Ember Cascade <code>R U R D U</code>: Pyro Pummel, Somersault</td><td>Rebirth Blaze, after Hyper Elbow</td></tr>
+      <tr><td>Noa</td><td>Gale Waltz <code>L U L D U</code>: Mirage Lancer, Swan Driver</td><td>Rebirth Tempest, after Sonic Javelin</td></tr>
+      <tr><td>Gala</td><td>Iron Avalanche <code>R U R D D</code>: Battering Ram, Super Ironhead</td><td>Rebirth Thunder, after Ironhead</td></tr>
+    </tbody>
+  </table>
+  <table class="data">
+    <thead><tr><th>Seru</th><th>Base</th><th>MP, power</th><th>Capture</th></tr></thead>
+    <tbody>
+      <tr><td>Hearthfire</td><td>Gola Gola (40 MP)</td><td>96, 210%</td><td>Hearth Gola, after the Cinder Warden</td></tr>
+      <tr><td>Verdant Bloom</td><td>Iota (90 MP)</td><td>140, 180%</td><td>Verdant Iota, after the Verdant Colossus</td></tr>
+      <tr><td>Grove Fang</td><td>Kemaro (72 MP)</td><td>100, 240%</td><td>Grove Kemaro, after the Verdant Colossus</td></tr>
+      <tr><td>Tempest Dive</td><td>Barra (85 MP)</td><td>125, 260%</td><td>Storm Barra, after the Iron Regent</td></tr>
+    </tbody>
+  </table>
+  <p>Retail regular arts cost 24-30 AP and Super Arts 54-66; the finishers cost 60 across their two arts for five beats at <code>x28</code> and 140%. The strongest retail capturable Seru is Gilium (160 MP); the Ra-Seru evolutions cost 240. The tower Seru roll about twice their base for two to three times its MP.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <ul class="bullets">
+    <li><a href="expansion-pack.html">Expansion packs</a> &middot; <a href="expansion-pack-battle.html">battles</a> &middot; <a href="expansion-pack-quests.html">quests and saves</a></li>
+    <li><a href="art-data.html">Art data</a> &middot; <a href="spell-table.html">spell table</a> &middot; <a href="../subsystems/battle-action-queue.html">battle action queue</a> &middot; <a href="../subsystems/cast-module.html">cast modules</a></li>
+  </ul>
+</section>

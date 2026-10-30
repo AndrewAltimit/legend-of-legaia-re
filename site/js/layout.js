@@ -285,6 +285,7 @@ const NAV = [
       { href: 'formats/expansion-pack-cutscenes.html', text: 'Cutscenes', key: 'formats/expansion-pack-cutscenes', indent: true },
       { href: 'formats/expansion-pack-maps.html', text: 'Maps', key: 'formats/expansion-pack-maps', indent: true },
       { href: 'formats/expansion-pack-items.html', text: 'Items and shops', key: 'formats/expansion-pack-items', indent: true },
+      { href: 'formats/expansion-pack-arts.html', text: 'Arts and Seru', key: 'formats/expansion-pack-arts', indent: true },
     ],
   },
   {

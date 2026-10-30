@@ -47,6 +47,7 @@ mod dream_return_seat_disc;
 mod encounter_region_groups_disc;
 mod encounter_step_counter_disc;
 mod entry_install_slice_disc;
+mod expansion_arts_disc;
 mod expansion_boss_disc;
 mod expansion_cards_disc;
 mod expansion_cutscene_rebirth_disc;

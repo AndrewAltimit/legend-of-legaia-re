@@ -14,6 +14,8 @@ crate-type = ["rlib"]
 
 [dependencies]
 legaia-actor-formats.workspace = true
+legaia-art.workspace = true
+legaia-engine-battle-vm.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-expansion.workspace = true
 legaia-engine-scene.workspace = true

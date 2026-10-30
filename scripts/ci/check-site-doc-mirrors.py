@@ -164,6 +164,8 @@ MIRRORS = [
      "site/_content/formats/expansion-pack-items.html"),
     ("docs/formats/expansion-pack-audio.md",
      "site/_content/formats/expansion-pack-audio.html"),
+    ("docs/formats/expansion-pack-arts.md",
+     "site/_content/formats/expansion-pack-arts.html"),
     ("docs/subsystems/expansion-modes.md",
      "site/_content/subsystems/expansion-modes.html"),
     ("docs/subsystems/netplay.md",

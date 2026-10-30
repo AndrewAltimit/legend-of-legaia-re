@@ -35,6 +35,7 @@ import {
 import { renderMaps } from './expansion-workbench-map.js';
 import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
+import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -98,6 +99,8 @@ const TABS = [
   ['cutscenes', 'Cutscenes', 'cutscenes.toml', renderCutscenes],
   ['cards', 'Cards', 'cards.toml', renderCards],
   ['items', 'Items', 'items.toml', renderItems],
+  ['arts', 'Arts', 'arts.toml', renderArts],
+  ['spells', 'Spells', 'spells.toml', renderSpells],
   ['modes', 'Modes', 'modes.toml', renderModes],
   ['audio', 'Audio', 'audio.toml', renderAudio],
   ['maps', 'Maps', 'maps/', renderMaps],
@@ -135,6 +138,9 @@ function idsOf(kind) {
     case 'item': return keys(p.items && p.items.items);
     case 'item_set': return keys(p.items && p.items.sets);
     case 'shop': return arr(p.items && p.items.shops);
+    case 'art': return keys(p.arts && p.arts.arts);
+    case 'art_chain': return keys(p.arts && p.arts.chains);
+    case 'spell': return keys(p.spells && p.spells.spells);
     case 'mode': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt', 'party_nights'].flatMap((k) => arr(p.modes[k]));
     case 'instance': return ['poker', 'card_duels', 'golf', 'races', 'prop_hunt'].flatMap((k) => arr(p.modes[k]));
     case 'track': return keys(p.audio && p.audio.tracks);
@@ -167,6 +173,9 @@ const ctx = {
   rerender: () => rerender(),
   checkDialog: (line) => {
     try { return JSON.parse(S.wb.check_dialog(JSON.stringify(line))); } catch (e) { return null; }
+  },
+  artPreview: (art, atk, def) => {
+    try { return JSON.parse(S.wb.art_preview(JSON.stringify(art), atk, def)); } catch (e) { return { error: errText(e) }; }
   },
   mapPreview: (map) => {
     try { return JSON.parse(S.wb.map_preview(JSON.stringify(map))); } catch (e) { return { error: String(e) }; }

@@ -42,7 +42,7 @@ learn = { level = 80, requires = { bosses = ["azure_seraph"] } }
 
 [chains.rebirth_blaze]
 character = "vahn"
-arts = ["ember_cascade", 0x29]  # then Hyper Elbow (L R U)
+arts = ["ember_cascade", 0x29]  # then Hyper Elbow (L R L)
 finisher = "rebirth_blaze"
 
 # --- Noa ----------------------------------------------------------------------

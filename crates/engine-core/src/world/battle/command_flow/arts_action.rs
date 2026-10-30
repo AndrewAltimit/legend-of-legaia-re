@@ -85,20 +85,31 @@ impl World {
         // Hyper Arts the special one (`sltiu a1,a0,0x4` at `0x801EF330`),
         // gated on the slot's `+0x25F` Ra-Seru marker, the rest the normal
         // rewrite.
-        let mut bank = self.art_bank_rows(character);
-        // An expansion pack's known arts join the walk as further normal
-        // records past retail's 24 rows (`legaia_engine_expansion::arts`):
-        // every retail record is tried first at each start, so a retail art
-        // matches exactly as without them. Empty with no pack.
-        for (b, cmds, sources) in self.expansion_bank_rows(character) {
-            let k = usize::from(b - 0x1B);
-            if bank.len() <= k {
-                bank.resize(k + 1, (Vec::new(), [0; 4]));
-            }
-            bank[k] = (cmds, sources);
-        }
+        let bank = self.art_bank_rows(character);
         let records = legaia_art::bank_view(&bank);
-        let built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
+        let mut built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
+        // An expansion pack's known arts walk second, over the arrows the
+        // retail walk left (`legaia_engine_expansion::arts`): their rows sit
+        // past retail's 24, every retail row is blank in this pass, so a
+        // retail art matches exactly as without them - and the retail
+        // bank's one-arrow Super stubs, which end its walk at any start that
+        // finds their arrow, cannot hide them. No pack art known: no pass.
+        let extra = self.expansion_bank_rows(character);
+        if !extra.is_empty() {
+            let mut pack_bank: Vec<legaia_art::BankRow> = Vec::new();
+            for (b, cmds, sources) in extra {
+                let k = usize::from(b - 0x1B);
+                if pack_bank.len() <= k {
+                    pack_bank.resize(k + 1, (Vec::new(), [0; 4]));
+                }
+                pack_bank[k] = (cmds, sources);
+            }
+            let pack_records = legaia_art::bank_view(&pack_bank);
+            let over =
+                legaia_art::tokenize_bank_over(&pack_records, built.queue, built.marks, false);
+            built.queue = over.queue;
+            built.marks = over.marks;
+        }
         let tokens = built.queue;
         log::debug!(
             "arts queue: {:?} (Ra-Seru {miracle_armed}) -> {:02x?}",

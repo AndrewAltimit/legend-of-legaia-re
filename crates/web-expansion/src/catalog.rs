@@ -67,12 +67,37 @@ pub struct SceneRow {
     pub category: String,
 }
 
+/// One retail art a pack art's segment may borrow the clip of: a character's
+/// action constant (`0x1B..=0x32`) and its name.
+#[derive(Debug, Clone, Serialize)]
+pub struct ArtClipRow {
+    /// `vahn` / `noa` / `gala`.
+    pub character: &'static str,
+    pub constant: u8,
+    pub name: String,
+}
+
+/// One row of the disc's arts-name table (`DAT_80075EC4`): what the arts
+/// list shows and the combo the Arts tab checks a pack combo against.
+#[derive(Debug, Clone, Serialize)]
+pub struct ArtComboRow {
+    pub character: &'static str,
+    pub name: String,
+    pub ap: u8,
+    /// `L` / `R` / `U` / `D` arrows.
+    pub commands: String,
+}
+
 /// Everything the pickers list, serialised once per disc.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CatalogLists {
     pub monsters: Vec<MonsterRow>,
     pub items: Vec<NamedId>,
     pub spells: Vec<NamedId>,
+    /// Each hero's retail arts, by constant (the segment picker).
+    pub art_clips: Vec<ArtClipRow>,
+    /// The disc's arts-name table rows (the combo check).
+    pub art_combos: Vec<ArtComboRow>,
     pub scenes: Vec<SceneRow>,
     pub bgm: Vec<NamedId>,
 }
@@ -152,6 +177,18 @@ impl DiscCatalog {
                     }
                 }
             }
+            if let Some(oracle) = legaia_art::ArtsOracle::from_scus(scus) {
+                for e in oracle.entries() {
+                    lists.art_combos.push(ArtComboRow {
+                        character: hero_key(e.character),
+                        name: e.name.clone(),
+                        ap: e.ap,
+                        commands: legaia_expansion_format::arts::commands_string(
+                            &e.commands.iter().map(|c| c.as_byte()).collect::<Vec<_>>(),
+                        ),
+                    });
+                }
+            }
             if let Some(t) = SpellNameTable::from_scus(scus) {
                 for id in 0..=u8::MAX {
                     if let Some(n) = t.name(id).filter(|n| !n.trim().is_empty()) {
@@ -164,6 +201,7 @@ impl DiscCatalog {
             }
         }
 
+        lists.art_clips = art_clips();
         let db = legaia_gamedata::Database::load();
         for name in index.cdname_scene_names() {
             let row = db.scene_by_id(&name);
@@ -444,4 +482,34 @@ mod tests {
         assert_eq!(l.len(), usize::from(BGM_COUNT));
         assert!(l.iter().all(|t| !t.name.is_empty()));
     }
+}
+
+/// The `arts.toml` key of an art-table character.
+fn hero_key(c: legaia_art::Character) -> &'static str {
+    match c {
+        legaia_art::Character::Vahn => "vahn",
+        legaia_art::Character::Noa => "noa",
+        legaia_art::Character::Gala => "gala",
+    }
+}
+
+/// Every hero's retail art constants with their names (the curated art
+/// tables, `legaia_art::tables`): the clips a segment may name.
+pub fn art_clips() -> Vec<ArtClipRow> {
+    let mut out = Vec::new();
+    for c in legaia_art::Character::all() {
+        for b in 0x1Bu8..=0x32 {
+            let Some(a) = legaia_art::ActionConstant::from_byte(b) else {
+                continue;
+            };
+            if let Some(name) = legaia_art::tables::art_name(c, a) {
+                out.push(ArtClipRow {
+                    character: hero_key(c),
+                    constant: b,
+                    name: name.to_string(),
+                });
+            }
+        }
+    }
+    out
 }

@@ -350,6 +350,67 @@ impl Core {
         }))
     }
 
+    /// A pack art's damage preview through the retail melee kernel
+    /// (`battle_formulas::physical_excess`, `FUN_801EC3E4`): per hit beat, the
+    /// low / mean / high damage over 64 rolls for an attacker of `atk` (the
+    /// art folds half the weapon in - pass the folded figure) against a
+    /// defence of `def`, after the art's `damage_pct`; `beats` is how many
+    /// power bytes each segment names (the clip's own beats are the disc's).
+    pub fn art_preview(&self, art_json: &str, atk: u16, def: u16) -> Result<Value> {
+        use legaia_engine_battle_vm::battle_formulas::{
+            PhysicalHit, command_power_scalar, physical_excess,
+        };
+        let art: legaia_expansion_format::arts::ArtDef =
+            serde_json::from_str(art_json).context("art does not parse")?;
+        let mut seed: u32 = 0x1234_5678;
+        let mut rand = move || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            ((seed >> 16) & 0x7FFF) as u16
+        };
+        let mut hits = Vec::new();
+        let mut total = [0u32; 3];
+        for (si, s) in art.segments.iter().enumerate() {
+            for p in &s.power {
+                let Some(b) = p.byte() else { continue };
+                let hit = PhysicalHit {
+                    attacker_atk: atk,
+                    attacker_hp: 0,
+                    defender_def: def,
+                    command_scalar: command_power_scalar(b),
+                    staged_anim: 0x1B,
+                    art_power_bit: false,
+                    affinity_pct: 100,
+                    attacker_status: 0,
+                    defender_status: 0,
+                    defender_guarding: false,
+                    combo_scale: 1,
+                    attack_ramp: 0,
+                    guard_ramp: 0,
+                };
+                let rolls: Vec<u32> = (0..64)
+                    .map(|_| {
+                        let raw = physical_excess(&hit, &mut rand).min(9999);
+                        (raw * u32::from(art.damage_pct) / 100).min(9999)
+                    })
+                    .collect();
+                let lo = *rolls.iter().min().unwrap_or(&0);
+                let hi = *rolls.iter().max().unwrap_or(&0);
+                let mean = rolls.iter().sum::<u32>() / rolls.len().max(1) as u32;
+                for (t, v) in total.iter_mut().zip([lo, mean, hi]) {
+                    *t += v;
+                }
+                hits.push(json!({
+                    "segment": si,
+                    "power": legaia_expansion_format::arts::power_label(b),
+                    "low": lo,
+                    "mean": mean,
+                    "high": hi,
+                }));
+            }
+        }
+        Ok(json!({ "hits": hits, "low": total[0], "mean": total[1], "high": total[2] }))
+    }
+
     /// One dialogue line checked as the validator checks it, row by row.
     pub fn check_dialog(&self, line_json: &str) -> Result<Value> {
         let line: DialogLine = serde_json::from_str(line_json).context("line does not parse")?;
@@ -586,6 +647,8 @@ fn unchanged(path: &str, a: &ExpansionPack, b: &ExpansionPack) -> bool {
         "cards.toml" => a.cards == b.cards,
         "modes.toml" => a.modes == b.modes,
         "items.toml" => a.items == b.items,
+        "arts.toml" => a.arts == b.arts,
+        "spells.toml" => a.spells == b.spells,
         _ => match path
             .strip_prefix("maps/")
             .and_then(|p| p.strip_suffix(".toml"))

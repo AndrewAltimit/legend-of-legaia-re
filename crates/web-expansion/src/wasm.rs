@@ -158,6 +158,14 @@ impl ExpansionWorkbench {
             .map_err(err)
     }
 
+    /// A pack art's damage preview (`Core::art_preview`).
+    pub fn art_preview(&self, art: &str, atk: u16, def: u16) -> Result<String, JsValue> {
+        self.core
+            .art_preview(art, atk, def)
+            .map(|v| v.to_string())
+            .map_err(err)
+    }
+
     /// The engine's reading of a map's tile layer (or `{ error }`).
     pub fn map_preview(&self, map: &str) -> String {
         self.core.map_preview(map).to_string()

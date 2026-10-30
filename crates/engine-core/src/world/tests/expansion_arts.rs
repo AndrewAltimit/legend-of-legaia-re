@@ -102,9 +102,8 @@ fn record(action: u8, commands: &[legaia_art::Command]) -> legaia_art::ArtRecord
     }
 }
 
-/// Vahn's retail normal arts with the combos the arts-name table spells
-/// (`data/gamedata/arts.toml`: Arms = Left, Ra-Seru = Right, High = Up, Low
-/// = Down), and his bank head.
+/// Vahn's retail bank as his disc record carries it (the combos read off
+/// `record0`, Super records with their one-arrow stubs).
 fn vahn_retail() -> Vec<(u8, Vec<legaia_art::Command>)> {
     vec![
         (
@@ -124,7 +123,17 @@ fn vahn_retail() -> Vec<(u8, Vec<legaia_art::Command>)> {
         (0x26, vec![Up, Down, Left]),
         (0x27, vec![Up, Down, Up]),
         (0x28, vec![Down, Right, Up]),
-        (0x29, vec![Left, Right, Up]),
+        (0x29, vec![Left, Right, Left]),
+        // The Super Art records carry a one-arrow stub combo on the disc
+        // (`Down` for every Vahn Super): a full one-arrow match ends the walk
+        // at that start, which is why pack arts walk in a second pass.
+        (0x2A, vec![Down]),
+        (0x2B, vec![Down]),
+        (0x2C, vec![Down]),
+        (0x2D, vec![Down]),
+        (0x2E, vec![Down]),
+        (0x2F, vec![Down]),
+        (0x30, vec![Down]),
     ]
 }
 
@@ -238,14 +247,14 @@ fn a_pack_art_builds_its_queue_byte_exact() {
     assert_eq!(w.expansion.arts.turn_performed, [0]);
 }
 
-/// `R U R D U` then `L R U` (Hyper Elbow): the chain appends `0x1A` (marked
+/// `R U R D U` then `L R L` (Hyper Elbow): the chain appends `0x1A` (marked
 /// for the SUPER banner) and the finisher's byte, once the finisher is
 /// known; Spirit pays both pack arts.
 #[test]
 fn a_chain_appends_its_finisher_and_both_arts_are_charged() {
     let mut w = with_pack(arts_world());
     w.expansion_teach_art("ember");
-    let input = [Right, Up, Right, Down, Up, Left, Right, Up];
+    let input = [Right, Up, Right, Down, Up, Left, Right, Left];
     let (q, actions, marks) = w.build_arts_action_queue(0, &input);
     // Hyper Elbow is new to the record: learn-on-use gives it the `0x1A`
     // starter this once (`0x801EF6F0`).

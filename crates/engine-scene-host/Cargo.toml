@@ -55,6 +55,9 @@ log.workspace = true
 legaia-disc-patch.workspace = true
 legaia-translate.workspace = true
 legaia-engine-battle-hud.workspace = true
+# expansion_arts_disc commits a battle turn through the test-driver seam.
+legaia-engine-core = { workspace = true, features = ["test-drivers"] }
+legaia-engine-battle-loop.workspace = true
 # Named only by tests: crates the disc-gated chains walk directly.
 legaia-engine-camera.workspace = true
 legaia-engine-modes.workspace = true

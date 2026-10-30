@@ -392,10 +392,24 @@ pub fn tokenize_bank(
     special_armed: bool,
 ) -> BankTokens {
     let mut q = [0u8; QUEUE_LEN];
-    let mut marks = [0u32; QUEUE_LEN];
     for (i, c) in input.iter().take(QUEUE_LEN).enumerate() {
         q[i] = c.as_action().as_byte();
     }
+    tokenize_bank_over(records, q, [0u32; QUEUE_LEN], special_armed)
+}
+
+/// [`tokenize_bank`] over a queue window already part-normalised: the same
+/// walk, starting from `q` and its side array `marks` instead of raw arrows.
+/// Bytes that are not swings (`0x0C..=0x0F`) match nothing, so a second walk
+/// over [`tokenize_bank`]'s output with other records rewrites only the
+/// arrows the first left - how an expansion pack's arts match after every
+/// retail art has had its turn (`legaia_engine_expansion::arts`).
+pub fn tokenize_bank_over(
+    records: &[BankArt<'_>],
+    mut q: [u8; QUEUE_LEN],
+    mut marks: [u32; QUEUE_LEN],
+    special_armed: bool,
+) -> BankTokens {
     let mut hyper_matches = Vec::new();
     let mut miracle_matched = false;
     let in_window = |p: isize| (0..QUEUE_LEN as isize).contains(&p);

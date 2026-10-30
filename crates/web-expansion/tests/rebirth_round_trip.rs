@@ -178,3 +178,31 @@ fn every_rebirth_cutscene_previews_to_its_end() {
             .is_err()
     );
 }
+
+/// The Arts tab's damage preview runs Rebirth's arts through the retail
+/// melee kernel: one row per power byte, more ATK more damage, and the
+/// finisher's `damage_pct` on top.
+#[test]
+fn the_arts_preview_rolls_rebirths_arts() {
+    let mut core = Core::new();
+    let (_, pack) = load(&mut core);
+    let ember = pack["arts"]["arts"]["ember_cascade"].to_string();
+    let low = core.art_preview(&ember, 200, 150).unwrap();
+    let high = core.art_preview(&ember, 400, 150).unwrap();
+    assert_eq!(low["hits"].as_array().unwrap().len(), 3, "U22 L22 then L28");
+    assert_eq!(low["hits"][2]["power"], "L28");
+    assert!(high["mean"].as_u64() > low["mean"].as_u64());
+    let mut boosted: Value = serde_json::from_str(&ember).unwrap();
+    boosted["damage_pct"] = 200.into();
+    let twice = core.art_preview(&boosted.to_string(), 200, 150).unwrap();
+    let (a, b) = (
+        low["mean"].as_u64().unwrap(),
+        twice["mean"].as_u64().unwrap(),
+    );
+    assert!(b > a * 3 / 2, "damage_pct doubles the roll ({a} -> {b})");
+    assert!(
+        legaia_web_expansion::catalog::art_clips()
+            .iter()
+            .any(|c| c.character == "noa" && c.constant == 0x31 && c.name == "Love You")
+    );
+}
