@@ -50,6 +50,9 @@ pub struct DecorDef {
     pub rotation: [f32; 3],
     /// Uniform scale; `1` when left out.
     pub scale: Option<f32>,
+    /// Block the ground under the mesh: the lower half of its drawn hull
+    /// closes the collision sub-cells it covers, as a solid prop's does.
+    pub solid: bool,
 }
 
 /// A seeded brush: scatter a weighted set of meshes over a tile rectangle.
@@ -94,6 +97,9 @@ pub struct ScatterBrush {
     /// read through it from the follow camera ([`Clearance`]). `None`
     /// paints up to the path's edge.
     pub clearance: Option<Clearance>,
+    /// Every mesh the brush places blocks the ground under it
+    /// ([`DecorDef::solid`]): an orchard the player walks round.
+    pub solid: bool,
 }
 
 /// A [`ScatterBrush`]'s clearance round the walkable floor (every tile
@@ -207,6 +213,7 @@ impl Default for ScatterBrush {
             keep_clear: true,
             cluster: None,
             clearance: None,
+            solid: false,
         }
     }
 }
@@ -275,6 +282,8 @@ pub struct EdgeDecor {
     pub yaw_jitter: f32,
     pub scale_range: Option<[f32; 2]>,
     pub seed: u64,
+    /// Each copy blocks the ground under it ([`DecorDef::solid`]).
+    pub solid: bool,
 }
 
 impl Default for EdgeDecor {
@@ -295,6 +304,7 @@ impl Default for EdgeDecor {
             yaw_jitter: 0.0,
             scale_range: None,
             seed: 0,
+            solid: false,
         }
     }
 }
@@ -1028,6 +1038,8 @@ pub struct Decoration {
     /// Degrees `[x, y, z]`.
     pub rotation: [f32; 3],
     pub scale: f32,
+    /// Whether it blocks the ground under it ([`DecorDef::solid`]).
+    pub solid: bool,
 }
 
 /// A [`Cluster`]'s density factor at map-local tile `(col, row)` of a
@@ -1107,6 +1119,7 @@ impl crate::map::MapDef {
                 offset: d.offset.map(f32::from),
                 rotation: d.rotation,
                 scale: d.scale.unwrap_or(1.0),
+                solid: d.solid,
             })
             .collect();
         let floor = |c: usize, r: usize| grid.get(c, r).is_some_and(|t| !t.void && t.walls != 0xF);
@@ -1190,6 +1203,7 @@ impl crate::map::MapDef {
                             offset: [dx, f32::from(m.y), dz],
                             rotation: [pitch, yaw, roll],
                             scale,
+                            solid: brush.solid,
                         });
                     }
                 }
@@ -1255,6 +1269,7 @@ impl crate::map::MapDef {
                             ],
                             rotation: [0.0, (yaw + edge.yaw + turn).rem_euclid(360.0), 0.0],
                             scale,
+                            solid: edge.solid,
                         });
                     }
                 }

@@ -215,6 +215,12 @@ impl SceneHost {
                 image.covered_cells
             );
         }
+        if !image.open_large_props.is_empty() {
+            log::warn!(
+                "expansion: map '{map_id}': props {:?} draw more than a tile and a half across but close no ground (set `solid`)",
+                image.open_large_props
+            );
+        }
         if image.decoration_chunk > 1 {
             log::info!(
                 "expansion: map '{map_id}' bakes its decorations in {0} x {0} tile cells",

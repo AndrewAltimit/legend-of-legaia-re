@@ -59,6 +59,7 @@ mod expansion_map_disc;
 mod expansion_map_grid;
 mod expansion_map_npcs_disc;
 mod expansion_podium_disc;
+mod expansion_solid_props_disc;
 mod expansion_stage_disc;
 mod expansion_terrain_disc;
 mod expansion_waves_disc;

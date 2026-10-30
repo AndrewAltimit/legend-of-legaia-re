@@ -126,6 +126,7 @@ mesh = { scene = "town01", object = 47 }
 tile = [33, 20]
 rotation = [8.0, -35.0, 0.0]
 scale = 1.2
+solid = true
 
 [[props]]
 id = "jetty_lantern"

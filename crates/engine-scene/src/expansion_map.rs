@@ -47,6 +47,7 @@ use legaia_scene_formats::man_section::ActorPlacement;
 use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 
 pub mod detail;
+pub mod footprint;
 pub mod gltf;
 pub mod terrain;
 pub mod tmd_ops;
@@ -365,6 +366,13 @@ pub struct FieldImage {
     /// tile already draws one. The keys [`prop_scales_at`] and
     /// [`prop_records_at`] take.
     pub prop_anchors: Vec<(u16, u16)>,
+    /// Ids of props that stand in the player's way
+    /// ([`footprint::Footprint::is_large_obstacle`]) and close nothing
+    /// (neither `solid` nor standable): drawn buildings the player walks
+    /// through.
+    pub open_large_props: Vec<String>,
+    /// How many `solid` decorations closed their footprint.
+    pub solid_decorations: usize,
 }
 
 /// Build the synthetic field image of `def` (whose resolved tiles are
@@ -435,7 +443,7 @@ pub fn build_field_image(
         meshes: Vec::new(),
     };
     let mut cell_items = Vec::new();
-    let (mut free, covered_cells, anchors) = write_objects(
+    let (mut free, covered_cells, anchors, open_large_props) = write_objects(
         &mut img,
         def,
         grid,
@@ -478,6 +486,25 @@ pub fn build_field_image(
     let (dropped, chunk) = write_decorations(
         &mut img, def, grid, base, &mut added, &mut free, surface, cell_items,
     )?;
+    // Solid decorations close the ground under their meshes.
+    let mut solid_decorations = 0;
+    if let Some(lib) = base.library {
+        for d in def.decorations()?.iter().filter(|d| d.solid) {
+            let Some(h) = solid_mesh_raw(lib, &d.mesh)
+                .and_then(|raw| footprint::base_hull(raw, d.rotation, d.scale))
+            else {
+                continue;
+            };
+            let (x, z) = tile_centre_world(def, d.tile[0], d.tile[1]);
+            footprint::close_hull(
+                &mut img,
+                &h,
+                f32::from(x) + d.offset[0],
+                f32::from(z) + d.offset[2],
+            );
+            solid_decorations += 1;
+        }
+    }
     // A kept room keeps its own floor steps (`KeptFloor`).
     let kept = KeptFloor::new(def, grid, base.base_map);
     let records: Vec<ElevationOverride> = kept.records().iter().copied().take(0x7F0).collect();
@@ -489,6 +516,8 @@ pub fn build_field_image(
         decoration_chunk: chunk,
         covered_cells,
         prop_anchors: anchors,
+        open_large_props,
+        solid_decorations,
     })
 }
 
@@ -589,7 +618,23 @@ fn psx_angle(deg: f32) -> u16 {
 
 /// What [`write_objects`] leaves: the record slots still free, the tiles
 /// whose cell mesh a prop replaced, and each prop's record anchor.
-type WrittenObjects = (Vec<usize>, Vec<[u16; 2]>, Vec<(u16, u16)>);
+type WrittenObjects = (Vec<usize>, Vec<[u16; 2]>, Vec<(u16, u16)>, Vec<String>);
+
+/// A prop whose footprint runs past this many world units on either axis
+/// (one and a half tiles), standing in the player's way
+/// ([`footprint::Footprint::is_large_obstacle`]), and neither `solid` nor
+/// standable is listed in [`FieldImage::open_large_props`]: a house the
+/// player walks through.
+pub const OPEN_PROP_WARN_EXTENT: f32 = 192.0;
+
+/// The file bytes a solid mesh's footprint is measured from: the library's
+/// copy, or for a base-pack `{ object = N }` the base pack's.
+fn solid_mesh_raw<'a>(lib: &'a MeshLibrary, mesh: &PropMesh) -> Option<&'a [u8]> {
+    lib.raw(mesh).or_else(|| match mesh {
+        PropMesh::Object { object } => lib.base_raw.get(usize::from(*object)).map(Vec::as_slice),
+        _ => None,
+    })
+}
 
 /// The meshes a map image adds past the base pack, deduplicated by bytes:
 /// added mesh `k` is pack index `len + k`.
@@ -840,6 +885,7 @@ fn write_objects(
     let mut placed_tiles: Vec<(u16, u16)> = Vec::new();
     let mut anchors_taken: Vec<(u16, u16)> = Vec::new();
     let mut covered = Vec::new();
+    let mut open_large = Vec::new();
     for prop in &def.props {
         let [col, row] = prop.tile;
         if usize::from(col) >= grid.width || usize::from(row) >= grid.height {
@@ -966,13 +1012,33 @@ fn write_objects(
         let o = cell_off(ac, ar);
         set_cell(img, o, s as u16 | cell_gates(flags));
         let (gc, gr) = grid_tile(def, col, row);
+        // The mesh's footprint ([`footprint`]): what a solid prop closes
+        // past its own tile, and what flags a large prop left open.
+        let fp = base
+            .library
+            .and_then(|lib| solid_mesh_raw(lib, &prop.mesh))
+            .and_then(|raw| footprint::footprint(raw, prop.rotation, prop.scale.unwrap_or(1.0)));
+        let (wx, wz) = tile_centre_world(def, col, row);
+        let (wx, wz) = (
+            f32::from(wx) + f32::from(prop.offset[0]),
+            f32::from(wz) + f32::from(prop.offset[2]),
+        );
         if prop.solid && prop.top.is_none() {
             // Close the prop's tile: its wall quarters sit one byte row down.
             let b = COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc;
             img[b] |= 0xF0;
+            if let Some(f) = &fp {
+                footprint::close_hull(img, &f.hull, wx, wz);
+            }
+        } else if prop.top.is_none()
+            && fp
+                .as_ref()
+                .is_some_and(|f| f.is_large_obstacle(f32::from(prop.offset[1])))
+        {
+            open_large.push(prop.id.clone());
         }
     }
-    Ok((free, covered, anchors_taken))
+    Ok((free, covered, anchors_taken, open_large))
 }
 
 /// One part a decorated cell bakes: a decoration's mesh or a decal's.

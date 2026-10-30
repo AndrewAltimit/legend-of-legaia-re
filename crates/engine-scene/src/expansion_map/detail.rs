@@ -208,6 +208,8 @@ pub fn needs_library(def: &MapDef, base_entry: Option<u32>) -> bool {
         || !def.edges.is_empty()
         || !def.decals.is_empty()
         || !def.emitters.is_empty()
+        // A solid prop's footprint is measured off its mesh.
+        || def.props.iter().any(|p| p.solid && p.top.is_none())
         || def.mesh_refs().iter().any(|m| match m {
             PropMesh::Object { .. } => false,
             PropMesh::Tmd {

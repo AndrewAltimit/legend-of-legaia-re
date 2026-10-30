@@ -170,7 +170,7 @@ tile = [2, 2]
 offset = [0, 0, 0]                          # world units from the tile centre, y up
 rotation = [0.0, 45.0, 0.0]                 # degrees; y is the yaw
 scale = 0.75                                # uniform; 1 when left out
-solid = true                                # close the prop's tile
+solid = true                                # close the ground under the mesh
 top = 64                                    # standable: a floor 64 units up
 footprint = [128, 128]                      # the top's extent, world units
 ```
@@ -185,8 +185,7 @@ footprint = [128, 128]                      # the top's extent, world units
 | `{ asset = "models/x.glb", colors = 256 }` | A glTF model the pack carries ([Model assets](#model-assets)). |
 
 `scale` folds into the prop's model matrix after its rotation, where a
-retail placed object's render scale lands. Props carry no collision box of
-their own: `solid` closes the tile.
+retail placed object's render scale lands.
 
 `animate` is a list of procedural animators and `light` a light the prop
 carries ([Animated props](#animated-props), [Lights](#lights)). A cell
@@ -206,6 +205,26 @@ scene pack. A prop's `offset[1]` is from the floor the player walks on its
 tile: its tier, plus in a kept room the retail floor step there
 ([A kept room's floor](#a-kept-rooms-floor)). `0` stands the mesh's origin
 on the floor.
+
+### Solid props
+
+`solid` closes the ground the mesh stands on. The footprint is the convex
+hull, in the floor plane, of the mesh's vertices in the lower half of its
+height once rotated and scaled
+([`footprint`](../../crates/engine-scene/src/expansion_map/footprint.rs)):
+a cottage's walls and not its overhanging eaves, a tree's trunk and lower
+boughs and not its whole canopy. Every `64 x 64` wall sub-cell whose centre
+lies inside the hull is closed, and so is the prop's own tile, so a house
+turned to any angle blocks where it draws without the tile layer having to
+trace it. The player's wall probe leads it by 47 units, so it stops just
+short of the walls.
+
+A prop that stands in the player's way - more than a tile and a half across
+on an axis, taller than a step, and reaching down to body height - but is
+neither `solid` nor standable is logged at entry
+(`FieldImage::open_large_props`): drawn buildings nobody closed. The
+disc-gated `expansion_solid_props_disc` test holds the flagship pack to it,
+and walks the player at each solid prop from every side.
 
 ### Standable props
 
@@ -612,8 +631,11 @@ texture strip.
 
 ## Decorations
 
-A tile holds one prop, but any number of decorations. They have no
-collision and draw only. When the map loads, every decoration of a tile is
+A tile holds one prop, but any number of decorations. They draw only,
+unless marked `solid` (`[[decor]]`, a `[[scatter]]` brush, an `[[edges]]`
+run): a solid decoration closes its mesh's footprint as a solid prop does
+([Solid props](#solid-props)) - an orchard, a fence line, a market stall
+the player walks round. When the map loads, every decoration of a tile is
 baked with the tile's own cell mesh (if any) into one mesh
 ([`tmd_ops::bake`](../../crates/engine-scene/src/expansion_map/tmd_ops.rs)),
 which the tile's cell draws through the ordinary decoration-cell path on
