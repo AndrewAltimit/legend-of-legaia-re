@@ -259,6 +259,7 @@ id = "archive_tablet"
 mesh = { object = 110 }
 tile = [4, 18]
 rotation = [0.0, 30.0, 0.0]
+solid = true
 
 [[props]]
 id = "archive_pillar"
@@ -272,6 +273,7 @@ mesh = { object = 98 }
 tile = [4, 13]
 offset = [0, 0, 40]
 light = { color = [210, 255, 200], radius = 520, height = 80, flicker = 0.1, period = 40 }
+solid = true
 
 # The Flooded Cloister: urns on columns between the pools, planters along
 # its walls, a pale lamp.
@@ -286,6 +288,7 @@ id = "cloister_lamp"
 mesh = { object = 98 }
 tile = [47, 19]
 light = { color = [200, 240, 255], radius = 520, height = 80, flicker = 0.1, period = 45 }
+solid = true
 
 [[scatter]]
 id = "cloister_planters"

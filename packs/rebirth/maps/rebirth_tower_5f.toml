@@ -375,10 +375,12 @@ tile = [9, 6]
 [[decor]]
 mesh = { object = 142 }
 tile = [27, 6]
+solid = true
 
 [[decor]]
 mesh = { object = 142 }
 tile = [21, 17]
+solid = true
 
 # The card room: the dealer's display case, a plant.
 [[props]]
@@ -454,6 +456,7 @@ solid = true
 [[decor]]
 mesh = { object = 131 }
 tile = [30, 16]
+solid = true
 
 # The lounge: the piano on its stage, small tables with
 # chairs, plants.
@@ -472,11 +475,13 @@ offset = [0, 64, 0]
 mesh = { object = 27 }
 tile = [19, 21]
 rotation = [0.0, 90.0, 0.0]
+solid = true
 
 [[decor]]
 mesh = { object = 27 }
 tile = [21, 21]
 rotation = [0.0, -90.0, 0.0]
+solid = true
 
 [[decor]]
 mesh = { object = 75 }
@@ -487,11 +492,13 @@ offset = [0, 64, 0]
 mesh = { object = 27 }
 tile = [23, 24]
 rotation = [0.0, 90.0, 0.0]
+solid = true
 
 [[decor]]
 mesh = { object = 27 }
 tile = [25, 24]
 rotation = [0.0, -90.0, 0.0]
+solid = true
 
 [[decor]]
 mesh = { object = 75 }
@@ -502,6 +509,7 @@ offset = [0, 64, 0]
 mesh = { object = 27 }
 tile = [18, 26]
 rotation = [0.0, 90.0, 0.0]
+solid = true
 
 [[decor]]
 mesh = { object = 136 }
@@ -510,6 +518,7 @@ tile = [10, 19]
 [[decor]]
 mesh = { object = 142 }
 tile = [26, 19]
+solid = true
 
 [[decor]]
 mesh = { object = 136 }
@@ -523,11 +532,13 @@ tile = [14, 1]
 [[decor]]
 mesh = { object = 142 }
 tile = [22, 1]
+solid = true
 
 [[decor]]
 mesh = { object = 131 }
 tile = [22, 4]
 rotation = [0.0, 90.0, 0.0]
+solid = true
 
 [[props]]
 id = "lantern_landing"

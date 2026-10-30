@@ -207,6 +207,7 @@ tile = [27, 26]
 offset = [61, 0, -44]
 rotation = [0.0, 0.0, 0.0]
 scale = 0.60
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -214,6 +215,7 @@ tile = [27, 27]
 offset = [-56, 0, -30]
 rotation = [0.0, 37.0, 0.0]
 scale = 0.75
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -221,6 +223,7 @@ tile = [25, 27]
 offset = [4, 0, 25]
 rotation = [0.0, 74.0, 0.0]
 scale = 0.90
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -228,6 +231,7 @@ tile = [24, 27]
 offset = [-63, 0, -25]
 rotation = [0.0, 111.0, 0.0]
 scale = 0.67
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -235,6 +239,7 @@ tile = [23, 26]
 offset = [-59, 0, -37]
 rotation = [0.0, 148.0, 0.0]
 scale = 0.82
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -242,6 +247,7 @@ tile = [23, 24]
 offset = [-61, 0, 44]
 rotation = [0.0, 185.0, 0.0]
 scale = 0.60
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -249,6 +255,7 @@ tile = [23, 23]
 offset = [56, 0, 30]
 rotation = [0.0, 222.0, 0.0]
 scale = 0.75
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -256,6 +263,7 @@ tile = [25, 23]
 offset = [-4, 0, -25]
 rotation = [0.0, 259.0, 0.0]
 scale = 0.90
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -263,6 +271,7 @@ tile = [26, 23]
 offset = [63, 0, 25]
 rotation = [0.0, 296.0, 0.0]
 scale = 0.67
+solid = true
 
 [[decor]]
 mesh = { scene = "cave01", object = 30 }
@@ -270,6 +279,7 @@ tile = [27, 24]
 offset = [59, 0, 37]
 rotation = [0.0, 333.0, 0.0]
 scale = 0.82
+solid = true
 
 # The ford: flat stones across the brook, boulders on its banks.
 
@@ -327,6 +337,7 @@ mesh = { object = 5 }
 tile = [39, 30]
 rotation = [0.0, 30.0, 0.0]
 scale = 0.22
+solid = true
 
 [[decor]]
 mesh = { object = 5 }
@@ -558,6 +569,7 @@ mesh = { scene = "town01", object = 81 }
 tile = [72, 36]
 rotation = [0.0, 15.0, 0.0]
 scale = 0.9
+solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 81 }
@@ -565,6 +577,7 @@ tile = [72, 36]
 offset = [20, 0, 60]
 rotation = [0.0, 95.0, 0.0]
 scale = 0.8
+solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 35 }
@@ -583,6 +596,7 @@ scale = 0.8
 mesh = { scene = "town01", object = 33 }
 tile = [81, 36]
 scale = 0.7
+solid = true
 
 # The ruined court: the hive (the great tree turned to wax and thorn) just
 # inside the north gate, torches either side of the gate, a crystal

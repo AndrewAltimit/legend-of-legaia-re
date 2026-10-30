@@ -154,11 +154,13 @@ mesh = { scene = "town01", object = 46 }
 tile = [40, 31]
 offset = [-20, 0, 10]
 scale = 0.8
+solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 34 }
 tile = [42, 31]
 scale = 0.75
+solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 83 }
@@ -183,6 +185,7 @@ mesh = { scene = "town01", object = 81 }
 tile = [4, 15]
 rotation = [0.0, 30.0, 0.0]
 scale = 0.8
+solid = true
 
 # Palms and ferns along the dunes, thickest round the path's foot.
 [[scatter]]
