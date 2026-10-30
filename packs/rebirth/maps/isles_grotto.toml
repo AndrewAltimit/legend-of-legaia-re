@@ -76,7 +76,7 @@ to = { kind = "map", map = "isles_thornwood", spawn = "from_grotto" }
 [[triggers]]
 id = "grotto_intro"
 rect = [18, 1, 22, 4]
-event = { kind = "dialog", line = "isles_grotto_intro" }
+event = { kind = "toast", line = "isles_grotto_intro" }
 once = true
 
 # Wading out to the islet is talking to the Pearl.

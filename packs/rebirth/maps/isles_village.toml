@@ -108,7 +108,8 @@ id = "to_thornwood"
 rect = [63, 12, 63, 14]
 to = { kind = "map", map = "isles_thornwood", spawn = "from_village" }
 requires = { quests = ["isles_landfall"] }
-locked_line = "isles_elder_thorns_active"
+locked_line = "isles_thorns_locked"
+locked_toast = true
 
 # The lodge's hearth, just inside its gate: the party rests, and may save.
 [[triggers]]

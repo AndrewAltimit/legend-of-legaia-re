@@ -95,7 +95,7 @@ to = { kind = "map", map = "isles_village", spawn = "from_beach" }
 [[triggers]]
 id = "arrival"
 rect = [2, 14, 5, 19]
-event = { kind = "dialog", line = "isles_beach_intro" }
+event = { kind = "toast", line = "isles_beach_intro" }
 once = true
 
 [[npcs]]
@@ -122,7 +122,7 @@ solid = true
 
 [[props]]
 id = "boat_wreck"
-mesh = { scene = "town01", object = 47 }
+mesh = { scene = "town01", object = 48 }
 tile = [33, 20]
 rotation = [8.0, -35.0, 0.0]
 scale = 1.2
@@ -169,6 +169,19 @@ tile = [43, 32]
 scale = 0.8
 
 [[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [1, 14]
+rotation = [0.0, 15.0, 0.0]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [1, 15]
+scale = 0.8
+solid = true
+
+[[decor]]
 mesh = { scene = "town01", object = 81 }
 tile = [4, 15]
 rotation = [0.0, 30.0, 0.0]
@@ -190,21 +203,70 @@ meshes = [
   { mesh = { scene = "vell", object = 13 }, weight = 2, scale = [0.35, 0.5] },
 ]
 
-[[scatter]]
-id = "path_palms"
-rect = [38, 4, 62, 18]
-on = "gG.s"
-density = 0.5
-seed = 4102
-jitter = 50
-yaw = [0.0, 360.0]
-scale = [0.35, 0.5]
-cluster = { centre = [48.0, 12.0], radius = 9.0, falloff = 1.5 }
-meshes = [
-  { mesh = { scene = "vell", object = 12 }, weight = 2 },
-  { mesh = { scene = "vell", object = 15 }, weight = 2 },
-  { mesh = { scene = "vell", object = 18 }, weight = 1, scale = [0.35, 0.5] },
-]
+# Palms line both sides of the dune path, every third row.
+[[decor]]
+mesh = { scene = "vell", object = 12 }
+tile = [53, 6]
+offset = [-30, 0, 0]
+rotation = [0.0, 251.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 12 }
+tile = [59, 6]
+offset = [30, 0, 0]
+rotation = [0.0, 329.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [49, 9]
+offset = [-30, 0, 0]
+rotation = [0.0, 340.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 12 }
+tile = [54, 9]
+offset = [30, 0, 0]
+rotation = [0.0, 45.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [46, 12]
+offset = [-30, 0, 0]
+rotation = [0.0, 82.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [50, 12]
+offset = [30, 0, 0]
+rotation = [0.0, 134.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [43, 15]
+offset = [-30, 0, 0]
+rotation = [0.0, 184.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [47, 15]
+offset = [30, 0, 0]
+rotation = [0.0, 236.0, 0.0]
+scale = 0.42
+solid = true
 
 [[scatter]]
 id = "beach_drift"
@@ -218,7 +280,7 @@ scale = [0.4, 0.8]
 meshes = [
   { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.3, 0.5] },
   { mesh = { scene = "vell", object = 10 }, weight = 2, scale = [0.3, 0.5] },
-  { mesh = { scene = "town01", object = 47 }, weight = 1, scale = [0.5, 0.8] },
+  { mesh = { scene = "town01", object = 33 }, weight = 1, scale = [0.6, 0.8] },
 ]
 
 [[scatter]]

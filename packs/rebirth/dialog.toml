@@ -721,6 +721,12 @@ text = """
 (A gate, grown through
 with a hive.)"""
 
+[lines.isles_thorns_locked]
+text = "The elder should hear of you first."
+
+[lines.isles_grotto_locked]
+text = "The hive seals the stair down."
+
 [lines.isles_hermit_hello]
 speaker = "Hermit Ost"
 text = """

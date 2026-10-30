@@ -85,18 +85,19 @@ id = "grotto_stair"
 rect = [77, 1, 79, 1]
 to = { kind = "map", map = "isles_grotto", spawn = "from_ruins" }
 requires = { bosses = ["isles_hive_queen"] }
-locked_line = "isles_hermit_hello"
+locked_line = "isles_grotto_locked"
+locked_toast = true
 
 [[triggers]]
 id = "forest_intro"
 rect = [1, 15, 3, 19]
-event = { kind = "dialog", line = "isles_thornwood_intro" }
+event = { kind = "toast", line = "isles_thornwood_intro" }
 once = true
 
 [[triggers]]
 id = "ruins_intro"
 rect = [71, 18, 72, 22]
-event = { kind = "dialog", line = "isles_ruins_intro" }
+event = { kind = "toast", line = "isles_ruins_intro" }
 once = true
 
 # The hive in the gate: the queen wakes.
@@ -112,11 +113,13 @@ requires = { bosses_unbeaten = ["isles_hive_queen"] }
 [[triggers]]
 id = "hermit"
 rect = [72, 19, 73, 21]
+press = true
 event = { kind = "talk", npc = "isles_hermit" }
 
 [[triggers]]
 id = "hermit_warning"
 rect = [72, 19, 73, 21]
+press = true
 event = { kind = "dialog", line = "isles_hermit_hello" }
 requires = { bosses_unbeaten = ["isles_hive_queen"] }
 
@@ -128,10 +131,10 @@ offset = [0, 40, 40]
 light = { color = [255, 190, 120], radius = 520, height = 60, flicker = 0.3, period = 12 }
 
 [[decor]]
-mesh = { scene = "town01", object = 61 }
+mesh = { scene = "town01", object = 41 }
 tile = [73, 19]
 rotation = [0.0, 90.0, 0.0]
-scale = 0.8
+scale = 0.4
 
 [[decor]]
 mesh = { scene = "town01", object = 81 }
