@@ -701,7 +701,6 @@ jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.6, 1.0]
 meshes = [
-  { mesh = { scene = "town01", object = 80 }, weight = 1 },
   { mesh = { scene = "vell", object = 13 }, weight = 3, scale = [0.25, 0.4] },
   { mesh = { scene = "vell", object = 10 }, weight = 3, scale = [0.3, 0.5] },
 ]
@@ -719,6 +718,21 @@ meshes = [
   { mesh = { scene = "vell", object = 13 }, weight = 1 },
   { mesh = { scene = "vell", object = 10 }, weight = 1 },
 ]
+
+# Potted flowers stand along the inside of each yard's hedge, not out in
+# the meadow.
+[[edges]]
+id = "yard_pots"
+mesh = { scene = "town01", object = 80 }
+walls = "h"
+on = "y"
+every = 4
+phase = 1
+inset = 30
+jitter = 30
+yaw_jitter = 180.0
+scale_range = [0.7, 0.9]
+seed = 4208
 
 [[scatter]]
 id = "shore_palms"
