@@ -102,6 +102,8 @@ once = true
 id = "isles_ferrywoman"
 label = "Ferrywoman Maro"
 model = { kind = "npc", scene = "town01", index = 36 }
+# The placement's own clip lies her flat on the sand; 18 is her idle.
+clip = 18
 tile = [6, 18]
 facing = 6
 line = "isles_ferry_idle"

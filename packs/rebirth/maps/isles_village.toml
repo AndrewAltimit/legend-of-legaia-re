@@ -259,9 +259,11 @@ solid = true
 
 [[props]]
 id = "great_tree"
-mesh = { scene = "town01", object = 88 }
+# The West Voz Forest's great tree: Rim Elm's own (town01 88) is the
+# Genesis Tree, which the enhanced lighting draws as a glowing light.
+mesh = { scene = "vell", object = 3 }
 tile = [16, 8]
-scale = 0.62
+scale = 0.72
 solid = true
 animate = [{ kind = "sway", axis = "x", degrees = 1.5, period = 260 }]
 
