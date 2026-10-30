@@ -2585,6 +2585,15 @@ placement / posed-prop resolvers, the browser play page and the field-scene
 viewer in their placement / terrain position exporters (the drift gate's
 sim-pair rows pin all three call sites).
 
+The candidate pairs come from buckets of quantized plane (normal and
+distance). A bucket can hold thousands of planes - every ground cell of a
+large expansion-pack map lies on one plane - so within a bucket whose
+members share an in-plane axis the pairs are swept along it, and a pair
+further apart on that axis than the lifts' slide reach is never formed: it
+could be neither a conflict nor an abutment. The pairs kept are walked in
+the order of the full walk, so the offsets are the same (the
+`pruned_walk_matches_the_full_walk` test pins it).
+
 Five properties of the kernel, each closing a view-angle-dependent fight:
 
 - **Normal families.** Conflicts are partitioned by normal (clustered by

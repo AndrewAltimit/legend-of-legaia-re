@@ -344,6 +344,80 @@ pub fn coplanar_draw_offsets(
     draws: &[EnvDraw],
     planes_of: &HashMap<usize, MeshPlanes>,
 ) -> HashMap<EnvDraw, [f32; 3]> {
+    offsets_walk(draws, planes_of, true)
+}
+
+/// A bucket key - a quantized normal `k` (each component within `+-129`)
+/// and a distance quantum `d` - packed into one word whose order is the
+/// tuple's: 9 bits a normal component, offset by 256, and 34 for `d`,
+/// offset by `2^33`.
+fn bucket_key(k: (i32, i32, i32), d: i64) -> u64 {
+    let c = |v: i32| (v + 256).clamp(0, 511) as u64;
+    let d = (d + (1 << 33)).clamp(0, (1 << 34) - 1) as u64;
+    (c(k.0) << 52) | (c(k.1) << 43) | (c(k.2) << 34) | d
+}
+
+/// The in-bucket pairs [`coplanar_draw_offsets`] walks, as positions into
+/// `members`, in the nested-loop order `(xi, yi)`, `xi < yi`.
+///
+/// With `prune`, a bucket whose members share an axis that is in-plane for
+/// every one of them (not the dominant normal axis of any) is swept along
+/// that axis, and a pair whose boxes are further apart on it than
+/// [`SLIDE_REACH`] is left out. Such a pair can do nothing in the walk: a
+/// conflict needs the boxes to meet on every axis ([`aabb_overlaps`]) and an
+/// abutment needs them within [`SLIDE_REACH`] on every in-plane axis
+/// ([`planes_within_slide_reach`]), and the walk skips any other pair
+/// without recording it. So the pairs kept, walked in the same order, give
+/// the same offsets as every pair. A floor map's one ground plane is the
+/// case it is for: thousands of tile draws in one bucket, nearly all of
+/// them far apart (an expansion map of 120 x 120 tiles took seconds of the
+/// scene build in the quadratic walk).
+fn bucket_pairs(members: &[usize], world: &[WorldPlane], prune: bool) -> Vec<(usize, usize)> {
+    let n = members.len();
+    let sweep = prune
+        .then(|| {
+            let mut dominant = [false; 3];
+            for &m in members {
+                dominant[dominant_axis(world[m].n)] = true;
+            }
+            (0..3).find(|&ax| !dominant[ax])
+        })
+        .flatten();
+    let Some(ax) = sweep else {
+        return (0..n)
+            .flat_map(|xi| ((xi + 1)..n).map(move |yi| (xi, yi)))
+            .collect();
+    };
+    let mut ord: Vec<usize> = (0..n).collect();
+    ord.sort_by(|&p, &q| {
+        world[members[p]].lo[ax]
+            .total_cmp(&world[members[q]].lo[ax])
+            .then(p.cmp(&q))
+    });
+    let mut out = Vec::new();
+    for (k, &p) in ord.iter().enumerate() {
+        let hi = world[members[p]].hi[ax];
+        for &q in &ord[k + 1..] {
+            // `planes_within_slide_reach`'s own comparison, so the cut is
+            // exact in floats; `lo - SLIDE_REACH` only grows along `ord`.
+            let near = (world[members[q]].lo[ax] - SLIDE_REACH).partial_cmp(&hi);
+            if near != Some(std::cmp::Ordering::Less) {
+                break;
+            }
+            out.push((p.min(q), p.max(q)));
+        }
+    }
+    out.sort_unstable();
+    out
+}
+
+/// [`coplanar_draw_offsets`], with the in-bucket pair walk pruned
+/// ([`bucket_pairs`]) or not; the two agree, which the tests pin.
+fn offsets_walk(
+    draws: &[EnvDraw],
+    planes_of: &HashMap<usize, MeshPlanes>,
+    prune: bool,
+) -> HashMap<EnvDraw, [f32; 3]> {
     // Instance every significant plane into world space.
     let mut world: Vec<WorldPlane> = Vec::new();
     for (di, d) in draws.iter().enumerate() {
@@ -363,7 +437,12 @@ pub fn coplanar_draw_offsets(
     // (identical for everything in the bucket), because each cluster's own
     // `d` amplifies that normal noise by the world coordinate magnitude
     // (`|dn| * |v|` = tens of units at map scale).
-    let mut buckets: HashMap<(i32, i32, i32, i64), Vec<usize>> = HashMap::new();
+    //
+    // One `(key, plane)` entry per bucket a plane joins, sorted: a bucket is
+    // a run of one key, its members in plane order - the walk a map of
+    // per-key lists would give, without a list per key (a decorated map
+    // instances ~10^5 planes into ~10^7 mostly single-member buckets).
+    let mut buckets: Vec<(u64, u32)> = Vec::new();
     for (i, w) in world.iter().enumerate() {
         let base = (
             (w.n[0] * 128.0).round() as i32,
@@ -382,10 +461,8 @@ pub fn coplanar_draw_offsets(
                     let nq = [nq[0] / len, nq[1] / len, nq[2] / len];
                     let dq = dot(nq, w.point);
                     for dd in -1..=1i64 {
-                        buckets
-                            .entry((k.0, k.1, k.2, (dq / 2.0).floor() as i64 + dd))
-                            .or_default()
-                            .push(i);
+                        let key = bucket_key(k, (dq / 2.0).floor() as i64 + dd);
+                        buckets.push((key, i as u32));
                     }
                 }
             }
@@ -429,68 +506,76 @@ pub fn coplanar_draw_offsets(
     // Sorted bucket walk: greedy family clustering is discovery-order
     // sensitive, and HashMap iteration order would make the offsets differ
     // run to run (the determinism-replay contract forbids that).
-    let mut bucket_keys: Vec<_> = buckets.keys().copied().collect();
-    bucket_keys.sort();
-    for key in bucket_keys {
-        let members = &buckets[&key];
-        for xi in 0..members.len() {
-            for yi in (xi + 1)..members.len() {
-                let (i, j) = (members[xi].min(members[yi]), members[xi].max(members[yi]));
-                if i == j || seen.contains(&(i, j)) {
-                    continue;
-                }
-                let (a, b) = (&world[i], &world[j]);
-                if a.draw == b.draw {
-                    continue; // intra-mesh handled by separate_coplanar_prims
-                }
-                if draws[a.draw] == draws[b.draw] {
-                    // Exact-duplicate placements rasterise to bit-identical
-                    // depths (stable overdraw, not shimmer), and no per-draw
-                    // offset can separate two draws sharing one map key.
-                    continue;
-                }
-                // Plane separation measured point-through-plane (never
-                // `a.d - b.d`: rep-normal noise scales into spurious tens of
-                // units of d at world coordinates).
-                let sep = dot(a.n, sub(b.point, a.point)).abs();
-                if dot(a.n, b.n) < 0.9995 || sep > 0.75 {
-                    continue;
-                }
-                if !aabb_overlaps(a, b) {
-                    // Coplanar but not overlapping: an **abutment**, two
-                    // strips of one surface meeting edge to edge. They are
-                    // not a conflict as authored - but a lift this pass hands
-                    // one of them is a slide *inside* their shared plane, and
-                    // a slide turns the abutment into a coplanar overlap that
-                    // was never in the art. Keep the pair so the repair below
-                    // can see one it manufactured.
-                    // Only a pair that is disjoint **in the plane** is an
-                    // abutment. A pair that overlaps in-plane and failed the
-                    // test on the normal axis instead is simply already
-                    // separated in depth - recording that as an abutment sets
-                    // the repair fighting itself, because the very lift that
-                    // separates it reads as a manufactured overlap to the
-                    // in-plane test (tunnela's res38 tunnel segments: the
-                    // abutment arm pushed a draw back onto the neighbour the
-                    // conflict arm had just lifted it off, every round).
-                    if planes_within_slide_reach(a, b)
-                        && !planes_overlap_shifted(a, [0.0; 3], b, [0.0; 3])
-                    {
-                        seen.insert((i, j));
-                        abutments.push((i, j));
-                    }
-                    continue;
-                }
-                seen.insert((i, j));
-                pairs.push((i, j));
-                let fi = family_of(a.n, &mut family_reps);
-                if families.len() <= fi {
-                    families.resize_with(fi + 1, Edges::default);
-                }
-                let edges = &mut families[fi];
-                edges.entry(a.draw).or_default().push((b.draw, i));
-                edges.entry(b.draw).or_default().push((a.draw, j));
+    buckets.sort_unstable();
+    let mut members: Vec<usize> = Vec::new();
+    let mut start = 0;
+    while start < buckets.len() {
+        let key = buckets[start].0;
+        let end = start + buckets[start..].partition_point(|e| e.0 == key);
+        members.clear();
+        members.extend(buckets[start..end].iter().map(|e| e.1 as usize));
+        start = end;
+        if members.len() < 2 {
+            continue;
+        }
+        for (xi, yi) in bucket_pairs(&members, &world, prune) {
+            let (i, j) = (members[xi].min(members[yi]), members[xi].max(members[yi]));
+            let (a, b) = (&world[i], &world[j]);
+            // The pure tests first, the `seen` lookup after: a pair either
+            // test drops is dropped whether or not it was seen.
+            if i == j || a.draw == b.draw {
+                continue; // intra-mesh handled by separate_coplanar_prims
             }
+            // Plane separation measured point-through-plane (never
+            // `a.d - b.d`: rep-normal noise scales into spurious tens of
+            // units of d at world coordinates).
+            let sep = dot(a.n, sub(b.point, a.point)).abs();
+            if dot(a.n, b.n) < 0.9995 || sep > 0.75 {
+                continue;
+            }
+            if seen.contains(&(i, j)) {
+                continue;
+            }
+            if draws[a.draw] == draws[b.draw] {
+                // Exact-duplicate placements rasterise to bit-identical
+                // depths (stable overdraw, not shimmer), and no per-draw
+                // offset can separate two draws sharing one map key.
+                continue;
+            }
+            if !aabb_overlaps(a, b) {
+                // Coplanar but not overlapping: an **abutment**, two
+                // strips of one surface meeting edge to edge. They are
+                // not a conflict as authored - but a lift this pass hands
+                // one of them is a slide *inside* their shared plane, and
+                // a slide turns the abutment into a coplanar overlap that
+                // was never in the art. Keep the pair so the repair below
+                // can see one it manufactured.
+                // Only a pair that is disjoint **in the plane** is an
+                // abutment. A pair that overlaps in-plane and failed the
+                // test on the normal axis instead is simply already
+                // separated in depth - recording that as an abutment sets
+                // the repair fighting itself, because the very lift that
+                // separates it reads as a manufactured overlap to the
+                // in-plane test (tunnela's res38 tunnel segments: the
+                // abutment arm pushed a draw back onto the neighbour the
+                // conflict arm had just lifted it off, every round).
+                if planes_within_slide_reach(a, b)
+                    && !planes_overlap_shifted(a, [0.0; 3], b, [0.0; 3])
+                {
+                    seen.insert((i, j));
+                    abutments.push((i, j));
+                }
+                continue;
+            }
+            seen.insert((i, j));
+            pairs.push((i, j));
+            let fi = family_of(a.n, &mut family_reps);
+            if families.len() <= fi {
+                families.resize_with(fi + 1, Edges::default);
+            }
+            let edges = &mut families[fi];
+            edges.entry(a.draw).or_default().push((b.draw, i));
+            edges.entry(b.draw).or_default().push((a.draw, j));
         }
     }
     if families.is_empty() {
@@ -750,6 +835,70 @@ mod tests {
             [size, 0.0, size],
         ];
         (p, vec![0, 1, 2, 2, 1, 3])
+    }
+
+    /// The pruned pair walk gives exactly the offsets of the full one, over
+    /// a field that has every shape the walk acts on: a floor grid of
+    /// overlapping and abutting tiles at two heights, slabs stacked on it,
+    /// walls facing X and Z, and a row of tilted ramps.
+    #[test]
+    fn pruned_walk_matches_the_full_walk() {
+        let mut planes_of = HashMap::new();
+        let (p, i) = floor_quad(140.0);
+        planes_of.insert(0, mesh_planes(&p, &i));
+        let (p, i) = floor_quad(60.0);
+        planes_of.insert(1, mesh_planes(&p, &i));
+        // A wall facing X, one facing Z.
+        let wall_x = vec![
+            [0.0, 0.0, 0.0],
+            [0.0, -100.0, 0.0],
+            [0.0, 0.0, 120.0],
+            [0.0, -100.0, 120.0],
+        ];
+        planes_of.insert(2, mesh_planes(&wall_x, &[0, 1, 2, 2, 1, 3]));
+        let wall_z = vec![
+            [0.0, 0.0, 0.0],
+            [120.0, 0.0, 0.0],
+            [0.0, -100.0, 0.0],
+            [120.0, -100.0, 0.0],
+        ];
+        planes_of.insert(3, mesh_planes(&wall_z, &[0, 1, 2, 2, 1, 3]));
+        // A ramp rising along X.
+        let ramp = vec![
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 128.0],
+            [128.0, -64.0, 0.0],
+            [128.0, -64.0, 128.0],
+        ];
+        planes_of.insert(4, mesh_planes(&ramp, &[0, 1, 2, 2, 1, 3]));
+        let mut draws = Vec::new();
+        for r in 0..24 {
+            for c in 0..24 {
+                // 140-wide tiles every 128 overlap their neighbours; every
+                // third row sits 64 lower.
+                let y = if r % 3 == 0 { -64 } else { 0 };
+                draws.push(draw(0, c * 128, y, r * 128));
+                if (r + c) % 5 == 0 {
+                    draws.push(draw(1, c * 128 + 30, y, r * 128 + 30));
+                }
+                if (r * 7 + c) % 11 == 0 {
+                    draws.push(draw(2, c * 128, 0, r * 128));
+                    draws.push(draw(2, c * 128 + 1, 0, r * 128 + 60));
+                }
+                if (r + 3 * c) % 13 == 0 {
+                    draws.push(draw(3, c * 128, 0, r * 128));
+                    draws.push(draw(3, c * 128 + 128, 0, r * 128));
+                }
+                if r == 7 {
+                    draws.push(draw(4, c * 128, 0, r * 128));
+                    draws.push(draw(4, c * 128 + 64, -32, r * 128));
+                }
+            }
+        }
+        let full = offsets_walk(&draws, &planes_of, false);
+        let pruned = offsets_walk(&draws, &planes_of, true);
+        assert!(!full.is_empty(), "the field has conflicts to resolve");
+        assert_eq!(pruned, full);
     }
 
     /// A mesh's planes come out in one order however the accumulator hashes:
