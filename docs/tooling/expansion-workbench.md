@@ -170,6 +170,30 @@ terrain's tables stay JSON while the terrain editor's own tools are built.
 
 ## The page
 
+**Starting.** Before a pack is open the page offers three starting points:
+*Rebirth example*, *New pack ...* (the id, name and template form) and *Open your pack*
+(an `.lxpack` or a folder). A choice made before the disc is read waits for
+it and runs once the disc is in, instead of being refused; step 1 of the
+panel says whether the disc is read. Once a pack is open, the disc picker and
+the pack buttons fold to one summary line ("Disc and pack", the disc's file
+name and the pack) that unfolds to open another pack or change the disc, and
+the page scrolls to the editor.
+
+**Checks on the field.** Every check on the open tab marks the field it names
+(the longest `data-path` holding its field) with a red edge, amber for a
+warning, and its message under the field until it is fixed; a click in the
+Checks list still jumps there and flashes it. The Maps tab is left out (its
+panel is one map of several). A value the format's types refuse, such as
+`999` in a `u8` field, fails the whole pack's parse in the session; the page
+maps the column serde reports back to the JSON path it wrote and lists it as
+an ordinary check on that field, with the field's range. **Download**,
+**Play in browser** and **Play here** refuse while the pack has an error and
+open the first one, with `F8` to step through the rest.
+
+**Long lists.** A list editor of more than twelve entries (monsters, dialogue
+lines, quests) has a filter over its labels; `Enter` opens the first match,
+and the text survives an edit's re-render.
+
 **Undo and redo** cover the whole pack: every edit, a painter stroke as one
 step, a burst of typing as one step (`Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z`;
 in a text box the box's own undo runs first). The history holds up to 200
@@ -608,10 +632,15 @@ hosts word the outcome through `hotkeys::pack_reload_notice`; on the play page
 ## Persistence and the play hand-off
 
 The working pack autosaves to IndexedDB database `legaia-expansion-workbench`,
-store `autosave`: key `current` holds `{ json, label, savedAt }`, key `source`
-the tree or bundle it was loaded from. A returning visitor who loads a disc is
-offered "resume". Every access is wrapped; without storage the page still
-works.
+store `autosave`: key `current` holds `{ json, label, savedAt, tab, edited,
+clean }`, key `source` the tree or bundle it was loaded from. `edited` says
+whether the pack differs from what was opened or last downloaded, and
+`clean` holds that baseline while it does. A returning visitor who loads a
+disc is offered the pack back: an edited one as unsaved changes to resume (a
+discard asks first), an unedited one as "pick up where you left off". A
+resume reopens the tab it was on and keeps the **unsaved changes** mark. A
+record without `edited` counts as edited. Every access is wrapped; without
+storage the page still works.
 
 **Play in browser** (and Play here with no play tab open) exports the bundle
 and installs it in the play page's pack library below - an older version
