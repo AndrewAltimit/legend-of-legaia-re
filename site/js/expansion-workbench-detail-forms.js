@@ -124,7 +124,7 @@ const ORECT4 = { t: 'otuple', n: 4, names: ['col0', 'row0', 'col1', 'row1'] };
 
 /** `[[decor]]`: one mesh at a time. */
 export function decorEd(dctx, box, map) {
-  const sec = section(box, 'decor', 'Decorations', 'one mesh a tile at a time; draw only', (map.decor || []).length, 'decorations');
+  const sec = section(box, 'decor', 'Decorations', 'one mesh a tile at a time; draw only unless Solid', (map.decor || []).length, 'decorations');
   listEd(dctx, sec, map, 'decor', '', {
     add: 'Decoration', fold: true, dup: freshOf('decor'),
     make: () => ({ id: '', mesh: { object: 0 }, tile: [0, 0], offset: [0, 0, 0], rotation: [0, 0, 0], scale: null }),
@@ -136,6 +136,7 @@ export function decorEd(dctx, box, map) {
         { k: 'offset', t: 'tuple', n: 3, names: ['x', 'y', 'z'], label: 'Offset', hint: 'from the tile centre, y up' },
         { k: 'rotation', t: 'tuple', n: 3, float: true, names: ['x', 'y', 'z'], label: 'Rotation (deg)', hint: 'y is the yaw' },
         { k: 'scale', t: 'ofloat', label: 'Scale', ph: '1' },
+        { k: 'solid', t: 'bool', label: 'Solid', hint: 'blocks the ground under the mesh' },
       ], p);
       g.prepend(tileField(dctx, d, { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'Tile' }, p));
       b.append(g);
@@ -161,6 +162,7 @@ export function scatterEd(dctx, box, map) {
         { k: 'tilt', t: 'float', label: 'Tilt (deg)', hint: 'off upright, each way' },
         { k: 'on', label: 'Paints on', hint: 'legend characters; empty: every floor tile', ph: '.,' },
         { k: 'keep_clear', t: 'dbool', label: 'Keep spawns, exits, NPCs and props clear' },
+        { k: 'solid', t: 'bool', label: 'Solid', hint: 'every mesh blocks the ground under it' },
       ], p);
       g.prepend(tileField(dctx, s, Object.assign({ k: 'rect', label: 'Tiles' }, RECT4), p));
       b.append(g);
@@ -232,6 +234,7 @@ export function edgesEd(dctx, box, map) {
         { k: 'yaw_jitter', t: 'float', label: 'Yaw jitter (deg)' },
         { k: 'scale_range', t: 'otuple', n: 2, float: true, names: ['min', 'max'], label: 'Scale range', hint: 'overrides scale' },
         { k: 'seed', t: 'int', label: 'Seed' },
+        { k: 'solid', t: 'bool', label: 'Solid', hint: 'each copy blocks the ground under it' },
       ], p);
       g.prepend(tileField(dctx, e, Object.assign({ k: 'rect', label: 'Only inside', hint: 'empty: the whole map' }, ORECT4), p));
       b.append(g);

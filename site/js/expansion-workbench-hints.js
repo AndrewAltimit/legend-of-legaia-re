@@ -7,8 +7,9 @@
  *
  *   - **walk-through** (`kind: 'walk'`): a large prop or decoration the
  *     player walks through - a prop not `solid`, with no standable `top`,
- *     on a tile its style leaves open; a decoration (which never blocks) on
- *     an open tile. "Large" is the mesh's box from the base scene's
+ *     on a tile its style leaves open; a decoration not `solid` on an open
+ *     tile (a `solid` decoration closes its mesh's footprint as a solid prop
+ *     does). "Large" is the mesh's box from the base scene's
  *     geometry pack (`scene_objects`' `size`, times the scale): wider than
  *     half a tile both ways and taller than a step, standing on the floor.
  *     A glTF or PROT mesh has no size here and is not judged.
@@ -94,7 +95,7 @@ export function walkThrough(map, objectsFor) {
     if (large(size, p.scale, (p.offset || [])[1])) out.push({ type: 'props', i, size });
   });
   (map.decor || []).forEach((d, i) => {
-    if (!d.tile || !open(d.tile)) return;
+    if (d.solid || !d.tile || !open(d.tile)) return;
     const size = meshSize(d.mesh, base, objectsFor);
     if (large(size, d.scale, (d.offset || [])[1])) out.push({ type: 'decor', i, size });
   });
@@ -126,7 +127,7 @@ export function authoringHints(pack, objectsFor) {
         severity: 'hint', kind: 'walk', path, field: `${w.type}[${w.i}]`,
         message: w.type === 'props'
           ? `the player walks through ${what} ${o.id || '#' + w.i} (${box}): tick Solid, give it a standable top, or stand it on a wall tile`
-          : `the player walks through ${what} ${o.id || '#' + w.i} (${box}): decorations never block - make it a solid prop, or put it on a wall tile`,
+          : `the player walks through ${what} ${o.id || '#' + w.i} (${box}): tick Solid, or put it on a wall tile`,
       });
     }
     const talk = walkOnDialogs(map);

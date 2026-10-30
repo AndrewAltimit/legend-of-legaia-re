@@ -203,7 +203,7 @@ opens what a hint names, selected in the painter.
 
 | Hint | When |
 |---|---|
-| Walk-through | A prop that is not `solid`, has no standable `top` and stands on a tile its style leaves open, or a decoration (which never blocks) on an open tile, whose mesh is large: wider than half a tile both ways and taller than a step, from the floor. The size is the mesh's box in its scene's geometry pack (`scene_objects`, times the scale), built a scene at a time while the page is idle; a glTF or PROT mesh is not judged. |
+| Walk-through | A prop that is not `solid`, has no standable `top` and stands on a tile its style leaves open, or a decoration not `solid` on an open tile, whose mesh is large: wider than half a tile both ways and taller than a step, from the floor. The size is the mesh's box in its scene's geometry pack (`scene_objects`, times the scale), built a scene at a time while the page is idle; a glTF or PROT mesh is not judged. |
 | Walk-on text | A `dialog` trigger that is neither `press` nor `once`, so it stops the player on every visit; and a map with more than three walk-on dialogs (`TEXT_BUSY`), once or not. Each suggests an examine (`press`) or a `toast`. |
 
 The painter's **Walk-through** box (on by default) marks the same objects
