@@ -67,7 +67,7 @@ pub fn setup_screen(s: &RulesSetup) -> RulesScreen {
         rows: s.rows(),
         cursor: Some(s.cursor),
         footer: Some(s.help().to_string()),
-        hint: "Arrows change  X confirm  O back".into(),
+        hint: "Arrows change  X confirm  Start play  O back".into(),
     }
 }
 

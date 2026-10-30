@@ -28,6 +28,7 @@ use legaia_engine_audio::AudioSink;
 use crate::session::{BootSession, NewGameHost, start_new_game_on};
 use crate::title_continue::{CARD_PORTS, CardPorts};
 
+const PAD_START: u16 = 0x0008;
 const PAD_UP: u16 = 0x0010;
 const PAD_RIGHT: u16 = 0x0020;
 const PAD_DOWN: u16 = 0x0040;
@@ -36,7 +37,7 @@ const PAD_CIRCLE: u16 = 0x2000;
 const PAD_CROSS: u16 = 0x4000;
 
 /// The setup screen's input off a pad edge word (retail bit layout:
-/// D-pad `0x10..0x80`, Cross confirms, Circle backs out).
+/// D-pad `0x10..0x80`, Cross confirms, Circle backs out, Start begins).
 pub fn setup_input(edge: u16) -> SetupInput {
     SetupInput {
         up: edge & PAD_UP != 0,
@@ -45,6 +46,7 @@ pub fn setup_input(edge: u16) -> SetupInput {
         right: edge & PAD_RIGHT != 0,
         confirm: edge & PAD_CROSS != 0,
         cancel: edge & PAD_CIRCLE != 0,
+        start: edge & PAD_START != 0,
     }
 }
 

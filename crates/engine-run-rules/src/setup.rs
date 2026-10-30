@@ -17,6 +17,8 @@ pub struct SetupInput {
     pub right: bool,
     pub confirm: bool,
     pub cancel: bool,
+    /// Start: begin the run with the rules as they stand, from any row.
+    pub start: bool,
 }
 
 /// What a step of the screen came to.
@@ -303,6 +305,12 @@ impl RulesSetup {
         if input.cancel {
             return SetupOutcome::Cancelled;
         }
+        if input.start {
+            return SetupOutcome::Start {
+                rules: self.rules.clone(),
+                ng_source: self.ng_source.filter(|_| self.rules.ng_plus.is_some()),
+            };
+        }
         let n = self.row_list().len();
         if input.up {
             self.cursor = (self.cursor + n - 1) % n;
@@ -355,6 +363,20 @@ mod tests {
             }
         );
         assert_eq!(press(&mut s, |i| i.cancel = true), SetupOutcome::Cancelled);
+    }
+
+    #[test]
+    fn start_begins_the_run_from_any_row() {
+        let mut s = RulesSetup::new(vec![], 1);
+        press(&mut s, |i| i.up = true);
+        assert_ne!(s.selected(), SetupRow::Start);
+        assert_eq!(
+            press(&mut s, |i| i.start = true),
+            SetupOutcome::Start {
+                rules: RunRules::default(),
+                ng_source: None
+            }
+        );
     }
 
     #[test]

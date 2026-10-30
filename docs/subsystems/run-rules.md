@@ -88,7 +88,7 @@ A won stage pays `STAGE_PURSE` gold and opens the intermission: next battle, res
 
 ## The rules screen
 
-The title's NEW GAME opens the rules screen (`engine-session` `open_run_rules_screen`) on both hosts, except in retail-faithful mode, where NEW GAME is retail's straight start. It opens on the retail rules with the cursor on *Start*, so one confirm is the original New Game. Up / Down pick a row, Left / Right change it, Cross confirms, Circle returns to the title. The seed row rolls a readable seed; the page's `play_run_rules_set_seed` takes a typed one.
+The title's NEW GAME opens the rules screen (`engine-session` `open_run_rules_screen`) on both hosts, except in retail-faithful mode, where NEW GAME is retail's straight start. It opens on the retail rules with the cursor on *Start*, so one confirm is the original New Game. Up / Down pick a row, Left / Right change it, Cross confirms, Start begins the run from any row, Circle returns to the title. The seed row rolls a readable seed; the page's `play_run_rules_set_seed` takes a typed one.
 
 The screen sits on the world (`RunRulesState::setup`), so the shared screen layers draw it (`engine-screens` `run_rules::active_screen`): the native window through its screen-prim pass and text layer, the browser play page on the title's menu canvas (`play_run_rules_draws_json`) and in game through the same pass. The pause menu shows the run's summary line (`Hard / NG+1 / Ironman / Seed RIM-0042`) at the foot of the root panel; under retail rules it shows nothing.
 
