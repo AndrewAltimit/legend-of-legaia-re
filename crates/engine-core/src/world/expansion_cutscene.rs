@@ -305,6 +305,15 @@ impl World {
             if run.skipped { "skipped" } else { "ends" }
         );
         self.expansion_notify(QuestEvent::FlagSet(seen_flag(&run.id)));
+        // A boss's intro ends on its fight.
+        if let Some((id, boss)) = self.expansion.battle.boss_intro.take() {
+            if id == run.id {
+                self.expansion.battle.intro_played = Some(boss.clone());
+                self.expansion.quests.fights.push(PackFight::Boss(boss));
+            } else {
+                self.expansion.battle.boss_intro = Some((id, boss));
+            }
+        }
         if let Some(f) = self.expansion.cutscene.fight.take() {
             self.expansion.quests.fights.push(match f {
                 Fight::Formation(f) => PackFight::Formation(f),
@@ -456,6 +465,25 @@ impl World {
                 );
             }
             Command::Bgm(other) => log::warn!("expansion: cutscene bgm {other} is not a bgm"),
+            Command::Banner(line) => {
+                let text = self
+                    .expansion
+                    .pack
+                    .as_ref()
+                    .and_then(|p| p.dialog.lines.get(&line))
+                    .map(legaia_expansion_format::boss_script::banner_text);
+                match text {
+                    // The place-name banner's balloon (the MAN loader's spawn
+                    // with no parent link), carrying the pack's line.
+                    Some(t) if !t.is_empty() => {
+                        let mut b =
+                            legaia_engine_dialog::text_balloon::TextBalloon::spawn(t.as_bytes());
+                        b.parent_link = false;
+                        self.cutscene.text_balloon = Some(b);
+                    }
+                    _ => log::warn!("expansion: cutscene banner `{line}` has no text"),
+                }
+            }
             Command::Sound(s) => {
                 if !self.expansion_play_sound(&s) {
                     log::warn!("expansion: cutscene sound {s} did not play");

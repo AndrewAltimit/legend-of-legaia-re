@@ -212,7 +212,8 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 | `[[golf]]` | `[[golf.holes]]`, each `par` (3), `rows` (tile strings), `heights` (digit strings of the same shape), `max_strokes` (0 = `par + 5`) |
 | `[[races]]` | `laps` (3), `points` (closed centerline, world units), `half_width` (64), `boost_segments`, `racers` (4), `ai_tier` |
 | `[[prop_hunt]]` | `props` (`id`, `mesh`, `radius`), `decoys` (`prop`, `x`, `y`), `bounds`, `blockers`, `rounds` (3), `hunters` (1), `players` (4), `hide_frames`, `round_frames`, `hunter_health` (100), `miss_penalty` (10), `ai_tier` |
-| `[[party_nights]]` | `order` (`fixed` / `shuffle`), `points` ([10, 6, 4, 2]), `last_place_picks` (false), `double_final` (true), `players` (4, a night alone's seats), `rivals` (names), `ai_tier`, `[[party_nights.rounds]]`, `[[party_nights.prizes]]` |
+| `[[party_nights]]` | `order` (`fixed` / `shuffle`), `points` ([10, 6, 4, 2]), `last_place_picks` (false), `double_final` (true), `players` (4, a night alone's seats), `rivals` (names), `ai_tier`, `podium`, `[[party_nights.rounds]]`, `[[party_nights.prizes]]` |
+| `podium` | `map` (a pack map), `tile` (the first-place block), `facing` (compass sector), `bodies` (map NPCs that play the rivals, in rival order): where a night played alone ends, in the world ([expansion-modes.md](../subsystems/expansion-modes.md#the-podium-in-the-world)) |
 | `[[party_nights.rounds]]` | `mode` (an instance id), `name`, `hands`, `stack` (poker), `holes` (golf, 1-based), `laps` (race), `rounds` (prop hunt), `double`, `wager` (0..=50 percent) |
 | `[[party_nights.prizes]]` | `place` (1-based), `gold`, `coins`, `boosters`, `cards` |
 

@@ -572,7 +572,9 @@ The validator checks the file is in the pack, has the `glTF` version-2
 header (or is JSON for `.gltf`), and that `colors` is 16 or 256; the
 conversion's own checks run at entry. [`scripts/models/generate_ember_crystal.py`](../../scripts/models/generate_ember_crystal.py)
 writes the Rebirth pack's crystal and is a worked example of a model a
-modder builds.
+modder builds; [`scripts/models/generate_rebirth_props.py`](../../scripts/models/generate_rebirth_props.py)
+builds its floors' set pieces from prisms, tori and gears over a banded
+texture strip.
 
 ## Decorations
 

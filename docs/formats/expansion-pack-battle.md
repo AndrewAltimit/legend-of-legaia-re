@@ -134,9 +134,13 @@ music = { kind = "bgm", id = 30 }
 reward_items = [{ item = { kind = "item", id = 233 }, count = 1 }]
 reward_gold = 50000
 once = true
+intro = "ash_king_intro"            # cutscenes.toml: played as the fight is called
+outro = "ash_king_fallen"           # cutscenes.toml: played on the field after a win
 ```
 
 A boss is a formation plus staging. `no_escape` marks its formation scripted. `music` replaces the battle track for this fight (when the host's battle-music swap is on): a retail cue or a pack track, with `audio.toml`'s `music.boss` standing in when it is unset ([audio](expansion-pack-audio.md#boss-music-phases-and-telegraphs)). `reward_items` and `reward_gold` pay on victory on top of the formation's spoils, and land in the spoils' drops and gold; a reward item may be a pack item, which lands in the pack bag with a toast ([items](expansion-pack-items.md)). A `once` boss refuses a second start after a victory (`World::expansion_boss_cleared`).
+
+`intro` and `outro` stage the fight on the field. An intro is a [cutscene](expansion-pack-cutscenes.md) played when anything calls the fight - a dialogue choice, a quest start, a trigger, a cutscene's `boss` step - and the fight starts when it ends or is skipped (`World::start_expansion_boss` starts the cutscene and keeps the boss, the cutscene's end queues the fight). An intro bound to another map, or one that cannot start, gives way: the fight starts at once. An outro is queued as the won fight pays out and plays back on the field once the results and the quest's own lines are done. Neither may hold a `battle` or `boss` step. The fight's own moments - a phase's banner, music and sound - are the [boss script's](#phases).
 
 Quests and maps start fights through two `World` entry points: `start_expansion_battle(formation)` and `start_expansion_boss(boss)`. Both go through the ordinary encounter path - transition, battle music, `begin_encounter_battle` - as `World::force_encounter` does.
 

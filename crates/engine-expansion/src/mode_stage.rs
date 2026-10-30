@@ -172,6 +172,8 @@ pub struct StageFrame {
     pub duel: Option<DuelStageFrame>,
     /// A poker table: cards, chips, NPCs and cues.
     pub poker: Option<PokerStageFrame>,
+    /// A party night's podium: blocks, figures, confetti.
+    pub podium: Option<crate::podium_stage::PodiumFrame>,
 }
 
 impl StageFrame {
@@ -253,10 +255,13 @@ impl WorldStage {
             ModeView::Race(v) => self.race(&frame, &v, mode.local_seat),
             ModeView::Duel(v) => {
                 let table = mode.duel_table()?;
+                self.duel.watching = mode.watching;
+                self.duel.seat_names = [mode.seat_label(0, "Rival"), mode.seat_label(1, "Rival")];
                 return Some(self.duel_frame(table, &v, mode.local_seat));
             }
             ModeView::Poker(v) => {
                 let table = mode.poker_table()?;
+                self.poker.watching = mode.watching;
                 return Some(self.poker_frame(table, &v, mode.local_seat));
             }
             _ => return None,
@@ -288,6 +293,7 @@ impl WorldStage {
             banner: duel.banner.clone(),
             duel: Some(duel),
             poker: None,
+            podium: None,
         }
     }
 
@@ -311,6 +317,7 @@ impl WorldStage {
             banner: poker.banner.clone(),
             duel: None,
             poker: Some(poker),
+            podium: None,
         }
     }
 
@@ -532,6 +539,7 @@ impl WorldStage {
             banner: None,
             duel: None,
             poker: None,
+            podium: None,
         }
     }
 
@@ -643,6 +651,7 @@ impl WorldStage {
             banner,
             duel: None,
             poker: None,
+            podium: None,
         }
     }
 }

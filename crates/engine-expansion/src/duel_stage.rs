@@ -284,6 +284,12 @@ pub struct DuelStage {
     /// The session's last view, noted as it left play (the move that ended
     /// it), which the results stage plays out.
     final_view: Option<DuelView>,
+    /// Whether this machine only watches the duel (a spectating peer): the
+    /// table is laid out from seat 0's side, and the end reads the winner
+    /// by name instead of "You win!" / "You lose".
+    pub watching: bool,
+    /// Each seat's name as a watcher reads it ([`Self::watching`]).
+    pub seat_names: [String; 2],
 }
 
 /// The pile the dealer deals from: off the board's right edge.
@@ -390,6 +396,8 @@ impl DuelStage {
             *self = Self {
                 table: Some(table.clone()),
                 local: local.min(1),
+                watching: self.watching,
+                seat_names: std::mem::take(&mut self.seat_names),
                 ..Self::default()
             };
         }
@@ -498,15 +506,59 @@ impl DuelStage {
             let me = self.local;
             let (mine, theirs) = (view.scores[me], view.scores[1 - me]);
             let at = now + self.settle_frames();
-            let (text, cue, crowd, opp) = if mine > theirs {
-                ("You win!", t.sfx.win.clone(), Mood::Cheer, Mood::Slump)
+            let (text, cue, crowd, opp) = if self.watching {
+                // A watcher has no side: the winner by name, the crowd
+                // cheering whoever took it, the opponent's reaction its own.
+                let name = |seat: usize| {
+                    let n = &self.seat_names[seat];
+                    if n.is_empty() {
+                        format!("Seat {}", seat + 1)
+                    } else {
+                        n.clone()
+                    }
+                };
+                let (s0, s1) = (view.scores[0], view.scores[1]);
+                if s0 == s1 {
+                    (
+                        "Draw".to_string(),
+                        t.sfx.lose.clone(),
+                        Mood::Idle,
+                        Mood::Idle,
+                    )
+                } else {
+                    let w = usize::from(s1 > s0);
+                    let opp = if w == 1 { Mood::Cheer } else { Mood::Slump };
+                    (
+                        format!("{} wins!", name(w)),
+                        t.sfx.win.clone(),
+                        Mood::Cheer,
+                        opp,
+                    )
+                }
+            } else if mine > theirs {
+                (
+                    "You win!".to_string(),
+                    t.sfx.win.clone(),
+                    Mood::Cheer,
+                    Mood::Slump,
+                )
             } else if mine < theirs {
-                ("You lose", t.sfx.lose.clone(), Mood::Slump, Mood::Cheer)
+                (
+                    "You lose".to_string(),
+                    t.sfx.lose.clone(),
+                    Mood::Slump,
+                    Mood::Cheer,
+                )
             } else {
-                ("Draw", t.sfx.lose.clone(), Mood::Idle, Mood::Idle)
+                (
+                    "Draw".to_string(),
+                    t.sfx.lose.clone(),
+                    Mood::Idle,
+                    Mood::Idle,
+                )
             };
             self.pending_cues.push((at, cue));
-            self.banner = Some((text.to_string(), at, at + OUTRO_FRAMES));
+            self.banner = Some((text, at, at + OUTRO_FRAMES));
             self.crowd_mood = (crowd, u32::MAX);
             self.opponent_mood = (opp, u32::MAX);
         }

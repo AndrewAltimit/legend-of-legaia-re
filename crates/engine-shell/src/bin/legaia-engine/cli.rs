@@ -1290,7 +1290,9 @@ pub(crate) enum Cmd {
         /// `cards-binder` and `cards-dealer[:ID]` open the active pack's card
         /// screen (the card menu, the binder, a dealer's counter) instead;
         /// `items`, `items-gear` and `shop[:ID]` its item screen (the pack
-        /// bag, its Gear tab, a pack shop's counter).
+        /// bag, its Gear tab, a pack shop's counter). DEBUG: `NIGHT:podium`
+        /// enters party night `NIGHT`, plays its rounds out at once (the
+        /// player first in each) and lands on its podium.
         #[arg(long = "mode", value_name = "INSTANCE")]
         pack_mode: Option<String>,
         // --- end expansion game modes ---

@@ -551,6 +551,11 @@ pub struct BattleRuntime {
     pub steals: BTreeMap<u16, (u8, u8)>,
     /// The boss being fought, by local key.
     pub active_boss: Option<String>,
+    /// A boss intro cutscene in play: `(cutscene id, boss key)`. The fight
+    /// starts as it ends (`World::start_expansion_boss`).
+    pub boss_intro: Option<(String, String)>,
+    /// The boss whose intro just played: its next start fights at once.
+    pub intro_played: Option<String>,
     /// Battle track for the next fight's swap (a global BGM id).
     pub battle_bgm: Option<u16>,
     /// Bosses marked [`CompiledBoss::once`] the party has beaten.

@@ -175,6 +175,22 @@ impl World {
             log::info!("expansion: boss `{boss}` is already beaten");
             return false;
         }
+        // The boss's intro plays first; the fight starts as it ends. Off
+        // its map (or with another cutscene running) the fight starts now.
+        let intro = self
+            .expansion
+            .pack
+            .as_ref()
+            .and_then(|p| p.battle.bosses.get(key))
+            .and_then(|d| d.intro.clone());
+        let played = self.expansion.battle.intro_played.take();
+        if let Some(intro) = intro
+            && played.as_deref() != Some(key)
+            && self.start_expansion_cutscene(&intro)
+        {
+            self.expansion.battle.boss_intro = Some((intro, key.to_string()));
+            return true;
+        }
         self.install_expansion_formations();
         if !self.force_encounter(b.formation_id) {
             return false;
@@ -377,6 +393,17 @@ impl World {
             let money = i64::from(self.party.money).saturating_add(i64::from(b.reward_gold));
             self.party.money = money.min(i64::from(super::BATTLE_GOLD_CAP)) as i32;
             rewards.gold = rewards.gold.saturating_add(b.reward_gold);
+        }
+        let outro = self
+            .expansion
+            .pack
+            .as_ref()
+            .and_then(|p| p.battle.bosses.get(&key))
+            .and_then(|d| d.outro.clone());
+        if let Some(c) = outro {
+            // Played back on the field, after the results and the quest's
+            // own lines.
+            self.expansion_play_cutscene(&c);
         }
         if b.once {
             self.expansion.battle.cleared_bosses.insert(key);

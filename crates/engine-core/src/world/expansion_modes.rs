@@ -143,8 +143,9 @@ impl World {
             self.close_card_screen();
             return;
         }
-        if let Some(lp) = self.expansion.party.take() {
+        if let Some(mut lp) = self.expansion.party.take() {
             // A night played alone closes whole, its round forfeited.
+            self.take_down_party_podium(&mut lp);
             if let Some(seat) = self.expansion.mode_seat.take() {
                 self.restore_pack_mode_player_from(seat.player_return);
                 self.restore_pack_mode_bodies(&seat.body_idle);

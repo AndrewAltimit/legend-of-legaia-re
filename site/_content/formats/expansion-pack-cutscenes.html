@@ -79,6 +79,7 @@ frames = 300</code></pre>
       <tr><td><code>show</code>, <code>hide</code></td><td>Bring a pack NPC on or take it off.</td></tr>
       <tr><td><code>camera</code>, <code>camera_reset</code>, <code>shake</code></td><td>Move the shot, ease it back, shake it.</td></tr>
       <tr><td><code>fade</code>, <code>flash</code>, <code>tint</code></td><td>The screen layer: fade to black / white / clear, a dying flash, a held colour.</td></tr>
+      <tr><td><code>banner</code></td><td>A title across the lower screen in the place-name banner's balloon: a dialog line's first page.</td></tr>
       <tr><td><code>set_flag</code>, <code>clear_flag</code>, <code>counter</code></td><td>Pack flags and counters.</td></tr>
       <tr><td><code>label</code>, <code>goto</code>, <code>branch</code></td><td>Jump targets and jumps; a branch reads the quest gate shape and a counter.</td></tr>
       <tr><td><code>start_track</code>, <code>join</code></td><td>Start a track; wait for one.</td></tr>
@@ -106,6 +107,7 @@ frames = 300</code></pre>
       <tr><td>A map's <code>enter_cutscenes</code></td><td>On arrival: the first unseen entry whose gate holds, or one with <code>repeat</code>.</td></tr>
       <tr><td>A pack NPC's <code>cutscene</code></td><td>When the player talks to it, in place of its line.</td></tr>
       <tr><td>A quest's <code>start_cutscene</code> / <code>complete_cutscene</code></td><td>After the quest's line, once back in the field.</td></tr>
+      <tr><td>A boss's <code>intro</code> / <code>outro</code></td><td>As its fight is called (the fight follows), and back on the field after a win.</td></tr>
     </tbody>
   </table>
   <p>A hook queues the cutscene; it starts on the first field frame with no box open, no fight waiting and no scene change in flight.</p>

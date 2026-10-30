@@ -112,6 +112,15 @@ impl Default for CutsceneDef {
     }
 }
 
+impl CutsceneDef {
+    /// Every step of the main track and every named track.
+    pub fn all_steps(&self) -> impl Iterator<Item = &Step> {
+        self.steps
+            .iter()
+            .chain(self.tracks.values().flat_map(|t| t.steps.iter()))
+    }
+}
+
 /// A named track.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -297,6 +306,10 @@ pub enum Step {
     },
     /// A flash of `color` that dies out over `frames`.
     Flash { color: [u8; 3], frames: u32 },
+    /// A title across the lower screen - a boss's name, a place - in the
+    /// place-name banner's balloon: the first page of `dialog.toml` line
+    /// `line`, its rows joined. It does not wait.
+    Banner { line: String },
     /// Hold a colour over the frame until changed; `color = [0, 0, 0]`
     /// clears it.
     Tint {
@@ -414,6 +427,7 @@ impl Step {
             Self::Shake { .. } => "shake",
             Self::Fade { .. } => "fade",
             Self::Flash { .. } => "flash",
+            Self::Banner { .. } => "banner",
             Self::Tint { .. } => "tint",
             Self::SetFlag { .. } => "set_flag",
             Self::ClearFlag { .. } => "clear_flag",
@@ -865,6 +879,22 @@ fn check_step(
             check_frames(cx, at, *frames)
         }
         Step::Flash { frames, .. } | Step::Tint { frames, .. } => check_frames(cx, at, *frames),
+        Step::Banner { line } => {
+            cx.reference("line", line, &format!("{at}.line"));
+            if let Some(l) = pack.dialog.lines.get(line) {
+                let t = crate::boss_script::banner_text(l);
+                if t.chars().count() > crate::boss_script::BANNER_WARN_CHARS {
+                    cx.warning(
+                        &format!("{at}.line"),
+                        format!(
+                            "line {line:?} reads {} characters as a banner; it holds about {}",
+                            t.chars().count(),
+                            crate::boss_script::BANNER_WARN_CHARS
+                        ),
+                    );
+                }
+            }
+        }
         Step::Shake { amplitude, frames } => {
             check_frames(cx, at, *frames);
             if *amplitude > MAX_SHAKE {

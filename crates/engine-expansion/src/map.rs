@@ -67,6 +67,9 @@ pub struct ActiveMap {
     /// The map's sculpted floor ([`MapDef::terrain_heightfield`]), `None`
     /// on a tier-floored map.
     terrain: Option<Arc<legaia_expansion_format::terrain::Heightfield>>,
+    /// Tops a mode stage stands up for a while (a party night's podium
+    /// blocks), over the map's own ([`Self::set_stage_tops`]).
+    stage_tops: Vec<FloorTop>,
     /// Each animated material's pristine VRAM words, captured the first
     /// frame it applies (`World::step_expansion_materials`), keyed by its
     /// index in `def.materials`.
@@ -122,6 +125,7 @@ impl ActiveMap {
             patrol_next: Vec::new(),
             floor_tops: Vec::new(),
             terrain: None,
+            stage_tops: Vec::new(),
             material_captures: Default::default(),
             particle_sheet: None,
             foam_cluts: None,
@@ -323,6 +327,7 @@ impl ActiveMap {
     pub fn floor_top_at(&self, x: i32, z: i32) -> Option<i16> {
         self.floor_tops
             .iter()
+            .chain(&self.stage_tops)
             .filter(|t| t.contains(x, z))
             .map(|t| t.top)
             .max()
@@ -342,7 +347,13 @@ impl ActiveMap {
 
     /// Whether the map has any standable top.
     pub fn has_floor_tops(&self) -> bool {
-        !self.floor_tops.is_empty()
+        !self.floor_tops.is_empty() || !self.stage_tops.is_empty()
+    }
+
+    /// Stand `tops` on the map over its own (a party night's podium
+    /// blocks); an empty list takes them down.
+    pub fn set_stage_tops(&mut self, tops: Vec<FloorTop>) {
+        self.stage_tops = tops;
     }
 }
 

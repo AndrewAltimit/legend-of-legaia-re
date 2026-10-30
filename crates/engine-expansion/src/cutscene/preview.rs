@@ -276,6 +276,7 @@ pub fn describe(step: &Step) -> String {
             format!("fade to {to} over {frames} frames")
         }
         Step::Flash { color, frames } => format!("flash {color:?} for {frames} frames"),
+        Step::Banner { line } => format!("banner \"{line}\""),
         Step::Tint { color, .. } if *color == [0, 0, 0] => "tint cleared".to_string(),
         Step::Tint { color, mode, .. } => format!("tint {color:?} ({mode:?})"),
         Step::SetFlag { flag } => format!("raise flag {flag}"),

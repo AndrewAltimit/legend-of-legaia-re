@@ -190,6 +190,10 @@ pub struct PackCast {
     pub spell: usize,
     /// The magic level the cast rolls at.
     pub level: u8,
+    /// The spell id the cast runs as: the base, or for a spell widened to
+    /// every enemy on a one-enemy base, the all-enemies Seru it presents as
+    /// (`World::expansion_begin_pack_cast`).
+    pub cast_id: u8,
 }
 
 /// The spell-side state of an active pack.

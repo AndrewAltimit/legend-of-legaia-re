@@ -93,6 +93,9 @@ pub enum PartyCard {
         over: bool,
         /// The night ended before its last round (no prizes).
         early: bool,
+        /// The podium stands in the world (`modes.toml` `podium`): the card
+        /// is a caption over the field, not a screen of its own.
+        in_world: bool,
     },
 }
 
@@ -260,6 +263,7 @@ pub fn party_card(
             frame: frame.max(PODIUM_FRAMES.saturating_sub(*timer)),
             over: false,
             early: false,
+            in_world: false,
         },
         PartyPhase::Over { early } => PartyCard::Podium {
             night: name,
@@ -268,6 +272,7 @@ pub fn party_card(
             frame: frame.max(PODIUM_FRAMES),
             over: true,
             early: *early,
+            in_world: false,
         },
     }
 }
@@ -525,9 +530,18 @@ fn compose(card: &PartyCard) -> Canvas {
             night,
             rows,
             prize,
+            over,
+            in_world: true,
+            ..
+        } => caption(&mut c, night, rows, prize, *over),
+        PartyCard::Podium {
+            night,
+            rows,
+            prize,
             frame,
             over,
             early,
+            ..
         } => {
             backdrop(&mut c, ink::HIGHLIGHT);
             c.text(night.clone(), 6, 2, pen::GOLD);
@@ -580,6 +594,68 @@ fn compose(card: &PartyCard) -> Canvas {
         }
     }
     c
+}
+
+/// The podium standing in the world: a title strip over the field, and a
+/// caption under it naming the top three left to right as the blocks stand
+/// (2nd, 1st, 3rd), with the prize.
+fn caption(c: &mut Canvas, night: &str, rows: &[PartyRow], prize: &[String], over: bool) {
+    c.panel(0, 0, STAGE_W, 18, [20, 14, 40, 220], [228, 196, 90, 255]);
+    c.text(night.to_string(), 6, 2, pen::GOLD);
+    c.text_right("Final standings", STAGE_W - 6, 2, pen::DIM);
+    // Under the title strip, clear of the toasts and the footer below.
+    let top = 22;
+    let prize_rows: Vec<String> = prize
+        .chunks(2)
+        .enumerate()
+        .map(|(i, c)| {
+            let items = c.join(", ");
+            if i == 0 {
+                format!("You won: {items}")
+            } else {
+                items
+            }
+        })
+        .collect();
+    let h = 4 + 2 * (LINE - 2) + prize_rows.len() as i32 * (LINE - 2) + 2;
+    c.panel(
+        30,
+        top,
+        STAGE_W - 60,
+        h,
+        [14, 10, 30, 210],
+        [228, 196, 90, 255],
+    );
+    for (i, x) in [(1usize, 80), (0, STAGE_W / 2), (2, STAGE_W - 80)] {
+        let Some(r) = rows.get(i) else { continue };
+        let mut name = r.name.clone();
+        if r.you && r.name != "You" {
+            name.push_str(" (you)");
+        }
+        c.text_centre(
+            format!("{} {}", place_text(r.place), name),
+            x,
+            top + 4,
+            if r.you { pen::GOLD } else { pen::WHITE },
+        );
+        c.text_centre(score_text(r.score), x, top + 4 + LINE - 2, pen::DIM);
+    }
+    for (i, row) in prize_rows.into_iter().enumerate() {
+        c.text_centre(
+            row,
+            STAGE_W / 2,
+            top + 4 + (2 + i as i32) * (LINE - 2),
+            pen::GREEN,
+        );
+    }
+    footer(
+        c,
+        if over {
+            "Cross: close"
+        } else {
+            "What a night!"
+        },
+    );
 }
 
 /// Three blocks, 2nd / 1st / 3rd, rising in; a figure in each player's

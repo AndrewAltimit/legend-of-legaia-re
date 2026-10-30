@@ -222,6 +222,32 @@ step in with each player's last-round delta and the next round (or the
 pick); the podium raises 2nd / 1st / 3rd blocks with a figure in each
 player's colour, confetti and sparkles over a completed night.
 
+### The podium in the world
+
+A night whose `modes.toml` entry names a `podium` ends in the world
+instead: once the night completes, the scene host enters the podium's map
+(`World::pack_mode_wants_map` answers it while no round is seated), and
+each frame `World::stage_party_podium` lays out
+`legaia_engine_expansion::podium_stage::podium_frame` there - a pure
+function of the standings, the podium's tile and facing and a frame clock:
+
+| Piece | What it is |
+|---|---|
+| Blocks | 1st in the middle (`112` units), 2nd on the camera's left (`76`), 3rd on its right (`48`), each `116` units square, rising in over `50` frames, the lower blocks a beat behind. Each stands up as a standable top on the map (`ActiveMap::set_stage_tops`), so the floor sampler lifts whoever stands on it. |
+| Figures | The player's party leader on its block, moved there and turned to the camera; a player off the podium watches from in front of it. Each rival stands on its block through the map NPC `bodies` names for it, else as a stand-in figure in its seat colour. |
+| Confetti | `72` pieces falling over the podium on fixed per-piece paths, turning as they fall, and sparkles round the winner's head. |
+| Shot | From far out and low, easing in over `150` frames, then a slow sway either side of straight on. |
+
+The hosts read it through `World::pack_mode_stage` like any in-world stage,
+so both frame its shot and draw its blocks, stand-ins and confetti through
+`engine-world-views` (`pack_mode_world::podium`); the party card becomes a
+caption over the field (the title strip, the top three left to right with
+their scores, the prize). Closing the night takes the blocks down and puts
+the player and the bodies back (`World::take_down_party_podium`). The
+podium is presentation: the night never reads it. A room's night keeps the
+flat podium. For a capture, `--mode <night>:podium` plays a night's rounds
+out at once and lands on the podium (`World::debug_play_out_party_night`).
+
 ## Hosts
 
 Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition.
@@ -377,7 +403,7 @@ The stage keeps its own frame clock; every tween is a pure function of it and of
 | Place | A placed card slides from the hand (or its hover) in an arc and drops onto its cell over `22` frames; it lands with a dust ring and the place cue |
 | Capture | When the card lands, each card it captured turns over about its long axis in `20` frames, lifting off the board; the owner's colour changes at the half turn with the flip cue and a burst of sparks in the capturer's colour |
 | Chain | A capture that is not a neighbour of the placed card is a chain capture: it waits `12` frames more, bursts larger, and raises "Chain!" |
-| End | The last flips play out; the result cue and banner ("You win!", "You lose", "Draw"); the opponent cheers or slumps and the spectators the other way |
+| End | The last flips play out; the result cue and banner ("You win!", "You lose", "Draw"; a watcher reads "<name> wins!"); the opponent cheers or slumps and the spectators the other way |
 
 A move that takes two or more cards raises a banner ("2 captured!") and sets the NPCs' moods: the spectators cheer for the player and slump against them, the opponent the reverse, each for `90` frames; the opponent plays its `think` clip while it is choosing. A mood plays the NPC's `cheer` / `slump` clip, and an NPC without one keeps its idle. Sound cues are retail cue ids pushed on the field's SFX ring (`World::push_sfx_cue`), the table's `sfx` or the menu cues.
 

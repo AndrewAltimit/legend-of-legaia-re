@@ -176,12 +176,12 @@ pub fn local_party_card(world: &World) -> Option<PartyCard> {
         return None;
     }
     let lp = world.local_party()?;
-    Some(party_card(
-        &lp.night,
-        Some(0),
-        lp.granted.as_deref(),
-        lp.frame,
-    ))
+    let mut card = party_card(&lp.night, Some(0), lp.granted.as_deref(), lp.frame);
+    // A podium standing in the world is a caption over the field.
+    if let PartyCard::Podium { in_world, .. } = &mut card {
+        *in_world = lp.podium_stage.is_some();
+    }
+    Some(card)
 }
 
 /// The seat's flat prims in display space; empty unless it owns the frame.

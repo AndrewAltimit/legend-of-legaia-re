@@ -23,6 +23,7 @@ use legaia_engine_field::world_map_markers::{DISPLAY_H, DISPLAY_W, depth_toward}
 use legaia_render_kernels::screen_prim::{CornerDepth, FlatQuad, ScreenPrim};
 
 mod duel;
+mod podium;
 mod poker;
 
 /// The ball's radius, world units.
@@ -489,6 +490,9 @@ fn stage_pieces(pr: &Projector<'_>, stage: &StageFrame) -> Vec<ScreenPrim> {
     }
     if let Some(p) = &stage.poker {
         return poker::poker_pieces(pr, p);
+    }
+    if let Some(p) = &stage.podium {
+        return podium::podium_pieces(pr, stage, p);
     }
     let mut out = Vec::new();
     for t in &stage.trails {

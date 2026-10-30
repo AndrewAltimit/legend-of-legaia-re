@@ -74,6 +74,7 @@ Each step is a table whose `do` key names it. Frames are display frames, 60 a se
 | `fade` | `to` (`black` / `white` / `clear`), `frames`, `wait` | Fades the screen. |
 | `flash` | `color`, `frames` | An additive flash that dies out. |
 | `tint` | `color`, `frames`, `mode` (`add` / `subtract`) | Holds a colour over the frame; `[0, 0, 0]` clears it. |
+| `banner` | `line` | A title in the place-name banner's balloon: the line's first page, rows joined. Does not wait. |
 | `set_flag` / `clear_flag` | `flag` | A pack flag. |
 | `counter` | `counter`, `add` | Adds to a pack counter. |
 | `label` | `name` | A jump target. |
@@ -123,6 +124,7 @@ A `say` waits until the box closes. When its line ends on a menu, the option the
 | `enter_cutscenes` | a map | on arrival: the first entry whose `requires` holds and which is unseen (or has `repeat = true`). A save resumed on the map plays none. |
 | `cutscene` | a pack NPC | when the player talks to it, in place of its line. |
 | `start_cutscene`, `complete_cutscene` | a quest | after the quest's start or completion line, once the player is back in the field. |
+| `intro`, `outro` | a `battle.toml` boss | as its fight is called, the fight starting when it ends; after a won fight, back on the field ([battle](expansion-pack-battle.md#bosses)). |
 
 A hook queues the cutscene; it starts on the first field frame with no dialogue box open, no fight waiting and no scene change in flight.
 
@@ -160,6 +162,8 @@ Errors stop the pack loading; warnings do not.
 | A zoom outside `0.25..=4`, a pitch outside `-60..=60`, more than ten minutes in one step, a shake over 64 | error |
 | A track no `start_track` starts | warning |
 | A hook naming a cutscene that does not exist, or an arrival cutscene bound to another map | error |
+| A boss `intro` or `outro` that starts a fight of its own | error |
+| A `banner` line past 40 characters | warning |
 
 ## Gaps
 

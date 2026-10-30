@@ -614,6 +614,28 @@ pub struct PartyNight {
     /// How hard the rivals play.
     pub ai_tier: AiTier,
     pub prizes: Vec<PartyPrize>,
+    /// Where the podium stands in the world at the end of the night: a
+    /// pack map's tile, with the rivals' bodies. Without it (or off that
+    /// map) the podium is the party card's flat one.
+    pub podium: Option<PartyPodium>,
+}
+
+/// A party night's podium in the world: three blocks on a pack map,
+/// 2nd / 1st / 3rd left to right as the camera sees them, with the top
+/// three's party leaders standing on them.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PartyPodium {
+    /// The pack map the podium stands on.
+    pub map: String,
+    /// The first-place block's map-local tile.
+    pub tile: [u16; 2],
+    /// The compass sector (`0..8`) the podium faces: the camera looks
+    /// back along it, and the figures face it.
+    pub facing: u8,
+    /// The map NPCs that stand in for the AI rivals, in rival order. A
+    /// rival with none draws as a stand-in figure in its seat colour.
+    pub bodies: Vec<String>,
 }
 
 impl Default for PartyNight {
@@ -631,6 +653,7 @@ impl Default for PartyNight {
             rivals: Vec::new(),
             ai_tier: AiTier::Regular,
             prizes: Vec::new(),
+            podium: None,
         }
     }
 }
@@ -713,6 +736,40 @@ fn instance_kind(s: &ModeSection, id: &str) -> Option<InstanceKind> {
     }
 }
 
+/// A party night's podium: its map, tile, facing and body NPCs.
+fn check_podium(pd: &PartyPodium, at: &str, cx: &mut crate::validate::Checker<'_>) {
+    let Some(map) = cx.pack().maps.get(&pd.map) else {
+        cx.error(
+            &format!("{at}.map"),
+            format!("the pack has no map {:?}", pd.map),
+        );
+        return;
+    };
+    if let Ok(g) = map.tile_grid()
+        && (usize::from(pd.tile[0]) >= g.width || usize::from(pd.tile[1]) >= g.height)
+    {
+        cx.error(
+            &format!("{at}.tile"),
+            format!("tile {:?} is off map {:?}", pd.tile, pd.map),
+        );
+    }
+    if pd.facing >= 8 {
+        cx.error(&format!("{at}.facing"), "a compass sector is 0..8");
+    }
+    let missing: Vec<String> = pd
+        .bodies
+        .iter()
+        .filter(|b| !map.npcs.iter().any(|m| &m.id == *b))
+        .cloned()
+        .collect();
+    for (k, b) in missing.iter().enumerate() {
+        cx.error(
+            &format!("{at}.bodies[{k}]"),
+            format!("map {:?} has no NPC {b:?}", pd.map),
+        );
+    }
+}
+
 /// `modes.toml`'s rules: the party nights. (Instance ids are the section's
 /// own, hyphenated ones included, so they are checked here rather than
 /// declared as pack-wide content ids.)
@@ -748,6 +805,9 @@ impl crate::validate::SectionRules for ModeSection {
             }
             if !(2..=6).contains(&n.players) {
                 cx.error(&format!("{at}.players"), "a night seats 2..=6 players");
+            }
+            if let Some(pd) = &n.podium {
+                check_podium(pd, &format!("{at}.podium"), cx);
             }
             if n.rivals.len() + 1 > usize::from(n.players.max(2)) {
                 cx.warning(

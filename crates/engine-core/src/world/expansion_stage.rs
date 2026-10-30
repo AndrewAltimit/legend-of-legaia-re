@@ -41,7 +41,12 @@ impl World {
         if self.mode != SceneMode::Expansion {
             return None;
         }
-        self.expansion.mode_seat.as_deref()?.stage_frame.as_ref()
+        match self.expansion.mode_seat.as_deref() {
+            Some(seat) => seat.stage_frame.as_ref(),
+            // Between a night's rounds no seat is open; its podium may
+            // stand in the world (`World::stage_party_podium`).
+            None => self.expansion.party.as_deref()?.podium_stage.as_ref(),
+        }
     }
 
     /// Whether a duel or poker table in the world owns the frame.
@@ -56,7 +61,10 @@ impl World {
         if self.mode != SceneMode::Expansion {
             return None;
         }
-        let frame = self.expansion.mode_seat.as_deref()?.active()?.map_frame()?;
+        let Some(seat) = self.expansion.mode_seat.as_deref() else {
+            return self.party_podium_wants_map();
+        };
+        let frame = seat.active()?.map_frame()?;
         let here = self.expansion.map.as_ref().map(|m| m.map_id.as_str());
         (here != Some(frame.map_id.as_str())).then(|| (frame.map_id.clone(), frame.spawn.clone()))
     }

@@ -118,6 +118,8 @@ pub enum Command {
     Bgm(DiscRef),
     /// A retail cue or pack sound (`World::expansion_play_sound`).
     Sound(legaia_expansion_format::audio::SoundRef),
+    /// Raise a title banner of a pack line (`banner`).
+    Banner(String),
     /// A held music pick and its fade (`World::expansion_set_music`).
     Music(legaia_expansion_format::audio::MusicRef, u16),
     /// Release the held music pick.
@@ -903,6 +905,11 @@ impl CutsceneRun {
                 self.screen.fade(*to, frames);
                 if *wait && frames > 0 {
                     self.set_wait(k, Wait::Fade);
+                }
+            }
+            Step::Banner { line } => {
+                if !skipping {
+                    out.push(Command::Banner(line.clone()));
                 }
             }
             Step::Flash { color, frames } => {

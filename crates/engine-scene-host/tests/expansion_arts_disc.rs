@@ -315,7 +315,9 @@ fn a_pack_art_and_a_pack_spell_run_in_a_real_battle() {
 }
 
 /// A pack spell whose `target` widens its base's shape strikes every
-/// monster: Cinder Storm rides Gimard (one enemy) as `all_enemies`.
+/// monster: Cinder Storm rides Gimard (one enemy) as `all_enemies`, and
+/// casts as a fire Seru whose own shape is every enemy, so its creature
+/// strikes the whole row the damage folds on.
 #[test]
 fn a_widened_pack_spell_strikes_every_monster() {
     let Some(mut host) = host() else {
@@ -351,9 +353,13 @@ fn a_widened_pack_spell_strikes_every_monster() {
     );
     host.world.battle.player_driven = true;
     let mut cast_seen = false;
+    let mut cast_as = None;
     for _ in 0..4_000 {
         let _ = host.tick();
         cast_seen |= host.world.expansion.spells.casting.is_some();
+        if cast_seen && cast_as.is_none() {
+            cast_as = Some(host.world.actors[0].battle.params[0]);
+        }
         if cast_seen
             && host
                 .world
@@ -369,6 +375,23 @@ fn a_widened_pack_spell_strikes_every_monster() {
         }
     }
     assert!(cast_seen, "the pack cast was in flight");
+    let cast_as = cast_as.expect("the cast id");
+    assert_ne!(cast_as, 0x81, "not Gimard's one-enemy module");
+    let shape = host
+        .world
+        .tables
+        .spell_catalog
+        .get(cast_as)
+        .map(|d| (d.target, d.element));
+    let gimard = host.world.tables.spell_catalog.get(0x81).map(|d| d.element);
+    assert_eq!(
+        shape,
+        Some((
+            legaia_engine_battle::spells::SpellTarget::AllEnemies,
+            gimard.unwrap()
+        )),
+        "cast {cast_as:#04x} as an all-enemies Seru of Gimard's element"
+    );
     let after: Vec<u16> = (pc..pc + 2)
         .map(|s| host.world.actors[s].battle.hp)
         .collect();

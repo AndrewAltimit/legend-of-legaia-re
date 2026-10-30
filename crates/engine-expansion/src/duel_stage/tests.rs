@@ -257,3 +257,35 @@ fn the_reaction_shot_holds_the_results() {
             .is_some_and(|b| b == "You win!" || b == "You lose" || b == "Draw")
     }));
 }
+
+/// A watcher (a spectating peer) reads the winner by name: the end never
+/// says "You win!" or "You lose" to someone with no seat.
+#[test]
+fn a_watcher_reads_the_winner_by_name() {
+    let t = table(6);
+    let mut s = session(9);
+    let mut stage = DuelStage {
+        watching: true,
+        seat_names: ["Vahn".into(), "Rival".into()],
+        ..DuelStage::default()
+    };
+    let mut banners = Vec::new();
+    for _ in 0..3000 {
+        if s.is_finished() {
+            break;
+        }
+        s.tick(&[0, 0]);
+        banners.extend(stage.step(&t, &s.view(), 0).banner);
+    }
+    let last = s.view();
+    while stage.holds_results() {
+        banners.extend(stage.step(&t, &last, 0).banner);
+    }
+    assert!(banners.iter().all(|b| !b.starts_with("You")), "{banners:?}");
+    assert!(
+        banners
+            .iter()
+            .any(|b| b == "Vahn wins!" || b == "Rival wins!" || b == "Draw"),
+        "{banners:?}"
+    );
+}

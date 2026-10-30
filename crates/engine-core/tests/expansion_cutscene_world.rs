@@ -50,6 +50,11 @@ choices = [{ label = "Yes" }, { label = "No" }]
 
 [lines.hello]
 text = "Hello."
+
+[lines.alpha_banner]
+text = """
+The Alpha,
+Lord of the Hall"""
 "#;
 
 const BATTLE: &str = r#"
@@ -59,6 +64,10 @@ name = "Wolf"
 
 [formations.ambush]
 monsters = ["wolf"]
+
+[bosses.alpha]
+formation = "ambush"
+intro = "alpha_intro"
 "#;
 
 const CUTSCENES: &str = r#"
@@ -78,6 +87,14 @@ steps = [
   { do = "label", name = "fight" },
   { do = "set_flag", flag = "agreed" },
   { do = "battle", formation = "ambush" },
+]
+
+[cutscenes.alpha_intro]
+map = "hall"
+steps = [
+  { do = "camera", focus = { tile = [6, 1] }, zoom = 0.8, frames = 20 },
+  { do = "banner", line = "alpha_banner" },
+  { do = "wait", frames = 60 },
 ]
 
 [cutscenes.walk]
@@ -231,6 +248,51 @@ fn a_cutscene_locks_the_player_moves_the_npc_branches_and_starts_its_fight() {
             legaia_engine_battle::encounter::EncounterPhase::Idle
         )),
         "the encounter was triggered"
+    );
+}
+
+/// A boss with an `intro` plays it as its fight is called - the shot, the
+/// title banner - and the fight starts as the cutscene ends.
+#[test]
+fn a_boss_intro_plays_its_banner_and_then_starts_the_fight() {
+    let mut w = hall_world();
+    assert!(w.start_expansion_boss("alpha"), "the call is taken");
+    assert!(w.expansion_cutscene_active(), "the intro plays first");
+    let triggered = |w: &World| {
+        w.encounters.session.as_ref().is_some_and(|s| {
+            !matches!(
+                s.phase(),
+                legaia_engine_battle::encounter::EncounterPhase::Idle
+            )
+        })
+    };
+    assert!(!triggered(&w), "no fight yet");
+    let mut banner = None;
+    let mut n = 0;
+    while w.expansion_cutscene_active() && n < 600 {
+        frame(&mut w, 0);
+        if banner.is_none() {
+            banner = w.cutscene.text_balloon.as_ref().map(|b| b.text.clone());
+        }
+        n += 1;
+    }
+    assert!(!w.expansion_cutscene_active(), "the intro ended");
+    assert_eq!(
+        banner.as_deref(),
+        Some(&b"The Alpha, Lord of the Hall"[..]),
+        "the title banner rose with the line's rows joined"
+    );
+    for _ in 0..10 {
+        if triggered(&w) {
+            break;
+        }
+        frame(&mut w, 0);
+    }
+    assert!(triggered(&w), "the fight followed the intro");
+    assert_eq!(
+        w.expansion.battle.active_boss.as_deref(),
+        Some("alpha"),
+        "as the boss"
     );
 }
 

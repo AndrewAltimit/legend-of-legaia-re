@@ -180,6 +180,9 @@ pub struct PokerStage {
     /// The frame the last showdown began, and its winner's seat.
     showdown: Option<(u32, Option<usize>)>,
     pending_cues: Vec<(u32, SoundRef)>,
+    /// Whether this machine only watches the table (a spectating peer): no
+    /// seat is "You", and no hand shows its faces before the showdown.
+    pub watching: bool,
 }
 
 fn smooth(t: f32) -> f32 {
@@ -273,6 +276,7 @@ impl PokerStage {
             *self = Self {
                 table: Some(t.clone()),
                 local,
+                watching: self.watching,
                 ..Self::default()
             };
         }
@@ -460,10 +464,14 @@ impl PokerStage {
                     }
                 }
                 if let Some((w, amount)) = best {
-                    let who = if w == local {
+                    let mine = !self.watching && w == local;
+                    let who = if mine {
                         "You win".to_string()
                     } else {
-                        format!("{} wins", t.seat_name(w, local))
+                        format!(
+                            "{} wins",
+                            t.seat_name(w, if self.watching { usize::MAX } else { local })
+                        )
                     };
                     let hand = view
                         .last_awards
@@ -475,7 +483,7 @@ impl PokerStage {
                     self.banner = Some((format!("{who} {amount}{hand}"), now + BANNER_FRAMES));
                     self.pending_cues.push((
                         now + 10,
-                        if w == local {
+                        if mine || self.watching {
                             t.sfx.win.clone()
                         } else {
                             t.sfx.lose.clone()
@@ -740,7 +748,7 @@ impl PokerStage {
                 .iter()
                 .enumerate()
                 .map(|(seat, s)| {
-                    let open = seat == local || (showdown && !s.folded);
+                    let open = (!self.watching && seat == local) || (showdown && !s.folded);
                     if open { s.hole } else { None }
                 })
                 .collect(),

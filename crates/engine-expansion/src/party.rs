@@ -26,7 +26,28 @@ pub struct LocalNight {
     pub granted: Option<Vec<String>>,
     /// Frames since the night opened (the party card's clock).
     pub frame: u32,
+    /// Where the podium stands in the world (`modes.toml` `podium`).
+    pub podium: Option<legaia_expansion_format::modes::PartyPodium>,
+    /// The podium's stage this frame, while it stands on its map.
+    pub podium_stage: Option<crate::mode_stage::StageFrame>,
+    /// The frame the in-world podium came up.
+    pub podium_since: Option<u32>,
+    /// What the in-world podium moved, to put back as the night closes.
+    pub podium_return: Option<PodiumReturn>,
 }
+
+/// What an in-world podium moved, for the close: the player's pose
+/// `[x, y, z, heading]`, and each body NPC's slot with its anchor, heading
+/// and clip before the podium took it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PodiumReturn {
+    pub player: Option<[i16; 4]>,
+    pub bodies: Vec<BodyReturn>,
+}
+
+/// One body NPC the podium moved: its slot, and its anchor, heading and
+/// clip before.
+pub type BodyReturn = (u8, Option<(i16, i16)>, Option<i16>, Option<u8>);
 
 impl LocalNight {
     pub fn new(night: PartyNight, return_mode: SceneMode) -> Self {
@@ -37,6 +58,10 @@ impl LocalNight {
             finished_for: 0,
             granted: None,
             frame: 0,
+            podium: None,
+            podium_stage: None,
+            podium_since: None,
+            podium_return: None,
         }
     }
 }

@@ -602,6 +602,12 @@ impl World {
         let sp = &spells.spells[index];
         let mut def = self.tables.spell_catalog.get(menu_id).cloned()?;
         def.id = sp.base();
+        // A one-enemy base widened to every enemy casts as a fitting
+        // all-enemies Seru: its module's creature and camera then strike the
+        // whole row the damage folds on, where the base's would aim at one.
+        if let Some(p) = self.widened_presentation(sp.base(), def.target) {
+            def.id = p;
+        }
         let roster = self.party_roster_slot(caster as usize) as u8;
         let level = self
             .expansion
@@ -615,14 +621,43 @@ impl World {
             roster,
             spell: index,
             level,
+            cast_id: def.id,
         });
         log::info!(
             "expansion: {} casts pack spell `{}` (Lv {level}) as spell {:#04x}",
             HERO_NAMES.get(usize::from(roster)).unwrap_or(&"?"),
             sp.key,
-            sp.base()
+            def.id
         );
         Some(def)
+    }
+
+    /// The all-enemies Seru a pack spell of base `base` presents as when
+    /// its shape `target` widens the base's one-enemy shape: the player Seru
+    /// (`0x81..=0xA0`) of the base's element whose catalog shape is every
+    /// enemy, the nearest in MP to the base (then the lowest id). `None`
+    /// when the spell keeps its base's shape, or no Seru fits.
+    pub(in crate::world) fn widened_presentation(
+        &self,
+        base: u8,
+        target: legaia_engine_battle::spells::SpellTarget,
+    ) -> Option<u8> {
+        use legaia_engine_battle::spells::SpellTarget;
+        let b = self.tables.spell_catalog.get(base)?;
+        if target != SpellTarget::AllEnemies || b.target != SpellTarget::OneEnemy {
+            return None;
+        }
+        (0x81..=0xA0u8)
+            .filter(|&id| id != base)
+            .filter_map(|id| self.tables.spell_catalog.get(id).map(|d| (id, d)))
+            .filter(|(id, d)| {
+                d.target == SpellTarget::AllEnemies
+                    && d.element == b.element
+                    && self.spell_table_class(*id)
+                        != Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
+            })
+            .min_by_key(|(id, d)| (d.mp_cost.abs_diff(b.mp_cost), *id))
+            .map(|(id, _)| id)
     }
 
     /// The pack cast in flight for `caster` on base spell `spell_id`.
@@ -632,7 +667,7 @@ impl World {
         spell_id: u8,
     ) -> Option<(&PackCast, &CompiledSpell)> {
         let (c, s) = self.expansion.spells.cast()?;
-        (s.base() == spell_id && caster.is_none_or(|x| x == c.caster)).then_some((c, s))
+        (c.cast_id == spell_id && caster.is_none_or(|x| x == c.caster)).then_some((c, s))
     }
 
     /// The MP the cast in flight debits for base spell `spell_id`.

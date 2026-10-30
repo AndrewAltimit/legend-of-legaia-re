@@ -177,7 +177,17 @@ pub(super) fn enter_debug_pack_mode(session: &mut NativeSession, seeds: &super::
         log::info!("play-window: --mode picker: the mode picker is open");
         return;
     }
+    // `<night>:podium` plays a party night's rounds out at once and lands on
+    // its podium (`World::debug_play_out_party_night`).
+    let (id, podium) = match id.strip_suffix(":podium") {
+        Some(night) => (night, true),
+        None => (id, false),
+    };
     match world.enter_pack_mode(id) {
+        Ok(()) if podium => {
+            let ok = world.debug_play_out_party_night();
+            log::info!("play-window: --mode {id}:podium: played out {ok}");
+        }
         Ok(()) => log::info!("play-window: --mode {id}: entered"),
         Err(e) => {
             let known: Vec<String> = world

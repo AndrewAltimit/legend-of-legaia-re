@@ -184,6 +184,18 @@ For cutscene steps (`sound`, `music`, `music_release` in [`cutscenes.toml`](expa
 
 ## Rebirth
 
-[`packs/rebirth`](../../packs/rebirth/) keeps each floor's retail music and adds: a games-room zone on 5F (the Sol casino's "Wild Declaration" over the Rest's bar tune), the pack's own drone in 7F's inner sanctum, ember-crystal, brazier, hearth and throne-lamp crackle (1F, 2F, 5F, 8F), the Warden's Stone hum, running water on 3F, the casino music at the poker table and "Funky Ascent" over a Grid Duel, the Hollow Sovereign's phase music (Apostles of the Mist, then Apocalypse, then the Wild Arms battle theme for its unbound form) with a chime on its ultimate's telegraph, and the title theme over every tower boss's results.
+[`packs/rebirth`](../../packs/rebirth/) keeps each floor's retail music and lays its own soundscape over it:
 
-Its four WAV files are synthesised by [`scripts/models/generate_rebirth_audio.py`](../../scripts/models/generate_rebirth_audio.py) - sine partials and seeded noise, no disc audio.
+| Floor | Sound |
+|---|---|
+| 1F, 2F | Ember-crystal, brazier and hearth crackle |
+| 3F | The garden's water channels and two fountains; a light wind over the terraces |
+| 4F | Drips round the sunken court, the heart's low hum |
+| 5F | The Rest's crowd, loudest by the tables; the hearth; the Sol casino's "Wild Declaration" in the games room, the casino music at the poker table and "Funky Ascent" over a Grid Duel |
+| 6F | The engine's hum and clank at both flywheels, the furnace |
+| 7F | The pack's drone in the inner sanctum (a music zone) and faintly round the ring corridor |
+| 8F | Wind through the open top, the throne lamps and two braziers |
+
+Each tower boss opens on its intro cutscene's entrance sting, rings the phase-change shimmer as its script changes phase, and closes on the falling knell in its outro; the Hollow Sovereign's phases also turn the music (Apostles of the Mist, then Apocalypse, then the Wild Arms battle theme for its unbound form), with a chime on its ultimate's telegraph, and every tower boss's results play the title theme.
+
+Its WAV files are synthesised by [`scripts/models/generate_rebirth_audio.py`](../../scripts/models/generate_rebirth_audio.py) - sine partials and seeded noise, no disc audio.

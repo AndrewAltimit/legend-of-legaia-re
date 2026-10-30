@@ -77,9 +77,65 @@ impl World {
             }
         };
         let return_mode = self.pack_mode_return();
+        let podium = def.podium.clone();
         self.expansion.mode_seat = None;
-        self.expansion.party = Some(Box::new(LocalNight::new(night, return_mode)));
+        let mut lp = LocalNight::new(night, return_mode);
+        lp.podium = podium;
+        self.expansion.party = Some(Box::new(lp));
         self.mode = SceneMode::Expansion;
+        true
+    }
+
+    /// DEBUG affordance: play out every round the night played alone has
+    /// left, the player placing first in each and the rivals in a turning
+    /// order, and leave the scoreboard one frame from the podium - so a
+    /// capture reaches the podium without playing the night. `false` with
+    /// no night, or a round already on the seat.
+    pub fn debug_play_out_party_night(&mut self) -> bool {
+        if self.expansion.mode_seat.is_some() {
+            return false;
+        }
+        let Some(lp) = self.expansion.party.as_deref_mut() else {
+            return false;
+        };
+        let n = lp.night.players.len().max(2);
+        for round in 0..512usize {
+            match lp.night.phase.clone() {
+                PartyPhase::Intro { slot, .. } => {
+                    lp.night.phase = PartyPhase::Intro { slot, timer: 1 };
+                    lp.night.tick();
+                }
+                PartyPhase::Playing { .. } => {
+                    if let Some((a, b)) = lp.night.current_match() {
+                        lp.night
+                            .record_duel(Some(if a == 0 || b == 0 { 0 } else { a.min(b) }));
+                    } else {
+                        let places: Vec<(PlayerKey, u8)> = (0..n as PlayerKey)
+                            .map(|k| {
+                                let place = if k == 0 {
+                                    1
+                                } else {
+                                    2 + ((k as usize - 1 + round) % (n - 1)) as u8
+                                };
+                                (k, place)
+                            })
+                            .collect();
+                        lp.night.record(&places);
+                    }
+                }
+                PartyPhase::Board { .. } => {
+                    lp.night.phase = PartyPhase::Board { timer: 1 };
+                    if lp.night.next_slot().is_none() {
+                        return true;
+                    }
+                    lp.night.tick();
+                }
+                PartyPhase::Pick { picker, .. } => {
+                    lp.night.pick(picker, 0, true);
+                }
+                _ => return true,
+            }
+        }
         true
     }
 
@@ -95,7 +151,11 @@ impl World {
             return false;
         };
         lp.frame = lp.frame.wrapping_add(1);
-        match self.step_local_party(&mut lp) {
+        let step = self.step_local_party(&mut lp);
+        if !matches!(step, Step::Close) {
+            self.stage_party_podium(&mut lp);
+        }
+        match step {
             Step::Handled => {
                 self.expansion.party = Some(lp);
                 true
@@ -105,6 +165,7 @@ impl World {
                 false
             }
             Step::Close => {
+                self.take_down_party_podium(&mut lp);
                 self.close_party_seat();
                 self.mode = lp.return_mode;
                 true

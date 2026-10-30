@@ -336,6 +336,16 @@ pub struct BossDef {
     /// A boss fought once: after a victory it cannot be started again.
     #[serde(default)]
     pub once: bool,
+    /// A `cutscenes.toml` cutscene played as the fight is called (a
+    /// challenge's choice, a quest's start, a trigger): the fight starts
+    /// when it ends or is skipped. Played only on its own map; elsewhere
+    /// the fight starts at once.
+    #[serde(default)]
+    pub intro: Option<String>,
+    /// A `cutscenes.toml` cutscene played back on the field after a won
+    /// fight, once the results and any quest lines are done.
+    #[serde(default)]
+    pub outro: Option<String>,
 }
 
 fn yes() -> bool {
@@ -712,6 +722,29 @@ impl crate::validate::SectionRules for BattleSection {
             for (what, chance) in [("drop", &m.drop), ("steal", &m.steal)] {
                 if let Some(c) = chance {
                     c.item.check(cx, &format!("monsters.{key}.{what}.item"));
+                }
+            }
+        }
+        for (key, b) in &self.bosses {
+            for (field, c) in [("intro", &b.intro), ("outro", &b.outro)] {
+                let Some(c) = c else { continue };
+                cx.reference("cutscene", c, &format!("bosses.{key}.{field}"));
+                let fights = cx.pack().cutscenes.get(c).is_some_and(|d| {
+                    d.all_steps().any(|s| {
+                        matches!(
+                            s,
+                            crate::cutscene::Step::Battle { .. }
+                                | crate::cutscene::Step::Boss { .. }
+                        )
+                    })
+                });
+                if fights {
+                    cx.error(
+                        &format!("bosses.{key}.{field}"),
+                        format!(
+                            "cutscene {c:?} starts a fight of its own; the boss's fight follows it"
+                        ),
+                    );
                 }
             }
         }
