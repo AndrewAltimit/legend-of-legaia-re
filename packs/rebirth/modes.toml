@@ -165,7 +165,7 @@ spawn = "from_below"
 [card_duels.table]
 tile = [3, 12]
 offset = [-96, 0, 64]
-facing = 6
+facing = 0
 opponent = { npc = "duel_second", name = "The Warden's Second" }
 spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
 
