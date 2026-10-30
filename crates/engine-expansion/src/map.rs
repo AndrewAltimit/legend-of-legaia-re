@@ -442,6 +442,13 @@ impl ActiveMap {
         !self.floor_tops.is_empty() || !self.stage_tops.is_empty()
     }
 
+    /// Read the map's own standable tops from [`Self::def`] again, after
+    /// an edit moved a prop in place (the workbench's 3D preview); the
+    /// stage's tops are left as they are.
+    pub fn refresh_floor_tops(&mut self) {
+        self.floor_tops = self.def.floor_tops();
+    }
+
     /// Stand `tops` on the map over its own (a party night's podium
     /// blocks); an empty list takes them down.
     pub fn set_stage_tops(&mut self, tops: Vec<FloorTop>) {
@@ -819,6 +826,18 @@ requires = { quests = ["intro"] }
         assert_eq!(m.floor_top_at(x0 + 127, z0 + 127), Some(64));
         assert_eq!(m.floor_top_at(x0 + 128, z0), None);
         assert_eq!(m.floor_top_at(x0 - 1, z0), None);
+    }
+
+    #[test]
+    fn a_standable_prop_moved_in_place_takes_its_top_along() {
+        let mut m = npc_map();
+        let (x0, z0) = (12 * 128, 21 * 128);
+        let i = m.def.props.iter().position(|p| p.top.is_some()).unwrap();
+        Arc::make_mut(&mut m.def).props[i].tile[0] += 1;
+        assert_eq!(m.floor_top_at(x0, z0), Some(64), "stale until refreshed");
+        m.refresh_floor_tops();
+        assert_eq!(m.floor_top_at(x0, z0), None);
+        assert_eq!(m.floor_top_at(x0 + 128, z0), Some(64));
     }
 
     #[test]
