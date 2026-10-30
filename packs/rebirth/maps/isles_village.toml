@@ -11,7 +11,8 @@ base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
 # Sound-test track 6, "Rim Elm".
 bgm = { kind = "bgm", id = 6 }
 camera = "far"
-floor_heights = [0, 16]
+# Tiers: the meadow, the green, the wooded rise round the village, the bay.
+floor_heights = [0, 16, 210, -60]
 
 [tiles]
 origin = [4, 4]
@@ -61,13 +62,13 @@ rows = [
 ]
 
 [tiles.legend]
-"#" = { label = "stone wall", walls = "all", wall = { kind = "box", height = 160, tpage = 12, clut = 32006, tile = 36 } }
+"#" = { label = "wooded rise", walls = "all", height = 2, ground = { kind = "texture", tpage = 12, clut = 32006, tile = 36 } }
 "g" = { label = "grass", ground = { kind = "texture", tpage = 12, clut = 32003, tile = 0 } }
 "G" = { label = "grass (long)", ground = { kind = "texture", tpage = 12, clut = 32001, tile = 9 } }
 "d" = { label = "lane", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
 "p" = { label = "village green", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
 "," = { label = "shingle", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
-"~" = { label = "bay", walls = "all", ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
+"~" = { label = "bay", walls = "all", height = 3, ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
 "j" = { label = "jetty", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
 "H" = { label = "hut", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
 "L" = { label = "lodge", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32006, tile = 12 } }
@@ -410,3 +411,72 @@ lamps = [
   { id = "huts_ne", tile = [37, 9], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 10 },
   { id = "huts_s", tile = [34, 30], offset = [0, 140, 0], color = [255, 170, 100], radius = 600, flicker = 0.25, period = 12 },
 ]
+
+# The ground: the village sits on a low hill rising from the bay, ringed by
+# a wooded rise; the lanes are worn into the turf and blend into it, each
+# house and the well stand on a levelled pad, and the bay shelves away
+# under the jetty.
+[terrain]
+resolution = 4
+smooth = 3
+max_step = 44
+skirt = 5
+seed = 4220
+variation = 0.24
+blend = 0.6
+sun = [210.0, 34.0]
+shading = 0.55
+shapes = [
+  { kind = "noise", rect = [0, 0, 51, 1], amplitude = 50, scale = 1.8, seed = 1 },
+  { kind = "raise", at = [25.0, 18.0], radius = 21.0, height = 64 },
+  { kind = "raise", at = [9.0, 9.0], radius = 7.0, height = 22 },
+  { kind = "raise", at = [40.0, 26.0], radius = 8.0, height = 16 },
+  { kind = "noise", rect = [1, 2, 50, 34], amplitude = 7, scale = 3.0, seed = 2 },
+  { kind = "flatten", at = [9.5, 9.5], radius = 2.6 },
+  { kind = "flatten", at = [16.5, 6.5], radius = 2.6 },
+  { kind = "flatten", at = [33.5, 7.5], radius = 2.6 },
+  { kind = "flatten", at = [40.5, 10.5], radius = 2.6 },
+  { kind = "flatten", at = [10.5, 18.5], radius = 2.6 },
+  { kind = "flatten", at = [38.5, 28.5], radius = 2.6 },
+  { kind = "flatten", at = [30.5, 32.5], radius = 2.6 },
+  { kind = "flatten", at = [8.5, 26.5], radius = 2.6 },
+  { kind = "flatten", at = [45.5, 21.5], radius = 2.6 },
+  { kind = "flatten", at = [14.5, 31.5], radius = 2.6 },
+  { kind = "flatten", at = [24.5, 20.5], radius = 2.6 },
+  { kind = "flatten", at = [20.5, 12.5], radius = 2.6 },
+  { kind = "flatten", at = [31.5, 17.5], radius = 2.6 },
+  { kind = "noise", rect = [0, 33, 51, 41], amplitude = 16, scale = 1.6, seed = 5 },
+  { kind = "plateau", rect = [19, 35, 20, 40], height = 18, edge = 0.18 },
+]
+materials = [
+  { name = "turf", chars = "g", tint = [130, 136, 120], cells = [
+    { tpage = 12, clut = 32000, tile = 24 }, { tpage = 12, clut = 32000, tile = 25 }, { tpage = 12, clut = 32000, tile = 26 }, { tpage = 12, clut = 32000, tile = 32 }, { tpage = 12, clut = 32000, tile = 33 }, { tpage = 12, clut = 32000, tile = 34 }, { tpage = 12, clut = 32000, tile = 40 }, { tpage = 12, clut = 32000, tile = 41 }, { tpage = 12, clut = 32000, tile = 42 },
+  ] },
+  { name = "long grass", chars = "G", tint = [128, 138, 116], cells = [
+    { tpage = 12, clut = 32001, tile = 3 }, { tpage = 12, clut = 32001, tile = 4 }, { tpage = 12, clut = 32001, tile = 5 }, { tpage = 12, clut = 32001, tile = 11 }, { tpage = 12, clut = 32001, tile = 12 }, { tpage = 12, clut = 32001, tile = 13 }, { tpage = 12, clut = 32001, tile = 19 }, { tpage = 12, clut = 32001, tile = 20 }, { tpage = 12, clut = 32001, tile = 21 },
+  ] },
+  { name = "lane", chars = "d<>", lift = -4, tint = [124, 118, 110], cells = [
+    { tpage = 12, clut = 32004, tile = 24 }, { tpage = 12, clut = 32004, tile = 26 }, { tpage = 12, clut = 32004, tile = 32 }, { tpage = 12, clut = 32004, tile = 33 }, { tpage = 12, clut = 32004, tile = 40 }, { tpage = 12, clut = 32004, tile = 41 }, { tpage = 12, clut = 32004, tile = 42 },
+  ] },
+  { name = "green", chars = "p", tint = [116, 112, 104], cells = [
+    { tpage = 12, clut = 32004, tile = 3 }, { tpage = 12, clut = 32004, tile = 5 }, { tpage = 12, clut = 32004, tile = 19 }, { tpage = 12, clut = 32004, tile = 20 },
+  ] },
+  { name = "shingle", chars = ",", tint = [118, 116, 112], cells = [
+    { tpage = 12, clut = 32005, tile = 3 }, { tpage = 12, clut = 32005, tile = 5 }, { tpage = 12, clut = 32005, tile = 19 }, { tpage = 12, clut = 32005, tile = 21 },
+  ] },
+  { name = "bay bed", chars = "~", tint = [96, 100, 110], cells = [
+    { tpage = 12, clut = 32008, tile = 3 }, { tpage = 12, clut = 32008, tile = 5 }, { tpage = 12, clut = 32008, tile = 11 }, { tpage = 12, clut = 32008, tile = 19 }, { tpage = 12, clut = 32008, tile = 21 },
+  ] },
+  { name = "yard", chars = "HLT", tint = [124, 118, 108], cells = [
+    { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 },
+  ] },
+  { name = "rise", chars = "#", tint = [106, 118, 100], cells = [
+    { tpage = 12, clut = 32001, tile = 3 }, { tpage = 12, clut = 32001, tile = 4 }, { tpage = 12, clut = 32001, tile = 5 }, { tpage = 12, clut = 32001, tile = 11 }, { tpage = 12, clut = 32001, tile = 12 }, { tpage = 12, clut = 32001, tile = 13 },
+  ] },
+  { name = "jetty", chars = "j", rotate = false, tint = [240, 214, 186], cells = [{ tpage = 27, clut = 32128, tile = 27 }, { tpage = 27, clut = 32128, tile = 28 }, { tpage = 27, clut = 32128, tile = 35 }, { tpage = 27, clut = 32128, tile = 36 }, { tpage = 27, clut = 32128, tile = 43 }, { tpage = 27, clut = 32128, tile = 44 }] },
+]
+cliff = { slope = 1.05, tint = [120, 114, 106], cells = [
+  { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 }, { tpage = 12, clut = 32006, tile = 48 }, { tpage = 12, clut = 32006, tile = 49 }, { tpage = 12, clut = 32006, tile = 56 }, { tpage = 12, clut = 32006, tile = 57 },
+] }
+water = { level = -8, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [140, 160, 160], deep = [64, 84, 120], depth = 50, foam = 14, foam_color = [140, 140, 136], wade = 4 }
+sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4, color = [150, 120, 110] }

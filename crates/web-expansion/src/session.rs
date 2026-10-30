@@ -530,6 +530,15 @@ impl Core {
         // not load.
         probe.decor.clear();
         probe.scatter.clear();
+        // The terrain's own meshes bake from nothing the preview loads
+        // either; its walls and floor come back below, from the same pure
+        // functions the engine's image builder runs.
+        let terrain_walls = match &def.terrain {
+            Some(_) => Some(def.terrain_walls(&grid)?),
+            None => None,
+        };
+        let terrain_field = def.terrain_heightfield()?;
+        probe.terrain = None;
         probe.edges.clear();
         probe.decals.clear();
         probe.emitters.clear();
@@ -557,8 +566,15 @@ impl Core {
         for r in 0..h {
             for c in 0..w {
                 let t = grid.get(c, r).expect("in range");
-                tier.push(byte(c, r) & 0x0F);
-                walls.push(byte(c, r + 1) >> 4);
+                tier.push(if terrain_walls.is_some() {
+                    0
+                } else {
+                    byte(c, r) & 0x0F
+                });
+                walls.push(
+                    (byte(c, r + 1) >> 4)
+                        | terrain_walls.as_ref().map_or(0, |w| w[r * grid.width + c]),
+                );
                 void.push(t.void);
                 let k = [
                     byte(c, r) & 0x0F,
@@ -587,6 +603,17 @@ impl Core {
             "ladder_from_base": def.floor_heights.is_empty() && base_lut.is_some(),
             "tiers": FLOOR_TIERS,
             "off_grid": off_grid,
+            // The sculpted floor (`[terrain]`): the heightfield over the
+            // map and its skirt, `cols x rows` vertices `res` a tile, and
+            // the water level, for the painter's relief shading.
+            "terrain": terrain_field.as_ref().map(|f| json!({
+                "cols": f.cols,
+                "rows": f.rows,
+                "res": f.res,
+                "skirt": f.skirt,
+                "heights": f.heights,
+                "water": def.terrain.as_ref().and_then(|t| t.water.as_ref()).map(|w| w.level),
+            })),
             // Standable prop tops in map-local tiles: `[col0, row0, col1,
             // row1, top]`, the painter's overlay of what action movement
             // stands on.

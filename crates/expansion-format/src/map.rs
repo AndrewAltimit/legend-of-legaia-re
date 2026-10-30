@@ -125,6 +125,10 @@ pub struct MapDef {
     /// whose gate holds and that has not been seen (unless `repeat`) plays
     /// once the player stands on the map.
     pub enter_cutscenes: Vec<EnterCutscene>,
+    /// A sculpted ground in place of the tier floor
+    /// ([`crate::terrain::TerrainDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<crate::terrain::TerrainDef>,
     /// Music, music zones and ambient sources ([`crate::audio::MapAudio`]).
     #[serde(skip_serializing_if = "crate::audio::MapAudio::is_empty")]
     pub audio: crate::audio::MapAudio,

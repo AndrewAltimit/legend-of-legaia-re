@@ -54,6 +54,8 @@ pub mod progression;
 pub mod quest;
 pub mod refs;
 pub mod spells;
+pub mod terrain;
+pub mod terrain_rules;
 pub mod validate;
 
 use std::collections::BTreeMap;

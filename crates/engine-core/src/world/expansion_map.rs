@@ -241,6 +241,24 @@ impl World {
                 wrote = true;
             }
         }
+        // The terrain's surf: each foam band's palette brightens as a crest
+        // rolls in (`terrain::surf_level`).
+        let surf = def
+            .terrain
+            .as_ref()
+            .and_then(|t| t.water.as_ref())
+            .map(|w| w.surf);
+        if let (Some(cluts), Some(period)) = (map.foam_cluts, surf) {
+            for (band, cba) in cluts.into_iter().enumerate() {
+                let (x, y) = ((cba & 0x3F) * 16, cba >> 6);
+                let level = legaia_expansion_format::terrain::surf_level(frame, period, band);
+                let out = legaia_expansion_format::terrain::foam_palette(level);
+                if super::ambient::read_rect(vram, x, y, 16, 1) != out {
+                    super::ambient::write_rect(vram, x, y, 16, &out);
+                    wrote = true;
+                }
+            }
+        }
         wrote
     }
 }

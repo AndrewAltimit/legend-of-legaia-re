@@ -87,7 +87,11 @@ the 1F stair down leads to Rim Elm.
 
 Past a sea gate in the Atrium's west wall (open once the Warden's Trial is
 done) lies an outdoor region of four maps, each laid out from scratch at
-the field grid's larger sizes and dressed with the detail layer:
+the field grid's larger sizes and dressed with the detail layer. The
+beach, the village and the grotto stand on a sculpted `[terrain]`
+(sloping shores, cliffs, dunes, a hill, a rock floor and a pool under
+animated water with rolling surf; `docs/formats/expansion-pack-maps.md`,
+"Terrain"):
 
 | Map | Base | Size | What is there |
 |---|---|---|---|

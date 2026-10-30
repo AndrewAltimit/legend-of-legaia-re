@@ -64,6 +64,9 @@ pub struct ActiveMap {
     patrol_next: Vec<usize>,
     /// The standable props' tops ([`MapDef::floor_tops`]).
     floor_tops: Vec<FloorTop>,
+    /// The map's sculpted floor ([`MapDef::terrain_heightfield`]), `None`
+    /// on a tier-floored map.
+    terrain: Option<Arc<legaia_expansion_format::terrain::Heightfield>>,
     /// Each animated material's pristine VRAM words, captured the first
     /// frame it applies (`World::step_expansion_materials`), keyed by its
     /// index in `def.materials`.
@@ -71,6 +74,10 @@ pub struct ActiveMap {
     /// Where the map's particle sprites sit in VRAM, set by the map's load
     /// when it has emitters.
     pub particle_sheet: Option<legaia_expansion_format::map_detail::ParticleSheet>,
+    /// The CBA words of the terrain's foam band palettes, shallowest first,
+    /// set by the map's load when its water foams: what the surf pulse
+    /// rewrites (`World::step_expansion_materials`).
+    pub foam_cluts: Option<[u16; legaia_expansion_format::terrain::FOAM_BANDS]>,
 }
 
 /// What talking to a pack NPC does ([`ActiveMap::talk`]).
@@ -114,11 +121,15 @@ impl ActiveMap {
             events: Vec::new(),
             patrol_next: Vec::new(),
             floor_tops: Vec::new(),
+            terrain: None,
             material_captures: Default::default(),
             particle_sheet: None,
+            foam_cluts: None,
         };
         m.patrol_next = vec![0; m.def.npcs.len()];
         m.floor_tops = m.def.floor_tops();
+        // A terrain that does not build was refused by the map's load.
+        m.terrain = m.def.terrain_heightfield().ok().flatten().map(Arc::new);
         m.encounter = m.encounter_zone_at(spawn);
         m
     }
@@ -315,6 +326,18 @@ impl ActiveMap {
             .filter(|t| t.contains(x, z))
             .map(|t| t.top)
             .max()
+    }
+
+    /// The terrain's floor height (up positive) at world `(x, z)`: the
+    /// surface the terrain's meshes draw there. `None` on a map without a
+    /// terrain and off its heightfield.
+    pub fn terrain_floor_at(&self, x: i32, z: i32) -> Option<i32> {
+        self.terrain.as_ref()?.sample_world(x, z)
+    }
+
+    /// Whether the map floors on a terrain.
+    pub fn has_terrain(&self) -> bool {
+        self.terrain.is_some()
     }
 
     /// Whether the map has any standable top.

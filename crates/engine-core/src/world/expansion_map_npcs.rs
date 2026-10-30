@@ -144,6 +144,16 @@ impl World {
         }
     }
 
+    /// The pack map's terrain floor under world `(x, z)` in the retail
+    /// Y-down frame, `None` with no pack map, no terrain, or off it.
+    pub(in crate::world) fn expansion_terrain_floor_y(&self, x: i32, z: i32) -> Option<i32> {
+        self.expansion
+            .map
+            .as_ref()?
+            .terrain_floor_at(x, z)
+            .map(|h| -h)
+    }
+
     /// The floor height (Y down) of the standable top under world `(x, z)`,
     /// `None` off every top or with no map active.
     pub(in crate::world) fn expansion_floor_top_y(&self, x: i32, z: i32) -> Option<i32> {

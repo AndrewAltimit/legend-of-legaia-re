@@ -14,6 +14,7 @@ tab, and nothing is uploaded.
 | Tile painter | `site/js/expansion-workbench-map.js` |
 | Map detail layer (prop sources, animators, lights, decorations) | `site/js/expansion-workbench-detail.js` |
 | 3D preview and Play here | `site/js/expansion-workbench-preview3d.js`; on the play page `site/js/play-expansion-live.js` and `site/js/play-view-editor-overlay.js` |
+| Map terrain (sculpt brush, materials, water, horizon) | `site/js/expansion-workbench-terrain.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
 | Example pack | `site/packs/rebirth.json`, written by `site/_gen.py` from [`packs/rebirth/`](../../packs/rebirth/README.md) |
 
@@ -126,6 +127,18 @@ no collision). The canvas draws every decoration (green dots) and decal
 (`decor`), so a brush's coverage shows as it is edited. It builds the field
 image without decorations and with every non-base prop mesh as mesh `0`
 (neither touches the collision grid it reads).
+
+The **Terrain** box turns a map's `[terrain]` on and holds its knobs, the
+water level, and the `materials`, `cliff`, `water`, `sky` and `shapes`
+tables as JSON editors
+([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#terrain)). The
+**Sculpt** tool (`K`) writes strokes into `shapes`: a click stamps the
+brush (raise, lower, smooth, or flatten to the mean under it), a drag with
+raise or lower lays a ridge along it; **Remove last stroke** pops one. The
+canvas shades the relief and the water from `map_preview`'s `terrain` - the
+heightfield the engine's floor sampler and meshes are built from - and the
+painter's wall quarters include the ones the terrain adds (too steep, too
+deep), so what is walkable reads off the canvas.
 
 The **Heights** overlay is read back from `map_preview`, which builds the
 synthetic field image the engine enters

@@ -426,6 +426,29 @@ seed = 11
   <p>Each particle is a camera-facing sprite drawn through the field screen-effect pass the retail fog sheets use (<code>HostView::fog_prims</code>, both hosts), projected by the same view. Its whole life is a pure function of the seed, its index and <code>World::frame</code> - no state, no random stream - so it is the same on both hosts and in every run. The sprites are the engine's own (a soft dot, a spark, a leaf, a drop, drawn at load into free VRAM), additive for the glowing kinds, opaque for leaves.</p>
 </section>
 
+<section class="doc-section" id="terrain" data-doc="terrain">
+  <h2>Terrain</h2>
+<pre><code>[terrain]
+resolution = 4          # vertices a tile side: 1, 2 or 4
+smooth = 2              # blur passes over the tier base
+max_step = 40           # height a 64 x 64 sub-cell may span and stay walkable
+skirt = 8               # tiles drawn past each edge
+shapes = [
+  { kind = "ridge", from = [14.0, 9.0], to = [27.0, 6.5], radius = 2.6, height = 30 },
+  { kind = "plateau", rect = [40, 18, 41, 33], height = 22, edge = 0.18 },
+  { kind = "flatten", at = [9.5, 9.5], radius = 2.6 },
+]
+materials = [{ name = "sand", chars = ".", tint = [134, 130, 122], cells = [{ tpage = 12, clut = 32005, tile = 3 }] }]
+cliff = { slope = 0.95, cells = [{ tpage = 12, clut = 32006, tile = 6 }] }
+water = { level = -10, cells = [{ tpage = 9, clut = 31880, tile = 56 }], foam = 16, wade = 5, surf = 150 }
+sky = { tpage = 10, clut = 31104, radius = 6 }</code></pre>
+  <p>A map with <code>[terrain]</code> floors on a <strong>heightfield</strong> instead of the tier grid: <code>resolution</code> vertices a tile side. The tiers are its base (smoothed into slopes), and the <code>shapes</code> sculpt it in order - <code>raise</code>, <code>ridge</code>, <code>plateau</code>, <code>ramp</code>, <code>flatten</code> (to a height, or the mean under the brush), <code>smooth</code>, <code>noise</code>. It is a pure function of the file.</p>
+  <h3 id="walking-the-terrain">Walking the terrain</h3>
+  <p>The floor sampler answers the terrain's surface, interpolated over the very triangle the mesh draws, so the player stands on the drawn ground to the unit. Tiers are written <code>0</code>; props, decorations, NPCs, lamps and emitters stand on the surface. A sub-cell steeper than <code>max_step</code>, or deeper than <code>wade</code> under the water, is a wall quarter: slopes walk, cliffs and deep water block.</p>
+  <h3 id="drawing-the-terrain">Drawing the terrain</h3>
+  <p>Each tile's quads bake into its decoration cell, so both hosts draw it on the path they already run. Ground quads take the material with the highest weight at their centre after a dithering noise (<code>blend</code>), so material boundaries are organic, not the tile grid; each tile turns its cell one of eight ways against repeats; steep quads take the <code>cliff</code> material. Vertex colours carry the material tints across boundaries, a macro brightness variation and a baked sun, under the retail field's own <code>texel * colour / 128</code> law. Water is a flat textured surface coloured by depth, meeting the slope in the depth buffer; an additive foam band rolls in every <code>surf</code> frames; <code>sky</code> rings the map with a retail sky page.</p>
+</section>
+
 <section class="doc-section" id="how-large-a-map-can-be" data-doc="how-large-a-map-can-be">
   <h2>How large a map can be</h2>
   <p>One map is one field grid: at most <code>120 x 120</code> tiles of <code>128</code> world units, about 15,000 units a side - larger than any retail room. Two budgets bound what it holds: 508 object records (ground textures, walls, props and decorated cells share them) and the VRAM the base scene leaves free for foreign meshes and model textures. A larger world is several maps joined by map exits, which enter at once with no streaming.</p>

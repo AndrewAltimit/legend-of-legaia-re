@@ -23,6 +23,7 @@
 
 import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-forms.js';
 import { propMeshEditor, propDetail, renderDetail } from './expansion-workbench-detail.js';
+import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
@@ -32,7 +33,7 @@ const SWATCH = ['#6b8f71', '#8a9a5b', '#b08d57', '#7d8fa6', '#a37a74', '#6f9fa0'
 const TOOLS = [
   ['paint', 'Paint', 'B'], ['rect', 'Fill rect', 'R'], ['pick', 'Pick', 'I'], ['select', 'Select / move', 'V'],
   ['spawn', 'Spawn', 'S'], ['exit', 'Exit', 'E'], ['trigger', 'Trigger', 'T'], ['encounter', 'Encounters', 'N'], ['prop', 'Prop', 'P'],
-  ['npc', 'NPC', 'C'],
+  ['npc', 'NPC', 'C'], TERRAIN_TOOL,
 ];
 
 // View state survives the tab re-rendering on every structural edit.
@@ -309,6 +310,7 @@ function draw(ctx, cv) {
     g.lineTo(cx + Math.sin(a) * cs * 0.45, cy + Math.cos(a) * cs * 0.45);
     g.stroke();
   });
+  if (good) drawTerrain(g, map, pv, cs);
   if (V.drag && V.drag.rect) {
     const [c0, r0, c1, r1] = V.drag.rect;
     zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.15)', [3, 3]);
@@ -465,6 +467,7 @@ export function renderMaps(ctx, el) {
   renderPalette(ctx, mctx, side, map);
   renderSelection(ctx, mctx, side, map);
   renderDetail(ctx, mctx, side, map);
+  renderTerrain(ctx, mctx, side, map);
   renderMapAudio(ctx, mctx, side, map);
 
   function zoom(d) {
@@ -503,6 +506,9 @@ export function renderMaps(ctx, el) {
       snapshot(ctx, V.map);
       V.drag = { paint: true };
       if (setChar(map, c, r, V.brush)) { syncSize(map); mctx.changed(); }
+    } else if (t === 'sculpt') {
+      const b = cv.getBoundingClientRect();
+      V.drag = sculptDown(map, (ev.clientX - b.left) / V.cell, (ev.clientY - b.top) / V.cell);
     } else if (t === 'pick') {
       V.brush = charAt(map, c, r);
       ctx.rerender();
@@ -551,6 +557,9 @@ export function renderMaps(ctx, el) {
     if (!d || !inside) return;
     if (d.paint) {
       if (setChar(map, c, r, V.brush)) { syncSize(map); mctx.changed(); }
+    } else if (d.sculpt) {
+      const b = cv.getBoundingClientRect();
+      d.to = [(ev.clientX - b.left) / V.cell, (ev.clientY - b.top) / V.cell];
     } else if (d.rect) {
       d.rect[2] = c; d.rect[3] = r;
       redraw();
@@ -571,6 +580,11 @@ export function renderMaps(ctx, el) {
     V.drag = null;
     wrap.classList.remove('is-panning');
     if (!d) return;
+    if (d.sculpt) {
+      snapshot(ctx, V.map);
+      if (sculptUp(map, d)) ctx.changed(true);
+      return;
+    }
     if (d.rect) {
       const [c0, r0, c1, r1] = d.rect;
       const q = [Math.min(c0, c1), Math.min(r0, r1), Math.max(c0, c1), Math.max(r0, r1)];

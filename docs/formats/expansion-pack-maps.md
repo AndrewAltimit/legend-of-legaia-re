@@ -40,6 +40,7 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `fog` | The retail field fog pool over tile regions ([Fog](#fog)). |
 | `decals` | Flat textured floor polygons, one by one or by brush ([Decals](#decals)). |
 | `emitters` | Particle emitters ([Particles](#particles)). |
+| `terrain` | A sculpted floor in place of the tier grid: heights, ground materials, water, horizon ([Terrain](#terrain)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
 from the first character of the first row: column grows with world `+X`, row
@@ -330,6 +331,8 @@ the sections it names, with or without a disc:
 | A `{ scene, object = N }` mesh, with a disc: `N` past that scene's pack | error |
 | Decals: `tile` / `rect` on the map, `sides` `3..=16`, size `1..=1024`, density `0..=8`; a decal placing nothing | error / warning |
 | Emitters: rectangle on the map, at most 512 particles, life at least 1 frame | error |
+| Terrain: resolution `1`, `2` or `4`; skirt at most 12; knobs in range; shapes' radii positive and rectangles on the map; a material, cliff or water with no cells; a character two materials paint | error |
+| Terrain: a spawn or NPC tile too steep or too deep to stand on; an exit with no open tile | warning |
 
 ## Exits, triggers and encounter zones
 
@@ -877,6 +880,128 @@ spark, a leaf, a drop) drawn at load into free VRAM
 STP bit (the glowing kinds and smoke blend additively, ABR 1)
 and one without (leaves draw opaque). The packet colour tints them.
 
+## Terrain
+
+```toml
+[terrain]
+resolution = 4          # vertices a tile side: 1, 2 or 4 (a vertex every 32 units)
+smooth = 2              # box-blur passes over the tier base
+max_step = 40           # height range a 64 x 64 sub-cell may span and stay walkable
+skirt = 8               # tiles of terrain drawn past each edge
+seed = 4120
+variation = 0.2         # macro brightness noise over the vertex colours
+blend = 0.55            # width of the dithered boundary between materials
+sun = [150.0, 42.0]     # baked sun: azimuth, elevation (degrees)
+shading = 0.6
+shapes = [
+  { kind = "ridge", from = [14.0, 9.0], to = [27.0, 6.5], radius = 2.6, height = 30 },
+  { kind = "plateau", rect = [40, 18, 41, 33], height = 22, edge = 0.18 },
+  { kind = "flatten", at = [9.5, 9.5], radius = 2.6 },          # no height: level to the mean
+  { kind = "noise", rect = [1, 5, 62, 24], amplitude = 5, scale = 0.7 },
+]
+materials = [
+  { name = "sand", chars = ".", tint = [134, 130, 122], cells = [{ tpage = 12, clut = 32005, tile = 3 }] },
+  { name = "lane", chars = "d", lift = -4, cells = [{ tpage = 12, clut = 32004, tile = 4 }] },
+]
+cliff = { slope = 0.95, cells = [{ tpage = 12, clut = 32006, tile = 6 }] }
+water = { level = -10, cells = [{ tpage = 9, clut = 31880, tile = 56 }], depth = 56, foam = 16, wade = 5, surf = 150 }
+sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4 }
+```
+
+A map with a `[terrain]` table floors on a **heightfield** instead of the
+tier grid ([`legaia_expansion_format::terrain`](../../crates/expansion-format/src/terrain.rs)):
+`resolution` vertices a tile side over the whole map plus its `skirt`.
+The tiers are its base - each tile's `floor_heights` rung (plus its
+material's `lift`, and a per-tile jostle of up to its `roughness`) at the
+tile centre, bilinear between centres, blurred `smooth` times - and the
+`shapes` sculpt it in order:
+
+| Shape | Effect |
+|---|---|
+| `raise` | Adds `height` (negative lowers) under a round brush, a cosine falloff to `radius` tiles. |
+| `ridge` | `raise` along a segment `from` - `to`: a dune, a ridge, a ditch. |
+| `plateau` | Sets the tiles of `rect` to `height`, an `edge` tiles wide slope round it, `roughness` tiles of noise on the edge line. |
+| `ramp` | A straight slope from `height[0]` at `from` to `height[1]` at `to`, `radius` tiles either side. |
+| `flatten` | Pulls the ground under a brush toward `height`, or with no `height` toward its mean there (a house pad on a hillside). |
+| `smooth` | Blurs the ground under a brush. |
+| `noise` | Fractal noise, `amplitude` either way, features `scale` tiles across, over `rect` or the whole map. |
+
+Positions are map-local tile coordinates as floats (`[2.5, 3.5]` is the
+centre of tile `[2, 3]`); heights are world units, up positive. The whole
+build is a pure function of the file: the same heights on every host,
+with or without a disc.
+
+### Walking the terrain
+
+The floor sampler (`World::sample_field_floor_height`, the `FUN_80019278`
+port, and its camera-ladder sibling) answers the terrain's surface on a
+terrain map (`ActiveMap::terrain_floor_at`): `Heightfield::sample_world`
+interpolates over the triangle the mesh draws there - a quad's corners
+`a b / c d` split along `b`-`c`, the PSX quad's two triangles - so the
+player stands on the drawn ground to the unit. The map writes every
+collision tier `0` and an all-zero ladder (`floor_lut`), so placed props,
+decoration cells and the hosts' floor reads stand at the heights the map
+gives them: a prop's record carries the surface under it in its `+0x02`
+lift, a decoration bakes it into its vertices, NPCs, lamps and emitters
+sample the floor at run time. A standable top still wins where it stands
+higher.
+
+Steepness is collision: every `64 x 64` sub-cell whose heights span more
+than `max_step` is a wall quarter, and so is one whose centre lies more
+than `water.wade` under the water (`MapDef::terrain_walls`, OR-ed into the
+style's own quarters). A gentle slope walks; a cliff face and deep water
+block, for the retail walk and action movement alike. The validator warns
+of a spawn or NPC the terrain walls in and an exit it closes.
+
+### Drawing the terrain
+
+The terrain draws through the decoration-cell path both hosts run
+([`expansion_map::terrain`](../../crates/engine-scene/src/expansion_map/terrain.rs)):
+each map tile gets a mesh of its quads (an edge tile also carries the
+skirt beyond it), baked with the tile's decorations into its cell, so no
+host draws anything new. A tile's style draws no flat ground; its `wall`
+or `mesh` ground is lifted onto the tile's lowest corner and baked in
+too. On a map with more tiles than free records, the cells are chunked as
+any decorated map's are; a cell whose anchor holds a placed prop anchors
+on another of its tiles, so the ground under a prop still draws.
+
+| Layer | What draws |
+|---|---|
+| Ground | `GT3` triangles, each quad textured with its material. |
+| Water | A flat textured surface at `water.level` over every quad that dips below it. The opaque surface meets the ground in the depth buffer, so the shoreline follows the sculpted slope, not the quad grid. |
+| Foam | An additive band over the shallows, brightest at the waterline. |
+| Horizon | `sky`: a ring of wall round the map, `radius` tiles past its half-diagonal, textured with a page of the base scene's VRAM (a retail sky page) repeated round it mirrored. |
+
+**Materials.** A material paints the tile characters in `chars` with one
+of its `cells` (atlas cells of the base scene's VRAM, as a `texture`
+ground names them; cells may mix palettes), picked per tile; a tile whose
+character no material names paints with its style's `ground` texture. A
+quad takes the material with the highest weight at its centre - the four
+nearest tile centres' materials, bilinear - after a noise of `blend`
+width, so a boundary is a dithered, organic edge about a tile wide rather
+than the tile grid's step. Each tile turns and mirrors its cell one of
+eight ways (`rotate`, on by default) against visible repeats. A quad
+steeper than `cliff.slope` (rise over run) takes the cliff material.
+
+**Vertex colours** carry what a blend would: each vertex's colour is the
+material tints (`tint`, `128` = the texel as is) blended by the same
+weights, times a low-frequency brightness noise (`variation`), times the
+baked sun (`sun`, `shading`), so a slope facing away darkens with lighting
+off. That is the retail field's own law - `texel * colour / 128` through
+the depth cue, no light source - and both render modes draw it; enhanced
+lighting lights it like any field mesh.
+
+**Water** is coloured by depth, `shallow` to `deep` over `depth` units.
+Animate its texture with `[[materials]]` (`scroll` or `cycle` on the
+water cell). The foam band is the engine's own texture (`terrain::foam_sheet`,
+written into free VRAM at load: a `4 x 4` block and one STP palette per
+depth band), blended additively, its vertex colour `foam_color` fading to
+black away from the line. Its four depth bands brighten in turn, deepest
+first, every `surf` frames (`terrain::surf_level`, written by
+`World::step_expansion_materials`): a crest rolling in to the beach.
+
+The Rebirth pack's Isles beach, village and grotto are built on it.
+
 ## How large a map can be
 
 One map is one field grid: at most `120 x 120` tiles of `128` world units
@@ -890,6 +1015,10 @@ maps joined by `exits` with `to = { kind = "map" }`; a map exit enters at
 once, with no streaming.
 
 ## Gaps
+- **Terrain.** A decal lies flat at the surface height of its centre, so
+  on a slope it cuts in or floats; place decals on level ground. The water
+  surface is flat (its waves are texture and foam animation, not vertex
+  motion). The sculpt brush has no raster heightmap import.
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
   preset applies on a host's direct entry (`--map`, the play page's

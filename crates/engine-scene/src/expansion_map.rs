@@ -48,6 +48,7 @@ use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 
 pub mod detail;
 pub mod gltf;
+pub mod terrain;
 pub mod tmd_ops;
 pub mod vram_alloc;
 
@@ -314,14 +315,63 @@ pub fn build_field_image(
             img[OBJECT_GRID_OFFSET..n].copy_from_slice(&map[OBJECT_GRID_OFFSET..n]);
         }
     }
-    write_collision_grid(&mut img, def, grid);
+    let surface = def.terrain_surface()?;
+    let terrain_walls = match &surface {
+        Some(_) => Some(def.terrain_walls(grid)?),
+        None => None,
+    };
+    write_collision_grid(&mut img, def, grid, terrain_walls.as_deref());
     let mut added = Added {
         len: base.geometry_len,
         meshes: Vec::new(),
     };
-    let (mut free, covered_cells, anchors) =
-        write_objects(&mut img, def, grid, base, keep, &mut added)?;
-    let (dropped, chunk) = write_decorations(&mut img, def, grid, base, &mut added, &mut free)?;
+    let mut cell_items = Vec::new();
+    let (mut free, covered_cells, anchors) = write_objects(
+        &mut img,
+        def,
+        grid,
+        base,
+        keep,
+        &mut added,
+        surface.as_ref(),
+        &mut cell_items,
+    )?;
+    if let Some(s) = &surface {
+        let foam = base.library.and_then(|l| l.foam_sheet.as_ref());
+        let no_stp = Default::default();
+        let stp = base.library.map_or(&no_stp, |l| &l.stp_cluts);
+        for (tile, raw) in terrain::tile_meshes(def, grid, s, foam, stp)? {
+            cell_items.push(Item {
+                tile,
+                src: ItemSrc::Raw(raw),
+                offset: [0.0; 3],
+                rotation: [0.0; 3],
+                scale: 1.0,
+                lift: Some(0.0),
+            });
+        }
+        if let Some(sky) = def.terrain.as_ref().and_then(|t| t.sky.as_ref()) {
+            let (tile, raw) = terrain::sky_mesh(def, grid, sky)?;
+            cell_items.push(Item {
+                tile,
+                src: ItemSrc::Raw(raw),
+                offset: [0.0; 3],
+                rotation: [0.0; 3],
+                scale: 1.0,
+                lift: Some(0.0),
+            });
+        }
+    }
+    let (dropped, chunk) = write_decorations(
+        &mut img,
+        def,
+        grid,
+        base,
+        &mut added,
+        &mut free,
+        surface.as_ref(),
+        cell_items,
+    )?;
     write_empty_trigger_block(&mut img);
     Ok(FieldImage {
         image: img,
@@ -336,9 +386,21 @@ pub fn build_field_image(
 /// The `+0x4000` grid. Everything off the map is a wall; a void tile takes
 /// the tier of a floor neighbour above or left of it, so the ground's corner
 /// heights stay level along the map's edge.
-fn write_collision_grid(img: &mut [u8], def: &MapDef, grid: &TileGrid) {
+///
+/// With a terrain (`terrain_walls`, the walls it adds per tile) every tier
+/// is `0` - the terrain's heightfield is the floor - and each tile's wall
+/// quarters take the terrain's too.
+fn write_collision_grid(
+    img: &mut [u8],
+    def: &MapDef,
+    grid: &TileGrid,
+    terrain_walls: Option<&[u8]>,
+) {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let tier = |c: usize, r: usize| -> u8 {
+        if terrain_walls.is_some() {
+            return 0;
+        }
         let t = grid.get(c, r).expect("in range");
         if !t.void {
             return t.tier;
@@ -357,7 +419,8 @@ fn write_collision_grid(img: &mut [u8], def: &MapDef, grid: &TileGrid) {
         for col in 0..grid.width {
             let at = |c: usize, r: usize| (oy + r) * GRID_DIM + ox + c;
             cg[at(col, row)] = (cg[at(col, row)] & 0xF0) | tier(col, row);
-            let walls = grid.get(col, row).expect("in range").walls;
+            let walls = grid.get(col, row).expect("in range").walls
+                | terrain_walls.map_or(0, |w| w[row * grid.width + col]);
             let below = at(col, row + 1);
             cg[below] = (walls << 4) | (cg[below] & 0x0F);
         }
@@ -484,6 +547,12 @@ fn mesh_index(
 /// and props. Adds the generated wall boxes and carried-in prop meshes to
 /// `added`; returns the record slots still free and the tiles whose cell
 /// mesh a prop replaced ([`FieldImage::covered_cells`]).
+///
+/// With a terrain (`surface`) no tile carries a ground texture (the
+/// terrain's meshes are the ground), and a tile's wall or mesh ground is
+/// pushed to `cell_items` instead, lifted onto the terrain, for the
+/// decoration bake to fold into the tile's cell.
+#[allow(clippy::too_many_arguments)]
 fn write_objects(
     img: &mut [u8],
     def: &MapDef,
@@ -491,6 +560,8 @@ fn write_objects(
     base: BaseInputs<'_>,
     keep: bool,
     added: &mut Added,
+    surface: Option<&legaia_expansion_format::terrain::TerrainSurface>,
+    cell_items: &mut Vec<Item>,
 ) -> Result<WrittenObjects> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
@@ -552,6 +623,42 @@ fn write_objects(
             let Some(style) = def.style(c) else {
                 continue;
             };
+            if let Some(s) = surface {
+                // On a terrain the wall or mesh ground stands on the
+                // tile's lowest corner, baked into the tile's cell.
+                let (cx, cz) = def.tile_centre(col as u16, row as u16);
+                let low = [(-64, -64), (63, -64), (-64, 63), (63, 63)]
+                    .iter()
+                    .filter_map(|(dx, dz)| s.field.sample_world(cx + dx, cz + dz))
+                    .min()
+                    .unwrap_or(0);
+                let src = match (&style.wall, &style.ground) {
+                    (
+                        Some(WallMesh::Box {
+                            height,
+                            tpage,
+                            clut,
+                            tile,
+                        }),
+                        _,
+                    ) => Some(ItemSrc::Raw(wall_box_tmd(*height, *tpage, *clut, *tile)?)),
+                    (Some(WallMesh::Mesh { index }), _) | (None, Some(Ground::Mesh { index })) => {
+                        Some(ItemSrc::Mesh(PropMesh::Object { object: *index }))
+                    }
+                    _ => None,
+                };
+                if let Some(src) = src {
+                    cell_items.push(Item {
+                        tile: [col as u16, row as u16],
+                        src,
+                        offset: [0.0; 3],
+                        rotation: [0.0; 3],
+                        scale: 1.0,
+                        lift: Some(low as f32),
+                    });
+                }
+                continue;
+            }
             let tex = match &style.ground {
                 Some(g @ (Ground::Texture { .. } | Ground::BaseCell { .. })) => ground_texture(g)?,
                 _ => None,
@@ -703,12 +810,22 @@ fn write_objects(
                 .map_or(0, |t| ladder[usize::from(t.tier)])
         };
         let shift = |v: i16, d: i32| (i32::from(v) + d).clamp(-32768, 32767) as i16;
+        // On a terrain the prop stands on the surface under it.
+        let lift = match surface {
+            Some(s) => {
+                let (cx, cz) = def.tile_centre(col, row);
+                s.field
+                    .sample_world(
+                        cx + i32::from(prop.offset[0]),
+                        cz + i32::from(prop.offset[2]),
+                    )
+                    .unwrap_or(0)
+            }
+            None => i32::from(tier(col, row)) - i32::from(tier(anchor.0, anchor.1)),
+        };
         let offset = [
             shift(prop.offset[0], (i32::from(col) - i32::from(anchor.0)) * 128),
-            shift(
-                prop.offset[1],
-                i32::from(tier(col, row)) - i32::from(tier(anchor.0, anchor.1)),
-            ),
+            shift(prop.offset[1], lift),
             shift(prop.offset[2], (i32::from(row) - i32::from(anchor.1)) * 128),
         ];
         let s = alloc("a prop")?;
@@ -747,6 +864,9 @@ struct Item {
     offset: [f32; 3],
     rotation: [f32; 3],
     scale: f32,
+    /// The floor the part stands on, world units up from tier `0`: `None`
+    /// takes its tile's tier (or, on a terrain, the surface under it).
+    lift: Option<f32>,
 }
 
 enum ItemSrc {
@@ -841,6 +961,13 @@ pub fn decal_tmd(d: &legaia_expansion_format::map_detail::Decal) -> Result<Vec<u
 /// A placed prop's tile keeps its prop: its decorations are dropped (the
 /// cell names one record, and a prop's is placed). Returns how many were
 /// dropped and the cell size used.
+///
+/// On a terrain map (`surface`) the terrain's own tile meshes and the
+/// walls lifted onto it (`cell_items`) bake first, every decoration stands
+/// on the surface under it, and a cell whose anchor tile holds a placed
+/// prop anchors on another tile of the cell (or a neighbouring cell)
+/// instead of dropping its parts: the ground must draw.
+#[allow(clippy::too_many_arguments)]
 fn write_decorations(
     img: &mut [u8],
     def: &MapDef,
@@ -848,20 +975,20 @@ fn write_decorations(
     base: BaseInputs<'_>,
     added: &mut Added,
     free: &mut Vec<usize>,
+    surface: Option<&legaia_expansion_format::terrain::TerrainSurface>,
+    cell_items: Vec<Item>,
 ) -> Result<(usize, usize)> {
     use legaia_scene_formats::field_objects::FLAG_PLACED;
     // Decorations name their meshes; decals are meshes built here.
-    let mut decos: Vec<Item> = def
-        .decorations()?
-        .into_iter()
-        .map(|d| Item {
-            tile: d.tile,
-            src: ItemSrc::Mesh(d.mesh),
-            offset: d.offset,
-            rotation: d.rotation,
-            scale: d.scale,
-        })
-        .collect();
+    let mut decos: Vec<Item> = cell_items;
+    decos.extend(def.decorations()?.into_iter().map(|d| Item {
+        tile: d.tile,
+        src: ItemSrc::Mesh(d.mesh),
+        offset: d.offset,
+        rotation: d.rotation,
+        scale: d.scale,
+        lift: None,
+    }));
     for d in def.decals()? {
         decos.push(Item {
             tile: d.tile,
@@ -869,6 +996,7 @@ fn write_decorations(
             offset: d.offset,
             rotation: [0.0, d.yaw, 0.0],
             scale: 1.0,
+            lift: None,
         });
     }
     if decos.is_empty() {
@@ -880,10 +1008,41 @@ fn write_decorations(
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     let ladder = def.floor_ladder().unwrap_or([0; FLOOR_TIERS]);
     let tier_height = |c: u16, r: u16| -> f32 {
+        if surface.is_some() {
+            return 0.0;
+        }
         let t = grid
             .get(usize::from(c), usize::from(r))
             .map_or(0, |t| usize::from(t.tier));
         f32::from(ladder[t])
+    };
+    // The floor an item stands on: its own lift, the terrain under it, or
+    // its tile's tier.
+    let item_floor = |d: &Item| -> f32 {
+        if let Some(l) = d.lift {
+            return l;
+        }
+        match surface {
+            Some(s) => {
+                let (cx, cz) = def.tile_centre(d.tile[0], d.tile[1]);
+                s.field
+                    .sample_world(
+                        cx + d.offset[0].round() as i32,
+                        cz + d.offset[2].round() as i32,
+                    )
+                    .unwrap_or(0) as f32
+            }
+            None => tier_height(d.tile[0], d.tile[1]),
+        }
+    };
+    let placed_at = |img: &[u8], c: u16, r: u16| -> bool {
+        let (gc, gr) = grid_tile(def, c, r);
+        let o = cell_off(gc, gr);
+        let idx = usize::from(u16::from_le_bytes([img[o], img[o + 1]]) & OBJECT_INDEX_MASK);
+        idx != 0 && {
+            let rec = &img[idx * OBJECT_RECORD_STRIDE..];
+            u16::from_le_bytes([rec[0x12], rec[0x13]]) & FLAG_PLACED != 0
+        }
     };
     // A placed prop's anchor cell names its placed record; decorations
     // there are left out below (`FLAG_PLACED`).
@@ -913,9 +1072,61 @@ fn write_decorations(
             .or_default()
             .push(d);
     }
-    for list in groups.values() {
+    // On a terrain a cell anchors on any of its tiles but a placed prop's;
+    // a cell with none joins the nearest cell that has one.
+    let mut anchors: std::collections::BTreeMap<[u16; 2], [u16; 2]> = Default::default();
+    if surface.is_some() {
+        let free_tile = |key: [u16; 2]| -> Option<[u16; 2]> {
+            let (c0, r0) = (key[0] * chunk, key[1] * chunk);
+            let mid = (f32::from(chunk) - 1.0) / 2.0;
+            (0..chunk)
+                .flat_map(|dr| (0..chunk).map(move |dc| [c0 + dc, r0 + dr]))
+                .filter(|t| usize::from(t[0]) < grid.width && usize::from(t[1]) < grid.height)
+                .filter(|t| !placed_at(img, t[0], t[1]))
+                .min_by(|a, b| {
+                    let d = |t: &[u16; 2]| {
+                        (f32::from(t[0] - c0) - mid).powi(2) + (f32::from(t[1] - r0) - mid).powi(2)
+                    };
+                    d(a).total_cmp(&d(b)).then(a.cmp(b))
+                })
+        };
+        let keys: Vec<[u16; 2]> = groups.keys().copied().collect();
+        for key in keys {
+            if let Some(t) = free_tile(key) {
+                anchors.insert(key, t);
+                continue;
+            }
+            let list = groups.remove(&key).expect("a key of the map");
+            let mut target = None;
+            'search: for ring in 1..=3i32 {
+                for dr in -ring..=ring {
+                    for dc in -ring..=ring {
+                        let (c, r) = (i32::from(key[0]) + dc, i32::from(key[1]) + dr);
+                        if c < 0 || r < 0 {
+                            continue;
+                        }
+                        let k = [c as u16, r as u16];
+                        if let Some(t) = free_tile(k) {
+                            target = Some((k, t));
+                            break 'search;
+                        }
+                    }
+                }
+            }
+            match target {
+                Some((k, t)) => {
+                    anchors.insert(k, t);
+                    groups.entry(k).or_default().extend(list);
+                }
+                None => dropped += list.len(),
+            }
+        }
+    }
+    for (key, list) in &groups {
         // The anchor: the cell's decorated tile nearest the cell's centre.
-        let anchor = if chunk == 1 {
+        let anchor = if let Some(&t) = anchors.get(key) {
+            t
+        } else if chunk == 1 {
             list[0].tile
         } else {
             let cx = f32::from(list[0].tile[0] / chunk * chunk) + f32::from(chunk) / 2.0 - 0.5;
@@ -969,7 +1180,11 @@ fn write_decorations(
             let inv: tmd_ops::Mat3 = std::array::from_fn(|i| std::array::from_fn(|j| r[j][i]));
             (inv, rec_off)
         });
-        let h0 = tier_height(anchor[0], anchor[1]);
+        let h0 = if surface.is_some() {
+            0.0
+        } else {
+            tier_height(anchor[0], anchor[1])
+        };
         // (bytes, offset, rotation, scale) of each decoration.
         type Part = (Vec<u8>, [f32; 3], [f32; 3], f32);
         let mut owned: Vec<Part> = Vec::new();
@@ -982,7 +1197,7 @@ fn write_decorations(
             };
             let dx = (f32::from(d.tile[0]) - f32::from(anchor[0])) * 128.0;
             let dz = (f32::from(d.tile[1]) - f32::from(anchor[1])) * 128.0;
-            let lift = tier_height(d.tile[0], d.tile[1]) - h0;
+            let lift = item_floor(d) - h0;
             // Map frame (y up) to the retail field frame (y down).
             owned.push((
                 raw.to_vec(),
@@ -1220,7 +1435,14 @@ pub fn base_scenery(
 
 /// The map's floor ladder in the MAN convention, falling back to `base_lut`
 /// (the base scene's own) when the map names none.
+///
+/// A map with a terrain floors on its heightfield instead: every tier is
+/// written `0`, and the ladder is all zero so the decoration cells and
+/// placed props stand at the heights the terrain gives them.
 pub fn floor_lut(def: &MapDef, base_lut: Option<[i16; FLOOR_TIERS]>) -> [i16; FLOOR_TIERS] {
+    if def.terrain.is_some() {
+        return [0; FLOOR_TIERS];
+    }
     def.floor_ladder().or(base_lut).unwrap_or([0; FLOOR_TIERS])
 }
 

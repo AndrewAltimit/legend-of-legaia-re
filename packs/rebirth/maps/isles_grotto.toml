@@ -10,7 +10,8 @@ base = { scene = { kind = "scene", name = "cave01" }, geometry = "none" }
 # Sound-test track 20.
 bgm = { kind = "bgm", id = 20 }
 camera = "far"
-floor_heights = [0, 16]
+# Tiers: the cavern floor, the islet, the rock, the pool's bed.
+floor_heights = [0, 20, 340, -110]
 
 [tiles]
 origin = [4, 4]
@@ -54,10 +55,10 @@ rows = [
 ]
 
 [tiles.legend]
-"#" = { label = "cave rock", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32454, tile = 41 } }
+"#" = { label = "cave rock", walls = "all", height = 2, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
 "." = { label = "cave floor", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
 "," = { label = "cave floor (wet)", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
-"~" = { label = "pool", walls = "all", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 40 } }
+"~" = { label = "pool", walls = "all", height = 3, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 40 } }
 "i" = { label = "islet", height = 1, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
 "b" = { label = "stepping stones", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
 "^" = { label = "stair up", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
@@ -171,7 +172,7 @@ seed = 4413
 
 [[materials]]
 kind = "scroll"
-cell = { tpage = 11, clut = 32454, tile = 40 }
+cell = { tpage = 11, clut = 32454, tile = 1 }
 dx = 1
 dy = 1
 period = 10
@@ -188,3 +189,57 @@ lamps = [
 regions = [
   { rect = [14, 14, 30, 28], angle = 0.0, spread = 60.0, speed = 6 },
 ]
+
+# The ground: a rock floor that heaves and dips, walls that rise as lumpy
+# stone instead of boxes, a stair climbing to the gate, and the pool -
+# a bowl under still, glowing water, crossed by a causeway of stepping
+# stones to the islet.
+[terrain]
+resolution = 4
+smooth = 2
+max_step = 40
+skirt = 4
+seed = 4420
+variation = 0.3
+blend = 0.6
+sun = [200.0, 55.0]
+shading = 0.7
+shapes = [
+  { kind = "noise", amplitude = 6, scale = 1.2, seed = 1 },
+  { kind = "noise", amplitude = 9, scale = 4.0, seed = 2 },
+  { kind = "ramp", from = [20.5, 4.0], to = [20.5, 0.0], radius = 2.5, height = [0, 70] },
+  { kind = "noise", rect = [15, 14, 29, 28], amplitude = 30, scale = 1.4, seed = 3 },
+  { kind = "plateau", rect = [14, 21, 20, 21], height = -24, edge = 0.35 },
+  { kind = "raise", at = [14.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "raise", at = [15.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "raise", at = [16.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "raise", at = [17.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "raise", at = [18.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "raise", at = [19.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "raise", at = [20.5, 21.5], radius = 0.55, height = 22 },
+  { kind = "plateau", rect = [21, 20, 23, 22], height = 6, edge = 0.5, roughness = 0.3 },
+]
+materials = [
+  { name = "rock floor", chars = ".", tint = [100, 108, 156], cells = [
+    { tpage = 10, clut = 32580, tile = 4 }, { tpage = 10, clut = 32580, tile = 5 }, { tpage = 10, clut = 32580, tile = 8 }, { tpage = 10, clut = 32580, tile = 9 }, { tpage = 10, clut = 32580, tile = 12 }, { tpage = 10, clut = 32580, tile = 13 },
+  ] },
+  { name = "wet rock", chars = ",^", tint = [84, 96, 142], cells = [
+    { tpage = 10, clut = 32580, tile = 40 }, { tpage = 10, clut = 32580, tile = 41 }, { tpage = 10, clut = 32580, tile = 43 }, { tpage = 10, clut = 32580, tile = 44 },
+  ] },
+  { name = "cave wall", chars = "#", roughness = 70, tint = [92, 96, 124], cells = [
+    { tpage = 10, clut = 32585, tile = 0 }, { tpage = 10, clut = 32585, tile = 1 }, { tpage = 10, clut = 32585, tile = 24 }, { tpage = 10, clut = 32585, tile = 25 }, { tpage = 10, clut = 32585, tile = 26 },
+  ] },
+  { name = "pool bed", chars = "~", tint = [70, 92, 140], cells = [
+    { tpage = 10, clut = 32580, tile = 16 }, { tpage = 10, clut = 32580, tile = 17 }, { tpage = 10, clut = 32580, tile = 18 },
+  ] },
+  { name = "islet", chars = "i", tint = [126, 126, 150], cells = [
+    { tpage = 10, clut = 32585, tile = 27 }, { tpage = 10, clut = 32585, tile = 28 }, { tpage = 10, clut = 32585, tile = 29 }, { tpage = 10, clut = 32585, tile = 30 },
+  ] },
+  { name = "stepping stones", chars = "b", tint = [140, 144, 170], cells = [
+    { tpage = 10, clut = 32580, tile = 44 }, { tpage = 10, clut = 32580, tile = 45 },
+  ] },
+]
+cliff = { slope = 1.0, tint = [88, 92, 120], cells = [
+  { tpage = 10, clut = 32585, tile = 0 }, { tpage = 10, clut = 32585, tile = 1 }, { tpage = 10, clut = 32585, tile = 24 }, { tpage = 10, clut = 32585, tile = 25 }, { tpage = 10, clut = 32585, tile = 26 },
+] }
+water = { level = -22, cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [60, 116, 210], deep = [24, 44, 130], depth = 60, foam = 18, foam_color = [60, 130, 170], wade = 6 }

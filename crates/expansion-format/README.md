@@ -18,7 +18,7 @@ shareable language pack follows. The format reference is
 | `refs` | `DiscRef` coordinates, their disc-free range checks, the `DiscResolver` trait |
 | `bundle` | The deterministic `.lxpack` single-file archive |
 | `validate` | The validator, the `SectionRules` extension trait, the no-disc-bytes rule |
-| `battle`, `progression`, `quest`, `dialog`, `cards`, `cutscene`, `modes`, `items`, `arts`, `spells`, `map` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by; `arts` resolves a segment's retail art against `legaia_art`'s per-character tables) |
+| `battle`, `progression`, `quest`, `dialog`, `cards`, `cutscene`, `modes`, `items`, `arts`, `spells`, `map`, `terrain` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by; `arts` resolves a segment's retail art against `legaia_art`'s per-character tables) |
 | `audio`, `audio_clip` | `audio.toml` and map `[audio]` (`MusicRef`, `SoundRef`, tracks, sounds, zones, ambient sources), and the one WAV / Ogg Vorbis decoder and probe (`lewton` for Vorbis) the validator and both hosts run ([`expansion-pack-audio.md`](../../docs/formats/expansion-pack-audio.md)) |
 
 The core API takes and returns bytes, so it builds for `wasm32`; only

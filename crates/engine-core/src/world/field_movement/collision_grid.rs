@@ -258,7 +258,12 @@ impl World {
     /// `y` raised to a pack map's standable top under `(x, z)` when the top
     /// stands above it (`World::expansion_floor_top_y`); `y` itself off
     /// every top and with no pack map.
+    ///
+    /// On a pack map with a terrain the floor is the terrain's surface
+    /// (`World::expansion_terrain_floor_y`) in place of the tier grid's,
+    /// which the map writes all zero.
     fn with_expansion_floor_top(&self, y: i32, x: i32, z: i32) -> i32 {
+        let y = self.expansion_terrain_floor_y(x, z).unwrap_or(y);
         match self.expansion_floor_top_y(x, z) {
             Some(top) => y.min(top),
             None => y,

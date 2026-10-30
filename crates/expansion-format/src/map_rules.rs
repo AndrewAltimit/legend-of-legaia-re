@@ -62,6 +62,7 @@ impl SectionRules for MapDef {
         check_encounters(self, cx);
         check_props(self, cx, base.as_deref());
         crate::map_detail_rules::check_detail(self, cx, base.as_deref(), grid.as_ref());
+        crate::terrain_rules::check_terrain(self, cx, grid.as_ref());
         check_npcs(self, cx, base.as_deref(), grid.as_ref());
         check_entrances(self, cx);
         check_enter_cutscenes(self, cx);

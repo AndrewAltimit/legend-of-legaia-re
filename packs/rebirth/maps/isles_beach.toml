@@ -12,7 +12,9 @@ base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
 # Sound-test track 6, "Rim Elm" - the sea wind over the old village tune.
 bgm = { kind = "bgm", id = 6 }
 camera = "far"
-floor_heights = [0, 24]
+# Tiers: sand, the dune shelf, the cliff top, the seabed, the outcrops.
+# The terrain below smooths them into slopes and sculpts the rest.
+floor_heights = [0, 24, 300, -70, 34]
 
 [tiles]
 origin = [4, 4]
@@ -56,14 +58,14 @@ rows = [
 ]
 
 [tiles.legend]
-"#" = { label = "cliff", walls = "all", wall = { kind = "box", height = 288, tpage = 12, clut = 32006, tile = 36 } }
-"r" = { label = "rock outcrop", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 13 } }
+"#" = { label = "cliff", walls = "all", height = 2, ground = { kind = "texture", tpage = 12, clut = 32006, tile = 36 } }
+"r" = { label = "rock outcrop", walls = "all", height = 4, ground = { kind = "texture", tpage = 12, clut = 32005, tile = 13 } }
 "g" = { label = "dune grass", height = 1, ground = { kind = "texture", tpage = 12, clut = 32000, tile = 9 } }
 "G" = { label = "dune grass (thick)", height = 1, ground = { kind = "texture", tpage = 12, clut = 32001, tile = 1 } }
 "." = { label = "sand", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 38 } }
 "s" = { label = "sand (pale)", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 30 } }
 "," = { label = "wet sand", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
-"~" = { label = "sea", walls = "all", ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
+"~" = { label = "sea", walls = "all", height = 3, ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
 "j" = { label = "jetty", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
 "p" = { label = "landing", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
 "d" = { label = "dune path", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
@@ -282,3 +284,64 @@ lamps = [
 regions = [
   { rect = [2, 24, 62, 32], angle = 0.0, spread = 30.0, speed = 10 },
 ]
+
+# The ground: the tiers above smoothed into a sloping shore, a cliff line
+# with rock faces, wind-cut dunes, a raised landing and pier, and the sea
+# over a seabed that shelves away from the surf.
+[terrain]
+resolution = 4
+smooth = 2
+max_step = 44
+skirt = 5
+seed = 4120
+variation = 0.22
+blend = 0.75
+soften = 0.3
+sun = [150.0, 42.0]
+shading = 0.6
+shapes = [
+  { kind = "noise", rect = [0, 0, 63, 4], amplitude = 60, scale = 1.6, seed = 1 },
+  { kind = "ridge", from = [6.0, 9.5], to = [15.0, 8.0], radius = 2.2, height = 18 },
+  { kind = "ridge", from = [14.0, 9.0], to = [27.0, 6.5], radius = 2.6, height = 30 },
+  { kind = "ridge", from = [31.0, 7.0], to = [41.0, 5.5], radius = 2.0, height = 20 },
+  { kind = "ridge", from = [43.0, 6.0], to = [53.0, 4.5], radius = 2.4, height = 26 },
+  { kind = "ridge", from = [55.0, 9.0], to = [62.0, 7.0], radius = 2.0, height = 18 },
+  { kind = "raise", at = [22.0, 16.0], radius = 5.0, height = 14 },
+  { kind = "raise", at = [50.0, 18.0], radius = 6.0, height = 12 },
+  { kind = "noise", rect = [1, 5, 62, 24], amplitude = 5, scale = 0.7, octaves = 2, seed = 2 },
+  { kind = "noise", amplitude = 9, scale = 5.0, seed = 3 },
+  { kind = "plateau", rect = [1, 14, 5, 19], height = 26, edge = 0.4 },
+  { kind = "plateau", rect = [40, 18, 41, 33], height = 22, edge = 0.18 },
+  { kind = "plateau", rect = [38, 31, 43, 32], height = 22, edge = 0.18 },
+  { kind = "flatten", at = [60.5, 4.5], radius = 3.0, height = 24 },
+  { kind = "flatten", at = [3.5, 16.5], radius = 2.0, height = 26 },
+]
+materials = [
+  { name = "sand", chars = ".r", tint = [136, 132, 124], cells = [
+    { tpage = 12, clut = 32005, tile = 3 }, { tpage = 12, clut = 32005, tile = 5 }, { tpage = 12, clut = 32005, tile = 19 }, { tpage = 12, clut = 32005, tile = 21 }, { tpage = 12, clut = 32005, tile = 27 }, { tpage = 12, clut = 32005, tile = 28 },
+  ] },
+  { name = "pale sand", chars = "s", tint = [90, 88, 86], cells = [
+    { tpage = 12, clut = 32005, tile = 30 }, { tpage = 12, clut = 32005, tile = 31 },
+  ] },
+  { name = "wet sand", chars = ",~", tint = [104, 106, 116], cells = [
+    { tpage = 12, clut = 32008, tile = 3 }, { tpage = 12, clut = 32008, tile = 5 }, { tpage = 12, clut = 32008, tile = 11 }, { tpage = 12, clut = 32008, tile = 19 }, { tpage = 12, clut = 32008, tile = 21 }, { tpage = 12, clut = 32008, tile = 48 },
+  ] },
+  { name = "dune grass", chars = "g", tint = [130, 134, 118], cells = [
+    { tpage = 12, clut = 32000, tile = 3 }, { tpage = 12, clut = 32000, tile = 4 }, { tpage = 12, clut = 32000, tile = 5 }, { tpage = 12, clut = 32000, tile = 11 }, { tpage = 12, clut = 32000, tile = 12 }, { tpage = 12, clut = 32000, tile = 13 }, { tpage = 12, clut = 32000, tile = 19 }, { tpage = 12, clut = 32000, tile = 20 }, { tpage = 12, clut = 32000, tile = 21 },
+  ] },
+  { name = "thick grass", chars = "G", tint = [130, 140, 118], cells = [
+    { tpage = 12, clut = 32001, tile = 3 }, { tpage = 12, clut = 32001, tile = 4 }, { tpage = 12, clut = 32001, tile = 5 }, { tpage = 12, clut = 32001, tile = 11 }, { tpage = 12, clut = 32001, tile = 12 }, { tpage = 12, clut = 32001, tile = 13 }, { tpage = 12, clut = 32001, tile = 19 }, { tpage = 12, clut = 32001, tile = 20 }, { tpage = 12, clut = 32001, tile = 21 },
+  ] },
+  { name = "path", chars = "dp<>", tint = [122, 118, 110], cells = [
+    { tpage = 12, clut = 32004, tile = 24 }, { tpage = 12, clut = 32004, tile = 26 }, { tpage = 12, clut = 32004, tile = 32 }, { tpage = 12, clut = 32004, tile = 33 }, { tpage = 12, clut = 32004, tile = 40 }, { tpage = 12, clut = 32004, tile = 41 }, { tpage = 12, clut = 32004, tile = 42 },
+  ] },
+  { name = "pier", chars = "j", rotate = false, tint = [240, 214, 186], cells = [{ tpage = 27, clut = 32128, tile = 27 }, { tpage = 27, clut = 32128, tile = 28 }, { tpage = 27, clut = 32128, tile = 35 }, { tpage = 27, clut = 32128, tile = 36 }, { tpage = 27, clut = 32128, tile = 43 }, { tpage = 27, clut = 32128, tile = 44 }] },
+  { name = "cliff top", chars = "#", tint = [122, 128, 112], cells = [
+    { tpage = 12, clut = 32000, tile = 24 }, { tpage = 12, clut = 32000, tile = 25 }, { tpage = 12, clut = 32000, tile = 26 }, { tpage = 12, clut = 32000, tile = 32 }, { tpage = 12, clut = 32000, tile = 33 }, { tpage = 12, clut = 32000, tile = 34 }, { tpage = 12, clut = 32000, tile = 40 }, { tpage = 12, clut = 32000, tile = 41 }, { tpage = 12, clut = 32000, tile = 42 },
+  ] },
+]
+cliff = { slope = 0.95, tint = [126, 120, 112], cells = [
+  { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 }, { tpage = 12, clut = 32006, tile = 48 }, { tpage = 12, clut = 32006, tile = 49 }, { tpage = 12, clut = 32006, tile = 56 }, { tpage = 12, clut = 32006, tile = 57 },
+] }
+water = { level = -10, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [150, 175, 170], deep = [70, 92, 128], depth = 56, foam = 18, foam_color = [150, 150, 146], wade = 5 }
+sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4 }

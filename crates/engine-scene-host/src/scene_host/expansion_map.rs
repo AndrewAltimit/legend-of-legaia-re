@@ -137,6 +137,7 @@ impl SceneHost {
         // Materials naming another scene's VRAM point at the copies the
         // library made; the map runtime animates the resolved list.
         let particle_sheet = library.as_ref().and_then(|l| l.particle_sheet);
+        let foam_cluts = library.as_ref().and_then(|l| l.foam_sheet).map(|f| f.cluts);
         let mut live_def = def.clone();
         if let Some(lib) = library.as_ref() {
             for p in resolve_materials(&mut live_def, lib, &base_name) {
@@ -248,6 +249,7 @@ impl SceneHost {
         });
         let mut active = active;
         active.particle_sheet = particle_sheet;
+        active.foam_cluts = foam_cluts;
         self.world.expansion.map = Some(active);
         // The map's fog pool and its gate (no-op without `[fog]`).
         self.world.arm_expansion_fog();

@@ -113,6 +113,13 @@ pub struct MeshLibrary {
     /// The particle sprites a map with emitters draws from
     /// ([`particle_sheet`]), written through [`Self::vram_patches`].
     pub particle_sheet: Option<legaia_expansion_format::map_detail::ParticleSheet>,
+    /// The shoreline foam's texture and band palettes a map whose terrain
+    /// has foaming water draws from ([`super::terrain::foam_sheet`]).
+    pub foam_sheet: Option<super::terrain::FoamSheet>,
+    /// Each palette a terrain's soft boundaries blend through, keyed by
+    /// its CBA word, to the CBA word of its copy with the STP bit on every
+    /// non-zero entry ([`super::terrain::stp_palettes`]).
+    pub stp_cluts: BTreeMap<u16, u16>,
 }
 
 /// One source scene's relocated pages and palettes.
@@ -172,6 +179,7 @@ impl MeshLibrary {
 /// pack, or decorates (decorations bake from the pack's file bytes).
 pub fn needs_library(def: &MapDef, base_entry: Option<u32>) -> bool {
     !def.decor.is_empty()
+        || def.terrain.is_some()
         || !def.scatter.is_empty()
         || !def.edges.is_empty()
         || !def.decals.is_empty()
@@ -262,6 +270,22 @@ pub fn resolve_mesh_library(
         lib.particle_sheet = Some(
             particle_sheet(&mut alloc, &mut lib.vram_patches).context("the particle sprites")?,
         );
+    }
+    if def
+        .terrain
+        .as_ref()
+        .and_then(|t| t.water.as_ref())
+        .is_some_and(|w| w.foam > 0.0)
+    {
+        lib.foam_sheet = Some(
+            super::terrain::foam_sheet(&mut alloc, &mut lib.vram_patches)
+                .context("the shoreline foam")?,
+        );
+    }
+    if let Some(surface) = def.terrain_surface().context("the terrain")? {
+        lib.stp_cluts =
+            super::terrain::stp_palettes(&surface, &base_vram, &mut alloc, &mut lib.vram_patches)
+                .context("the terrain's blend palettes")?;
     }
     // Group the carried-in meshes by source scene so each scene relocates
     // once.
