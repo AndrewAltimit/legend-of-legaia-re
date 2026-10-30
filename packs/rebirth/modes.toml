@@ -393,6 +393,10 @@ double_final = true
 players = 4
 rivals = ["Keeper Odalric", "Mirela", "Old Tobin"]
 ai_tier = "regular"
+# The night ends on a podium in the Rest's hall (5F), facing the stair the
+# party came up: the top three's leaders on the blocks, the rivals played
+# by the Rest's regulars.
+podium = { map = "rebirth_tower_5f", tile = [5, 5], facing = 4, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
 
 [[party_nights.rounds]]
 mode = "tower-green"

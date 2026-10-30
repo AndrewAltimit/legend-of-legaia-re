@@ -197,3 +197,75 @@ tile = [9, 1]
 radius = 448
 inner = 64
 volume = 0.5
+
+# ---------------------------------------------------------------------------
+# The open top: the wind howls through the hall from the broken roof, and
+# two iron braziers (`assets/models/brazier.glb`) burn either side of the
+# carpet's head, their sparks pulled upward.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "brazier_west"
+mesh = { asset = "models/brazier.glb" }
+tile = [5, 4]
+offset = [0, 224, 0]
+scale = 1.2
+solid = true
+light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 9 }
+
+[[props]]
+id = "brazier_east"
+mesh = { asset = "models/brazier.glb" }
+tile = [11, 4]
+offset = [0, 224, 0]
+scale = 1.2
+solid = true
+light = { color = [255, 130, 50], radius = 700, height = 140, flicker = 0.4, period = 11 }
+
+[[emitters]]
+kind = "embers"
+rect = [5, 4, 5, 4]
+height = [130, 170]
+count = 24
+velocity = [0.3, 1.6, 0.0]
+seed = 811
+
+[[emitters]]
+kind = "embers"
+rect = [11, 4, 11, 4]
+height = [130, 170]
+count = 24
+velocity = [0.3, 1.6, 0.0]
+seed = 812
+
+[[audio.ambient]]
+id = "brazier_west"
+sound = { kind = "sound", id = "torch" }
+tile = [5, 4]
+radius = 512
+inner = 96
+volume = 0.55
+
+[[audio.ambient]]
+id = "brazier_east"
+sound = { kind = "sound", id = "torch" }
+tile = [11, 4]
+radius = 512
+inner = 96
+volume = 0.55
+
+[[audio.ambient]]
+id = "wind_north"
+sound = { kind = "sound", id = "wind" }
+tile = [8, 1]
+radius = 2600
+inner = 900
+volume = 0.55
+
+[[audio.ambient]]
+id = "wind_south"
+sound = { kind = "sound", id = "wind" }
+tile = [8, 22]
+radius = 1600
+inner = 500
+volume = 0.35

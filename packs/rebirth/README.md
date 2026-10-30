@@ -33,12 +33,13 @@ Rebirth is built for the climb from there to 99.
 | `progression.toml` | The level curve past 60, EXP and gold multipliers, enemy scaling, level-up rewards. |
 | `quests.toml` | A ten-quest main chain, ten side quests, five challenges. |
 | `dialog.toml` | Every line the pack says. |
-| `cutscenes.toml` | Four scripted scenes: the tower intro on the first arrival in the Atrium, the voice on the throne speaking at the Gambler's Rest, the Sovereign rising before the last fight, and the throne breaking after it. |
+| `cutscenes.toml` | The tower intro on the first arrival in the Atrium, the voice on the throne speaking at the Gambler's Rest, the Sovereign rising before the last fight and the throne breaking after it, and each floor keeper's intro and fall. |
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
-| `audio.toml` | The pack's own drone track and four sounds, the tower bosses' victory music, the mode music at the Rest's tables. |
-| `assets/audio/` | Four WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
+| `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
+| `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
+| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers (`scripts/models/generate_rebirth_props.py`). |
 | `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Azure Seraph), chained from that art into a retail one; all on the heroes' own retail clips. |
 | `spells.toml` | Four tower Seru - Hearthfire, Verdant Bloom, Grove Fang, Tempest Dive - each cast as the retail Seru it grew from and taught by capturing its pack monster once that floor's keeper falls. |
 
@@ -114,6 +115,13 @@ The region's monsters, formations, encounter tables and mini-boss are
 | Iron Regent | 6F | Jette | 31 "Cort's War" | the Regent and two Brass Sentinels |
 | Azure Seraph | 7F | Lapis | 29 "The Cold Koru" | the Seraph alone |
 | Hollow Sovereign | 8F | Dohati, then Songi | 61 "Apocalypse" | wave 1: the Sovereign and two Throne Heralds; wave 2: the Sovereign Unbound |
+
+Each keeper's fight opens on its intro cutscene (`battle.toml` `intro`):
+the shot finds the keeper's place, the entrance sting hits, the screen
+flashes the keeper's colour and its title banner rises. Each phase change
+rings the phase shimmer under the script's banner line, and a won fight
+closes back on the floor (`outro`) on the falling knell and a banner of
+what is left.
 | Echo of the Throne | 8F | Songi | 61 "Apocalypse" | repeatable rematch: the Unbound and a herald, four more heralds refilling |
 
 The first five are `once = true`: their gold and item rewards pay out on the
@@ -174,6 +182,10 @@ the four legendaries.
 
 The Gambler's Rest's five tables are `modes.toml` instances, and the
 keeper's quests count wins at each by id:
+
+Tower Game Night ends on a podium in the Rest's hall: the top three's
+leaders on 2nd / 1st / 3rd blocks, the rivals played by the Rest's
+regulars, confetti and a slow shot round them (`modes.toml` `podium`).
 
 - **Tower High Table** (`tower-high-table`): six-seat no-limit Hold'em for
   gold, 5,000 buy-in, expert opponents, blinds doubling every eight hands.
@@ -369,7 +381,10 @@ water runs in the garden's channels (3F), each a positional source heard by
 distance and panned across the view. The Hollow Sovereign opens on "Apostles
 of the Mist", turns to "Apocalypse" as its shell cracks, rings a chime as it
 is unmade and on every Grand Beam telegraph, and its unbound form arrives to
-the Wild Arms battle theme. The four WAV files are synthesised from sine
+the Wild Arms battle theme. The Rest's crowd murmurs, loudest by the
+tables (5F); the engine hums at both flywheels (6F); the sunken court drips
+(4F); a fountain plays in the garden (3F); and the wind howls through the
+open top (8F). The WAV files are synthesised from sine
 partials and seeded noise by `scripts/models/generate_rebirth_audio.py`; no
 disc audio is copied.
 

@@ -209,3 +209,85 @@ lamps = [
   { id = "regent", tile = [8, 11], offset = [0, 100, 0], color = [255, 200, 120], radius = 800, flicker = 0.4, period = 7 },
   { id = "lever", tile = [8, 22], offset = [0, 100, 0], color = [140, 180, 255], radius = 700, flicker = 0.4, period = 9 },
 ]
+
+# ---------------------------------------------------------------------------
+# The Regent's banners and the engine's cogs: red banners hang at the
+# alcove's mouth, four iron cogs turn against the hall's walls in mesh
+# (`assets/models/cog.glb`, `banner_red.glb`), and the whole floor hums.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "regent_banner_w"
+mesh = { asset = "models/banner_red.glb" }
+tile = [7, 12]
+offset = [0, 40, 0]
+scale = 1.2
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 140 }]
+
+[[props]]
+id = "regent_banner_e"
+mesh = { asset = "models/banner_red.glb" }
+tile = [9, 12]
+offset = [0, 40, 0]
+scale = 1.2
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 150, phase = 0.5 }]
+
+[[props]]
+id = "cog_nw"
+mesh = { asset = "models/cog.glb" }
+tile = [2, 6]
+offset = [-40, 150, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = 300 }]
+
+[[props]]
+id = "cog_ne"
+mesh = { asset = "models/cog.glb" }
+tile = [14, 6]
+offset = [40, 150, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = -300 }]
+
+[[props]]
+id = "cog_sw"
+mesh = { asset = "models/cog.glb" }
+tile = [2, 27]
+offset = [-40, 150, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = -260 }]
+
+[[props]]
+id = "cog_se"
+mesh = { asset = "models/cog.glb" }
+tile = [14, 27]
+offset = [40, 150, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "x", period = 260 }]
+
+[[audio.ambient]]
+id = "engine_north"
+sound = { kind = "sound", id = "engine" }
+tile = [8, 8]
+radius = 900
+inner = 200
+volume = 0.55
+
+[[audio.ambient]]
+id = "engine_south"
+sound = { kind = "sound", id = "engine" }
+tile = [8, 25]
+radius = 900
+inner = 200
+volume = 0.55
+
+[[audio.ambient]]
+id = "furnace"
+sound = { kind = "sound", id = "torch" }
+tile = [9, 9]
+radius = 600
+inner = 96
+volume = 0.5

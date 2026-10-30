@@ -926,3 +926,40 @@ grotto, and the water glows.)
 text = """
 The hive shrieks!
 """
+
+# --- Boss beats (cutscenes.toml `*_intro` / `*_fallen`) ----------------------
+# Each floor keeper is announced by a title banner as the fight is called,
+# and leaves one as it falls. A banner is one row: the line's first page.
+
+[lines.banner_cinder_warden]
+text = "Cinder Warden, Keeper of the Stair"
+
+[lines.banner_verdant_colossus]
+text = "Verdant Colossus, Heart of the Vault"
+
+[lines.banner_iron_regent]
+text = "Iron Regent, Master of the Engine"
+
+[lines.banner_azure_seraph]
+text = "Azure Seraph, Voice of the Sanctum"
+
+[lines.banner_hollow_sovereign]
+text = "The Hollow Sovereign"
+
+[lines.banner_throne_echo]
+text = "Echo of the Throne"
+
+[lines.fallen_cinder_warden]
+text = "The Ember Stair goes cold"
+
+[lines.fallen_verdant_colossus]
+text = "The Vault sleeps"
+
+[lines.fallen_iron_regent]
+text = "The Engine is still"
+
+[lines.fallen_azure_seraph]
+text = "The Sanctum falls silent"
+
+[lines.fallen_throne_echo]
+text = "The echo fades"

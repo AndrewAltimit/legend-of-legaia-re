@@ -1,5 +1,5 @@
 # The tower's soundscape. Music is the disc's own, named by sound-test id
-# (docs/reference/music-tracks.md); the four WAV files under assets/audio/
+# (docs/reference/music-tracks.md); the WAV files under assets/audio/
 # are the pack's own work, synthesised by
 # `scripts/models/generate_rebirth_audio.py` - no disc audio is copied.
 
@@ -22,6 +22,35 @@ file = "audio/tower_drone.wav"
 [sounds.chime]
 file = "audio/chime.wav"
 gain = 1.4
+
+# Ambient loops: the wind over the open top (8F), the Rest's crowd (5F),
+# the engine's hum (6F) and the drips of the sunken court (4F).
+[sounds.wind]
+file = "audio/wind.wav"
+
+[sounds.crowd]
+file = "audio/crowd.wav"
+gain = 0.8
+
+[sounds.engine]
+file = "audio/engine.wav"
+
+[sounds.drips]
+file = "audio/drips.wav"
+
+# The boss beats (cutscenes.toml, battle.toml): an entrance hit, the
+# shimmer of a phase change, and the knell as a keeper falls.
+[sounds.sting_boss]
+file = "audio/sting_boss.wav"
+gain = 1.3
+
+[sounds.sting_phase]
+file = "audio/sting_phase.wav"
+gain = 1.2
+
+[sounds.sting_fall]
+file = "audio/sting_fall.wav"
+gain = 1.2
 
 [music]
 # Every tower boss closes on the title theme (sound-test 65).
