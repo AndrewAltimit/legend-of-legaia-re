@@ -62,6 +62,12 @@ facing = 4
 id = "dais"
 tile = [7, 7]
 
+# The first arrival plays the tower's intro (`cutscenes.toml`
+# `tower_intro`): the camera rises up the hall and the Warden's familiar
+# comes down to meet the party.
+[[enter_cutscenes]]
+cutscene = "tower_intro"
+
 [[exits]]
 id = "stair_down"
 rect = [7, 12, 7, 12]
@@ -369,3 +375,15 @@ regions = [
   { rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 },
   { rect = [1, 9, 13, 11], angle = 270.0, spread = 40.0, speed = 18 },
 ]
+
+# The Warden's familiar: one of the tower's grey beasts, which keeps the
+# stone company. It first appears in the intro cutscene, and waits by the
+# dais from then on.
+[[npcs]]
+id = "warden_familiar"
+label = "the Warden's familiar"
+model = { kind = "npc", scene = "tower", index = 1 }
+tile = [4, 8]
+facing = 4
+line = "familiar_purr"
+present = { flags = ["cutscene.tower_intro"] }

@@ -142,7 +142,9 @@ active_dialog = "guide_sovereign"
 objectives = [
     { kind = "win_boss", boss = "hollow_sovereign", text = "Defeat the Hollow Sovereign" },
 ]
-complete_dialog = "guide_sovereign_done"
+# The ending plays as a cutscene once the party is back on the floor
+# (`cutscenes.toml` `sovereign_falls`); Ysolde's closing words are in it.
+complete_cutscene = "sovereign_falls"
 rewards = { cards = ["hollow-sovereign"], set_flags = ["sovereign_fallen"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
@@ -150,7 +152,8 @@ id = "rebirth"
 title = "Rebirth"
 description = "The throne is empty. Warden Ysolde asks one last thing: reach the peak of your own strength."
 auto_start = true
-prerequisites = { quests = ["tower_sovereign"] }
+# After the ending cutscene, not under it.
+prerequisites = { quests = ["tower_sovereign"], flags = ["cutscene.sovereign_falls"] }
 start_dialog = "guide_rebirth"
 objectives = [
     { kind = "reach_level", level = 99, text = "Reach level 99" },

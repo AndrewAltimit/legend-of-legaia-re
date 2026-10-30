@@ -33,6 +33,7 @@ Rebirth is built for the climb from there to 99.
 | `progression.toml` | The level curve past 60, EXP and gold multipliers, enemy scaling, level-up rewards. |
 | `quests.toml` | A ten-quest main chain, ten side quests, five challenges. |
 | `dialog.toml` | Every line the pack says. |
+| `cutscenes.toml` | Four scripted scenes: the tower intro on the first arrival in the Atrium, the voice on the throne speaking at the Gambler's Rest, the Sovereign rising before the last fight, and the throne breaking after it. |
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |

@@ -132,3 +132,45 @@ fn xp_chart_and_dialog_check() {
     let d = core.check_dialog(&long.to_string()).unwrap();
     assert_eq!(d["pages"][0][0]["long"], true);
 }
+
+#[test]
+fn every_rebirth_cutscene_previews_to_its_end() {
+    let mut core = Core::new();
+    let (_, pack) = load(&mut core);
+    let ids: Vec<String> = pack["cutscenes"]["cutscenes"]
+        .as_object()
+        .expect("Rebirth has cutscenes")
+        .keys()
+        .cloned()
+        .collect();
+    assert!(ids.contains(&"tower_intro".to_string()), "{ids:?}");
+    for id in &ids {
+        let t = core.cutscene_timeline(&pack.to_string(), id, &[]).unwrap();
+        assert_eq!(t["ended"], true, "{id} never ends: {t}");
+        let rows = t["rows"].as_array().unwrap();
+        assert!(!rows.is_empty(), "{id}");
+        // Frames never run backwards on a track.
+        let mut last: std::collections::BTreeMap<String, u64> = Default::default();
+        for r in rows {
+            let track = r["track"].as_str().unwrap().to_string();
+            let f = r["frame"].as_u64().unwrap();
+            assert!(last.get(&track).is_none_or(|&p| p <= f), "{id}: {r}");
+            last.insert(track, f);
+        }
+    }
+    // The intro's camera crane runs beside its main track.
+    let t = core
+        .cutscene_timeline(&pack.to_string(), "tower_intro", &[])
+        .unwrap();
+    assert!(
+        t["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["track"] == "crane" && r["kind"] == "camera")
+    );
+    assert!(
+        core.cutscene_timeline(&pack.to_string(), "nope", &[])
+            .is_err()
+    );
+}

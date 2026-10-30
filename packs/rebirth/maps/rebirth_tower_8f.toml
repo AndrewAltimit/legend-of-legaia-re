@@ -74,6 +74,16 @@ rect = [5, 20, 11, 22]
 event = { kind = "dialog", line = "floor_8f_intro" }
 once = true
 
+# The approach to the throne, once the Sanctum is silent and while the
+# Sovereign stands: it rises and speaks (`cutscenes.toml`
+# `sovereign_rises`), and the Hollow Throne quest's offer follows.
+[[triggers]]
+id = "throne_approach"
+rect = [4, 6, 12, 6]
+event = { kind = "cutscene", cutscene = "sovereign_rises" }
+once = true
+requires = { quests = ["sanctum_echoes"], bosses_unbeaten = ["hollow_sovereign"], min_level = 90 }
+
 [[triggers]]
 id = "throne"
 rect = [5, 1, 11, 2]

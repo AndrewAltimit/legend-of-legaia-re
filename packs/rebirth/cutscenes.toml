@@ -1,0 +1,335 @@
+# Legend of Legaia: Rebirth - cutscenes.
+#
+# Scripted scenes on the tower's maps: the steps of each run on the
+# engine's cutscene sequencer (a camera move, a walk, a line, a fade) one
+# after another, with the `tracks` running beside the main list.
+# Format: docs/formats/expansion-pack-cutscenes.md.
+#
+# Map tiles here are each map's own: `[column, row]` from the top-left of
+# its `tiles.rows`.
+
+# --- 1F: the tower wakes ------------------------------------------------------
+
+# The first arrival in the Atrium (maps/rebirth_tower_1f.toml
+# `enter_cutscenes`): the camera rises up the hall toward the stair above,
+# the Warden's familiar pads down off the dais to meet the party, and
+# Ysolde's voice calls them to the stone. It leaves the party where it
+# arrived, so stepping toward the dais still raises the stone's own talk
+# (`tower_rumour`).
+[cutscenes.tower_intro]
+title = "The Tower Wakes"
+map = "rebirth_tower_1f"
+letterbox = true
+
+[[cutscenes.tower_intro.steps]]
+do = "fade"
+to = "black"
+
+[[cutscenes.tower_intro.steps]]
+do = "camera"
+focus = { tile = [7, 11] }
+pitch = -14.0
+zoom = 0.55
+
+[[cutscenes.tower_intro.steps]]
+do = "fade"
+to = "clear"
+frames = 60
+
+[[cutscenes.tower_intro.steps]]
+do = "start_track"
+track = "crane"
+
+[[cutscenes.tower_intro.steps]]
+do = "wait"
+frames = 150
+
+[[cutscenes.tower_intro.steps]]
+do = "say"
+line = "intro_hall"
+
+[[cutscenes.tower_intro.steps]]
+do = "join"
+track = "crane"
+
+# The stone stirs.
+[[cutscenes.tower_intro.steps]]
+do = "shake"
+amplitude = 10
+frames = 50
+
+[[cutscenes.tower_intro.steps]]
+do = "flash"
+color = [70, 90, 140]
+frames = 30
+
+[[cutscenes.tower_intro.steps]]
+do = "show"
+npc = "warden_familiar"
+tile = [5, 4]
+
+[[cutscenes.tower_intro.steps]]
+do = "camera"
+focus = { actor = "warden_familiar" }
+pitch = 6.0
+zoom = 1.25
+frames = 70
+
+[[cutscenes.tower_intro.steps]]
+do = "move"
+actor = "warden_familiar"
+path = [[5, 8], [6, 9]]
+
+[[cutscenes.tower_intro.steps]]
+do = "face"
+actor = "warden_familiar"
+toward = "player"
+
+[[cutscenes.tower_intro.steps]]
+do = "face"
+actor = "player"
+toward = "warden_familiar"
+
+[[cutscenes.tower_intro.steps]]
+do = "say"
+line = "intro_familiar"
+
+[[cutscenes.tower_intro.steps]]
+do = "camera"
+focus = { tile = [7, 6] }
+pitch = 4.0
+zoom = 1.45
+frames = 90
+
+[[cutscenes.tower_intro.steps]]
+do = "flash"
+color = [90, 120, 190]
+frames = 40
+
+[[cutscenes.tower_intro.steps]]
+do = "say"
+line = "intro_voice"
+
+# The familiar goes back up to wait by the dais; the shot comes home.
+[[cutscenes.tower_intro.steps]]
+do = "move"
+actor = "warden_familiar"
+to = [4, 8]
+wait = false
+
+[[cutscenes.tower_intro.steps]]
+do = "camera_reset"
+frames = 60
+
+[[cutscenes.tower_intro.steps]]
+do = "face"
+actor = "warden_familiar"
+facing = 4
+
+# The crane up the hall: from low over the entrance up to the stair at the
+# far end, pulling back as it rises.
+[[cutscenes.tower_intro.tracks.crane.steps]]
+do = "camera"
+focus = { tile = [7, 1] }
+pitch = 22.0
+zoom = 2.3
+frames = 300
+
+# --- 5F: the hollow stirs ----------------------------------------------------
+
+# The middle of the climb (maps/rebirth_tower_5f.toml `enter_cutscenes`,
+# once the Verdant Vault is won): the voice on the throne speaks for the
+# first time, and the tower shudders under it.
+[cutscenes.hollow_stirs]
+title = "The Hollow Stirs"
+map = "rebirth_tower_5f"
+letterbox = true
+
+[[cutscenes.hollow_stirs.steps]]
+do = "wait"
+frames = 30
+
+[[cutscenes.hollow_stirs.steps]]
+do = "camera"
+focus = { tile = [8, 1] }
+pitch = -10.0
+zoom = 1.6
+frames = 150
+
+[[cutscenes.hollow_stirs.steps]]
+do = "shake"
+amplitude = 14
+frames = 90
+
+[[cutscenes.hollow_stirs.steps]]
+do = "tint"
+color = [0, 90, 90]
+mode = "subtract"
+frames = 60
+
+[[cutscenes.hollow_stirs.steps]]
+do = "wait"
+frames = 60
+
+[[cutscenes.hollow_stirs.steps]]
+do = "say"
+line = "hollow_stirs_voice"
+
+[[cutscenes.hollow_stirs.steps]]
+do = "tint"
+color = [0, 0, 0]
+frames = 45
+
+[[cutscenes.hollow_stirs.steps]]
+do = "camera_reset"
+frames = 80
+
+[[cutscenes.hollow_stirs.steps]]
+do = "say"
+line = "hollow_stirs_reply"
+
+[[cutscenes.hollow_stirs.steps]]
+do = "set_flag"
+flag = "hollow_heard"
+
+# --- 8F: the throne ----------------------------------------------------------
+
+# Before the superboss (maps/rebirth_tower_8f.toml, the `throne_approach`
+# trigger): the Sovereign rises on its throne and speaks, then the Hollow
+# Throne quest starts, whose offer is the fight.
+[cutscenes.sovereign_rises]
+title = "The Hollow Sovereign"
+map = "rebirth_tower_8f"
+letterbox = true
+
+[[cutscenes.sovereign_rises.steps]]
+do = "start_track"
+track = "shot"
+
+[[cutscenes.sovereign_rises.steps]]
+do = "move"
+actor = "player"
+to = [8, 4]
+
+[[cutscenes.sovereign_rises.steps]]
+do = "face"
+actor = "player"
+facing = 0
+
+[[cutscenes.sovereign_rises.steps]]
+do = "join"
+track = "shot"
+
+[[cutscenes.sovereign_rises.steps]]
+do = "shake"
+amplitude = 18
+frames = 70
+
+[[cutscenes.sovereign_rises.steps]]
+do = "flash"
+color = [160, 40, 40]
+frames = 40
+
+[[cutscenes.sovereign_rises.steps]]
+do = "tint"
+color = [0, 70, 70]
+mode = "subtract"
+frames = 40
+
+[[cutscenes.sovereign_rises.steps]]
+do = "say"
+line = "sovereign_rises"
+
+[[cutscenes.sovereign_rises.steps]]
+do = "tint"
+color = [0, 0, 0]
+frames = 30
+
+[[cutscenes.sovereign_rises.steps]]
+do = "camera_reset"
+frames = 60
+
+[[cutscenes.sovereign_rises.steps]]
+do = "say"
+line = "sovereign_rises_reply"
+
+[[cutscenes.sovereign_rises.steps]]
+do = "start_quest"
+quest = "tower_sovereign"
+
+[[cutscenes.sovereign_rises.tracks.shot.steps]]
+do = "camera"
+focus = { tile = [8, 1] }
+pitch = -16.0
+zoom = 0.8
+frames = 160
+
+# After the superboss falls (`tower_sovereign`'s `complete_cutscene`): the
+# throne breaks, the light goes out of the tower, and Ysolde speaks her
+# last at the top of it.
+[cutscenes.sovereign_falls]
+title = "The Throne Breaks"
+map = "rebirth_tower_8f"
+letterbox = true
+
+[[cutscenes.sovereign_falls.steps]]
+do = "fade"
+to = "white"
+
+[[cutscenes.sovereign_falls.steps]]
+do = "camera"
+focus = { tile = [8, 2] }
+pitch = -8.0
+zoom = 1.1
+
+[[cutscenes.sovereign_falls.steps]]
+do = "fade"
+to = "clear"
+frames = 90
+
+[[cutscenes.sovereign_falls.steps]]
+do = "say"
+line = "sovereign_falls"
+
+[[cutscenes.sovereign_falls.steps]]
+do = "shake"
+amplitude = 20
+frames = 120
+
+[[cutscenes.sovereign_falls.steps]]
+do = "flash"
+color = [255, 240, 200]
+frames = 60
+
+[[cutscenes.sovereign_falls.steps]]
+do = "camera"
+pitch = 24.0
+zoom = 2.4
+frames = 240
+wait = false
+
+[[cutscenes.sovereign_falls.steps]]
+do = "say"
+line = "sovereign_falls_after"
+
+[[cutscenes.sovereign_falls.steps]]
+do = "fade"
+to = "white"
+frames = 120
+
+[[cutscenes.sovereign_falls.steps]]
+do = "camera_reset"
+frames = 0
+
+[[cutscenes.sovereign_falls.steps]]
+do = "fade"
+to = "clear"
+frames = 120
+
+[[cutscenes.sovereign_falls.steps]]
+do = "say"
+line = "guide_sovereign_done"
+
+[[cutscenes.sovereign_falls.steps]]
+do = "set_flag"
+flag = "throne_broken"

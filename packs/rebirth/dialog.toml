@@ -574,3 +574,110 @@ text = "Thunder pours into the Unbound..."
 
 [lines.unbound_last]
 text = "\"I was the Mist's last dream!\""
+
+# --- Cutscenes (cutscenes.toml) ----------------------------------------------
+
+[lines.intro_hall]
+speaker = "Narration"
+text = """
+(The hall rises further than the
+tower stood tall from outside.
+
+Dust hangs in the air without
+falling, as if time stopped here
+when the Mist came.)"""
+
+[lines.intro_familiar]
+speaker = "The Warden's familiar"
+text = """
+Rrrowww...
+
+(A grey shape pads down from the
+dais and circles you once.
+
+Then it looks back at the great
+stone behind it, and waits.)"""
+
+[lines.intro_voice]
+speaker = "Warden Ysolde"
+text = """
+(A voice, faint as settling dust:
+
+...You came. After so long, the
+stair has a sound on it again.
+
+Come to the stone. I will tell
+you what this tower keeps.)"""
+
+[lines.familiar_purr]
+speaker = "The Warden's familiar"
+text = """
+Rrrowww...
+
+(It keeps one eye on the stone.)"""
+
+[lines.hollow_stirs_voice]
+speaker = "The Hollow Voice"
+text = """
+...I hear you.
+
+Every step up my tower, I hear
+you. Every Seru beside you, I
+hear it breathing.
+
+Climb, then. I am so tired of
+being only what I took."""
+
+[lines.hollow_stirs_reply]
+speaker = "Warden Ysolde"
+text = """
+(Do not answer it.
+
+That is the thing on the throne.
+It has never spoken before.
+
+It is afraid of you. Remember
+that when you reach the top.)"""
+
+[lines.sovereign_rises]
+speaker = "The Hollow Sovereign"
+text = """
+So the little lights climbed all
+the way to me.
+
+I am every voice the Mist ever
+swallowed. I am Rim Elm's lost
+children. I am the Seru that
+never woke.
+
+Take my throne, if you think a
+throne is something you can take."""
+
+[lines.sovereign_rises_reply]
+speaker = "Warden Ysolde"
+text = """
+(Steady. It is only as strong as
+what it holds on to.
+
+Break its grip, and everything it
+took can finally go home.)"""
+
+[lines.sovereign_falls]
+speaker = "The Hollow Sovereign"
+text = """
+...Ah.
+
+So that is what it feels like,
+to let go."""
+
+[lines.sovereign_falls_after]
+speaker = "Narration"
+text = """
+(The throne cracks down the middle.
+Light pours up out of it, then out
+of the walls, then out of the
+floor beneath your feet.
+
+Somewhere far below, a bell that
+has not rung in a hundred years
+rings once.)"""

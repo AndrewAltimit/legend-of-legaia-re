@@ -41,6 +41,12 @@ facing = 4
 id = "from_above"
 tile = [8, 3]
 
+# Halfway up, once the Verdant Vault has fallen, the thing on the throne
+# speaks for the first time (`cutscenes.toml` `hollow_stirs`).
+[[enter_cutscenes]]
+cutscene = "hollow_stirs"
+requires = { quests = ["verdant_vault"] }
+
 [[exits]]
 id = "stair_down"
 rect = [13, 9, 13, 9]
