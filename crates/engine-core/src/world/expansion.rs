@@ -34,6 +34,9 @@ impl World {
     /// them from the next scene on, or once the host merges them itself.
     pub fn activate_expansion(&mut self, pack: Arc<ExpansionPack>) -> Result<(), Vec<String>> {
         self.deactivate_expansion();
+        // A loaded save's dormant block this activation will adopt.
+        let adopting =
+            self.expansion_dormant_pack_id().as_deref() == Some(pack.manifest.id.as_str());
         let mut problems = pack.progression.problems();
         let compiled = match CompiledBattle::compile(&pack.manifest.id, &pack.battle) {
             Ok(c) => Some(c),
@@ -61,8 +64,12 @@ impl World {
         // One activation path for battles and quests: the quest runtime
         // follows the pack (adopting progress a save left dormant for it).
         self.adopt_expansion_progress();
-        // A save loaded before this pack was active, made with another
-        // version of it, says what it lost.
+        // A save loaded before this pack was active: its "not loaded" notice
+        // is now wrong, and a save made with another version of the pack
+        // says what it lost instead.
+        if adopting {
+            self.expansion.toasts.clear();
+        }
         self.toast_expansion_compat();
         self.compile_expansion_items();
         self.compile_expansion_arts();

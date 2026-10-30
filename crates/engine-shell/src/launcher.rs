@@ -575,7 +575,7 @@ pub fn resolve_pack(name: &Path, dir: Option<&Path>) -> Option<PathBuf> {
         return None;
     }
     for candidate in [dir.join(id), dir.join(format!("{id}.lxpack"))] {
-        if expansion_pack_path(&candidate).is_some() {
+        if candidate.exists() && expansion_pack_path(&candidate).is_some() {
             return Some(candidate);
         }
     }
