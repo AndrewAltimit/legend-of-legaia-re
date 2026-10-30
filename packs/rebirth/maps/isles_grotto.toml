@@ -910,13 +910,7 @@ shapes = [
   { kind = "flatten", at = [35.5, 9.5], radius = 6.0, height = 24, strength = 0.7 },
   { kind = "ramp", from = [35.5, 15.0], to = [35.5, 35.0], radius = 1.8, height = [20, -14] },
   { kind = "noise", rect = [22, 41, 49, 56], amplitude = 30, scale = 1.4, seed = 3 },
-  { kind = "raise", at = [36.0, 42.5], radius = 0.6, height = 26 },
-  { kind = "raise", at = [36.0, 43.5], radius = 0.6, height = 26 },
-  { kind = "raise", at = [36.0, 44.5], radius = 0.6, height = 26 },
-  { kind = "raise", at = [36.0, 45.5], radius = 0.6, height = 26 },
-  { kind = "raise", at = [36.0, 46.5], radius = 0.6, height = 26 },
-  { kind = "raise", at = [36.0, 47.5], radius = 0.6, height = 26 },
-  { kind = "raise", at = [36.0, 48.5], radius = 0.6, height = 26 },
+  { kind = "plateau", rect = [35, 42, 36, 47], height = 4, edge = 0.3, roughness = 0.2 },
   { kind = "plateau", rect = [33, 48, 37, 51], height = 6, edge = 0.5, roughness = 0.3 },
 ]
 materials = [
