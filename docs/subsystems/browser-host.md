@@ -455,6 +455,7 @@ to hand to a rebuilt engine after a trap.
 | `reload_expansion(bytes)` | The hot reload (`play_expansion_live`): activate as `load_expansion` does, then re-enter the map the player is on with them seated where they stood (`SceneHost::enter_expansion_map_seated`), the follow camera kept; JSON `{ ok, pack, errors, warnings, map, reentered, ms }`. |
 | `expansion_overlay_json()` | The active pack map for the editor overlay: tile rectangle and origin, each tile's wall mask and floor height (the world's floor sampler), spawns, exits, trigger and encounter zones, props, NPCs, the player. |
 | `expansion_seat_player(col, row)` | Stand the player on a map tile, on its floor. |
+| `expansion_place_npc(n, col, row, facing)` | Move pack NPC `n` to a tile and facing without a rebuild (its anchor and heading); refused for a scenery or patrolling NPC. |
 | `expansion_set_quiet_arrivals(on)` | Enter pack maps without their arrival cutscene and place-name banner (`SceneHost::quiet_expansion_arrivals`). |
 | `expansion_preview_cutscene(id)` | Play a pack cutscene now, through the trigger path. |
 | `expansion_preview_fight(kind, id)` | Start a pack fight now: `kind` `formation` or `boss`, through a map trigger's `battle` / `boss` path. |

@@ -10,6 +10,7 @@ tab, and nothing is uploaded.
 |---|---|
 | Page | `site/_content/tooling/expansion-workbench.html` |
 | App, state, history, persistence, shortcuts, templates, export | `site/js/expansion-workbench-app.js` |
+| Validation worker | `site/js/expansion-workbench-validate-worker.js` |
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
 | Rename with references | `site/js/expansion-workbench-rename.js` |
 | Flow tab (the progression graph) | `site/js/expansion-workbench-graph.js` |
@@ -48,6 +49,8 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `sources_zip(pack)` | The source tree as a zip under one `<id>/` folder. |
 | `start_fresh(id, name)` | A pack holding only its manifest. |
 | `validate(pack)` | Every issue, `[{ severity, path, field, message }]`. |
+| `open_disc_keep(image)` / `take_disc_parts()` / `open_disc_parts(parts)` | The disc opened keeping the files its catalog reads, handed over once, and a second session's catalog built from them (the validation worker). |
+| `session_files()` / `set_session_files(data)` | The loaded tree, its canonical forms, the assets and documents, carried to a second session so it validates as this one does. |
 | `files_view(pack)` | The exported tree, `[{ path, size, text }]`. |
 | `export_bundle(pack)` | The `.lxpack` bytes; refused while the pack has an error. |
 | `xp_chart(progression)` | Cumulative XP per level, retail and the pack's, and the enemy scaling per party level. |
@@ -182,8 +185,9 @@ the page scrolls to the editor.
 **Checks on the field.** Every check on the open tab marks the field it names
 (the longest `data-path` holding its field) with a red edge, amber for a
 warning, and its message under the field until it is fixed; a click in the
-Checks list still jumps there and flashes it. The Maps tab is left out (its
-panel is one map of several). A value the format's types refuse, such as
+Checks list still jumps there and flashes it. On the Maps tab the open map's
+checks are marked (the other maps' stay in the Checks list). A fold built
+late (below) takes its marks as it opens. A value the format's types refuse, such as
 `999` in a `u8` field, fails the whole pack's parse in the session; the page
 maps the column serde reports back to the JSON path it wrote and lists it as
 an ordinary check on that field, with the field's range. **Download**,
@@ -192,7 +196,29 @@ open the first one, with `F8` to step through the rest.
 
 **Long lists.** A list editor of more than twelve entries (monsters, dialogue
 lines, quests) has a filter over its labels; `Enter` opens the first match,
-and the text survives an edit's re-render.
+and the text survives an edit's re-render. A list of folds - a boss script's
+phases and each phase's moves, the encounter overrides - builds a fold's
+fields the first time it opens (or when a check's jump lands in it), so a
+re-render of the Battle tab builds the labels, not every phase's form.
+
+**Validation off the main thread.** The validator costs a few hundred
+milliseconds a run on a pack of Rebirth's size, so it runs in a module
+worker (`expansion-workbench-validate-worker.js`) holding a second
+`ExpansionWorkbench` session. The page's session opens the disc with
+`open_disc_keep` and hands the three disc files its catalog reads
+(`take_disc_parts`: `PROT.DAT`, `CDNAME.TXT`, `SCUS_942.54`) to the worker,
+which builds the same catalog from them (`open_disc_parts`) without the
+image; the loaded tree, its canonical forms, the assets and documents follow
+as `session_files` / `set_session_files` whenever they change. A run starts
+a moment after the last edit; an answer for a pack that changed since it was
+asked is dropped. Typing never waits for a check. Without the worker (an
+older bundle, a worker that failed) validation runs on the page, and an
+export, a play or a hand-off still validates on the page at once, so it is
+never refused on a stale answer.
+
+**Phone width.** Below 44rem the pack bar keeps Undo, Redo, Download and
+Play in browser and folds Keys, TOML files, Share, Play here and Live under
+**More**.
 
 **Undo and redo** cover the whole pack: every edit, a painter stroke as one
 step, a burst of typing as one step (`Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z`;
@@ -359,7 +385,10 @@ the terrain's `detail`. The
 canvas shades the relief and the water from `map_preview`'s `terrain` - the
 heightfield the engine's floor sampler and meshes are built from - and the
 painter's wall quarters include the ones the terrain adds (too steep, too
-deep), so what is walkable reads off the canvas. The 3D preview draws the
+deep), so what is walkable reads off the canvas. The relief is one image a
+`map_preview` (a pixel per heightfield sample inside the skirt, built once
+and kept with that preview) drawn scaled over the tiles, so a hover's redraw
+costs one image draw. The 3D preview draws the
 sculpted ground as the engine builds it, and its volumes stand on the
 terrain's floor.
 
@@ -397,7 +426,7 @@ enhancements.
 | Player | The field camera: the follow view the game draws the map with, on the player. |
 | Fit map | Back to the whole map in the orbit camera. |
 | Walk from selection | Stands the player on the selected tile (`expansion_seat_player`) and switches to the field camera; the arrow keys walk in the picture. |
-| 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview. |
+| 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview, in the editor's **Select** mode. |
 | Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props: translucent volumes over the picture. |
 
 **Orientation.** The game draws the world with screen X mirrored (the
@@ -418,6 +447,11 @@ preview with *Arrival* ticked, play both.
 it): Split and 3D are classes on the page (`xw-view-split`, `xw-view-3d`)
 whose rules `expansion-workbench-preview3d.js` installs, and the framed page
 resizes its canvas to the width it is shown at (4:3, 320 to 960 wide).
+Split's divider sits in the editor's grid beside the picture: a drag, or the
+arrow keys on it, sets the picture column's share of the editor (a quarter
+to three quarters, kept per browser), and a double-click resets it. Split
+and 3D open the 3D editor in **Select** unless a mode was picked by hand; 2D
+opens it in **View**.
 
 **The grid.** The Grid layer draws each tile's edges at its four corner
 heights, and fills a cell whose corners disagree - a ramp, by the
@@ -442,6 +476,23 @@ a fight is armed or running in the frame the reload answers busy and is
 retried (the frame closes a card binder it opened itself first). What
 is not an edit rebuilds nothing: the selection, the layers, the camera and a
 cutscene's path are messages to the frame.
+
+**Object-only edits move, they do not rebuild.** An edit since the last
+build that only moved or turned props and NPCs of the open map - the pack's
+JSON with those poses blanked (each prop's tile, offset X / Z and turn, each
+NPC's tile and facing) is the text the build was sent - goes to the frame at
+once as `xw-move`: each prop's placed draw, found by where it stands, moves
+to its new world position, turns, and rises by the floor's change between
+the two tiles (the grid's corner heights); each NPC goes through
+`expansion_place_npc`, which sets its anchor (what the draw, the collision
+box and the talk probe read) and heading and the definition the overlay
+reads. A move costs a few milliseconds where a rebuild costs seconds. A prop
+with no single plain draw at its old place (a tilted or script-moved one),
+an NPC that patrols or is scenery, or a frame without the export answers
+`ok: false` and the map rebuilds. The engine's own copy of a moved prop - its
+collision box, a standable top - stays where the build put it until the next
+rebuild: the next edit of anything else, **Reload**, or the **Player** camera
+and **Walk from selection**, which rebuild first when a prop has moved.
 
 **Drafts.** Between rebuilds the volumes follow the editor at once: each
 `map_preview` the painter computes (a moment after an edit) goes to the
@@ -554,7 +605,7 @@ its top half - 1152 draws. Rebirth's atrium (29 x 13) is the small case.
 
 | Step | Atrium | 120 x 120 |
 |---|---|---|
-| `map_preview`, `validate`, `export_bundle` (each edit, in the workbench) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
+| `map_preview`, `validate` (in the worker), `export_bundle` (each edit, in the workbench) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
 | Painter redraw on a hover | - | 1 - 6 ms |
 | Hot reload, native build of the same call (`big_map_reload_cost`), of which the coplanar pass | - | 0.92 s, 0.30 s (2.5 s, 1.8 s with the bucket walk) |
 | Hot reload, the page's GL upload after it (`PlayView._rebuild`) | - | 0.4 s |
