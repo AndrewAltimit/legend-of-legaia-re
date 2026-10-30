@@ -329,11 +329,12 @@ impl World {
             .roster
             .members
             .get(char_slot as usize)
-            .map(|r| r.displayed_skills().count.saturating_add(pack_known));
+            .map(|r| r.displayed_skills().count);
         let mut session =
             ArtsCommandInputSession::new(actor, actor, pool, costs, pages).with_preseed(preseed);
         if let Some(n) = learned {
-            session = session.with_list_rows(n);
+            // An expansion pack's known arts page on after the record's own.
+            session = session.with_list_rows_and_pack(n, pack_known);
         }
         // The gauge build cuts the window at the first command one full pool
         // cannot pay, zeroing that one byte (`sb zero,0x1df(a1)` at

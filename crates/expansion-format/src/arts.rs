@@ -113,12 +113,6 @@ fn is_100(v: &u16) -> bool {
     *v == 100
 }
 
-impl Default for Character {
-    fn default() -> Self {
-        Self::Vahn
-    }
-}
-
 impl ArtDef {
     /// The command bytes (`1` Left, `2` Right, `3` Down, `4` Up - the art
     /// record's own encoding), `None` when the string holds anything else.
@@ -384,12 +378,11 @@ impl crate::validate::SectionRules for ArtSection {
             *budget.entry(a.character).or_default() += a.segments.len();
             for (i, s) in a.segments.iter().enumerate() {
                 let sat = format!("{at}.segments[{i}]");
-                match s.art.constant(a.character) {
-                    None => cx.error(
+                if s.art.constant(a.character).is_none() {
+                    cx.error(
                         &format!("{sat}.art"),
                         format!("{:?} is not one of {:?}'s retail arts", s.art, a.character),
-                    ),
-                    Some(_) => {}
+                    );
                 }
                 if s.power.len() > 4 {
                     cx.error(&format!("{sat}.power"), "at most four power bytes");

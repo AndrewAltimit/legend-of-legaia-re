@@ -166,7 +166,7 @@ A pack monster is a retail monster with the pack's numbers ([battle](expansion-p
 
 `learn` is the same in both files: `level` (the character's own), `requires` (the [quest prerequisite](expansion-pack-quests.md#queststoml) shape: quests, pack and story flags, bosses, party level) and `item` (held, not used up). Every set condition must hold; an empty `learn` is known from the start. The engine re-checks after every quest step and battle and at activation and load (`World::expansion_refresh_learning`); a newly learned art or spell raises a toast. A spell with `learn.capture` is learned only by the capture, its other conditions gating it. Scripts and tests teach directly with `World::expansion_teach_art` / `expansion_teach_spell`.
 
-A pack art matches the arts input only once known, and the battle arts list (Triangle) lists the known ones after the character's retail arts; past retail's fifteen the list pages on (`arts_list_pager`, an engine extension retail's lists never reach).
+A pack art matches the arts input only once known, and the battle arts list (Triangle) lists the known ones after the character's retail arts; with any known, the pages run on until every row has shown (`arts_list_pager_ext`, an engine extension), and with none the pager is retail's three-page one.
 
 ## Saves
 

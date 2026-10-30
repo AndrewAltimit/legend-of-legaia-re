@@ -465,25 +465,6 @@ impl DiscResolver for DiscCatalog {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn hull_of_a_square_with_an_inner_point() {
-        let h = convex_hull(vec![(0, 0), (10, 0), (10, 10), (0, 10), (5, 5), (10, 0)]);
-        assert_eq!(h, vec![[0, 0], [10, 0], [10, 10], [0, 10]]);
-    }
-
-    #[test]
-    fn bgm_list_covers_the_sound_test() {
-        let db = legaia_gamedata::Database::load();
-        let l = bgm_list(&db);
-        assert_eq!(l.len(), usize::from(BGM_COUNT));
-        assert!(l.iter().all(|t| !t.name.is_empty()));
-    }
-}
-
 /// The `arts.toml` key of an art-table character.
 fn hero_key(c: legaia_art::Character) -> &'static str {
     match c {
@@ -512,4 +493,23 @@ pub fn art_clips() -> Vec<ArtClipRow> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hull_of_a_square_with_an_inner_point() {
+        let h = convex_hull(vec![(0, 0), (10, 0), (10, 10), (0, 10), (5, 5), (10, 0)]);
+        assert_eq!(h, vec![[0, 0], [10, 0], [10, 10], [0, 10]]);
+    }
+
+    #[test]
+    fn bgm_list_covers_the_sound_test() {
+        let db = legaia_gamedata::Database::load();
+        let l = bgm_list(&db);
+        assert_eq!(l.len(), usize::from(BGM_COUNT));
+        assert!(l.iter().all(|t| !t.name.is_empty()));
+    }
 }

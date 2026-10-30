@@ -181,6 +181,9 @@ pub struct ArtsCommandInputSession {
     /// ([`arts_list_pager`]); `None` keeps the plain page cycle over
     /// [`Self::list_pages`].
     pub list_rows: Option<u8>,
+    /// Expansion-pack art rows listed after [`Self::list_rows`]
+    /// ([`arts_list_pager_ext`]); `0` is the retail list.
+    pub pack_rows: u8,
     /// The list window's slide counter `0x801F4E0A`, `0..=`[`ARTS_LIST_SLIDE_MAX`]
     /// ([`Self::step_list_slide`]): the window's `x` is
     /// `slide * 160 / 12 - 146`, off-screen at `0` and seated at `14`.
@@ -249,11 +252,30 @@ pub enum ArtsInputResolution {
 /// the first and only with six or more arts (`sltiu v1, 6`), to the third
 /// only from the second and only with eleven or more (`sltiu v0, 0xB`), and
 /// any other press closes it - so retail shows at most three pages of five,
-/// however many arts the record lists (retail never lists more than fifteen;
-/// an expansion pack's arts past that page on).
+/// however many arts are learned.
 ///
 /// PORT: overlay_battle_action_0898_801d3748
 pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
+    arts_list_pager_ext(open, learned, 0)
+}
+
+/// [`arts_list_pager`] with `extra` expansion-pack rows listed after the
+/// record's `learned` arts: an engine extension. With `extra == 0` it is the
+/// retail pager exactly; otherwise the pages run on past the third while
+/// rows remain, so a pack's arts after a full retail list still show.
+pub fn arts_list_pager_ext(open: Option<u8>, learned: u8, extra: u8) -> Option<u8> {
+    if extra > 0 {
+        let total = usize::from(learned) + usize::from(extra);
+        return match open {
+            None => Some(0),
+            Some(p) if total > (usize::from(p) + 1) * 5 => Some(p + 1),
+            Some(_) => None,
+        };
+    }
+    retail_pager(open, learned)
+}
+
+fn retail_pager(open: Option<u8>, learned: u8) -> Option<u8> {
     if learned == 0 {
         return open;
     }
@@ -261,9 +283,6 @@ pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
         None => Some(0),
         Some(0) if learned >= 6 => Some(1),
         Some(1) if learned >= 11 => Some(2),
-        // Engine extension: past retail's fifteen (only an expansion pack's
-        // arts take a list there) the pages run on.
-        Some(p) if p >= 2 && usize::from(learned) > (usize::from(p) + 1) * 5 => Some(p + 1),
         Some(_) => None,
     }
 }
@@ -369,9 +388,23 @@ impl ArtsCommandInputSession {
             0 => 0,
             1..=5 => 1,
             6..=10 => 2,
-            11..=15 => 3,
-            n => n.div_ceil(5),
+            _ => 3,
         };
+        self
+    }
+
+    /// [`Self::with_list_rows`] with `pack` expansion-pack art rows after
+    /// the `learned` ones: the pages cover every row (an engine extension;
+    /// `pack == 0` is [`Self::with_list_rows`]).
+    pub fn with_list_rows_and_pack(mut self, learned: u8, pack: u8) -> Self {
+        if pack == 0 {
+            return self.with_list_rows(learned);
+        }
+        self.list_rows = Some(learned);
+        self.pack_rows = pack;
+        self.list_pages = (usize::from(learned) + usize::from(pack))
+            .div_ceil(5)
+            .min(usize::from(u8::MAX)) as u8;
         self
     }
 
@@ -391,6 +424,7 @@ impl ArtsCommandInputSession {
             list_page: None,
             list_row_page: 0,
             list_rows: None,
+            pack_rows: 0,
             list_slide: 0,
             preseed: Vec::new(),
             preseed_spent: Vec::new(),
@@ -534,7 +568,7 @@ impl ArtsCommandInputSession {
             )
         {
             self.list_page = match self.list_rows {
-                Some(rows) => arts_list_pager(self.list_page, rows),
+                Some(rows) => arts_list_pager_ext(self.list_page, rows, self.pack_rows),
                 None => match self.list_page {
                     None => Some(0),
                     Some(p) if p + 1 < self.list_pages => Some(p + 1),

@@ -291,7 +291,7 @@ impl World {
         let ch = pack_character(character);
         if !bytes
             .iter()
-            .any(|&b| b >= FIRST_PACK_BYTE && b <= xa::LAST_PACK_BYTE)
+            .any(|b| (FIRST_PACK_BYTE..=xa::LAST_PACK_BYTE).contains(b))
             && arts.chains.is_empty()
         {
             return Vec::new();

@@ -688,8 +688,10 @@ fn the_journal_travels_and_arms_challenges() {
     let mut menu = FieldMenuSession::new();
     let view = journal_on_select(PadButton::Select.mask(), &world).unwrap();
     let mut sub = open_journal(&mut menu, view.clone()).unwrap();
-    // Left wraps from Quests to the last page (Items), then to Travel.
+    // Left wraps from Quests to the last page (Arts), then Items, then
+    // Travel.
     for edge in [
+        PadButton::Left.mask(),
         PadButton::Left.mask(),
         PadButton::Left.mask(),
         PadButton::Cross.mask(),

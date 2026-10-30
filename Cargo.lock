@@ -2425,6 +2425,7 @@ dependencies = [
  "legaia-disc-patch",
  "legaia-engine-battle",
  "legaia-engine-battle-hud",
+ "legaia-engine-battle-loop",
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
@@ -2736,6 +2737,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "flate2",
+ "legaia-art",
  "lewton",
  "serde",
  "sha2",
@@ -3255,7 +3257,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
+ "legaia-art",
  "legaia-engine-battle",
+ "legaia-engine-battle-vm",
  "legaia-engine-expansion",
  "legaia-engine-scene",
  "legaia-expansion-format",

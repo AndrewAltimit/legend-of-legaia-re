@@ -176,9 +176,10 @@ impl ItemKind {
 }
 
 /// A character a pack item may be worn by.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Character {
+    #[default]
     Vahn,
     Noa,
     Gala,

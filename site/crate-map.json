@@ -415,10 +415,12 @@
     "engine-scene-host",
     "engine-session",
     "engine-shell",
+    "expansion-format",
     "explorer",
     "parity",
     "patcher",
     "translate",
+    "web-expansion",
     "web-minigames",
     "web-patcher",
     "web-play",
@@ -1200,6 +1202,7 @@
     "engine-ui",
     "engine-world-views",
     "parity",
+    "web-expansion",
     "web-minigames",
     "web-play"
    ],
@@ -1587,6 +1590,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "arts",
     "audio",
     "battle",
     "battle_waves",
@@ -1608,6 +1612,7 @@
     "quest",
     "quest_challenge",
     "quest_save",
+    "spells",
     "toast"
    ],
    "band": "kernels",
@@ -2433,6 +2438,7 @@
     "disc-audit",
     "disc-patch",
     "engine-battle-hud",
+    "engine-battle-loop",
     "engine-camera",
     "font",
     "gamedata",
@@ -3004,11 +3010,14 @@
   },
   "expansion-format": {
    "package": "legaia-expansion-format",
-   "deps": [],
+   "deps": [
+    "art"
+   ],
    "dev_deps": [],
    "bins": [],
    "lib": true,
    "modules": [
+    "arts",
     "audio",
     "audio_clip",
     "battle",
@@ -3027,6 +3036,7 @@
     "progression",
     "quest",
     "refs",
+    "spells",
     "validate"
    ],
    "band": "families",
@@ -4422,7 +4432,9 @@
    "package": "legaia-web-expansion",
    "deps": [
     "actor-formats",
+    "art",
     "engine-battle",
+    "engine-battle-vm",
     "engine-expansion",
     "engine-scene",
     "expansion-format",
