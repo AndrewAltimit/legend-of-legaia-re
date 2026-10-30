@@ -14,6 +14,8 @@ tab, and nothing is uploaded.
 | Form kit and section editors | `site/js/expansion-workbench-forms.js` |
 | Tile painter | `site/js/expansion-workbench-map.js` |
 | Map detail layer (prop sources, animators, lights, decorations, entrances) | `site/js/expansion-workbench-detail.js` |
+| Sharing: import gates, drop, Share panel | `site/js/expansion-workbench-share.js` |
+| Pack library (shared with the play page) | `site/js/play-pack-library.js` |
 | 3D preview and Play here | `site/js/expansion-workbench-preview3d.js`; on the play page `site/js/play-expansion-live.js` and `site/js/play-view-editor-overlay.js` |
 | Map terrain (sculpt brush, materials, water, horizon) | `site/js/expansion-workbench-terrain.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
@@ -32,7 +34,12 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 |---|---|
 | `open_disc(image)` | The picker lists: monsters (id, name, base stats, element, drop, spells), items, spells, scenes, music. |
 | `begin_files` / `add_file(path, bytes)` / `finish_files()` | Loads a pack tree (a folder pick or the example): `{ pack, files, issues }`. One leading directory shared by every path is dropped. |
-| `load_bundle(bytes)` | The same from a `.lxpack`. |
+| `load_bundle(bytes)` | The same from a `.lxpack`, unchecked (the resume path, over bytes it stored itself). |
+| `import_bundle(bytes)` | A shared `.lxpack` through every [import gate](../formats/expansion-pack.md#sharing-and-trust): `{ ok, pack, files, issues, summary }`, or `{ ok: false, error: { kind, message } }`. |
+| `share_status(pack)` | The Share panel's identity facts: engine and format gates, each dependency parsed, the cover's size. |
+| `diff_against(old, pack)` | The pack against an older `.lxpack` of it: `{ diff, counts, bump, suggested_version, changelog, same_pack }`. |
+| `set_doc(path, text)` / `doc_text(path)` | A documentation file (`CHANGELOG.md`) written into or read from the pack. |
+| `sources_zip(pack)` | The source tree as a zip under one `<id>/` folder. |
 | `start_fresh(id, name)` | A pack holding only its manifest. |
 | `validate(pack)` | Every issue, `[{ severity, path, field, message }]`. |
 | `files_view(pack)` | The exported tree, `[{ path, size, text }]`. |
@@ -49,7 +56,10 @@ A file the editor left unchanged exports as the bytes it was loaded from:
 the edited pack) with the loaded pack's and keeps the original where they are
 equal, so an unedited section keeps its comments and an edit that is
 reverted gives the loaded bytes back. An edited one is re-serialised by `to_files`, which is deterministic,
-so the same pack always gives the same `.lxpack`.
+so the same pack always gives the same `.lxpack`. A section file that was
+loaded but holds only its default (an empty `battle.toml`) is kept too, so an
+unedited pack exports exactly the layout files it came from: a `.lxpack`
+imported and exported again is the same bytes.
 
 The crate sits in the engine layer: it reads scene geometry through
 `legaia-engine-scene` (`scene_assembly`, `expansion_map`) and the level curve
@@ -362,6 +372,33 @@ milliseconds. `play_expansion_live::tests::big_map_reload_cost` (ignored,
 disc-gated) builds the same map natively and splits the reload into the
 engine's map entry and the page's scene build.
 
+## Sharing
+
+**Open .lxpack** and a drop anywhere on the page (an `.lxpack`, or a pack
+folder) go through `import_bundle`, which runs the
+[import gates](../formats/expansion-pack.md#sharing-and-trust) before
+anything is parsed; a refusal names its gate and what it means ("It needs a
+newer engine than this one", "Packs are data only: ..."), and the session
+keeps the pack it had. A folder drop is walked with the File and Directory
+Entries API and loads like **Open folder**; a dropped disc image is pointed at
+the disc picker.
+
+**Share** opens a panel over the pack:
+
+- **Identity**: the cover (set from a PNG, stored as `assets/cover.png`),
+  the version, authors, the pack format and minimum engine against this
+  engine, and each dependency as parsed. The Manifest tab edits the fields.
+- **Compare with an older .lxpack**: the
+  [diff](../formats/expansion-pack.md#diff-and-changelog) file by file and
+  entry by entry, each changed field with its old and new value, the bump it
+  calls for with a button that sets the suggested version, and an editable
+  changelog draft to copy or put at the top of `CHANGELOG.md` (which then
+  ships in the next export).
+- **Download sources (.zip)**: the editable tree under one `<id>/` folder,
+  deterministic; unzipped, **Open folder** reads it back.
+- **Add to play library** stores the bundle as an installed pack and makes it
+  active; **Play** is Play in browser.
+
 ## Play here
 
 **Play here** plays the map the Maps tab is on in a play tab, for an
@@ -388,8 +425,20 @@ works.
 `{ id, name, version, bytes, savedAt }` (`bytes` a `Uint8Array` of the
 `.lxpack`), then opens `play.html?expansion=1`. The play page reads that key
 once its disc is up and loads the bundle through `LegaiaRuntime::load_expansion`,
-the same call as its own *Load expansion* file input
+the same call as its own *Install a pack* file input
 ([`browser-host.md`](../subsystems/browser-host.md)).
+
+The play page's **installed packs** (`site/js/play-pack-library.js`) live in
+the same database and store, so neither side bumps its schema version: key
+`lib:<id>` holds `{ id, name, version, authors, description, bytes, cover,
+installedAt }` and key `active` the active pack's id. Installing (the file
+input, or a drop on the expansion card) reads the bundle through the import
+gates with `LegaiaRuntime::expansion_bundle_info` / `expansion_bundle_cover`,
+replaces any version installed under the same id, and plays it; the list shows
+each pack's cover, version and authors with Play and Remove. With no
+`?expansion=1` hand-off, the page loads the active pack once its disc is up;
+**Unload** clears the active pack. Every load re-reads the stored bytes
+through the engine, never trusting the stored copy.
 
 ## The example pack
 
@@ -413,6 +462,11 @@ committed.
   loads, validates clean and exports its own bytes; an edit to a monster and a
   map round-trips through the bundle and touches only those two files; the
   tower map's preview shows the corner rule; the XP chart and the dialog check.
+- The same file, sharing (disc-free): a Rebirth `.lxpack` imported and
+  exported again is the same bytes, and its sources zip holds every file; an
+  empty section file survives the round trip; cutscene and audio edits reach
+  the export; refused imports name their gate; the diff against an older
+  bundle counts, bumps and drafts the changelog.
 - `crates/web-expansion/tests/disc_catalog.rs` (`LEGAIA_DISC_BIN`): the catalog
   lists, Rebirth with no coordinate error on the real disc, the tower scene's
   geometry pack, the preview with the base scene's ladder.

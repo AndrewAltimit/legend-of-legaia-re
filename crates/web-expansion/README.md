@@ -12,7 +12,7 @@ and nothing read from it is written into a pack. Page and exports:
 | Module | What it does |
 |---|---|
 | `catalog` | `DiscCatalog`: the picker lists read off the disc (monster records with base stats, item and spell names, CDNAME scenes, music), a base scene's geometry pack, and the `DiscResolver` the validator checks coordinates through. |
-| `session` | `Core`, the native-testable session: pack trees and bundles in, the pack's JSON form, validation over the exported files, the `.lxpack`, and the XP, dialogue and map previews. |
+| `session` | `Core`, the native-testable session: pack trees and bundles in (shared bundles through the import gates), the pack's JSON form, the diff against an older bundle and the sources zip, validation over the exported files, the `.lxpack`, and the XP, dialogue and map previews. |
 | `wasm` | `ExpansionWorkbench`, the `#[wasm_bindgen]` edge over `Core`: JSON and bytes in and out. |
 
 ## Layering

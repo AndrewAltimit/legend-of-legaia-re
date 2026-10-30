@@ -346,6 +346,9 @@ struct LauncherApp {
     /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
     /// or why it could not be read.
     expansion: Option<Result<ExpansionInfo, String>>,
+    /// How many packs the packs folder holds ([`launcher::scan_packs`]),
+    /// counted once when the window opens.
+    installed_packs: usize,
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
@@ -395,6 +398,9 @@ impl LauncherApp {
                 .expansion
                 .as_deref()
                 .map(launcher::inspect_expansion),
+            installed_packs: launcher::packs_dir()
+                .map(|d| launcher::scan_packs(&d).len())
+                .unwrap_or(0),
             settings,
             settings_file,
             options,
@@ -506,7 +512,9 @@ impl LauncherApp {
             .disc
             .as_deref()
             .and_then(Path::parent)
+            .map(Path::to_path_buf)
             .filter(|d| d.is_dir())
+            .or_else(|| launcher::packs_dir().filter(|d| d.is_dir()))
         {
             dialog = dialog.set_directory(dir);
         }
@@ -609,7 +617,9 @@ impl LauncherApp {
             .expansion
             .as_deref()
             .and_then(Path::parent)
+            .map(Path::to_path_buf)
             .filter(|d| d.is_dir())
+            .or_else(|| launcher::packs_dir().filter(|d| d.is_dir()))
         {
             dialog = dialog.set_directory(dir);
         }
@@ -1244,9 +1254,19 @@ impl LauncherApp {
                              room code. Tab opens the same screen in play."
                 .into(),
             Item::Expansion => match &self.expansion {
-                None => "Play with an expansion pack: new maps, quests and fights made for \
-                         the port. Choose an .lxpack file, or the pack.toml in a pack folder."
-                    .into(),
+                None => {
+                    let installed = self.installed_packs;
+                    let mut s = "Play with an expansion pack: new maps, quests and fights made \
+                                 for the port. Choose an .lxpack file, or the pack.toml in a pack \
+                                 folder."
+                        .to_string();
+                    if installed > 0 {
+                        s.push_str(&format!(
+                            " {installed} installed in the packs folder (`legaia-engine packs`)."
+                        ));
+                    }
+                    s
+                }
                 Some(Ok(info)) if info.playable() => format!(
                     "{}. New Game and Continue play with it. Delete or right-click: none.",
                     info.summary()

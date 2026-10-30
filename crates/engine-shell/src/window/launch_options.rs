@@ -532,10 +532,23 @@ pub struct ExpansionLaunch {
 impl ExpansionLaunch {
     /// Read the pack, a directory or an `.lxpack` bundle
     /// (`legaia_expansion_format::read_files`).
+    ///
+    /// A `pack` that is not a path names an installed pack by id, looked up
+    /// in the packs folder (`crate::launcher::resolve_pack`).
     pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
-        legaia_expansion_format::read_files(&self.pack)
+        let dir = crate::launcher::packs_dir();
+        let path =
+            crate::launcher::resolve_pack(&self.pack, dir.as_deref()).with_context(|| {
+                format!(
+                    "--expansion {}: no such file or folder, and no installed pack has that id{}",
+                    self.pack.display(),
+                    dir.map(|d| format!(" (packs folder {})", d.display()))
+                        .unwrap_or_default()
+                )
+            })?;
+        legaia_expansion_format::read_files(&path)
             .and_then(|files| legaia_expansion_format::ExpansionPack::from_files(&files))
-            .with_context(|| format!("--expansion {}", self.pack.display()))
+            .with_context(|| format!("--expansion {}", path.display()))
     }
 }
 

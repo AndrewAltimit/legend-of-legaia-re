@@ -14,10 +14,13 @@ shareable language pack follows. The format reference is
 | Module | Scope |
 |---|---|
 | `lib` | `ExpansionPack`, the `PackFiles` tree, `from_files` / `to_files`, the directory and bundle loaders |
-| `manifest` | `pack.toml`, id and semver syntax |
+| `manifest` | `pack.toml`, id and semver syntax, the pack-format and engine gates, dependency entries |
+| `version` | Semantic versions and cargo-style version ranges |
 | `refs` | `DiscRef` coordinates, their disc-free range checks, the `DiscResolver` trait |
 | `bundle` | The deterministic `.lxpack` single-file archive |
-| `validate` | The validator, the `SectionRules` extension trait, the no-disc-bytes rule |
+| `validate` | The validator, the `SectionRules` extension trait, the no-disc-bytes rule, the import trust checks |
+| `share` | The import gates a shared `.lxpack` passes, the library summary, the sources zip |
+| `diff` | Two versions of a pack compared entry by entry; the semver bump and changelog draft |
 | `battle`, `progression`, `quest`, `dialog`, `cards`, `cutscene`, `modes`, `items`, `arts`, `spells`, `map`, `terrain` | The content sections (`items` also holds `ItemRef`, the retail-or-pack item reference every section names items by; `arts` resolves a segment's retail art against `legaia_art`'s per-character tables) |
 | `audio`, `audio_clip` | `audio.toml` and map `[audio]` (`MusicRef`, `SoundRef`, tracks, sounds, zones, ambient sources), and the one WAV / Ogg Vorbis decoder and probe (`lewton` for Vorbis) the validator and both hosts run ([`expansion-pack-audio.md`](../../docs/formats/expansion-pack-audio.md)) |
 

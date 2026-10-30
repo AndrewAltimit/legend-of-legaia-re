@@ -391,3 +391,65 @@ fn a_prerequisite_gate_reads_the_packs_flags() {
     w.expansion_notify(QuestEvent::FlagSet("beaten".into()));
     assert!(!w.expansion_prerequisites_hold(&gate));
 }
+
+/// A save made with another version of the active pack: ids the pack no
+/// longer defines are dropped with one notice, whether the save loads onto
+/// the active pack or the pack activates after the load; what remains plays
+/// and saves again cleanly.
+#[test]
+fn a_save_from_another_pack_version_drops_vanished_ids_with_a_notice() {
+    use legaia_engine_expansion::quest::QuestState;
+    let old = || {
+        let mut p = ExpansionProgress {
+            pack_id: "t".into(),
+            pack_version: "0.9.0".into(),
+            ..Default::default()
+        };
+        p.quests.insert(
+            "retired_quest".into(),
+            QuestState {
+                status: QuestStatus::Active,
+                objectives: vec![1],
+                completions: 0,
+                last_completed_at: 0,
+            },
+        );
+        p.cards.collection.add("retired_card", 2);
+        p.flags.flags.insert("open".into());
+        p.encode()
+    };
+
+    // Loaded onto the active pack.
+    let mut w = field_world(1);
+    w.activate_expansion(pack()).expect("activates");
+    w.expansion_load_block(Some(&old()));
+    let toast = w.expansion_toast().expect("a notice").to_string();
+    assert!(
+        toast.contains("0.9.0") && toast.contains("2 saved entries"),
+        "{toast}"
+    );
+    let r = w.expansion_compat_report().expect("a report");
+    assert_eq!(
+        (r.saved_version.as_str(), r.pack_version.as_str()),
+        ("0.9.0", "1.0.0")
+    );
+    assert_eq!(r.dropped.len(), 2);
+    assert!(w.expansion.quests.quest("retired_quest").is_none());
+    assert_eq!(w.expansion.quests.progress.cards.collection.total(), 0);
+    assert!(
+        w.expansion.quests.progress.flags.is_set("open"),
+        "flags are kept"
+    );
+    // The next save carries the reconciled progress under the new version.
+    let saved = ExpansionProgress::decode(&w.expansion_save_block().unwrap()).unwrap();
+    assert_eq!(saved.pack_version, "1.0.0");
+    assert!(saved.quests.is_empty());
+
+    // Loaded first, the pack activated after: the same outcome.
+    let mut w = field_world(1);
+    w.expansion_load_block(Some(&old()));
+    w.activate_expansion(pack()).expect("activates");
+    assert!(w.expansion_toast().is_some_and(|t| t.contains("dropped")));
+    assert!(w.expansion.quests.quest("retired_quest").is_none());
+    assert_eq!(w.expansion_dormant_pack_id(), None);
+}

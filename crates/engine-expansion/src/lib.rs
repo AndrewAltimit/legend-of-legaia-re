@@ -33,6 +33,7 @@ pub mod progression;
 pub mod quest;
 pub mod quest_challenge;
 pub mod quest_save;
+pub mod save_compat;
 pub mod spells;
 pub mod toast;
 
@@ -93,6 +94,10 @@ pub struct ExpansionState {
     /// The pack's compiled spells and the cast in flight; the spells known
     /// are `quests.progress.spells`.
     pub spells: spells::SpellRuntime,
+    /// What the last adoption of saved progress dropped or resized
+    /// ([`save_compat::reconcile`]), kept for a host to show after the toast
+    /// has gone.
+    pub last_compat: Option<save_compat::CompatReport>,
 }
 
 impl ExpansionState {

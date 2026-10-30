@@ -11,12 +11,13 @@ A pack carries **no bytes from the disc**. Every disc asset it uses is named by 
 | Source form | A directory: `pack.toml` plus optional section files, `maps/`, `assets/` |
 | Shareable form | One `.lxpack` file ([bundle](#the-lxpack-bundle)) |
 | Text encoding | UTF-8 TOML for every manifest, section and map |
-| Schema version | `1` (`manifest::SCHEMA_VERSION`) |
+| Schema version | `2` (`manifest::SCHEMA_VERSION`); schemas `1` and `2` load |
 | Disc | NA release only, `SCUS-94254` |
 | Parser | `ExpansionPack::from_files` (one parser for directory, bundle and browser input) |
 | Writer | `ExpansionPack::to_files`, `bundle::write_bundle` |
 | Validator | `validate::validate`, `validate::validate_files` |
-| CLI | `asset expansion validate / bundle / unbundle / info` |
+| Sharing | `share::import_bundle` (the import gates), `diff::diff_packs` (versions compared) |
+| CLI | `asset expansion validate / bundle / unbundle / info / diff`, `legaia-engine packs` |
 
 ## Layout
 
@@ -55,13 +56,15 @@ The whole tree is one `PackFiles` value (`BTreeMap<path, bytes>`). The directory
 | `version` | string | yes | Semantic version, `MAJOR.MINOR.PATCH[-pre][+build]`. |
 | `authors` | string list | no | Who made it. |
 | `description` | string | no | What the pack adds. |
-| `schema` | integer | no | Schema version the pack is written against; defaults to the current one. |
+| `schema` | integer | no | Pack-format version the pack is written against; defaults to the current one. |
 | `disc` | string | no | The disc the coordinates point into; defaults to `SCUS-94254`, the only value accepted. |
 | `license` | string | no | Licence for the pack's own content: an SPDX expression or free text. |
 | `homepage` | string | no | Where the pack is published, an `http(s)` URL. |
 | `tags` | string list | no | Discovery tags, pack-id syntax. |
-| `requires` | string list | no | Pack ids that must be loaded alongside this one. |
-| `conflicts` | string list | no | Pack ids that must not be. |
+| `requires` | string list | no | Packs that must be loaded alongside this one: `id`, or `id@range` ([dependencies](#dependencies)). |
+| `conflicts` | string list | no | Packs that must not be, in the same form; a range limits the conflict to those versions. |
+| `cover` | string | no | The cover image: a PNG under `assets/`, written from the pack root (`assets/cover.png`). Schema 2. |
+| `min_engine` | string | no | The oldest engine version the pack runs on, semver. Schema 2. |
 
 A minimal manifest:
 
@@ -70,6 +73,31 @@ id = "tower"
 name = "The Tower"
 version = "0.1.0"
 ```
+
+## Versions and compatibility
+
+Three versions meet when a pack loads: the pack's own `version`, the **pack format** it is written in (`schema`), and the **engine** reading it (`manifest::ENGINE_VERSION`, the workspace version every engine crate shares).
+
+| Gate | Passes when | Refusal |
+|---|---|---|
+| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=2`) | "written in pack format N, newer than this engine reads ... update the engine" |
+| Engine | `min_engine` is absent, or not newer than `ENGINE_VERSION` | "needs engine X or newer; this engine is Y" |
+
+`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schema 2 only added optional keys, so a schema-1 pack is a valid schema-2 pack with them absent. The validator warns when a schema-1 manifest uses a schema-2 key, since an older engine would trip on it.
+
+### Dependencies
+
+A `requires` or `conflicts` entry is a pack id, optionally followed by `@` and a version range (`manifest::PackDep`). A range is one or more comparators, all of which must hold, separated by commas or spaces (`version::VersionReq`). The operators are cargo's:
+
+| Entry | Matches |
+|---|---|
+| `base` | any version of `base` |
+| `base@1.2.3`, `base@^1.2.3` | `>=1.2.3, <2.0.0`; below `1.0.0` the caret holds the leftmost non-zero part (`^0.2.3` is `<0.3.0`) |
+| `base@~1.2.3` | `>=1.2.3, <1.3.0` |
+| `base@=1.2`, `base@1.2.*` | any `1.2.x` |
+| `base@>=1.2 <2` | both bounds; a missing part reads as the whole range of it |
+
+A pre-release (`2.0.0-rc.1`) satisfies a range only when a comparator names a pre-release of the same `MAJOR.MINOR.PATCH`. Content ids of another pack (`base:thing`) resolve against the id part of the entry. `manifest::check_dependencies` checks a manifest against a list of installed `(id, version)` pairs and names each missing pack, out-of-range version and installed conflict.
 
 ## Content ids and namespacing
 
@@ -275,9 +303,11 @@ Each entry-table record, in path-byte order with no duplicates:
 
 The data region follows the table: each entry's stored bytes back to back in table order, with no padding. The file ends with a 32-byte SHA-256 of every byte before it.
 
-The writer deflates an entry only when that makes it smaller. The reader checks the magic, version, flags and trailer before trusting the table, refuses unsorted or duplicate paths, unknown methods, a stored entry whose lengths differ and trailing bytes, inflates each entry to exactly its declared length, and checks each entry's digest.
+The writer deflates an entry only when that makes it smaller. The reader checks the magic, the file size against `MAX_BUNDLE_LEN`, the version (before the checksum, so a bundle from a newer writer says so whatever else changed), the flags and the trailer before trusting the table, refuses unsorted or duplicate paths, unknown methods, a stored entry whose lengths differ and trailing bytes, inflates each entry to exactly its declared length, and checks each entry's digest.
 
 A path must be relative, `/`-separated, at most 255 bytes, with no empty, `.` or `..` component and none of `\`, `:` or NUL, which keeps an unpacked bundle inside its output directory on every host. Limits: 16384 entries, 64 MiB per entry and 512 MiB in total once decompressed.
+
+Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bundle`, `corrupt`, `unsupported_version`, `too_large` or `bad_path` - so a reader can word it for a person rather than print the parser's message. `asset expansion bundle` writes only the files of the [layout](#layout), which is everything the loader reads, so a bundle unpacks to exactly the editable tree and the workbench's import-and-export reproduces it byte for byte.
 
 ## Validation
 
@@ -287,13 +317,16 @@ A path must be relative, `/`-separated, at most 255 bytes, with no empty, `.` or
 |---|---|
 | `pack.toml` missing or unparsable, or any section or map unparsable | error |
 | `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name` | error |
-| `schema` other than the current version; `disc` other than `SCUS-94254` | error |
+| `schema` outside the formats this build reads; `disc` other than `SCUS-94254` | error |
+| `min_engine` malformed or newer than this engine; a `requires` / `conflicts` entry or its range malformed | error |
+| `cover` not a `.png` under `assets/`, absent from the pack, or over 1 MiB | error |
+| A file anywhere named like a program, script or scriptable document ([trust](#sharing-and-trust)) | error |
 | A pack in its own `requires` / `conflicts`, or one pack in both | error |
 | Content id malformed, pack-qualified at its definition, or defined twice | error |
 | Reference to undefined content, or to a pack not in `requires` | error |
 | `DiscRef` out of range, or rejected by the supplied resolver | error |
 | Any [no-disc-bytes](#the-no-disc-bytes-rule) violation | error |
-| Empty `description`, `authors` or `license`; non-URL `homepage`; a repeated list entry | warning |
+| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a schema-2 key in a schema-1 manifest | warning |
 | A file outside the [layout](#layout) | warning |
 
 ### Adding a section's checks
@@ -323,6 +356,43 @@ Anywhere in the pack, a file named like a disc file is refused: `PROT.DAT`, `DMY
 
 The rule exists because packs are made to be shared, and the disc's bytes are not the project's to share. A coordinate costs the modder nothing - the engine reads the mesh, texture or cue from the player's own disc - and it keeps every pack legal to post. The type allowlist does most of the work: an LZS stream, a DATA_FIELD chunk or a headerless table has no PNG or Ogg signature, so it fails rule 2 even though it has no magic of its own for rule 3 to catch. The checks are a guard against accidents, not a proof; text a modder pastes in from the game is still the modder's responsibility.
 
+## Sharing and trust
+
+A pack is downloaded from strangers and opened in a browser tab or beside a game, so its contents are **data only**. Nothing in a pack is ever executed or interpreted as code: the engine reads TOML into typed structures, decodes PNG, glTF, Ogg and WAV with its own decoders, and shows text as text. There is no scripting language in the format - a cutscene, a boss script or a quest is a fixed vocabulary of steps the engine's own kernels run, bounded by the validator - and no field holds a URL the engine fetches; `homepage` is shown, never followed.
+
+`share::import_bundle` is the one gate a shared `.lxpack` passes through, on every reader (the workbench's Open and drop, the play page's library and its install, the launcher's check), in this order:
+
+| Gate | Refuses | Kind |
+|---|---|---|
+| Bundle | Not an `.lxpack`; a newer bundle format; a file, entry or tree over its size limit; a bad checksum, length or table; a path that could leave the pack directory | `not_a_bundle`, `unsupported_version`, `too_large`, `corrupt`, `bad_path` |
+| Trust (`validate::trust_issues`) | A disc file or disc format by name; a program, script or scriptable document (`.js`, `.html`, `.svg`, `.wasm`, `.exe`, `.sh`, `.py`, `.lua`, ...) anywhere in the tree; an asset outside the type allowlist, without its type's signature, carrying disc bytes, or over the asset budgets | `unsafe` |
+| Format | A newer pack format, or a newer engine than this one | `newer_format`, `older_format`, `newer_engine` |
+| Parse | `pack.toml` or a section that does not parse | `unparsable` |
+
+A pack that passes them is opened; ordinary validation errors (a dangling reference, a value out of range) are left for the workbench to show and keep the engine from activating the pack. The play page never trusts its own stored copy either: every activation re-reads the bytes through the gates and the validator.
+
+What the checks do not promise: they guard against accidents and obvious lures, not against every way to hide data in a valid PNG or Ogg file, and they cannot tell whether text a modder pasted in came from the game. A pack's author answers for its content; the engine's part is that opening one can do nothing but add content to the game. The browser pages store packs only in the viewer's own IndexedDB and upload nothing.
+
+## Save compatibility
+
+The save's expansion block ([`expansion-pack-quests.md`](expansion-pack-quests.md)) records the pack version it was written under and names pack content by id. A save made with one version of a pack and loaded with another goes through `legaia_engine_expansion::save_compat::reconcile` whenever its progress is adopted for the active pack - on a load with the pack active, or when the pack activates after the load:
+
+| Saved entry | When the pack no longer defines it |
+|---|---|
+| Quest, challenge, once-only boss | Dropped. A kept quest's objective progress is resized to its current objective count (new objectives start at zero). |
+| Pack-map location | Dropped; the resume lands in the map's base scene. |
+| Card, booster set | Dropped with all copies; the duel deck and seen marks keep the cards that remain. |
+| Pack item held or worn, art, spell | Dropped; a worn slot falls empty (the retail record's byte under pack gear is already `0`). |
+| Pack flags and counters | Kept: free-form names, not definitions. |
+
+Nothing fails and nothing is invented. The report (`CompatReport`) is logged line by line and shown as one toast on both hosts (`Saved with rebirth 0.1.0: 3 saved entries are gone from the pack and were dropped`), and the play page's expansion status repeats it (`World::expansion_compat_report`). The next save writes the reconciled progress under the new version.
+
+## Diff and changelog
+
+`diff::diff_packs(old, new)` compares two versions of a pack through each file's TOML value, so it is blind to comments, key order and layout. Within a file every top-level key that holds a table of entries (`monsters`) or an array of tables with an `id` (`quests`, `cards`) is a collection, its entries matched by key or id and reported added, removed or changed; a change lists each differing field as a dotted path with its old and new value. Other top-level keys are entries of the file's `settings`; each map file is an entry of `maps`, each asset of `assets` (by content), and the manifest one entry of its own.
+
+`PackDiff::bump` reads the change as semver: a removal is major (it can break saves and dependent packs; below `1.0.0` it bumps the minor), an addition minor, a change alone a patch, and the manifest's own fields do not count. `suggested_version` applies it to the old version, and `changelog` drafts a Markdown section (`## 0.2.0`, then Added / Changed / Removed lines naming each entry and its file) for the top of `CHANGELOG.md`. The workbench's Share panel and `asset expansion diff` both run it.
+
 ## Tooling
 
 ```bash
@@ -331,9 +401,12 @@ asset expansion validate packs/rebirth [--strict]      # a directory or an .lxpa
 asset expansion bundle packs/rebirth -o rebirth.lxpack # refuses a pack with errors
 asset expansion unbundle rebirth.lxpack -o out/        # out/ must be empty or absent
 asset expansion info rebirth.lxpack [--json]
+asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
+legaia-engine packs [--dir DIR] [--json]                # the installed packs
+legaia-engine play-window --expansion rebirth           # an installed pack, by id
 ```
 
-`validate` exits non-zero on any error, and with `--strict` on any warning. None of these reads a disc.
+`validate` exits non-zero on any error, and with `--strict` on any warning. None of these reads a disc. The native host's installed packs live in `packs/` under its data directory (`launcher::packs_dir`): `legaia-engine packs` lists each `.lxpack` and pack folder there with its version, authors, pack format and whether it plays, `--expansion` takes a pack id as well as a path, and the launcher's pack picker opens in that folder.
 
 ## See also
 

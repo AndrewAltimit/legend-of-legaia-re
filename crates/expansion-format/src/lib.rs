@@ -43,6 +43,7 @@ pub mod bundle;
 pub mod cards;
 pub mod cutscene;
 pub mod dialog;
+pub mod diff;
 pub mod items;
 pub mod manifest;
 pub mod map;
@@ -53,10 +54,12 @@ pub mod modes;
 pub mod progression;
 pub mod quest;
 pub mod refs;
+pub mod share;
 pub mod spells;
 pub mod terrain;
 pub mod terrain_rules;
 pub mod validate;
+pub mod version;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -151,11 +154,25 @@ fn section<T: for<'de> Deserialize<'de> + Default>(files: &PackFiles, name: &str
 
 impl ExpansionPack {
     /// Parse a pack from its file tree.
+    ///
+    /// The pack-format and engine gates ([`manifest::check_compatibility`])
+    /// run first, on a lenient read of `pack.toml`, so a pack from a newer
+    /// format is refused with "update the engine" rather than with whatever
+    /// key of the new format the strict parse trips on.
     pub fn from_files(files: &PackFiles) -> Result<Self> {
         let manifest = files.get("pack.toml").context("pack.toml is missing")?;
-        let manifest =
-            toml::from_str(std::str::from_utf8(manifest).context("pack.toml is not UTF-8")?)
-                .context("parsing pack.toml")?;
+        let text = std::str::from_utf8(manifest).context("pack.toml is not UTF-8")?;
+        if let Some(peek) = manifest::ManifestPeek::read(text)
+            && let Err(why) = peek.compatibility()
+        {
+            let who = match (peek.id.is_empty(), peek.version.is_empty()) {
+                (false, false) => format!("pack {:?} {}", peek.id, peek.version),
+                (false, true) => format!("pack {:?}", peek.id),
+                _ => "the pack".to_string(),
+            };
+            anyhow::bail!("{who} cannot be loaded: {why}");
+        }
+        let manifest = toml::from_str(text).context("parsing pack.toml")?;
         let mut maps = BTreeMap::new();
         let mut assets = BTreeMap::new();
         let mut docs = BTreeMap::new();

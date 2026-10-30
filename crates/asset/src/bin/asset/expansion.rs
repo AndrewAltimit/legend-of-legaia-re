@@ -23,7 +23,64 @@ pub(super) fn run(cmd: ExpansionCmd) -> Result<()> {
             Some(pack) => info_cmd(&pack, json),
             None => format_info(json),
         },
+        ExpansionCmd::Diff {
+            old,
+            new,
+            changelog,
+            json,
+        } => diff_cmd(&old, &new, changelog, json),
     }
+}
+
+fn diff_cmd(old: &Path, new: &Path, changelog: bool, json: bool) -> Result<()> {
+    use legaia_expansion_format::diff::{Change, diff_packs};
+    let load = |p: &Path| ExpansionPack::from_files(&read_files(p)?);
+    let (a, b) = (load(old)?, load(new)?);
+    let d = diff_packs(&a, &b);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&d)?);
+        return Ok(());
+    }
+    if changelog {
+        print!("{}", d.changelog());
+        return Ok(());
+    }
+    let (added, removed, changed) = d.counts();
+    println!(
+        "{} {} -> {}: {added} added, {removed} removed, {changed} changed",
+        b.manifest.id, d.old_version, d.new_version
+    );
+    for f in &d.files {
+        println!("{}", f.path);
+        for e in &f.entries {
+            match &e.change {
+                Change::Added => println!("  + {} {}", e.collection, e.id),
+                Change::Removed => println!("  - {} {}", e.collection, e.id),
+                Change::Changed(fields) => {
+                    println!("  ~ {} {}", e.collection, e.id);
+                    for c in fields {
+                        println!(
+                            "      {}: {} -> {}",
+                            if c.field.is_empty() {
+                                "(value)"
+                            } else {
+                                &c.field
+                            },
+                            c.old.as_deref().unwrap_or("(none)"),
+                            c.new.as_deref().unwrap_or("(none)")
+                        );
+                    }
+                }
+            }
+        }
+    }
+    if let Some(v) = d.suggested_version()
+        && v != d.new_version
+        && d.new_version == d.old_version
+    {
+        println!("suggested version: {v}");
+    }
+    Ok(())
 }
 
 fn print_issues(issues: &[Issue]) {
@@ -62,6 +119,18 @@ fn bundle_cmd(dir: &Path, out: &Path) -> Result<()> {
     print_issues(&issues);
     if has_errors(&issues) {
         bail!("{} failed validation; not bundled", dir.display());
+    }
+    // Only the layout's files: what the loader reads, so the bundle
+    // unpacks to the editable tree the workbench round-trips byte for byte.
+    let (files, skipped): (PackFiles, PackFiles) = files
+        .into_iter()
+        .partition(|(p, _)| legaia_expansion_format::is_known_path(p));
+    if !skipped.is_empty() {
+        println!(
+            "skipped {} file(s) outside the pack layout: {}",
+            skipped.len(),
+            skipped.keys().cloned().collect::<Vec<_>>().join(", ")
+        );
     }
     let bytes = write_bundle(&files)?;
     std::fs::write(out, &bytes).with_context(|| format!("writing {}", out.display()))?;
@@ -135,6 +204,12 @@ fn info_cmd(path: &Path, json: bool) -> Result<()> {
         println!("  homepage:  {h}");
     }
     println!("  schema:    {}   disc: {}", m.schema, m.disc);
+    if let Some(e) = &m.min_engine {
+        println!("  engine:    {e} or newer");
+    }
+    if let Some(c) = &m.cover {
+        println!("  cover:     {c}");
+    }
     for (label, list) in [
         ("tags", &m.tags),
         ("requires", &m.requires),

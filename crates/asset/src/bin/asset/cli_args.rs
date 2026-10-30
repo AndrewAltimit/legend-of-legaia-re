@@ -1264,8 +1264,9 @@ pub(super) enum ExpansionCmd {
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
-    /// Pack a pack directory into one `.lxpack` bundle. Refuses a pack that
-    /// fails validation.
+    /// Pack a pack directory into one `.lxpack` bundle: the files of the
+    /// pack layout, which is all the loader reads. Refuses a pack that fails
+    /// validation.
     Bundle {
         /// Pack directory.
         dir: PathBuf,
@@ -1286,6 +1287,21 @@ pub(super) enum ExpansionCmd {
     Info {
         /// Pack directory or `.lxpack` file.
         pack: Option<PathBuf>,
+        /// Emit JSON instead of text.
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Compare two versions of a pack (directories or `.lxpack` files),
+    /// file by file and entry by entry, or draft the changelog section for
+    /// the newer one.
+    Diff {
+        /// The older version.
+        old: PathBuf,
+        /// The newer version.
+        new: PathBuf,
+        /// Print a Markdown changelog draft instead of the diff.
+        #[arg(long, default_value_t = false)]
+        changelog: bool,
         /// Emit JSON instead of text.
         #[arg(long, default_value_t = false)]
         json: bool,

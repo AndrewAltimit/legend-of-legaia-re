@@ -42,3 +42,28 @@ fn rebirth_round_trips_through_to_files() {
     assert_eq!(pack.to_files().unwrap(), exported, "deterministic");
     assert!(validate_files(&exported, None).is_empty());
 }
+
+/// The share path end to end: the directory bundles, the bundle imports
+/// through every gate with its cover, its sources unbundle to the same tree,
+/// and that tree bundles to the same bytes.
+#[test]
+fn rebirth_shares_byte_identically() {
+    use legaia_expansion_format::{bundle, share};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    let files = legaia_expansion_format::read_dir_files(&root).unwrap();
+    let layout: legaia_expansion_format::PackFiles = files
+        .into_iter()
+        .filter(|(p, _)| legaia_expansion_format::is_known_path(p))
+        .collect();
+    let bytes = bundle::write_bundle(&layout).unwrap();
+    let imported = share::import_bundle(&bytes).unwrap();
+    assert_eq!(imported.summary.id, "rebirth");
+    assert_eq!(imported.summary.cover.as_deref(), Some("assets/cover.png"));
+    assert!(imported.cover().unwrap().starts_with(b"\x89PNG"));
+    assert!(imported.pack.manifest.compatibility().is_ok());
+    assert_eq!(imported.files, layout);
+    assert_eq!(bundle::write_bundle(&imported.files).unwrap(), bytes);
+    // An unchanged pack diffs empty against itself.
+    let d = legaia_expansion_format::diff::diff_packs(&imported.pack, &imported.pack);
+    assert!(d.is_empty());
+}

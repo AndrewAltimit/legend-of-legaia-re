@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; expansion packs</div>
   <h1>Expansion packs: the format</h1>
-  <p class="lede">An expansion pack is a modder-authored bundle of new content for the port - custom maps, battles and bosses, a level curve, quests, dialogue, trading cards, game modes - that the engine loads beside the player's own disc. It is the port's own format, not a disc format, so nothing here is decoded from retail and the page carries no confidence labels: it is the specification. This page covers the pack's layout, the manifest, how a pack names disc content, the shareable <code>.lxpack</code> bundle and validation. The sections have pages of their own (<a href="expansion-pack-battle.html">battles</a>, <a href="expansion-pack-quests.html">quests</a>, <a href="expansion-pack-cutscenes.html">cutscenes</a>, <a href="expansion-pack-maps.html">maps</a>); the tour is the <a href="../guides/expansion-packs.html">expansion packs hub</a>.</p>
+  <p class="lede">An expansion pack is a modder-authored bundle of new content for the port - custom maps, battles and bosses, a level curve, quests, dialogue, trading cards, game modes - that the engine loads beside the player's own disc. It is the port's own format, not a disc format, so nothing here is decoded from retail and the page carries no confidence labels: it is the specification. This page covers the pack's layout, the manifest and its versions, how a pack names disc content, the shareable <code>.lxpack</code> bundle, validation, what an import trusts, save compatibility across pack versions, and comparing two versions. The sections have pages of their own (<a href="expansion-pack-battle.html">battles</a>, <a href="expansion-pack-quests.html">quests</a>, <a href="expansion-pack-cutscenes.html">cutscenes</a>, <a href="expansion-pack-maps.html">maps</a>); the tour is the <a href="../guides/expansion-packs.html">expansion packs hub</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance" data-doc="at-a-glance">
@@ -10,12 +10,13 @@
     <dt>Source form</dt><dd>A directory: <code>pack.toml</code> plus optional section files, <code>maps/</code> and <code>assets/</code>.</dd>
     <dt>Shareable form</dt><dd>One <code>.lxpack</code> file (<a href="#the-lxpack-bundle">bundle</a>), byte-deterministic.</dd>
     <dt>Encoding</dt><dd>UTF-8 TOML for every manifest, section and map.</dd>
-    <dt>Schema</dt><dd>Version <code>1</code> (<code>manifest::SCHEMA_VERSION</code>).</dd>
+    <dt>Schema</dt><dd>Version <code>2</code> (<code>manifest::SCHEMA_VERSION</code>); schemas <code>1</code> and <code>2</code> load.</dd>
     <dt>Disc</dt><dd>NA release only, <code>SCUS-94254</code>.</dd>
     <dt>Parser</dt><dd><code>ExpansionPack::from_files</code> - one parser for a directory, a bundle and the browser workbench's input.</dd>
     <dt>Writer</dt><dd><code>ExpansionPack::to_files</code>, <code>bundle::write_bundle</code>.</dd>
     <dt>Validator</dt><dd><code>validate::validate</code>, <code>validate::validate_files</code>.</dd>
-    <dt>CLI</dt><dd><code>asset expansion validate / bundle / unbundle / info</code>.</dd>
+    <dt>Sharing</dt><dd><code>share::import_bundle</code> (the import gates), <code>diff::diff_packs</code> (two versions compared).</dd>
+    <dt>CLI</dt><dd><code>asset expansion validate / bundle / unbundle / info / diff</code>, <code>legaia-engine packs</code>.</dd>
     <dt>Crate</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md" target="_blank" rel="noopener"><code>legaia_expansion_format</code></a>; the runtime is <code>legaia_engine_expansion</code>.</dd>
   </dl>
   <p class="callout callout-tip">A pack carries <strong>no bytes from the disc</strong>. Every disc asset it uses is named by a coordinate (<a href="#disc-references"><code>DiscRef</code></a>) and resolved against the disc the player supplies - the same rule a shareable <a href="../tooling/translation.html">language pack</a> follows. The flagship pack, <a href="../guides/rebirth.html">Rebirth</a>, is written with exactly the format and tooling on this page.</p>
@@ -53,18 +54,46 @@
       <tr><td><code>version</code></td><td>string</td><td>yes</td><td>Semantic version, <code>MAJOR.MINOR.PATCH[-pre][+build]</code>.</td></tr>
       <tr><td><code>authors</code></td><td>string list</td><td>no</td><td>Who made it.</td></tr>
       <tr><td><code>description</code></td><td>string</td><td>no</td><td>What the pack adds.</td></tr>
-      <tr><td><code>schema</code></td><td>integer</td><td>no</td><td>Schema version the pack is written against; defaults to the current one.</td></tr>
+      <tr><td><code>schema</code></td><td>integer</td><td>no</td><td>Pack-format version the pack is written against; defaults to the current one.</td></tr>
       <tr><td><code>disc</code></td><td>string</td><td>no</td><td>The disc the coordinates point into; <code>SCUS-94254</code>, the only value accepted.</td></tr>
       <tr><td><code>license</code></td><td>string</td><td>no</td><td>Licence for the pack's own content: an SPDX expression or free text.</td></tr>
       <tr><td><code>homepage</code></td><td>string</td><td>no</td><td>Where the pack is published, an <code>http(s)</code> URL.</td></tr>
       <tr><td><code>tags</code></td><td>string list</td><td>no</td><td>Discovery tags, pack-id syntax.</td></tr>
-      <tr><td><code>requires</code></td><td>string list</td><td>no</td><td>Pack ids that must be loaded alongside this one.</td></tr>
-      <tr><td><code>conflicts</code></td><td>string list</td><td>no</td><td>Pack ids that must not be.</td></tr>
+      <tr><td><code>requires</code></td><td>string list</td><td>no</td><td>Packs that must be loaded alongside this one: <code>id</code>, or <code>id@range</code> (<a href="#dependencies">dependencies</a>).</td></tr>
+      <tr><td><code>conflicts</code></td><td>string list</td><td>no</td><td>Packs that must not be, in the same form; a range limits the conflict to those versions.</td></tr>
+      <tr><td><code>cover</code></td><td>string</td><td>no</td><td>The cover image: a PNG under <code>assets/</code>, written from the pack root (<code>assets/cover.png</code>). Schema 2.</td></tr>
+      <tr><td><code>min_engine</code></td><td>string</td><td>no</td><td>The oldest engine version the pack runs on, semver. Schema 2.</td></tr>
     </tbody>
   </table>
 <pre><code>id = "tower"
 name = "The Tower"
 version = "0.1.0"</code></pre>
+</section>
+
+<section class="doc-section" id="versions-and-compatibility" data-doc="versions-and-compatibility">
+  <h2>Versions and compatibility</h2>
+  <p>Three versions meet when a pack loads: the pack's own <code>version</code>, the <strong>pack format</strong> it is written in (<code>schema</code>), and the <strong>engine</strong> reading it (<code>manifest::ENGINE_VERSION</code>, the workspace version every engine crate shares).</p>
+  <table>
+    <thead><tr><th>Gate</th><th>Passes when</th><th>Refusal</th></tr></thead>
+    <tbody>
+      <tr><td>Pack format</td><td><code>schema</code> in <code>1..=2</code></td><td>"written in pack format N, newer than this engine reads ... update the engine"</td></tr>
+      <tr><td>Engine</td><td><code>min_engine</code> absent, or not newer than this engine</td><td>"needs engine X or newer; this engine is Y"</td></tr>
+    </tbody>
+  </table>
+  <p><code>ExpansionPack::from_files</code> runs both gates first, on a lenient read of <code>pack.toml</code> (<code>ManifestPeek</code>), before the strict parse - so a pack from a newer format is refused with "update the engine", not with "unknown field" for whatever new key it carries. Every reader parses through <code>from_files</code>, so the native <code>--expansion</code>, the launcher, the play page and the workbench all refuse alike. Old packs keep loading: schema 2 only added optional keys.</p>
+  <h3 id="dependencies">Dependencies</h3>
+  <p>A <code>requires</code> or <code>conflicts</code> entry is a pack id, optionally <code>@</code> and a version range (<code>PackDep</code>): comparators that must all hold, separated by commas or spaces, with cargo's operators.</p>
+  <table>
+    <thead><tr><th>Entry</th><th>Matches</th></tr></thead>
+    <tbody>
+      <tr><td><code>base</code></td><td>any version</td></tr>
+      <tr><td><code>base@1.2.3</code>, <code>base@^1.2.3</code></td><td><code>&gt;=1.2.3, &lt;2.0.0</code>; below <code>1.0.0</code> the caret holds the leftmost non-zero part</td></tr>
+      <tr><td><code>base@~1.2.3</code></td><td><code>&gt;=1.2.3, &lt;1.3.0</code></td></tr>
+      <tr><td><code>base@=1.2</code>, <code>base@1.2.*</code></td><td>any <code>1.2.x</code></td></tr>
+      <tr><td><code>base@&gt;=1.2 &lt;2</code></td><td>both bounds</td></tr>
+    </tbody>
+  </table>
+  <p>A pre-release satisfies a range only when a comparator names a pre-release of the same version. <code>check_dependencies</code> checks a manifest against the installed packs and names each missing pack, out-of-range version and installed conflict.</p>
 </section>
 
 <section class="doc-section" id="content-ids-and-namespacing" data-doc="content-ids-and-namespacing">
@@ -228,6 +257,8 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
     <li><strong>The reader trusts nothing first.</strong> It checks the magic, version, flags and trailer before the table, refuses unsorted or duplicate paths, unknown methods, a stored entry whose lengths differ and trailing bytes, inflates each entry to exactly its declared length, and checks each entry's digest.</li>
     <li><strong>Paths stay inside the output directory.</strong> Relative, <code>/</code>-separated, at most 255 bytes, no empty, <code>.</code> or <code>..</code> component and none of <code>\</code>, <code>:</code> or NUL - on every host.</li>
     <li><strong>Limits.</strong> 16384 entries, 64 MiB per entry and 512 MiB in total once decompressed.</li>
+    <li><strong>Error kinds.</strong> Every refusal carries a kind - <code>not_a_bundle</code>, <code>corrupt</code>, <code>unsupported_version</code>, <code>too_large</code>, <code>bad_path</code> - so a reader words it for a person. The version is read before the checksum, so a bundle from a newer writer says so.</li>
+    <li><strong>Layout only.</strong> <code>asset expansion bundle</code> writes the files of the layout, everything the loader reads, so a bundle unpacks to exactly the editable tree and the workbench's import-then-export reproduces it byte for byte.</li>
   </ul>
 </section>
 
@@ -239,13 +270,16 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
     <tbody>
       <tr><td><code>pack.toml</code> missing or unparsable, or any section or map unparsable</td><td>error</td></tr>
       <tr><td><code>id</code>, <code>version</code>, <code>tags</code>, <code>requires</code> or <code>conflicts</code> malformed; empty <code>name</code></td><td>error</td></tr>
-      <tr><td><code>schema</code> other than the current version; <code>disc</code> other than <code>SCUS-94254</code></td><td>error</td></tr>
+      <tr><td><code>schema</code> outside the formats this build reads; <code>disc</code> other than <code>SCUS-94254</code></td><td>error</td></tr>
+      <tr><td><code>min_engine</code> malformed or newer than this engine; a <code>requires</code> / <code>conflicts</code> entry or range malformed</td><td>error</td></tr>
+      <tr><td><code>cover</code> not a <code>.png</code> under <code>assets/</code>, absent, or over 1 MiB</td><td>error</td></tr>
+      <tr><td>A file anywhere named like a program, script or scriptable document (<a href="#sharing-and-trust">trust</a>)</td><td>error</td></tr>
       <tr><td>A pack in its own <code>requires</code> / <code>conflicts</code>, or one pack in both</td><td>error</td></tr>
       <tr><td>Content id malformed, pack-qualified at its definition, or defined twice</td><td>error</td></tr>
       <tr><td>Reference to undefined content, or to a pack not in <code>requires</code></td><td>error</td></tr>
       <tr><td><code>DiscRef</code> out of range, or rejected by the supplied resolver</td><td>error</td></tr>
       <tr><td>Any <a href="#the-no-disc-bytes-rule">no-disc-bytes</a> violation</td><td>error</td></tr>
-      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; non-URL <code>homepage</code>; a repeated list entry</td><td>warning</td></tr>
+      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; no <code>cover</code>; non-URL <code>homepage</code>; a repeated list entry; a schema-2 key in a schema-1 manifest</td><td>warning</td></tr>
       <tr><td>A file outside the <a href="#layout">layout</a></td><td>warning</td></tr>
     </tbody>
   </table>
@@ -282,14 +316,53 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
   <p class="callout callout-provenance">Packs are made to be shared, and the disc's bytes are not the project's to share. The type allowlist does most of the work: an LZS stream, a DATA_FIELD chunk or a headerless table has no PNG or Ogg signature, so it fails rule 2 even though it has no magic of its own for rule 3 to catch. The checks guard against accidents, not a proof; text a modder pastes in from the game is still the modder's responsibility.</p>
 </section>
 
+<section class="doc-section" id="sharing-and-trust" data-doc="sharing-and-trust">
+  <h2>Sharing and trust</h2>
+  <p>A pack is downloaded from strangers and opened in a browser tab or beside a game, so its contents are <strong>data only</strong>. Nothing in a pack is executed or interpreted as code: the engine reads TOML into typed structures, decodes PNG, glTF, Ogg and WAV with its own decoders, and shows text as text. The format has no scripting language - a cutscene, a boss script or a quest is a fixed vocabulary of steps the engine's own kernels run - and no field is a URL the engine fetches.</p>
+  <p><code>share::import_bundle</code> is the one gate a shared <code>.lxpack</code> passes through on every reader (the workbench's Open and drop, the play page's library, the launcher), in this order:</p>
+  <ol class="steps steps-vertical">
+    <li><b>Bundle</b><span>magic, bundle format, size limits, checksum, table, every path inside the pack directory - <code>not_a_bundle</code>, <code>unsupported_version</code>, <code>too_large</code>, <code>corrupt</code>, <code>bad_path</code></span></li>
+    <li><b>Trust</b><span>no disc file, no program, script or scriptable document anywhere (<code>.js</code>, <code>.html</code>, <code>.svg</code>, <code>.wasm</code>, <code>.exe</code>, <code>.sh</code>, ...), every asset an allowed type with its signature and no disc bytes, the asset budgets - <code>unsafe</code></span></li>
+    <li><b>Format</b><span>the pack-format and engine gates - <code>newer_format</code>, <code>older_format</code>, <code>newer_engine</code></span></li>
+    <li><b>Parse</b><span><code>pack.toml</code> and every section - <code>unparsable</code></span></li>
+  </ol>
+  <p>A pack that passes is opened; ordinary validation errors are left for the workbench to show and keep the engine from activating it. The play page re-reads its stored copy through the same gates on every activation. Packs are stored only in the viewer's own browser storage; nothing is uploaded.</p>
+  <p class="callout callout-provenance">The checks guard against accidents and obvious lures, not against every way to hide data inside a valid PNG or Ogg, and they cannot tell where pasted text came from. A pack's author answers for its content; the engine's part is that opening one can do nothing but add content to the game.</p>
+</section>
+
+<section class="doc-section" id="save-compatibility" data-doc="save-compatibility">
+  <h2>Save compatibility</h2>
+  <p>The save's expansion block (<a href="expansion-pack-quests.html">quests and saves</a>) records the pack version it was written under and names pack content by id. When a save made with one version loads under another, <code>save_compat::reconcile</code> runs as the progress is adopted for the active pack - on a load with the pack active, or when it activates after the load:</p>
+  <table>
+    <thead><tr><th>Saved entry</th><th>When the pack no longer defines it</th></tr></thead>
+    <tbody>
+      <tr><td>Quest, challenge, once-only boss</td><td>Dropped; a kept quest's objective progress is resized to its current objectives (new ones start at zero).</td></tr>
+      <tr><td>Pack-map location</td><td>Dropped; the resume lands in the map's base scene.</td></tr>
+      <tr><td>Card, booster set</td><td>Dropped with every copy; the duel deck keeps the cards that remain.</td></tr>
+      <tr><td>Pack item held or worn, art, spell</td><td>Dropped; a worn slot falls empty.</td></tr>
+      <tr><td>Pack flags and counters</td><td>Kept: names, not definitions.</td></tr>
+    </tbody>
+  </table>
+  <p>Nothing fails and nothing is invented. Both hosts show one toast (<code>Saved with rebirth 0.1.0: 3 saved entries are gone from the pack and were dropped</code>), the play page's expansion status repeats it, and the next save writes the reconciled progress under the new version.</p>
+</section>
+
+<section class="doc-section" id="diff-and-changelog" data-doc="diff-and-changelog">
+  <h2>Diff and changelog</h2>
+  <p><code>diff::diff_packs(old, new)</code> compares two versions through each file's TOML value, so comments and layout do not count. A top-level key holding a table of entries (<code>monsters</code>) or an array of tables with an <code>id</code> (<code>quests</code>, <code>cards</code>) is a collection: its entries are matched by key or id and reported added, removed or changed, a change listing each differing field as a dotted path with old and new values. Other keys are the file's <code>settings</code>; each map, asset and the manifest is an entry of its own.</p>
+  <p>The diff reads as semver: a removal is a major bump (it can break saves and dependent packs; below <code>1.0.0</code>, a minor one), an addition minor, a change alone a patch. <code>suggested_version</code> applies it, and <code>changelog</code> drafts a Markdown section - Added, Changed, Removed - for the top of <code>CHANGELOG.md</code>. The <a href="../tooling/expansion-workbench.html">workbench</a>'s Share panel and <code>asset expansion diff</code> both run it.</p>
+</section>
+
 <section class="doc-section" id="tooling" data-doc="tooling">
   <h2>Tooling</h2>
 <pre><code>asset expansion info                                   # schema, bundle version, layout
 asset expansion validate packs/rebirth [--strict]      # a directory or an .lxpack
 asset expansion bundle packs/rebirth -o rebirth.lxpack # refuses a pack with errors
 asset expansion unbundle rebirth.lxpack -o out/        # out/ must be empty or absent
-asset expansion info rebirth.lxpack [--json]</code></pre>
-  <p><code>validate</code> exits non-zero on any error, and with <code>--strict</code> on any warning. None of these reads a disc. The same checks run in the browser on the <a href="../tooling/expansion-workbench.html">expansion workbench</a>, with the visitor's disc resolving every coordinate.</p>
+asset expansion info rebirth.lxpack [--json]
+asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
+legaia-engine packs [--dir DIR] [--json]                # the installed packs
+legaia-engine play-window --expansion rebirth           # an installed pack, by id</code></pre>
+  <p><code>validate</code> exits non-zero on any error, and with <code>--strict</code> on any warning. None of these reads a disc. The native host's installed packs live in <code>packs/</code> under its data directory: <code>legaia-engine packs</code> lists each with its version, authors, pack format and whether it plays, <code>--expansion</code> takes a pack id as well as a path, and the launcher's pack picker opens there. The same checks run in the browser on the <a href="../tooling/expansion-workbench.html">expansion workbench</a>, with the visitor's disc resolving every coordinate.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="see-also">

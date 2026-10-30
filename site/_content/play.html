@@ -344,6 +344,21 @@ div.play-vis-head { cursor: default; }
   margin-top: 0.45rem; line-height: 1.55; word-break: break-word;
 }
 .play-save-status.is-error { color: #d84b4b; }
+/* The installed-packs list (js/play-pack-library.js). */
+.play-lib { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.45rem; }
+.play-lib.is-drop { outline: 1px dashed var(--accent); outline-offset: 3px; }
+.play-lib-empty { font-size: 0.74rem; color: var(--text-dim); }
+.play-lib-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 1px solid var(--border); background: var(--bg); padding: 0.3rem; }
+.play-lib-row.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.play-lib-cover { width: 64px; height: 36px; object-fit: cover; display: block; background: var(--bg-raised); }
+.play-lib-cover.is-blank { display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-weight: 600; }
+.play-lib-meta { min-width: 0; }
+.play-lib-name { font-size: 0.8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.play-lib-ver { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); font-weight: 400; }
+.play-lib-by { font-size: 0.72rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.play-lib-actions { display: flex; gap: 0.3rem; }
+.play-lib-actions button { font-size: 0.72rem; padding: 0.15rem 0.45rem; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); cursor: pointer; }
+.play-lib-actions button:hover { border-color: var(--accent); }
 #play-cheats .play-btn-row { margin-top: 0.4rem; align-items: center; }
 #play-cheats input[type="text"] { max-width: 100%; }
 .play-cheat-party {
@@ -862,9 +877,10 @@ div.play-vis-head { cursor: default; }
 
         <div class="play-card" id="play-expansion-card">
           <h3>Expansion pack</h3>
-          <label class="play-save-import">Load expansion (.lxpack)
+          <label class="play-save-import">Install a pack (.lxpack, or drop one on this card)
             <input type="file" id="expansion-import" accept=".lxpack" disabled>
           </label>
+          <div class="play-lib" id="expansion-library" aria-label="Installed packs"></div>
           <div class="play-btn-row">
             <select id="expansion-map" disabled aria-label="Pack map"></select>
             <button id="expansion-enter" type="button" disabled
@@ -1079,6 +1095,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/canvas-abr.js"></script>
 <script src="js/play-minigames.js"></script>
 <script src="js/play-expansion-live.js"></script>
+<script src="js/play-pack-library.js"></script>
 <script>
 (function () {
   'use strict';
@@ -1386,13 +1403,21 @@ div.play-vis-head { cursor: default; }
     try { info = JSON.parse(runtime.expansion_info_json()); } catch (e) { return; }
     if (info.dormant) {
       expansionMsg(`This save was made with the expansion pack "${info.dormant}", which is not loaded. Its progress is kept; load the pack to play it.`, true);
+    } else if (info.compat && info.compat.notice) {
+      /* A save from another version of the active pack: what it lost. */
+      expansionMsg(`${info.compat.notice}. Everything else in the save plays on.`, true);
     }
   }
 
   async function expansionDiscReady() {
     expansionInput.disabled = false;
-    expansionMsg('No expansion pack: the game as it shipped. Load an .lxpack to add one.');
-    if (!/[?&]expansion=1\b/.test(location.search)) return;
+    expansionMsg('No expansion pack: the game as it shipped. Install an .lxpack to add one.');
+    if (packLibrary) packLibrary.render();
+    /* Without the workbench's hand-off, play with the library's active pack. */
+    if (!/[?&]expansion=1\b/.test(location.search)) {
+      if (packLibrary) await packLibrary.loadActive();
+      return;
+    }
     const rec = await readWorkbenchPack();
     if (!rec || !rec.bytes) {
       expansionMsg('No pack from the expansion workbench is stored in this browser.', true);
@@ -1429,13 +1454,48 @@ div.play-vis-head { cursor: default; }
     adopted: (bytes) => { expansionBytes = bytes; },
   }) : null;
 
+  /* The installed-packs list (js/play-pack-library.js): install from a file
+   * or a drop, pick the active pack, see its cover, version and author,
+   * remove it. */
+  const packLibrary = window.LegaiaPackLibrary ? window.LegaiaPackLibrary.attach({
+    runtime: () => runtime,
+    load: (bytes, from) => { loadExpansionBytes(bytes, from); return lastExpansionInfo; },
+    status: expansionMsg,
+    mount: document.getElementById('expansion-library'),
+  }) : null;
+
+  async function expansionInstall(bytes, from) {
+    if (packLibrary) await packLibrary.install(bytes, from);
+    else loadExpansionBytes(bytes, from);
+  }
+
   expansionInput.addEventListener('change', async () => {
     const f = expansionInput.files && expansionInput.files[0];
     if (!f) return;
     const bytes = new Uint8Array(await f.arrayBuffer());
-    loadExpansionBytes(bytes, f.name);
     expansionInput.value = '';
+    await expansionInstall(bytes, f.name);
   });
+
+  /* Drop an .lxpack on the expansion card to install it. */
+  (function () {
+    const card = document.getElementById('play-expansion-card');
+    const lib = document.getElementById('expansion-library');
+    if (!card) return;
+    card.addEventListener('dragover', (e) => {
+      if (expansionInput.disabled) return;
+      e.preventDefault();
+      lib.classList.add('is-drop');
+    });
+    card.addEventListener('dragleave', () => lib.classList.remove('is-drop'));
+    card.addEventListener('drop', async (e) => {
+      lib.classList.remove('is-drop');
+      if (expansionInput.disabled) return;
+      e.preventDefault();
+      const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) await expansionInstall(new Uint8Array(await f.arrayBuffer()), f.name);
+    });
+  })();
 
   expansionEnterBtn.addEventListener('click', () => {
     const id = expansionMapSel.value;
@@ -1449,6 +1509,7 @@ div.play-vis-head { cursor: default; }
     try { runtime.unload_expansion(); } catch (e) { console.warn(e); }
     expansionBytes = null;
     expansionShow(null);
+    if (packLibrary) packLibrary.deactivate();
     expansionMsg('No expansion pack: the game as it shipped. Its progress stays in your saves.');
   });
 

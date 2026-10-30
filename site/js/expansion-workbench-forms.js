@@ -541,8 +541,10 @@ export function renderManifest(ctx, el) {
     { k: 'authors', t: 'csv', label: 'Authors', hint: 'comma-separated', wide: true },
     { k: 'description', t: 'textarea', label: 'Description', wide: true, rows: 4 },
     { k: 'tags', t: 'csv', label: 'Tags' },
-    { k: 'requires', t: 'csv', label: 'Requires', hint: 'pack ids' },
-    { k: 'conflicts', t: 'csv', label: 'Conflicts', hint: 'pack ids' },
+    { k: 'requires', t: 'csv', label: 'Requires', hint: 'id or id@range: base@^1.2' },
+    { k: 'conflicts', t: 'csv', label: 'Conflicts', hint: 'id or id@range' },
+    { k: 'min_engine', t: 'otext', label: 'Minimum engine', ph: '0.1.0' },
+    { k: 'cover', t: 'otext', label: 'Cover', ph: 'assets/cover.png', hint: 'Share sets it' },
   ]));
   el.append(h('p', { class: 'xw-note' }, `Schema ${m.schema}, disc ${m.disc}.`));
 }

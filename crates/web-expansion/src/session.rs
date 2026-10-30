@@ -33,7 +33,7 @@ use legaia_expansion_format::manifest::PackManifest;
 use legaia_expansion_format::map::{BaseGeometry, FLOOR_TIERS, Ground, MapDef, PropMesh};
 use legaia_expansion_format::progression::{MAX_LEVEL, ProgressionSection};
 use legaia_expansion_format::validate::{self, Issue, Severity};
-use legaia_expansion_format::{ExpansionPack, PackFiles, bundle};
+use legaia_expansion_format::{ExpansionPack, PackFiles, bundle, diff, share};
 use legaia_scene_formats::field_objects::{COLLISION_GRID_OFFSET, GRID_DIM};
 
 use crate::catalog::{DiscCatalog, SceneObjects};
@@ -257,7 +257,11 @@ impl Core {
     }
 
     /// The file tree the pack exports as. A manifest, section or map whose
-    /// value equals what it was loaded as keeps its original bytes.
+    /// value equals what it was loaded as keeps its original bytes - and so
+    /// does a section file the pack was loaded with whose value is the
+    /// default (an empty `battle.toml`), which [`ExpansionPack::to_files`]
+    /// alone would leave out. So an unedited pack exports exactly the layout
+    /// files it was loaded from: `.lxpack` in, the same `.lxpack` out.
     pub fn pack_files(&self, pack_json: &str) -> Result<PackFiles> {
         let pack = self.pack_from_json(pack_json)?;
         let mut files = pack.to_files()?;
@@ -272,6 +276,16 @@ impl Core {
                 && self.original_canonical.get(path) == Some(bytes)
             {
                 bytes.clone_from(o);
+            }
+        }
+        // A section file the pack was loaded with that holds only its
+        // default (an empty `battle.toml`) and is still the default: `to_files`
+        // writes no file for it, so keep the loaded one. With this an unedited
+        // pack exports exactly the layout files it came from.
+        for (path, o) in &self.original {
+            let section = legaia_expansion_format::SECTION_FILES.contains(&path.as_str());
+            if section && !files.contains_key(path) && !self.original_canonical.contains_key(path) {
+                files.insert(path.clone(), o.clone());
             }
         }
         Ok(files)
@@ -335,6 +349,124 @@ impl Core {
             );
         }
         bundle::write_bundle(&files)
+    }
+
+    // --- Sharing -----------------------------------------------------------------
+
+    /// Import a shared `.lxpack` through every gate
+    /// ([`legaia_expansion_format::share::import_bundle`]) and load it:
+    /// `{ ok: true, pack, files, issues, summary }`, or `{ ok: false,
+    /// error: { kind, message } }` naming the gate that refused it
+    /// (`not_a_bundle`, `corrupt`, `unsupported_version`, `too_large`,
+    /// `bad_path`, `newer_format`, `older_format`, `newer_engine`, `unsafe`,
+    /// `unparsable`). A refused bundle leaves the session as it was.
+    pub fn import_bundle(&mut self, bytes: &[u8]) -> Value {
+        match share::import_bundle(bytes) {
+            Err(e) => json!({ "ok": false, "error": e }),
+            Ok(imported) => {
+                let summary = imported.summary.clone();
+                let mut v = self.load_files(imported.files);
+                v["ok"] = json!(true);
+                v["summary"] = json!(summary);
+                v
+            }
+        }
+    }
+
+    /// The pack the page holds against an older version of it (`old`, the
+    /// `.lxpack` the page was handed): `{ diff, counts: [added, removed,
+    /// changed], bump, suggested_version, changelog, same_pack }`
+    /// ([`legaia_expansion_format::diff`]).
+    pub fn diff_against(&self, old: &[u8], pack_json: &str) -> Result<Value> {
+        let old = share::import_bundle(old)
+            .map_err(|e| anyhow::anyhow!("{}", e.message))?
+            .pack;
+        let new = self.pack_from_json(pack_json)?;
+        let d = diff::diff_packs(&old, &new);
+        let (a, r, c) = d.counts();
+        Ok(json!({
+            "old": { "id": old.manifest.id, "version": old.manifest.version },
+            "same_pack": old.manifest.id == new.manifest.id,
+            "counts": [a, r, c],
+            "bump": d.bump(),
+            "suggested_version": d.suggested_version(),
+            "changelog": d.changelog(),
+            "diff": d,
+        }))
+    }
+
+    /// Put a documentation file (`CHANGELOG.md`, `README.md`, ...) into the
+    /// pack, carried with its assets. Refused for any other path.
+    pub fn set_doc(&mut self, path: &str, bytes: Vec<u8>) -> Result<()> {
+        if !is_doc(path) {
+            bail!("{path} is not one of the pack's documentation files");
+        }
+        self.extras.insert(path.to_string(), bytes);
+        Ok(())
+    }
+
+    /// A documentation file's text (empty when absent).
+    pub fn doc_text(&self, path: &str) -> String {
+        self.extras
+            .get(path)
+            .filter(|_| is_doc(path))
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .unwrap_or_default()
+    }
+
+    /// The pack's source tree as a zip under one `<id>/` folder
+    /// ([`share::sources_zip`]): the editable form, which unpacks into a
+    /// directory Open folder reads back.
+    pub fn sources_zip(&self, pack_json: &str) -> Result<Vec<u8>> {
+        let files = self.pack_files(pack_json)?;
+        let pack = self.pack_from_json(pack_json)?;
+        let root = if pack.manifest.id.is_empty() {
+            "pack"
+        } else {
+            pack.manifest.id.as_str()
+        };
+        Ok(share::sources_zip(root, &files)?)
+    }
+
+    /// The pack's identity as the sharing panel shows it: can this engine
+    /// load it, what it needs, its cover's size. `{ engine, schema,
+    /// schema_min, schema_max, compatible, why, cover_bytes, requires:
+    /// [{ text, id, range, ok }], conflicts: [...] }`.
+    pub fn share_status(&self, pack_json: &str) -> Result<Value> {
+        use legaia_expansion_format::manifest::{
+            ENGINE_VERSION, MIN_SCHEMA_VERSION, PackDep, SCHEMA_VERSION,
+        };
+        let pack = self.pack_from_json(pack_json)?;
+        let m = &pack.manifest;
+        let deps = |list: &[String]| -> Vec<Value> {
+            list.iter()
+                .map(|t| match PackDep::parse(t) {
+                    Ok(d) => json!({
+                        "text": t, "id": d.id,
+                        "range": d.version.map(|r| r.to_string()), "ok": true,
+                    }),
+                    Err(e) => json!({ "text": t, "ok": false, "error": e }),
+                })
+                .collect()
+        };
+        let cover = m
+            .cover
+            .as_ref()
+            .and_then(|c| c.strip_prefix("assets/"))
+            .and_then(|c| pack.assets.get(c))
+            .map(Vec::len);
+        let compat = m.compatibility();
+        Ok(json!({
+            "engine": ENGINE_VERSION,
+            "schema": m.schema,
+            "schema_min": MIN_SCHEMA_VERSION,
+            "schema_max": SCHEMA_VERSION,
+            "compatible": compat.is_ok(),
+            "why": compat.err().map(|e| e.to_string()),
+            "cover_bytes": cover,
+            "requires": deps(&m.requires),
+            "conflicts": deps(&m.conflicts),
+        }))
     }
 
     // --- Previews ----------------------------------------------------------------

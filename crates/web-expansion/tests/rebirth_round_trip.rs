@@ -208,8 +208,8 @@ fn the_arts_preview_rolls_rebirths_arts() {
 }
 
 /// The workbench's `.lxpack` of an unedited Rebirth is the CLI's
-/// (`asset expansion bundle packs/rebirth`: every file of the tree through
-/// `write_bundle`), byte for byte.
+/// (`asset expansion bundle packs/rebirth`: the tree's layout files - all
+/// of Rebirth's - through `write_bundle`), byte for byte.
 #[test]
 fn unedited_rebirth_bundle_is_the_cli_bundle() {
     let mut core = Core::new();
@@ -328,4 +328,115 @@ fn a_shop_row_in_either_spelling_is_unchanged() {
     }
     assert!(rewrote > 0, "Rebirth has bare shop rows");
     assert_eq!(core.export_bundle(&pack.to_string()).unwrap(), cli);
+}
+
+/// The import path: `.lxpack` -> editable sources -> `.lxpack` is byte for
+/// byte the bundle that came in, and so is the sources zip's tree.
+#[test]
+fn an_imported_bundle_exports_its_own_bytes() {
+    let layout: PackFiles = rebirth_files()
+        .into_iter()
+        .filter(|(p, _)| legaia_expansion_format::is_known_path(p))
+        .collect();
+    let bytes = bundle::write_bundle(&layout).unwrap();
+    let mut core = Core::new();
+    let r = core.import_bundle(&bytes);
+    assert_eq!(r["ok"], true, "{}", r["error"]);
+    assert_eq!(r["summary"]["cover"], "assets/cover.png");
+    let pack = r["pack"].to_string();
+    assert_eq!(core.export_bundle(&pack).unwrap(), bytes);
+    // The sources zip holds the same files under `rebirth/`.
+    let zip = core.sources_zip(&pack).unwrap();
+    assert!(zip.starts_with(b"PK\x03\x04"));
+    for path in layout.keys() {
+        let name = format!("rebirth/{path}");
+        assert!(
+            zip.windows(name.len()).any(|w| w == name.as_bytes()),
+            "{name}"
+        );
+    }
+}
+
+/// A bundle carrying an empty section file (its value the default) comes
+/// back with that file, so the round trip holds for any tree, not only one
+/// the workbench wrote.
+#[test]
+fn an_empty_section_file_survives_the_round_trip() {
+    let mut files = PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"# hand written\nid = \"t\"\nname = \"T\"\nversion = \"0.1.0\"\n".to_vec(),
+    );
+    files.insert("battle.toml".into(), b"# nothing yet\n".to_vec());
+    files.insert("CHANGELOG.md".into(), b"## 0.1.0\n".to_vec());
+    let bytes = bundle::write_bundle(&files).unwrap();
+    let mut core = Core::new();
+    let r = core.import_bundle(&bytes);
+    assert_eq!(r["ok"], true);
+    assert_eq!(core.export_bundle(&r["pack"].to_string()).unwrap(), bytes);
+    assert_eq!(core.doc_text("CHANGELOG.md"), "## 0.1.0\n");
+}
+
+/// Refused imports name their gate; the session keeps the pack it had.
+#[test]
+fn refused_imports_name_the_gate() {
+    let mut core = Core::new();
+    let (_, pack) = load(&mut core);
+    let r = core.import_bundle(b"PK\x03\x04 a zip, not a pack");
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["error"]["kind"], "not_a_bundle");
+    let mut newer = PackFiles::new();
+    newer.insert(
+        "pack.toml".into(),
+        b"id = \"t\"\nname = \"T\"\nversion = \"3.0.0\"\nschema = 99\nshiny = 1\n".to_vec(),
+    );
+    let r = core.import_bundle(&bundle::write_bundle(&newer).unwrap());
+    assert_eq!(r["error"]["kind"], "newer_format");
+    assert!(
+        r["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("update the engine")
+    );
+    // Still the Rebirth session: it exports as before.
+    assert!(core.export_bundle(&pack.to_string()).is_ok());
+}
+
+/// The diff panel: Rebirth against an edited copy of itself.
+#[test]
+fn the_diff_panel_reads_an_older_bundle() {
+    let mut core = Core::new();
+    let (files, mut pack) = load(&mut core);
+    let old: PackFiles = files
+        .into_iter()
+        .filter(|(p, _)| legaia_expansion_format::is_known_path(p))
+        .collect();
+    let old = bundle::write_bundle(&old).unwrap();
+    let same = core.diff_against(&old, &pack.to_string()).unwrap();
+    assert_eq!(same["counts"], serde_json::json!([0, 0, 0]));
+    assert_eq!(same["suggested_version"], Value::Null);
+
+    pack["battle"]["monsters"]["mist_hound"] = serde_json::json!({
+        "base": { "kind": "monster", "id": 12 },
+        "hp": 9000,
+    });
+    pack["battle"]["monsters"]["ironhide_ogre"]["hp"] = serde_json::json!({ "mul": 4.0 });
+    let d = core.diff_against(&old, &pack.to_string()).unwrap();
+    assert_eq!(d["same_pack"], true);
+    assert_eq!(d["counts"], serde_json::json!([1, 0, 1]));
+    assert_eq!(d["bump"], "minor");
+    assert_eq!(d["suggested_version"], "0.2.0");
+    let log = d["changelog"].as_str().unwrap();
+    assert!(
+        log.contains("- monster `mist_hound` (battle.toml)"),
+        "{log}"
+    );
+    assert!(
+        log.contains("- monster `ironhide_ogre`: hp (battle.toml)"),
+        "{log}"
+    );
+
+    let s = core.share_status(&pack.to_string()).unwrap();
+    assert_eq!(s["compatible"], true);
+    assert!(s["cover_bytes"].as_u64().unwrap() > 0);
 }

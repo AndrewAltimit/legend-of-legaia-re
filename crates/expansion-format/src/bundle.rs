@@ -56,6 +56,61 @@ const HEADER_LEN: usize = 16;
 const ENTRY_FIXED_LEN: usize = 0x2C;
 const DIGEST_LEN: usize = 32;
 
+/// Largest bundle file: every entry at its limits, stored.
+pub const MAX_BUNDLE_LEN: usize =
+    HEADER_LEN + MAX_ENTRIES * (ENTRY_FIXED_LEN + MAX_PATH_LEN) + MAX_TOTAL_LEN + DIGEST_LEN;
+
+/// What kind of failure a bundle read hit, for a reader that words it for a
+/// person (the workbench's import, the play page's library).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BundleErrorKind {
+    /// The bytes do not start with the bundle magic: some other file.
+    NotABundle,
+    /// The file is damaged or truncated: a checksum, length or table fails.
+    Corrupt,
+    /// The bundle is written in a bundle format this build does not read.
+    UnsupportedVersion,
+    /// The bundle, an entry or the whole tree is over a size limit.
+    TooLarge,
+    /// An entry's path could escape the pack directory or is malformed.
+    BadPath,
+}
+
+/// A bundle read failure with its [`BundleErrorKind`]; carried inside the
+/// `anyhow::Error` [`read_bundle`] returns (`downcast_ref::<BundleError>`).
+/// A failure with no `BundleError` inside is [`BundleErrorKind::Corrupt`]
+/// ([`error_kind`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleError {
+    pub kind: BundleErrorKind,
+    pub message: String,
+}
+
+impl std::fmt::Display for BundleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for BundleError {}
+
+/// The kind of a [`read_bundle`] failure.
+pub fn error_kind(e: &anyhow::Error) -> BundleErrorKind {
+    e.downcast_ref::<BundleError>()
+        .map_or(BundleErrorKind::Corrupt, |b| b.kind)
+}
+
+macro_rules! refuse {
+    ($kind:ident, $($t:tt)*) => {
+        return Err(BundleError {
+            kind: BundleErrorKind::$kind,
+            message: format!($($t)*),
+        }
+        .into())
+    };
+}
+
 const METHOD_STORED: u8 = 0;
 const METHOD_DEFLATE: u8 = 1;
 
@@ -131,32 +186,51 @@ pub fn is_bundle(bytes: &[u8]) -> bool {
 
 /// Parse `.lxpack` bytes back into the pack tree.
 pub fn read_bundle(bytes: &[u8]) -> Result<PackFiles> {
-    ensure!(is_bundle(bytes), "not an .lxpack bundle (bad magic)");
-    ensure!(
-        bytes.len() >= HEADER_LEN + DIGEST_LEN,
-        "bundle is truncated"
-    );
+    if !is_bundle(bytes) {
+        refuse!(
+            NotABundle,
+            "not an .lxpack bundle (the file does not start with the bundle magic)"
+        );
+    }
+    if bytes.len() > MAX_BUNDLE_LEN {
+        refuse!(
+            TooLarge,
+            "the file is {} bytes, over the {MAX_BUNDLE_LEN}-byte bundle limit",
+            bytes.len()
+        );
+    }
+    if bytes.len() < HEADER_LEN + DIGEST_LEN {
+        refuse!(Corrupt, "bundle is truncated");
+    }
     let (body, trailer) = bytes.split_at(bytes.len() - DIGEST_LEN);
-    ensure!(
-        Sha256::digest(body).as_slice() == trailer,
-        "bundle checksum mismatch (the file is corrupt or truncated)"
-    );
+    // The version is read before the checksum so a bundle from a newer
+    // writer says so, whatever else that format changed.
+    let version = u16::from_le_bytes([body[8], body[9]]);
+    if version != BUNDLE_VERSION {
+        refuse!(
+            UnsupportedVersion,
+            "bundle format version {version} is not supported (this build reads version {BUNDLE_VERSION}); update the engine"
+        );
+    }
+    if Sha256::digest(body).as_slice() != trailer {
+        refuse!(
+            Corrupt,
+            "bundle checksum mismatch (the file is corrupt or truncated)"
+        );
+    }
     let mut r = Cursor {
         bytes: body,
-        pos: 8,
+        pos: 10,
     };
-    let version = r.u16()?;
-    ensure!(
-        version == BUNDLE_VERSION,
-        "bundle format version {version} is not supported (this build reads {BUNDLE_VERSION})"
-    );
     let flags = r.u16()?;
     ensure!(flags == 0, "unknown bundle flags 0x{flags:04X}");
     let count = r.u32()? as usize;
-    ensure!(
-        count <= MAX_ENTRIES,
-        "{count} entries exceed the bundle limit of {MAX_ENTRIES}"
-    );
+    if count > MAX_ENTRIES {
+        refuse!(
+            TooLarge,
+            "{count} entries exceed the bundle limit of {MAX_ENTRIES}"
+        );
+    }
     ensure!(
         count * ENTRY_FIXED_LEN <= body.len() - HEADER_LEN,
         "{count} entries cannot fit in a {}-byte bundle",
@@ -182,14 +256,23 @@ pub fn read_bundle(bytes: &[u8]) -> Result<PackFiles> {
         let path = std::str::from_utf8(r.take(path_len)?)
             .with_context(|| format!("entry {i}: path is not UTF-8"))?
             .to_string();
-        ensure!(is_valid_path(&path), "entry {i}: invalid path {path:?}");
+        if !is_valid_path(&path) {
+            refuse!(BadPath, "entry {i}: invalid path {path:?}");
+        }
         ensure!(reserved == 0, "{path}: reserved byte is {reserved}");
-        ensure!(
-            raw_len <= MAX_ENTRY_LEN,
-            "{path}: {raw_len} bytes exceed the entry limit"
-        );
+        if raw_len > MAX_ENTRY_LEN {
+            refuse!(
+                TooLarge,
+                "{path}: {raw_len} bytes exceed the {MAX_ENTRY_LEN}-byte entry limit"
+            );
+        }
         total += raw_len;
-        ensure!(total <= MAX_TOTAL_LEN, "the bundle exceeds the size limit");
+        if total > MAX_TOTAL_LEN {
+            refuse!(
+                TooLarge,
+                "the pack unpacks to over the {MAX_TOTAL_LEN}-byte bundle limit"
+            );
+        }
         match method {
             METHOD_STORED => ensure!(
                 stored_len == raw_len,
@@ -335,6 +418,22 @@ mod tests {
         }
         assert!(read_bundle(&good[..good.len() - 1]).is_err());
         assert!(read_bundle(b"PK\x03\x04").is_err());
+    }
+
+    #[test]
+    fn failures_carry_their_kind() {
+        let good = write_bundle(&sample()).unwrap();
+        let kind = |b: &[u8]| error_kind(&read_bundle(b).unwrap_err());
+        assert_eq!(kind(b"PK\x03\x04"), BundleErrorKind::NotABundle);
+        assert_eq!(kind(&good[..good.len() - 3]), BundleErrorKind::Corrupt);
+        let mut flipped = good.clone();
+        flipped[HEADER_LEN + 20] ^= 1;
+        assert_eq!(kind(&flipped), BundleErrorKind::Corrupt);
+        let mut newer = good.clone();
+        newer[8] = 2;
+        let e = read_bundle(&newer).unwrap_err();
+        assert_eq!(error_kind(&e), BundleErrorKind::UnsupportedVersion);
+        assert!(e.to_string().contains("update the engine"), "{e}");
     }
 
     #[test]

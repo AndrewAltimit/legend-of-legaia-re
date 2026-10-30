@@ -25,7 +25,7 @@ use std::path::PathBuf;
         also resolve against the current directory - run from the same directory \
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
-        Playing:      play-window, play-str, config, save, load\n  \
+        Playing:      play-window, play-str, config, save, load, packs\n  \
         Exploring:    list-scenes, info, record, replay, export-glb\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
@@ -1484,6 +1484,19 @@ pub(crate) enum Cmd {
         /// Window height.
         #[arg(long, default_value_t = 480)]
         height: u32,
+    },
+    /// List the installed expansion packs: every `.lxpack` and pack folder
+    /// in the packs folder (`packs/` under the data directory), with its
+    /// version, authors, pack format and whether it plays on this engine.
+    /// `play-window --expansion <id>` plays one by its id.
+    #[command(display_order = 5)]
+    Packs {
+        /// The folder to list instead of the packs folder.
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Print JSON instead of text.
+        #[arg(long)]
+        json: bool,
     },
     /// Show or update the keyboard-to-pad-button input mapping used by
     /// `play-window`. The config file defaults to `legaia-input.toml` in

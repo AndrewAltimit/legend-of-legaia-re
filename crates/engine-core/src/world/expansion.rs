@@ -61,6 +61,9 @@ impl World {
         // One activation path for battles and quests: the quest runtime
         // follows the pack (adopting progress a save left dormant for it).
         self.adopt_expansion_progress();
+        // A save loaded before this pack was active, made with another
+        // version of it, says what it lost.
+        self.toast_expansion_compat();
         self.compile_expansion_items();
         self.compile_expansion_arts();
         // The run rules' flags a pack can gate on (`run.ng_plus`, ...).

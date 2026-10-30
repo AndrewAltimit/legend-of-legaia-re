@@ -180,9 +180,11 @@ impl World {
         // A loaded save starts outside any cutscene.
         self.expansion.cutscene.clear();
         self.expansion.cutscene.hidden.clear();
+        self.expansion.last_compat = None;
         self.adopt_expansion_progress();
         self.expansion.toasts.clear();
         self.toast_dormant_pack();
+        self.toast_expansion_compat();
     }
 
     /// Bring the quest runtime onto the active pack (adopting a dormant

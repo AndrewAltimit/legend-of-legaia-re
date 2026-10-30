@@ -36,6 +36,10 @@ fn info_json(pack: Option<&ExpansionPack>, errors: &[String], warnings: &[String
             "version": p.manifest.version,
             "authors": p.manifest.authors,
             "description": p.manifest.description,
+            "license": p.manifest.license,
+            "schema": p.manifest.schema,
+            "min_engine": p.manifest.min_engine,
+            "cover": p.manifest.cover,
             "maps": p.maps.iter().map(|(id, m)| json!({ "id": id, "name": m.name })).collect::<Vec<_>>(),
             "quests": p.quests.quests.len(),
             "challenges": p.quests.challenges.len(),
@@ -62,6 +66,37 @@ impl LegaiaRuntime {
         self.load_expansion_core(bytes)
     }
 
+    /// What a pack library lists for `.lxpack` bytes, read through every
+    /// import gate (`legaia_expansion_format::share::import_bundle`) without
+    /// activating anything or needing a disc: `{ ok: true, summary: { id,
+    /// name, version, authors, description, license, homepage, tags, schema,
+    /// min_engine, requires, conflicts, cover, files, bytes, maps, quests,
+    /// cards }, errors: [..] }` (`errors` the validator's, which keep the
+    /// pack from activating), or `{ ok: false, error: { kind, message } }`.
+    pub fn expansion_bundle_info(&self, bytes: &[u8]) -> String {
+        match legaia_expansion_format::share::import_bundle(bytes) {
+            Err(e) => json!({ "ok": false, "error": e }).to_string(),
+            Ok(i) => {
+                let issues = validate_files(&i.files, None);
+                json!({
+                    "ok": true,
+                    "summary": i.summary,
+                    "errors": legaia_expansion_format::share::error_lines(&issues),
+                })
+                .to_string()
+            }
+        }
+    }
+
+    /// The cover image (PNG bytes) of an `.lxpack`, empty when it has none
+    /// or does not import.
+    pub fn expansion_bundle_cover(&self, bytes: &[u8]) -> Vec<u8> {
+        legaia_expansion_format::share::import_bundle(bytes)
+            .ok()
+            .and_then(|i| i.cover().map(<[u8]>::to_vec))
+            .unwrap_or_default()
+    }
+
     /// Drop the active expansion pack: the game as it shipped. Its progress
     /// is kept dormant and written back into the next save.
     pub fn unload_expansion(&mut self) {
@@ -82,6 +117,17 @@ impl LegaiaRuntime {
                 .unwrap_or_default();
         v["dormant"] = json!(host.world.expansion_dormant_pack_id());
         v["map"] = json!(host.active_expansion_map());
+        // A loaded save made with another version of the pack: what it was
+        // made with and what was dropped (`legaia_engine_expansion::save_compat`).
+        v["compat"] = match host.world.expansion_compat_report() {
+            Some(r) => json!({
+                "saved_version": r.saved_version,
+                "pack_version": r.pack_version,
+                "notice": r.notice(),
+                "lines": r.lines(),
+            }),
+            None => serde_json::Value::Null,
+        };
         v.to_string()
     }
 
@@ -98,9 +144,11 @@ impl LegaiaRuntime {
 impl LegaiaRuntime {
     /// JsValue-free body of [`Self::load_expansion`].
     pub(crate) fn load_expansion_core(&mut self, bytes: &[u8]) -> String {
-        let files = match legaia_expansion_format::bundle::read_bundle(bytes) {
-            Ok(f) => f,
-            Err(e) => return info_json(None, &[format!("not an .lxpack bundle: {e:#}")], &[]),
+        // Every import gate first (bundle integrity, trust, the pack-format
+        // and engine versions), each refusal worded for the player.
+        let files = match legaia_expansion_format::share::import_bundle(bytes) {
+            Ok(i) => i.files,
+            Err(e) => return info_json(None, &[e.message], &[]),
         };
         let issues = validate_files(&files, None);
         let line = |i: &legaia_expansion_format::validate::Issue| {
@@ -234,6 +282,43 @@ mod tests {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
         let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
         legaia_expansion_format::bundle::write_bundle(&files).expect("bundle")
+    }
+
+    /// The library's read of a bundle: Rebirth's summary and cover, and a
+    /// newer-format pack refused with its gate named.
+    #[test]
+    fn bundle_info_reads_the_library_fields() {
+        let rt = LegaiaRuntime::new();
+        let info: serde_json::Value =
+            serde_json::from_str(&rt.expansion_bundle_info(&rebirth_bundle())).unwrap();
+        assert_eq!(info["ok"], true, "{info}");
+        assert_eq!(info["summary"]["id"], "rebirth");
+        assert_eq!(info["summary"]["cover"], "assets/cover.png");
+        assert!(info["errors"].as_array().unwrap().is_empty());
+        assert!(
+            rt.expansion_bundle_cover(&rebirth_bundle())
+                .starts_with(b"\x89PNG")
+        );
+        let mut f = legaia_expansion_format::PackFiles::new();
+        f.insert(
+            "pack.toml".into(),
+            b"id = \"n\"\nname = \"N\"\nversion = \"1.0.0\"\nschema = 50\n".to_vec(),
+        );
+        let newer = legaia_expansion_format::bundle::write_bundle(&f).unwrap();
+        let info: serde_json::Value =
+            serde_json::from_str(&rt.expansion_bundle_info(&newer)).unwrap();
+        assert_eq!(info["error"]["kind"], "newer_format");
+        assert!(rt.expansion_bundle_cover(&newer).is_empty());
+        let mut rt = rt;
+        let loaded: serde_json::Value = serde_json::from_str(&rt.load_expansion(&newer)).unwrap();
+        assert_eq!(loaded["ok"], false);
+        assert!(
+            loaded["errors"][0]
+                .as_str()
+                .unwrap()
+                .contains("update the engine"),
+            "{loaded}"
+        );
     }
 
     /// The Rebirth bundle reads and validates; with no disc loaded it is

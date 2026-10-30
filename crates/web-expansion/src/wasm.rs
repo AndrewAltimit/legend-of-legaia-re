@@ -102,6 +102,46 @@ impl ExpansionWorkbench {
             .map_err(err)
     }
 
+    /// Import a shared `.lxpack` through every gate (`Core::import_bundle`):
+    /// `{ ok, error: { kind, message } }` or `{ ok, pack, files, issues,
+    /// summary }`.
+    pub fn import_bundle(&mut self, bytes: Vec<u8>) -> String {
+        self.core.import_bundle(&bytes).to_string()
+    }
+
+    /// The pack against an older `.lxpack` of it (`Core::diff_against`).
+    pub fn diff_against(&self, old: Vec<u8>, pack: &str) -> Result<String, JsValue> {
+        self.core
+            .diff_against(&old, pack)
+            .map(|v| v.to_string())
+            .map_err(err)
+    }
+
+    /// Write a documentation file (`CHANGELOG.md`) into the pack.
+    pub fn set_doc(&mut self, path: &str, text: &str) -> Result<(), JsValue> {
+        self.core
+            .set_doc(path, text.as_bytes().to_vec())
+            .map_err(err)
+    }
+
+    /// A documentation file's text (empty when absent).
+    pub fn doc_text(&self, path: &str) -> String {
+        self.core.doc_text(path)
+    }
+
+    /// The pack's sources as a zip under one `<id>/` folder.
+    pub fn sources_zip(&self, pack: &str) -> Result<Vec<u8>, JsValue> {
+        self.core.sources_zip(pack).map_err(err)
+    }
+
+    /// The sharing panel's status (`Core::share_status`).
+    pub fn share_status(&self, pack: &str) -> Result<String, JsValue> {
+        self.core
+            .share_status(pack)
+            .map(|v| v.to_string())
+            .map_err(err)
+    }
+
     /// A new pack holding only its manifest (pack JSON).
     pub fn start_fresh(&mut self, id: &str, name: &str) -> String {
         self.core.start_fresh(id, name).to_string()

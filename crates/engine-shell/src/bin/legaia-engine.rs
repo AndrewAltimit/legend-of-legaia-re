@@ -625,6 +625,7 @@ fn main() -> Result<()> {
             height,
         } => cmd_play_str(&str_file, disc.as_deref(), width, height),
         Cmd::Config { cmd } => cmd_config(cmd),
+        Cmd::Packs { dir, json } => cmd_packs(dir.as_deref(), json),
         Cmd::Inventory {
             item,
             party_size,
@@ -745,4 +746,68 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
         }
     }
     Ok(decoded)
+}
+
+/// `legaia-engine packs`: the installed expansion packs with their metadata.
+fn cmd_packs(dir: Option<&Path>, json: bool) -> Result<()> {
+    use legaia_engine_shell::launcher;
+    let dir = match dir {
+        Some(d) => d.to_path_buf(),
+        None => launcher::packs_dir()
+            .ok_or_else(|| anyhow::anyhow!("no data directory is known; pass --dir"))?,
+    };
+    let list = launcher::scan_packs(&dir);
+    if json {
+        let rows: Vec<serde_json::Value> = list
+            .iter()
+            .map(|r| match r {
+                Ok(i) => serde_json::json!({
+                    "path": i.path, "id": i.id, "name": i.name, "version": i.version,
+                    "authors": i.authors, "description": i.description,
+                    "schema": i.schema, "min_engine": i.min_engine, "cover": i.cover,
+                    "playable": i.playable(), "errors": i.errors, "warnings": i.warnings,
+                }),
+                Err((p, e)) => serde_json::json!({ "path": p, "playable": false, "errors": [e] }),
+            })
+            .collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "dir": dir,
+                "engine": legaia_expansion_format::manifest::ENGINE_VERSION,
+                "packs": rows,
+            }))?
+        );
+        return Ok(());
+    }
+    println!(
+        "Expansion packs in {} (engine {}):",
+        dir.display(),
+        legaia_expansion_format::manifest::ENGINE_VERSION
+    );
+    if list.is_empty() {
+        println!("  (none - copy an .lxpack or a pack folder here)");
+    }
+    for r in &list {
+        match r {
+            Ok(i) => {
+                let state = if i.playable() {
+                    "playable".to_string()
+                } else {
+                    format!("not playable: {}", i.errors.join("; "))
+                };
+                println!("  {:<20} {}  [{state}]", i.id, i.summary());
+                let mut facts = vec![format!("format {}", i.schema)];
+                if let Some(m) = &i.min_engine {
+                    facts.push(format!("needs engine {m}"));
+                }
+                if i.cover.is_some() {
+                    facts.push("cover".into());
+                }
+                println!("  {:<20} {}  {}", "", facts.join(", "), i.path.display());
+            }
+            Err((p, e)) => println!("  {:<20} cannot be read: {e}", p.display()),
+        }
+    }
+    Ok(())
 }

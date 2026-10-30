@@ -24,7 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::manifest::{
-    SCHEMA_VERSION, SUPPORTED_DISC, is_valid_content_id, is_valid_pack_id, is_valid_semver,
+    MAX_COVER_LEN, MIN_SCHEMA_VERSION, PackDep, SCHEMA_VERSION, SUPPORTED_DISC, dep_id,
+    is_valid_content_id, is_valid_pack_id, is_valid_semver,
 };
 use crate::refs::{DiscRef, DiscResolver};
 use crate::{ExpansionPack, PackFiles};
@@ -228,7 +229,7 @@ impl<'a> Checker<'a> {
             .manifest
             .requires
             .iter()
-            .map(String::as_str)
+            .map(|r| dep_id(r))
             .collect();
         let pending = std::mem::take(&mut self.pending);
         for p in pending {
@@ -341,6 +342,8 @@ pub fn validate_files(files: &PackFiles, resolver: Option<&dyn DiscResolver>) ->
             issue(Severity::Error, path, "not a valid pack path".into());
         } else if let Some(why) = disc_file_name(path) {
             issue(Severity::Error, path, why);
+        } else if let Some(why) = code_file_name(path) {
+            issue(Severity::Error, path, why);
         } else if !crate::is_known_path(path) {
             issue(
                 Severity::Warning,
@@ -354,6 +357,40 @@ pub fn validate_files(files: &PackFiles, resolver: Option<&dyn DiscResolver>) ->
         Err(e) => issue(Severity::Error, "pack.toml", format!("{e:#}")),
     }
     issues
+}
+
+/// The checks that decide whether a pack tree may be trusted at all, run on
+/// import before anything is parsed: every path well-formed and neither a
+/// disc file nor a program, every asset an allowed type with that type's
+/// signature and no disc bytes, and the size budgets. A pack that fails one
+/// is refused outright; everything else [`validate_files`] reports is left
+/// for the editor to fix.
+pub fn trust_issues(files: &PackFiles) -> Vec<Issue> {
+    let empty = ExpansionPack::default();
+    let mut cx = Checker::new(&empty);
+    let mut assets_total = 0usize;
+    for (path, bytes) in files {
+        let why = if !crate::bundle::is_valid_path(path) {
+            Some("not a valid pack path".to_string())
+        } else {
+            disc_file_name(path).or_else(|| code_file_name(path))
+        };
+        if let Some(why) = why {
+            cx.push(Severity::Error, path, "", why);
+        } else if path.starts_with("assets/") {
+            assets_total += bytes.len();
+            check_asset(&mut cx, path, bytes);
+        }
+    }
+    if assets_total > MAX_ASSETS_TOTAL {
+        cx.push(
+            Severity::Error,
+            "assets/",
+            "",
+            format!("assets total {assets_total} bytes, over the {MAX_ASSETS_TOTAL}-byte budget"),
+        );
+    }
+    cx.issues
 }
 
 fn sections(pack: &ExpansionPack) -> Vec<(String, &dyn SectionRules)> {
@@ -399,7 +436,7 @@ fn check_manifest(cx: &mut Checker<'_>) {
         );
     }
     match m.schema {
-        s if s == SCHEMA_VERSION => {}
+        s if (MIN_SCHEMA_VERSION..=SCHEMA_VERSION).contains(&s) => {}
         s if s > SCHEMA_VERSION => cx.error(
             "schema",
             format!(
@@ -408,6 +445,30 @@ fn check_manifest(cx: &mut Checker<'_>) {
         ),
         s => cx.error("schema", format!("schema {s} is not supported")),
     }
+    if m.schema < 2 {
+        for (field, used) in [
+            ("cover", m.cover.is_some()),
+            ("min_engine", m.min_engine.is_some()),
+        ] {
+            if used {
+                cx.warning(
+                    field,
+                    format!("`{field}` is a schema 2 key; set `schema = 2` so older engines refuse the pack instead of tripping on it"),
+                );
+            }
+        }
+    }
+    if let Some(v) = &m.min_engine {
+        if !is_valid_semver(v) {
+            cx.error(
+                "min_engine",
+                format!("min_engine {v:?} is not semver (MAJOR.MINOR.PATCH)"),
+            );
+        } else if let Err(why) = m.compatibility() {
+            cx.error("min_engine", why.to_string());
+        }
+    }
+    check_cover(cx, m.cover.as_deref());
     if m.disc != SUPPORTED_DISC {
         cx.error(
             "disc",
@@ -435,13 +496,73 @@ fn check_manifest(cx: &mut Checker<'_>) {
         cx.warning("homepage", format!("homepage {h:?} is not an http(s) URL"));
     }
     check_id_list(cx, "tags", &m.tags, &m.id);
-    check_id_list(cx, "requires", &m.requires, &m.id);
-    check_id_list(cx, "conflicts", &m.conflicts, &m.id);
-    for both in m.requires.iter().filter(|r| m.conflicts.contains(r)) {
-        cx.error(
-            "conflicts",
-            format!("{both:?} is listed in both `requires` and `conflicts`"),
+    check_dep_list(cx, "requires", &m.requires, &m.id);
+    check_dep_list(cx, "conflicts", &m.conflicts, &m.id);
+    // A conflict with a range may exclude only some versions of a required
+    // pack (`requires = ["base@^2"]`, `conflicts = ["base@<2"]`); one with
+    // no range contradicts the requirement outright.
+    for r in &m.requires {
+        let id = dep_id(r);
+        if m.conflicts
+            .iter()
+            .any(|c| dep_id(c) == id && !c.contains('@'))
+        {
+            cx.error(
+                "conflicts",
+                format!("{id:?} is listed in both `requires` and `conflicts`"),
+            );
+        }
+    }
+}
+
+/// `requires` / `conflicts`: each a well-formed [`PackDep`], not the pack
+/// itself, each pack once.
+fn check_dep_list(cx: &mut Checker<'_>, field: &str, deps: &[String], own: &str) {
+    let mut seen = BTreeSet::new();
+    for (i, text) in deps.iter().enumerate() {
+        let at = format!("{field}[{i}]");
+        match PackDep::parse(text) {
+            Err(why) => cx.error(&at, why),
+            Ok(d) if d.id == own => cx.error(&at, "a pack cannot name itself"),
+            Ok(d) => {
+                if !seen.insert(d.id.clone()) {
+                    cx.warning(&at, format!("{:?} is listed twice", d.id));
+                }
+            }
+        }
+    }
+}
+
+/// The manifest's cover: a PNG the pack carries under `assets/`, no larger
+/// than [`MAX_COVER_LEN`]. A pack with no cover is warned about, since the
+/// play page's library and the launcher show one.
+fn check_cover(cx: &mut Checker<'_>, cover: Option<&str>) {
+    let Some(path) = cover else {
+        cx.warning(
+            "cover",
+            "the pack has no cover image; libraries show a placeholder",
         );
+        return;
+    };
+    let Some(rel) = path.strip_prefix("assets/") else {
+        return cx.error(
+            "cover",
+            format!("cover {path:?} is not under assets/ (write it from the pack root, assets/cover.png)"),
+        );
+    };
+    if extension(path).as_deref() != Some("png") {
+        return cx.error("cover", format!("cover {path:?} is not a .png"));
+    }
+    match cx.pack.assets.get(rel) {
+        None => cx.error("cover", format!("cover {path:?} is not in the pack")),
+        Some(b) if b.len() > MAX_COVER_LEN => cx.error(
+            "cover",
+            format!(
+                "cover is {} bytes, over the {MAX_COVER_LEN}-byte cover limit",
+                b.len()
+            ),
+        ),
+        Some(_) => {}
     }
 }
 
@@ -490,6 +611,23 @@ const DISC_EXTENSIONS: &[&str] = &[
     "dat", "exe", "tim", "tmd", "vab", "vag", "seq", "lzs", "man", "mes", "anm", "mdt", "dpk",
     "spk", "pch",
 ];
+
+/// Extensions of programs, scripts and documents that can run one. A pack is
+/// data only: nothing in it is ever executed, so carrying one is a mistake
+/// at best and a lure at worst.
+pub const CODE_EXTENSIONS: &[&str] = &[
+    "js", "mjs", "cjs", "ts", "wasm", "html", "htm", "xhtml", "svg", "xml", "sh", "bash", "zsh",
+    "bat", "cmd", "ps1", "vbs", "py", "pyc", "rb", "pl", "lua", "php", "jar", "class", "dll", "so",
+    "dylib", "com", "scr", "msi", "app", "apk", "elf", "lnk", "desktop", "url",
+];
+
+/// Why `path` is named like a program or script, if it is.
+pub fn code_file_name(path: &str) -> Option<String> {
+    let ext = extension(path)?;
+    CODE_EXTENSIONS.contains(&ext.as_str()).then(|| {
+        format!(".{ext} is a program, script or scriptable document; a pack is data only and carries none")
+    })
+}
 
 fn extension(path: &str) -> Option<String> {
     let name = path.rsplit('/').next().unwrap_or(path);
@@ -737,10 +875,14 @@ mod tests {
         manifest.description = "d".into();
         manifest.authors = vec!["me".into()];
         manifest.license = "CC0-1.0".into();
-        ExpansionPack {
+        manifest.cover = Some("assets/cover.png".into());
+        let mut pack = ExpansionPack {
             manifest,
             ..Default::default()
-        }
+        };
+        pack.assets
+            .insert("cover.png".into(), b"\x89PNG\r\n\x1a\n".to_vec());
+        pack
     }
 
     fn errors(issues: &[Issue]) -> Vec<String> {
@@ -877,6 +1019,84 @@ laps = 1
     }
 
     #[test]
+    fn identity_rules() {
+        let mut p = good_pack();
+        p.manifest.cover = Some("assets/cover.png".into());
+        p.manifest.min_engine = Some(crate::manifest::ENGINE_VERSION.into());
+        p.assets
+            .insert("cover.png".into(), b"\x89PNG\r\n\x1a\n".to_vec());
+        p.manifest.requires = vec!["base@^1.2".into()];
+        p.manifest.conflicts = vec!["base@<1.2".into(), "rival".into()];
+        let issues = validate(&p);
+        assert!(errors(&issues).is_empty(), "{issues:#?}");
+
+        p.manifest.cover = Some("cover.png".into());
+        p.manifest.min_engine = Some("99.0.0".into());
+        p.manifest.requires = vec!["base@^x".into()];
+        p.manifest.conflicts = vec!["base".into()];
+        let e = errors(&validate(&p));
+        for want in ["[cover]", "[min_engine]", "[requires[0]]"] {
+            assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
+        }
+        p.manifest.requires = vec!["base".into()];
+        let e = errors(&validate(&p));
+        assert!(e.iter().any(|m| m.contains("both")), "{e:#?}");
+
+        p.manifest.cover = Some("assets/missing.png".into());
+        assert!(
+            errors(&validate(&p))
+                .iter()
+                .any(|m| m.contains("not in the pack"))
+        );
+    }
+
+    #[test]
+    fn schema_one_packs_still_validate() {
+        let mut p = good_pack();
+        p.manifest.schema = 1;
+        assert!(errors(&validate(&p)).is_empty());
+        p.manifest.min_engine = Some("0.0.1".into());
+        let issues = validate(&p);
+        assert!(errors(&issues).is_empty());
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.field == "min_engine" && i.severity == Severity::Warning)
+        );
+    }
+
+    #[test]
+    fn code_files_are_refused_anywhere() {
+        let mut files = PackFiles::new();
+        files.insert(
+            "pack.toml".into(),
+            b"id = \"t\"\nname = \"T\"\nversion = \"0.1.0\"\n".to_vec(),
+        );
+        for p in [
+            "install.sh",
+            "assets/ui/menu.html",
+            "assets/logo.svg",
+            "run.BAT",
+        ] {
+            files.insert(p.into(), b"x".to_vec());
+        }
+        let issues = validate_files(&files, None);
+        for p in [
+            "install.sh",
+            "assets/ui/menu.html",
+            "assets/logo.svg",
+            "run.BAT",
+        ] {
+            assert!(
+                issues.iter().any(|i| i.path == p
+                    && i.severity == Severity::Error
+                    && i.message.contains("data only")),
+                "{p}: {issues:#?}"
+            );
+        }
+    }
+
+    #[test]
     fn missing_metadata_only_warns() {
         let p = ExpansionPack {
             manifest: PackManifest::new("test", "Test", "0.1.0"),
@@ -884,7 +1104,8 @@ laps = 1
         };
         let issues = validate(&p);
         assert!(!has_errors(&issues));
-        assert_eq!(issues.len(), 3, "{issues:?}");
+        // description, authors, license and cover.
+        assert_eq!(issues.len(), 4, "{issues:?}");
     }
 
     #[test]

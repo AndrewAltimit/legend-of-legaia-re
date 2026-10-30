@@ -17,6 +17,7 @@ battle-spoils steps. With no pack loaded every kernel is the identity.
 | `dialog` | Pack lines compiled for the field VM's inline dialogue runner. |
 | `cutscene` | The cutscene sequencer (`CutsceneRun`): step tracks, waits, branches, skip, its camera pose and screen layer; `preview` plays one against a stand-in world for the workbench timeline. |
 | `quest_save` | The save's expansion block. |
+| `save_compat` | A save from another version of the pack: what the pack no longer defines is dropped, with a report. |
 | `map` | The active pack map: zones, exits, trigger events, once flags, the save location. |
 | `cards` | The trading-card plumbing: grant drain, battle reward sources, stakes, card notices and toasts, the card screen seat, the monster portrait cache. The cards themselves are `quest_save::ExpansionProgress::cards`. |
 | `items` | Pack items at runtime: the compiled catalog, `ItemProgress` (the pack bag and worn gear, saved as tail record 4), the worn-gear stat / passive / set arithmetic, the per-fight `BattleAliases` over the five unnamed retail ids. |

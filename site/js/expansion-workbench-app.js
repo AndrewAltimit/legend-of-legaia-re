@@ -38,6 +38,7 @@ import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
 import { createFind } from './expansion-workbench-xref.js';
+import { attachShare } from './expansion-workbench-share.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -408,6 +409,7 @@ function runValidate() {
   renderIssues();
   renderTabs();
   if (S.tab === 'progression') updateChart();
+  if (S.share) S.share.refresh();
 }
 
 function updateChart() {
@@ -675,12 +677,9 @@ function init() {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
     if (!f || needDisc()) return;
-    try {
-      const bytes = new Uint8Array(await f.arrayBuffer());
-      await loadResult(JSON.parse(S.wb.load_bundle(bytes)), f.name, { bundle: bytes });
-    } catch (e) {
-      setStatus('Error: ' + errText(e), 'err');
-    }
+    // Through the import gates (expansion-workbench-share.js): a refused
+    // bundle says which gate and why.
+    await S.share.importBundle(new Uint8Array(await f.arrayBuffer()), f.name);
   });
   $('xw-dir-file').addEventListener('change', async (ev) => {
     const list = [...(ev.target.files || [])];
@@ -842,6 +841,18 @@ function initRest() {
     playUrl: (map) => new URL(`../play.html?expansion=1&map=${encodeURIComponent(map)}`, import.meta.url).href,
   });
   $('xw-panel').before(S.preview.el);
+  S.share = attachShare({
+    S,
+    changed: (structural) => ctx.changed(structural),
+    setStatus,
+    errText,
+    downloadFile,
+    loaded: loadResult,
+    loadTree,
+    needDisc,
+    exportBundle,
+    play: playInBrowser,
+  });
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

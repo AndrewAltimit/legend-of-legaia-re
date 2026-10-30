@@ -431,8 +431,12 @@ The page's *Expansion pack* card hands an `.lxpack` bundle's bytes to
 `LegaiaRuntime::load_expansion`, from a file input or from the slot the
 expansion workbench's *Play in browser* fills (IndexedDB database
 `legaia-expansion`, store `packs`, key `play`, value `{ id, name, version,
-bytes, savedAt }`, read when the page opens as `play.html?expansion=1`). The
-export reads the bundle (`bundle::read_bundle`), validates it
+bytes, savedAt }`, read when the page opens as `play.html?expansion=1`), or
+from the page's installed-packs library in the same store
+([`expansion-workbench.md`](../tooling/expansion-workbench.md#persistence-and-the-play-hand-off)).
+The export reads the bundle through the import gates
+(`share::import_bundle`: integrity, trust, pack format and engine version),
+validates it
 (`validate::validate_files`) and activates it through
 `SceneHost::activate_expansion_pack`, the native window's path; it answers
 JSON with the manifest, the maps and every error and warning, and refuses a
@@ -443,7 +447,9 @@ to hand to a rebuilt engine after a trap.
 |---|---|
 | `load_expansion(bytes)` | Read, validate and activate a bundle; JSON `{ ok, pack, errors, warnings }`. |
 | `unload_expansion()` | Deactivate; the progress stays dormant for the next save. |
-| `expansion_info_json()` | The active pack, the map the player is on, and `dormant`: the pack a loaded save names that is not loaded. |
+| `expansion_bundle_info(bytes)` | The library's read of a bundle, nothing activated and no disc needed: `{ ok, summary, errors }` or `{ ok: false, error: { kind, message } }`. |
+| `expansion_bundle_cover(bytes)` | The bundle's cover PNG bytes, empty when it has none. |
+| `expansion_info_json()` | The active pack, the map the player is on, `dormant` (the pack a loaded save names that is not loaded) and `compat` (what a save from another version of the active pack lost: `{ saved_version, pack_version, notice, lines }`). |
 | `enter_expansion_map(map, spawn)` | `SceneHost::enter_expansion_map` with `enter_field`'s staging around it; the scene build reads the map off the same `Scene`. |
 | `reload_expansion(bytes)` | The hot reload (`play_expansion_live`): activate as `load_expansion` does, then re-enter the map the player is on with them seated where they stood (`SceneHost::enter_expansion_map_seated`), the follow camera kept; JSON `{ ok, pack, errors, warnings, map, reentered, ms }`. |
 | `expansion_overlay_json()` | The active pack map for the editor overlay: tile rectangle and origin, each tile's wall mask and floor height (the world's floor sampler), spawns, exits, trigger and encounter zones, props, NPCs, the player. |

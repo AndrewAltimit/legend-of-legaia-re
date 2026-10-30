@@ -227,6 +227,44 @@ impl World {
         }
     }
 
+    /// Saved progress was adopted under another version of the active pack,
+    /// or lost entries the pack no longer defines
+    /// ([`legaia_engine_expansion::save_compat`]): log every change, toast
+    /// the one-line notice, and keep the report for
+    /// [`Self::expansion_compat_report`].
+    pub(in crate::world) fn toast_expansion_compat(&mut self) {
+        let Some(report) = self.expansion.quests.compat.take() else {
+            return;
+        };
+        if report.version_changed() {
+            log::info!(
+                "expansion: save made with {} {}, playing {}",
+                report.pack_id,
+                report.saved_version,
+                report.pack_version
+            );
+        }
+        for line in report.lines() {
+            log::warn!("expansion: {}: {line}", report.pack_id);
+        }
+        if let Some(notice) = report.notice() {
+            self.expansion.toasts.push(notice);
+        }
+        self.expansion.last_compat = Some(report);
+    }
+
+    /// What adopting the loaded save's progress for the active pack changed:
+    /// the save's pack version, the active one, and every entry dropped.
+    /// `None` when the save matched the pack.
+    pub fn expansion_compat_report(
+        &self,
+    ) -> Option<&legaia_engine_expansion::save_compat::CompatReport> {
+        self.expansion
+            .pack
+            .as_ref()
+            .and(self.expansion.last_compat.as_ref())
+    }
+
     /// The loaded save names a pack that is not active: say so once.
     pub(in crate::world) fn toast_dormant_pack(&mut self) {
         if let Some(id) = self.expansion_dormant_pack_id() {

@@ -223,6 +223,10 @@ pub struct QuestRuntime {
     /// Pack fights waiting for the dialogue channel to free up, oldest
     /// first.
     pub fights: Vec<PackFight>,
+    /// What adopting saved progress for the active pack dropped or resized
+    /// ([`crate::save_compat::reconcile`]), until the `World` takes it for
+    /// its notice.
+    pub compat: Option<crate::save_compat::CompatReport>,
 }
 
 /// One objective's progress target.
@@ -357,7 +361,14 @@ impl QuestRuntime {
         if !previous.pack_id.is_empty() && self.dormant.is_none() {
             self.dormant = Some(previous.encode());
         }
-        self.progress = adopted.unwrap_or_else(|| ExpansionProgress::new(pack));
+        match adopted {
+            Some(mut p) => {
+                let report = crate::save_compat::reconcile(&mut p, pack);
+                self.compat = (!report.is_clean() || report.version_changed()).then_some(report);
+                self.progress = p;
+            }
+            None => self.progress = ExpansionProgress::new(pack),
+        }
         self.progress.pack_version = pack.manifest.version.clone();
         self.challenge = None;
     }
@@ -399,9 +410,14 @@ impl QuestRuntime {
         self.fights.clear();
         self.challenge = None;
         self.dialog = DialogRuntime::default();
+        self.compat = None;
         let decoded = block.and_then(ExpansionProgress::decode);
         match (pack, decoded) {
-            (Some(p), Some(d)) if d.pack_id == p.manifest.id => {
+            (Some(p), Some(mut d)) if d.pack_id == p.manifest.id => {
+                // A save from another version of the pack: drop what the
+                // pack no longer defines before anything reads it.
+                let report = crate::save_compat::reconcile(&mut d, p);
+                self.compat = (!report.is_clean() || report.version_changed()).then_some(report);
                 self.progress = d;
                 self.progress.pack_version = p.manifest.version.clone();
                 self.dormant = None;

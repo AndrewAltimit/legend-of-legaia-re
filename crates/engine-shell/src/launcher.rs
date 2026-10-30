@@ -410,6 +410,14 @@ pub struct ExpansionInfo {
     pub version: String,
     /// `authors`, joined.
     pub authors: String,
+    /// The manifest's description.
+    pub description: String,
+    /// The pack format the pack is written in, and the oldest engine it
+    /// needs.
+    pub schema: u32,
+    pub min_engine: Option<String>,
+    /// The cover image's path in the pack, when it has one.
+    pub cover: Option<String>,
     /// The validator's errors (`file: field: message`); a pack with any is
     /// not playable.
     pub errors: Vec<String>,
@@ -464,7 +472,16 @@ pub fn expansion_pack_path(chosen: &Path) -> Option<PathBuf> {
 pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, String> {
     use legaia_expansion_format::validate::{Severity, validate_files};
     let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    let files = legaia_expansion_format::read_files(&path).map_err(|e| format!("{e:#}"))?;
+    // A bundle goes through the import gates the browser library uses, so a
+    // damaged, newer-format or unsafe `.lxpack` says which.
+    let files = if path.is_dir() {
+        legaia_expansion_format::read_dir_files(&path).map_err(|e| format!("{e:#}"))?
+    } else {
+        let bytes = std::fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+        legaia_expansion_format::share::import_bundle(&bytes)
+            .map_err(|e| e.message)?
+            .files
+    };
     let issues = validate_files(&files, None);
     let errors: Vec<String> = issues
         .iter()
@@ -479,12 +496,19 @@ pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, Stri
         .collect();
     let warnings = issues.len() - errors.len();
     let pack = legaia_expansion_format::ExpansionPack::from_files(&files);
-    let (id, name, version, authors) = match &pack {
+    let (id, name, version, authors, description, schema, min_engine, cover) = match &pack {
         Ok(p) => (
             p.manifest.id.clone(),
             p.manifest.name.clone(),
             p.manifest.version.clone(),
             p.manifest.authors.join(", "),
+            p.manifest.description.clone(),
+            p.manifest.schema,
+            p.manifest.min_engine.clone(),
+            p.manifest
+                .cover
+                .clone()
+                .filter(|c| files.contains_key(c.as_str())),
         ),
         Err(_) => Default::default(),
     };
@@ -500,9 +524,66 @@ pub fn inspect_expansion(path: &Path) -> std::result::Result<ExpansionInfo, Stri
         name,
         version,
         authors,
+        description,
+        schema,
+        min_engine,
+        cover,
         errors,
         warnings,
     })
+}
+
+/// The folder installed expansion packs live in: `packs/` under the data
+/// directory ([`data_dir`]). A pack is an `.lxpack` file or a pack folder
+/// dropped there; `legaia-engine packs` lists them and `--expansion <id>`
+/// finds one by its id.
+pub fn packs_dir() -> Option<PathBuf> {
+    data_dir().map(|d| d.join(PACKS_DIR))
+}
+
+/// [`packs_dir`]'s name under the data directory.
+pub const PACKS_DIR: &str = "packs";
+
+/// Every expansion pack in `dir` ([`expansion_pack_path`] accepts each
+/// entry), checked, in file-name order. A pack that cannot be read at all
+/// comes back as `Err((path, why))`. An absent directory is an empty list.
+pub fn scan_packs(dir: &Path) -> Vec<std::result::Result<ExpansionInfo, (PathBuf, String)>> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut paths: Vec<PathBuf> = rd
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter_map(|p| expansion_pack_path(&p).filter(|q| q == &p))
+        .collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|p| inspect_expansion(&p).map_err(|e| (p, e)))
+        .collect()
+}
+
+/// What `--expansion NAME` names: the path itself when it exists, else the
+/// installed pack in `dir` whose manifest id is `NAME` (or whose file or
+/// folder is called `NAME` / `NAME.lxpack`). `None` when nothing matches.
+pub fn resolve_pack(name: &Path, dir: Option<&Path>) -> Option<PathBuf> {
+    if name.exists() {
+        return Some(name.to_path_buf());
+    }
+    let dir = dir?;
+    let id = name.to_str()?;
+    if !legaia_expansion_format::manifest::is_valid_pack_id(id) {
+        return None;
+    }
+    for candidate in [dir.join(id), dir.join(format!("{id}.lxpack"))] {
+        if expansion_pack_path(&candidate).is_some() {
+            return Some(candidate);
+        }
+    }
+    scan_packs(dir)
+        .into_iter()
+        .flatten()
+        .find(|i| i.id == id)
+        .map(|i| i.path)
 }
 
 const SPIRIT_AP_RETAIL: i16 = legaia_engine_core::world::SPIRIT_AP_RETAIL;
@@ -1434,6 +1515,36 @@ mod tests {
         assert_eq!(a[0], "play-window");
         assert_eq!(a[2], "/g/l.bin");
         assert!(a.iter().any(|s| s == "--boot-ui"));
+    }
+
+    /// The packs folder: every pack in it is listed with its metadata, and
+    /// `--expansion <id>` finds one by id.
+    #[test]
+    fn the_packs_folder_lists_and_resolves_by_id() {
+        let tmp = std::env::temp_dir().join(format!("legaia-packs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        let files = legaia_expansion_format::read_dir_files(rebirth).unwrap();
+        let bundle = legaia_expansion_format::bundle::write_bundle(&files).unwrap();
+        std::fs::write(tmp.join("renamed.lxpack"), &bundle).unwrap();
+        std::fs::write(tmp.join("broken.lxpack"), b"LXPACK\x1a\n junk").unwrap();
+        std::fs::write(tmp.join("notes.txt"), b"not a pack").unwrap();
+        let list = scan_packs(&tmp);
+        assert_eq!(list.len(), 2, "{list:?}");
+        let err = list[0].as_ref().unwrap_err();
+        assert!(err.0.ends_with("broken.lxpack"));
+        let ok = list[1].as_ref().unwrap();
+        assert_eq!((ok.id.as_str(), ok.schema), ("rebirth", 2));
+        assert_eq!(ok.cover.as_deref(), Some("assets/cover.png"));
+        assert!(ok.playable(), "{:?}", ok.errors);
+        assert_eq!(
+            resolve_pack(Path::new("rebirth"), Some(&tmp)),
+            Some(tmp.join("renamed.lxpack"))
+        );
+        assert_eq!(resolve_pack(Path::new("nope"), Some(&tmp)), None);
+        assert!(scan_packs(&tmp.join("absent")).is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     /// The remembered expansion pack rides the play args as `--expansion`,
