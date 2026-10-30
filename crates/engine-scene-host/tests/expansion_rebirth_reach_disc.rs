@@ -109,6 +109,11 @@ fn every_spawn_exit_and_trigger_on_the_rebirth_maps_is_reachable() {
         host.enter_expansion_map(id, "")
             .unwrap_or_else(|e| panic!("{id}: {e:#}"));
         let reach = flood(&host, def);
+        let reached = reach.seen.iter().filter(|s| **s).count();
+        assert!(
+            reached > 16,
+            "{id}: the flood from the first spawn reached {reached} sub-cells"
+        );
         for s in &def.spawns {
             checked += 1;
             let t = [s.tile[0], s.tile[1], s.tile[0], s.tile[1]];
