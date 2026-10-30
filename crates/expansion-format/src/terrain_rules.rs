@@ -54,6 +54,44 @@ pub(crate) fn check_terrain(m: &MapDef, cx: &mut Checker<'_>, grid: Option<&Tile
             }
             TerrainShape::Ramp { radius, height, .. } => (Some(*radius), height.to_vec()),
             TerrainShape::Smooth { radius, .. } => (Some(*radius), vec![]),
+            TerrainShape::Stroke {
+                path,
+                radius,
+                height,
+                strength,
+                ..
+            } => {
+                if path.is_empty() || path.len() > 4096 {
+                    cx.error(&format!("{at}.path"), "a stroke has 1 to 4096 points");
+                }
+                if !(0.0..=1.0).contains(strength) {
+                    cx.error(&format!("{at}.strength"), "strength is 0..=1");
+                }
+                (Some(*radius), height.iter().copied().collect())
+            }
+            TerrainShape::Heightmap {
+                image,
+                rect,
+                height,
+                ..
+            } => {
+                let key = image.strip_prefix("assets/").unwrap_or(image);
+                match cx.pack().assets.get(key) {
+                    None => cx.error(
+                        &format!("{at}.image"),
+                        format!("assets/{key} is not in the pack"),
+                    ),
+                    Some(bytes) => {
+                        if let Err(e) = crate::terrain::GrayImage::from_png(bytes) {
+                            cx.error(&format!("{at}.image"), format!("assets/{key}: {e}"));
+                        }
+                    }
+                }
+                if rect.is_some_and(|r| !on(r)) {
+                    cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
+                }
+                (None, height.to_vec())
+            }
             TerrainShape::Plateau {
                 rect, height, edge, ..
             } => {
@@ -103,6 +141,14 @@ pub(crate) fn check_terrain(m: &MapDef, cx: &mut Checker<'_>, grid: Option<&Tile
                     format!("{ch:?} is already painted by materials[{prev}]"),
                 );
             }
+        }
+    }
+    if !matches!(t.detail, 1 | 2 | 4) {
+        cx.error("terrain.detail", format!("{} is not 1, 2 or 4", t.detail));
+    }
+    for scene in t.borrowed() {
+        if scene.is_empty() {
+            cx.error("terrain", "a `from` names no scene");
         }
     }
     if t.cliff.as_ref().is_some_and(|c| c.cells.is_empty()) {

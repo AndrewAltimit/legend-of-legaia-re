@@ -27,7 +27,7 @@
 use anyhow::{Context, Result};
 use legaia_expansion_format::map::{MapDef, TileGrid};
 use legaia_expansion_format::map_detail::AtlasCell;
-use legaia_expansion_format::terrain::{Heightfield, TerrainSurface, orient_uv};
+use legaia_expansion_format::terrain::{Heightfield, QuadPaint, TerrainSurface, orient_uv};
 use legaia_scene_formats::field_objects::{GROUND_ATLAS_AXIS, GROUND_ATLAS_TILE_PX};
 use legaia_tmd::descriptor::PacketShape;
 use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
@@ -159,6 +159,7 @@ pub fn tile_meshes(
     s: &TerrainSurface,
     foam: Option<&FoamSheet>,
     stp: &std::collections::BTreeMap<u16, u16>,
+    vram: Option<&legaia_tim::Vram>,
 ) -> Result<Vec<([u16; 2], Vec<u8>)>> {
     let f = &s.field;
     let (res, skirt) = (f.res, f.skirt);
@@ -178,7 +179,7 @@ pub fn tile_meshes(
         }
         let (c, r) = ((k % grid.width) as u16, (k / grid.width) as u16);
         let (cx, cz) = def.tile_centre(c, r);
-        if let Some(raw) = tile_mesh(s, quads, [cx, cz], foam, stp)? {
+        if let Some(raw) = tile_mesh(s, quads, [cx, cz], foam, stp, vram)? {
             out.push(([c, r], raw));
         }
     }
@@ -197,12 +198,24 @@ fn vertex(f: &Heightfield, i: usize, j: usize, y: f32, centre: [i32; 2]) -> [i16
     ]
 }
 
+/// [`vertex`] at fractional vertex coordinates `(fi, fj)`.
+fn vertex_at(f: &Heightfield, fi: f32, fj: f32, y: f32, centre: [i32; 2]) -> [i16; 3] {
+    let x = f.origin[0] as f32 + fi * f.step as f32 - centre[0] as f32;
+    let z = f.origin[1] as f32 + fj * f.step as f32 - centre[1] as f32;
+    [
+        x.round().clamp(-32768.0, 32767.0) as i16,
+        (-y).round().clamp(-32768.0, 32767.0) as i16,
+        z.round().clamp(-32768.0, 32767.0) as i16,
+    ]
+}
+
 fn tile_mesh(
     s: &TerrainSurface,
     quads: &[(usize, usize)],
     centre: [i32; 2],
     foam: Option<&FoamSheet>,
     stp: &std::collections::BTreeMap<u16, u16>,
+    vram: Option<&legaia_tim::Vram>,
 ) -> Result<Option<Vec<u8>>> {
     let f = &s.field;
     let res = f.res;
@@ -224,7 +237,8 @@ fn tile_mesh(
         let corners = [(i, j), (i + 1, j), (i, j + 1), (i + 1, j + 1)];
         let h = |(a, b): (usize, usize)| f32::from(f.heights[b * f.cols + a]);
         let pair = s.paint[j * qc + i];
-        if pair.iter().any(Option::is_some) {
+        let fine = s.fine.get(&(j * qc + i));
+        if pair.iter().any(Option::is_some) || fine.is_some() {
             // Tile-local fraction of each corner; V runs against Z, as the
             // retail ground maps it (`build_ground_heightfield`). A steep
             // quad maps from the side instead - U along the face, V down
@@ -239,22 +253,34 @@ fn tile_mesh(
             let gz = (hs[2] - hs[0] + hs[3] - hs[1]).abs();
             let band = (lo / 128.0).floor() * 128.0;
             let span = (hi - band).max(128.0);
-            let frac = |q: usize, lo_q: usize| {
-                (q % res) as f32 / res as f32
-                    + if q.is_multiple_of(res) && q > lo_q {
-                        1.0
-                    } else {
-                        0.0
-                    }
+            let cols4 = corners.map(|(a, b)| s.colors[b * f.cols + a].map(f32::from));
+            // A point `(sx, sz)` of the quad (`0..=1` across it) on the
+            // triangle the quad draws there, split along `b`-`c`: its height
+            // and vertex colour, so a subdivided quad draws the same surface.
+            let on_tri = |sx: f32, sz: f32| -> (f32, [u8; 3]) {
+                let w = if sx + sz <= 1.0 {
+                    [1.0 - sx - sz, sx, sz, 0.0]
+                } else {
+                    [0.0, 1.0 - sz, 1.0 - sx, sx + sz - 1.0]
+                };
+                let y = (0..4).map(|k| hs[k] * w[k]).sum::<f32>();
+                let c = std::array::from_fn(|ch| {
+                    (0..4).map(|k| cols4[k][ch] * w[k]).sum::<f32>().round() as u8
+                });
+                (y, c)
             };
-            let uv = |cell: AtlasCell, orient: u8, (a, b): (usize, usize)| -> (u8, u8) {
+            let base_u = (i % res) as f32;
+            let base_v = (j % res) as f32;
+            let uv = |cell: AtlasCell, orient: u8, sx: f32, sz: f32, y: f32| -> (u8, u8) {
                 let u0 = (usize::from(cell.tile) % GROUND_ATLAS_AXIS) * px;
                 let v0 = (usize::from(cell.tile) / GROUND_ATLAS_AXIS % GROUND_ATLAS_AXIS) * px;
+                let fu = (base_u + sx) / res as f32;
+                let fz = (base_v + sz) / res as f32;
                 let (fu, fv) = if steep {
-                    let along = if gx > gz { frac(b, j) } else { frac(a, i) };
-                    (along, 1.0 - (h((a, b)) - band) / span)
+                    let along = if gx > gz { fz } else { fu };
+                    (along, 1.0 - (y - band) / span)
                 } else {
-                    (frac(a, i), 1.0 - frac(b, j))
+                    (fu, 1.0 - fz)
                 };
                 let (ou, ov) = orient_uv(orient, fu, fv);
                 (
@@ -262,33 +288,80 @@ fn tile_mesh(
                     (v0 as f32 + ov * (px as f32 - 1.0)).round().min(255.0) as u8,
                 )
             };
-            let ids = corners.map(|c| vert(vertex(f, c.0, c.1, h(c), centre)));
-            let cols = corners.map(|(a, b)| s.colors[b * f.cols + a]);
-            for (tri, p) in UP.iter().zip(pair) {
-                let Some(p) = p else { continue };
-                let uvs = corners.map(|c| uv(p.cell, p.orient, c));
-                ground.push(ModelPrim {
-                    vertices: tri.iter().map(|&t| ids[t]).collect(),
-                    uvs: tri.iter().map(|&t| uvs[t]).collect(),
-                    cba: p.cell.clut,
-                    tsb: u16::from(p.cell.tpage),
-                    colors: tri.iter().map(|&t| cols[t]).collect(),
+            // One sub-quad `[sx0, sx1] x [sz0, sz1]` with its two paints,
+            // as (ground, soft) prims.
+            let mut emit = |pair: [Option<QuadPaint>; 2], sx0: f32, sz0: f32, d: f32| {
+                let mut g = Vec::new();
+                let mut sf = Vec::new();
+                let pts = [
+                    (sx0, sz0),
+                    (sx0 + d, sz0),
+                    (sx0, sz0 + d),
+                    (sx0 + d, sz0 + d),
+                ];
+                let at = pts.map(|(sx, sz)| on_tri(sx, sz));
+                let ids = std::array::from_fn::<u16, 4, _>(|k| {
+                    let (sx, sz) = pts[k];
+                    vert(vertex_at(f, i as f32 + sx, j as f32 + sz, at[k].0, centre))
                 });
-                // The soft boundary: the runner-up half-blended over the
-                // triangle (ABR 0, `0.5B + 0.5F`) from its palette's STP copy.
-                if let Some((cell, orient)) = p.overlay
-                    && let Some(&clut) = stp.get(&cell.clut)
-                {
-                    let uvs = corners.map(|c| uv(cell, orient, c));
-                    soft.push(ModelPrim {
+                for (tri, p) in UP.iter().zip(pair) {
+                    let Some(p) = p else { continue };
+                    let uvs = std::array::from_fn::<(u8, u8), 4, _>(|k| {
+                        uv(p.cell, p.orient, pts[k].0, pts[k].1, at[k].0)
+                    });
+                    g.push(ModelPrim {
                         vertices: tri.iter().map(|&t| ids[t]).collect(),
                         uvs: tri.iter().map(|&t| uvs[t]).collect(),
-                        cba: clut,
-                        tsb: u16::from(cell.tpage) & !0x60,
-                        colors: tri.iter().map(|&t| cols[t]).collect(),
+                        cba: p.cell.clut,
+                        tsb: u16::from(p.cell.tpage),
+                        colors: tri.iter().map(|&t| at[t].1).collect(),
                     });
+                    // The soft boundary: the runner-up half-blended over the
+                    // triangle (ABR 0, `0.5B + 0.5F`) from its palette's STP copy.
+                    if let Some((cell, orient)) = p.overlay
+                        && let Some(&clut) = stp.get(&cell.clut)
+                    {
+                        let uvs = std::array::from_fn::<(u8, u8), 4, _>(|k| {
+                            uv(cell, orient, pts[k].0, pts[k].1, at[k].0)
+                        });
+                        sf.push(ModelPrim {
+                            vertices: tri.iter().map(|&t| ids[t]).collect(),
+                            uvs: tri.iter().map(|&t| uvs[t]).collect(),
+                            cba: clut,
+                            tsb: u16::from(cell.tpage) & !0x60,
+                            colors: tri.iter().map(|&t| at[t].1).collect(),
+                        });
+                    }
                 }
-            }
+                (g, sf)
+            };
+            // The hosts drop a prim whose texels read as all-zero words (an
+            // unwritten page); a sub-quad samples so few that a dark patch of
+            // a texture can, so a quad with such a sub-prim draws whole.
+            let visible = |prims: &[ModelPrim]| {
+                vram.is_none_or(|v| {
+                    prims
+                        .iter()
+                        .all(|p| v.prim_has_texture_data(p.cba, p.tsb, &p.uvs))
+                })
+            };
+            let fine_prims = fine.and_then(|subs| {
+                let n = s.detail.max(1);
+                let d = 1.0 / n as f32;
+                let (mut g, mut sf) = (Vec::new(), Vec::new());
+                for (k, sub) in subs.iter().enumerate() {
+                    let (a, b) = emit(*sub, (k % n) as f32 * d, (k / n) as f32 * d, d);
+                    g.extend(a);
+                    sf.extend(b);
+                }
+                (visible(&g) && visible(&sf)).then_some((g, sf))
+            });
+            let (g, sf) = match fine_prims {
+                Some(x) => x,
+                None => emit(pair, 0.0, 0.0, 1.0),
+            };
+            ground.extend(g);
+            soft.extend(sf);
         }
         let Some(w) = &s.water else { continue };
         if !corners.iter().any(|&c| h(c) < w.level) {

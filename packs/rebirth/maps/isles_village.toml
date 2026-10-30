@@ -480,3 +480,55 @@ cliff = { slope = 1.05, tint = [120, 114, 106], cells = [
 ] }
 water = { level = -8, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [140, 160, 160], deep = [64, 84, 120], depth = 50, foam = 14, foam_color = [140, 140, 136], wade = 4 }
 sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4, color = [150, 120, 110] }
+
+# Village life: the bay's surf at the jetty, the wind in the wooded rise,
+# and a murmur round the lodge and the green.
+[audio]
+
+[[audio.ambient]]
+id = "bay_surf"
+sound = { kind = "sound", id = "surf" }
+tile = [20, 38]
+radius = 1500
+inner = 320
+volume = 0.7
+
+[[audio.ambient]]
+id = "bay_east"
+sound = { kind = "sound", id = "surf" }
+tile = [44, 37]
+radius = 1300
+inner = 300
+volume = 0.6
+
+[[audio.ambient]]
+id = "rise_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [26, 1]
+radius = 1400
+inner = 400
+volume = 0.3
+
+[[audio.ambient]]
+id = "lodge"
+sound = { kind = "sound", id = "crowd" }
+tile = [45, 22]
+radius = 700
+inner = 160
+volume = 0.35
+
+[[audio.ambient]]
+id = "green"
+sound = { kind = "sound", id = "crowd" }
+tile = [24, 20]
+radius = 600
+inner = 140
+volume = 0.25
+
+[[audio.ambient]]
+id = "woods"
+sound = { kind = "sound", id = "birds" }
+tile = [6, 4]
+radius = 1200
+inner = 300
+volume = 0.5

@@ -84,6 +84,13 @@ pub struct TerrainDef {
     /// boundary. Drawn through the PSX `0.5B + 0.5F` blend from palette
     /// copies carrying the STP bit, so it holds in both render modes.
     pub soften: f32,
+    /// Subdivision of a quad on a material boundary: `1` (off), `2` or `4`
+    /// sub-quads a side, each triangle choosing its material at its own
+    /// centroid, so a boundary steps every `32 / detail` world units rather
+    /// than every `32`. The sub-quads lie on the quad's own two triangles:
+    /// the surface, and the floor the player walks, are unchanged.
+    #[serde(default = "detail_off")]
+    pub detail: u8,
     /// The baked sun: `[azimuth, elevation]` in degrees (azimuth `0` lights
     /// from `+Z`, `90` from `+X`).
     pub sun: [f32; 2],
@@ -113,6 +120,7 @@ impl Default for TerrainDef {
             variation: 0.15,
             blend: 0.5,
             soften: 0.3,
+            detail: 1,
             sun: [135.0, 50.0],
             shading: 0.5,
             shapes: Vec::new(),
@@ -183,6 +191,41 @@ pub enum TerrainShape {
         #[serde(default = "one")]
         strength: f32,
     },
+    /// A brush dragged along `path`: `op` under a round brush `radius`
+    /// tiles wide, at every point of the polyline (the distance to the
+    /// nearest segment, so the joints do not add up). `raise` adds `height`
+    /// (negative digs); `flatten` pulls toward `height`, or with none toward
+    /// the mean along the path; `smooth` blurs. What the 3D sculpt brush
+    /// writes for a drag.
+    Stroke {
+        path: Vec<[f32; 2]>,
+        radius: f32,
+        #[serde(default)]
+        op: StrokeOp,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        height: Option<f32>,
+        #[serde(default = "one")]
+        strength: f32,
+    },
+    /// A grayscale PNG under the pack's `assets/` (`image`, relative to
+    /// `assets/`) stretched over `rect` (the whole map when left out, image
+    /// row 0 at the rectangle's low-Z edge): black is `height[0]`, white
+    /// `height[1]`. The ground is pulled toward it by `strength`, or with
+    /// `add` the image's height is added. Read at the pack's load
+    /// ([`MapDef::resolve_terrain_images`]); 8- or 16-bit, grey or colour
+    /// (luminance).
+    Heightmap {
+        image: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rect: Option<[u16; 4]>,
+        height: [f32; 2],
+        #[serde(default = "one")]
+        strength: f32,
+        #[serde(default)]
+        add: bool,
+        #[serde(skip)]
+        data: HeightImage,
+    },
     /// Fractal noise over `rect` (the whole map when left out), `amplitude`
     /// either way, features `scale` tiles across.
     Noise {
@@ -198,6 +241,102 @@ pub enum TerrainShape {
     },
 }
 
+/// What a [`TerrainShape::Stroke`] does under its brush.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StrokeOp {
+    #[default]
+    Raise,
+    Flatten,
+    Smooth,
+}
+
+/// A decoded heightmap image: `w x h` samples, `0..=1`, row-major. Empty
+/// until [`MapDef::resolve_terrain_images`] reads the file.
+#[derive(Debug, Clone, Default)]
+pub struct HeightImage(pub Option<std::sync::Arc<GrayImage>>);
+
+/// One heightmap's samples.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrayImage {
+    pub w: usize,
+    pub h: usize,
+    pub v: Vec<f32>,
+}
+
+impl PartialEq for HeightImage {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (Some(a), Some(b)) => std::sync::Arc::ptr_eq(a, b) || a == b,
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
+impl GrayImage {
+    /// Decode a PNG to luminance samples.
+    pub fn from_png(bytes: &[u8]) -> Result<Self> {
+        let mut dec = png::Decoder::new(std::io::Cursor::new(bytes));
+        dec.set_transformations(png::Transformations::EXPAND);
+        let mut reader = dec.read_info()?;
+        let mut buf = vec![
+            0u8;
+            reader
+                .output_buffer_size()
+                .ok_or_else(|| anyhow::anyhow!("PNG frame too large"))?
+        ];
+        let info = reader.next_frame(&mut buf)?;
+        let (w, h) = (info.width as usize, info.height as usize);
+        if w == 0 || h == 0 || w * h > 1 << 22 {
+            bail!("a heightmap is 1 to 4M pixels ({w} x {h})");
+        }
+        let chans = match info.color_type {
+            png::ColorType::Grayscale => 1,
+            png::ColorType::GrayscaleAlpha => 2,
+            png::ColorType::Rgb => 3,
+            png::ColorType::Rgba => 4,
+            png::ColorType::Indexed => bail!("an indexed PNG did not expand"),
+        };
+        let wide = info.bit_depth == png::BitDepth::Sixteen;
+        let data = &buf[..info.buffer_size()];
+        let sample = |k: usize| -> f32 {
+            if wide {
+                f32::from(u16::from_be_bytes([data[2 * k], data[2 * k + 1]])) / 65535.0
+            } else {
+                f32::from(data[k]) / 255.0
+            }
+        };
+        let v = (0..w * h)
+            .map(|p| {
+                let b = p * chans;
+                if chans >= 3 {
+                    0.299 * sample(b) + 0.587 * sample(b + 1) + 0.114 * sample(b + 2)
+                } else {
+                    sample(b)
+                }
+            })
+            .collect();
+        Ok(Self { w, h, v })
+    }
+
+    /// Bilinear sample at `(u, v)`, `0..=1` across the image.
+    pub fn sample(&self, u: f32, v: f32) -> f32 {
+        let x = (u.clamp(0.0, 1.0) * (self.w - 1) as f32).max(0.0);
+        let y = (v.clamp(0.0, 1.0) * (self.h - 1) as f32).max(0.0);
+        let (x0, y0) = (x.floor() as usize, y.floor() as usize);
+        let (x1, y1) = ((x0 + 1).min(self.w - 1), (y0 + 1).min(self.h - 1));
+        let (fx, fy) = (x - x0 as f32, y - y0 as f32);
+        let p = |x: usize, y: usize| self.v[y * self.w + x];
+        let top = p(x0, y0) + (p(x1, y0) - p(x0, y0)) * fx;
+        let bot = p(x0, y1) + (p(x1, y1) - p(x0, y1)) * fx;
+        top + (bot - top) * fy
+    }
+}
+
+fn detail_off() -> u8 {
+    1
+}
 fn half() -> f32 {
     0.5
 }
@@ -244,6 +383,11 @@ pub struct TerrainMaterial {
     /// tile, before the smoothing: a lumpy cave wall, a rubbled slope.
     #[serde(default)]
     pub roughness: f32,
+    /// A retail scene whose VRAM the cells name instead of the base
+    /// scene's: the map's load copies each cell's texels and palette into
+    /// free VRAM and paints with the copies ([`TerrainDef::borrowed`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 /// The material steep faces take.
@@ -255,6 +399,9 @@ pub struct CliffMaterial {
     pub slope: f32,
     #[serde(default = "neutral")]
     pub tint: [u8; 3],
+    /// As [`TerrainMaterial::from`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 /// A water table: a flat textured surface at `level` over every quad whose
@@ -288,6 +435,9 @@ pub struct WaterDef {
     /// turn, deepest first ([`surf_level`]). `0` holds the foam still.
     #[serde(default = "surf")]
     pub surf: u16,
+    /// As [`TerrainMaterial::from`], for the surface's cells.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
 }
 
 fn surf() -> u16 {
@@ -474,6 +624,10 @@ pub struct QuadPaint {
     pub overlay: Option<(AtlasCell, u8)>,
 }
 
+/// A triangle's material choice: the winner (its index, cell and turn) and
+/// the runner-up close enough to blend.
+type Choice = (Option<(u16, (AtlasCell, u8))>, Option<(AtlasCell, u8)>);
+
 /// [`QuadPaint::material`] of a cliff quad.
 pub const CLIFF: u16 = u16::MAX;
 
@@ -498,6 +652,12 @@ pub struct TerrainSurface {
     /// row-major: the quad's `(a, c, b)` and `(b, c, d)` triangles (corners
     /// `a b / c d`). `None` where no material reaches.
     pub paint: Vec<[Option<QuadPaint>; 2]>,
+    /// Sub-quads a side of a boundary quad ([`TerrainDef::detail`]).
+    pub detail: usize,
+    /// The boundary quads' finer paint, by quad index into `paint`:
+    /// `detail x detail` sub-quads row-major, two triangles each, split as
+    /// the quad is. A quad listed here draws its sub-quads instead.
+    pub fine: std::collections::BTreeMap<usize, Vec<[Option<QuadPaint>; 2]>>,
     /// The water table, copied from the def.
     pub water: Option<WaterDef>,
 }
@@ -646,7 +806,83 @@ impl TerrainDef {
     }
 }
 
+impl TerrainDef {
+    /// The retail scenes whose VRAM the terrain's cells name (`from`), each
+    /// once, in order.
+    pub fn borrowed(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        let froms = self.materials.iter().map(|m| m.from.as_deref()).chain([
+            self.cliff.as_ref().and_then(|c| c.from.as_deref()),
+            self.water.as_ref().and_then(|w| w.from.as_deref()),
+        ]);
+        for f in froms.flatten() {
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// Every atlas cell the terrain paints with that names scene `from`'s
+    /// VRAM, mutably: what the map's load rewrites to its copies.
+    pub fn borrowed_cells_mut(&mut self, from: &str) -> Vec<&mut AtlasCell> {
+        let mut out: Vec<&mut AtlasCell> = Vec::new();
+        for m in &mut self.materials {
+            if m.from.as_deref() == Some(from) {
+                out.extend(m.cells.iter_mut());
+            }
+        }
+        if let Some(c) = self
+            .cliff
+            .as_mut()
+            .filter(|c| c.from.as_deref() == Some(from))
+        {
+            out.extend(c.cells.iter_mut());
+        }
+        if let Some(w) = self
+            .water
+            .as_mut()
+            .filter(|w| w.from.as_deref() == Some(from))
+        {
+            out.extend(w.cells.iter_mut());
+        }
+        out
+    }
+}
+
 impl MapDef {
+    /// Read every [`TerrainShape::Heightmap`]'s image out of the pack's
+    /// `assets/` (keyed relative to `assets/`). Returns a message per image
+    /// that is missing or does not decode; such a shape shapes nothing.
+    pub fn resolve_terrain_images(
+        &mut self,
+        assets: &std::collections::BTreeMap<String, Vec<u8>>,
+    ) -> Vec<String> {
+        let mut problems = Vec::new();
+        let Some(t) = self.terrain.as_mut() else {
+            return problems;
+        };
+        for s in &mut t.shapes {
+            if let TerrainShape::Heightmap { image, data, .. } = s {
+                let key = image.strip_prefix("assets/").unwrap_or(image);
+                match assets.get(key) {
+                    None => {
+                        data.0 = None;
+                        problems.push(format!("heightmap assets/{key} is not in the pack"));
+                    }
+                    Some(bytes) => match GrayImage::from_png(bytes) {
+                        Ok(img) => data.0 = Some(std::sync::Arc::new(img)),
+                        Err(e) => {
+                            data.0 = None;
+                            problems.push(format!("heightmap assets/{key}: {e}"));
+                        }
+                    },
+                }
+            }
+        }
+        problems
+    }
+
     /// The map's terrain heights, `None` with no `[terrain]`.
     pub fn terrain_heightfield(&self) -> Result<Option<Heightfield>> {
         let Some(t) = &self.terrain else {
@@ -789,7 +1025,8 @@ fn heightfield(def: &MapDef, t: &TerrainDef, grid: &TileGrid) -> Result<Heightfi
         h = blur(&h, cols, rows);
     }
     for shape in &t.shapes {
-        apply_shape(&mut h, cols, rows, &uv, shape, t.seed);
+        let map_rect = [0.0, 0.0, grid.width as f32, grid.height as f32];
+        apply_shape(&mut h, cols, rows, &uv, shape, t.seed, map_rect);
     }
     let heights = h
         .iter()
@@ -818,6 +1055,7 @@ fn apply_shape(
     uv: &impl Fn(usize, usize) -> [f32; 2],
     shape: &TerrainShape,
     terrain_seed: u64,
+    map_rect: [f32; 4],
 ) {
     let each = |h: &mut [f32], f: &mut dyn FnMut([f32; 2], f32) -> f32| {
         for j in 0..rows {
@@ -913,6 +1151,101 @@ fn apply_shape(
                     h[k] += (b[k] - h[k]) * m;
                 }
             }
+        }
+        TerrainShape::Stroke {
+            ref path,
+            radius,
+            op,
+            height,
+            strength,
+        } => {
+            if path.is_empty() {
+                return;
+            }
+            // Distance from `p` to the polyline.
+            let dist = |p: [f32; 2]| -> f32 {
+                if path.len() == 1 {
+                    return (p[0] - path[0][0]).hypot(p[1] - path[0][1]);
+                }
+                path.windows(2)
+                    .map(|w| segment(p, w[0], w[1]).0)
+                    .fold(f32::MAX, f32::min)
+            };
+            match op {
+                StrokeOp::Raise => {
+                    let height = height.unwrap_or(0.0);
+                    each(h, &mut |p, v| {
+                        v + height * strength * cos_falloff(dist(p), radius)
+                    })
+                }
+                StrokeOp::Flatten => {
+                    let level = height.unwrap_or_else(|| {
+                        let (mut sum, mut n) = (0.0, 0.0);
+                        for j in 0..rows {
+                            for i in 0..cols {
+                                let w = cos_falloff(dist(uv(i, j)), radius);
+                                sum += h[j * cols + i] * w;
+                                n += w;
+                            }
+                        }
+                        if n > 0.0 { sum / n } else { 0.0 }
+                    });
+                    each(h, &mut |p, v| {
+                        let m = (cos_falloff(dist(p), radius) * strength).clamp(0.0, 1.0);
+                        v + (level - v) * m
+                    })
+                }
+                StrokeOp::Smooth => {
+                    let mut b = h.to_vec();
+                    for _ in 0..3 {
+                        b = blur(&b, cols, rows);
+                    }
+                    for j in 0..rows {
+                        for i in 0..cols {
+                            let k = j * cols + i;
+                            let m =
+                                (cos_falloff(dist(uv(i, j)), radius) * strength).clamp(0.0, 1.0);
+                            h[k] += (b[k] - h[k]) * m;
+                        }
+                    }
+                }
+            }
+        }
+        TerrainShape::Heightmap {
+            rect,
+            height,
+            strength,
+            add,
+            ref data,
+            ..
+        } => {
+            let Some(img) = data.0.as_ref() else {
+                return;
+            };
+            let [x0, z0, x1, z1] = match rect {
+                Some([c0, r0, c1, r1]) => [
+                    f32::from(c0.min(c1)),
+                    f32::from(r0.min(r1)),
+                    f32::from(c0.max(c1)) + 1.0,
+                    f32::from(r0.max(r1)) + 1.0,
+                ],
+                None => map_rect,
+            };
+            each(h, &mut |p, v| {
+                if p[0] < x0 || p[0] > x1 || p[1] < z0 || p[1] > z1 {
+                    return v;
+                }
+                let s = img.sample(
+                    (p[0] - x0) / (x1 - x0).max(1e-3),
+                    (p[1] - z0) / (z1 - z0).max(1e-3),
+                );
+                let target = height[0] + (height[1] - height[0]) * s;
+                if add {
+                    v + target * strength
+                } else {
+                    v + (target - v) * strength.clamp(0.0, 1.0)
+                }
+            })
         }
         TerrainShape::Noise {
             rect,
@@ -1081,6 +1414,53 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
             colors.push(tint.map(|c| (c * k).round().clamp(0.0, 255.0) as u8));
         }
     }
+    // Score each candidate material at `(u, v)`: its summed weight at a
+    // noise-warped point (so a boundary meanders rather than following the
+    // tile grid) plus a dithering noise of its own. Best first.
+    let rank = |u: f32, v: f32| -> Vec<(u16, f32)> {
+        let warp = t.blend;
+        let (wu, wv) = (
+            u + warp * (fbm(t.seed ^ 0x5741_5250, u * 0.45, v * 0.45, 3) - 0.5) * 2.0,
+            v + warp * (fbm(t.seed ^ 0x5741_5251, u * 0.45, v * 0.45, 3) - 0.5) * 2.0,
+        );
+        let mut cand: Vec<(u16, f32)> = Vec::with_capacity(4);
+        for (m, w) in weights(wu, wv) {
+            let Some(m) = m else { continue };
+            match cand.iter_mut().find(|(cm, _)| *cm == m) {
+                Some((_, cw)) => *cw += w,
+                None => cand.push((m, w)),
+            }
+        }
+        let mut scored: Vec<(u16, f32)> = cand
+            .into_iter()
+            .map(|(m, w)| {
+                let n = fbm(
+                    t.seed ^ (u64::from(m) * 0x1F3D + 0x5A5A),
+                    u * 1.7,
+                    v * 1.7,
+                    2,
+                );
+                (m, w + t.blend * 0.6 * (n - 0.5))
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        scored
+    };
+    let detail = usize::from(t.detail.clamp(1, 4));
+    // The winning material at each vertex: a quad whose corners or
+    // triangles disagree lies on a boundary and is subdivided.
+    let vertex_win: Vec<Option<u16>> = if detail > 1 {
+        (0..rows)
+            .flat_map(|j| (0..cols).map(move |i| (i, j)))
+            .map(|(i, j)| {
+                let (u, v) = to_uv(i as f32, j as f32);
+                rank(u, v).first().map(|&(m, _)| m)
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut fine = std::collections::BTreeMap::new();
     let cliff_slope = t.cliff.as_ref().map(|c| c.slope);
     let mut paint = Vec::with_capacity((cols - 1) * (rows - 1));
     for j in 0..rows - 1 {
@@ -1121,37 +1501,9 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                     if mat.rotate { (hsh & 7) as u8 } else { 0 },
                 ))
             };
-            // Score each candidate material at `(u, v)`: its summed weight
-            // at a noise-warped point (so a boundary meanders rather than
-            // following the tile grid) plus a dithering noise of its own.
-            // Returns the winner and the runner-up close enough to blend.
+            // The winner at `(u, v)` and the runner-up close enough to blend.
             let choose = |u: f32, v: f32| {
-                let warp = t.blend;
-                let (wu, wv) = (
-                    u + warp * (fbm(t.seed ^ 0x5741_5250, u * 0.45, v * 0.45, 3) - 0.5) * 2.0,
-                    v + warp * (fbm(t.seed ^ 0x5741_5251, u * 0.45, v * 0.45, 3) - 0.5) * 2.0,
-                );
-                let mut cand: Vec<(u16, f32)> = Vec::with_capacity(4);
-                for (m, w) in weights(wu, wv) {
-                    let Some(m) = m else { continue };
-                    match cand.iter_mut().find(|(cm, _)| *cm == m) {
-                        Some((_, cw)) => *cw += w,
-                        None => cand.push((m, w)),
-                    }
-                }
-                let mut scored: Vec<(u16, f32)> = cand
-                    .into_iter()
-                    .map(|(m, w)| {
-                        let n = fbm(
-                            t.seed ^ (u64::from(m) * 0x1F3D + 0x5A5A),
-                            u * 1.7,
-                            v * 1.7,
-                            2,
-                        );
-                        (m, w + t.blend * 0.6 * (n - 0.5))
-                    })
-                    .collect();
-                scored.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+                let scored = rank(u, v);
                 let ground = scored
                     .first()
                     .and_then(|&(m, _)| paint_of(m).map(|p| (m, p)));
@@ -1191,14 +1543,45 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
                     continue;
                 }
             }
-            paint.push(tris.map(|(ground, runner)| {
+            let to_paint = |(ground, runner): Choice| {
                 ground.map(|(m, (cell, orient))| QuadPaint {
                     cell,
                     orient,
                     material: m,
                     overlay: runner,
                 })
-            }));
+            };
+            if detail > 1 {
+                let win = |a: usize, b: usize| vertex_win[b * cols + a];
+                let mats = [
+                    tris[0].0.map(|g| g.0),
+                    tris[1].0.map(|g| g.0),
+                    win(i, j),
+                    win(i + 1, j),
+                    win(i, j + 1),
+                    win(i + 1, j + 1),
+                ];
+                if mats.iter().any(|m| *m != mats[0]) {
+                    // Sub-quad (si, sj) of `detail` a side, its triangles
+                    // at their own centroids, split as the quad is.
+                    let d = detail as f32;
+                    let q = 1.0 / (res as f32 * d);
+                    let (u0, v0) = (u - 0.5 / res as f32, v - 0.5 / res as f32);
+                    let mut subs = Vec::with_capacity(detail * detail);
+                    for sj in 0..detail {
+                        for si in 0..detail {
+                            let (su, sv) = (u0 + si as f32 * q, v0 + sj as f32 * q);
+                            let third = q / 3.0;
+                            subs.push([
+                                to_paint(choose(su + third, sv + third)),
+                                to_paint(choose(su + q - third, sv + q - third)),
+                            ]);
+                        }
+                    }
+                    fine.insert(paint.len(), subs);
+                }
+            }
+            paint.push(tris.map(to_paint));
         }
     }
     TerrainSurface {
@@ -1206,6 +1589,8 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
         materials: mats,
         colors,
         paint,
+        detail,
+        fine,
         water: t.water.clone(),
     }
 }

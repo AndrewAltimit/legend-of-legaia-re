@@ -253,7 +253,36 @@ impl Core {
                 pack.docs.insert(path.clone(), bytes.clone());
             }
         }
+        let assets = pack.assets.clone();
+        for m in pack.maps.values_mut() {
+            let _ = m.resolve_terrain_images(&assets);
+        }
         Ok(pack)
+    }
+
+    /// The images `def`'s terrain heightmaps name, out of the pack's
+    /// `assets/`, keyed relative to `assets/`.
+    fn heightmap_assets(&self, def: &MapDef) -> std::collections::BTreeMap<String, Vec<u8>> {
+        let names: Vec<&str> = def
+            .terrain
+            .iter()
+            .flat_map(|t| t.shapes.iter())
+            .filter_map(|s| match s {
+                legaia_expansion_format::terrain::TerrainShape::Heightmap { image, .. } => {
+                    Some(image.strip_prefix("assets/").unwrap_or(image))
+                }
+                _ => None,
+            })
+            .collect();
+        names
+            .into_iter()
+            .filter_map(|n| {
+                Some((
+                    n.to_string(),
+                    self.extras.get(&format!("assets/{n}"))?.clone(),
+                ))
+            })
+            .collect()
     }
 
     /// The file tree the pack exports as. A manifest, section or map whose
@@ -645,7 +674,8 @@ impl Core {
     }
 
     fn map_preview_inner(&self, map_json: &str) -> Result<Value> {
-        let def: MapDef = serde_json::from_str(map_json).context("map does not parse")?;
+        let mut def: MapDef = serde_json::from_str(map_json).context("map does not parse")?;
+        let heightmaps = def.resolve_terrain_images(&self.heightmap_assets(&def));
         let grid = def.tile_grid()?;
         let base = def
             .base
@@ -754,7 +784,10 @@ impl Core {
                 "rows": f.rows,
                 "res": f.res,
                 "skirt": f.skirt,
+                "step": f.step,
+                "origin": f.origin,
                 "heights": f.heights,
+                "problems": heightmaps,
                 "water": def.terrain.as_ref().and_then(|t| t.water.as_ref()).map(|w| w.level),
             })),
             // Standable prop tops in map-local tiles: `[col0, row0, col1,

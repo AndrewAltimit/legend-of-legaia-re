@@ -303,6 +303,68 @@ count = 24
 color = [255, 210, 80]
 seed = 4314
 
+# The floor: a sculpted forest. The thickets rise into wooded banks either
+# side of the path (walled anyway, so only the eye climbs them), the path is
+# a worn lane borrowed from Rim Elm's VRAM (`from = "town01"`, the West Voz
+# Forest has no dirt of its own), the clearings are turf, and the ruins stand
+# on their tiers with a rock cliff where the court meets the forest.
+[terrain]
+resolution = 4
+smooth = 2
+max_step = 44
+skirt = 4
+seed = 4320
+variation = 0.28
+blend = 0.7
+soften = 0.35
+detail = 4
+sun = [225.0, 38.0]
+shading = 0.6
+shapes = [
+  { kind = "noise", amplitude = 7, scale = 3.0, seed = 1 },
+  { kind = "noise", rect = [1, 1, 69, 32], amplitude = 3, scale = 0.8, octaves = 2, seed = 2 },
+  { kind = "raise", at = [8.0, 3.0], radius = 7.0, height = 46 },
+  { kind = "raise", at = [30.0, 2.0], radius = 8.0, height = 60 },
+  { kind = "raise", at = [48.0, 30.0], radius = 9.0, height = 54 },
+  { kind = "raise", at = [62.0, 2.0], radius = 6.0, height = 40 },
+  { kind = "raise", at = [8.0, 30.0], radius = 7.0, height = 38 },
+  { kind = "ridge", from = [20.0, 4.0], to = [38.0, 8.0], radius = 2.5, height = 26 },
+  { kind = "ridge", from = [46.0, 24.0], to = [62.0, 27.0], radius = 2.5, height = 22 },
+  { kind = "flatten", at = [7.5, 15.5], radius = 3.5, strength = 0.8 },
+  { kind = "flatten", at = [22.5, 23.5], radius = 4.5, strength = 0.8 },
+  { kind = "flatten", at = [51.5, 12.5], radius = 3.5, strength = 0.8 },
+  { kind = "flatten", at = [36.5, 15.5], radius = 3.0, strength = 0.7 },
+]
+materials = [
+  { name = "leaf litter", chars = ".", tint = [118, 116, 96], cells = [
+    { tpage = 12, clut = 32583, tile = 0 }, { tpage = 12, clut = 32583, tile = 1 }, { tpage = 12, clut = 32583, tile = 2 }, { tpage = 12, clut = 32583, tile = 6 }, { tpage = 12, clut = 32583, tile = 8 }, { tpage = 12, clut = 32583, tile = 9 }, { tpage = 12, clut = 32583, tile = 10 }, { tpage = 12, clut = 32583, tile = 12 }, { tpage = 12, clut = 32583, tile = 16 }, { tpage = 12, clut = 32583, tile = 17 }, { tpage = 12, clut = 32583, tile = 20 }, { tpage = 12, clut = 32583, tile = 24 }, { tpage = 12, clut = 32583, tile = 25 }, { tpage = 12, clut = 32583, tile = 26 }, { tpage = 12, clut = 32583, tile = 28 }, { tpage = 12, clut = 32583, tile = 32 }, { tpage = 12, clut = 32583, tile = 33 }, { tpage = 12, clut = 32583, tile = 34 }, { tpage = 12, clut = 32583, tile = 40 }, { tpage = 12, clut = 32583, tile = 41 }, { tpage = 12, clut = 32583, tile = 42 }, { tpage = 12, clut = 32583, tile = 48 }, { tpage = 12, clut = 32583, tile = 49 },
+  ] },
+  { name = "turf", chars = ",", from = "town01", tint = [118, 128, 104], cells = [
+    { tpage = 12, clut = 32000, tile = 24 }, { tpage = 12, clut = 32000, tile = 25 }, { tpage = 12, clut = 32000, tile = 26 }, { tpage = 12, clut = 32000, tile = 32 }, { tpage = 12, clut = 32000, tile = 33 }, { tpage = 12, clut = 32000, tile = 34 }, { tpage = 12, clut = 32000, tile = 40 }, { tpage = 12, clut = 32000, tile = 41 }, { tpage = 12, clut = 32000, tile = 42 },
+  ] },
+  { name = "lane", chars = "d<", from = "town01", lift = -5, tint = [116, 110, 98], cells = [
+    { tpage = 12, clut = 32004, tile = 24 }, { tpage = 12, clut = 32004, tile = 26 }, { tpage = 12, clut = 32004, tile = 32 }, { tpage = 12, clut = 32004, tile = 33 }, { tpage = 12, clut = 32004, tile = 40 }, { tpage = 12, clut = 32004, tile = 41 }, { tpage = 12, clut = 32004, tile = 42 },
+  ] },
+  { name = "thicket", chars = "T", lift = 34, roughness = 18, tint = [104, 112, 96], cells = [
+    { tpage = 12, clut = 32589, tile = 0 }, { tpage = 12, clut = 32589, tile = 1 }, { tpage = 12, clut = 32589, tile = 2 }, { tpage = 12, clut = 32589, tile = 6 }, { tpage = 12, clut = 32589, tile = 8 }, { tpage = 12, clut = 32589, tile = 9 }, { tpage = 12, clut = 32589, tile = 10 }, { tpage = 12, clut = 32589, tile = 12 }, { tpage = 12, clut = 32589, tile = 16 }, { tpage = 12, clut = 32589, tile = 17 }, { tpage = 12, clut = 32589, tile = 20 }, { tpage = 12, clut = 32589, tile = 24 }, { tpage = 12, clut = 32589, tile = 25 }, { tpage = 12, clut = 32589, tile = 26 }, { tpage = 12, clut = 32589, tile = 28 }, { tpage = 12, clut = 32589, tile = 32 }, { tpage = 12, clut = 32589, tile = 33 }, { tpage = 12, clut = 32589, tile = 34 }, { tpage = 12, clut = 32589, tile = 40 }, { tpage = 12, clut = 32589, tile = 41 }, { tpage = 12, clut = 32589, tile = 42 }, { tpage = 12, clut = 32589, tile = 48 }, { tpage = 12, clut = 32589, tile = 49 },
+  ] },
+  { name = "moss", chars = "t", lift = 26, roughness = 14, tint = [112, 120, 100], cells = [
+    { tpage = 12, clut = 32590, tile = 3 }, { tpage = 12, clut = 32590, tile = 4 }, { tpage = 12, clut = 32590, tile = 5 }, { tpage = 12, clut = 32590, tile = 7 }, { tpage = 12, clut = 32590, tile = 11 }, { tpage = 12, clut = 32590, tile = 13 }, { tpage = 12, clut = 32590, tile = 15 }, { tpage = 12, clut = 32590, tile = 18 }, { tpage = 12, clut = 32590, tile = 19 }, { tpage = 12, clut = 32590, tile = 27 }, { tpage = 12, clut = 32590, tile = 35 }, { tpage = 12, clut = 32590, tile = 43 }, { tpage = 12, clut = 32590, tile = 44 }, { tpage = 12, clut = 32590, tile = 45 },
+  ] },
+  { name = "court stone", chars = "q=v", rotate = false, tint = [128, 124, 132], cells = [
+    { tpage = 11, clut = 32512, tile = 0 }, { tpage = 11, clut = 32512, tile = 1 }, { tpage = 11, clut = 32512, tile = 2 }, { tpage = 11, clut = 32512, tile = 8 }, { tpage = 11, clut = 32512, tile = 9 }, { tpage = 11, clut = 32512, tile = 10 }, { tpage = 11, clut = 32512, tile = 16 }, { tpage = 11, clut = 32512, tile = 17 }, { tpage = 11, clut = 32512, tile = 18 }, { tpage = 11, clut = 32512, tile = 24 }, { tpage = 11, clut = 32512, tile = 25 }, { tpage = 11, clut = 32512, tile = 26 }, { tpage = 11, clut = 32512, tile = 32 }, { tpage = 11, clut = 32512, tile = 33 }, { tpage = 11, clut = 32512, tile = 40 }, { tpage = 11, clut = 32512, tile = 41 }, { tpage = 11, clut = 32512, tile = 48 }, { tpage = 11, clut = 32512, tile = 49 }, { tpage = 11, clut = 32512, tile = 56 }, { tpage = 11, clut = 32512, tile = 57 },
+  ] },
+  { name = "inner court", chars = "Qo", rotate = false, tint = [140, 132, 128], cells = [
+    { tpage = 11, clut = 32513, tile = 0 }, { tpage = 11, clut = 32513, tile = 1 }, { tpage = 11, clut = 32513, tile = 2 }, { tpage = 11, clut = 32513, tile = 8 }, { tpage = 11, clut = 32513, tile = 9 }, { tpage = 11, clut = 32513, tile = 10 }, { tpage = 11, clut = 32513, tile = 16 }, { tpage = 11, clut = 32513, tile = 17 }, { tpage = 11, clut = 32513, tile = 18 }, { tpage = 11, clut = 32513, tile = 24 }, { tpage = 11, clut = 32513, tile = 25 }, { tpage = 11, clut = 32513, tile = 26 }, { tpage = 11, clut = 32513, tile = 32 }, { tpage = 11, clut = 32513, tile = 33 }, { tpage = 11, clut = 32513, tile = 40 }, { tpage = 11, clut = 32513, tile = 41 }, { tpage = 11, clut = 32513, tile = 48 }, { tpage = 11, clut = 32513, tile = 49 }, { tpage = 11, clut = 32513, tile = 56 }, { tpage = 11, clut = 32513, tile = 57 },
+  ] },
+  { name = "ruin footing", chars = "#", tint = [110, 106, 118], cells = [
+    { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
+  ] },
+]
+cliff = { slope = 0.9, tint = [104, 100, 112], cells = [
+  { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
+] }
+
 [lighting]
 mood = "dusk"
 lamps = [
@@ -315,3 +377,55 @@ lamps = [
 regions = [
   { rect = [2, 10, 68, 26], angle = 0.0, spread = 50.0, speed = 8 },
 ]
+
+# The forest: birdsong in the clearings, the wind through the canopy, and
+# a hush of drips by the ruined court.
+[audio]
+
+[[audio.ambient]]
+id = "west_birds"
+sound = { kind = "sound", id = "birds" }
+tile = [8, 16]
+radius = 1300
+inner = 300
+volume = 0.6
+
+[[audio.ambient]]
+id = "clearing_birds"
+sound = { kind = "sound", id = "birds" }
+tile = [22, 23]
+radius = 1300
+inner = 300
+volume = 0.65
+
+[[audio.ambient]]
+id = "east_birds"
+sound = { kind = "sound", id = "birds" }
+tile = [52, 13]
+radius = 1300
+inner = 300
+volume = 0.6
+
+[[audio.ambient]]
+id = "canopy_wind_w"
+sound = { kind = "sound", id = "wind" }
+tile = [18, 8]
+radius = 1800
+inner = 500
+volume = 0.35
+
+[[audio.ambient]]
+id = "canopy_wind_e"
+sound = { kind = "sound", id = "wind" }
+tile = [56, 24]
+radius = 1800
+inner = 500
+volume = 0.35
+
+[[audio.ambient]]
+id = "court_torch"
+sound = { kind = "sound", id = "torch" }
+tile = [72, 21]
+radius = 600
+inner = 120
+volume = 0.4

@@ -193,6 +193,11 @@ impl ExpansionPack {
                 docs.insert(path.clone(), bytes.clone());
             }
         }
+        // Heightmaps read their images out of the pack's assets once, here;
+        // a missing one is the validator's to report.
+        for m in maps.values_mut() {
+            let _ = m.resolve_terrain_images(&assets);
+        }
         Ok(Self {
             manifest,
             battle: section(files, "battle.toml")?,

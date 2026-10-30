@@ -38,6 +38,15 @@ file = "audio/engine.wav"
 [sounds.drips]
 file = "audio/drips.wav"
 
+# The Isles' outdoors: the surf along the beach and the bay, and the
+# Thornwood's birdsong.
+[sounds.surf]
+file = "audio/surf.wav"
+
+[sounds.birds]
+file = "audio/birds.wav"
+gain = 0.8
+
 # The boss beats (cutscenes.toml, battle.toml): an entrance hit, the
 # shimmer of a phase change, and the knell as a keeper falls.
 [sounds.sting_boss]

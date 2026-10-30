@@ -120,6 +120,26 @@ pub struct MeshLibrary {
     /// its CBA word, to the CBA word of its copy with the STP bit on every
     /// non-zero entry ([`super::terrain::stp_palettes`]).
     pub stp_cluts: BTreeMap<u16, u16>,
+    /// The map's `[terrain]` with every cell that names another scene's
+    /// VRAM (`from`) rewritten to its copy ([`borrow_terrain_cells`]);
+    /// `None` when nothing is borrowed. The terrain the map's meshes draw.
+    pub terrain: Option<legaia_expansion_format::terrain::TerrainDef>,
+    /// The VRAM the map will draw against (the base scene's build under
+    /// [`Self::vram_patches`]) on a terrain map whose boundary quads
+    /// subdivide (`detail`): a sub-quad samples only a few texels, and one
+    /// whose texels the hosts' texture filter would read as missing (all
+    /// zero words) is drawn whole instead ([`super::terrain::tile_meshes`]).
+    pub terrain_vram: Option<TerrainVram>,
+}
+
+/// [`MeshLibrary::terrain_vram`]: the map's VRAM, shared.
+#[derive(Clone)]
+pub struct TerrainVram(pub std::sync::Arc<Vram>);
+
+impl std::fmt::Debug for TerrainVram {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TerrainVram")
+    }
 }
 
 /// One source scene's relocated pages and palettes.
@@ -282,9 +302,28 @@ pub fn resolve_mesh_library(
                 .context("the shoreline foam")?,
         );
     }
-    if let Some(surface) = def.terrain_surface().context("the terrain")? {
+    if let Some(t) = def.terrain.as_ref().filter(|t| !t.borrowed().is_empty()) {
+        let mut t = t.clone();
+        borrow_terrain_cells(index, &mut t, &mut alloc, &mut lib.vram_patches)
+            .context("the terrain's borrowed textures")?;
+        lib.terrain = Some(t);
+    }
+    let terrain_def = lib.terrain.as_ref().map(|t| MapDef {
+        terrain: Some(t.clone()),
+        ..def.clone()
+    });
+    if let Some(surface) = terrain_def
+        .as_ref()
+        .unwrap_or(def)
+        .terrain_surface()
+        .context("the terrain")?
+    {
+        // The blend palettes copy what the map's VRAM will hold: the base
+        // scene's words under the copies made so far.
+        let mut vram = base_vram.clone();
+        apply_vram_patches(&mut vram, &lib.vram_patches);
         lib.stp_cluts =
-            super::terrain::stp_palettes(&surface, &base_vram, &mut alloc, &mut lib.vram_patches)
+            super::terrain::stp_palettes(&surface, &vram, &mut alloc, &mut lib.vram_patches)
                 .context("the terrain's blend palettes")?;
     }
     // Group the carried-in meshes by source scene so each scene relocates
@@ -377,7 +416,158 @@ pub fn resolve_mesh_library(
                 .push((mesh, LibMesh::Added(lib.added.len() - 1)));
         }
     }
+    if def.terrain.as_ref().is_some_and(|t| t.detail > 1) {
+        let mut vram = res.vram.clone();
+        apply_vram_patches(&mut vram, &lib.vram_patches);
+        lib.terrain_vram = Some(TerrainVram(std::sync::Arc::new(vram)));
+    }
     Ok(lib)
+}
+
+/// Copy every terrain cell that names another scene's VRAM
+/// ([`legaia_expansion_format::terrain::TerrainMaterial::from`]) into free
+/// VRAM of the map's and rewrite the cell to the copy: the cell's `32 x 32`
+/// texels to a free atlas-cell slot of a page of the same depth, its
+/// palette (16 or 256 entries) to a free palette row. A cell or palette two
+/// materials share is copied once. Clears every `from`.
+pub fn borrow_terrain_cells(
+    index: &ProtIndex,
+    t: &mut legaia_expansion_format::terrain::TerrainDef,
+    alloc: &mut VramAlloc,
+    patches: &mut Vec<VramPatch>,
+) -> Result<()> {
+    use legaia_scene_formats::field_objects::{GROUND_ATLAS_AXIS, GROUND_ATLAS_TILE_PX};
+    let scenes: Vec<String> = t.borrowed().into_iter().map(str::to_string).collect();
+    let px = u16::from(GROUND_ATLAS_TILE_PX);
+    let axis = GROUND_ATLAS_AXIS as u16;
+    for name in scenes {
+        let src = Scene::load(index, &name).with_context(|| format!("scene `{name}`"))?;
+        let res =
+            field_resources(index, &src).with_context(|| format!("scene `{name}`'s resources"))?;
+        // (page bits, tile) -> (new page bits, new tile); clut -> clut.
+        let mut cells: BTreeMap<(u16, u8), (u16, u8)> = BTreeMap::new();
+        let mut cluts: BTreeMap<(u16, u16), u16> = BTreeMap::new();
+        for cell in t.borrowed_cells_mut(&name) {
+            let tsb = u16::from(cell.tpage);
+            let (ppx, ppy, depth) = tsb_page(tsb);
+            let per = 16 / u16::from(depth);
+            let w = px / per;
+            let key = (tsb & 0x19F, cell.tile);
+            let (ntsb, ntile) = match cells.get(&key) {
+                Some(&v) => v,
+                None => {
+                    let (cu, cv) = (
+                        u16::from(cell.tile) % axis * px,
+                        u16::from(cell.tile) / axis % axis * px,
+                    );
+                    let from = Rect {
+                        x: ppx + cu / per,
+                        y: ppy + cv,
+                        w,
+                        h: px,
+                    };
+                    let (to, (dpx, dpy)) = alloc_atlas_cell(alloc, depth, w, px)
+                        .with_context(|| format!("no free VRAM for a cell of `{name}`"))?;
+                    patches.push(VramPatch::read(&res.vram, from).moved(to));
+                    let ntile = ((to.y - dpy) / px) * axis + (to.x - dpx) / w;
+                    let v = (tsb_with_page(tsb, dpx, dpy), ntile as u8);
+                    cells.insert(key, v);
+                    v
+                }
+            };
+            let entries: u16 = if depth == 8 { 256 } else { 16 };
+            let nclut = if depth == 16 {
+                cell.clut
+            } else {
+                match cluts.get(&(cell.clut, entries)) {
+                    Some(&c) => c,
+                    None => {
+                        let (x, y) = cba_xy(cell.clut);
+                        let to = alloc
+                            .alloc_clut(entries)
+                            .with_context(|| format!("no free VRAM for a palette of `{name}`"))?;
+                        patches.push(
+                            VramPatch::read(
+                                &res.vram,
+                                Rect {
+                                    x,
+                                    y,
+                                    w: entries,
+                                    h: 1,
+                                },
+                            )
+                            .moved(to),
+                        );
+                        let c = cba_word(to.x, to.y);
+                        cluts.insert((cell.clut, entries), c);
+                        c
+                    }
+                }
+            };
+            cell.tpage = ntsb as u8;
+            cell.tile = ntile;
+            cell.clut = nclut;
+        }
+        for m in &mut t.materials {
+            if m.from.as_deref() == Some(name.as_str()) {
+                m.from = None;
+            }
+        }
+        if let Some(c) = t
+            .cliff
+            .as_mut()
+            .filter(|c| c.from.as_deref() == Some(name.as_str()))
+        {
+            c.from = None;
+        }
+        if let Some(w) = t
+            .water
+            .as_mut()
+            .filter(|w| w.from.as_deref() == Some(name.as_str()))
+        {
+            w.from = None;
+        }
+    }
+    Ok(())
+}
+
+/// A free `w x h` rectangle at an atlas-cell slot of a texture page of
+/// `depth` bits: its offset in the page a whole number of cells, so a tile
+/// index names it. Claims it; returns it and its page's origin.
+fn alloc_atlas_cell(
+    alloc: &mut VramAlloc,
+    depth: u8,
+    w: u16,
+    h: u16,
+) -> Option<(Rect, (u16, u16))> {
+    let span: u16 = match depth {
+        4 => 64,
+        8 => 128,
+        _ => 256,
+    };
+    for py in [256u16, 0] {
+        for pxi in (0..16u16).rev() {
+            let ppx = pxi * 64;
+            if ppx + span > 1024 {
+                continue;
+            }
+            for cy in 0..256 / h {
+                for cx in 0..span / w {
+                    let r = Rect {
+                        x: ppx + cx * w,
+                        y: py + cy * h,
+                        w,
+                        h,
+                    };
+                    if alloc.is_free(r) {
+                        alloc.mark(r);
+                        return Some((r, (ppx, py)));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// The particle sprite sheet: four `16 x 16` 4bpp sprites side by side -

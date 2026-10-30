@@ -2755,6 +2755,7 @@ dependencies = [
  "flate2",
  "legaia-art",
  "lewton",
+ "png",
  "serde",
  "sha2",
  "toml",

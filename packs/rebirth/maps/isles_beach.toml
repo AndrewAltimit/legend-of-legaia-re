@@ -345,3 +345,46 @@ cliff = { slope = 0.95, tint = [126, 120, 112], cells = [
 ] }
 water = { level = -10, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [150, 175, 170], deep = [70, 92, 128], depth = 56, foam = 18, foam_color = [150, 150, 146], wade = 5 }
 sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4 }
+
+# The surf breaking along the shore, and the wind off the cliffs.
+[audio]
+
+[[audio.ambient]]
+id = "surf_west"
+sound = { kind = "sound", id = "surf" }
+tile = [6, 27]
+radius = 1400
+inner = 300
+volume = 0.8
+
+[[audio.ambient]]
+id = "surf_bay"
+sound = { kind = "sound", id = "surf" }
+tile = [24, 25]
+radius = 1500
+inner = 320
+volume = 0.85
+
+[[audio.ambient]]
+id = "surf_jetty"
+sound = { kind = "sound", id = "surf" }
+tile = [44, 27]
+radius = 1400
+inner = 300
+volume = 0.8
+
+[[audio.ambient]]
+id = "surf_east"
+sound = { kind = "sound", id = "surf" }
+tile = [58, 28]
+radius = 1300
+inner = 300
+volume = 0.75
+
+[[audio.ambient]]
+id = "cliff_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [40, 3]
+radius = 1600
+inner = 400
+volume = 0.35

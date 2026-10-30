@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate the Rebirth pack's own audio: a short tower drone that loops
-seamlessly, torch, water, wind, crowd, engine and drip loops, a telegraph
+seamlessly, torch, water, wind, crowd, engine, drip, surf and birdsong
+loops, a telegraph
 chime, and the boss stings (an entrance hit, a phase-change shimmer and a
 falling knell).
 
@@ -203,6 +204,52 @@ def drips(rate=16000, seconds=3.0, seed=37):
     return normalise(out, 0.6), None
 
 
+def surf(rate=16000, seconds=6.0, seed=41):
+    """Waves on a beach: low noise that swells and breaks twice a loop, a
+    hiss of backwash trailing each break."""
+    rng = random.Random(seed)
+    n = int(rate * seconds)
+    noise = loop_noise(rng, n, rate // 2)
+    out, lo, hi = [], 0.0, 0.0
+    for i, s in enumerate(noise):
+        t = i / n
+        ph = (2 * t) % 1.0  # two waves a loop
+        swell = math.sin(math.pi * min(1.0, ph / 0.35)) ** 2 if ph < 0.35 else math.exp(-(ph - 0.35) * 5)
+        lo += (s - lo) * 0.03
+        hi += (s - hi) * 0.3
+        wash = (hi - lo) * 0.35 * math.exp(-max(0.0, ph - 0.3) * 3) * (ph > 0.3)
+        out.append(lo * 2.2 * (0.25 + swell) + wash)
+    return normalise(out, 0.6), None
+
+
+def birds(rate=22050, seconds=6.0, seed=43):
+    """A wood's birdsong: chirps and short trills of gliding sine at a few
+    voices, sparse, over a faint leafy hush."""
+    rng = random.Random(seed)
+    n = int(rate * seconds)
+    noise = loop_noise(rng, n, rate // 5)
+    out, a, b = [], 0.0, 0.0
+    for s in noise:
+        a += (s - a) * 0.08
+        b += (a - b) * 0.01
+        out.append((a - b) * 0.25)
+    for _ in range(11):
+        at = rng.randrange(n)
+        base = rng.uniform(2200, 4200)
+        notes = rng.randrange(1, 6)
+        gap = rng.uniform(0.06, 0.12)
+        for k in range(notes):
+            dur = rng.uniform(0.04, 0.09)
+            sweep = rng.uniform(-0.35, 0.45)
+            start = at + int(k * gap * rate)
+            for j in range(int(dur * rate)):
+                tt = j / rate
+                env = math.sin(math.pi * tt / dur) ** 2
+                hz = base * (1 + sweep * tt / dur)
+                out[(start + j) % n] += 0.5 * env * math.sin(2 * math.pi * hz * tt)
+    return normalise(out, 0.55), None
+
+
 def sting_boss(rate=22050, seconds=2.6):
     """A boss's entrance: a low drum hit and a minor chord of buzzing reeds
     that swells and cuts off."""
@@ -267,6 +314,8 @@ def main():
         ("crowd.wav", crowd(), 16000),
         ("engine.wav", engine(), 16000),
         ("drips.wav", drips(), 16000),
+        ("surf.wav", surf(), 16000),
+        ("birds.wav", birds(), 22050),
         ("sting_boss.wav", sting_boss(), 22050),
         ("sting_phase.wav", sting_phase(), 22050),
         ("sting_fall.wav", sting_fall(), 22050),

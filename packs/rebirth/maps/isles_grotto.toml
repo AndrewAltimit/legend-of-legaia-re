@@ -202,6 +202,7 @@ skirt = 4
 seed = 4420
 variation = 0.3
 blend = 0.6
+detail = 4
 sun = [200.0, 55.0]
 shading = 0.7
 shapes = [
@@ -219,27 +220,74 @@ shapes = [
   { kind = "raise", at = [20.5, 21.5], radius = 0.55, height = 22 },
   { kind = "plateau", rect = [21, 20, 23, 22], height = 6, edge = 0.5, roughness = 0.3 },
 ]
+# The Snowdrift Cave's own ground is golden sand and straw: the grotto's
+# rock is borrowed from the West Voz Forest's cliff page (`from = "vell"`,
+# copied into free VRAM at entry), grey-violet stone that takes the blue of
+# the water's light.
 materials = [
-  { name = "rock floor", chars = ".", tint = [100, 108, 156], cells = [
-    { tpage = 10, clut = 32580, tile = 4 }, { tpage = 10, clut = 32580, tile = 5 }, { tpage = 10, clut = 32580, tile = 8 }, { tpage = 10, clut = 32580, tile = 9 }, { tpage = 10, clut = 32580, tile = 12 }, { tpage = 10, clut = 32580, tile = 13 },
+  { name = "rock floor", chars = ".", from = "vell", tint = [112, 116, 140], cells = [
+    { tpage = 11, clut = 32512, tile = 0 }, { tpage = 11, clut = 32512, tile = 1 }, { tpage = 11, clut = 32512, tile = 2 }, { tpage = 11, clut = 32512, tile = 8 }, { tpage = 11, clut = 32512, tile = 9 }, { tpage = 11, clut = 32512, tile = 10 }, { tpage = 11, clut = 32512, tile = 16 }, { tpage = 11, clut = 32512, tile = 17 }, { tpage = 11, clut = 32512, tile = 18 }, { tpage = 11, clut = 32512, tile = 24 }, { tpage = 11, clut = 32512, tile = 25 }, { tpage = 11, clut = 32512, tile = 26 }, { tpage = 11, clut = 32512, tile = 32 }, { tpage = 11, clut = 32512, tile = 33 }, { tpage = 11, clut = 32512, tile = 40 }, { tpage = 11, clut = 32512, tile = 41 }, { tpage = 11, clut = 32512, tile = 48 }, { tpage = 11, clut = 32512, tile = 49 }, { tpage = 11, clut = 32512, tile = 56 }, { tpage = 11, clut = 32512, tile = 57 },
   ] },
-  { name = "wet rock", chars = ",^", tint = [84, 96, 142], cells = [
-    { tpage = 10, clut = 32580, tile = 40 }, { tpage = 10, clut = 32580, tile = 41 }, { tpage = 10, clut = 32580, tile = 43 }, { tpage = 10, clut = 32580, tile = 44 },
+  { name = "wet rock", chars = ",^", from = "vell", tint = [96, 108, 140], cells = [
+    { tpage = 11, clut = 32513, tile = 0 }, { tpage = 11, clut = 32513, tile = 1 }, { tpage = 11, clut = 32513, tile = 2 }, { tpage = 11, clut = 32513, tile = 8 }, { tpage = 11, clut = 32513, tile = 9 }, { tpage = 11, clut = 32513, tile = 10 }, { tpage = 11, clut = 32513, tile = 16 }, { tpage = 11, clut = 32513, tile = 17 }, { tpage = 11, clut = 32513, tile = 18 }, { tpage = 11, clut = 32513, tile = 24 }, { tpage = 11, clut = 32513, tile = 25 }, { tpage = 11, clut = 32513, tile = 26 },
   ] },
-  { name = "cave wall", chars = "#", roughness = 70, tint = [92, 96, 124], cells = [
-    { tpage = 10, clut = 32585, tile = 0 }, { tpage = 10, clut = 32585, tile = 1 }, { tpage = 10, clut = 32585, tile = 24 }, { tpage = 10, clut = 32585, tile = 25 }, { tpage = 10, clut = 32585, tile = 26 },
+  { name = "cave wall", chars = "#", from = "vell", roughness = 70, tint = [100, 102, 124], cells = [
+    { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
   ] },
-  { name = "pool bed", chars = "~", tint = [70, 92, 140], cells = [
-    { tpage = 10, clut = 32580, tile = 16 }, { tpage = 10, clut = 32580, tile = 17 }, { tpage = 10, clut = 32580, tile = 18 },
+  { name = "pool bed", chars = "~", from = "vell", tint = [76, 96, 140], cells = [
+    { tpage = 11, clut = 32515, tile = 0 }, { tpage = 11, clut = 32515, tile = 1 }, { tpage = 11, clut = 32515, tile = 2 }, { tpage = 11, clut = 32515, tile = 8 }, { tpage = 11, clut = 32515, tile = 9 }, { tpage = 11, clut = 32515, tile = 10 }, { tpage = 11, clut = 32515, tile = 16 }, { tpage = 11, clut = 32515, tile = 17 }, { tpage = 11, clut = 32515, tile = 18 },
   ] },
-  { name = "islet", chars = "i", tint = [126, 126, 150], cells = [
-    { tpage = 10, clut = 32585, tile = 27 }, { tpage = 10, clut = 32585, tile = 28 }, { tpage = 10, clut = 32585, tile = 29 }, { tpage = 10, clut = 32585, tile = 30 },
+  { name = "islet", chars = "i", from = "vell", tint = [130, 130, 150], cells = [
+    { tpage = 11, clut = 32513, tile = 32 }, { tpage = 11, clut = 32513, tile = 33 }, { tpage = 11, clut = 32513, tile = 40 }, { tpage = 11, clut = 32513, tile = 41 }, { tpage = 11, clut = 32513, tile = 48 }, { tpage = 11, clut = 32513, tile = 49 }, { tpage = 11, clut = 32513, tile = 56 }, { tpage = 11, clut = 32513, tile = 57 },
   ] },
-  { name = "stepping stones", chars = "b", tint = [140, 144, 170], cells = [
-    { tpage = 10, clut = 32580, tile = 44 }, { tpage = 10, clut = 32580, tile = 45 },
+  { name = "stepping stones", chars = "b", from = "vell", tint = [146, 148, 168], cells = [
+    { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 },
   ] },
 ]
-cliff = { slope = 1.0, tint = [88, 92, 120], cells = [
-  { tpage = 10, clut = 32585, tile = 0 }, { tpage = 10, clut = 32585, tile = 1 }, { tpage = 10, clut = 32585, tile = 24 }, { tpage = 10, clut = 32585, tile = 25 }, { tpage = 10, clut = 32585, tile = 26 },
+cliff = { slope = 1.0, from = "vell", tint = [96, 98, 122], cells = [
+  { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
 ] }
-water = { level = -22, cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [60, 116, 210], deep = [24, 44, 130], depth = 60, foam = 18, foam_color = [60, 130, 170], wade = 6 }
+water = { level = -22, cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [52, 100, 214], deep = [22, 40, 132], depth = 60, foam = 18, foam_color = [60, 130, 170], wade = 6 }
+
+# The pool: water lapping at its middle and drips off the vault around it.
+[audio]
+
+[[audio.ambient]]
+id = "pool"
+sound = { kind = "sound", id = "water" }
+tile = [22, 20]
+radius = 1100
+inner = 260
+volume = 0.7
+
+[[audio.ambient]]
+id = "drips_north"
+sound = { kind = "sound", id = "drips" }
+tile = [20, 8]
+radius = 900
+inner = 160
+volume = 0.6
+
+[[audio.ambient]]
+id = "drips_west"
+sound = { kind = "sound", id = "drips" }
+tile = [6, 14]
+radius = 800
+inner = 160
+volume = 0.5
+
+[[audio.ambient]]
+id = "drips_south"
+sound = { kind = "sound", id = "drips" }
+tile = [22, 30]
+radius = 800
+inner = 160
+volume = 0.5
+
+[[audio.ambient]]
+id = "drips_east"
+sound = { kind = "sound", id = "drips" }
+tile = [34, 18]
+radius = 800
+inner = 160
+volume = 0.5

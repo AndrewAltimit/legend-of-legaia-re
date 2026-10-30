@@ -37,7 +37,7 @@ Rebirth is built for the climb from there to 99.
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
-| `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
+| `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips, surf, birdsong) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
 | `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
 | `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers (`scripts/models/generate_rebirth_props.py`). |
 | `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Azure Seraph), chained from that art into a retail one; all on the heroes' own retail clips. |
@@ -89,10 +89,12 @@ the 1F stair down leads to Rim Elm.
 Past a sea gate in the Atrium's west wall (open once the Warden's Trial is
 done) lies an outdoor region of four maps, each laid out from scratch at
 the field grid's larger sizes and dressed with the detail layer. The
-beach, the village and the grotto stand on a sculpted `[terrain]`
-(sloping shores, cliffs, dunes, a hill, a rock floor and a pool under
-animated water with rolling surf; `docs/formats/expansion-pack-maps.md`,
-"Terrain"):
+four stand on a sculpted `[terrain]` (sloping shores, cliffs, dunes, a
+hill, a forest of wooded banks, a rock floor and a pool under animated
+water with rolling surf; `docs/formats/expansion-pack-maps.md`,
+"Terrain"). The grotto's rock and the Thornwood's lane and turf are
+borrowed from other retail scenes' VRAM (`from`), and each map has its own
+ambience (`[audio]`: surf, wind, drips, birdsong, the village's murmur):
 
 | Map | Base | Size | What is there |
 |---|---|---|---|

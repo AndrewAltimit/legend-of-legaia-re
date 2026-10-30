@@ -213,3 +213,103 @@ fn the_surf_rolls_in_deepest_band_first() {
     assert_eq!(surf_level(10, 0, 2), 31, "still surf is full");
     assert!(foam_palette(20)[FOAM_INDEX] & 0x8000 != 0);
 }
+
+#[test]
+fn a_stroke_raises_along_its_path_without_adding_up_at_the_joints() {
+    let m = map(
+        "[terrain]\nsmooth = 0\nshapes = [{ kind = \"stroke\", path = [[1.5, 1.5], [5.0, 1.5], [8.5, 1.5]], radius = 1.0, height = 20 }]",
+    );
+    let f = m.terrain_heightfield().unwrap().unwrap();
+    let at = |u: f32, v: f32| f.at((u * 4.0) as isize, (v * 4.0) as isize);
+    // On the path, at a joint and mid-segment alike: the full height.
+    assert_eq!(at(5.0, 1.5), 20);
+    assert_eq!(at(3.0, 1.5), 20);
+    // Off the brush: untouched.
+    assert_eq!(at(5.0, 4.5), 0);
+    // Flatten along a path pulls the raised block down to the level given.
+    let m = map(
+        "[terrain]\nsmooth = 0\nshapes = [{ kind = \"stroke\", op = \"flatten\", path = [[4.5, 2.5], [5.5, 3.5]], radius = 2.0, height = 0 }]",
+    );
+    let f = m.terrain_heightfield().unwrap().unwrap();
+    assert!(f.at(5 * 4, 3 * 4) < 64);
+}
+
+fn gray_png(w: u32, h: u32, f: impl Fn(u32, u32) -> u8) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut enc = png::Encoder::new(&mut out, w, h);
+        enc.set_color(png::ColorType::Grayscale);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut wr = enc.write_header().unwrap();
+        let data: Vec<u8> = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .map(|(x, y)| f(x, y))
+            .collect();
+        wr.write_image_data(&data).unwrap();
+    }
+    out
+}
+
+#[test]
+fn a_heightmap_reads_its_png_from_the_assets() {
+    let mut m = map(
+        "[terrain]\nsmooth = 0\nshapes = [{ kind = \"heightmap\", image = \"hm/ramp.png\", height = [0, 100] }]",
+    );
+    // Before its image is read the shape shapes nothing.
+    let flat = m.terrain_heightfield().unwrap().unwrap();
+    assert_eq!(flat.at(4, 4), 0);
+    let mut assets = std::collections::BTreeMap::new();
+    assets.insert(
+        "hm/ramp.png".to_string(),
+        gray_png(11, 2, |x, _| (x * 255 / 10) as u8),
+    );
+    assert!(m.resolve_terrain_images(&assets).is_empty());
+    let f = m.terrain_heightfield().unwrap().unwrap();
+    // Black at the map's low-X edge, white at its far edge, linear between.
+    assert_eq!(f.at(0, 8), 0);
+    assert_eq!(f.at(40, 8), 100);
+    assert!((f.at(20, 8) - 50).abs() <= 1);
+    // A missing image is reported and shapes nothing.
+    assert_eq!(m.resolve_terrain_images(&Default::default()).len(), 1);
+    assert_eq!(m.terrain_heightfield().unwrap().unwrap(), flat);
+}
+
+#[test]
+fn detail_subdivides_only_boundary_quads() {
+    let mats = "materials = [{ name = \"a\", chars = \".\", cells = [{ tpage = 1, clut = 1, tile = 1 }] }, { name = \"b\", chars = \"^\", cells = [{ tpage = 2, clut = 2, tile = 2 }] }]";
+    let plain = map(&format!("[terrain]\n{mats}"))
+        .terrain_surface()
+        .unwrap()
+        .unwrap();
+    assert!(plain.fine.is_empty());
+    let fine = map(&format!("[terrain]\ndetail = 4\n{mats}"))
+        .terrain_surface()
+        .unwrap()
+        .unwrap();
+    assert!(!fine.fine.is_empty());
+    assert!(
+        fine.fine.len() < fine.paint.len() / 4,
+        "only boundary quads subdivide"
+    );
+    assert_eq!(fine.detail, 4);
+    for subs in fine.fine.values() {
+        assert_eq!(subs.len(), 16);
+        // A boundary quad's sub-triangles mix both materials somewhere
+        // along it, or at least carry one.
+        assert!(subs.iter().flatten().any(Option::is_some));
+    }
+    // The coarse paint and heights are unchanged by the detail.
+    assert_eq!(plain.paint, fine.paint);
+    assert_eq!(plain.field, fine.field);
+}
+
+#[test]
+fn borrowed_scenes_list_each_from_once() {
+    let m = map(
+        "[terrain]\nmaterials = [{ chars = \".\", from = \"cave02\", cells = [{ tpage = 1, clut = 1, tile = 1 }] }, { chars = \"^\", from = \"cave02\", cells = [{ tpage = 1, clut = 2, tile = 3 }] }]\ncliff = { from = \"rugi\", cells = [{ tpage = 1, clut = 1, tile = 1 }] }",
+    );
+    let mut t = m.terrain.clone().unwrap();
+    assert_eq!(t.borrowed(), vec!["cave02", "rugi"]);
+    assert_eq!(t.borrowed_cells_mut("cave02").len(), 2);
+    assert_eq!(t.borrowed_cells_mut("rugi").len(), 1);
+}

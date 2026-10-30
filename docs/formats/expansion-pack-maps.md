@@ -893,6 +893,7 @@ skirt = 8               # tiles of terrain drawn past each edge
 seed = 4120
 variation = 0.2         # macro brightness noise over the vertex colours
 blend = 0.55            # width of the dithered boundary between materials
+detail = 4              # sub-quads a side on a material boundary: 1, 2 or 4
 sun = [150.0, 42.0]     # baked sun: azimuth, elevation (degrees)
 shading = 0.6
 shapes = [
@@ -927,11 +928,16 @@ tile centre, bilinear between centres, blurred `smooth` times - and the
 | `flatten` | Pulls the ground under a brush toward `height`, or with no `height` toward its mean there (a house pad on a hillside). |
 | `smooth` | Blurs the ground under a brush. |
 | `noise` | Fractal noise, `amplitude` either way, features `scale` tiles across, over `rect` or the whole map. |
+| `stroke` | A brush dragged along `path` (a list of points): `op = "raise"` adds `height`, `"flatten"` pulls toward `height` (or the mean along the path), `"smooth"` blurs, each under a `radius` brush at the polyline's nearest point, scaled by `strength`. What the workbench's 3D sculpt brush writes. |
+| `heightmap` | A grayscale PNG under the pack's `assets/` (`image`), stretched over `rect` (or the whole map, image row 0 at the low-Z edge): black is `height[0]`, white `height[1]`. Pulls the ground toward it by `strength`, or with `add = true` adds it. 8- or 16-bit, grey or colour (luminance). |
 
 Positions are map-local tile coordinates as floats (`[2.5, 3.5]` is the
 centre of tile `[2, 3]`); heights are world units, up positive. The whole
-build is a pure function of the file: the same heights on every host,
-with or without a disc.
+build is a pure function of the pack: the same heights on every host,
+with or without a disc. A `heightmap` reads its image when the pack loads
+(`MapDef::resolve_terrain_images`, from `ExpansionPack::from_files`); the
+validator errors on an image missing from `assets/` or one that does not
+decode.
 
 ### Walking the terrain
 
@@ -985,6 +991,38 @@ than the tile grid's step. Each tile turns and mirrors its cell one of
 eight ways (`rotate`, on by default) against visible repeats. A quad
 steeper than `cliff.slope` (rise over run) takes the cliff material.
 
+**Boundary detail.** A quad is `32` units across (at `resolution = 4`), so a
+material boundary steps in `32`-unit stairs however its noise meanders.
+With `detail = 2` or `4`, a quad whose triangles or corners disagree on
+their material is cut into `detail x detail` sub-quads, each triangle
+choosing at its own centroid (`TerrainSurface::fine`), so the boundary
+steps every `16` or `8` units. The sub-quads lie on the quad's own two
+triangles - split as the quad is, heights and vertex colours interpolated
+over the triangle they fall in - so the surface, and the floor the player
+walks, are unchanged; only boundary quads pay the extra triangles. A
+sub-quad samples only a few texels, and the hosts drop a prim whose texels
+are all zero words (their test for an unwritten page), so a quad any of
+whose sub-prims would read that way against the map's VRAM draws whole
+(`MeshLibrary::terrain_vram`).
+
+**Textures from another scene.** A material, the `cliff` or the `water`
+whose atlas cells name another retail scene's VRAM says so with
+`from = "<scene>"`:
+
+```toml
+materials = [
+  { name = "moss rock", chars = ",", from = "cave02", cells = [{ tpage = 10, clut = 32580, tile = 40 }] },
+]
+```
+
+At entry the engine builds that scene's resources and copies each named
+cell's `32 x 32` texels into a free atlas-cell slot of a page of the same
+depth, and its palette into a free palette row
+([`detail::borrow_terrain_cells`](../../crates/engine-scene/src/expansion_map/detail.rs)),
+then paints with the copies (`MeshLibrary::terrain`); a cell or palette two
+materials share is copied once. It is the animated materials' `from` for
+the ground: a base scene with a narrow palette set borrows what it lacks.
+
 **Vertex colours** carry what a blend would: each vertex's colour is the
 material tints (`tint`, `128` = the texel as is) blended by the same
 weights, times a low-frequency brightness noise (`variation`), times the
@@ -1002,7 +1040,14 @@ black away from the line. Its four depth bands brighten in turn, deepest
 first, every `surf` frames (`terrain::surf_level`, written by
 `World::step_expansion_materials`): a crest rolling in to the beach.
 
-The Rebirth pack's Isles beach, village and grotto are built on it.
+**Decals** on a terrain drape over it: the polygon is cut into pieces
+about `32` units across and each vertex stands on the ground under it
+(`expansion_map::decal_tmd_draped`), relative to the ground at the decal's
+centre where the bake stands it, so a decal on a slope follows the slope.
+Off a terrain a decal is one flat polygon, as before.
+
+The Rebirth pack's Isles beach, village, grotto and Thornwood are built on
+it.
 
 ## How large a map can be
 
@@ -1017,10 +1062,9 @@ maps joined by `exits` with `to = { kind = "map" }`; a map exit enters at
 once, with no streaming.
 
 ## Gaps
-- **Terrain.** A decal lies flat at the surface height of its centre, so
-  on a slope it cuts in or floats; place decals on level ground. The water
-  surface is flat (its waves are texture and foam animation, not vertex
-  motion). The sculpt brush has no raster heightmap import.
+- **Terrain.** The water surface is flat (its waves are texture and foam
+  animation, not vertex motion): the terrain draws through baked
+  decoration cells, which neither host deforms per frame.
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
   preset applies on a host's direct entry (`--map`, the play page's

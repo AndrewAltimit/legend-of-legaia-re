@@ -225,7 +225,7 @@ cells = [{ tpage = 9, clut = 31880, tile = 56 }]"#,
         v0: 0,
         cluts: [0x7FC0, 0x7FC1, 0x7FC2, 0x7FC3],
     };
-    let meshes = tile_meshes(&def, &grid, &s, Some(&sheet), &Default::default()).unwrap();
+    let meshes = tile_meshes(&def, &grid, &s, Some(&sheet), &Default::default(), None).unwrap();
     let mut water = 0;
     let mut foam = 0;
     for (_, raw) in &meshes {
@@ -250,7 +250,7 @@ fn a_terrain_mesh_decodes_through_the_hosts_mesh_builder() {
     let def = def();
     let s = def.terrain_surface().unwrap().unwrap();
     let grid = def.tile_grid().unwrap();
-    let meshes = tile_meshes(&def, &grid, &s, None, &Default::default()).unwrap();
+    let meshes = tile_meshes(&def, &grid, &s, None, &Default::default(), None).unwrap();
     let (_, raw) = &meshes[grid.width * 3 + 3];
     let tmd = legaia_tmd::parse(raw).unwrap();
     let m = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&tmd, raw, |_, _, _| true);
@@ -266,4 +266,90 @@ fn a_terrain_mesh_decodes_through_the_hosts_mesh_builder() {
         "colours {:?} (surface {want:?})",
         &m.colors[..6.min(m.colors.len())]
     );
+}
+
+/// Every vertex of every baked terrain cell, world frame, height up.
+fn world_vertices(def: &MapDef) -> (Vec<[i32; 3]>, usize) {
+    let (out, base_len) = build(def);
+    let mut v = Vec::new();
+    let mut tris = 0;
+    for (at, raw) in cells(def, &out, base_len) {
+        let tmd = legaia_tmd::parse(&raw).unwrap();
+        for p in tmd.objects.iter().flat_map(|o| o.vertices.iter()) {
+            v.push([
+                at[0] + i32::from(p.x),
+                -i32::from(p.y),
+                at[1] + i32::from(p.z),
+            ]);
+        }
+        tris += legaia_tmd::encode::decode_model(&tmd, &raw)
+            .unwrap()
+            .iter()
+            .flat_map(|o| o.groups.iter())
+            .map(|g| g.prims.len())
+            .sum::<usize>();
+    }
+    (v, tris)
+}
+
+#[test]
+fn detail_subdivides_boundary_quads_on_the_same_surface() {
+    let mut def = def();
+    let t = def.terrain.as_mut().unwrap();
+    t.materials = toml::from_str::<toml::Table>(
+        "m = [{ chars = \".#\", cells = [{ tpage = 12, clut = 32005, tile = 38 }] }, { chars = \"^\", cells = [{ tpage = 12, clut = 32000, tile = 9 }] }]",
+    )
+    .unwrap()["m"]
+        .clone()
+        .try_into()
+        .unwrap();
+    let (_, coarse) = world_vertices(&def);
+    def.terrain.as_mut().unwrap().detail = 4;
+    let field = def.terrain_heightfield().unwrap().unwrap();
+    let (verts, fine) = world_vertices(&def);
+    assert!(
+        fine > coarse,
+        "boundary quads draw more triangles ({fine} vs {coarse})"
+    );
+    let max_x = field.origin[0] + (field.cols as i32 - 1) * field.step - 1;
+    let max_z = field.origin[1] + (field.rows as i32 - 1) * field.step - 1;
+    for [x, y, z] in verts {
+        let s = field.sample_world(x.min(max_x), z.min(max_z)).unwrap();
+        assert!((y - s).abs() <= 2, "sub-vertex at ({x}, {z}): {y} vs {s}");
+    }
+}
+
+#[test]
+fn a_decal_on_a_slope_follows_the_ground() {
+    let mut def = def();
+    def.decals = toml::from_str::<toml::Table>(
+        "d = [{ id = \"stain\", cell = { tpage = 12, clut = 32005, tile = 1 }, tile = [5, 1], size = [200, 200] }]",
+    )
+    .unwrap()["d"]
+        .clone()
+        .try_into()
+        .unwrap();
+    let field = def.terrain_heightfield().unwrap().unwrap();
+    let d = &def.decals().unwrap()[0];
+    let (cx, cz) = def.tile_centre(d.tile[0], d.tile[1]);
+    let ground = |x: f32, z: f32| field.sample_world(x as i32, z as i32).unwrap() as f32;
+    let h0 = ground(cx as f32, cz as f32);
+    let drape = |x: f32, z: f32| -(ground(cx as f32 + x, cz as f32 + z) - h0);
+    let raw = super::super::decal_tmd_draped(d, Some(&drape)).unwrap();
+    let tmd = legaia_tmd::parse(&raw).unwrap();
+    let vs = &tmd.objects[0].vertices;
+    assert!(vs.len() > 4, "the decal is cut into pieces");
+    let ys: Vec<i16> = vs.iter().map(|v| v.y).collect();
+    assert!(
+        ys.iter().any(|y| *y != ys[0]),
+        "the decal is not flat on the slope"
+    );
+    for v in vs {
+        let want = drape(f32::from(v.x), f32::from(v.z));
+        assert!((f32::from(v.y) - want).abs() <= 1.0);
+    }
+    // Off a terrain it stays one flat polygon.
+    let flat = legaia_tmd::parse(&super::super::decal_tmd(d).unwrap()).unwrap();
+    assert_eq!(flat.objects[0].vertices.len(), 6);
+    assert!(flat.objects[0].vertices.iter().all(|v| v.y == 0));
 }

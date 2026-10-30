@@ -315,7 +315,16 @@ pub fn build_field_image(
             img[OBJECT_GRID_OFFSET..n].copy_from_slice(&map[OBJECT_GRID_OFFSET..n]);
         }
     }
-    let surface = def.terrain_surface()?;
+    // A terrain whose cells borrow another scene's VRAM paints with the
+    // library's rewritten copy (the heights are the same either way).
+    let borrowed = base
+        .library
+        .and_then(|l| l.terrain.as_ref())
+        .map(|t| MapDef {
+            terrain: Some(t.clone()),
+            ..def.clone()
+        });
+    let surface = borrowed.as_ref().unwrap_or(def).terrain_surface()?;
     let terrain_walls = match &surface {
         Some(_) => Some(def.terrain_walls(grid)?),
         None => None,
@@ -340,7 +349,11 @@ pub fn build_field_image(
         let foam = base.library.and_then(|l| l.foam_sheet.as_ref());
         let no_stp = Default::default();
         let stp = base.library.map_or(&no_stp, |l| &l.stp_cluts);
-        for (tile, raw) in terrain::tile_meshes(def, grid, s, foam, stp)? {
+        let vram = base
+            .library
+            .and_then(|l| l.terrain_vram.as_ref())
+            .map(|v| &*v.0);
+        for (tile, raw) in terrain::tile_meshes(def, grid, s, foam, stp, vram)? {
             cell_items.push(Item {
                 tile,
                 src: ItemSrc::Raw(raw),
@@ -879,6 +892,18 @@ enum ItemSrc {
 /// atlas cell (a rectangle maps the whole cell, an `n`-gon the cell's
 /// inscribed circle), both windings so it reads from any side.
 pub fn decal_tmd(d: &legaia_expansion_format::map_detail::Decal) -> Result<Vec<u8>> {
+    decal_tmd_draped(d, None)
+}
+
+/// [`decal_tmd`] laid over the ground: `drape` gives the mesh-frame `Y`
+/// (retail, down) of the ground at mesh-frame `(x, z)`, and the polygon is
+/// cut into pieces about `32` units across, each vertex at the ground under
+/// it, so a decal on a slope follows it rather than cutting in or floating.
+/// `None` draws it flat in one piece.
+pub fn decal_tmd_draped(
+    d: &legaia_expansion_format::map_detail::Decal,
+    drape: Option<&dyn Fn(f32, f32) -> f32>,
+) -> Result<Vec<u8>> {
     use legaia_tmd::descriptor::PacketShape;
     use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
     let px = f32::from(legaia_scene_formats::field_objects::GROUND_ATLAS_TILE_PX);
@@ -895,12 +920,22 @@ pub fn decal_tmd(d: &legaia_expansion_format::map_detail::Decal) -> Result<Vec<u
             (v0 + fv * (sv - 1.0)).round() as u8,
         )
     };
+    // Pieces a side: one flat, about 32 units each draped.
+    let pieces = match drape {
+        None => 1,
+        Some(_) => ((hw.max(hd) * 2.0 / 32.0).ceil() as usize).clamp(1, 8),
+    };
+    let y_at = |x: f32, z: f32| drape.map_or(0.0, |f| f(x, z));
     let mut vertices: Vec<[i16; 3]> = Vec::new();
     let mut prims = Vec::new();
     let mut tri = |a: ([f32; 2], (u8, u8)), b: ([f32; 2], (u8, u8)), c: ([f32; 2], (u8, u8))| {
         let base = vertices.len() as u16;
         for p in [a.0, b.0, c.0] {
-            vertices.push([p[0].round() as i16, 0, p[1].round() as i16]);
+            vertices.push([
+                p[0].round() as i16,
+                y_at(p[0], p[1]).round().clamp(-32768.0, 32767.0) as i16,
+                p[1].round() as i16,
+            ]);
         }
         for order in [[0u16, 1, 2], [0, 2, 1]] {
             let uvs = [a.1, b.1, c.1];
@@ -914,24 +949,37 @@ pub fn decal_tmd(d: &legaia_expansion_format::map_detail::Decal) -> Result<Vec<u
         }
     };
     if d.sides == 4 {
-        let c = [
-            ([-hw, -hd], uv(0.0, 0.0)),
-            ([hw, -hd], uv(1.0, 0.0)),
-            ([hw, hd], uv(1.0, 1.0)),
-            ([-hw, hd], uv(0.0, 1.0)),
-        ];
-        tri(c[0], c[1], c[2]);
-        tri(c[0], c[2], c[3]);
+        let n = pieces as f32;
+        let at = |a: usize, b: usize| {
+            let (fu, fv) = (a as f32 / n, b as f32 / n);
+            ([-hw + fu * 2.0 * hw, -hd + fv * 2.0 * hd], uv(fu, fv))
+        };
+        for b in 0..pieces {
+            for a in 0..pieces {
+                tri(at(a, b), at(a + 1, b), at(a + 1, b + 1));
+                tri(at(a, b), at(a + 1, b + 1), at(a, b + 1));
+            }
+        }
     } else {
         let n = usize::from(d.sides.clamp(3, 16));
-        let centre = ([0.0, 0.0], uv(0.5, 0.5));
-        let rim = |k: usize| {
+        // Rings out from the centre, `pieces` of them.
+        let ring = |k: usize, r: usize| {
             let a = k as f32 / n as f32 * std::f32::consts::TAU;
             let (s, c) = a.sin_cos();
-            ([c * hw, s * hd], uv(0.5 + c * 0.5, 0.5 + s * 0.5))
+            let f = r as f32 / pieces as f32;
+            (
+                [c * hw * f, s * hd * f],
+                uv(0.5 + c * 0.5 * f, 0.5 + s * 0.5 * f),
+            )
         };
+        let centre = ([0.0, 0.0], uv(0.5, 0.5));
         for k in 0..n {
-            tri(centre, rim(k), rim((k + 1) % n));
+            let k1 = (k + 1) % n;
+            tri(centre, ring(k, 1), ring(k1, 1));
+            for r in 1..pieces {
+                tri(ring(k, r), ring(k, r + 1), ring(k1, r + 1));
+                tri(ring(k, r), ring(k1, r + 1), ring(k1, r));
+            }
         }
     }
     encode(&[ModelObject {
@@ -990,9 +1038,32 @@ fn write_decorations(
         lift: None,
     }));
     for d in def.decals()? {
+        // On a terrain the decal drapes over the surface: each vertex at
+        // the ground under it, relative to the ground at its centre (where
+        // the bake stands it).
+        let raw = match surface {
+            Some(s) => {
+                let (cx, cz) = def.tile_centre(d.tile[0], d.tile[1]);
+                let (ox, oz) = (cx as f32 + d.offset[0], cz as f32 + d.offset[2]);
+                let ground = |x: f32, z: f32| {
+                    s.field
+                        .sample_world(x.round() as i32, z.round() as i32)
+                        .unwrap_or(0) as f32
+                };
+                let h0 = ground(ox, oz);
+                let (sy, cy) = d.yaw.to_radians().sin_cos();
+                let drape = move |x: f32, z: f32| {
+                    // The bake turns the mesh by `Ry(yaw)`.
+                    let (wx, wz) = (ox + cy * x + sy * z, oz - sy * x + cy * z);
+                    -(ground(wx, wz) - h0)
+                };
+                decal_tmd_draped(&d, Some(&drape))?
+            }
+            None => decal_tmd(&d)?,
+        };
         decos.push(Item {
             tile: d.tile,
-            src: ItemSrc::Raw(decal_tmd(&d)?),
+            src: ItemSrc::Raw(raw),
             offset: d.offset,
             rotation: [0.0, d.yaw, 0.0],
             scale: 1.0,
