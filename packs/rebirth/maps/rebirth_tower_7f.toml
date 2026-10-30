@@ -122,6 +122,7 @@ once = true
 id = "rest_alcove"
 rect = [24, 2, 26, 3]
 event = { kind = "rest", save = true }
+press = true
 
 [[encounters]]
 id = "north_ring"

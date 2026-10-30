@@ -136,6 +136,7 @@ requires = { flags = ["rest_open"] }
 id = "high_table_seat"
 rect = [18, 11, 18, 11]
 event = { kind = "mode", mode = "tower-high-table" }
+press = true
 requires = { flags = ["rest_open"] }
 
 # The Tower Armory (items.toml): its stock grows as the bosses fall.
