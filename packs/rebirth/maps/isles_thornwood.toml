@@ -1,11 +1,16 @@
-# Rebirth Isles: the Thornwood. Laid out from scratch over the West Voz
-# Forest (`vell`): a winding path east through a forest thick enough to wall
-# it, past three clearings, to the island's old ruins - a walled court of
-# fallen pillars (Rim Elm's stones) round the hive the Thornwood Queen has
-# grown into the north gate. Past the gate a stair runs down to the grotto.
+# Rebirth Isles: the Thornwood. Laid out over the West Voz Forest (`vell`)
+# as a walk with a shape: the lane leaves the village's fields at the wood's
+# edge and winds east under clumped old growth - through Mushroom Hollow, a
+# sunken glade ringed with toadstools; across a brook at a ford of
+# stepping stones; up to the old shrine, a broken ring of standing stones
+# round an inscribed tablet, with a spur climbing to a lookout; down to the
+# hermit's camp, pitched round the log he sits on; and on to the island's
+# ruined court, where the Thornwood Queen has grown her hive inside the
+# north gate. Past the gate a stair runs down to the grotto. A side trail
+# off the first bend drops to a fern dell with a spring.
 
 name = "Rebirth Isles - The Thornwood"
-size = [88, 34]
+size = [112, 56]
 base = { scene = { kind = "scene", name = "vell" }, geometry = "none" }
 # Sound-test track 8, "Call of the Ruins".
 bgm = { kind = "bgm", id = 8 }
@@ -15,40 +20,62 @@ floor_heights = [0, 16, 32]
 [tiles]
 origin = [4, 4]
 rows = [
-  "TTTTTTTTTTTTTTTtttTTTTTTTTtttTTTTTTTTTTtttttTTTtttTTTtttTTTtttttTTTTTTTtttttttttTTTTtttt",
-  "TTTTTTTTTTTTTTTTTTTTttTTTTtttTTTTTTTTTTtttttTTTtttTTTtttTTTTttTTTTTTTTTtttttqqqqqTTTttTT",
-  "TTTTTTTTTttttTTTTTTttttTTTTTTTTTtttTTTTtttttTTTttttttttttttTTTTTTTTTTTTtttttqqqqqTTTtTTT",
-  "TTttTTTTttttttTTTTTttttTTTTTTTTTtttTTTTTttttTTTttttttttttttTTTTTTTTTTTTtttttqqqqqTTTTTTT",
-  "TTttTTTTTtttttTTTTtttttTTTTTTTTTtttTTTTTTtttTTTttttttttttttTTTTTTTTTTTTtttttqqqqqTTTTTTT",
-  "TtttTTTTTTtttttTttttTTTTTTtttTTTttttTTTTTTTTtttTTTTTTTTTttttttTTTTTTtttTTTTTqqqqqTTTTTTT",
-  "ttttTTTTTTTtttttttttTTTTTTtttTTTtttttTTTTTTTtttTTTTTTTTTtttttttTTTTttttTTTTTqqqqqtTTTTTT",
-  "tttttTTTTTttttttttttTTTTTTtttTTTtttTTTTTTTTTtttTTTTTTTTTttttttTTTTTttttTTTTTTvvvttTTTTTT",
-  "tttttttttttTTTttttttTTTTTTTTTTTTTTTTTTTTTTttTTTTTTTTTTTTtttTTTTTTTTTtt#######===#######T",
-  "tttttttttttTTTttttttTTTTTTTTTTTTTTTTTTTTTtttTTTTtTTTTTTTtttTTTTTTTTTtt#,,,,,,,,,,,,,,,#T",
-  "tttTtttttttTTTttttttTTTTTTTTTTTTTTTTTTTTTtttT.d.tTTTTTTTtttTTTTTTTTTtt#,qqqqqqqqqqqqq,#T",
-  "TTTTTTTTtttttttttttttTTTTTtttTTTTTTTTTTTTTT.ddddd..,,,TTttttttttTTTTTt#,qqqqqqqqqqqqq,#T",
-  "TTTTTTTTttttttttttttttTTTTtttTTTTTTTTTTTT.dddddddddd,,,TtttttttttTTTTt#,qqQQQQQQQQQqq,#T",
-  "tTTTTTTTttttttttttttTTTTTTtttTTTTTTT,TT.ddddd.T..ddddd,.ttttttttTTTTTt#,qqQoQQQQQoQqq,#T",
-  "ttTTTTT...d.TTTTTTTTTTTTtTTTTttTTT,,,,ddddd.TTTTTT,dddddd.tTTTTTTTTTTT#,qqQQQQQQQQQqq,#T",
-  "tt...ddddddd.TTTTTTTTTTtttTTTtttTT,,ddddd.TTTTTTTTt,,,dddd.TTTTTTTTTTT#,qqQQQQQQQQQqq,#T",
-  "<dddddddddddd.TTTTTTTTTtttTTTtttT,,dddd,TTTTTTTTTTtttTT.ddd.TTTTTTTTTT#,qqQQQQQQQQQqq,#T",
-  "<ddddd...t.ddd.TTttTTTTTtttttttTT.ddd,,TTTTTTTTTTTTttTTt.ddd.TTTTtttTT#,qqQQQQQQQQQqq,#t",
-  "<...tTTTttttddd.TtttTTTTttttttTT.ddd,,,TTTtTTTTTTTTTTTTTttddd.tTttttTT,,qqQoQQQQQoQqq,#t",
-  "TttttTTTttttt.ddd,,,TTTTTTttttT.ddd.,TTTTTTTTTTTTTTTTTTTttt.dddTTttt..,,qqQQQQQQQQQqq,#t",
-  "tttttTTTtttttt.ddd,,,tTTTTTTTT.ddd.ttTTTTTTTTTTTTTTTTTTTttTT.ddd...ddd,,qqQQQQQQQQQqq,#T",
-  "ttttTTTTttttttT,ddd,,,tTTTTTT.ddd.ttttTTTTTTTTTTTTTTTTTTTTTTT.dddddddd,,qqQQQQQQQQQqq,#T",
-  "ttttTTTTttttttT,,ddddddd...T.ddd.tttttTTTTTTTTTTTTTTTTTTTTTTTT.ddddd..,,qqQQQQQQQQQqq,#T",
-  "ttTTTTTTTTTtttT,,,ddddddddddddd.TttttttTtttTTTTTtTTTTTTTttttttt.d..TTT#,qqQoQQQQQoQqq,#t",
-  "ttTTTTTTTTTtttTT,,,,,..ddddddd.TTTttttttttttTTTtttTTTTTTttttttttttTTTt#,qqQQQQQQQQQqq,#t",
-  "ttTTTTTTTTTtttTTT,,,ttttt...d.TTTttttttttttTTTTtttTTTTTTtttttttttTTTTt#,qqqqqqqqqqqqq,#t",
-  "TTTTTTTTttttttTTTTTTtttttTT,,,TTtttttTTTTTTTTTTtttTTTTTTTTTTTTtttTTTtt#,qqqqqqqqqqqqq,#t",
-  "TTTTTTttttttttTTTTTTtttTTT,,,,,TttttTTTTTTTTTTTtttTTTTTTTTTTTTtttTTTtt#,,,,,,,,,,,,,,,#t",
-  "TTTTTTttttttttTTTTTTTttTTT,,,,,tttttTTTTTTTTTTTtttTTTTTTTTTTTTtttTTTtt#################t",
-  "TTTttttttttTTTTTTTTTTTTTtT,,,,,ttttttTTTTTtttttttttttTTTTTTtttTTTTTTtttTTTTTTTTTttttTTtt",
-  "TTttttTTTTTTTTtttTTTTTTTtTT,,,tttTttttTTTtttttttttttttttttttttTTTTTttttttTTTTTttttttTTTT",
-  "TTtttTTTTTTTTTTttTTTTTTTTTTTTttttttttTTTTttttTTtttttttTTttttttTTTTTttttttTTTTtttttttTTTT",
-  "tttttTTTTTTTTTTTTTTTtttTTTTTTttttttTTTTTTtttTTTTTTtttTTTtttttttTTTTTttttttTTTttttttTTTTT",
-  "tttttTTTTTTTTTTTTTTTtttTTTTTTttttttTTTTTTttTTTTTTTtttTTTttttttttTTTTttttttTTTtttttTTTTTT",
+  "TTTtttTTTtttTTTttttttTTTTTTTTTTTTtttwwtTTTtttttttttTTTttttttTTTttttttTTTTTTTTTTTTTTTtttTTTTTTTTTTTTTTTTTTTTTtttT",
+  "TTTtttTTTtttTTTttttttTTTTTTTTTTTTtttwwwTTTtttttttttTTTttttttTTTttttttTTTTTTTTTTTTTTTtttTTTTTTTTTTvvvTTTTTTTTtttT",
+  "TTTtttTTTtttTTTttttttTTTTTTTTTTTTtttwwwTTTtttttttttTTTttttttTTTttttttTTTTTTTTTTTTTTTtttTTTTTTT#qvvvvvq#TTTTTtttT",
+  "tttTTTtttTTTTTTTTTTTTTTTTTTTTTttttttTwwTTTTTTtttttttttTTTtttTTTTTTtttttttttTTTTTTttttttTTTTTTT#qvvvvvq#TTttttttt",
+  "tttTTTtttTTTTTTTTTTTTTTTTTTTTTttttttTwwTTTTTTtttttttttT,,,ttTTTTTTtttttttttTTTTTTttttttTTTTTTT#qqqqqqq#TTttttttt",
+  "tttTTTtttTTTTTTTTTTTTTTTTTTTTTttttttTwwwTTTTTtttttttt,,,,,,,TTTTTTtttttttttTTTTTTttttttTTTTTTT#qqqqqqq#TTttttttt",
+  "tttTTTTTTTTTTTTTTTTTTtttTTTTTTTTTTTTTwwwttTTTttttttTT,,,,,,,,ttttttttTTTTTTTTTtttTTTttttttTTTT#qqqqqqq#ttttttttt",
+  "tttTTTTTTTTTTTTTTTTTTtttTTTTTTTTTTTTTTwwttTTTttttttT,,,,,,,,,ttttttttTTTTTTTTTtttTTTttttttTTTT#qqqqqqq#ttttttttt",
+  "tttTTTTTTTTTTTTTTTTTTtttTTTTTTTTTTTTTTwwttTTTttttttT,,,,,,,,,ttttttttTTTTTTTTTtttTTTttttttTTTT#qqqqqqq#ttttttttt",
+  "TTTtttTTTtttTTTTTTTTTttttttttttttTTTTTwwwTtttTTTtttTT,,,d,,tTTTTTTtttttttttTTTTTTtttTTTTTTTTTT#qqqqqqq#TTTTTtttt",
+  "TTTtttTTTtttTTTTTTTTTttttttttttttTTTTTwwwTtttTTTtttTTTt,d,ttTTTTTTtttttttttTTTTTTtttTTTT#########===#########ttt",
+  "TTTtttTTTtttTTTTTTTTTttttttttttttTTTTTTwwTtttTTTtttTTTt.d.ttTTTTTTtttttttttTTTTTTtttTTTT#,,,,,,,,,,,,,,,,,,,#ttt",
+  "TTTTTTTTTTTTtttTTTTTTtttTTTtttTTTTTTTTTwwTTTTTTTTTTTTTT.d.tttttTTTttttttTTTtttttttttTTTt#,qqqqqqqqqqqqqqqqq,#TTT",
+  "TTTTTTTTTTTTtttTTTTTTtttTTTtttTTTTTTTTTwwwTTTTTTTTT.TT..d..ttttTTTttttttTTTtttttttttTTTt#,qqqqqqqqqqqqqqqqq,#TTT",
+  "TTTTTTTTTTTTtttTTTTTTtttTTTtttTTTTTTTTTwwwTTTTTTTTTT..,,d,.,.t.TTTttttttTTTtttttttttTTTt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "tttTTTTTTTTTtttTTTTTTTTTttttttTTTTTTTTTTwwtttTTTTT.,,,,,,,,,,,.tttttttttTTTTTTtttTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "tttTTTTTTTTTtttTTTTTTTTTttttttTTTTTTTTTTwwtttTTT...,,,,,,,,,,,,.ttttttttTTTTTTtttTTTTTTT#,qqQoQQQQQQQQQoQqq,#TTT",
+  "tttTTTTTTTTTtttTTTTTTTTT..ttttTTTTTTTTTTwwtttTTTT.,,,,,,,,,,,,,,.tttttttTTTTTTtttTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "TTTttttttTTTtttTTTTTTTTTT.,...TTTtttTTTTwwTTTTTT.,,,,,,,,,,,,,,,.ttttTTTTTTTTTtttTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "TTTttttttTTTtttTTTT....,,,.,..T.TtttTTTTwwTTTTTT.,,,,,,,,,,,,,,..ttttTTTTTTTTTtttTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "TTTttttttTTTtttTTTT..,,,,,,,,,.T.tttTTTTwwTTTTTT.,,,,,,,d,,,,,,.,ttttTTTTTTTTTtttTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "tttTTTTTTTTTTTTTT..,,,,,,,,,,,,..TTTttttwwTTTTTTt.,,,,ddddd,,,,...TTTTTTTTTTTTTTTTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTt",
+  "tttTTTTTTTTTTTTTT..,,,,,,,,,,,,,..TTttttwwTTTTTTt.,,,ddd,,ddd,,,.TTTTTTTTTTTTTTTTTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTt",
+  "tttTTTTTTTTTTTTT.T.,,,,,,,,,,,,,...TttttwwTTTTT.t,,ddd,,,,,dd,,,TTTTTTTTTTTTTTTTTTTTTTTT#,qqQoQQQQQQQQQoQqq,#TTt",
+  "TTTTTTTTTTTTTTTT...,,,,,,,,,,,,,,TTTTTTTwwtttTTTt.ddd,,,,,,,dd,.TTtttTTTtttTTTTTTTTTtttt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "TTTTTTTTTTTTTTTTT.,,,,,,,,,,,,,,,,.TTTTTwwtttTTT.ddd,,,,,,,,,dd..TtttTTTtttTTTTTTTTTtttt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "TTTTTTTTTTTTTTTT..,,,,,ddddd,,,,,TTTTTTTwwtttTT..ddd.,,,,,,.,ddd.TtttTTTtttTTTTTTTTTtttt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "tttTTTtttTTTtttttt,,ddddd,ddddd,,.TTTTTtwwwtttt.ddd.TTT.T.T...ddd.tttTTTTTTTTTtttTTTTTTT#,qqQQQQQQQQQQQQQqq,#TTt",
+  "tttTTTtttTTTttttt.,ddd,,,,,,,ddd..TTTTT.www.tt.ddd.TTTTT.TTTT.dddd.ttTTTTTTTTTtttTTTTTT.#,qqQQQQQQQQQQQQQqq,#TTt",
+  "tttTTTtttTTTtttt..ddd,,,,,,,,,,ddd.TTTT.www.t.ddd..TTTTTTTTTTT.ddd.ttTTTTTTTTTtttTTT...d,,qqQQQQQQQQQQQQQqq,#TTt",
+  "TTTtttTTTTTTtttT.ddd,.,,,,,,,,,dddd...t..ww...ddd.TTTTTTTtttttt.ddd.TtttTTTtttTTTtt..ddd,,qqQoQQQQQQQQQoQqq,#TTt",
+  "TTTtttTTTTTTttt.ddd...,,,,..,T..dddddd...ww.dddd.TTTTTTTTtttttt.dddd.tttTT...tTTTtt.dddd,,qqQQQQQQQQQQQQQqq,#TTt",
+  "TTTtttTTTTTTtt.ddd..tTT..T..TT.t.ddddddddffdddd.TTTTTTTTTttttttT.dddd.tt.TT.....Tt.ddd..,,qqQQQQQQQQQQQQQqq,#TTt",
+  "tttTTTTTTtttt..ddd.tttttt.ttttTTT...dddddffddd..tttTTTtttTTTTTTTT.ddd....,,,,,.T..dddd.t#,qqQQQQQQQQQQQQQqq,#ttT",
+  "tttTTTTTTttt..ddd.ttttttttttttTTTTT.....dfff..TTtttTTTtttTTTTTTTTT.ddd.,,,,,,,,,.dddd.tt#,qqQQQQQQQQQQQQQqq,#ttT",
+  "tttTTTTTTtt..ddd.TttttttttttttTTTTTTTTTT.www.TTTtttTTTtttTTTTTTTTT..ddd,,,,,,,,,dddd.ttt#,qqQQQQQQQQQQQQQqq,#ttT",
+  "TTTtttTTTTT.dddddttttTTTTTTtttTTTTTTTTTt..ww.TTTTTTTTTttttttTTTTTTt..dddd,,,,,,dddd.TTTt#,qqQQQQQQQQQQQQQqq,#ttt",
+  "T,,,,,,,TT.ddd..d.tttTTTTTTtttTTTTTTTTTt..ww..TTTTTTTTttttttTTTTTTtt,.,dddd,ddddd,.tTTTt#,qqQoQQQQQQQQQoQqq,#ttt",
+  "T,,,,,,,,,dddd..ddtttTTTTTTtttTTTTTTTTTtt.ww..TTTTTTTTttttttTTTTTTtt,,,,,,dddd,,,..tTTTt#,qqQQQQQQQQQQQQQqq,#ttt",
+  ",,,,,,,,ddddd.TT.d.ttTTTtttttttttTTTtttTTTwwwTTTTTTTTTTTTttttttTTTTT.,,,,,,,,,,,,,.TTTTt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "<ddddddddd,,.TTT.ddttTTTtttttttttTTTtttTTTwwwTTTTTTTTTTTTttttttTTTTTT.,,,,,,,,,,,,.TTTTt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "<dddddd,,,,,TTTTTdd.tTTTtttttttttTTTtttTTTTwwTTTTTTTTTTTTttttttTTTTTT.,,,,,,,,,,,.TTTTTt#,qqQQQQQQQQQQQQQqq,#TTT",
+  "<,,,,,,,,,,TtttTT,dd,,ttTTTtttTTTtttTTTTTTTwwttttttTTTTTTTTTtttTTTTTTt..,,,,,,,,.tttTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "t,,,,,,,,,,TtttT,,dd,,,tTTTtttTTTtttTTTTTTTwwttttttTTTTTTTTTtttTTTTTTtt.t,.,,,,...ttTTTT#,qqQQQQQQQQQQQQQqq,#TTT",
+  "t,,,,,,,,,TTttt,,,,d,,,,TTTtttTTTtttTTTTTTTwwttttttTTTTTTTTTtttTTTTTTttt...T...TTtttTTTT#,qqQoQQQQQQQQQoQqq,#TTT",
+  "T,,,,,,,,,ttTTTt,,,,,,,,tttTTTTTTttttttTTTTwwwTTTTTTTTttttttTTTtttttttttTTTtttTTTttttttT#,qqqqqqqqqqqqqqqqq,#TTT",
+  "TTTTTTTTTtttTTTt,,,,,,,,tttTTTTTTttttttTTTTwwwTTTTTTTTttttttTTTtttttttttTTTtttTTTttttttT#,qqqqqqqqqqqqqqqqq,#TTT",
+  "TTTTTTTTTtttTTT,t,,,,,,ttttTTTTTTttttttTTTTTwwTTTTTTTTttttttTTTtttttttttTTTtttTTTttttttT#,,,,,,,,,,,,,,,,,,,#TTT",
+  "TTTtttTTTttttttTTT,,,,TTTTTTTTtttTTTttttttTTwwtttttTTTTTTTTTTTTTTTTTTTTTTTTTTTtttTTTtttT#####################ttt",
+  "TTTtttTTTttttttTTTTTTTTTTTTTTTtttTTTttttttTTwwtttttTTTTTTTTTTTTTTTTTTTTTTTTTTTtttTTTtttTTTtttTTTtttTTTTTTTTTtttt",
+  "TTTtttTTTttttttTTTTTTTTTTTTTTTtttTTTttttttTTwwtttttTTTTTTTTTTTTTTTTTTTTTTTTTTTtttTTTtttTTTtttTTTtttTTTTTTTTTtttt",
+  "tttTTTTTTtttTTTttttttTTTTTTTTTtttTTTttttttTTwwttTTTTTTTTTttttttttttttTTTTTTttttttTTTttttttTTTTTTTTTTTTTTTtttTTTt",
+  "tttTTTTTTtttTTTttttttTTTTTTTTTtttTTTttttttTTwwwtTTTTTTTTTttttttttttttTTTTTTttttttTTTttttttTTTTTTTTTTTTTTTtttTTTt",
+  "tttTTTTTTtttTTTttttttTTTTTTTTTtttTTTttttttTTTwwtTTTTTTTTTttttttttttttTTTTTTttttttTTTttttttTTTTTTTTTTTTTTTtttTTTt",
+  "TTTTTTTTTtttTTTTTTTTTTTTttttttTTTTTTtttTTTTTTwwTtttTTTTTTtttTTTTTTtttTTTTTTtttTTTTTTttttttTTTTTTTTTTTTtttTTTtttT",
+  "TTTTTTTTTtttTTTTTTTTTTTTttttttTTTTTTtttTTTTTTwwTtttTTTTTTtttTTTTTTtttTTTTTTtttTTTTTTttttttTTTTTTTTTTTTtttTTTtttT",
 ]
 
 [tiles.legend]
@@ -57,6 +84,8 @@ rows = [
 "." = { label = "forest floor", ground = { kind = "texture", tpage = 12, clut = 32583, tile = 9 } }
 "," = { label = "clearing", ground = { kind = "texture", tpage = 12, clut = 32584, tile = 9 } }
 "d" = { label = "path", ground = { kind = "texture", tpage = 12, clut = 32578, tile = 17 } }
+"w" = { label = "brook", walls = "all", ground = { kind = "texture", tpage = 11, clut = 32515, tile = 9 } }
+"f" = { label = "ford stones", ground = { kind = "texture", tpage = 11, clut = 32512, tile = 28 } }
 "#" = { label = "ruin wall", walls = "all", wall = { kind = "box", height = 192, tpage = 11, clut = 32512, tile = 9 } }
 "q" = { label = "court", height = 1, ground = { kind = "texture", tpage = 11, clut = 32512, tile = 0 } }
 "Q" = { label = "inner court", height = 2, ground = { kind = "texture", tpage = 11, clut = 32513, tile = 1 } }
@@ -67,22 +96,22 @@ rows = [
 
 [[spawns]]
 id = "from_village"
-tile = [2, 17]
+tile = [2, 41]
 facing = 2
 
 [[spawns]]
 id = "from_grotto"
-tile = [78, 5]
+tile = [98, 5]
 facing = 0
 
 [[exits]]
 id = "to_village"
-rect = [0, 16, 0, 18]
+rect = [0, 40, 0, 42]
 to = { kind = "map", map = "isles_village", spawn = "from_thornwood" }
 
 [[exits]]
 id = "grotto_stair"
-rect = [77, 1, 79, 1]
+rect = [97, 1, 99, 1]
 to = { kind = "map", map = "isles_grotto", spawn = "from_ruins" }
 requires = { bosses = ["isles_hive_queen"] }
 locked_line = "isles_grotto_locked"
@@ -90,162 +119,831 @@ locked_toast = true
 
 [[triggers]]
 id = "forest_intro"
-rect = [1, 15, 3, 19]
+rect = [1, 39, 3, 43]
 event = { kind = "toast", line = "isles_thornwood_intro" }
 once = true
 
 [[triggers]]
 id = "ruins_intro"
-rect = [71, 18, 72, 22]
+rect = [86, 29, 89, 32]
 event = { kind = "toast", line = "isles_ruins_intro" }
 once = true
 
-# The hive in the gate: the queen wakes.
+# Inside the north gate: the queen wakes.
 [[triggers]]
 id = "hive_gate"
-rect = [77, 9, 79, 10]
+rect = [96, 11, 100, 12]
 event = { kind = "boss", boss = "isles_hive_queen" }
 requires = { bosses_unbeaten = ["isles_hive_queen"] }
 
-# Hermit Ost keeps a camp by the court's west gap: a cold fire, a bench and
-# a lantern. Stepping up to it is talking to him (the West Voz Forest has
-# no townsfolk to dress him in).
+# Hermit Ost's camp: his log by the fire. Pressing the action button beside
+# it is talking to him (the West Voz Forest has no townsfolk to dress him in).
 [[triggers]]
 id = "hermit"
-rect = [72, 19, 73, 21]
+rect = [73, 35, 77, 37]
 press = true
 event = { kind = "talk", npc = "isles_hermit" }
 
 [[triggers]]
 id = "hermit_warning"
-rect = [72, 19, 73, 21]
+rect = [73, 35, 77, 37]
 press = true
 event = { kind = "dialog", line = "isles_hermit_hello" }
 requires = { bosses_unbeaten = ["isles_hive_queen"] }
 
-[[props]]
-id = "hermit_lantern"
-mesh = { scene = "rugi", object = 15 }
-tile = [72, 21]
-offset = [0, 40, 40]
-light = { color = [255, 190, 120], radius = 520, height = 60, flicker = 0.3, period = 12 }
-
-[[decor]]
-mesh = { scene = "town01", object = 41 }
-tile = [73, 19]
-rotation = [0.0, 90.0, 0.0]
-scale = 0.4
-
-[[decor]]
-mesh = { scene = "town01", object = 81 }
-tile = [72, 20]
-scale = 0.6
-
 [[encounters]]
 id = "west_wood"
-rect = [1, 1, 40, 32]
+rect = [1, 0, 44, 55]
 table = "isles_thornwood"
 
 [[encounters]]
 id = "east_wood"
-rect = [41, 1, 69, 32]
+rect = [45, 0, 87, 55]
 table = "isles_thornwood"
 
 [[encounters]]
 id = "ruin_court"
-rect = [71, 11, 85, 27]
+rect = [89, 11, 107, 47]
 table = "isles_ruins"
 
-# The hive itself: Rim Elm's great tree turned to wax and thorn, pulsing.
+# Mushroom Hollow: a sunken glade with a fairy ring of toadstools, giant
+# caps at its rim and a fallen trunk across its north side.
+
+[[props]]
+id = "hollow_log"
+mesh = { scene = "town01", object = 41 }
+tile = [24, 21]
+rotation = [0.0, 8.0, 0.0]
+scale = 0.55
+solid = true
+
+[[props]]
+id = "giant_cap_0"
+mesh = { scene = "cave01", object = 30 }
+tile = [19, 23]
+rotation = [0.0, 20.0, 0.0]
+scale = 2.6
+solid = true
+
+[[props]]
+id = "giant_cap_1"
+mesh = { scene = "cave01", object = 30 }
+tile = [31, 28]
+rotation = [0.0, 140.0, 0.0]
+scale = 2.3
+solid = true
+
+[[props]]
+id = "giant_cap_2"
+mesh = { scene = "cave01", object = 30 }
+tile = [30, 21]
+rotation = [0.0, 260.0, 0.0]
+scale = 2.0
+solid = true
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [27, 26]
+offset = [61, 0, -44]
+rotation = [0.0, 0.0, 0.0]
+scale = 0.60
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [27, 27]
+offset = [-56, 0, -30]
+rotation = [0.0, 37.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [25, 27]
+offset = [4, 0, 25]
+rotation = [0.0, 74.0, 0.0]
+scale = 0.90
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [24, 27]
+offset = [-63, 0, -25]
+rotation = [0.0, 111.0, 0.0]
+scale = 0.67
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [23, 26]
+offset = [-59, 0, -37]
+rotation = [0.0, 148.0, 0.0]
+scale = 0.82
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [23, 24]
+offset = [-61, 0, 44]
+rotation = [0.0, 185.0, 0.0]
+scale = 0.60
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [23, 23]
+offset = [56, 0, 30]
+rotation = [0.0, 222.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [25, 23]
+offset = [-4, 0, -25]
+rotation = [0.0, 259.0, 0.0]
+scale = 0.90
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [26, 23]
+offset = [63, 0, 25]
+rotation = [0.0, 296.0, 0.0]
+scale = 0.67
+
+[[decor]]
+mesh = { scene = "cave01", object = 30 }
+tile = [27, 24]
+offset = [59, 0, 37]
+rotation = [0.0, 333.0, 0.0]
+scale = 0.82
+
+# The ford: flat stones across the brook, boulders on its banks.
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [41, 32]
+offset = [-15, 4, -15]
+rotation = [0.0, 0.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [42, 32]
+offset = [2, 4, 8]
+rotation = [0.0, 53.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [41, 33]
+offset = [-11, 4, 1]
+rotation = [0.0, 106.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [42, 33]
+offset = [6, 4, -6]
+rotation = [0.0, 159.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [41, 34]
+offset = [-7, 4, -13]
+rotation = [0.0, 212.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [42, 34]
+offset = [10, 4, 10]
+rotation = [0.0, 265.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [43, 34]
+offset = [-3, 4, 3]
+rotation = [0.0, 318.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { object = 5 }
+tile = [39, 30]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.22
+
+[[decor]]
+mesh = { object = 5 }
+tile = [46, 36]
+rotation = [0.0, 200.0, 0.0]
+scale = 0.25
+
+[[decor]]
+mesh = { object = 5 }
+tile = [38, 37]
+rotation = [0.0, 110.0, 0.0]
+scale = 0.2
+
+[[decor]]
+mesh = { object = 5 }
+tile = [45, 29]
+rotation = [0.0, 300.0, 0.0]
+scale = 0.18
+
+# The old shrine: a ring of standing stones (two fallen) round an
+# inscribed tablet, broken pillars at the ring's back, and a worn rune
+# circle in the turf.
+
+[[props]]
+id = "shrine_tablet"
+mesh = { scene = "uru", object = 1 }
+tile = [56, 18]
+scale = 1.7
+solid = true
+
+[[props]]
+id = "shrine_stone_0"
+mesh = { scene = "uru", object = 8 }
+tile = [60, 21]
+offset = [-3, 0, 48]
+rotation = [0.0, 10.0, 0.0]
+scale = 2.8
+solid = true
+
+[[props]]
+id = "shrine_stone_1"
+mesh = { scene = "uru", object = 8 }
+tile = [58, 23]
+offset = [-45, 0, 41]
+rotation = [0.0, 55.0, 0.0]
+scale = 2.8
+solid = true
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [54, 23]
+offset = [45, 0, 41]
+rotation = [0.0, 90.0, 0.0]
+scale = 1.5
+
+[[props]]
+id = "shrine_stone_3"
+mesh = { scene = "uru", object = 8 }
+tile = [52, 21]
+offset = [3, 0, 48]
+rotation = [0.0, 145.0, 0.0]
+scale = 2.8
+solid = true
+
+[[props]]
+id = "shrine_stone_4"
+mesh = { scene = "uru", object = 8 }
+tile = [52, 19]
+offset = [3, 0, -48]
+rotation = [0.0, 190.0, 0.0]
+scale = 2.8
+solid = true
+
+[[decor]]
+mesh = { scene = "uru", object = 34 }
+tile = [54, 17]
+offset = [45, 0, -41]
+rotation = [0.0, 225.0, 0.0]
+scale = 1.5
+
+[[props]]
+id = "shrine_stone_6"
+mesh = { scene = "uru", object = 8 }
+tile = [58, 17]
+offset = [-45, 0, -41]
+rotation = [0.0, 280.0, 0.0]
+scale = 2.8
+solid = true
+
+[[props]]
+id = "shrine_stone_7"
+mesh = { scene = "uru", object = 8 }
+tile = [60, 19]
+offset = [-3, 0, -48]
+rotation = [0.0, 325.0, 0.0]
+scale = 2.8
+solid = true
+
+[[props]]
+id = "shrine_pillar_w"
+mesh = { scene = "town01", object = 77 }
+tile = [51, 16]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.3
+solid = true
+
+[[props]]
+id = "shrine_pillar_e"
+mesh = { scene = "town01", object = 77 }
+tile = [61, 16]
+rotation = [0.0, -25.0, 0.0]
+scale = 0.26
+solid = true
+
+[[decor]]
+mesh = { scene = "rugi", object = 12 }
+tile = [56, 21]
+offset = [0, 2, -64]
+scale = 1.4
+
+# The lookout: one great tree on the knoll above the shrine.
+
+[[props]]
+id = "lookout_tree"
+mesh = { object = 3 }
+tile = [57, 6]
+scale = 0.34
+solid = true
+animate = [{ kind = "sway", axis = "x", degrees = 1.2, period = 300 }]
+
+[[props]]
+id = "lookout_cairn"
+mesh = { scene = "uru", object = 35 }
+tile = [54, 7]
+rotation = [0.0, 30.0, 0.0]
+scale = 1.2
+solid = true
+
+# The hermit's camp, pitched round his log: the fire before it, a
+# moss-roofed lean-to with his bedroll behind, firewood stacked, a pot, a
+# basket and a barrel, and his lantern on its post.
+
+[[props]]
+id = "hermit_log"
+mesh = { scene = "town01", object = 41 }
+tile = [75, 36]
+scale = 0.5
+solid = true
+
+[[props]]
+id = "hermit_lean_to"
+mesh = { scene = "cave01", object = 31 }
+tile = [79, 35]
+rotation = [0.0, 200.0, 0.0]
+scale = 1.3
+solid = true
+
+[[props]]
+id = "hermit_lantern"
+mesh = { scene = "rugi", object = 15 }
+tile = [77, 38]
+offset = [0, 40, 40]
+light = { color = [255, 190, 120], radius = 520, height = 60, flicker = 0.3, period = 12 }
+
+[[decor]]
+mesh = { scene = "town01", object = 90 }
+tile = [79, 36]
+offset = [0, 2, -40]
+rotation = [0.0, 20.0, 0.0]
+scale = 1.1
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [75, 38]
+offset = [0, 0, -20]
+scale = 0.45
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [70, 0, -20]
+rotation = [0.0, 0.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [43, 0, 26]
+rotation = [0.0, 51.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [-15, 0, 38]
+rotation = [0.0, 102.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [-63, 0, 6]
+rotation = [0.0, 153.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [-63, 0, -46]
+rotation = [0.0, 204.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [-15, 0, -78]
+rotation = [0.0, 255.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "rugi", object = 19 }
+tile = [75, 38]
+offset = [43, 0, -66]
+rotation = [0.0, 306.0, 0.0]
+scale = 0.3
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [72, 36]
+rotation = [0.0, 15.0, 0.0]
+scale = 0.9
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [72, 36]
+offset = [20, 0, 60]
+rotation = [0.0, 95.0, 0.0]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 35 }
+tile = [76, 39]
+offset = [30, 0, 20]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [80, 37]
+offset = [0, 0, 20]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.8
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [81, 36]
+scale = 0.7
+
+# The ruined court: the hive (the great tree turned to wax and thorn) just
+# inside the north gate, torches either side of the gate, a crystal
+# turning over the inner court.
+
 [[props]]
 id = "hive"
-mesh = { scene = "vell", object = 3 }
-tile = [78, 11]
+mesh = { object = 3 }
+tile = [98, 16]
 scale = 0.4
 solid = true
 animate = [{ kind = "pulse", amount = 0.05, period = 70 }]
-light = { color = [255, 200, 60], radius = 700, height = 140, flicker = 0.35, period = 20 }
+light = { color = [255, 200, 60], radius = 760, height = 140, flicker = 0.35, period = 20 }
 
 [[props]]
 id = "court_crystal"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [78, 18]
+tile = [98, 32]
 offset = [0, 80, 0]
 scale = 1.6
 animate = [{ kind = "spin", period = 500 }, { kind = "bob", amplitude = 12, period = 200 }]
 light = { color = [120, 200, 255], radius = 640, height = 60, flicker = 0.1, period = 50 }
 
-# Forest walls: trees on every thicket tile, cleared off the camera's side
-# of the path (the follow camera stands to the north, `-Z`) so the player
-# and the path always read through the canopy, as in the West Voz Forest.
+[[props]]
+id = "gate_torch_w"
+mesh = { scene = "rugi", object = 15 }
+tile = [96, 11]
+offset = [0, 40, -50]
+light = { color = [255, 170, 90], radius = 420, height = 60, flicker = 0.35, period = 14 }
+
+[[props]]
+id = "gate_torch_e"
+mesh = { scene = "rugi", object = 15 }
+tile = [100, 11]
+offset = [0, 40, -50]
+light = { color = [255, 170, 90], radius = 420, height = 60, flicker = 0.35, period = 14 }
+
+[[props]]
+id = "court_stone_0_95"
+mesh = { scene = "uru", object = 8 }
+tile = [95, 24]
+rotation = [0.0, 95.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_0_101"
+mesh = { scene = "uru", object = 8 }
+tile = [101, 24]
+rotation = [0.0, 101.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_1_95"
+mesh = { scene = "uru", object = 8 }
+tile = [95, 28]
+rotation = [0.0, 128.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_1_101"
+mesh = { scene = "uru", object = 8 }
+tile = [101, 28]
+rotation = [0.0, 134.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_2_95"
+mesh = { scene = "uru", object = 8 }
+tile = [95, 36]
+rotation = [0.0, 161.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_2_101"
+mesh = { scene = "uru", object = 8 }
+tile = [101, 36]
+rotation = [0.0, 167.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_3_95"
+mesh = { scene = "uru", object = 8 }
+tile = [95, 40]
+rotation = [0.0, 194.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "court_stone_3_101"
+mesh = { scene = "uru", object = 8 }
+tile = [101, 40]
+rotation = [0.0, 200.0, 0.0]
+scale = 2.4
+solid = true
+
+# The forest. Old giants stand in groves (clusters), tall trunks and bent
+# trees fill between them, and shrubs and ferns crowd the thicket floor;
+# all thin out on the camera's side of the path (`-Z`) so the lane reads.
+# Ferns and bushes line the path's edges. Round the court the wood dies
+# back to bare snags.
+
 [[scatter]]
-id = "forest"
-rect = [0, 0, 87, 33]
+id = "grove_0"
+rect = [3, 23, 17, 37]
 on = "Tt"
-density = 1.0
-seed = 4301
+density = 0.45
+seed = 4330
 jitter = 40
 yaw = [0.0, 360.0]
-scale = [0.3, 0.45]
-clearance = { radius = 0.9, front = 3.5, keep = 0.0 }
+scale = [0.24, 0.34]
+cluster = { centre = [10.0, 30.0], radius = 7.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
 meshes = [
-  { mesh = { object = 3 }, weight = 3, scale = [0.22, 0.32] },
-  { mesh = { object = 12 }, weight = 2 },
-  { mesh = { object = 15 }, weight = 2 },
-  { mesh = { object = 7 }, weight = 2, scale = [0.5, 0.7] },
-  { mesh = { object = 42 }, weight = 1, scale = [0.8, 1.0] },
+  { mesh = { object = 3 }, weight = 1 },
 ]
 
 [[scatter]]
-id = "undergrowth"
-rect = [0, 0, 69, 33]
-on = ".,"
-density = 0.3
-seed = 4302
+id = "grove_1"
+rect = [24, 2, 40, 18]
+on = "Tt"
+density = 0.45
+seed = 4331
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [32.0, 10.0], radius = 8.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "grove_2"
+rect = [41, 35, 59, 53]
+on = "Tt"
+density = 0.45
+seed = 4332
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [50.0, 44.0], radius = 9.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "grove_3"
+rect = [61, 5, 75, 19]
+on = "Tt"
+density = 0.45
+seed = 4333
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [68.0, 12.0], radius = 7.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "grove_4"
+rect = [57, 43, 71, 55]
+on = "Tt"
+density = 0.45
+seed = 4334
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [64.0, 50.0], radius = 7.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "grove_5"
+rect = [6, 46, 18, 55]
+on = "Tt"
+density = 0.45
+seed = 4335
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [12.0, 52.0], radius = 6.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "grove_6"
+rect = [80, 46, 92, 55]
+on = "Tt"
+density = 0.45
+seed = 4336
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [86.0, 52.0], radius = 6.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "grove_7"
+rect = [14, 0, 26, 12]
+on = "Tt"
+density = 0.45
+seed = 4337
+jitter = 40
+yaw = [0.0, 360.0]
+scale = [0.24, 0.34]
+cluster = { centre = [20.0, 6.0], radius = 6.0, falloff = 1.2 }
+clearance = { radius = 1.2, front = 4.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 3 }, weight = 1 },
+]
+
+[[scatter]]
+id = "forest"
+rect = [0, 0, 87, 55]
+on = "Tt"
+density = 0.32
+seed = 4301
+jitter = 44
+yaw = [0.0, 360.0]
+scale = [0.4, 0.6]
+clearance = { radius = 0.9, front = 3.5, keep = 0.0 }
+meshes = [
+  { mesh = { object = 7 }, weight = 4, scale = [0.5, 0.75] },
+  { mesh = { object = 27 }, weight = 3, scale = [0.5, 0.75] },
+  { mesh = { object = 0 }, weight = 2, scale = [0.4, 0.55] },
+  { mesh = { object = 6 }, weight = 1, scale = [0.45, 0.6] },
+  { mesh = { object = 42 }, weight = 1, scale = [0.6, 0.9] },
+  { mesh = { object = 12 }, weight = 2, scale = [0.35, 0.5] },
+]
+
+[[scatter]]
+id = "blight"
+rect = [80, 0, 111, 55]
+on = "Tt"
+density = 0.6
+seed = 4308
 jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.25, 0.4]
+scale = [0.5, 0.8]
+clearance = { radius = 0.9, front = 3.0, keep = 0.0 }
+meshes = [
+  { mesh = { object = 4 }, weight = 3 },
+  { mesh = { object = 28 }, weight = 3 },
+  { mesh = { object = 7 }, weight = 1, scale = [0.45, 0.6] },
+  { mesh = { object = 42 }, weight = 2, scale = [0.6, 0.9] },
+]
+
+[[scatter]]
+id = "thicket_floor"
+rect = [0, 0, 111, 55]
+on = "Tt"
+density = 0.32
+seed = 4307
+jitter = 48
+yaw = [0.0, 360.0]
+scale = [0.4, 0.6]
+clearance = { radius = 0.5, front = 1.2, keep = 0.3 }
 meshes = [
   { mesh = { object = 13 }, weight = 3 },
   { mesh = { object = 14 }, weight = 2 },
-  { mesh = { object = 10 }, weight = 3 },
+  { mesh = { object = 18 }, weight = 2 },
+  { mesh = { object = 19 }, weight = 2 },
   { mesh = { object = 20 }, weight = 1 },
-  { mesh = { object = 4 }, weight = 1 },
 ]
 
 [[scatter]]
-id = "clearing_mushrooms"
-rect = [14, 18, 32, 31]
-on = ","
-density = 0.3
+id = "brookside"
+rect = [34, 0, 50, 55]
+on = "Tt"
+density = 0.35
+seed = 4309
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.4, 0.6]
+clearance = { radius = 0.6, front = 1.5, keep = 0.2 }
+meshes = [
+  { mesh = { object = 8 }, weight = 2 },
+  { mesh = { object = 9 }, weight = 2 },
+  { mesh = { object = 11 }, weight = 2 },
+  { mesh = { object = 39 }, weight = 1, scale = [0.15, 0.22] },
+]
+
+[[scatter]]
+id = "turf"
+rect = [0, 0, 87, 55]
+on = ",."
+density = 0.14
+seed = 4302
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.3, 0.45]
+meshes = [
+  { mesh = { object = 10 }, weight = 3 },
+  { mesh = { object = 16 }, weight = 3 },
+  { mesh = { object = 41 }, weight = 1, scale = [0.8, 1.2] },
+]
+
+[[scatter]]
+id = "hollow_caps"
+rect = [16, 17, 34, 33]
+on = ".,"
+density = 0.35
 seed = 4303
 jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.3, 0.5]
-cluster = { centre = [18.0, 22.0], radius = 5.0, falloff = 1.0 }
+scale = [0.6, 1.0]
+cluster = { centre = [25.5, 25.5], radius = 8.0, falloff = 0.7 }
 meshes = [
-  { mesh = { scene = "cave01", object = 40 }, weight = 2 },
-  { mesh = { scene = "cave01", object = 47 }, weight = 1, scale = [0.8, 1.2] },
+  { mesh = { scene = "cave01", object = 47 }, weight = 2 },
+  { mesh = { scene = "cave01", object = 30 }, weight = 1, scale = [0.35, 0.6] },
+]
+
+[[scatter]]
+id = "dell_ferns"
+rect = [14, 40, 25, 50]
+on = ".,"
+density = 0.4
+seed = 4310
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.45, 0.65]
+meshes = [
+  { mesh = { object = 8 }, weight = 2 },
+  { mesh = { object = 17 }, weight = 2 },
+  { mesh = { object = 41 }, weight = 1, scale = [1.0, 1.4] },
 ]
 
 [[scatter]]
 id = "ruin_rubble"
-rect = [71, 9, 85, 27]
-on = "qQ"
-density = 0.18
+rect = [89, 11, 107, 47]
+on = "qQ,"
+density = 0.14
 seed = 4304
 jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.4, 0.8]
 meshes = [
-  { mesh = { object = 22 }, weight = 2, scale = [0.4, 0.6] },
-  { mesh = { object = 10 }, weight = 2, scale = [0.3, 0.5] },
-  { mesh = { object = 41 }, weight = 1, scale = [0.8, 1.2] },
+  { mesh = { object = 22 }, weight = 2, scale = [0.35, 0.55] },
+  { mesh = { scene = "uru", object = 30 }, weight = 2, scale = [0.8, 1.3] },
+  { mesh = { scene = "town01", object = 41 }, weight = 1, scale = [0.25, 0.4] },
 ]
 
 [[scatter]]
 id = "ruin_pillars"
-rect = [71, 9, 85, 27]
+rect = [89, 11, 107, 47]
 on = "o"
 density = 1.0
 seed = 4305
@@ -257,25 +955,30 @@ meshes = [
   { mesh = { scene = "town01", object = 10 }, weight = 1 },
 ]
 
-# The thicket's floor: ferns and shrubs under the trees and across the
-# cleared band, low enough to leave the path in view, off the row beside it.
-# Last of the brushes, so adding it reshuffles none of the others.
-[[scatter]]
-id = "thicket_floor"
-rect = [0, 0, 87, 33]
-on = "Tt"
-density = 0.9
-seed = 4307
-jitter = 48
-yaw = [0.0, 360.0]
-scale = [0.4, 0.6]
-clearance = { radius = 0.5, front = 1.2, keep = 0.0 }
-meshes = [
-  { mesh = { object = 13 }, weight = 3 },
-  { mesh = { object = 14 }, weight = 2 },
-  { mesh = { object = 20 }, weight = 2 },
-  { mesh = { object = 4 }, weight = 2 },
-]
+[[edges]]
+id = "path_verge"
+mesh = { object = 13 }
+walls = "Tt"
+on = ".,"
+every = 2
+inset = 10
+jitter = 60
+yaw_jitter = 180.0
+scale_range = [0.35, 0.55]
+seed = 4315
+
+[[edges]]
+id = "path_ferns"
+mesh = { object = 9 }
+walls = "Tt"
+on = ".,"
+every = 2
+phase = 1
+inset = 24
+jitter = 50
+yaw_jitter = 180.0
+scale_range = [0.4, 0.6]
+seed = 4316
 
 [[edges]]
 id = "ruin_vines"
@@ -291,49 +994,107 @@ seed = 4306
 [[decals]]
 cell = { tpage = 11, clut = 32515, tile = 33 }
 span = 2
-tile = [78, 18]
+tile = [98, 32]
 offset = [0, 3, 0]
 size = [520, 520]
 sides = 16
 color = [130, 130, 130]
 yaw = [0.0, 0.0]
 
+# Ash under the hermit's fire.
+[[decals]]
+cell = { tpage = 11, clut = 32515, tile = 33 }
+span = 1
+tile = [75, 38]
+offset = [0, 2, -20]
+size = [170, 170]
+sides = 10
+color = [60, 56, 52]
+yaw = [0.0, 0.0]
+
+# Moss on the shrine's turf.
+[[decals]]
+cell = { tpage = 12, clut = 32590, tile = 13 }
+rect = [50, 15, 62, 26]
+density = 0.25
+seed = 4317
+size = [80, 80]
+size_jitter = 0.4
+sides = 9
+offset = [0, 2, 0]
+jitter = 40
+yaw = [0.0, 360.0]
+color = [100, 104, 92]
+
 [[emitters]]
 kind = "leaves"
-rect = [2, 4, 68, 30]
-count = 70
+rect = [2, 4, 86, 52]
+count = 90
 color = [110, 170, 70]
 seed = 4311
 
 [[emitters]]
 kind = "sparkles"
-rect = [14, 18, 32, 31]
+rect = [18, 19, 33, 32]
 height = [20, 140]
 count = 40
 color = [200, 255, 150]
 seed = 4312
 
 [[emitters]]
+kind = "sparkles"
+rect = [15, 42, 24, 49]
+height = [20, 120]
+count = 18
+color = [180, 255, 200]
+seed = 4318
+
+[[emitters]]
 kind = "dust"
-rect = [72, 10, 84, 26]
+rect = [51, 15, 62, 26]
+height = [0, 160]
+count = 30
+color = [220, 230, 255]
+seed = 4319
+
+[[emitters]]
+kind = "dust"
+rect = [90, 12, 106, 46]
 height = [0, 120]
-count = 50
+count = 60
 color = [255, 220, 120]
 seed = 4313
 
 [[emitters]]
 kind = "embers"
-rect = [76, 10, 80, 12]
+rect = [96, 14, 100, 18]
 height = [80, 240]
 count = 24
 color = [255, 210, 80]
 seed = 4314
 
+[[emitters]]
+kind = "embers"
+rect = [75, 38, 75, 38]
+height = [10, 90]
+count = 16
+color = [255, 160, 60]
+seed = 4321
+
+[[emitters]]
+kind = "smoke"
+rect = [75, 38, 75, 38]
+height = [60, 200]
+count = 8
+color = [120, 116, 110]
+seed = 4322
+
 # The floor: a sculpted forest. The thickets rise into wooded banks either
-# side of the path (walled anyway, so only the eye climbs them), the path is
-# a worn lane borrowed from Rim Elm's VRAM (`from = "town01"`, the West Voz
-# Forest has no dirt of its own), the clearings are turf, and the ruins stand
-# on their tiers with a rock cliff where the court meets the forest.
+# side of the path (walled anyway, so only the eye climbs them); the lane
+# (Rim Elm's, `from = "town01"`) drops into the hollow, crosses the brook,
+# climbs to the shrine's shelf and the lookout knoll above it, and runs down
+# to the camp; the brook is a cut bed under water the Snowdrift Cave lends
+# its surface to (`from = "cave01"`).
 [terrain]
 resolution = 4
 smooth = 2
@@ -344,25 +1105,35 @@ variation = 0.28
 blend = 0.7
 soften = 0.35
 detail = 4
-# Boundary detail and soft blends only near the path: the thicket's floor
-# is seen through the trees, where the finer edge is triangles nobody sees.
 detail_reach = 2
 sun = [225.0, 38.0]
 shading = 0.6
 shapes = [
   { kind = "noise", amplitude = 7, scale = 3.0, seed = 1 },
-  { kind = "noise", rect = [1, 1, 69, 32], amplitude = 3, scale = 0.8, octaves = 2, seed = 2 },
-  { kind = "raise", at = [8.0, 3.0], radius = 7.0, height = 46 },
-  { kind = "raise", at = [30.0, 2.0], radius = 8.0, height = 60 },
-  { kind = "raise", at = [48.0, 30.0], radius = 9.0, height = 54 },
-  { kind = "raise", at = [62.0, 2.0], radius = 6.0, height = 40 },
-  { kind = "raise", at = [8.0, 30.0], radius = 7.0, height = 38 },
-  { kind = "ridge", from = [20.0, 4.0], to = [38.0, 8.0], radius = 2.5, height = 26 },
-  { kind = "ridge", from = [46.0, 24.0], to = [62.0, 27.0], radius = 2.5, height = 22 },
-  { kind = "flatten", at = [7.5, 15.5], radius = 3.5, strength = 0.8 },
-  { kind = "flatten", at = [22.5, 23.5], radius = 4.5, strength = 0.8 },
-  { kind = "flatten", at = [51.5, 12.5], radius = 3.5, strength = 0.8 },
-  { kind = "flatten", at = [36.5, 15.5], radius = 3.0, strength = 0.7 },
+  { kind = "noise", rect = [1, 1, 87, 54], amplitude = 3, scale = 0.8, octaves = 2, seed = 2 },
+  { kind = "raise", at = [9.0, 30.0], radius = 7.0, height = 50 },
+  { kind = "raise", at = [30.0, 6.0], radius = 8.0, height = 64 },
+  { kind = "raise", at = [62.0, 48.0], radius = 9.0, height = 56 },
+  { kind = "raise", at = [70.0, 6.0], radius = 7.0, height = 70 },
+  { kind = "raise", at = [8.0, 52.0], radius = 6.0, height = 40 },
+  { kind = "raise", at = [86.0, 50.0], radius = 6.0, height = 46 },
+  { kind = "flatten", at = [25.5, 25.5], radius = 6.0, strength = 0.8 },
+  { kind = "raise", at = [25.5, 25.5], radius = 6.0, height = -18 },
+  { kind = "ramp", from = [45.5, 33.0], to = [52.5, 24.0], radius = 3.0, height = [0, 64] },
+  { kind = "flatten", at = [56.5, 20.5], radius = 7.5, height = 64, strength = 0.9 },
+  { kind = "ramp", from = [56.5, 13.5], to = [56.5, 9.0], radius = 2.2, height = [64, 132] },
+  { kind = "flatten", at = [56.5, 7.5], radius = 4.0, height = 132, strength = 0.9 },
+  { kind = "ramp", from = [60.5, 23.5], to = [70.0, 35.5], radius = 3.0, height = [64, 12] },
+  { kind = "flatten", at = [75.5, 38.5], radius = 6.0, height = 12, strength = 0.9 },
+  { kind = "raise", at = [19.5, 46.5], radius = 2.0, height = -60 },
+  { kind = "ridge", from = [37.5, 0.5], to = [39.5, 8.5], radius = 1.3, height = -70 },
+  { kind = "ridge", from = [39.5, 8.5], to = [41.5, 16.5], radius = 1.3, height = -70 },
+  { kind = "ridge", from = [41.5, 16.5], to = [41.5, 24.5], radius = 1.3, height = -70 },
+  { kind = "ridge", from = [41.5, 24.5], to = [42.5, 33.5], radius = 1.3, height = -70 },
+  { kind = "ridge", from = [42.5, 33.5], to = [44.5, 42.5], radius = 1.3, height = -70 },
+  { kind = "ridge", from = [44.5, 42.5], to = [45.5, 50.5], radius = 1.3, height = -70 },
+  { kind = "ridge", from = [45.5, 50.5], to = [46.5, 55.5], radius = 1.3, height = -70 },
+  { kind = "raise", at = [42.5, 33.5], radius = 1.8, height = 58 },
 ]
 materials = [
   { name = "leaf litter", chars = ".", tint = [118, 116, 96], cells = [
@@ -389,72 +1160,113 @@ materials = [
   { name = "ruin footing", chars = "#", tint = [110, 106, 118], cells = [
     { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
   ] },
+  { name = "brook bed", chars = "w", tint = [80, 96, 100], cells = [
+    { tpage = 11, clut = 32515, tile = 0 }, { tpage = 11, clut = 32515, tile = 1 }, { tpage = 11, clut = 32515, tile = 2 }, { tpage = 11, clut = 32515, tile = 8 }, { tpage = 11, clut = 32515, tile = 9 }, { tpage = 11, clut = 32515, tile = 10 },
+  ] },
+  { name = "ford stones", chars = "f", tint = [140, 140, 150], cells = [
+    { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 },
+  ] },
 ]
 cliff = { slope = 0.9, tint = [104, 100, 112], cells = [
   { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
 ] }
+water = { level = -22, from = "cave01", cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [44, 70, 72], deep = [14, 28, 34], depth = 40, foam = 8, foam_color = [40, 70, 60], wade = 6 }
 
 [lighting]
 mood = "dusk"
 lamps = [
-  { id = "clearing_w", tile = [18, 22], offset = [0, 220, 0], color = [180, 255, 160], radius = 900 },
-  { id = "clearing_c", tile = [36, 16], offset = [0, 220, 0], color = [255, 220, 160], radius = 800 },
-  { id = "clearing_e", tile = [52, 13], offset = [0, 220, 0], color = [180, 255, 160], radius = 700 },
+  { id = "hollow", tile = [25, 25], offset = [0, 220, 0], color = [180, 255, 160], radius = 900 },
+  { id = "dell", tile = [19, 45], offset = [0, 180, 0], color = [160, 255, 200], radius = 600 },
+  { id = "shrine", tile = [56, 20], offset = [0, 240, 0], color = [190, 210, 255], radius = 900 },
+  { id = "camp_fire", tile = [75, 38], offset = [0, 60, -20], color = [255, 150, 70], radius = 760, flicker = 0.35, period = 9 },
 ]
 
 [fog]
 regions = [
-  { rect = [2, 10, 68, 26], angle = 0.0, spread = 50.0, speed = 8 },
+  { rect = [16, 18, 34, 32], angle = 0.0, spread = 50.0, speed = 6 },
+  { rect = [36, 26, 48, 40], angle = 180.0, spread = 40.0, speed = 8 },
 ]
 
-# The forest: birdsong in the clearings, the wind through the canopy, and
-# a hush of drips by the ruined court.
+# The forest: birdsong in the glades, wind on the lookout, the brook at the
+# ford and the spring, the hermit's fire, and the hive's drone in the court.
 [audio]
 
 [[audio.ambient]]
-id = "west_birds"
+id = "edge_birds"
 sound = { kind = "sound", id = "birds" }
-tile = [8, 16]
+tile = [6, 41]
 radius = 1300
 inner = 300
 volume = 0.6
 
 [[audio.ambient]]
-id = "clearing_birds"
+id = "hollow_birds"
 sound = { kind = "sound", id = "birds" }
-tile = [22, 23]
+tile = [25, 25]
 radius = 1300
 inner = 300
 volume = 0.65
 
 [[audio.ambient]]
-id = "east_birds"
+id = "dell_birds"
 sound = { kind = "sound", id = "birds" }
-tile = [52, 13]
-radius = 1300
-inner = 300
+tile = [19, 45]
+radius = 900
+inner = 200
+volume = 0.5
+
+[[audio.ambient]]
+id = "ford"
+sound = { kind = "sound", id = "water" }
+tile = [42, 33]
+radius = 900
+inner = 200
 volume = 0.6
 
 [[audio.ambient]]
-id = "canopy_wind_w"
-sound = { kind = "sound", id = "wind" }
-tile = [18, 8]
-radius = 1800
-inner = 500
-volume = 0.35
-
-[[audio.ambient]]
-id = "canopy_wind_e"
-sound = { kind = "sound", id = "wind" }
-tile = [56, 24]
-radius = 1800
-inner = 500
-volume = 0.35
-
-[[audio.ambient]]
-id = "court_torch"
-sound = { kind = "sound", id = "torch" }
-tile = [72, 21]
+id = "spring"
+sound = { kind = "sound", id = "water" }
+tile = [19, 46]
 radius = 600
 inner = 120
 volume = 0.4
+
+[[audio.ambient]]
+id = "shrine_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [56, 20]
+radius = 1400
+inner = 400
+volume = 0.3
+
+[[audio.ambient]]
+id = "lookout_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [56, 7]
+radius = 1000
+inner = 300
+volume = 0.55
+
+[[audio.ambient]]
+id = "camp_fire"
+sound = { kind = "sound", id = "torch" }
+tile = [75, 38]
+radius = 700
+inner = 140
+volume = 0.5
+
+[[audio.ambient]]
+id = "canopy_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [66, 46]
+radius = 1800
+inner = 500
+volume = 0.3
+
+[[audio.ambient]]
+id = "hive_drone"
+sound = { kind = "sound", id = "drone" }
+tile = [98, 16]
+radius = 1200
+inner = 300
+volume = 0.45
