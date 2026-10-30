@@ -10,7 +10,7 @@ tab, and nothing is uploaded.
 |---|---|
 | Page | `site/_content/tooling/expansion-workbench.html` |
 | App, state, history, persistence, shortcuts, templates, export | `site/js/expansion-workbench-app.js` |
-| Validation worker | `site/js/expansion-workbench-validate-worker.js` |
+| Validation and bundle worker | `site/js/expansion-workbench-validate-worker.js` |
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
 | Rename with references | `site/js/expansion-workbench-rename.js` |
 | Flow tab (the progression graph) | `site/js/expansion-workbench-graph.js` |
@@ -24,6 +24,8 @@ tab, and nothing is uploaded.
 | Pack library (shared with the play page) | `site/js/play-pack-library.js` |
 | 3D preview and Play here | `site/js/expansion-workbench-preview3d.js`; on the play page `site/js/play-expansion-live.js` and `site/js/play-view-editor-overlay.js` |
 | Editing in the 3D preview (gizmos, brushes, multi-select) | `site/js/expansion-workbench-gizmos.js`; on the play page `site/js/play-view-editor-gizmos.js` |
+| Layout helpers (snap, align, spread, repeat, fill between, mirror) | `site/js/expansion-workbench-layout.js` |
+| Authoring hints (walk-through props, walk-on text) | `site/js/expansion-workbench-hints.js` |
 | Map terrain (sculpt brush, materials, water, horizon) | `site/js/expansion-workbench-terrain.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
 | Example pack | `site/packs/rebirth.json`, written by `site/_gen.py` from [`packs/rebirth/`](../../packs/rebirth/README.md) |
@@ -194,6 +196,31 @@ an ordinary check on that field, with the field's range. **Download**,
 **Play in browser** and **Play here** refuse while the pack has an error and
 open the first one, with `F8` to step through the rest.
 
+**Hints.** Above the checks, a **Hints** fold lists advice that is not a
+defect (`expansion-workbench-hints.js`): a pack with hints validates with no
+warning and exports as it is, so the validator does not carry them. A click
+opens what a hint names, selected in the painter.
+
+| Hint | When |
+|---|---|
+| Walk-through | A prop that is not `solid`, has no standable `top` and stands on a tile its style leaves open, or a decoration (which never blocks) on an open tile, whose mesh is large: wider than half a tile both ways and taller than a step, from the floor. The size is the mesh's box in its scene's geometry pack (`scene_objects`, times the scale), built a scene at a time while the page is idle; a glTF or PROT mesh is not judged. |
+| Walk-on text | A `dialog` trigger that is neither `press` nor `once`, so it stops the player on every visit; and a map with more than three walk-on dialogs (`TEXT_BUSY`), once or not. Each suggests an examine (`press`) or a `toast`. |
+
+The painter's **Walk-through** box (on by default) marks the same objects
+on the canvas: a red cross over a walk-through prop or decoration, an amber
+corner on each walk-on dialog trigger, solid when it repeats.
+
+**Trigger and exit forms.** A trigger's **Fires** picks *when the player
+steps on it* or *when the player examines it* (`press`), **Once ever** says
+the flag that remembers it, and **Raises** names `dialog` as the box that
+stops the player and `toast` as the notice that stops nothing. Under a
+dialog or toast trigger a line says what the player meets (an examined
+dialog, a story beat once, a toast in passing), in amber for a walk-on
+dialog that repeats. An exit's **While shut** box holds its `locked_line`
+(**Says why**) and `locked_toast` (**As a toast**) under its **Open when**
+gate, with a note saying whether the line is ever said (no gate: never) and
+how.
+
 **Long lists.** A list editor of more than twelve entries (monsters, dialogue
 lines, quests) has a filter over its labels; `Enter` opens the first match,
 and the text survives an edit's re-render. A list of folds - a boss script's
@@ -209,7 +236,12 @@ worker (`expansion-workbench-validate-worker.js`) holding a second
 (`take_disc_parts`: `PROT.DAT`, `CDNAME.TXT`, `SCUS_942.54`) to the worker,
 which builds the same catalog from them (`open_disc_parts`) without the
 image; the loaded tree, its canonical forms, the assets and documents follow
-as `session_files` / `set_session_files` whenever they change. A run starts
+as `session_files` / `set_session_files` whenever they change. The 3D
+preview's `.lxpack` for each rebuild (and **Live**'s) is built there too, as
+a `bundle` message answered with the bytes or the export's refusal, so a
+rebuild does not hold the page's thread for the export; the frame then
+hot-reloads it. An edit made while the bytes are built waits for them and
+goes in next. A run starts
 a moment after the last edit; an answer for a pack that changed since it was
 asked is dropped. Typing never waits for a check. Without the worker (an
 older bundle, a worker that failed) validation runs on the page, and an
@@ -478,21 +510,31 @@ is not an edit rebuilds nothing: the selection, the layers, the camera and a
 cutscene's path are messages to the frame.
 
 **Object-only edits move, they do not rebuild.** An edit since the last
-build that only moved or turned props and NPCs of the open map - the pack's
-JSON with those poses blanked (each prop's tile, offset X / Z and turn, each
-NPC's tile and facing) is the text the build was sent - goes to the frame at
-once as `xw-move`: each prop's placed draw, found by where it stands, moves
-to its new world position, turns, and rises by the floor's change between
-the two tiles (the grid's corner heights); each NPC goes through
-`expansion_place_npc`, which sets its anchor (what the draw, the collision
-box and the talk probe read) and heading and the definition the overlay
-reads. A move costs a few milliseconds where a rebuild costs seconds. A prop
-with no single plain draw at its old place (a tilted or script-moved one),
-an NPC that patrols or is scenery, or a frame without the export answers
-`ok: false` and the map rebuilds. The engine's own copy of a moved prop - its
-collision box, a standable top - stays where the build put it until the next
-rebuild: the next edit of anything else, **Reload**, or the **Player** camera
-and **Walk from selection**, which rebuild first when a prop has moved.
+build that only moved or turned props, NPCs, spawns and lamps of the open
+map - the pack's JSON with those poses blanked (each prop's tile, offset X /
+Z and turn, each NPC's and spawn's tile and facing, each lamp's tile and
+offset) is the text the build was sent - goes to the frame at once as
+`xw-move`, and the engine's copy of each object follows:
+
+| Object | In the frame | In the engine |
+|---|---|---|
+| Prop | Its placed draw, found by where it stands, moves to its new world position, turns, and rises by the floor's change between the two tiles (the grid's corner heights). | `expansion_place_prop`: the definition (what the overlay, the prop's light and the floor read); a standable top follows (`ActiveMap::refresh_floor_tops`); a solid prop's closed tile moves in the collision grid - the tile it left takes back its style's walls and the terrain's, unless another solid prop stands there. |
+| NPC | - | `expansion_place_npc`: its anchor (what the draw, the collision box and the talk probe read), heading and definition. |
+| Spawn | - | `expansion_place_spawn`: the definition the overlay and the next arrival read. |
+| Lamp | - | `expansion_place_lamp`: the definition, which the scene's lights read every frame. |
+
+`play_expansion_live::tests::props_lamps_spawns_moved_in_place_match_a_rebuild`
+(disc-gated) moves a solid prop, a standable prop, a lamp and a spawn of
+each Rebirth map in place and checks the whole collision grid, the standable
+tops, the lights and the overlay's spawns against a rebuild with the edited
+definition. A move costs a few milliseconds where a rebuild costs seconds,
+so **Walk from selection** right after a move walks into the moved prop.
+A prop with no single plain draw at its old place (a tilted or script-moved
+one), an NPC that patrols or is scenery, or a frame without the export
+answers `ok: false` and the map rebuilds; a frame whose bundle has no
+`expansion_place_prop` moves the draw only, and the **Player** camera and
+**Walk from selection** rebuild first. Decorations are baked into their
+tile's cell mesh at the build, so moving one rebuilds.
 
 **Drafts.** Between rebuilds the volumes follow the editor at once: each
 `map_preview` the painter computes (a moment after an edit) goes to the
@@ -592,6 +634,25 @@ ground draws a box that selects what it holds, Shift adds, a drag on one
 object of several moves them all, and Delete and Ctrl+D act on the whole
 selection.
 
+**Layout.** With something selected, a **Layout** row joins the Select bar,
+and the painter's selection box carries the same row
+(`expansion-workbench-layout.js`, pure edits of the map, one undo step
+each). Positions are tile units, the object's tile plus its offset; an
+object with an `offset` (props, decorations, lamps) keeps a fraction of a
+tile in it, NPCs and spawns stand on whole tiles, a zone moves by whole tiles.
+
+| Button | Does |
+|---|---|
+| Snap | Each selected object onto its tile centre (offset X / Z zero). |
+| Align rows / Align cols | The selection on one row or one column: the middle of theirs. |
+| Spread across / Spread down | Three or more objects spaced evenly between the outer two, in their order. |
+| Repeat | **Count** copies of the selection in a row, **Step** tiles apart (across, down). |
+| Fill between | Two selected objects: copies of the first so that **Count** stand evenly from one to the other, both ends included - six pillars along a wall from the first and the last. |
+| Mirror L-R / Mirror T-B | Across the map's middle column or row; a prop's yaw and an NPC's or spawn's facing turn with it, a patrol is mirrored. With **as copies** (the default) the originals stay, and one on the axis itself is not copied. |
+
+One prop a tile: a prop is never moved or copied onto a tile another prop
+holds; it stays, and the row's account says how many stayed.
+
 The undo seam is `snapshot` and `refresh` in the editor's `api`
 (`expansion-workbench-gizmos.js`, `mountMapEditor`): they close the page
 history's step around each 3D edit (`ctx.commit`).
@@ -605,7 +666,7 @@ its top half - 1152 draws. Rebirth's atrium (29 x 13) is the small case.
 
 | Step | Atrium | 120 x 120 |
 |---|---|---|
-| `map_preview`, `validate` (in the worker), `export_bundle` (each edit, in the workbench) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
+| `map_preview`, `validate` (in the worker), `export_bundle` (each rebuild, in the worker) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
 | Painter redraw on a hover | - | 1 - 6 ms |
 | Hot reload, native build of the same call (`big_map_reload_cost`), of which the coplanar pass | - | 0.92 s, 0.30 s (2.5 s, 1.8 s with the bucket walk) |
 | Hot reload, the page's GL upload after it (`PlayView._rebuild`) | - | 0.4 s |
