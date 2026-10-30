@@ -73,7 +73,7 @@ deps = ["engine-camera", "engine-vm"]
 
 [crates.engine-ui]
 role = "renderer-agnostic draw-list builders"
-deps = ["engine-battle-vm", "engine-modes", "render-kernels"]
+deps = ["engine-battle-vm", "engine-expansion", "engine-modes", "render-kernels"]
 dev = ["engine-camera", "engine-field"]
 
 [crates.engine-effects]

@@ -29,6 +29,7 @@ pub mod party;
 mod poker;
 mod race;
 
+use legaia_engine_expansion::modes::{ModeSource, ModeStage, PackModeSeat};
 use legaia_engine_modes::active::{ActiveMode, ModeEntry, ModeKind, ModeView, score_unit};
 use legaia_engine_modes::session::Placement;
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, line_quad};
@@ -82,15 +83,16 @@ pub(crate) mod pen {
 
 /// How a label sits on its pen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Align {
+pub enum Align {
     Left,
     Centre,
     Right,
 }
 
-/// One label of the composition.
+/// One label of the composition: the text, its pen in stage pixels (the
+/// top of the line, `x` where `align` anchors it) and its colour.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Label {
+pub struct Label {
     pub text: String,
     pub x: i32,
     pub y: i32,
@@ -262,6 +264,77 @@ pub fn mode_screen_texts(font: &legaia_font::Font, screen: &ModeScreen<'_>) -> V
 /// for tests and for a host reading the screen as text.
 pub fn mode_screen_strings(screen: &ModeScreen<'_>) -> Vec<String> {
     compose(screen).labels.into_iter().map(|l| l.text).collect()
+}
+
+/// The screen's labels unmeasured, in draw order: for a host that sets
+/// them in a font of its own rather than the dialog font (the modes page,
+/// which runs with no disc).
+pub fn mode_screen_labels(screen: &ModeScreen<'_>) -> Vec<Label> {
+    compose(screen).labels
+}
+
+/// The seat's screen: the picker, the session in play (its in-world HUD
+/// while the seat stages it on a pack map) or the results card. The one
+/// projection of a [`PackModeSeat`] both play hosts and the World-free
+/// modes page draw from.
+pub fn seat_screen(seat: &PackModeSeat) -> ModeScreen<'_> {
+    match &seat.stage {
+        ModeStage::Picker {
+            entries,
+            cursor,
+            error,
+        } => ModeScreen::Picker {
+            heading: match seat.source {
+                ModeSource::Pack => "Pack modes",
+                ModeSource::Builtin => "Practice modes",
+            },
+            entries,
+            cursor: *cursor,
+            error: error.as_deref(),
+        },
+        // Played on its pack map: the field draws the game, the screen only
+        // its HUD.
+        ModeStage::Playing { mode, quit_prompt } if seat.stage_frame.is_some() => {
+            ModeScreen::InWorld {
+                mode,
+                log: &seat.log,
+                quit_prompt: *quit_prompt,
+                banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+                outro: seat
+                    .stage_frame
+                    .as_ref()
+                    .and_then(|f| f.duel.as_ref())
+                    .is_some_and(|d| d.outro),
+            }
+        }
+        ModeStage::Playing { mode, quit_prompt } => ModeScreen::Playing {
+            mode,
+            log: &seat.log,
+            quit_prompt: *quit_prompt,
+        },
+        ModeStage::Results {
+            name,
+            kind,
+            rows,
+            granted,
+            completed,
+            local_seat,
+            seat_names,
+        } => ModeScreen::Results {
+            name,
+            kind: *kind,
+            rows,
+            granted,
+            completed: *completed,
+            local_seat: *local_seat,
+            seat_names,
+            // A duel at a table: the reaction shot, then the card over it.
+            over_world: seat.stage_frame.is_some(),
+            holding: seat.world_stage.holds_results(),
+            banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+            names: &seat.seat_names,
+        },
+    }
 }
 
 pub(crate) fn labels_to_draws(font: &legaia_font::Font, labels: &[Label]) -> Vec<TextDraw> {
