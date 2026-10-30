@@ -95,7 +95,9 @@ Each step is a table whose `do` key names it. Frames are display frames, 60 a se
 
 ### Actors
 
-An actor is `"player"` (the party leader the field draws), a pack NPC id of the cutscene's `map`, or `"retail:<slot>"` for a retail scene's placement. The player walks at the pad walk's pace (8 world units a frame, 12 with `run`) and plays its walk clip; an NPC walks each leg on the motion VM at its own glide speed. A walk goes straight from stop to stop: it is a path, not a route, and passes through walls, so a `path` steers it round a prop.
+An actor is `"player"` (the party leader the field draws), a pack NPC id of the cutscene's `map`, or `"retail:<slot>"` for a retail scene's placement. The player walks at the pad walk's pace (8 world units a frame, 12 with `run`) and plays its walk clip; an NPC walks each leg on the motion VM at its own glide speed.
+
+A walk goes straight from stop to stop where that line keeps to open ground. Where it would cross a wall, the leg goes round on the collision grid instead (an A* search over the grid's open 64-unit sub-cells, pulled taut into the fewest straight legs: `World::field_walk_path`), so naming a tile across the room walks the actor round the table. A leg with no way round - its end on a wall, or a region the grid does not join - walks straight as before, so a `path` still steers a walk exactly where the author wants it.
 
 A pack NPC's `present` gate ([`expansion-pack-maps.md`](expansion-pack-maps.md#npcs)) keeps it off the map until it holds; a `show` step brings it on for the visit. `hide` parks it on retail's own off-map hide box (`FIELD_OFFMAP_HIDE_XZ`), which keeps it out of every draw, the talk probe and the collision boxes on both hosts.
 
@@ -162,6 +164,6 @@ Errors stop the pack loading; warnings do not.
 ## Gaps
 
 - The field draws the party leader only, so the other party members cannot be moved.
-- A walk is straight-line between stops; nothing routes it round walls.
+- The path round a wall is the collision grid's: a prop with no wall bits under it (a pack prop the map gives no wall) is walked through.
 - A cutscene plays on one scene: a scene change ends it, so there is no step that changes map midway.
 - `clip` on the player names a clip base of the party bank (idle, walk, run, ...), not a free animation.

@@ -333,13 +333,22 @@ impl World {
                 run,
                 clip,
             } => {
-                let stops = waypoints
-                    .iter()
-                    .map(|t| {
-                        let (x, z) = self.cutscene_tile_world(*t, on_map);
-                        (x as i16, z as i16)
-                    })
-                    .collect();
+                // Each leg whose straight line would cross a wall goes round
+                // it on the grid's open ground (`World::field_walk_path`); a
+                // leg with no way round, or no grid, walks straight.
+                let mut at = self
+                    .cutscene_actor_pos(&actor)
+                    .map(|(x, z)| (i32::from(x), i32::from(z)));
+                let mut stops = Vec::new();
+                for t in &waypoints {
+                    let to = self.cutscene_tile_world(*t, on_map);
+                    let leg = at
+                        .filter(|&from| !self.field_leg_clear(from, to))
+                        .and_then(|from| self.field_walk_path(from, to))
+                        .unwrap_or_else(|| vec![to]);
+                    stops.extend(leg.into_iter().map(|(x, z)| (x as i16, z as i16)));
+                    at = Some(to);
+                }
                 let idle = self
                     .cutscene_npc_slot(&actor)
                     .and_then(|s| self.npcs.clip_current.get(&s).copied());
