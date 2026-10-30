@@ -1,0 +1,14 @@
+[package]
+name = "legaia-engine-run-rules"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_run_rules"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-randomizer.workspace = true
+serde.workspace = true
+serde_json.workspace = true

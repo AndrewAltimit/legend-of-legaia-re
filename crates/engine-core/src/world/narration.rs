@@ -35,6 +35,8 @@ impl World {
     /// the current scene without re-walking the [`legaia_engine_scene_host::scene_host::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
+        // An ironman run's autosave falls due at each scene entry.
+        self.run_rules_scene_entered();
         // An active expansion pack's enter-scene objectives.
         if self.expansion.is_active() {
             let scene = self.active_scene_label.clone();

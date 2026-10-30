@@ -104,7 +104,7 @@ pub fn randomize_monster_stats(
 /// share this pass, its clamps and its slot handling.
 ///
 /// Story bosses are scaled too; only the scripted tutorial fight
-/// ([`crate::monster_stats::SCALE_PINNED_MONSTER_IDS`]) is pinned. Composes with
+/// ([`legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS`]) is pinned. Composes with
 /// [`randomize_monster_stats`]: run the randomizer first and this multiplies the
 /// values it dealt out, because both read the roster back off the disc. An
 /// all-retail scale writes nothing. Slot handling (same-size re-pack,
@@ -135,7 +135,7 @@ pub struct AttackCountReport {
 /// the unchanged per-round AGL budget affords proportionally more (or fewer)
 /// strikes. Seedless - the result depends only on the disc and the scale. A
 /// retail (`1x`) scale writes nothing. Only the unwinnable-by-design tutorial
-/// fight ([`crate::monster_stats::SCALE_PINNED_MONSTER_IDS`]) is pinned. Slot
+/// fight ([`legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS`]) is pinned. Slot
 /// handling (same-size re-pack, skip-on-overflow) matches the stat scale.
 pub fn scale_enemy_attack_count(
     patcher: &mut DiscPatcher,
@@ -151,7 +151,7 @@ pub fn scale_enemy_attack_count(
     let records = legaia_actor_formats::monster_archive::records(&entry)
         .context("decode monster archive records")?;
     for rec in &records {
-        if monster_stats::SCALE_PINNED_MONSTER_IDS.contains(&rec.id) {
+        if legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS.contains(&rec.id) {
             continue;
         }
         let plan = crate::attack_count::plan_record(rec, scale);
@@ -192,10 +192,10 @@ pub fn scale_enemy_attack_count(
 /// bundles are skipped, not an error.
 ///
 /// Two curated lists bracket the scan, each for a reason the scan can't reach.
-/// [`monster_stats::STORY_BOSS_MONSTER_IDS`] is unioned in as a floor: a boss
+/// [`legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS`] is unioned in as a floor: a boss
 /// form the game swaps in mid-battle is named by no formation record, so the
 /// scan alone would leave it on the trash multiplier.
-/// [`monster_stats::TUTORIAL_MONSTER_IDS`] is then forced back to regular,
+/// [`legaia_randomizer::monsters::TUTORIAL_MONSTER_IDS`] is then forced back to regular,
 /// because two of the first three Piura are scripted-only on the disc and a
 /// boss slider must not reach a fresh save's opening fights
 /// ([`monster_class::MonsterClasses::force_regular`]).
@@ -209,8 +209,8 @@ pub fn classify_monsters(patcher: &DiscPatcher) -> Result<monster_class::Monster
             scan.observe(&scene);
         }
     }
-    let mut classes = scan.finish(monster_stats::STORY_BOSS_MONSTER_IDS);
-    classes.force_regular(monster_stats::TUTORIAL_MONSTER_IDS);
+    let mut classes = scan.finish(legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS);
+    classes.force_regular(legaia_randomizer::monsters::TUTORIAL_MONSTER_IDS);
     Ok(classes)
 }
 
@@ -226,7 +226,7 @@ pub fn classify_monsters(patcher: &DiscPatcher) -> Result<monster_class::Monster
 /// the uniform pass does.
 ///
 /// Story bosses are scaled by the boss half rather than skipped; only the
-/// scripted tutorial fight ([`crate::monster_stats::SCALE_PINNED_MONSTER_IDS`])
+/// scripted tutorial fight ([`legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS`])
 /// is pinned, in either class. Composes with [`randomize_monster_stats`] the
 /// same way: run the randomizer first and this multiplies the values it dealt
 /// out. An all-retail profile writes nothing.

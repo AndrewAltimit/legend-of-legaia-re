@@ -27,11 +27,11 @@ use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::fortress_encounter_fix::{
     self as fix, FORTRESS_SCENES, POST_JETTE_FLAG, RETAIL_STALE_ROW, STALE_FLAG, TableState,
 };
+use legaia_randomizer::drops::DropMode;
 use legaia_scene_formats::man_section;
 
 /// `deroa`'s third gated group ("Gate of Hell vanished").

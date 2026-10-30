@@ -828,6 +828,9 @@ pub(super) struct PlayWindowApp {
     /// Never write the options or bindings files: set by the headless
     /// window, whose key presses are a test's, not a player's.
     pub(super) persist_disabled: bool,
+    /// The title's NEW GAME opens the New Game rules screen first (off in
+    /// retail-faithful mode, where NEW GAME is retail's straight start).
+    pub(super) run_rules_screen: bool,
     /// Write card saves back to their image even with
     /// [`Self::persist_disabled`] set: a headless window opened over a
     /// caller's own save directory (`HeadlessPlayWindow::open_boot_ui_in`),
@@ -1112,6 +1115,13 @@ pub(super) enum BootUiState {
     /// Game-over panel is active after a party wipe.
     #[allow(dead_code)]
     GameOver(legaia_engine_menus::game_over::GameOverSession),
+    /// The New Game rules screen between the title's NEW GAME and the
+    /// opening. The screen itself sits on the world
+    /// (`World::run_rules.setup`, `legaia_engine_session::run_rules`), so
+    /// the shared screen layers draw it; this arm feeds it the pad.
+    RunRules,
+    /// The Boss Rush intermission or result screen, also on the world.
+    BossRush,
 }
 
 /// The single world-space Y negation of the **field render frame**: field

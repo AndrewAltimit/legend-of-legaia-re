@@ -107,6 +107,12 @@ pub enum SwitchChange {
     /// Enter map `map` of the active pack at spawn `spawn`
     /// (`SceneHost::enter_expansion_map`; empty = the map's first spawn).
     Map { map: String, spawn: String },
+    /// The run's rules (`World::run_rules`, `legaia_engine_run_rules`):
+    /// difficulty, New Game+, ironman, randomizer seed, mode. A value row:
+    /// the recorder notes it whenever the world's rules change.
+    RunRules {
+        rules: legaia_engine_run_rules::rules::RunRules,
+    },
 }
 
 /// `[meta]` block.
@@ -595,6 +601,7 @@ pub fn apply_switch<S: ReplaySeat + ?Sized>(
             }
         }
         SwitchChange::Map { map, spawn } => seat.replay_enter_map(map, spawn)?,
+        SwitchChange::RunRules { rules } => seat.replay_world().run_rules.rules = rules.clone(),
     }
     Ok(())
 }
@@ -856,7 +863,18 @@ active_scene = "town01"
             },
         );
         file.push_switch(11, SwitchChange::NoPack);
+        file.push_switch(
+            11,
+            SwitchChange::RunRules {
+                rules: legaia_engine_run_rules::rules::RunRules {
+                    difficulty: legaia_engine_run_rules::rules::Difficulty::Hard,
+                    randomizer: Some(legaia_engine_run_rules::rules::Randomizer::all("seed")),
+                    ..Default::default()
+                },
+            },
+        );
         let text = file.to_toml_string().unwrap();
+        assert!(text.contains("set = \"run_rules\""), "{text}");
         assert!(text.contains("set = \"action_movement\""), "{text}");
         assert_eq!(ReplayFile::from_toml_str(&text).unwrap(), file);
         let at0: Vec<_> = file.switches_at(0).collect();

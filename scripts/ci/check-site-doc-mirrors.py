@@ -170,6 +170,8 @@ MIRRORS = [
      "site/_content/subsystems/expansion-modes.html"),
     ("docs/subsystems/netplay.md",
      "site/_content/subsystems/netplay.html"),
+    ("docs/subsystems/run-rules.md",
+     "site/_content/subsystems/run-rules.html"),
 ]
 
 # Register mirrors: fragments whose rows are rendered from docs/ at build time.

@@ -38,8 +38,8 @@
 //! is strictly same-size and in place - and since 0899 is raw, no recompression
 //! is involved.
 
-use crate::drops::DropMode;
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::drops::DropMode;
+use legaia_randomizer::rng::SplitMix64;
 
 /// Bytes per prize record (`[u16 id][u16 gate][u32 price]`).
 pub const RECORD_SIZE: usize = 8;

@@ -19,10 +19,9 @@
 use legaia_actor_formats::monster_archive::{self, SLOT_STRIDE};
 use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
-use legaia_patcher::monster_stats::{
-    self, FIELD_COUNT, SCALE_PINNED_MONSTER_IDS, ScaleProfile, StatScale, scale_stats,
-};
+use legaia_patcher::monster_stats::{self, FIELD_COUNT, ScaleProfile, StatScale, scale_stats};
+use legaia_randomizer::drops::DropMode;
+use legaia_randomizer::monsters::SCALE_PINNED_MONSTER_IDS;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
@@ -142,7 +141,7 @@ fn shuffle_monster_stats_round_trips_on_disc() {
         ]
     };
     let before_by_id = by_id(&before);
-    for &pid in legaia_patcher::monster_stats::PROTECTED_MONSTER_IDS {
+    for &pid in legaia_randomizer::monsters::PROTECTED_MONSTER_IDS {
         let (Some(b), Some(r)) = (before_by_id.get(&pid), a.get(&pid)) else {
             continue; // id not populated on this disc - nothing to pin
         };
@@ -278,7 +277,7 @@ fn enemy_stat_scale_round_trips_on_disc() {
             assert_eq!(r.name, b.name, "id {}: name changed", b.id);
 
             // Unlike the shuffle, this pass deliberately reaches the bosses.
-            if monster_stats::PROTECTED_MONSTER_IDS.contains(&b.id)
+            if legaia_randomizer::monsters::PROTECTED_MONSTER_IDS.contains(&b.id)
                 && !SCALE_PINNED_MONSTER_IDS.contains(&b.id)
                 && stat_vec(r) != stat_vec(b)
             {
@@ -396,7 +395,7 @@ fn monster_class_agrees_with_curated_bosses() {
     let raw = scan.finish(&[]);
 
     // No curated boss is a random encounter anywhere on the disc.
-    let leaked: Vec<u16> = monster_stats::STORY_BOSS_MONSTER_IDS
+    let leaked: Vec<u16> = legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS
         .iter()
         .copied()
         .filter(|&id| scan.seen_random(id))
@@ -444,30 +443,30 @@ fn monster_class_agrees_with_curated_bosses() {
 
     // What the patcher actually uses: scan, plus curated floor, minus tutorial.
     let classes = apply::classify_monsters(&patcher).expect("classify");
-    for &id in monster_stats::STORY_BOSS_MONSTER_IDS {
+    for &id in legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS {
         assert!(classes.is_boss(id), "curated boss {id} must classify boss");
     }
-    for &id in monster_stats::TUTORIAL_MONSTER_IDS {
+    for &id in legaia_randomizer::monsters::TUTORIAL_MONSTER_IDS {
         assert!(
             !classes.is_boss(id),
             "tutorial enemy {id} must never take the boss multiplier"
         );
     }
-    let found_by_scan = monster_stats::STORY_BOSS_MONSTER_IDS
+    let found_by_scan = legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS
         .iter()
         .filter(|&&id| raw.is_boss(id))
         .count();
     let only_scan: Vec<u16> = raw
         .boss_ids()
         .into_iter()
-        .filter(|id| !monster_stats::STORY_BOSS_MONSTER_IDS.contains(id))
+        .filter(|id| !legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS.contains(id))
         .collect();
     eprintln!(
         "monster class: {} bosses total ({scan_bosses} from the scan, {} of {} curated bosses \
          also found by the scan); scan-only ids {only_scan:?}",
         classes.boss_count(),
         found_by_scan,
-        monster_stats::STORY_BOSS_MONSTER_IDS.len(),
+        legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS.len(),
     );
 }
 

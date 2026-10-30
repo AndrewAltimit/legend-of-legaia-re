@@ -63,6 +63,8 @@ impl World {
         self.adopt_expansion_progress();
         self.compile_expansion_items();
         self.compile_expansion_arts();
+        // The run rules' flags a pack can gate on (`run.ng_plus`, ...).
+        self.sync_run_pack_flags();
         Ok(())
     }
 

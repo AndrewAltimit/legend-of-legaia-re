@@ -41,6 +41,34 @@ impl<S: AudioSink> BootSession<S> {
         })
     }
 
+    /// Start the run the New Game rules screen confirmed
+    /// ([`crate::run_rules::start_run_on`]) through the session's own field
+    /// entry - the native and headless twin of the page's `play_start_run`.
+    pub fn start_run(
+        &mut self,
+        rules: legaia_engine_run_rules::rules::RunRules,
+        source: Option<legaia_save::SaveFile>,
+        opts: &FieldLiveOpts,
+    ) -> Option<&'static str> {
+        crate::run_rules::start_run_on(
+            &mut SessionNewGame {
+                session: self,
+                opts,
+            },
+            rules,
+            source,
+        )
+    }
+
+    /// One frame of a Boss Rush ([`crate::run_rules::boss_rush_step_on`])
+    /// through the session's own field entry.
+    pub fn boss_rush_step(&mut self, opts: &FieldLiveOpts) -> crate::run_rules::BossRushHostStep {
+        crate::run_rules::boss_rush_step_on(&mut SessionNewGame {
+            session: self,
+            opts,
+        })
+    }
+
     /// Begin the New Game slate and hand the score over: the seeded world
     /// ([`Self::begin_new_game`]) and the title theme stopped so the
     /// prologue's own BGM (or its scripted silence) owns the audio. The

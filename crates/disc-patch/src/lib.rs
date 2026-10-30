@@ -15,7 +15,6 @@ pub mod disc;
 pub mod field_script;
 pub mod monster;
 pub mod ppf;
-pub mod rng;
 pub mod space_ledger;
 
 /// Compressed-stream budget for a scene bundle's MAN: the space its LZS stream

@@ -99,6 +99,7 @@ id = "builtin-golf"
 | `card_menu` | - | `World::open_card_menu` |
 | `battle` | `formation` | `World::start_expansion_battle` |
 | `map` | `map`, `spawn` | `SceneHost::enter_expansion_map` (a scene host only) |
+| `run_rules` | `rules` (a table: `mode`, `difficulty`, optional `ng_plus` / `ironman` / `randomizer`) | `World::run_rules` ([run-rules](../subsystems/run-rules.md#saves-and-replays)); a value row the recorder notes on every change |
 
 The `hash` is `replay::pack_content_hash`: SHA-256 over the pack's canonical
 file tree (`ExpansionPack::to_files`), each file as its path, a NUL, its

@@ -690,6 +690,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("subsystems/engine.html",     "Engine reimplementation",       "subsystems/engine",          "subsystems/engine.html"),
     ("subsystems/gameplay-tweaks.html","Gameplay tweaks",           "subsystems/gameplay-tweaks", "subsystems/gameplay-tweaks.html"),
     ("subsystems/expansion-modes.html","Expansion game modes",      "subsystems/expansion-modes", "subsystems/expansion-modes.html"),
+    ("subsystems/run-rules.html",  "Run rules",                     "subsystems/run-rules",       "subsystems/run-rules.html"),
     ("subsystems/netplay.html",    "Netplay",                       "subsystems/netplay",         "subsystems/netplay.html"),
     ("formats/index.html",         "Formats",                       "formats/index",              "formats/index.html"),
     # Per-format pages (mirrored from docs/formats/)

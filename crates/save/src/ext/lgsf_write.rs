@@ -217,6 +217,14 @@ impl SaveFile {
             out.extend_from_slice(body);
         }
 
+        // Optional LGXF block: the run rules. Emitted only when the save
+        // carries them.
+        if let Some(body) = self.ext_v2.run_rules.as_deref() {
+            out.extend_from_slice(&SAVE_FILE_EXTF_MAGIC);
+            out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            out.extend_from_slice(body);
+        }
+
         out
     }
 }

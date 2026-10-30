@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 
 use super::Run;
 use crate::cli::mode_str;

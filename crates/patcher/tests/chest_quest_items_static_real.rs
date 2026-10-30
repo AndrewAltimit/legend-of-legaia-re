@@ -12,7 +12,7 @@ use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

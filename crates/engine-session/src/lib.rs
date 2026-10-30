@@ -42,6 +42,7 @@ pub mod mode_trace;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
 pub mod party_spec;
+pub mod run_rules;
 pub mod scene_actors;
 pub mod session;
 pub mod session_switches;

@@ -217,11 +217,11 @@ Top of the stack first. Every crate name links its README.
   Rank 2: [`engine-battle-vm`](crates/engine-battle-vm/README.md), [`render-kernels`](crates/render-kernels/README.md) \
   Rank 1: [`engine-camera`](crates/engine-camera/README.md), [`engine-dev-menu`](crates/engine-dev-menu/README.md), [`engine-mode`](crates/engine-mode/README.md), [`engine-modes`](crates/engine-modes/README.md), [`engine-motion-vm`](crates/engine-motion-vm/README.md),
   [`engine-title`](crates/engine-title/README.md) \
-  Rank 0: [`engine-dialog`](crates/engine-dialog/README.md), [`engine-system`](crates/engine-system/README.md), [`engine-vm`](crates/engine-vm/README.md)
+  Rank 0: [`engine-dialog`](crates/engine-dialog/README.md), [`engine-run-rules`](crates/engine-run-rules/README.md), [`engine-system`](crates/engine-system/README.md), [`engine-vm`](crates/engine-vm/README.md)
 - **Patcher and capture libraries.** The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles. \
-  [`disc-patch`](crates/disc-patch/README.md), [`translate`](crates/translate/README.md), [`code-hooks`](crates/code-hooks/README.md), [`arts-patch`](crates/arts-patch/README.md), [`texture-replace`](crates/texture-replace/README.md),
-  [`party-swap`](crates/party-swap/README.md), [`delilas-party`](crates/delilas-party/README.md), [`delilas-challenge`](crates/delilas-challenge/README.md), [`ram-image`](crates/ram-image/README.md), [`mednafen`](crates/mednafen/README.md),
-  [`pcsx-redux`](crates/pcsx-redux/README.md)
+  [`disc-patch`](crates/disc-patch/README.md), [`randomizer`](crates/randomizer/README.md), [`translate`](crates/translate/README.md), [`code-hooks`](crates/code-hooks/README.md), [`arts-patch`](crates/arts-patch/README.md),
+  [`texture-replace`](crates/texture-replace/README.md), [`party-swap`](crates/party-swap/README.md), [`delilas-party`](crates/delilas-party/README.md), [`delilas-challenge`](crates/delilas-challenge/README.md), [`ram-image`](crates/ram-image/README.md),
+  [`mednafen`](crates/mednafen/README.md), [`pcsx-redux`](crates/pcsx-redux/README.md)
 - **Format families.** The Legaia-specific layer over the parsers: containers, scenes, actors, minigames, the 2D interface, the static tables, code overlays. \
   [`container-formats`](crates/container-formats/README.md), [`scene-formats`](crates/scene-formats/README.md), [`actor-formats`](crates/actor-formats/README.md), [`minigame-formats`](crates/minigame-formats/README.md), [`ui-formats`](crates/ui-formats/README.md),
   [`game-tables`](crates/game-tables/README.md), [`overlay-images`](crates/overlay-images/README.md), [`disc-audit`](crates/disc-audit/README.md), [`expansion-format`](crates/expansion-format/README.md)

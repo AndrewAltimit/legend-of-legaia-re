@@ -199,6 +199,9 @@ pub struct World {
     /// The active expansion pack and its runtime state; inert with no pack
     /// loaded. See [`legaia_engine_expansion::ExpansionState`].
     pub expansion: legaia_engine_expansion::ExpansionState,
+    /// The run rules the run plays under (retail by default). See
+    /// [`crate::world::run_rules`].
+    pub run_rules: crate::world::run_rules::RunRulesState,
 
     /// Seru capture + magic-learning state: the capture log and registry, this battle's captures, shiny rolls and magic level-ups.
     pub seru: SeruState,
@@ -423,6 +426,7 @@ impl World {
             board: TileBoardState::new(),
             minigames: MinigameState::new(),
             expansion: legaia_engine_expansion::ExpansionState::default(),
+            run_rules: Default::default(),
             tables: DiscTables::new(),
             seru: SeruState::new(),
             clock: FrameClock::new(),
@@ -590,6 +594,8 @@ impl World {
     pub fn begin_new_game(&mut self) {
         // A New Game started over a live battle leaves that battle first.
         self.abandon_live_battle();
+        // The staged run's rules take over (retail when nothing is staged).
+        self.begin_run_new_game();
         self.flags.story_flags = 0;
         self.flags.story_flag_bits.clear();
         // A NEW GAME is the opening chain, not a free-roam picker visit: the

@@ -7,7 +7,7 @@ use crate::flag_values::{
 };
 use clap::{Parser, ValueEnum};
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 use std::path::PathBuf;
 
 #[derive(Parser)]

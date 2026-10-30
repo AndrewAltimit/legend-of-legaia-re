@@ -291,6 +291,19 @@ impl SaveFile {
             cursor = end;
         }
 
+        // Optional LGXF run-rules block, kept verbatim.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXTF_MAGIC {
+            cursor += 4;
+            let size = u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let end = cursor
+                .checked_add(size)
+                .filter(|&e| e <= buf.len())
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGXF run-rules block truncated"))?;
+            ext_v2.run_rules = Some(buf[cursor..end].to_vec());
+            cursor = end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -524,5 +537,6 @@ pub(super) fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
         retail_window: None,
         previous_scene: None,
         expansion: None,
+        run_rules: None,
     })
 }

@@ -262,7 +262,7 @@ pub fn mode_screen_strings(screen: &ModeScreen<'_>) -> Vec<String> {
     compose(screen).labels.into_iter().map(|l| l.text).collect()
 }
 
-fn labels_to_draws(font: &legaia_font::Font, labels: &[Label]) -> Vec<TextDraw> {
+pub(crate) fn labels_to_draws(font: &legaia_font::Font, labels: &[Label]) -> Vec<TextDraw> {
     let mut out = Vec::new();
     for l in labels {
         let layout = font.layout_ascii(&l.text);

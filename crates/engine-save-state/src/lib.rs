@@ -205,6 +205,9 @@ impl WorldSaveState for World {
                     self.expansion_record_map_location();
                     self.expansion_save_block()
                 },
+                // The run rules; `None` under retail rules, so such a save is
+                // byte-identical to a pre-block file.
+                run_rules: self.run_rules_save_block(),
             },
         }
     }
@@ -309,6 +312,8 @@ impl LoadFullTail for World {
         // The expansion pack's progress, or a dormant block for a pack that
         // is not active; a save without one resets the pack's progress.
         self.expansion_load_block(sf.ext_v2.expansion.as_deref());
+        // The run's rules; a save without the block plays retail rules.
+        self.run_rules_load_block(sf.ext_v2.run_rules.as_deref());
         // The configured audio level and the voice volume ride in the same
         // live-state window as the gold; retail's card load restores them with
         // it and the next MAN load re-applies the level. A save naming no

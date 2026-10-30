@@ -176,7 +176,11 @@ impl World {
                 .actors
                 .get(victim_slot as usize)
                 .and_then(|a| a.battle_monster_id)
-                .and_then(|id| self.tables.steal_table.as_ref()?.entry(id))?;
+                .and_then(|id| {
+                    self.expansion_steal_override(id)
+                        .or_else(|| self.run_rules_steal_override(id))
+                        .or_else(|| self.tables.steal_table.as_ref()?.entry(id))
+                })?;
             let roll = (self.next_rand() % 100) as u8;
             return Some(StealOutcome::FromMonster {
                 chance: entry.chance_pct,

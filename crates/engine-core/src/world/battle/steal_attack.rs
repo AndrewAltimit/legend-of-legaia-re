@@ -57,6 +57,7 @@ impl World {
         });
         let entry = self.actors[slot].battle_monster_id.and_then(|id| {
             self.expansion_steal_override(id)
+                .or_else(|| self.run_rules_steal_override(id))
                 .or_else(|| self.tables.steal_table.as_ref()?.entry(id))
         });
         let inputs = StealAttackInputs {

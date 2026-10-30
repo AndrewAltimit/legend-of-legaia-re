@@ -1676,10 +1676,10 @@ dependencies = [
  "anyhow",
  "legaia-art",
  "legaia-code-hooks",
- "legaia-disc-patch",
  "legaia-game-tables",
  "legaia-iso",
  "legaia-lzs",
+ "legaia-randomizer",
 ]
 
 [[package]]
@@ -1809,6 +1809,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-lzs",
  "legaia-party-swap",
+ "legaia-randomizer",
  "legaia-texture-replace",
  "legaia-translate",
  "legaia-vab",
@@ -2061,6 +2062,7 @@ dependencies = [
  "legaia-engine-mode",
  "legaia-engine-modes",
  "legaia-engine-motion-vm",
+ "legaia-engine-run-rules",
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -2072,6 +2074,7 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-randomizer",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
@@ -2192,6 +2195,7 @@ dependencies = [
  "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-run-rules",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
@@ -2357,6 +2361,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-run-rules"
+version = "0.1.0"
+dependencies = [
+ "legaia-randomizer",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "legaia-engine-save-state"
 version = "0.1.0"
 dependencies = [
@@ -2492,6 +2505,7 @@ dependencies = [
  "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-modes",
+ "legaia-engine-run-rules",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
  "legaia-engine-system",
@@ -2530,6 +2544,7 @@ dependencies = [
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-mode",
+ "legaia-engine-run-rules",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
@@ -2596,6 +2611,7 @@ dependencies = [
  "legaia-engine-modes",
  "legaia-engine-netplay",
  "legaia-engine-render",
+ "legaia-engine-run-rules",
  "legaia-engine-save-state",
  "legaia-engine-scene",
  "legaia-engine-scene-host",
@@ -3010,6 +3026,7 @@ dependencies = [
  "legaia-pcsx-redux",
  "legaia-prot",
  "legaia-ram-image",
+ "legaia-randomizer",
  "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
@@ -3065,6 +3082,7 @@ dependencies = [
  "legaia-minigame-formats",
  "legaia-party-swap",
  "legaia-prot",
+ "legaia-randomizer",
  "legaia-scene-formats",
  "legaia-texture-replace",
  "legaia-tim",
@@ -3113,6 +3131,10 @@ dependencies = [
  "serde",
  "toml",
 ]
+
+[[package]]
+name = "legaia-randomizer"
+version = "0.1.0"
 
 [[package]]
 name = "legaia-render-kernels"
@@ -3339,6 +3361,7 @@ dependencies = [
  "legaia-lzs",
  "legaia-patcher",
  "legaia-prot",
+ "legaia-randomizer",
  "legaia-texture-replace",
  "legaia-tim",
  "legaia-translate",

@@ -15,7 +15,7 @@ use legaia_game_tables::move_power::{
     self, BATTLE_ACTION_OVERLAY_PROT_INDEX, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
 };
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

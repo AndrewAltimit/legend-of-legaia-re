@@ -6,6 +6,9 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
     fn give_item(&mut self, item_id: u8) {
         // Op 0x39 GIVE_ITEM: add one of `item_id` to the inventory, capacity-
         // checked like the retail add-by-id primitive FUN_800421D4(item_id, 1).
+        // The run rules' randomizer may hand over another item (identity
+        // without one).
+        let item_id = self.world.run_rules_give_item(item_id);
         let slot = self.world.party.inventory.entry(item_id).or_insert(0);
         *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         self.world

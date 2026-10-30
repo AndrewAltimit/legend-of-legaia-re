@@ -721,7 +721,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     }
 
     fn spirit_turn_ap(&self) -> i16 {
-        self.world.toggles.spirit_ap
+        self.world.run_scale_ap(self.world.toggles.spirit_ap)
     }
     /// Character record `+0x185` count / `+0x186..` ids - the displayed-skill
     /// list the AI auto-fill arm draws its queue bytes from.

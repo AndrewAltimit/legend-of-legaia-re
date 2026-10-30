@@ -15,9 +15,9 @@
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_patcher::apply::{self, EncounterScope};
 use legaia_patcher::chest::SceneChests;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_prot::cdname::{self, RAW_TOC_INDEX_OFFSET};
+use legaia_randomizer::drops::DropMode;
 
 const SEED: u64 = 0x5EED_1C0D_E5A1_7F03;
 

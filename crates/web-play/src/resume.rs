@@ -95,6 +95,15 @@ impl LegaiaRuntime {
         // score handed over, then the shared opening order, each leg
         // entered through this page's field entry and confirmed by the
         // scene the session then holds.
+        // A Boss Rush the rules screen staged starts its first stage; every
+        // other run (staged rules or none) is the story's New Game.
+        if self
+            .scene_host
+            .host()
+            .is_some_and(|h| legaia_engine_session::run_rules::boss_rush_staged(&h.world))
+        {
+            return legaia_engine_session::run_rules::start_staged_run_on(&mut PageNewGame(self));
+        }
         start_new_game_on(&mut PageNewGame(self))
     }
 
@@ -114,7 +123,7 @@ impl LegaiaRuntime {
 /// The play page's half of a New Game
 /// ([`legaia_engine_session::start_new_game_on`]): its session, and its
 /// field entry, which rebuilds the page's render state with the scene.
-struct PageNewGame<'a>(&'a mut LegaiaRuntime);
+pub(crate) struct PageNewGame<'a>(pub(crate) &'a mut LegaiaRuntime);
 
 impl NewGameHost for PageNewGame<'_> {
     type Sink = crate::play_sfx::PageSink;

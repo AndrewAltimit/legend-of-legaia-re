@@ -411,8 +411,11 @@ fn enforce_battle_load_limits(
             .read_entry(idx)
             .with_context(|| format!("read PROT entry {idx}"))?;
         for mut scene in scene_carriers(&entry, idx) {
-            let (f, c) =
-                scene.enforce_species_limits(table, budget, crate::encounter::MAX_DISTINCT_SPECIES);
+            let (f, c) = scene.enforce_species_limits(
+                table,
+                budget,
+                legaia_randomizer::encounters::MAX_DISTINCT_SPECIES,
+            );
             if f == 0 {
                 continue;
             }

@@ -180,6 +180,8 @@ impl PlayWindowApp {
         // hold, which owns the frame from here (the arm below skips the
         // scene tick while any boot UI is active).
         self.poll_game_over();
+        // A Boss Rush's stage entries and screens, an ironman run's card.
+        self.poll_run_rules();
         let pressed_edge = self.pad & !self.prev_pad;
         // The tick's owner, in the order both play hosts share
         // (`BootSession::claim_tick`): the window's boot UI (title, save

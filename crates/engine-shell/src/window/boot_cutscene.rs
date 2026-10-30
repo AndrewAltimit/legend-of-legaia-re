@@ -386,6 +386,19 @@ impl PlayWindowApp {
                     FrontEndStep::AttractStart(id) => start_attract = Some(id),
                     FrontEndStep::AttractEnded if lane.aborted => abort_attract = true,
                     FrontEndStep::AttractEnded => attract_finished = true,
+                    FrontEndStep::Picked(TitleOutcome::NewGame) if self.run_rules_screen => {
+                        // The New Game rules screen first (the page's
+                        // `play_run_rules_open`); its retail rules with the
+                        // cursor on Start make one confirm the original New
+                        // Game.
+                        let ports = [self.port1_card.as_ref(), self.card.as_ref()];
+                        legaia_engine_session::run_rules::open_run_rules_screen(
+                            &mut self.session.host.world,
+                            ports,
+                            self.session.frames ^ 0x5EED,
+                        );
+                        self.boot_ui = BootUiState::RunRules;
+                    }
                     FrontEndStep::Picked(TitleOutcome::NewGame) => {
                         // Mirror the retail NEW GAME -> field-launch (master
                         // mode 2 -> mode 3): one call on both hosts - the
@@ -440,6 +453,38 @@ impl PlayWindowApp {
                     }
                     FrontEndStep::Logos | FrontEndStep::Title(_) | FrontEndStep::AttractPlaying => {
                     }
+                }
+                true
+            }
+            BootUiState::RunRules => {
+                use legaia_engine_session::run_rules::{RunRulesStep, step_run_rules_screen};
+                match step_run_rules_screen(&mut self.session.host.world, raw_pressed) {
+                    RunRulesStep::Running => {}
+                    RunRulesStep::Cancelled => self.reopen_title(),
+                    RunRulesStep::Start { rules, source } => {
+                        log::info!("new game: run rules {:?}", rules.summary());
+                        match self.session.start_run(
+                            rules,
+                            source.map(|s| *s),
+                            &self.field_live_opts,
+                        ) {
+                            Some(scene) => {
+                                log::info!("new game: entered '{scene}'");
+                                self.rebuild_scene_render_state();
+                            }
+                            None => log::warn!("new game: no opening scene would enter"),
+                        }
+                        self.boot_ui = BootUiState::Inactive;
+                    }
+                }
+                true
+            }
+            BootUiState::BossRush => {
+                let world = &mut self.session.host.world;
+                if legaia_engine_session::run_rules::boss_rush_screen_input(world, raw_pressed) {
+                    self.reopen_title();
+                } else if !legaia_engine_session::run_rules::boss_rush_screen_up(world) {
+                    self.boot_ui = BootUiState::Inactive;
                 }
                 true
             }
@@ -828,6 +873,18 @@ impl PlayWindowApp {
     pub(super) fn boot_ui_draws(&self, surface_w: u32, surface_h: u32) -> Vec<TextDraw> {
         match &self.boot_ui {
             BootUiState::Inactive => Vec::new(),
+            // The New Game rules screen and the Boss Rush intermission /
+            // result: their panels ride the shared screen layers, their
+            // labels the shared composition the page draws too.
+            BootUiState::RunRules | BootUiState::BossRush => {
+                let mut texts = legaia_engine_screens::run_rules::run_rules_stage_texts(
+                    &self.session.host.world,
+                    &self.font,
+                );
+                let (origin, scale) = self.save_select_stage(surface_w, surface_h);
+                legaia_engine_ui::scale_stage_text_draws(&mut texts, origin, scale);
+                texts
+            }
             BootUiState::FrontEnd(fe) => {
                 // The publisher logos are drawn via the sprite overlay
                 // (see `publisher_logo_sprite_draw`); no font text.

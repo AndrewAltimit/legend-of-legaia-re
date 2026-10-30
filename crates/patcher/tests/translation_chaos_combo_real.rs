@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 use legaia_disc_patch::disc::DiscPatcher;
 use legaia_iso::raw::SECTOR_SIZE;
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::items::valid_item_pool;
+use legaia_randomizer::drops::DropMode;
 use legaia_translate::{ImportPhase, import_pack_phase};
 
 fn load_disc() -> Option<Vec<u8>> {

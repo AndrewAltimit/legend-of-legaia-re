@@ -425,7 +425,7 @@ impl World {
             .get(slot as usize)
             .and_then(|a| a.battle_monster_id)
             == Some(crate::world::SCALE_PINNED_MONSTER_ID);
-        let permille = self.toggles.enemy_attack_permille;
+        let permille = self.run_enemy_attack_permille();
         let record_agl = self
             .actors
             .get(slot as usize)

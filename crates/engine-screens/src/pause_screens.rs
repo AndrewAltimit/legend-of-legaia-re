@@ -135,6 +135,11 @@ pub fn field_menu_root_draws(
         out.texts
             .extend(journal_hint_draws(ctx, world.cards_available()));
     }
+    // The run's rules (difficulty, New Game+, seed ...), under retail rules
+    // nothing.
+    out.texts.extend(crate::run_rules::run_summary_draws(
+        ctx.font, world, ctx.origin, ctx.scale,
+    ));
     if let Some(message) = refusal {
         out.extend(save_refusal_draws(ctx, message));
     }

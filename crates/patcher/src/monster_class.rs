@@ -51,7 +51,7 @@
 //! swaps in mid-battle (Cort's later phases, a transformed Songi) is never named
 //! by a formation record at all, so no amount of scanning can find it. So
 //! [`ClassScan::finish`] takes an `always_boss` list - in practice
-//! [`crate::monster_stats::STORY_BOSS_MONSTER_IDS`], the hand-curated set the
+//! [`legaia_randomizer::monsters::STORY_BOSS_MONSTER_IDS`], the hand-curated set the
 //! stat *shuffle* already guards - and unions it in. The scan supplies breadth
 //! (every scripted-only enemy on the disc, including ones no hand list would
 //! think to name); the curated list supplies the forms the encounter tables
@@ -144,7 +144,7 @@ impl MonsterClasses {
     /// formation indices - so the rule in the module docs classifies the opening
     /// fights of a fresh save as bosses. That is technically what they are and
     /// emphatically not what the knob means: "make the bosses 5x" must not make
-    /// the tutorial lethal. [`crate::monster_stats::TUTORIAL_MONSTER_IDS`] is
+    /// the tutorial lethal. [`legaia_randomizer::monsters::TUTORIAL_MONSTER_IDS`] is
     /// already the curated set for "must stay beatable at level 1", so it is the
     /// list that belongs here.
     pub fn force_regular(&mut self, ids: &[u16]) {

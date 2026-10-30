@@ -50,6 +50,7 @@ pub mod play_name_entry;
 pub mod play_netplay;
 pub mod play_pack_modes;
 pub mod play_rumble;
+pub mod play_run_rules;
 pub mod play_sfx;
 pub mod play_shop;
 pub mod play_tile_board;

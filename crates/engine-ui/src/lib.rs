@@ -74,6 +74,7 @@ pub mod muscle_dome_hud;
 pub mod pause_menu;
 pub mod prize_exchange;
 pub mod ringside_backdrop;
+pub mod run_rules_screen;
 pub mod shop_screen;
 pub mod slot_cabinet;
 pub mod slot_paylines;

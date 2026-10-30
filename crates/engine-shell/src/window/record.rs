@@ -111,6 +111,8 @@ pub(super) struct RecordLog {
     /// recorded; [`Self::observe_world`] records a row when either moves.
     noted_action_movement: bool,
     noted_pack: Option<crate::replay::SwitchChange>,
+    /// The run rules last noted (the retail rules until a row says other).
+    noted_run_rules: legaia_engine_run_rules::rules::RunRules,
     /// Events recorded since the last successful on-disk write.
     dirty: bool,
     /// Once the final flush has run, additional Close events become
@@ -132,6 +134,7 @@ impl RecordLog {
             switches: Vec::new(),
             noted_action_movement: false,
             noted_pack: None,
+            noted_run_rules: Default::default(),
             dirty: false,
             flushed: false,
         }
@@ -173,6 +176,15 @@ impl RecordLog {
         if on != self.noted_action_movement {
             self.noted_action_movement = on;
             self.record_switch(frame, SwitchChange::ActionMovement { on });
+        }
+        if world.run_rules.rules != self.noted_run_rules {
+            self.noted_run_rules = world.run_rules.rules.clone();
+            self.record_switch(
+                frame,
+                SwitchChange::RunRules {
+                    rules: self.noted_run_rules.clone(),
+                },
+            );
         }
         let id = world
             .expansion

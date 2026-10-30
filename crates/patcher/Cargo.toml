@@ -32,6 +32,7 @@ legaia-party-swap.workspace = true
 legaia-texture-replace.workspace = true
 legaia-translate.workspace = true
 legaia-disc-patch.workspace = true
+legaia-randomizer.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 legaia-lzs.workspace = true

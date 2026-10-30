@@ -20,7 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use legaia_disc_patch::disc::DiscPatcher;
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::rng::SplitMix64;
 use legaia_translate::space::{self, NameFitter, Outcome, RoomKind, SpaceOptions, SpaceReport};
 use legaia_translate::{
     IssueKind, LanguagePack, WritePath, export_pack, import_pack, import_pack_relayout,

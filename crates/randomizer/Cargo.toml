@@ -1,0 +1,11 @@
+[package]
+name = "legaia-randomizer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_randomizer"
+path = "src/lib.rs"
+
+[dependencies]

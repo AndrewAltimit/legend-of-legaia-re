@@ -196,6 +196,7 @@ const NAV = [
       { href: 'subsystems/engine.html', text: 'Engine reimplementation', key: 'subsystems/engine' },
       { href: 'subsystems/gameplay-tweaks.html', text: 'Gameplay tweaks', key: 'subsystems/gameplay-tweaks' },
       { href: 'subsystems/expansion-modes.html', text: 'Expansion game modes', key: 'subsystems/expansion-modes' },
+      { href: 'subsystems/run-rules.html', text: 'Run rules', key: 'subsystems/run-rules' },
       { href: 'subsystems/netplay.html', text: 'Netplay', key: 'subsystems/netplay' },
       { href: 'subsystems/renderer-port.html', text: 'Port renderer (wgpu)', key: 'subsystems/renderer-port' },
       { href: 'subsystems/browser-host.html', text: 'Browser host', key: 'subsystems/browser-host' },

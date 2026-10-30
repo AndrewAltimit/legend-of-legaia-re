@@ -158,6 +158,7 @@
      "label": "rank 0",
      "crates": [
       "engine-dialog",
+      "engine-run-rules",
       "engine-system",
       "engine-vm"
      ]
@@ -173,6 +174,7 @@
      "label": "",
      "crates": [
       "disc-patch",
+      "randomizer",
       "translate",
       "code-hooks",
       "arts-patch",
@@ -433,10 +435,10 @@
    "deps": [
     "art",
     "code-hooks",
-    "disc-patch",
     "game-tables",
     "iso",
-    "lzs"
+    "lzs",
+    "randomizer"
    ],
    "dev_deps": [],
    "bins": [],
@@ -708,6 +710,7 @@
     "game-tables",
     "lzs",
     "party-swap",
+    "randomizer",
     "texture-replace",
     "translate",
     "vab",
@@ -808,14 +811,12 @@
     "field_script",
     "monster",
     "ppf",
-    "rng",
     "space_ledger"
    ],
    "band": "libraries",
    "track": "patcher",
-   "scope": "The patcher's foundation: <code>DiscPatcher</code> same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN and monster-slot re-pack, the seeded <code>rng</code>. Depends on no other patcher crate.",
+   "scope": "The patcher's foundation: <code>DiscPatcher</code> same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN and monster-slot re-pack. Depends on no other patcher crate.",
    "dependents": [
-    "arts-patch",
     "delilas-challenge",
     "delilas-party",
     "patcher",
@@ -1397,6 +1398,7 @@
     "engine-mode",
     "engine-modes",
     "engine-motion-vm",
+    "engine-run-rules",
     "engine-scene",
     "engine-system",
     "engine-vm",
@@ -1407,6 +1409,7 @@
     "minigame-formats",
     "overlay-images",
     "prot",
+    "randomizer",
     "render-kernels",
     "save",
     "scene-formats",
@@ -1843,6 +1846,7 @@
     "engine-field",
     "engine-menus",
     "engine-minigames",
+    "engine-run-rules",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2276,6 +2280,35 @@
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-render/README.md"
   },
+  "engine-run-rules": {
+   "package": "legaia-engine-run-rules",
+   "deps": [
+    "randomizer"
+   ],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "boss_rush",
+    "rules",
+    "save",
+    "scaling",
+    "setup"
+   ],
+   "band": "kernels",
+   "track": "engine",
+   "rank": 0,
+   "role": "run rules: difficulty presets, New Game+, ironman, randomizer seed, Boss Rush, the rules screen session",
+   "scope": "The run rules, <code>World</code>-free: <code>RunRules</code> (difficulty presets, New Game+, ironman, randomizer seed, Boss Rush mode), New Game+'s enemy curve, the Boss Rush run and intermission, the New Game rules screen session, the <code>LGXF</code> save body. <code>World::run_rules</code> is its seat; identity under the default rules.",
+   "dependents": [
+    "engine-core",
+    "engine-menu-runtime",
+    "engine-screens",
+    "engine-session",
+    "engine-shell"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-run-rules/README.md"
+  },
   "engine-save-state": {
    "package": "legaia-engine-save-state",
    "deps": [
@@ -2496,6 +2529,7 @@
     "engine-minigames",
     "engine-mode",
     "engine-modes",
+    "engine-run-rules",
     "engine-scene",
     "engine-scene-host",
     "engine-system",
@@ -2519,6 +2553,7 @@
     "battle_value_readout",
     "dev_menu",
     "expansion_modes",
+    "run_rules",
     "field_frame",
     "field_messages",
     "field_occlusion",
@@ -2559,6 +2594,7 @@
     "engine-menus",
     "engine-minigame-scenes",
     "engine-mode",
+    "engine-run-rules",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2603,6 +2639,7 @@
     "mode_trace",
     "native",
     "party_spec",
+    "run_rules",
     "scene_actors",
     "session",
     "session_switches",
@@ -2649,6 +2686,7 @@
     "engine-mode",
     "engine-netplay",
     "engine-render",
+    "engine-run-rules",
     "engine-save-state",
     "engine-scene",
     "engine-scene-host",
@@ -2855,6 +2893,7 @@
     "cast_theeder",
     "dance",
     "expansion_modes",
+    "run_rules_screen",
     "field_party_hud",
     "fishing",
     "menu",
@@ -3674,6 +3713,7 @@
     "mdec",
     "overlay-images",
     "patcher",
+    "randomizer",
     "render-kernels",
     "tmd",
     "ui-formats"
@@ -3757,6 +3797,7 @@
     "minigame-formats",
     "party-swap",
     "prot",
+    "randomizer",
     "scene-formats",
     "texture-replace",
     "tim",
@@ -3784,7 +3825,6 @@
     "chest",
     "damage_ap",
     "door",
-    "drops",
     "earth_egg",
     "element_affinity",
     "encounter",
@@ -3927,6 +3967,34 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/ram-image/README.md"
+  },
+  "randomizer": {
+   "package": "legaia-randomizer",
+   "deps": [],
+   "dev_deps": [],
+   "bins": [],
+   "lib": true,
+   "modules": [
+    "drops",
+    "bands",
+    "encounters",
+    "items",
+    "monsters",
+    "rng",
+    "sites"
+   ],
+   "band": "libraries",
+   "track": "patcher",
+   "scope": "The randomizer's planning logic shared by the patcher and the engine's run rules: the seeded <code>rng</code> (SplitMix64, seed strings), drop planning, the monster and encounter safety lists, item pools, order-independent site picks, stat bands, formation rerolls. No disc I/O, no dependencies.",
+   "dependents": [
+    "arts-patch",
+    "delilas-party",
+    "engine-core",
+    "engine-run-rules",
+    "patcher",
+    "web-patcher"
+   ],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/randomizer/README.md"
   },
   "render-kernels": {
    "package": "legaia-render-kernels",
@@ -4529,6 +4597,7 @@
     "lzs",
     "patcher",
     "prot",
+    "randomizer",
     "texture-replace",
     "tim",
     "translate",
@@ -4648,6 +4717,7 @@
     "play_netplay",
     "play_pack_modes",
     "play_rumble",
+    "play_run_rules",
     "play_sfx",
     "play_shop",
     "play_tile_board",

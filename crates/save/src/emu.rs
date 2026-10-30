@@ -445,6 +445,28 @@ impl MountedCard {
         })
     }
 
+    /// Erase the single-block save opening at `block`: its directory frame
+    /// is marked deleted (`0xA1`, which [`Self::first_free_block`] counts as
+    /// free, as the BIOS's own delete leaves it) with its checksum
+    /// restamped, and the card is marked dirty. The block's bytes stay, as
+    /// the BIOS leaves them; nothing lists the save any more.
+    ///
+    /// # Errors
+    ///
+    /// Fails when `block` does not open a save.
+    pub fn erase_save_block(&mut self, block: u8) -> Result<()> {
+        if !self.block_is_save_start(block) {
+            bail!("block {block} does not open a save");
+        }
+        let Some(frame) = self.view.dir_frame_mut(&mut self.bytes, block) else {
+            bail!("no directory frame for block {block}");
+        };
+        frame[..4].copy_from_slice(&0xA1u32.to_le_bytes());
+        frame[0x7F] = frame[..0x7F].iter().fold(0u8, |acc, &b| acc ^ b);
+        self.dirty = true;
+        Ok(())
+    }
+
     /// This card's SC block `block`, when the block opens a save chain.
     pub fn sc_block(&self, block: u8) -> Option<&[u8]> {
         self.view
@@ -499,6 +521,21 @@ mod tests {
         assert_eq!(card.first_free_block(), Some(2));
         assert_eq!(card::legaia_save_number(b"BISCPS-10059PRO-1x"), Some(1));
         assert_eq!(card::legaia_save_number(b"BASCUS-94221FFTA00"), None);
+    }
+
+    /// An erased save leaves the listing and frees its block, dirtying the
+    /// card; a free block cannot be erased.
+    #[test]
+    fn erasing_a_save_frees_its_block() {
+        let mut card = MountedCard::from_bytes(raw_card(), "t").unwrap();
+        assert!(card.block_is_save_start(1));
+        card.erase_save_block(1).unwrap();
+        assert!(card.dirty);
+        assert!(!card.block_is_save_start(1));
+        assert_eq!(card.first_free_block(), Some(1));
+        let f = card.dir_frame(1).unwrap();
+        assert_eq!(f[0x7F], f[..0x7F].iter().fold(0u8, |a, &b| a ^ b));
+        assert!(card.erase_save_block(1).is_err());
     }
 
     /// `persist` writes a dirty card back to the file it was opened from,

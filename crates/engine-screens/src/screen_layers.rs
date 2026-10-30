@@ -176,6 +176,12 @@ pub fn compose_screen_prims(
         pack_mode_world,
     } = host;
 
+    // A run-rules screen (the New Game rules, the Boss Rush intermission or
+    // result) owns the whole frame; nothing is drawn under it.
+    if let Some(screen) = crate::run_rules::active_screen(world) {
+        return (screen.prims(), Vec::new());
+    }
+
     // An expansion mode screen owns the whole frame: its panels are the
     // under-text list, and only the pause wipe may cover it. A golf round or
     // race played on its pack map draws in the field instead: the stage's

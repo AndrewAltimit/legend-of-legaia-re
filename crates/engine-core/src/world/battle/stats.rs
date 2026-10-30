@@ -79,7 +79,9 @@ impl World {
         // (`lbu v1,0x1(v0)` at `0x801E7A34`), not the actor table.
         let enemies: Vec<EscapeActor> = self.seated_monster_slots().map(fold).collect();
         let mut flags = EscapeFlags {
-            no_escape: self.battle.no_escape,
+            // A run rule (Nightmare) refuses the Run as the formation's own
+            // no-escape byte does.
+            no_escape: self.battle.no_escape || self.run_no_escape(),
             ..EscapeFlags::default()
         };
         // The forced arm is folded per living member; Run is only offered to
@@ -248,7 +250,7 @@ impl World {
             // The INT the seed installed, under the enemy stat scale (the
             // catalog's `intel` is the scripted profile's `[4]`).
             .map(|d| {
-                crate::world::field_loop::scale_monster_def(d, self.toggles.enemy_stat_permille)
+                crate::world::field_loop::scale_monster_def(d, self.run_enemy_stat_permille(d.id))
                     .installed_stats(true)[4]
             })
             .unwrap_or(0);
@@ -279,6 +281,7 @@ impl World {
     pub(in crate::world) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
         let defender_is_party = defender_slot < self.party.party_count;
         let resist = self.defender_resist(defender_slot);
+        let damage_ap = self.run_scale_ap(self.toggles.damage_ap);
         let Some(a) = self.actors.get_mut(defender_slot as usize) else {
             return;
         };
@@ -290,7 +293,7 @@ impl World {
             a.battle.spirit_gauge,
             resist,
             defender_is_party,
-            self.toggles.damage_ap,
+            damage_ap,
         );
     }
 
@@ -361,7 +364,7 @@ impl World {
         let id = self.actors.get(slot as usize)?.battle_monster_id?;
         let def = crate::world::field_loop::scale_monster_def(
             self.tables.monster_catalog.get(id)?,
-            self.toggles.enemy_stat_permille,
+            self.run_enemy_stat_permille(id),
         );
         if def.raw_stats == [0u16; 6] {
             return None;

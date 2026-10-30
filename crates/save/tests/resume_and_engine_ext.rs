@@ -57,6 +57,7 @@ fn a_save() -> SaveFile {
             audio_levels: None,
             options: None,
             expansion: None,
+            run_rules: None,
             active_party: vec![1, 0],
             per_char: vec![
                 (

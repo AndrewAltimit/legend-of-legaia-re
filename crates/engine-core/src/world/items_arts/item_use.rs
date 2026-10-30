@@ -121,6 +121,9 @@ impl World {
             return outcome;
         }
         let outcome = legaia_engine_menus::items::apply_effect(entry.effect, &snapshot);
+        // The run's difficulty scales what a healing item restores (the
+        // identity at Normal).
+        let outcome = self.run_scale_item_outcome(outcome, &snapshot);
         match outcome {
             legaia_engine_menus::items::ItemOutcome::HealedHp { amount } => {
                 if field_roster {

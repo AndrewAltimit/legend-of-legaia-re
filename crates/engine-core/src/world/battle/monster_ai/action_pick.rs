@@ -230,7 +230,7 @@ impl World {
         // stream. We only redirect a single living-party target (`class < pc`)
         // to the lowest-HP living member; all-party (8) / monster-band (9) /
         // self targets are left exactly as the faithful path resolved them.
-        if self.toggles.smarter_monster_targeting
+        if self.run_smart_monsters()
             && target_class < pc
             && let Some(low) = self.lowest_hp_living_party_member(pc)
         {

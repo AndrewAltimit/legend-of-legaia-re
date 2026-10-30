@@ -274,9 +274,12 @@ impl World {
                 // up. Always open with no pack.
                 self.open_battle_command(session.actor);
             }
-            Some(Resolution::OpenItemMenu) if !self.expansion_item_use_allowed() => {
-                // An armed expansion challenge's `no_items` rule: the ring
-                // stays up. Always open with no pack.
+            Some(Resolution::OpenItemMenu)
+                if !self.expansion_item_use_allowed() || !self.run_battle_items_allowed() =>
+            {
+                // An armed expansion challenge's `no_items` rule, or a
+                // hardcore ironman run: the ring stays up. Always open with
+                // no pack and no run rule.
                 self.open_battle_command(session.actor);
             }
             Some(Resolution::OpenSpellMenu) if self.battle.raseru_forbidden() => {

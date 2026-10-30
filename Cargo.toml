@@ -27,6 +27,7 @@ members = [
     "crates/save",
     "crates/extract",
     "crates/disc-patch",
+    "crates/randomizer",
     "crates/translate",
     "crates/party-swap",
     "crates/texture-replace",
@@ -64,6 +65,7 @@ members = [
     "crates/engine-cheats",
     "crates/engine-netplay",
     "crates/engine-expansion",
+    "crates/engine-run-rules",
     "crates/engine-modes",
     "crates/netplay",
     "crates/expansion-format",
@@ -174,6 +176,7 @@ legaia-engine-battle-hud = { path = "crates/engine-battle-hud" }
 legaia-engine-cheats = { path = "crates/engine-cheats" }
 legaia-engine-netplay = { path = "crates/engine-netplay" }
 legaia-engine-expansion = { path = "crates/engine-expansion" }
+legaia-engine-run-rules = { path = "crates/engine-run-rules" }
 legaia-engine-modes = { path = "crates/engine-modes" }
 legaia-netplay = { path = "crates/netplay", default-features = false }
 legaia-expansion-format = { path = "crates/expansion-format" }
@@ -215,6 +218,7 @@ legaia-ram-image = { path = "crates/ram-image" }
 legaia-mednafen = { path = "crates/mednafen", default-features = false }
 legaia-mes = { path = "crates/mes", default-features = false }
 legaia-disc-patch = { path = "crates/disc-patch" }
+legaia-randomizer = { path = "crates/randomizer" }
 legaia-translate = { path = "crates/translate" }
 legaia-code-hooks = { path = "crates/code-hooks" }
 legaia-party-swap = { path = "crates/party-swap" }

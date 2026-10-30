@@ -5,7 +5,7 @@
 //! `(current drops, item pool, seed, mode)` so a published seed always
 //! reproduces the same drop table.
 
-use legaia_disc_patch::rng::SplitMix64;
+use crate::rng::SplitMix64;
 
 /// How drops are reassigned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

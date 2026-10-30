@@ -35,7 +35,7 @@ use legaia_engine_field::field_regions::{
     lookup_intra_scene_teleport, parse_intra_scene_teleports,
 };
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
+use legaia_randomizer::drops::DropMode;
 
 /// `.MAP` trigger-block offset (`legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET`).
 const TRIGGER_BLOCK: usize = legaia_engine_field::field_regions::MAP_REGION_BLOCK_OFFSET;

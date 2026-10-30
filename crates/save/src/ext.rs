@@ -120,8 +120,9 @@
 //! (item slots), `LGX7` (minigame purses), `LGX8` (field position), `LGX9`
 //! (audio levels), `LGXA` (options), `LGXB` (retail window), `LGXC`
 //! (previous scene), `LGXD` (expansion-pack progress, an opaque body whose
-//! layout `legaia_engine_expansion::quest_save` owns), then the `LGX5`
-//! resume trailer.
+//! layout `legaia_engine_expansion::quest_save` owns), `LGXF` (run rules, an
+//! opaque body whose layout `legaia_engine_run_rules::save` owns), then the
+//! `LGX5` resume trailer.
 //!
 //! ## The engine-ext blob inside a retail SC block (`LGXE`)
 //!
@@ -218,6 +219,10 @@ pub const SAVE_FILE_EXTC_MAGIC: [u8; 4] = *b"LGXC";
 /// verbatim. Emitted only when the save carries one, so a save made without
 /// an expansion pack is byte-identical to a pre-block file.
 pub const SAVE_FILE_EXTD_MAGIC: [u8; 4] = *b"LGXD";
+/// Optional run-rules block ([`SaveExtV2::run_rules`]): the body verbatim.
+/// Emitted only when the save carries one, so a save of a run with retail
+/// rules is byte-identical to a pre-block file.
+pub const SAVE_FILE_EXTF_MAGIC: [u8; 4] = *b"LGXF";
 /// Byte offset of the engine-ext blob inside a retail SC block: the first
 /// byte past the `0x1A18`-byte live-state copy retail composes and loads.
 pub const RETAIL_ENGINE_EXT_OFFSET: usize = crate::card::RETAIL_LIVE_STATE_SIZE;
@@ -381,6 +386,13 @@ pub struct SaveExtV2 {
     /// optional `LGXD` block, a retail SC block in the engine-ext tail after
     /// the `LGX4` body. `None` = no pack progress.
     pub expansion: Option<Vec<u8>>,
+    /// The run-rules block: the rules a run plays under (difficulty, New
+    /// Game+, ironman, randomizer seed, Boss Rush), in the layout
+    /// `legaia_engine_run_rules::save` owns; this crate stores it opaquely.
+    /// An `LGSF` file carries it in the optional `LGXF` block, a retail SC
+    /// block as the engine-ext tail's segment after the expansion one.
+    /// `None` = retail rules.
+    pub run_rules: Option<Vec<u8>>,
 }
 
 /// Where a save was written: the scene to resume into and the name the

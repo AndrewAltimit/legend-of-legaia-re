@@ -224,6 +224,10 @@ reason = "the battle HUD model and the numeral readout the draw-list builders pr
 role = "expansion-pack runtime kernels: monster and formation overrides, level curve, quests, the mode seat"
 deps = ["engine-battle", "engine-mode", "engine-modes", "engine-system"]
 
+[crates.engine-run-rules]
+role = "run rules: difficulty presets, New Game+, ironman, randomizer seed, Boss Rush, the rules screen session"
+deps = []
+
 [crates.engine-modes]
 role = "rules engines for the port's own game modes: poker, golf, racing, card battles, prop hunt"
 deps = ["engine-system"]

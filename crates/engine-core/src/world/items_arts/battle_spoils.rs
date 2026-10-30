@@ -200,7 +200,7 @@ impl World {
             // the record field; `1000` is the identity.
             xp_total = xp_total.saturating_add(u32::from(crate::world::scale_exp_permille(
                 def.exp,
-                self.toggles.exp_rate_permille,
+                self.run_exp_permille(),
             )));
             gold_acc = gold_acc.saturating_add(
                 legaia_engine_battle_vm::battle_formulas::victory_gold_per_monster(def.gold),
@@ -284,6 +284,8 @@ impl World {
         }
         // An expansion pack's EXP / gold multipliers (identity without one).
         let (xp_total, gold_credited) = self.expansion_scale_spoils(xp_total, gold_credited);
+        // The run's difficulty scales the credited gold (identity at Normal).
+        let gold_credited = self.run_scale_gold(gold_credited);
 
         let alive = (0..usize::from(self.party.party_count))
             .filter(|&i| self.actors.get(i).is_some_and(|a| a.battle.hp > 0))
@@ -390,7 +392,7 @@ impl World {
         let Some(formation) = self.battle.active_formation.as_ref() else {
             return 0;
         };
-        let rate = self.toggles.exp_rate_permille;
+        let rate = self.run_exp_permille();
         let total: u32 = formation
             .slots
             .iter()

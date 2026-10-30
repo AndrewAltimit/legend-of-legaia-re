@@ -1493,6 +1493,10 @@ div.play-vis-head { cursor: default; }
   function startNewGame() {
     if (!runtime) return;
     enterWith('the opening', (v) => v.newGame().state);
+    /* A run with rules (difficulty, New Game+, seed ...) says so. */
+    let summary = '';
+    try { summary = typeof runtime.play_run_summary === 'function' ? runtime.play_run_summary() : ''; } catch (e) { summary = ''; }
+    if (summary) saveMsg('Run rules: ' + summary);
   }
 
   /* The boot title's (and the post-wipe title's) outcome: 'loaded' = a
@@ -1699,6 +1703,14 @@ div.play-vis-head { cursor: default; }
     };
     const pulse = new Set();
     const onKey = (e) => {
+      /* On the New Game rules screen, Tab types a randomizer seed (the pad
+       * row rolls one). */
+      if (handoff === 'rules' && e.code === 'Tab') {
+        e.preventDefault();
+        const seed = window.prompt('Randomizer seed');
+        if (seed) { try { runtime.play_run_rules_set_seed(seed); } catch (err) { console.warn(err); } }
+        return;
+      }
       if (!PAD || PAD[e.code] === undefined) return;
       /* Typing in the scene search (or any field) is not a pad press. */
       const t = e.target;
@@ -1849,6 +1861,32 @@ div.play-vis-head { cursor: default; }
         try { runtime.boot_title_start(); } catch (e) { return finish('new_game'); }
         statusEl.textContent = 'Press Start (Enter). Up/Down to choose, Z to confirm.';
       };
+      if (handoff === 'rules') {
+        /* The New Game rules screen (`play_run_rules_step` /
+         * `play_run_rules_draws_json`), the native window's too: difficulty,
+         * New Game+, ironman, the randomizer seed, Boss Rush. Retail rules
+         * with the cursor on Start, so one confirm is the original New Game.
+         * 'start' stages the run; `play_new_game` then starts it. */
+        let step = '';
+        for (let i = 0; i < ticks && !step; i++) {
+          try { step = runtime.play_run_rules_step(i === 0 ? edge : 0); } catch (e) { return finish('new_game'); }
+        }
+        let rd = null;
+        try { rd = JSON.parse(runtime.play_run_rules_draws_json(menuCanvas.width, menuCanvas.height)); }
+        catch (e) { rd = null; }
+        ctx.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+        if (rd && rd.open) {
+          for (const r of rd.rects) {
+            ctx.fillStyle = 'rgba(' + r.rgba[0] + ',' + r.rgba[1] + ',' + r.rgba[2] + ',' + (r.rgba[3] / 255) + ')';
+            ctx.fillRect(r.x, r.y, r.w, r.h);
+          }
+          const fr = ensureFont();
+          if (fr) fr.blit(ctx, rd.texts);
+        }
+        if (step === 'start') return finish('new_game');
+        if (step === 'back') backToTitle();
+        return;
+      }
       if (handoff === 'continue') {
         /* The title's Continue: the session's one Continue screen (the
          * native window's too). One step per tick - the card-read dialog
@@ -1918,6 +1956,18 @@ div.play-vis-head { cursor: default; }
           ? 'Pick a memory-card port, then a save block. Z confirms, X backs out.'
           : 'Options. Up/Down picks a row, Z opens it, X returns to the title.';
         return;
+      }
+      if (outcome === 'new_game') {
+        /* NEW GAME opens the rules screen first (not in retail-faithful
+         * mode, where `play_run_rules_open` answers false). */
+        let opened = false;
+        try { opened = typeof runtime.play_run_rules_open === 'function' && runtime.play_run_rules_open(); }
+        catch (e) { opened = false; }
+        if (opened) {
+          handoff = 'rules';
+          statusEl.textContent = 'New Game rules. Up/Down picks a row, Left/Right changes it, Z on Start begins, X returns to the title, Tab types a randomizer seed.';
+          return;
+        }
       }
       if (outcome) finish(outcome);   /* new_game */
     };

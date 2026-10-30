@@ -42,8 +42,8 @@ use legaia_engine_core::world::World;
 use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::house_door::{DoorSide, SceneHouseDoors};
+use legaia_randomizer::drops::DropMode;
 
 /// Rim Elm scene bundle PROT entry.
 const TOWN01_ENTRY: usize = 4;

@@ -395,6 +395,13 @@ impl LegaiaRuntime {
             .unwrap_or_default();
         // The multiplayer room screen / roaming panel's labels, stage space.
         let mut pack_mode_texts = pack_mode_texts;
+        // The run rules' screens (the Boss Rush intermission and result),
+        // stage space - the composition the native window draws too.
+        if let Some(h) = self.scene_host.host() {
+            pack_mode_texts.extend(legaia_engine_screens::run_rules::run_rules_stage_texts(
+                &h.world, font,
+            ));
+        }
         pack_mode_texts.extend(self.netplay_stage_texts(font));
         if screens.sprites.is_empty()
             && windows.is_empty()

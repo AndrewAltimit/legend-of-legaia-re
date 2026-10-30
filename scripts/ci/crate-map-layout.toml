@@ -76,7 +76,7 @@ title = "Patcher and capture libraries"
 blurb = "The disc-writing layers under legaia-patcher, and the emulator save-state readers under the parity oracles."
 track = "patcher"
 crates = [
-    "disc-patch", "translate", "code-hooks", "arts-patch", "texture-replace",
+    "disc-patch", "randomizer", "translate", "code-hooks", "arts-patch", "texture-replace",
     "party-swap", "delilas-party", "delilas-challenge",
     "ram-image", "mednafen", "pcsx-redux",
 ]

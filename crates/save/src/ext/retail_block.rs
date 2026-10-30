@@ -134,6 +134,15 @@ impl SaveFile {
         if xp_len > 0 {
             ext_v2.expansion = Some(tail.get(p + 2..p + 2 + xp_len)?.to_vec());
         }
+        // The run-rules segment after it: absent on every blob written
+        // without one.
+        let p = p + 2 + xp_len;
+        let rr_len = tail
+            .get(p..p + 2)
+            .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]) as usize);
+        if rr_len > 0 {
+            ext_v2.run_rules = Some(tail.get(p + 2..p + 2 + rr_len)?.to_vec());
+        }
         Some(ext_v2)
     }
 
@@ -169,15 +178,27 @@ impl SaveFile {
             p += 2;
             tail[p..p + v4.len()].copy_from_slice(&v4);
             p += v4.len();
-            // The expansion segment rides only when it fits whole: the
-            // play clock and the party composition outrank a quest log.
+            // The run rules' segment follows the expansion one and is
+            // reserved first: an ironman run's id and its rules outrank a
+            // quest log. The tail is zeroed, so a skipped segment reads as a
+            // zero length.
+            let rr = self.ext_v2.run_rules.as_deref().filter(|r| !r.is_empty());
+            let rr_room = rr.map_or(0, |r| 2 + r.len());
             if let Some(xp) = self.ext_v2.expansion.as_deref()
                 && !xp.is_empty()
-                && p + 2 + xp.len() <= tail.len()
+                && p + 2 + xp.len() + rr_room <= tail.len()
             {
                 tail[p..p + 2].copy_from_slice(&(xp.len() as u16).to_le_bytes());
+                tail[p + 2..p + 2 + xp.len()].copy_from_slice(xp);
+                p += 2 + xp.len();
+            } else {
                 p += 2;
-                tail[p..p + xp.len()].copy_from_slice(xp);
+            }
+            if let Some(r) = rr
+                && p + 2 + r.len() <= tail.len()
+            {
+                tail[p..p + 2].copy_from_slice(&(r.len() as u16).to_le_bytes());
+                tail[p + 2..p + 2 + r.len()].copy_from_slice(r);
             }
         }
         crate::card::restamp_sc_block_checksum(sc_block);

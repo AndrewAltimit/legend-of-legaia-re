@@ -11,13 +11,13 @@
 //!
 //! The planning is identical to the drop randomizer's (reassign the item for
 //! every *stealable* monster, keep its chance), so this reuses
-//! [`crate::drops::plan_drops`]; only the addressing differs (SCUS file offset
+//! [`legaia_randomizer::drops::plan_drops`]; only the addressing differs (SCUS file offset
 //! vs. PROT record). `Shuffle` redistributes the existing steal-item multiset
 //! among the stealable monsters; `Random` draws each from the item pool.
 
 use legaia_game_tables::steal_table::{self, StealTable};
 
-use crate::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
+use legaia_randomizer::drops::{CurrentDrop, DropAssignment, DropMode, plan_drops};
 
 /// ISO 9660 file holding the steal table.
 pub const SCUS_NAME: &str = "SCUS_942.54";

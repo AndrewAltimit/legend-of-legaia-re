@@ -56,8 +56,8 @@
 use legaia_scene_formats::field_disasm::{self, InsnInfo};
 use legaia_scene_formats::{man_section, scene_asset_table};
 
-use crate::drops::DropMode;
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::drops::DropMode;
+use legaia_randomizer::rng::SplitMix64;
 
 const MAN_TYPE: u8 = 0x03;
 /// The system/player script channel a cross-context op targets to act on the

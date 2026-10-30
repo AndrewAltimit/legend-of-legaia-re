@@ -29,7 +29,7 @@
 //! whose formation sits at an index a rate>0 region's range happens to span - so
 //! the heuristic alone would treat it as random and could replace that tutorial
 //! boss (stranding a fresh save) or donate Gimard, a boss-tier enemy, into an
-//! ordinary early encounter. [`PROTECTED_FORMATION_IDS`] lists the ids that must
+//! ordinary early encounter. [`PROTECTED_FORMATION_IDS`](legaia_randomizer::encounters::PROTECTED_FORMATION_IDS) lists the ids that must
 //! never participate in a random encounter; any formation holding one is forced
 //! back to scripted in [`SceneEncounters::locate`], and such ids never enter a
 //! donor pool, so the fight ships exactly as authored regardless of the region
@@ -38,38 +38,12 @@
 use legaia_scene_formats::man_section::{self, EncounterSection};
 use legaia_scene_formats::scene_asset_table;
 
-use crate::drops::DropMode;
-use legaia_disc_patch::rng::SplitMix64;
+use legaia_randomizer::drops::DropMode;
+use legaia_randomizer::encounters::is_protected_formation_id;
+use legaia_randomizer::rng::SplitMix64;
 
 /// MAN asset type byte in a scene bundle's descriptor table.
 const MAN_TYPE: u8 = 0x03;
-
-/// 1-based `battle_data` monster ids that must never take part in a **random**
-/// encounter - neither donated into one nor replaced out of an existing fight -
-/// *on top of* the formations [`random_formation_mask`] already marks scripted.
-///
-/// The region-rate heuristic correctly classifies every story boss's formation
-/// as scripted, with one exception: the early **Gimard** Seru-boss fight sits at
-/// a formation index a rate>0 region's range spans, so the heuristic alone would
-/// treat it as a random encounter. Left unguarded a randomized run could replace
-/// that mandatory tutorial fight (soft-locking a fresh save) or donate Gimard - a
-/// boss-tier enemy - into an ordinary early encounter the party can't yet beat.
-/// Listing its id forces every formation that holds it back to scripted (see
-/// [`SceneEncounters::locate`]) and keeps it out of every donor pool, so the
-/// fight is preserved no matter how the scene's regions are laid out - the same
-/// intent as the matching stat-side guard (`crate::monster_stats`).
-///
-/// The first wild Piura are deliberately **not** listed: they are genuine random
-/// encounters, and the heuristic already leaves their scripted appearances fixed.
-pub const PROTECTED_FORMATION_IDS: &[u8] = &[
-    10, // Gimard - the early scripted Seru-boss fight.
-];
-
-/// Whether `id` is a [`PROTECTED_FORMATION_IDS`] enemy (one that must never be a
-/// random encounter).
-pub fn is_protected_formation_id(id: u8) -> bool {
-    PROTECTED_FORMATION_IDS.contains(&id)
-}
 
 /// Per-monster **combat-power** lookup, keyed by the formation byte (a 1-based
 /// `battle_data` archive id - the same id space [`SceneEncounters`] writes into a
@@ -108,27 +82,6 @@ impl MonsterPowerTable {
         self.power[id as usize]
     }
 }
-
-/// The most **distinct** monster species a random formation may hold: **2**,
-/// retail's own authoring ceiling - and a hard engine invariant, not a style
-/// choice. The battle setup `FUN_80055B6C` (at `0x80055C80..0x80055D2C`)
-/// classifies the formation cells into "the first species" (`cells[0]`, with a
-/// copy count) and "the other species" - held in a **single register** - then,
-/// behind a 50% RNG coin flip (`FUN_80056798() & 1`), rebuilds the cell array
-/// as `[other x other_count, first x first_count]` (the species-order variety
-/// shuffle). With three distinct species the single "other" register is
-/// overwritten by each later species, so `[a, b, c]` rebuilds as `[c, c, a]`:
-/// the middle species silently vanishes and the last is duplicated. The other
-/// half of the flip loads the formation verbatim - all three distinct blocks
-/// stream, which is what makes an over-budget trio a *probabilistic* freeze.
-/// Capping distinct species at 2 keeps every formation inside the invariant
-/// the rebuild was written for (where it is an exact multiset-preserving
-/// species swap). Pinned live: forced installs of `[133,151,94]` /
-/// `[94,133,151]` / `[151,133,94]` / `[32,34,14]` (map03 + rikuroa contexts)
-/// each read back `[c2, c2, c0]` at battle main, with the write PC at
-/// `0x80055D14/18` and the per-seat record pointers showing seat 1 sharing
-/// seat 0's block.
-pub const MAX_DISTINCT_SPECIES: usize = 2;
 
 /// Per-monster **battle-heap cost** lookup, keyed by the formation byte. The
 /// cost is the decoded `battle_data` block's `+0x08` word (the texture-pool
@@ -221,7 +174,7 @@ fn random_formation_mask(body: &[u8], sec: &EncounterSection) -> Vec<bool> {
     mask
 }
 
-/// Force any formation that holds a [`PROTECTED_FORMATION_IDS`] enemy back to
+/// Force any formation that holds a [`PROTECTED_FORMATION_IDS`](legaia_randomizer::encounters::PROTECTED_FORMATION_IDS) enemy back to
 /// non-random in `mask`. The explicit-id complement to the region-rate
 /// [`random_formation_mask`]: the heuristic misclassifies the early Gimard fight
 /// as random (a rate>0 region's range spans its formation index), so this pass
@@ -732,7 +685,7 @@ impl SceneEncounters {
     /// as a post-pass over already-randomized ids (composes with every scope +
     /// mode, exactly like [`Self::enforce_solo_strong`]):
     ///
-    /// 1. at most [`MAX_DISTINCT_SPECIES`] distinct species - the retail battle
+    /// 1. at most [`MAX_DISTINCT_SPECIES`](legaia_randomizer::encounters::MAX_DISTINCT_SPECIES) distinct species - the retail battle
     ///    setup's species-order rebuild (`FUN_80055B6C`) holds "the other
     ///    species" in one register, so a third distinct species is silently
     ///    dropped-and-duplicated on half of all rolls and streams a third
@@ -818,6 +771,7 @@ impl SceneEncounters {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_randomizer::encounters::MAX_DISTINCT_SPECIES;
 
     #[test]
     fn species_limits_cap_distinct_count_and_heap_cost() {

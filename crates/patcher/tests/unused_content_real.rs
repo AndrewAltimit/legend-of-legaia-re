@@ -19,11 +19,11 @@ use legaia_game_tables::item_names::ItemNameTable;
 use legaia_iso::iso9660::find_file_in_image;
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
-use legaia_patcher::drops::DropMode;
 use legaia_patcher::encounter::SceneEncounters;
 use legaia_patcher::item_name::{SERU_BELL_ID, SERU_BELL_NAME};
 use legaia_patcher::items::valid_item_pool;
 use legaia_patcher::unused::{self, UNUSED_ENEMY_IDS, UNUSED_ITEM_IDS};
+use legaia_randomizer::drops::DropMode;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

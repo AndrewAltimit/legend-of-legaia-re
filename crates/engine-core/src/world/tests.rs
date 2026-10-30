@@ -369,6 +369,7 @@ mod player_clip_pick;
 mod player_scale;
 mod round_prompt_gate;
 mod rumble_field_ops;
+mod run_rules;
 mod script_teleport;
 mod seru_absorb;
 mod seru_side_effect_live_disc;

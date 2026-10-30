@@ -374,6 +374,8 @@ impl World {
         // An expansion pack's monsters take their seats' catalog entries for
         // the fight (identity with no pack).
         self.expansion_prepare_battle(formation);
+        // The run rules' randomizer, over whatever the pack seated.
+        self.run_rules_prepare_battle(formation);
         // **The Tetsu spar is Vahn alone** - an engine rule, not a port.
         // Retail seats whoever is in the present-party list `DAT_8007BD10`
         // (`FUN_80052FA0` counts its non-zero ids into `ctx[+0]`,
@@ -684,7 +686,7 @@ impl World {
         monster_id: u16,
         scripted: bool,
     ) {
-        let stat_permille = self.toggles.enemy_stat_permille;
+        let stat_permille = self.run_enemy_stat_permille(monster_id);
         if let Some(def) = self
             .tables
             .monster_catalog

@@ -231,6 +231,8 @@ use legaia_engine_field::object_tint::{
 pub mod pause_session;
 mod prop_interact;
 mod retail_progression;
+pub mod run_rules;
+pub mod run_rules_boss_rush;
 pub use retail_progression::RetailProgressionTables;
 pub use save::{FIELD_MENU_DENY_CUE, FIELD_MENU_LOCK_BIT, FIELD_SYSTEM_LOCK_BIT};
 mod save;

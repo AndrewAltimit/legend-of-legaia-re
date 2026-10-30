@@ -93,6 +93,7 @@ fn build_synthetic_save() -> SaveFile {
             retail_window: None,
             previous_scene: None,
             expansion: None,
+            run_rules: None,
             active_party: vec![0, 1, 2],
             per_char: vec![(
                 0,

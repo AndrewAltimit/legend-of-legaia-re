@@ -117,6 +117,7 @@ impl World {
                 self.terrain.region_tracker = Some(tracker);
                 return false;
             }
+            tracker.set_rate_permille(self.run_encounter_rate_permille());
             let roll = tracker.on_step(wx, wz, || self.next_rand());
             // Per-step roll diagnostics (trace level; off in normal runs):
             // which tile the step landed on and how far the region counter
@@ -137,6 +138,8 @@ impl World {
                     };
                     // An expansion pack's encounter override picks the fight.
                     let er = self.expansion_substitute_roll(er);
+                    // The run rules' randomizer redraws the fight's seats.
+                    let er = self.run_rules_substitute_roll(er);
                     log::info!(
                         "encounter: region roll in '{}' at ({wx}, {wz}) -> formation row {}",
                         self.active_scene_label,
@@ -164,7 +167,7 @@ impl World {
         }
         let rng = self.next_rng();
         let modifiers = self.encounter_rate_modifiers();
-        if self.expansion_substitutes_rolls() {
+        if self.expansion_substitutes_rolls() || self.run_rules_rerolls_encounters() {
             // The session's own `on_step`, opened up so the pack's override
             // can pick the rolled fight before the transition is armed.
             let roll = match self.encounters.session.as_mut() {
@@ -183,6 +186,7 @@ impl World {
                 return false;
             };
             let roll = self.expansion_substitute_roll(roll);
+            let roll = self.run_rules_substitute_roll(roll);
             return self
                 .encounters
                 .session

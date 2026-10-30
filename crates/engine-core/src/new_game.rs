@@ -46,6 +46,9 @@ impl World {
         if let Some(inv) = inventory {
             self.seed_starting_inventory(inv);
         }
+        // The run rules' half: the New Game+ carry, the randomizer's
+        // starting gear (both nothing under retail rules).
+        self.finish_run_new_game();
     }
 
     /// Seed the starting party for a New Game from the SCUS starting-party

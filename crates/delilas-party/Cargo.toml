@@ -14,6 +14,7 @@ legaia-art.workspace = true
 legaia-arts-patch.workspace = true
 legaia-code-hooks.workspace = true
 legaia-disc-patch.workspace = true
+legaia-randomizer.workspace = true
 legaia-lzs.workspace = true
 legaia-party-swap.workspace = true
 legaia-texture-replace.workspace = true
