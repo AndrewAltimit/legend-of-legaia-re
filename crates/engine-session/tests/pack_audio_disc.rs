@@ -204,7 +204,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         "{:?}",
         rec.cmds
     );
-    assert!(rec.has(AudioCommand::BgmFade(2011, 90)), "{:?}", rec.cmds);
+    assert!(rec.has(AudioCommand::BgmFade(2025, 90)), "{:?}", rec.cmds);
     assert!(s.bgm.as_ref().unwrap().is_attached());
     if let Some(dir) = dump {
         let path = std::path::Path::new(&dir).join("genesis_7f_sanctum.wav");

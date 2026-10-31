@@ -1,15 +1,19 @@
 # Genesis Tower, fifth floor: the Gambler's Rest. Laid out from scratch
 # (`geometry = "none"`) out of the retail Sol Tower rooms' (`koin1`) dark
-# planks, brick and furniture. No monster climbs this high: the stair from
-# below opens on the hall, where Keeper Odalric pours behind the long bar,
-# five regulars wait round the High Table and the hearth burns on the east
-# wall (rest and save). Off the hall, the card room to the west (the
-# Warden's Duel table and the tower's card dealer) and the games room to
-# the east (Tower Game Night, the arcade cabinets, its own music); behind
-# the bar, the lounge with its piano stage and the stair up.
+# planks, brick and furniture. No monster climbs this high, and the Rest
+# is the tower's one warm floor, built on three levels: the stair from
+# below opens on a gallery over the hall, a grand stair runs down into it,
+# and past the bar a balustrade looks down on the sunken lounge, where the
+# piano plays on its stage and the stair up leaves. In the hall Keeper
+# Odalric pours behind the long bar, the regulars wait round the High
+# Table and the hearth burns on the east wall (rest and save). Off the
+# hall, the card room to the west (the Warden's Duel table and the tower's
+# card dealer) and the games room to the east (Tower Game Night, the
+# arcade cabinets, its own music).
 #
-# The follow camera looks south from the north side: each room's north edge
-# is a low rail, the far and side walls stand full height.
+# The follow camera looks south from the north side: each room's north
+# edge is a low rail, the far and side walls stand full height, and from
+# the gallery it looks down over the whole hall.
 
 name = "Genesis Tower 5F - Gambler's Rest"
 size = [37, 30]
@@ -17,8 +21,11 @@ base = { scene = { kind = "scene", name = "koin1" }, geometry = "none" }
 # Sound-test track 24, "Where Everyone Drinks".
 bgm = { kind = "bgm", id = 24 }
 camera = "far"
-# Tier 1 is the lounge's stage.
-floor_heights = [0, 40]
+# Three levels: the sunken lounge (tier 0, its stage tier 1), the hall and
+# its side rooms (tier 2), and the gallery the stair from below opens on
+# (tier 6), a grand stair (tiers 5, 4) down into the hall and a short flight
+# (tier 3) on down to the lounge.
+floor_heights = [0, 40, 160, 80, 208, 256, 304]
 
 # Past the Rest's edge, the dark boards of the floor below.
 [surround]
@@ -43,12 +50,12 @@ chain = { tpage = 11, clut = 32517, tile = 27, width = 6, shade = 72, items = ["
 [tiles]
 origin = [20, 20]
 rows = [
-  "             ___________             ",
-  "             #.........#             ",
-  "             >.........#             ",
-  "             #.........#             ",
-  "             #.........#             ",
-  "       _______........._______       ",
+  "             rrrrrrrrrrr             ",
+  "             WuuuuuuuuuW             ",
+  "             >uuuuuuuuuW             ",
+  "             WuuuuuuuuuW             ",
+  "             WrrUUUUUqrW             ",
+  "       _________DDDDDp________       ",
   "       #.....................#       ",
   "________N....................________",
   "#,,,,,,#....................F#gggggg#",
@@ -61,38 +68,52 @@ rows = [
   "#,,,,,,#A..CCCCCCCCC.........#gggggg#",
   "#,,,,,,#...#########.........#gggggg#",
   "########...#########.........########",
-  "       ###-----------.....-###       ",
-  "         #lllllllllllllllll#         ",
-  "         #lllllllllllllllll#         ",
-  "         #lllllllllllllllll#         ",
-  "         #lllllllllllllllll#         ",
-  "         #lssssssllllllllll#         ",
-  "         #lssssssllllllllll#         ",
-  "         #lssssssllllllllll#         ",
-  "         #lssssssllllllllll#         ",
-  "         #lllllllllllllllll#         ",
-  "         #lllllllllllllllll#         ",
-  "         ##############<####         ",
+  "       ###-----------dddddv###       ",
+  "         #lllllllllllllllll=         ",
+  "         #lllllllllllllllll=         ",
+  "         #lllllllllllllllll=         ",
+  "         #lllllllllllllllll=         ",
+  "         #lssssssllllllllll=         ",
+  "         #lssssssllllllllll=         ",
+  "         #lssssssllllllllll=         ",
+  "         #lssssssllllllllll=         ",
+  "         #lllllllllllllllll=         ",
+  "         #lllllllllllllllll=         ",
+  "         ==============<====         ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32517, tile = 27 } }
-"_" = { label = "rail", walls = "all", wall = { kind = "box", height = 48, tpage = 11, clut = 32518, tile = 48 } }
-"-" = { label = "rail (lounge)", walls = "all", wall = { kind = "box", height = 64, tpage = 11, clut = 32518, tile = 48 } }
-"." = { label = "hall floor", ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
-"," = { label = "card room", ground = { kind = "texture", tpage = 12, clut = 32451, tile = 24 } }
-"g" = { label = "games room", ground = { kind = "texture", tpage = 11, clut = 32517, tile = 35 } }
+# Tiers are corner heights: a tile's tier is the height at its low-X /
+# low-Z corner, so every wall takes the tier of the floor it borders on
+# its north or west side, or that floor's last row would tilt into it. The
+# boxes reach on down to the lower floor beside them.
+"#" = { label = "wall", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32517, tile = 27 } }
+"=" = { label = "wall (lounge)", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32517, tile = 27 } }
+"W" = { label = "wall (gallery)", height = 6, walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32517, tile = 27 } }
+"_" = { label = "rail", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 11, clut = 32518, tile = 48 } }
+"r" = { label = "gallery balustrade", height = 6, walls = "all", wall = { kind = "box", height = 48, tpage = 11, clut = 32518, tile = 48 } }
+"q" = { label = "stair rail (upper)", height = 5, walls = "all", wall = { kind = "box", height = 48, tpage = 11, clut = 32518, tile = 48 } }
+"p" = { label = "stair rail (lower)", height = 4, walls = "all", wall = { kind = "box", height = 48, tpage = 11, clut = 32518, tile = 48 } }
+"-" = { label = "lounge balustrade", height = 2, walls = "all", wall = { kind = "box", height = 64, tpage = 11, clut = 32518, tile = 48 } }
+"v" = { label = "lounge balustrade (stair)", height = 3, walls = "all", wall = { kind = "box", height = 64, tpage = 11, clut = 32518, tile = 48 } }
+"." = { label = "hall floor", height = 2, ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
+"u" = { label = "gallery", height = 6, ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
+"U" = { label = "grand stair (upper)", height = 5, ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
+"D" = { label = "grand stair (lower)", height = 4, ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
+"d" = { label = "lounge steps", height = 3, ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
+"," = { label = "card room", height = 2, ground = { kind = "texture", tpage = 12, clut = 32451, tile = 24 } }
+"g" = { label = "games room", height = 2, ground = { kind = "texture", tpage = 11, clut = 32517, tile = 35 } }
 "l" = { label = "lounge", ground = { kind = "texture", tpage = 8, clut = 32259, tile = 27 } }
 "s" = { label = "stage", height = 1, ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
 # The furniture the tile layer closes: the bar, the board, the armory
 # counter, the hearth, the two tables.
-"C" = { label = "bar", walls = "all", wall = { kind = "box", height = 88, tpage = 8, clut = 32259, tile = 11 } }
-"N" = { label = "notice board", walls = "all", wall = { kind = "box", height = 160, tpage = 11, clut = 32518, tile = 48 } }
-"A" = { label = "armory counter", walls = "all", wall = { kind = "box", height = 88, tpage = 8, clut = 32259, tile = 11 } }
-"F" = { label = "hearth", walls = "all", wall = { kind = "box", height = 192, tpage = 11, clut = 32517, tile = 28 } }
-"T" = { label = "the High Table", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
-"G" = { label = "game-night table", walls = "all", ground = { kind = "texture", tpage = 11, clut = 32517, tile = 35 } }
-">" = { label = "stair down", ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
+"C" = { label = "bar", height = 2, walls = "all", wall = { kind = "box", height = 88, tpage = 8, clut = 32259, tile = 11 } }
+"N" = { label = "notice board", height = 2, walls = "all", wall = { kind = "box", height = 160, tpage = 11, clut = 32518, tile = 48 } }
+"A" = { label = "armory counter", height = 2, walls = "all", wall = { kind = "box", height = 88, tpage = 8, clut = 32259, tile = 11 } }
+"F" = { label = "hearth", height = 2, walls = "all", wall = { kind = "box", height = 192, tpage = 11, clut = 32517, tile = 28 } }
+"T" = { label = "the High Table", height = 2, walls = "all", ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
+"G" = { label = "game-night table", height = 2, walls = "all", ground = { kind = "texture", tpage = 11, clut = 32517, tile = 35 } }
+">" = { label = "stair down", height = 6, ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
 "<" = { label = "stair up", ground = { kind = "texture", tpage = 8, clut = 32259, tile = 27 } }
 
 [[spawns]]
@@ -184,7 +205,8 @@ press = true
 
 # Sound: the Rest plays the bar's tune (`bgm` above); the games room on the
 # east side has the Sol casino's "Wild Declaration" (18), cross-fading as the
-# party walks through its door.
+# party walks through its door; down in the lounge the piano plays the
+# soft "Melody of Memories" (sound-test track 49).
 [audio]
 fade_frames = 40
 
@@ -192,6 +214,11 @@ fade_frames = 40
 id = "games_room"
 rect = [29, 8, 35, 16]
 music = { kind = "bgm", id = 18 }
+
+[[audio.zones]]
+id = "lounge"
+rect = [10, 19, 26, 28]
+music = { kind = "bgm", id = 49 }
 
 [[audio.ambient]]
 id = "hearth"
@@ -708,8 +735,8 @@ tile = [15, 28]
 offset = [64, 0, 54]
 hangs = true
 
-# The landing: plants, barrels and the tavern's sign at the top of the
-# stair.
+# The gallery: plants, barrels and the tavern's sign at the head of the
+# grand stair.
 [[decor]]
 mesh = { object = 136 }
 tile = [14, 1]
@@ -723,14 +750,14 @@ solid = true
 
 [[decor]]
 mesh = { object = 131 }
-tile = [22, 4]
+tile = [22, 3]
 offset = [-22, 0, 19]
 rotation = [0.0, 90.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 155 }
-tile = [15, 4]
+tile = [15, 3]
 offset = [0, -1, 0]
 rotation = [0.0, 30.0, 0.0]
 solid = true
@@ -854,3 +881,27 @@ lamps = [
   { id = "high_table", tile = [18, 10], offset = [0, 200, 0], color = [255, 225, 160], radius = 460, flicker = 0.08, period = 30 },
   { id = "stage", tile = [13, 24], offset = [0, 220, 0], color = [255, 240, 210], radius = 520, flicker = 0.03, period = 60 },
 ]
+
+# 9F: warm evening light falling through the tower's high windows onto the
+# 9F: High Table and the piano stage, dust turning in it:
+# 9F: [[beams]]
+# 9F: id = "window_high_table"
+# 9F: tile = [18, 11]
+# 9F: height = 1100
+# 9F: tilt = 16.0
+# 9F: angle = 160.0
+# 9F: width = [90, 200]
+# 9F: color = [255, 220, 170]
+# 9F: intensity = 60
+# 9F: breathe = 0.1
+# 9F: motes = 14
+# 9F: [[beams]]
+# 9F: id = "window_stage"
+# 9F: tile = [13, 24]
+# 9F: height = 1300
+# 9F: tilt = 12.0
+# 9F: angle = 160.0
+# 9F: width = [80, 180]
+# 9F: color = [255, 230, 190]
+# 9F: intensity = 55
+# 9F: motes = 10

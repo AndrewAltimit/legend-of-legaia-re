@@ -1,10 +1,16 @@
 # Genesis Tower, seventh floor: the Sanctum of Echoes. Laid out from
 # scratch (`geometry = "none"`) out of the retail Sol Tower vault's
-# (`korb3`) pale stone and blue steel: an octagonal ring corridor runs round
-# a walled inner sanctum, where the Azure Seraph keeps the raised heart. The
-# stair from below opens on a landing at the ring's north point, with a
-# quiet rest alcove off it; four echo shrines stand in the ring's diagonal
-# bays; the stair up leaves from the ring's south point.
+# (`korb3`) pale stone and blue steel. The sea came into the tower here
+# long ago and stayed: the whole floor is still water, and the octagon is
+# walked on boardwalks laid round its walls. The stair from below opens on
+# a landing at the ring's north point, with a quiet rest alcove off it; a
+# stone causeway runs from the landing across the water to the walled
+# inner sanctum, an island where the Azure Seraph keeps the raised heart;
+# four echo shrines stand on the boardwalk in the ring's diagonal bays,
+# two jetties run out into the water at the ring's east and west points,
+# and the stair up leaves from the ring's south point. The islanders say
+# the drowned sailors' prayers settled on this floor; lanterns float on the
+# water for them.
 #
 # The follow camera looks south from the north side: the outer ring's north
 # walls and the sanctum's north wall are low, so the camera sees into the
@@ -14,18 +20,20 @@
 name = "Genesis Tower 7F - Sanctum of Echoes"
 size = [33, 34]
 base = { scene = { kind = "scene", name = "korb3" }, geometry = "none" }
-# Sound-test track 11, "The Profane Realm".
-bgm = { kind = "bgm", id = 11 }
+# Sound-test track 25, "The Quiet Genesis Tree": the floor is a still one.
+bgm = { kind = "bgm", id = 25 }
 camera = "far"
-# Tier 0 is the ring, tier 1 the sanctum, tier 2 the heart.
+# Tier 0 is the boardwalk ring and the causeway, tier 1 the sanctum,
+# tier 2 the heart. The water lies under them all: a space in the rows.
 floor_heights = [0, 32, 72]
 
-# Past the ring's edge, cold steel far below, the outer wall dropping to it.
+# The water: still and dark, a little under the boardwalks, reaching to the
+# tower's outer wall all round.
 [surround]
-ground = { tpage = 8, clut = 30976, tile = 39 }
-side = { tpage = 8, clut = 30976, tile = 30 }
-depth = 448
-shade = 56
+ground = { tpage = 9, clut = 31042, tile = 52 }
+side = { tpage = 8, clut = 30915, tile = 54 }
+depth = 40
+shade = 96
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
@@ -49,33 +57,33 @@ rows = [
   "           #,,,,,,,,,rrrrrrr#    ",
   "           #,,,,,,,,,#rrrrrr#    ",
   "      ______,,,,,,,,,########    ",
-  "     __...................__     ",
-  "    __.....................__    ",
-  "   __.......................__   ",
-  "  __.........................__  ",
-  " __..s.....................s..__ ",
-  "__.............................__",
-  "_.........aaaaa:::iaaaa........._",
-  "#........aa:::::::::::ia........#",
-  "#.......aa:::::::::::::ia.......#",
-  "#......aa:::::::::::::::ia......#",
-  "#......a:::o:::::::::o:::i......#",
-  "#......a:::::::AAA:::::::i......#",
-  "#......a::::::AAAAA::::::i......#",
-  "#......b::::::AAAAA::::::I......#",
-  "#......b::::::AAAAA::::::I......#",
-  "#......b:::::::AAA:::::::I......#",
-  "#......b:::o:::::::::o:::I......#",
-  "#......bI:::::::::::::::II......#",
-  "#.......bI:::::::::::::II.......#",
-  "#........bI:::::::::::II........#",
-  "#.........bIIIIIIIIIIII.........#",
-  "##.............................##",
-  " ##..s.....................s..## ",
-  "  ##.........................##  ",
-  "   ##.......................##   ",
-  "    ##.....................##    ",
-  "     ##...................##     ",
+  "     __,,,,,,,.....,,,,,,,__     ",
+  "    __,,,,,,,,.....,,,,,,,,__    ",
+  "   __,,,,     .....     ,,,,__   ",
+  "  __,,,,      .....      ,,,,__  ",
+  " __,,s,       .....       ,s,,__ ",
+  "__,,,,,       .....       ,,,,,__",
+  "_,,,,     aaaaa:::iaaaa     ,,,,_",
+  "#,,,     aa    :::    ia     ,,,#",
+  "#,,     aa     :::     ia     ,,#",
+  "#,,    aa      :::      ia    ,,#",
+  "#,,    a   o ::::::: o   i    ,,#",
+  "#,,    a     ::AAA::     i    ,,#",
+  "#,,    a::::::AAAAA::::::i    ,,#",
+  "#,,,,,,b::::::AAAAA::::::I,,,,,,#",
+  "#,,,,,,b::::::AAAAA::::::I,,,,,,#",
+  "#,,    b     ::AAA::     I    ,,#",
+  "#,,    b   o ::::::: o   I    ,,#",
+  "#,,    bI      :::      II    ,,#",
+  "#,,     bI     :::     II     ,,#",
+  "#,,,     bI    :::    II     ,,,#",
+  "#,,,,     bIIIIIIIIIIII     ,,,,#",
+  "##,,,,,                   ,,,,,##",
+  " ##,,s,                   ,s,,## ",
+  "  ##,,,,     ,,,,,,,     ,,,,##  ",
+  "   ##,,,,    ,,,,,,,    ,,,,##   ",
+  "    ##,,,,,,,,,,,,,,,,,,,,,##    ",
+  "     ##,,,,,,,,,,,,,,,,,,,##     ",
   "      #######%%%<%%%#######      ",
 ]
 
@@ -90,10 +98,10 @@ rows = [
 "a" = { label = "sanctum parapet (ring side)", walls = "all", wall = { kind = "box", height = 48, tpage = 8, clut = 30849, tile = 42 } }
 "I" = { label = "sanctum wall", height = 1, walls = "all", wall = { kind = "box", height = 160, tpage = 8, clut = 30849, tile = 42 } }
 "b" = { label = "sanctum wall (ring side)", walls = "all", wall = { kind = "box", height = 160, tpage = 8, clut = 30849, tile = 42 } }
-"." = { label = "ring floor (steel)", ground = { kind = "texture", tpage = 8, clut = 30976, tile = 39 } }
+"." = { label = "causeway (steel)", ground = { kind = "texture", tpage = 8, clut = 30976, tile = 39 } }
 ":" = { label = "sanctum floor", height = 1, ground = { kind = "texture", tpage = 8, clut = 30976, tile = 2 } }
 "A" = { label = "the heart", height = 2, ground = { kind = "texture", tpage = 8, clut = 30849, tile = 18 } }
-"," = { label = "landing planks", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
+"," = { label = "boardwalk", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
 "r" = { label = "rest alcove", ground = { kind = "texture", tpage = 8, clut = 30850, tile = 4 } }
 # Echo shrines and the sanctum's obelisk bases: solid.
 "s" = { label = "echo shrine", walls = "all", wall = { kind = "box", height = 40, tpage = 8, clut = 30849, tile = 42 } }
@@ -321,6 +329,152 @@ tile = [18, 31]
 solid = true
 light = { color = [255, 150, 70], radius = 520, height = 140, flicker = 0.35, period = 12 }
 
+# ---------------------------------------------------------------------------
+# On the water: paper lanterns set afloat for the drowned, drifting slowly
+# where they were let go; a skiff moored at the west jetty; tarred pilings
+# at the jetties' ends and along the causeway. Each stands on the boardwalk
+# or causeway tile beside the water and reaches out over it by its offset:
+# a prop's record takes its tile's cell, and on a water tile that cell is
+# the water's own.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "float_lantern_1"
+mesh = { asset = "models/lantern.glb" }
+tile = [8, 8]
+hangs = true
+offset = [150, -34, 120]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 200, phase = 0.0 }, { kind = "orbit", radius = 24, period = 1700, phase = 0.0 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 260 }
+
+[[props]]
+id = "float_lantern_2"
+mesh = { asset = "models/lantern.glb" }
+tile = [24, 8]
+hangs = true
+offset = [-150, -34, 120]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 220, phase = 0.3 }, { kind = "orbit", radius = 24, period = -1900, phase = 0.3 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 280 }
+
+[[props]]
+id = "float_lantern_3"
+mesh = { asset = "models/lantern.glb" }
+tile = [2, 15]
+hangs = true
+offset = [170, -34, 0]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 190, phase = 0.5 }, { kind = "orbit", radius = 24, period = 2100, phase = 0.5 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 250 }
+
+[[props]]
+id = "float_lantern_4"
+mesh = { asset = "models/lantern.glb" }
+tile = [30, 15]
+hangs = true
+offset = [-170, -34, 0]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 210, phase = 0.7 }, { kind = "orbit", radius = 24, period = -1800, phase = 0.7 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 270 }
+
+[[props]]
+id = "float_lantern_5"
+mesh = { asset = "models/lantern.glb" }
+tile = [7, 29]
+hangs = true
+offset = [170, -34, -100]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 230, phase = 0.15 }, { kind = "orbit", radius = 24, period = 2000, phase = 0.15 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 290 }
+
+[[props]]
+id = "float_lantern_6"
+mesh = { asset = "models/lantern.glb" }
+tile = [25, 29]
+hangs = true
+offset = [-170, -34, -100]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 200, phase = 0.85 }, { kind = "orbit", radius = 24, period = -2200, phase = 0.85 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 260 }
+
+[[props]]
+id = "float_lantern_7"
+mesh = { asset = "models/lantern.glb" }
+tile = [15, 14]
+hangs = true
+offset = [-170, -66, 0]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 240, phase = 0.4 }, { kind = "orbit", radius = 24, period = 2400, phase = 0.4 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 300 }
+
+[[props]]
+id = "float_lantern_8"
+mesh = { asset = "models/lantern.glb" }
+tile = [17, 24]
+hangs = true
+offset = [170, -66, 0]
+scale = 0.8
+animate = [{ kind = "bob", amplitude = 4, period = 210, phase = 0.6 }, { kind = "orbit", radius = 24, period = -2300, phase = 0.6 }]
+light = { color = [255, 196, 130], radius = 300, height = 0, breathe = 0.35, breathe_period = 270 }
+
+[[props]]
+id = "rowboat"
+mesh = { asset = "models/rowboat.glb" }
+tile = [4, 20]
+hangs = true
+offset = [0, -40, 100]
+scale = 0.7
+animate = [{ kind = "bob", amplitude = 3, period = 260 }, { kind = "sway", axis = "x", degrees = 2.0, period = 300 }]
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [6, 19]
+offset = [40, -40, -72]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [6, 20]
+offset = [40, -40, 72]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [26, 19]
+offset = [-40, -40, -72]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [26, 20]
+offset = [-40, -40, 72]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [14, 8]
+offset = [-72, -40, 0]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [18, 8]
+offset = [72, -40, 0]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [14, 11]
+offset = [-72, -40, 0]
+hangs = true
+
+[[decor]]
+mesh = { asset = "models/piling.glb" }
+tile = [18, 11]
+offset = [72, -40, 0]
+hangs = true
+
 [[props]]
 id = "rest_lantern"
 mesh = { asset = "models/lantern.glb" }
@@ -345,6 +499,25 @@ rect = [1, 6, 31, 32]
 count = 60
 color = [170, 190, 230]
 seed = 702
+
+# Motes drift down through the light over the heart and the causeway.
+[[emitters]]
+kind = "sparkles"
+rect = [15, 18, 17, 20]
+height = [80, 600]
+count = 24
+velocity = [0.0, -0.25, 0.0]
+color = [220, 235, 255]
+seed = 707
+
+[[emitters]]
+kind = "sparkles"
+rect = [15, 8, 17, 10]
+height = [40, 520]
+count = 16
+velocity = [0.0, -0.25, 0.0]
+color = [220, 235, 255]
+seed = 708
 
 [[emitters]]
 kind = "sparkles"
@@ -403,7 +576,71 @@ lamps = [
   # A cold wash round the ring's south arc and over the landing.
   { id = "ring_south", tile = [16, 29], offset = [0, 260, 0], color = [140, 160, 230], radius = 900 },
   { id = "landing", tile = [16, 6], offset = [0, 260, 0], color = [150, 170, 230], radius = 800 },
+  # Pale light falls from the vault's high windows onto the heart and the
+  # causeway, breathing slowly as cloud passes over the sea outside.
+  { id = "skylight_heart", tile = [16, 19], offset = [0, 620, 0], color = [170, 195, 240], radius = 720, breathe = 0.2, breathe_period = 420 },
+  { id = "skylight_causeway", tile = [16, 9], offset = [0, 560, 0], color = [200, 220, 255], radius = 760, breathe = 0.2, breathe_period = 460 },
 ]
+
+# 9F: shafts of pale light from the high windows, motes turning in them:
+# 9F: [[beams]]
+# 9F: id = "heart"
+# 9F: tile = [16, 19]
+# 9F: height = 1200
+# 9F: tilt = 10.0
+# 9F: angle = 200.0
+# 9F: width = [120, 240]
+# 9F: color = [210, 228, 255]
+# 9F: intensity = 75
+# 9F: breathe = 0.2
+# 9F: motes = 20
+# 9F: [[beams]]
+# 9F: id = "causeway"
+# 9F: tile = [16, 9]
+# 9F: height = 1100
+# 9F: tilt = 10.0
+# 9F: angle = 200.0
+# 9F: width = [90, 180]
+# 9F: color = [210, 228, 255]
+# 9F: intensity = 60
+# 9F: motes = 12
+# 9F: [[beams]]
+# 9F: id = "jetty_w"
+# 9F: tile = [3, 19]
+# 9F: height = 1000
+# 9F: tilt = 14.0
+# 9F: angle = 120.0
+# 9F: width = [80, 170]
+# 9F: color = [220, 230, 255]
+# 9F: intensity = 50
+# 9F: motes = 8
+# 9F: [[beams]]
+# 9F: id = "jetty_e"
+# 9F: tile = [29, 19]
+# 9F: height = 1000
+# 9F: tilt = 14.0
+# 9F: angle = 240.0
+# 9F: width = [80, 170]
+# 9F: color = [220, 230, 255]
+# 9F: intensity = 50
+# 9F: motes = 8
+
+# The water: the vault's ribbed cyan light-strip (a palette nothing else on
+# the floor draws through), turned to a dark sea green and drifting slowly,
+# so the ribs read as the faint swell of still water.
+[[materials]]
+kind = "tint"
+clut = 31042
+hue = -10.0
+value = -10
+color = [44, 84, 112]
+
+[[materials]]
+kind = "scroll"
+cell = { tpage = 9, clut = 31042, tile = 52 }
+dx = 0
+dy = 1
+period = 20
 
 [fog]
 regions = [{ rect = [8, 13, 24, 25], angle = 0.0, spread = 180.0, speed = 6 }]

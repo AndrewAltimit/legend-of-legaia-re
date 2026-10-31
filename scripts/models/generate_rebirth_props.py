@@ -535,8 +535,51 @@ def net_rack(out):
     write_glb(out, m, img, "net_rack")
 
 
+BRONZE = ((214, 160, 84), (92, 56, 26))
+
+
+def tower_bell(out):
+    """8F: the tower's great bronze bell in its timber yoke. The bell's
+    mouth is 1.2 across, its lip 0.5 above the origin; the yoke's beam
+    rests on two posts whose feet stand on the ground at the origin."""
+    img, b = strip([BRONZE, DARK_WOOD, IRON, BRASS], 81, stripes=0.15)
+    m = Mesh()
+    # The bell, turned on a lathe: lip, sound bow, waist, shoulder, crown.
+    prof = [(0.50, 0.62), (0.58, 0.60), (0.70, 0.50), (1.00, 0.42),
+            (1.40, 0.38), (1.62, 0.34), (1.74, 0.24), (1.80, 0.0)]
+    for (y0, r0), (y1, r1) in zip(prof, prof[1:]):
+        m.prism(16, r0, r1, y0, y1, b[0])
+    # A brass band round the sound bow, and the inside of the mouth.
+    m.prism(16, 0.605, 0.605, 0.60, 0.66, b[3])
+    m.prism(16, 0.58, 0.36, 0.50, 1.50, b[2])
+    # The clapper hangs inside.
+    m.prism(6, 0.03, 0.03, 0.55, 1.50, b[2], cap=b[2])
+    m.prism(8, 0.09, 0.09, 0.50, 0.62, b[2], cap=b[2])
+    # The crown's canons and the headstock it hangs from.
+    m.prism(6, 0.08, 0.08, 1.78, 1.95, b[3], cap=b[3])
+    m.box(-1.05, 1.95, -0.10, 1.05, 2.15, 0.10, b[1])
+    # Two posts carry the headstock's ends, braced at the foot.
+    for x in (-0.95, 0.95):
+        m.box(x - 0.08, 0.0, -0.08, x + 0.08, 2.15, 0.08, b[1])
+        m.box(x - 0.08, 0.0, -0.30, x + 0.08, 0.10, 0.30, b[1])
+    write_glb(out, m, img, "tower_bell")
+
+
+def piling(out):
+    """A tarred timber piling with an iron band: a stilt under a deck or a
+    mooring post, its foot at the origin, 1.6 tall."""
+    img, b = strip([DARK_WOOD, IRON, WOOD], 83, stripes=0.3)
+    m = Mesh()
+    m.prism(8, 0.11, 0.10, 0.0, 1.60, b[0], cap=b[2])
+    for y in (0.35, 1.30):
+        m.prism(8, 0.115, 0.115, y, y + 0.06, b[1])
+    write_glb(out, m, img, "piling")
+
+
 def main(out_dir):
     os.makedirs(out_dir, exist_ok=True)
+    tower_bell(os.path.join(out_dir, "tower_bell.glb"))
+    piling(os.path.join(out_dir, "piling.glb"))
     sundial(os.path.join(out_dir, "sundial.glb"))
     ring(os.path.join(out_dir, "armillary_ring.glb"))
     obelisk(os.path.join(out_dir, "obelisk.glb"))
