@@ -2562,12 +2562,16 @@ div.play-vis-head { cursor: default; }
     if (embedQuery.get('xwpreview') === '1') return false;
     if (LegaiaSaves.portraitCanvases()) return false;
     if (portraitHarvestBusy || !discBytes) return false;
+    /* The runtime that loaded the disc reads the three faces off it (the
+     * free `disc_portrait_rgba` copies the whole image into the engine for
+     * each face); the bar asks again on its next render until it is up. */
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.loaded_disc_portrait_rgba !== 'function') return false;
     portraitHarvestBusy = true;
-    saveTools().then(mod => {
-      if (typeof mod.disc_portrait_rgba !== 'function') return;
+    Promise.resolve().then(() => {
       const rgba = [];
       for (let i = 0; i < 3; i++) {
-        const buf = mod.disc_portrait_rgba(discBytes, i);
+        const buf = rt.loaded_disc_portrait_rgba(i);
         if (!buf || buf.length !== 16 * 16 * 4) { portraitHarvestBusy = false; return; }
         rgba.push(buf);
       }

@@ -28,6 +28,8 @@ pub use vram::*;
 pub use vram_filtered::*;
 pub use vram_posed::*;
 
+use std::collections::HashMap;
+
 /// Bit 15 of the per-vertex TSB attribute carries the prim's
 /// semi-transparency enable (the group mode byte's ABE bit; see
 /// [`legaia_prims::GroupHeader::abe`]). A TMD TSB word only uses bits
@@ -97,13 +99,12 @@ pub fn rot_zyx(v: [f32; 3], cx: f32, sx: f32, cy: f32, sy: f32, cz: f32, sz: f32
 /// positions in singleton-face bins (which the renderer treats as "fall
 /// back to screen-space derivatives").
 pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) -> Vec<[f32; 3]> {
-    use std::collections::HashMap;
     type Key = (i32, i32, i32);
     let key_of = |p: &[f32; 3]| -> Key { (p[0] as i32, p[1] as i32, p[2] as i32) };
     // The bins are only ever looked up, never walked, so the hasher cannot
     // change the result: a multiply-rotate hash in place of SipHash.
-    let mut bins: HashMap<Key, [f32; 3], std::hash::BuildHasherDefault<BinHasher>> =
-        HashMap::with_capacity_and_hasher(positions.len(), Default::default());
+    let mut bins: FastMap<Key, [f32; 3]> =
+        FastMap::with_capacity_and_hasher(positions.len(), Default::default());
     for tri in indices.as_chunks::<3>().0 {
         let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
         if a >= positions.len() || b >= positions.len() || c >= positions.len() {
@@ -148,7 +149,11 @@ pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) ->
 /// smooth-normal bins key on quantised positions a mesh build hashes once
 /// per corner, where SipHash was a measurable share of a scene build.
 #[derive(Default)]
-struct BinHasher(u64);
+pub(crate) struct BinHasher(u64);
+
+/// A map hashed with [`BinHasher`], for the mesh passes' keyed lookups whose
+/// result never depends on the map's iteration order.
+pub(crate) type FastMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<BinHasher>>;
 
 impl std::hash::Hasher for BinHasher {
     fn finish(&self) -> u64 {
@@ -164,6 +169,12 @@ impl std::hash::Hasher for BinHasher {
     }
     fn write_i32(&mut self, v: i32) {
         self.write_u64(u64::from(v as u32));
+    }
+    fn write_usize(&mut self, v: usize) {
+        self.write_u64(v as u64);
+    }
+    fn write_i64(&mut self, v: i64) {
+        self.write_u64(v as u64);
     }
     fn write_u64(&mut self, v: u64) {
         self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);

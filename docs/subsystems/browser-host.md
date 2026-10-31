@@ -58,6 +58,15 @@ The split is deliberate:
   the same world field and resolves through the same
   `SceneModelBank::tmd_bytes`.
 
+A scene rebuild keeps the static environment meshes the last build uploaded
+when their content is unchanged: `field_mesh_key(slot)` is the hex content key
+of a slot's unposed mesh (its TMD's bytes and the scene VRAM it samples, valid
+until the next tick), and the page's scene upload
+(`play-view-scene-build.js`) takes back the GL buffers of a key it already
+holds instead of building and uploading the mesh again, freeing the rest once
+the static layers are up. A pack map rebuilt after a workbench edit re-enters
+mostly the same meshes.
+
 The map + NPC layers make the **native play-window's exact resolver calls**,
 pinned by the disc-gated parity test `crates/web-play/tests/play_parity.rs`:
 

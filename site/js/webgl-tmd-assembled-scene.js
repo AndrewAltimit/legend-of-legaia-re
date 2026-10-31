@@ -156,8 +156,34 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
   }
 
   clearScene() {
+    this.freeSceneMeshRecords(this.sceneMeshes.values());
+    this.sceneMeshes.clear();
+  }
+
+  /* Empty the scene mesh table without freeing anything: the meshes come
+   * back as a meshId -> record map. A scene rebuilt from mostly the same
+   * meshes (play-view-scene-build.js) hands the records it keeps back
+   * (`adoptSceneMesh`) and frees the rest (`freeSceneMeshRecords`). */
+  detachSceneMeshes() {
+    const old = this.sceneMeshes;
+    this.sceneMeshes = new Map();
+    return old;
+  }
+
+  /* The record `uploadSceneMesh` made for `meshId` (null when none). */
+  sceneMeshRecord(meshId) {
+    return this.sceneMeshes.get(meshId) || null;
+  }
+
+  /* Register a record `detachSceneMeshes` gave out under `meshId`. */
+  adoptSceneMesh(meshId, rec) {
+    this.sceneMeshes.set(meshId, rec);
+  }
+
+  /* Free the GL objects of detached records nothing adopted. */
+  freeSceneMeshRecords(recs) {
     const gl = this.gl;
-    for (const m of this.sceneMeshes.values()) {
+    for (const m of recs) {
       gl.deleteVertexArray(m.vao);
       gl.deleteBuffer(m.posBuf);
       gl.deleteBuffer(m.uvBuf);
@@ -167,7 +193,6 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.deleteBuffer(m.idxBuf);
       if (m.normBuf) gl.deleteBuffer(m.normBuf);
     }
-    this.sceneMeshes.clear();
   }
 
   /* Upload the walk-view continent ground heightfield. Attribute layout

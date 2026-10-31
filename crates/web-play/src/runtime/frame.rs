@@ -17,6 +17,11 @@ impl LegaiaRuntime {
         // lands and loads in one call (`BootSession::resume_save`) and parks
         // nothing.
         self.pending_card_resume = None;
+        // A tick may animate the scene VRAM: the env meshes' content keys
+        // (`field_mesh_key`) take it afresh.
+        if let Some(f) = self.field.as_mut() {
+            f.mesh_key_vram = None;
+        }
         // The same for a score hand-off armed alongside it: with no entry to
         // run it, it runs now, over the scene still open.
         self.run_pending_bgm_handoff();

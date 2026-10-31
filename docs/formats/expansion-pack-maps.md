@@ -742,9 +742,29 @@ same products in the same order as a serial build.
 The preparation reads only the `ProtIndex` and the pack - no `World` state,
 no RNG - and its product is what the entry would build itself, so an entry
 from the cache plays bit-identically to a cold one
-(`crates/engine-scene-host/tests/expansion_map_preload_disc.rs`). A pack
-activation, a hot reload included, empties the cache. Retail scene entry is
-untouched.
+(`crates/engine-scene-host/tests/expansion_map_preload_disc.rs`). Since a
+prepared map is a function of the disc, the map's definition and the pack's
+assets alone, a new version of the pack - a hot reload - keeps every
+prepared map whose definition it leaves equal, when its assets are equal
+too; the rest of the cache goes, as does every preparation under way. An
+edit to one map of a pack therefore re-prepares that map and nothing else.
+Retail scene entry is untouched.
+
+Several products of a map's preparation and of every scene build are
+derived again for an equal input on the next entry, and are kept by content
+instead: a terrain's resolved surface (`MapDef::terrain_surface`, which the
+validator, the rest checks and the mesh library each ask for), each
+decoration mesh a bake places (`tmd_ops::BakeCache`), and per mesh the
+occluder triangles, fog surfaces and coplanar planes and the coplanar lifts
+of the whole draw list (`legaia_engine_scene::mesh_memo`, kept for the last
+two builds within a byte budget). The browser page keeps each static
+environment mesh it uploaded under the mesh's content key
+(`LegaiaRuntime::field_mesh_key`: the TMD's bytes and the VRAM it samples)
+and takes it back on the next scene build instead of building it again.
+Every one of these hands back what a fresh derivation makes; the play page's
+`isles_map_entry_cost` measurement (`crates/web-play`) hashes everything an
+Isles map's build makes, before and after a hot reload, and asserts the two
+equal.
 
 ## Meshes from other scenes
 
