@@ -10,7 +10,9 @@
 //! have a reached sub-cell inside its tile; an exit the same on one tile of
 //! its rectangle; a press trigger (examined from the next tile) one within
 //! a tile of its rectangle. Heights are not walked: a tier step is not a
-//! wall here. Skips when `LEGAIA_DISC_BIN` is unset.
+//! wall here. `engine-session`'s `expansion_rebirth_main_line_disc` plays
+//! the quest lines over the same walk, gates and fights included. Skips
+//! when `LEGAIA_DISC_BIN` is unset.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
