@@ -14,7 +14,7 @@
     <dt>Entry</dt><dd><code>SceneHost::enter_expansion_map</code> (<code>engine-scene-host</code>, <code>scene_host/expansion_map.rs</code>)</dd>
     <dt>Runtime</dt><dd>Zones and NPCs <code>legaia_engine_expansion::map</code>; entrances <code>legaia_engine_expansion::entrance</code></dd>
     <dt>Editor</dt><dd>The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s tile painter edits the file 1:1</dd>
-    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/rebirth/maps/rebirth_tower_1f.toml" target="_blank" rel="noopener"><code>packs/rebirth/maps/rebirth_tower_1f.toml</code></a></dd>
+    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/rebirth/maps/genesis_1f.toml" target="_blank" rel="noopener"><code>packs/rebirth/maps/genesis_1f.toml</code></a></dd>
   </dl>
 </section>
 
@@ -636,7 +636,7 @@ requires = { min_level = 30 }</code></pre>
 
 <section class="doc-section" id="running-a-map" data-doc="running-a-map">
   <h2>Running a map</h2>
-  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/rebirth --map rebirth_tower_1f [--spawn dais]</code></div>
+  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/rebirth --map genesis_1f [--spawn dais]</code></div>
   <p><code>--expansion</code> takes a pack directory or an <code>.lxpack</code> bundle and activates it through <code>World::activate_expansion</code>; with <code>--resume-save</code> the save's own map (if any) is the landing instead of <code>--map</code>. Without <code>--map</code> the pack is simply active, for the title's New Game and Continue.</p>
   <p>The browser play page loads an <code>.lxpack</code> through <code>LegaiaRuntime::load_expansion</code> and enters a map through <code>enter_expansion_map</code>, the same <code>SceneHost::enter_expansion_map</code> entry; its scene build reads the map's ground, walls and props off the same <code>Scene</code> (<a href="../subsystems/browser-host.html">browser host</a>). Any scene change - an exit, a scene picker - leaves the map and drops its layer; a battle fought on the map returns to it. The map's <code>name</code> shows as the place-name banner on entry. Step-by-step: <a href="../guides/expansion-packs.html">expansion packs guide</a>.</p>
 </section>

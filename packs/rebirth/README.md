@@ -28,7 +28,7 @@ Rebirth is built for the climb from there to 99.
 | File | Contents |
 |---|---|
 | `pack.toml` | The manifest. |
-| `maps/rebirth_tower_1f.toml` ... `_8f.toml` | The eight floors of the tower. |
+| `maps/genesis_1f.toml` ... `_8f.toml` | The eight floors of the tower. |
 | `battle.toml` | The derived monsters, formations (five in waves), the tower and Isles encounter tables, one retail-scene override, eight bosses (every one refuses Run). |
 | `progression.toml` | The level curve past 40, EXP and gold multipliers, enemy scaling, level-up rewards at 55, 60, 70, 80, 90 and 99. |
 | `quests.toml` | An eleven-quest main chain ending in the First Breath, ten side quests, four Isles quests, five challenges. |
@@ -47,14 +47,14 @@ Rebirth is built for the climb from there to 99.
 
 | Floor | Map | Base scene | Party level | What's there |
 |---|---|---|---|---|
-| 1F Atrium | `rebirth_tower_1f` | `tower` (Sky Gardens Tower), built from scratch | 40-48 | The Warden's Stone, the training gauntlet bell, the card dealer, the stair down to Rim Elm |
-| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), built from scratch (37 x 40) | 50-55 | Boss: the Cinder Warden; the forge and the ash shrine |
-| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), built from scratch (39 x 40) | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
-| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), built from scratch (49 x 37) | 60-68 | Boss: the Verdant Colossus; the Root Archive and the Flooded Cloister |
-| 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), built from scratch (37 x 30) | - | No monsters; Keeper Odalric and his five tables |
-| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), built from scratch (35 x 37) | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
-| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), built from scratch (33 x 34) | 80-88 | Boss: the Azure Seraph |
-| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), built from scratch (31 x 36) | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch in the nave |
+| 1F Atrium | `genesis_1f` | `tower` (Sky Gardens Tower), built from scratch | 40-48 | The Warden's Stone, the training gauntlet bell, the card dealer, the stair down to Rim Elm |
+| 2F Ember Stair | `genesis_2f` | `rugi` (Rogue's Tower), built from scratch (37 x 40) | 50-55 | Boss: the Cinder Warden; the forge and the ash shrine |
+| 3F Hanging Garden | `genesis_3f` | `teien` (Sky Gardens), built from scratch (39 x 40) | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
+| 4F Verdant Vault | `genesis_4f` | `concnow` (Conkram), built from scratch (49 x 37) | 60-68 | Boss: the Verdant Colossus; the Root Archive and the Flooded Cloister |
+| 5F Gambler's Rest | `genesis_5f` | `koin1` (Sol Tower rooms), built from scratch (37 x 30) | - | No monsters; Keeper Odalric and his five tables |
+| 6F Engine Deep | `genesis_6f` | `chitei2` (Jette's Fortress), built from scratch (35 x 37) | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
+| 7F Sanctum of Echoes | `genesis_7f` | `korb3` (Sol Tower underground), built from scratch (33 x 34) | 80-88 | Boss: the Azure Seraph |
+| 8F Hollow Throne | `genesis_8f` | `taiku2` (Zora's Floating Castle), built from scratch (31 x 36) | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch in the nave |
 
 Every floor carries the detail layer
 ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)).
@@ -243,7 +243,7 @@ regulars, confetti and a slow shot round them (`modes.toml` `podium`).
   card room's table on the 5F floor: the Warden's second across the board,
   two regulars watching, the tower's card dealer beside them (talk to the
   second to sit down).
-- **The Rebirth Links** (`rebirth-links`): six holes - bunkers guarding a
+- **The Rebirth Links** (`genesis-links`): six holes - bunkers guarding a
   green, a dogleg, an island green behind a bridge, stepped terraces
   (height grid), conveyor ramps round a wall (slope tiles), and a long par
   5 to a green that slopes away.
@@ -269,7 +269,7 @@ run on the overworld, where there is room to run to. **Drake Dash**
 under Rim Elm to the water gate, a hairpin to cut with a hop and a boost
 lying off the plain's long straight for whoever hopped to it.
 
-The earlier village instances (`mist-lantern-table`, `rim-elm-duel`,
+The earlier village instances (`mist-lantern-table`, `haven-duel`,
 `windmill-links`, `drake-circuit`, `storehouse`) stay as the gentler set.
 
 ### Gear
@@ -371,11 +371,11 @@ asset expansion validate packs/rebirth
 
 # Native window: enter the tower's first floor directly
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_1f
+    --expansion packs/rebirth --map genesis_1f
 
 # Any floor at a named spawn (floors 2F-7F have from_below and from_above)
 legaia-engine play-window --disc ... --expansion packs/rebirth \
-    --map rebirth_tower_6f --spawn from_below
+    --map genesis_6f --spawn from_below
 
 # Share it as one file, and unpack one
 asset expansion bundle packs/rebirth -o rebirth.lxpack
@@ -471,7 +471,7 @@ Every pack flag and counter the pack writes is read somewhere (the
 validator's flow lints hold it to that): the trial's `tower_open` lifts the
 stair seal and arms the dais guardian, `rest_open` opens the 5F tables,
 `hollow_heard`, `tables_beaten`, `sovereign_fallen` and `breath_released`
-turn NPC lines, `throne_broken` and `reborn` gate the last two quests, the
+turn NPC lines, `throne_broken` and `vigil_kept` gate the last two quests, the
 Isles flags gate the next Isles quest and Pell's late stock, and the
 `bosses_felled`, `bounties` and `echoes_broken` counters are objectives of
 **Rebirth**, **Tower Bounty Hunter** and **Echo Breaker**.

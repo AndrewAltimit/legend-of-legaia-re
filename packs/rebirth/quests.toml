@@ -95,7 +95,7 @@ description = "Halfway up the tower, a hall where nothing hunts. Its keeper stil
 auto_start = true
 prerequisites = { quests = ["verdant_vault"] }
 objectives = [
-    { kind = "enter_scene", scene = "rebirth_tower_5f", text = "Reach the fifth floor" },
+    { kind = "enter_scene", scene = "genesis_5f", text = "Reach the fifth floor" },
     { kind = "talk", npc = "rest_keeper", text = "Talk to the keeper" },
 ]
 complete_dialog = "keeper_welcome"
@@ -107,7 +107,7 @@ title = "The Engine Deep"
 description = "The sixth floor's machines still run for their master. Stop the engine and the one who drives it."
 giver = "regent_seat"
 prerequisites = { quests = ["gamblers_rest"], min_level = 70 }
-# The offer is the alcove's own trigger (maps/rebirth_tower_6f.toml), gated
+# The offer is the alcove's own trigger (maps/genesis_6f.toml), gated
 # on the Regent still standing, so a won fight is not offered again while
 # the gauntlet remains.
 ordered = false
@@ -147,7 +147,7 @@ complete_cutscene = "sovereign_falls"
 rewards = { cards = ["hollow-sovereign"], set_flags = ["sovereign_fallen"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
-id = "rebirth"
+id = "last_vigil"
 title = "Rebirth"
 description = "The throne is empty. Warden Ysolde asks one last thing: reach the peak of your own strength."
 auto_start = true
@@ -158,15 +158,15 @@ objectives = [
     { kind = "counter", counter = "bosses_felled", at_least = 5, text = "Fell the tower's five keepers" },
     { kind = "talk", npc = "tower_guide", text = "Return to the Warden's Stone" },
 ]
-complete_dialog = "guide_rebirth_done"
-rewards = { gold = 99999, set_flags = ["reborn"] }
+complete_dialog = "guide_vigil_done"
+rewards = { gold = 99999, set_flags = ["vigil_kept"] }
 
 [[quests]]
 id = "first_breath"
 title = "The First Breath"
 description = "Ysolde's seal was never on the stair. Under the Warden's Stone lies the first breath the Mist ever drew, and she has held it down alone since before the Mist came."
 giver = "tower_guide"
-prerequisites = { quests = ["rebirth"], flags = ["reborn"] }
+prerequisites = { quests = ["last_vigil"], flags = ["vigil_kept"] }
 start_dialog = "breath_offer"
 active_dialog = "breath_offer"
 objectives = [
@@ -185,13 +185,13 @@ auto_start = true
 prerequisites = { flags = ["tower_open"] }
 ordered = false
 objectives = [
-    { kind = "enter_scene", scene = "rebirth_tower_2f", text = "The Ember Stair" },
-    { kind = "enter_scene", scene = "rebirth_tower_3f", text = "The Hanging Garden" },
-    { kind = "enter_scene", scene = "rebirth_tower_4f", text = "The Verdant Vault" },
-    { kind = "enter_scene", scene = "rebirth_tower_5f", text = "The Gambler's Rest" },
-    { kind = "enter_scene", scene = "rebirth_tower_6f", text = "The Engine Deep" },
-    { kind = "enter_scene", scene = "rebirth_tower_7f", text = "The Sanctum of Echoes" },
-    { kind = "enter_scene", scene = "rebirth_tower_8f", text = "The Hollow Throne" },
+    { kind = "enter_scene", scene = "genesis_2f", text = "The Ember Stair" },
+    { kind = "enter_scene", scene = "genesis_3f", text = "The Hanging Garden" },
+    { kind = "enter_scene", scene = "genesis_4f", text = "The Verdant Vault" },
+    { kind = "enter_scene", scene = "genesis_5f", text = "The Gambler's Rest" },
+    { kind = "enter_scene", scene = "genesis_6f", text = "The Engine Deep" },
+    { kind = "enter_scene", scene = "genesis_7f", text = "The Sanctum of Echoes" },
+    { kind = "enter_scene", scene = "genesis_8f", text = "The Hollow Throne" },
 ]
 rewards = { gold = 20000, items = [{ item = "mist_lantern" }], cards = ["sky-sovereign"] }
 
@@ -304,7 +304,7 @@ ordered = false
 objectives = [
     { kind = "win_mode", mode = "tower-high-table", text = "Win at the Tower High Table" },
     { kind = "win_mode", mode = "wardens-duel", text = "Win the Warden's Duel" },
-    { kind = "win_mode", mode = "rebirth-links", text = "Win the Rebirth Links" },
+    { kind = "win_mode", mode = "genesis-links", text = "Win the Rebirth Links" },
     { kind = "win_mode", mode = "spiral-circuit", text = "Win the Monastery Run" },
     { kind = "win_mode", mode = "old-vault", text = "Win hide and seek in the Old Vault" },
 ]

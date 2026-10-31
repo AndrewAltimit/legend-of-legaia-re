@@ -491,7 +491,7 @@ The HUD is the score plates, the turn prompt and the selected card's panel, clea
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_5f --mode wardens-duel
+    --expansion packs/rebirth --map genesis_5f --mode wardens-duel
 ```
 
 The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
@@ -563,7 +563,7 @@ Every label of the in-world HUDs sits in a box of its own (`Label::max_w`): the 
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_5f --mode tower-high-table
+    --expansion packs/rebirth --map genesis_5f --mode tower-high-table
 ```
 
 The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt, with the hall's own card table put away while it plays (`hide = ["high_table"]`); the Mist Lantern Table and the Village Duel do the same with Tolva's Haven's plank tables.

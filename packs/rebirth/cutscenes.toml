@@ -10,7 +10,7 @@
 
 # --- 1F: the tower wakes ------------------------------------------------------
 
-# The first arrival in the Atrium (maps/rebirth_tower_1f.toml
+# The first arrival in the Atrium (maps/genesis_1f.toml
 # `enter_cutscenes`): the camera rises up the hall toward the stair above,
 # the Warden's familiar pads down off the dais to meet the party, and
 # Ysolde's voice calls them to the stone. It leaves the party where it
@@ -19,7 +19,7 @@
 # rest.
 [cutscenes.tower_intro]
 title = "The Tower Wakes"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 letterbox = true
 
 [[cutscenes.tower_intro.steps]]
@@ -130,12 +130,12 @@ frames = 300
 
 # --- 5F: the hollow stirs ----------------------------------------------------
 
-# The middle of the climb (maps/rebirth_tower_5f.toml `enter_cutscenes`,
+# The middle of the climb (maps/genesis_5f.toml `enter_cutscenes`,
 # once the Verdant Vault is won): the voice on the throne speaks for the
 # first time, and the tower shudders under it.
 [cutscenes.hollow_stirs]
 title = "The Hollow Stirs"
-map = "rebirth_tower_5f"
+map = "genesis_5f"
 letterbox = true
 
 [[cutscenes.hollow_stirs.steps]]
@@ -183,12 +183,12 @@ flag = "hollow_heard"
 
 # --- 8F: the throne ----------------------------------------------------------
 
-# Before the superboss (maps/rebirth_tower_8f.toml, the `throne_approach`
+# Before the superboss (maps/genesis_8f.toml, the `throne_approach`
 # trigger): the Sovereign rises on its throne and speaks, then the Hollow
 # Throne quest starts, whose offer is the fight.
 [cutscenes.sovereign_rises]
 title = "The Hollow Sovereign"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 
 [[cutscenes.sovereign_rises.steps]]
@@ -256,7 +256,7 @@ frames = 160
 # last at the top of it.
 [cutscenes.sovereign_falls]
 title = "The Throne Breaks"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 
 [[cutscenes.sovereign_falls.steps]]
@@ -329,7 +329,7 @@ flag = "throne_broken"
 
 [cutscenes.warden_intro]
 title = "The Cinder Warden"
-map = "rebirth_tower_2f"
+map = "genesis_2f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [18, 32] }, pitch = -10.0, zoom = 0.7, frames = 70 },
@@ -344,7 +344,7 @@ steps = [
 
 [cutscenes.warden_fallen]
 title = "The Ember Stair Goes Cold"
-map = "rebirth_tower_2f"
+map = "genesis_2f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [18, 32] }, pitch = -6.0, zoom = 0.85, frames = 60 },
@@ -357,7 +357,7 @@ steps = [
 
 [cutscenes.colossus_intro]
 title = "The Verdant Colossus"
-map = "rebirth_tower_4f"
+map = "genesis_4f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [24, 20] }, pitch = -14.0, zoom = 0.9, frames = 80 },
@@ -373,7 +373,7 @@ steps = [
 
 [cutscenes.colossus_fallen]
 title = "The Vault Sleeps"
-map = "rebirth_tower_4f"
+map = "genesis_4f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [24, 20] }, pitch = -8.0, zoom = 1.0, frames = 60 },
@@ -386,7 +386,7 @@ steps = [
 
 [cutscenes.regent_intro]
 title = "The Iron Regent"
-map = "rebirth_tower_6f"
+map = "genesis_6f"
 letterbox = true
 steps = [
     # From the hall, high and back, down into the alcove's mouth: the
@@ -403,7 +403,7 @@ steps = [
 
 [cutscenes.regent_fallen]
 title = "The Engine Is Still"
-map = "rebirth_tower_6f"
+map = "genesis_6f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [17, 31] }, pitch = 18.0, zoom = 1.3, frames = 60 },
@@ -417,7 +417,7 @@ steps = [
 
 [cutscenes.seraph_intro]
 title = "The Azure Seraph"
-map = "rebirth_tower_7f"
+map = "genesis_7f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [16, 19] }, pitch = 14.0, zoom = 0.8, frames = 90 },
@@ -433,7 +433,7 @@ steps = [
 
 [cutscenes.seraph_fallen]
 title = "The Sanctum Falls Silent"
-map = "rebirth_tower_7f"
+map = "genesis_7f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [16, 19] }, pitch = 10.0, zoom = 1.0, frames = 60 },
@@ -449,7 +449,7 @@ steps = [
 # fight, once the offer is taken.
 [cutscenes.sovereign_intro]
 title = "The Hollow Sovereign"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [15, 33] }, pitch = -16.0, zoom = 0.7, frames = 60 },
@@ -464,7 +464,7 @@ steps = [
 
 [cutscenes.echo_intro]
 title = "Echo of the Throne"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [15, 33] }, pitch = -10.0, zoom = 0.8, frames = 50 },
@@ -476,7 +476,7 @@ steps = [
 
 [cutscenes.echo_fallen]
 title = "The Echo Fades"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [15, 33] }, pitch = -6.0, zoom = 0.85, frames = 50 },
@@ -492,7 +492,7 @@ steps = [
 # The pack's last fight opens on the Warden's Stone, the seal lifting.
 [cutscenes.breath_intro]
 title = "The First Breath"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -12.0, zoom = 0.8, frames = 60 },
@@ -504,7 +504,7 @@ steps = [
 
 [cutscenes.breath_fallen]
 title = "The Seal Sleeps"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },

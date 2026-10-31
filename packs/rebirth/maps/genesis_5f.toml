@@ -113,12 +113,12 @@ requires = { quests = ["verdant_vault"] }
 [[exits]]
 id = "stair_down"
 rect = [13, 2, 13, 2]
-to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_above" }
+to = { kind = "map", map = "genesis_4f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
 rect = [23, 29, 23, 29]
-to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_below" }
+to = { kind = "map", map = "genesis_6f", spawn = "from_below" }
 
 # The keeper's bar: every table quest is given across it.
 [[triggers]]

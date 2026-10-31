@@ -764,7 +764,7 @@ either folder (`legaia-engine packs` lists them):
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
     --expansion rebirth                 # New Game and Continue play with it
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion rebirth.lxpack --map rebirth_tower_1f   # straight onto a map
+    --expansion rebirth.lxpack --map genesis_1f   # straight onto a map
 ```
 
 **Where Rebirth starts.** Rebirth is made for a late-game party: its way in is
@@ -785,7 +785,7 @@ changes, so a map edited in a text editor shows a moment after it is saved:
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch
+    --expansion packs/rebirth --map genesis_1f --expansion-watch
 ```
 
 A pack with an error is refused and the running one stays; the notice line

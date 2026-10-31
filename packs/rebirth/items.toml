@@ -64,32 +64,32 @@ all_party = true
 
 # --- Weapons: boss rewards ---------------------------------------------------
 
-[items.rebirth_blade]
+[items.vigil_blade]
 name = "Rebirth Blade"
 description = "Forged where the Mist|was torn away."
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 characters = ["vahn"]
 attack = 112
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_talon]
+[items.vigil_talon]
 name = "Rebirth Talon"
 description = "Light as breath and|twice as sharp."
 kind = "weapon"
 icon = { kind = "item", id = 0x2D }
 characters = ["noa"]
 attack = 110
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_maul]
+[items.vigil_maul]
 name = "Rebirth Maul"
 description = "The Colossus's heartwood,|bound in iron."
 kind = "weapon"
 icon = { kind = "item", id = 0x33 }
 characters = ["gala"]
 attack = 114
-set = "rebirth"
+set = "vigil"
 
 # --- Armour: the Warden tier (sold from the start) ---------------------------
 
@@ -124,7 +124,7 @@ ldf = 76
 
 # --- The Rebirth set (sold once the Iron Regent falls) -----------------------
 
-[items.rebirth_mail]
+[items.vigil_mail]
 name = "Rebirth Mail"
 description = "Mail of the reborn."
 kind = "armor"
@@ -132,9 +132,9 @@ icon = { kind = "item", id = 0x4A }
 price = 120000
 characters = ["vahn"]
 defence = 94
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_robe]
+[items.vigil_robe]
 name = "Rebirth Robe"
 description = "Robe of the reborn."
 kind = "armor"
@@ -143,9 +143,9 @@ price = 118000
 characters = ["noa"]
 udf = 95
 ldf = 88
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_plate]
+[items.vigil_plate]
 name = "Rebirth Plate"
 description = "Plate of the reborn."
 kind = "armor"
@@ -154,9 +154,9 @@ price = 120000
 characters = ["gala"]
 udf = 86
 ldf = 96
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_crown]
+[items.vigil_crown]
 name = "Rebirth Crown"
 description = "A crown for whoever|climbs the whole tower."
 kind = "helmet"
@@ -164,9 +164,9 @@ icon = { kind = "item", id = 0x3D }
 price = 90000
 udf = 71
 intelligence = 70
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_greaves]
+[items.vigil_greaves]
 name = "Rebirth Greaves"
 description = "Stride over the Mist."
 kind = "boots"
@@ -175,9 +175,9 @@ price = 95000
 attack = 98
 ldf = 70
 speed = 35
-set = "rebirth"
+set = "vigil"
 
-[sets.rebirth]
+[sets.vigil]
 name = "Rebirth"
 # Two pieces: +10 ATK. Three: +12 UDF and LDF. All four a hero can wear
 # (weapon, armour, crown, greaves): All Guard (passive 0x24, the Rainbow
@@ -254,11 +254,11 @@ stock = [
     { item = "sovereign_nectar", requires = { bosses = ["verdant_colossus"] } },
     { item = "ysoldes_seal", requires = { bosses = ["verdant_colossus"] } },
     { item = "tower_sigil", requires = { quests = ["engine_deep"] } },
-    { item = "rebirth_mail", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_robe", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_plate", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_greaves", requires = { bosses = ["azure_seraph"] } },
+    { item = "vigil_mail", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_robe", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_plate", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_crown", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_greaves", requires = { bosses = ["azure_seraph"] } },
 ]
 
 # Trader Pell's stall in the Rebirth Isles village (maps/isles_village.toml).

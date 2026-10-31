@@ -1,5 +1,5 @@
 # Soak-harness finding (pad input only - no disc bytes).
-# soak-scene = "xp:rebirth_tower_1f+rt"
+# soak-scene = "xp:genesis_1f+rt"
 # soak-seed = 1
 # soak-signature = "save_roundtrip|tower|ext_v2.previous_scene"
 # detail: Some("town01") -> Some("tower") - the pack-map resume re-entered the map over its base scene and noted the base scene as the one left

@@ -1290,7 +1290,7 @@ pub(crate) enum Cmd {
         /// `--map`) is entered, play the active expansion pack's cutscene
         /// `ID` (`cutscenes.toml`), the way a trigger, an arrival or a quest
         /// starts one - e.g. `--expansion packs/rebirth --map
-        /// rebirth_tower_8f --play-cutscene sovereign_falls`. It runs against
+        /// genesis_8f --play-cutscene sovereign_falls`. It runs against
         /// the launch's flags.
         #[arg(long, value_name = "ID", requires = "expansion")]
         play_cutscene: Option<String>,

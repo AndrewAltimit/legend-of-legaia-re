@@ -59,7 +59,7 @@ fn an_edit_round_trips_and_touches_only_its_file() {
         "hp": 9000,
     });
     // The painter: one more spawn and a repainted tile.
-    let map = &mut pack["maps"]["rebirth_tower_1f"];
+    let map = &mut pack["maps"]["genesis_1f"];
     map["spawns"]
         .as_array_mut()
         .unwrap()
@@ -77,7 +77,7 @@ fn an_edit_round_trips_and_touches_only_its_file() {
 
     for (path, b) in &back {
         let changed = files.get(path) != Some(b);
-        let edited_file = path == "battle.toml" || path == "maps/rebirth_tower_1f.toml";
+        let edited_file = path == "battle.toml" || path == "maps/genesis_1f.toml";
         assert_eq!(changed, edited_file, "{path}");
     }
 
@@ -91,7 +91,7 @@ fn an_edit_round_trips_and_touches_only_its_file() {
 fn the_tower_map_previews_with_the_corner_rule() {
     let mut core = Core::new();
     let (_, pack) = load(&mut core);
-    let map = &pack["maps"]["rebirth_tower_1f"];
+    let map = &pack["maps"]["genesis_1f"];
     let p = core.map_preview(&map.to_string());
     assert!(p["error"].is_null(), "{p}");
     let (w, h) = (p["width"].as_u64().unwrap(), p["height"].as_u64().unwrap());
@@ -242,10 +242,7 @@ fn an_edit_then_its_revert_exports_the_loaded_bytes() {
             "cutscenes.toml",
             &["cutscenes", "cutscenes", "tower_intro", "title"],
         ),
-        (
-            "maps/rebirth_tower_1f.toml",
-            &["maps", "rebirth_tower_1f", "name"],
-        ),
+        ("maps/genesis_1f.toml", &["maps", "genesis_1f", "name"]),
     ];
     for (file, path) in edits {
         let mut edited = pack.clone();
@@ -429,7 +426,7 @@ fn the_diff_panel_reads_an_older_bundle() {
     assert_eq!(d["same_pack"], true);
     assert_eq!(d["counts"], serde_json::json!([1, 0, 1]));
     assert_eq!(d["bump"], "minor");
-    assert_eq!(d["suggested_version"], "0.2.0");
+    assert_eq!(d["suggested_version"], "0.3.0");
     let log = d["changelog"].as_str().unwrap();
     assert!(
         log.contains("- monster `mist_hound` (battle.toml)"),
@@ -522,7 +519,7 @@ fn the_detail_forms_open_without_an_edit() {
 
     // A Duplicate and its Remove, a reorder and its reverse: the loaded bytes.
     let mut edited = pack.clone();
-    let map = &mut edited["maps"]["rebirth_tower_1f"];
+    let map = &mut edited["maps"]["genesis_1f"];
     let decals = map["decals"].as_array_mut().unwrap();
     let copy = decals[0].clone();
     decals.insert(1, copy);
@@ -532,10 +529,10 @@ fn the_detail_forms_open_without_an_edit() {
     let bytes = core.export_bundle(&edited.to_string()).unwrap();
     let back = bundle::read_bundle(&bytes).unwrap();
     for (path, body) in &back {
-        let touched = path == "maps/rebirth_tower_1f.toml" || path == "modes.toml";
+        let touched = path == "maps/genesis_1f.toml" || path == "modes.toml";
         assert_eq!(files.get(path) != Some(body), touched, "{path}");
     }
-    edited["maps"]["rebirth_tower_1f"]["decals"]
+    edited["maps"]["genesis_1f"]["decals"]
         .as_array_mut()
         .unwrap()
         .remove(1);
@@ -616,7 +613,7 @@ fn the_stage_and_tint_forms_round_trip() {
         .find(|(_, b)| b["stage"].is_null())
         .map(|(k, _)| k.clone())
         .expect("a Rebirth boss on the room's stage");
-    let map = "rebirth_tower_2f";
+    let map = "genesis_2f";
     let tint_at = pack["maps"][map]["materials"]
         .as_array()
         .unwrap()

@@ -64,7 +64,7 @@ fn bundle_unbundle_round_trips_rebirth() {
     );
     let text = ok(&asset(&[Path::new("info"), &lxpack]));
     assert!(
-        text.contains("Legend of Legaia: Rebirth 0.1.0 (rebirth)"),
+        text.contains("Legend of Legaia: Rebirth 0.2.0 (rebirth)"),
         "{text}"
     );
     ok(&asset(&[Path::new("validate"), &lxpack]));

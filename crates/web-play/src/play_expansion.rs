@@ -536,7 +536,7 @@ mod tests {
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|m| m["id"] == "rebirth_tower_1f")
+                .any(|m| m["id"] == "genesis_1f")
         );
         assert_eq!(v["ok"], false, "no disc: not activated");
         assert!(v["errors"][0].as_str().unwrap().contains("load the disc"));
@@ -564,10 +564,10 @@ mod tests {
         let v: serde_json::Value =
             serde_json::from_str(&rt.load_expansion_core(&rebirth_bundle())).unwrap();
         assert_eq!(v["ok"], true, "{v}");
-        rt.enter_expansion_map_core("rebirth_tower_1f", "")
+        rt.enter_expansion_map_core("genesis_1f", "")
             .expect("enter the pack map");
         let host = rt.scene_host.host().unwrap();
-        assert_eq!(host.active_expansion_map(), Some("rebirth_tower_1f"));
+        assert_eq!(host.active_expansion_map(), Some("genesis_1f"));
         // The page arms its live battles after the map's monster merge; the
         // arm keeps the pack's monsters and rolls no retail encounters.
         for id in host.world.expansion_base_monster_ids() {
@@ -580,7 +580,7 @@ mod tests {
         let field = rt.field.as_ref().expect("the page built the scene");
         assert!(!field.placements.is_empty(), "the map's props draw");
         let info: serde_json::Value = serde_json::from_str(&rt.expansion_info_json()).unwrap();
-        assert_eq!(info["map"], "rebirth_tower_1f");
+        assert_eq!(info["map"], "genesis_1f");
         rt.unload_expansion();
         assert!(!rt.scene_host.host().unwrap().world.expansion.is_active());
     }

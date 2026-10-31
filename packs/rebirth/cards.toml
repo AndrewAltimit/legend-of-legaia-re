@@ -436,7 +436,7 @@ art = { kind = "monster", id = 112 }
 # --- Boosters ----------------------------------------------------------------
 
 [[boosters]]
-id = "rebirth-starter"
+id = "genesis-starter"
 name = "Rebirth Starter Pack"
 cards_per_pack = 5
 weights = { common = 70, uncommon = 23, rare = 6, legendary = 1 }
@@ -464,12 +464,12 @@ price = 4000
 
 # --- Dealers -----------------------------------------------------------------
 
-# The tower's ground floor (maps/rebirth_tower_1f.toml, trigger
+# The tower's ground floor (maps/genesis_1f.toml, trigger
 # `card_dealer`).
 [[dealers]]
 id = "tower"
 name = "Tower Card Dealer"
-stock = ["rebirth-starter", "mistborn", "hollow-court"]
+stock = ["genesis-starter", "mistborn", "hollow-court"]
 sell_percent = 100
 
 # --- Rewards -----------------------------------------------------------------
@@ -477,12 +477,12 @@ sell_percent = 100
 # Early field monsters drop the odd starter pack, in any fight.
 [[rewards]]
 source = { kind = "monster", id = 1 }
-booster = "rebirth-starter"
+booster = "genesis-starter"
 chance_percent = 5
 
 [[rewards]]
 source = { kind = "monster", id = 4 }
-booster = "rebirth-starter"
+booster = "genesis-starter"
 chance_percent = 5
 
 [[rewards]]
@@ -531,7 +531,7 @@ chance_percent = 8
 # A won tower formation pays a booster on top.
 [[rewards]]
 source = { kind = "formation", id = "ogre_pack" }
-booster = "rebirth-starter"
+booster = "genesis-starter"
 chance_percent = 25
 
 [[rewards]]
@@ -551,8 +551,8 @@ count = 2
 
 # A won card duel or poker night pays in cards too.
 [[rewards]]
-source = { kind = "mode", id = "rim-elm-duel" }
-booster = "rebirth-starter"
+source = { kind = "mode", id = "haven-duel" }
+booster = "genesis-starter"
 
 [[rewards]]
 source = { kind = "mode", id = "mist-lantern-table" }
@@ -671,9 +671,9 @@ booster = "mistborn"
 
 [[rewards]]
 source = { kind = "mode", id = "old-vault" }
-booster = "rebirth-starter"
+booster = "genesis-starter"
 count = 2
 
 [[rewards]]
-source = { kind = "mode", id = "rebirth-links" }
+source = { kind = "mode", id = "genesis-links" }
 card = "gilded-bison"

@@ -603,7 +603,7 @@ mod tests {
         let bytes = std::fs::read(disc).expect("read the disc");
         let files = rebirth_files();
         let pack = bundle(&files);
-        let map = "rebirth_tower_1f";
+        let map = "genesis_1f";
 
         // A fresh entry: what the play page draws for the map.
         let mut fresh = LegaiaRuntime::new();
@@ -702,14 +702,15 @@ mod tests {
         let bytes = std::fs::read(disc).expect("read the disc");
         let files = rebirth_files();
         let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
-        // A map with a standing (no patrol, not scenery) NPC.
+        // A map with a standing (no patrol, not scenery) NPC that is
+        // always present (a presence gate parks it off the map).
         let (map, n) = pack
             .maps
             .iter()
             .find_map(|(id, m)| {
                 m.npcs
                     .iter()
-                    .position(|x| !x.scenery && x.patrol.is_empty())
+                    .position(|x| !x.scenery && x.patrol.is_empty() && x.present.is_empty())
                     .map(|n| (id.clone(), n))
             })
             .expect("a standing NPC in Rebirth");
@@ -987,7 +988,7 @@ mod tests {
         let bytes = std::fs::read(disc).expect("read the disc");
         let files = rebirth_files();
         let mut pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
-        let mut m = pack.maps["rebirth_tower_1f"].clone();
+        let mut m = pack.maps["genesis_1f"].clone();
         let wall = m
             .tiles
             .legend

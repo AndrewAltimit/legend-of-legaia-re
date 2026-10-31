@@ -29,7 +29,7 @@ segments = [
 element = 2                   # fire
 learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
-[arts.rebirth_blaze]
+[arts.knell_blaze]
 character = "vahn"
 name = "Rebirth Blaze"
 description = "The tower's fire, given back."
@@ -42,10 +42,10 @@ damage_pct = 140
 element = 2
 learn = { level = 80, requires = { bosses = ["iron_regent"] } }
 
-[chains.rebirth_blaze]
+[chains.knell_blaze]
 character = "vahn"
 arts = ["ember_cascade", 0x29]  # then Hyper Elbow (L R L)
-finisher = "rebirth_blaze"
+finisher = "knell_blaze"
 
 # --- Noa ----------------------------------------------------------------------
 
@@ -63,7 +63,7 @@ element = 3                   # wind
 rider = { status = "numb", chance = 20 }
 learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
-[arts.rebirth_tempest]
+[arts.knell_tempest]
 character = "noa"
 name = "Rebirth Tempest"
 description = "Every wind the Mist held."
@@ -76,10 +76,10 @@ damage_pct = 140
 element = 3
 learn = { level = 80, requires = { bosses = ["iron_regent"] } }
 
-[chains.rebirth_tempest]
+[chains.knell_tempest]
 character = "noa"
 arts = ["gale_waltz", 0x29]   # then Sonic Javelin (R D R)
-finisher = "rebirth_tempest"
+finisher = "knell_tempest"
 
 # --- Gala ---------------------------------------------------------------------
 
@@ -96,7 +96,7 @@ segments = [
 element = 4                   # thunder
 learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
-[arts.rebirth_thunder]
+[arts.knell_thunder]
 character = "gala"
 name = "Rebirth Thunder"
 description = "Biron's own storm."
@@ -109,7 +109,7 @@ damage_pct = 140
 element = 4
 learn = { level = 80, requires = { bosses = ["iron_regent"] } }
 
-[chains.rebirth_thunder]
+[chains.knell_thunder]
 character = "gala"
 arts = ["iron_avalanche", 0x27]   # then Ironhead (U D D)
-finisher = "rebirth_thunder"
+finisher = "knell_thunder"

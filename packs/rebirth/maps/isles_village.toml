@@ -122,7 +122,7 @@ press = true
 [[triggers]]
 id = "duel_seat"
 rect = [10, 10, 10, 10]
-event = { kind = "mode", mode = "rim-elm-duel" }
+event = { kind = "mode", mode = "haven-duel" }
 press = true
 
 [[triggers]]
@@ -194,7 +194,7 @@ clip = 18
 line = "isles_child"
 
 # The Village Duel's table under the great tree (`modes.toml`
-# `rim-elm-duel`): Brin across the board, two islanders looking on.
+# `haven-duel`): Brin across the board, two islanders looking on.
 [[npcs]]
 id = "duel_brin"
 label = "Brin, a card player"

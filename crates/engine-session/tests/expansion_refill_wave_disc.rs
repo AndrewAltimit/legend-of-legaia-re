@@ -18,7 +18,7 @@ use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_expansion_format::ExpansionPack;
 
-const MAP_ID: &str = "rebirth_tower_1f";
+const MAP_ID: &str = "genesis_1f";
 /// Longest a real approach walk takes (see `dead_target_redirect_disc`).
 const APPROACH_HOLD_LIMIT: u32 = 900;
 const BATTLE_TICKS: u32 = 120_000;

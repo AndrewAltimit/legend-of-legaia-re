@@ -120,12 +120,12 @@ tile = [26, 34]
 [[exits]]
 id = "stair_down"
 rect = [17, 0, 17, 0]
-to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_above" }
+to = { kind = "map", map = "genesis_5f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
 rect = [26, 36, 26, 36]
-to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_below" }
+to = { kind = "map", map = "genesis_7f", spawn = "from_below" }
 
 [[triggers]]
 id = "arrival"

@@ -23,7 +23,7 @@ fn the_game_night_ends_on_a_podium_in_the_rest() {
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
     host.activate_expansion_pack(Arc::new(pack))
         .expect("Rebirth activates");
-    host.enter_expansion_map("rebirth_tower_5f", "")
+    host.enter_expansion_map("genesis_5f", "")
         .expect("enter 5F");
     let before = {
         let m = &host.world.actors[0].move_state;

@@ -2,7 +2,7 @@
 //! pack's shops.
 //!
 //! ```toml
-//! [items.rebirth_blade]
+//! [items.vigil_blade]
 //! name = "Rebirth Blade"
 //! description = "Forged in the tower's heart."
 //! kind = "weapon"
@@ -10,7 +10,7 @@
 //! price = 64000
 //! characters = ["vahn"]
 //! attack = 108
-//! set = "rebirth"
+//! set = "vigil"
 //!
 //! [items.phoenix_plume]
 //! name = "Phoenix Plume"
@@ -20,14 +20,14 @@
 //! effect = { kind = "revive", percent = 50 }
 //! all_party = true
 //!
-//! [sets.rebirth]
+//! [sets.vigil]
 //! name = "Rebirth Regalia"
 //! bonuses = [{ pieces = 2, attack = 8 }, { pieces = 3, defence = 12, passives = [0x24] }]
 //!
 //! [[shops]]
 //! id = "tower_armory"
 //! name = "Tower Armory"
-//! stock = ["rebirth_blade", 0x79, { item = "phoenix_plume", requires = { flags = ["floor3"] } }]
+//! stock = ["vigil_blade", 0x79, { item = "phoenix_plume", requires = { flags = ["floor3"] } }]
 //! ```
 //!
 //! A pack item is not a retail item id. Retail's id space is a `u8` with
@@ -49,7 +49,7 @@ use crate::refs::DiscRef;
 ///
 /// In TOML: an integer (`0x79`, a retail id), an item coordinate
 /// (`{ kind = "item", id = 0x79 }`, the same retail id) or a string
-/// (`"rebirth_blade"`, a pack item; `other:item` names one of a required
+/// (`"vigil_blade"`, a pack item; `other:item` names one of a required
 /// pack's).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -680,22 +680,22 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = r#"
-[items.rebirth_blade]
+[items.vigil_blade]
 name = "Rebirth Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 price = 64000
 characters = ["vahn"]
 attack = 108
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_mail]
+[items.vigil_mail]
 name = "Rebirth Mail"
 kind = "armor"
 icon = { kind = "item", id = 0x4A }
 defence = 90
 characters = ["vahn"]
-set = "rebirth"
+set = "vigil"
 
 [items.plume]
 name = "Phoenix Plume"
@@ -704,26 +704,26 @@ price = 9000
 effect = { kind = "revive", percent = 50 }
 all_party = true
 
-[sets.rebirth]
+[sets.vigil]
 name = "Rebirth Regalia"
 bonuses = [{ pieces = 2, attack = 8, passives = [0x24] }]
 
 [[shops]]
 id = "armory"
 name = "Tower Armory"
-stock = ["rebirth_blade", 0x79, { item = "plume", requires = { flags = ["f"] }, price = 8000 }]
+stock = ["vigil_blade", 0x79, { item = "plume", requires = { flags = ["f"] }, price = 8000 }]
 "#;
 
     #[test]
     fn parses_items_sets_and_shops() {
         let s: ItemSection = toml::from_str(SAMPLE).unwrap();
-        let blade = &s.items["rebirth_blade"];
+        let blade = &s.items["vigil_blade"];
         assert_eq!(blade.kind, ItemKind::Weapon);
         assert_eq!(blade.equip_mask(), 0b001);
         assert_eq!(blade.sell_price(), 32000);
         assert_eq!(s.items["plume"].equip_mask(), 0b111);
         let shop = s.shop("").unwrap();
-        assert_eq!(shop.stock[0].item(), &ItemRef::Pack("rebirth_blade".into()));
+        assert_eq!(shop.stock[0].item(), &ItemRef::Pack("vigil_blade".into()));
         assert_eq!(shop.stock[1].item().retail_id(), Some(0x79));
         assert_eq!(shop.stock[2].price(), Some(8000));
         assert!(!shop.stock[2].requires().unwrap().is_empty());

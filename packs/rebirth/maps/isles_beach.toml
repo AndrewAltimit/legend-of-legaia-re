@@ -86,7 +86,7 @@ facing = 6
 [[exits]]
 id = "sea_stair_up"
 rect = [0, 16, 0, 17]
-to = { kind = "map", map = "rebirth_tower_1f", spawn = "from_sea" }
+to = { kind = "map", map = "genesis_1f", spawn = "from_sea" }
 
 [[exits]]
 id = "dune_path"

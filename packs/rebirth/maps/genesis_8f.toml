@@ -118,7 +118,7 @@ facing = 4
 [[exits]]
 id = "stair_down"
 rect = [15, 0, 15, 0]
-to = { kind = "map", map = "rebirth_tower_7f", spawn = "from_above" }
+to = { kind = "map", map = "genesis_7f", spawn = "from_above" }
 
 [[triggers]]
 id = "arrival"

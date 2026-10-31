@@ -87,7 +87,7 @@ fn catalog_and_rebirth_against_the_disc() {
     assert!(cells.len() > 4, "tower samples {} cells", cells.len());
     assert!(cells.iter().all(|c| c["tile"].as_u64().unwrap() < 64));
     assert!(cells[0]["prims"].as_u64() >= cells[cells.len() - 1]["prims"].as_u64());
-    let map = &loaded["pack"]["maps"]["rebirth_tower_1f"];
+    let map = &loaded["pack"]["maps"]["genesis_1f"];
     let p = core.map_preview(&map.to_string());
     assert!(p["error"].is_null(), "{p}");
 }

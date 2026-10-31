@@ -33,13 +33,13 @@
 
 <section class="doc-section" id="itemstoml" data-doc="itemstoml">
   <h2><code>items.toml</code></h2>
-<pre><code>[items.rebirth_blade]
+<pre><code>[items.vigil_blade]
 name = "Rebirth Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 characters = ["vahn"]
 attack = 112
-set = "rebirth"
+set = "vigil"
 
 [items.phoenix_plume]
 name = "Phoenix Plume"
@@ -48,12 +48,12 @@ price = 12000
 effect = { kind = "revive", percent = 50 }
 all_party = true
 
-[sets.rebirth]
+[sets.vigil]
 bonuses = [{ pieces = 2, attack = 10 }, { pieces = 4, passives = [0x24] }]
 
 [[shops]]
 id = "tower_armory"
-stock = ["phoenix_plume", 0x79, { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } }]</code></pre>
+stock = ["phoenix_plume", 0x79, { item = "vigil_crown", requires = { bosses = ["iron_regent"] } }]</code></pre>
   <table class="data">
     <thead><tr><th>Key</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -73,7 +73,7 @@ stock = ["phoenix_plume", 0x79, { item = "rebirth_crown", requires = { bosses = 
 
 <section class="doc-section" id="item-references" data-doc="item-references">
   <h2>Item references</h2>
-  <p>Everywhere a pack names an item it writes an <code>ItemRef</code>: an integer (<code>0x79</code>, a retail id), an item coordinate (<code>{ kind = "item", id = 0x79 }</code>), or a string (<code>"rebirth_blade"</code>, a pack item). Drops, steals, boss and level rewards, quest rewards, <code>collect_item</code> objectives and shop stock all take it.</p>
+  <p>Everywhere a pack names an item it writes an <code>ItemRef</code>: an integer (<code>0x79</code>, a retail id), an item coordinate (<code>{ kind = "item", id = 0x79 }</code>), or a string (<code>"vigil_blade"</code>, a pack item). Drops, steals, boss and level rewards, quest rewards, <code>collect_item</code> objectives and shop stock all take it.</p>
 </section>
 
 <section class="doc-section" id="runtime" data-doc="runtime">

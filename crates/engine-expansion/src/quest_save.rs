@@ -437,7 +437,7 @@ mod tests {
         let plain = sample().encode();
         let mut p = sample();
         p.map = Some(crate::map::MapLocation {
-            map_id: "rebirth_tower_1f".into(),
+            map_id: "genesis_1f".into(),
             x: 2880,
             z: -64,
             facing: 0x800,
@@ -462,7 +462,7 @@ mod tests {
         c.collection.add("mist-wisp", 2);
         c.collection.add("ash-hound", 1);
         c.collection.move_in_binder(1, 0);
-        c.boosters.insert("rebirth-starter".into(), 3);
+        c.boosters.insert("genesis-starter".into(), 3);
         c.deck = vec!["ash-hound".into(), "mist-wisp".into()];
         c.seen.insert("mist-wisp".into());
         c.starter_granted = true;
@@ -488,16 +488,16 @@ mod tests {
         let plain = sample().encode();
         let mut p = sample();
         assert_eq!(p.encode(), plain, "no pack items, no item record");
-        p.items.add("rebirth_blade", 1);
+        p.items.add("vigil_blade", 1);
         p.items.add("phoenix_plume", 7);
-        p.items.add("rebirth_mail", 1);
-        assert!(p.items.equip("rebirth_mail", 0, 0));
+        p.items.add("vigil_mail", 1);
+        assert!(p.items.equip("vigil_mail", 0, 0));
         let bytes = p.encode();
         assert_eq!(&bytes[..plain.len()], &plain[..], "appended after the rest");
         assert_eq!(bytes[plain.len()], 4, "tag 4");
         let back = ExpansionProgress::decode(&bytes).unwrap();
         assert_eq!(back.items.count("phoenix_plume"), 7);
-        assert_eq!(back.items.worn_at(0, 0), Some("rebirth_mail"));
+        assert_eq!(back.items.worn_at(0, 0), Some("vigil_mail"));
         assert_eq!(back, p);
         assert!(ExpansionProgress::decode(&bytes[..bytes.len() - 1]).is_none());
     }

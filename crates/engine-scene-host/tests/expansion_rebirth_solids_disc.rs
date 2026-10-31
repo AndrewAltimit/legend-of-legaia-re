@@ -95,7 +95,7 @@ fn every_solid_prop_and_pier_on_the_rebirth_floors_blocks_the_walk() {
     for (id, def) in pack
         .maps
         .iter()
-        .filter(|(id, _)| id.starts_with("rebirth_tower_"))
+        .filter(|(id, _)| id.starts_with("genesis_"))
     {
         let grid = def.tile_grid().expect("grid");
         for (what, col, row) in obstacles(def, &grid) {

@@ -11,7 +11,7 @@
 //!   crystal than across the room.
 //!
 //! With `LEGAIA_PACK_AUDIO_DUMP=<dir>` the 7F hand-over is also written to
-//! `<dir>/rebirth_7f_sanctum.wav` (Sony-derived output; never commit it).
+//! `<dir>/genesis_7f_sanctum.wav` (Sony-derived output; never commit it).
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;
@@ -97,7 +97,7 @@ fn the_games_room_cross_fades_to_the_casino_theme() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    s.enter_expansion_map_live("rebirth_tower_5f", "from_below", &FieldLiveOpts::default())
+    s.enter_expansion_map_live("genesis_5f", "from_below", &FieldLiveOpts::default())
         .expect("enter 5F");
     let mut rec = Rec {
         seen: s.bgm.as_ref().expect("audio").commands().count(),
@@ -133,7 +133,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    s.enter_expansion_map_live("rebirth_tower_7f", "from_below", &FieldLiveOpts::default())
+    s.enter_expansion_map_live("genesis_7f", "from_below", &FieldLiveOpts::default())
         .expect("enter 7F");
     let dump = std::env::var_os("LEGAIA_PACK_AUDIO_DUMP");
     let mut pcm: Vec<i16> = Vec::new();
@@ -207,7 +207,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
     assert!(rec.has(AudioCommand::BgmFade(2011, 90)), "{:?}", rec.cmds);
     assert!(s.bgm.as_ref().unwrap().is_attached());
     if let Some(dir) = dump {
-        let path = std::path::Path::new(&dir).join("rebirth_7f_sanctum.wav");
+        let path = std::path::Path::new(&dir).join("genesis_7f_sanctum.wav");
         let wav = legaia_expansion_format::audio_clip::encode_wav(SPU_INTERNAL_RATE, 2, &pcm, None);
         std::fs::write(&path, wav).expect("write the dump");
         eprintln!("wrote {}", path.display());
@@ -220,7 +220,7 @@ fn the_ember_crystals_crackle_by_distance() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    s.enter_expansion_map_live("rebirth_tower_1f", "", &FieldLiveOpts::default())
+    s.enter_expansion_map_live("genesis_1f", "", &FieldLiveOpts::default())
         .expect("enter 1F");
     let mut rec = Rec {
         seen: s.bgm.as_ref().expect("audio").commands().count(),

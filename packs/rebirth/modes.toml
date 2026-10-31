@@ -37,14 +37,14 @@ players = [
 ]
 
 [[card_duels]]
-id = "rim-elm-duel"
+id = "haven-duel"
 name = "Village Duel"
 deck = ["burrow-pup", "ember-moth", "fen-lurker", "storm-ram", "hollow-shell"]
 ai_tier = "novice"
 elemental_cells = true
 chain = false
 stakes = false
-win_booster = "rebirth-starter"
+win_booster = "genesis-starter"
 # Played at the plank table under the great tree in Tolva's Haven's west
 # meadow, Brin across the board and two islanders looking on.
 map = "isles_village"
@@ -188,7 +188,7 @@ max_hands = 60
 blind_double_every = 8
 # Dealt at the High Table in the Gambler's Rest hall: five of the tower's
 # regulars round the felt, the player's chair at its south edge.
-map = "rebirth_tower_5f"
+map = "genesis_5f"
 spawn = "from_below"
 
 [poker.table]
@@ -225,7 +225,7 @@ stakes = true
 win_booster = "mistborn"
 # Played at the card room's table on the Gambler's Rest floor, the
 # Warden's second across the board and two regulars looking on.
-map = "rebirth_tower_5f"
+map = "genesis_5f"
 spawn = "from_below"
 
 [card_duels.table]
@@ -246,7 +246,7 @@ spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher", cheer = 25, slum
 # miniature: bunkers guarding the green, a dogleg, an island green,
 # terraces, a run of ramps, and a long finishing hole with a sloped green.
 [[golf]]
-id = "rebirth-links"
+id = "genesis-links"
 name = "The Rebirth Links"
 location = { kind = "scene", name = "teien" }
 
@@ -443,7 +443,7 @@ decoys = [
 [[golf]]
 id = "tower-green"
 name = "Tower Green"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 spawn = "dais"
 
 [[golf.holes]]
@@ -457,7 +457,7 @@ area = [5, 4, 9, 8]
 [[races]]
 id = "sol-ring"
 name = "Sol Ring"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 spawn = "entrance"
 laps = 3
 racers = 3
@@ -493,7 +493,7 @@ ai_tier = "regular"
 # The night ends on a podium in the Rest's hall (5F), facing the stair the
 # party came up: the top three's leaders on the blocks, the rivals played
 # by the Rest's regulars.
-podium = { map = "rebirth_tower_5f", tile = [24, 10], facing = 0, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
+podium = { map = "genesis_5f", tile = [24, 10], facing = 0, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
 
 [[party_nights.rounds]]
 mode = "tower-green"
@@ -511,7 +511,7 @@ mode = "sol-ring"
 laps = 1
 
 [[party_nights.rounds]]
-mode = "rim-elm-duel"
+mode = "haven-duel"
 name = "Duel on the Hill"
 
 [[party_nights.rounds]]
@@ -531,12 +531,12 @@ name = "Drake Dash"
 [[party_nights.prizes]]
 place = 1
 gold = 1500
-boosters = ["mistborn", "rebirth-starter"]
+boosters = ["mistborn", "genesis-starter"]
 
 [[party_nights.prizes]]
 place = 2
 gold = 800
-boosters = ["rebirth-starter"]
+boosters = ["genesis-starter"]
 
 [[party_nights.prizes]]
 place = 3

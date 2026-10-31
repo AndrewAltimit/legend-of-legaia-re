@@ -28,7 +28,7 @@ fn pack() -> Arc<ExpansionPack> {
     files.insert(
         "items.toml".into(),
         br#"
-[items.rebirth_blade]
+[items.vigil_blade]
 name = "Rebirth Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
@@ -119,9 +119,9 @@ fn a_worn_pack_weapon_changes_the_attack_a_real_battle_seeds() {
 
     assert!(
         host.world
-            .grant_item_ref(&ItemRef::Pack("rebirth_blade".into()), 1)
+            .grant_item_ref(&ItemRef::Pack("vigil_blade".into()), 1)
     );
-    assert!(host.world.equip_pack_item("rebirth_blade", 0, 2));
+    assert!(host.world.equip_pack_item("vigil_blade", 0, 2));
     assert_eq!(
         host.world.party.inventory.get(&CHAOS_BREAKER).copied(),
         Some(1)

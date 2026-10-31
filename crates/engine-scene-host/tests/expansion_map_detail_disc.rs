@@ -226,7 +226,7 @@ fn the_dressed_rebirth_floors_enter() {
     assert!(!has_errors(&issues), "{issues:#?}");
     host.activate_expansion_pack(Arc::new(pack))
         .expect("activates");
-    for map in ["rebirth_tower_1f", "rebirth_tower_2f"] {
+    for map in ["genesis_1f", "genesis_2f"] {
         host.enter_expansion_map(map, "")
             .unwrap_or_else(|e| panic!("{map}: {e:#}"));
         let o = host.scene.as_ref().unwrap().overrides.clone().unwrap();
@@ -240,7 +240,7 @@ fn the_dressed_rebirth_floors_enter() {
         for _ in 0..30 {
             host.tick().expect("tick");
         }
-        if map == "rebirth_tower_2f" {
+        if map == "genesis_2f" {
             // The Ember Stair's torches: the violet ramp turns amber once
             // and then holds.
             let mut vram = field_resources(&host.index, host.scene.as_ref().unwrap())

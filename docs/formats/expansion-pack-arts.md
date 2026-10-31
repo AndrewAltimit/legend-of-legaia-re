@@ -84,10 +84,10 @@ segments = [
 element = 2
 learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
-[chains.rebirth_blaze]
+[chains.knell_blaze]
 character = "vahn"
 arts = ["ember_cascade", 0x29]
-finisher = "rebirth_blaze"
+finisher = "knell_blaze"
 ```
 
 ### `[arts.<key>]`

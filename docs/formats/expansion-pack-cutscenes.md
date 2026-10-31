@@ -19,7 +19,7 @@ Retail bytecode stays the faithful path for retail's own scenes; nothing here ru
 ```toml
 [cutscenes.tower_intro]
 title = "The Tower Wakes"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 letterbox = true
 
 [[cutscenes.tower_intro.steps]]

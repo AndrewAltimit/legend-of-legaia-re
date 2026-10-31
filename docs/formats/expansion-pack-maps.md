@@ -14,7 +14,7 @@ Entry and per-tick step: `SceneHost::enter_expansion_map` in
 zone and NPC runtime: [`legaia_engine_expansion::map`](../../crates/engine-expansion/src/map.rs);
 validation: [`legaia_expansion_format::map_rules`](../../crates/expansion-format/src/map_rules.rs);
 the detail layer: [`legaia_expansion_format::map_detail`](../../crates/expansion-format/src/map_detail.rs).
-Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/rebirth_tower_1f.toml).
+Sample: [`packs/rebirth/maps/genesis_1f.toml`](../../packs/rebirth/maps/genesis_1f.toml).
 
 ## File layout
 
@@ -717,7 +717,7 @@ base scene.
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_1f [--spawn dais]
+    --expansion packs/rebirth --map genesis_1f [--spawn dais]
 ```
 
 `--expansion` takes a pack directory or an `.lxpack` bundle and activates it

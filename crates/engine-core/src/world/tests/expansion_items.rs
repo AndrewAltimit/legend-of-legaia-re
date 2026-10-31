@@ -20,20 +20,20 @@ use legaia_save::EquipmentSlots;
 use legaia_save::character::LiveStats;
 
 const ITEMS_TOML: &str = r#"
-[items.rebirth_blade]
+[items.vigil_blade]
 name = "Rebirth Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 price = 1000
 characters = ["vahn"]
 attack = 108
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_mail]
+[items.vigil_mail]
 name = "Rebirth Mail"
 kind = "armor"
 defence = 20
-set = "rebirth"
+set = "vigil"
 
 [items.tonic]
 name = "Tonic"
@@ -41,21 +41,21 @@ kind = "consumable"
 price = 50
 effect = { kind = "heal_hp", amount = 300 }
 
-[sets.rebirth]
+[sets.vigil]
 name = "Rebirth"
 bonuses = [{ pieces = 2, attack = 6, passives = [0x06] }]
 
 [[shops]]
 id = "armory"
 name = "Armory"
-stock = ["rebirth_blade", "tonic", 0x77]
+stock = ["vigil_blade", "tonic", 0x77]
 "#;
 
 const BATTLE_TOML: &str = r#"
 [monsters.keeper]
 base = { kind = "monster", id = 9 }
 name = "Keeper"
-drop = { item = "rebirth_blade", chance_pct = 100 }
+drop = { item = "vigil_blade", chance_pct = 100 }
 
 [formations.den]
 monsters = ["keeper"]
@@ -150,7 +150,7 @@ fn with_no_pack_every_item_hook_is_the_identity() {
     assert!(w.pack_worn_bonus(0).is_none());
     assert!(w.grant_item_ref(&ItemRef::Retail(0x77), 2));
     assert_eq!(w.party.inventory.get(&0x77).copied(), Some(2));
-    assert!(!w.grant_item_ref(&ItemRef::Pack("rebirth_blade".into()), 1));
+    assert!(!w.grant_item_ref(&ItemRef::Pack("vigil_blade".into()), 1));
     assert!(w.grant_item_id(0xFD, 1), "an unlent id is a retail id");
     assert_eq!(w.party.inventory.get(&0xFD).copied(), Some(1));
     assert!(!w.open_item_shop(""));
@@ -164,12 +164,12 @@ fn pack_gear_displaces_retail_gear_and_folds_into_the_battle_seed() {
     w.activate_expansion(pack()).unwrap();
     w.seed_party_battle_stats();
     let (retail_atk, retail_def) = (w.battle.attack[0], w.battle.defense_split[0]);
-    assert!(w.grant_item_ref(&ItemRef::Pack("rebirth_blade".into()), 1));
+    assert!(w.grant_item_ref(&ItemRef::Pack("vigil_blade".into()), 1));
     assert!(
-        !w.equip_pack_item("rebirth_blade", 0, 0),
+        !w.equip_pack_item("vigil_blade", 0, 0),
         "a weapon is byte 2"
     );
-    assert!(w.equip_pack_item("rebirth_blade", 0, 2));
+    assert!(w.equip_pack_item("vigil_blade", 0, 2));
     // The retail weapon went to the bag and the byte is empty.
     assert_eq!(w.party.roster.members[0].equipment().slots[2], 0);
     assert_eq!(w.party.inventory.get(&0x27).copied(), Some(1));
@@ -189,8 +189,8 @@ fn pack_gear_displaces_retail_gear_and_folds_into_the_battle_seed() {
     assert_eq!(w.battle.attack[0], retail_atk, "base ATK is unchanged");
     assert_eq!(w.battle.defense_split[0], retail_def);
     // A second set piece adds the two-piece tier.
-    w.grant_item_ref(&ItemRef::Pack("rebirth_mail".into()), 1);
-    assert!(w.equip_pack_item("rebirth_mail", 0, 0));
+    w.grant_item_ref(&ItemRef::Pack("vigil_mail".into()), 1);
+    assert!(w.equip_pack_item("vigil_mail", 0, 0));
     w.seed_party_battle_stats();
     assert_eq!(w.battle.attack[0], retail_atk + 6, "the set's +6");
     assert_eq!(w.battle.defense_split[0], Some((60, 60)));
@@ -205,7 +205,7 @@ fn pack_gear_displaces_retail_gear_and_folds_into_the_battle_seed() {
     eq.slots[2] = 0x27;
     w.party.roster.members[0].set_equipment(eq);
     w.reconcile_pack_gear();
-    assert_eq!(w.pack_item_progress().count("rebirth_blade"), 1);
+    assert_eq!(w.pack_item_progress().count("vigil_blade"), 1);
     assert_eq!(w.pack_item_progress().worn_at(0, 2), None);
 }
 
@@ -223,7 +223,7 @@ fn the_item_screen_buys_and_equips_through_the_tick() {
     assert_eq!(names[..2], ["Rebirth Blade", "Tonic"]);
     press(&mut w, PadButton::Cross);
     press(&mut w, PadButton::Cross);
-    assert_eq!(w.pack_item_progress().count("rebirth_blade"), 1);
+    assert_eq!(w.pack_item_progress().count("vigil_blade"), 1);
     assert_eq!(w.party.money, 500);
     press(&mut w, PadButton::Circle);
     assert!(!w.item_screen_open());
@@ -236,7 +236,7 @@ fn the_item_screen_buys_and_equips_through_the_tick() {
     assert_eq!(cmp.rows[0].0, "ATK");
     assert_eq!(cmp.rows[0].2 - cmp.rows[0].1, 108 - 72);
     press(&mut w, PadButton::Cross);
-    assert_eq!(w.pack_item_progress().worn_at(0, 2), Some("rebirth_blade"));
+    assert_eq!(w.pack_item_progress().worn_at(0, 2), Some("vigil_blade"));
 }
 
 #[test]
@@ -255,7 +255,7 @@ fn a_pack_drop_and_a_boss_reward_land_in_the_pack_bag() {
         .expansion
         .items
         .aliases
-        .id_of("rebirth_blade")
+        .id_of("vigil_blade")
         .expect("lent");
     assert_eq!(
         w.tables.monster_catalog.get(9).unwrap().drop_item,
@@ -269,7 +269,7 @@ fn a_pack_drop_and_a_boss_reward_land_in_the_pack_bag() {
     }
     let r = w.battle.last_rewards.clone().expect("the party wins");
     assert_eq!(r.drops, [alias], "the drop rides its alias");
-    assert_eq!(w.pack_item_progress().count("rebirth_blade"), 1);
+    assert_eq!(w.pack_item_progress().count("vigil_blade"), 1);
     assert_eq!(w.pack_item_progress().count("tonic"), 3, "the boss reward");
     assert!(
         w.party.inventory.get(&alias).is_none(),
@@ -328,15 +328,15 @@ fn a_field_use_runs_the_retail_handler_and_spends_one() {
 fn pack_items_survive_deactivation_as_dormant_progress() {
     let mut w = world();
     w.activate_expansion(pack()).unwrap();
-    w.grant_item_ref(&ItemRef::Pack("rebirth_blade".into()), 1);
-    w.equip_pack_item("rebirth_blade", 0, 2);
+    w.grant_item_ref(&ItemRef::Pack("vigil_blade".into()), 1);
+    w.equip_pack_item("vigil_blade", 0, 2);
     w.deactivate_expansion();
     assert!(w.pack_worn_bonus(0).is_none(), "no pack, no bonus");
     w.seed_party_battle_stats();
     assert_eq!(w.battle.equip_atk[0][2], 0, "the slot is empty without it");
     w.activate_expansion(pack()).unwrap();
-    assert_eq!(w.pack_item_progress().worn_at(0, 2), Some("rebirth_blade"));
+    assert_eq!(w.pack_item_progress().worn_at(0, 2), Some("vigil_blade"));
     let block = w.expansion.quests.progress.encode();
     let back = legaia_engine_expansion::quest_save::ExpansionProgress::decode(&block).unwrap();
-    assert_eq!(back.items.worn_at(0, 2), Some("rebirth_blade"));
+    assert_eq!(back.items.worn_at(0, 2), Some("vigil_blade"));
 }

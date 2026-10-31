@@ -188,34 +188,34 @@ fn a_reload_keeps_the_maps_it_left_unchanged() {
     let Some(mut host) = host(&pack) else {
         return;
     };
-    host.enter_expansion_map("rebirth_tower_1f", "")
+    host.enter_expansion_map("genesis_1f", "")
         .expect("enter 1f");
-    host.enter_expansion_map("rebirth_tower_2f", "")
+    host.enter_expansion_map("genesis_2f", "")
         .expect("enter 2f");
     let cold = scene_snapshot(&host);
     // The same pack again.
     let same = Arc::new((*pack).clone());
     host.activate_expansion_pack(same.clone())
         .expect("reactivates");
-    host.enter_expansion_map("rebirth_tower_2f", "")
+    host.enter_expansion_map("genesis_2f", "")
         .expect("re-enter");
     let mut ready = host.expansion_preload.ready_maps();
     ready.sort();
-    assert_eq!(ready, ["rebirth_tower_1f", "rebirth_tower_2f"]);
+    assert_eq!(ready, ["genesis_1f", "genesis_2f"]);
     assert!(scene_snapshot(&host) == cold, "the kept map differs");
     // 1f edited: it goes, 2f stays.
     let mut edited = (*same).clone();
     edited
         .maps
-        .get_mut("rebirth_tower_1f")
+        .get_mut("genesis_1f")
         .expect("1f")
         .name
         .push_str(" (edited)");
     host.activate_expansion_pack(Arc::new(edited))
         .expect("the edit activates");
-    host.enter_expansion_map("rebirth_tower_2f", "")
+    host.enter_expansion_map("genesis_2f", "")
         .expect("enter 2f");
-    assert_eq!(host.expansion_preload.ready_maps(), ["rebirth_tower_2f"]);
+    assert_eq!(host.expansion_preload.ready_maps(), ["genesis_2f"]);
 }
 
 #[test]

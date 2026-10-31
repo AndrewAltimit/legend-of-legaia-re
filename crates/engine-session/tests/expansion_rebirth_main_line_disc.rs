@@ -587,7 +587,7 @@ fn the_rebirth_main_line_plays_from_a_new_game_to_the_first_breath() {
         .map(|m| m.map_id)
         .collect();
     assert!(
-        travel.contains("rebirth_tower_1f"),
+        travel.contains("genesis_1f"),
         "Travel offers the tower: {travel:?}"
     );
 
@@ -601,13 +601,8 @@ fn the_rebirth_main_line_plays_from_a_new_game_to_the_first_breath() {
             break;
         }
     }
-    assert_eq!(
-        run.map(),
-        "rebirth_tower_1f",
-        "the woodpile enters the tower"
-    );
-    run.log
-        .push("town01 -> rebirth_tower_1f by the woodpile".into());
+    assert_eq!(run.map(), "genesis_1f", "the woodpile enters the tower");
+    run.log.push("town01 -> genesis_1f by the woodpile".into());
     run.settle("the tower intro");
 
     // 1F: the stone wakes, then sets the Warden's Trial.
@@ -718,14 +713,14 @@ fn the_rebirth_main_line_plays_from_a_new_game_to_the_first_breath() {
         run.s
             .host
             .world
-            .request_expansion_travel("rebirth_tower_1f", "dais"),
+            .request_expansion_travel("genesis_1f", "dais"),
         "Travel to the Atrium"
     );
     run.tick(0);
-    assert_eq!(run.map(), "rebirth_tower_1f");
+    assert_eq!(run.map(), "genesis_1f");
     run.settle("travelling home");
     run.press("warden_stone");
-    run.expect_done("rebirth");
+    run.expect_done("last_vigil");
     if !run.completed("first_breath") {
         run.press("warden_stone");
     }
@@ -763,14 +758,9 @@ fn the_rebirth_isles_chain_plays_from_the_sea_gate_to_the_pearl() {
     run.s
         .enter_field_live("town01", &opts)
         .expect("enter Rim Elm");
-    assert!(
-        run.s
-            .host
-            .world
-            .request_expansion_travel("rebirth_tower_1f", "")
-    );
+    assert!(run.s.host.world.request_expansion_travel("genesis_1f", ""));
     run.tick(0);
-    assert_eq!(run.map(), "rebirth_tower_1f", "Travel enters the tower");
+    assert_eq!(run.map(), "genesis_1f", "Travel enters the tower");
     run.settle("the tower intro");
     run.press("warden_stone");
     run.expect_done("tower_rumour");

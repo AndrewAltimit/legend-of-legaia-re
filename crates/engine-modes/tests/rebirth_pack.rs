@@ -134,7 +134,7 @@ fn rebirth_map_courses_build_from_their_maps() {
 /// builds (its map rounds on the tower's maps), for a night alone and for a
 /// full room.
 #[test]
-fn rebirth_tower_game_night_builds_every_round() {
+fn genesis_game_night_builds_every_round() {
     use legaia_engine_modes::active::{ActiveMode, BuildOptions, ModeKind};
     use legaia_engine_modes::party::{PartyNight, round_section, solo_players};
     let pack = legaia_expansion_format::ExpansionPack::from_dir(&crate::common::pack_dir())

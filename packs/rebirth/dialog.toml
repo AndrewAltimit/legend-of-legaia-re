@@ -44,7 +44,7 @@ lifted, and eight floors await.
 The fire on the second floor
 wakes at level 50. Climb well."""
 
-[lines.guide_rebirth_done]
+[lines.guide_vigil_done]
 speaker = "Warden Ysolde"
 text = """
 There is nothing more the tower
@@ -319,7 +319,7 @@ choices = [
     { label = "Not now.", reply = "\"The cards will keep.\"" },
 ]
 
-# The card room's table (maps/rebirth_tower_5f.toml).
+# The card room's table (maps/genesis_5f.toml).
 [lines.duel_second_hello]
 speaker = "The Warden's Second"
 text = """
@@ -393,7 +393,7 @@ The games room. Six holes, a
 race, or hide and seek in the
 old vault."""
 choices = [
-    { label = "The Rebirth Links.", mode = "rebirth-links" },
+    { label = "The Rebirth Links.", mode = "genesis-links" },
     { label = "The Monastery Run.", mode = "spiral-circuit" },
     { label = "The Old Vault.", mode = "old-vault" },
     { label = "Not now.", reply = "\"Come back when you are\nfeeling lucky.\"" },
@@ -640,7 +640,7 @@ Five cards, nine squares. The
 tree has watched me win all
 summer. Care to try?"""
 choices = [
-    { label = "Deal me in.", mode = "rim-elm-duel" },
+    { label = "Deal me in.", mode = "haven-duel" },
     { label = "Not now.", reply = "\"I'll be under the tree.\"" },
 ]
 

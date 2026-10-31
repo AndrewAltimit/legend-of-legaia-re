@@ -157,9 +157,9 @@ pub(super) fn enter_expansion_run(
 fn expansion_labels_parse() {
     assert_eq!(split_expansion("town01"), None);
     assert_eq!(
-        split_expansion("xp:rebirth_tower_1f+am"),
+        split_expansion("xp:genesis_1f+am"),
         Some(ExpansionRun {
-            target: "rebirth_tower_1f".into(),
+            target: "genesis_1f".into(),
             pack: true,
             action_movement: true,
             ..Default::default()

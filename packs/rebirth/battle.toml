@@ -798,7 +798,7 @@ formations = [
 ]
 
 # Each tower floor's encounter zones name one of these tables
-# (`maps/rebirth_tower_<n>f.toml`, `[[encounters]] table = ...`).
+# (`maps/genesis_<n>f.toml`, `[[encounters]] table = ...`).
 [[encounters]]
 scene = "tower_1f"
 steps = [12, 24]
@@ -887,7 +887,7 @@ stage = { scene = "jouinc", index = 0 }
 no_escape = true
 formation = "verdant_heart"
 music = { kind = "bgm", id = 32 }
-reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }, { item = "rebirth_maul" }]
+reward_items = [{ item = { kind = "item", id = 248 }, count = 1 }, { item = "vigil_maul" }]
 reward_gold = 30000
 once = true
 intro = "colossus_intro"
@@ -899,7 +899,7 @@ stage = { scene = "retona", index = 0 }
 no_escape = true
 formation = "regent_hall"
 music = { kind = "bgm", id = 31 }
-reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }, { item = "rebirth_blade" }]
+reward_items = [{ item = { kind = "item", id = 249 }, count = 1 }, { item = "vigil_blade" }]
 reward_gold = 40000
 once = true
 intro = "regent_intro"
@@ -912,7 +912,7 @@ stage = { scene = "korb3", index = 1, tint = [150, 150, 150] }
 no_escape = true
 formation = "sanctum_seraph"
 music = { kind = "bgm", id = 29 }
-reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }, { item = "rebirth_talon" }]
+reward_items = [{ item = { kind = "item", id = 228 }, count = 1 }, { item = "vigil_talon" }]
 reward_gold = 50000
 once = true
 intro = "seraph_intro"

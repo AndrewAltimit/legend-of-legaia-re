@@ -376,7 +376,7 @@ asset expansion info rebirth.lxpack [--json]
 asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
 legaia-engine packs [--dir DIR] [--json]                # the installed packs
 legaia-engine play-window --expansion rebirth           # an installed pack, by id
-legaia-engine play-window --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch  # reload on every save</code></pre>
+legaia-engine play-window --expansion packs/rebirth --map genesis_1f --expansion-watch  # reload on every save</code></pre>
   <p><code>validate</code> exits non-zero on any error, and with <code>--strict</code> on any warning. None of these reads a disc. The native host's installed packs live in <code>packs/</code> under its data directory: <code>legaia-engine packs</code> lists each with its version, authors, pack format and whether it plays, <code>--expansion</code> takes a pack id as well as a path, and the launcher's pack picker opens there. The same checks run in the browser on the <a href="../tooling/expansion-workbench.html">expansion workbench</a>, with the visitor's disc resolving every coordinate.</p>
 </section>
 

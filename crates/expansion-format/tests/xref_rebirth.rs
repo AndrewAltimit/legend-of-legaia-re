@@ -192,7 +192,7 @@ fn rebirth_flow_graph_draws_its_progression() {
     assert!(
         g.edges
             .iter()
-            .any(|e| e.from == "entry:" && e.to == "map:rebirth_tower_1f" && e.role == "enters")
+            .any(|e| e.from == "entry:" && e.to == "map:genesis_1f" && e.role == "enters")
     );
     // Every lint finding is on a node or listed on its own.
     let on_nodes: usize = g.nodes.iter().map(|n| n.problems.len()).sum();

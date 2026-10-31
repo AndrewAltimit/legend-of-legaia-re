@@ -1077,7 +1077,7 @@ to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [37,
 
 [[exits]]
 rect = [3, 2, 3, 2]
-to = { kind = "map", map = "rebirth_tower_2f" }
+to = { kind = "map", map = "genesis_2f" }
 
 [[triggers]]
 rect = [1, 2, 2, 2]
@@ -1113,9 +1113,7 @@ tile = [1, 2]
         assert_eq!(m.spawn("start").map(|s| s.facing), Some(4));
         assert!(m.spawn("nope").is_none());
         assert_eq!(m.exits.len(), 2);
-        assert!(
-            matches!(m.exits[1].to, ExitTarget::Map { ref map, .. } if map == "rebirth_tower_2f")
-        );
+        assert!(matches!(m.exits[1].to, ExitTarget::Map { ref map, .. } if map == "genesis_2f"));
         assert_eq!(
             m.triggers[0].event,
             MapEvent::Battle {

@@ -402,7 +402,7 @@ mod tests {
     fn pack_reload_notices_name_the_outcome() {
         let r = PackReloadOutcome::Reloaded {
             pack: "rebirth 0.3.0".into(),
-            map: Some("rebirth_atrium".into()),
+            map: Some("genesis_1f".into()),
             ms: 180,
         };
         assert_eq!(

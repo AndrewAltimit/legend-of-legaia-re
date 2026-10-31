@@ -10,7 +10,7 @@ use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_expansion_format::ExpansionPack;
 
-const MAP_ID: &str = "rebirth_tower_1f";
+const MAP_ID: &str = "genesis_1f";
 
 fn open() -> Option<NativeSession> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

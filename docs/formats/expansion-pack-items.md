@@ -36,14 +36,14 @@ An id the retail side already uses (a patched disc that named one) is skipped. A
 ## `items.toml`
 
 ```toml
-[items.rebirth_blade]
+[items.vigil_blade]
 name = "Rebirth Blade"
 description = "Forged where the Mist|was torn away."
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 characters = ["vahn"]
 attack = 112
-set = "rebirth"
+set = "vigil"
 
 [items.phoenix_plume]
 name = "Phoenix Plume"
@@ -53,14 +53,14 @@ price = 12000
 effect = { kind = "revive", percent = 50 }
 all_party = true
 
-[sets.rebirth]
+[sets.vigil]
 name = "Rebirth"
 bonuses = [{ pieces = 2, attack = 10 }, { pieces = 4, passives = [0x24] }]
 
 [[shops]]
 id = "tower_armory"
 name = "Tower Armory"
-stock = ["phoenix_plume", 0x79, { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } }]
+stock = ["phoenix_plume", 0x79, { item = "vigil_crown", requires = { bosses = ["iron_regent"] } }]
 ```
 
 ### `[items.<key>]`
@@ -116,7 +116,7 @@ Everywhere a pack names an item it writes an `ItemRef`:
 |---|---|---|
 | An integer | `0x79` | Retail item id |
 | An item coordinate | `{ kind = "item", id = 0x79 }` | The same retail item |
-| A string | `"rebirth_blade"`, `"rebirth:rebirth_blade"` | A pack item; `other:item` names a required pack's |
+| A string | `"vigil_blade"`, `"rebirth:vigil_blade"` | A pack item; `other:item` names a required pack's |
 
 The form is accepted in `battle.toml` monster `drop` and `steal` and boss `reward_items`, `progression.toml` `level_rewards`, `quests.toml` `rewards.items` and `collect_item` objectives, and shop `stock`. A pack key must be defined in `items.toml`; a retail id is a disc coordinate the resolver checks.
 

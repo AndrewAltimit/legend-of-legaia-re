@@ -114,6 +114,6 @@ fn the_wardens_duel_plays_at_the_card_room_table() {
     let Some(mut host) = host("../../packs/rebirth") else {
         return;
     };
-    enter(&mut host, "wardens-duel", "rebirth_tower_5f");
+    enter(&mut host, "wardens-duel", "genesis_5f");
     check_table(&mut host, "duel_second");
 }
