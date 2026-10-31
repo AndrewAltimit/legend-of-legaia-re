@@ -16,7 +16,7 @@ use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim, ScreenQuad};
 
 use super::duel::{
     BAND_BOARD, BAND_CARDS, BAND_MARKS, BAND_SPARKS, BAND_TABLE, FELT, Table, WOOD, WOOD_DARK,
-    box_sides, burst, card, flat, front, rgba, shade,
+    box_sides, burst, card, chair, flat, front, rgba, shade,
 };
 use super::{Projector, Pt};
 
@@ -430,6 +430,9 @@ pub(super) fn poker_pieces(pr: &Projector<'_>, s: &PokerStageFrame) -> Vec<Scree
     };
     let top = s.table.top();
     table(&mut out, &t, s);
+    for ch in &s.chairs {
+        chair(&mut out, pr, ch);
+    }
     // The seat to act: a pulsing gold ring on the felt before it.
     if let Some(at) = s.to_act {
         let k = 0.55 + 0.45 * (s.clock as f32 / 9.0).sin().abs();

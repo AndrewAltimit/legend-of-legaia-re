@@ -42,6 +42,10 @@ pub struct PokerTableFrame {
     /// a single-player game) skipped.
     pub players: Vec<DuelSeatNpc>,
     pub spectators: Vec<DuelSeatNpc>,
+    /// The seat height of a chair the stage draws for a seated NPC, world
+    /// units above the floor (`lift` not included).
+    #[serde(default)]
+    pub chair_height: f32,
 }
 
 /// Why a table could not be placed.
@@ -88,6 +92,7 @@ impl PokerTableFrame {
             sfx: l.sfx.clone(),
             players: l.players.clone(),
             spectators: l.spectators.clone(),
+            chair_height: f32::from(l.chair_height),
         }))
     }
 
@@ -189,6 +194,7 @@ mod tests {
             sfx: DuelSfx::default(),
             players: Vec::new(),
             spectators: Vec::new(),
+            chair_height: 34.0,
         }
     }
 

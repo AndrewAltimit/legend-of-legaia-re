@@ -415,7 +415,7 @@ The table is placed in its own axes: `across` from the player's seat toward the 
 
 - **Cards.** A card is a quad `0.86` of a cell wide at the face's aspect. Each hand is fanned along its seat's edge of the board, tilted up toward its holder; the selected card rises and reaches toward the board, and a held card hovers face up over the cursor's cell. Grid cards lie flat, reading from the near seat.
 - **Faces and backs.** Whether a card shows its face or its back is the projected quad's winding: the near hand turns its faces to the camera, the far hand its backs, and a capture flip shows the back at its half turn.
-- **Seats.** The opponent NPC stands on its seat, `seat_distance` past the board's far edge; the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
+- **Seats.** The opponent NPC takes its seat, `seat_distance` from the board's centre - seated in a chair the stage draws when it names a `sit` clip, standing otherwise ([Seated NPCs](#seated-npcs)); the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
 
 ### The timeline
 
@@ -493,7 +493,7 @@ A poker instance that names a pack map and a table (`map`, `[poker.table]`) is d
 
 ### Chairs and hidden cards
 
-Chairs ring the oval evenly. Each peer sits in the near chair - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
+Seats ring the oval evenly. Each peer sits in the near seat - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
 
 A hole card shows its face only to its own seat, and to every seat at a showdown while its seat is still in the hand. Every other card lies face down, and the card page holds no face for it at all (`poker::art::VisibleCards`): the page is built from the view the session or the hosting peer sent, which for a guest already carries no other seat's cards.
 
@@ -510,13 +510,19 @@ A hole card shows its face only to its own seat, and to every seat at a showdown
 
 The dealer button sits on the felt before the button's chair, and a pulsing ring marks the chair to act; the opponent to act plays its `think` clip and the camera leans toward it.
 
+### Seated NPCs
+
+A table NPC that names a `sit` clip ([`expansion-pack.md`](../formats/expansion-pack.md#seated-npcs)) sits while the seat is open: the stage pushes a `duel_stage::StageChair` for its seat (`DuelStageFrame::chairs`, `PokerStageFrame::chairs`), centred on the NPC's anchor, facing the table's middle, its seat at the table's `chair_height` plus `lift`, and poses the NPC with `sit` wherever it would have played its idle. `pack_mode_world`'s `duel::chair` draws each chair in the table's wood - four legs, the seat, two rear posts carrying a top rail and a slat - depth-tested like the table, so a sitter's legs and the table hide it where they should.
+
+The chair is the stage's own, not a map prop that appears while seated: it exists exactly while someone sits on it, follows the seat wherever a table's layout or a networked viewer's chair puts it, and needs no `hide` entry or collision. A seated clip lifts the model off its origin by itself (the posture table's `seated` rule is that lift), so the NPC's anchor stays on the floor and only the chair's height has to match the clips' hips. The party leader stays standing: the party locomotion bank has no seated record, and no scene bank a pack map borrows from has a record of the party rig's bone count.
+
 ### Drawing the table
 
 The table is an oval: a felt fan lit brightest in the middle with a gold betting line, a polished wooden racetrack round it, and a padded leather rail whose crown rises between its two lips; with `draw_table` also the wooden apron under the rail, its shadowed underside, and a pedestal on a cross foot.
 
 Chips are stacked discs with a casino chip's white edge spots, turned a little per chip, and an inlaid face on top, coloured by the stack's size against the big blind; a stack of six chips or more lies as a pile of two or three columns, its top denomination tallest and the two below it beside it, a pure function of the stack so every frame and every peer draws the same pile. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
 
-The HUD is a plate per other seat along the top (its name, chips or state, its street bet on a row of its own, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
+The HUD is a plate per other seat along the top (its name, chips or state, its street bet on a row of its own, the seat to act lit, the button), the player's own plate bottom-left (chips, bet, the hand it makes), the pot bottom-centre between it and the action menu bottom-right. The pot stays off the top band, where it would cover the far seats' bets and the pile on the felt.
 
 Every label of the in-world HUDs sits in a box of its own (`Label::max_w`): the hosts set it in the dialog font and cut anything wider than its box with a `..` mark (`expansion_modes::fit_text`; the modes page does the same in its web font), so a long table name is shortened, never run into a score or off a plate. A banner starts under the HUD's top band. The engine-ui tests lay out each mode's in-world HUD across a session with long names and assert every box on the stage, no two labels sharing a row's pixels, and - with the extracted dialog font - every non-name label whole.
 

@@ -31,7 +31,7 @@ use legaia_engine_modes::poker::{Phase, PokerView, Street};
 
 use legaia_expansion_format::audio::SoundRef;
 
-use crate::duel_stage::{BurstKind, CardPose, DuelNpcPose, StageBurst, StageCard};
+use crate::duel_stage::{BurstKind, CardPose, DuelNpcPose, StageBurst, StageCard, StageChair};
 use crate::mode_stage::{LeaderClip, StagePose, StageShot};
 
 /// Frames between two dealt cards.
@@ -54,6 +54,9 @@ pub const SWEEP_FRAMES: f32 = 80.0;
 /// How long a contested showdown holds the felt, sweep and winner shot
 /// together.
 pub const SHOWDOWN_HOLD: u32 = 150;
+/// The seat shot's pitch (12-bit units) and distance scale.
+pub const SEAT_PITCH: f32 = 335.0;
+pub const SEAT_DISTANCE: f32 = 0.29;
 /// A playing card's size on the felt, world units (half width).
 pub const CARD_HALF_W: f32 = 9.5;
 
@@ -104,6 +107,8 @@ pub struct PokerStageFrame {
     pub deck: [f32; 2],
     pub bursts: Vec<StageBurst>,
     pub npcs: Vec<DuelNpcPose>,
+    /// The chairs under the seated NPCs.
+    pub chairs: Vec<StageChair>,
     pub cues: Vec<SoundRef>,
     pub shot: StageShot,
     pub banner: Option<String>,
@@ -687,6 +692,7 @@ impl PokerStage {
 
         // The NPCs: the k-th other seat's NPC sits in that seat's chair.
         let mut npcs = Vec::new();
+        let mut chairs = Vec::new();
         let centre = world(0.0, 0.0);
         let order: Vec<usize> = (0..n).filter(|&s| s != 0).collect();
         for (k, npc) in t.players.iter().enumerate() {
@@ -710,10 +716,15 @@ impl PokerStage {
                 Mood::Idle if s.all_in => npc.all_in,
                 Mood::Idle if thinking => npc.think,
                 Mood::Idle => None,
-            };
+            }
+            .or(npc.sit);
+            let pos = t.chair_pos(chair(seat));
+            if npc.sit.is_some() {
+                chairs.push(StageChair::under(pos, centre, t.lift + t.chair_height));
+            }
             npcs.push(DuelNpcPose {
                 npc: npc.npc.clone(),
-                pos: Some(t.chair_pos(chair(seat))),
+                pos: Some(pos),
                 look_at: centre,
                 clip,
             });
@@ -768,6 +779,7 @@ impl PokerStage {
             deck: world(deck.0, deck.1),
             bursts,
             npcs,
+            chairs,
             cues,
             shot,
             banner,
@@ -800,12 +812,15 @@ impl PokerStage {
         let c = t.centre();
         let top = t.top();
         let drift = (now as f32 / 260.0 * std::f32::consts::TAU).sin();
+        // Low and back enough that every opponent's head clears the felt
+        // and sits under the seat plates, the felt's middle on the screen's
+        // middle and the viewer's hand still large in front.
         let mut target = StageShot {
-            focus: [c[0] - across[0] * 24.0, c[1] - across[1] * 24.0],
+            focus: [c[0], c[1]],
             yaw: look + drift * 26.0,
-            pitch: 430.0,
-            distance: 0.24,
-            lift: top,
+            pitch: SEAT_PITCH,
+            distance: SEAT_DISTANCE,
+            lift: top + 8.0,
         };
         // Lean toward the seat to act.
         if let (Phase::Betting(_), Some(s)) = (view.phase, view.to_act)
@@ -817,7 +832,7 @@ impl PokerStage {
             target.focus[1] += right[1] * dr * 30.0;
         }
         if matches!(view.phase, Phase::Betting(Street::Preflop)) && view.board.is_empty() {
-            target.distance = 0.22;
+            target.distance = SEAT_DISTANCE * 0.92;
         }
         let mut k = 0.07;
         if now < ESTABLISH_FRAMES {

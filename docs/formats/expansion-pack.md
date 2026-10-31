@@ -262,8 +262,9 @@ A Grid Duel may name a pack map and a table on it, and is then played on a board
 | `seat_distance` (120) | Each seat's distance from the board's centre |
 | `draw_table` (true) | Draw the built-in wooden table under the board; off when a prop of the map is the table |
 | `hide` (`[]`) | Prop ids of the map (`[[props]] id`) whose draw goes while the duel is seated, back when the seat closes: the decor table the built-in one stands in for ([Hidden props](../subsystems/expansion-modes.md#hidden-props)) |
-| `opponent` | `{ npc, name, think, cheer, slump }`: the map NPC seated across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss |
-| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them |
+| `opponent` | `{ npc, name, think, cheer, slump, sit }`: the map NPC across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss; with `sit` it sits in a chair at its seat ([Seated NPCs](#seated-npcs)) |
+| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them; a spectator never sits |
+| `chair_height` (34) | The seat of the chair a seated NPC sits on, world units above the floor |
 | `surface` | `{ tpage, clut, uv = [u, v, w, h] }`: a texture of the base scene's VRAM the board's cells sample instead of the built-in felt |
 | `sfx` | `{ deal, place, flip, win, lose }`: sounds, each a retail cue (`{ kind = "sfx", id = N }`) or a pack sound (`{ kind = "sound", id = "..." }`); menu cues by default |
 
@@ -273,8 +274,15 @@ A poker table names a map and a table the same way (`map`, `spawn`, `[poker.tabl
 |---|---|
 | `tile`, `offset`, `facing`, `height` (64), `draw_table` (true), `hide`, `surface`, `sfx` | As for a duel table; `sfx` plays `deal` per card, `place` for chips pushed out, `flip` per board card, `win` / `lose` for a pot |
 | `radius` (130) | The felt's half depth toward the player, world units; its half width is 1.35 times that |
-| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in }`, in seat order with the player's seat skipped; a seat with none stays empty-chaired |
+| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in, sit }`, in seat order with the player's seat skipped; a seat with none stays empty |
+| `chair_height` (34) | As for a duel table |
 | `spectators` | NPCs watching from their tiles; they cheer when the player wins a pot |
+
+#### Seated NPCs
+
+A table NPC with `sit` sits: the stage draws a wooden chair at its seat (seat, legs, a back on the side away from the table, in the table's wood) and the NPC plays the `sit` clip in place of its idle while the game is seated, back to its own clip and tile when the seat closes. The chair is part of the stage, like the built-in table, so it needs no prop on the map and stands only while someone sits on it. `sit` is a clip id of the NPC's borrowed placement (the `clip` numbering) that the [posture table](expansion-pack-maps.md#npc-clip-postures) lists as `seated`; the validator warns on any other, and on `sit` given to a spectator.
+
+A reaction clip still plays over `sit`, so a seated NPC's `think` / `cheer` / `slump` / `fold` / `all_in` should be seated clips too, or left out. The party leader stands at the player's side: the party's field bank has no seated clip, and no scene bank a pack map borrows from has one for its rig.
 
 A table prop of the map should not be standable (`top`): the board sits `height` above the floor the sampler answers at the table's centre. Sample: the `duel_table` test pack, `crates/engine-modes/tests/fixtures/duel_table/`.
 

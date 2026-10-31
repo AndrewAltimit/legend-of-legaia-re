@@ -268,7 +268,7 @@ shop = "tower"
 [[npcs]]
 id = "high_table_odile"
 label = "Odile, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 16 }
+model = { kind = "npc", scene = "koin1", index = 22 }
 tile = [16, 9]
 facing = 6
 line = "high_table_hello"
@@ -284,7 +284,7 @@ line = "high_table_hello"
 [[npcs]]
 id = "high_table_sefa"
 label = "Sefa, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 17 }
+model = { kind = "npc", scene = "koin1", index = 4 }
 tile = [16, 11]
 facing = 6
 line = "high_table_hello"

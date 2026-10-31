@@ -54,6 +54,10 @@ pub struct DuelTableFrame {
     /// The map NPC across the board and the spectators, with their clips.
     pub opponent: Option<legaia_expansion_format::modes::DuelSeatNpc>,
     pub spectators: Vec<legaia_expansion_format::modes::DuelSeatNpc>,
+    /// The seat height of a chair the stage draws for a seated NPC, world
+    /// units above the floor (`lift` not included).
+    #[serde(default)]
+    pub chair_height: f32,
 }
 
 /// Why a duel's table could not be placed.
@@ -99,6 +103,7 @@ impl DuelTableFrame {
             sfx: t.sfx.clone(),
             opponent: t.opponent.clone(),
             spectators: t.spectators.clone(),
+            chair_height: f32::from(t.chair_height),
         }))
     }
 
@@ -189,6 +194,7 @@ mod tests {
             sfx: DuelSfx::default(),
             opponent: None,
             spectators: Vec::new(),
+            chair_height: 34.0,
         }
     }
 

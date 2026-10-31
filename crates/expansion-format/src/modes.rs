@@ -167,6 +167,9 @@ pub struct PokerTableLayout {
     pub players: Vec<DuelSeatNpc>,
     /// Map NPCs watching from where they stand.
     pub spectators: Vec<DuelSeatNpc>,
+    /// The seat of a chair the stage draws for a seated NPC (`sit`), world
+    /// units above the floor.
+    pub chair_height: u16,
     /// The felt sampled from the scene's own VRAM instead of the built-in
     /// green.
     pub surface: Option<DuelSurface>,
@@ -187,6 +190,7 @@ impl Default for PokerTableLayout {
             hide: Vec::new(),
             players: Vec::new(),
             spectators: Vec::new(),
+            chair_height: DEFAULT_CHAIR_HEIGHT,
             surface: None,
             sfx: DuelSfx::default(),
         }
@@ -283,6 +287,9 @@ pub struct DuelTable {
     /// Map NPCs watching from where they stand: each turns to the table and
     /// reacts to big moves and the result.
     pub spectators: Vec<DuelSeatNpc>,
+    /// The seat of the chair the stage draws for a seated opponent
+    /// ([`DuelSeatNpc::sit`]), world units above the floor.
+    pub chair_height: u16,
     /// The board's playing surface sampled from the scene's own VRAM (a
     /// floor or cloth texture of the base scene), instead of the built-in
     /// felt.
@@ -304,11 +311,16 @@ impl Default for DuelTable {
             hide: Vec::new(),
             opponent: None,
             spectators: Vec::new(),
+            chair_height: DEFAULT_CHAIR_HEIGHT,
             surface: None,
             sfx: DuelSfx::default(),
         }
     }
 }
+
+/// A table chair's seat height when the table names none, world units: the
+/// hip height of the retail townsfolk's seated clips.
+pub const DEFAULT_CHAIR_HEIGHT: u16 = 34;
 
 /// A map NPC at a duel or poker table and the clips it reacts with (records of the
 /// base scene's ANM bundle, the [`crate::map::NpcDef::clip`] numbering).
@@ -332,6 +344,13 @@ pub struct DuelSeatNpc {
     pub fold: Option<u8>,
     /// Poker: played while the seat is all in.
     pub all_in: Option<u8>,
+    /// Sit at the table: the stage draws a chair at this NPC's seat and
+    /// the NPC plays this clip (a `seated` clip of the posture table,
+    /// `crate::npc_postures`) in place of its idle while the game is
+    /// seated. Left out, the NPC stands at its seat. A reaction clip still
+    /// plays over it, so a seated NPC's reactions should be seated clips
+    /// too. A spectator has no chair and never sits.
+    pub sit: Option<u8>,
 }
 
 /// A duel table's playing surface: one texture rectangle of the map's base

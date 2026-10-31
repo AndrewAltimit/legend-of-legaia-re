@@ -32,6 +32,7 @@ fn table() -> PokerTableFrame {
             })
             .collect(),
         spectators: Vec::new(),
+        chair_height: 34.0,
     }
 }
 
@@ -164,4 +165,33 @@ fn a_contested_showdown_holds_the_felt() {
         .collect();
     let longest = shown.split(|&b| !b).map(<[bool]>::len).max().unwrap_or(0);
     assert!(longest >= 100, "a showdown stays up {longest} frames");
+}
+
+/// A player with a `sit` clip sits in a chair at its seat, playing that
+/// clip at rest; one without stands, chairless; spectators never sit.
+#[test]
+fn a_seated_player_sits_in_a_chair_at_its_seat() {
+    let mut t = table();
+    t.players[0].sit = Some(9);
+    t.players[0].think = None;
+    t.spectators.push(DuelSeatNpc {
+        npc: "fan".into(),
+        sit: Some(9),
+        ..Default::default()
+    });
+    let s = session(1);
+    let f = PokerStage::default().step(&t, &s.view(), 0);
+    assert_eq!(f.chairs.len(), 1, "{:?}", f.chairs);
+    let p1 = f.npcs.iter().find(|n| n.npc == "p1").unwrap();
+    assert_eq!(p1.clip, Some(9));
+    let at = p1.pos.unwrap();
+    let ch = f.chairs[0];
+    assert!((ch.pos[0] - at[0]).hypot(ch.pos[1] - at[1]) < 1.0);
+    assert_eq!(ch.seat, t.lift + t.chair_height);
+    // The chair faces the table's middle.
+    let c = t.centre();
+    let d = [c[0] - ch.pos[0], c[1] - ch.pos[1]];
+    assert!(d[0] * ch.toward[0] + d[1] * ch.toward[1] > 0.9 * d[0].hypot(d[1]));
+    let p2 = f.npcs.iter().find(|n| n.npc == "p2").unwrap();
+    assert_ne!(p2.clip, Some(9));
 }

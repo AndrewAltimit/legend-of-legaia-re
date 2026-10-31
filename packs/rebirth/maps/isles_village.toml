@@ -223,7 +223,7 @@ line = "isles_duel_onlooker"
 [[npcs]]
 id = "lantern_wenna"
 label = "Wenna"
-model = { kind = "npc", scene = "town01", index = 14 }
+model = { kind = "npc", scene = "town01", index = 19 }
 tile = [54, 32]
 facing = 6
 line = "isles_lantern_wenna"
@@ -231,7 +231,7 @@ line = "isles_lantern_wenna"
 [[npcs]]
 id = "lantern_harl"
 label = "Harl"
-model = { kind = "npc", scene = "town01", index = 46 }
+model = { kind = "npc", scene = "town01", index = 41 }
 tile = [56, 30]
 facing = 4
 line = "isles_lantern_harl"
