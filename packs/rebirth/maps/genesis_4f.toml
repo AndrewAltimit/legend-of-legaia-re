@@ -5,9 +5,11 @@
 # that rings the vault; stairs drop from it to the colonnade, and steps
 # drop again into the sunken court at the centre, where the moss over the
 # Verdant Colossus breathes round four flooded corners. Off the west
-# gallery, the Root Archive, its shelves split by the trunks that grew
-# through them; off the east, the Flooded Cloister a step down, its pools
-# full of rainwater. The stair up leaves from the south gallery.
+# gallery, the Root Archive: its floor long since fallen into the dark, four
+# root trunks of the Genesis root rising out of the pit, and the Wardens'
+# narrow walks still running between them; off the east, the Flooded
+# Cloister a step down, its pools full of rainwater. The stair up leaves
+# from the south gallery.
 #
 # The follow camera looks south from the north side: each room's north edge
 # is a low parapet, the vault's far and side walls stand full height.
@@ -15,19 +17,27 @@
 name = "Genesis Tower 4F - Verdant Vault"
 size = [49, 37]
 base = { scene = { kind = "scene", name = "concnow" }, geometry = "none" }
-# Sound-test track 8, "Call of the Ruins".
-bgm = { kind = "bgm", id = 8 }
+# Sound-test track 3, "Path of Secrets" (the underground path to Octam):
+# walks over a pit, and a quiet that the keeper below only waits in.
+bgm = { kind = "bgm", id = 3 }
 camera = "far"
-# Tier 2 the landing, galleries and the Root Archive; tier 1 the colonnade
-# and the Flooded Cloister; tier 0 the sunken court.
+# Tier 2 the landing, galleries and the Root Archive's walks; tier 1 the
+# colonnade and the Flooded Cloister; tier 0 the sunken court.
 floor_heights = [0, 72, 144]
 
-# Past the vault's edge, rainwater pooled at the foot of its walls.
+# Past the vault's edge - and at the foot of the Root Archive's pit -
+# rainwater pooled far below, the walls dropping to it.
 [surround]
 ground = { tpage = 9, clut = 32206, tile = 3 }
 side = { tpage = 25, clut = 32199, tile = 0 }
-depth = 384
-shade = 64
+depth = 1152
+shade = 56
+# 9F: fade = 10
+# 9F: [[surround.regions]]
+# 9F: rect = [1, 13, 7, 23]   # the Root Archive's pit
+# 9F: depth = 1792
+# 9F: shade = 64
+# 9F: fade = 4
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
@@ -49,17 +59,17 @@ rows = [
   "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
   "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
   "_________:::e,,,,,,,,,,,,,,,,,,,,,,,b:::_________",
-  "#aaaaaaa#:::e,,,,fffffuuuuufffff,,,,b:::#kkkkkkkg",
-  "#aaaaaaa#:::e,,,,fww.........wwf,,,,b:::#kkkkkkkg",
-  "#araaara#:::e,,c,fww.........wwf,c,,b:::#kkpppkkg",
-  "#aaaaaaa#:::e,,,,f.............h,,,,b:::#kkpppkkg",
-  "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkpppkkg",
+  "#   a   #:::e,,,,fffffuuuuufffff,,,,b:::#kkkkkkkg",
+  "#   a   #:::e,,,,fww.........wwf,,,,b:::#kkkkkkkg",
+  "#  aaa  #:::e,,c,fww.........wwf,c,,b:::#kkpppkkg",
+  "#  aaa  #:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#   a   a:::e,,,,f.............h,,,,b:::kkkpppkkg",
   "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkkkkkkg",
-  "#aaaaaaaa:::D,,,,f.....MMM.....h,,,,d:::kkkkkkkkg",
-  "#aaaaaaa#:::D,,,,f.....MMM.....h,,,,d:::#kkkkkkkg",
-  "#araaara#:::D,,,,f.....MMM.....h,,,,d:::#kkpppkkg",
-  "#aaaaaaa#:::e,,,,f.............h,,,,e:::#kkpppkkg",
-  "#aaaaaaa#:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#   a   a:::D,,,,f.....MMM.....h,,,,d:::kkkkkkkkg",
+  "#  aaa  #:::D,,,,f.....MMM.....h,,,,d:::#kkkkkkkg",
+  "#  aaa  #:::D,,,,f.....MMM.....h,,,,d:::#kkpppkkg",
+  "#   a   #:::e,,,,f.............h,,,,e:::#kkpppkkg",
+  "#   a   #:::e,,,,f.............h,,,,b:::#kkpppkkg",
   "#########:::e,,,,f.............h,,,,b:::#kkkkkkkg",
   "        #:::e,,c,fww.........wwh,c,,b:::#kkkkkkkg",
   "        #:::e,,,,fww.........wwf,,,,b:::#gggggggg",
@@ -97,8 +107,8 @@ rows = [
 "w" = { label = "court pool", walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
 # The moss over the sleeping Colossus: a low mound, examined from the court.
 "M" = { label = "moss mound", walls = "all", wall = { kind = "box", height = 40, tpage = 10, clut = 32192, tile = 43 } }
-"a" = { label = "archive floor", height = 2, ground = { kind = "texture", tpage = 24, clut = 32258, tile = 28 } }
-"r" = { label = "root trunk", height = 2, walls = "all", ground = { kind = "texture", tpage = 24, clut = 32258, tile = 28 } }
+# The Root Archive's walks: what is left of its floor, over the pit.
+"a" = { label = "archive walk", height = 2, ground = { kind = "texture", tpage = 24, clut = 32258, tile = 28 } }
 "k" = { label = "cloister", height = 1, ground = { kind = "texture", tpage = 9, clut = 32198, tile = 28 } }
 "p" = { label = "cloister pool", height = 1, walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
 ">" = { label = "stair down", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
@@ -254,33 +264,49 @@ tile = [33, 15]
 mesh = { object = 10 }
 tile = [33, 25]
 
-# The Root Archive: four old trunks (`concnow` meshes 4 and 5) grown up
-# through the floor, a fallen tablet and broken pillars, a pale lamp.
+# The Root Archive: four trunks of the Genesis root (the Thornwood's tall
+# bare trunk, `vell` mesh 7) rising out of the pit's dark from the water
+# far below, past the walks, each with a rootlight shrub on the ledge at its
+# foot; the last tablet at the end of the cross walk, a broken pillar at
+# the end of the spine, a pale lamp at its head.
 [[decor]]
-mesh = { object = 4 }
+id = "root_trunk_nw"
+mesh = { scene = "vell", object = 7 }
 tile = [2, 15]
+offset = [-24, -1152, -24]
+scale = 1.7
+rotation = [0.0, 20.0, 0.0]
 
 [[decor]]
-mesh = { object = 5 }
+id = "root_trunk_ne"
+mesh = { scene = "vell", object = 7 }
 tile = [6, 15]
-rotation = [0.0, 90.0, 0.0]
+offset = [24, -1152, -24]
+scale = 1.6
+rotation = [0.0, 110.0, 0.0]
 
 [[decor]]
-mesh = { object = 5 }
+id = "root_trunk_sw"
+mesh = { scene = "vell", object = 7 }
 tile = [2, 21]
+offset = [-24, -1152, 24]
+scale = 1.65
 rotation = [0.0, 200.0, 0.0]
 
 [[decor]]
-mesh = { object = 4 }
+id = "root_trunk_se"
+mesh = { scene = "vell", object = 7 }
 tile = [6, 21]
-rotation = [0.0, 45.0, 0.0]
+offset = [24, -1152, 24]
+scale = 1.75
+rotation = [0.0, 290.0, 0.0]
 
 [[props]]
 id = "archive_tablet"
 mesh = { object = 110 }
-tile = [4, 18]
-offset = [-42, 15, 24]
-rotation = [0.0, 30.0, 0.0]
+tile = [1, 18]
+offset = [-30, 15, 0]
+rotation = [0.0, 80.0, 0.0]
 solid = true
 
 [[props]]
@@ -484,9 +510,12 @@ seed = 409
 mood = "dusk"
 lamps = [
   { id = "court_glow", tile = [24, 20], offset = [0, 60, 0], color = [90, 220, 120], radius = 900, flicker = 0.15, period = 60 },
-  # A pale shaft over the heart, so the vault is not one green.
+  # A pale shaft over the heart, so the vault is not one green (the beam
+  # below, once the engine reads it).
   { id = "heart_shaft", tile = [24, 20], offset = [0, 360, 0], color = [235, 245, 210], radius = 560, flicker = 0.05, period = 90 },
-  { id = "archive", tile = [4, 18], offset = [0, 160, 0], color = [200, 255, 190], radius = 600, flicker = 0.1, period = 70 },
+  { id = "archive", tile = [4, 18], offset = [0, 160, 0], color = [200, 255, 190], radius = 600, breathe = 0.2, breathe_period = 360 },
+  # The root's glow far down the archive's pit, coming up the trunks.
+  { id = "archive_deep", tile = [4, 18], offset = [0, -900, 0], color = [110, 255, 150], radius = 1200, breathe = 0.5, breathe_period = 300 },
   # The lanterns on their pedestals in the archive and the cloister.
   { id = "archive_lamp", tile = [4, 13], offset = [0, 150, 40], color = [210, 255, 200], radius = 520, flicker = 0.1, period = 40 },
   { id = "cloister_lamp", tile = [47, 19], offset = [24, 150, 0], color = [200, 240, 255], radius = 520, flicker = 0.1, period = 45 },
@@ -497,6 +526,73 @@ lamps = [
   { id = "rootlight_2", tile = [3, 20], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
   { id = "rootlight_3", tile = [5, 20], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
 ]
+
+# Light through the vault's broken roof onto the court, and the root's
+# glow rising round the archive's trunks. Lane 9F's `[[beams]]` (enhanced
+# lighting only), comments until the engine reads them; the `heart_shaft`
+# and `archive_deep` lamps carry the light meanwhile.
+# 9F: [[beams]]
+# 9F: id = "heart_shaft"
+# 9F: tile = [24, 20]
+# 9F: height = 1500
+# 9F: tilt = 8.0
+# 9F: angle = 180.0
+# 9F: width = [110, 240]
+# 9F: color = [235, 245, 210]
+# 9F: intensity = 75
+# 9F: profile = "fall"
+# 9F: pool = true
+# 9F: breathe = 0.12
+# 9F: period = 540
+# 9F: motes = 16
+# 9F: seed = 401
+#
+# 9F: [[beams]]
+# 9F: id = "archive_light"
+# 9F: tile = [4, 18]
+# 9F: height = 1200
+# 9F: tilt = 12.0
+# 9F: angle = 150.0
+# 9F: width = [50, 110]
+# 9F: color = [230, 255, 220]
+# 9F: intensity = 55
+# 9F: profile = "fall"
+# 9F: pool = true
+# 9F: period = 480
+# 9F: motes = 6
+# 9F: seed = 402
+#
+# 9F: [[beams]]
+# 9F: id = "archive_root_glow"
+# 9F: tile = [4, 18]
+# 9F: offset = [0, -1600, 0]
+# 9F: height = 1500
+# 9F: width = [320, 160]
+# 9F: color = [120, 255, 160]
+# 9F: intensity = 55
+# 9F: profile = "rise"
+# 9F: breathe = 0.35
+# 9F: period = 300
+# 9F: motes = 18
+# 9F: seed = 403
+
+# Rootlight motes drift up the trunks out of the archive's pit.
+[[emitters]]
+id = "archive_motes"
+kind = "dust"
+rect = [1, 13, 7, 23]
+height = [-900, 120]
+count = 44
+life = 420
+velocity = [0.0, 0.6, 0.0]
+spread = [0.1, 0.2, 0.1]
+sway = 14.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 411
 
 [fog]
 regions = [{ rect = [18, 14, 30, 26], angle = 0.0, spread = 180.0, speed = 8 }]
@@ -529,9 +625,17 @@ volume = 0.35
 id = "archive_wind"
 sound = { kind = "sound", id = "wind" }
 tile = [4, 18]
-radius = 560
+radius = 640
 inner = 128
-volume = 0.25
+volume = 0.3
+
+[[audio.ambient]]
+id = "archive_water"
+sound = { kind = "sound", id = "drips" }
+tile = [4, 18]
+radius = 560
+inner = 96
+volume = 0.3
 
 [[audio.ambient]]
 id = "heart_hum"
@@ -542,8 +646,8 @@ inner = 160
 volume = 0.35
 
 # ---------------------------------------------------------------------------
-# Rootlight. In the Root Archive the root's own trunks split the
-# shelves, and a shrub glows at the inner foot of each.
+# Rootlight. In the Root Archive the root's own trunks rise out of the
+# pit, and a shrub glows on the ledge beside each.
 # Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
 # own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
 # lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.

@@ -1,12 +1,14 @@
 # Genesis Tower, second floor: the Ember Stair. Laid out from scratch
 # (`geometry = "none"`) out of the retail Rogue's Tower (`rugi`) brick and
-# rock: a stair of fire that climbs away from the camera in four flights.
-# The landing opens on the lower hall, its centre aisle walled from the side
-# aisles by two lava moats with a bridge across each; off the hall, the west
-# forge (anvils and a slag trough) and the east ash shrine. The first flight
-# climbs to the middle hall between lava runs and four ember pillars; the
-# second to the upper terrace, where the Cinder Warden's brazier burns on a
-# raised dais and the stair up leaves through the far wall behind it.
+# rock: a stair of fire that climbs away from the camera, landing over
+# landing, above the lava lake far down the tower's core. The landing opens
+# on the lower hall, its centre aisle cut from the side aisles by two
+# chasms with a bridge across each, the lake's glow coming up through them;
+# off the hall, the west forge (anvils and a slag trough) and the east ash
+# shrine. The first flight climbs to the middle landing, a span of stone
+# with nothing either side of it but the drop and four ember pillars on it;
+# the second to the upper terrace, where the Cinder Warden's brazier burns
+# on a raised dais and the stair up leaves through the far wall behind it.
 #
 # The follow camera looks south from the north side: every room's north
 # edge is a low parapet, its far and side walls stand full height.
@@ -22,13 +24,17 @@ camera = "far"
 # before the next tier: tiers are corner heights, so that row is the slope.
 floor_heights = [0, 56, 112, 160]
 
-# Past the floor's edge the tower falls away to a lake of lava far below,
-# the stair's own walls dropping to it.
+# Past the floor's edge - and down the chasms and either side of the
+# middle landing - the tower falls away to a lake of lava far below, the
+# stair's own walls dropping to it. The lake heaves (the lava material
+# below tints the drop's own floor).
 [surround]
 ground = { tpage = 5, clut = 30720, tile = 0 }
 side = { tpage = 11, clut = 32523, tile = 38 }
-depth = 448
-shade = 112
+depth = 1024
+# The lake lights itself: its floor and the walls nearest it draw full bright.
+shade = 128
+# 9F: fade = 24
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
@@ -44,25 +50,25 @@ rows = [
   "            #k..........#            ",
   "       ______...........______       ",
   "       #.....................#       ",
-  "       #...LL...........LL...#       ",
-  "_______#.o.LL...........LL.o.#_______",
-  "#gffff##...LL...........LL...##aaaah#",
+  "       #...  ...........  ...#       ",
+  "_______#.o.  ...........  .o.#_______",
+  "#gffff##...  ...........  ...##aaaah#",
   "#fFfffff...==...........==...aaaaaaa#",
   "#fffQfff...==...........==...aaaaaAa#",
-  "#fFfff##...LL...........LL...##aaaaa#",
-  "#ffgff##.o.LL...........LL.o.##aaaah#",
-  "########...LL...........LL...########",
+  "#fFfff##...  ...........  ...##aaaaa#",
+  "#ffgff##.o.  ...........  .o.##aaaah#",
+  "########...  ...........  ...########",
   "       #.....................#       ",
   "       ######SSSSSSSSSSS######       ",
-  "         #,,,,,,,,,,,,,,,,,b         ",
-  "         #ll,,,,,,,,,,,,,llb         ",
-  "         #ll,,p,,,,,,,p,,ll#         ",
-  "         #ll,,,,,,,,,,,,,ll#         ",
-  "         #ll,,,,,,,,,,,,,ll#         ",
-  "         #ll,,,,,,,,,,,,,ll#         ",
-  "         #ll,,p,,,,,,,p,,ll#         ",
-  "         #ll,,,,,,,,,,,,,ll#         ",
-  "         #,,,,,,,,,,,,,,,,,b         ",
+  "            ,,,,,,,,,,,,,            ",
+  "            ,,,,,,,,,,,,,            ",
+  "            ,,p,,,,,,,p,,            ",
+  "            ,,,,,,,,,,,,,            ",
+  "            ,,,,,,,,,,,,,            ",
+  "            ,,,,,,,,,,,,,            ",
+  "            ,,p,,,,,,,p,,            ",
+  "            ,,,,,,,,,,,,,            ",
+  "            ,,,,,,,,,,,,,            ",
   "     -----cccssssssssssscccc----     ",
   "     #:::::::::::::::::::::::::d     ",
   "     #:::::::::::::::::::::::::d     ",
@@ -95,7 +101,7 @@ rows = [
 "^" = { label = "brazier dais", height = 3, ground = { kind = "texture", tpage = 12, clut = 32576, tile = 0 } }
 "S" = { label = "first flight", ground = { kind = "texture", tpage = 6, clut = 30464, tile = 24 } }
 "s" = { label = "second flight", height = 1, ground = { kind = "texture", tpage = 6, clut = 30464, tile = 24 } }
-"=" = { label = "bridge", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 0 } }
+"=" = { label = "chasm bridge", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 0 } }
 "f" = { label = "forge floor", ground = { kind = "texture", tpage = 27, clut = 32192, tile = 0 } }
 "a" = { label = "shrine floor", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 1 } }
 # Floor under a set piece standing against a wall, kept clear of the wall
@@ -105,9 +111,8 @@ rows = [
 "g" = { label = "forge floor (set piece)", ground = { kind = "texture", tpage = 27, clut = 32192, tile = 0 } }
 "h" = { label = "shrine floor (set piece)", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 1 } }
 # Lava: the Rogue's Tower's water, turned to fire and set flowing by the
-# materials below. Never walked.
-"L" = { label = "lava", walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
-"l" = { label = "lava run", height = 1, walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
+# materials below. Never walked. The chasms are void tiles: the drop to
+# the lava lake.
 "Q" = { label = "slag trough", walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
 # Solid stone: piers, the ember pillars, anvils, the ash altar, the brazier.
 "o" = { label = "pier", walls = "all", wall = { kind = "box", height = 288, tpage = 11, clut = 32523, tile = 46 } }
@@ -357,61 +362,6 @@ y = 30
 scale_range = [0.5, 0.62]
 seed = 2202
 
-# Fallen rock heaps in the lower hall's side aisles and the terrace's far
-# corners, where the ceiling gave way: the cave's boulders (`rugi` 17..20).
-[[scatter]]
-id = "rubble_west"
-rect = [8, 6, 10, 15]
-on = "."
-density = 1.2
-seed = 2203
-jitter = 50
-scale = [0.3, 0.55]
-tilt = 10.0
-keep_clear = true
-cluster = { centre = [8.0, 14.0], radius = 3.0, falloff = 1.0 }
-meshes = [
-  { mesh = { object = 17 }, scale = [0.3, 0.45] },
-  { mesh = { object = 18 } },
-  { mesh = { object = 19 }, y = 12 },
-  { mesh = { object = 20 } },
-]
-
-[[scatter]]
-id = "rubble_east"
-rect = [26, 6, 28, 15]
-on = "."
-density = 1.2
-seed = 2204
-jitter = 50
-scale = [0.3, 0.55]
-tilt = 10.0
-keep_clear = true
-cluster = { centre = [28.0, 7.0], radius = 3.0, falloff = 1.0 }
-meshes = [
-  { mesh = { object = 17 }, scale = [0.3, 0.45] },
-  { mesh = { object = 18 } },
-  { mesh = { object = 19 }, y = 12 },
-  { mesh = { object = 20 } },
-]
-
-[[scatter]]
-id = "rubble_terrace"
-rect = [6, 34, 30, 38]
-on = ":"
-density = 0.8
-seed = 2205
-jitter = 50
-scale = [0.3, 0.5]
-tilt = 10.0
-keep_clear = true
-cluster = { centre = [7.0, 38.0], radius = 4.0, falloff = 1.2 }
-meshes = [
-  { mesh = { object = 17 }, scale = [0.3, 0.45] },
-  { mesh = { object = 19 }, y = 12 },
-  { mesh = { object = 20 } },
-]
-
 # A rune circle (the Rogue's Tower's own, four atlas cells) glows on the
 # dais round the brazier.
 [[decals]]
@@ -424,6 +374,38 @@ sides = 16
 color = [110, 110, 110]
 yaw = [0.0, 0.0]
 
+# The lake's glow rising out of the two chasms and past the middle
+# landing: lane 9F's `[[beams]]` (enhanced lighting only), left as comments
+# until the engine reads them; the `moat_*` / `run_*` lamps carry the glow
+# alone meanwhile.
+# 9F: [[beams]]
+# 9F: id = "chasm_w"
+# 9F: tile = [11, 10]
+# 9F: offset = [0, -1000, 0]
+# 9F: height = 1100
+# 9F: width = [140, 90]
+# 9F: color = [255, 120, 50]
+# 9F: intensity = 70
+# 9F: profile = "rise"
+# 9F: breathe = 0.3
+# 9F: period = 200
+# 9F: motes = 12
+# 9F: seed = 211
+#
+# 9F: [[beams]]
+# 9F: id = "chasm_e"
+# 9F: tile = [25, 10]
+# 9F: offset = [0, -1000, 0]
+# 9F: height = 1100
+# 9F: width = [140, 90]
+# 9F: color = [255, 120, 50]
+# 9F: intensity = 70
+# 9F: profile = "rise"
+# 9F: breathe = 0.3
+# 9F: period = 220
+# 9F: motes = 12
+# 9F: seed = 212
+
 [lighting]
 mood = "night"
 lamps = [
@@ -431,11 +413,14 @@ lamps = [
   { id = "ember_ne", tile = [22, 19], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 13 },
   { id = "ember_sw", tile = [14, 23], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 12 },
   { id = "ember_se", tile = [22, 23], offset = [0, 300, 0], color = [255, 120, 50], radius = 480, flicker = 0.35, period = 14 },
-  # The lava glows up from the moats and runs.
-  { id = "moat_w", tile = [11, 10], offset = [0, 40, 64], color = [255, 90, 20], radius = 640, flicker = 0.25, period = 30 },
-  { id = "moat_e", tile = [25, 10], offset = [0, 40, 64], color = [255, 90, 20], radius = 640, flicker = 0.25, period = 33 },
-  { id = "run_w", tile = [10, 21], offset = [64, 40, 0], color = [255, 90, 20], radius = 600, flicker = 0.25, period = 29 },
-  { id = "run_e", tile = [26, 21], offset = [-64, 40, 0], color = [255, 90, 20], radius = 600, flicker = 0.25, period = 31 },
+  # The lava lake glows up through the chasms and past the middle landing:
+  # a slow swell far below, and its light on the bridges and the ledges.
+  { id = "moat_w", tile = [11, 10], offset = [0, -700, 0], color = [255, 100, 30], radius = 1000, breathe = 0.3, breathe_period = 200 },
+  { id = "moat_e", tile = [25, 10], offset = [0, -700, 0], color = [255, 100, 30], radius = 1000, breathe = 0.3, breathe_period = 220 },
+  { id = "run_w", tile = [10, 21], offset = [0, -700, 0], color = [255, 100, 30], radius = 1000, breathe = 0.3, breathe_period = 210 },
+  { id = "run_e", tile = [26, 21], offset = [0, -700, 0], color = [255, 100, 30], radius = 1000, breathe = 0.3, breathe_period = 230 },
+  { id = "bridge_w", tile = [11, 10], offset = [0, -60, 64], color = [255, 120, 50], radius = 420, flicker = 0.15, period = 40 },
+  { id = "bridge_e", tile = [25, 10], offset = [0, -60, 64], color = [255, 120, 50], radius = 420, flicker = 0.15, period = 44 },
   { id = "forge", tile = [3, 11], offset = [0, 80, 0], color = [255, 110, 40], radius = 560, flicker = 0.45, period = 8 },
   { id = "shrine", tile = [33, 11], offset = [0, 160, 0], color = [255, 200, 150], radius = 520, flicker = 0.1, period = 60 },
 ]
@@ -448,8 +433,9 @@ regions = [
   { rect = [6, 27, 30, 29], angle = 90.0, spread = 40.0, speed = 10 },
 ]
 
-# Sparks climb from the brazier, embers rise off the lava, the forge
-# smokes, and warm ash drifts down through every hall.
+# Sparks climb from the brazier, embers ride the heat up out of the
+# chasms from the lake far below, the forge smokes, and warm ash drifts
+# down through every hall.
 [[emitters]]
 kind = "embers"
 rect = [17, 31, 19, 33]
@@ -461,33 +447,41 @@ seed = 201
 [[emitters]]
 kind = "embers"
 rect = [11, 7, 12, 14]
-height = [0, 30]
-count = 24
-color = [255, 140, 50]
+height = [-640, -40]
+count = 32
+life = 260
+velocity = [0.0, 2.4, 0.0]
+color = [255, 150, 60]
 seed = 202
 
 [[emitters]]
 kind = "embers"
 rect = [24, 7, 25, 14]
-height = [0, 30]
-count = 24
-color = [255, 140, 50]
+height = [-640, -40]
+count = 32
+life = 260
+velocity = [0.0, 2.4, 0.0]
+color = [255, 150, 60]
 seed = 203
 
 [[emitters]]
 kind = "embers"
 rect = [10, 18, 11, 24]
-height = [0, 30]
-count = 20
-color = [255, 140, 50]
+height = [-640, -40]
+count = 28
+life = 260
+velocity = [0.0, 2.4, 0.0]
+color = [255, 150, 60]
 seed = 206
 
 [[emitters]]
 kind = "embers"
 rect = [25, 18, 26, 24]
-height = [0, 30]
-count = 20
-color = [255, 140, 50]
+height = [-640, -40]
+count = 28
+life = 260
+velocity = [0.0, 2.4, 0.0]
+color = [255, 150, 60]
 seed = 207
 
 [[emitters]]
@@ -543,20 +537,19 @@ hue = 175.0
 value = 8
 color = [255, 150, 70]
 
-# The lava heaves: swells roll down the moats, runs and the slag trough,
-# the molten floor itself rising and falling rather than its texture
-# sliding.
+# The forge's slag trough heaves: swells roll down it, the molten floor
+# itself rising and falling rather than its texture sliding.
 [[ground_motion]]
 kind = "swell"
-chars = "LlQ"
+chars = "Q"
 amplitude = 10
 period = 150
 phases = 4
 wavelength = 4.0
 angle = 0.0
 
-# Sound: the brazier roars loudest; the lava hisses along its moats and
-# runs; the forge's coals crackle.
+# Sound: the brazier roars loudest; the lake's heat breathes up the
+# chasms; the forge's coals crackle.
 [[audio.ambient]]
 id = "brazier_fire"
 sound = { kind = "sound", id = "torch" }
@@ -583,7 +576,7 @@ volume = 0.45
 
 [[audio.ambient]]
 id = "lava_runs"
-sound = { kind = "sound", id = "torch" }
+sound = { kind = "sound", id = "wind" }
 tile = [18, 21]
 radius = 900
 inner = 300
