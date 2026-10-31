@@ -123,12 +123,6 @@ rect = [1, 39, 3, 43]
 event = { kind = "toast", line = "isles_thornwood_intro" }
 once = true
 
-[[triggers]]
-id = "ruins_intro"
-rect = [86, 29, 89, 32]
-event = { kind = "toast", line = "isles_ruins_intro" }
-once = true
-
 # Inside the north gate: the queen wakes.
 [[triggers]]
 id = "hive_gate"
@@ -136,19 +130,17 @@ rect = [96, 11, 100, 12]
 event = { kind = "boss", boss = "isles_hive_queen" }
 requires = { bosses_unbeaten = ["isles_hive_queen"] }
 
-# Hermit Ost's camp: his log by the fire. Pressing the action button beside
-# it is talking to him (the West Voz Forest has no townsfolk to dress him in).
-[[triggers]]
-id = "hermit"
-rect = [73, 35, 77, 37]
-press = true
-event = { kind = "talk", npc = "isles_hermit" }
-
-[[triggers]]
-id = "hermit_warning"
-rect = [73, 35, 77, 37]
-press = true
-event = { kind = "dialog", line = "isles_hermit_hello" }
+# Hermit Ost at his camp, standing by the fire beside his log. The West
+# Voz Forest has no townsfolk, so he is Rim Elm's old man (`town01`
+# placement 37), borrowed with his model and clips. Until the queen falls
+# he warns the party; after, his quest lines do the talking.
+[[npcs]]
+id = "isles_hermit"
+label = "Hermit Ost"
+model = { kind = "npc", scene = "town01", index = 37 }
+tile = [74, 37]
+facing = 5
+line = "isles_hermit_hello"
 requires = { bosses_unbeaten = ["isles_hive_queen"] }
 
 [[encounters]]

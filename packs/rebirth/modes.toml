@@ -12,6 +12,25 @@ currency = "coins"
 chip_value = 1
 ai_tier = "regular"
 blind_double_every = 10
+# Dealt by lantern light on the meadow below the lodge in Tolva's Haven:
+# three islanders round a plank table, the player's place at its south
+# edge, looking up at the lodge's hedge.
+map = "isles_village"
+spawn = "from_thornwood"
+
+[poker.table]
+tile = [56, 32]
+facing = 0
+radius = 90
+# The plank table on that tile (the map's `lantern_table` prop) is the
+# table: the felt and the cards lie on its top.
+draw_table = false
+height = 90
+players = [
+  { npc = "lantern_wenna", name = "Wenna" },
+  { npc = "lantern_harl", name = "Harl" },
+  { npc = "lantern_ysel", name = "Ysel" },
+]
 
 [[card_duels]]
 id = "rim-elm-duel"
@@ -22,6 +41,20 @@ elemental_cells = true
 chain = false
 stakes = false
 win_booster = "rebirth-starter"
+# Played at the plank table under the great tree in Tolva's Haven's west
+# meadow, Brin across the board and two islanders looking on.
+map = "isles_village"
+spawn = "from_beach"
+
+[card_duels.table]
+tile = [11, 10]
+facing = 6
+# The map's `duel_table` prop on that tile is the table.
+draw_table = false
+height = 64
+seat_distance = 150
+opponent = { npc = "duel_brin", name = "Brin" }
+spectators = [{ npc = "duel_onlooker_a" }, { npc = "duel_onlooker_b" }]
 
 [[golf]]
 id = "windmill-links"

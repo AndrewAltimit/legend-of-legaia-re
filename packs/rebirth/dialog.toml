@@ -640,6 +640,49 @@ after dark. The wasps don't
 sleep.
 """
 
+# The Village Duel's table under the great tree (maps/isles_village.toml).
+[lines.isles_duel_brin]
+speaker = "Brin"
+text = """
+Five cards, nine squares. The
+tree has watched me win all
+summer. Care to try?"""
+choices = [
+    { label = "Deal me in.", mode = "rim-elm-duel" },
+    { label = "Not now.", reply = "\"I'll be under the tree.\"" },
+]
+
+[lines.isles_duel_onlooker]
+speaker = "Islander"
+text = """
+Brin plays the corners. Everyone
+knows it, and still she wins."""
+
+# The Mist Lantern Table below the lodge (maps/isles_village.toml).
+[lines.isles_lantern_wenna]
+speaker = "Wenna"
+text = """
+A thousand coins buys a seat.
+The lanterns keep the mist off
+the cards."""
+choices = [
+    { label = "Deal me in.", mode = "mist-lantern-table" },
+    { label = "Not tonight.", reply = "\"The table's here every night.\"" },
+]
+
+[lines.isles_lantern_harl]
+speaker = "Harl"
+text = """
+Small blind ten, big blind
+twenty. Doubles every ten hands,
+so don't dawdle."""
+
+[lines.isles_lantern_ysel]
+speaker = "Ysel"
+text = """
+Harl folds anything that isn't a
+pair. Don't tell him I said so."""
+
 [lines.isles_child]
 speaker = "Child"
 text = """
@@ -651,11 +694,6 @@ Then it rolled into the sea.
 text = """
 (Thorns close overhead.
 Something hums.)"""
-
-[lines.isles_ruins_intro]
-text = """
-(A gate, grown through
-with a hive.)"""
 
 [lines.isles_thorns_locked]
 text = "The elder should hear of you first."

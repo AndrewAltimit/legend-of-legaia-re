@@ -121,8 +121,8 @@ ambience (`[audio]`: surf, wind, drips, birdsong, the village's murmur):
 | Map | Base | Size | What is there |
 |---|---|---|---|
 | `isles_beach` Saltwind Beach | `town01` | 64 x 36 | The sea-stair landing, dunes and palms, surf, a ruined jetty, the ferrywoman; shore encounters |
-| `isles_village` Tolva's Haven | `town01` | 64 x 50 | Huts, the well and windmill, the lodge (`rest`), Pell's Trading Post (`shop` `isles_trader`), villagers; a dusk mood |
-| `isles_thornwood` The Thornwood | `vell` | 112 x 56 | A lane winding through clumped old forest: Mushroom Hollow, a ford, the old shrine and its lookout, the hermit's camp round his log, a fern dell, and the ruined court with the Thornwood Queen (`isles_hive_queen`) inside the gate |
+| `isles_village` Tolva's Haven | `town01` | 64 x 50 | Huts, the well and windmill, the lodge (`rest`), Pell's Trading Post (`shop` `isles_trader`), villagers; the Village Duel table under the great tree and the Mist Lantern Table below the lodge (`modes.toml`); a dusk mood |
+| `isles_thornwood` The Thornwood | `vell` | 112 x 56 | A lane winding through clumped old forest: Mushroom Hollow, a ford, the old shrine and its lookout, the hermit's camp round his log (Hermit Ost, Rim Elm's old man borrowed into the forest), a fern dell, and the ruined court with the Thornwood Queen (`isles_hive_queen`) inside the gate |
 | `isles_grotto` The Singing Grotto | `cave01` | 72 x 60 | Four chambers under the ruins linked by passages: the antechamber, the crystal gallery, the mushroom grotto round its spring, and the singing pool with the Pearl on its islet |
 
 The region's monsters, formations, encounter tables and mini-boss are

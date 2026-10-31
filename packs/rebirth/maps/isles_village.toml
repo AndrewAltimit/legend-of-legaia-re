@@ -118,6 +118,19 @@ rect = [53, 21, 53, 23]
 event = { kind = "rest", save = true }
 press = true
 
+# The two game tables: the action button at the player's place sits down.
+[[triggers]]
+id = "duel_seat"
+rect = [10, 10, 10, 10]
+event = { kind = "mode", mode = "rim-elm-duel" }
+press = true
+
+[[triggers]]
+id = "lantern_seat"
+rect = [56, 34, 56, 34]
+event = { kind = "mode", mode = "mist-lantern-table" }
+press = true
+
 [[npcs]]
 id = "isles_elder"
 label = "Elder Tolva"
@@ -140,6 +153,9 @@ after = { quests = ["isles_nets"] }
 id = "isles_trader_pell"
 label = "Trader Pell"
 model = { kind = "npc", scene = "town01", index = 33 }
+# The placement's own clip crouches him behind Rim Elm's counter; 29 is
+# his standing idle.
+clip = 29
 tile = [12, 30]
 facing = 2
 line = "isles_shop_keeper"
@@ -152,6 +168,9 @@ model = { kind = "npc", scene = "town01", index = 13 }
 tile = [24, 19]
 line = "isles_villager_a"
 patrol = [[32, 19], [32, 25], [24, 25]]
+# Rim Elm's stream walks her in clip 17, which barely moves her feet; 44
+# is the model's walk cycle.
+walk_clip = 44
 pause = 120
 
 [[npcs]]
@@ -169,14 +188,61 @@ model = { kind = "npc", scene = "town01", index = 15 }
 tile = [26, 24]
 line = "isles_child"
 patrol = [[30, 24], [30, 20], [26, 20]]
+# The placement installs no walk, so name the model's run of steps.
+walk_clip = 19
 pause = 45
 
+# The Village Duel's table under the great tree (`modes.toml`
+# `rim-elm-duel`): Brin across the board, two islanders looking on.
 [[npcs]]
-id = "isles_mill"
-label = "windmill sails"
-model = { kind = "npc", scene = "town01", index = 5 }
-tile = [7, 7]
-scenery = true
+id = "duel_brin"
+label = "Brin, a card player"
+model = { kind = "npc", scene = "town01", index = 43 }
+tile = [13, 10]
+facing = 2
+line = "isles_duel_brin"
+
+[[npcs]]
+id = "duel_onlooker_a"
+label = "Islander"
+model = { kind = "npc", scene = "town01", index = 18 }
+tile = [12, 8]
+facing = 4
+line = "isles_duel_onlooker"
+
+[[npcs]]
+id = "duel_onlooker_b"
+label = "Islander"
+model = { kind = "npc", scene = "town01", index = 38 }
+tile = [12, 12]
+facing = 0
+line = "isles_duel_onlooker"
+
+# The Mist Lantern Table on the meadow below the lodge (`modes.toml`
+# `mist-lantern-table`): three islanders at its other places.
+[[npcs]]
+id = "lantern_wenna"
+label = "Wenna"
+model = { kind = "npc", scene = "town01", index = 14 }
+tile = [54, 32]
+facing = 6
+line = "isles_lantern_wenna"
+
+[[npcs]]
+id = "lantern_harl"
+label = "Harl"
+model = { kind = "npc", scene = "town01", index = 46 }
+tile = [56, 30]
+facing = 4
+line = "isles_lantern_harl"
+
+[[npcs]]
+id = "lantern_ysel"
+label = "Ysel"
+model = { kind = "npc", scene = "town01", index = 32 }
+tile = [58, 32]
+facing = 2
+line = "isles_lantern_ysel"
 
 # Houses: each cottage stands in its own hedged yard, its door to the lane.
 [[props]]
@@ -244,7 +310,9 @@ scale = 0.55
 solid = true
 
 # The green: the well at its heart, the windmill on its knoll, the old
-# tree in the west meadow.
+# tree in the west meadow. (Rim Elm's sails are a placement its MAN binds
+# to the windmill's hub; a pack NPC stands on the ground, where they turned
+# at the foot of the tower, so the mill keeps its own vanes alone.)
 [[props]]
 id = "well"
 mesh = { scene = "town01", object = 28 }
@@ -446,6 +514,70 @@ tile = [40, 37]
 scale = 0.85
 solid = true
 
+# The Village Duel's plank table under the great tree.
+[[props]]
+id = "duel_table"
+mesh = { scene = "town01", object = 57 }
+tile = [11, 10]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.85
+solid = true
+
+# The Mist Lantern Table: a long plank table on the meadow below the lodge,
+# a lantern post at each corner, barrels and a basket at its side.
+[[props]]
+id = "lantern_table"
+mesh = { scene = "town01", object = 57 }
+tile = [56, 32]
+rotation = [0.0, 90.0, 0.0]
+scale = 1.2
+solid = true
+
+[[props]]
+id = "lantern_table_nw"
+mesh = { scene = "rugi", object = 15 }
+tile = [54, 30]
+offset = [0, 40, 0]
+light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 13 }
+
+[[props]]
+id = "lantern_table_ne"
+mesh = { scene = "rugi", object = 15 }
+tile = [58, 30]
+offset = [0, 40, 0]
+light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 15 }
+
+[[props]]
+id = "lantern_table_sw"
+mesh = { scene = "rugi", object = 15 }
+tile = [54, 34]
+offset = [0, 40, 0]
+light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 17 }
+
+[[props]]
+id = "lantern_table_se"
+mesh = { scene = "rugi", object = 15 }
+tile = [58, 34]
+offset = [0, 40, 0]
+light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 11 }
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [60, 31]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [60, 32]
+offset = [10, 0, 20]
+scale = 0.65
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [60, 33]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.8
+
 # Lantern posts at the lane corners.
 [[props]]
 id = "lantern_0"
@@ -630,7 +762,8 @@ rotation = [0.0, 63.0, 0.0]
 scale = 0.32
 solid = true
 
-# Yard life: flowers along the cottages, a bench of pots by each door.
+# Yard life: flowers along the cottages, a little round table on the
+# elder's terrace either side of his door.
 [[decor]]
 mesh = { scene = "town01", object = 80 }
 tile = [4, 19]
