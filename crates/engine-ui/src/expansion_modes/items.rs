@@ -7,11 +7,11 @@
 //! Tower Armory                                     48210 G
 //!  [Buy]  Sell
 //! +---------------------------------+ +----------------+
-//! |> Rebirth Blade         64000 G  | | Forged in the  |
+//! |> Vigil Blade           64000 G  | | Forged in the  |
 //! |  Phoenix Plume          9000 G  | | tower's heart. |
 //! |  Healing Berry          3000 G  | | Weapon ATK +108|
 //! +---------------------------------+ +----------------+
-//! Bought 1 Rebirth Blade for 64000 G.
+//! Bought 1 Vigil Blade for 64000 G.
 //! L/R: Buy/Sell  X: choose  O: leave
 //! ```
 
@@ -223,7 +223,7 @@ mod tests {
             tabs: vec!["Buy".into(), "Sell".into()],
             rows: vec![
                 ItemRowView {
-                    name: "Rebirth Blade".into(),
+                    name: "Vigil Blade".into(),
                     right: "64000 G".into(),
                     sub: "Have 0".into(),
                     dim: true,
@@ -250,7 +250,7 @@ mod tests {
             "Tower Armory",
             "48210 G",
             "Buy",
-            "Rebirth Blade",
+            "Vigil Blade",
             "64000 G",
             "Have 0",
         ] {

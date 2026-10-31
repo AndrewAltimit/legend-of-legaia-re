@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn a_fitting_line_is_drawn_as_is_and_a_long_one_condensed_into_its_width() {
         let f = font();
-        let line = b"Tower of Rebirth 7F - Sanctum of Echoes";
+        let line = b"Genesis Tower 7F - Sanctum of Echoes";
         let w = i32::from(text_balloon_text_width(&f, line));
         let pen = (20, 180);
         let dsts = |ds: Vec<TextDraw>| ds.iter().map(|d| d.dst).collect::<Vec<_>>();

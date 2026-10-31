@@ -53,7 +53,7 @@ const JOURNAL_WIDTH: i32 = 272;
 /// ```text
 /// JOURNAL - Legend of Legaia: Rebirth 0.1.0
 /// Quests  Challenges  Cards  Travel     New cards: 1
-/// > The Rebirth Tower                           Active
+/// > The Genesis Tower                           Active
 ///     The guide will open the tower to a party that
 ///     proves itself in battle and grows strong ...
 ///     Win three battles                            2/3

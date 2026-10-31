@@ -417,7 +417,7 @@ mod tests {
 
             [arts.nova]
             character = "vahn"
-            name = "Rebirth Nova"
+            name = "Knell Nova"
             segments = [{ art = 0x2A }]
 
             [arts.kick]

@@ -24,7 +24,7 @@
 //! map.
 //!
 //! ```toml
-//! name = "Tower of Rebirth, 1F"
+//! name = "Genesis Tower, 1F"
 //! base = { scene = { kind = "scene", name = "dolk" } }
 //! floor_heights = [0, 64]
 //!
