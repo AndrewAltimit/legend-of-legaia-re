@@ -1043,7 +1043,8 @@ pub const SURROUND_MAX_REACH: u8 = 16;
 /// every tile up to `reach` past the map's edges, and, with `side`, the
 /// floor's own edge faces dropping to it. Without one the view past the
 /// floor is the clear colour, which a follow camera at a map's edge frames
-/// as a black void.
+/// as a black void. With `backdrop`, a wall stands round the drop
+/// ([`BackdropDef`]): the far side of a hall the camera looks over.
 ///
 /// ```toml
 /// [surround]
@@ -1052,6 +1053,7 @@ pub const SURROUND_MAX_REACH: u8 = 16;
 /// depth = 384
 /// reach = 8
 /// shade = 72
+/// backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1024, distance = 2 }
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -1069,6 +1071,9 @@ pub struct SurroundDef {
     /// Vertex colour of the drop and its faces (`128` draws the texel as
     /// is; lower darkens it, the retail `texel * colour / 128` law).
     pub shade: u8,
+    /// A wall standing round the drop, `None` for none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backdrop: Option<BackdropDef>,
 }
 
 impl Default for SurroundDef {
@@ -1079,7 +1084,70 @@ impl Default for SurroundDef {
             depth: 384,
             reach: SURROUND_DEFAULT_REACH,
             shade: 80,
+            backdrop: None,
         }
+    }
+}
+
+/// The tallest backdrop, world units above tier `0`.
+pub const BACKDROP_MAX_HEIGHT: u16 = 4096;
+
+/// A surround's backdrop: a wall rising from the drop to `height` above
+/// tier `0`, `distance` tiles past the map's rectangle along each of its
+/// `sides`, facing the map. An interior's far walls stop where the camera
+/// still looks, and the clear colour past them reads as a black sky; the
+/// backdrop is the tower's outer wall behind them. Its faces draw at
+/// `shade` and darken over their top two fifths to `fade`, so a backdrop
+/// whose top is in view fades into the dark rather than ending on a line.
+///
+/// ```toml
+/// backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1024, distance = 2, sides = "esw", shade = 96, fade = 0 }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackdropDef {
+    /// Texture page of the wall's atlas cell.
+    pub tpage: u8,
+    /// Palette (CBA word) of the wall's atlas cell.
+    pub clut: u16,
+    /// Atlas cell, `0..64`; one cell a `128 x 128` face.
+    pub tile: u8,
+    /// The wall's top, world units above tier `0`.
+    pub height: u16,
+    /// Tiles past the map's rectangle the wall stands, `1..=reach`.
+    pub distance: u8,
+    /// The map's edges it stands along: any of `n` (`-Z`), `e` (`+X`), `s`
+    /// (`+Z`), `w` (`-X`). The follow camera stands on the `-Z` side, so
+    /// the default leaves that side open.
+    pub sides: String,
+    /// Vertex colour of the wall (`128` draws the texel as is).
+    pub shade: u8,
+    /// Vertex colour at the wall's top (`0` fades to black).
+    pub fade: u8,
+}
+
+impl Default for BackdropDef {
+    fn default() -> Self {
+        Self {
+            tpage: 0,
+            clut: 0,
+            tile: 0,
+            height: 1024,
+            distance: 2,
+            sides: "esw".to_string(),
+            shade: 96,
+            fade: 0,
+        }
+    }
+}
+
+impl BackdropDef {
+    /// Whether the wall stands along side `k` ([`SurroundDef`] side order:
+    /// `0` = `-Z` (`n`), `1` = `+X` (`e`), `2` = `+Z` (`s`), `3` = `-X` (`w`)).
+    pub fn has_side(&self, k: usize) -> bool {
+        ["n", "e", "s", "w"]
+            .get(k)
+            .is_some_and(|c| self.sides.to_ascii_lowercase().contains(c))
     }
 }
 

@@ -859,6 +859,7 @@ fn write_objects(
 ) -> Result<WrittenObjects> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let kept = KeptFloor::new(def, grid, base.base_map.filter(|_| keep));
+    let ladder = def.floor_ladder().unwrap_or([0; FLOOR_TIERS]);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     // Record 0 is the empty slot every unnamed cell points at, and object
     // ids 1..=3 name the protagonist / NPC meshes, which the field draw never
@@ -972,7 +973,16 @@ fn write_objects(
                         tpage,
                         clut,
                         tile,
-                    } => added.index(wall_box_tmd(*height, *tpage, *clut, *tile)?, "a wall box")?,
+                    } => {
+                        // The cell draws at its corners' mean height: the
+                        // box reaches on down to the lowest corner, so a
+                        // wall between two floors meets the lower one.
+                        let foot = wall_foot(img, ox + col, oy + row, &ladder);
+                        added.index(
+                            wall_box_tmd_from(*height, foot, *tpage, *clut, *tile)?,
+                            "a wall box",
+                        )?
+                    }
                 };
                 let flags = if tex.is_some() {
                     FLAGS_DECORATION | FLAGS_GROUND
@@ -1651,6 +1661,37 @@ const WALL_FACE_HEIGHT: i32 = 128;
 /// (unlit, the retail field mesh path). Each face is emitted in both
 /// windings, so the box reads from inside a wall run as well as outside.
 pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u8>> {
+    wall_box_tmd_from(height, 0, tpage, clut, tile)
+}
+
+/// How far below the height its cell draws at (the mean of its four corner
+/// tiles' floor heights, `Placement::world_y`) field-grid tile `(gc, gr)`'s
+/// lowest corner lies: what a wall box there reaches down by.
+fn wall_foot(img: &[u8], gc: usize, gr: usize, ladder: &[i16; FLOOR_TIERS]) -> u16 {
+    let h = |c: usize, r: usize| -> i32 {
+        let b = img
+            .get(COLLISION_GRID_OFFSET + r.min(GRID_DIM - 1) * GRID_DIM + c.min(GRID_DIM - 1))
+            .copied()
+            .unwrap_or(0);
+        i32::from(ladder[usize::from(b & 0x0F)])
+    };
+    let c = [h(gc, gr), h(gc + 1, gr), h(gc, gr + 1), h(gc + 1, gr + 1)];
+    // Retail sums the corners' Y-down heights and divides toward zero.
+    let mean = -((-c.iter().sum::<i32>()) / 4);
+    let low = c.iter().copied().min().unwrap_or(0);
+    (mean - low).clamp(0, i32::from(u16::MAX)) as u16
+}
+
+/// [`wall_box_tmd`] whose sides reach on `foot` world units below the
+/// cell's floor: a wall on a tier edge, its cell drawn at the mean of
+/// corners on two floors, meets the lower floor with no gap under it.
+pub fn wall_box_tmd_from(
+    height: u16,
+    foot: u16,
+    tpage: u8,
+    clut: u16,
+    tile: u8,
+) -> Result<Vec<u8>> {
     use legaia_tmd::descriptor::PacketShape;
     use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
     if height == 0 {
@@ -1691,7 +1732,7 @@ pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u
     };
     let e = 64;
     let corners = [[-e, -e], [e, -e], [e, e], [-e, e]];
-    let mut y = 0;
+    let mut y = -i32::from(foot);
     while y < h {
         let top = (y + WALL_FACE_HEIGHT).min(h);
         for k in 0..4 {

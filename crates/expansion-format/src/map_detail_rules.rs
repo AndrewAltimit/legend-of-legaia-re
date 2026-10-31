@@ -4,7 +4,7 @@
 //! ([`crate::map_rules`]).
 
 use crate::map::{MAX_WALL_HEIGHT, MapDef, TileGrid};
-use crate::map_detail::{MAX_DECORATIONS, MaterialFx, SURROUND_MAX_REACH};
+use crate::map_detail::{BACKDROP_MAX_HEIGHT, MAX_DECORATIONS, MaterialFx, SURROUND_MAX_REACH};
 use crate::map_rules::{check_light, check_mesh};
 use crate::validate::Checker;
 
@@ -238,6 +238,44 @@ fn check_surround(m: &MapDef, cx: &mut Checker<'_>) {
             "surround.reach",
             format!("reach {} is past {SURROUND_MAX_REACH}", s.reach),
         );
+    }
+    if let Some(b) = &s.backdrop {
+        if b.height == 0 || b.height > BACKDROP_MAX_HEIGHT {
+            cx.error(
+                "surround.backdrop.height",
+                format!("height {} is not in 1..={BACKDROP_MAX_HEIGHT}", b.height),
+            );
+        }
+        if b.distance == 0 || b.distance > s.reach {
+            cx.error(
+                "surround.backdrop.distance",
+                format!(
+                    "distance {} is not in 1..={} (the surround's reach)",
+                    b.distance, s.reach
+                ),
+            );
+        }
+        if b.tile >= 64 {
+            cx.error(
+                "surround.backdrop.tile",
+                format!("atlas cell {} is past 63", b.tile),
+            );
+        }
+        if let Some(c) = b
+            .sides
+            .chars()
+            .find(|c| !"nesw".contains(c.to_ascii_lowercase()))
+        {
+            cx.error(
+                "surround.backdrop.sides",
+                format!("{c:?} is not one of n, e, s, w"),
+            );
+        } else if b.sides.is_empty() {
+            cx.warning(
+                "surround.backdrop.sides",
+                "no side named: the backdrop is not drawn",
+            );
+        }
     }
     if m.terrain.is_some() {
         cx.warning(

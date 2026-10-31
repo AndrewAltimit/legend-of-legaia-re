@@ -441,6 +441,17 @@ enumerate has no length to append to, and a box on it is refused at entry.
 A tile holds one cell mesh, so a style cannot carry both a `mesh` ground
 and a `wall`.
 
+A wall cell draws at the mean of its four corner tiles' floor heights, as
+every decoration cell does, so a box on the edge between two floors would
+stand clear of the lower one. The box reaches on down to its cell's lowest
+corner (`wall_box_tmd_from`), which is what lets a wall take the tier of
+the floor on its north or west side: tiers are corner heights
+([Tiers are corner heights](#tiers-are-corner-heights)), so a wall on
+another tier than that floor would tilt the floor's last row up or down
+into it, while the wall's own cell can slope unseen under its box. A wall
+between a terrace and the lower hall south of it stands on the terrace's
+tier and meets the hall's floor.
+
 ## Validation
 
 The validator (`legaia_expansion_format::validate`) checks each map against
@@ -1130,6 +1141,7 @@ side = { tpage = 11, clut = 32523, tile = 38 }      # the floor edge's face down
 depth = 448                                         # world units below tier 0
 reach = 8                                           # tiles past the map's edges
 shade = 72                                          # vertex colour, 128 = the texel as is
+backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1152, distance = 2, sides = "esw", shade = 96, fade = 0 }
 ```
 
 A map with `geometry = "none"` draws nothing past its floor, so a follow
@@ -1154,6 +1166,20 @@ same bordered sides and floor height (a cell draws at its corners' mean
 tier height, so the mesh carries the rest of the drop), which costs a
 handful of the map's object records. A terrain draws its own `skirt`
 instead, and the validator warns of a surround on one.
+
+An interior's far walls stop where the follow camera still looks: past
+their tops it frames the clear colour, a black sky over a room that has
+none. `backdrop` stands a wall round the drop, `distance` tiles past the
+map's rectangle along each of its `sides` (`n` is `-Z`, `e` `+X`, `s` `+Z`,
+`w` `-X`), rising from the drop to `height` above tier `0` and facing the
+map: the tower's outer wall behind the room's own. The follow camera
+stands on the map's `-Z` side, so the default `"esw"` leaves that side open
+rather than walling the camera out. Its faces draw at `shade` and darken
+over their top two fifths to `fade` (`0`, black, by default), so a top in
+view fades into the dark instead of ending on a line. The faces ride the
+surround's own cells, one record for each shape, and are drawn, never
+walked. The validator holds `height` to `1..=4096`, `distance` to
+`1..=reach` and `sides` to those four letters.
 
 ## Particles
 

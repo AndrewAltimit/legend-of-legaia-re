@@ -268,7 +268,14 @@ fn wall_tiles_name_a_generated_box_past_the_geometry_pack() {
         },
     )
     .unwrap();
-    assert_eq!(out.added_tmds.len(), 1, "one box for every wall tile");
+    // One box for the walls on flat cells, and one reaching on down for
+    // the wall beside the raised tile, whose cell draws at its corners'
+    // mean height.
+    assert_eq!(
+        out.added_tmds.len(),
+        2,
+        "one box for the flat walls, one at the tier edge"
+    );
     let tiles = legaia_scene_formats::field_objects::parse_terrain_tiles(&out.image);
     let walls = def
         .tiles
@@ -278,9 +285,12 @@ fn wall_tiles_name_a_generated_box_past_the_geometry_pack() {
         .filter(|&c| c == '#')
         .count();
     assert_eq!(
-        tiles.iter().filter(|p| p.pack_index == Some(20)).count(),
+        tiles
+            .iter()
+            .filter(|p| matches!(p.pack_index, Some(20 | 21)))
+            .count(),
         walls,
-        "every wall cell draws pack mesh 20, the first past the pack"
+        "every wall cell draws a generated box, past the pack"
     );
     // Without the pack's length there is nowhere to put the box.
     assert!(build_field_image(&def, &grid, BaseInputs::default()).is_err());
@@ -317,6 +327,58 @@ fn a_wall_box_is_a_textured_tmd_of_the_tile_footprint() {
             .all(|uv| (32..64).contains(&uv[0]) && (32..64).contains(&uv[1]))
     );
     assert!(wall_box_tmd(0, 28, 0, 0).is_err());
+}
+
+#[test]
+fn a_wall_between_two_floors_reaches_down_to_the_lower() {
+    // The box's sides run from `foot` below its cell's floor.
+    let raw = wall_box_tmd_from(100, 36, 28, 32576, 9).unwrap();
+    let tmd = legaia_tmd::parse(&raw).unwrap();
+    let ys: Vec<i16> = tmd.objects[0].vertices.iter().map(|p| p.y).collect();
+    assert_eq!((ys.iter().min(), ys.iter().max()), (Some(&-100), Some(&36)));
+    // A balustrade on the high floor's tier, north of a floor 64 lower:
+    // its cell draws at the mean of its corners (32), so its box reaches
+    // 32 further down, to the low floor.
+    let def: MapDef = toml::from_str(
+        r#"
+name = "step"
+base = { scene = { kind = "scene", name = "dolk" } }
+floor_heights = [0, 64]
+
+[tiles]
+origin = [10, 10]
+rows = [
+  "...",
+  "JJJ",
+  ",,,",
+]
+[tiles.legend]
+"." = { ground = { kind = "texture", tpage = 12, clut = 0x7C40, tile = 5 } }
+"," = { height = 1, ground = { kind = "texture", tpage = 12, clut = 0x7C40, tile = 5 } }
+"J" = { walls = "all", wall = { kind = "box", height = 80, tpage = 12, clut = 0x7C40, tile = 5 } }
+"#,
+    )
+    .unwrap();
+    let grid = def.tile_grid().unwrap();
+    let img = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            geometry_entry: Some(99),
+            geometry_len: Some(20),
+            ..BaseInputs::default()
+        },
+    )
+    .unwrap();
+    let foot = |raw: &[u8]| {
+        let t = legaia_tmd::parse(raw).unwrap();
+        t.objects[0].vertices.iter().map(|p| p.y).max().unwrap()
+    };
+    let feet: Vec<i16> = img.added_tmds.iter().map(|m| foot(m)).collect();
+    assert!(
+        feet.contains(&32),
+        "a box reaches 32 below its cell: {feet:?}"
+    );
 }
 
 /// A base pack of small textured quads: mesh `i` is a 20-unit plate on
@@ -431,9 +493,10 @@ fn a_decorated_wall_tile_keeps_its_box() {
         },
     )
     .unwrap();
-    // The box, plus one bake of box + plate.
-    assert_eq!(out.added_tmds.len(), 2);
-    let baked = legaia_tmd::parse(&out.added_tmds[1]).unwrap();
+    // The two boxes (flat, and at the tier edge), plus one bake of box +
+    // plate.
+    assert_eq!(out.added_tmds.len(), 3);
+    let baked = legaia_tmd::parse(&out.added_tmds[2]).unwrap();
     let boxed = legaia_tmd::parse(&out.added_tmds[0]).unwrap();
     assert_eq!(baked.objects.len(), boxed.objects.len() + 1);
 }
