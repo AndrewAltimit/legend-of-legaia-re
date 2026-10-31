@@ -1533,9 +1533,20 @@ impl World {
     /// [`legaia_engine_field::dialog_state::DialogState::current`]'s inline buffer), steps it from the current pad
     /// edges (Cross/Circle = confirm, Up/Down = menu cursor), and tears it down
     /// (clearing `current_dialog`) when the conversation ends. No-op when the
-    /// flag is off, so the default simplified path is untouched.
+    /// flag is off (an expansion pack's line excepted), so the default
+    /// simplified path is untouched.
     pub fn drive_inline_dialogue(&mut self) {
-        if !self.toggles.use_vm_dialogue {
+        // An expansion pack's line has no simplified twin: it is compiled
+        // inline-script bytes (`World::expansion_say`) and only this runner
+        // pages it, so it steps whatever the toggle says. Without this a
+        // `--simple-dialogue` window, or any driver that leaves the toggle
+        // off, parks on the pack's first line forever.
+        let pack_line = self
+            .dialog
+            .inline
+            .as_ref()
+            .is_some_and(|d| self.expansion.quests.dialog.is_pending_run(&d.bytecode));
+        if !self.toggles.use_vm_dialogue && !pack_line {
             return;
         }
         // A prop-bound record run (door / cupboard) is stepped by its own

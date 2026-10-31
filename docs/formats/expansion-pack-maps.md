@@ -306,11 +306,12 @@ slots. From there the NPC is a field NPC on every path a retail one takes:
 | Talk | The facing probe (`FUN_801CF9F4`'s port) picks it on Cross; `World::trigger_field_interact` turns it to the player and hands the talk to the map. |
 | Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. At each stop the NPC turns back to `clip` and stands `pause` ticks (`ActiveMap::patrol_tick`). A leg starts only while no dialogue holds the field. |
 
-Talking to an NPC runs its `line` through the pack dialogue runner
-(`World::expansion_say`) and then raises the quest event `Talked(id)`
+Talking to an NPC raises the quest event `Talked(id)`
 (`World::expansion_talked`), so a quest naming the NPC as `giver` or in a
-`talk` objective advances; a quest line the talk starts plays after the
-NPC's own. An NPC with a `shop` opens that counter instead: an
+`talk` objective advances, and runs its `line` through the pack dialogue
+runner (`World::expansion_say`). When the talk starts, completes or reminds
+a quest that has a line of its own, that line is the answer and the NPC's
+`line` is not said before it: one box per talk. An NPC with a `shop` opens that counter instead: an
 `items.toml` `[[shops]]` id opens the pack item shop (`World::open_item_shop`,
 the `shop` trigger's path, [items](expansion-pack-items.md#the-item-screen)),
 a `cards.toml` `[[dealers]]` id the dealer's counter

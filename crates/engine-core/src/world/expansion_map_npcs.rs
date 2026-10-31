@@ -60,8 +60,9 @@ impl World {
     }
 
     /// The talk on a pack NPC: when placement `slot` is one of the active
-    /// map's NPCs, run its line, raise `Talked(id)` for the quests and
-    /// report the interaction. Returns whether `slot` was a pack NPC (the
+    /// map's NPCs, raise `Talked(id)` for the quests, run its line unless a
+    /// quest line the talk raised answers for it, and report the
+    /// interaction. Returns whether `slot` was a pack NPC (the
     /// retail interaction then does not run).
     pub(in crate::world) fn expansion_npc_interact(&mut self, interact_id: u8, slot: u8) -> bool {
         let Some(talk) = self
@@ -91,13 +92,20 @@ impl World {
                 }
                 ok
             });
+        // The quests hear the talk first: when it starts, completes or
+        // reminds a quest that has a line of its own, that line is the
+        // NPC's answer, and the NPC's idle line is not said before it - one
+        // box per talk, not two.
+        let queued = self.expansion.quests.dialog.queued.len();
+        self.expansion_talked(&talk.npc);
+        let quest_speaks = self.expansion.quests.dialog.queued.len() > queued;
         if !opened
+            && !quest_speaks
             && let Some(line) = &talk.line
             && let Err(e) = self.expansion_say(line)
         {
             log::warn!("expansion: npc `{}` line `{line}`: {e:?}", talk.npc);
         }
-        self.expansion_talked(&talk.npc);
         self.pending_field_events.push(
             legaia_engine_field::field_events::FieldEvent::FieldInteract { interact_id, slot },
         );
