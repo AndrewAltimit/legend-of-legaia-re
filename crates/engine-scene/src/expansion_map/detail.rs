@@ -400,7 +400,8 @@ pub fn resolve_mesh_library(
         base_raw,
         ..Default::default()
     };
-    if !def.emitters.is_empty() {
+    // The sheet also carries the dust a light beam draws.
+    if !def.emitters.is_empty() || !def.beams.is_empty() {
         lib.particle_sheet = Some(
             particle_sheet(&mut alloc, &mut lib.vram_patches).context("the particle sprites")?,
         );

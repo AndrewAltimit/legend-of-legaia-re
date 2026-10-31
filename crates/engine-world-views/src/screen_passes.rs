@@ -143,6 +143,22 @@ impl<'a> HostView<'a> {
         out
     }
 
+    /// A pack map's light beams (`[[beams]]`, `World::expansion_beam_prims`)
+    /// through the follow frame: additive shafts with dust in them, an
+    /// enhancement drawn only under `enhanced_lighting` - with it off this
+    /// is empty and the frame stays retail-faithful. Both hosts append it to
+    /// the field screen-effect pass beside [`Self::fog_prims`].
+    pub fn beam_prims(&self, enhanced_lighting: bool) -> Vec<ScreenPrim> {
+        let world = self.world;
+        if !enhanced_lighting || world.expansion.map.is_none() {
+            return Vec::new();
+        }
+        let Some(view) = self.follow_frame().field_view() else {
+            return Vec::new();
+        };
+        world.expansion_beam_prims(&world.field_fx_view(&view))
+    }
+
     /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
     /// retail's `FUN_8001C394` blob) through the follow frame, wrapped by
     /// `drop_shadow_prim`. Each cell carries its corners' scene depth, so a

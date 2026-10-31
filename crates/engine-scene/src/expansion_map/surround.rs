@@ -66,10 +66,7 @@ pub fn surround_tmd(s: &SurroundDef, cell: SurroundCell) -> Result<Vec<u8>> {
     };
     let shade = [s.shade; 3];
     let mut vertices: Vec<[i16; 3]> = Vec::new();
-    let mut prims = Vec::new();
-    // `quad(a, b, c, d, cell)` is a face in perimeter order, `a`-`b` its top
-    // edge; the file stores Z-order `a, b, d, c`.
-    let mut quad = |p: [[i32; 3]; 4], cell: &AtlasCell| {
+    let mut intern = |p: &[[i32; 3]; 4]| -> [u16; 4] {
         let mut idx = [0u16; 4];
         for (k, v) in p.iter().enumerate() {
             let v = v.map(|c| c as i16);
@@ -81,25 +78,56 @@ pub fn surround_tmd(s: &SurroundDef, cell: SurroundCell) -> Result<Vec<u8>> {
                 }
             };
         }
-        let [a, b, c, d] = idx;
-        for order in [[a, b, d, c], [b, a, c, d]] {
-            prims.push(ModelPrim {
-                vertices: order.to_vec(),
-                uvs: uv(cell).to_vec(),
-                cba: cell.clut,
-                tsb: u16::from(cell.tpage),
-                colors: vec![shade],
-            });
-        }
+        idx
     };
+    let mut prims = Vec::new();
+    // Faces darkening toward the drop (`fade`): Gouraud, top edge first.
+    let mut faded = Vec::new();
     let e = 64;
     let h = cell.drop;
-    quad([[-e, h, -e], [e, h, -e], [e, h, e], [-e, h, e]], &s.ground);
+    // `quad(a, b, c, d)` is a face in perimeter order, `a`-`b` its top edge;
+    // the file stores Z-order `a, b, d, c`. `cols` is the top and bottom
+    // edge's colour, `None` the flat `shade`.
+    let mut quad = |p: [[i32; 3]; 4], cell: &AtlasCell, cols: Option<([u8; 3], [u8; 3])>| {
+        let [a, b, c, d] = intern(&p);
+        for order in [[a, b, d, c], [b, a, c, d]] {
+            match cols {
+                None => prims.push(ModelPrim {
+                    vertices: order.to_vec(),
+                    uvs: uv(cell).to_vec(),
+                    cba: cell.clut,
+                    tsb: u16::from(cell.tpage),
+                    colors: vec![shade],
+                }),
+                Some((ct, cb)) => faded.push(ModelPrim {
+                    vertices: order.to_vec(),
+                    uvs: uv(cell).to_vec(),
+                    cba: cell.clut,
+                    tsb: u16::from(cell.tpage),
+                    colors: vec![ct, ct, cb, cb],
+                }),
+            }
+        }
+    };
+    let fade = s.fade.map(|f| [f; 3]);
+    quad(
+        [[-e, h, -e], [e, h, -e], [e, h, e], [-e, h, e]],
+        &s.ground,
+        fade.map(|f| (f, f)),
+    );
     if let Some(side) = &s.side {
         let corners = [[-e, -e], [e, -e], [e, e], [-e, e]];
         for (k, top) in cell.faces.iter().enumerate() {
             let Some(mut y) = *top else {
                 continue;
+            };
+            let y0 = y;
+            // `shade` at the face's top, `fade` at the drop.
+            let tint = |y: i32| -> Option<[u8; 3]> {
+                let f = s.fade?;
+                let t = ((y - y0) as f32 / (h - y0).max(1) as f32).clamp(0.0, 1.0);
+                let c = f32::from(s.shade) + (f32::from(f) - f32::from(s.shade)) * t;
+                Some([c.round().clamp(0.0, 255.0) as u8; 3])
             };
             let [x0, z0] = corners[k];
             let [x1, z1] = corners[(k + 1) % 4];
@@ -108,6 +136,7 @@ pub fn surround_tmd(s: &SurroundDef, cell: SurroundCell) -> Result<Vec<u8>> {
                 quad(
                     [[x0, y, z0], [x1, y, z1], [x1, low, z1], [x0, low, z0]],
                     side,
+                    tint(y).zip(tint(low)),
                 );
                 y = low;
             }
@@ -140,18 +169,7 @@ pub fn surround_tmd(s: &SurroundDef, cell: SurroundCell) -> Result<Vec<u8>> {
             while y > cell.top {
                 let hi = (y - WALL_FACE_HEIGHT).max(cell.top);
                 let p = [[x0, hi, z0], [x1, hi, z1], [x1, y, z1], [x0, y, z0]];
-                let mut idx = [0u16; 4];
-                for (n, v) in p.iter().enumerate() {
-                    let v = v.map(|c| c as i16);
-                    idx[n] = match vertices.iter().position(|w| *w == v) {
-                        Some(i) => i as u16,
-                        None => {
-                            vertices.push(v);
-                            (vertices.len() - 1) as u16
-                        }
-                    };
-                }
-                let [a, bb, c, d] = idx;
+                let [a, bb, c, d] = intern(&p);
                 let (ct, cb) = (tint(hi), tint(y));
                 for (order, cols) in [
                     ([a, bb, d, c], [ct, ct, cb, cb]),
@@ -169,11 +187,15 @@ pub fn surround_tmd(s: &SurroundDef, cell: SurroundCell) -> Result<Vec<u8>> {
             }
         }
     }
-    let mut groups = vec![ModelGroup {
-        shape: PacketShape::Ft4,
-        semi_transparent: false,
-        prims,
-    }];
+    let mut groups = Vec::new();
+    if !prims.is_empty() {
+        groups.push(ModelGroup {
+            shape: PacketShape::Ft4,
+            semi_transparent: false,
+            prims,
+        });
+    }
+    wall_prims.splice(0..0, faded);
     if !wall_prims.is_empty() {
         groups.push(ModelGroup {
             shape: PacketShape::Gt4,
@@ -245,7 +267,16 @@ pub(super) fn write_surround(
     let floor = |gc: i32, gr: i32| -> i32 {
         (tier_at(gc, gr) + tier_at(gc + 1, gr) + tier_at(gc, gr + 1) + tier_at(gc + 1, gr + 1)) / 4
     };
-    let bottom = i32::from(ladder[0]) - i32::from(s.depth);
+    // Each region's surround, and which one (if any) a grid tile takes:
+    // only the map's own void tiles fall in a region.
+    let region_defs: Vec<SurroundDef> = s.regions.iter().map(|r| s.for_region(r)).collect();
+    let region_of = |gc: i32, gr: i32| -> Option<usize> {
+        let (c, r) = (gc - ox, gr - oy);
+        if c < 0 || r < 0 || c >= w || r >= h {
+            return None;
+        }
+        s.region_at(c as u16, r as u16)
+    };
     // The backdrop ring: map-local tile `(c, r)` carries a face on the edge
     // toward the map along each side the backdrop stands on. Side order is
     // the map's edge (`n`, `e`, `s`, `w`); the face is on the tile's edge
@@ -272,19 +303,23 @@ pub(super) fn write_surround(
         on
     };
     let top_world = s.backdrop.as_ref().map_or(0, |b| i32::from(b.height));
-    let mut cells: Vec<(i32, i32, SurroundCell)> = Vec::new();
+    let mut cells: Vec<(i32, i32, Option<usize>, SurroundCell)> = Vec::new();
     for gr in oy - reach..oy + h + reach {
         for gc in ox - reach..ox + w + reach {
             if !fills(img, gc, gr) {
                 continue;
             }
             // Heights up; the mesh frame is Y down from the cell's floor.
+            let region = region_of(gc, gr);
+            let es = region.map_or(s, |k| &region_defs[k]);
+            let bottom = i32::from(ladder[0]) - i32::from(es.depth);
             let at = floor(gc, gr);
-            let faces = SIDES.map(|(dc, dr)| s.side.and(edge(gc + dc, gr + dr)).map(|nb| at - nb));
+            let faces = SIDES.map(|(dc, dr)| es.side.and(edge(gc + dc, gr + dr)).map(|nb| at - nb));
             let backdrop = ring(gc - ox, gr - oy);
             cells.push((
                 gc,
                 gr,
+                region,
                 SurroundCell {
                     faces,
                     drop: at - bottom,
@@ -298,12 +333,14 @@ pub(super) fn write_surround(
             ));
         }
     }
-    let mut records: Vec<(SurroundCell, usize)> = Vec::new();
-    for &(gc, gr, key) in &cells {
+    let mut records: Vec<((Option<usize>, SurroundCell), usize)> = Vec::new();
+    for &(gc, gr, region, cell) in &cells {
+        let key = (region, cell);
         let slot = match records.iter().find(|(k, _)| *k == key) {
             Some(&(_, slot)) => slot,
             None => {
-                let mesh = added.index(surround_tmd(s, key)?, "the surround")?;
+                let es = region.map_or(s, |k| &region_defs[k]);
+                let mesh = added.index(surround_tmd(es, cell)?, "the surround")?;
                 let slot = free
                     .pop()
                     .ok_or_else(|| anyhow::anyhow!("out of object records placing the surround"))?;
@@ -595,5 +632,74 @@ reach = 3
             "{:?}",
             shade_at(300)
         );
+    }
+
+    #[test]
+    fn a_region_takes_its_own_depth_and_fades_its_faces_into_the_dark() {
+        use legaia_expansion_format::map_detail::SurroundRegion;
+        let mut def: MapDef = toml::from_str(MAP).unwrap();
+        // The void tile (3, 1) falls in a deep region.
+        def.surround.as_mut().unwrap().regions = vec![SurroundRegion {
+            rect: [3, 1, 3, 1],
+            depth: 1500,
+            fade: Some(4),
+            ..SurroundRegion::default()
+        }];
+        let with = build(&def);
+        let plain = build(&MapDef {
+            surround: Some(SurroundDef {
+                regions: Vec::new(),
+                ..def.surround.clone().unwrap()
+            }),
+            ..def.clone()
+        });
+        let mesh = |f: &crate::expansion_map::FieldImage, c: usize, r: usize| -> Vec<u8> {
+            let slot = usize::from(cell(&f.image, c, r) & OBJECT_INDEX_MASK);
+            let rec = &f.image[slot * OBJECT_RECORD_STRIDE..];
+            let m = usize::from(u16::from_le_bytes([rec[0x10], rec[0x11]]));
+            f.added_tmds[m - 20].clone()
+        };
+        let pit = mesh(&with, 13, 21);
+        assert_ne!(pit, mesh(&plain, 13, 21));
+        // Out of the region, the margin is as before.
+        assert_eq!(mesh(&with, 7, 17), mesh(&plain, 7, 17));
+        let tmd = legaia_tmd::parse(&pit).expect("parses");
+        let ys: Vec<i16> = tmd.objects[0].vertices.iter().map(|p| p.y).collect();
+        assert!(*ys.iter().max().unwrap() >= 1500, "{ys:?}");
+        // The faces darken from the shade at the top to the fade at the drop.
+        let (vm, _) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &pit);
+        let bottom = *ys.iter().max().unwrap();
+        let at = |y: i16| -> Vec<u8> {
+            vm.positions
+                .iter()
+                .zip(&vm.colors)
+                .filter(|(p, _)| p[1] == f32::from(y))
+                .map(|(_, c)| c[0])
+                .collect()
+        };
+        assert!(at(bottom).iter().all(|&c| c == 4), "{:?}", at(bottom));
+        let top = *ys.iter().min().unwrap();
+        assert!(at(top).iter().all(|&c| c == 80), "{:?}", at(top));
+        // Collision is untouched: the pit is drawn, never walked.
+        let cg = COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM;
+        assert_eq!(with.image[cg.clone()], plain.image[cg]);
+    }
+
+    #[test]
+    fn no_fade_and_no_region_keep_the_mesh_as_it_was() {
+        let def: MapDef = toml::from_str(MAP).unwrap();
+        let s = def.surround.clone().unwrap();
+        let key = SurroundCell {
+            faces: [Some(-48), None, None, None],
+            drop: 316,
+            backdrop: [false; 4],
+            top: 0,
+        };
+        let raw = surround_tmd(&s, key).unwrap();
+        let tmd = legaia_tmd::parse(&raw).unwrap();
+        // Every vertex at the flat shade, as the surround has always drawn.
+        let (vm, _) = legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids_lenient(&tmd, &raw);
+        assert!(!vm.colors.is_empty());
+        assert!(vm.colors.iter().all(|c| c[0] == s.shade), "{:?}", vm.colors);
     }
 }
