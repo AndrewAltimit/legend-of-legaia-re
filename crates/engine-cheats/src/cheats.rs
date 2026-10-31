@@ -150,7 +150,9 @@ pub trait WorldCheats {
     /// `1..=99`) by granting the XP that reaches it, with the retail stat
     /// growth applied. Returns the level the character is at afterwards, or
     /// `None` when the slot holds no character (no record, or a zeroed one).
-    /// A target at or below the current level changes nothing.
+    /// A raised level brings a living member's current HP and MP up to the
+    /// new maxima (a fallen member stays at 0 HP). A target at or below the
+    /// current level changes nothing.
     fn cheat_set_level(&mut self, roster_slot: usize, level: u8) -> Option<u8>;
 
     /// [`Self::cheat_set_level`] over every present party member. Returns
@@ -282,7 +284,8 @@ impl WorldCheats for World {
         }
         let target = level.clamp(1, MAX_LEVEL);
         let tracker = &mut self.party.level_up_tracker;
-        if target > tracker.level[roster_slot] {
+        let raised = target > tracker.level[roster_slot];
+        if raised {
             // XP that reaches `target`: the threshold out of `target - 1`.
             let need = tracker.threshold_for(roster_slot, target - 1);
             let have = tracker.xp[roster_slot];
@@ -306,8 +309,23 @@ impl WorldCheats for World {
             rec.set_cumulative_xp(xp);
             rec.set_next_level_xp(next);
             rec.set_level(cur);
+            // A cheated level is a party ready to play at it: a living
+            // member's HP and MP follow the new maxima up, so the party does
+            // not arrive at level 60 carrying its level-1 HP. The fallen
+            // stay fallen (Restore revives them).
+            if raised {
+                let mut hms = rec.hp_mp_sp();
+                if hms.hp_cur > 0 {
+                    hms.hp_cur = hms.hp_max;
+                    hms.mp_cur = hms.mp_max;
+                    rec.set_hp_mp_sp(hms);
+                }
+            }
         }
         self.resync_party_after_cheat();
+        if raised {
+            self.mirror_party_records_to_actors();
+        }
         Some(cur)
     }
 
@@ -914,13 +932,35 @@ mod tests {
         assert_eq!(rec.next_level_xp(), t.threshold_for(0, 10).unwrap());
         assert!(rec.hp_mp_sp().hp_max > hp_before, "growth raised max HP");
         assert!(rec.live_stats().atk > atk_before, "growth raised ATK");
-        // A level-up is not a heal.
-        assert_eq!(rec.hp_mp_sp().hp_cur, 180);
+        // A cheated level-up brings current HP / MP up to the new maxima.
+        assert_eq!(rec.hp_mp_sp().hp_cur, rec.hp_mp_sp().hp_max);
+        assert_eq!(rec.hp_mp_sp().mp_cur, rec.hp_mp_sp().mp_max);
+        assert_eq!(w.actors[0].battle.hp, rec.hp_mp_sp().hp_max);
         assert_eq!(w.actors[0].battle.max_hp, rec.hp_mp_sp().hp_max);
         // Lowering is a no-op.
         assert_eq!(w.cheat_set_level(0, 3), Some(10));
         // An empty slot is not a character.
         assert_eq!(w.cheat_set_level(3, 10), None);
+    }
+
+    #[test]
+    fn raised_level_tops_up_the_living_and_leaves_the_fallen() {
+        let mut w = world_with_trio();
+        let mut hurt = w.party.roster.members[0].hp_mp_sp();
+        hurt.hp_cur = 1;
+        hurt.mp_cur = 0;
+        w.party.roster.members[0].set_hp_mp_sp(hurt);
+        let mut down = w.party.roster.members[1].hp_mp_sp();
+        down.hp_cur = 0;
+        w.party.roster.members[1].set_hp_mp_sp(down);
+        w.apply_cheat(&PlayerCheat::PartyLevel(60), None);
+        let a = w.party.roster.members[0].hp_mp_sp();
+        assert_eq!((a.hp_cur, a.mp_cur), (a.hp_max, a.mp_max));
+        assert!(a.hp_max > hurt.hp_max);
+        assert_eq!(w.actors[0].battle.hp, a.hp_max);
+        let b = w.party.roster.members[1].hp_mp_sp();
+        assert_eq!(b.hp_cur, 0, "a fallen member is not revived by a level");
+        assert_eq!(w.actors[1].battle.liveness, 0);
     }
 
     #[test]
