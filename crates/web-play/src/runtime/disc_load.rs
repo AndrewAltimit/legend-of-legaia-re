@@ -38,6 +38,9 @@ impl LegaiaRuntime {
         };
         let mut host = SceneHost::from_prot_bytes(prot_bytes, cdname_resolved)
             .map_err(|e| JsValue::from_str(&format!("load_disc: {e}")))?;
+        // Pack maps' exits prepare their maps ahead, in idle-tick slices
+        // (`step_expansion_preload_when_idle`).
+        host.set_expansion_preload(true);
         // Item-name labels for the field menu's Item screen (executable-only;
         // a PROT.DAT load has no SCUS and the menu shows raw ids instead).
         self.item_names = scus

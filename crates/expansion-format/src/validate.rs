@@ -24,8 +24,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use crate::manifest::{
-    MAX_COVER_LEN, MIN_SCHEMA_VERSION, PackDep, SCHEMA_VERSION, SUPPORTED_DISC, dep_id,
-    is_valid_content_id, is_valid_pack_id, is_valid_semver,
+    MAX_COVER_LEN, MAX_SHORT_NAME_LEN, MIN_SCHEMA_VERSION, PackDep, SCHEMA_VERSION, SUPPORTED_DISC,
+    dep_id, is_valid_content_id, is_valid_pack_id, is_valid_semver,
 };
 use crate::refs::{DiscRef, DiscResolver};
 use crate::{ExpansionPack, PackFiles};
@@ -310,6 +310,23 @@ impl<'a> Checker<'a> {
                 );
             }
         }
+        // Resting placement needs the meshes' shapes, which only a disc
+        // gives (warnings).
+        for (name, def) in &self.pack.maps {
+            let Some(base) = def.base.scene_name() else {
+                continue;
+            };
+            let shapes =
+                |m: &crate::map::PropMesh, r: [f32; 3], s: f32| resolver.mesh_shape(base, m, r, s);
+            for issue in crate::map_rest::rest_issues(def, &shapes) {
+                self.push(
+                    Severity::Warning,
+                    &format!("maps/{name}.toml"),
+                    &issue.at,
+                    issue.to_string(),
+                );
+            }
+        }
         for (path, field, scene, index) in std::mem::take(&mut self.stage_refs) {
             match resolver.battle_stage_count(&scene) {
                 Some(0) => self.push(
@@ -525,6 +542,28 @@ fn check_manifest(cx: &mut Checker<'_>) {
                     format!("`{field}` is a schema 2 key; set `schema = 2` so older engines refuse the pack instead of tripping on it"),
                 );
             }
+        }
+    }
+    if m.schema < 3 && m.short_name.is_some() {
+        cx.warning(
+            "short_name",
+            "`short_name` is a schema 3 key; set `schema = 3` so older engines refuse the pack instead of tripping on it",
+        );
+    }
+    if let Some(short) = &m.short_name {
+        let n = short.trim().chars().count();
+        if n == 0 {
+            cx.error(
+                "short_name",
+                "short_name is empty; remove it to use the name",
+            );
+        } else if n > MAX_SHORT_NAME_LEN || short.contains(['\n', '\r']) {
+            cx.error(
+                "short_name",
+                format!(
+                    "short_name {short:?} is not one line of at most {MAX_SHORT_NAME_LEN} characters"
+                ),
+            );
         }
     }
     if let Some(v) = &m.min_engine {
@@ -866,13 +905,9 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
                         .map(|(k, n)| (format!("spectators[{k}]"), n)),
                 );
             for (seat, n) in seats {
-                if !map.npcs.iter().any(|m| m.id == n.npc) {
-                    cx.error(
-                        &format!("{at}.table.{seat}.npc"),
-                        format!("map {map_id:?} has no NPC {:?}", n.npc),
-                    );
-                }
+                check_table_seat(cx, &at, &seat, map_id, map, n);
             }
+            check_table_hide(cx, &at, map_id, map, &t.hide, t.draw_table);
         }
         for (i, p) in modes.poker.iter().enumerate() {
             let at = format!("poker[{i}]");
@@ -922,14 +957,107 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
                         .map(|(k, n)| (format!("spectators[{k}]"), n)),
                 );
             for (seat, n) in seats {
-                if !map.npcs.iter().any(|m| m.id == n.npc) {
-                    cx.error(
-                        &format!("{at}.table.{seat}.npc"),
-                        format!("map {map_id:?} has no NPC {:?}", n.npc),
-                    );
-                }
+                check_table_seat(cx, &at, &seat, map_id, map, n);
             }
+            check_table_hide(cx, &at, map_id, map, &t.hide, t.draw_table);
         }
+    }
+}
+
+/// One NPC at a mode table: it is an NPC of the table's map, and its `sit`
+/// clip seats it - a spectator has no chair, and a clip the posture table
+/// ([`crate::npc_postures`]) measures as not seated would stand or crouch
+/// in the chair.
+fn check_table_seat(
+    cx: &mut Checker<'_>,
+    at: &str,
+    seat: &str,
+    map_id: &str,
+    map: &crate::map::MapDef,
+    n: &crate::modes::DuelSeatNpc,
+) {
+    use crate::npc_postures::{Posture, table};
+    let Some(def) = map.npcs.iter().find(|m| m.id == n.npc) else {
+        cx.error(
+            &format!("{at}.table.{seat}.npc"),
+            format!("map {map_id:?} has no NPC {:?}", n.npc),
+        );
+        return;
+    };
+    let Some(sit) = n.sit else {
+        return;
+    };
+    let field = format!("{at}.table.{seat}.sit");
+    if seat.starts_with("spectators") {
+        cx.warning(&field, "a spectator watches standing; `sit` is ignored");
+        return;
+    }
+    let Some(DiscRef::Npc { scene, index }) = &def.model else {
+        return;
+    };
+    let Some(row) = table().get(scene, *index) else {
+        return;
+    };
+    match row.posture(Some(sit)) {
+        Some(Posture::Seated) => {}
+        p => {
+            let seated = row.clips(Posture::Seated);
+            let list = if seated.is_empty() {
+                "none - pick another placement to seat".to_string()
+            } else {
+                seated
+                    .iter()
+                    .map(u8::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            cx.warning(
+                &field,
+                format!(
+                    "clip {sit} is {} for `{scene}` placement {index}, not seated; seated clips: \
+                     {list}",
+                    p.map_or("not a clip its model plays", |p| p.word())
+                ),
+            );
+        }
+    }
+}
+
+/// A mode table's `hide` list: each names a prop of the table's map, once.
+/// A decoration cannot hide (its tile's cell bakes it with the others), so
+/// naming one is an error that says so. Hiding props while drawing no table
+/// of its own leaves the cards on nothing: a warning.
+fn check_table_hide(
+    cx: &mut Checker<'_>,
+    at: &str,
+    map_id: &str,
+    map: &crate::map::MapDef,
+    hide: &[String],
+    draw_table: bool,
+) {
+    for (k, id) in hide.iter().enumerate() {
+        let field = format!("{at}.table.hide[{k}]");
+        if hide[..k].contains(id) {
+            cx.warning(&field, format!("{id:?} is listed twice"));
+        } else if map.props.iter().any(|p| !p.id.is_empty() && p.id == *id) {
+            continue;
+        } else if map.decor.iter().any(|d| !d.id.is_empty() && d.id == *id) {
+            cx.error(
+                &field,
+                format!(
+                    "{id:?} is a decoration of map {map_id:?}; decorations bake into their \
+                     tile's cell and cannot hide - make it a [[props]] entry"
+                ),
+            );
+        } else {
+            cx.error(&field, format!("map {map_id:?} has no prop {id:?}"));
+        }
+    }
+    if !hide.is_empty() && !draw_table {
+        cx.warning(
+            &format!("{at}.table.draw_table"),
+            "props are hidden but the table draws none of its own (`draw_table = false`)",
+        );
     }
 }
 
@@ -1135,6 +1263,34 @@ laps = 1
     }
 
     #[test]
+    fn short_name_rules() {
+        let mut p = good_pack();
+        p.manifest.name = "Legend of Legaia: A Very Long Subtitle".into();
+        assert_eq!(p.manifest.short_label(), p.manifest.name);
+        p.manifest.short_name = Some("Subtitle".into());
+        let issues = validate(&p);
+        assert!(errors(&issues).is_empty(), "{issues:#?}");
+        assert_eq!(p.manifest.short_label(), "Subtitle");
+        for bad in ["  ", "A short name that runs on too long", "Two\nlines"] {
+            p.manifest.short_name = Some(bad.into());
+            let e = errors(&validate(&p));
+            assert!(
+                e.iter().any(|m| m.contains("[short_name]")),
+                "{bad:?}: {e:#?}"
+            );
+        }
+        p.manifest.short_name = Some("Subtitle".into());
+        p.manifest.schema = 2;
+        let issues = validate(&p);
+        assert!(errors(&issues).is_empty());
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.field == "short_name" && i.severity == Severity::Warning)
+        );
+    }
+
+    #[test]
     fn code_files_are_refused_anywhere() {
         let mut files = PackFiles::new();
         files.insert(
@@ -1310,6 +1466,95 @@ laps = 1
         pack.modes.card_duels = vec![duel];
         let e = errors(&validate(&pack));
         assert!(!e.iter().any(|m| m.contains("card_duels")), "{e:?}");
+    }
+
+    /// `sit` seats a table NPC: a clip the posture table measures as seated
+    /// passes, a standing one warns with the seated list, and a spectator's
+    /// is ignored with a warning.
+    #[test]
+    fn a_table_npc_sits_on_a_seated_clip() {
+        let mut pack = good_pack();
+        // town01 placement 43: standing 36, seated 34 (data/npc_postures.toml).
+        let map: crate::map::MapDef = toml::from_str(
+            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[npcs]]\nid = \"rival\"\nmodel = { kind = \"npc\", scene = \"town01\", index = 43 }\ntile = [0, 0]\n",
+        )
+        .unwrap();
+        pack.maps.insert("room".into(), map);
+        let duel = |sit: u8, spectator: bool| {
+            let n = modes::DuelSeatNpc {
+                npc: "rival".into(),
+                sit: Some(sit),
+                ..Default::default()
+            };
+            modes::CardDuel {
+                id: "d".into(),
+                map: Some("room".into()),
+                table: Some(modes::DuelTable {
+                    tile: [1, 1],
+                    opponent: (!spectator).then(|| n.clone()),
+                    spectators: if spectator { vec![n] } else { Vec::new() },
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }
+        };
+        let sit_issues = |pack: &ExpansionPack| -> Vec<String> {
+            validate(pack)
+                .iter()
+                .filter(|i| i.field.ends_with(".sit"))
+                .map(ToString::to_string)
+                .collect()
+        };
+        pack.modes.card_duels = vec![duel(34, false)];
+        assert!(sit_issues(&pack).is_empty(), "{:?}", sit_issues(&pack));
+        pack.modes.card_duels = vec![duel(36, false)];
+        let w = sit_issues(&pack);
+        assert!(
+            w.len() == 1 && w[0].contains("standing") && w[0].contains("34"),
+            "{w:?}"
+        );
+        pack.modes.card_duels = vec![duel(34, true)];
+        let w = sit_issues(&pack);
+        assert!(w.len() == 1 && w[0].contains("spectator"), "{w:?}");
+    }
+
+    #[test]
+    fn a_table_hides_props_of_its_map_only() {
+        let mut pack = good_pack();
+        let map: crate::map::MapDef = toml::from_str(
+            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[props]]\nid = \"plank\"\nmesh = { object = 1 }\ntile = [1, 1]\n[[decor]]\nid = \"rug\"\nmesh = { object = 2 }\ntile = [1, 1]\n",
+        )
+        .unwrap();
+        pack.maps.insert("room".into(), map);
+        let poker = |hide: &[&str], draw_table: bool| modes::PokerTable {
+            id: "p".into(),
+            map: Some("room".into()),
+            table: Some(modes::PokerTableLayout {
+                tile: [1, 1],
+                hide: hide.iter().map(|s| s.to_string()).collect(),
+                draw_table,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        pack.modes.poker = vec![poker(&["plank"], true)];
+        let issues = validate(&pack);
+        assert!(
+            !issues.iter().any(|i| i.field.contains("hide")),
+            "{issues:?}"
+        );
+        pack.modes.poker = vec![poker(&["plank", "nothing", "rug"], true)];
+        let e = errors(&validate(&pack));
+        assert!(e.iter().any(|m| m.contains("no prop \"nothing\"")), "{e:?}");
+        assert!(e.iter().any(|m| m.contains("cannot hide")), "{e:?}");
+        pack.modes.poker = vec![poker(&["plank"], false)];
+        let issues = validate(&pack);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.severity == Severity::Warning && i.field.ends_with("draw_table")),
+            "{issues:?}"
+        );
     }
 
     #[test]

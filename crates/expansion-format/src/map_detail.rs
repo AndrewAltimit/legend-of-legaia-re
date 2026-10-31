@@ -50,6 +50,15 @@ pub struct DecorDef {
     pub rotation: [f32; 3],
     /// Uniform scale; `1` when left out.
     pub scale: Option<f32>,
+    /// Block the ground under the mesh: the lower half of its drawn hull
+    /// closes the collision sub-cells it covers, as a solid prop's does.
+    pub solid: bool,
+    /// Rest it on another's top ([`crate::map::PropDef::on`]).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub on: String,
+    /// It hangs or is mounted ([`crate::map::PropDef::hangs`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A seeded brush: scatter a weighted set of meshes over a tile rectangle.
@@ -94,6 +103,13 @@ pub struct ScatterBrush {
     /// read through it from the follow camera ([`Clearance`]). `None`
     /// paints up to the path's edge.
     pub clearance: Option<Clearance>,
+    /// Every mesh the brush places blocks the ground under it
+    /// ([`DecorDef::solid`]): an orchard the player walks round.
+    pub solid: bool,
+    /// What it places hangs or is mounted ([`crate::map::PropDef::hangs`]):
+    /// the resting check passes it over.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A [`ScatterBrush`]'s clearance round the walkable floor (every tile
@@ -207,6 +223,8 @@ impl Default for ScatterBrush {
             keep_clear: true,
             cluster: None,
             clearance: None,
+            solid: false,
+            hangs: false,
         }
     }
 }
@@ -275,6 +293,13 @@ pub struct EdgeDecor {
     pub yaw_jitter: f32,
     pub scale_range: Option<[f32; 2]>,
     pub seed: u64,
+    /// Each copy blocks the ground under it ([`DecorDef::solid`]).
+    pub solid: bool,
+    /// The copies are mounted on the wall they run along (a sconce, a
+    /// banner) rather than standing: the resting check passes them over
+    /// ([`crate::map::PropDef::hangs`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 impl Default for EdgeDecor {
@@ -295,6 +320,8 @@ impl Default for EdgeDecor {
             yaw_jitter: 0.0,
             scale_range: None,
             seed: 0,
+            solid: false,
+            hangs: false,
         }
     }
 }
@@ -1015,6 +1042,213 @@ impl Default for FogRegionDef {
     }
 }
 
+/// The tiles past the floor's edge to which a surround reaches when the
+/// map names none: enough to fill the follow camera's widest preset.
+pub const SURROUND_DEFAULT_REACH: u8 = 8;
+
+/// The most tiles a surround reaches past the map's edges.
+pub const SURROUND_MAX_REACH: u8 = 16;
+
+/// What a map built with no base geometry shows past its floor: a flat
+/// ground `depth` world units below the floor's edge on every void tile and
+/// every tile up to `reach` past the map's edges, and, with `side`, the
+/// floor's own edge faces dropping to it. Without one the view past the
+/// floor is the clear colour, which a follow camera at a map's edge frames
+/// as a black void. With `backdrop`, a wall stands round the drop
+/// ([`BackdropDef`]): the far side of a hall the camera looks over.
+///
+/// ```toml
+/// [surround]
+/// ground = { tpage = 12, clut = 32576, tile = 8 }
+/// side = { tpage = 11, clut = 32523, tile = 38 }
+/// depth = 384
+/// reach = 8
+/// shade = 72
+/// backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1024, distance = 2 }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SurroundDef {
+    /// The drop's ground: one atlas cell a tile.
+    pub ground: AtlasCell,
+    /// The floor edge's face from the floor down to the drop. `None` leaves
+    /// the edge open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<AtlasCell>,
+    /// How far below the floor's edge the drop lies, world units.
+    pub depth: u16,
+    /// Tiles past the map's edges the drop reaches.
+    pub reach: u8,
+    /// Vertex colour of the drop and its faces (`128` draws the texel as
+    /// is; lower darkens it, the retail `texel * colour / 128` law).
+    pub shade: u8,
+    /// A wall standing round the drop, `None` for none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backdrop: Option<BackdropDef>,
+}
+
+impl Default for SurroundDef {
+    fn default() -> Self {
+        Self {
+            ground: AtlasCell::default(),
+            side: None,
+            depth: 384,
+            reach: SURROUND_DEFAULT_REACH,
+            shade: 80,
+            backdrop: None,
+        }
+    }
+}
+
+/// The tallest backdrop, world units above tier `0`.
+pub const BACKDROP_MAX_HEIGHT: u16 = 4096;
+
+/// A surround's backdrop: a wall rising from the drop to `height` above
+/// tier `0`, `distance` tiles past the map's rectangle along each of its
+/// `sides`, facing the map. An interior's far walls stop where the camera
+/// still looks, and the clear colour past them reads as a black sky; the
+/// backdrop is the tower's outer wall behind them. Its faces draw at
+/// `shade` and darken over their top two fifths to `fade`, so a backdrop
+/// whose top is in view fades into the dark rather than ending on a line.
+///
+/// ```toml
+/// backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1024, distance = 2, sides = "esw", shade = 96, fade = 0 }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackdropDef {
+    /// Texture page of the wall's atlas cell.
+    pub tpage: u8,
+    /// Palette (CBA word) of the wall's atlas cell.
+    pub clut: u16,
+    /// Atlas cell, `0..64`; one cell a `128 x 128` face.
+    pub tile: u8,
+    /// The wall's top, world units above tier `0`.
+    pub height: u16,
+    /// Tiles past the map's rectangle the wall stands, `1..=reach`.
+    pub distance: u8,
+    /// The map's edges it stands along: any of `n` (`-Z`), `e` (`+X`), `s`
+    /// (`+Z`), `w` (`-X`). The follow camera stands on the `-Z` side, so
+    /// the default leaves that side open.
+    pub sides: String,
+    /// Vertex colour of the wall (`128` draws the texel as is).
+    pub shade: u8,
+    /// Vertex colour at the wall's top (`0` fades to black).
+    pub fade: u8,
+}
+
+impl Default for BackdropDef {
+    fn default() -> Self {
+        Self {
+            tpage: 0,
+            clut: 0,
+            tile: 0,
+            height: 1024,
+            distance: 2,
+            sides: "esw".to_string(),
+            shade: 96,
+            fade: 0,
+        }
+    }
+}
+
+impl BackdropDef {
+    /// Whether the wall stands along side `k` ([`SurroundDef`] side order:
+    /// `0` = `-Z` (`n`), `1` = `+X` (`e`), `2` = `+Z` (`s`), `3` = `-X` (`w`)).
+    pub fn has_side(&self, k: usize) -> bool {
+        ["n", "e", "s", "w"]
+            .get(k)
+            .is_some_and(|c| self.sides.to_ascii_lowercase().contains(c))
+    }
+}
+
+/// The highest ceiling, world units above tier `0`.
+pub const CEILING_MAX_HEIGHT: u16 = 4096;
+
+/// The widest chain, world units.
+pub const CHAIN_MAX_WIDTH: u8 = 64;
+
+/// What hangs over a map's floor: a ceiling `height` above tier `0` and,
+/// with `chain`, a chain from every hung item (a prop or decoration marked
+/// `hangs`) up to it, so a lantern hangs from something rather than from
+/// nothing.
+///
+/// With `cell` the ceiling itself draws: a flat underside over the map's
+/// rectangle, wound to face down. The field pass culls back faces, so it
+/// reads from beneath and is not drawn from above - the follow camera, which
+/// looks down on the room from over its walls, sees through it instead of
+/// being walled out, and the camera-occlusion gate skips it for the same
+/// reason. Without `cell` only the chains draw, rising out of the frame.
+///
+/// ```toml
+/// [ceiling]
+/// height = 1536
+/// cell = { tpage = 28, clut = 32576, tile = 2 }
+/// shade = 48
+/// chain = { tpage = 28, clut = 32576, tile = 2, width = 6, shade = 72, items = ["lantern_hall"] }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CeilingDef {
+    /// The ceiling's height above tier `0`, world units.
+    pub height: u16,
+    /// The underside's atlas cell, one a tile. `None` draws no underside.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<AtlasCell>,
+    /// Vertex colour of the underside (`128` draws the texel as is).
+    pub shade: u8,
+    /// The chain every hung item hangs from. `None` hangs none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<ChainDef>,
+}
+
+impl Default for CeilingDef {
+    fn default() -> Self {
+        Self {
+            height: 1024,
+            cell: None,
+            shade: 64,
+            chain: None,
+        }
+    }
+}
+
+/// A ceiling's chain ([`CeilingDef::chain`]): a square shaft `width` units
+/// across from a hung item's top up to the ceiling, its four sides textured
+/// with one atlas cell.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChainDef {
+    /// Texture page of the chain's atlas cell.
+    pub tpage: u8,
+    /// Palette (CBA word) of the chain's atlas cell.
+    pub clut: u16,
+    /// Atlas cell, `0..64`.
+    pub tile: u8,
+    /// Width of the shaft, `1..=64` world units.
+    pub width: u8,
+    /// Vertex colour of the chain (`128` draws the texel as is).
+    pub shade: u8,
+    /// The ids of the hung props and decorations that take a chain; empty
+    /// for every one. `hangs` also marks a wall-mounted item, which a chain
+    /// would only spoil.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<String>,
+}
+
+impl Default for ChainDef {
+    fn default() -> Self {
+        Self {
+            tpage: 0,
+            clut: 0,
+            tile: 0,
+            width: 6,
+            shade: 80,
+            items: Vec::new(),
+        }
+    }
+}
+
 /// One decoration as the engine bakes it: a mesh on a tile at a transform.
 /// [`crate::map::MapDef::decorations`] expands every `[[decor]]`,
 /// `[[scatter]]` and `[[edges]]` entry into these.
@@ -1028,6 +1262,31 @@ pub struct Decoration {
     /// Degrees `[x, y, z]`.
     pub rotation: [f32; 3],
     pub scale: f32,
+    /// Whether it blocks the ground under it ([`DecorDef::solid`]).
+    pub solid: bool,
+}
+
+/// The map entry a [`Decoration`] comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DecorSource {
+    /// `decor[i]`.
+    Decor(usize),
+    /// Mesh `mesh` of `scatter[brush]`.
+    Scatter { brush: usize, mesh: usize },
+    /// `edges[i]`.
+    Edges(usize),
+}
+
+impl DecorSource {
+    /// The entry's field path: `decor[3]`, `scatter[1].meshes[0]`,
+    /// `edges[2]`.
+    pub fn path(&self) -> String {
+        match self {
+            Self::Decor(i) => format!("decor[{i}]"),
+            Self::Scatter { brush, mesh } => format!("scatter[{brush}].meshes[{mesh}]"),
+            Self::Edges(i) => format!("edges[{i}]"),
+        }
+    }
 }
 
 /// A [`Cluster`]'s density factor at map-local tile `(col, row)` of a
@@ -1096,17 +1355,33 @@ impl crate::map::MapDef {
     /// total weight, or the map expands past [`MAX_DECORATIONS`] (or a tile
     /// past [`MAX_DECORATIONS_PER_TILE`]).
     pub fn decorations(&self) -> anyhow::Result<Vec<Decoration>> {
+        Ok(self
+            .decorations_sourced()?
+            .into_iter()
+            .map(|(_, d)| d)
+            .collect())
+    }
+
+    /// [`Self::decorations`], each with the entry that placed it.
+    pub fn decorations_sourced(&self) -> anyhow::Result<Vec<(DecorSource, Decoration)>> {
         use anyhow::bail;
         let grid = self.tile_grid()?;
-        let mut out: Vec<Decoration> = self
+        let mut out: Vec<(DecorSource, Decoration)> = self
             .decor
             .iter()
-            .map(|d| Decoration {
-                mesh: d.mesh.clone(),
-                tile: d.tile,
-                offset: d.offset.map(f32::from),
-                rotation: d.rotation,
-                scale: d.scale.unwrap_or(1.0),
+            .enumerate()
+            .map(|(i, d)| {
+                (
+                    DecorSource::Decor(i),
+                    Decoration {
+                        mesh: d.mesh.clone(),
+                        tile: d.tile,
+                        offset: d.offset.map(f32::from),
+                        rotation: d.rotation,
+                        scale: d.scale.unwrap_or(1.0),
+                        solid: d.solid,
+                    },
+                )
             })
             .collect();
         let floor = |c: usize, r: usize| grid.get(c, r).is_some_and(|t| !t.void && t.walls != 0xF);
@@ -1164,10 +1439,11 @@ impl crate::map::MapDef {
                     let jitter = f32::from(brush.jitter.min(256));
                     for _ in 0..n {
                         let mut pick = (rng.unit() * total as f32) as u64;
-                        let m = brush
+                        let (mi, m) = brush
                             .meshes
                             .iter()
-                            .find(|m| {
+                            .enumerate()
+                            .find(|(_, m)| {
                                 let w = u64::from(m.weight);
                                 if pick < w {
                                     true
@@ -1176,7 +1452,10 @@ impl crate::map::MapDef {
                                     false
                                 }
                             })
-                            .unwrap_or(&brush.meshes[brush.meshes.len() - 1]);
+                            .unwrap_or((
+                                brush.meshes.len() - 1,
+                                &brush.meshes[brush.meshes.len() - 1],
+                            ));
                         let [s0, s1] = m.scale.unwrap_or(brush.scale);
                         let dx = rng.range(-jitter, jitter);
                         let dz = rng.range(-jitter, jitter);
@@ -1184,13 +1463,17 @@ impl crate::map::MapDef {
                         let pitch = rng.range(-brush.tilt, brush.tilt);
                         let roll = rng.range(-brush.tilt, brush.tilt);
                         let scale = rng.range(s0, s1);
-                        out.push(Decoration {
-                            mesh: m.mesh.clone(),
-                            tile: [col, row],
-                            offset: [dx, f32::from(m.y), dz],
-                            rotation: [pitch, yaw, roll],
-                            scale,
-                        });
+                        out.push((
+                            DecorSource::Scatter { brush: b, mesh: mi },
+                            Decoration {
+                                mesh: m.mesh.clone(),
+                                tile: [col, row],
+                                offset: [dx, f32::from(m.y), dz],
+                                rotation: [pitch, yaw, roll],
+                                scale,
+                                solid: brush.solid,
+                            },
+                        ));
                     }
                 }
             }
@@ -1245,17 +1528,21 @@ impl crate::map::MapDef {
                             Some([a, b]) => rng.range(a, b),
                             None => edge.scale.unwrap_or(1.0),
                         };
-                        out.push(Decoration {
-                            mesh: edge.mesh.clone(),
-                            tile: [mc, mr],
-                            offset: [
-                                px * (reach - inward) + pz.abs() * along,
-                                f32::from(edge.y),
-                                pz * (reach - inward) + px.abs() * along,
-                            ],
-                            rotation: [0.0, (yaw + edge.yaw + turn).rem_euclid(360.0), 0.0],
-                            scale,
-                        });
+                        out.push((
+                            DecorSource::Edges(e),
+                            Decoration {
+                                mesh: edge.mesh.clone(),
+                                tile: [mc, mr],
+                                offset: [
+                                    px * (reach - inward) + pz.abs() * along,
+                                    f32::from(edge.y),
+                                    pz * (reach - inward) + px.abs() * along,
+                                ],
+                                rotation: [0.0, (yaw + edge.yaw + turn).rem_euclid(360.0), 0.0],
+                                scale,
+                                solid: edge.solid,
+                            },
+                        ));
                     }
                 }
             }
@@ -1267,7 +1554,7 @@ impl crate::map::MapDef {
             );
         }
         let mut per_tile: std::collections::BTreeMap<[u16; 2], usize> = Default::default();
-        for d in &out {
+        for (_, d) in &out {
             let n = per_tile.entry(d.tile).or_default();
             *n += 1;
             if *n > MAX_DECORATIONS_PER_TILE {

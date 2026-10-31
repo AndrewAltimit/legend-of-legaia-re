@@ -23,14 +23,19 @@
 
 import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-forms.js';
 import { propMeshEditor, propDetail, renderDetail, entrancesEd } from './expansion-workbench-detail.js';
+import { restBox, refreshRest } from './expansion-workbench-detail-forms.js';
 import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
-import { mountMapEditor, editorChanged, select as editSelect, selection as editSelection, objectsIn, deleteObjects, duplicateObjects, drawSelection, clearSelection } from './expansion-workbench-gizmos.js';
+import { nudge } from './expansion-workbench-layout.js';
+import { walkThrough, walkOnDialogs } from './expansion-workbench-hints.js';
+import { mountMapEditor, editorChanged, select as editSelect, selection as editSelection, objectsIn, deleteObjects, duplicateObjects, drawSelection, clearSelection, layoutRow } from './expansion-workbench-gizmos.js';
 
 const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
 const SPARE_CHARS = '#.,^=~*+o%&@:;abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const SWATCH = ['#6b8f71', '#8a9a5b', '#b08d57', '#7d8fa6', '#a37a74', '#6f9fa0', '#9c8bb0', '#b5a26e', '#7fa86b', '#a88a9c'];
+// The arrow keys' nudge, in painter columns and rows (row 0 at the top).
+const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 const TOOLS = [
   ['paint', 'Paint', 'B'], ['rect', 'Fill rect', 'R'], ['pick', 'Pick', 'I'], ['select', 'Select / move', 'V'],
   ['spawn', 'Spawn', 'S'], ['exit', 'Exit', 'E'], ['trigger', 'Trigger', 'T'], ['encounter', 'Encounters', 'N'], ['prop', 'Prop', 'P'],
@@ -39,9 +44,14 @@ const TOOLS = [
 
 // View state survives the tab re-rendering on every structural edit.
 const V = {
-  map: null, tool: 'paint', brush: '.', cell: 22, heights: true, sel: null,
+  map: null, tool: 'paint', brush: '.', cell: 22, heights: true, walk: true, sel: null,
   scroll: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null, pick: null,
   propObject: 0, drag: null, npcs: {}, npcModel: null,
+  // The JSON (and session generation) each map's last preview request was
+  // made from, and the open render's redraw (a late preview draws there).
+  previewKey: {}, redraw: null,
+  // The engine's collision reading per map, from the 3D preview's builds.
+  collide: false, blocked: {},
 };
 
 function legendKeys(map) {
@@ -107,30 +117,138 @@ function objectsAt(map, c, r) {
   return out;
 }
 
+/* The prop or decoration standing on tile `(c, r)` (by where its origin
+ * is), as its field path: a prop first, then the decoration nearest the
+ * tile's centre. */
+function itemAt(map, c, r) {
+  const at = (x) => {
+    const o = x.offset || [0, 0, 0];
+    return [x.tile[0] + 0.5 + (o[0] || 0) / 128, x.tile[1] + 0.5 + (o[2] || 0) / 128];
+  };
+  let best = null, bd = Infinity;
+  const look = (list, kind) => (list || []).forEach((x, i) => {
+    if (!x.tile) return;
+    const [x0, z0] = at(x);
+    if (Math.floor(x0) !== c || Math.floor(z0) !== r) return;
+    const d = Math.hypot(x0 - c - 0.5, z0 - r - 0.5) + (kind === 'decor' ? 1 : 0);
+    if (d < bd) { bd = d; best = `${kind}[${i}]`; }
+  });
+  look(map.props, 'props');
+  look(map.decor, 'decor');
+  return best;
+}
+
+/* Resting placement on the canvas: a dashed line from each prop or
+ * decoration resting `on` another to its support (red when the id names
+ * nothing), and a red ring round each item the resting check reports. */
+function drawRest(g, map, cs, pv) {
+  const pos = (x) => {
+    const o = x.offset || [0, 0, 0];
+    return [(x.tile[0] + 0.5 + (o[0] || 0) / 128) * cs, (x.tile[1] + 0.5 + (o[2] || 0) / 128) * cs];
+  };
+  const items = [].concat((map.props || []).map((x, i) => [`props[${i}]`, x]), (map.decor || []).map((x, i) => [`decor[${i}]`, x]));
+  const byId = new Map(items.filter(([, x]) => x.id).map(([, x]) => [x.id, x]));
+  g.lineWidth = 1.5;
+  g.setLineDash([3, 2]);
+  for (const [, x] of items) {
+    if (!x.on || !x.tile) continue;
+    const s = byId.get(x.on);
+    const [ax, ay] = pos(x);
+    g.strokeStyle = s ? '#f0e6a0' : '#e0605a';
+    g.beginPath();
+    g.moveTo(ax, ay);
+    if (s && s.tile) g.lineTo(...pos(s)); else g.lineTo(ax + cs * 0.4, ay - cs * 0.4);
+    g.stroke();
+  }
+  g.setLineDash([]);
+  if (!pv || !pv.rest_issues) return;
+  const at = new Map(items);
+  g.strokeStyle = '#e0605a';
+  g.lineWidth = 2;
+  for (const i of pv.rest_issues) {
+    const x = at.get(i.at);
+    if (!x || !x.tile) continue;
+    const [cx, cy] = pos(x);
+    g.beginPath();
+    g.arc(cx, cy, Math.max(4, cs * 0.45), 0, Math.PI * 2);
+    g.stroke();
+  }
+}
+
+/* The open map's latest map_preview reading of where item `at` rests,
+ * and the resting check's message for `at`. */
+function restOf(at) {
+  const q = V.preview[V.map];
+  return q && !q.error && q.rest ? q.rest.find((x) => x.at === at) || null : null;
+}
+function restIssueOf(at) {
+  const q = V.preview[V.map];
+  const i = q && !q.error && q.rest_issues ? q.rest_issues.find((x) => x.at === at) : null;
+  return i ? i.message : null;
+}
+
 function baseScene(map) {
   const s = map.base && map.base.scene;
   return s && s.kind === 'scene' && s.name ? s.name : null;
 }
 
 // --- Drawing ------------------------------------------------------------------------
-function draw(ctx, cv) {
-  const map = ctx.pack.maps[V.map];
-  if (!map || !cv) return;
-  const { w, h: ht } = dims(map);
-  const cs = V.cell;
-  cv.width = Math.max(1, w * cs);
-  cv.height = Math.max(1, ht * cs);
+/* A sloped cell's hatching, one cell's worth drawn once per cell size and
+ * filled as a pattern (a pattern repeats from the canvas origin, and every
+ * cell starts on a multiple of the cell size): clipping and stroking each
+ * cell's lines was most of a terrain map's redraw. */
+const HATCH = new Map();
+function hatchPattern(g, cs) {
+  let p = HATCH.get(cs);
+  if (p) return p;
+  const t = document.createElement('canvas');
+  t.width = cs;
+  t.height = cs;
+  const tg = t.getContext('2d');
+  tg.strokeStyle = 'rgba(255,240,180,0.55)';
+  tg.lineWidth = 1;
+  for (let k = -cs; k < cs; k += 5) { tg.beginPath(); tg.moveTo(k, cs); tg.lineTo(k + cs, 0); tg.stroke(); }
+  p = g.createPattern(t, 'repeat');
+  HATCH.set(cs, p);
+  return p;
+}
+
+/* The tile pass, drawn into a canvas of its own and kept: its key is all
+ * it reads (the rows, the legend, the preview, the cell size and the
+ * heights toggle), so a redraw that changed none of them is one blit. */
+const TILES = { key: null, canvas: null, pv: null, pvId: 0 };
+function tileLayer(map, w, ht, cs, pv, good) {
+  if (pv !== TILES.pv) { TILES.pv = pv; TILES.pvId++; }
+  const key = [w, ht, cs, V.heights ? 1 : 0, good ? TILES.pvId : 0, JSON.stringify(map.tiles.legend), (map.tiles.rows || []).join('\n')].join('\u0001');
+  if (TILES.key === key && TILES.canvas) return TILES.canvas;
+  const cv = TILES.canvas || document.createElement('canvas');
+  TILES.canvas = cv;
+  TILES.key = key;
+  if (cv.width !== w * cs || cv.height !== ht * cs) { cv.width = Math.max(1, w * cs); cv.height = Math.max(1, ht * cs); }
   const g = cv.getContext('2d');
   g.clearRect(0, 0, cv.width, cv.height);
-  const pv = V.preview[V.map];
-  const good = pv && !pv.error && pv.width === w && pv.height === ht;
+  // The tile pass looks every tile up: each row split once, each legend
+  // character's colour and wall mask once (not per tile).
+  const rows = (map.tiles.rows || []).map((row) => [...row]);
+  const look = new Map();
+  const styleOf = (ch) => {
+    let e = look.get(ch);
+    if (!e) { const st = map.tiles.legend[ch]; e = { st, col: colourOf(map, ch), mask: wallMask(st) }; look.set(ch, e); }
+    return e;
+  };
+  // Nothing in the tile pass sets another font: set the tier digits' once.
+  g.font = `${Math.round(cs * 0.42)}px monospace`;
   const ladder = good ? pv.ladder : null;
   const top = ladder ? Math.max(1, ...ladder.map(Math.abs)) : 1;
+  const lift = ladder ? ladder.map((v) => `rgba(255,255,255,${Math.min(0.45, (Math.abs(v) / top) * 0.45)})`) : null;
+  const hatch = hatchPattern(g, cs);
   for (let r = 0; r < ht; r++) {
+    const rowCh = rows[r] || [];
     for (let c = 0; c < w; c++) {
-      const ch = charAt(map, c, r);
+      const ch = c < rowCh.length ? rowCh[c] : ' ';
       const x = c * cs, y = r * cs;
-      const col = colourOf(map, ch);
+      const look1 = styleOf(ch);
+      const col = look1.col;
       if (!col) {
         g.fillStyle = (c + r) % 2 ? '#1b1d22' : '#23262c';
         g.fillRect(x, y, cs, cs);
@@ -138,14 +256,14 @@ function draw(ctx, cv) {
       }
       g.fillStyle = col;
       g.fillRect(x, y, cs, cs);
-      const st = map.tiles.legend[ch];
+      const st = look1.st;
       const tier = good ? pv.tier[r * w + c] : (st ? st.height || 0 : 0);
       if (V.heights && ladder && ladder[tier]) {
         // Higher floors lighter.
-        g.fillStyle = `rgba(255,255,255,${Math.min(0.45, (Math.abs(ladder[tier]) / top) * 0.45)})`;
+        g.fillStyle = lift[tier];
         g.fillRect(x, y, cs, cs);
       }
-      const mask = good ? pv.walls[r * w + c] : wallMask(st);
+      const mask = good ? pv.walls[r * w + c] : look1.mask;
       if (mask && mask !== 15) {
         g.fillStyle = 'rgba(20,22,26,0.85)';
         const hh = cs / 2;
@@ -159,14 +277,8 @@ function draw(ctx, cv) {
       }
       if (V.heights && good && !pv.void[r * w + c] && !pv.flat[r * w + c] && mask !== 15) {
         // A sloped cell: its four corners disagree.
-        g.save();
-        g.beginPath();
-        g.rect(x, y, cs, cs);
-        g.clip();
-        g.strokeStyle = 'rgba(255,240,180,0.55)';
-        g.lineWidth = 1;
-        for (let k = -cs; k < cs; k += 5) { g.beginPath(); g.moveTo(x + k, y + cs); g.lineTo(x + k + cs, y); g.stroke(); }
-        g.restore();
+        g.fillStyle = hatch;
+        g.fillRect(x, y, cs, cs);
       }
       if (st && st.wall) {
         // A visible wall: the box or mesh the tile draws.
@@ -176,11 +288,29 @@ function draw(ctx, cv) {
       }
       if (V.heights && cs >= 18 && mask !== 15) {
         g.fillStyle = 'rgba(0,0,0,0.7)';
-        g.font = `${Math.round(cs * 0.42)}px monospace`;
         g.fillText(String(tier), x + 2, y + cs * 0.45);
       }
     }
   }
+  return cv;
+}
+
+function draw(ctx, cv) {
+  const map = ctx.pack.maps[V.map];
+  if (!map || !cv) return;
+  const { w, h: ht } = dims(map);
+  const cs = V.cell;
+  // A resize clears the canvas and reallocates it: only when it changed.
+  const cw = Math.max(1, w * cs), ch0 = Math.max(1, ht * cs);
+  if (cv.width !== cw) cv.width = cw;
+  if (cv.height !== ch0) cv.height = ch0;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  const pv = V.preview[V.map];
+  const good = pv && !pv.error && pv.width === w && pv.height === ht;
+  // The tiles themselves, from a layer kept while they are unchanged: a
+  // selection, a drag or a hover redraws only what lies over them.
+  g.drawImage(tileLayer(map, w, ht, cs, pv, good), 0, 0);
   if (cs >= 8) {
     g.strokeStyle = 'rgba(0,0,0,0.25)';
     g.lineWidth = 1;
@@ -248,6 +378,7 @@ function draw(ctx, cv) {
     g.fill();
     g.stroke();
   });
+  drawRest(g, map, cs, good ? pv : null);
   (map.spawns || []).forEach((s, i) => {
     const cx = (s.tile[0] + 0.5) * cs, cy = (s.tile[1] + 0.5) * cs;
     g.fillStyle = i === 0 ? '#3ecf8e' : '#2a9d6f';
@@ -304,7 +435,9 @@ function draw(ctx, cv) {
     const [c0, r0, c1, r1] = V.drag.box;
     zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.08)', [2, 2]);
   }
+  if (V.collide) drawCollision(g, w, ht, cs);
   drawSelection(g, map, cs);
+  if (V.walk) drawWalkThrough(g, map, cs);
   // The tile last clicked here or in the 3D preview, with nothing selected.
   if (!V.sel && V.cursor && V.cursor.map === V.map) {
     const [c, r] = V.cursor.tile;
@@ -322,6 +455,9 @@ function draw(ctx, cv) {
  * `mapId` and make the next click on its canvas call `req.done([c, r])`;
  * `req.cancel()` runs on Cancel / Esc. The caller switches to the Maps tab.
  */
+/** The map the tab has open (null before it first draws). */
+export function openMapId() { return V.map || null; }
+
 export function armPick(mapId, req) {
   V.map = mapId;
   V.sel = null;
@@ -388,7 +524,12 @@ export function renderMaps(ctx, el) {
   for (const k of ['props', 'npcs', 'spawns', 'exits', 'triggers', 'encounters']) map[k] = map[k] || [];
   const path = '';
 
-  const cv = h('canvas', {});
+  // One canvas for every render of the tab: a fresh one is a new canvas
+  // surface to allocate and fill on each structural edit (a stroke's end,
+  // a drop). What an older render left listening checks `live()`.
+  const token = V.renderSeq = (V.renderSeq || 0) + 1;
+  const cv = V.canvas || (V.canvas = h('canvas', {}));
+  const live = () => token === V.renderSeq && cv.isConnected;
   // The 3D preview (expansion-workbench-preview3d.js) follows the painter's
   // selection: the selected object's tile or zone, else the last tile clicked.
   const pv = ctx.preview;
@@ -398,12 +539,35 @@ export function renderMaps(ctx, el) {
     if (o && o.tile) return { tile: o.tile };
     return V.cursor && V.cursor.map === V.map ? { tile: V.cursor.tile } : null;
   };
-  const redraw = () => { draw(ctx, cv); if (pv) pv.select(selShape()); editorChanged(); };
+  // It also takes each map_preview the painter computes: the tile grid and a
+  // draft of the edit, drawn at once while the rebuild runs.
+  let frame = 0;
+  const redraw = () => {
+    if (frame) { cancelAnimationFrame(frame); frame = 0; }
+    if (token !== V.renderSeq) return;
+    draw(ctx, cv);
+    if (pv) { pv.select(selShape()); if (pv.setMapPreview) pv.setMapPreview(map, V.preview[V.map]); }
+    editorChanged();
+  };
+  // A drag's edits come faster than frames: draw once a frame.
+  const redrawSoon = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; if (live()) redraw(); });
+  };
+  V.redraw = redraw;
   // Edits from the side forms redraw the canvas without a re-render.
   const mctx = Object.create(ctx);
-  mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx, redraw); redraw(); } };
+  mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx); redrawSoon(); } };
   // The side boxes' undo step (the terrain's heightmap import).
   mctx.snapshot = () => { if (ctx.commit) ctx.commit(); };
+  // The rest forms' reads of the latest map_preview (measured in the
+  // worker) and their pick of an item on the canvas.
+  mctx.rest = (at) => restOf(at);
+  mctx.restIssue = (at) => restIssueOf(at);
+  mctx.pickItem = (req) => {
+    V.pick = { prompt: req.prompt, done: ([c, r]) => { const hit = itemAt(map, c, r); if (hit) req.done(hit); else ctx.rerender(); } };
+    ctx.rerender();
+  };
 
   // Settings.
   const settings = h('details', { class: 'xw-box', open: ids.length === 1 && !(map.tiles.rows || []).length ? true : null });
@@ -476,9 +640,14 @@ export function renderMaps(ctx, el) {
     h('button', { type: 'button', class: 'wb-mini', title: 'Zoom in', onclick: () => zoom(1) }, '+'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: !ctx.canUndo(), onclick: () => undo(ctx, -1) }, 'Undo'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: !ctx.canRedo(), onclick: () => undo(ctx, 1) }, 'Redo'),
-    h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'));
+    h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'),
+    walkToggle(redraw), collisionToggle(() => redraw(), pv));
 
   const wrap = h('div', { class: 'xw-canvas-wrap', tabindex: '0' }, cv);
+  if (V.refocus) {
+    V.refocus = false;
+    setTimeout(() => { if (wrap.isConnected) wrap.focus({ preventScroll: true }); }, 0);
+  }
   const hover = h('div', { class: 'xw-hover' });
   const note = h('p', { class: 'xw-note' }, 'Heights: the number is each tile\'s floor tier; lighter is higher. The floor reads a tile\'s tier at its top-left corner (low X, low Z) and slopes across the cell to its neighbours\' corners, so a cell is flat only where its four corners agree. Hatched cells slope: along a raised block\'s top and left edges the cell outside it ramps up onto it, and along its bottom and right edges its own last row and column ramp down. Drag with the right or middle button (or hold Space) to pan; Ctrl+wheel zooms.');
   const pickBar = V.pick ? h('div', { class: 'xw-pickbar', role: 'status' }, V.pick.prompt || (V.pick.rect ? 'Drag a rectangle on the map to fill the field.' : 'Click a tile on the map to fill the field.'),
@@ -522,8 +691,8 @@ export function renderMaps(ctx, el) {
   let space = false;
   wrap.addEventListener('keydown', (ev) => { if (ev.code === 'Space') { space = true; ev.preventDefault(); } });
   wrap.addEventListener('keyup', (ev) => { if (ev.code === 'Space') space = false; });
-  cv.addEventListener('contextmenu', (ev) => ev.preventDefault());
-  cv.addEventListener('mousedown', (ev) => {
+  cv.oncontextmenu = (ev) => ev.preventDefault();
+  cv.onmousedown = (ev) => {
     wrap.focus({ preventScroll: true });
     if (ev.button === 1 || ev.button === 2 || space) {
       V.drag = { pan: true, x: ev.clientX, y: ev.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop };
@@ -602,9 +771,9 @@ export function renderMaps(ctx, el) {
       V.sel = { type: 'props', i: map.props.length - 1 };
       ctx.changed(true);
     }
-  });
+  };
   const onMove = (ev) => {
-    if (!cv.isConnected) return;
+    if (!live()) return;
     const d = V.drag;
     if (d && d.pan) {
       wrap.scrollLeft = d.sl - (ev.clientX - d.x);
@@ -623,10 +792,10 @@ export function renderMaps(ctx, el) {
       d.to = [(ev.clientX - b.left) / V.cell, (ev.clientY - b.top) / V.cell];
     } else if (d.rect) {
       d.rect[2] = c; d.rect[3] = r;
-      redraw();
+      redrawSoon();
     } else if (d.box) {
       d.box[2] = c; d.box[3] = r;
-      redraw();
+      redrawSoon();
     } else if (d.move && V.sel && (c !== d.from[0] || r !== d.from[1])) {
       const dc = c - d.from[0], dr = r - d.from[1];
       for (const s of d.group || [V.sel]) {
@@ -637,11 +806,12 @@ export function renderMaps(ctx, el) {
         if (o.rect) o.rect = [o.rect[0] + dc, o.rect[1] + dr, o.rect[2] + dc, o.rect[3] + dr];
       }
       d.from = [c, r];
+      d.moved = true;
       mctx.changed();
     }
   };
   const onUp = () => {
-    if (!cv.isConnected) return;
+    if (!live()) return;
     if (pv) pv.hold(false);
     const d = V.drag;
     V.drag = null;
@@ -677,7 +847,10 @@ export function renderMaps(ctx, el) {
       if (d.kind === 'encounter') list.push({ id, rect: q, table: '' });
       V.sel = { type: d.kind + 's', i: list.length - 1 };
       ctx.changed(true);
-    } else if (d.move || d.paint) {
+    } else if (d.paint || (d.move && d.moved)) {
+      // The tab draws again; the canvas takes the keys back (the arrows'
+      // nudge, Delete). A click that moved nothing changes nothing.
+      V.refocus = true;
       ctx.changed(true);
     }
   };
@@ -688,7 +861,7 @@ export function renderMaps(ctx, el) {
     document.removeEventListener('keydown', V.listeners.key);
   }
   const onKey = (ev) => {
-    if (!cv.isConnected || ev.defaultPrevented) return;
+    if (!live() || ev.defaultPrevented) return;
     const t = ev.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const k = ev.key.toLowerCase();
@@ -711,6 +884,29 @@ export function renderMaps(ctx, el) {
       return;
     }
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const arrow = ARROWS[ev.key];
+    if (arrow && (V.sel || editSelection().length) && wrap.contains(document.activeElement)) {
+      // Arrows nudge the selection a tile; Shift a quarter tile (32 units).
+      ev.preventDefault();
+      const many = editSelection().length ? editSelection() : [V.sel];
+      const step = ev.shiftKey ? 0.25 : 1;
+      if (ctx.commit) ctx.commit();
+      const r = nudge(map, many, arrow[0] * step, arrow[1] * step);
+      if (!r.moved) return;
+      // One undo step a press; the canvas keeps the focus for the next.
+      mctx.changed();
+      if (ctx.commit) ctx.commit();
+      renderSelection(ctx, mctx, side, map);
+      editorChanged();
+      return;
+    }
+    if (k === 'escape' && (V.sel || editSelection().length)) {
+      V.sel = null;
+      editSelect([]);
+      renderSelection(ctx, mctx, side, map);
+      redraw();
+      return;
+    }
     const tool = TOOLS.find((x) => x[2].toLowerCase() === k);
     if (tool) { V.tool = tool[0]; ctx.rerender(); }
   };
@@ -752,8 +948,12 @@ export function renderMaps(ctx, el) {
       },
       ids: () => ctx.ids('npc'),
     });
+    pv.onCollision((m) => {
+      V.blocked[m.map] = m;
+      if (V.collide && live() && m.map === V.map) redraw();
+    });
     pv.onPick((c, r) => {
-      if (!cv.isConnected) return;
+      if (!live()) return;
       V.cursor = { map: V.map, tile: [c, r] };
       const hit = objectsAt(map, c, r);
       V.sel = hit.length ? hit[0] : null;
@@ -769,11 +969,12 @@ export function renderMaps(ctx, el) {
     });
   }
   loadObjects(ctx, baseScene(map), () => { renderSelection(ctx, mctx, side, map); redraw(); });
-  if (!V.preview[V.map]) V.preview[V.map] = ctx.mapPreview(map);
   redraw();
   const sc = V.scroll[V.map];
   if (sc) requestAnimationFrame(() => { wrap.scrollLeft = sc[0]; wrap.scrollTop = sc[1]; });
-  schedulePreview(ctx, redraw);
+  // A map opened for the first time asks for its preview at once (the
+  // canvas draws from the legend meanwhile).
+  schedulePreview(ctx, !V.preview[V.map]);
 }
 
 function newMap(ctx) {
@@ -792,14 +993,132 @@ function newMap(ctx) {
   };
 }
 
-function schedulePreview(ctx, redraw) {
+/* The open map's `map_preview`, a moment after an edit: built in the
+ * validation worker (ctx.mapPreviewLater) and drawn when it lands. A map
+ * whose JSON (and the session's files) are what the last request was made
+ * from is not asked again: a re-render of the tab costs no preview. An
+ * answer for a map edited since it was asked is dropped - the edit asked
+ * for the next one. */
+function schedulePreview(ctx, now) {
   clearTimeout(V.previewTimer);
-  V.previewTimer = setTimeout(() => {
-    const map = ctx.pack.maps && ctx.pack.maps[V.map];
-    if (!map) return;
-    V.preview[V.map] = ctx.mapPreview(map);
+  V.previewTimer = setTimeout(() => requestPreview(ctx), now ? 0 : 140);
+}
+
+function requestPreview(ctx) {
+  const id = V.map;
+  const map = id && ctx.pack.maps && ctx.pack.maps[id];
+  if (!map) return;
+  const json = JSON.stringify(map);
+  const key = (ctx.sessionGen ? ctx.sessionGen() : 0) + ':' + json;
+  if (V.previewKey[id] === key) return;
+  V.previewKey[id] = key;
+  const answer = (pv) => {
+    const cur = ctx.pack && ctx.pack.maps && ctx.pack.maps[id];
+    if (!cur || JSON.stringify(cur) !== json) return;
+    const first = !V.preview[id];
+    V.preview[id] = pv;
+    if (V.map !== id || !V.redraw) return;
+    V.redraw();
+    refreshRest();
+    if (first) refreshTierLabels(pv);
+  };
+  if (ctx.mapPreviewLater) ctx.mapPreviewLater(id, json, answer);
+  else answer(ctx.mapPreview(map));
+}
+
+const tierOpts = (ladder) => Array.from({ length: 16 }, (_, i) => [String(i), `tier ${i}${ladder[i] != null ? ` (${ladder[i]} up)` : ''}`]);
+
+/* The legend entry's floor-tier labels, drawn before the map's first
+ * preview, take its ladder when it lands. */
+function refreshTierLabels(pv) {
+  if (!pv || pv.error || !pv.ladder) return;
+  const sel = document.querySelector(`[data-path="tiles.legend.${CSS.escape(V.brush)}.height"] select`);
+  if (!sel) return;
+  const opts = tierOpts(pv.ladder);
+  for (const o of sel.options) {
+    const hit = opts.find((x) => x[0] === o.value);
+    if (hit) o.textContent = hit[1];
+  }
+}
+
+/* The walk-through check (expansion-workbench-hints.js) on the canvas: a
+ * large prop or decoration the player walks through gets a red cross-hatched
+ * tile, and a walk-on dialog trigger an amber corner mark (a repeating one
+ * a filled mark). The same objects list as hints under the Checks. */
+function drawWalkThrough(g, map, cs) {
+  const bad = walkThrough(map, (sc) => V.objects[sc] || null);
+  g.save();
+  g.strokeStyle = '#ff4d4d';
+  g.lineWidth = 2;
+  for (const w of bad) {
+    const o = (w.type === 'props' ? map.props : map.decor)[w.i];
+    const off = o.offset || [0, 0, 0];
+    const x = (o.tile[0] + 0.5 + (off[0] || 0) / 128) * cs, y = (o.tile[1] + 0.5 + (off[2] || 0) / 128) * cs;
+    const r = cs * 0.42;
+    g.setLineDash([]);
+    g.strokeRect(x - r, y - r, 2 * r, 2 * r);
+    g.beginPath();
+    g.moveTo(x - r, y - r); g.lineTo(x + r, y + r);
+    g.moveTo(x + r, y - r); g.lineTo(x - r, y + r);
+    g.stroke();
+  }
+  for (const t of walkOnDialogs(map)) {
+    const q = map.triggers[t.i].rect || [0, 0, 0, 0];
+    const x = Math.min(q[0], q[2]) * cs, y = Math.min(q[1], q[3]) * cs;
+    const k = Math.max(6, cs * 0.35);
+    g.fillStyle = t.repeats ? 'rgba(255,190,60,0.95)' : 'rgba(255,190,60,0.45)';
+    g.beginPath();
+    g.moveTo(x, y); g.lineTo(x + k, y); g.lineTo(x, y + k);
+    g.closePath();
+    g.fill();
+  }
+  g.restore();
+}
+
+/* The quarters the engine's collision grid closes past the tile's own
+ * walls (solid props, decorations, terrain walls), from the 3D preview's
+ * last build of this map: red, a quarter tile each. */
+function drawCollision(g, w, ht, cs) {
+  const c = V.blocked[V.map];
+  if (!c || c.width !== w || c.height !== ht) return;
+  const hh = cs / 2;
+  g.save();
+  g.fillStyle = 'rgba(232, 52, 52, 0.55)';
+  g.strokeStyle = 'rgba(120, 10, 10, 0.9)';
+  g.lineWidth = 1;
+  for (let r = 0; r < ht; r++) {
+    for (let col = 0; col < w; col++) {
+      const k = r * w + col;
+      const extra = (c.blocked[k] & 15) & ~(c.walls[k] || 0);
+      if (!extra) continue;
+      for (const [q, bit] of Object.entries(QBIT)) {
+        if (!(extra & bit)) continue;
+        const x = col * cs + (q[1] === 'r' ? hh : 0), y = r * cs + (q[0] === 'b' ? hh : 0);
+        g.fillRect(x + 1, y + 1, hh - 2, hh - 2);
+        g.strokeRect(x + 1.5, y + 1.5, hh - 3, hh - 3);
+      }
+    }
+  }
+  g.restore();
+}
+
+function collisionToggle(redraw, pv) {
+  const cb = h('input', { type: 'checkbox' });
+  cb.checked = V.collide;
+  cb.addEventListener('change', () => {
+    V.collide = cb.checked;
+    // The marks come from the engine: open the preview to get them.
+    if (V.collide && pv && !V.blocked[V.map] && !pv.isOpen()) pv.open();
     redraw();
-  }, 140);
+  });
+  return h('label', { class: 'xw-check xw-field', title: 'Mark in red what the player bumps into beyond the painted walls - solid props, decorations and terrain - as the engine\'s collision grid has it after the 3D preview\'s last build (it opens the preview)' }, cb, 'Collision');
+}
+
+function walkToggle(redraw) {
+  const cb = h('input', { type: 'checkbox' });
+  cb.checked = V.walk;
+  cb.addEventListener('change', () => { V.walk = cb.checked; redraw(); });
+  return h('label', { class: 'xw-check xw-field', title: 'Mark large props and decorations the player walks through (red cross) and walk-on dialog triggers (amber corner; solid when it repeats on every visit). The Checks list them as hints.' }, cb, 'Walk-through');
 }
 
 function loadObjects(ctx, scene, done) {
@@ -817,6 +1136,23 @@ function loadObjects(ctx, scene, done) {
   }, 30);
 }
 
+/** The borrowed placement's clips by measured pose (`scene_npcs`'
+ * `postures`, legaia_web_expansion::npc_posture): which ids stand, walk,
+ * sit (and need a seat under them) or crouch. Empty until the disc's list
+ * has loaded. */
+function clipPostureHint(model) {
+  const list = model && V.npcs[model.scene];
+  const row = list && (list.postures || []).find((r) => r.index === model.index);
+  const el = h('p', { class: 'xw-hint', 'data-path': 'clip-postures' });
+  if (!row) return el;
+  const part = (label, ids) => (ids && ids.length ? `${label}: ${ids.join(', ')}` : '');
+  const own = row.clip ? `own clip ${row.clip}` : 'no clip of its own';
+  const parts = [part('standing', row.standing), part('walking', row.walking),
+    part('seated (put a seat under it)', row.seated), part('crouched', row.crouched)].filter(Boolean);
+  el.textContent = `Clips by measured pose (${own}): ${parts.join('; ')}.`;
+  return el;
+}
+
 function loadNpcs(ctx, scene, done) {
   if (!scene || V.npcs[scene] || !ctx.cat) return;
   try {
@@ -832,7 +1168,7 @@ function loadNpcs(ctx, scene, done) {
 function npcModelPicker(ctx, model, onPick) {
   const list = V.npcs[model.scene];
   const wrap = h('div', {});
-  wrap.append(field(ctx, model, { k: 'scene', t: 'scenename', label: 'Model scene', hint: 'the map\'s base scene, unless a party member' }, ''));
+  wrap.append(field(ctx, model, { k: 'scene', t: 'scenename', label: 'Model scene', hint: 'the map\'s base scene, or one other scene for all its townsfolk' }, ''));
   if (!list || !list.npcs.length) {
     wrap.append(field(ctx, model, { k: 'index', t: 'int', label: 'Placement', hint: list && list.error ? list.error : (ctx.cat ? 'reading the scene...' : 'load your disc to list NPCs') }, ''));
     return wrap;
@@ -931,7 +1267,7 @@ function renderPalette(ctx, mctx, side, map) {
     }
     ed.append(h('label', { class: 'xw-field', 'data-path': `${p}.walls` }, h('span', {}, 'Wall quarters', h('span', { class: 'xw-hint' }, ' a tile is four 64x64 sub-cells')), q));
     const ladder = (V.preview[V.map] && V.preview[V.map].ladder) || map.floor_heights || [];
-    ed.append(grid(lctx, st, [{ k: 'height', t: 'sel', num: true, opts: Array.from({ length: 16 }, (_, i) => [String(i), `tier ${i}${ladder[i] != null ? ` (${ladder[i]} up)` : ''}`]), label: 'Floor tier' }], p));
+    ed.append(grid(lctx, st, [{ k: 'height', t: 'sel', num: true, opts: tierOpts(ladder), label: 'Floor tier' }], p));
     // Ground.
     const g = st.ground;
     const kind = h('select', {}, ...['', 'texture', 'base_cell', 'mesh'].map((k) => h('option', { value: k, selected: (g ? g.kind : '') === k }, k || 'nothing')));
@@ -1001,6 +1337,15 @@ function renderSelection(ctx, mctx, side, map) {
   box.setAttribute('data-path', p);
   box.append(h('div', { class: 'xw-box-head' }, `${sel.type.replace(/s$/, '')} ${o.id || ''}`, h('span', { class: 'xw-sp' }),
     h('button', { type: 'button', class: 'wb-mini', onclick: () => { map[sel.type].splice(sel.i, 1); V.sel = null; ctx.changed(true); } }, 'Delete')));
+  // Snap, align, spread, repeat, fill between and mirror over the
+  // selection (the multi-selection when there is one).
+  const lay = layoutRow([sel], {
+    map: () => map,
+    snapshot: () => { if (ctx.commit) ctx.commit(); },
+    refresh: () => ctx.changed(true),
+    selected: (list) => { editSelect(list.length > 1 ? list : []); V.sel = list[0] || null; },
+  });
+  if (lay) box.append(lay);
   const rect = { k: 'rect', t: 'tuple', n: 4, label: 'Tiles', hint: '[col0, row0, col1, row1]' };
   if (sel.type === 'spawns') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },
@@ -1020,15 +1365,32 @@ function renderSelection(ctx, mctx, side, map) {
     } else {
       box.append(grid(mctx, to, [{ k: 'map', t: 'sel', opts: Object.keys(ctx.pack.maps), label: 'Map' }, { k: 'spawn', label: 'Spawn', ph: 'first' }], `${p}.to`));
     }
-    box.append(grid(mctx, o, [{ k: 'locked_line', t: 'oref', kind: 'line', label: 'Said while shut', hint: 'a sealed stair saying why' }], p));
     box.append(gateBox(mctx, o, 'requires', p, 'Open when'));
+    box.append(h('div', { class: 'xw-box-head' }, 'While shut'));
+    box.append(grid(mctx, o, [
+      { k: 'locked_line', t: 'oref', kind: 'line', label: 'Says why', hint: 'on each step onto the shut exit: "The seal holds."' },
+      { k: 'locked_toast', t: 'bool', label: 'As a toast', hint: 'a one-row notice at the top; the player is not stopped' },
+    ], p));
+    box.append(h('p', { class: 'xw-note' }, !o.requires
+      ? 'The exit has no "Open when" gate, so it is never shut and this line is never said.'
+      : o.locked_line
+        ? (o.locked_toast ? 'A toast: the player reads why and keeps walking. Only the line\'s first page shows (40 characters).' : 'A dialog box: it stops the player on every step onto the exit. Tick As a toast for a lighter touch.')
+        : 'No line: the shut exit just does nothing when stepped on.'));
   } else if (sel.type === 'triggers') {
-    box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'once', t: 'bool', label: 'Once per visit' }], p));
+    box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect], p));
+    // How it fires: on entry, or as an examine (`press`).
+    const how = h('select', { 'aria-label': 'Fires' },
+      h('option', { value: 'walk', selected: !o.press }, 'when the player steps on it'),
+      h('option', { value: 'press', selected: !!o.press }, 'when the player examines it (action button)'));
+    how.addEventListener('change', () => { if (how.value === 'press') o.press = true; else delete o.press; ctx.changed(true); });
+    box.append(h('label', { class: 'xw-field', 'data-path': `${p}.press` }, h('span', {}, 'Fires', h('span', { class: 'xw-hint' }, ' an examine fires while standing on it or facing it from the next tile')), how));
+    box.append(grid(mctx, o, [{ k: 'once', t: 'bool', label: 'Once ever', hint: 'fires the first time only; a flag remembers it across visits and saves' }], p));
     const ev = o.event;
     const EVENTS = {
       battle: [{ k: 'formation', t: 'ref', kind: 'formation', label: 'Formation' }],
       boss: [{ k: 'boss', t: 'ref', kind: 'boss', label: 'Boss' }],
-      dialog: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line' }],
+      dialog: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'a dialog box: the player stops and reads' }],
+      toast: [{ k: 'line', t: 'ref', kind: 'line', label: 'Line', hint: 'its first page as a one-row notice; the player keeps walking' }],
       talk: [{ k: 'npc', label: 'NPC id', hint: 'a quest giver / talk objective' }],
       start_quest: [{ k: 'quest', t: 'ref', kind: 'quest', label: 'Quest' }],
       set_flag: [{ k: 'flag', label: 'Pack flag' }],
@@ -1041,7 +1403,8 @@ function renderSelection(ctx, mctx, side, map) {
       cutscene: [{ k: 'cutscene', t: 'ref', kind: 'cutscene', label: 'Cutscene' }],
       sound: [{ k: 'sound', t: 'sound', label: 'Sound', hint: 'a retail cue or an audio.toml sound' }],
     };
-    const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, k.replace('_', ' '))));
+    const EVENT_LABEL = { dialog: 'dialog (a box that stops the player)', toast: 'toast (a notice that stops nothing)' };
+    const kind = h('select', {}, ...Object.keys(EVENTS).map((k) => h('option', { value: k, selected: ev.kind === k }, EVENT_LABEL[k] || k.replace('_', ' '))));
     kind.addEventListener('change', () => {
       const k = kind.value;
       const first = (kd) => ctx.ids(kd)[0] || '';
@@ -1053,6 +1416,17 @@ function renderSelection(ctx, mctx, side, map) {
     });
     box.append(h('label', { class: 'xw-field', 'data-path': `${p}.event` }, h('span', {}, 'Raises'), kind));
     box.append(grid(mctx, ev, EVENTS[ev.kind] || [], `${p}.event`));
+    // What the player meets, in a line: walk-on text is the thing to keep rare.
+    if (ev.kind === 'dialog' || ev.kind === 'toast') {
+      const say = ev.kind === 'toast'
+        ? (o.press ? 'Examined, it shows a toast: a light touch for flavour text.' : 'Stepping on it shows a toast: the player reads it in passing and keeps walking.')
+        : o.press
+          ? 'Examined, it opens a dialog box: the player asked for it, so it may run long.'
+          : o.once
+            ? 'Stepping on it opens a dialog box, the first time only: keep these for story beats.'
+            : 'Stepping on it opens a dialog box on every visit: that stops the player each time they pass. Make it an examine, a toast, or Once ever.';
+      box.append(h('p', { class: 'xw-note' + (ev.kind === 'dialog' && !o.press && !o.once ? ' is-warn' : '') }, say));
+    }
     box.append(gateBox(mctx, o, 'requires', p, 'Fires when'));
   } else if (sel.type === 'encounters') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id' }, rect, { k: 'table', label: 'Encounter table' }], p));
@@ -1067,6 +1441,7 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'top', t: 'oint', label: 'Standable top', hint: 'world units up; action movement stands on it' },
       { k: 'footprint', t: 'tuple', n: 2, label: 'Top footprint', hint: '[x, z] world units; untouched = the tile' },
     ], p));
+    box.append(restBox(mctx, map, o, p));
     box.append(propDetail(mctx, o, p));
   } else if (sel.type === 'npcs') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id', hint: 'the quest talk key' }, { k: 'label', label: 'Label' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },
@@ -1085,6 +1460,7 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'cutscene', t: 'oref', kind: 'cutscene', label: 'Plays (cutscene)', hint: 'in place of its line' },
       { k: 'scenery', t: 'bool', label: 'Scenery (plays its clip; no talk, no collision)' },
     ], p));
+    box.append(clipPostureHint(o.model));
     box.append(gateBox(mctx, o, 'requires', p, 'Talks when'));
     box.append(gateBox(mctx, o, 'after', p, 'After (switches to the second line)'));
     box.append(gateBox(mctx, o, 'present', p, 'Stands on the map when (else a cutscene brings it on)'));

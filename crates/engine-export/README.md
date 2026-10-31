@@ -9,7 +9,7 @@ and must never be committed or redistributed.
 
 ## What it produces
 
-One module, `glb_export`, with one entry point per artifact family:
+`glb_export` has one entry point per artifact family:
 
 - **World glb** (`export_world_glb`) - ground heightfield, terrain tiles and
   placed objects, each draw instanced at its resolved world transform, bound
@@ -26,6 +26,16 @@ One module, `glb_export`, with one entry point per artifact family:
 - **Equipment items and party field forms** (`export_equipment_item_glbs`,
   `export_party_field_glbs`) with their manifests (`items_manifest`,
   `party_manifest`), beside the per-scene `world_manifest`.
+
+## The mesh catalog
+
+`mesh_catalog` measures every mesh of a field scene's geometry pack the way a
+pack map's placement of it is measured (`engine-scene::expansion_map::footprint`
+at scale 1) and renders a numbered contact sheet through
+`actor-formats::mesh_raster`. `legaia-engine mesh-catalog` drives it to keep
+`expansion-format`'s committed borrowed-mesh catalog
+([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#the-mesh-catalog))
+in step with the disc; the sheet is local output like the rest.
 
 ## Where it sits
 

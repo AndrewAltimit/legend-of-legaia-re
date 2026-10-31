@@ -1,11 +1,14 @@
-# Rebirth Isles: the Singing Grotto, under the ruins. Laid out from scratch
-# over the Snowdrift Cave's (`cave01`) blue rock: a stair down from the
-# ruins' gate, a cavern of dripping stone and mushrooms, and a still pool at
-# its heart with an islet where the Pearl sings. Water light ripples on the
-# walls, crystals turn over the pool, and the drips never stop.
+# Rebirth Isles: the Singing Grotto, under the ruins. Laid out over the
+# Snowdrift Cave's (`cave01`) rock as four chambers linked by passages: the
+# antechamber at the foot of the stair; the crystal gallery to the west,
+# its walls grown with crystal clusters that light the rock; the mushroom
+# grotto to the east round a spring; and, at the end, the singing pool - a
+# still lake under a vault with an islet at its heart, reached by stepping
+# stones, where the Pearl turns over its rune circle among a crown of
+# crystals. A low tunnel runs straight from the antechamber to the pool.
 
 name = "Rebirth Isles - The Singing Grotto"
-size = [40, 36]
+size = [72, 60]
 base = { scene = { kind = "scene", name = "cave01" }, geometry = "none" }
 # Sound-test track 20.
 bgm = { kind = "bgm", id = 20 }
@@ -16,48 +19,74 @@ floor_heights = [0, 20, 340, -110]
 [tiles]
 origin = [4, 4]
 rows = [
-  "###################^^^##################",
-  "###################...##################",
-  "###################.....################",
-  "##################........##############",
-  "################,,,...,....#############",
-  "##########..,...,,,.........,.##########",
-  "#########......,,,.............#########",
-  "#########...........,.......,...########",
-  "########....,......,,.....,,,,.....#####",
-  "######,,,.......................,....###",
-  "####.#..,,,.....................,....###",
-  "###..#..,.#...........,......###......##",
-  "###,,...,###...,....,,,,.,,,.###..,...##",
-  "###,,,,,,.#....,,,.....,,,,..###..,...##",
-  "###,,,,,,......,,,,.....,,..........,,##",
-  "###...........,,,,,...~.........,...,,##",
-  "##............,,,,,~~~~~~~..,...,,,,,.##",
-  "##............,...~~~~~~~~~.....,,,...##",
-  "#.............,..~~~~~~~~~~~.....,,...##",
-  "##...............~~~~~~~~~~~.....,,,...#",
-  "####..,,,,,,,....~~~~iii~~~~.....,,,,,,#",
-  "#####,,,......bbbbbbbiii~~~~~..........#",
-  "#####,,,.........~~~~iii~~~~..........##",
-  "#####............~~~~~~~~~~~........####",
-  "######......,...,~~~~~~~~~~~..,,,.######",
-  "######..........,.~~~~~~~~~....,,.######",
-  "######..,..#....,,,~~~~~~~.....,########",
-  "####.##...###....,,,,,~.......##########",
-  "#######...,#,.....,,...,,,,,,,##########",
-  "#######....,,....,,,,,,,,...,.##########",
-  "########....,,,,,,,,,,,,,....###########",
-  "#########...,,,,,...,,,......###########",
-  "############,,.......,,...##############",
-  "##############........,..###############",
-  "###############...,...,#################",
-  "########################################",
+  "##################################^^^###################################",
+  "#################################:::::##################################",
+  "#################################:::.:##################################",
+  "#################################::...##################################",
+  "#################################:....##################################",
+  "###############################:::.....#################################",
+  "#############################:::.......,,,##############################",
+  "############################:..,,mmm...,,,:#############################",
+  "#############################.,,mmmm...,,,::############################",
+  "############################.,,.mmm.m..,,,,:############################",
+  "###########################..,,.mmm.mm:,,,,::###########################",
+  "#########################::,,,,.mmmmmm:::...::::########################",
+  "########################::..,,..mmmmmm:::::::::::#######################",
+  "######################::::..##,::::m::::####:::.::######################",
+  "####################::::::########:m:#########::::,,####################",
+  "##################:::.::##########:::###########::,,m###################",
+  "################.::::::###########::#############:,mmm##################",
+  "#########:::##mm...::#############::##############::..mmmm....m.########",
+  "#######mmmm::::m....#############:::###############:..mmm.....,,,,######",
+  "######mmmmmmmmm....##############:::###############:..mm,.....,,,,######",
+  "#####mmmmmmmmmm.....#############:::##############:..,,m,......mmm:#####",
+  "####mmmmm..::mm:.....#############::##############:..,,m,......mmm,#####",
+  "####.......::mmm.....#############:::#############:..mmmm,.....,,,,,####",
+  "####.....::::mmmmm...#############:.:#############::mmmm,,,mm..,,,,.####",
+  "####.....::..mmmm..,,#############:..############::.mmmm,,,,,,,,,,,,####",
+  "#####....:...mmm,,,,,##############...############:.mmmm,,,,~~~,,,,#####",
+  "#####....::...m.,,,,###############...#############.mmmm,,,~~~~~,,######",
+  "#####:...::......,,,###############...##############mmmm,.,~~~~~,,######",
+  "######...........:,################.,,###############m::,.,,,,,,########",
+  "#######........::,#################,,,#################:,,,:::##########",
+  "#######........,###################,,#################::,,,::###########",
+  "########......,.###################,,#################::::##############",
+  "#############.,:##################,,,################::::###############",
+  "#############::::#################,,,###############:..:################",
+  "##############...:################,,,##############:...:################",
+  "##############:..::###############,,,#.#.#########:m...#################",
+  "###############:.:::##############,,,...::::#####:m...##################",
+  "#################:::..##,.m::mmm::,,.m...:::::##::...###################",
+  "##################...m.....mmmmmm...mmm..:::m::::.::####################",
+  "###################.mmmm.....mmmm...mmmmm::.......:#####################",
+  "##################.mmmmm....mmmmmm.,,mmmm,,::::::::#####################",
+  "#################mm...mm.,.mmmmmmm,,,,mmm,,,,,::::::####################",
+  "#################........,,mmm,m,,,,,,,,,,,,,,,.....:###################",
+  "#################..m.::::,,,,,,,,~~bb~~~~,,,,,,.......##################",
+  "################..mm::::,,,,~~~~~~~bb~~~~~~,,,,,,.....##################",
+  "################:..::::,,~~~~~~~~~~bb~~~~~~~~,,,......##################",
+  "################::::::,,~~~~~~~~~~~bb~~~~~~~~~,,.....:.#################",
+  "#################:....,~~~~~~~~~~~~bb~~~~~~~~~~,,,....##################",
+  "#################:....,~~~~~~~~~~~iii~~~~~~~~~~,,,,.,.##################",
+  "##################:...,~~~~~~~~~~iiiii~~~~~~~~~,,,m,####################",
+  "###################.,,,~~~~~~~~~~iiiii~~~~~~~~~,,,mm####################",
+  "###################.,,,,~~~~~~~~~~iii~~~~~~~~~,,,,m#####################",
+  "####################,,,,,,~~~~~~~~~~~~~~~~~~~,,,,,######################",
+  "#####################,,,.,,,~~~~~~~~~~~~~~~~,,,,########################",
+  "########################...,,,,,~~~~~~~~~,,,,:##########################",
+  "############################..:,,,,,,,,,,,::############################",
+  "#################################,,,,,mm:::#############################",
+  "###################################,,,:::###############################",
+  "########################################################################",
+  "########################################################################",
 ]
 
 [tiles.legend]
 "#" = { label = "cave rock", walls = "all", height = 2, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
 "." = { label = "cave floor", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
 "," = { label = "cave floor (wet)", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
+"m" = { label = "cave floor (moss)", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
+":" = { label = "scree", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
 "~" = { label = "pool", walls = "all", height = 3, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 40 } }
 "i" = { label = "islet", height = 1, ground = { kind = "texture", tpage = 11, clut = 32454, tile = 41 } }
 "b" = { label = "stepping stones", ground = { kind = "texture", tpage = 11, clut = 32454, tile = 49 } }
@@ -65,108 +94,933 @@ rows = [
 
 [[spawns]]
 id = "from_ruins"
-tile = [20, 2]
+tile = [35, 2]
 facing = 4
 
 [[exits]]
 id = "stair_up"
-rect = [19, 0, 21, 0]
+rect = [34, 0, 36, 0]
 to = { kind = "map", map = "isles_thornwood", spawn = "from_grotto" }
 
 [[triggers]]
 id = "grotto_intro"
-rect = [18, 1, 22, 4]
-event = { kind = "dialog", line = "isles_grotto_intro" }
+rect = [33, 1, 37, 4]
+event = { kind = "toast", line = "isles_grotto_intro" }
 once = true
 
-# Wading out to the islet is talking to the Pearl.
+# On the islet, the action button speaks to the Pearl.
 [[triggers]]
 id = "pearl"
-rect = [21, 20, 23, 22]
+rect = [33, 48, 37, 51]
+press = true
 event = { kind = "talk", npc = "isles_pearl" }
 
 [[triggers]]
 id = "pearl_song"
-rect = [21, 20, 23, 22]
+rect = [33, 48, 37, 51]
+press = true
 event = { kind = "dialog", line = "isles_pearl_idle" }
 requires = { quests = ["isles_pearl"] }
 
 [[encounters]]
 id = "cavern"
-rect = [1, 5, 38, 34]
+rect = [1, 5, 70, 58]
 table = "isles_grotto"
 
-# The Pearl: a crystal over the islet, turning and breathing light.
+# The Pearl: a crystal over the islet's rune circle, turning and breathing
+# light, and the crown of crystals round the islet's rim.
+
 [[props]]
 id = "pearl"
+# A crystal held in the air by its own light: it hangs on nothing.
+hangs = true
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [22, 21]
+tile = [35, 50]
 offset = [0, 90, 0]
 scale = 2.0
 animate = [{ kind = "spin", period = 360 }, { kind = "bob", amplitude = 16, period = 180 }, { kind = "pulse", amount = 0.08, period = 90 }]
-light = { color = [140, 220, 255], radius = 1100, height = 0, flicker = 0.15, period = 45 }
+light = { color = [140, 220, 255], radius = 1300, height = 0, flicker = 0.15, period = 45 }
+
+[[decor]]
+mesh = { scene = "rugi", object = 3 }
+tile = [35, 49]
+offset = [0, 4, 128]
+scale = 2.2
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [37, 50]
+offset = [62, 0, 40]
+rotation = [-8.0, 0.0, 0.0]
+scale = 2.60
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [35, 52]
+offset = [42, 10, -53]
+rotation = [0.0, 61.0, 0.0]
+scale = 0.70
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [33, 51]
+offset = [-19, 0, -29]
+rotation = [8.0, 122.0, 0.0]
+scale = 2.60
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [33, 49]
+offset = [-62, 10, -40]
+rotation = [-8.0, 183.0, 0.0]
+scale = 0.55
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [35, 47]
+offset = [-42, 0, 53]
+rotation = [0.0, 244.0, 0.0]
+scale = 2.60
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [37, 48]
+offset = [19, 10, 29]
+rotation = [8.0, 305.0, 0.0]
+scale = 0.85
+
+# Crystal clusters grown on the walls, thickest in the gallery: three to
+# five stones a cluster, leaning off the rock, one light each.
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [16, 29]
+offset = [-15, 0, 33]
+rotation = [-20.0, 0.0, 0.0]
+scale = 0.76
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [16, 29]
+offset = [-8, 0, 43]
+rotation = [-14.0, 97.0, 0.0]
+scale = 3.34
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [16, 29]
+offset = [23, 0, 72]
+rotation = [-8.0, 194.0, 0.0]
+scale = 0.87
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [16, 29]
+offset = [59, 0, 70]
+rotation = [-2.0, 291.0, 0.0]
+scale = 2.93
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [5, 25]
+offset = [-59, 0, -39]
+rotation = [-6.0, 31.0, -14.0]
+scale = 3.39
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [5, 25]
+offset = [-49, 0, 8]
+rotation = [0.0, 128.0, -14.0]
+scale = 0.65
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [5, 25]
+offset = [-39, 0, 34]
+rotation = [6.0, 225.0, -14.0]
+scale = 2.90
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [5, 25]
+offset = [-30, 0, 54]
+rotation = [12.0, 322.0, -14.0]
+scale = 0.61
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [5, 25]
+offset = [-14, 0, 87]
+rotation = [18.0, 59.0, -14.0]
+scale = 2.42
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [4, 21]
+offset = [-66, 0, -40]
+rotation = [-6.0, 62.0, -14.0]
+scale = 0.62
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [4, 21]
+offset = [-49, 0, -7]
+rotation = [0.0, 159.0, -14.0]
+scale = 2.56
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [4, 21]
+offset = [-27, 0, 27]
+rotation = [6.0, 256.0, -14.0]
+scale = 1.07
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [8, 18]
+offset = [-22, 0, -60]
+rotation = [8.0, 93.0, 0.0]
+scale = 2.52
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [8, 18]
+offset = [8, 0, -43]
+rotation = [14.0, 190.0, 0.0]
+scale = 1.00
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [8, 18]
+offset = [20, 0, -32]
+rotation = [20.0, 287.0, 0.0]
+scale = 2.67
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [8, 18]
+offset = [57, 0, -27]
+rotation = [26.0, 24.0, 0.0]
+scale = 0.60
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [13, 18]
+offset = [-22, 0, -68]
+rotation = [8.0, 124.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [13, 18]
+offset = [2, 0, -57]
+rotation = [14.0, 221.0, 0.0]
+scale = 2.48
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [13, 18]
+offset = [16, 0, -45]
+rotation = [20.0, 318.0, 0.0]
+scale = 0.97
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [13, 18]
+offset = [54, 0, -29]
+rotation = [26.0, 55.0, 0.0]
+scale = 2.89
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [13, 18]
+offset = [89, 0, -11]
+rotation = [32.0, 152.0, 0.0]
+scale = 0.84
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [16, 16]
+offset = [-64, 0, -36]
+rotation = [-6.0, 155.0, -14.0]
+scale = 2.47
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [16, 16]
+offset = [-50, 0, 0]
+rotation = [0.0, 252.0, -14.0]
+scale = 1.09
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [16, 16]
+offset = [-31, 0, 40]
+rotation = [6.0, 349.0, -14.0]
+scale = 2.97
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 31]
+offset = [-35, 0, 55]
+rotation = [-20.0, 186.0, 0.0]
+scale = 1.03
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [11, 31]
+offset = [-1, 0, 62]
+rotation = [-14.0, 283.0, 0.0]
+scale = 2.96
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [11, 31]
+offset = [18, 0, 64]
+rotation = [-8.0, 20.0, 0.0]
+scale = 0.83
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [11, 31]
+offset = [61, 0, 74]
+rotation = [-2.0, 117.0, 0.0]
+scale = 3.13
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [27, 10]
+offset = [-60, 0, -32]
+rotation = [-6.0, 0.0, -14.0]
+scale = 0.67
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [27, 10]
+offset = [-60, 0, 5]
+rotation = [0.0, 97.0, -14.0]
+scale = 2.60
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [27, 10]
+offset = [-32, 0, 27]
+rotation = [6.0, 194.0, -14.0]
+scale = 1.06
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [27, 10]
+offset = [-28, 0, 64]
+rotation = [12.0, 291.0, -14.0]
+scale = 3.01
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [36, 15]
+offset = [48, 0, -24]
+rotation = [-6.0, 31.0, 14.0]
+scale = 2.72
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [36, 15]
+offset = [63, 0, -11]
+rotation = [0.0, 128.0, 14.0]
+scale = 0.90
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [36, 15]
+offset = [67, 0, 38]
+rotation = [6.0, 225.0, 14.0]
+scale = 2.65
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [36, 15]
+offset = [70, 0, 63]
+rotation = [12.0, 322.0, 14.0]
+scale = 1.13
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [36, 15]
+offset = [59, 0, 93]
+rotation = [18.0, 59.0, 14.0]
+scale = 2.08
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [53, 16]
+offset = [37, 0, -30]
+rotation = [-6.0, 0.0, 14.0]
+scale = 1.04
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [53, 16]
+offset = [57, 0, 0]
+rotation = [0.0, 97.0, 14.0]
+scale = 3.42
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [53, 16]
+offset = [65, 0, 17]
+rotation = [6.0, 194.0, 14.0]
+scale = 0.87
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [53, 16]
+offset = [68, 0, 62]
+rotation = [12.0, 291.0, 14.0]
+scale = 2.55
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [50, 23]
+offset = [-45, 0, -18]
+rotation = [-6.0, 31.0, -14.0]
+scale = 2.45
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [50, 23]
+offset = [-36, 0, 0]
+rotation = [0.0, 128.0, -14.0]
+scale = 1.04
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [50, 23]
+offset = [-33, 0, 39]
+rotation = [6.0, 225.0, -14.0]
+scale = 3.44
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [50, 23]
+offset = [-41, 0, 46]
+rotation = [12.0, 322.0, -14.0]
+scale = 1.05
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [50, 23]
+offset = [-28, 0, 103]
+rotation = [18.0, 59.0, -14.0]
+scale = 3.43
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [65, 26]
+offset = [38, 0, -21]
+rotation = [-6.0, 62.0, 14.0]
+scale = 0.63
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [65, 26]
+offset = [62, 0, -5]
+rotation = [0.0, 159.0, 14.0]
+scale = 2.69
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [65, 26]
+offset = [60, 0, 40]
+rotation = [6.0, 256.0, 14.0]
+scale = 0.84
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [49, 36]
+offset = [-70, 0, -28]
+rotation = [-6.0, 0.0, -14.0]
+scale = 0.71
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [49, 36]
+offset = [-57, 0, 0]
+rotation = [0.0, 97.0, -14.0]
+scale = 2.54
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [49, 36]
+offset = [-48, 0, 44]
+rotation = [6.0, 194.0, -14.0]
+scale = 1.11
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [49, 36]
+offset = [-30, 0, 51]
+rotation = [12.0, 291.0, -14.0]
+scale = 3.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [53, 48]
+offset = [47, 0, -42]
+rotation = [-6.0, 31.0, 14.0]
+scale = 2.52
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [53, 48]
+offset = [39, 0, -3]
+rotation = [0.0, 128.0, 14.0]
+scale = 1.19
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [53, 48]
+offset = [47, 0, 31]
+rotation = [6.0, 225.0, 14.0]
+scale = 3.03
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [53, 48]
+offset = [72, 0, 47]
+rotation = [12.0, 322.0, 14.0]
+scale = 0.80
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [53, 48]
+offset = [79, 0, 80]
+rotation = [18.0, 59.0, 14.0]
+scale = 2.01
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [40, 57]
+offset = [50, 0, -33]
+rotation = [-6.0, 62.0, 14.0]
+scale = 0.64
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [40, 57]
+offset = [43, 0, -11]
+rotation = [0.0, 159.0, 14.0]
+scale = 3.37
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [40, 57]
+offset = [62, 0, 27]
+rotation = [6.0, 256.0, 14.0]
+scale = 0.86
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [26, 54]
+offset = [-34, 0, 51]
+rotation = [-20.0, 93.0, 0.0]
+scale = 2.69
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [26, 54]
+offset = [-12, 0, 48]
+rotation = [-14.0, 190.0, 0.0]
+scale = 0.62
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [26, 54]
+offset = [43, 0, 52]
+rotation = [-8.0, 287.0, 0.0]
+scale = 2.23
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [26, 54]
+offset = [58, 0, 71]
+rotation = [-2.0, 24.0, 0.0]
+scale = 0.62
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [28, 37]
+offset = [-43, 0, -65]
+rotation = [8.0, 124.0, 0.0]
+scale = 0.60
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [28, 37]
+offset = [14, 0, -50]
+rotation = [14.0, 221.0, 0.0]
+scale = 2.95
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [28, 37]
+offset = [37, 0, -33]
+rotation = [20.0, 318.0, 0.0]
+scale = 1.06
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [28, 37]
+offset = [69, 0, -44]
+rotation = [26.0, 55.0, 0.0]
+scale = 3.26
+solid = true
+
+[[decor]]
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [28, 37]
+offset = [88, 0, -20]
+rotation = [32.0, 152.0, 0.0]
+scale = 1.10
+
+# The mushroom grotto: giant caps round the spring, small ones between.
 
 [[props]]
-id = "pool_crystal_w"
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [17, 18]
-offset = [0, 60, 0]
-animate = [{ kind = "orbit", radius = 40, period = 400 }, { kind = "bob", amplitude = 10, period = 150 }]
-light = { color = [120, 160, 255], radius = 420, height = 0 }
+id = "grotto_cap_0"
+mesh = { object = 30 }
+tile = [54, 20]
+rotation = [0.0, 30.0, 0.0]
+scale = 2.6
+solid = true
 
 [[props]]
-id = "pool_crystal_e"
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [27, 24]
-offset = [0, 60, 0]
-animate = [{ kind = "orbit", radius = 40, period = -400 }, { kind = "bob", amplitude = 10, period = 150, phase = 0.5 }]
-light = { color = [120, 160, 255], radius = 420, height = 0 }
+id = "grotto_cap_1"
+mesh = { object = 30 }
+tile = [63, 21]
+rotation = [0.0, 120.0, 0.0]
+scale = 2.2
+solid = true
+
+[[props]]
+id = "grotto_cap_2"
+mesh = { object = 30 }
+tile = [57, 27]
+rotation = [0.0, 250.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "grotto_cap_4"
+mesh = { object = 30 }
+tile = [52, 25]
+rotation = [0.0, 80.0, 0.0]
+scale = 2.0
+solid = true
+
+# Stalagmites in the antechamber and along the long tunnel.
+
+[[props]]
+id = "stalagmite_0"
+mesh = { object = 44 }
+tile = [30, 8]
+rotation = [0.0, 0.0, 0.0]
+scale = 3.0
+solid = true
+
+[[props]]
+id = "stalagmite_1"
+mesh = { object = 44 }
+tile = [41, 7]
+rotation = [0.0, 47.0, 0.0]
+scale = 2.6
+solid = true
+
+[[props]]
+id = "stalagmite_2"
+mesh = { object = 44 }
+tile = [39, 12]
+rotation = [0.0, 94.0, 0.0]
+scale = 2.2
+solid = true
+
+[[props]]
+id = "stalagmite_3"
+mesh = { object = 44 }
+tile = [31, 12]
+rotation = [0.0, 141.0, 0.0]
+scale = 2.4
+solid = true
+
+[[props]]
+id = "stalagmite_4"
+mesh = { object = 44 }
+tile = [34, 22]
+rotation = [0.0, 188.0, 0.0]
+scale = 2.0
+solid = true
+
+# The gallery's floor: stalagmite stands and fallen boulders by its walls,
+# a few small crystals grown at their feet; the middle stays open.
+[[decor]]
+mesh = { object = 44 }
+tile = [6, 21]
+scale = 2.4
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [6, 21]
+offset = [60, 0, 40]
+rotation = [0.0, 70.0, 0.0]
+scale = 1.5
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [5, 23]
+offset = [20, 0, -10]
+rotation = [0.0, 140.0, 0.0]
+scale = 1.8
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [19, 22]
+rotation = [0.0, 30.0, 0.0]
+scale = 2.2
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [19, 22]
+offset = [-55, 0, 50]
+rotation = [0.0, 100.0, 0.0]
+scale = 1.4
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [18, 25]
+offset = [10, 0, 0]
+rotation = [0.0, 200.0, 0.0]
+scale = 1.9
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [7, 28]
+rotation = [0.0, 250.0, 0.0]
+scale = 2.6
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [7, 28]
+offset = [55, 0, -40]
+rotation = [0.0, 300.0, 0.0]
+scale = 1.3
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [14, 30]
+offset = [0, 0, 30]
+rotation = [0.0, 20.0, 0.0]
+scale = 1.7
+solid = true
+
+[[decor]]
+mesh = { object = 44 }
+tile = [12, 18]
+rotation = [0.0, 80.0, 0.0]
+scale = 2.0
+solid = true
+
+[[decor]]
+mesh = { scene = "rugi", object = 17 }
+tile = [5, 22]
+offset = [30, 0, 30]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "rugi", object = 18 }
+tile = [18, 24]
+offset = [-20, 0, 40]
+rotation = [0.0, 120.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "rugi", object = 17 }
+tile = [8, 29]
+offset = [-30, 0, 20]
+rotation = [0.0, 200.0, 0.0]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { scene = "rugi", object = 18 }
+tile = [13, 18]
+offset = [40, 0, 20]
+rotation = [0.0, 10.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [6, 22]
+offset = [-30, 0, -20]
+scale = 1.2
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [19, 23]
+offset = [30, 0, -30]
+rotation = [0.0, 50.0, 0.0]
+scale = 1.4
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [7, 27]
+offset = [30, 0, 40]
+rotation = [0.0, 20.0, 0.0]
+scale = 1.1
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [13, 30]
+offset = [40, 0, -30]
+rotation = [0.0, 80.0, 0.0]
+scale = 1.3
 
 [[scatter]]
 id = "mushrooms"
-rect = [1, 1, 38, 34]
-on = ".,"
-density = 0.12
+rect = [46, 14, 70, 32]
+on = "."
+density = 0.45
 seed = 4401
 jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.3, 0.5]
+scale = [0.6, 1.0]
+cluster = { centre = [58.5, 23.5], radius = 10.0, falloff = 0.8 }
 meshes = [
-  { mesh = { object = 40 }, weight = 3 },
-  { mesh = { object = 47 }, weight = 2, scale = [0.8, 1.2] },
+  { mesh = { object = 47 }, weight = 3 },
+  { mesh = { object = 30 }, weight = 2, scale = [0.4, 0.8] },
 ]
 
+# Stalagmites and cave caps grow out of the rock along the walls, and a
+# little fallen rubble lies by them; the chambers' floors stay open.
 [[edges]]
-id = "wall_crystals"
-mesh = { asset = "models/ember_crystal.glb" }
+id = "wall_stalagmites"
+mesh = { object = 44 }
 walls = "#"
-every = 4
+every = 2
+phase = 1
 inset = 30
+jitter = 50
+yaw_jitter = 180.0
+scale_range = [0.8, 1.5]
+seed = 4404
+
+[[edges]]
+id = "wall_caps"
+mesh = { object = 47 }
+walls = "#"
+every = 5
+phase = 3
+inset = 40
 jitter = 40
 yaw_jitter = 180.0
-scale_range = [0.6, 1.0]
-seed = 4402
+scale_range = [0.6, 0.9]
+seed = 4403
 
+[[scatter]]
+id = "rubble"
+rect = [1, 1, 70, 58]
+on = ":"
+density = 0.28
+seed = 4405
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.2, 0.35]
+keep_clear = true
+meshes = [
+  { mesh = { scene = "vell", object = 22 }, weight = 3, scale = [0.18, 0.32] },
+  { mesh = { object = 44 }, weight = 2, scale = [0.6, 1.1] },
+  { mesh = { scene = "rugi", object = 17 }, weight = 1, scale = [0.3, 0.45] },
+]
 [[emitters]]
 kind = "drips"
-rect = [2, 2, 37, 33]
-count = 60
+rect = [2, 2, 69, 57]
+count = 90
 color = [170, 210, 255]
 seed = 4411
 
 [[emitters]]
 kind = "sparkles"
-rect = [16, 15, 28, 27]
-height = [0, 220]
-count = 60
+rect = [24, 40, 47, 56]
+height = [0, 240]
+count = 70
 color = [150, 220, 255]
 seed = 4412
 
 [[emitters]]
-kind = "dust"
-rect = [2, 2, 37, 33]
-height = [0, 160]
+kind = "sparkles"
+rect = [5, 18, 20, 31]
+height = [20, 260]
 count = 40
+color = [170, 200, 255]
+seed = 4414
+
+[[emitters]]
+kind = "sparkles"
+rect = [58, 24, 65, 29]
+height = [0, 120]
+count = 20
+color = [200, 170, 255]
+seed = 4415
+
+[[emitters]]
+kind = "dust"
+rect = [2, 2, 69, 57]
+height = [0, 160]
+count = 50
 color = [140, 170, 230]
 seed = 4413
 
@@ -180,20 +1034,37 @@ period = 10
 [lighting]
 mood = "cave"
 lamps = [
-  { id = "stair_light", tile = [20, 2], offset = [0, 120, 0], color = [200, 220, 255], radius = 600 },
-  { id = "cavern_w", tile = [10, 22], offset = [0, 160, 0], color = [90, 140, 255], radius = 700, flicker = 0.1, period = 70 },
-  { id = "cavern_e", tile = [32, 20], offset = [0, 160, 0], color = [90, 140, 255], radius = 700, flicker = 0.1, period = 80 },
+  { id = "stair_light", tile = [35, 2], offset = [0, 120, 0], color = [200, 220, 255], radius = 600 },
+  { id = "spring", tile = [61, 26], offset = [0, 100, 0], color = [180, 140, 255], radius = 560, flicker = 0.1, period = 60 },
+  { id = "crystals_b0", tile = [16, 29], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 50 },
+  { id = "crystals_b1", tile = [5, 25], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 57 },
+  { id = "crystals_b2", tile = [4, 21], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 64 },
+  { id = "crystals_b3", tile = [8, 18], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 71 },
+  { id = "crystals_b4", tile = [13, 18], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 78 },
+  { id = "crystals_b5", tile = [16, 16], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 85 },
+  { id = "crystals_b6", tile = [11, 31], offset = [0, 120, 0], color = [150, 200, 255], radius = 520, flicker = 0.12, period = 92 },
+  { id = "crystals_a7", tile = [27, 10], offset = [0, 120, 0], color = [170, 190, 255], radius = 520, flicker = 0.12, period = 99 },
+  { id = "crystals_a8", tile = [36, 15], offset = [0, 120, 0], color = [170, 190, 255], radius = 520, flicker = 0.12, period = 106 },
+  { id = "crystals_c9", tile = [53, 16], offset = [0, 120, 0], color = [190, 160, 255], radius = 520, flicker = 0.12, period = 113 },
+  { id = "crystals_c10", tile = [50, 23], offset = [0, 120, 0], color = [190, 160, 255], radius = 520, flicker = 0.12, period = 120 },
+  { id = "crystals_c11", tile = [65, 26], offset = [0, 120, 0], color = [190, 160, 255], radius = 520, flicker = 0.12, period = 127 },
+  { id = "crystals_d12", tile = [49, 36], offset = [0, 120, 0], color = [130, 210, 255], radius = 520, flicker = 0.12, period = 134 },
+  { id = "crystals_d13", tile = [53, 48], offset = [0, 120, 0], color = [130, 210, 255], radius = 520, flicker = 0.12, period = 141 },
+  { id = "crystals_d14", tile = [40, 57], offset = [0, 120, 0], color = [130, 210, 255], radius = 520, flicker = 0.12, period = 148 },
+  { id = "crystals_d15", tile = [26, 54], offset = [0, 120, 0], color = [130, 210, 255], radius = 520, flicker = 0.12, period = 155 },
+  { id = "crystals_d16", tile = [28, 37], offset = [0, 120, 0], color = [130, 210, 255], radius = 520, flicker = 0.12, period = 162 },
 ]
 
 [fog]
 regions = [
-  { rect = [14, 14, 30, 28], angle = 0.0, spread = 60.0, speed = 6 },
+  { rect = [20, 40, 52, 56], angle = 0.0, spread = 60.0, speed = 6 },
+  { rect = [56, 23, 66, 30], angle = 90.0, spread = 50.0, speed = 5 },
 ]
 
 # The ground: a rock floor that heaves and dips, walls that rise as lumpy
-# stone instead of boxes, a stair climbing to the gate, and the pool -
-# a bowl under still, glowing water, crossed by a causeway of stepping
-# stones to the islet.
+# stone, a stair climbing to the gate, the long tunnel falling to the pool,
+# and the pool itself - a bowl under still, glowing water, crossed by a
+# causeway of stepping stones to the islet.
 [terrain]
 resolution = 4
 smooth = 2
@@ -203,33 +1074,38 @@ seed = 4420
 variation = 0.3
 blend = 0.6
 detail = 4
+detail_reach = 3
 sun = [200.0, 55.0]
 shading = 0.7
 shapes = [
   { kind = "noise", amplitude = 6, scale = 1.2, seed = 1 },
   { kind = "noise", amplitude = 9, scale = 4.0, seed = 2 },
-  { kind = "ramp", from = [20.5, 4.0], to = [20.5, 0.0], radius = 2.5, height = [0, 70] },
-  { kind = "noise", rect = [15, 14, 29, 28], amplitude = 30, scale = 1.4, seed = 3 },
-  { kind = "plateau", rect = [14, 21, 20, 21], height = -24, edge = 0.35 },
-  { kind = "raise", at = [14.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "raise", at = [15.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "raise", at = [16.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "raise", at = [17.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "raise", at = [18.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "raise", at = [19.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "raise", at = [20.5, 21.5], radius = 0.55, height = 22 },
-  { kind = "plateau", rect = [21, 20, 23, 22], height = 6, edge = 0.5, roughness = 0.3 },
+  { kind = "ramp", from = [35.5, 5.0], to = [35.5, 0.0], radius = 2.8, height = [0, 70] },
+  { kind = "flatten", at = [35.5, 9.5], radius = 6.0, height = 24, strength = 0.7 },
+  { kind = "ramp", from = [35.5, 15.0], to = [35.5, 35.0], radius = 1.8, height = [20, -14] },
+  { kind = "noise", rect = [22, 41, 49, 56], amplitude = 30, scale = 1.4, seed = 3 },
+  { kind = "plateau", rect = [4, 21, 6, 26], height = 30, edge = 0.8, roughness = 0.4 },
+  { kind = "plateau", rect = [48, 38, 50, 41], height = 26, edge = 0.7, roughness = 0.4 },
+  { kind = "flatten", at = [7.5, 25.5], radius = 1.5, height = -40, strength = 1.0 },
+  { kind = "flatten", at = [16.5, 27.5], radius = 1.4, height = -40, strength = 1.0 },
+  { kind = "flatten", at = [43.5, 10.5], radius = 1.3, height = -40, strength = 1.0 },
+  { kind = "flatten", at = [22.5, 40.5], radius = 1.5, height = -40, strength = 1.0 },
+  { kind = "flatten", at = [65.5, 22.5], radius = 1.3, height = -40, strength = 1.0 },
+  { kind = "plateau", rect = [35, 42, 36, 47], height = 4, edge = 0.3, roughness = 0.2 },
+  { kind = "plateau", rect = [33, 48, 37, 51], height = 6, edge = 0.5, roughness = 0.3 },
 ]
-# The Snowdrift Cave's own ground is golden sand and straw: the grotto's
-# rock is borrowed from the West Voz Forest's cliff page (`from = "vell"`,
-# copied into free VRAM at entry), grey-violet stone that takes the blue of
-# the water's light.
 materials = [
   { name = "rock floor", chars = ".", from = "vell", tint = [112, 116, 140], cells = [
-    { tpage = 11, clut = 32512, tile = 0 }, { tpage = 11, clut = 32512, tile = 1 }, { tpage = 11, clut = 32512, tile = 2 }, { tpage = 11, clut = 32512, tile = 8 }, { tpage = 11, clut = 32512, tile = 9 }, { tpage = 11, clut = 32512, tile = 10 }, { tpage = 11, clut = 32512, tile = 16 }, { tpage = 11, clut = 32512, tile = 17 }, { tpage = 11, clut = 32512, tile = 18 }, { tpage = 11, clut = 32512, tile = 24 }, { tpage = 11, clut = 32512, tile = 25 }, { tpage = 11, clut = 32512, tile = 26 }, { tpage = 11, clut = 32512, tile = 32 }, { tpage = 11, clut = 32512, tile = 33 }, { tpage = 11, clut = 32512, tile = 40 }, { tpage = 11, clut = 32512, tile = 41 }, { tpage = 11, clut = 32512, tile = 48 }, { tpage = 11, clut = 32512, tile = 49 }, { tpage = 11, clut = 32512, tile = 56 }, { tpage = 11, clut = 32512, tile = 57 },
+    { tpage = 11, clut = 32512, tile = 1 }, { tpage = 11, clut = 32512, tile = 9 }, { tpage = 11, clut = 32512, tile = 12 }, { tpage = 11, clut = 32512, tile = 14 }, { tpage = 11, clut = 32512, tile = 17 }, { tpage = 11, clut = 32512, tile = 20 }, { tpage = 11, clut = 32512, tile = 22 }, { tpage = 11, clut = 32512, tile = 33 }, { tpage = 11, clut = 32512, tile = 41 }, { tpage = 11, clut = 32512, tile = 49 }, { tpage = 11, clut = 32512, tile = 52 }, { tpage = 11, clut = 32512, tile = 54 }, { tpage = 11, clut = 32512, tile = 62 }, { tpage = 11, clut = 32512, tile = 6 },
   ] },
   { name = "wet rock", chars = ",^", from = "vell", tint = [96, 108, 140], cells = [
-    { tpage = 11, clut = 32513, tile = 0 }, { tpage = 11, clut = 32513, tile = 1 }, { tpage = 11, clut = 32513, tile = 2 }, { tpage = 11, clut = 32513, tile = 8 }, { tpage = 11, clut = 32513, tile = 9 }, { tpage = 11, clut = 32513, tile = 10 }, { tpage = 11, clut = 32513, tile = 16 }, { tpage = 11, clut = 32513, tile = 17 }, { tpage = 11, clut = 32513, tile = 18 }, { tpage = 11, clut = 32513, tile = 24 }, { tpage = 11, clut = 32513, tile = 25 }, { tpage = 11, clut = 32513, tile = 26 },
+    { tpage = 11, clut = 32513, tile = 1 }, { tpage = 11, clut = 32513, tile = 9 }, { tpage = 11, clut = 32513, tile = 12 }, { tpage = 11, clut = 32513, tile = 14 }, { tpage = 11, clut = 32513, tile = 20 }, { tpage = 11, clut = 32513, tile = 22 }, { tpage = 11, clut = 32513, tile = 33 }, { tpage = 11, clut = 32513, tile = 41 }, { tpage = 11, clut = 32513, tile = 49 }, { tpage = 11, clut = 32513, tile = 54 },
+  ] },
+  { name = "moss", chars = "m", from = "vell", tint = [78, 100, 100], roughness = 6, cells = [
+    { tpage = 12, clut = 32590, tile = 9 }, { tpage = 12, clut = 32589, tile = 9 },
+  ] },
+  { name = "scree", chars = ":", from = "vell", lift = 5, roughness = 10, tint = [104, 104, 128], cells = [
+    { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 },
   ] },
   { name = "cave wall", chars = "#", from = "vell", roughness = 70, tint = [100, 102, 124], cells = [
     { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
@@ -238,7 +1114,7 @@ materials = [
     { tpage = 11, clut = 32515, tile = 0 }, { tpage = 11, clut = 32515, tile = 1 }, { tpage = 11, clut = 32515, tile = 2 }, { tpage = 11, clut = 32515, tile = 8 }, { tpage = 11, clut = 32515, tile = 9 }, { tpage = 11, clut = 32515, tile = 10 }, { tpage = 11, clut = 32515, tile = 16 }, { tpage = 11, clut = 32515, tile = 17 }, { tpage = 11, clut = 32515, tile = 18 },
   ] },
   { name = "islet", chars = "i", from = "vell", tint = [130, 130, 150], cells = [
-    { tpage = 11, clut = 32513, tile = 32 }, { tpage = 11, clut = 32513, tile = 33 }, { tpage = 11, clut = 32513, tile = 40 }, { tpage = 11, clut = 32513, tile = 41 }, { tpage = 11, clut = 32513, tile = 48 }, { tpage = 11, clut = 32513, tile = 49 }, { tpage = 11, clut = 32513, tile = 56 }, { tpage = 11, clut = 32513, tile = 57 },
+    { tpage = 11, clut = 32513, tile = 33 }, { tpage = 11, clut = 32513, tile = 41 }, { tpage = 11, clut = 32513, tile = 49 }, { tpage = 11, clut = 32513, tile = 52 }, { tpage = 11, clut = 32513, tile = 54 },
   ] },
   { name = "stepping stones", chars = "b", from = "vell", tint = [146, 148, 168], cells = [
     { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 },
@@ -249,45 +1125,77 @@ cliff = { slope = 1.0, from = "vell", tint = [96, 98, 122], cells = [
 ] }
 water = { level = -22, cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [52, 100, 214], deep = [22, 40, 132], depth = 60, foam = 18, foam_color = [60, 130, 170], wade = 6 }
 
-# The pool: water lapping at its middle and drips off the vault around it.
+# The pool: water lapping at its middle, the spring, and drips off the vault.
 [audio]
 
 [[audio.ambient]]
 id = "pool"
 sound = { kind = "sound", id = "water" }
-tile = [22, 20]
-radius = 1100
-inner = 260
+tile = [35, 48]
+radius = 1300
+inner = 300
 volume = 0.7
 
 [[audio.ambient]]
-id = "drips_north"
+id = "pearl_chime"
+sound = { kind = "sound", id = "chime" }
+tile = [35, 50]
+radius = 700
+inner = 160
+volume = 0.35
+
+[[audio.ambient]]
+id = "spring"
+sound = { kind = "sound", id = "water" }
+tile = [61, 26]
+radius = 700
+inner = 140
+volume = 0.45
+
+[[audio.ambient]]
+id = "drips_ante"
 sound = { kind = "sound", id = "drips" }
-tile = [20, 8]
+tile = [35, 9]
 radius = 900
 inner = 160
-volume = 0.6
+volume = 0.55
 
 [[audio.ambient]]
-id = "drips_west"
+id = "drips_gallery"
 sound = { kind = "sound", id = "drips" }
-tile = [6, 14]
-radius = 800
+tile = [12, 24]
+radius = 900
 inner = 160
 volume = 0.5
 
 [[audio.ambient]]
-id = "drips_south"
+id = "drips_grotto"
 sound = { kind = "sound", id = "drips" }
-tile = [22, 30]
-radius = 800
+tile = [58, 22]
+radius = 900
 inner = 160
 volume = 0.5
 
 [[audio.ambient]]
-id = "drips_east"
+id = "drips_tunnel"
 sound = { kind = "sound", id = "drips" }
-tile = [34, 18]
-radius = 800
+tile = [35, 26]
+radius = 700
 inner = 160
-volume = 0.5
+volume = 0.45
+
+[[audio.ambient]]
+id = "drips_pool_w"
+sound = { kind = "sound", id = "drips" }
+tile = [20, 46]
+radius = 900
+inner = 160
+volume = 0.45
+
+[[audio.ambient]]
+id = "drips_pool_e"
+sound = { kind = "sound", id = "drips" }
+tile = [51, 46]
+radius = 900
+inner = 160
+volume = 0.45

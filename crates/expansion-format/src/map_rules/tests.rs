@@ -258,3 +258,123 @@ event = {{ kind = "rest", cost = 100, save = true }}
     }
     assert!(!e.iter().any(|m| m.contains("errand")), "{e:#?}");
 }
+
+#[test]
+fn a_seated_clip_wants_a_seat_and_a_walk_clip_should_walk() {
+    // town01 placement 43 per the committed posture table: clip 34 seated,
+    // clip 15 standing, clip 44 walking.
+    let npc = r#"
+[[npcs]]
+id = "sitter"
+model = { kind = "npc", scene = "town01", index = 43 }
+tile = [3, 2]
+clip = 34
+patrol = [[1, 2]]
+walk_clip = 15
+line = "hello"
+"#;
+    let warnings = |map: &str| -> Vec<String> {
+        validate(&pack(map))
+            .into_iter()
+            .filter(|i| i.severity == Severity::Warning && i.path == "maps/hall.toml")
+            .map(|i| format!("{}: {}", i.field, i.message))
+            .collect()
+    };
+    let bare = warnings(&format!("{MAP}{npc}"));
+    assert!(
+        bare.iter()
+            .any(|w| w.starts_with("npcs[1].clip") && w.contains("seated")),
+        "{bare:#?}"
+    );
+    assert!(
+        bare.iter()
+            .any(|w| w.starts_with("npcs[1].walk_clip") && w.contains("standing")),
+        "{bare:#?}"
+    );
+    let seat = "\n[[decor]]\nmesh = { object = 3 }\ntile = [3, 2]\n";
+    let fixed = npc.replace("walk_clip = 15", "walk_clip = 44");
+    let seated = warnings(&format!("{MAP}{fixed}{seat}"));
+    assert!(
+        !seated.iter().any(|w| w.starts_with("npcs[1].")),
+        "{seated:#?}"
+    );
+}
+
+/// A disc whose every mesh is a 32-unit cube on its origin.
+struct CubeDisc;
+
+impl DiscResolver for CubeDisc {
+    fn resolve(&self, _r: &DiscRef) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn mesh_shape(
+        &self,
+        _base_scene: &str,
+        _mesh: &crate::map::PropMesh,
+        _rotation: [f32; 3],
+        scale: f32,
+    ) -> Option<crate::map_rest::Shape> {
+        let h = 16.0 * scale;
+        Some(crate::map_rest::Shape {
+            hull: vec![[-h, -h], [h, -h], [h, h], [-h, h]],
+            bottom: 0.0,
+            top: 2.0 * h,
+        })
+    }
+}
+
+#[test]
+fn resting_is_judged_with_the_resolvers_meshes_and_on_without_one() {
+    let map = format!(
+        "{MAP}\n[[props]]\nid = \"cup\"\nmesh = {{ object = 1 }}\ntile = [1, 2]\noffset = [0, 40, 0]\n\n[[props]]\nid = \"lost\"\nmesh = {{ object = 1 }}\ntile = [2, 1]\non = \"nothing\"\n"
+    );
+    let p = pack(&map);
+    // No disc: the broken `on` is an error, the floating cup unjudged.
+    let issues = validate(&p);
+    assert!(
+        errors(&issues)
+            .iter()
+            .any(|m| m.contains("props[2].on") && m.contains("no prop")),
+        "{issues:#?}"
+    );
+    assert!(!issues.iter().any(|i| i.message.contains("floats")));
+    let issues = validate_with(&p, Some(&CubeDisc));
+    assert!(
+        issues.iter().any(|i| i.severity == Severity::Warning
+            && i.field == "props[1]"
+            && i.message.contains("floats 40")),
+        "{issues:#?}"
+    );
+}
+
+#[test]
+fn a_ceiling_holds_its_ranges_and_names_hung_items() {
+    let hung = "\n[[props]]\nid = \"lamp\"\nmesh = { object = 3 }\ntile = [2, 1]\nhangs = true\n\n[[props]]\nid = \"crate\"\nmesh = { object = 4 }\ntile = [1, 2]\n";
+    let good = format!(
+        "{MAP}{hung}\n[ceiling]\nheight = 2048\ncell = {{ tpage = 28, clut = 32576, tile = 2 }}\nchain = {{ tpage = 28, clut = 32576, tile = 2, width = 6, items = [\"lamp\"] }}\n"
+    );
+    let issues = validate(&pack(&good));
+    assert!(errors(&issues).is_empty(), "{issues:#?}");
+    let bad = format!(
+        "{MAP}{hung}\n[ceiling]\nheight = 5000\ncell = {{ tpage = 28, clut = 32576, tile = 70 }}\nchain = {{ tpage = 28, clut = 32576, tile = 2, width = 0, items = [\"crate\", \"gone\"] }}\n"
+    );
+    let e = errors(&validate(&pack(&bad)));
+    for want in [
+        "height 5000",
+        "atlas cell 70",
+        "width 0",
+        "\"crate\" names no prop",
+        "\"gone\" names no prop",
+    ] {
+        assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
+    }
+    let empty = format!("{MAP}\n[ceiling]\nheight = 900\n");
+    let issues = validate(&pack(&empty));
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.message.contains("the ceiling draws nothing")),
+        "{issues:#?}"
+    );
+}

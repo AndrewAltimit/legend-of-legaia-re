@@ -16,8 +16,8 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]`, `[[party_nights]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
 | Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
 | Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
-| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion` |
-| Screens | `legaia_engine_ui::expansion_modes`, projected by `legaia_engine_screens::expansion_modes` |
+| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion`; the World-free modes page holds one directly |
+| Screens | `legaia_engine_ui::expansion_modes`; `seat_screen` projects a seat, `legaia_engine_screens::expansion_modes` the world's |
 | Tests | per-module rule tests; `crates/engine-modes/tests/` determinism, random-pad soak and Rebirth conversion |
 
 ## The session contract
@@ -269,7 +269,7 @@ itself a few frames later (`World::age_net_podium`).
 
 ## Hosts
 
-Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition.
+Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page runs the same seat with no `World` and no disc, and draws the same composition through `seat_screen`.
 
 ### The seat
 
@@ -289,6 +289,7 @@ When a session finishes, the seat settles it: the session's own rewards, plus, w
 |---|---|
 | Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
 | Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
+| Browser modes page | `site/modes.html`: the instances laid out on a pack map first, played in 3D in the play page's runtime framed with `?embed=1&mode=<id>` off the site's disc cache; then every instance flat, with no disc and no `World` (`LegaiaModes`, [`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)) |
 | Card screens | Native: `\` (backslash) opens the card menu and closes it; `--mode cards`, `--mode cards-binder` and `--mode cards-dealer[:ID]` open a card screen at launch. Browser: `play_cards_open("menu" / "binder" / "dealer:ID")`, `play_cards_close`, with `play_cards_json` (counts, completion) and `play_card_notices_json`. A pack map opens a dealer through its `card_dealer` trigger |
 
 ### Controls
@@ -343,7 +344,7 @@ The session runs in its own mode units, exactly as for a tile-string course, and
 `WorldStage::step` turns the session's view into a `StageFrame` once a frame, while the session's map is the one the player is in:
 
 - **Golf.** The party leader stands beside the player's ball facing the aim, plays the swing for 24 frames after a strike, and runs to the ball's new lie once it rests; holed, it waits by the cup. The other seats stand at their own balls as bodies, on the far side from where the leader would stand. Every ball not yet holed draws, the rolling one at the session's rolling position. The aim arrow lies on the ground from the ball to play, lengthening with the power meter and warming from yellow to red as it fills. The camera sits behind the ball to play looking down its aim, follows a rolling ball along the shot's line, and settles on the cup between holes; it eases toward each target. Banners name the hole and par at its start and the score as a ball drops ("Birdie!", "Hole in one!").
-- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it. The other racers are bodies. A boosting racer leaves a fading ribbon of its last positions. The camera chases from behind on the heading, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
+- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it. The other racers are bodies. A boosting racer leaves a fading ribbon of its last positions. The camera chases from behind and above on the heading, high enough that the map's walls rarely stand between it and the racer, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
 
 The party bank has no swing clip, so the swing plays the landing clip (clip base `7`, the hop phase machine's landing), whose crouch and rise reads as a putt. The leader's walk to its ball, the camera ease and the banner timers are the stage's own memory; nothing the stage keeps reaches the session.
 
@@ -369,9 +370,13 @@ Both hosts draw the field under the seat as they draw any field scene, the leade
 |---|---|
 | Ball | A shaded disc facing the camera with a band of the seat's colour, over a blob shadow |
 | Cup | A dark disc with a white rim, a flagpole and a red pennant |
+| Hole | Every playable tile tinted by its surface over the map's floor (fairway mown in a checker, rough, sand, water), a white line where play ends, a chevron down each sloped tile, a lighter putting green round the cup, the tee's mat and two red markers |
+| Track | Red-and-white kerbs along both edges of the session's corridor, a chequered start line across the first segment, cyan chevrons down each boost segment |
 | Aim arrow | A ground strip and head, translucent |
-| Body | A capsule billboard in the seat's colour with a head, over a blob shadow |
+| Body | A stand-in figure facing the camera - legs, a tunic in the seat's colour with a belt, arms, a head with hair - over a blob shadow; a body under way swings its legs and arms with the ground it covers |
 | Boost trail | A translucent cyan ribbon |
+
+The hole and the track come from the session (`StageFrame::course` off `ActiveMode::golf_course`, `StageFrame::track` off `ActiveMode::race_track`), so they mark exactly where the ball rolls and the racers are held, whatever the map draws under them; they link in one ground band past every standing piece and draw first.
 
 They are built in code from no disc bytes. `screen_layers::compose_screen_prims` puts them, with the drop shadows, under the seat's HUD, which is `ModeScreen::InWorld`: the hole, par and whose stroke, a compact scorecard, the power meter; or the lap and place, the running order and the boost gauge; and the stage's banner. The native window fills `HostScreenPrims::pack_mode_world` from `HostView::pack_mode_world_prims`, and the browser play page from the same call (`play_field_fx.rs`).
 
@@ -387,7 +392,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 
 ### Gaps
 
-- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a capsule billboard in its seat's colour.
+- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a flat stand-in figure in its seat's colour.
 - **Racer collision is the session's.** Racers keep to the track by its half-width, not by the map's walls, so a map draws its corridor to the track.
 - **The browser host enters no pack map** yet ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#gaps)); its draw path for the stage is in place for when it does.
 
@@ -410,7 +415,7 @@ The table is placed in its own axes: `across` from the player's seat toward the 
 
 - **Cards.** A card is a quad `0.86` of a cell wide at the face's aspect. Each hand is fanned along its seat's edge of the board, tilted up toward its holder; the selected card rises and reaches toward the board, and a held card hovers face up over the cursor's cell. Grid cards lie flat, reading from the near seat.
 - **Faces and backs.** Whether a card shows its face or its back is the projected quad's winding: the near hand turns its faces to the camera, the far hand its backs, and a capture flip shows the back at its half turn.
-- **Seats.** The opponent NPC stands on its seat, `seat_distance` past the board's far edge; the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
+- **Seats.** The opponent NPC takes its seat, `seat_distance` from the board's centre - seated in a chair the stage draws when it names a `sit` clip, standing otherwise ([Seated NPCs](#seated-npcs)); the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
 
 ### The timeline
 
@@ -445,7 +450,7 @@ The seat holds its results card until the reaction shot is over (`WorldStage::ho
 
 Everything is screen primitives projected through the stage's frame with per-corner scene depth, so an NPC or a wall in front of the table hides it.
 
-Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
+Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, each with an inset lip shadowed on its far and left edges and lit on the near and right; or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
 
 The HUD is the score plates, the turn prompt and the selected card's panel, clean of the table; it steps aside for the reaction shot, leaving the stage's banner.
 
@@ -457,6 +462,22 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 ```
 
 The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
+
+### Hidden props
+
+A table drawn by the stage often stands where the map already has furniture: the hall's own card table, a plank table on a meadow. A table's `hide` names the map's props (`[[props]]` ids) whose draws go while the seat is open, so the stage's table replaces the decor one instead of standing inside it:
+
+```toml
+[poker.table]
+tile = [56, 32]
+hide = ["lantern_table"]      # the plank table the stage's felt replaces
+```
+
+The first frame the stage stands on the instance's map, `World::stage_pack_mode` notes the named props' indices on the seat (`PackModeSeat::hidden_props`), and `World::hidden_object_records` lists their draw-record keys (`PROP_RECORD_BASE + n`, which every named prop draws under) while the world is in the seat. Both hosts already skip a placed draw whose record is in that set each frame (the native window's placed-object pass, the play page's `field_placement_parked`), so the hiding is one model with no host code of its own.
+
+A hidden prop's light goes with it. The seat's results stage keeps them hidden while the table plays its last moves; when the seat closes the set empties and they draw again. Collision is never touched: the player is seated at the table, and the walk past it afterwards meets the same footprint as before.
+
+A decoration cannot hide: its tile's cell bakes it with every other decoration there into one mesh. The validator refuses a `hide` naming a `[[decor]]` id (make it a `[[props]]` entry) or an id the map does not have, and warns when a table hides props but draws none of its own (`draw_table = false`).
 
 ## Poker at a table
 
@@ -472,7 +493,7 @@ A poker instance that names a pack map and a table (`map`, `[poker.table]`) is d
 
 ### Chairs and hidden cards
 
-Chairs ring the oval evenly. Each peer sits in the near chair - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
+Seats ring the oval evenly. Each peer sits in the near seat - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
 
 A hole card shows its face only to its own seat, and to every seat at a showdown while its seat is still in the hand. Every other card lies face down, and the card page holds no face for it at all (`poker::art::VisibleCards`): the page is built from the view the session or the hosting peer sent, which for a guest already carries no other seat's cards.
 
@@ -489,11 +510,21 @@ A hole card shows its face only to its own seat, and to every seat at a showdown
 
 The dealer button sits on the felt before the button's chair, and a pulsing ring marks the chair to act; the opponent to act plays its `think` clip and the camera leans toward it.
 
+### Seated NPCs
+
+A table NPC that names a `sit` clip ([`expansion-pack.md`](../formats/expansion-pack.md#seated-npcs)) sits while the seat is open: the stage pushes a `duel_stage::StageChair` for its seat (`DuelStageFrame::chairs`, `PokerStageFrame::chairs`), centred on the NPC's anchor, facing the table's middle, its seat at the table's `chair_height` plus `lift`, and poses the NPC with `sit` wherever it would have played its idle. `pack_mode_world`'s `duel::chair` draws each chair in the table's wood - four legs, the seat, two rear posts carrying a top rail and a slat - depth-tested like the table, so a sitter's legs and the table hide it where they should.
+
+The chair is the stage's own, not a map prop that appears while seated: it exists exactly while someone sits on it, follows the seat wherever a table's layout or a networked viewer's chair puts it, and needs no `hide` entry or collision. A seated clip lifts the model off its origin by itself (the posture table's `seated` rule is that lift), so the NPC's anchor stays on the floor and only the chair's height has to match the clips' hips. The party leader stays standing: the party locomotion bank has no seated record, and no scene bank a pack map borrows from has a record of the party rig's bone count.
+
 ### Drawing the table
 
-The table is an oval: a felt fan lit brightest in the middle, a gold betting line, a padded rail and its wooden outer face, on four legs. Chips are stacked discs, a side band per chip with a white stripe every third and a face on top, coloured by the stack's size against the big blind. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
+The table is an oval: a felt fan lit brightest in the middle with a gold betting line, a polished wooden racetrack round it, and a padded leather rail whose crown rises between its two lips; with `draw_table` also the wooden apron under the rail, its shadowed underside, and a pedestal on a cross foot.
 
-The HUD is a plate per other seat along the top (its name, chips or state, its street bet, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
+Chips are stacked discs with a casino chip's white edge spots, turned a little per chip, and an inlaid face on top, coloured by the stack's size against the big blind; a stack of six chips or more lies as a pile of two or three columns, its top denomination tallest and the two below it beside it, a pure function of the stack so every frame and every peer draws the same pile. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
+
+The HUD is a plate per other seat along the top (its name, chips or state, its street bet on a row of its own, the seat to act lit, the button), the player's own plate bottom-left (chips, bet, the hand it makes), the pot bottom-centre between it and the action menu bottom-right. The pot stays off the top band, where it would cover the far seats' bets and the pile on the felt.
+
+Every label of the in-world HUDs sits in a box of its own (`Label::max_w`): the hosts set it in the dialog font and cut anything wider than its box with a `..` mark (`expansion_modes::fit_text`; the modes page does the same in its web font), so a long table name is shortened, never run into a score or off a plate. A banner starts under the HUD's top band. The engine-ui tests lay out each mode's in-world HUD across a session with long names and assert every box on the stage, no two labels sharing a row's pixels, and - with the extracted dialog font - every non-name label whole.
 
 ### Running it
 
@@ -502,7 +533,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --expansion packs/rebirth --map rebirth_tower_5f --mode tower-high-table
 ```
 
-The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt.
+The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt, with the hall's own card table put away while it plays (`hide = ["high_table"]`); the Mist Lantern Table and the Village Duel do the same with Tolva's Haven's plank tables.
 
 ## Tests
 

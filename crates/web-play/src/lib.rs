@@ -54,6 +54,7 @@ pub mod play_rumble;
 pub mod play_run_rules;
 pub mod play_sfx;
 pub mod play_shop;
+pub mod play_ssao;
 pub mod play_tile_board;
 pub mod play_toggles;
 pub mod play_world_map_markers;

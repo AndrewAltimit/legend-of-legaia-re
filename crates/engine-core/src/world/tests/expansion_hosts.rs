@@ -169,8 +169,8 @@ fn a_retail_npc_talk_and_a_mode_win_reach_the_quests_and_toast() {
     );
 }
 
-/// The Rebirth journal follows the pack's own content: every challenge and
-/// map listed, the auto-start quest opening on its level, and its talk
+/// The Rebirth journal follows the pack's own content: every challenge
+/// listed, every map but the open ways in behind the Travel gate, the auto-start quest opening on its level, and its talk
 /// opening the quest that names it as a prerequisite. Derived from the pack
 /// files, so the content can grow without the test pinning its shape.
 #[test]
@@ -191,9 +191,36 @@ fn the_rebirth_journal_lists_its_chain_and_challenge() {
         .collect();
     assert_eq!(titles, want);
     assert!(empty.challenges.iter().all(|c| c.best.is_none()));
+    // Before any visit, Travel offers only the maps whose retail-scene
+    // entrance is open to this level-30 party; the Unlock Travel cheat lists
+    // them all.
+    let open: Vec<&str> = pack
+        .maps
+        .iter()
+        .filter(|(_, m)| {
+            m.entrances
+                .iter()
+                .any(|e| e.requires.min_level.is_none_or(|l| l <= 30))
+        })
+        .map(|(id, _)| id.as_str())
+        .collect();
+    assert!(!open.is_empty(), "Rebirth has a way in at level 30");
+    let listed: Vec<&str> = empty.maps.iter().map(|m| m.map_id.as_str()).collect();
+    assert_eq!(listed, open, "only the open ways in, before any visit");
+    let mut shut = field_world(29);
+    shut.activate_expansion(pack.clone())
+        .expect("Rebirth activates");
+    assert!(
+        shut.expansion_journal().unwrap().maps.is_empty(),
+        "a level-29 party is offered nothing"
+    );
+    assert_eq!(empty.maps_total, pack.maps.len());
+    w.toggles.travel_all_maps = true;
+    let unlocked = w.expansion_journal().unwrap();
     for id in pack.maps.keys() {
-        assert!(empty.maps.iter().any(|m| m.map_id == *id), "map {id}");
+        assert!(unlocked.maps.iter().any(|m| m.map_id == *id), "map {id}");
     }
+    w.toggles.travel_all_maps = false;
 
     // The first auto-start quest the party's level opens, and its talk.
     let first = pack
@@ -452,4 +479,94 @@ fn a_save_from_another_pack_version_drops_vanished_ids_with_a_notice() {
     assert!(w.expansion_toast().is_some_and(|t| t.contains("dropped")));
     assert!(w.expansion.quests.quest("retired_quest").is_none());
     assert_eq!(w.expansion_dormant_pack_id(), None);
+}
+
+fn press_pack() -> std::sync::Arc<ExpansionPack> {
+    let mut files = legaia_expansion_format::PackFiles::new();
+    files.insert(
+        "pack.toml".into(),
+        b"id = \"p\"\nname = \"P\"\nversion = \"1.0.0\"\n".to_vec(),
+    );
+    files.insert(
+        "dialog.toml".into(),
+        b"[lines.board]\ntext = \"\"\"\nThe board lists\nthe tables.\n\nSecond page.\"\"\"\n"
+            .to_vec(),
+    );
+    files.insert(
+        "maps/hall.toml".into(),
+        br#"
+name = "Hall"
+base = { scene = { kind = "scene", name = "tower" } }
+[tiles]
+origin = [0, 0]
+rows = [".....", ".....", "....."]
+[tiles.legend]
+"." = {}
+[[spawns]]
+id = "door"
+tile = [0, 0]
+[[triggers]]
+id = "board"
+rect = [2, 1, 2, 1]
+event = { kind = "toast", line = "board" }
+press = true
+"#
+        .to_vec(),
+    );
+    std::sync::Arc::new(ExpansionPack::from_files(&files).expect("pack parses"))
+}
+
+#[test]
+fn a_press_zone_fires_on_the_button_and_a_toast_event_shows_the_first_page() {
+    use legaia_engine_expansion::map::ActiveMap;
+    use legaia_expansion_format::map::MapEvent;
+    let mut w = field_world(1);
+    w.actors[0].active = true;
+    w.activate_expansion(press_pack()).expect("activates");
+    let pack = w.expansion.pack.clone().unwrap();
+    let def = std::sync::Arc::new(pack.maps["hall"].clone());
+    let grid = std::sync::Arc::new(def.tile_grid().unwrap());
+    w.expansion.map = Some(ActiveMap::new("hall", def, grid, (0, 0), |_| false));
+
+    // Walking onto the zone fires nothing.
+    stand_on(&mut w, 2, 1);
+    let open = |_: &legaia_expansion_format::quest::Prerequisites| true;
+    let map = w.expansion.map.as_mut().unwrap();
+    map.step_gated(Some((1, 1)), open);
+    map.step_gated(Some((2, 1)), open);
+    assert!(
+        map.pending_events().is_empty(),
+        "a press zone is not walk-on"
+    );
+
+    // The button on it fires it.
+    assert!(w.expansion_press_triggers());
+    let fired = w.expansion.map.as_mut().unwrap().take_events();
+    assert_eq!(fired.len(), 1);
+    let MapEvent::Toast { line } = &fired[0].event else {
+        panic!("{fired:?}");
+    };
+    // The toast is the line's first page on one row; no dialogue opens.
+    assert!(w.expansion_toast_line(line));
+    assert!(w.dialog.inline.is_none());
+    assert_eq!(drain_toasts(&mut w), vec!["The board lists the tables."]);
+
+    // Facing it from the next tile fires it too; facing away does not.
+    stand_on(&mut w, 1, 1);
+    let facing_at = (0..8u16).find(|&s| {
+        w.actors[0].move_state.render_26 = ((s * 0x200 + 0x800) & 0xfff) as i16;
+        w.expansion_press_triggers()
+    });
+    assert!(facing_at.is_some(), "some facing reaches the next tile");
+    stand_on(&mut w, 4, 2);
+    assert!(
+        (0..8u16).all(|s| {
+            w.actors[0].move_state.render_26 = ((s * 0x200 + 0x800) & 0xfff) as i16;
+            !w.expansion_press_triggers()
+        }),
+        "two tiles away is out of reach"
+    );
+    // With no pack map active the button is the identity.
+    w.expansion.map = None;
+    assert!(!w.expansion_press_triggers());
 }

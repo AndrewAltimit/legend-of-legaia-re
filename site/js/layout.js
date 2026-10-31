@@ -79,6 +79,7 @@ const NAV = [
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
+      { href: 'modes.html',                     text: 'Game modes',               key: 'modes' },
       { href: 'arts.html',                      text: 'Tactical Arts',            key: 'arts' },
       { href: 'magic.html',                     text: 'Seru magic & summons',     key: 'magic' },
       { href: 'monsters.html',                  text: 'Enemy table',              key: 'monsters' },
@@ -355,7 +356,7 @@ const NAV = [
 /* Interactive pages get app chrome (no sidebar); everything else is docs. */
 const EXPLORE_KEYS = new Set([
   'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'tooling/translation-workbench', 'tooling/expansion-workbench', 'world', 'shops',
-  'minigames', 'arts', 'magic', 'monsters', 'characters', 'npcs', 'world-overview', 'disc-map',
+  'minigames', 'modes', 'arts', 'magic', 'monsters', 'characters', 'npcs', 'world-overview', 'disc-map',
 ]);
 /* Docs sections that open collapsed unless they hold the current page (or the
    reader opened them before): each is a long reference list, and five of
@@ -372,7 +373,7 @@ function zoneForKey(key) {
 /* Explore sidebar: every interactive page, grouped like the home launcher,
    so each one is reachable from the left nav on any explore page. */
 const EXPLORE_GROUPS = [
-  { label: 'play',           title: 'Play', keys: ['play', 'minigames'] },
+  { label: 'play',           title: 'Play', keys: ['play', 'minigames', 'modes'] },
   { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench', 'tooling/expansion-workbench'] },
   { label: 'browse the disc', title: 'Explore the game data', keys: [
     '#Viewers', 'viewer', 'media', 'world-overview', 'disc-map',
@@ -395,7 +396,7 @@ function exploreNavSections() {
 const RAIL = [
   { label: 'Home',   href: 'index.html',              match: k => k === 'home',
     icon: '<path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10.5V19h11v-8.5"/>' },
-  { label: 'Play',   href: 'play.html',               match: k => k === 'play' || k === 'minigames',
+  { label: 'Play',   href: 'play.html',               match: k => k === 'play' || k === 'minigames' || k === 'modes',
     icon: '<rect x="3" y="8" width="18" height="9" rx="4.5"/><path d="M8 11v3M6.5 12.5h3"/><circle cx="15.5" cy="11.5" r="0.9"/><circle cx="17.8" cy="13.4" r="0.9"/>' },
   { label: 'Mods',   href: 'tooling/rom-patcher.html', match: k => k === 'tooling/rom-patcher' || k === 'tooling/translation-workbench' || k === 'tooling/expansion-workbench',
     icon: '<path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/>' },

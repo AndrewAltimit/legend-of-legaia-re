@@ -62,6 +62,11 @@ pub struct ActiveMap {
     /// Each NPC's next patrol stop, an index into its route
     /// ([`Self::patrol_route`]), parallel to `def.npcs`.
     patrol_next: Vec<usize>,
+    /// Per NPC, parallel to `def.npcs`: whether a patrol leg is in flight,
+    /// and the ticks left of its stand at the stop it reached
+    /// ([`Self::patrol_tick`]).
+    patrol_walking: Vec<bool>,
+    patrol_wait: Vec<u16>,
     /// The standable props' tops ([`MapDef::floor_tops`]).
     floor_tops: Vec<FloorTop>,
     /// The map's sculpted floor ([`MapDef::terrain_heightfield`]), `None`
@@ -96,6 +101,17 @@ pub struct NpcTalk {
     pub cutscene: Option<String>,
 }
 
+/// What a patrolling NPC does this tick ([`ActiveMap::patrol_tick`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatrolStep {
+    /// It just reached a stop: it turns to its idle clip and stands.
+    Arrived,
+    /// It stands at the stop.
+    Wait,
+    /// It sets out for the stop at world `(x, z)`.
+    SetOut((i16, i16)),
+}
+
 impl ActiveMap {
     /// A map entered with the player on map-local tile `spawn`. `flag_set`
     /// answers whether a pack flag is raised: a `once` trigger whose flag
@@ -123,6 +139,8 @@ impl ActiveMap {
             encounter: None,
             events: Vec::new(),
             patrol_next: Vec::new(),
+            patrol_walking: Vec::new(),
+            patrol_wait: Vec::new(),
             floor_tops: Vec::new(),
             terrain: None,
             stage_tops: Vec::new(),
@@ -131,6 +149,8 @@ impl ActiveMap {
             foam_cluts: None,
         };
         m.patrol_next = vec![0; m.def.npcs.len()];
+        m.patrol_walking = vec![false; m.def.npcs.len()];
+        m.patrol_wait = vec![0; m.def.npcs.len()];
         m.floor_tops = m.def.floor_tops();
         // A terrain that does not build was refused by the map's load.
         m.terrain = m.def.terrain_heightfield().ok().flatten().map(Arc::new);
@@ -180,23 +200,12 @@ impl ActiveMap {
         let (c, r) = tile?;
         let was_in = |rect| prev.is_some_and(|(pc, pr)| rect_contains(rect, pc, pr));
         self.encounter = self.encounter_zone_at((c, r));
-        for (i, t) in self.def.triggers.iter().enumerate() {
-            if !rect_contains(&t.rect, c, r) || was_in(&t.rect) {
+        let def = Arc::clone(&self.def);
+        for (i, t) in def.triggers.iter().enumerate() {
+            if t.press || !rect_contains(&t.rect, c, r) || was_in(&t.rect) {
                 continue;
             }
-            if t.once && self.fired.contains(&i) {
-                continue;
-            }
-            if !t.requires.is_empty() && !open(&t.requires) {
-                continue;
-            }
-            if t.once {
-                self.fired.insert(i);
-            }
-            self.events.push(FiredTrigger {
-                event: t.event.clone(),
-                once_flag: t.once.then(|| once_flag(&self.map_id, t, i)),
-            });
+            self.fire(i, &open);
         }
         let exit = self
             .def
@@ -205,14 +214,65 @@ impl ActiveMap {
             .find(|e| rect_contains(&e.rect, c, r) && !was_in(&e.rect))?;
         if !exit.requires.is_empty() && !open(&exit.requires) {
             if let Some(line) = &exit.locked_line {
+                let line = line.clone();
                 self.events.push(FiredTrigger {
-                    event: MapEvent::Dialog { line: line.clone() },
+                    event: if exit.locked_toast {
+                        MapEvent::Toast { line }
+                    } else {
+                        MapEvent::Dialog { line }
+                    },
                     once_flag: None,
                 });
             }
             return None;
         }
         Some(exit.to.clone())
+    }
+
+    /// Fire trigger `i` when its `once` is unspent and its gate is open:
+    /// queue its event and spend the `once`. Returns whether it fired.
+    fn fire(&mut self, i: usize, open: &impl Fn(&Prerequisites) -> bool) -> bool {
+        let t = &self.def.triggers[i];
+        if t.once && self.fired.contains(&i) {
+            return false;
+        }
+        if !t.requires.is_empty() && !open(&t.requires) {
+            return false;
+        }
+        let event = FiredTrigger {
+            event: t.event.clone(),
+            once_flag: t.once.then(|| once_flag(&self.map_id, t, i)),
+        };
+        if t.once {
+            self.fired.insert(i);
+        }
+        self.events.push(event);
+        true
+    }
+
+    /// The action button pressed on the field: fire the `press` triggers
+    /// under the first of `tiles` (the tile the player faces, then the one
+    /// they stand on) that holds any open one. Walk-on triggers are not
+    /// asked. Returns whether anything fired, so the press is spent and the
+    /// retail probe does not also run.
+    pub fn press_gated(
+        &mut self,
+        tiles: &[(u16, u16)],
+        open: impl Fn(&Prerequisites) -> bool,
+    ) -> bool {
+        let def = Arc::clone(&self.def);
+        for &(c, r) in tiles {
+            let mut fired = false;
+            for (i, t) in def.triggers.iter().enumerate() {
+                if t.press && rect_contains(&t.rect, c, r) {
+                    fired |= self.fire(i, &open);
+                }
+            }
+            if fired {
+                return true;
+            }
+        }
+        false
     }
 
     /// Note the player on map-local `tile` without firing anything: a
@@ -322,6 +382,38 @@ impl ActiveMap {
         Some(route[*cursor])
     }
 
+    /// One patrol tick of NPC `n`, called while no leg of its is in
+    /// flight: a leg that was walking has just reached its stop, and the NPC
+    /// stands there [`NpcDef::pause`] ticks before it sets out for the next
+    /// stop. `None` for an NPC that stands still.
+    ///
+    /// [`NpcDef::pause`]: legaia_expansion_format::map::NpcDef::pause
+    pub fn patrol_tick(&mut self, n: usize) -> Option<PatrolStep> {
+        let pause = self.def.npcs.get(n)?.pause;
+        if self.patrol_route(n).is_empty() {
+            return None;
+        }
+        let walking = self.patrol_walking.get_mut(n)?;
+        if std::mem::take(walking) && pause > 0 {
+            self.patrol_wait[n] = pause;
+            return Some(PatrolStep::Arrived);
+        }
+        if self.patrol_wait[n] > 0 {
+            self.patrol_wait[n] -= 1;
+            return Some(PatrolStep::Wait);
+        }
+        let stop = self.next_patrol_stop(n)?;
+        Some(PatrolStep::SetOut(stop))
+    }
+
+    /// Record that NPC `n`'s leg toward the stop [`Self::patrol_tick`] gave
+    /// is in flight.
+    pub fn patrol_set_out(&mut self, n: usize) {
+        if let Some(w) = self.patrol_walking.get_mut(n) {
+            *w = true;
+        }
+    }
+
     /// The height (up positive) of the standable top under world `(x, z)`,
     /// the highest when several overlap. `None` off every top.
     pub fn floor_top_at(&self, x: i32, z: i32) -> Option<i16> {
@@ -348,6 +440,13 @@ impl ActiveMap {
     /// Whether the map has any standable top.
     pub fn has_floor_tops(&self) -> bool {
         !self.floor_tops.is_empty() || !self.stage_tops.is_empty()
+    }
+
+    /// Read the map's own standable tops from [`Self::def`] again, after
+    /// an edit moved a prop in place (the workbench's 3D preview); the
+    /// stage's tops are left as they are.
+    pub fn refresh_floor_tops(&mut self) {
+        self.floor_tops = self.def.floor_tops();
     }
 
     /// Stand `tops` on the map over its own (a party night's podium
@@ -461,6 +560,63 @@ table = "west"
         });
         m.step(Some((2, 1)));
         assert!(m.take_events().is_empty());
+    }
+
+    const PRESS_MAP: &str = r######"
+[tiles]
+rows = ["......", "......"]
+[tiles.legend]
+"." = {}
+
+[[triggers]]
+id = "board"
+rect = [2, 0, 2, 0]
+event = { kind = "dialog", line = "board" }
+press = true
+
+[[triggers]]
+id = "note"
+rect = [4, 1, 4, 1]
+event = { kind = "toast", line = "note" }
+press = true
+once = true
+requires = { flags = ["open"] }
+"######;
+
+    #[test]
+    fn a_press_trigger_fires_on_the_button_not_on_entry() {
+        let def: MapDef = toml::from_str(PRESS_MAP).unwrap();
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("m", Arc::new(def), Arc::new(grid), (0, 0), |_| false);
+        // Walking across the board says nothing.
+        for c in 1..=3 {
+            m.step(Some((c, 0)));
+        }
+        assert!(m.pending_events().is_empty());
+        // Facing it (first tile) fires it; the standing tile is the fallback.
+        assert!(m.press_gated(&[(2, 0), (3, 0)], |_| true));
+        assert!(m.press_gated(&[(5, 0), (2, 0)], |_| true));
+        assert!(!m.press_gated(&[(5, 0), (3, 0)], |_| true));
+        let board = MapEvent::Dialog {
+            line: "board".into(),
+        };
+        let ev = m.take_events();
+        assert_eq!(ev.len(), 2);
+        assert!(ev.iter().all(|e| e.event == board && e.once_flag.is_none()));
+        // A gated once press: shut, it fires nothing and spends nothing;
+        // open, it fires once ever.
+        assert!(!m.press_gated(&[(4, 1)], |_| false));
+        assert!(m.press_gated(&[(4, 1)], |_| true));
+        assert!(!m.press_gated(&[(4, 1)], |_| true));
+        assert_eq!(
+            m.take_events(),
+            vec![FiredTrigger {
+                event: MapEvent::Toast {
+                    line: "note".into()
+                },
+                once_flag: Some("map.m.note".into()),
+            }]
+        );
     }
 
     const NPC_MAP: &str = r######"
@@ -581,6 +737,28 @@ requires = { quests = ["intro"] }
     }
 
     #[test]
+    fn a_locked_toast_exit_says_its_line_as_a_toast() {
+        let toml = GATED_MAP.replace(
+            "locked_line = \"sealed\"",
+            "locked_line = \"sealed\"\nlocked_toast = true",
+        );
+        let def: MapDef = toml::from_str(&toml).unwrap();
+        assert!(def.exits[0].locked_toast);
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("g", Arc::new(def), Arc::new(grid), (0, 0), |_| false);
+        assert_eq!(m.step_gated(Some((5, 0)), flags(&[])), None);
+        assert_eq!(
+            m.take_events(),
+            [FiredTrigger {
+                event: MapEvent::Toast {
+                    line: "sealed".into()
+                },
+                once_flag: None
+            }]
+        );
+    }
+
+    #[test]
     fn a_shut_trigger_fires_nothing_and_keeps_its_once() {
         let mut m = gated_map();
         m.step_gated(Some((2, 0)), flags(&["king_beaten"]));
@@ -620,6 +798,26 @@ requires = { quests = ["intro"] }
     }
 
     #[test]
+    fn a_patrol_stands_out_its_pause_at_each_stop() {
+        let mut def: MapDef = toml::from_str(NPC_MAP).unwrap();
+        def.npcs[1].pause = 2;
+        let grid = def.tile_grid().unwrap();
+        let mut m = ActiveMap::new("m", Arc::new(def), Arc::new(grid), (0, 0), |_| false);
+        assert_eq!(m.patrol_tick(0), None, "the elder stands still");
+        let centre = |c: i16, r: i16| ((10 + c) * 128 + 64, (20 + r) * 128 + 64);
+        // Seated, it sets out at once.
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::SetOut(centre(5, 1))));
+        m.patrol_set_out(1);
+        // The leg lands: it arrives, stands two ticks, sets out again.
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::Arrived));
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::Wait));
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::Wait));
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::SetOut(centre(5, 0))));
+        // A leg that never set out (blocked) does not count as an arrival.
+        assert_eq!(m.patrol_tick(1), Some(PatrolStep::SetOut(centre(4, 1))));
+    }
+
+    #[test]
     fn a_standable_prop_raises_the_floor_over_its_tile() {
         let m = npc_map();
         assert!(m.has_floor_tops());
@@ -628,6 +826,18 @@ requires = { quests = ["intro"] }
         assert_eq!(m.floor_top_at(x0 + 127, z0 + 127), Some(64));
         assert_eq!(m.floor_top_at(x0 + 128, z0), None);
         assert_eq!(m.floor_top_at(x0 - 1, z0), None);
+    }
+
+    #[test]
+    fn a_standable_prop_moved_in_place_takes_its_top_along() {
+        let mut m = npc_map();
+        let (x0, z0) = (12 * 128, 21 * 128);
+        let i = m.def.props.iter().position(|p| p.top.is_some()).unwrap();
+        Arc::make_mut(&mut m.def).props[i].tile[0] += 1;
+        assert_eq!(m.floor_top_at(x0, z0), Some(64), "stale until refreshed");
+        m.refresh_floor_tops();
+        assert_eq!(m.floor_top_at(x0, z0), None);
+        assert_eq!(m.floor_top_at(x0 + 128, z0), Some(64));
     }
 
     #[test]

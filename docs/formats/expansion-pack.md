@@ -11,7 +11,7 @@ A pack carries **no bytes from the disc**. Every disc asset it uses is named by 
 | Source form | A directory: `pack.toml` plus optional section files, `maps/`, `assets/` |
 | Shareable form | One `.lxpack` file ([bundle](#the-lxpack-bundle)) |
 | Text encoding | UTF-8 TOML for every manifest, section and map |
-| Schema version | `2` (`manifest::SCHEMA_VERSION`); schemas `1` and `2` load |
+| Schema version | `3` (`manifest::SCHEMA_VERSION`); schemas `1` to `3` load |
 | Disc | NA release only, `SCUS-94254` |
 | Parser | `ExpansionPack::from_files` (one parser for directory, bundle and browser input) |
 | Writer | `ExpansionPack::to_files`, `bundle::write_bundle` |
@@ -53,6 +53,7 @@ The whole tree is one `PackFiles` value (`BTreeMap<path, bytes>`). The directory
 |---|---|---|---|
 | `id` | string | yes | Machine id, `[a-z0-9_-]`, at most 48 characters, starting with a letter or digit. Namespaces every content id in the pack. |
 | `name` | string | yes | Display name. |
+| `short_name` | string | no | A label for narrow places (the launcher's Expansion button): one line of at most 24 characters; unset, those places show `name`. Schema 3. |
 | `version` | string | yes | Semantic version, `MAJOR.MINOR.PATCH[-pre][+build]`. |
 | `authors` | string list | no | Who made it. |
 | `description` | string | no | What the pack adds. |
@@ -80,10 +81,10 @@ Three versions meet when a pack loads: the pack's own `version`, the **pack form
 
 | Gate | Passes when | Refusal |
 |---|---|---|
-| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=2`) | "written in pack format N, newer than this engine reads ... update the engine" |
+| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=3`) | "written in pack format N, newer than this engine reads ... update the engine" |
 | Engine | `min_engine` is absent, or not newer than `ENGINE_VERSION` | "needs engine X or newer; this engine is Y" |
 
-`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schema 2 only added optional keys, so a schema-1 pack is a valid schema-2 pack with them absent. The validator warns when a schema-1 manifest uses a schema-2 key, since an older engine would trip on it.
+`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schemas 2 (`cover`, `min_engine`) and 3 (`short_name`) only added optional keys, so an older pack is a valid newer one with them absent. The validator warns when a manifest uses a key newer than its `schema`, since an older engine would trip on it.
 
 ### Dependencies
 
@@ -260,8 +261,10 @@ A Grid Duel may name a pack map and a table on it, and is then played on a board
 | `board` (132) | The board's width, world units; its depth is 1.36 times that |
 | `seat_distance` (120) | Each seat's distance from the board's centre |
 | `draw_table` (true) | Draw the built-in wooden table under the board; off when a prop of the map is the table |
-| `opponent` | `{ npc, name, think, cheer, slump }`: the map NPC seated across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss |
-| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them |
+| `hide` (`[]`) | Prop ids of the map (`[[props]] id`) whose draw goes while the duel is seated, back when the seat closes: the decor table the built-in one stands in for ([Hidden props](../subsystems/expansion-modes.md#hidden-props)) |
+| `opponent` | `{ npc, name, think, cheer, slump, sit }`: the map NPC across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss; with `sit` it sits in a chair at its seat ([Seated NPCs](#seated-npcs)) |
+| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them; a spectator never sits |
+| `chair_height` (34) | The seat of the chair a seated NPC sits on, world units above the floor |
 | `surface` | `{ tpage, clut, uv = [u, v, w, h] }`: a texture of the base scene's VRAM the board's cells sample instead of the built-in felt |
 | `sfx` | `{ deal, place, flip, win, lose }`: sounds, each a retail cue (`{ kind = "sfx", id = N }`) or a pack sound (`{ kind = "sound", id = "..." }`); menu cues by default |
 
@@ -269,10 +272,17 @@ A poker table names a map and a table the same way (`map`, `spawn`, `[poker.tabl
 
 | Key (default) | Meaning |
 |---|---|
-| `tile`, `offset`, `facing`, `height` (64), `draw_table` (true), `surface`, `sfx` | As for a duel table; `sfx` plays `deal` per card, `place` for chips pushed out, `flip` per board card, `win` / `lose` for a pot |
+| `tile`, `offset`, `facing`, `height` (64), `draw_table` (true), `hide`, `surface`, `sfx` | As for a duel table; `sfx` plays `deal` per card, `place` for chips pushed out, `flip` per board card, `win` / `lose` for a pot |
 | `radius` (130) | The felt's half depth toward the player, world units; its half width is 1.35 times that |
-| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in }`, in seat order with the player's seat skipped; a seat with none stays empty-chaired |
+| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in, sit }`, in seat order with the player's seat skipped; a seat with none stays empty |
+| `chair_height` (34) | As for a duel table |
 | `spectators` | NPCs watching from their tiles; they cheer when the player wins a pot |
+
+#### Seated NPCs
+
+A table NPC with `sit` sits: the stage draws a wooden chair at its seat (seat, legs, a back on the side away from the table, in the table's wood) and the NPC plays the `sit` clip in place of its idle while the game is seated, back to its own clip and tile when the seat closes. The chair is part of the stage, like the built-in table, so it needs no prop on the map and stands only while someone sits on it. `sit` is a clip id of the NPC's borrowed placement (the `clip` numbering) that the [posture table](expansion-pack-maps.md#npc-clip-postures) lists as `seated`; the validator warns on any other, and on `sit` given to a spectator.
+
+A reaction clip still plays over `sit`, so a seated NPC's `think` / `cheer` / `slump` / `fold` / `all_in` should be seated clips too, or left out. The party leader stands at the player's side: the party's field bank has no seated clip, and no scene bank a pack map borrows from has one for its rig.
 
 A table prop of the map should not be standable (`top`): the board sits `height` above the floor the sampler answers at the table's centre. Sample: the `duel_table` test pack, `crates/engine-modes/tests/fixtures/duel_table/`.
 
@@ -333,7 +343,7 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Rule | Severity |
 |---|---|
 | `pack.toml` missing or unparsable, or any section or map unparsable | error |
-| `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name` | error |
+| `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name`; `short_name` empty, over 24 characters or more than one line | error |
 | `schema` outside the formats this build reads; `disc` other than `SCUS-94254` | error |
 | `min_engine` malformed or newer than this engine; a `requires` / `conflicts` entry or its range malformed | error |
 | `cover` not a `.png` under `assets/`, absent from the pack, or over 1 MiB | error |
@@ -343,7 +353,7 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Reference to undefined content, or to a pack not in `requires` | error |
 | `DiscRef` out of range, or rejected by the supplied resolver | error |
 | Any [no-disc-bytes](#the-no-disc-bytes-rule) violation | error |
-| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a schema-2 key in a schema-1 manifest | warning |
+| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a manifest key newer than the manifest's `schema` | warning |
 | A file outside the [layout](#layout) | warning |
 | A [flow lint](#flow-lints): a pack flag or counter read and never written, or written and never read; a map, quest or challenge the player cannot reach; a quest prerequisite cycle; a card, booster or pack item nothing (reachable) grants | warning |
 

@@ -292,6 +292,45 @@ pub fn stream_variants(man: &[u8], rec: &MotionRecord) -> Vec<MotionVariant> {
     out
 }
 
+/// The default-move record a partition-1 placement's motion stream installs
+/// (op `0x17` `[op, move, anim]`, `FUN_80038158` case `0x80039AF8`): the
+/// clip the actor rests in (`move`, which the walk ops' retire epilogue
+/// restamps) and the clip it walks in (`anim`, which their prologue
+/// stamps). `None` when no stream is bound to the placement or none of its
+/// variants installs one. The first install in variant order wins.
+///
+/// The stream is bound by actor id `N0 + placement_index`, `N0` the
+/// partition-0 record count, as `FUN_8003A1E4` seats it.
+pub fn placement_default_move(
+    man: &[u8],
+    man_file: &ManFile,
+    placement_index: usize,
+) -> Option<[u8; 2]> {
+    let n0 = man_file.partitions.first()?.len();
+    let bind_id = u8::try_from(n0.checked_add(placement_index)?).ok()?;
+    if bind_id >= ACTOR_PLAYER {
+        return None;
+    }
+    let records = motion_records(man, man_file);
+    let rec = records
+        .iter()
+        .find(|r| r.bindings.iter().any(|b| b.actor_id == bind_id))?;
+    for v in stream_variants(man, rec) {
+        let mut pc = v.code_offset;
+        while pc < v.code_end {
+            let op = *man.get(pc)?;
+            let Some(w) = op_width(op) else {
+                break;
+            };
+            if op == 0x17 && pc + 3 <= v.code_end {
+                return Some([man[pc + 1], man[pc + 2]]);
+            }
+            pc += w;
+        }
+    }
+    None
+}
+
 /// Collect every op-`0x07`/`0x08` system-flag write in every motion record
 /// of `man`'s tail section 1.
 ///

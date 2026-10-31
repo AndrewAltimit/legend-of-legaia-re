@@ -41,6 +41,8 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `decals` | Flat textured floor polygons, one by one or by brush ([Decals](#decals)). |
 | `emitters` | Particle emitters ([Particles](#particles)). |
 | `terrain` | A sculpted floor in place of the tier grid: heights, ground materials, water, horizon ([Terrain](#terrain)). |
+| `surround` | The ground past the floor's edge: a drop below it and the edge faces down to it ([Surround](#surround)). |
+| `ceiling` | A ceiling over the floor and the chains hung items hang from ([Ceiling](#ceiling)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
 from the first character of the first row: column grows with world `+X`, row
@@ -170,9 +172,11 @@ tile = [2, 2]
 offset = [0, 0, 0]                          # world units from the tile centre, y up
 rotation = [0.0, 45.0, 0.0]                 # degrees; y is the yaw
 scale = 0.75                                # uniform; 1 when left out
-solid = true                                # close the prop's tile
+solid = true                                # close the ground under the mesh
 top = 64                                    # standable: a floor 64 units up
 footprint = [128, 128]                      # the top's extent, world units
+on = "table"                                # rest on that prop's or decoration's top
+hangs = false                               # hung or wall-mounted: not on anything
 ```
 
 `mesh` takes four forms ([`PropMesh`](../../crates/expansion-format/src/map.rs)):
@@ -185,8 +189,7 @@ footprint = [128, 128]                      # the top's extent, world units
 | `{ asset = "models/x.glb", colors = 256 }` | A glTF model the pack carries ([Model assets](#model-assets)). |
 
 `scale` folds into the prop's model matrix after its rotation, where a
-retail placed object's render scale lands. Props carry no collision box of
-their own: `solid` closes the tile.
+retail placed object's render scale lands.
 
 `animate` is a list of procedural animators and `light` a light the prop
 carries ([Animated props](#animated-props), [Lights](#lights)). A cell
@@ -206,6 +209,26 @@ scene pack. A prop's `offset[1]` is from the floor the player walks on its
 tile: its tier, plus in a kept room the retail floor step there
 ([A kept room's floor](#a-kept-rooms-floor)). `0` stands the mesh's origin
 on the floor.
+
+### Solid props
+
+`solid` closes the ground the mesh stands on. The footprint is the convex
+hull, in the floor plane, of the mesh's vertices in the lower half of its
+height once rotated and scaled
+([`footprint`](../../crates/engine-scene/src/expansion_map/footprint.rs)):
+a cottage's walls and not its overhanging eaves, a tree's trunk and lower
+boughs and not its whole canopy. Every `64 x 64` wall sub-cell whose centre
+lies inside the hull is closed, and so is the prop's own tile, so a house
+turned to any angle blocks where it draws without the tile layer having to
+trace it. The player's wall probe leads it by 47 units, so it stops just
+short of the walls.
+
+A prop that stands in the player's way - more than a tile and a half across
+on an axis, taller than a step, and reaching down to body height - but is
+neither `solid` nor standable is logged at entry
+(`FieldImage::open_large_props`): drawn buildings nobody closed. The
+disc-gated `expansion_solid_props_disc` test holds the flagship pack to it,
+and walks the player at each solid prop from every side.
 
 ### Standable props
 
@@ -229,6 +252,67 @@ mesh's visible height is the modder's call.
 | The retail walk | Refused at the edge of any top higher than the one it stands on: the walk climbs nothing. Walking off a top is not refused. |
 | NPC patrols | Walk the sampled floor; route them around a top. |
 
+### Resting placement
+
+A prop or a `[[decor]]` that stands on something names it: `on = "<id>"`, the
+id of a prop or a decoration of the same map. Its lowest point is set on the
+support's top - a standable prop's `top`, else the highest point of the
+support's mesh - and `offset[1]` lifts it from there, so a cup is placed on a
+table without knowing how tall the table's mesh is. A support may itself rest
+on another. The engine resolves it when the map loads, from the meshes'
+vertices ([`map_rest::rest_on`](../../crates/expansion-format/src/map_rest.rs)),
+and builds and runs the map from the resolved offsets; an `on` naming no item,
+or resting an item on itself, is a validation error.
+
+The placement is also checked
+([`map_rest::rest_issues`](../../crates/expansion-format/src/map_rest.rs)). An
+item whose base is more than `10` units over the highest ground under its
+footprint must be on the top of a support its footprint is over: a prop or
+decoration (the floor-plane hull of its mesh, or a standable top's
+footprint), or a tile whose whole area is a wall box (a counter, a ledge).
+The support is the one holding the most of the item's footprint (of those
+holding as much, the one whose top is nearest its base), not the one under
+its origin, so a mesh built off its origin is judged where it draws.
+Otherwise it is reported:
+
+| Report | Means |
+|---|---|
+| floats N units over the ground | Nothing is under it. Rest it with `on`, or mark it `hangs` (a lantern on a chain, a banner on a wall). |
+| hovers N units over / sinks N units into the top of X | It stands over X but not on its top. Sunk, it is reported only when X holds at least half its footprint: a rock leaning into the next one of a pile is not a mug sunk into a table. |
+| reaches N units past the edge of X | It rests on X and is wider than X's top by more than `12` units. |
+
+The base is the mesh's lowest point, except on a flat card - a picture
+drawn on one upright plane, a flame or a sprite tree, whose floor-plane
+hull has no area. Its lowest vertex says little about where the picture
+stands (`rugi`'s torch card, object 15, reaches 64 units below its origin,
+under the floor of any tile it is set on), so a card is read from its
+origin when it spans the origin, else from its nearer end
+([`map_rest::visual_base`](../../crates/expansion-format/src/map_rest.rs)).
+
+Every placement of a `[[scatter]]` mesh and of an `[[edges]]` run is
+judged the same way, and each brush mesh or run is reported once, at its
+worst placement, with how many placements rest badly
+(`scatter[2].meshes[0] ("grass"), 14 placements, the worst floats ...`).
+A brush has no `on`; its fix is its `y`, or `hangs = true` on the brush or
+the run (a run of sconces mounted on the walls it follows). Brush
+placements are judged, never supports.
+
+A mesh's origin is not always its base: a retail mesh can be built standing
+well above its origin (a plant pot whose lowest vertex is `91` units up), so
+the check measures the vertices rather than trusting `offset[1]`. That needs
+the meshes, so it runs where they are: the engine logs each report when it
+prepares the map (`expansion: map '<id>': rest: ...`), the disc-gated
+`expansion_rest_rebirth_disc` test lists the flagship pack's, and the
+validator warns with a resolver that measures meshes
+(`DiscResolver::mesh_shape`, which the workbench's disc catalog implements
+off each scene's geometry pack); without one it judges nothing. An item or
+support whose mesh is not measured (a model asset in the workbench) is not
+judged either.
+[`map_rest::rest_report`](../../crates/expansion-format/src/map_rest.rs) is
+the editor's side of the same reading: each prop's and decoration's
+resolved height, base and top, and the surfaces under its footprint, most
+held first, with the `offset[1]` that rests it on each.
+
 ## NPCs
 
 ```toml
@@ -240,6 +324,7 @@ facing = 0                                      # compass sector, 0..8
 clip = 2                                        # optional idle clip id
 patrol = [[9, 8], [9, 6]]                       # optional loop of tiles
 walk_clip = 4                                   # optional clip a patrol leg plays
+pause = 90                                      # optional ticks it stands at each stop
 line = "tower_guide_hello"                      # a dialog.toml line
 shop = "tower_dealer"                           # optional: an items.toml shop or a cards.toml dealer
 requires = { quests = ["tower_rumour"] }        # optional: silent until it holds
@@ -255,11 +340,34 @@ clip byte names a record of the scene's ANM bundle
 ([`anm.md`](anm.md), [`script-vm.md`](../subsystems/script-vm.md)). A pack NPC
 borrows one by coordinate, `DiscRef::Npc { scene, index }`, the placement's
 partition-1 index (the site's NPC page lists it as the NPC's slot; `0` is
-the scene controller). Its model and idle clip come from that record; `clip`
-overrides the clip with another record of the same bundle (id = record + 1).
-The model scene must be the base scene - the mesh indexes the base scene's
-pool and samples its VRAM - unless the placement is a party member or save
-point (model byte `0xF0` and up), whose mesh is the resident global pool.
+the scene controller). Its model comes from that record; `clip` names its
+idle clip, another record of the same bundle (id = record + 1).
+
+Left out, the clips come from the placement's own motion stream where it
+installs a default-move record (op `0x17` `[move, anim]`,
+`legaia_scene_formats::man_motion::placement_default_move`): the actor
+rests in `move` and walks in `anim`, so `clip` takes the first and a
+patrolling NPC's `walk_clip` the second
+(`expansion_map::fill_borrowed_npc_clips`, at entry). The placement's clip
+byte is not always the rest clip - Rim Elm's old man (`town01` placement
+37) is placed on his walk cycle, which his stream replaces on its first
+tick - and a pack map runs no stream, so a borrowed NPC without this marks
+time in place and a patrol glides in its idle pose. A placement whose
+stream installs nothing keeps its clip byte.
+A placement's mesh is its model byte's entry of its scene's model pool and
+its clips are records of that scene's ANM bundle. A party member or save
+point (model byte `0xF0` and up) draws from the resident global pool in
+any scene. Townsfolk of another scene than the base are carried in
+(`expansion_map::detail::NpcBank`): each model joins the map's pool right
+after the base scene's own models, its textures copied into free VRAM the
+way a [foreign mesh's](#meshes-from-other-scenes) are, and the borrowed
+scene's ANM bundle stands in for the base scene's
+(`npc_catalog::scene_anm_bundle`), so the clip ids a pack writes for them
+are that scene's own. One bundle poses a map's townsfolk, so they come
+from one scene - the base, or one other - and a map borrowing from another
+scene cannot also keep the base scene's animated props (`base.scenery`);
+entry refuses either mix. The Thornwood's hermit is Rim Elm's old man over
+the West Voz Forest, which has no townsfolk of its own.
 
 At entry the engine reads each NPC's placement off the disc
 (`legaia_engine_scene::expansion_map::resolve_map_npcs`) and seats it as an
@@ -272,13 +380,14 @@ slots. From there the NPC is a field NPC on every path a retail one takes:
 | Draw | The live-scene placement list (`npc_catalog::live_scene_placements`, `catalog_live_scene_npcs`) both hosts build their NPC meshes and clips from, posed by the base scene's ANM bundle. |
 | Collision | Its anchor in `World::npcs.positions`: the moving-actor box (`FUN_801CFC40`'s moving arm, ±40 units) blocks the player as a village NPC does. |
 | Talk | The facing probe (`FUN_801CF9F4`'s port) picks it on Cross; `World::trigger_field_interact` turns it to the player and hands the talk to the map. |
-| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. A leg starts only while no dialogue holds the field. |
+| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. At each stop the NPC turns back to `clip` and stands `pause` ticks (`ActiveMap::patrol_tick`). A leg starts only while no dialogue holds the field. |
 
-Talking to an NPC runs its `line` through the pack dialogue runner
-(`World::expansion_say`) and then raises the quest event `Talked(id)`
+Talking to an NPC raises the quest event `Talked(id)`
 (`World::expansion_talked`), so a quest naming the NPC as `giver` or in a
-`talk` objective advances; a quest line the talk starts plays after the
-NPC's own. An NPC with a `shop` opens that counter instead: an
+`talk` objective advances, and runs its `line` through the pack dialogue
+runner (`World::expansion_say`). When the talk starts, completes or reminds
+a quest that has a line of its own, that line is the answer and the NPC's
+`line` is not said before it: one box per talk. An NPC with a `shop` opens that counter instead: an
 `items.toml` `[[shops]]` id opens the pack item shop (`World::open_item_shop`,
 the `shop` trigger's path, [items](expansion-pack-items.md#the-item-screen)),
 a `cards.toml` `[[dealers]]` id the dealer's counter
@@ -293,6 +402,58 @@ While its `requires` gate is shut the NPC says nothing and opens no shop
 `present` gate is shut is off the map for the visit - parked on retail's
 off-map hide box (`World::expansion_hide_absent_npcs`) - until a cutscene's
 `show` step brings it on.
+
+### NPC clip postures
+
+A clip id says nothing about the pose it plays: a borrowed placement's ANM
+bundle holds standing idles, gestures, walk cycles and seated poses side by
+side, and a seated clip on a bare tile draws an NPC sitting on air (the
+`koin1` slot players' own clip is one). The posture table
+([`legaia_expansion_format::npc_postures`](../../crates/expansion-format/src/npc_postures.rs),
+`crates/expansion-format/data/npc_postures.toml`) lists, for each
+placement of the scenes it covers, every clip the model can play (bone
+count equal to the model's object count) under the pose it measures as.
+It holds disc coordinates and clip ids only.
+
+The measurement
+([`legaia_web_expansion::npc_posture`](../../crates/web-expansion/src/npc_posture.rs))
+poses each clip frame by frame through the placement's mesh the way both
+hosts draw it and reads three numbers off the posed vertices: the clip's
+mean height, how far its lowest point rises above the model's standing
+floor, and how far the lower body travels from frame 0. The model's
+standing height and floor are the upper quartile over its clips: a bundle
+mixes clips authored for other rigs of the same bone count, whose origins
+sit at other heights, so the reference is the model's own clips rather
+than the actor origin.
+
+A clip authored for another rig of the same bone count poses this model's
+parts at that rig's joints. On a taller rig the head sinks into the chest,
+and the shorter outline passes the `seated` test, so a height test alone
+lists the clip as a sit. Each clip is therefore also checked against the
+placement's own clip, the one retail plays on it. The head (the object
+highest in that pose) and its nearest object are rigid parts meeting at a
+joint, so their centroids keep their distance in every clip made for the
+rig: a nod or a bow moves them by about a quarter of it at most. A clip
+that moves them closer or apart by more than 0.3 of it is left out of the
+table. Clips made for other rigs measure 0.45 and up. The check looks at
+the head only, so a clip that keeps the head but flings the limbs still
+passes; the screenshot of a seated table is the final word.
+
+| Pose | Rule |
+|---|---|
+| `seated` | Lowest point at least 20 units above the model's standing floor, height at most 0.85 of the standing height. |
+| `crouched` | Height at most 0.8 of the standing height, not lifted. |
+| `walking` | Lower body travels at least 25 units. |
+| `standing` | Everything else: idles and upper-body gestures. |
+
+The example `cargo run -p legaia-web-expansion --example npc_postures --
+extracted <scene>...` regenerates the table, and a disc-gated test checks
+the committed one against the disc. The validator reads it (rows below), and
+the workbench's NPC form lists the borrowed placement's clips by pose,
+measured live off the loaded disc. A pose the table names is the vertices'
+shape, not the animator's intent: a placement that is not a figure
+(town01's windmill sails) is classed all the same, which is why the
+validator skips `scenery` NPCs.
 
 ## Visible walls
 
@@ -318,6 +479,17 @@ enumerate has no length to append to, and a box on it is refused at entry.
 A tile holds one cell mesh, so a style cannot carry both a `mesh` ground
 and a `wall`.
 
+A wall cell draws at the mean of its four corner tiles' floor heights, as
+every decoration cell does, so a box on the edge between two floors would
+stand clear of the lower one. The box reaches on down to its cell's lowest
+corner (`wall_box_tmd_from`), which is what lets a wall take the tier of
+the floor on its north or west side: tiers are corner heights
+([Tiers are corner heights](#tiers-are-corner-heights)), so a wall on
+another tier than that floor would tilt the floor's last row up or down
+into it, while the wall's own cell can slope unseen under its box. A wall
+between a terrace and the lower hall south of it stands on the terrace's
+tier and meets the hall's floor.
+
 ## Validation
 
 The validator (`legaia_expansion_format::validate`) checks each map against
@@ -329,7 +501,7 @@ the sections it names, with or without a disc:
 | Every spawn, exit, zone, prop, NPC tile and patrol waypoint lies on the grid | error |
 | The map has a spawn; spawn, exit, trigger, encounter and prop ids are unique in the map | error |
 | NPC ids are unique across the pack | error |
-| A trigger's `battle` / `boss` / `dialog` / `start_quest` / `card_dealer` / `shop` names a defined formation, boss, line, quest, dealer, shop | error |
+| A trigger's `battle` / `boss` / `dialog` / `toast` / `start_quest` / `card_dealer` / `shop` names a defined formation, boss, line, quest, dealer, shop | error |
 | A trigger's `challenge` / `mode` names a defined challenge and mode instance; `start = true` on a challenge with no formation | error |
 | An NPC's `line`, `line_after` and `shop`, and an exit's `locked_line`, name a defined line and an item shop or dealer | error |
 | A gate's quests and bosses are defined; no empty pack flag id; `min_level` in `1..=99` | error |
@@ -337,16 +509,20 @@ the sections it names, with or without a disc:
 | An encounter zone's `table` is a `battle.toml` `[[encounters]]` `scene` | error |
 | ... whose table has no `steps` (it can never roll on a map) | warning |
 | A `talk` trigger's NPC id that no quest gives from or talks to | warning |
+| A `toast` line whose first page runs past 40 characters (one toast row) | warning |
 | An exit to another map names a map of the pack and a spawn it has | error |
 | Facings are sectors `0..8`; a retail exit's tile is on the `128 x 128` grid | error |
 | Disc refs: the base scene, retail exit scenes, NPC models, BGM, prop TMDs (range rules, then the disc when one is loaded) | error |
 | One prop and one NPC a tile; a style with both a `mesh` ground and a `wall` | error |
 | Wall box height `1..=512`; standable footprint `1..=1024` a side | error |
-| An NPC model from a scene other than the base scene | warning |
+| NPC models from two different scenes (the townsfolk pose from one clip bank; party-member placements excepted) | warning |
+| A seated clip with no decoration or standable prop on the NPC's tile; a patrol `walk_clip` that does not walk; a `clip` the model cannot play ([NPC clip postures](#npc-clip-postures)) | warning |
 | A spawn, NPC or waypoint on a void or fully walled tile; an NPC on a prop's tile | warning |
 | With a disc: a geometry-pack index (`{ object = N }` props, `mesh` grounds and walls) past the base scene's pack | error |
 | Decorations: brushes have meshes and a weight; the map expands within 8192 decorations and 32 a tile; rectangles on the map; scales positive | error |
 | Decorations on a placed prop's tile (left out at load) | warning |
+| An `on` naming no prop or decoration of the map, or resting an item on itself | error |
+| With a resolver that measures meshes: an item floating, off its support's top, or overhanging it ([Resting placement](#resting-placement)) | warning |
 | A model asset is in the pack, a glTF 2.0 binary or JSON, `colors` 16 or 256 | error |
 | Animator periods at least 1 (a spin may be negative); pulse amount `0..1`; light radius, flicker `0..=1` | error |
 | Materials: periods at least 1, palette ranges inside 256 entries | error |
@@ -373,7 +549,8 @@ fires nothing, and the spawn tile does not fire on arrival.
 
 An exit with a `requires` gate leads nowhere while the gate is shut, and
 says its optional `locked_line` (a `dialog.toml` line) on each step onto it
-instead.
+instead - as a toast rather than a dialog box with `locked_toast = true`, so
+the player learns why without being stopped on every step.
 
 ### Triggers
 
@@ -385,6 +562,7 @@ hands it to that section's runtime the tick it fires:
 | `{ kind = "battle", formation = F }` | `World::start_expansion_battle(F)` - a `battle.toml` formation |
 | `{ kind = "boss", boss = B }` | `World::start_expansion_boss(B)` - a `battle.toml` boss |
 | `{ kind = "dialog", line = L }` | `World::expansion_say(L)` - a `dialog.toml` line |
+| `{ kind = "toast", line = L }` | `World::expansion_toast_line(L)` - line `L`'s first page as one toast row (`boss_script::banner_text`); takes no input, stops nothing |
 | `{ kind = "talk", npc = N }` | `World::expansion_talked(N)` - a quest's talk objective |
 | `{ kind = "start_quest", quest = Q }` | `World::expansion_start_quest(Q)` |
 | `{ kind = "set_flag", flag = X }` | raises pack flag `X` |
@@ -406,6 +584,15 @@ cutscene runs, the map's zones and exits fire nothing (`ActiveMap::observe`).
 `map.<map id>.<trigger id>` (`map.<map id>.<index>` for a trigger with no id),
 which saves with the pack's progress, and a trigger whose flag is up stays
 quiet on every later visit. Quests can read the flag like any other.
+
+`press = true` makes a trigger something the player examines rather than
+a tile that fires on entry: walking onto it fires nothing, and the action
+button fires it while the player stands on it or faces it from the next tile
+(`ActiveMap::press_gated`, asked by the field interaction probe once no NPC
+or prop answers the press, `World::expansion_press_triggers`). Objects (a
+brazier, a bell, a notice board) and quest givers that are not NPCs want
+it; walk-on triggers are for what has to happen as the player arrives, and
+a line the player did not ask for reads best as a `toast`.
 
 A trigger with a `requires` gate fires only while it holds; a shut trigger
 fires nothing and spends no `once`, so it fires on the first entry after it
@@ -501,8 +688,11 @@ validator checks the scene coordinate, the tile range, the spawn and the
 quests `requires` names; it cannot see the scene's walls without the disc.
 
 The pause menu's **Travel** page (the Journal, Select on the root list)
-enters any of the pack's maps directly, which is the way in for testing a map
-whose entrance is out of reach ([`field-menu.md`](../subsystems/field-menu.md#expansion-pack-journal-engine-extension)).
+enters a pack map the party has been to on this save directly, and lists a
+map whose entrance gate holds now before its first visit; the *Unlock
+all Travel maps* cheat (`--cheat-travel`, the play page's Cheats panel) lists
+every map, which is the way in for testing a map whose entrance is out of
+reach ([`field-menu.md`](../subsystems/field-menu.md#expansion-pack-journal-engine-extension)).
 
 ## Saving on a map
 
@@ -534,6 +724,60 @@ scene build reads the map's ground, walls and props off the same `Scene`
 scene picker - leaves the map and drops its layer; a battle fought on the map
 returns to it. The map's `name` shows as the place-name banner on entry.
 
+### Entry cost and preparing ahead
+
+Most of a map's entry depends only on the disc and the pack: the mesh
+library, the synthetic field image (terrain tile meshes and baked decoration
+cells are the bulk of it), the NPC and scenery placements, and the base
+scene's resource build with the map's layer seated. A terrain-heavy island
+map spends several hundred milliseconds there on a native release build; a
+tower floor over a kept room, tens. `legaia_engine_scene_host::expansion_preload`
+splits that half off as a `PreparedMap`, which the entry then seats on the
+running world.
+
+`SceneHost` keeps prepared maps in a small least-recently-used cache, bounded
+by count and by footprint (a terrain map prepares to tens of MiB, a tower
+floor to one or two). Every entry fills it, so walking back to a map just
+left swaps it in. With preloading on (`SceneHost::set_expansion_preload`,
+which both play hosts set), entering a map also starts preparing every map
+its exits lead to: on a worker thread natively, and on the browser page a
+phase per tick once the player has stood idle on the field for half a second
+(the wasm build has no threads). Natively the requests start on the frame
+after the entry, once the window's own rebuild of the entered map is done. An exit taken while its map is still
+preparing waits for that preparation rather than starting another. The
+native window also starts its own render build of the map from the entry's,
+rather than building the same scene a second time, and its scene upload (any
+scene's, retail included) builds the CPU half of each environment mesh, and
+the coplanar offsets, occluder set and fog ground field, in parallel - the
+same products in the same order as a serial build.
+
+The preparation reads only the `ProtIndex` and the pack - no `World` state,
+no RNG - and its product is what the entry would build itself, so an entry
+from the cache plays bit-identically to a cold one
+(`crates/engine-scene-host/tests/expansion_map_preload_disc.rs`). Since a
+prepared map is a function of the disc, the map's definition and the pack's
+assets alone, a new version of the pack - a hot reload - keeps every
+prepared map whose definition it leaves equal, when its assets are equal
+too; the rest of the cache goes, as does every preparation under way. An
+edit to one map of a pack therefore re-prepares that map and nothing else.
+Retail scene entry is untouched.
+
+Several products of a map's preparation and of every scene build are
+derived again for an equal input on the next entry, and are kept by content
+instead: a terrain's resolved surface (`MapDef::terrain_surface`, which the
+validator, the rest checks and the mesh library each ask for), each
+decoration mesh a bake places (`tmd_ops::BakeCache`), and per mesh the
+occluder triangles, fog surfaces and coplanar planes and the coplanar lifts
+of the whole draw list (`legaia_engine_scene::mesh_memo`, kept for the last
+two builds within a byte budget). The browser page keeps each static
+environment mesh it uploaded under the mesh's content key
+(`LegaiaRuntime::field_mesh_key`: the TMD's bytes and the VRAM it samples)
+and takes it back on the next scene build instead of building it again.
+Every one of these hands back what a fresh derivation makes; the play page's
+`isles_map_entry_cost` measurement (`crates/web-play`) hashes everything an
+Isles map's build makes, before and after a hot reload, and asserts the two
+equal.
+
 ## Meshes from other scenes
 
 A mesh named from another scene's pack samples that scene's VRAM, which the
@@ -564,6 +808,36 @@ The copies are written by the scene's resource build after its own uploads
 rebuild of the map's VRAM - the return from a battle included - carry them.
 The base scene's own words are never written. A map whose foreign meshes do
 not fit the free VRAM is refused at entry.
+
+### The mesh catalog
+
+A coordinate does not say what it names: `{ scene = "town01", object = 47 }`
+is a bed and `object = 48` is the stern of a boat cut open where it meets a
+wall, and both have been placed as boats. The mesh catalog
+([`legaia_expansion_format::mesh_catalog`](../../crates/expansion-format/src/mesh_catalog.rs),
+`crates/expansion-format/data/mesh_catalog.toml`) labels every mesh of the
+geometry packs the Rebirth pack borrows from (`town01`, `vell`, `rugi`,
+`cave01`, `uru`), one entry per `(scene, object)`:
+
+| Field | Meaning |
+|---|---|
+| `label` | What the mesh is, in a few words. |
+| `kind` | `building`, `plant`, `rock`, `furniture`, `structure`, `light`, `vehicle`, `terrain` or `other`. |
+| `size` | The base footprint's width (`X`) and depth (`Z`) and the mesh's height, world units at scale 1, unrotated ([Solid props](#solid-props) measures the same hull). A flat card - a sprite tree, a fern - has no floor-plane hull, so its size is its bounding box. |
+| `solid` | At scale 1 it stands in the player's way (`Footprint::is_large_obstacle`): a placement wants `solid = true`. |
+| `tris` | Triangles it draws. |
+| `note` | How it reads and what it suits: an interior wall open behind, a black occluder block that is no prop, a card that draws from one side. |
+
+The numbers are measured off the disc and the labels are hand-written from a
+contact sheet: `legaia-engine mesh-catalog --scene <s> --catalog <file>
+--sheet-dir <dir>` measures each scene's pack (`legaia_engine_export::mesh_catalog`),
+merges the measurements into the file keeping every label already there,
+and draws a numbered sheet of the meshes (a red corner marks a `solid` one)
+to read new labels from. The sheet draws disc meshes and stays local; the
+file holds labels and numbers only. A disc-gated test checks the committed
+sizes against the disc. It sits beside the [posture table](#npc-clip-postures):
+that one says what a borrowed NPC's clips are, this one what a borrowed
+mesh is.
 
 ## Model assets
 
@@ -600,8 +874,11 @@ texture strip.
 
 ## Decorations
 
-A tile holds one prop, but any number of decorations. They have no
-collision and draw only. When the map loads, every decoration of a tile is
+A tile holds one prop, but any number of decorations. They draw only,
+unless marked `solid` (`[[decor]]`, a `[[scatter]]` brush, an `[[edges]]`
+run): a solid decoration closes its mesh's footprint as a solid prop does
+([Solid props](#solid-props)) - an orchard, a fence line, a market stall
+the player walks round. When the map loads, every decoration of a tile is
 baked with the tile's own cell mesh (if any) into one mesh
 ([`tmd_ops::bake`](../../crates/engine-scene/src/expansion_map/tmd_ops.rs)),
 which the tile's cell draws through the ordinary decoration-cell path on
@@ -645,6 +922,7 @@ phase = 0                                   # ...where (col + row + phase) % eve
 inset = 6                                   # world units from the wall face
 y = 120
 yaw = 0.0                                   # added to facing into the room
+hangs = true                                # mounted on the wall: not on anything
 ```
 
 A brush's draw for a tile is a pure function of its `seed`, its index and
@@ -913,6 +1191,103 @@ wisps are the pool's own: they drift at `speed` toward `angle` (degrees,
 retail's does, so a fogged map's rolls differ from an unfogged one's -
 deterministically.
 
+## Surround
+
+```toml
+[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }      # the drop's floor, one cell a tile
+side = { tpage = 11, clut = 32523, tile = 38 }      # the floor edge's face down to it
+depth = 448                                         # world units below tier 0
+reach = 8                                           # tiles past the map's edges
+shade = 72                                          # vertex colour, 128 = the texel as is
+backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1152, distance = 2, sides = "esw", shade = 96, fade = 0 }
+```
+
+A map with `geometry = "none"` draws nothing past its floor, so a follow
+camera standing near the map's edge - an arrival landing beside the low
+parapet the camera looks over - frames the clear colour there as a black
+void. The surround fills it with a drop: a flat ground `depth` below tier
+`0` on every void tile of the map and on every grid tile up to `reach`
+past its edges (clipped to the field grid), and, with `side`, a face from
+the floor down to the drop along every edge where such a tile borders the
+map's floor or walls, so the floor reads as a ledge with depth below it
+rather than a sheet hung in nothing. `shade` darkens both the
+`texel * colour / 128` way; an [animated material](#animated-materials) on
+the ground's cell animates the drop with it - a lava floor far below a
+stair of fire.
+
+It is drawn, never walked: the tiles it covers are walls already (void
+tiles and everything off the map). It goes in through the decoration-cell
+path ([`expansion_map::surround`](../../crates/engine-scene/src/expansion_map/surround.rs)):
+a cell that already draws something - a kept retail cell, a wall, a
+decoration - keeps it, and one shared record serves every cell of the
+same bordered sides and floor height (a cell draws at its corners' mean
+tier height, so the mesh carries the rest of the drop), which costs a
+handful of the map's object records. A terrain draws its own `skirt`
+instead, and the validator warns of a surround on one.
+
+A pack map's ground cells carry the depth-sort bit `0x8000`
+([`CELL_GROUND_DEPTH_SORTED`](../../crates/scene-formats/src/field_objects.rs)),
+which few retail floors do. A cell without it goes into the ground pass's
+far bucket and draws under every other primitive whatever its depth -
+harmless when nothing lies below the floor, but from the follow camera the
+drop past the map's far edge projects onto the floor rows in front of that
+edge, and a far-bucket floor let the drop and its faces paint over them.
+Sorted by its own depth, the floor covers what lies under it.
+
+An interior's far walls stop where the follow camera still looks: past
+their tops it frames the clear colour, a black sky over a room that has
+none. `backdrop` stands a wall round the drop, `distance` tiles past the
+map's rectangle along each of its `sides` (`n` is `-Z`, `e` `+X`, `s` `+Z`,
+`w` `-X`), rising from the drop to `height` above tier `0` and facing the
+map: the tower's outer wall behind the room's own. The follow camera
+stands on the map's `-Z` side, so the default `"esw"` leaves that side open
+rather than walling the camera out. Its faces draw at `shade` and darken
+over their top two fifths to `fade` (`0`, black, by default), so a top in
+view fades into the dark instead of ending on a line. The faces ride the
+surround's own cells, one record for each shape, and are drawn, never
+walked. The validator holds `height` to `1..=4096`, `distance` to
+`1..=reach` and `sides` to those four letters.
+
+## Ceiling
+
+```toml
+[ceiling]
+height = 2048                                    # world units above tier 0
+cell = { tpage = 11, clut = 32517, tile = 27 }   # the underside, one cell a tile
+shade = 48
+chain = { tpage = 11, clut = 32517, tile = 27, width = 6, shade = 64, items = ["lantern_hall"] }
+```
+
+A room built from scratch has no ceiling, so a lantern marked `hangs`
+hangs from nothing. `chain` gives every hung prop and decoration named in
+`items` (every one when `items` is empty) a square shaft `width` units
+across from the item's top up to `height`. `hangs` marks wall-mounted
+items too - a banner, a cog set in a wall - which a chain would spoil,
+which is what `items` is for. The item's top is its mesh's highest vertex
+above its origin, scaled; a tilted item's chain starts at its origin. The
+chain does not follow a prop's `sway`, which moves a lantern's top by a
+few units.
+
+`cell` draws the ceiling itself: a flat underside over the map's
+rectangle at `height`, in pieces of 4 x 4 tiles
+([`expansion_map::ceiling`](../../crates/engine-scene/src/expansion_map/ceiling.rs)),
+wound to face down. The field pass culls back faces, so the underside is
+drawn only to a camera below it. The follow camera looks down on a room
+from above its walls (the tower floors' eye stands 700 to 1700 units up),
+so it never sees the underside and is never walled out by it, whatever the
+distance preset; and the camera-occlusion gate leaves out any flat face
+seen only from beneath
+([`FieldOccluders`](../../crates/engine-scene/src/field_occlusion.rs)), so
+a ceiling between the eye and the player does not arm the fade. A
+`height` above the eye is the usual choice: the chains run up out of the
+frame, as a chain from a high vault does.
+
+Both go in through the decoration bake, as items on a tile no placed prop
+holds, and draw on both hosts. The validator holds `height` to
+`1..=4096`, the atlas cells to `0..64` and `width` to `1..=64`, and errors
+on an `items` id that names no hung prop or decoration.
+
 ## Particles
 
 ```toml
@@ -1145,7 +1520,7 @@ once, with no streaming.
   decoration cells, which neither host deforms per frame.
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
-  preset applies on a host's direct entry (`--map`, the play page's
-  *Enter map*).
-- **NPC clips.** A patrolling NPC keeps `walk_clip` (or its idle clip) at the
-  ends of its legs; nothing cues the idle clip back between legs.
+  preset applies on a host's direct entry (`--map`, a pack map row in the
+  play page's scene list).
+- **NPC clips.** A patrolling NPC with no `pause` keeps `walk_clip` at the
+  ends of its legs: it sets out again on the next tick.

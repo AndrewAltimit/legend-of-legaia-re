@@ -44,6 +44,7 @@ pub mod screen_prim_raster;
 pub mod shatter;
 pub mod shutter_bars;
 pub mod sprite_arm;
+pub mod ssao;
 pub mod streak_pass;
 pub mod ui_tint;
 pub mod vram_capture;

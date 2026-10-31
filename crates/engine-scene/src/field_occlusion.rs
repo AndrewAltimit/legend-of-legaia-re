@@ -32,6 +32,7 @@
 //! converted to retail Y-down).
 
 use crate::field_env::EnvDraw;
+use crate::mesh_memo::{ContentKey, MeshMemo};
 use crate::scene_resources::SceneResources;
 
 /// Half a standing character's height, world units (the mesh is ~130 tall).
@@ -107,6 +108,7 @@ const SEG_T_MAX: f32 = 0.998;
 pub const OCCLUDER_MIN_OPACITY: f32 = 0.55;
 
 /// One instanced draw's triangle range + world AABB (the broad phase).
+#[derive(Debug, PartialEq)]
 struct DrawRange {
     lo: [f32; 3],
     hi: [f32; 3],
@@ -116,8 +118,57 @@ struct DrawRange {
     res_tmd: usize,
 }
 
+/// Each mesh's occluder triangles, by its bytes and the VRAM they were
+/// gated against ([`crate::mesh_memo`]).
+static OCCLUDER_MEMO: MeshMemo<(Vec<[f32; 3]>, Vec<u32>)> = MeshMemo::new(64 << 20);
+
+/// One mesh's occluder triangles in object space (both halves, the
+/// filters [`FieldOccluders::build`] lists applied): positions and the
+/// kept triangles' indices.
+fn occluder_triangles(
+    rt: &crate::scene_resources::ResolvedTmd,
+    vram: &legaia_tim::Vram,
+) -> (Vec<[f32; 3]>, Vec<u32>) {
+    let semi = legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
+    let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(&rt.tmd, &rt.raw, |cba, tsb, uvs| {
+        vram.prim_has_texture_data(cba, tsb, uvs)
+            && vram.prim_opaque_fraction(cba, tsb, uvs) >= OCCLUDER_MIN_OPACITY
+    });
+    let mut positions = mesh.positions;
+    let mut indices = Vec::with_capacity(mesh.indices.len());
+    // ABE gate on the BUILT stream: the filter closure above receives the
+    // prim's raw TSB, but the ABE enable is a mode-byte bit the builder
+    // packs into the per-vertex attribute afterwards - so the
+    // semi-transparency exclusion must read the packed cba_tsb, not the
+    // closure argument.
+    for tri in mesh.indices.as_chunks::<3>().0 {
+        let abe = mesh
+            .cba_tsb
+            .get(tri[0] as usize)
+            .is_some_and(|ct| ct[1] & semi != 0);
+        if !abe {
+            indices.extend_from_slice(tri);
+        }
+    }
+    let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rt.tmd, &rt.raw);
+    let base = positions.len() as u32;
+    positions.extend_from_slice(&cmesh.positions);
+    // Colour half: same ABE gate on the blend word (all corners of a prim
+    // share one word).
+    for tri in cmesh.indices.as_chunks::<3>().0 {
+        let abe = cmesh
+            .blend
+            .get(tri[0] as usize)
+            .is_some_and(|w| w & semi != 0);
+        if !abe {
+            indices.extend(tri.iter().map(|i| i + base));
+        }
+    }
+    (positions, indices)
+}
+
 /// World-space static-occluder set for one assembled field scene.
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct FieldOccluders {
     /// Instanced triangles, retail Y-down world space.
     tris: Vec<[[f32; 3]; 3]>,
@@ -149,71 +200,35 @@ impl FieldOccluders {
     ///   mostly the transparent `0x0000` word is a cutout the shaders
     ///   `discard` per texel (foliage, grates, tile skirts); the character
     ///   reads straight through it on screen, so it must not arm the gate.
+    ///
+    /// Each mesh's filtered triangles are kept by content across builds
+    /// ([`OCCLUDER_MEMO`]), so a scene rebuilt from the same meshes and VRAM
+    /// derives them once.
     pub fn build(draw_lists: &[&[EnvDraw]], res: &SceneResources) -> Self {
         use std::collections::HashMap;
-        let mut cache: HashMap<usize, (Vec<[f32; 3]>, Vec<u32>)> = HashMap::new();
+        use std::sync::Arc;
+        type Tris = (Vec<[f32; 3]>, Vec<u32>);
+        OCCLUDER_MEMO.begin_build();
+        let vram_key = ContentKey::of_vram(&res.vram);
+        let mut cache: HashMap<usize, Option<Arc<Tris>>> = HashMap::new();
         let mut out = Self::default();
         for draws in draw_lists {
             for d in *draws {
                 if d.anim_id != 0 {
                     continue;
                 }
-                let (positions, indices) = match cache.entry(d.res_tmd) {
-                    std::collections::hash_map::Entry::Occupied(e) => {
-                        let (p, i) = e.into_mut();
-                        (&*p, &*i)
-                    }
-                    std::collections::hash_map::Entry::Vacant(e) => {
-                        let Some(rt) = res.tmds.get(d.res_tmd) else {
-                            continue;
-                        };
-                        let vram = &res.vram;
-                        let semi = legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT;
-                        let mesh = legaia_tmd::mesh::tmd_to_vram_mesh_filtered(
-                            &rt.tmd,
-                            &rt.raw,
-                            |cba, tsb, uvs| {
-                                vram.prim_has_texture_data(cba, tsb, uvs)
-                                    && vram.prim_opaque_fraction(cba, tsb, uvs)
-                                        >= OCCLUDER_MIN_OPACITY
-                            },
-                        );
-                        let mut positions = mesh.positions;
-                        let mut indices = Vec::with_capacity(mesh.indices.len());
-                        // ABE gate on the BUILT stream: the filter closure
-                        // above receives the prim's raw TSB, but the ABE
-                        // enable is a mode-byte bit the builder packs into
-                        // the per-vertex attribute afterwards - so the
-                        // semi-transparency exclusion must read the packed
-                        // cba_tsb, not the closure argument.
-                        for tri in mesh.indices.as_chunks::<3>().0 {
-                            let abe = mesh
-                                .cba_tsb
-                                .get(tri[0] as usize)
-                                .is_some_and(|ct| ct[1] & semi != 0);
-                            if !abe {
-                                indices.extend_from_slice(tri);
-                            }
-                        }
-                        let cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rt.tmd, &rt.raw);
-                        let base = positions.len() as u32;
-                        positions.extend_from_slice(&cmesh.positions);
-                        // Colour half: same ABE gate on the blend word (all
-                        // corners of a prim share one word).
-                        for tri in cmesh.indices.as_chunks::<3>().0 {
-                            let abe = cmesh
-                                .blend
-                                .get(tri[0] as usize)
-                                .is_some_and(|w| w & semi != 0);
-                            if !abe {
-                                indices.extend(tri.iter().map(|i| i + base));
-                            }
-                        }
-                        let (p, i) = e.insert((positions, indices));
-                        (&*p, &*i)
-                    }
-                };
-                out.add_instanced_mesh(positions, indices, d);
+                let mesh = cache.entry(d.res_tmd).or_insert_with(|| {
+                    let rt = res.tmds.get(d.res_tmd)?;
+                    let key = ContentKey::pair(ContentKey::of_bytes(&rt.raw), vram_key);
+                    Some(OCCLUDER_MEMO.get_or(key, || {
+                        let t = occluder_triangles(rt, &res.vram);
+                        let bytes = t.0.len() * 12 + t.1.len() * 4;
+                        (t, bytes)
+                    }))
+                });
+                if let Some(m) = mesh {
+                    out.add_instanced_mesh(&m.0, &m.1, d);
+                }
             }
         }
         out
@@ -239,6 +254,9 @@ impl FieldOccluders {
                 continue;
             };
             let w = [xf(*a), xf(*b), xf(*cc)];
+            if faces_only_down(&w) {
+                continue;
+            }
             for v in &w {
                 for ax in 0..3 {
                     lo[ax] = lo[ax].min(v[ax]);
@@ -377,6 +395,22 @@ fn segment_hits_aabb(a: [f32; 3], dir: [f32; 3], lo: [f32; 3], hi: [f32; 3]) -> 
     true
 }
 
+/// Whether a world-space triangle is a flat face wound to be seen only from
+/// beneath (a ceiling's underside): its visible side, `-cross(e1, e2)` of the
+/// emitted winding, points straight down (`+Y`, the frame is Y-down).
+///
+/// The field pass culls back faces (`camera_frame::nclip_cull_mode`), so
+/// from any eye above such a face it is not drawn, and the gate's segments
+/// all come down from the eye to the player: a face of this kind can never
+/// be what hides the character. Left in, a pack map's ceiling under the
+/// follow camera's eye blocked every sample and armed the fade over a
+/// plainly visible player.
+fn faces_only_down(t: &[[f32; 3]; 3]) -> bool {
+    let c = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+    let len = dot(c, c).sqrt();
+    len > 1e-6 && -c[1] / len > 0.99
+}
+
 /// Möller-Trumbore, double-sided (the corpus' winding is mixed - see the
 /// renderers' no-cull default), over the trimmed segment parameter range.
 fn segment_hits_triangle(a: [f32; 3], dir: [f32; 3], tri: &[[f32; 3]; 3]) -> bool {
@@ -493,6 +527,30 @@ mod tests {
         o.add_instanced_mesh(&p, &i, &draw_at(-190, 0, 0, 0));
         assert!(o.segment_blocked(EYE, PLAYER));
         assert!(!o.fully_occluded(EYE, PLAYER));
+    }
+
+    /// A ceiling's underside (wound to face down) between the eye and the
+    /// player is not an occluder; the same slab wound to face up - a roof
+    /// the eye looks down on - is.
+    #[test]
+    fn an_underside_seen_from_above_does_not_arm_the_gate() {
+        // A 4000-wide slab at Y -300 (between the eye at -500 and the
+        // player at -65), perimeter-ordered so `-cross(e1, e2)` is `+Y`.
+        let p = vec![
+            [-2000.0, -300.0, -2000.0],
+            [2000.0, -300.0, -2000.0],
+            [2000.0, -300.0, 2000.0],
+            [-2000.0, -300.0, 2000.0],
+        ];
+        let down = vec![0, 1, 2, 0, 2, 3];
+        let up = vec![0, 2, 1, 0, 3, 2];
+        let mut o = FieldOccluders::default();
+        o.add_instanced_mesh(&p, &down, &draw_at(0, 0, 0, 0));
+        assert!(o.is_empty(), "the underside is left out");
+        assert!(!o.fully_occluded(EYE, PLAYER));
+        let mut o = FieldOccluders::default();
+        o.add_instanced_mesh(&p, &up, &draw_at(0, 0, 0, 0));
+        assert!(o.fully_occluded(EYE, PLAYER), "a roof still hides");
     }
 
     /// Yaw instancing: the wall rotated a quarter turn lies along the

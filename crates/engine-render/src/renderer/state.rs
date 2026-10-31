@@ -36,6 +36,24 @@ pub struct Renderer {
     pub(super) bloom_pass: std::cell::RefCell<Option<bloom::BloomPass>>,
     /// Whether bloom is on (default off).
     pub(super) bloom_on: std::cell::Cell<bool>,
+    /// The SSAO enhancement's pre-pass, passes and targets, built on the
+    /// first frame it runs ([`Renderer::set_ssao`]).
+    pub(super) ssao_pass: std::cell::RefCell<Option<ssao::SsaoPass>>,
+    /// Whether SSAO is on (default off).
+    pub(super) ssao_on: std::cell::Cell<bool>,
+    /// The scene camera SSAO reconstructs view space from
+    /// ([`Renderer::set_ssao_camera`]); `None` leaves the pass inert.
+    pub(super) ssao_camera: std::cell::Cell<Option<Mat4>>,
+    /// Whether that camera takes retail Y-down points
+    /// ([`Renderer::set_ssao_camera_y_down`]).
+    pub(super) ssao_camera_y_down: std::cell::Cell<bool>,
+    /// The SSAO response ([`Renderer::set_ssao_params`]).
+    pub(super) ssao_params: std::cell::Cell<ssao::SsaoParams>,
+    /// SSAO's AO-only tuning view ([`Renderer::set_ssao_debug_view`]).
+    pub(super) ssao_debug: std::cell::Cell<bool>,
+    /// The scene pipelines' group-2 layout (lights + shadow maps), kept for
+    /// the pipelines built after construction (the SSAO pre-pass).
+    pub(super) scene_lights_bgl: wgpu::BindGroupLayout,
     pub(super) surface: wgpu::Surface<'static>,
     pub(super) device: wgpu::Device,
     pub(super) queue: wgpu::Queue,

@@ -134,6 +134,108 @@ pub struct MeshLibrary {
     /// [`Self::terrain`] (or the map's own `[terrain]`): built once here,
     /// where the blend palettes need it, and reused by the image build.
     pub terrain_surface: Option<std::sync::Arc<legaia_expansion_format::terrain::TerrainSurface>>,
+    /// The townsfolk the map borrows from a scene other than its base
+    /// ([`NpcBank`]), when it borrows any.
+    pub npc_bank: Option<NpcBank>,
+}
+
+/// The townsfolk a map borrows from another scene than its base: their
+/// models carried into the map's model pool with their textures, and the
+/// scene's clip bank, which poses them.
+///
+/// A placement's mesh is its model byte's entry of the scene's model pool,
+/// and its clips are records of the scene's ANM bundle, so a placement of
+/// another scene brings both. The models join the pool right after the base
+/// scene's own ([`Self::first`]), and the borrowed scene's bundle stands in
+/// for the base scene's: the clip ids a pack writes for these NPCs are the
+/// borrowed scene's own. That is why a map borrows from one scene at most,
+/// and not beside townsfolk or animated props of its base scene's, which
+/// pose from the base bundle.
+#[derive(Debug, Clone, Default)]
+pub struct NpcBank {
+    /// The scene the NPCs come from.
+    pub scene: String,
+    /// The base scene's own model count: the index the first carried-in
+    /// model takes.
+    pub first: usize,
+    /// Each borrowed placement's model byte to its index in the map's pool.
+    pub models: BTreeMap<u8, u8>,
+    /// The carried-in models in pool order, as `(source PROT entry, TMD
+    /// bytes)`, texture words pointing at [`MeshLibrary::vram_patches`].
+    pub tmds: Vec<(u32, Vec<u8>)>,
+    /// The scene's ANM bundle (its decoded bytes), `None` when it ships none.
+    pub clips: Option<Vec<u8>>,
+}
+
+/// The one scene other than `base` whose townsfolk `def` borrows, with that
+/// scene's placements. Party-member placements (special models) draw in any
+/// scene and do not count. Refused: townsfolk from two other scenes, or from
+/// another scene beside the base scene's own townsfolk or animated props
+/// (they pose from the base scene's clip bank, which the borrowed one
+/// replaces).
+pub fn borrowed_npc_scene(
+    index: &ProtIndex,
+    def: &MapDef,
+    base: &str,
+) -> Result<
+    Option<(
+        String,
+        Vec<legaia_scene_formats::man_section::ActorPlacement>,
+    )>,
+> {
+    let mut lists: BTreeMap<String, Vec<legaia_scene_formats::man_section::ActorPlacement>> =
+        BTreeMap::new();
+    let mut foreign: Option<String> = None;
+    let mut own: Option<&str> = None;
+    for npc in &def.npcs {
+        let Some(DiscRef::Npc { scene, index: pi }) = &npc.model else {
+            continue;
+        };
+        if !lists.contains_key(scene) {
+            let s = Scene::load(index, scene)?;
+            let man = s
+                .field_man_payload(index)?
+                .with_context(|| format!("scene `{scene}` has no MAN"))?;
+            let mf = legaia_scene_formats::man_section::parse(&man)?;
+            lists.insert(scene.clone(), mf.actor_placements(&man));
+        }
+        let special = lists[scene]
+            .iter()
+            .find(|p| p.index == usize::from(*pi))
+            .is_some_and(|p| p.special_model);
+        if special {
+            continue;
+        }
+        if scene == base {
+            own.get_or_insert(npc.id.as_str());
+            continue;
+        }
+        match &foreign {
+            Some(f) if f != scene => bail!(
+                "npc {:?} is from `{scene}` and another from `{f}`: a map borrows townsfolk \
+                 from one scene besides its base",
+                npc.id
+            ),
+            _ => foreign = Some(scene.clone()),
+        }
+    }
+    let Some(scene) = foreign else {
+        return Ok(None);
+    };
+    if let Some(id) = own {
+        bail!(
+            "npc {id:?} is from the base scene `{base}` and others from `{scene}`: their clip \
+             banks cannot both pose"
+        );
+    }
+    if def.base.scenery {
+        bail!(
+            "the map borrows townsfolk from `{scene}`, so the base scene's animated props \
+             (`base.scenery`) have no clip bank to pose from"
+        );
+    }
+    let placements = lists.remove(&scene).unwrap_or_default();
+    Ok(Some((scene, placements)))
 }
 
 /// [`MeshLibrary::terrain_vram`]: the map's VRAM, shared.
@@ -208,6 +310,14 @@ pub fn needs_library(def: &MapDef, base_entry: Option<u32>) -> bool {
         || !def.edges.is_empty()
         || !def.decals.is_empty()
         || !def.emitters.is_empty()
+        // A solid prop's footprint is measured off its mesh, and so are the
+        // tops `on` rests things on.
+        || def.props.iter().any(|p| (p.solid && p.top.is_none()) || !p.on.is_empty())
+        // Townsfolk from another scene bring their models' textures.
+        || def.npcs.iter().any(|n| {
+            matches!(&n.model, Some(DiscRef::Npc { scene, .. })
+                if def.base.scene_name() != Some(scene.as_str()))
+        })
         || def.mesh_refs().iter().any(|m| match m {
             PropMesh::Object { .. } => false,
             PropMesh::Tmd {
@@ -335,6 +445,10 @@ pub fn resolve_mesh_library(
     // Group the carried-in meshes by source scene so each scene relocates
     // once.
     let mut by_scene: BTreeMap<String, Vec<(PropMesh, u16)>> = BTreeMap::new();
+    let borrowed = borrowed_npc_scene(index, def, &base.name).context("the borrowed townsfolk")?;
+    if let Some((scene, _)) = &borrowed {
+        by_scene.entry(scene.clone()).or_default();
+    }
     for mesh in def.mesh_refs() {
         if lib.lookup(mesh).is_some() || by_scene.values().flatten().any(|(m, _)| m == mesh) {
             continue;
@@ -407,6 +521,52 @@ pub fn resolve_mesh_library(
             })?;
             raws.push(raw.clone());
         }
+        // The borrowed townsfolk's models relocate with the scene's meshes,
+        // so a page they share is copied once.
+        let mut bank = None;
+        if let Some((_, placements)) = borrowed.as_ref().filter(|(s, _)| *s == scene_name) {
+            let first = res.tmds.len() - res.shared_tmd_count;
+            let scene_models = src_res.tmds.len() - src_res.shared_tmd_count;
+            let mut b = NpcBank {
+                scene: scene_name.clone(),
+                first,
+                clips: crate::npc_catalog::scene_anm_bundle(&src).map(|c| c.decoded),
+                ..Default::default()
+            };
+            for npc in &def.npcs {
+                let Some(DiscRef::Npc { scene, index: pi }) = &npc.model else {
+                    continue;
+                };
+                let Some(p) = placements
+                    .iter()
+                    .find(|p| *scene == scene_name && p.index == usize::from(*pi))
+                    .filter(|p| !p.special_model)
+                else {
+                    continue;
+                };
+                if b.models.contains_key(&p.model_index) {
+                    continue;
+                }
+                let t = src_res
+                    .tmds
+                    .get(usize::from(p.model_index))
+                    .filter(|_| usize::from(p.model_index) < scene_models)
+                    .with_context(|| {
+                        format!(
+                            "npc {:?}: scene `{scene_name}` has no model {}",
+                            npc.id, p.model_index
+                        )
+                    })?;
+                let at = u8::try_from(first + b.tmds.len())
+                    .ok()
+                    .filter(|&i| i < 0xF0)
+                    .with_context(|| format!("npc {:?}: the map's model pool is full", npc.id))?;
+                b.models.insert(p.model_index, at);
+                b.tmds.push((t.entry_idx, t.raw.clone()));
+                raws.push(t.raw.clone());
+            }
+            bank = Some(b);
+        }
         let moved = relocate(
             &mut raws,
             &src_res.vram,
@@ -416,6 +576,13 @@ pub fn resolve_mesh_library(
         )
         .with_context(|| format!("textures of scene `{scene_name}`"))?;
         lib.relocations.insert(scene_name.clone(), moved);
+        if let Some(mut b) = bank {
+            let models = raws.split_off(meshes.len());
+            for ((_, raw), moved) in b.tmds.iter_mut().zip(models) {
+                *raw = moved;
+            }
+            lib.npc_bank = Some(b);
+        }
         for ((mesh, _), raw) in meshes.into_iter().zip(raws) {
             lib.added.push(raw);
             lib.entries

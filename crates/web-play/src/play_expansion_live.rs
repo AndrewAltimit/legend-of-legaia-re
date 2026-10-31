@@ -20,6 +20,7 @@
 //! encounter zones, props and NPCs of the definition the engine runs.
 
 use legaia_engine_scene_host::scene_host::ExpansionReloadSeat;
+use legaia_scene_formats::field_map::GRID_DIM as COLLISION_GRID_DIM;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
@@ -69,6 +70,61 @@ impl LegaiaRuntime {
     /// pack map or off its rectangle.
     pub fn expansion_seat_player(&mut self, col: u32, row: u32) -> bool {
         self.expansion_seat_player_core(col, row)
+    }
+
+    /// Move pack NPC `n` of the active map to map-local tile `(col, row)`,
+    /// facing compass sector `facing`, without rebuilding the map: the
+    /// anchor the draw, the collision box and the talk probe read, and its
+    /// heading - what the workbench's 3D preview does for a moved NPC.
+    /// `false` (the caller rebuilds instead) off a pack map, off its
+    /// rectangle, for a scenery NPC or one that patrols (its walk legs are
+    /// built from its tile at entry).
+    pub fn expansion_place_npc(&mut self, n: u32, col: u32, row: u32, facing: u32) -> bool {
+        self.expansion_place_npc_core(n, col, row, facing)
+    }
+
+    /// Move prop `i` of the active map to map-local tile `(col, row)` with
+    /// offset `(ox, oz)` and yaw `yaw` degrees, without rebuilding the map:
+    /// the definition the overlay, the prop's light and the floor read,
+    /// its standable top, and the collision grid under the tile it left
+    /// and the tile it closes (a solid prop with no top closes its tile).
+    /// The draw is the page's (`play-expansion-live.js` moves it). `false`
+    /// off a pack map, off its rectangle or for an index the map lacks.
+    #[allow(clippy::too_many_arguments)]
+    pub fn expansion_place_prop(
+        &mut self,
+        i: u32,
+        col: u32,
+        row: u32,
+        ox: i32,
+        oz: i32,
+        yaw: f32,
+    ) -> bool {
+        self.expansion_place_prop_core(i, col, row, ox, oz, yaw)
+    }
+
+    /// Move lamp `i` of the active map's lighting to map-local tile
+    /// `(col, row)` at `offset` (world units, `y` up), without rebuilding:
+    /// the light is read from the definition every frame. `false` off a
+    /// pack map, off its rectangle or for an index the map lacks.
+    pub fn expansion_place_lamp(
+        &mut self,
+        i: u32,
+        col: u32,
+        row: u32,
+        ox: i32,
+        oy: i32,
+        oz: i32,
+    ) -> bool {
+        self.expansion_place_lamp_core(i, col, row, [ox, oy, oz])
+    }
+
+    /// Move spawn `i` of the active map to map-local tile `(col, row)`,
+    /// facing compass sector `facing`, without rebuilding: what the overlay
+    /// and the next arrival read. `false` off a pack map, off its
+    /// rectangle or for an index the map lacks.
+    pub fn expansion_place_spawn(&mut self, i: u32, col: u32, row: u32, facing: u32) -> bool {
+        self.expansion_place_spawn_core(i, col, row, facing)
     }
 
     /// Play cutscene `id` of the active pack now (the workbench's timeline
@@ -210,9 +266,22 @@ impl LegaiaRuntime {
         let mut floor = Vec::with_capacity(gw * gh);
         let mut walls = Vec::with_capacity(gw * gh);
         let mut void = Vec::with_capacity(gw * gh);
+        // What the player collides with: each tile's four quarter bits in
+        // the collision grid the world walks (the tile walls, every solid
+        // prop's tile and footprint, every solid decoration's footprint,
+        // a terrain's walls), one byte row below the tile.
+        let mut blocked = Vec::with_capacity(gw * gh);
+        let cg = &w.terrain.collision_grid;
+        let [ox, oy] = def.tiles.origin.map(usize::from);
         for row in 0..gh {
             for col in 0..gw {
                 let t = &grid.tiles[row * gw + col];
+                let at = (oy + row + 1) * COLLISION_GRID_DIM + ox + col;
+                blocked.push(if ox + col < COLLISION_GRID_DIM {
+                    cg.get(at).map_or(0, |b| b >> 4)
+                } else {
+                    0
+                });
                 let (x, z) = def.tile_centre(col as u16, row as u16);
                 floor.push(if t.void {
                     0
@@ -244,6 +313,7 @@ impl LegaiaRuntime {
             "unit": 128,
             "floor": floor,
             "walls": walls,
+            "blocked": blocked,
             "void": void,
             "spawns": def.spawns.iter().map(|s| json!({ "id": s.id, "tile": s.tile, "facing": s.facing })).collect::<Vec<_>>(),
             "exits": def.exits.iter().map(|e| json!({ "id": e.id, "rect": e.rect })).collect::<Vec<_>>(),
@@ -253,6 +323,181 @@ impl LegaiaRuntime {
             "npcs": def.npcs.iter().map(|n| json!({ "id": n.id, "tile": n.tile, "scenery": n.scenery, "patrol": n.patrol })).collect::<Vec<_>>(),
             "player": player,
         })
+    }
+
+    /// Body of [`Self::expansion_place_npc`].
+    pub(crate) fn expansion_place_npc_core(
+        &mut self,
+        n: u32,
+        col: u32,
+        row: u32,
+        facing: u32,
+    ) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let w = &mut host.world;
+        let Some(active) = w.expansion.map.as_mut() else {
+            return false;
+        };
+        let (Ok(n), Ok(c), Ok(r)) = (usize::try_from(n), u16::try_from(col), u16::try_from(row))
+        else {
+            return false;
+        };
+        if usize::from(c) >= active.grid.width || usize::from(r) >= active.grid.height {
+            return false;
+        }
+        let Some(npc) = active.def.npcs.get(n) else {
+            return false;
+        };
+        if npc.scenery || !npc.patrol.is_empty() {
+            return false;
+        }
+        let Some(slot) = legaia_expansion_format::map::npc_slot(n) else {
+            return false;
+        };
+        let (x, z) = active.def.tile_centre(c, r);
+        let (Ok(x), Ok(z)) = (i16::try_from(x), i16::try_from(z)) else {
+            return false;
+        };
+        let facing = (facing & 7) as u8;
+        // The definition the overlay and the talk read follows the move.
+        let def = std::sync::Arc::make_mut(&mut active.def);
+        def.npcs[n].tile = [c, r];
+        def.npcs[n].facing = facing;
+        w.npcs.positions.insert(slot, (x, z));
+        w.npcs.entry_positions.insert(slot, (x, z));
+        w.npcs
+            .headings
+            .insert(slot, (i16::from(facing) * 0x200 + 0x800) & 0x0FFF);
+        true
+    }
+
+    /// Body of [`Self::expansion_place_prop`].
+    pub(crate) fn expansion_place_prop_core(
+        &mut self,
+        i: u32,
+        col: u32,
+        row: u32,
+        ox: i32,
+        oz: i32,
+        yaw: f32,
+    ) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let w = &mut host.world;
+        let Some(active) = w.expansion.map.as_mut() else {
+            return false;
+        };
+        let (Ok(i), Ok(c), Ok(r)) = (usize::try_from(i), u16::try_from(col), u16::try_from(row))
+        else {
+            return false;
+        };
+        let (gw, gh) = (active.grid.width, active.grid.height);
+        if usize::from(c) >= gw || usize::from(r) >= gh || i >= active.def.props.len() {
+            return false;
+        }
+        let p = &active.def.props[i];
+        let closes = p.solid && p.top.is_none();
+        // A solid prop's footprint is re-derived from what the entry built
+        // the grid from; without it (another map's inputs) the caller
+        // rebuilds instead.
+        let inputs = match &host.expansion_collision {
+            Some((id, inputs)) if *id == active.map_id => Some(inputs),
+            _ => None,
+        };
+        if closes && inputs.is_none() {
+            return false;
+        }
+        let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        let def = std::sync::Arc::make_mut(&mut active.def);
+        let p = &mut def.props[i];
+        p.tile = [c, r];
+        p.offset[0] = clamp(ox);
+        p.offset[2] = clamp(oz);
+        p.rotation[1] = yaw;
+        if p.top.is_some() {
+            active.refresh_floor_tops();
+        }
+        if let (true, Some(inputs)) = (closes, inputs) {
+            // The grid as the build writes it (`collision_grid`, the same
+            // code): the tiles' walls, then every solid prop's tile and mesh
+            // footprint and every solid decoration's, the moved prop at its
+            // new pose.
+            let g = legaia_engine_scene::expansion_map::collision_grid(
+                &active.def,
+                &active.grid,
+                inputs,
+            );
+            let cg = &mut w.terrain.collision_grid;
+            let n = g.len().min(cg.len());
+            cg[..n].copy_from_slice(&g[..n]);
+        }
+        true
+    }
+
+    /// Body of [`Self::expansion_place_lamp`].
+    pub(crate) fn expansion_place_lamp_core(
+        &mut self,
+        i: u32,
+        col: u32,
+        row: u32,
+        offset: [i32; 3],
+    ) -> bool {
+        let Some(active) = self
+            .scene_host
+            .host_mut()
+            .and_then(|h| h.world.expansion.map.as_mut())
+        else {
+            return false;
+        };
+        let (Ok(i), Ok(c), Ok(r)) = (usize::try_from(i), u16::try_from(col), u16::try_from(row))
+        else {
+            return false;
+        };
+        if usize::from(c) >= active.grid.width
+            || usize::from(r) >= active.grid.height
+            || i >= active.def.lighting.lamps.len()
+        {
+            return false;
+        }
+        let clamp = |v: i32| v.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+        let def = std::sync::Arc::make_mut(&mut active.def);
+        def.lighting.lamps[i].tile = [c, r];
+        def.lighting.lamps[i].offset = offset.map(clamp);
+        true
+    }
+
+    /// Body of [`Self::expansion_place_spawn`].
+    pub(crate) fn expansion_place_spawn_core(
+        &mut self,
+        i: u32,
+        col: u32,
+        row: u32,
+        facing: u32,
+    ) -> bool {
+        let Some(active) = self
+            .scene_host
+            .host_mut()
+            .and_then(|h| h.world.expansion.map.as_mut())
+        else {
+            return false;
+        };
+        let (Ok(i), Ok(c), Ok(r)) = (usize::try_from(i), u16::try_from(col), u16::try_from(row))
+        else {
+            return false;
+        };
+        if usize::from(c) >= active.grid.width
+            || usize::from(r) >= active.grid.height
+            || i >= active.def.spawns.len()
+        {
+            return false;
+        }
+        let def = std::sync::Arc::make_mut(&mut active.def);
+        def.spawns[i].tile = [c, r];
+        def.spawns[i].facing = (facing & 7) as u8;
+        true
     }
 
     /// Body of [`Self::expansion_seat_player`].
@@ -445,6 +690,288 @@ mod tests {
         assert_eq!(rt.expansion_overlay()["map"], map);
     }
 
+    /// Disc-gated: an NPC moved in place stands where a rebuild with the
+    /// edited definition puts it - the anchor and the heading - and one
+    /// that patrols is refused (the caller rebuilds).
+    #[test]
+    fn npc_moved_in_place_matches_a_rebuild() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let files = rebirth_files();
+        let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
+        // A map with a standing (no patrol, not scenery) NPC.
+        let (map, n) = pack
+            .maps
+            .iter()
+            .find_map(|(id, m)| {
+                m.npcs
+                    .iter()
+                    .position(|x| !x.scenery && x.patrol.is_empty())
+                    .map(|n| (id.clone(), n))
+            })
+            .expect("a standing NPC in Rebirth");
+        let def = &pack.maps[&map];
+        let [c, r] = def.npcs[n].tile;
+        // One tile over, inside the rectangle.
+        let w = def
+            .tiles
+            .rows
+            .iter()
+            .map(|r| r.chars().count())
+            .max()
+            .unwrap() as u16;
+        let to = [if c + 1 < w { c + 1 } else { c - 1 }, r];
+        let facing = (def.npcs[n].facing + 3) & 7;
+        let slot = legaia_expansion_format::map::npc_slot(n).unwrap();
+        let read = |rt: &LegaiaRuntime| {
+            let w = &rt.scene_host.host().unwrap().world;
+            (
+                w.npcs.positions.get(&slot).copied(),
+                w.npcs.headings.get(&slot).copied(),
+            )
+        };
+
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let _ = rt.load_expansion_core(&bundle(&files));
+        rt.enter_expansion_map_core(&map, "").expect("enter");
+        assert!(rt.expansion_place_npc_core(
+            n as u32,
+            u32::from(to[0]),
+            u32::from(to[1]),
+            u32::from(facing)
+        ));
+        let moved = read(&rt);
+        assert_eq!(rt.expansion_overlay()["npcs"][n]["tile"], json!(to));
+
+        let mut edited = pack.clone();
+        let e = &mut edited.maps.get_mut(&map).unwrap().npcs[n];
+        e.tile = to;
+        e.facing = facing;
+        let r = rt.reload_expansion_core(&bundle(&edited.to_files().unwrap()));
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(read(&rt), moved, "in place == rebuilt");
+
+        // Off the rectangle and a patrolling NPC are refused.
+        assert!(!rt.expansion_place_npc_core(n as u32, 999, 0, 0));
+        if let Some(p) = edited.maps[&map]
+            .npcs
+            .iter()
+            .position(|x| !x.patrol.is_empty())
+        {
+            assert!(!rt.expansion_place_npc_core(p as u32, 0, 0, 0));
+        }
+    }
+
+    /// Disc-gated: the overlay's `blocked` layer is the collision grid the
+    /// player walks - every tile wall is in it, a solid prop with no top
+    /// closes its whole tile, and a prop moved in place takes its closed
+    /// quarters along.
+    #[test]
+    fn overlay_blocked_layer_is_the_walked_collision_grid() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let files = rebirth_files();
+        let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let _ = rt.load_expansion_core(&bundle(&files));
+        let mut checked = 0;
+        for (map, def) in &pack.maps {
+            let Some(si) = def.props.iter().position(|p| p.solid && p.top.is_none()) else {
+                continue;
+            };
+            rt.enter_expansion_map_core(map, "").expect("enter");
+            let ov = rt.expansion_overlay();
+            let (w, h) = (
+                ov["width"].as_u64().unwrap() as usize,
+                ov["height"].as_u64().unwrap() as usize,
+            );
+            let blocked: Vec<u8> = serde_json::from_value(ov["blocked"].clone()).unwrap();
+            let walls: Vec<u8> = serde_json::from_value(ov["walls"].clone()).unwrap();
+            assert_eq!(blocked.len(), w * h, "{map}");
+            for (i, (&b, &wl)) in blocked.iter().zip(&walls).enumerate() {
+                assert_eq!(b & wl, wl, "{map}: tile {i}'s walls are blocked");
+            }
+            let at = |t: [u16; 2]| usize::from(t[1]) * w + usize::from(t[0]);
+            let from = def.props[si].tile;
+            assert_eq!(
+                blocked[at(from)],
+                0xF,
+                "{map}: a solid prop closes its tile"
+            );
+            // An open tile with no prop and no wall, to move the prop onto.
+            let grid = def.tile_grid().unwrap();
+            let free = (0..h)
+                .flat_map(|r| (0..w).map(move |c| [c as u16, r as u16]))
+                .find(|&t| {
+                    let g = grid.get(usize::from(t[0]), usize::from(t[1])).unwrap();
+                    !g.void
+                        && blocked[at(t)] == 0
+                        && !def.props.iter().any(|p| p.tile == t)
+                        && !def
+                            .decorations()
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|d| d.tile == t)
+                });
+            let Some(to) = free else { continue };
+            let o = def.props[si].offset;
+            assert!(rt.expansion_place_prop_core(
+                si as u32,
+                u32::from(to[0]),
+                u32::from(to[1]),
+                i32::from(o[0]),
+                i32::from(o[2]),
+                def.props[si].rotation[1],
+            ));
+            let moved: Vec<u8> =
+                serde_json::from_value(rt.expansion_overlay()["blocked"].clone()).unwrap();
+            assert_eq!(
+                moved[at(to)],
+                0xF,
+                "{map}: the moved prop closes its new tile"
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "no Rebirth map has a solid prop to move");
+    }
+
+    /// Disc-gated: a solid prop, a standable prop, a lamp and a spawn moved
+    /// in place leave the world as a rebuild with the edited definition
+    /// does - the whole collision grid, the standable tops, the lights and
+    /// the overlay's spawns.
+    #[test]
+    fn props_lamps_spawns_moved_in_place_match_a_rebuild() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let files = rebirth_files();
+        let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let mut checked = 0;
+        for (map, def) in &pack.maps {
+            let solid = def.props.iter().position(|p| p.solid && p.top.is_none());
+            let Some(si) = solid else { continue };
+            let grid = def.tile_grid().unwrap();
+            let _ = rt.load_expansion_core(&bundle(&files));
+            rt.enter_expansion_map_core(map, "").expect("enter");
+            let grid_before = rt
+                .scene_host
+                .host()
+                .unwrap()
+                .world
+                .terrain
+                .collision_grid
+                .clone();
+            let o = def.tiles.origin.map(usize::from);
+            let at = |t: [u16; 2]| (o[1] + usize::from(t[1]) + 1) * 0x80 + o[0] + usize::from(t[0]);
+            // A tile the world leaves open with no prop on it, to move the
+            // prop onto.
+            let free = (0..grid.height)
+                .flat_map(|r| (0..grid.width).map(move |c| [c as u16, r as u16]))
+                .find(|&t| {
+                    let g = grid.get(usize::from(t[0]), usize::from(t[1])).unwrap();
+                    !g.void
+                        && grid_before[at(t)] >> 4 == 0
+                        && !def.props.iter().any(|p| p.tile == t)
+                });
+            let Some(to) = free else { continue };
+            let mut edited = pack.clone();
+            let e = edited.maps.get_mut(map).unwrap();
+            e.props[si].tile = to;
+            e.props[si].offset[0] = 8;
+            e.props[si].rotation[1] = 90.0;
+            assert!(rt.expansion_place_prop_core(
+                si as u32,
+                u32::from(to[0]),
+                u32::from(to[1]),
+                8,
+                i32::from(e.props[si].offset[2]),
+                90.0
+            ));
+            let top = e.props.iter().position(|p| p.top.is_some());
+            if let Some(ti) = top {
+                let t = e.props[ti].tile;
+                let to = [t[0], (t[1] + 1).min(grid.height as u16 - 1)];
+                e.props[ti].tile = to;
+                let o = e.props[ti].offset;
+                assert!(rt.expansion_place_prop_core(
+                    ti as u32,
+                    u32::from(to[0]),
+                    u32::from(to[1]),
+                    i32::from(o[0]),
+                    i32::from(o[2]),
+                    e.props[ti].rotation[1]
+                ));
+            }
+            if !e.lighting.lamps.is_empty() {
+                e.lighting.lamps[0].tile = to;
+                e.lighting.lamps[0].offset = [4, 80, -4];
+                assert!(rt.expansion_place_lamp_core(
+                    0,
+                    u32::from(to[0]),
+                    u32::from(to[1]),
+                    [4, 80, -4]
+                ));
+            }
+            e.spawns[0].tile = to;
+            e.spawns[0].facing = 3;
+            assert!(rt.expansion_place_spawn_core(0, u32::from(to[0]), u32::from(to[1]), 3));
+            let read = |rt: &LegaiaRuntime| {
+                let w = &rt.scene_host.host().unwrap().world;
+                let m = w.expansion.map.as_ref().unwrap();
+                let tops: Vec<_> = (0..grid.height as i32 * 8)
+                    .flat_map(|z| (0..grid.width as i32 * 8).map(move |x| (x, z)))
+                    .map(|(x, z)| {
+                        let o = def.tiles.origin.map(i32::from);
+                        m.floor_top_at(o[0] * 128 + x * 16, o[1] * 128 + z * 16)
+                    })
+                    .collect();
+                let lights: Vec<_> = w
+                    .expansion_map_lights()
+                    .iter()
+                    .map(|l| l.pos.map(|v| v as i32))
+                    .collect();
+                (
+                    w.terrain.collision_grid.clone(),
+                    tops,
+                    lights,
+                    rt.expansion_overlay()["spawns"].clone(),
+                )
+            };
+            let moved = read(&rt);
+            assert_eq!(
+                moved.0[at(to)] >> 4,
+                0xF,
+                "{map}: the prop closes its new tile"
+            );
+            assert_ne!(moved.0, grid_before, "{map}: the move changed the grid");
+            let r = rt.reload_expansion_core(&bundle(&edited.to_files().unwrap()));
+            assert_eq!(r["ok"], true, "{r}");
+            let rebuilt = read(&rt);
+            assert!(
+                moved.0 == rebuilt.0,
+                "{map}: collision grid in place == rebuilt"
+            );
+            assert_eq!(moved.1, rebuilt.1, "{map}: standable tops");
+            assert_eq!(moved.2, rebuilt.2, "{map}: lights");
+            assert_eq!(moved.3, rebuilt.3, "{map}: spawns");
+            checked += 1;
+        }
+        assert!(checked > 0, "Rebirth has a map with a solid prop");
+        assert!(!rt.expansion_place_prop_core(9999, 0, 0, 0, 0, 0.0));
+    }
+
     /// Disc-gated, ignored (a measurement, not a check): what a hot reload
     /// of the largest map the format allows costs, split into the engine's
     /// map entry and the page's scene build. The workbench doc's cost table
@@ -549,12 +1076,14 @@ mod tests {
         );
     }
 
-    /// Disc-gated, ignored (a measurement, not a check): each Isles map's
-    /// entry cost on the play page's path - the engine's map entry, the
-    /// page's scene build and the arrays it uploads - with the triangle
-    /// count drawn and a hash of the uploaded arrays (a change of output
-    /// shows as a change of hash): `cargo test -p legaia-web-play --profile
-    /// release-test --lib isles_map_entry_cost -- --ignored --nocapture`.
+    /// Disc-gated, ignored (a measurement): each Isles map's entry cost on
+    /// the play page's path - the engine's map entry, the page's scene build
+    /// and the arrays it uploads - then the workbench's rebuild of it (a
+    /// reload of the same pack), with the triangle count drawn and a hash of
+    /// everything the build made (a change of output shows as a change of
+    /// hash; the rebuild must make what the entry made): `cargo test -p
+    /// legaia-web-play --profile release-test --lib isles_map_entry_cost --
+    /// --ignored --nocapture`.
     #[test]
     #[ignore]
     fn isles_map_entry_cost() {
@@ -568,26 +1097,27 @@ mod tests {
         assert!(rt.load_disc(bytes, String::new()).is_ok());
         let v: Value = serde_json::from_str(&rt.load_expansion_core(&pack)).unwrap();
         assert_eq!(v["ok"], true, "{v}");
-        for map in [
-            "isles_beach",
-            "isles_village",
-            "isles_grotto",
-            "isles_thornwood",
-        ] {
-            let t = std::time::Instant::now();
-            rt.scene_host
-                .host_mut()
-                .unwrap()
-                .enter_expansion_map(map, "")
-                .expect("enter");
-            let engine = t.elapsed();
-            let t = std::time::Instant::now();
-            assert!(rt.rebuild_render_state().is_ok());
-            let page = t.elapsed();
-            let t = std::time::Instant::now();
-            let arrays = scene_build(&rt);
+        // Everything a build makes that the page draws or queries: the
+        // uploaded arrays and meshes, the occluders, the coplanar lifts and
+        // the fog ground, as one hash (a change of output shows as a change
+        // of hash).
+        let fingerprint = |rt: &mut LegaiaRuntime| -> (u64, usize) {
             let mut h = std::collections::hash_map::DefaultHasher::new();
-            std::hash::Hash::hash(&arrays, &mut h);
+            std::hash::Hash::hash(&scene_build(rt), &mut h);
+            let f = rt.field.as_ref().unwrap();
+            std::hash::Hash::hash(&format!("{:?}", f.occluders), &mut h);
+            let mut lifts: Vec<String> = f
+                .coplanar_offsets
+                .iter()
+                .map(|(d, o)| format!("{d:?} {o:?}"))
+                .collect();
+            lifts.sort();
+            std::hash::Hash::hash(&lifts, &mut h);
+            let fog = rt
+                .scene_host
+                .host()
+                .and_then(|h| h.world.fog_volume.ground_field().map(|g| format!("{g:?}")));
+            std::hash::Hash::hash(&fog, &mut h);
             // Each distinct mesh the page uploads, as `ensure` builds it.
             let mut slots: Vec<(u32, u32)> = rt
                 .field_terrain_slots()
@@ -619,12 +1149,42 @@ mod tests {
                 std::hash::Hash::hash(&rt.field_mesh_cba_tsb(), &mut h);
                 std::hash::Hash::hash(&rt.field_mesh_flat_rgba(), &mut h);
             }
+            (std::hash::Hasher::finish(&h), tris)
+        };
+        for map in [
+            "isles_beach",
+            "isles_village",
+            "isles_grotto",
+            "isles_thornwood",
+        ] {
+            let t = std::time::Instant::now();
+            rt.scene_host
+                .host_mut()
+                .unwrap()
+                .enter_expansion_map(map, "")
+                .expect("enter");
+            let engine = t.elapsed();
+            let t = std::time::Instant::now();
+            assert!(rt.rebuild_render_state().is_ok());
+            let page = t.elapsed();
+            let t = std::time::Instant::now();
+            let (cold, tris) = fingerprint(&mut rt);
             let upload = t.elapsed();
+            // The workbench's rebuild: the same pack again, re-entered where
+            // the player stands.
+            let t = std::time::Instant::now();
+            let r = rt.reload_expansion_core(&pack);
+            let reload = t.elapsed();
+            assert_eq!(r["reentered"], true, "{r}");
+            let t = std::time::Instant::now();
+            let (again, _) = fingerprint(&mut rt);
+            let upload_again = t.elapsed();
             eprintln!(
                 "{map}: engine entry {engine:?}, page build {page:?}, arrays {upload:?}; \
-                 ~{tris} triangles, output hash {:016x}",
-                std::hash::Hasher::finish(&h)
+                 reload {reload:?}, arrays {upload_again:?}; ~{tris} triangles, \
+                 output hash {cold:016x} / after the reload {again:016x}"
             );
+            assert_eq!(cold, again, "{map}: the reload builds what the entry built");
         }
     }
 }

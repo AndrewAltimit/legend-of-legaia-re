@@ -132,6 +132,12 @@ pub struct MapDef {
     /// Music, music zones and ambient sources ([`crate::audio::MapAudio`]).
     #[serde(skip_serializing_if = "crate::audio::MapAudio::is_empty")]
     pub audio: crate::audio::MapAudio,
+    /// What draws past the floor's edge ([`crate::map_detail::SurroundDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surround: Option<crate::map_detail::SurroundDef>,
+    /// What hangs over the floor ([`crate::map_detail::CeilingDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ceiling: Option<crate::map_detail::CeilingDef>,
 }
 
 /// A cutscene a map plays on arrival.
@@ -401,6 +407,17 @@ pub struct PropDef {
     pub animate: Vec<crate::map_detail::Animator>,
     /// A light the prop carries under enhanced lighting.
     pub light: Option<crate::map_detail::PropLight>,
+    /// Rest the prop on another's top: the id of a prop or a `[[decor]]`
+    /// of this map. The mesh's lowest point sits on the support's top (its
+    /// standable `top`, else its mesh's highest point), and
+    /// [`Self::offset`]`[1]` lifts it from there
+    /// ([`crate::map_rest`]). Empty stands it on the floor.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub on: String,
+    /// The prop hangs or is mounted (a lantern on a chain, a torch on a
+    /// wall): the resting check passes it over off the floor.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A field NPC a pack places on a map.
@@ -436,6 +453,10 @@ pub struct NpcDef {
     /// The clip id a patrol leg plays (a walk cycle of the same bundle).
     /// `None` keeps the idle clip while walking.
     pub walk_clip: Option<u8>,
+    /// Ticks a patrolling NPC stands at each stop, in its idle clip
+    /// ([`Self::clip`]), before it sets out for the next one. `0` walks the
+    /// loop without stopping.
+    pub pause: u16,
     /// The `dialog.toml` line the NPC says when talked to. Empty says
     /// nothing (a quest giver whose quest lines do the talking).
     pub line: String,
@@ -566,6 +587,11 @@ pub struct ExitDef {
     /// shut (a sealed stair saying why). Optional.
     #[serde(default)]
     pub locked_line: Option<String>,
+    /// Show [`Self::locked_line`] as a toast (its first page on one row)
+    /// instead of a dialog box: the player learns why without being
+    /// stopped on every step onto the shut exit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked_toast: bool,
 }
 
 /// Where an exit leads.
@@ -656,6 +682,12 @@ pub struct TriggerZone {
     /// the zone quiet on every later visit.
     #[serde(default)]
     pub once: bool,
+    /// Fire on the action button instead of on entry: walking onto the zone
+    /// does nothing, and pressing Cross while the player stands on it or
+    /// faces it fires it - an object the player chooses to examine (a
+    /// brazier, a notice board), not a tile that talks at every passer-by.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub press: bool,
     /// What must hold for the zone to fire: the quest prerequisite shape.
     /// A shut zone fires nothing and spends no `once`; it fires on the
     /// first entry after it opens. Empty is always open.
@@ -684,6 +716,10 @@ pub enum MapEvent {
     Boss { boss: String },
     /// Show a pack dialogue line (`dialog.toml`).
     Dialog { line: String },
+    /// Show a pack dialogue line as a toast: its first page on one row
+    /// ([`crate::boss_script::banner_text`]), on the toast rows, taking no
+    /// input and stopping nothing - a cue in place of a dialog box.
+    Toast { line: String },
     /// Count as talking to the pack NPC `npc` (a quest's talk objective).
     Talk { npc: String },
     /// Start a pack quest (`quests.toml`).

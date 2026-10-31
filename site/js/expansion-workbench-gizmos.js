@@ -28,6 +28,7 @@
  * after, which close the page history's step around it.
  */
 import { h } from './expansion-workbench-forms.js';
+import { layoutTools, layoutSummary, nudge } from './expansion-workbench-layout.js';
 
 const UNIT = 128;
 const TYPES = ['props', 'decor', 'npcs', 'spawns', 'lamps', 'emitters', 'triggers', 'exits', 'encounters'];
@@ -42,7 +43,38 @@ const G = {
   mode: 'view', tool: 'move', snap: 'tile', sel: [],
   brush: { kind: 'raise', radius: 2.5, height: 24, strength: 1, char: '' },
   api: null, sentTerrain: undefined, sentObjects: '', bar: null,
+  // The layout row's counts and steps (expansion-workbench-layout.js),
+  // shared with the painter's.
+  layout: {}, layoutMsg: '',
 };
+
+/** Run layout edit `fn(map, sel)` as one undo step over `sel`, through
+ * `api` (the editor's), and keep its account for the bar. */
+function runLayout(api, sel, fn) {
+  const map = api.map();
+  if (!map || !sel.length) return null;
+  api.snapshot();
+  const r = fn(map, sel);
+  G.sel = (r && r.sel) || sel;
+  G.layoutMsg = layoutSummary(r);
+  api.selected(G.sel);
+  api.refresh(true);
+  renderBar();
+  sync(true);
+  return r;
+}
+
+/** The layout row over the shared selection, for the painter's side
+ * (`sel` the painter's own when nothing is multi-selected; `painterApi`
+ * the painter's `{ map(), snapshot(), refresh(), selected(list) }`). */
+export function layoutRow(sel, painterApi) {
+  const api = painterApi || G.api;
+  if (!api) return null;
+  const list = G.sel.length ? G.sel : (sel || []);
+  const row = layoutTools(Object.assign(G.layout, { h, sel: () => list, run: (fn) => runLayout(api, list, fn) }));
+  if (G.layoutMsg) row.append(h('span', { class: 'xw-hint' }, ' ' + G.layoutMsg));
+  return row;
+}
 
 /** The list behind selection type `type` on `map` (created when asked). */
 export function listOf(map, type, make) {
@@ -263,6 +295,8 @@ export function selection() { return G.sel.slice(); }
 /** Set the selection (from the painter); the frame follows. */
 export function select(list) {
   G.sel = (list || []).filter((s) => s && TYPES.includes(s.type));
+  G.layoutMsg = '';
+  renderBar();
   sync(true);
 }
 
@@ -298,7 +332,9 @@ function onFrame(m) {
   if (!map) return;
   if (m.type === 'xw-select') {
     G.sel = (m.keys || []).map((k) => { const [type, i] = k.split(':'); return { type, i: +i }; });
+    G.layoutMsg = '';
     api.selected(G.sel);
+    renderBar();
   } else if (m.type === 'xw-transform') {
     api.snapshot();
     applyTransforms(map, m.edits || []);
@@ -317,6 +353,22 @@ function onFrame(m) {
     else if (m.ctrl && m.key === 'd') duplicateSel();
     else if (m.ctrl && m.key === 'z') api.undo(m.shift ? 1 : -1);
     else if (m.ctrl && m.key === 'y') api.undo(1);
+    else if (m.key === 'nudge' && G.sel.length) {
+      // One tile, or a quarter (32 units) with Shift or the 32-unit snap.
+      const step = m.fine || G.snap === 'sub' ? 0.25 : 1;
+      runLayout(api, G.sel, (map, sel) => nudge(map, sel, (m.dc | 0) * step, (m.dr | 0) * step));
+      G.layoutMsg = '';
+      renderBar();
+    } else if (m.key === 'tool' && ['move', 'rotate', 'scale'].includes(m.tool)) {
+      G.tool = m.tool;
+      renderBar();
+      sync();
+    } else if (m.key === 'deselect' && G.sel.length) {
+      G.sel = [];
+      api.selected(G.sel);
+      renderBar();
+      sync(true);
+    }
     else if (m.key === '[' || m.key === ']') {
       G.brush.radius = Math.max(0.25, Math.min(16, G.brush.radius * (m.key === ']' ? 1.25 : 0.8)));
       renderBar();
@@ -363,7 +415,7 @@ function renderBar() {
   bar.innerHTML = '';
   const map = api.map();
   const b = (label, on, title, fn) => h('button', { type: 'button', class: 'wb-mini' + (on ? ' is-on' : ''), title, onclick: fn }, label);
-  const setMode = (m) => { G.mode = m; renderBar(); sync(); };
+  const setMode = (m) => { G.mode = m; G.picked = true; renderBar(); sync(); };
   bar.append(h('span', { class: 'wb-label' }, 'Edit'),
     b('View', G.mode === 'view', 'The picture is only looked at: a click picks a tile', () => setMode('view')),
     b('Select', G.mode === 'select', 'Pick, move, turn and scale props, decorations, NPCs, spawns, lamps, emitters and zones', () => setMode('select')));
@@ -381,12 +433,16 @@ function renderBar() {
     const snap = h('select', { 'aria-label': 'Snap' },
       ...[['tile', 'Snap: tile'], ['sub', 'Snap: 32 units'], ['free', 'Free']].map(([k, l]) => h('option', { value: k, selected: G.snap === k }, l)));
     snap.addEventListener('change', () => { G.snap = snap.value; sync(); });
-    bar.append(h('span', { class: 'xw-sep' }), tool('move', 'Move', 'Arrows move on one axis, the square on both; drag an object to move it'),
-      tool('rotate', 'Rotate', 'Drag the ring: 15 degree steps (NPCs and spawns by facing sector)'),
-      tool('scale', 'Scale', 'Drag the corner handle; a zone\'s corner resizes it'), snap,
+    bar.append(h('span', { class: 'xw-sep' }), tool('move', 'Move', 'Arrows move on one axis, the square on both; drag an object to move it (W)'),
+      tool('rotate', 'Rotate', 'Drag the ring: 15 degree steps (NPCs and spawns by facing sector) (E)'),
+      tool('scale', 'Scale', 'Drag the corner handle; a zone\'s corner resizes it (R)'), snap,
       b('Duplicate', false, 'Copy the selection one tile over (Ctrl+D)', duplicateSel),
       b('Delete', false, 'Remove the selection (Delete)', removeSel),
-      h('span', { class: 'xw-hint' }, ` ${G.sel.length ? `${G.sel.length} selected` : 'click an object; Shift adds'}; Shift while dragging places freely`));
+      h('span', { class: 'xw-hint' }, ` ${G.sel.length ? `${G.sel.length} selected; arrows nudge (Shift a quarter tile)` : 'click an object; Shift adds'}; Shift while dragging places freely; W / E / R move, rotate, scale`));
+    if (G.sel.length) {
+      bar.append(layoutTools(Object.assign(G.layout, { h, sel: () => G.sel, run: (fn) => runLayout(api, G.sel, fn) })));
+      if (G.layoutMsg) bar.append(h('span', { class: 'xw-hint' }, ' ' + G.layoutMsg));
+    }
   } else if (G.mode === 'sculpt') {
     const kind = h('select', { 'aria-label': 'Brush' }, ...BRUSHES.map(([k, l]) => h('option', { value: k, selected: G.brush.kind === k }, l)));
     kind.addEventListener('change', () => { G.brush.kind = kind.value; sync(); });
@@ -411,6 +467,18 @@ export function mountMapEditor(api) {
   if (!G.bar) G.bar = h('div', { class: 'xw-tools xw-3d-edit', role: 'toolbar', 'aria-label': '3D editing' });
   api.preview.onEdit(onFrame);
   api.preview.setEditBar(G.bar);
+  /* Split and 3D are for working in the picture: they open in Select
+   * (unless a mode was picked by hand), 2D in View as before. */
+  if (api.preview.onView) {
+    const byView = (view) => {
+      if (G.picked || view === '2d' || G.mode !== 'view') return;
+      G.mode = 'select';
+      renderBar();
+      sync(true);
+    };
+    api.preview.onView(byView);
+    byView(api.preview.state().view);
+  }
   renderBar();
   sync(true);
   return G.bar;
@@ -432,4 +500,4 @@ export function setEditor(o) {
 }
 
 // Headless-verification hook.
-if (typeof window !== 'undefined') window.__xwEdit = { state: editorState, set: setEditor, select };
+if (typeof window !== 'undefined') window.__xwEdit = { state: editorState, set: setEditor, select, layout: (fn) => runLayout(G.api, G.sel, fn) };

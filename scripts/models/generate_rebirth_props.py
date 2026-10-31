@@ -180,6 +180,10 @@ CLOTH_RED = ((220, 60, 60), (110, 20, 30))
 CLOTH_GOLD = ((250, 210, 90), (170, 110, 30))
 PAPER = ((255, 236, 180), (240, 150, 60))
 WATER = ((200, 240, 255), (40, 110, 200))
+WOOD = ((176, 124, 72), (92, 58, 30))
+DARK_WOOD = ((120, 82, 48), (58, 36, 20))
+APPLE = ((236, 80, 50), (140, 30, 20))
+PEAR = ((214, 210, 90), (120, 130, 40))
 
 
 def sundial(out):
@@ -279,6 +283,45 @@ def lantern(out):
     write_glb(out, m, img, "lantern")
 
 
+def lamp_post(out):
+    """The Isles: a timber post with a crossarm and a paper lantern hung
+    from its end; its foot stands on the ground at the origin."""
+    img, b = strip([WOOD, DARK_WOOD, PAPER, BRASS], 57)
+    m = Mesh()
+    m.prism(4, 0.07, 0.06, 0.0, 1.62, b[0], twist=math.pi / 4, cap=b[1])
+    m.prism(4, 0.10, 0.08, 0.0, 0.12, b[1], twist=math.pi / 4, cap=b[1])
+    m.box(-0.04, 1.48, -0.035, 0.42, 1.55, 0.035, b[1])
+    m.box(0.33, 1.36, -0.01, 0.35, 1.48, 0.01, b[3])
+    prof = [(1.06, 0.06), (1.10, 0.11), (1.17, 0.13), (1.27, 0.13), (1.33, 0.10), (1.36, 0.06)]
+    for (y0, r0), (y1, r1) in zip(prof, prof[1:]):
+        m.prism(8, r0, r1, y0, y1, b[2], cx=0.34)
+    m.prism(8, 0.065, 0.065, 1.36, 1.39, b[3], cx=0.34, cap=b[3])
+    m.prism(8, 0.065, 0.065, 1.03, 1.06, b[3], cx=0.34, cap=b[3])
+    write_glb(out, m, img, "lamp_post")
+
+
+def produce_crate(out):
+    """An open slatted crate heaped with fruit, for a stall top or a stack
+    on the ground: 0.5 x 0.36, 0.26 high, its base at the origin."""
+    img, b = strip([WOOD, DARK_WOOD, APPLE, PEAR], 67)
+    m = Mesh()
+    hx, hz, h = 0.25, 0.18, 0.16
+    m.box(-hx, 0.0, -hz, hx, 0.02, hz, b[1])
+    for (x0, z0, x1, z1) in ((-hx, -hz, hx, -hz + 0.02), (-hx, hz - 0.02, hx, hz),
+                             (-hx, -hz, -hx + 0.02, hz), (hx - 0.02, -hz, hx, hz)):
+        m.box(x0, 0.0, z0, x1, h, z1, b[0])
+    rnd = random.Random(68)
+    for i in range(14):
+        x = rnd.uniform(-hx + 0.06, hx - 0.06)
+        z = rnd.uniform(-hz + 0.06, hz - 0.06)
+        y = h - 0.04 + rnd.uniform(0.0, 0.06)
+        r = rnd.uniform(0.045, 0.06)
+        band = b[2] if i % 3 else b[3]
+        m.prism(6, r * 0.6, r, y - r * 0.5, y, band, cx=x, cz=z)
+        m.prism(6, r, r * 0.5, y, y + r * 0.7, band, cx=x, cz=z, cap=band)
+    write_glb(out, m, img, "produce_crate")
+
+
 def fountain(out):
     """3F / 4F: a round basin with a spout column and a water sheet."""
     img, b = strip([STONE, WATER, DARK_STONE], 33)
@@ -307,6 +350,191 @@ def throne_brazier(out):
     write_glb(out, m, img, "brazier")
 
 
+SAND_SHELL = ((250, 236, 214), (196, 160, 126))
+PINK_SHELL = ((250, 200, 186), (190, 110, 96))
+STARFISH = ((250, 150, 80), (190, 70, 40))
+BLEACHED = ((214, 204, 184), (128, 116, 98))
+HULL_PAINT = ((90, 130, 150), (40, 66, 86))
+FROND = ((112, 160, 72), (34, 72, 28))
+DUNE_GRASS = ((214, 210, 140), (110, 128, 60))
+
+
+def loft(m, sections, band, both=False):
+    """Quads between consecutive rings of points (each ring the same
+    length), `band` mapped along each strip."""
+    for s0, s1 in zip(sections, sections[1:]):
+        for k in range(len(s0) - 1):
+            m.quad(s0[k], s0[k + 1], s1[k + 1], s1[k], band, both=both)
+
+
+def rowboat(out):
+    """The Isles: a clinker rowboat, 2.6 long (+X bow), its keel on the
+    ground at the origin, two thwarts and a pair of oars laid inside."""
+    img, b = strip([WOOD, DARK_WOOD, HULL_PAINT, BLEACHED], 91)
+    m = Mesh()
+    n = 10
+    length, beam, depth = 2.6, 0.92, 0.42
+    sections = []
+    for i in range(n + 1):
+        t = i / n
+        x = (t - 0.5) * length
+        # Blunt at the stern (-X), fine at the bow.
+        w = beam / 2 * (1 - abs(2 * t - 1) ** (2.4 if t > 0.5 else 3.6)) ** 0.5
+        w = max(w, 0.02 if t > 0.5 else 0.16)
+        sheer = depth + 0.14 * (2 * t - 1) ** 2
+        ring = []
+        for k in range(7):
+            a = math.pi * k / 6
+            ring.append([x, sheer * (1 - 0.98 * math.sin(a)), -w * math.cos(a)])
+        sections.append(ring)
+    loft(m, sections, b[2], both=True)
+    # The gunwale: a dark rail along each side.
+    for side in (0, 6):
+        for s0, s1 in zip(sections, sections[1:]):
+            p0, p1 = s0[side], s1[side]
+            m.quad([p0[0], p0[1] - 0.05, p0[2]], [p1[0], p1[1] - 0.05, p1[2]],
+                   [p1[0], p1[1] + 0.02, p1[2]], [p0[0], p0[1] + 0.02, p0[2]], b[1], both=True)
+    # The transom closing the stern.
+    s = sections[0]
+    for k in range(len(s) - 1):
+        m.tri([s[0][0], s[0][1], 0.0], s[k], s[k + 1], [0.5, b[1][0]], [0.0, b[1][1]], [1.0, b[1][1]])
+        m.tri([s[0][0], s[0][1], 0.0], s[k + 1], s[k], [0.5, b[1][0]], [1.0, b[1][1]], [0.0, b[1][1]])
+    # Floorboards, two thwarts, and the oars.
+    m.box(-0.95, 0.04, -0.2, 0.75, 0.07, 0.2, b[0])
+    for x in (-0.45, 0.35):
+        m.box(x - 0.09, depth - 0.12, -0.4, x + 0.09, depth - 0.08, 0.4, b[0])
+    for z in (-0.12, 0.12):
+        m.box(-1.0, depth - 0.07, z - 0.025, 1.05, depth - 0.03, z + 0.025, b[3])
+        m.box(0.75, depth - 0.08, z - 0.07, 1.15, depth - 0.05, z + 0.07, b[3])
+    write_glb(out, m, img, "rowboat")
+
+
+def shells(out):
+    """The Isles: a scatter of shells - three cones, two fan scallops and a
+    starfish - lying in a 0.5 patch round the origin."""
+    img, b = strip([SAND_SHELL, PINK_SHELL, STARFISH], 93, stripes=0.35)
+    m = Mesh()
+    rnd = random.Random(94)
+    for _ in range(3):
+        cx, cz = rnd.uniform(-0.2, 0.2), rnd.uniform(-0.2, 0.2)
+        r = rnd.uniform(0.03, 0.05)
+        m.prism(6, r, 0.0, 0.0, r * 2.4, b[0], cx=cx, cz=cz, twist=rnd.uniform(0, 3))
+    for _ in range(2):
+        cx, cz = rnd.uniform(-0.22, 0.22), rnd.uniform(-0.22, 0.22)
+        a0 = rnd.uniform(0, 2 * math.pi)
+        r = rnd.uniform(0.06, 0.09)
+        ribs = 7
+        for k in range(ribs):
+            a = a0 + (k / ribs - 0.5) * 2.0
+            a1 = a0 + ((k + 1) / ribs - 0.5) * 2.0
+            hub = [cx, 0.005, cz]
+            p = [cx + r * math.cos(a), 0.035 if k % 2 else 0.02, cz + r * math.sin(a)]
+            q = [cx + r * math.cos(a1), 0.02 if k % 2 else 0.035, cz + r * math.sin(a1)]
+            m.tri(hub, q, p, [0.5, b[1][0]], [1.0, b[1][1]], [0.0, b[1][1]])
+            m.tri(hub, p, q, [0.5, b[1][0]], [0.0, b[1][1]], [1.0, b[1][1]])
+    # A five-armed starfish.
+    sx, sz = 0.12, -0.16
+    pts = []
+    for k in range(10):
+        a = math.pi * k / 5
+        r = 0.11 if k % 2 == 0 else 0.04
+        pts.append([sx + r * math.cos(a), 0.012, sz + r * math.sin(a)])
+    top = [sx, 0.03, sz]
+    for k in range(10):
+        p, q = pts[k], pts[(k + 1) % 10]
+        m.tri(top, q, p, [0.5, b[2][0]], [1.0, b[2][1]], [0.0, b[2][1]])
+        m.tri([p[0], 0.0, p[2]], p, q, [0.0, b[2][1]], [0.0, b[2][0]], [1.0, b[2][0]])
+    write_glb(out, m, img, "shells")
+
+
+def driftwood(out):
+    """The Isles: a sea-bleached log 1.7 long lying along X with a bend and
+    two broken branch stubs; its underside on the ground at the origin."""
+    img, b = strip([BLEACHED, DARK_WOOD], 95, stripes=0.3)
+    m = Mesh()
+    path = [(-0.85, 0.11, 0.0, 0.10), (-0.3, 0.12, 0.08, 0.12), (0.25, 0.10, 0.02, 0.10),
+            (0.85, 0.06, -0.14, 0.05)]
+    sections = []
+    for (x, y, z, r) in path:
+        sections.append([[x, y + r * math.sin(2 * math.pi * k / 8), z + r * math.cos(2 * math.pi * k / 8)]
+                         for k in range(9)])
+    loft(m, sections, b[0])
+    for (x, y, z, r) in (path[0], path[-1]):
+        c = [x, y, z]
+        ring = [[x, y + r * math.sin(2 * math.pi * k / 8), z + r * math.cos(2 * math.pi * k / 8)] for k in range(9)]
+        for k in range(8):
+            m.tri(c, ring[k], ring[k + 1], [0.5, b[1][0]], [0.0, b[1][1]], [1.0, b[1][1]])
+            m.tri(c, ring[k + 1], ring[k], [0.5, b[1][0]], [1.0, b[1][1]], [0.0, b[1][1]])
+    for (x, z, a, ln) in ((-0.15, 0.1, 0.7, 0.42), (0.45, -0.02, -0.9, 0.3)):
+        dx, dz = math.cos(a) * ln * 0.6, math.sin(a) * ln
+        m.prism(5, 0.04, 0.015, 0.12, 0.2, b[0], cx=x, cz=z)
+        m.quad([x, 0.14, z], [x + dx, 0.2, z + dz], [x + dx, 0.23, z + dz], [x, 0.19, z], b[0], both=True)
+    write_glb(out, m, img, "driftwood")
+
+
+def frond_plant(out, name, colour, seed, fronds, length, rise, width):
+    """A plant of `fronds` arching blades round the origin, each a strip of
+    quads drawn from both sides, so it reads from any side: unlike a flat
+    card, never edge-on."""
+    img, b = strip([colour, DARK_WOOD], seed)
+    m = Mesh()
+    rnd = random.Random(seed)
+    for f in range(fronds):
+        a = 2 * math.pi * (f + rnd.uniform(-0.3, 0.3)) / fronds
+        ln = length * rnd.uniform(0.75, 1.1)
+        up = rise * rnd.uniform(0.8, 1.15)
+        steps = 5
+        prev = None
+        for s in range(steps + 1):
+            t = s / steps
+            r = ln * t
+            y = up * math.sin(math.pi * 0.85 * t) + 0.01
+            w = width * math.sin(math.pi * min(1.0, t * 1.1 + 0.05)) * (1 - 0.6 * t)
+            cx, cz = r * math.cos(a), r * math.sin(a)
+            nx, nz = -math.sin(a) * w, math.cos(a) * w
+            cur = ([cx - nx, y, cz - nz], [cx + nx, y, cz + nz])
+            if prev:
+                v0 = b[0][0] + (b[0][1] - b[0][0]) * (s - 1) / steps
+                v1 = b[0][0] + (b[0][1] - b[0][0]) * s / steps
+                m.quad(prev[0], prev[1], cur[1], cur[0], (v1, v0), both=True)
+            prev = cur
+    write_glb(out, m, img, name)
+
+
+NET = ((150, 132, 96), (70, 58, 40))
+
+
+def net_rack(out):
+    """The Isles: a fishers' drying rack - two forked posts and a pole 1.8
+    long across them along X, a net hung over the pole in sagging folds;
+    the posts' feet on the ground at the origin."""
+    img, b = strip([DARK_WOOD, WOOD, NET], 101, stripes=0.6)
+    m = Mesh()
+    for x in (-0.85, 0.85):
+        m.prism(5, 0.045, 0.035, 0.0, 1.05, b[0], cx=x, cap=b[0])
+        for dz in (-0.05, 0.05):
+            m.quad([x, 0.98, 0.0], [x, 0.98, 0.0], [x, 1.12, dz], [x, 1.12, dz * 0.6], b[0], both=True)
+    # The pole: a prism built along Y, then laid along X at the forks.
+    at = len(m.pos)
+    m.prism(6, 0.03, 0.03, -0.95, 0.95, b[1], cap=b[1])
+    m.pos[at:] = [[p[1], 1.05 + p[0], p[2]] for p in m.pos[at:]]
+    # The net: hung over the pole, falling both sides in folds to a hem.
+    cols = 12
+    for side in (-1, 1):
+        for k in range(cols):
+            x0 = -0.8 + 1.6 * k / cols
+            x1 = -0.8 + 1.6 * (k + 1) / cols
+            sag0 = 0.08 * math.sin(math.pi * k / cols)
+            sag1 = 0.08 * math.sin(math.pi * (k + 1) / cols)
+            fold0 = 0.03 * (k % 2)
+            fold1 = 0.03 * ((k + 1) % 2)
+            top0, top1 = [x0, 1.05, 0.0], [x1, 1.05, 0.0]
+            bot0 = [x0, 0.35 + sag0, side * (0.2 + fold0)]
+            bot1 = [x1, 0.35 + sag1, side * (0.2 + fold1)]
+            m.quad(bot0, bot1, top1, top0, b[2], both=True)
+    write_glb(out, m, img, "net_rack")
+
+
 def main(out_dir):
     os.makedirs(out_dir, exist_ok=True)
     sundial(os.path.join(out_dir, "sundial.glb"))
@@ -317,6 +545,14 @@ def main(out_dir):
     lantern(os.path.join(out_dir, "lantern.glb"))
     fountain(os.path.join(out_dir, "fountain.glb"))
     throne_brazier(os.path.join(out_dir, "brazier.glb"))
+    lamp_post(os.path.join(out_dir, "lamp_post.glb"))
+    produce_crate(os.path.join(out_dir, "produce_crate.glb"))
+    rowboat(os.path.join(out_dir, "rowboat.glb"))
+    shells(os.path.join(out_dir, "shells.glb"))
+    driftwood(os.path.join(out_dir, "driftwood.glb"))
+    frond_plant(os.path.join(out_dir, "fern.glb"), "fern", FROND, 97, 9, 0.55, 0.32, 0.09)
+    frond_plant(os.path.join(out_dir, "dune_grass.glb"), "dune_grass", DUNE_GRASS, 99, 14, 0.38, 0.42, 0.025)
+    net_rack(os.path.join(out_dir, "net_rack.glb"))
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@
 //! explicit bands of the ordering table - legs, apron, top, board, marks,
 //! shadows, cards by distance, sparks - all deeper than the HUD's buckets.
 
-use legaia_engine_expansion::duel_stage::{BurstKind, DuelStageFrame, StageCard};
+use legaia_engine_expansion::duel_stage::{BurstKind, DuelStageFrame, StageCard, StageChair};
 use legaia_engine_modes::cards::table_art;
 use legaia_render_kernels::screen_prim::{CornerDepth, FlatQuad, ScreenPrim, ScreenQuad};
 
@@ -257,6 +257,66 @@ fn table(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
     }
 }
 
+/// A chair's seat half width and half depth, its thickness, its legs' half
+/// side, and how far its back rises over the seat, world units.
+const CHAIR_HALF_W: f32 = 15.0;
+const CHAIR_HALF_D: f32 = 14.0;
+const CHAIR_SEAT_T: f32 = 4.0;
+const CHAIR_LEG: f32 = 2.2;
+const CHAIR_BACK_H: f32 = 40.0;
+
+/// A wooden chair under a seated NPC ([`StageChair`]), in the table's wood:
+/// four legs, the seat, and a back of two posts with a top rail and a slat
+/// on the side away from the table. Built in the chair's own axes, standing
+/// on the floor under it.
+pub(super) fn chair(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, ch: &StageChair) {
+    let floor = pr
+        .world
+        .sample_field_floor_height(ch.pos[0] as i32, ch.pos[1] as i32) as f32;
+    let t = Table {
+        pr,
+        floor,
+        centre: ch.pos,
+        right: [ch.toward[1], -ch.toward[0]],
+        across: ch.toward,
+        eye: pr.eye,
+    };
+    let (w, d, seat) = (CHAIR_HALF_W, CHAIR_HALF_D, ch.seat);
+    let under = seat - CHAIR_SEAT_T;
+    let l = CHAIR_LEG;
+    for (r, a) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+        let (cr, ca) = (r * (w - l - 1.0), a * (d - l - 1.0));
+        let top = if a < 0.0 { seat + CHAIR_BACK_H } else { under };
+        box_sides(
+            out,
+            &t,
+            (cr - l, ca - l, cr + l, ca + l),
+            top,
+            0.0,
+            WOOD_DARK,
+            BAND_TABLE + 3,
+        );
+    }
+    box_sides(out, &t, (-w, -d, w, d), seat, under, WOOD, BAND_TABLE + 2);
+    lit_rect(out, &t, (-w, -d, w, d), seat, 1, WOOD, 80.0, BAND_TABLE + 1);
+    // The back: a top rail and a slat between the rear posts.
+    let back = -d + l;
+    for (hi, lo) in [
+        (seat + CHAIR_BACK_H - 1.0, seat + CHAIR_BACK_H - 9.0),
+        (seat + CHAIR_BACK_H - 17.0, seat + CHAIR_BACK_H - 22.0),
+    ] {
+        box_sides(
+            out,
+            &t,
+            (-w + 1.0, back - 1.6, w - 1.0, back + 1.6),
+            hi,
+            lo,
+            WOOD,
+            BAND_TABLE + 2,
+        );
+    }
+}
+
 /// The board: a gold rim, the felt cells (or the scene's surface texture),
 /// with gaps between them.
 fn board(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
@@ -298,7 +358,40 @@ fn board(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
         );
         match tb.surface {
             Some(surf) => surface_cell(out, t, rect, top + 0.8, surf, BAND_BOARD),
-            None => lit_rect(out, t, rect, top + 0.8, 2, FELT, w * 1.6, BAND_BOARD),
+            None => {
+                lit_rect(out, t, rect, top + 0.8, 2, FELT, w * 1.6, BAND_BOARD);
+                cell_bevel(out, t, rect, top + 0.85);
+            }
+        }
+    }
+}
+
+/// A felt cell's inset edge: the far and left lips in shadow, the near and
+/// right lips catching the lamp, so each cell reads as a tile sunk into
+/// the board rather than a painted square.
+fn cell_bevel(
+    out: &mut Vec<ScreenPrim>,
+    t: &Table<'_, '_>,
+    (r0, a0, r1, a1): (f32, f32, f32, f32),
+    h: f32,
+) {
+    let e = ((r1 - r0).min(a1 - a0) * 0.06).max(1.0);
+    let dark = rgba(shade(FELT, 0.45), 255);
+    let light = rgba(shade(FELT, 1.6), 255);
+    for ((q0, q1, q2, q3), c) in [
+        ((r0, a1 - e, r1, a1), dark),
+        ((r0, a0 + e, r0 + e, a1 - e), dark),
+        ((r0, a0, r1, a0 + e), light),
+        ((r1 - e, a0 + e, r1, a1 - e), light),
+    ] {
+        let pts = [
+            t.at(q0, q3, h),
+            t.at(q2, q3, h),
+            t.at(q0, q1, h),
+            t.at(q2, q1, h),
+        ];
+        if let [Some(p0), Some(p1), Some(p2), Some(p3)] = pts {
+            out.push(flat([p0, p1, p2, p3], [c; 4], None, BAND_BOARD - 1));
         }
     }
 }
@@ -632,6 +725,9 @@ pub(super) fn duel_pieces(pr: &Projector<'_>, s: &DuelStageFrame) -> Vec<ScreenP
     };
     if s.table.draw_table {
         table(&mut out, &t, s);
+    }
+    for ch in &s.chairs {
+        chair(&mut out, pr, ch);
     }
     board(&mut out, &t, s);
     marks(&mut out, &t, s);

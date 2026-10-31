@@ -175,6 +175,13 @@ jobs:
           fi
           cargo deny check advisories
 
+      # Every pack under packs/ validates, bundles byte-for-byte the same
+      # twice and reads back clean - what release-build.sh ships as
+      # packs/<id>.lxpack. Builds the `asset` CLI (dev profile, warm in the
+      # runner's target cache).
+      - name: Expansion packs validate and bundle
+        run: python3 scripts/ci/check-expansion-packs.py
+
       # The site's crate map, the README's crate diagrams and its layer list
       # are generated from the manifests; a stale copy fails.
       - name: Crate map freshness

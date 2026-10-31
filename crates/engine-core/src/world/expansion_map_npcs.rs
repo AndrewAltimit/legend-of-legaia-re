@@ -60,8 +60,9 @@ impl World {
     }
 
     /// The talk on a pack NPC: when placement `slot` is one of the active
-    /// map's NPCs, run its line, raise `Talked(id)` for the quests and
-    /// report the interaction. Returns whether `slot` was a pack NPC (the
+    /// map's NPCs, raise `Talked(id)` for the quests, run its line unless a
+    /// quest line the talk raised answers for it, and report the
+    /// interaction. Returns whether `slot` was a pack NPC (the
     /// retail interaction then does not run).
     pub(in crate::world) fn expansion_npc_interact(&mut self, interact_id: u8, slot: u8) -> bool {
         let Some(talk) = self
@@ -91,24 +92,82 @@ impl World {
                 }
                 ok
             });
+        // The quests hear the talk first: when it starts, completes or
+        // reminds a quest that has a line of its own, that line is the
+        // NPC's answer, and the NPC's idle line is not said before it - one
+        // box per talk, not two.
+        let queued = self.expansion.quests.dialog.queued.len();
+        self.expansion_talked(&talk.npc);
+        let quest_speaks = self.expansion.quests.dialog.queued.len() > queued;
         if !opened
+            && !quest_speaks
             && let Some(line) = &talk.line
             && let Err(e) = self.expansion_say(line)
         {
             log::warn!("expansion: npc `{}` line `{line}`: {e:?}", talk.npc);
         }
-        self.expansion_talked(&talk.npc);
         self.pending_field_events.push(
             legaia_engine_field::field_events::FieldEvent::FieldInteract { interact_id, slot },
         );
         true
     }
 
+    /// The action button on a pack map with no NPC or prop under the probe:
+    /// fire the map's `press` triggers on the tile the player faces (one
+    /// tile ahead along the retail facing probe's compass point) or, failing
+    /// that, the tile they stand on. The fired events run on the map's next
+    /// step (`SceneHost::step_expansion_map`). Returns whether one fired;
+    /// `false` with no pack map active.
+    pub(in crate::world) fn expansion_press_triggers(&mut self) -> bool {
+        let Some(slot) = self.player_actor_slot.map(usize::from) else {
+            return false;
+        };
+        let Some(actor) = self.actors.get(slot).filter(|a| a.active) else {
+            return false;
+        };
+        let ms = &actor.move_state;
+        let (x, z) = (i32::from(ms.world_x), i32::from(ms.world_z));
+        let sector = (((i32::from(ms.render_26) + 0x800) & 0xfff) >> 9) as usize;
+        // The probe point is 64 units ahead; a pack tile is wider, so look a
+        // full tile ahead to reach the next one.
+        let (dx, dz) = super::config::FIELD_FACING_PROBES[sector];
+        let (ax, az) = (x + 2 * i32::from(dx), z - 2 * i32::from(dz));
+        let Some(mut map) = self.expansion.map.take() else {
+            return false;
+        };
+        let tiles: Vec<(u16, u16)> = [map.tile_at_world(ax, az), map.tile_at_world(x, z)]
+            .into_iter()
+            .flatten()
+            .collect();
+        let fired = map.press_gated(&tiles, |p| self.expansion_prerequisites_hold(p));
+        self.expansion.map = Some(map);
+        fired
+    }
+
+    /// Show pack line `line_id` as a toast: its first page on one row
+    /// (`boss_script::banner_text`). Returns whether the line resolved.
+    pub fn expansion_toast_line(&mut self, line_id: &str) -> bool {
+        let Some(text) = self
+            .expansion
+            .pack
+            .as_ref()
+            .and_then(|p| p.dialog.lines.get(line_id))
+            .map(legaia_engine_expansion::boss_script::banner_text)
+        else {
+            return false;
+        };
+        self.expansion.toasts.push(text);
+        true
+    }
+
     /// One tick of the pack NPCs' patrols: each patrolling NPC with no walk
-    /// leg in flight starts the next one, toward the next stop of its loop.
+    /// leg in flight stands out its pause at the stop it reached, in its
+    /// idle clip, then starts the next leg toward the next stop of its loop
+    /// in its walk clip ([`legaia_engine_expansion::map::ActiveMap::patrol_tick`]).
     /// Nobody sets out while a dialogue holds the field, so the NPC being
     /// talked to stays put.
     pub fn step_expansion_npc_patrols(&mut self) {
+        use legaia_engine_expansion::map::PatrolStep;
         // A cutscene moves the NPCs itself.
         if self.dialogue_owns_input() || self.expansion.cutscene.active() {
             return;
@@ -116,30 +175,38 @@ impl World {
         let Some(map) = self.expansion.map.as_ref() else {
             return;
         };
-        let walkers: Vec<(usize, u8, Option<u8>)> = map
+        let walkers: Vec<(usize, u8, Option<u8>, Option<u8>)> = map
             .npcs()
             .enumerate()
             .filter(|(_, (_, d))| !d.patrol.is_empty())
-            .map(|(n, (slot, d))| (n, slot, d.walk_clip))
+            .map(|(n, (slot, d))| (n, slot, d.walk_clip, d.clip))
             .collect();
-        for (n, slot, walk_clip) in walkers {
+        for (n, slot, walk_clip, idle_clip) in walkers {
             if self.npcs.motions.contains_key(&slot) || self.expansion_npc_hidden(slot) {
                 continue;
             }
-            let Some((x, z)) = self
-                .expansion
-                .map
-                .as_mut()
-                .and_then(|m| m.next_patrol_stop(n))
-            else {
+            let Some(step) = self.expansion.map.as_mut().and_then(|m| m.patrol_tick(n)) else {
                 continue;
             };
-            if self.start_field_npc_motion(slot, x, z)
-                && let Some(clip) = walk_clip
-            {
-                // The leg plays the walk clip, as a `4C 51` walk's move-anim
-                // id does.
-                self.carry_npc_run_anim(slot, clip);
+            match step {
+                PatrolStep::Arrived => {
+                    if let Some(clip) = idle_clip {
+                        self.carry_npc_run_anim(slot, clip);
+                    }
+                }
+                PatrolStep::Wait => {}
+                PatrolStep::SetOut((x, z)) => {
+                    if self.start_field_npc_motion(slot, x, z) {
+                        if let Some(m) = self.expansion.map.as_mut() {
+                            m.patrol_set_out(n);
+                        }
+                        if let Some(clip) = walk_clip {
+                            // The leg plays the walk clip, as a `4C 51`
+                            // walk's move-anim id does.
+                            self.carry_npc_run_anim(slot, clip);
+                        }
+                    }
+                }
             }
         }
     }

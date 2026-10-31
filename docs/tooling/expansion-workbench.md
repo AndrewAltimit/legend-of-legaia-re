@@ -10,6 +10,7 @@ tab, and nothing is uploaded.
 |---|---|
 | Page | `site/_content/tooling/expansion-workbench.html` |
 | App, state, history, persistence, shortcuts, templates, export | `site/js/expansion-workbench-app.js` |
+| Validation and bundle worker | `site/js/expansion-workbench-validate-worker.js` |
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
 | Rename with references | `site/js/expansion-workbench-rename.js` |
 | Flow tab (the progression graph) | `site/js/expansion-workbench-graph.js` |
@@ -23,6 +24,8 @@ tab, and nothing is uploaded.
 | Pack library (shared with the play page) | `site/js/play-pack-library.js` |
 | 3D preview and Play here | `site/js/expansion-workbench-preview3d.js`; on the play page `site/js/play-expansion-live.js` and `site/js/play-view-editor-overlay.js` |
 | Editing in the 3D preview (gizmos, brushes, multi-select) | `site/js/expansion-workbench-gizmos.js`; on the play page `site/js/play-view-editor-gizmos.js` |
+| Layout helpers (snap, align, spread, repeat, fill between, mirror) | `site/js/expansion-workbench-layout.js` |
+| Authoring hints (walk-through props, walk-on text) | `site/js/expansion-workbench-hints.js` |
 | Map terrain (sculpt brush, materials, water, horizon) | `site/js/expansion-workbench-terrain.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
 | Example pack | `site/packs/rebirth.json`, written by `site/_gen.py` from [`packs/rebirth/`](../../packs/rebirth/README.md) |
@@ -48,6 +51,8 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `sources_zip(pack)` | The source tree as a zip under one `<id>/` folder. |
 | `start_fresh(id, name)` | A pack holding only its manifest. |
 | `validate(pack)` | Every issue, `[{ severity, path, field, message }]`. |
+| `open_disc_keep(image)` / `take_disc_parts()` / `open_disc_parts(parts)` | The disc opened keeping the files its catalog reads, handed over once, and a second session's catalog built from them (the validation worker). |
+| `session_files()` / `set_session_files(data)` | The loaded tree, its canonical forms, the assets and documents, carried to a second session so it validates as this one does. |
 | `files_view(pack)` | The exported tree, `[{ path, size, text }]`. |
 | `export_bundle(pack)` | The `.lxpack` bytes; refused while the pack has an error. |
 | `xp_chart(progression)` | Cumulative XP per level, retail and the pack's, and the enemy scaling per party level. |
@@ -150,6 +155,7 @@ validator path, so a check clicks through to the field.
 | `modes.toml` | Races: centre-line points, or a map race (spawn, waypoints over the map's tiles, racers) | Point list / Form |
 | `modes.toml` | Prop hunt blockers (drawn on the pad among the decoys) | Point list |
 | `modes.toml` | Table seats: NPC, name, clips side by side | Form |
+| `modes.toml` | A table's `hide`: the map props it hides while seated | Map of the props round the table, list by distance |
 | `audio.toml` | Tracks, sounds, music picks | Form, playback |
 | `maps/<id>.toml` | Settings, base, arrival cutscenes | Form |
 | `maps/<id>.toml` | Entrances from retail scenes | Form (list) |
@@ -157,6 +163,8 @@ validator path, so a check clicks through to the field.
 | `maps/<id>.toml` | Map `[audio]` | Form (Sound box) |
 | `maps/<id>.toml` | Lighting (mood, lamps), fog regions, particle emitters | Form (lists) |
 | `maps/<id>.toml` | Prop mesh source and light | Form |
+| `maps/<id>.toml` | Resting: a prop's or decoration's `on` and `hangs`, a brush's or run's `hangs` | Form: support list, Pick on the painter, rest on what is under it |
+| `maps/<id>.toml` | `[surround]` and its `backdrop` | Form, texture-cell picker |
 | `maps/<id>.toml` | Terrain: sculpt strokes, resolution and settings | Sculpt tool, form |
 | `maps/<id>.toml` | Terrain materials, cliff, water table, horizon, shape list | JSON |
 | `maps/<id>.toml` | Decorations, scatter brushes (meshes, cluster), edge runs, decals, animated materials (cycle, hsv, tint, scroll), prop animators | Form (lists), tile and rectangle Pick on the painter, texture-cell picker |
@@ -169,6 +177,97 @@ randomizer, Boss Rush) are a New Game screen choice of the player
 terrain's tables stay JSON while the terrain editor's own tools are built.
 
 ## The page
+
+**Starting.** Before a pack is open the page offers three starting points:
+*Rebirth example*, *New pack ...* (the id, name and template form) and *Open your pack*
+(an `.lxpack` or a folder). A choice made before the disc is read waits for
+it and runs once the disc is in, instead of being refused; step 1 of the
+panel says whether the disc is read. Once a pack is open, the disc picker and
+the pack buttons fold to one summary line ("Disc and pack", the disc's file
+name and the pack) that unfolds to open another pack or change the disc, and
+the page scrolls to the editor.
+
+**Checks on the field.** Every check on the open tab marks the field it names
+(the longest `data-path` holding its field) with a red edge, amber for a
+warning, and its message under the field until it is fixed; a click in the
+Checks list still jumps there and flashes it. On the Maps tab the open map's
+checks are marked (the other maps' stay in the Checks list). A fold built
+late (below) takes its marks as it opens. A value the format's types refuse, such as
+`999` in a `u8` field, fails the whole pack's parse in the session; the page
+maps the column serde reports back to the JSON path it wrote and lists it as
+an ordinary check on that field, with the field's range. **Download**,
+**Play in browser** and **Play here** refuse while the pack has an error and
+open the first one, with `F8` to step through the rest.
+
+**Hints.** Above the checks, a **Hints** fold lists advice that is not a
+defect (`expansion-workbench-hints.js`): a pack with hints validates with no
+warning and exports as it is, so the validator does not carry them. A click
+opens what a hint names, selected in the painter.
+
+| Hint | When |
+|---|---|
+| Walk-through | A prop that is not `solid`, has no standable `top` and stands on a tile its style leaves open, or a decoration not `solid` on an open tile, whose mesh is large: wider than half a tile both ways and taller than a step, from the floor. The size is the mesh's box in its scene's geometry pack (`scene_objects`, times the scale), built a scene at a time while the page is idle; a glTF or PROT mesh is not judged. |
+| Walk-on text | A `dialog` trigger that is neither `press` nor `once`, so it stops the player on every visit; and a map with more than three walk-on dialogs (`TEXT_BUSY`), once or not. Each suggests an examine (`press`) or a `toast`. |
+
+The painter's **Walk-through** box (on by default) marks the same objects
+on the canvas: a red cross over a walk-through prop or decoration, an amber
+corner on each walk-on dialog trigger, solid when it repeats.
+
+**Trigger and exit forms.** A trigger's **Fires** picks *when the player
+steps on it* or *when the player examines it* (`press`), **Once ever** says
+the flag that remembers it, and **Raises** names `dialog` as the box that
+stops the player and `toast` as the notice that stops nothing. Under a
+dialog or toast trigger a line says what the player meets (an examined
+dialog, a story beat once, a toast in passing), in amber for a walk-on
+dialog that repeats. An exit's **While shut** box holds its `locked_line`
+(**Says why**) and `locked_toast` (**As a toast**) under its **Open when**
+gate, with a note saying whether the line is ever said (no gate: never) and
+how.
+
+**Long lists.** A list editor of more than twelve entries (monsters, dialogue
+lines, quests) has a filter over its labels; `Enter` opens the first match,
+and the text survives an edit's re-render. A list of folds - a boss script's
+phases and each phase's moves, the encounter overrides - builds a fold's
+fields the first time it opens (or when a check's jump lands in it), so a
+re-render of the Battle tab builds the labels, not every phase's form.
+
+**Validation off the main thread.** The validator costs a few hundred
+milliseconds a run on a pack of Rebirth's size, so it runs in a module
+worker (`expansion-workbench-validate-worker.js`) holding a second
+`ExpansionWorkbench` session. The page's session opens the disc with
+`open_disc_keep` and hands the three disc files its catalog reads
+(`take_disc_parts`: `PROT.DAT`, `CDNAME.TXT`, `SCUS_942.54`) to the worker,
+which builds the same catalog from them (`open_disc_parts`) without the
+image; the loaded tree, its canonical forms, the assets and documents follow
+as `session_files` / `set_session_files` whenever they change. The 3D
+preview's `.lxpack` for each rebuild (and **Live**'s) is built there too, as
+a `bundle` message answered with the bytes or the export's refusal, so a
+rebuild does not hold the page's thread for the export; the frame then
+hot-reloads it. An edit made while the bytes are built waits for them and
+goes in next. A run starts
+a moment after the last edit; an answer for a pack that changed since it was
+asked is dropped. Typing never waits for a check. Without the worker (an
+older bundle, a worker that failed) validation runs on the page, and an
+export, a play or a hand-off still validates on the page at once, so it is
+never refused on a stale answer.
+
+The worker also builds the painter's `map_preview` (`map_preview`, answered
+parsed) and the Find box's reference sites (`xref_sites`). It runs one
+request at a time, in order, with two exceptions that keep it from working
+for nobody: a `validate` or `xref_sites` drops an older one still waiting,
+and a `map_preview` drops an older one of the same map and runs ahead of the
+checks and bundles waiting, but never ahead of the `init`, `disc` and
+`files` messages before it. With the worker up, a tree opened as a folder or
+the example loads without its checks (`finish_files_unchecked`: the issues
+come back only for a tree that does not load) and the worker's first answer
+fills the Checks list. **Download** builds its `.lxpack` there as well; the
+page validates only when the export refuses or no check has answered the
+pack as it stands, to open the first error. The Find box refreshes a moment
+after an edit's re-render, from the worker's sites.
+
+**Phone width.** Below 44rem the pack bar keeps Undo, Redo, Download and
+Play in browser and folds Keys, TOML files, Share, Play here and Live under
+**More**.
 
 **Undo and redo** cover the whole pack: every edit, a painter stroke as one
 step, a burst of typing as one step (`Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z`;
@@ -313,12 +412,41 @@ the cells the base scene's meshes sample (`scene_objects`' `cells`, labelled
 page, palette, cell and prim count), takes the three words by hand, and
 shows the page's 8 x 8 atlas as a grid of buttons, the sampled cells marked:
 a coordinate and a count, never a texel. An NPC's form has a **Scenery**
-checkbox (draws and plays its clip, no talk, no collision). The canvas draws
+checkbox (draws and plays its clip, no talk, no collision). Under its clip fields
+it lists the borrowed placement's clips by measured pose - standing,
+walking, seated (wants a seat under it), crouched - from `scene_npcs`'
+`postures`
+([NPC clip postures](../formats/expansion-pack-maps.md#npc-clip-postures)). The canvas draws
 every decoration (green dots) and decal (blue dots) where the map bakes it:
 `map_preview` expands the map's `decor`, `scatter`, `edges` and `decals` and
 returns the positions (`decor`), so a brush's coverage shows as it is
 edited. It builds the field image without decorations and with every
 non-base prop mesh as mesh `0` (neither touches the collision grid it reads).
+
+A prop's selection form and each decoration's form have a **Rests on** box
+([Resting placement](../formats/expansion-pack-maps.md#resting-placement)):
+the support picked from the map's props and decorations (one with no id is
+given one, since `on` names an id), **Pick on map** (the next click on the
+canvas names the item standing on that tile), **Rest on what is under it**
+(the surface its footprint is most over: `on` that item with `offset[1]`
+`0`, or for a wall box the lift onto its top), the **Hangs** checkbox, and a
+line saying where its base and top stand and what is under it. A scatter
+brush and an edge run have **Hangs** too, and each brush mesh and run shows
+its resting report under its fields. The figures come from `map_preview`'s
+`rest` and `rest_issues` (`map_rest::rest_report` and `rest_issues` over the
+disc catalog's `mesh_shape`, which measures each scene's geometry pack the
+way the engine does at map load), so they are measured in the worker and the
+boxes refresh when a preview lands. The canvas draws a dashed line from each
+item resting `on` another to its support (red when the id names nothing)
+and a red ring round each item the check reports; the same reports are
+warnings in the Checks list (the validator over the same resolver), and a
+click opens the field.
+
+The **Surround** box turns the map's `[surround]` on and off and edits its
+drop ground, edge faces, depth, reach and shade, then its `backdrop` wall:
+its texture cell, height, distance, shade, fade and the four sides as
+checkboxes, with a warning when the north side, the follow camera's, is
+walled ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#surround)).
 
 The **Terrain** box turns a map's `[terrain]` on and holds its knobs, the
 water level, and the `materials`, `cliff`, `water`, `sky` and `shapes`
@@ -335,7 +463,22 @@ the terrain's `detail`. The
 canvas shades the relief and the water from `map_preview`'s `terrain` - the
 heightfield the engine's floor sampler and meshes are built from - and the
 painter's wall quarters include the ones the terrain adds (too steep, too
-deep), so what is walkable reads off the canvas. The 3D preview draws the
+deep), so what is walkable reads off the canvas. The relief is one image a
+`map_preview` (a pixel per heightfield sample inside the skirt, built once
+and kept with that preview) drawn scaled over the tiles, so a hover's redraw
+costs one image draw.
+
+The canvas keeps its **tile layer** (colours, tiers, walls, slope hatching)
+in a canvas of its own, keyed by everything it reads - the rows, the legend,
+the preview, the cell size and the Heights toggle - so a selection, a drag or
+a hover redraws only the objects and zones over one image of the tiles. A
+drag's edits draw once a frame. The `map_preview` behind the overlays is
+asked a moment after an edit, built in the validation worker, and drawn when
+it lands; a map whose JSON (and the session's files) are what the last
+request was made from is not asked again, so a re-render of the tab costs
+none, and an answer for a map edited since it was asked is dropped. A map
+opened for the first time draws from its legend until its first preview
+lands. The 3D preview draws the
 sculpted ground as the engine builds it, and its volumes stand on the
 terrain's floor.
 
@@ -353,7 +496,7 @@ cell's four corner heights.
 
 ## The 3D preview
 
-**Open 3D preview** on the Maps tab (and the Cutscenes, Battle and Cards tabs) frames the play
+**Open 3D preview** on the Maps tab (and the Cutscenes, Battle, Cards and Modes tabs) frames the play
 page itself, as `play.html?xwpreview=1`, above the editor. It is not a second
 renderer: the framed page runs its own `LegaiaRuntime`, reads the disc from
 the site's shared disc cache, loads the working pack's `.lxpack` and enters
@@ -373,7 +516,8 @@ enhancements.
 | Player | The field camera: the follow view the game draws the map with, on the player. |
 | Fit map | Back to the whole map in the orbit camera. |
 | Walk from selection | Stands the player on the selected tile (`expansion_seat_player`) and switches to the field camera; the arrow keys walk in the picture. |
-| Layers | Walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props: translucent volumes over the picture. |
+| 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview, in the editor's **Select** mode. |
+| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision: translucent volumes over the picture. |
 
 **Orientation.** The game draws the world with screen X mirrored (the
 retail horizontal flip, `buildWorldOrbitVp`), so its picture of a map seen
@@ -388,6 +532,23 @@ camera is never flipped.
 (`LegaiaRuntime::expansion_set_quiet_arrivals`), so an entry skips the map's
 `enter_cutscenes` and its place-name balloon; a player's entry, and the
 preview with *Arrival* ticked, play both.
+
+**Layouts.** The frame never moves in the page (moving an iframe reloads
+it): Split and 3D are classes on the page (`xw-view-split`, `xw-view-3d`)
+whose rules `expansion-workbench-preview3d.js` installs, and the framed page
+resizes its canvas to the width it is shown at (4:3, 320 to 960 wide).
+Split's divider sits in the editor's grid beside the picture: a drag, or the
+arrow keys on it, sets the picture column's share of the editor (a quarter
+to three quarters, kept per browser), and a double-click resets it. Split
+and 3D open the 3D editor in **Select** unless a mode was picked by hand; 2D
+opens it in **View**.
+
+**The grid.** The Grid layer draws each tile's edges at its four corner
+heights, and fills a cell whose corners disagree - a ramp, by the
+[corner rule](../formats/expansion-pack-maps.md#tiers-are-corner-heights).
+The heights are `map_preview`'s `corners` (the synthetic field image's
+tiers), or on a terrain map its heightfield sampled at each tile corner, so
+the grid is the one the Heights overlay shades in 2D.
 
 The volumes are read back from the engine, not from the editor:
 `expansion_overlay_json` is the definition the engine runs, with each tile's
@@ -405,6 +566,59 @@ a fight is armed or running in the frame the reload answers busy and is
 retried (the frame closes a card binder it opened itself first). What
 is not an edit rebuilds nothing: the selection, the layers, the camera and a
 cutscene's path are messages to the frame.
+
+**Object-only edits move, they do not rebuild.** An edit since the last
+build that only moved or turned props, NPCs, spawns and lamps of the open
+map - the pack's JSON with those poses blanked (each prop's tile, offset X /
+Z and turn, each NPC's and spawn's tile and facing, each lamp's tile and
+offset) is the text the build was sent - goes to the frame at once as
+`xw-move`, and the engine's copy of each object follows:
+
+| Object | In the frame | In the engine |
+|---|---|---|
+| Prop | Its placed draw, found by where it stands, moves to its new world position, turns, and rises by the floor's change between the two tiles (the grid's corner heights). | `expansion_place_prop`: the definition (what the overlay, the prop's light and the floor read); a standable top follows (`ActiveMap::refresh_floor_tops`); for a solid prop the collision grid is written again by the build's own code (`expansion_map::collision_grid`, from the `CollisionInputs` the entry kept: the terrain's walls and each solid mesh's bytes), so its tile and its mesh's footprint move and turn with it. |
+| NPC | - | `expansion_place_npc`: its anchor (what the draw, the collision box and the talk probe read), heading and definition. |
+| Spawn | - | `expansion_place_spawn`: the definition the overlay and the next arrival read. |
+| Lamp | - | `expansion_place_lamp`: the definition, which the scene's lights read every frame. |
+
+`play_expansion_live::tests::props_lamps_spawns_moved_in_place_match_a_rebuild`
+(disc-gated) moves a solid prop, a standable prop, a lamp and a spawn of
+each Rebirth map in place and checks the whole collision grid, the standable
+tops, the lights and the overlay's spawns against a rebuild with the edited
+definition. A move costs a few milliseconds where a rebuild costs seconds,
+so **Walk from selection** right after a move walks into the moved prop.
+A prop with no single plain draw at its old place (a tilted or script-moved
+one), an NPC that patrols or is scenery, or a frame without the export
+answers `ok: false` and the map rebuilds; a frame whose bundle has no
+`expansion_place_prop` moves the draw only, and the **Player** camera and
+**Walk from selection** rebuild first. Decorations are baked into their
+tile's cell mesh at the build, so moving one rebuilds.
+
+**Drafts.** Between rebuilds the volumes follow the editor at once: each
+`map_preview` the painter computes (a moment after an edit) goes to the
+frame with the map's object lists (`xw-overlay` `grid` and `defs`), and the
+frame draws that draft - spawns, exits, triggers, encounter zones, props
+and NPCs, and each tile whose walls, void or corner heights differ from the
+`map_preview` of the pack the last rebuild was sent (its floor the mean of
+its corners) - in place of its reading of the last build. Tiles the edit
+left alone keep the engine's reading. The rebuild's own reading replaces the draft when it lands. A
+draft of a map of another size than the built one waits for the rebuild.
+
+**Collision.** The Collision layer (off by default) draws what the player
+bumps into: the overlay's `blocked`, each tile's four quarter bits read from
+the collision grid the world walks (`terrain.collision_grid`, one byte row
+below the tile) - the tile walls, every solid prop's tile and mesh
+footprint, every solid decoration's footprint and a terrain's walls - as
+red quarter-tile blocks, leaving out the quarters the Walls layer draws
+while it is on. It is the engine's reading of the last build, or of the
+last in-place move (which writes the grid again), never the draft. The
+frame also posts it to the workbench (`xw-collision`), and the painter's
+**Collision** box marks the same quarters in red beyond each tile's own
+walls, so a house the player walks into shows as a house with no red
+under it. Ticking the box opens the preview when no build has reported.
+`play_expansion_live::tests::overlay_blocked_layer_is_the_walked_collision_grid`
+(disc-gated) checks that every tile wall is in the layer, that a solid prop
+closes its tile, and that a prop moved in place closes its new one.
 
 **Selection runs both ways.** A click in the picture ray-casts the frame's
 own view-projection against the tile floors and selects that tile in the
@@ -432,7 +646,13 @@ that is also a picker (the colour a mid-grey texel takes). Its **Fight on
 this stage in 3D** starts the fight on the stage as set. **Card faces in
 3D** on the Cards tab puts one of each pack card into the frame's collection
 and opens the binder (`expansion_preview_cards`): the card faces the engine
-draws, portraits included. The frame's world is the workbench's own, never a
+draws, portraits included. Each mode instance on the Modes tab has **Play in 3D** (**Sit at the table in
+3D** for a poker table or a card duel on a map, **Play on the map in 3D** for
+a course): the preview builds the instance's map and enters it through the
+play page's own mode entry (`play_pack_mode_enter`), so the table, its
+seats, the opponents and the seat camera are the engine's, with the editor's
+volumes off until the mode ends. Start leaves it; the next rebuild leaves a
+mode the preview started by itself. The frame's world is the workbench's own, never a
 player's save. With no map open on the Maps tab, the pack's first map stands
 in under the fight or the binder.
 
@@ -459,15 +679,26 @@ drag that starts on nothing in **Select** turns it too.
 
 The editor belongs to the Maps tab: on the Cutscenes, Battle and Cards tabs
 the frame drops to **View** and the bar hides (`suspendEdit`), and back on
-Maps both return as they were. While a mode other than **View** is on, the
-field HUD - the party readout and the passive-ability badges - stays off
-the frame (`set_editor_hud_hidden`), so it never covers the map being edited.
+Maps both return as they were. While a mode other than **View** is on, and
+under the Orbit camera in any mode, the field HUD - the party readout and
+the passive-ability badges - stays off the frame (`set_editor_hud_hidden`),
+so it never covers the map being edited; the Player camera shows it.
 
 | Mode | Does |
 |---|---|
 | Select | A click picks the object under it - a prop, decoration, NPC, spawn, lamp, emitter, trigger, exit or encounter zone; Shift or Ctrl adds or takes away. The selection gets a gizmo: **Move** (two arrows for one axis, a square for both; dragging an object moves it), **Rotate** (a ring: props and decorations in 15-degree steps, NPCs and spawns by facing sector), **Scale** (a corner handle: props and decorations; a zone's corner resizes it). A drag snaps to the tile or to the 32-unit sub-tile grid (**Snap**); Shift places freely. **Duplicate** (Ctrl+D) copies the selection one tile over (a prop to the nearest free tile); **Delete** removes it. |
 | Sculpt | A ring cursor of the brush's radius rides the ground, an inner ring at its strength; `[` and `]` size it. A drag lays one stroke: raise, lower, smooth and flatten write a `stroke` along the drag (a click writes the single-point shape), flatten levelling to the height where the drag starts; ridge and ramp drag from one point to another (a ramp from the ground under its start to the ground under its end plus **Height**); plateau and noise drag a rectangle. |
 | Paint | The tiles under the ring take a legend character: a terrain material's (named by the material) or any walkable style's. |
+
+**Keys.** With the picture focused in **Select**, `W`, `E` and `R` pick
+Move, Rotate and Scale, `Escape` drops the selection, and under the orbit
+camera the arrow keys nudge the selection a tile (a quarter tile with
+Shift or the 32-unit snap) along the map axis whose direction on screen is
+closest to the arrow, so they follow a turned camera; under the Player
+camera they walk. In the painter, with its canvas focused, the arrows nudge
+along its rows and columns. A nudge is `nudge` in
+`expansion-workbench-layout.js` (an object that would leave the map stays)
+and one undo step a press; its moves go to the frame in place.
 
 Objects stand on the ground: the frame samples the heightfield `map_preview`
 returns (with the terrain map's `origin` and `step`) the way
@@ -493,6 +724,25 @@ ground draws a box that selects what it holds, Shift adds, a drag on one
 object of several moves them all, and Delete and Ctrl+D act on the whole
 selection.
 
+**Layout.** With something selected, a **Layout** row joins the Select bar,
+and the painter's selection box carries the same row
+(`expansion-workbench-layout.js`, pure edits of the map, one undo step
+each). Positions are tile units, the object's tile plus its offset; an
+object with an `offset` (props, decorations, lamps) keeps a fraction of a
+tile in it, NPCs and spawns stand on whole tiles, a zone moves by whole tiles.
+
+| Button | Does |
+|---|---|
+| Snap | Each selected object onto its tile centre (offset X / Z zero). |
+| Align rows / Align cols | The selection on one row or one column: the middle of theirs. |
+| Spread across / Spread down | Three or more objects spaced evenly between the outer two, in their order. |
+| Repeat | **Count** copies of the selection in a row, **Step** tiles apart (across, down). |
+| Fill between | Two selected objects: copies of the first so that **Count** stand evenly from one to the other, both ends included - six pillars along a wall from the first and the last. |
+| Mirror L-R / Mirror T-B | Across the map's middle column or row; a prop's yaw and an NPC's or spawn's facing turn with it, a patrol is mirrored. With **as copies** (the default) the originals stay, and one on the axis itself is not copied. |
+
+One prop a tile: a prop is never moved or copied onto a tile another prop
+holds; it stays, and the row's account says how many stayed.
+
 The undo seam is `snapshot` and `refresh` in the editor's `api`
 (`expansion-workbench-gizmos.js`, `mountMapEditor`): they close the page
 history's step around each 3D edit (`ctx.commit`).
@@ -502,11 +752,11 @@ history's step around each 3D edit (`ctx.commit`).
 Measured headless (Chromium with SwiftShader, the software GL, on the real
 disc) on the largest map the format allows: 120 x 120 tiles, walls round the
 edge and a wall pillar every 8 tiles, and a scatter brush at density 0.6 over
-its top half - 1152 draws. Rebirth's atrium (15 x 13) is the small case.
+its top half - 1152 draws. Rebirth's atrium (29 x 13) is the small case.
 
 | Step | Atrium | 120 x 120 |
 |---|---|---|
-| `map_preview`, `validate`, `export_bundle` (each edit, in the workbench) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
+| `map_preview`, `validate` (in the worker), `export_bundle` (each rebuild, in the worker) | - | 20 - 100 ms, 26 - 127 ms, 66 - 321 ms |
 | Painter redraw on a hover | - | 1 - 6 ms |
 | Hot reload, native build of the same call (`big_map_reload_cost`), of which the coplanar pass | - | 0.92 s, 0.30 s (2.5 s, 1.8 s with the bucket walk) |
 | Hot reload, the page's GL upload after it (`PlayView._rebuild`) | - | 0.4 s |
@@ -608,10 +858,15 @@ hosts word the outcome through `hotkeys::pack_reload_notice`; on the play page
 ## Persistence and the play hand-off
 
 The working pack autosaves to IndexedDB database `legaia-expansion-workbench`,
-store `autosave`: key `current` holds `{ json, label, savedAt }`, key `source`
-the tree or bundle it was loaded from. A returning visitor who loads a disc is
-offered "resume". Every access is wrapped; without storage the page still
-works.
+store `autosave`: key `current` holds `{ json, label, savedAt, tab, edited,
+clean }`, key `source` the tree or bundle it was loaded from. `edited` says
+whether the pack differs from what was opened or last downloaded, and
+`clean` holds that baseline while it does. A returning visitor who loads a
+disc is offered the pack back: an edited one as unsaved changes to resume (a
+discard asks first), an unedited one as "pick up where you left off". A
+resume reopens the tab it was on and keeps the **unsaved changes** mark. A
+record without `edited` counts as edited. Every access is wrapped; without
+storage the page still works.
 
 **Play in browser** (and Play here with no play tab open) exports the bundle
 and installs it in the play page's pack library below - an older version

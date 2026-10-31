@@ -64,6 +64,13 @@ WAIVED = {
     ("webgl-bloom.js", "FS_COMPOSITE"): "the bloom composite draws with the "
     "depth test disabled and the depth mask off, so its fragment depth is "
     "neither compared nor written",
+    ("webgl-ssao.js", "FS_AO"): "the SSAO term draws into its own R8 target "
+    "with no depth attachment",
+    ("webgl-ssao.js", "FS_BLUR"): "the SSAO blur draws into its own R8 "
+    "targets with no depth attachment",
+    ("webgl-ssao.js", "FS_APPLY"): "the SSAO apply draws with the depth test "
+    "disabled and the depth mask off, so its fragment depth is neither "
+    "compared nor written",
 }
 
 SHADER_RE = re.compile(r"const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*`#version 300 es(.*?)`", re.S)

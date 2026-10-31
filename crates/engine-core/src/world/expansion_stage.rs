@@ -112,6 +112,62 @@ impl World {
         }
     }
 
+    /// The props of the map the player is on that instance `id`'s table
+    /// hides (`[poker.table]` / `[card_duels.table]` `hide`), as that map's
+    /// id and prop indices.
+    fn pack_mode_hidden_props(&self, id: &str) -> Option<(String, Vec<usize>)> {
+        let (modes, _) = self.pack_mode_sections();
+        let hide = modes
+            .poker
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.table.as_ref())
+            .map(|t| &t.hide)
+            .or_else(|| {
+                modes
+                    .card_duels
+                    .iter()
+                    .find(|d| d.id == id)
+                    .and_then(|d| d.table.as_ref())
+                    .map(|t| &t.hide)
+            })
+            .filter(|h| !h.is_empty())?;
+        let map = self.expansion.map.as_ref()?;
+        let props = map
+            .def
+            .props
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.id.is_empty() && hide.contains(&p.id))
+            .map(|(i, _)| i)
+            .collect();
+        Some((map.map_id.clone(), props))
+    }
+
+    /// The draw-record keys of the props the open seat's table hides on the
+    /// map the player is on (`PROP_RECORD_BASE + n`, from
+    /// `legaia_engine_scene::expansion_map`): what
+    /// [`World::hidden_object_records`] adds, so both hosts skip their draws.
+    /// Empty once the seat closes; collision is never touched.
+    pub fn pack_mode_hidden_prop_records(&self) -> Vec<usize> {
+        if self.mode != SceneMode::Expansion {
+            return Vec::new();
+        }
+        let (Some(seat), Some(map)) = (
+            self.expansion.mode_seat.as_deref(),
+            self.expansion.map.as_ref(),
+        ) else {
+            return Vec::new();
+        };
+        match &seat.hidden_props {
+            Some((id, props)) if *id == map.map_id => props
+                .iter()
+                .map(|i| legaia_engine_scene::expansion_map::PROP_RECORD_BASE + i)
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// The map NPC ids instance `id` names as the other seats' bodies.
     fn pack_mode_body_ids(&self, id: &str) -> Vec<String> {
         let (modes, _) = self.pack_mode_sections();
@@ -292,6 +348,9 @@ impl World {
             };
             seat.stage_frame = seat.world_stage.step(mode);
             let mode_id = mode.id.clone();
+            if seat.hidden_props.is_none() {
+                seat.hidden_props = self.pack_mode_hidden_props(&mode_id);
+            }
             self.stage_pack_mode_bodies(seat, &mode_id);
         }
         self.stage_pack_mode_duel(seat);

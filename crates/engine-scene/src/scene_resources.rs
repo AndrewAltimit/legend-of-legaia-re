@@ -149,6 +149,29 @@ fn override_tmds(scene: &Scene) -> Vec<ResolvedTmd> {
         .collect()
 }
 
+/// The models of the townsfolk a pack map borrows from another scene
+/// ([`crate::expansion_map::SceneOverride::npc_tmds`]), registered under
+/// their source entries (no scene entry of the base's, so no pack vote or
+/// geometry lookup sees them).
+fn override_npc_tmds(scene: &Scene) -> Vec<ResolvedTmd> {
+    let Some(o) = scene.overrides.as_ref() else {
+        return Vec::new();
+    };
+    o.npc_tmds
+        .iter()
+        .filter_map(|(entry_idx, raw)| {
+            let tmd = legaia_tmd::parse(raw).ok()?;
+            Some(ResolvedTmd {
+                entry_idx: *entry_idx,
+                offset: 0,
+                byte_len: raw.len(),
+                tmd,
+                raw: raw.clone(),
+            })
+        })
+        .collect()
+}
+
 /// Per-scene runtime resources: VRAM populated from every TIM in the
 /// CDNAME block, plus a parsed TMD pool, plus a count of how many TIMs
 /// fed VRAM. Owns its bytes - safe to hold across a subsequent scene

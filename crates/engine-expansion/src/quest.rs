@@ -460,6 +460,11 @@ impl QuestRuntime {
                 self.progress.flags.clear(f);
             }
             QuestEvent::BattleEnded { .. } => self.resolve_challenge(section, world, &event),
+            // A pack map entered is a map the Journal's Travel page offers
+            // from now on.
+            QuestEvent::SceneEntered(map) if pack.maps.contains_key(map) => {
+                self.progress.flags.set(&crate::journal::visited_flag(map));
+            }
             _ => {}
         }
         let was_active: Vec<String> = self

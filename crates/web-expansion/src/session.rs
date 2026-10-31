@@ -79,6 +79,43 @@ pub struct Core {
     staged: PackFiles,
     /// Base-scene geometry packs already assembled, by scene name.
     objects: HashMap<String, SceneObjects>,
+    /// The disc files the catalog was built from, kept by
+    /// [`Self::open_disc_owned`] until [`Self::take_disc_parts`] hands them
+    /// to a second session (the page's validation worker).
+    disc_parts: Option<Vec<u8>>,
+}
+
+/// One length-prefixed blob of the session encodings (`u32::MAX` for none).
+fn put_part(out: &mut Vec<u8>, part: Option<&[u8]>) {
+    match part {
+        Some(b) => {
+            out.extend_from_slice(&(b.len() as u32).to_le_bytes());
+            out.extend_from_slice(b);
+        }
+        None => out.extend_from_slice(&u32::MAX.to_le_bytes()),
+    }
+}
+
+fn take_u32(at: &mut &[u8]) -> Result<u32> {
+    let (head, rest) = at
+        .split_first_chunk::<4>()
+        .context("truncated session data")?;
+    *at = rest;
+    Ok(u32::from_le_bytes(*head))
+}
+
+fn take_part(at: &mut &[u8]) -> Result<Option<Vec<u8>>> {
+    let n = take_u32(at)?;
+    if n == u32::MAX {
+        return Ok(None);
+    }
+    let n = n as usize;
+    if at.len() < n {
+        bail!("truncated session data");
+    }
+    let (b, rest) = at.split_at(n);
+    *at = rest;
+    Ok(Some(b.to_vec()))
 }
 
 /// The longest timeline preview, in frames (ten minutes).
@@ -94,6 +131,96 @@ impl Core {
     pub fn open_disc(&mut self, image: &[u8]) -> Result<()> {
         self.catalog = Some(DiscCatalog::open(image)?);
         self.objects.clear();
+        Ok(())
+    }
+
+    /// [`Self::open_disc`] over an image the session may consume; with
+    /// `keep_parts` the three disc files the catalog reads (`PROT.DAT`,
+    /// `CDNAME.TXT`, `SCUS_942.54`) are kept, encoded, for
+    /// [`Self::take_disc_parts`]. The image is dropped before the copy, so
+    /// the copy reuses its memory.
+    pub fn open_disc_owned(&mut self, image: Vec<u8>, keep_parts: bool) -> Result<()> {
+        let prot = legaia_iso::image::extract_prot_dat(&image)
+            .context("PROT.DAT not found in the disc image (is it a Mode 2/2352 .bin?)")?;
+        let cdname = legaia_iso::image::extract_cdname_txt(&image);
+        let scus = legaia_iso::image::extract_scus(&image);
+        drop(image);
+        self.disc_parts = keep_parts.then(|| {
+            let mut out = Vec::with_capacity(prot.len() + 0x8_0000);
+            put_part(&mut out, Some(&prot));
+            put_part(&mut out, cdname.as_deref().map(str::as_bytes));
+            put_part(&mut out, scus.as_deref());
+            out
+        });
+        self.open_disc_files(prot, cdname.as_deref(), scus.as_deref())
+    }
+
+    fn open_disc_files(
+        &mut self,
+        prot: Vec<u8>,
+        cdname: Option<&str>,
+        scus: Option<&[u8]>,
+    ) -> Result<()> {
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, cdname)
+            .context("PROT index")?;
+        self.catalog = Some(DiscCatalog::from_parts(index, scus)?);
+        self.objects.clear();
+        Ok(())
+    }
+
+    /// The disc files [`Self::open_disc_owned`] kept, once.
+    pub fn take_disc_parts(&mut self) -> Option<Vec<u8>> {
+        self.disc_parts.take()
+    }
+
+    /// Open the disc from [`Self::take_disc_parts`]'s bytes: the same
+    /// catalog, without the image.
+    pub fn open_disc_parts(&mut self, parts: &[u8]) -> Result<()> {
+        let mut at = parts;
+        let prot = take_part(&mut at)?.context("the disc parts hold no PROT.DAT")?;
+        let cdname = take_part(&mut at)?
+            .map(String::from_utf8)
+            .transpose()
+            .context("CDNAME.TXT")?;
+        let scus = take_part(&mut at)?;
+        self.open_disc_files(prot, cdname.as_deref(), scus.as_deref())
+    }
+
+    /// The session's files besides the pack JSON - the loaded tree, its
+    /// canonical form, the assets and documentation - encoded for
+    /// [`Self::set_session_files`] on a second session, which then
+    /// validates exactly as this one does.
+    pub fn session_files(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        for set in [&self.original, &self.original_canonical, &self.extras] {
+            out.extend_from_slice(&(set.len() as u32).to_le_bytes());
+            for (path, bytes) in set {
+                put_part(&mut out, Some(path.as_bytes()));
+                put_part(&mut out, Some(bytes));
+            }
+        }
+        out
+    }
+
+    /// Take over [`Self::session_files`] from another session.
+    pub fn set_session_files(&mut self, data: &[u8]) -> Result<()> {
+        let mut at = data;
+        let mut sets: [PackFiles; 3] = Default::default();
+        for set in &mut sets {
+            let n = take_u32(&mut at)?;
+            for _ in 0..n {
+                let path = take_part(&mut at)?.context("a session file without a path")?;
+                let bytes = take_part(&mut at)?.unwrap_or_default();
+                set.insert(
+                    String::from_utf8(path).context("a session file path")?,
+                    bytes,
+                );
+            }
+        }
+        let [original, canonical, extras] = sets;
+        self.original = original;
+        self.original_canonical = canonical;
+        self.extras = extras;
         Ok(())
     }
 
@@ -192,6 +319,14 @@ impl Core {
         self.load_files(files)
     }
 
+    /// [`Self::finish_files`] leaving the checks to a second session (the
+    /// page's validation worker): `issues` is empty when the tree loads as a
+    /// pack, and says why when it does not.
+    pub fn finish_files_unchecked(&mut self) -> Value {
+        let files = std::mem::take(&mut self.staged);
+        self.load_files_with(files, false)
+    }
+
     /// Load a `.lxpack` bundle.
     pub fn load_bundle(&mut self, bytes: &[u8]) -> Result<Value> {
         let files = bundle::read_bundle(bytes).context("reading the .lxpack")?;
@@ -202,15 +337,26 @@ impl Core {
     /// tree does not parse (the issues say why); otherwise it becomes the
     /// session's original.
     pub fn load_files(&mut self, files: PackFiles) -> Value {
+        self.load_files_with(files, true)
+    }
+
+    fn load_files_with(&mut self, files: PackFiles, check: bool) -> Value {
         // A folder picked in the browser arrives under its own name
         // (`rebirth/pack.toml`): strip one shared leading directory.
         let files = strip_common_root(files);
-        let issues = self.check_files(&files);
         let list: Vec<Value> = files
             .iter()
             .map(|(p, b)| json!({ "path": p, "size": b.len() }))
             .collect();
-        match ExpansionPack::from_files(&files) {
+        let parsed = ExpansionPack::from_files(&files);
+        // Unchecked, a tree that loads leaves its checks to the caller; one
+        // that does not is checked here, for the reason.
+        let issues = if check || parsed.is_err() {
+            self.check_files(&files)
+        } else {
+            Vec::new()
+        };
+        match parsed {
             Ok(mut pack) => {
                 canonicalise(&mut pack);
                 self.original_canonical = pack.to_files().unwrap_or_default();
@@ -703,14 +849,19 @@ impl Core {
         // not load.
         probe.decor.clear();
         probe.scatter.clear();
+        // So do the surround past the floor's edge and the ceiling's
+        // underside and chains.
+        probe.surround = None;
+        probe.ceiling = None;
         // The terrain's own meshes bake from nothing the preview loads
         // either; its walls and floor come back below, from the same pure
         // functions the engine's image builder runs.
-        let terrain_walls = match &def.terrain {
-            Some(_) => Some(def.terrain_walls(&grid)?),
-            None => None,
-        };
+        // One heightfield serves both the terrain's wall quarters and the
+        // relief the painter shades.
         let terrain_field = def.terrain_heightfield()?;
+        let terrain_walls = terrain_field
+            .as_ref()
+            .map(|f| def.terrain_walls_in(&grid, f));
         probe.terrain = None;
         probe.edges.clear();
         probe.decals.clear();
@@ -772,6 +923,29 @@ impl Core {
                 corners.push(k.map(|n| ladder[usize::from(n)]));
             }
         }
+        // Where each prop and decoration rests, measured off the disc's
+        // meshes when one is loaded: the painter's `on` links and resting
+        // marks, and the form's "rest on what is under it".
+        let (rest, rest_issues) = {
+            use legaia_expansion_format::map_rest::{rest_issues, rest_report};
+            use legaia_expansion_format::refs::DiscResolver;
+            let base = def.base.scene_name();
+            let shapes = |m: &PropMesh, r: [f32; 3], s: f32| {
+                self.catalog
+                    .as_ref()
+                    .zip(base)
+                    .and_then(|(c, b)| c.mesh_shape(b, m, r, s))
+            };
+            let issues: Vec<Value> = if self.catalog.is_some() {
+                rest_issues(&def, &shapes)
+                    .iter()
+                    .map(|i| json!({ "at": i.at, "message": i.to_string() }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (rest_report(&def, &shapes), issues)
+        };
         let off_grid: Vec<Value> = def
             .off_grid_refs(&grid)
             .into_iter()
@@ -794,6 +968,8 @@ impl Core {
             "ladder_from_base": def.floor_heights.is_empty() && base_lut.is_some(),
             "tiers": FLOOR_TIERS,
             "off_grid": off_grid,
+            "rest": rest,
+            "rest_issues": rest_issues,
             // The sculpted floor (`[terrain]`): the heightfield over the
             // map and its skirt, `cols x rows` vertices `res` a tile, and
             // the water level, for the painter's relief shading.

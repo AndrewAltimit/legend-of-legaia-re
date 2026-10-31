@@ -10,6 +10,7 @@ folder holds only what you double-click, plus the text files:
 | `Legaia Explorer` (`.exe` on Windows, `.app` on macOS) | The asset browser and extractor |
 | `README-PLAY.txt` | How to start both, the controls |
 | `LICENSE`, `LICENSE-MIT`, `THIRD-PARTY-LICENSES.txt` | The licenses |
+| `packs/rebirth.lxpack` | *Legend of Legaia: Rebirth*, the project's expansion pack: new maps, quests and fights made for the port, no game data |
 | `command-line-tools/` | Every command-line program - the engine `legaia-engine`, `legaia-extract`, `legaia-patcher`, the format tools - and a `README.txt` listing them |
 
 The two programs at the top start the game from `command-line-tools/`, so
@@ -20,7 +21,8 @@ Pick your path:
 | You want to | Do this |
 |---|---|
 | **Play the game** | Double-click `Legend of Legaia` (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS); it starts `command-line-tools/legaia-engine` with no arguments. It asks for your disc image once and remembers it; the launcher also sets the display options, then *Play* opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
-| **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser. |
+| **Play the Rebirth expansion** | In the launcher, click *Expansion pack...* once: it picks the bundled Rebirth (the button then reads *Pack: Rebirth*), and *Play* starts the game with it on the title screen. *Continue* a late save, or play a New Game: Rebirth's entrance in Rim Elm opens at party level 30, and the Journal (Select on the pause menu) tracks its quests and takes you back to its maps. *Delete* on the button goes back to the original game. [Playing an expansion pack](playing-and-viewing.md#11-playing-an-expansion-pack) has the rest. |
+| **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser, with Rebirth one click away. |
 | **Get the assets out** | Follow sections 1-3 below, then [extracting-assets.md](extracting-assets.md). |
 | **Randomize, mod or translate** | Sections 1-2 below, then [modding-and-translation.md](modding-and-translation.md) or [translating.md](translating.md). |
 
@@ -28,7 +30,8 @@ The rest of this guide covers the archive, the disc check and the one-shot
 extraction, and ends with a table of every tool.
 
 One rule shapes everything here: **the project ships no Sony-owned bytes.**
-The archive contains only the project's own compiled tools. Every tool operates
+The archive contains only the project's own compiled tools and the project's
+own expansion pack, which points at your disc rather than carrying any of it. Every tool operates
 on a disc image *you* supply - a raw Mode 2/2352 `.bin` dump of your own
 *Legend of Legaia* (USA) disc, `SCUS-94254`. A `.cue` sheet is accepted
 anywhere a disc image is: the referenced `BINARY` track is resolved

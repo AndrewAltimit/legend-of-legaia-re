@@ -249,30 +249,6 @@ impl PlayWindowApp {
         (draws, placed, scene_binds)
     }
 
-    pub(in crate::window) fn compute_coplanar_env_offsets(
-        &self,
-        res: &SceneResources,
-    ) -> std::collections::HashMap<legaia_engine_scene::field_env::EnvDraw, [f32; 3]> {
-        use legaia_engine_scene::coplanar_draws;
-        // Ranked in retail's emission order (placed objects ahead of the
-        // terrain cells), the order equal-area ties resolve by.
-        let (terrain, placements, _) = self.static_env_layers(res);
-        let draws = coplanar_draws::emission_order(&terrain, &placements);
-        if draws.is_empty() {
-            return Default::default();
-        }
-        let planes = coplanar_draws::draw_plane_summaries(&draws, res);
-        let offs = coplanar_draws::coplanar_draw_offsets(&draws, &planes);
-        if !offs.is_empty() {
-            log::info!(
-                "play-window: {} coplanar draw lifts (of {} env draws)",
-                offs.len(),
-                draws.len()
-            );
-        }
-        offs
-    }
-
     /// The scene's **world-space** bounding box, for the world map's top-view
     /// debug camera.
     ///
@@ -301,74 +277,113 @@ impl PlayWindowApp {
         legaia_engine_scene::field_env::env_draws_world_aabb(&[&draws], res, ground.as_ref())
     }
 
-    /// Build the occlusion-fade visibility gate's world-space occluder set
-    /// from the same static draw list the render layers use (see
-    /// `legaia_engine_scene::field_occlusion`). Rebuilt per scene load.
-    pub(in crate::window) fn build_field_occluders(
-        &self,
-        res: &SceneResources,
-    ) -> legaia_engine_scene::field_occlusion::FieldOccluders {
-        let draws = self.static_env_draws(res);
-        let occ = legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&draws], res);
+    /// The three static-geometry products a scene load derives from its
+    /// draw list, built side by side (each reads only the draw list, the
+    /// resources and the disc, so the results are the serial build's):
+    ///
+    /// - the cross-draw **coplanar offsets** over the combined terrain +
+    ///   placed lists, ranked in retail's emission order (placed objects ahead
+    ///   of the terrain cells, the order equal-area ties resolve by) - every
+    ///   draw resolver then finds its draw's offset by identity lookup, so the
+    ///   layers stay mutually consistent;
+    /// - the occlusion-fade gate's world-space **occluder set**
+    ///   (`legaia_engine_scene::field_occlusion`), ray-cast per field frame;
+    /// - the volumetric fog's **ground coverage** field
+    ///   (`legaia_engine_scene::fog_ground`) handed to the world's bank - the
+    ///   browser play page makes the same call at its scene load. The bank
+    ///   lies on what is drawn: the story-hidden placements gone (the gate
+    ///   `resolve_placement_draws` runs), each placement at its render scale.
+    pub(in crate::window) fn build_static_env_products(&mut self, res: &SceneResources) {
+        use legaia_engine_scene::{coplanar_draws, field_env};
+        let started = std::time::Instant::now();
+        let (terrain, placements, binds) = self.static_env_layers(res);
+        let world = &self.session.host.world;
+        let mut fog_placements = placements.clone();
+        if let Some(binds) = binds.as_ref() {
+            field_env::retain_visible_placed_draws(
+                &mut fog_placements,
+                binds,
+                &world.hidden_object_records(),
+            );
+        }
+        let scales = field_env::placed_render_scales(
+            &fog_placements,
+            binds.as_ref(),
+            &world.object_render_scales(),
+        );
+        let host = &self.session.host;
+        let scene = host.scene.as_ref();
+        let index = &host.index;
+        let draws = coplanar_draws::emission_order(&terrain, &placements);
+        let mut all_draws = terrain.clone();
+        all_draws.extend(placements.iter().cloned());
+        let (offsets, occ, field) = std::thread::scope(|sc| {
+            let occ = sc.spawn(|| {
+                legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&all_draws], res)
+            });
+            let fog = sc.spawn(|| {
+                scene.and_then(|scene| {
+                    legaia_engine_scene::fog_ground::build_for_scene(
+                        &terrain,
+                        &fog_placements,
+                        &scales,
+                        res,
+                        scene,
+                        index,
+                    )
+                })
+            });
+            let offsets = if draws.is_empty() {
+                Default::default()
+            } else {
+                // The distinct meshes' planes on the thread pool: the same map
+                // the serial `draw_plane_summaries` builds.
+                let planes =
+                    coplanar_draws::draw_plane_summaries_with(&draws, res, |ids, planes_of| {
+                        use rayon::prelude::*;
+                        ids.par_iter().map(|&i| (i, planes_of(i))).collect()
+                    });
+                coplanar_draws::coplanar_draw_offsets(&draws, &planes)
+            };
+            (
+                offsets,
+                occ.join().expect("occluder build"),
+                fog.join().expect("fog ground build"),
+            )
+        });
+        if !offsets.is_empty() {
+            log::info!(
+                "play-window: {} coplanar draw lifts (of {} env draws)",
+                offsets.len(),
+                draws.len()
+            );
+        }
         if !occ.is_empty() {
             log::info!(
                 "play-window: occlusion-fade gate armed with {} static triangles",
                 occ.triangle_count()
             );
         }
-        occ
-    }
-
-    /// Build the volumetric fog's ground coverage field from the same static
-    /// draw list and hand it to the world's bank
-    /// (`legaia_engine_scene::fog_ground`) - the browser play page makes the
-    /// same call at its scene load. Rebuilt per scene load.
-    pub(in crate::window) fn install_fog_ground(&mut self, res: &SceneResources) {
-        use legaia_engine_scene::field_env;
-        let started = std::time::Instant::now();
-        // The bank lies on what is drawn: the story-hidden placements gone
-        // (the gate `resolve_placement_draws` runs), each placement at its
-        // render scale - the same layers the browser play page hands in.
-        let (terrain, mut placements, binds) = self.static_env_layers(res);
-        let world = &self.session.host.world;
-        if let Some(binds) = binds.as_ref() {
-            field_env::retain_visible_placed_draws(
-                &mut placements,
-                binds,
-                &world.hidden_object_records(),
-            );
-        }
-        let scales = field_env::placed_render_scales(
-            &placements,
-            binds.as_ref(),
-            &world.object_render_scales(),
-        );
-        let host = &mut self.session.host;
-        let field = host.scene.as_ref().and_then(|scene| {
-            legaia_engine_scene::fog_ground::build_for_scene(
-                &terrain,
-                &placements,
-                &scales,
-                res,
-                scene,
-                &host.index,
-            )
-        });
-        let label = host
-            .scene
-            .as_ref()
-            .map(|s| s.name.clone())
-            .unwrap_or_default();
+        let label = scene.map(|s| s.name.clone()).unwrap_or_default();
         if let Some(f) = &field {
             log::info!(
-                "play-window: fog ground field {}x{} cells, {} on the floor ({:.1} ms)",
+                "play-window: fog ground field {}x{} cells, {} on the floor",
                 f.w,
                 f.h,
                 f.covered_count(),
-                started.elapsed().as_secs_f64() * 1000.0
             );
         }
-        host.world.fog_volume.set_ground_field(&label, field);
+        log::info!(
+            "play-window: static env products built in {:.1} ms",
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+        self.coplanar_env_offsets = offsets;
+        self.field_occluders = occ;
+        self.session
+            .host
+            .world
+            .fog_volume
+            .set_ground_field(&label, field);
     }
 }
 

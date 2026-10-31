@@ -100,21 +100,23 @@ pub fn field_message_frame(
 
     // The `4C E1` balloon: the fixed `0x58 x 0x90` window
     // (`FUN_8002C69C(0x58, y, 0x90, 0xB)`) and the single line centred on the
-    // full 320-px screen (`FUN_80036888(text, 0, 0, x, y)`).
+    // full 320-px screen (`FUN_80036888(text, 0, 0, x, y)`). A line too long
+    // for that window - retail lets it overhang both sides - gets a window
+    // sized to it instead (`TextBalloon::fitted`); one that fits draws
+    // exactly as retail.
     if let Some(text) = world.text_balloon_drawing()
         && let Some(balloon) = world.cutscene.text_balloon.as_ref()
     {
+        let fit = balloon.fitted(ui::text_balloon_text_width(font, text));
         if let Some(rects) = chrome {
             out.sprites.extend(ui::text_balloon_chrome_draws_for(
-                rects,
-                balloon.frame_rect(),
-                origin,
-                scale,
+                rects, fit.frame, origin, scale,
             ));
         }
-        if let Some(pen) = balloon.pen() {
-            out.stage_texts
-                .extend(ui::text_balloon_text_draws_for(font, text, pen));
+        if balloon.pen().is_some() {
+            out.stage_texts.extend(ui::text_balloon_text_draws_fitted(
+                font, text, fit.pen, fit.text_w,
+            ));
         }
     }
 

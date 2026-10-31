@@ -156,8 +156,34 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
   }
 
   clearScene() {
+    this.freeSceneMeshRecords(this.sceneMeshes.values());
+    this.sceneMeshes.clear();
+  }
+
+  /* Empty the scene mesh table without freeing anything: the meshes come
+   * back as a meshId -> record map. A scene rebuilt from mostly the same
+   * meshes (play-view-scene-build.js) hands the records it keeps back
+   * (`adoptSceneMesh`) and frees the rest (`freeSceneMeshRecords`). */
+  detachSceneMeshes() {
+    const old = this.sceneMeshes;
+    this.sceneMeshes = new Map();
+    return old;
+  }
+
+  /* The record `uploadSceneMesh` made for `meshId` (null when none). */
+  sceneMeshRecord(meshId) {
+    return this.sceneMeshes.get(meshId) || null;
+  }
+
+  /* Register a record `detachSceneMeshes` gave out under `meshId`. */
+  adoptSceneMesh(meshId, rec) {
+    this.sceneMeshes.set(meshId, rec);
+  }
+
+  /* Free the GL objects of detached records nothing adopted. */
+  freeSceneMeshRecords(recs) {
     const gl = this.gl;
-    for (const m of this.sceneMeshes.values()) {
+    for (const m of recs) {
       gl.deleteVertexArray(m.vao);
       gl.deleteBuffer(m.posBuf);
       gl.deleteBuffer(m.uvBuf);
@@ -167,7 +193,6 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.deleteBuffer(m.idxBuf);
       if (m.normBuf) gl.deleteBuffer(m.normBuf);
     }
-    this.sceneMeshes.clear();
   }
 
   /* Upload the walk-view continent ground heightfield. Attribute layout
@@ -493,30 +518,6 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.uniform1i(this.locFogEnable, 0);
     }
 
-    /* Continent ground heightfield: one draw, fixed Y-flip model (the
-     * mesh is already in world coords, PSX +Y down). Drawn after the
-     * ocean (so land occludes water through depth-test) and before the
-     * landmark placements (so they sit on top). Per-cell UVs/CBA/tpage
-     * sample the kingdom slot-0 terrain atlas already in u_vram. */
-    if (this.groundEnable && this.ground && this.ground.indexCount > 0) {
-      /* model = diag(1, -1, 1): flip PSX +Y(down) to world +Y(up), no
-       * translation - matches placementModelScaled(0, 0, 0, 1). */
-      const flipY = new Float32Array([
-        1, 0, 0, 0,
-        0, -1, 0, 0,
-        0, 0, 1, 0,
-        0, 0, 0, 1,
-      ]);
-      gl.uniformMatrix4fv(this.locModel, false, flipY);
-      /* The ground is environment: the occlusion fade may dissolve it. */
-      gl.uniform1i(this.locOcclAllow, 1);
-      this._setHazeDraw(1);
-      gl.bindVertexArray(this.ground.vao);
-      gl.drawElements(gl.TRIANGLES, this.ground.indexCount, gl.UNSIGNED_INT, 0);
-      gl.bindVertexArray(null);
-      this._setHazeDraw(0);
-    }
-
     /* Group draws by meshId so we bind each VAO once per frame. */
     const byMesh = new Map();
     for (const p of placements) {
@@ -538,50 +539,88 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let nclipOn = this.nclipCull;
     /* Whether the whole-draw far bucket (`u_far_slice`) is staged. */
     let farOn = false;
-    for (const [meshId, list] of byMesh) {
-      const m = this.sceneMeshes.get(meshId);
-      if (m.indexCount === 0) continue;
-      /* Hybrid env meshes carry an untextured vertex-colour half; flip the
-       * FS flat branch on only for them (state-change once per mesh). */
-      const wantFlat = !!m.hasFlat;
-      if (wantFlat !== flatColorsOn) {
-        gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
-        flatColorsOn = wantFlat;
+    /* The opaque draws - the ground, then every placement - as one
+     * closure, so the SSAO pre-pass can issue them a second time into its
+     * G-buffer under the same uniforms (the trackers above carry across
+     * both runs). */
+    const drawOpaque = () => {
+      /* Continent ground heightfield: one draw, fixed Y-flip model (the
+       * mesh is already in world coords, PSX +Y down). Drawn after the
+       * ocean (so land occludes water through depth-test) and before the
+       * landmark placements (so they sit on top). Per-cell UVs/CBA/tpage
+       * sample the kingdom slot-0 terrain atlas already in u_vram. */
+      if (this.groundEnable && this.ground && this.ground.indexCount > 0) {
+        /* model = diag(1, -1, 1): flip PSX +Y(down) to world +Y(up), no
+         * translation - matches placementModelScaled(0, 0, 0, 1). */
+        const flipY = new Float32Array([
+          1, 0, 0, 0,
+          0, -1, 0, 0,
+          0, 0, 1, 0,
+          0, 0, 0, 1,
+        ]);
+        gl.uniformMatrix4fv(this.locModel, false, flipY);
+        /* The ground is environment: the occlusion fade may dissolve it. */
+        gl.uniform1i(this.locOcclAllow, 1);
+        this._setHazeDraw(1);
+        gl.bindVertexArray(this.ground.vao);
+        gl.drawElements(gl.TRIANGLES, this.ground.indexCount, gl.UNSIGNED_INT, 0);
+        gl.bindVertexArray(null);
+        this._setHazeDraw(0);
       }
-      this._ensureNormals(m);
-      gl.bindVertexArray(m.vao);
-      for (const p of list) {
-        const model = this._placementModel(p, m);
-        const wantCue = p.cue
-          || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
-          || this.cueParams;
-        if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
-        gl.uniformMatrix4fv(this.locModel, false, model);
-        if (p.hazeDeco || hazeOn) {
-          this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
-          hazeOn = !!p.hazeDeco;
+
+      for (const [meshId, list] of byMesh) {
+        const m = this.sceneMeshes.get(meshId);
+        if (m.indexCount === 0) continue;
+        /* Hybrid env meshes carry an untextured vertex-colour half; flip the
+         * FS flat branch on only for them (state-change once per mesh). */
+        const wantFlat = !!m.hasFlat;
+        if (wantFlat !== flatColorsOn) {
+          gl.uniform1i(this.locUseFlatColors, wantFlat ? 1 : 0);
+          flatColorsOn = wantFlat;
         }
-        /* Actor draws (the player, NPCs - `noOccl` on the placement) must
-         * never dissolve; environment placements may. */
-        gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
-        nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
-        eclipOn = this._setEffectClip(p.effectClip, eclipOn);
-        /* A far-bucket placement (the battle ground grid) writes its depth
-         * into the far slice, behind everything else on the frame. */
-        const wantFar = !!p.farBucket;
-        if (wantFar !== farOn && this.locFarSlice) {
-          gl.uniform1i(this.locFarSlice, wantFar ? 1 : 0);
-          farOn = wantFar;
+        this._ensureNormals(m);
+        gl.bindVertexArray(m.vao);
+        for (const p of list) {
+          const model = this._placementModel(p, m);
+          const wantCue = p.cue
+            || (p.decoCue && overworldDecorationCue(vp, model, this.overworldCurve))
+            || this.cueParams;
+          if (wantCue !== cueOn) { this._setCue(wantCue); cueOn = wantCue; }
+          gl.uniformMatrix4fv(this.locModel, false, model);
+          if (p.hazeDeco || hazeOn) {
+            this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
+            hazeOn = !!p.hazeDeco;
+          }
+          /* Actor draws (the player, NPCs - `noOccl` on the placement) must
+           * never dissolve; environment placements may. */
+          gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+          nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
+          eclipOn = this._setEffectClip(p.effectClip, eclipOn);
+          /* A far-bucket placement (the battle ground grid) writes its depth
+           * into the far slice, behind everything else on the frame. */
+          const wantFar = !!p.farBucket;
+          if (wantFar !== farOn && this.locFarSlice) {
+            gl.uniform1i(this.locFarSlice, wantFar ? 1 : 0);
+            farOn = wantFar;
+          }
+          gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
         }
-        gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
       }
-    }
-    if (farOn) gl.uniform1i(this.locFarSlice, 0);
-    /* Hand the frame-global cue back before the blend pass / next frame. */
-    if (cueOn !== undefined && cueOn !== this.cueParams) {
-      this._setCue(this.cueParams);
-      cueOn = this.cueParams;
-    }
+      if (farOn) gl.uniform1i(this.locFarSlice, 0);
+      /* Hand the frame-global cue back before the blend pass / next frame. */
+      if (cueOn !== undefined && cueOn !== this.cueParams) {
+        this._setCue(this.cueParams);
+        cueOn = this.cueParams;
+      }
+    };
+    drawOpaque();
+    /* Screen-space ambient occlusion + contact shadows (an enhancement,
+     * webgl-ssao.js): the opaque draws again into the G-buffer with the
+     * program's pre-pass switch on, then the AO multiplies the frame -
+     * before the blend pass, so the semi-transparent prims, the glow and
+     * every later layer stay undarkened. `ssaoFrame(vp)` is the page's
+     * hook into the engine's packet (`play_ssao_frame`); empty = off. */
+    this._drawSsao(vp, w, h, drawOpaque);
 
     /* Blend pass: re-draw the deferred semi-transparent (ABE) prims over the
      * finished opaque scene, one fixed-function blend state per ABR mode.
@@ -656,6 +695,52 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     /* The frame's view-projection, for overlay passes drawn after this
      * one into the same depth buffer (the world overview's Mist). */
     this.lastVp = vp;
+  }
+
+  /* The SSAO pre-pass and resolve inside renderAssembled. Inert unless the
+   * page installed `ssaoFrame` and it returns a packet; a driver that
+   * cannot build the pass turns it off for the session. */
+  _drawSsao(vp, w, h, drawOpaque) {
+    if (!this.ssaoFrame || this._ssaoBroken || !this.locGbuf) return;
+    if (typeof window.LegaiaSsaoPass !== 'function') return;
+    let frame = null;
+    try { frame = this.ssaoFrame(vp); } catch (e) { frame = null; }
+    if (!frame || frame.length < 24) return;
+    if (!(frame instanceof Float32Array)) frame = Float32Array.from(frame);
+    const gl = this.gl;
+    /* A WebXR session draws each eye into its own framebuffer and viewport;
+     * the pass stays out of VR (an eye's G-buffer would need the eye's
+     * viewport). */
+    const outFbo = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    if (outFbo !== null) return;
+    try {
+      if (!this._ssaoPass) this._ssaoPass = new window.LegaiaSsaoPass(gl);
+      const pass = this._ssaoPass;
+      if (pass.beginPrepass(w, h)) {
+        gl.uniform1i(this.locGbuf, 1);
+        gl.uniform4f(this.locGbufK, frame[0], frame[1], frame[2], 0);
+        gl.uniform4f(this.locGbufView, 0, 0, w, h);
+        drawOpaque();
+        gl.uniform1i(this.locGbuf, 0);
+        gl.bindVertexArray(null);
+        pass.resolve(frame, outFbo, !!this.ssaoDebug);
+      }
+    } catch (e) {
+      this._ssaoBroken = true;
+      try { console.warn('ssao pass disabled:', e); } catch (_) { /* no console */ }
+    }
+    /* Hand the frame back to the scene pass exactly as it left it. */
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outFbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(this.clearColor[0], this.clearColor[1], this.clearColor[2], this.clearColor[3]);
+    gl.useProgram(this.program);
+    gl.uniform1i(this.locGbuf, 0);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
   /* Model matrix for one renderAssembled placement (shared by the opaque

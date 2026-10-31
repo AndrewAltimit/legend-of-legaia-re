@@ -806,6 +806,42 @@ uniform vec2 u_eclip_b;
 
 out vec4 o_color;
 
+/* The SSAO pre-pass (webgl-ssao.js; 0 = off, the GL default): the scene
+ * program draws the opaque scene a second time into the G-buffer, and
+ * every exit of main() writes the fragment's G-buffer word in place of its
+ * colour - the same vertex stage and the same discards, so the G-buffer
+ * covers exactly the opaque fragments the frame shows (the native
+ * fs_ssao_prepass entries). u_gbuf_k = the frame's view scale (kx, ky, kw),
+ * u_gbuf_view = the viewport (x, y, w, h) in window pixels. */
+uniform int u_gbuf;
+uniform vec4 u_gbuf_k;
+uniform vec4 u_gbuf_view;
+vec4 g_word;
+
+/* The G-buffer word: the face normal from the derivatives of the
+ * reconstructed view position, turned to face the camera, and the linear
+ * depth (clip w). Taken ahead of any discard (native ssao_gbuffer_word). */
+vec4 gbuf_word() {
+  float w = 1.0 / max(gl_FragCoord.w, 1e-8);
+  vec2 ndc = (gl_FragCoord.xy - u_gbuf_view.xy) / u_gbuf_view.zw * 2.0 - 1.0;
+  vec3 p = vec3(ndc.x * w * u_gbuf_k.x, ndc.y * w * u_gbuf_k.y, w * u_gbuf_k.z);
+  vec3 n = cross(dFdx(p), dFdy(p));
+  float len = length(n);
+  if (len < 1e-12) {
+    n = -normalize(p);
+  } else {
+    n = n / len;
+    if (dot(n, p) > 0.0) n = -n;
+  }
+  return vec4(n, w);
+}
+
+/* Every colour exit of main(): the colour, or the G-buffer word in the
+ * pre-pass. */
+void emit(vec4 c) {
+  o_color = u_gbuf != 0 ? g_word : c;
+}
+
 /* Log-depth write on (LOG_DEPTH_GLSL): 1 on the play page's perspective
  * frames, 0 (the GL default) on every other surface. */
 uniform int u_log_depth_on;
@@ -1140,6 +1176,7 @@ void main() {
   vec2 uv_dy = dFdy(v_uv);
   v_prim_bary = v_prim_bary_pw / v_affine_w;
   vec4 bary_dy = dFdy(v_prim_bary);
+  if (u_gbuf != 0) g_word = gbuf_word();
   v_uv = psxSampleUv(v_uv, uv_dy, v_prim_bary, bary_dy);
   v_flat_rgba = v_flat_rgba_pw / v_affine_w;
   if (u_eclip_m.w > 0.5) {
@@ -1232,13 +1269,13 @@ void main() {
     flat_base = dyn_light(flat_base, vec3(0.0), geo_n, (tsb & 0x2000u) != 0u);
     vec3 flat_lit = apply_distance_fog(flat_base);
     if (flat_palette) {
-      o_color = vec4(psx_dither(flat_lit * u_palette.rgb), 1.0);
+      emit(vec4(psx_dither(flat_lit * u_palette.rgb), 1.0));
       return;
     }
     flat_lit = grade_near(flat_lit);
     /* An untextured prim's colour is shading arithmetic in both passes, so
      * it dithers in both (native COLOR_MESH fs_main and blend_pass_color). */
-    o_color = vec4(psx_dither(mix(flat_lit, dyn_far(u_cue_far), cue_ir0(v_view_z))), 1.0);
+    emit(vec4(psx_dither(mix(flat_lit, dyn_far(u_cue_far), cue_ir0(v_view_z))), 1.0));
     return;
   }
 
@@ -1361,14 +1398,14 @@ void main() {
    * structure. Blending is the caller's (additive, depth-read-only). */
   if (u_ghost.a > 0.0) {
     float luma = dot(lit, vec3(0.299, 0.587, 0.114));
-    o_color = vec4(u_ghost.rgb * (0.35 + 0.65 * luma) * u_ghost.a, 1.0);
+    emit(vec4(u_ghost.rgb * (0.35 + 0.65 * luma) * u_ghost.a, 1.0));
     return;
   }
 
   /* 15-bit dither on the opaque pass only: the textured blend pass's
    * foreground is a raw texel, which retail never dithers, read by the
    * blend equation as a truncated 5-bit channel. */
-  o_color = vec4(u_semi_pass == 1 ? psx_blend_foreground(lit) : psx_dither(lit), 1.0);
+  emit(vec4(u_semi_pass == 1 ? psx_blend_foreground(lit) : psx_dither(lit), 1.0));
 }
 `;
 

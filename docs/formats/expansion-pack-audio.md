@@ -197,8 +197,8 @@ For cutscene steps (`sound`, `music`, `music_release` in [`cutscenes.toml`](expa
 | 8F | Wind through the open top, the throne lamps and two braziers |
 | Isles beach | Surf along the shore at four points, wind off the cliffs |
 | Isles village | The bay's surf by the jetty, wind in the wooded rise, birdsong in the woods, a murmur round the lodge and the green |
-| Isles grotto | Water lapping at the pool, drips off the vault round it |
-| Isles Thornwood | Birdsong in the three clearings, wind through the canopy, the hermit's fire |
+| Isles grotto | Water at the pool and the spring, a chime by the Pearl, drips in every chamber |
+| Isles Thornwood | Birdsong in the glades, the brook at the ford, wind on the lookout, the hermit's fire, the hive's drone |
 
 Each tower boss opens on its intro cutscene's entrance sting, rings the phase-change shimmer as its script changes phase, and closes on the falling knell in its outro; the Hollow Sovereign's phases also turn the music (Apostles of the Mist, then Apocalypse, then the Wild Arms battle theme for its unbound form), with a chime on its ultimate's telegraph, and every tower boss's results play the title theme.
 

@@ -47,6 +47,29 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The content key of env slot `slot`'s unposed mesh as
+    /// [`Self::field_mesh`] builds it: its TMD's bytes and the scene VRAM it
+    /// samples, as hex. Two builds with one key make the same arrays, so the
+    /// page keeps a mesh it uploaded for a scene it rebuilds (a pack map
+    /// re-entered after an edit) instead of building it again. Empty for a
+    /// slot out of range. Valid until the next tick.
+    pub fn field_mesh_key(&mut self, slot: u32) -> String {
+        use legaia_engine_scene::mesh_memo::ContentKey;
+        let Some(host) = self.scene_host.host() else {
+            return String::new();
+        };
+        let (Some(f), Some(res)) = (self.field.as_mut(), host.resources.as_ref()) else {
+            return String::new();
+        };
+        let Some(rt) = f.env_tmds.get(slot as usize).and_then(|&i| res.tmds.get(i)) else {
+            return String::new();
+        };
+        let vram = *f
+            .mesh_key_vram
+            .get_or_insert_with(|| ContentKey::of_vram(&res.vram));
+        ContentKey::pair(ContentKey::of_bytes(&rt.raw), vram).to_hex()
+    }
+
     /// Select + build environment-pack slot `slot`; subsequent `field_mesh_*`
     /// reads return that mesh.
     pub fn field_mesh(&mut self, slot: u32) -> Result<u32, JsValue> {

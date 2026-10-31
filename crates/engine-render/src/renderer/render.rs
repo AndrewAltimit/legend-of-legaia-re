@@ -185,6 +185,28 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame encoder"),
             });
+        // The SSAO enhancement: a depth + normal pre-pass and the AO passes
+        // ahead of the main pass, applied inside it after the opaque draws.
+        // Off (the default), no camera staged or a non-scene target: nothing
+        // is encoded and the frame is the one it always was.
+        let ssao_on = match &target {
+            RenderTarget::Scene(scene) => {
+                let (full_w, full_h) = self.target_size();
+                let vp = self
+                    .scene_viewport
+                    .get()
+                    .filter(|&(x, y, w, h)| w > 0 && h > 0 && x + w <= full_w && y + h <= full_h);
+                if self.ssao_stage(vp) {
+                    crate::profile::mark("encode");
+                    self.encode_ssao_passes(&mut enc, scene, vp);
+                    crate::profile::mark("ssao");
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        };
         {
             // Mesh paths use the depth attachment; texture/clear paths skip it
             // (it would just sit unused, but keeping the depth-stencil-attachment
@@ -421,6 +443,16 @@ impl Renderer {
                             );
                             rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
                         }
+                    }
+                    // SSAO: the framebuffer times the AO, over the opaque
+                    // draws only - every blended, glowing, fogged and
+                    // screen-space layer below lands after it. Its pipeline
+                    // has a layout of its own, so the scene groups the
+                    // blend pass relies on are bound again.
+                    if ssao_on {
+                        self.draw_ssao_apply(&mut rp);
+                        rp.set_bind_group(1, &scene.vram.bind_group, &[]);
+                        rp.set_bind_group(2, &self.scene_lights_bg, &[]);
                     }
                     // PSX-faithful semi-transparency blend pass (see
                     // [`psx_blend`]): after every opaque draw, re-draw the

@@ -243,32 +243,8 @@ pub(super) fn build_scene_color_mesh(
         ],
         immediate_size: 0,
     });
-    let color_mesh_attributes = [
-        wgpu::VertexAttribute {
-            offset: 0,
-            shader_location: 0,
-            format: wgpu::VertexFormat::Float32x3,
-        },
-        wgpu::VertexAttribute {
-            offset: 12,
-            shader_location: 1,
-            format: wgpu::VertexFormat::Unorm8x4,
-        },
-        wgpu::VertexAttribute {
-            offset: 16,
-            shader_location: 2,
-            format: wgpu::VertexFormat::Uint32,
-        },
-        prim_ref_attributes(20)[0],
-        prim_ref_attributes(20)[1],
-        prim_ref_attributes(20)[2],
-        prim_ref_attributes(20)[3],
-    ];
-    let color_mesh_vertex_layout = wgpu::VertexBufferLayout {
-        array_stride: crate::renderer::COLOR_VERTEX_STRIDE,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &color_mesh_attributes,
-    };
+    let color_mesh_attributes = color_mesh_vertex_attributes();
+    let color_mesh_vertex_layout = color_mesh_vertex_layout(&color_mesh_attributes);
     let scene_color_mesh_pipeline =
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("legaia scene color mesh pipeline"),
@@ -323,5 +299,43 @@ pub(super) fn build_scene_color_mesh(
     ColorMeshParts {
         pipeline: scene_color_mesh_pipeline,
         blend_pipelines: scene_color_mesh_blend_pipelines,
+    }
+}
+
+/// The colour-mesh vertex attributes: position, colour, blend word and the
+/// primitive-corner record. Shared by the scene colour pipelines and the
+/// SSAO pre-pass so the two cannot drift.
+pub(in crate::renderer) fn color_mesh_vertex_attributes() -> [wgpu::VertexAttribute; 7] {
+    [
+        wgpu::VertexAttribute {
+            offset: 0,
+            shader_location: 0,
+            format: wgpu::VertexFormat::Float32x3,
+        },
+        wgpu::VertexAttribute {
+            offset: 12,
+            shader_location: 1,
+            format: wgpu::VertexFormat::Unorm8x4,
+        },
+        wgpu::VertexAttribute {
+            offset: 16,
+            shader_location: 2,
+            format: wgpu::VertexFormat::Uint32,
+        },
+        prim_ref_attributes(20)[0],
+        prim_ref_attributes(20)[1],
+        prim_ref_attributes(20)[2],
+        prim_ref_attributes(20)[3],
+    ]
+}
+
+/// The colour-mesh vertex buffer layout over [`color_mesh_vertex_attributes`].
+pub(in crate::renderer) fn color_mesh_vertex_layout(
+    attributes: &[wgpu::VertexAttribute],
+) -> wgpu::VertexBufferLayout<'_> {
+    wgpu::VertexBufferLayout {
+        array_stride: crate::renderer::COLOR_VERTEX_STRIDE,
+        step_mode: wgpu::VertexStepMode::Vertex,
+        attributes,
     }
 }

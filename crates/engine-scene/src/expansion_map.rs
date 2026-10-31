@@ -24,7 +24,9 @@
 //!   texture, decoration mesh and prop, each cell naming its record in its low
 //!   nine bits and carrying the draw gates `0x1000` / `0x2000` the grid-mark
 //!   refresh derives from the record's flags. A retail map ships them
-//!   stamped, and the draw side reads the scene's image unrefreshed.
+//!   stamped, and the draw side reads the scene's image unrefreshed. Every
+//!   ground cell the pack writes also carries the depth-sort bit `0x8000`
+//!   ([`set_cell`]).
 //! - `+0x10000` trigger block: the empty four-table chain. A pack map's exits
 //!   and zones are the map runtime's, not `.MAP` triggers.
 //!
@@ -38,16 +40,19 @@ use legaia_expansion_format::map::{
 };
 use legaia_expansion_format::refs::DiscRef;
 use legaia_scene_formats::field_objects::{
-    COLLISION_GRID_OFFSET, GRID_DIM, OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, OBJECT_RECORD_STRIDE,
-    ObjectRecord, TILE_CENTER,
+    CELL_GROUND_DEPTH_SORTED, CELL_WALK_VISIBLE, COLLISION_GRID_OFFSET, GRID_DIM,
+    OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, OBJECT_RECORD_STRIDE, ObjectRecord, TILE_CENTER,
 };
 
-use legaia_scene_formats::man_section::ActorPlacement;
+use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
 use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 
+pub mod ceiling;
 pub mod detail;
+pub mod footprint;
 pub mod gltf;
+pub mod surround;
 pub mod terrain;
 pub mod tmd_ops;
 pub mod vram_alloc;
@@ -92,9 +97,24 @@ fn cell_gates(flags: u16) -> u16 {
 /// Write cell word `value` at `o`, keeping the cell's elevation-override bit
 /// (`0x800`, a kept retail stair or raised floor) so the floor sampler still
 /// reads the tile's kind-2 record.
+///
+/// A ground cell (`0x1000`) also takes the depth-sort bit
+/// [`CELL_GROUND_DEPTH_SORTED`]. Without it the field ground pass links the
+/// cell into the far ordering-table bucket, under every other primitive
+/// whatever its depth - right for a retail floor, which nothing is drawn
+/// below, and wrong for a pack map with a [`surround`]: the drop and its
+/// faces lie hundreds of units under the floor, and from the follow camera
+/// the drop past a far edge projects onto the floor in front of it, so a far
+/// bucket floor let it paint straight over the rows before that edge. Sorted
+/// by its own depth, the floor covers what lies below it.
 fn set_cell(img: &mut [u8], o: usize, value: u16) {
     let old = u16::from_le_bytes([img[o], img[o + 1]]);
-    let v = value | (old & CELL_ELEVATION_OVERRIDE);
+    let sort = if value & CELL_WALK_VISIBLE != 0 {
+        CELL_GROUND_DEPTH_SORTED
+    } else {
+        0
+    };
+    let v = value | sort | (old & CELL_ELEVATION_OVERRIDE);
     img[o..o + 2].copy_from_slice(&v.to_le_bytes());
 }
 
@@ -212,15 +232,27 @@ pub struct SceneOverride {
     /// VRAM the added meshes sample, written over the base scene's build
     /// ([`detail::apply_vram_patches`]).
     pub vram_patches: Vec<VramPatch>,
-    /// The draw-record key of each animated prop, by the field-grid tile its
-    /// placement anchors on ([`prop_records`]): what a host hands
-    /// `World::object_draw_turn_matrices` / `object_draw_displacements` to
-    /// find the prop's live transform.
+    /// Models of townsfolk borrowed from another scene ([`detail::NpcBank`])
+    /// as `(source PROT entry, TMD bytes)`: the resource build puts them in
+    /// the model pool right after the base scene's own, at index
+    /// [`Self::npc_model_base`] on.
+    pub npc_tmds: Vec<(u32, Vec<u8>)>,
+    /// The base scene's own model count, where [`Self::npc_tmds`] start.
+    pub npc_model_base: usize,
+    /// The borrowed scene's ANM bundle (decoded bytes): the clip bank the
+    /// map's NPCs pose from in place of the base scene's
+    /// (`npc_catalog::scene_anm_bundle`).
+    pub npc_clips: Option<Vec<u8>>,
+    /// The draw-record key of each animated or named prop, by the
+    /// field-grid tile its placement anchors on ([`prop_records`]): what a
+    /// host hands `World::object_draw_turn_matrices` /
+    /// `object_draw_displacements` to find the prop's live transform, and
+    /// `World::hidden_object_records` to find it hidden.
     pub prop_records: Vec<((u8, u8), usize)>,
 }
 
 impl SceneOverride {
-    /// The draw-record key of the animated prop anchored on `anchor`.
+    /// The draw-record key of the prop anchored on `anchor`.
     pub fn prop_record(&self, anchor: (u8, u8)) -> Option<usize> {
         self.prop_records
             .iter()
@@ -228,7 +260,7 @@ impl SceneOverride {
             .map(|&(_, r)| r)
     }
 
-    /// Give each placed draw of an animated prop its draw-record key
+    /// Give each placed draw of a keyed prop its draw-record key
     /// ([`Self::prop_records`]) where it has no bind record of its own.
     /// `anchors` and `records` are a host's parallel per-draw lists.
     pub fn fill_prop_records(
@@ -277,12 +309,13 @@ pub fn prop_scales_at(def: &MapDef, anchors: &[(u16, u16)]) -> Vec<((u8, u8), f3
         .collect()
 }
 
-/// The draw-record key a pack map's animated prop `n` draws under: past every
-/// retail bind record (a MAN record index is a byte), so the two never meet.
+/// The draw-record key a pack map's prop `n` draws under: past every retail
+/// bind record (a MAN record index is a byte), so the two never meet.
 pub const PROP_RECORD_BASE: usize = 0x1_0000;
 
-/// The draw-record key of every prop that animates, keyed by its field-grid
-/// tile - [`SceneOverride::prop_records`].
+/// The draw-record key of every prop that animates or has an id (which a
+/// mode table can hide, `World::hidden_object_records`), keyed by its
+/// field-grid tile - [`SceneOverride::prop_records`].
 pub fn prop_records(def: &MapDef) -> Vec<((u8, u8), usize)> {
     let anchors: Vec<(u16, u16)> = def.props.iter().map(|p| (p.tile[0], p.tile[1])).collect();
     prop_records_at(def, &anchors)
@@ -295,7 +328,7 @@ pub fn prop_records_at(def: &MapDef, anchors: &[(u16, u16)]) -> Vec<((u8, u8), u
         .iter()
         .zip(anchors)
         .enumerate()
-        .filter(|(_, (p, _))| !p.animate.is_empty())
+        .filter(|(_, (p, _))| !p.animate.is_empty() || !p.id.is_empty())
         .filter_map(|(i, (_, &(ac, ar)))| {
             let (c, r) = grid_tile(def, ac, ar);
             Some((
@@ -365,6 +398,130 @@ pub struct FieldImage {
     /// tile already draws one. The keys [`prop_scales_at`] and
     /// [`prop_records_at`] take.
     pub prop_anchors: Vec<(u16, u16)>,
+    /// Ids of props that stand in the player's way
+    /// ([`footprint::Footprint::is_large_obstacle`]) and close nothing
+    /// (neither `solid` nor standable): drawn buildings the player walks
+    /// through.
+    pub open_large_props: Vec<String>,
+    /// How many `solid` decorations closed their footprint.
+    pub solid_decorations: usize,
+    /// What the image's collision grid was built from, kept so an edit that
+    /// moves a prop in place re-derives the grid as this build did
+    /// ([`collision_grid`]).
+    pub collision: CollisionInputs,
+}
+
+/// The inputs of a map's collision grid past its definition: the walls a
+/// terrain adds per tile (`None` on a tier-floored map) and the mesh bytes
+/// of every solid prop and decoration, whose footprints close the ground.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CollisionInputs {
+    pub terrain_walls: Option<Vec<u8>>,
+    pub solid_meshes: Vec<(PropMesh, Vec<u8>)>,
+}
+
+impl CollisionInputs {
+    fn raw(&self, mesh: &PropMesh) -> Option<&[u8]> {
+        self.solid_meshes
+            .iter()
+            .find(|(m, _)| m == mesh)
+            .map(|(_, r)| r.as_slice())
+    }
+}
+
+/// The `GRID_DIM x GRID_DIM` collision grid of `def` (the field image's
+/// `+0x4000` region) from `inputs`: what [`build_field_image`] writes, by
+/// the same code. A prop moved in place takes its footprint along by
+/// rebuilding this region alone.
+pub fn collision_grid(def: &MapDef, grid: &TileGrid, inputs: &CollisionInputs) -> Vec<u8> {
+    let mut img = vec![0u8; COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM];
+    write_solid_collision(&mut img, def, grid, inputs.terrain_walls.as_deref(), &|m| {
+        inputs.raw(m)
+    });
+    img.split_off(COLLISION_GRID_OFFSET)
+}
+
+/// The tile walls ([`write_collision_grid`]), then every solid prop with no
+/// standable top closing its own tile and its mesh's footprint, then every
+/// solid decoration closing its footprint. `raw` gives a mesh's bytes.
+/// Returns how many solid decorations closed their footprint.
+fn write_solid_collision<'r>(
+    img: &mut [u8],
+    def: &MapDef,
+    grid: &TileGrid,
+    terrain_walls: Option<&[u8]>,
+    raw: &dyn Fn(&PropMesh) -> Option<&'r [u8]>,
+) -> usize {
+    write_collision_grid(img, def, grid, terrain_walls);
+    for prop in def.props.iter().filter(|p| p.solid && p.top.is_none()) {
+        let [col, row] = prop.tile;
+        if usize::from(col) >= grid.width || usize::from(row) >= grid.height {
+            continue;
+        }
+        // Close the prop's tile: its wall quarters sit one byte row down.
+        let (gc, gr) = grid_tile(def, col, row);
+        img[COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc] |= 0xF0;
+        if let Some(f) = raw(&prop.mesh)
+            .and_then(|r| footprint::footprint(r, prop.rotation, prop.scale.unwrap_or(1.0)))
+        {
+            let (wx, wz) = tile_centre_world(def, col, row);
+            footprint::close_hull(
+                img,
+                &f.hull,
+                f32::from(wx) + f32::from(prop.offset[0]),
+                f32::from(wz) + f32::from(prop.offset[2]),
+            );
+        }
+    }
+    let mut solid_decorations = 0;
+    for d in def
+        .decorations()
+        .unwrap_or_default()
+        .iter()
+        .filter(|d| d.solid)
+    {
+        let Some(h) = raw(&d.mesh).and_then(|r| footprint::base_hull(r, d.rotation, d.scale))
+        else {
+            continue;
+        };
+        let (x, z) = tile_centre_world(def, d.tile[0], d.tile[1]);
+        footprint::close_hull(
+            img,
+            &h,
+            f32::from(x) + d.offset[0],
+            f32::from(z) + d.offset[2],
+        );
+        solid_decorations += 1;
+    }
+    solid_decorations
+}
+
+/// [`CollisionInputs::solid_meshes`] of `def` from the mesh library.
+fn solid_meshes(def: &MapDef, lib: Option<&MeshLibrary>) -> Result<Vec<(PropMesh, Vec<u8>)>> {
+    let Some(lib) = lib else {
+        return Ok(Vec::new());
+    };
+    let mut out: Vec<(PropMesh, Vec<u8>)> = Vec::new();
+    let meshes = def
+        .props
+        .iter()
+        .filter(|p| p.solid && p.top.is_none())
+        .map(|p| p.mesh.clone())
+        .chain(
+            def.decorations()?
+                .into_iter()
+                .filter(|d| d.solid)
+                .map(|d| d.mesh),
+        );
+    for m in meshes {
+        if out.iter().any(|(k, _)| *k == m) {
+            continue;
+        }
+        if let Some(r) = solid_mesh_raw(lib, &m) {
+            out.push((m, r.to_vec()));
+        }
+    }
+    Ok(out)
 }
 
 /// Build the synthetic field image of `def` (whose resolved tiles are
@@ -429,13 +586,23 @@ pub fn build_field_image(
         Some(_) => Some(def.terrain_walls(grid)?),
         None => None,
     };
-    write_collision_grid(&mut img, def, grid, terrain_walls.as_deref());
+    // The decorations are expanded once more below; an error stops the
+    // build there, as it did before.
+    def.decorations()?;
+    let solid_decorations =
+        write_solid_collision(&mut img, def, grid, terrain_walls.as_deref(), &|m| {
+            base.library.and_then(|lib| solid_mesh_raw(lib, m))
+        });
+    let collision = CollisionInputs {
+        terrain_walls,
+        solid_meshes: solid_meshes(def, base.library)?,
+    };
     let mut added = Added {
         len: base.geometry_len,
         meshes: Vec::new(),
     };
     let mut cell_items = Vec::new();
-    let (mut free, covered_cells, anchors) = write_objects(
+    let (mut free, covered_cells, anchors, open_large_props) = write_objects(
         &mut img,
         def,
         grid,
@@ -445,6 +612,20 @@ pub fn build_field_image(
         surface,
         &mut cell_items,
     )?;
+    // Past the floor's edge: the map's surround (a terrain draws its own
+    // skirt instead).
+    if surface.is_none() {
+        surround::write_surround(&mut img, def, grid, &mut added, &mut free)?;
+    }
+    // Over the floor: the ceiling's underside and the chains its hung items
+    // hang from, baked with the decorations.
+    cell_items.extend(ceiling::ceiling_items(
+        &img,
+        def,
+        grid,
+        base.library,
+        surface,
+    )?);
     if let Some(s) = surface {
         let foam = base.library.and_then(|l| l.foam_sheet.as_ref());
         let no_stp = Default::default();
@@ -489,6 +670,9 @@ pub fn build_field_image(
         decoration_chunk: chunk,
         covered_cells,
         prop_anchors: anchors,
+        open_large_props,
+        solid_decorations,
+        collision,
     })
 }
 
@@ -589,7 +773,35 @@ fn psx_angle(deg: f32) -> u16 {
 
 /// What [`write_objects`] leaves: the record slots still free, the tiles
 /// whose cell mesh a prop replaced, and each prop's record anchor.
-type WrittenObjects = (Vec<usize>, Vec<[u16; 2]>, Vec<(u16, u16)>);
+type WrittenObjects = (Vec<usize>, Vec<[u16; 2]>, Vec<(u16, u16)>, Vec<String>);
+
+/// A prop whose footprint runs past this many world units on either axis
+/// (one and a half tiles), standing in the player's way
+/// ([`footprint::Footprint::is_large_obstacle`]), and neither `solid` nor
+/// standable is listed in [`FieldImage::open_large_props`]: a house the
+/// player walks through.
+pub const OPEN_PROP_WARN_EXTENT: f32 = 192.0;
+
+/// The file bytes a solid mesh's footprint is measured from: the library's
+/// copy, or for a base-pack `{ object = N }` the base pack's.
+/// A map mesh's placed shape off the library's bytes, for the resting check
+/// ([`legaia_expansion_format::map_rest`]): `None` for a mesh the library
+/// does not hold.
+pub fn mesh_rest_shape(
+    lib: &MeshLibrary,
+    mesh: &PropMesh,
+    rotation: [f32; 3],
+    scale: f32,
+) -> Option<legaia_expansion_format::map_rest::Shape> {
+    footprint::rest_shape(solid_mesh_raw(lib, mesh)?, rotation, scale)
+}
+
+fn solid_mesh_raw<'a>(lib: &'a MeshLibrary, mesh: &PropMesh) -> Option<&'a [u8]> {
+    lib.raw(mesh).or_else(|| match mesh {
+        PropMesh::Object { object } => lib.base_raw.get(usize::from(*object)).map(Vec::as_slice),
+        _ => None,
+    })
+}
 
 /// The meshes a map image adds past the base pack, deduplicated by bytes:
 /// added mesh `k` is pack index `len + k`.
@@ -674,6 +886,7 @@ fn write_objects(
 ) -> Result<WrittenObjects> {
     let [ox, oy] = def.tiles.origin.map(usize::from);
     let kept = KeptFloor::new(def, grid, base.base_map.filter(|_| keep));
+    let ladder = def.floor_ladder().unwrap_or([0; FLOOR_TIERS]);
     let cell_off = |gc: usize, gr: usize| OBJECT_GRID_OFFSET + (gr * GRID_DIM + gc) * 2;
     // Record 0 is the empty slot every unnamed cell points at, and object
     // ids 1..=3 name the protagonist / NPC meshes, which the field draw never
@@ -787,7 +1000,16 @@ fn write_objects(
                         tpage,
                         clut,
                         tile,
-                    } => added.index(wall_box_tmd(*height, *tpage, *clut, *tile)?, "a wall box")?,
+                    } => {
+                        // The cell draws at its corners' mean height: the
+                        // box reaches on down to the lowest corner, so a
+                        // wall between two floors meets the lower one.
+                        let foot = wall_foot(img, ox + col, oy + row, &ladder);
+                        added.index(
+                            wall_box_tmd_from(*height, foot, *tpage, *clut, *tile)?,
+                            "a wall box",
+                        )?
+                    }
                 };
                 let flags = if tex.is_some() {
                     FLAGS_DECORATION | FLAGS_GROUND
@@ -840,6 +1062,7 @@ fn write_objects(
     let mut placed_tiles: Vec<(u16, u16)> = Vec::new();
     let mut anchors_taken: Vec<(u16, u16)> = Vec::new();
     let mut covered = Vec::new();
+    let mut open_large = Vec::new();
     for prop in &def.props {
         let [col, row] = prop.tile;
         if usize::from(col) >= grid.width || usize::from(row) >= grid.height {
@@ -965,14 +1188,20 @@ fn write_objects(
         let (ac, ar) = grid_tile(def, anchor.0, anchor.1);
         let o = cell_off(ac, ar);
         set_cell(img, o, s as u16 | cell_gates(flags));
-        let (gc, gr) = grid_tile(def, col, row);
-        if prop.solid && prop.top.is_none() {
-            // Close the prop's tile: its wall quarters sit one byte row down.
-            let b = COLLISION_GRID_OFFSET + (gr + 1) * GRID_DIM + gc;
-            img[b] |= 0xF0;
+        // A solid prop's tile and footprint close in
+        // [`write_solid_collision`]; a large one left open is flagged.
+        if !prop.solid
+            && prop.top.is_none()
+            && base
+                .library
+                .and_then(|lib| solid_mesh_raw(lib, &prop.mesh))
+                .and_then(|raw| footprint::footprint(raw, prop.rotation, prop.scale.unwrap_or(1.0)))
+                .is_some_and(|f| f.is_large_obstacle(f32::from(prop.offset[1])))
+        {
+            open_large.push(prop.id.clone());
         }
     }
-    Ok((free, covered, anchors_taken))
+    Ok((free, covered, anchors_taken, open_large))
 }
 
 /// One part a decorated cell bakes: a decoration's mesh or a decal's.
@@ -1309,6 +1538,8 @@ fn write_decorations(
             }
         }
     }
+    // The distinct meshes the decorations place, each read once.
+    let mut bake_cache = tmd_ops::BakeCache::default();
     for (key, list) in &groups {
         // The anchor: the cell's decorated tile nearest the cell's centre.
         let anchor = if let Some(&t) = anchors.get(key) {
@@ -1372,10 +1603,7 @@ fn write_decorations(
         } else {
             tier_height(anchor[0], anchor[1])
         };
-        // (bytes, offset, rotation, scale) of each decoration.
-        type Part = (Vec<u8>, [f32; 3], [f32; 3], f32);
-        let mut owned: Vec<Part> = Vec::new();
-        for d in list {
+        for d in list.iter() {
             let raw: &[u8] = match &d.src {
                 ItemSrc::Mesh(m) => lib
                     .raw(m)
@@ -1386,26 +1614,16 @@ fn write_decorations(
             let dz = (f32::from(d.tile[1]) - f32::from(anchor[1])) * 128.0;
             let lift = item_floor(d) - h0;
             // Map frame (y up) to the retail field frame (y down).
-            owned.push((
-                raw.to_vec(),
-                [d.offset[0] + dx, -(d.offset[1] + lift), d.offset[2] + dz],
-                d.rotation,
-                d.scale,
-            ));
+            parts.push(tmd_ops::Placed {
+                raw,
+                offset: [d.offset[0] + dx, -(d.offset[1] + lift), d.offset[2] + dz],
+                rotation: d.rotation,
+                scale: d.scale,
+                frame,
+            });
         }
-        parts.extend(
-            owned
-                .iter()
-                .map(|(raw, offset, rotation, scale)| tmd_ops::Placed {
-                    raw,
-                    offset: *offset,
-                    rotation: *rotation,
-                    scale: *scale,
-                    frame,
-                }),
-        );
-        let baked =
-            tmd_ops::bake(&parts).with_context(|| format!("decorations of tile {anchor:?}"))?;
+        let baked = tmd_ops::bake_cached(&parts, &mut bake_cache)
+            .with_context(|| format!("decorations of tile {anchor:?}"))?;
         drop(parts);
         let mesh = added.index(baked, "a decoration")?;
         let slot = free
@@ -1459,6 +1677,37 @@ const WALL_FACE_HEIGHT: i32 = 128;
 /// (unlit, the retail field mesh path). Each face is emitted in both
 /// windings, so the box reads from inside a wall run as well as outside.
 pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u8>> {
+    wall_box_tmd_from(height, 0, tpage, clut, tile)
+}
+
+/// How far below the height its cell draws at (the mean of its four corner
+/// tiles' floor heights, `Placement::world_y`) field-grid tile `(gc, gr)`'s
+/// lowest corner lies: what a wall box there reaches down by.
+fn wall_foot(img: &[u8], gc: usize, gr: usize, ladder: &[i16; FLOOR_TIERS]) -> u16 {
+    let h = |c: usize, r: usize| -> i32 {
+        let b = img
+            .get(COLLISION_GRID_OFFSET + r.min(GRID_DIM - 1) * GRID_DIM + c.min(GRID_DIM - 1))
+            .copied()
+            .unwrap_or(0);
+        i32::from(ladder[usize::from(b & 0x0F)])
+    };
+    let c = [h(gc, gr), h(gc + 1, gr), h(gc, gr + 1), h(gc + 1, gr + 1)];
+    // Retail sums the corners' Y-down heights and divides toward zero.
+    let mean = -((-c.iter().sum::<i32>()) / 4);
+    let low = c.iter().copied().min().unwrap_or(0);
+    (mean - low).clamp(0, i32::from(u16::MAX)) as u16
+}
+
+/// [`wall_box_tmd`] whose sides reach on `foot` world units below the
+/// cell's floor: a wall on a tier edge, its cell drawn at the mean of
+/// corners on two floors, meets the lower floor with no gap under it.
+pub fn wall_box_tmd_from(
+    height: u16,
+    foot: u16,
+    tpage: u8,
+    clut: u16,
+    tile: u8,
+) -> Result<Vec<u8>> {
     use legaia_tmd::descriptor::PacketShape;
     use legaia_tmd::encode::{LEGAIA_OBJECT_SCALE, ModelGroup, ModelObject, ModelPrim, encode};
     if height == 0 {
@@ -1499,7 +1748,7 @@ pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u
     };
     let e = 64;
     let corners = [[-e, -e], [e, -e], [e, e], [-e, e]];
-    let mut y = 0;
+    let mut y = -i32::from(foot);
     while y < h {
         let top = (y + WALL_FACE_HEIGHT).min(h);
         for k in 0..4 {
@@ -1521,18 +1770,71 @@ pub fn wall_box_tmd(height: u16, tpage: u8, clut: u16, tile: u8) -> Result<Vec<u
     }])
 }
 
+/// Fill each borrowed NPC's clips from its retail placement's motion stream
+/// where the pack names none: the default-move record the stream installs
+/// (`legaia_scene_formats::man_motion::placement_default_move`) gives the
+/// clip the actor rests in, which becomes [`NpcDef::clip`], and the clip it
+/// walks in, which a patrolling NPC takes as [`NpcDef::walk_clip`].
+///
+/// A retail placement's clip byte is not always its rest clip: Rim Elm's
+/// old man (`town01` placement 37) is placed on his walk cycle and his
+/// stream restamps the rest clip on its first tick. A pack map runs no
+/// stream, so without this the NPC would mark time in place - and a patrol
+/// would glide in its idle pose.
+///
+/// [`NpcDef::clip`]: legaia_expansion_format::map::NpcDef::clip
+/// [`NpcDef::walk_clip`]: legaia_expansion_format::map::NpcDef::walk_clip
+pub fn fill_borrowed_npc_clips(index: &ProtIndex, def: &mut MapDef) -> Result<()> {
+    let mut moves: std::collections::BTreeMap<String, Option<(Vec<u8>, ManFile)>> =
+        Default::default();
+    for npc in &mut def.npcs {
+        let Some(DiscRef::Npc { scene, index: pi }) = &npc.model else {
+            continue;
+        };
+        if npc.clip.is_some() && (npc.walk_clip.is_some() || npc.patrol.is_empty()) {
+            continue;
+        }
+        if !moves.contains_key(scene) {
+            let s = Scene::load(index, scene)?;
+            let parsed = s.field_man_payload(index)?.and_then(|man| {
+                legaia_scene_formats::man_section::parse(&man)
+                    .ok()
+                    .map(|f| (man, f))
+            });
+            moves.insert(scene.clone(), parsed);
+        }
+        let Some((man, mf)) = moves[scene].as_ref() else {
+            continue;
+        };
+        let Some([rest, walk]) =
+            legaia_scene_formats::man_motion::placement_default_move(man, mf, usize::from(*pi))
+        else {
+            continue;
+        };
+        if rest != 0 {
+            npc.clip.get_or_insert(rest);
+        }
+        if !npc.patrol.is_empty() && walk != 0 && walk != rest {
+            npc.walk_clip.get_or_insert(walk);
+        }
+    }
+    Ok(())
+}
+
 /// Resolve the map's NPCs into actor placements: each [`DiscRef::Npc`]'s
 /// retail placement read off its scene's MAN for the model byte and idle
 /// clip, seated on the NPC's tile in placement slot [`npc_slot`].
 ///
-/// Fails on an NPC with no model, a placement the scene does not have, or a
-/// model from another scene than `base_scene` that is not a party member:
-/// that mesh indexes another scene's model pool and samples another scene's
-/// VRAM, neither of which the map loads.
+/// A placement of another scene than `base_scene` that is not a party
+/// member takes the model index `bank` carried its model in at
+/// ([`detail::NpcBank`]). Fails on an NPC with no model, a placement the
+/// scene does not have, or another scene's townsperson `bank` does not
+/// carry.
 pub fn resolve_map_npcs(
     index: &ProtIndex,
     def: &MapDef,
     base_scene: &str,
+    bank: Option<&detail::NpcBank>,
 ) -> Result<Vec<ActorPlacement>> {
     let mut lists: std::collections::BTreeMap<String, Vec<ActorPlacement>> = Default::default();
     let mut out = Vec::with_capacity(def.npcs.len());
@@ -1552,12 +1854,20 @@ pub fn resolve_map_npcs(
             .iter()
             .find(|p| p.index == usize::from(*pi))
             .with_context(|| format!("npc {:?}: scene `{scene}` has no placement {pi}", npc.id))?;
+        let mut model_index = src.model_index;
         if scene != base_scene && !src.special_model {
-            bail!(
-                "npc {:?}: placement {pi} of `{scene}` draws only in its own scene \
+            if let Some(&at) = bank
+                .filter(|b| b.scene == *scene)
+                .and_then(|b| b.models.get(&src.model_index))
+            {
+                model_index = at;
+            } else {
+                bail!(
+                    "npc {:?}: placement {pi} of `{scene}` draws only in its own scene \
                  (the map's base scene is `{base_scene}`)",
-                npc.id
-            );
+                    npc.id
+                );
+            }
         }
         let slot = npc_slot(n).context("too many NPCs on one map")?;
         let (gc, gr) = grid_tile(def, npc.tile[0], npc.tile[1]);
@@ -1566,7 +1876,7 @@ pub fn resolve_map_npcs(
             index: usize::from(slot),
             record_offset: 0,
             local_count: 0,
-            model_index: src.model_index,
+            model_index,
             special_model: src.special_model,
             anim_id: npc.clip.unwrap_or(src.anim_id),
             tile_x: gc as u8,

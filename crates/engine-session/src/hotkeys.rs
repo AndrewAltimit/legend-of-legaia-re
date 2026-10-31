@@ -54,6 +54,9 @@ pub enum HostHotkey {
     // --- lane L ---
     /// `F10`: the bloom enhancement ([`OptionsState::bloom`]).
     Bloom,
+    /// `Home`: the screen-space ambient occlusion enhancement and the contact
+    /// shadows folded into it ([`OptionsState::ssao`]).
+    AmbientOcclusion,
     /// `End`: reload the active expansion pack from where it came from (the
     /// native window's `--expansion` folder or bundle, the play page's pack
     /// library) and re-enter the pack map the player is on, where they stand.
@@ -61,7 +64,7 @@ pub enum HostHotkey {
 }
 
 /// Every hotkey with its `KeyboardEvent.code`.
-pub const HOST_HOTKEYS: [(HostHotkey, &str); 14] = [
+pub const HOST_HOTKEYS: [(HostHotkey, &str); 15] = [
     (HostHotkey::DiagRows, "F1"),
     (HostHotkey::AudioMute, "F2"),
     (HostHotkey::DebugCamera, "F3"),
@@ -76,6 +79,7 @@ pub const HOST_HOTKEYS: [(HostHotkey, &str); 14] = [
     (HostHotkey::PreciseMovement, "KeyR"),
     // --- lane L ---
     (HostHotkey::Bloom, "F10"),
+    (HostHotkey::AmbientOcclusion, "Home"),
     (HostHotkey::ReloadPack, "End"),
 ];
 
@@ -114,6 +118,7 @@ impl HostHotkey {
             HostHotkey::CameraDistance => "camera_distance",
             HostHotkey::PreciseMovement => "precise_movement",
             HostHotkey::Bloom => "bloom",
+            HostHotkey::AmbientOcclusion => "ssao",
             HostHotkey::ReloadPack => "reload_pack",
         }
     }
@@ -132,9 +137,10 @@ impl HostHotkey {
             HostHotkey::VolumetricFog => "Ground fog",
             HostHotkey::EnhancedLighting => "Enhanced lighting",
             HostHotkey::LightShadows => "Lamp shadows",
-            HostHotkey::CameraDistance => "Camera distance",
-            HostHotkey::PreciseMovement => "Free-angle movement",
+            HostHotkey::CameraDistance => "Camera zoom",
+            HostHotkey::PreciseMovement => "Free movement",
             HostHotkey::Bloom => "Bloom",
+            HostHotkey::AmbientOcclusion => "Ambient occlusion",
             HostHotkey::ReloadPack => "Reload pack",
         }
     }
@@ -232,6 +238,7 @@ pub fn apply_options_hotkey(opts: &mut OptionsState, hotkey: HostHotkey) -> bool
         HostHotkey::OcclusionFade => opts.occlusion_fade = !opts.occlusion_fade,
         HostHotkey::LightShadows => opts.light_shadows = !opts.light_shadows,
         HostHotkey::Bloom => opts.bloom = !opts.bloom,
+        HostHotkey::AmbientOcclusion => opts.ssao = !opts.ssao,
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
@@ -261,6 +268,7 @@ pub fn options_hotkey_state(opts: &OptionsState, hotkey: HostHotkey) -> Option<S
         HostHotkey::OcclusionFade => on_off(opts.occlusion_fade),
         HostHotkey::LightShadows => on_off(opts.light_shadows),
         HostHotkey::Bloom => on_off(opts.bloom),
+        HostHotkey::AmbientOcclusion => on_off(opts.ssao),
         HostHotkey::DiagRows
         | HostHotkey::DebugCamera
         | HostHotkey::CheatMaxAp
@@ -428,6 +436,8 @@ mod tests {
         assert!(!o.light_shadows);
         assert!(apply_options_hotkey(&mut o, HostHotkey::Bloom));
         assert!(o.bloom);
+        assert!(apply_options_hotkey(&mut o, HostHotkey::AmbientOcclusion));
+        assert!(!o.ssao);
         let before = o.clone();
         assert!(!apply_options_hotkey(&mut o, HostHotkey::DebugCamera));
         assert_eq!(o, before);

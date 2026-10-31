@@ -75,6 +75,32 @@ pub fn text_balloon_text_draws_for(
     text_draws_for(&font.layout(text), pen, MENU_TEXT_WHITE)
 }
 
+/// [`text_balloon_text_draws_for`] for a line fitted to its frame
+/// (`TextBalloon::fitted`): drawn as is when it is no wider than `text_w`,
+/// else condensed horizontally into `text_w` - each glyph's offset from
+/// the pen and its width scaled by the same factor - so it never leaves its
+/// frame.
+pub fn text_balloon_text_draws_fitted(
+    font: &legaia_font::Font,
+    text: &[u8],
+    pen: (i32, i32),
+    text_w: i32,
+) -> Vec<TextDraw> {
+    let mut draws = text_balloon_text_draws_for(font, text, pen);
+    let width = i32::from(text_balloon_text_width(font, text));
+    if width <= text_w || width <= 0 {
+        return draws;
+    }
+    let scale = |v: i32| (i64::from(v) * i64::from(text_w.max(0)) / i64::from(width)) as i32;
+    for d in &mut draws {
+        let left = scale(d.dst.0 - pen.0);
+        let right = scale(d.dst.0 + d.dst.2 as i32 - pen.0);
+        d.dst.0 = pen.0 + left;
+        d.dst.2 = (right - left).max(1) as u32;
+    }
+    draws
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +133,31 @@ mod tests {
         assert_eq!(draws[0].dst.1, 180);
         assert!(draws[0].dst.0 >= 40);
         assert!(text_balloon_text_draws_for(&f, b"", (40, 180)).is_empty());
+    }
+
+    #[test]
+    fn a_fitting_line_is_drawn_as_is_and_a_long_one_condensed_into_its_width() {
+        let f = font();
+        let line = b"Tower of Rebirth 7F - Sanctum of Echoes";
+        let w = i32::from(text_balloon_text_width(&f, line));
+        let pen = (20, 180);
+        let dsts = |ds: Vec<TextDraw>| ds.iter().map(|d| d.dst).collect::<Vec<_>>();
+        assert_eq!(
+            dsts(text_balloon_text_draws_fitted(&f, line, pen, w)),
+            dsts(text_balloon_text_draws_for(&f, line, pen))
+        );
+        let narrow = w / 2;
+        let draws = text_balloon_text_draws_fitted(&f, line, pen, narrow);
+        assert_eq!(
+            draws.len(),
+            text_balloon_text_draws_for(&f, line, pen).len()
+        );
+        let right = |ds: &[TextDraw]| ds.iter().map(|d| d.dst.0 + d.dst.2 as i32).max().unwrap();
+        let full = right(&text_balloon_text_draws_for(&f, line, pen)) - pen.0;
+        assert!(draws.iter().all(|d| d.dst.0 >= pen.0));
+        // The glyph quads span what they spanned, scaled by narrow / w.
+        assert!(right(&draws) - pen.0 <= full * narrow / w + 1);
+        assert!(right(&draws) - pen.0 < full);
     }
 
     // The chrome builder is a pure delegation to

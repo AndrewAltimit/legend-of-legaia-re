@@ -7,7 +7,7 @@ What the site's wasm bundle exports, one section per module family: the play run
 The browser side is five crates:
 
 - [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `legaia_iso::image` and `legaia_prot::toc_index`.
-- [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames`; the play page holds one for the art it draws over an in-world minigame.
+- [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames` (the play page holds one for the art it draws over an in-world minigame) and the game-modes page's `LegaiaModes`.
 - [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
 - [`legaia-web-expansion`](../../crates/web-expansion/README.md) - the expansion workbench (`catalog`, `session`, `wasm`): an engine-layer crate whose previews are the engine's own kernels.
 - [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the `cdylib` the site loads.
@@ -57,6 +57,15 @@ The split is deliberate:
   re-uploads the mesh when the answer moves. The native window's twin reads
   the same world field and resolves through the same
   `SceneModelBank::tmd_bytes`.
+
+A scene rebuild keeps the static environment meshes the last build uploaded
+when their content is unchanged: `field_mesh_key(slot)` is the hex content key
+of a slot's unposed mesh (its TMD's bytes and the scene VRAM it samples, valid
+until the next tick), and the page's scene upload
+(`play-view-scene-build.js`) takes back the GL buffers of a key it already
+holds instead of building and uploading the mesh again, freeing the rest once
+the static layers are up. A pack map rebuilt after a workbench edit re-enters
+mostly the same meshes.
 
 The map + NPC layers make the **native play-window's exact resolver calls**,
 pinned by the disc-gated parity test `crates/web-play/tests/play_parity.rs`:
@@ -455,6 +464,7 @@ to hand to a rebuilt engine after a trap.
 | `reload_expansion(bytes)` | The hot reload (`play_expansion_live`): activate as `load_expansion` does, then re-enter the map the player is on with them seated where they stood (`SceneHost::enter_expansion_map_seated`), the follow camera kept; JSON `{ ok, pack, errors, warnings, map, reentered, ms }`. |
 | `expansion_overlay_json()` | The active pack map for the editor overlay: tile rectangle and origin, each tile's wall mask and floor height (the world's floor sampler), spawns, exits, trigger and encounter zones, props, NPCs, the player. |
 | `expansion_seat_player(col, row)` | Stand the player on a map tile, on its floor. |
+| `expansion_place_npc(n, col, row, facing)` | Move pack NPC `n` to a tile and facing without a rebuild (its anchor and heading); refused for a scenery or patrolling NPC. |
 | `expansion_set_quiet_arrivals(on)` | Enter pack maps without their arrival cutscene and place-name banner (`SceneHost::quiet_expansion_arrivals`). |
 | `expansion_preview_cutscene(id)` | Play a pack cutscene now, through the trigger path. |
 | `expansion_preview_fight(kind, id)` | Start a pack fight now: `kind` `formation` or `boss`, through a map trigger's `battle` / `boss` path. |
@@ -1176,6 +1186,26 @@ from-scratch SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
 Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
 
+## The game-modes page (`modes_page`)
+
+`LegaiaModes` runs the port's own game modes flat for `site/modes.html`, with no disc and no `World`. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own.
+
+The screen is the one projection every host draws, `legaia_engine_ui::expansion_modes::seat_screen`; `frame_json` hands its flat quads (in draw order, each with its blend mode and, for a gradient, its four corner colours) and its labels unmeasured (`mode_screen_labels`), and the page fills the quads - a gradient as a linear fill from its top edge's colour to its bottom edge's, an additive blend lighter, a subtractive one darker - and sets the labels in a web font, since the dialog font is disc data. A duel's cards are textured off its card page (`legaia_engine_modes::cards::table_art`); `card_page_rgba` composes that page as the play hosts write it into VRAM, minus the portraits a disc would give, and the page stretches each card prim's page rectangle over the card.
+
+The page's 3D section is not this class: it frames the play page (`play.html?embed=1&expansion=1&lib=<pack>&map=<map>&mode=<id>`), whose `LegaiaRuntime` boots off the site's disc cache and seats the instance at its table or course (`World::enter_pack_mode`, the scene host entering the mode's map); the pack report's `world_modes` lists which instances have one.
+
+| Export | Does |
+|---|---|
+| `new()` / `set_seed(seed)` | A runtime on the built-in practice set; the page seed every later session's seed mixes in. |
+| `use_builtin()` / `load_pack_tree(paths, data)` / `load_pack_bundle(bytes)` | The rules: the practice set, a pack tree (Rebirth as the site serves it, `packs/rebirth.json`), or `.lxpack` bytes through `share::import_bundle`. A pack contributes its `modes.toml`, its `cards.toml` as the duel's book and its maps. `""` or the reason. |
+| `modes_json()` | `{ source, pack, modes: [{ id, name, kind, map }] }`; `map` names the pack map an instance is laid out on. |
+| `enter(id)` / `open_picker()` / `leave()` | Seat an instance, the in-game picker, or nothing. |
+| `tick(pad)` | One frame off a `PadButton` word; returns the stage (`closed`, `picker`, `playing`, `results`). |
+| `state_json()` / `frame_json()` | The seat's stage, instance and quit prompt; the screen's quads and labels in the 320x240 stage. |
+| `card_page_info()` / `card_page_rgba()` | An open duel's card page: its key (changing with the faces) and size, and its RGBA8 texels. |
+
+A golf course, race or table laid out on a pack map builds from that map (`ActiveMode::build_with_maps`) and, with no world to stage it in, draws as its top-down screen. Nothing is granted: a page session has no save. Netplay stays on the play page, which joins rooms through `engine-netplay` over a running `World`. Tests: `crates/web-minigames/tests/modes_page_api.rs` plays every instance of the practice set and of Rebirth through the seat.
+
 ## Session saves + retail cards (`session_save`)
 
 The play page's save boundary. This module is **serialization only** -
@@ -1432,6 +1462,7 @@ reference TIMs sitting in other PROT entries.
 | [`host_slot`](../../crates/web-play/src/host_slot.rs) | The page's slot for its `BootSession` over `play_sfx::PageSink`; every page module reaches the scene host through it. |
 | [`play_hotkeys`](../../crates/web-play/src/play_hotkeys.rs) | `play_host_hotkey`: the native window's option / cheat / camera keys, resolved through the shared `engine-session::hotkeys` table; `play_host_hotkey_notice` / `play_host_hotkey_refusal` word the notice line; `host_hotkeys_json` lists the table. The page half is `window.__playHotkeyActions` in `play.html`. |
 | [`play_lighting`](../../crates/web-play/src/play_lighting.rs) / [`play_fog_volume`](../../crates/web-play/src/play_fog_volume.rs) | The enhanced-lighting and volumetric-fog enhancements (twins of the native `I` / `F8` and `F9`), from the shared engine-side sources. |
+| [`play_ssao`](../../crates/web-play/src/play_ssao.rs) | The ambient-occlusion and contact-shadow enhancement's per-frame packet for `site/js/webgl-ssao.js` (twin of the native `Home`), from `legaia_render_kernels::ssao`. |
 | [`play_cheats`](../../crates/web-play/src/play_cheats.rs) | The play page's Cheats panel, thin bindings over `engine-cheats::cheats`. |
 | [`play_toggles`](../../crates/web-play/src/play_toggles.rs) | Runtime twins of native launch switches, the launcher-remembered ones stored under `legaia.switches` (`PersistedSwitches`): `--retail` (`OptionsState::pin_retail` for the session; the options store keeps the pre-pin values), `--psx-render` (`set_psx_render`), `--set-flag`, `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS`, and the [gameplay tweaks](gameplay-tweaks.md) (`set_shiny_seru`, `set_flee_exp`, `set_exp_rate_permille`, `set_fortress_encounter_fix`, `set_jewel_fix`, `set_hp_readout_guard`, `set_bonus_drop`, `set_save_anywhere`, `set_action_movement`, and the battle-tuning setters `set_enemy_stat_permille`, `set_enemy_attack_permille`, `set_spirit_ap`, `set_damage_ap`, `set_seru_catch_rate`). |
 | [`audio_api`](../../crates/web-viewer/src/audio_api.rs) | `LegaiaAudio`, the media page's audio bindings. |

@@ -88,6 +88,11 @@ pub struct LegaiaRuntime {
     /// the page must re-upload the whole geometry, not just the per-frame
     /// posed positions (`FrameTicksReport::player_rig_rebuilt`).
     pub(crate) player_rig_gen: u32,
+    /// Consecutive field ticks on a pack map with no button held: the idle
+    /// window in which the page prepares the maps the current one's exits
+    /// lead to (`SceneHost::step_expansion_preload`; this build has no
+    /// worker thread to run them on).
+    pub(crate) preload_idle_ticks: u32,
     /// The tile-board actor mesh staged for upload, one slot at a time
     /// (`crate::play_tile_board`). Board cells all draw the same handful of
     /// template meshes, so the page uploads each slot once per scene.
@@ -477,6 +482,7 @@ impl LegaiaRuntime {
             field: None,
             player: None,
             player_rig_gen: 0,
+            preload_idle_ticks: 0,
             tile_mesh: None,
             actors: Default::default(),
             scene_anm: None,

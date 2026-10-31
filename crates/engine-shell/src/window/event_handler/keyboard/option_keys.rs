@@ -74,6 +74,7 @@ impl PlayWindowApp {
             HostHotkey::CameraDistance => self.key_camera_distance(),
             HostHotkey::PreciseMovement => self.key_precise_movement(),
             HostHotkey::Bloom => self.key_bloom(),
+            HostHotkey::AmbientOcclusion => self.key_ssao(),
             HostHotkey::ReloadPack => {}
         }
         let notice = self.hotkey_notice(hotkey);
@@ -228,6 +229,18 @@ impl PlayWindowApp {
             } else {
                 "off"
             }
+        );
+    }
+
+    /// `Home`: toggle the screen-space ambient occlusion enhancement and
+    /// the contact shadows folded into it (the `--no-ssao` flag's runtime
+    /// twin). The persisted `OptionsState::ssao`, flipped by the shared edit
+    /// and pushed into the renderer by the options apply; pure renderer
+    /// state.
+    fn key_ssao(&mut self) {
+        log::info!(
+            "render: ambient occlusion {}",
+            if self.options_state.ssao { "ON" } else { "off" }
         );
     }
 

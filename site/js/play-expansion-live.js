@@ -15,7 +15,8 @@
  *     a pack and enter a map, reload it after an edit, set the editor
  *     overlay (play-view-editor-overlay.js), switch between the free orbit
  *     camera and the player's follow camera, stand the player on a tile,
- *     play a cutscene. A click in the picture answers with the map tile under
+ *     play a cutscene, move props and NPCs in place after an object-only
+ *     edit (`xw-move`). A click in the picture answers with the map tile under
  *     it, and the preview reports its frame cost once a second.
  *
  * Messages, both directions, are `{ type, ... }` objects; the channel ones
@@ -110,6 +111,12 @@
      * (`xw-arrival`): off, the preview enters quietly. */
     let matchPainter = true;
     let arrival = false;
+    /* Whether the mode seat was opened by the workbench (`xw-mode`). */
+    let previewMode = false;
+    const modeOpen = () => {
+      const rt = api.runtime();
+      try { return !!(rt && JSON.parse(rt.play_pack_modes_json()).open); } catch (e) { return false; }
+    };
 
     function viewReady() {
       const v = api.view();
@@ -120,11 +127,14 @@
        * the picture is a panel in the editor, and the fill is the cost. */
       if (!v._xwSized && !v.psxRender) {
         v._xwSized = true;
-        for (const c of [v.canvas, v.menuOverlay].filter(Boolean)) {
-          const w = Math.max(320, Math.min(960, Math.round(c.clientWidth || 640)));
-          c.width = w;
-          c.height = Math.round(w * 3 / 4);
-        }
+        sizeCanvas(v);
+        /* The workbench's view switch resizes the frame (a dock, a split
+         * column, the whole view): follow it, a moment after it settles. */
+        let t = null;
+        window.addEventListener('resize', () => {
+          clearTimeout(t);
+          t = setTimeout(() => sizeCanvas(v), 150);
+        });
       }
       if (!v._xwFrameHooked) {
         /* Frame cost: the CPU time of each `_frame`, averaged over a second,
@@ -147,6 +157,9 @@
           rest = Math.max(1, Math.min(3, Math.floor(d / 16)));
           acc += d; n++; if (d > worst) worst = d;
           if (t - last >= 1000) {
+            /* A mode the workbench started that the player left (Start):
+             * the editor's volumes come back. */
+            if (previewMode && !modeOpen()) { previewMode = false; this.editorOverlayOn = true; }
             post({ type: 'xw-stats', frameMs: acc / Math.max(n, 1), worstMs: worst, fps: n * 1000 / (t - last) });
             acc = 0; n = 0; worst = 0; last = t;
           }
@@ -163,8 +176,21 @@
       return v;
     }
 
+    /* The canvas resolution: the width the frame shows it at (4:3, 320 to
+     * 960 wide), so the fill is what is seen. */
+    function sizeCanvas(v) {
+      if (v.psxRender) return;
+      for (const c of [v.canvas, v.menuOverlay].filter(Boolean)) {
+        const w = Math.max(320, Math.min(960, Math.round(c.clientWidth || 640)));
+        if (c.width === w) continue;
+        c.width = w;
+        c.height = Math.round(w * 3 / 4);
+      }
+    }
+
     function applyCamera(v) {
       v.debugCamera = wantOrbit;
+      if (typeof v.syncEditorHud === 'function') v.syncEditorHud();
       /* Match painter: the orbit sits on the map's high-Z side
        * (`focusEditorTile`, yaw pi) and the canvas is mirrored, so screen
        * right is +X and the painter's row 0 is the far edge at the top. The
@@ -238,6 +264,66 @@
       return Math.round(performance.now() - t0);
     }
 
+    /* An object-only edit from the workbench, applied to the running map:
+     *  - a prop's draw is found by where it stands now (its placed draw at
+     *    `from`, world x / z) and moved to `to`, turned by `turn` degrees and
+     *    raised by `dy` (the floor's change between the two tiles, up); the
+     *    engine's copy (`expansion_place_prop`: its closed tile in the
+     *    collision grid, its standable top, its light) takes `tile`,
+     *    `offset` and `yaw`;
+     *  - an NPC goes through `expansion_place_npc` (its anchor and heading);
+     *  - a spawn through `expansion_place_spawn`, a lamp through
+     *    `expansion_place_lamp` (the light is read every frame).
+     * A prop with no single plain placed draw at `from` (a tilted or a
+     * script-moved one, two draws on one spot) or an object the engine
+     * refuses answers `ok: false`, and the workbench rebuilds instead. The
+     * props are matched before anything moves. `collision` is false when
+     * the bundle cannot move a prop's engine copy (an older wasm). */
+    /* The engine's collision reading of the map just built or moved
+     * (`blocked`, play-view-editor-overlay.js), for the painter's
+     * Collision marks. */
+    function postCollision(v) {
+      const ov = v && v._editorMap;
+      if (!ov || !Array.isArray(ov.blocked)) return;
+      post({ type: 'xw-collision', map: ov.map, width: ov.width, height: ov.height, blocked: ov.blocked, walls: ov.walls });
+    }
+
+    function moveInPlace(rt, v, m) {
+      if (!rt || !v || !v.staticDraws) return { ok: false, why: 'no map' };
+      const picks = [];
+      for (const p of m.props || []) {
+        const hits = v.staticDraws.filter((d) => d.placeIdx !== undefined
+          && Math.abs(d.baseX - p.from[0]) <= 2 && Math.abs(d.baseZ - p.from[1]) <= 2);
+        if (hits.length !== 1 || hits[0].model || hits[0].liveModel) return { ok: false, why: `prop at ${p.from} has ${hits.length} draw(s)` };
+        picks.push([hits[0], p]);
+      }
+      const has = (f) => typeof rt[f] === 'function';
+      if ((m.npcs || []).length && !has('expansion_place_npc')) return { ok: false, why: 'no in-place NPC move in this bundle' };
+      if (((m.spawns || []).length && !has('expansion_place_spawn')) || ((m.lamps || []).length && !has('expansion_place_lamp'))) return { ok: false, why: 'no in-place spawn / lamp move in this bundle' };
+      const collision = has('expansion_place_prop');
+      for (const [d, p] of picks) {
+        const dx = p.to[0] - p.from[0], dz = p.to[1] - p.from[1];
+        d.x += dx; d.z += dz; d.baseX += dx; d.baseZ += dz;
+        if (p.dy) { d.y += p.dy; if (d.baseY !== undefined) d.baseY += p.dy; }
+        if (p.turn) d.rotY -= p.turn * Math.PI / 180;
+        if (collision && p.tile && !rt.expansion_place_prop(p.i, p.tile[0], p.tile[1], (p.offset && p.offset[0]) || 0, (p.offset && p.offset[2]) || 0, p.yaw || 0)) {
+          return { ok: false, why: `prop ${p.i} refused`, partial: true };
+        }
+      }
+      for (const nv of m.npcs || []) {
+        if (!rt.expansion_place_npc(nv.n, nv.tile[0], nv.tile[1], nv.facing || 0)) return { ok: false, why: `npc ${nv.n} refused`, partial: true };
+      }
+      for (const s of m.spawns || []) {
+        if (!rt.expansion_place_spawn(s.n, s.tile[0], s.tile[1], s.facing || 0)) return { ok: false, why: `spawn ${s.n} refused`, partial: true };
+      }
+      for (const l of m.lamps || []) {
+        const o = l.offset || [0, 96, 0];
+        if (!rt.expansion_place_lamp(l.n, l.tile[0], l.tile[1], o[0] || 0, o[1] || 0, o[2] || 0)) return { ok: false, why: `lamp ${l.n} refused`, partial: true };
+      }
+      if (typeof v.refreshEditorOverlay === 'function') { v.refreshEditorOverlay(); postCollision(v); }
+      return { ok: true, collision, props: picks.length, npcs: (m.npcs || []).length, spawns: (m.spawns || []).length, lamps: (m.lamps || []).length };
+    }
+
     window.addEventListener('message', (ev) => {
       if (ev.origin !== location.origin || ev.source !== parentWin) return;
       const m = ev.data || {};
@@ -247,6 +333,13 @@
         if (!rt) { post({ type: 'xw-loaded', ok: false, errors: ['the preview has no disc yet'] }); return; }
         const t0 = performance.now();
         const cur = packId(rt);
+        /* A mode the workbench started is the preview's own session, not
+         * anybody's game: leave it, so the build is not held up by it. */
+        if (previewMode) {
+          previewMode = false;
+          if (modeOpen()) rt.play_pack_mode_exit();
+          if (v) v.editorOverlayOn = true;
+        }
         let r;
         /* A first load, or the workbench moved to another map: activate and
          * enter it. Otherwise the same map hot-reloads where the player is. */
@@ -268,6 +361,7 @@
         const vv = viewReady();
         if (vv) {
           vv.refreshEditorOverlay();
+          postCollision(vv);
           if (r.ok && typeof vv.editorRebuilt === 'function') vv.editorRebuilt();
           applyCamera(vv);
         }
@@ -276,6 +370,10 @@
           errors: r.errors || [], engineMs: r.ms != null ? r.ms : null,
           ms: Math.round(performance.now() - t0),
         });
+      } else if (m.type === 'xw-move') {
+        /* Object-only edit: move the drawn props and the NPCs where they
+         * stand, without rebuilding the map (moveInPlace). */
+        post(Object.assign({ type: 'xw-moved', seq: m.seq }, moveInPlace(rt, v, m)));
       } else if (m.type === 'xw-edit') {
         if (v && typeof v.setEditorEdit === 'function') v.setEditorEdit(m);
         else pendingEdit = Object.assign(pendingEdit || {}, m);
@@ -300,6 +398,13 @@
         const ok = !!(rt && typeof rt.expansion_preview_cutscene === 'function' && rt.expansion_preview_cutscene(m.id));
         if (ok && v) { wantOrbit = false; applyCamera(v); }
         post({ type: 'xw-action', what: 'cutscene', id: m.id, ok });
+      } else if (m.type === 'xw-mode') {
+        /* A pack mode instance, as the play page's own mode list enters it. */
+        let why = 'this page build has no game modes';
+        if (rt && typeof rt.play_pack_mode_enter === 'function') why = rt.play_pack_mode_enter(m.id);
+        /* The mode's own picture: the editor's volumes stand down. */
+        if (!why) { previewMode = true; if (v) { v.editorOverlayOn = false; wantOrbit = false; applyCamera(v); } }
+        post({ type: 'xw-action', what: 'mode', id: m.id, ok: !why, why });
       } else if (m.type === 'xw-fight') {
         const ok = !!(rt && typeof rt.expansion_preview_fight === 'function' && rt.expansion_preview_fight(m.kind, m.id));
         if (ok && v) { wantOrbit = false; applyCamera(v); }

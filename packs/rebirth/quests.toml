@@ -1,7 +1,12 @@
 # Legend of Legaia: Rebirth - quests and challenges.
 #
 # The main chain climbs the Tower of Rebirth floor by floor; side quests
-# hang off the floors' NPCs. Every NPC here is a talk zone on a pack map
+# hang off the floors' NPCs. Dialogue is kept for what the player asks for
+# and for story beats: a quest that starts or completes on its own (an
+# auto-started quest, a count or a floor reached in the field) says nothing,
+# and its quest toast and Journal entry carry it. A side quest an NPC hands
+# out starts on its toast too, so one talk is never a queue of boxes. Every
+# NPC here is a talk zone on a pack map
 # (`[[triggers]] event = { kind = "talk", npc = ... }`), so "talking to"
 # the Warden's Stone or the 2F brazier is stepping up to it. Pack flags
 # and counters are the pack's own and never touch a retail story flag.
@@ -57,7 +62,6 @@ active_dialog = "ember_offer"
 objectives = [
     { kind = "win_boss", boss = "cinder_warden", text = "Defeat the Cinder Warden" },
 ]
-complete_dialog = "ember_done"
 rewards = { xp = 20000, cards = ["ember-scale"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
@@ -66,11 +70,9 @@ title = "The Hanging Garden"
 description = "The third floor's sundial counts out a trial of four waves. Outlast the garden."
 auto_start = true
 prerequisites = { quests = ["ember_stair"] }
-start_dialog = "garden_hint"
 objectives = [
     { kind = "defeat_formation", formation = "garden_gauntlet", text = "Clear the Garden Gauntlet" },
 ]
-complete_dialog = "garden_done"
 rewards = { gold = 25000, items = [{ item = 252, count = 1 }] }
 
 [[quests]]
@@ -84,7 +86,6 @@ active_dialog = "vault_offer"
 objectives = [
     { kind = "win_boss", boss = "verdant_colossus", text = "Defeat the Verdant Colossus" },
 ]
-complete_dialog = "vault_done"
 rewards = { xp = 30000, cards = ["ironhide-brute"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
@@ -114,7 +115,6 @@ objectives = [
     { kind = "defeat_formation", formation = "engine_gauntlet", text = "Outlast the Engine Gauntlet" },
     { kind = "win_boss", boss = "iron_regent", text = "Defeat the Iron Regent" },
 ]
-complete_dialog = "regent_done"
 rewards = { xp = 40000, cards = ["rune-sentinel"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
@@ -128,7 +128,6 @@ active_dialog = "seraph_offer"
 objectives = [
     { kind = "win_boss", boss = "azure_seraph", text = "Silence the Azure Seraph" },
 ]
-complete_dialog = "seraph_done"
 rewards = { xp = 50000, cards = ["radiant-warden"], counters = [{ counter = "bosses_felled" }] }
 
 [[quests]]
@@ -154,7 +153,6 @@ description = "The throne is empty. Warden Ysolde asks one last thing: reach the
 auto_start = true
 # After the ending cutscene, not under it.
 prerequisites = { quests = ["tower_sovereign"], flags = ["throne_broken"] }
-start_dialog = "guide_rebirth"
 objectives = [
     { kind = "reach_level", level = 99, text = "Reach level 99" },
     { kind = "counter", counter = "bosses_felled", at_least = 5, text = "Fell the tower's five keepers" },
@@ -195,7 +193,6 @@ objectives = [
     { kind = "enter_scene", scene = "rebirth_tower_7f", text = "The Sanctum of Echoes" },
     { kind = "enter_scene", scene = "rebirth_tower_8f", text = "The Hollow Throne" },
 ]
-complete_dialog = "every_floor_done"
 rewards = { gold = 20000, items = [{ item = "mist_lantern" }], cards = ["sky-sovereign"] }
 
 [[quests]]
@@ -204,7 +201,6 @@ title = "Bounty: Ironhide Ogres"
 description = "The Ironhide breed is spreading out of the tower. Thin it out: any fight with a monster built on the Dark Ogre counts."
 giver = "tower_guide"
 prerequisites = { flags = ["tower_open"] }
-start_dialog = "bounty_ogres_start"
 objectives = [
     { kind = "defeat_monster", monster = 109, count = 6, text = "Win six fights against Ironhide Ogres" },
     { kind = "talk", npc = "tower_guide", text = "Report to the Warden's Stone" },
@@ -219,7 +215,6 @@ title = "A Remedy for Stone"
 description = "The Warden's Stone is cracking. Ysolde asks for Healing Fruit to close the cracks."
 giver = "tower_guide"
 prerequisites = { flags = ["tower_open"] }
-start_dialog = "remedy_start"
 objectives = [
     { kind = "collect_item", item = 123, count = 5, hand_in = true, text = "Gather five Healing Fruit" },
     { kind = "talk", npc = "tower_guide", text = "Bring them to the Warden's Stone" },
@@ -244,11 +239,9 @@ title = "Bounty: Brass Sentinels"
 description = "Break the Brass Sentinels marching out of the Engine Deep."
 giver = "regent_seat"
 prerequisites = { quests = ["engine_deep"] }
-start_dialog = "sentinel_hunt_start"
 objectives = [
     { kind = "defeat_monster", monster = 129, count = 8, text = "Win eight fights against Brass Sentinels" },
 ]
-complete_dialog = "sentinel_hunt_done"
 rewards = { gold = 40000, items = [{ item = 131, count = 2 }], counters = [{ counter = "bounties" }] }
 repeat = { repeatable = true, cooldown_seconds = 3600 }
 
@@ -286,7 +279,6 @@ prerequisites = { flags = ["tower_open"] }
 objectives = [
     { kind = "counter", counter = "bounties", at_least = 4, text = "Complete four tower bounties" },
 ]
-complete_dialog = "bounty_board_done"
 rewards = { gold = 60000, items = [{ item = 0x86, count = 2 }] }
 
 [[quests]]
@@ -298,7 +290,6 @@ prerequisites = { flags = ["throne_broken"] }
 objectives = [
     { kind = "counter", counter = "echoes_broken", at_least = 5, text = "Break the Echo five times" },
 ]
-complete_dialog = "echo_breaker_done"
 rewards = { xp = 60000, items = [{ item = 0x8E, count = 3 }] }
 
 # --- The keeper's tables (5F) ------------------------------------------------
@@ -309,7 +300,6 @@ title = "The Keeper's Tables"
 description = "Keeper Odalric runs five tables in the Gambler's Rest. Win one of each: the card room by the bar holds the High Table and the Warden's Duel, the games room past it the links, the circuit and the vault."
 giver = "rest_keeper"
 prerequisites = { quests = ["gamblers_rest"] }
-start_dialog = "keeper_tables"
 ordered = false
 objectives = [
     { kind = "win_mode", mode = "tower-high-table", text = "Win at the Tower High Table" },
@@ -433,15 +423,16 @@ rewards = { gold = 8000, items = [{ item = 121, count = 3 }] }
 [[quests]]
 id = "isles_thornwood"
 title = "The Thornwood Queen"
-description = "The path inland is choked with thorn and wasps. The hermit at the ruins says the hive's queen has grown into the old gate itself."
+description = "The path inland is choked with thorn and wasps. The hermit camped below the ruins says the hive's queen has grown into the old gate itself."
 giver = "isles_elder"
-prerequisites = { quests = ["isles_landfall"], min_level = 35 }
-start_dialog = "isles_elder_thorns"
+# Offered in the same breath as Landfall's welcome (`isles_elder_hello`),
+# so the elder speaks once.
+prerequisites = { quests = ["isles_landfall"] }
 active_dialog = "isles_elder_thorns_active"
 objectives = [
     { kind = "enter_scene", scene = "isles_thornwood", text = "Follow the Thornwood path to the ruins" },
     { kind = "win_boss", boss = "isles_hive_queen", text = "Defeat the Thornwood Queen" },
-    { kind = "talk", npc = "isles_hermit", text = "Speak with the hermit at the gate" },
+    { kind = "talk", npc = "isles_hermit", text = "Tell the hermit at his camp by the fire" },
 ]
 complete_dialog = "isles_hermit_done"
 rewards = { gold = 15000, set_flags = ["isles_gate_open"] }
@@ -452,7 +443,8 @@ title = "The Pearl Below"
 description = "Under the ruins a stair runs down to a grotto where the sea still sings. Something there remembers the islands before the Mist."
 giver = "isles_hermit"
 prerequisites = { flags = ["isles_gate_open"] }
-start_dialog = "isles_hermit_grotto"
+# The Thornwood's closing words lead straight on; the stair's directions
+# wait for a second talk.
 active_dialog = "isles_hermit_grotto"
 objectives = [
     { kind = "enter_scene", scene = "isles_grotto", text = "Descend into the grotto" },

@@ -7,23 +7,30 @@
 <section class="doc-section" id="workbench">
   <div class="wb xw">
 
-    <div class="wb-toolbar">
-      <label class="wb-tool">
-        <span class="wb-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
-        <input type="file" id="xw-file" accept=".bin,application/octet-stream">
-      </label>
-      <div class="wb-tool">
-        <span class="wb-label">Pack
-          <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Open the Rebirth example (the project's own flagship pack), a <code>.lxpack</code> or a pack folder of your own, or start a new pack: empty, from the minimal template (a monster, a fight, a line, a quest and a small map wired together), or as a clone of Rebirth under your own id.</p><p>A pack folder is the directory holding <code>pack.toml</code>; the browser reads every file in it.</p></span></span>
-        </span>
-        <div class="wb-inline">
-          <button type="button" id="xw-rebirth" class="wb-button wb-button-ghost">Rebirth example</button>
-          <label class="wb-button wb-button-ghost wb-file-button">Open .lxpack<input type="file" id="xw-bundle-file" accept=".lxpack,application/octet-stream" hidden></label>
-          <label class="wb-button wb-button-ghost wb-file-button">Open folder<input type="file" id="xw-dir-file" webkitdirectory multiple hidden></label>
-          <button type="button" id="xw-fresh" class="wb-button wb-button-ghost" aria-controls="xw-new">New pack ...</button>
+    <details id="xw-setup" class="xw-setup" open>
+      <summary class="xw-setup-sum"><span class="xw-setup-title">Disc and pack</span> <span id="xw-setup-state" class="xw-dim"></span> <span class="xw-setup-hint xw-dim">open another pack or change the disc</span></summary>
+      <div class="wb-toolbar">
+        <label class="wb-tool">
+          <span class="wb-label">Disc image (<code>.bin</code>, Mode 2/2352)</span>
+          <input type="file" id="xw-file" accept=".bin,application/octet-stream">
+        </label>
+        <div class="wb-tool" id="xw-pack-tool">
+          <span class="wb-label">Pack
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Open the Rebirth example (the project's own flagship pack), a <code>.lxpack</code> or a pack folder of your own, or start a new pack: empty, from the minimal template (a monster, a fight, a line, a quest and a small map wired together), or as a clone of Rebirth under your own id.</p><p>A pack folder is the directory holding <code>pack.toml</code>; the browser reads every file in it.</p></span></span>
+          </span>
+          <div class="wb-inline">
+            <button type="button" id="xw-rebirth" class="wb-button wb-button-ghost">Rebirth example</button>
+            <label class="wb-button wb-button-ghost wb-file-button">Open .lxpack<input type="file" id="xw-bundle-file" accept=".lxpack,application/octet-stream" hidden></label>
+            <label class="wb-button wb-button-ghost wb-file-button">Open folder<input type="file" id="xw-dir-file" webkitdirectory multiple hidden></label>
+            <button type="button" id="xw-fresh" class="wb-button wb-button-ghost" aria-controls="xw-new">New pack ...</button>
+          </div>
         </div>
       </div>
-    </div>
+
+      <div class="wb-warn"><strong>A pack carries no game data.</strong> It names the disc's monsters, scenes, meshes and music by number, and every player supplies their own disc.
+        <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The names in the pickers (monsters, items, scenes) are read from the disc you load here and shown to you only. A picker writes the coordinate - <code>{ kind = "monster", id = 109 }</code> - never the name; a pack holds a name only where you type one.</p><p>Every export runs the validator's no-disc-bytes rule. Reference: <code>docs/formats/expansion-pack.md</code>.</p></span></span>
+      </div>
+    </details>
 
     <div id="xw-new" class="xw-new" hidden>
       <label class="xw-field"><span>Pack id <span class="xw-hint">lower case, digits, _ and -</span></span><input type="text" id="xw-new-id" value="my_pack" spellcheck="false"></label>
@@ -38,16 +45,32 @@
       <div class="wb-inline"><button type="button" id="xw-new-go" class="wb-button">Create</button><button type="button" id="xw-new-cancel" class="wb-button wb-button-ghost">Cancel</button></div>
     </div>
 
-    <div class="wb-warn"><strong>A pack carries no game data.</strong> It names the disc's monsters, scenes, meshes and music by number, and every player supplies their own disc.
-      <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>The names in the pickers (monsters, items, scenes) are read from the disc you load here and shown to you only. A picker writes the coordinate - <code>{ kind = "monster", id = 109 }</code> - never the name; a pack holds a name only where you type one.</p><p>Every export runs the validator's no-disc-bytes rule. Reference: <code>docs/formats/expansion-pack.md</code>.</p></span></span>
-    </div>
 
     <div id="xw-resume" class="wb-resume" hidden></div>
     <div id="xw-status" class="wb-status" role="status"></div>
 
     <div id="xw-empty" class="xw-start">
-      <p><strong>No pack open.</strong> 1. Choose your disc image above (it stays in this tab). 2. Open the Rebirth example, a <code>.lxpack</code> or a pack folder, or press <strong>New pack</strong>.</p>
-      <p class="xw-dim">The editors fill this space: a tab per pack file, the checks beside them, Find to see where any id, flag or coordinate is used (and rename it everywhere), and the Flow tab for the pack's progression graph.</p>
+      <p class="xw-start-step" id="xw-start-disc"><span class="xw-step-n">1</span> <span id="xw-start-disc-text">Choose your disc image above. It is read in this tab and never uploaded.</span></p>
+      <p class="xw-start-step"><span class="xw-step-n">2</span> Pick a starting point:</p>
+      <div class="xw-start-cards">
+        <button type="button" class="xw-start-card" data-start="rebirth">
+          <strong>Rebirth example</strong>
+          <span>The project's own example pack: maps, quests, bosses, cards and cutscenes, all wired together. The quickest way to see what a pack can do, and safe to poke at - nothing is written until you download.</span>
+        </button>
+        <button type="button" class="xw-start-card" data-start="new">
+          <strong>New pack ...</strong>
+          <span>Your own id and name, from the minimal template (a monster, a fight, a line, a quest and a small map that ties them together), an empty pack, or a copy of Rebirth.</span>
+        </button>
+        <div class="xw-start-card is-static">
+          <strong>Open your pack</strong>
+          <span>A <code>.lxpack</code> someone shared, or a pack folder (the one holding <code>pack.toml</code>). You can also drop either anywhere on the page.</span>
+          <span class="wb-inline">
+            <button type="button" class="wb-mini" data-start="bundle">.lxpack ...</button>
+            <button type="button" class="wb-mini" data-start="folder">Folder ...</button>
+          </span>
+        </div>
+      </div>
+      <p class="xw-dim">The editors fill this space once a pack is open: a tab per pack file, the checks beside them (click one to jump to its field), Find for where any id, flag or coordinate is used, and Play to try the pack in the browser.</p>
     </div>
 
     <div id="xw-main" hidden>
@@ -58,13 +81,16 @@
         <div class="wb-actions">
           <button type="button" id="xw-undo" class="wb-mini" title="Undo (Ctrl+Z)" disabled>Undo</button>
           <button type="button" id="xw-redo" class="wb-mini" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
-          <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys</button>
           <button type="button" id="xw-dl" class="wb-button">Download .lxpack</button>
-          <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
           <button type="button" id="xw-play" class="wb-button wb-button-ghost">Play in browser</button>
-          <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map the Maps tab is on, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play here</button>
-          <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
-          <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play here</strong> puts you on the map you are editing. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p></span></span>
+          <button type="button" id="xw-more" class="wb-mini xw-more-btn" aria-expanded="false" aria-controls="xw-more-items" title="Keys, the TOML files, Share, Play here and Live">More</button>
+          <span id="xw-more-items" class="xw-more-items">
+            <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys</button>
+            <button type="button" id="xw-toml" class="wb-button wb-button-ghost">TOML files</button>
+            <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map the Maps tab is on, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play here</button>
+            <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
+            <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Download .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has errors.</p><p><strong>TOML files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder. Files you did not change keep their original text and comments.</p><p><strong>Play in browser</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play here</strong> puts you on the map you are editing. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p></span></span>
+          </span>
         </div>
       </div>
       <div id="xw-keyhelp" class="xw-keyhelp" hidden>
@@ -74,7 +100,10 @@
           <tr><th>Ctrl+K or /</th><td>Find in the pack.</td></tr>
           <tr><th>F8 / Shift+F8</th><td>Next / previous check.</td></tr>
           <tr><th>Alt+1 .. Alt+0, Alt+[ / Alt+]</th><td>Go to a tab / the previous or next tab.</td></tr>
-          <tr><th>Painter</th><td>B paint, R fill rect, I pick, V select, S spawn, E exit, T trigger, N encounters, P prop, C NPC; Delete removes the selection; Ctrl+wheel zooms.</td></tr>
+          <tr><th>Painter</th><td>B paint, R fill rect, I pick, V select, S spawn, E exit, T trigger, N encounters, P prop, C NPC; Ctrl+wheel zooms; Space or right drag pans.</td></tr>
+          <tr><th>Selection (painter or 3D)</th><td>Arrows nudge it a tile, Shift+arrows a quarter tile; Ctrl+D duplicates; Delete removes; Escape drops it.</td></tr>
+          <tr><th>3D preview, Select</th><td>W move, E rotate, R scale; Shift while dragging places freely; Alt+drag turns the camera; the arrows follow the map axis nearest them on screen.</td></tr>
+          <tr><th>3D preview, Sculpt</th><td>[ and ] size the brush.</td></tr>
           <tr><th>?</th><td>This list. Escape closes it.</td></tr>
         </table>
       </div>
@@ -153,6 +182,9 @@
   .xw-issue-file { margin: 0.5rem 0 0.2rem; font-family: var(--font-mono); font-size: 0.8em; color: var(--accent-hi); }
   .xw-issue { display: block; width: 100%; text-align: left; padding: 0.25rem 0.4rem; margin: 0 0 2px; font: inherit; font-size: 0.82em; color: var(--text); background: var(--bg-raised); border: none; border-left: 3px solid var(--open); border-radius: 3px; cursor: pointer; }
   .xw-issue.is-warning { border-left-color: var(--warn); }
+  .xw-issue.is-hint { border-left-color: var(--accent); }
+  .xw-hints { margin: 0 0 0.4rem; }
+  .xw-hints > summary { cursor: pointer; font-size: 0.85em; color: var(--text-muted); }
   .xw-issue:hover { background: var(--bg-card-hi); }
   .xw-issue code { color: var(--text-dim); font-size: 0.92em; }
   .xw-ok { color: var(--ok); font-size: 0.86em; }
@@ -166,6 +198,37 @@
   .xw-start { margin: 0.6rem 0; padding: 0.9rem 1rem; border: 1px dashed var(--border-hi); border-radius: 8px; background: var(--bg-card); font-size: 0.92em; }
   .xw-start[hidden] { display: none; }
   .xw-start p { margin: 0.2rem 0; }
+  .xw-start-step { display: flex; align-items: baseline; gap: 0.5rem; }
+  .xw-step-n { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 1.5em; height: 1.5em; border-radius: 50%; border: 1px solid var(--border-hi); font-size: 0.85em; font-weight: 700; color: var(--text-muted); }
+  .xw-start-step.is-done .xw-step-n { background: var(--ok); border-color: var(--ok); color: #06231f; }
+  .xw-start-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: 0.6rem; margin: 0.5rem 0 0.7rem; }
+  .xw-start-card { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.7rem 0.8rem; text-align: left; font: inherit; font-size: 0.92em; color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; }
+  button.xw-start-card { cursor: pointer; }
+  button.xw-start-card:hover, button.xw-start-card:focus-visible { border-color: var(--accent); background: var(--bg-card-hi); }
+  .xw-start-card strong { color: var(--text-bright); font-size: 1.05em; }
+  .xw-start-card > span { color: var(--text-muted); line-height: 1.45; }
+  .xw-start-card[data-start="rebirth"] { border-color: var(--accent-line); }
+  .xw-start.is-waiting .xw-start-card.is-queued { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  /* The disc and pack pickers fold to one line once a pack is open. */
+  .xw-setup { margin: 0 0 0.3rem; }
+  .xw-setup > summary { display: none; }
+  .xw-setup.is-foldable > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.3rem 0.6rem; cursor: pointer; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); font-size: 0.88em; list-style: none; }
+  .xw-setup.is-foldable > summary::-webkit-details-marker { display: none; }
+  .xw-setup.is-foldable > summary::before { content: "\25B8"; color: var(--text-dim); }
+  .xw-setup.is-foldable[open] > summary::before { content: "\25BE"; }
+  .xw-setup.is-foldable[open] > summary { margin-bottom: 0.3rem; }
+  /* Before a pack is open the start panel offers the same choices. */
+  .xw-setup:not(.is-foldable) #xw-pack-tool { display: none; }
+  .xw-has-issue { box-shadow: inset 3px 0 0 var(--open); padding-left: 0.4rem; border-radius: 3px; }
+  .xw-has-issue.is-warning { box-shadow: inset 3px 0 0 var(--warn); }
+  .xw-has-issue input, .xw-has-issue select, .xw-has-issue textarea, select.xw-has-issue, input.xw-has-issue { border-color: var(--open); }
+  .xw-has-issue.is-warning input, .xw-has-issue.is-warning select, .xw-has-issue.is-warning textarea { border-color: var(--warn); }
+  .xw-issue-msg { display: block; margin-top: 0.15rem; font-size: 0.82em; font-weight: 400; color: var(--open); }
+  .xw-issue-msg.is-warning { color: var(--warn); }
+  .xw-issue-msg code { color: var(--text-dim); }
+  .xw-setup-title { font-weight: 600; color: var(--text-bright); }
+  .xw-setup-hint { margin-left: auto; }
+  .xw-setup[open] .xw-setup-hint { display: none; }
   .xw-keyhelp { margin: 0.3rem 0; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); overflow-x: auto; }
   .xw-keyhelp[hidden] { display: none; }
   .xw-keyhelp th { white-space: nowrap; color: var(--text-muted); }
@@ -207,6 +270,8 @@
   .xw-list { display: flex; flex-direction: column; gap: 1px; max-height: 32rem; overflow: auto; }
   .xw-li { flex: none; padding: 0.25rem 0.45rem; text-align: left; font: inherit; font-size: 0.85em; color: var(--text); background: transparent; border: none; border-left: 3px solid var(--border-hi); border-radius: 3px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .xw-li:hover { background: var(--bg-card-hi); }
+  .xw-li[hidden] { display: none; }
+  .xw-list-filter { width: 100%; margin-bottom: 0.25rem; }
   .xw-li.is-active { background: var(--accent-soft); border-left-color: var(--accent); }
   .xw-li.has-err { border-left-color: var(--open); }
   .xw-preview-num { font-family: var(--font-mono); font-size: 0.82em; color: var(--text-dim); }
@@ -247,6 +312,10 @@
   .xw-painter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); gap: 0.6rem; }
   .xw-tools { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; margin-bottom: 0.3rem; }
   .xw-tools .xw-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
+  .xw-layout { flex: 1 1 100%; font-size: 0.88em; gap: 0.25rem 0.35rem; margin: 0.2rem 0 0; }
+  .xw-layout .xw-check { display: inline-flex; flex-direction: row; align-items: center; gap: 0.25rem; color: var(--text-muted); }
+  .xw-layout .xw-num { width: 3.6em; }
+  .xw-layout button[disabled] { opacity: 0.45; cursor: default; }
   .xw-canvas-wrap { position: relative; overflow: auto; height: min(70vh, 40rem); border: 1px solid var(--border); border-radius: 6px; background: var(--bg-code); }
   .xw-canvas-wrap canvas { display: block; image-rendering: pixelated; cursor: crosshair; }
   .xw-canvas-wrap.is-panning canvas { cursor: grabbing; }
@@ -263,6 +332,7 @@
   .xw-quarters input:checked + span { color: var(--text-bright); font-weight: 700; }
   .xw-quarters label:has(input:checked) { background: var(--text-dim); }
   .xw-note { font-size: 0.82em; color: var(--text-dim); margin: 0.3rem 0; }
+  .xw-note.is-warn { color: var(--warn); }
   .xw-combo { font-family: var(--font-mono); font-size: 1.3em; letter-spacing: 0.15em; margin: 0.3rem 0; }
   .xw-table { border-collapse: collapse; font-size: 0.82em; margin: 0.3rem 0; }
   .xw-table th, .xw-table td { border: 1px solid var(--border); padding: 0.15rem 0.45rem; text-align: right; }
@@ -282,6 +352,12 @@
   /* A texture cell: the picker, the three words, the page's 8 x 8 atlas. */
   .xw-cell select { margin-bottom: 0.25rem; }
   .xw-cell-words .xw-grid { grid-template-columns: repeat(auto-fill, minmax(min(8rem, 100%), 1fr)); }
+  .xw-rest-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.35rem 0.5rem; }
+  .xw-rest-row > .xw-field:first-child { flex: 1 1 12rem; min-width: 0; }
+  .xw-rest-row select { max-width: 100%; }
+  .xw-hide { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-start; }
+  .xw-hide-map { width: min(15rem, 100%); height: auto; aspect-ratio: 1; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-code); cursor: pointer; }
+  .xw-hide-list { flex: 1 1 12rem; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); gap: 0.1rem 0.5rem; max-height: 15rem; overflow: auto; }
   .xw-atlas { display: grid; grid-template-columns: repeat(8, 1.3rem); gap: 2px; margin-top: 0.3rem; }
   .xw-atlas-c { width: 1.3rem; height: 1.3rem; padding: 0; border: 1px solid var(--border); border-radius: 2px; background: var(--bg-code); cursor: pointer; }
   .xw-atlas-c.is-used { background: var(--accent-soft); border-color: var(--accent-line); }
@@ -293,6 +369,10 @@
   .xw-points .xw-list-row input[type=number] { flex: 1 1 3.5rem; min-width: 0; width: 3.5rem; }
   .xw-list-row.is-on { outline: 1px solid var(--accent); border-radius: 3px; }
 
+  /* The pack bar's secondary buttons: inline on a wide screen, folded
+     under More on a phone (the rule below). */
+  .xw-more-btn { display: none; }
+  .xw-more-items { display: contents; }
   @media (max-width: 68rem) {
     .xw-work { grid-template-columns: minmax(0, 1fr); }
     .xw-issues { position: static; max-height: 20rem; }
@@ -305,6 +385,11 @@
     .xw-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
     .xw-tab { flex: none; }
     .wb-toolbar-pack { padding: 0.4rem 0.5rem; }
+    .wb-toolbar-pack .wb-actions { position: relative; }
+    .xw-more-btn { display: inline-block; align-self: stretch; }
+    .xw-more-items { display: none; }
+    .xw-more-items.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; position: absolute; z-index: 30; right: 0; top: calc(100% + 0.3rem); min-width: 12rem; padding: 0.5rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
+    .xw-more-items.is-open .info-tip { align-self: flex-start; }
     .xw-box { padding: 0.45rem 0.4rem; }
     .xw-stat { grid-template-columns: 4.5rem minmax(0, 1fr); }
   }

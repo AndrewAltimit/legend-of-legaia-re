@@ -1,157 +1,177 @@
-# Tower of Rebirth, fourth floor: the Verdant Vault. The overgrown palace
-# court of present-day Conkram (`concnow`), kept whole on the base
-# scene's own floor ladder: a high terrace ring (tier 8), the broken
-# colonnade inside it (tier 7) and the sunken court at the centre (tier
-# 1), with the retail stairs between them re-traced. The Verdant Colossus
-# sleeps in the sunken court.
+# Tower of Rebirth, fourth floor: the Verdant Vault. Laid out from scratch
+# (`geometry = "none"`) out of present-day Conkram's (`concnow`) veined
+# green stone, carved white marble, columns, planters and roots: a vault
+# the party climbs down into. The stair from below opens on a high gallery
+# that rings the vault; stairs drop from it to the colonnade, and steps
+# drop again into the sunken court at the centre, where the moss over the
+# Verdant Colossus breathes round four flooded corners. Off the west
+# gallery, the Root Archive, its shelves split by the trunks that grew
+# through them; off the east, the Flooded Cloister a step down, its pools
+# full of rainwater. The stair up leaves from the south gallery.
+#
+# The follow camera looks south from the north side: each room's north edge
+# is a low parapet, the vault's far and side walls stand full height.
 
 name = "Tower of Rebirth 4F - Verdant Vault"
-base = { scene = { kind = "scene", name = "concnow" }, geometry = "keep", scenery = true }
+size = [49, 37]
+base = { scene = { kind = "scene", name = "concnow" }, geometry = "none" }
 # Sound-test track 8, "Call of the Ruins".
 bgm = { kind = "bgm", id = 8 }
-camera = "default"
+camera = "far"
+# Tier 2 the landing, galleries and the Root Archive; tier 1 the colonnade
+# and the Flooded Cloister; tier 0 the sunken court.
+floor_heights = [0, 72, 144]
+
+# Past the vault's edge, rainwater pooled at the foot of its walls.
+[surround]
+ground = { tpage = 9, clut = 32206, tile = 3 }
+side = { tpage = 25, clut = 32199, tile = 0 }
+depth = 384
+shade = 64
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 25, clut = 32199, tile = 0, height = 1152, distance = 2, shade = 96 }
 
 [tiles]
-origin = [13, 16]
+origin = [20, 20]
 rows = [
-  "##############a.....b#############",
-  "##%%%%%%c%,,%##e....###,,%%%%%%%%%",
-  "##%%%%%%c,,,%#h.....i##,,%f%%%%%%%",
-  "##%%%%%%c,,,%#.......i#,,,f%%%%%%%",
-  "##%%%%%%c,,,%j.......k#,,,f%%%%%%%",
-  "##%%%%%%m,,,n.........k,,,f%%%%%%%",
-  "%%%%%ollm,,,,,,,,,,,,,,,,,pllq%%%%",
-  "%%%%%c,,,,,,,,,,,,,,,,,,,,,,,f%%%%",
-  "%%%%%c,,,,,,,_,_,_,_,_,,,,,,,f%%%%",
-  "%%%%%c,,,,,,___&_``_+_t,,,,,,f%%%%",
-  "%%%%%c,,,,,___u+v``_`w__,,,,,f%%%%",
-  "%%%%om,,,,,_________x__,,,,,,pl%%%",
-  "%%%%c,,,,,,_yuvzA``BC__+,,,,,,f%%%",
-  "%%%%c,,,,,,Czv__``__v___,,,,,,f%%%",
-  "%%%%c,,,,,,n`___`__`_____,,,,,f%%%",
-  "%%%%co,,,,,,_```````_DDvcf,,,,f%%%",
-  "%%%%%%f,,,,%,_``__`_`___+,,,m%f%%%",
-  "%%%%%%F,,EEn___GH___````_,,,I%%%%%",
-  "%%%%%%c,,,,,,______`````,,,,f%%%%%",
-  "%%%%%%c,,,,,u%,__w_```&`_,,,f%%%%%",
-  "%%%%%%c,,,,,v,,_z___uuC__,,,f%%%%%",
-  "%%%%%%cll,l,,____`__```_l,llf%%%%%",
-  "%%%%%%%%%%%%,,+_``z+&``,IEE%%%%%%%",
-  "#%%%%%%%%%cn,,,_``_DJH`,f%%%%%%%%%",
-  "#%%%%%%%%%c,,,,_``____,,f%%%%%%%%%",
-  "#%%%%%%%%%c%%%q_____K%%%f%%%%%%%%%",
-  "#%==========%%%_`,,_%%%%==========",
-  "#%=@@$$$@@$=%%n,,,,,g%%%=$$@@@$$$=",
-  "%%=@@$$$$$$=%n,,,,,,,c%%=$$@@@$$$=",
-  "%%==$$$@@@$=n,,,,,,,,,F%=$$@@@$$$=",
+  "                   ___________                   ",
+  "                   #:::::::::#                   ",
+  "                   >:::::::::#                   ",
+  "                   #:::::::::#                   ",
+  "                   #:::::::::#                   ",
+  "        ____________:::::::::____________        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #::::eeeeeeeeDDDDDDDeeeeeeee::::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,e:::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
+  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
+  "_________:::e,,,,,,,,,,,,,,,,,,,,,,,b:::_________",
+  "#aaaaaaa#:::e,,,,fffffuuuuufffff,,,,b:::#kkkkkkkg",
+  "#aaaaaaa#:::e,,,,fww.........wwf,,,,b:::#kkkkkkkg",
+  "#araaara#:::e,,c,fww.........wwf,c,,b:::#kkpppkkg",
+  "#aaaaaaa#:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkpppkkg",
+  "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkkkkkkg",
+  "#aaaaaaaa:::D,,,,f.....MMM.....h,,,,d:::kkkkkkkkg",
+  "#aaaaaaa#:::D,,,,f.....MMM.....h,,,,d:::#kkkkkkkg",
+  "#araaara#:::D,,,,f.....MMM.....h,,,,d:::#kkpppkkg",
+  "#aaaaaaa#:::e,,,,f.............h,,,,e:::#kkpppkkg",
+  "#aaaaaaa#:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#########:::e,,,,f.............h,,,,b:::#kkkkkkkg",
+  "        #:::e,,c,fww.........wwh,c,,b:::#kkkkkkkg",
+  "        #:::e,,,,fww.........wwf,,,,b:::#gggggggg",
+  "        #:::e,,,,fffhhuuuuufhhff,,,,b:::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
+  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
+  "        #:::e,,,,,,,,UUUUUUU,,,,,,,,b:::#        ",
+  "        #::::ebbbbbbb:::::::ebbbbbbb::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        ################<################        ",
+  "                                                 ",
 ]
 
 [tiles.legend]
-"," = { label = "floor, tier 8", height = 8 }
-"." = { label = "floor" }
-"_" = { label = "floor, tier 7", height = 7 }
-"`" = { label = "floor, tier 1", height = 1 }
-"#" = { label = "wall", walls = "all" }
-"$" = { label = "wall, tier 3", height = 3, walls = "all" }
-"%" = { label = "wall, tier 8", height = 8, walls = "all" }
-"&" = { label = "wall, tier 1", height = 1, walls = "all" }
-"+" = { label = "wall, tier 7", height = 7, walls = "all" }
-"=" = { label = "wall, tier 11", height = 11, walls = "all" }
-"@" = { label = "wall, tier 2", height = 2, walls = "all" }
-"A" = { label = "wall nook", height = 1, walls = ["tl", "tr", "bl"] }
-"B" = { label = "wall corner", height = 7, walls = ["br"] }
-"C" = { label = "wall edge", height = 7, walls = ["tl", "bl"] }
-"D" = { label = "wall edge", height = 7, walls = ["tl", "tr"] }
-"E" = { label = "wall edge", height = 8, walls = ["tl", "tr"] }
-"F" = { label = "wall nook", height = 8, walls = ["tl", "tr", "br"] }
-"G" = { label = "wall edge", height = 7, walls = ["tr", "br"] }
-"H" = { label = "wall edge", height = 1, walls = ["tl", "bl"] }
-"I" = { label = "wall nook", height = 8, walls = ["tl", "tr", "bl"] }
-"J" = { label = "wall edge", height = 1, walls = ["tl", "tr"] }
-"K" = { label = "wall corner", height = 1, walls = ["br"] }
-"a" = { label = "wall nook", walls = ["tl", "bl", "br"] }
-"b" = { label = "wall nook", walls = ["tr", "bl", "br"] }
-"c" = { label = "wall edge", height = 8, walls = ["tr", "br"] }
-"e" = { label = "wall edge", walls = ["tl", "bl"] }
-"f" = { label = "wall edge", height = 8, walls = ["tl", "bl"] }
-"g" = { label = "wall corner", height = 8, walls = ["tr"] }
-"h" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
-"i" = { label = "wall nook", walls = ["tl", "tr", "br"] }
-"j" = { label = "wall corner", walls = ["tl"] }
-"k" = { label = "wall corner", walls = ["tr"] }
-"l" = { label = "wall edge", height = 8, walls = ["bl", "br"] }
-"m" = { label = "wall nook", height = 8, walls = ["tr", "bl", "br"] }
-"n" = { label = "wall corner", height = 8, walls = ["tl"] }
-"o" = { label = "wall corner", height = 8, walls = ["br"] }
-"p" = { label = "wall nook", height = 8, walls = ["tl", "bl", "br"] }
-"q" = { label = "wall corner", height = 8, walls = ["bl"] }
-"t" = { label = "wall corner", height = 7, walls = ["bl"] }
-"u" = { label = "wall edge", height = 7, walls = ["bl", "br"] }
-"v" = { label = "wall corner", height = 7, walls = ["tl"] }
-"w" = { label = "wall edge", height = 7, walls = ["tr", "bl"] }
-"x" = { label = "wall corner", height = 1, walls = ["tr"] }
-"y" = { label = "wall nook", height = 7, walls = ["tl", "bl", "br"] }
-"z" = { label = "wall corner", height = 7, walls = ["tr"] }
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
+"#" = { label = "wall", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 25, clut = 32199, tile = 0 } }
+"g" = { label = "wall (cloister)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 25, clut = 32199, tile = 0 } }
+"_" = { label = "parapet", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 24, clut = 32258, tile = 28 } }
+":" = { label = "gallery", height = 2, ground = { kind = "texture", tpage = 10, clut = 32070, tile = 48 } }
+"e" = { label = "gallery ledge", height = 2, walls = "all", wall = { kind = "box", height = 40, tpage = 24, clut = 32258, tile = 28 } }
+"b" = { label = "gallery ledge (colonnade side)", height = 1, walls = "all", wall = { kind = "box", height = 40, tpage = 24, clut = 32258, tile = 28 } }
+"D" = { label = "stair down", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"d" = { label = "stair down (east)", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"," = { label = "colonnade", height = 1, ground = { kind = "texture", tpage = 5, clut = 30785, tile = 33 } }
+"U" = { label = "stair up", height = 1, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"c" = { label = "column", height = 1, walls = "all", ground = { kind = "texture", tpage = 5, clut = 30785, tile = 33 } }
+"f" = { label = "court rim", height = 1, walls = "all", wall = { kind = "box", height = 32, tpage = 9, clut = 32196, tile = 41 } }
+"h" = { label = "court rim (court side)", walls = "all", wall = { kind = "box", height = 32, tpage = 9, clut = 32196, tile = 41 } }
+"u" = { label = "court steps", height = 1, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"." = { label = "sunken court", ground = { kind = "texture", tpage = 10, clut = 32070, tile = 40 } }
+"w" = { label = "court pool", walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
+# The moss over the sleeping Colossus: a low mound, examined from the court.
+"M" = { label = "moss mound", walls = "all", wall = { kind = "box", height = 40, tpage = 10, clut = 32192, tile = 43 } }
+"a" = { label = "archive floor", height = 2, ground = { kind = "texture", tpage = 24, clut = 32258, tile = 28 } }
+"r" = { label = "root trunk", height = 2, walls = "all", ground = { kind = "texture", tpage = 24, clut = 32258, tile = 28 } }
+"k" = { label = "cloister", height = 1, ground = { kind = "texture", tpage = 9, clut = 32198, tile = 28 } }
+"p" = { label = "cloister pool", height = 1, walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
+">" = { label = "stair down", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"<" = { label = "stair up", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
 
 [[spawns]]
 id = "from_below"
-tile = [17, 27]
+tile = [24, 2]
 facing = 4
 
 [[spawns]]
 id = "from_above"
-tile = [17, 2]
+tile = [24, 33]
 
 [[exits]]
 id = "stair_down"
-rect = [13, 29, 21, 29]
+rect = [19, 2, 19, 2]
 to = { kind = "map", map = "rebirth_tower_3f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
-rect = [15, 0, 19, 0]
+rect = [24, 35, 24, 35]
 to = { kind = "map", map = "rebirth_tower_5f", spawn = "from_below" }
 
 [[triggers]]
 id = "arrival"
-rect = [12, 24, 20, 25]
-event = { kind = "dialog", line = "floor_4f_intro" }
+rect = [20, 3, 28, 3]
+event = { kind = "toast", line = "floor_4f_intro" }
 once = true
 
-# The sunken court: the Verdant Colossus's quest giver.
+# The moss mound in the sunken court: the Verdant Colossus's quest giver,
+# examined from the court round it.
 [[triggers]]
 id = "sunken_court"
-rect = [14, 15, 18, 15]
+rect = [23, 19, 25, 21]
 event = { kind = "talk", npc = "vault_heart" }
+press = true
 
 [[triggers]]
 id = "sunken_court_still"
-rect = [14, 15, 18, 15]
+rect = [23, 19, 25, 21]
 event = { kind = "dialog", line = "vault_after" }
+press = true
 requires = { bosses = ["verdant_colossus"] }
+once = true
 
 [[encounters]]
-id = "west_terrace"
-rect = [5, 6, 10, 21]
+id = "west_gallery"
+rect = [9, 9, 11, 31]
 table = "tower_4f"
 
 [[encounters]]
-id = "east_terrace"
-rect = [24, 6, 29, 21]
+id = "east_gallery"
+rect = [37, 9, 39, 31]
+table = "tower_4f"
+
+[[encounters]]
+id = "colonnade"
+rect = [13, 9, 35, 30]
 table = "tower_4f"
 
 # ---------------------------------------------------------------------------
-# Detail: the vault drips and grows. Water falls from the broken colonnade,
-# motes and spores drift over the court, and a ring of green light turns
-# on the floor of the sunken court where the Colossus sleeps, the vault's
-# heart hanging over it.
+# The court: a ring of green light (`concnow` mesh 127) turns on the floor
+# round the moss, the vault's heart hangs over it in two brass armillary
+# rings, and the court drips into the dark.
 # ---------------------------------------------------------------------------
 
 [[props]]
 id = "verdant_ring"
 mesh = { object = 127 }
-tile = [16, 13]
-offset = [0, 24, 0]
+tile = [24, 18]
+hangs = true
+offset = [0, 24, 128]
 rotation = [90.0, 0.0, 0.0]
 scale = 0.75
 animate = [{ kind = "spin", period = -720 }, { kind = "pulse", amount = 0.08, period = 120 }]
@@ -160,93 +180,358 @@ light = { color = [120, 255, 150], radius = 1300, height = 40, flicker = 0.12, p
 [[props]]
 id = "vault_heart"
 mesh = { asset = "models/ember_crystal.glb" }
-tile = [16, 12]
-offset = [0, 170, 64]
+tile = [24, 17]
+hangs = true
+offset = [0, 220, 384]
 scale = 2.2
 animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 18, period = 200 }]
 light = { color = [120, 255, 140], radius = 1000, height = 0, flicker = 0.12, period = 40 }
 
-[[emitters]]
-kind = "drips"
-rect = [11, 8, 23, 21]
-count = 28
-seed = 401
-
-[[emitters]]
-kind = "dust"
-rect = [5, 6, 29, 21]
-count = 60
-color = [170, 210, 150]
-seed = 402
-
-[[emitters]]
-kind = "sparkles"
-rect = [11, 9, 22, 20]
-height = [10, 120]
-count = 30
-color = [140, 255, 150]
-seed = 403
-
-[lighting]
-mood = "dusk"
-lamps = [
-  { id = "court_glow", tile = [16, 15], offset = [0, 60, 0], color = [90, 220, 120], radius = 800, flicker = 0.15, period = 60 },
-  # A pale shaft over the heart, so the vault is not one green.
-  { id = "heart_shaft", tile = [16, 12], offset = [0, 320, 0], color = [235, 245, 210], radius = 520, flicker = 0.05, period = 90 },
-]
-
-[fog]
-regions = [{ rect = [11, 9, 23, 20], angle = 0.0, spread = 180.0, speed = 8 }]
-
-# ---------------------------------------------------------------------------
-# The heart's cage: two brass armillary rings turn round the vault's heart
-# on crossed axes, and the sunken court drips into the dark.
-# ---------------------------------------------------------------------------
-
 [[props]]
 id = "heart_ring_a"
 mesh = { asset = "models/armillary_ring.glb" }
-tile = [15, 12]
-offset = [128, 170, 64]
+tile = [23, 17]
+hangs = true
+offset = [128, 220, 384]
 scale = 1.1
 animate = [{ kind = "spin", axis = "x", period = 360 }, { kind = "bob", amplitude = 18, period = 200 }]
 
 [[props]]
 id = "heart_ring_b"
 mesh = { asset = "models/armillary_ring.glb" }
-tile = [17, 12]
-offset = [-128, 170, 64]
+tile = [25, 17]
+hangs = true
+offset = [-128, 220, 384]
 scale = 1.3
 animate = [{ kind = "spin", axis = "z", period = -480 }, { kind = "bob", amplitude = 18, period = 200 }]
+
+# The colonnade's columns (`concnow` mesh 10), each on its own closed tile.
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [19, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [29, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [19, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [29, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 15]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 25]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 15]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 25]
+
+# The Root Archive: four old trunks (`concnow` meshes 4 and 5) grown up
+# through the floor, a fallen tablet and broken pillars, a pale lamp.
+[[decor]]
+mesh = { object = 4 }
+tile = [2, 15]
+
+[[decor]]
+mesh = { object = 5 }
+tile = [6, 15]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 5 }
+tile = [2, 21]
+rotation = [0.0, 200.0, 0.0]
+
+[[decor]]
+mesh = { object = 4 }
+tile = [6, 21]
+rotation = [0.0, 45.0, 0.0]
+
+[[props]]
+id = "archive_tablet"
+mesh = { object = 110 }
+tile = [4, 18]
+offset = [-42, 15, 24]
+rotation = [0.0, 30.0, 0.0]
+solid = true
+
+[[props]]
+id = "archive_pillar"
+mesh = { object = 122 }
+tile = [4, 23]
+solid = true
+
+# The archive's lamp: a lantern standing on a white marble pedestal
+# (`concnow` mesh 69); its light is the `archive_lamp` lamp below.
+[[decor]]
+id = "archive_pedestal"
+mesh = { object = 69 }
+tile = [4, 13]
+offset = [0, 0, 40]
+solid = true
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [4, 13]
+offset = [0, 0, 40]
+on = "archive_pedestal"
+
+# The Flooded Cloister, laid out round its two pools: an urn on its column
+# between them, a lantern on a marble pedestal against the east wall
+# facing the door, planters (`concnow` mesh 41) in the four corners and a
+# smaller one (mesh 77) at the middle of the north and south walls, and
+# ferns (mesh 17) against the side walls by each pool. The walks round the
+# pools and the door from the gallery stay clear.
+[[props]]
+id = "cloister_urn_n"
+mesh = { object = 44 }
+tile = [44, 19]
+solid = true
+
+[[decor]]
+id = "cloister_pedestal"
+mesh = { object = 69 }
+tile = [47, 19]
+offset = [24, 0, 0]
+solid = true
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [47, 19]
+offset = [24, 0, 0]
+on = "cloister_pedestal"
+
+[[decor]]
+mesh = { object = 41 }
+tile = [41, 13]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [47, 13]
+scale = 0.55
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [41, 25]
+scale = 0.55
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [47, 25]
+scale = 0.55
+rotation = [0.0, 270.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 77 }
+tile = [44, 13]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { object = 77 }
+tile = [44, 25]
+scale = 0.7
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 17 }
+tile = [41, 16]
+offset = [-24, 0, 0]
+rotation = [0.0, -90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [41, 22]
+offset = [-24, 0, 0]
+rotation = [0.0, -90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [47, 16]
+offset = [24, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [47, 22]
+offset = [24, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.4
+
+# Planters along the galleries, urns at their corners.
+[[edges]]
+id = "gallery_planters"
+mesh = { object = 41 }
+walls = "#"
+on = ":"
+every = 5
+inset = 50
+scale_range = [0.5, 0.7]
+seed = 405
+
+[[props]]
+id = "urn_nw"
+mesh = { object = 44 }
+tile = [10, 7]
+solid = true
+
+[[props]]
+id = "urn_ne"
+mesh = { object = 44 }
+tile = [38, 7]
+solid = true
+
+[[props]]
+id = "urn_sw"
+mesh = { object = 44 }
+tile = [10, 33]
+solid = true
+
+[[props]]
+id = "urn_se"
+mesh = { object = 44 }
+tile = [38, 33]
+solid = true
+
+# Moss over the court floor.
+[[decals]]
+id = "court_moss"
+cell = { tpage = 10, clut = 32192, tile = 43 }
+rect = [18, 14, 30, 26]
+on = "."
+density = 0.5
+seed = 407
+size = [110, 110]
+size_jitter = 0.4
+sides = 8
+jitter = 40
+
+[[emitters]]
+kind = "drips"
+rect = [17, 13, 31, 27]
+count = 32
+seed = 401
+
+[[emitters]]
+kind = "drips"
+rect = [41, 13, 47, 25]
+count = 20
+seed = 408
+
+[[emitters]]
+kind = "dust"
+rect = [9, 6, 39, 34]
+count = 60
+color = [170, 210, 150]
+seed = 402
+
+[[emitters]]
+kind = "sparkles"
+rect = [18, 14, 30, 26]
+height = [10, 120]
+count = 30
+color = [140, 255, 150]
+seed = 403
+
+[[emitters]]
+kind = "sparkles"
+rect = [1, 13, 7, 23]
+height = [20, 140]
+count = 16
+color = [200, 255, 170]
+seed = 409
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "court_glow", tile = [24, 20], offset = [0, 60, 0], color = [90, 220, 120], radius = 900, flicker = 0.15, period = 60 },
+  # A pale shaft over the heart, so the vault is not one green.
+  { id = "heart_shaft", tile = [24, 20], offset = [0, 360, 0], color = [235, 245, 210], radius = 560, flicker = 0.05, period = 90 },
+  { id = "archive", tile = [4, 18], offset = [0, 160, 0], color = [200, 255, 190], radius = 600, flicker = 0.1, period = 70 },
+  # The lanterns on their pedestals in the archive and the cloister.
+  { id = "archive_lamp", tile = [4, 13], offset = [0, 150, 40], color = [210, 255, 200], radius = 520, flicker = 0.1, period = 40 },
+  { id = "cloister_lamp", tile = [47, 19], offset = [24, 150, 0], color = [200, 240, 255], radius = 520, flicker = 0.1, period = 45 },
+  { id = "cloister", tile = [44, 19], offset = [0, 180, 0], color = [180, 220, 255], radius = 700, flicker = 0.05, period = 80 },
+]
+
+[fog]
+regions = [{ rect = [18, 14, 30, 26], angle = 0.0, spread = 180.0, speed = 8 }]
 
 [[audio.ambient]]
 id = "court_drips"
 sound = { kind = "sound", id = "drips" }
-tile = [16, 15]
+tile = [24, 20]
 radius = 900
 inner = 256
 volume = 0.6
 
 [[audio.ambient]]
-id = "west_drips"
+id = "cloister_drips"
 sound = { kind = "sound", id = "drips" }
-tile = [7, 13]
+tile = [44, 19]
 radius = 640
 inner = 128
-volume = 0.4
+volume = 0.5
 
 [[audio.ambient]]
-id = "east_drips"
-sound = { kind = "sound", id = "drips" }
-tile = [26, 13]
-radius = 640
+id = "cloister_water"
+sound = { kind = "sound", id = "water" }
+tile = [44, 22]
+radius = 520
+inner = 96
+volume = 0.35
+
+[[audio.ambient]]
+id = "archive_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [4, 18]
+radius = 560
 inner = 128
-volume = 0.4
+volume = 0.25
 
 [[audio.ambient]]
 id = "heart_hum"
 sound = { kind = "sound", id = "drone" }
-tile = [16, 12]
+tile = [24, 20]
 radius = 700
 inner = 160
 volume = 0.35

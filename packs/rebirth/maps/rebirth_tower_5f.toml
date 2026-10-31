@@ -1,53 +1,108 @@
-# Tower of Rebirth, fifth floor: the Gambler's Rest. The lobby of the
-# retail Sol Tower rooms (`koin1`), kept whole. No monster climbs this
-# high-ceilinged room; the Rest's keeper runs the tower's tables instead
-# (`modes.toml`), and their quests send the party to every one of them.
+# Tower of Rebirth, fifth floor: the Gambler's Rest. Laid out from scratch
+# (`geometry = "none"`) out of the retail Sol Tower rooms' (`koin1`) dark
+# planks, brick and furniture. No monster climbs this high: the stair from
+# below opens on the hall, where Keeper Odalric pours behind the long bar,
+# five regulars wait round the High Table and the hearth burns on the east
+# wall (rest and save). Off the hall, the card room to the west (the
+# Warden's Duel table and the tower's card dealer) and the games room to
+# the east (Tower Game Night, the arcade cabinets, its own music); behind
+# the bar, the lounge with its piano stage and the stair up.
+#
+# The follow camera looks south from the north side: each room's north edge
+# is a low rail, the far and side walls stand full height.
 
 name = "Tower of Rebirth 5F - Gambler's Rest"
-base = { scene = { kind = "scene", name = "koin1" }, geometry = "keep", scenery = true }
+size = [37, 30]
+base = { scene = { kind = "scene", name = "koin1" }, geometry = "none" }
 # Sound-test track 24, "Where Everyone Drinks".
 bgm = { kind = "bgm", id = 24 }
-camera = "default"
+camera = "far"
+# Tier 1 is the lounge's stage.
+floor_heights = [0, 40]
+
+# Past the Rest's edge, the dark boards of the floor below.
+[surround]
+ground = { tpage = 12, clut = 32448, tile = 0 }
+side = { tpage = 11, clut = 32517, tile = 27 }
+depth = 384
+shade = 48
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 11, clut = 32517, tile = 27, height = 1024, distance = 2, shade = 88 }
+
+# The vault overhead: the Rest's lanterns hang on chains from it. The follow camera
+# looks down from under it, so only the chains show, rising out of the
+# frame; the underside is wound to face down and drawn only from beneath.
+[ceiling]
+height = 2048
+cell = { tpage = 11, clut = 32517, tile = 27 }
+shade = 40
+chain = { tpage = 11, clut = 32517, tile = 27, width = 6, shade = 72, items = ["lantern_landing", "lantern_hall_w", "lantern_hall_e", "lantern_cards", "lantern_games", "lantern_lounge"] }
 
 [tiles]
-origin = [62, 56]
+origin = [20, 20]
 rows = [
-  "      #..#",
-  "      #..#",
-  "      #..#",
-  "#cccccc..cccccc#",
-  "#..............#",
-  "#...u..v...w...#",
-  "#..............#",
-  "#.b#.......##.##",
-  "#.b#.......##.#",
-  "#.b####....##.#",
-  "#.b   ###.#####",
-  "###     ###",
+  "             ___________             ",
+  "             #.........#             ",
+  "             >.........#             ",
+  "             #.........#             ",
+  "             #.........#             ",
+  "       _______........._______       ",
+  "       #.....................#       ",
+  "________N....................________",
+  "#,,,,,,#....................F#gggggg#",
+  "#,,,,,,#.....................#gggggg#",
+  "#,,,,,,,..........T..........ggggggg#",
+  "#,,,,,,,.....................gggGGGg#",
+  "#,,,,,,#.....................#ggGGGg#",
+  "#,,,,,,#.....................#ggGGGg#",
+  "#,,,,,,#A....................#gggggg#",
+  "#,,,,,,#A..CCCCCCCCC.........#gggggg#",
+  "#,,,,,,#...#########.........#gggggg#",
+  "########...#########.........########",
+  "       ###-----------.....-###       ",
+  "         #lllllllllllllllll#         ",
+  "         #lllllllllllllllll#         ",
+  "         #lllllllllllllllll#         ",
+  "         #lllllllllllllllll#         ",
+  "         #lssssssllllllllll#         ",
+  "         #lssssssllllllllll#         ",
+  "         #lssssssllllllllll#         ",
+  "         #lssssssllllllllll#         ",
+  "         #lllllllllllllllll#         ",
+  "         #lllllllllllllllll#         ",
+  "         ##############<####         ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
-"." = { label = "floor" }
-"b" = { label = "wall edge", walls = ["tr", "br"] }
-"c" = { label = "wall edge", walls = ["tl", "tr"] }
-# The lobby's overhead boards (koin1 records 0x813 / 0x817, meshes 96 and
-# 106, the far-sorted decoration cells over the counter row) hang between
-# the follow camera and the room the Rest's arrivals stand in, and cover
-# half the screen. These three cells keep their own floor texture and drop
-# the boards (docs/subsystems/renderer.md, the decoration cell's 0x800 flag).
-"u" = { label = "floor (boards cleared)", ground = { kind = "base_cell", cell = [66, 61] } }
-"v" = { label = "floor (boards cleared)", ground = { kind = "base_cell", cell = [69, 61] } }
-"w" = { label = "floor (boards cleared)", ground = { kind = "base_cell", cell = [73, 61] } }
+"#" = { label = "wall", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32517, tile = 27 } }
+"_" = { label = "rail", walls = "all", wall = { kind = "box", height = 48, tpage = 11, clut = 32518, tile = 48 } }
+"-" = { label = "rail (lounge)", walls = "all", wall = { kind = "box", height = 64, tpage = 11, clut = 32518, tile = 48 } }
+"." = { label = "hall floor", ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
+"," = { label = "card room", ground = { kind = "texture", tpage = 12, clut = 32451, tile = 24 } }
+"g" = { label = "games room", ground = { kind = "texture", tpage = 11, clut = 32517, tile = 35 } }
+"l" = { label = "lounge", ground = { kind = "texture", tpage = 8, clut = 32259, tile = 27 } }
+"s" = { label = "stage", height = 1, ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
+# The furniture the tile layer closes: the bar, the board, the armory
+# counter, the hearth, the two tables.
+"C" = { label = "bar", walls = "all", wall = { kind = "box", height = 88, tpage = 8, clut = 32259, tile = 11 } }
+"N" = { label = "notice board", walls = "all", wall = { kind = "box", height = 160, tpage = 11, clut = 32518, tile = 48 } }
+"A" = { label = "armory counter", walls = "all", wall = { kind = "box", height = 88, tpage = 8, clut = 32259, tile = 11 } }
+"F" = { label = "hearth", walls = "all", wall = { kind = "box", height = 192, tpage = 11, clut = 32517, tile = 28 } }
+"T" = { label = "the High Table", walls = "all", ground = { kind = "texture", tpage = 12, clut = 32448, tile = 0 } }
+"G" = { label = "game-night table", walls = "all", ground = { kind = "texture", tpage = 11, clut = 32517, tile = 35 } }
+">" = { label = "stair down", ground = { kind = "texture", tpage = 11, clut = 32518, tile = 48 } }
+"<" = { label = "stair up", ground = { kind = "texture", tpage = 8, clut = 32259, tile = 27 } }
 
 [[spawns]]
 id = "from_below"
-tile = [13, 6]
+tile = [18, 2]
 facing = 4
 
 [[spawns]]
 id = "from_above"
-tile = [8, 3]
+tile = [23, 27]
 
 # Halfway up, once the Verdant Vault has fallen, the thing on the throne
 # speaks for the first time (`cutscenes.toml` `hollow_stirs`).
@@ -57,108 +112,75 @@ requires = { quests = ["verdant_vault"] }
 
 [[exits]]
 id = "stair_down"
-rect = [13, 9, 13, 9]
+rect = [13, 2, 13, 2]
 to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
-rect = [8, 0, 9, 0]
+rect = [23, 29, 23, 29]
 to = { kind = "map", map = "rebirth_tower_6f", spawn = "from_below" }
 
-[[triggers]]
-id = "arrival"
-rect = [9, 4, 12, 6]
-event = { kind = "dialog", line = "floor_5f_intro" }
-once = true
-
-# The keeper's counter: every table quest is given here.
+# The keeper's bar: every table quest is given across it.
 [[triggers]]
 id = "keeper"
-rect = [5, 4, 6, 5]
+rect = [14, 15, 16, 15]
 event = { kind = "talk", npc = "rest_keeper" }
+press = true
 
+# The notice board inside the door lists the tables.
 [[triggers]]
 id = "table_board"
-rect = [1, 4, 1, 6]
+rect = [8, 7, 8, 7]
 event = { kind = "dialog", line = "rest_board" }
+press = true
+once = true
 
 # The keeper's tables open once he has welcomed the party: the card room
-# on the west side, the games room on the east.
+# through the west door, the games room through the east.
 [[triggers]]
 id = "card_room"
-rect = [4, 8, 5, 8]
+rect = [7, 10, 7, 11]
 event = { kind = "dialog", line = "rest_cards" }
+press = true
 requires = { flags = ["rest_open"] }
 
 [[triggers]]
 id = "games_room"
-rect = [9, 8, 10, 8]
+rect = [29, 10, 29, 11]
 event = { kind = "dialog", line = "rest_games" }
+press = true
 requires = { flags = ["rest_open"] }
 
-# The High Table's empty seat: sitting down deals in.
+# The High Table's empty chair, on its south side: sitting down deals in.
 [[triggers]]
 id = "high_table_seat"
-rect = [7, 9, 7, 9]
+rect = [18, 11, 18, 11]
 event = { kind = "mode", mode = "tower-high-table" }
+press = true
 requires = { flags = ["rest_open"] }
 
 # The Tower Armory (items.toml): its stock grows as the bosses fall.
 [[triggers]]
 id = "armory"
-rect = [2, 6, 3, 6]
+rect = [8, 14, 8, 15]
 event = { kind = "shop", shop = "tower_armory" }
+press = true
 
 # The games-room table: Tower Game Night, six short rounds against the
 # keeper and two regulars (`modes.toml`, `tower-game-night`).
 [[triggers]]
 id = "game_night_table"
-rect = [8, 9, 8, 9]
+rect = [32, 11, 34, 13]
 event = { kind = "mode", mode = "tower-game-night" }
+press = true
 requires = { flags = ["rest_open"] }
 
-# The Rest itself: the party recovers by the hearth, and may save.
+# The hearth: the party recovers by it, and may save.
 [[triggers]]
 id = "hearth"
-rect = [13, 4, 14, 4]
+rect = [28, 8, 28, 8]
 event = { kind = "rest", save = true }
-
-# ---------------------------------------------------------------------------
-# Detail: the Rest by lamplight. The hearth breathes smoke and sparks, the
-# lobby's air is full of the dust of a hundred card games, and the Sol
-# Tower's own animated fittings run (`scenery`).
-# ---------------------------------------------------------------------------
-
-[[emitters]]
-kind = "embers"
-rect = [13, 4, 14, 4]
-height = [0, 30]
-count = 18
-seed = 501
-
-[[emitters]]
-kind = "smoke"
-rect = [13, 4, 14, 4]
-height = [60, 120]
-count = 8
-color = [90, 85, 80]
-seed = 502
-
-[[emitters]]
-kind = "dust"
-rect = [1, 4, 14, 8]
-count = 50
-color = [255, 220, 170]
-seed = 503
-
-[lighting]
-mood = "dusk"
-lamps = [
-  { id = "hearth", tile = [13, 4], offset = [0, 60, 0], color = [255, 140, 60], radius = 700, flicker = 0.35, period = 10 },
-  { id = "keeper", tile = [5, 4], offset = [0, 160, 0], color = [255, 210, 150], radius = 600 },
-  # The game-night table under its own lamp: the room's centre of play.
-  { id = "game_table", tile = [8, 9], offset = [0, 180, 0], color = [255, 225, 160], radius = 420, flicker = 0.08, period = 30 },
-]
+press = true
 
 # Sound: the Rest plays the bar's tune (`bgm` above); the games room on the
 # east side has the Sol casino's "Wild Declaration" (18), cross-fading as the
@@ -168,28 +190,52 @@ fade_frames = 40
 
 [[audio.zones]]
 id = "games_room"
-rect = [8, 7, 14, 10]
+rect = [29, 8, 35, 16]
 music = { kind = "bgm", id = 18 }
 
 [[audio.ambient]]
 id = "hearth"
 sound = { kind = "sound", id = "torch" }
-tile = [13, 4]
+tile = [28, 8]
 radius = 512
 inner = 96
 volume = 0.5
 
+[[audio.ambient]]
+id = "crowd_hall"
+sound = { kind = "sound", id = "crowd" }
+tile = [18, 10]
+radius = 1100
+inner = 320
+volume = 0.45
+
+[[audio.ambient]]
+id = "crowd_cards"
+sound = { kind = "sound", id = "crowd" }
+tile = [4, 12]
+radius = 640
+inner = 128
+volume = 0.4
+
+[[audio.ambient]]
+id = "crowd_lounge"
+sound = { kind = "sound", id = "crowd" }
+tile = [18, 23]
+radius = 700
+inner = 200
+volume = 0.3
+
 # --- The card room's duel table (`modes.toml` `wardens-duel`) ---------------
 # The Warden's Duel is played at a table on the card room's floor: the
-# Warden's second sits across it, two regulars watch from the wall, and the
-# tower's card dealer keeps his counter beside them.
+# Warden's second sits across it, two regulars watch from beside it, and
+# the tower's card dealer keeps his counter by the west wall.
 
 [[npcs]]
 id = "duel_second"
 label = "the Warden's second"
-model = { kind = "npc", scene = "koin1", index = 11 }
-tile = [8, 8]
-facing = 6
+model = { kind = "npc", scene = "koin1", index = 18 }
+tile = [5, 13]
+facing = 2
 line = "duel_second_hello"
 line_after = "duel_second_after"
 after = { flags = ["tables_beaten"] }
@@ -198,7 +244,7 @@ after = { flags = ["tables_beaten"] }
 id = "duel_regular"
 label = "a card-room regular"
 model = { kind = "npc", scene = "koin1", index = 12 }
-tile = [9, 7]
+tile = [6, 12]
 facing = 2
 line = "duel_regular_hello"
 line_after = "duel_regular_after"
@@ -208,7 +254,7 @@ after = { flags = ["sovereign_fallen"] }
 id = "duel_watcher"
 label = "a watching gambler"
 model = { kind = "npc", scene = "koin1", index = 14 }
-tile = [9, 8]
+tile = [6, 14]
 facing = 2
 line = "duel_watcher_hello"
 line_after = "duel_watcher_after"
@@ -217,109 +263,575 @@ after = { flags = ["hollow_heard"] }
 [[npcs]]
 id = "card_room_dealer"
 label = "the tower's card dealer"
-model = { kind = "npc", scene = "koin1", index = 13 }
-tile = [4, 7]
-facing = 2
+model = { kind = "npc", scene = "koin1", index = 5 }
+tile = [1, 9]
+facing = 6
 line = "card_room_dealer_hello"
 shop = "tower"
 
 # --- The High Table (`modes.toml` `tower-high-table`) ------------------------
-# Five regulars sit round the High Table in the hall; the table seats them
-# itself, so their tiles here are only where they wait between games.
+# Four regulars wait round the High Table in the hall; Old Mott sits at the
+# bar. The table seats them itself, so these tiles are only where they wait
+# between games.
 
 [[npcs]]
 id = "high_table_odile"
 label = "Odile, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 15 }
-tile = [8, 4]
-facing = 2
+model = { kind = "npc", scene = "koin1", index = 22 }
+tile = [16, 9]
+facing = 6
 line = "high_table_hello"
 
 [[npcs]]
 id = "high_table_brann"
 label = "Brann, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 16 }
-tile = [9, 4]
-facing = 4
+model = { kind = "npc", scene = "koin1", index = 19 }
+tile = [20, 9]
+facing = 2
 line = "high_table_hello"
 
 [[npcs]]
 id = "high_table_sefa"
 label = "Sefa, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 17 }
-tile = [11, 4]
-facing = 4
+model = { kind = "npc", scene = "koin1", index = 4 }
+tile = [16, 11]
+facing = 6
 line = "high_table_hello"
 
 [[npcs]]
 id = "high_table_corwin"
 label = "Corwin, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 18 }
-tile = [12, 4]
-facing = 6
+tile = [20, 11]
+facing = 2
 line = "high_table_hello"
 
+# Old Mott is a koin1 slot player: his placement's motion stream seats him
+# (the retail Sol casino's players sit at the machines), so he waits on a
+# bar stool, turned to the hall - the east one, three stools clear of the
+# keeper's place at the bar, so a word with the keeper reaches the keeper.
 [[npcs]]
 id = "high_table_mott"
 label = "Old Mott, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 11 }
-tile = [12, 6]
-facing = 6
+tile = [19, 14]
+facing = 0
 line = "high_table_hello"
 
-# --- The Rest by lantern-light ------------------------------------------------
-# Paper lanterns hang over the hall, swaying a little in the hearth's draught
-# (`assets/models/lantern.glb`); the regulars' talk fills the room, loudest
-# by the tables.
+# --- Furniture ------------------------------------------------------------------
+# Every piece stands on the floor or on what holds it: koin1's furniture is
+# authored where the Sol rooms stood it (a plant on its sill, a stool's legs
+# below its origin, a case on its counter), so each offset here sets the
+# piece's foot on its surface and its middle on its spot.
+
+# Bar stools (`koin1` mesh 81) along the bar; Old Mott's is the east one.
+[[decor]]
+mesh = { object = 81 }
+tile = [12, 14]
+offset = [0, 51, 0]
+
+[[decor]]
+mesh = { object = 81 }
+tile = [15, 14]
+offset = [-40, 51, 0]
+
+[[decor]]
+mesh = { object = 81 }
+tile = [17, 14]
+offset = [40, 51, 0]
+
+[[decor]]
+mesh = { object = 81 }
+tile = [19, 14]
+offset = [0, 51, 0]
+
+# On the bar's top (88 up): tankards at either end, a bottle and a plate
+# by the keeper's place.
+[[decor]]
+mesh = { object = 132 }
+tile = [12, 15]
+offset = [-20, 46, 21]
+scale = 0.65
+
+[[decor]]
+mesh = { object = 133 }
+tile = [15, 15]
+offset = [47, 30, 23]
+scale = 0.75
+
+[[decor]]
+mesh = { object = 132 }
+tile = [18, 15]
+offset = [20, 46, -21]
+scale = 0.65
+rotation = [0.0, 180.0, 0.0]
+
+# Bottle shelves (`koin1` mesh 130) on the back wall, hung over the bar.
+[[decor]]
+mesh = { object = 130 }
+tile = [12, 16]
+offset = [0, 100, -124]
+hangs = true
+
+[[decor]]
+mesh = { object = 130 }
+tile = [15, 16]
+offset = [0, 100, -124]
+hangs = true
+
+[[decor]]
+mesh = { object = 130 }
+tile = [18, 16]
+offset = [0, 100, -124]
+hangs = true
+
+# The High Table: the Rest's long card table (`koin1` mesh 120, a table
+# on its own legs) on its tile. A prop, so the Tower High Table
+# (`modes.toml`) can put it away while its own felt is dealt on.
+[[props]]
+id = "high_table"
+mesh = { object = 120 }
+tile = [18, 10]
+scale = 1.3
+solid = true
+
+# A barrel stack at the bar's west end, barrels by the hall's south door,
+# and the armory's small glass case on its counter.
+[[props]]
+id = "barrels_bar"
+mesh = { object = 111 }
+tile = [10, 15]
+offset = [62, 0, 26]
+solid = true
 
 [[props]]
-id = "lantern_west"
+id = "barrels_hall"
+mesh = { object = 131 }
+tile = [27, 17]
+offset = [-19, 0, -22]
+solid = true
+
+[[decor]]
+mesh = { object = 144 }
+tile = [8, 15]
+offset = [21, 46, 20]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.33
+
+# Plants (`koin1` meshes 136 and 142, a pot on the floor) in the hall's
+# corners and by the doors.
+[[decor]]
+mesh = { object = 136 }
+tile = [9, 6]
+offset = [38, -91, -38]
+
+[[decor]]
+mesh = { object = 142 }
+tile = [27, 6]
+offset = [-63, -127, 64]
+solid = true
+
+[[decor]]
+mesh = { object = 142 }
+tile = [21, 17]
+offset = [-63, -127, 64]
+solid = true
+
+# The card room: the dealer's glass case along the west wall, a bench
+# under the painting on the south wall, a barrel stack and plants in the
+# corners. The middle of the room is the duel table's.
+[[props]]
+id = "card_case"
+mesh = { object = 144 }
+tile = [1, 11]
+offset = [49, -95, 46]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.75
+solid = true
+
+[[decor]]
+mesh = { object = 136 }
+tile = [1, 16]
+offset = [38, -91, -38]
+
+[[decor]]
+mesh = { object = 142 }
+tile = [6, 9]
+offset = [-63, -127, 64]
+solid = true
+
+[[decor]]
+mesh = { object = 118 }
+tile = [3, 16]
+offset = [1, -1, 64]
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 140 }
+tile = [3, 16]
+offset = [-2, 0, 60]
+hangs = true
+
+[[decor]]
+mesh = { object = 111 }
+tile = [6, 16]
+offset = [62, 0, 26]
+solid = true
+
+# The games room: the game-night table (the Rest's long table, `koin1`
+# mesh 120, turned along the room) with a bottle, a plate and tankards on
+# its top (83 up) and two chairs (mesh 27) down each side, and the
+# casino's arcade cabinets (mesh 78) on the east wall.
+[[decor]]
+mesh = { object = 120 }
+tile = [33, 12]
+offset = [83, 0, -1]
+rotation = [0.0, 90.0, 0.0]
+scale = 1.3
+
+[[decor]]
+mesh = { object = 32 }
+tile = [33, 12]
+offset = [32, 6, -122]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 132 }
+tile = [33, 12]
+offset = [32, 18, 100]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [33, 12]
+offset = [-130, 0, -98]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [33, 12]
+offset = [-130, 0, 62]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [33, 12]
+offset = [130, 0, -62]
+rotation = [0.0, -90.0, 0.0]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [33, 12]
+offset = [130, 0, 98]
+rotation = [0.0, -90.0, 0.0]
+
+[[props]]
+id = "arcade_n"
+mesh = { object = 78 }
+tile = [35, 8]
+rotation = [0.0, -90.0, 0.0]
+solid = true
+
+[[props]]
+id = "arcade_mid"
+mesh = { object = 78 }
+tile = [35, 10]
+rotation = [0.0, -90.0, 0.0]
+solid = true
+
+[[props]]
+id = "arcade_s"
+mesh = { object = 78 }
+tile = [35, 15]
+rotation = [0.0, -90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 131 }
+tile = [30, 16]
+offset = [-19, 0, -22]
+solid = true
+
+[[decor]]
+mesh = { object = 47 }
+tile = [32, 16]
+offset = [64, 0, 54]
+hangs = true
+
+[[decor]]
+mesh = { object = 136 }
+tile = [34, 16]
+offset = [38, -91, -38]
+
+# The lounge: the piano on its stage, small round tables (`koin1` mesh 76,
+# a pedestal, under mesh 75, its top) with chairs, plants, paintings on
+# the south wall.
+[[props]]
+id = "piano"
+mesh = { object = 24 }
+tile = [13, 24]
+solid = true
+
+[[decor]]
+mesh = { object = 76 }
+tile = [20, 21]
+offset = [0, 0, -2]
+solid = true
+
+[[decor]]
+mesh = { object = 75 }
+tile = [20, 21]
+offset = [0, 0, -1]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [20, 21]
+offset = [-102, 0, -18]
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 27 }
+tile = [20, 21]
+offset = [102, 0, 18]
+rotation = [0.0, -90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 76 }
+tile = [24, 24]
+offset = [0, 0, -2]
+solid = true
+
+[[decor]]
+id = "lounge_table_e"
+mesh = { object = 75 }
+tile = [24, 24]
+offset = [0, 0, -1]
+
+[[decor]]
+mesh = { object = 133 }
+tile = [24, 24]
+offset = [38, 0, 19]
+scale = 0.6
+on = "lounge_table_e"
+
+[[decor]]
+mesh = { object = 27 }
+tile = [24, 24]
+offset = [-102, 0, -18]
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 27 }
+tile = [24, 24]
+offset = [102, 0, 18]
+rotation = [0.0, -90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 76 }
+tile = [19, 26]
+offset = [0, 0, -2]
+solid = true
+
+[[decor]]
+mesh = { object = 75 }
+tile = [19, 26]
+offset = [0, 0, -1]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [19, 26]
+offset = [-102, 0, -18]
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 27 }
+tile = [19, 26]
+offset = [18, 0, -102]
+solid = true
+
+[[decor]]
+mesh = { object = 136 }
+tile = [10, 19]
+offset = [38, -91, -38]
+
+[[decor]]
+mesh = { object = 142 }
+tile = [26, 19]
+offset = [-63, -127, 64]
+solid = true
+
+[[decor]]
+mesh = { object = 136 }
+tile = [26, 28]
+offset = [38, -91, -38]
+
+[[decor]]
+mesh = { object = 140 }
+tile = [18, 28]
+offset = [-2, 0, 60]
+hangs = true
+
+[[decor]]
+mesh = { object = 45 }
+tile = [21, 28]
+offset = [64, 0, 54]
+hangs = true
+
+[[decor]]
+mesh = { object = 47 }
+tile = [15, 28]
+offset = [64, 0, 54]
+hangs = true
+
+# The landing: plants, barrels and the tavern's sign at the top of the
+# stair.
+[[decor]]
+mesh = { object = 136 }
+tile = [14, 1]
+offset = [38, -91, -38]
+
+[[decor]]
+mesh = { object = 142 }
+tile = [22, 1]
+offset = [-63, -127, 64]
+solid = true
+
+[[decor]]
+mesh = { object = 131 }
+tile = [22, 4]
+offset = [-22, 0, 19]
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 155 }
+tile = [15, 4]
+offset = [0, -1, 0]
+rotation = [0.0, 30.0, 0.0]
+solid = true
+
+[[props]]
+id = "lantern_landing"
 mesh = { asset = "models/lantern.glb" }
-tile = [3, 5]
+tile = [18, 3]
+hangs = true
+offset = [0, 250, 0]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 180 }]
+light = { color = [255, 190, 120], radius = 520, height = 0, flicker = 0.1, period = 28 }
+
+# The casino's red rugs (`koin1` mesh 25) under the High Table and the
+# game-night table.
+# (The High Table's rug is baked on the tile south of it: the table's
+# prop takes its own tile's cell.)
+[[decor]]
+mesh = { object = 25 }
+tile = [18, 11]
+offset = [0, 2, -128]
+scale = 2.0
+
+[[decor]]
+mesh = { object = 25 }
+tile = [33, 12]
+offset = [0, 2, 0]
+scale = 2.2
+
+# Paper lanterns hang over every room, swaying a little in the hearth's
+# draught (`assets/models/lantern.glb`).
+[[props]]
+id = "lantern_hall_w"
+mesh = { asset = "models/lantern.glb" }
+tile = [12, 9]
+hangs = true
 offset = [0, 250, 0]
 scale = 1.4
 animate = [{ kind = "sway", axis = "z", degrees = 5.0, period = 170 }, { kind = "spin", period = 900 }]
-light = { color = [255, 180, 100], radius = 520, height = 0, flicker = 0.12, period = 26 }
+light = { color = [255, 180, 100], radius = 560, height = 0, flicker = 0.12, period = 26 }
 
 [[props]]
-id = "lantern_mid"
+id = "lantern_hall_e"
 mesh = { asset = "models/lantern.glb" }
-tile = [10, 5]
-offset = [0, 260, 0]
-scale = 1.6
-animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 190, phase = 0.3 }, { kind = "spin", period = -1100 }]
-light = { color = [255, 180, 100], radius = 600, height = 0, flicker = 0.12, period = 29 }
-
-[[props]]
-id = "lantern_east"
-mesh = { asset = "models/lantern.glb" }
-tile = [14, 6]
+tile = [24, 12]
+hangs = true
 offset = [0, 250, 0]
 scale = 1.4
-animate = [{ kind = "sway", axis = "z", degrees = 5.0, period = 150, phase = 0.6 }, { kind = "spin", period = 1000 }]
-light = { color = [255, 180, 100], radius = 520, height = 0, flicker = 0.12, period = 23 }
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 190, phase = 0.3 }, { kind = "spin", period = -1100 }]
+light = { color = [255, 180, 100], radius = 560, height = 0, flicker = 0.12, period = 29 }
+
+[[props]]
+id = "lantern_cards"
+mesh = { asset = "models/lantern.glb" }
+tile = [4, 10]
+hangs = true
+offset = [0, 240, 0]
+scale = 1.3
+animate = [{ kind = "sway", axis = "z", degrees = 5.0, period = 150, phase = 0.6 }]
+light = { color = [255, 210, 150], radius = 520, height = 0, flicker = 0.1, period = 23 }
 
 [[props]]
 id = "lantern_games"
 mesh = { asset = "models/lantern.glb" }
-tile = [10, 8]
+tile = [32, 9]
+hangs = true
 offset = [0, 240, 0]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 5.0, period = 160, phase = 0.5 }]
-light = { color = [255, 140, 170], radius = 480, height = 0, flicker = 0.1, period = 31 }
+light = { color = [255, 140, 170], radius = 520, height = 0, flicker = 0.1, period = 31 }
 
-[[audio.ambient]]
-id = "crowd_hall"
-sound = { kind = "sound", id = "crowd" }
-tile = [9, 5]
-radius = 1100
-inner = 320
-volume = 0.45
+[[props]]
+id = "lantern_lounge"
+mesh = { asset = "models/lantern.glb" }
+tile = [20, 23]
+hangs = true
+offset = [0, 250, 0]
+scale = 1.4
+animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 200, phase = 0.2 }]
+light = { color = [255, 180, 120], radius = 640, height = 0, flicker = 0.1, period = 27 }
 
-[[audio.ambient]]
-id = "crowd_tables"
-sound = { kind = "sound", id = "crowd" }
-tile = [8, 8]
-radius = 640
-inner = 128
-volume = 0.5
+# The hearth breathes smoke and sparks; the air is full of the dust of a
+# hundred card games.
+[[emitters]]
+kind = "embers"
+rect = [28, 8, 28, 8]
+height = [0, 40]
+count = 18
+seed = 501
+
+[[emitters]]
+kind = "smoke"
+rect = [28, 8, 28, 8]
+height = [80, 160]
+count = 8
+color = [90, 85, 80]
+seed = 502
+
+[[emitters]]
+kind = "dust"
+rect = [1, 6, 35, 28]
+count = 70
+color = [255, 220, 170]
+seed = 503
+
+[[emitters]]
+kind = "sparkles"
+rect = [11, 23, 16, 26]
+height = [20, 160]
+count = 16
+color = [255, 240, 200]
+seed = 504
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "hearth", tile = [28, 8], offset = [0, 60, 0], color = [255, 140, 60], radius = 720, flicker = 0.35, period = 10 },
+  { id = "bar", tile = [15, 14], offset = [0, 180, 0], color = [255, 210, 150], radius = 640 },
+  # The High Table under its own lamp: the room's centre of play.
+  { id = "high_table", tile = [18, 10], offset = [0, 200, 0], color = [255, 225, 160], radius = 460, flicker = 0.08, period = 30 },
+  { id = "stage", tile = [13, 24], offset = [0, 220, 0], color = [255, 240, 210], radius = 520, flicker = 0.03, period = 60 },
+]

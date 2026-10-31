@@ -263,13 +263,45 @@ pub fn disc_portrait_rgba(bytes: Vec<u8>, char_id: usize) -> Vec<u8> {
         bytes
     };
     let off = OVERLAY_LOAD_PORTRAIT_TIM_OFFSET + char_id * OVERLAY_LOAD_PORTRAIT_STRIDE;
-    let Some(tim_bytes) = prot.get(off..off + OVERLAY_LOAD_PORTRAIT_STRIDE) else {
-        return Vec::new();
-    };
+    prot.get(off..off + OVERLAY_LOAD_PORTRAIT_STRIDE)
+        .map(portrait_tim_rgba)
+        .unwrap_or_default()
+}
+
+/// A save-file portrait TIM's bytes decoded to RGBA8 (empty when it does not
+/// parse).
+fn portrait_tim_rgba(tim_bytes: &[u8]) -> Vec<u8> {
     let Ok(parsed) = legaia_tim::parse(tim_bytes) else {
         return Vec::new();
     };
     legaia_tim::decode_rgba8(&parsed, 0).unwrap_or_default()
+}
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// [`disc_portrait_rgba`] read off the disc this runtime loaded, so the
+    /// play page's save bar does not hand the whole image to the engine
+    /// again for each face. Empty before a disc loads or when the TIM does
+    /// not parse.
+    pub fn loaded_disc_portrait_rgba(&self, char_id: usize) -> Vec<u8> {
+        use legaia_ui_formats::title_pak::{
+            OVERLAY_LOAD_PORTRAIT_COUNT, OVERLAY_LOAD_PORTRAIT_STRIDE,
+            OVERLAY_LOAD_PORTRAIT_TIM_OFFSET,
+        };
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        if char_id >= OVERLAY_LOAD_PORTRAIT_COUNT {
+            return Vec::new();
+        }
+        let off = OVERLAY_LOAD_PORTRAIT_TIM_OFFSET + char_id * OVERLAY_LOAD_PORTRAIT_STRIDE;
+        host.index
+            .prot_dat_raw_bytes(off as u64, OVERLAY_LOAD_PORTRAIT_STRIDE)
+            .ok()
+            .filter(|b| b.len() == OVERLAY_LOAD_PORTRAIT_STRIDE)
+            .map(|b| portrait_tim_rgba(&b))
+            .unwrap_or_default()
+    }
 }
 
 impl LegaiaRuntime {

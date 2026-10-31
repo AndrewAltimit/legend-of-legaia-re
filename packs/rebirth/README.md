@@ -39,7 +39,7 @@ Rebirth is built for the climb from there to 99.
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
 | `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips, surf, birdsong) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
 | `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
-| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers (`scripts/models/generate_rebirth_props.py`). |
+| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers, and the Isles' lamp posts, produce crates, rowboats, driftwood, shells, ferns and marram grass (`scripts/models/generate_rebirth_props.py`). |
 | `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Iron Regent), chained from that art into a retail one; all on the heroes' own retail clips. |
 | `spells.toml` | Four tower Seru - Hearthfire, Verdant Bloom, Grove Fang, Tempest Dive - each cast as the retail Seru it grew from and taught by capturing its pack monster once that floor's keeper falls. |
 
@@ -48,38 +48,57 @@ Rebirth is built for the climb from there to 99.
 | Floor | Map | Base scene | Party level | What's there |
 |---|---|---|---|---|
 | 1F Atrium | `rebirth_tower_1f` | `tower` (Sky Gardens Tower), built from scratch | 40-48 | The Warden's Stone, the training gauntlet bell, the card dealer, the stair down to Rim Elm |
-| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), kept whole | 50-55 | Boss: the Cinder Warden |
-| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), kept whole | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
-| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), kept whole | 60-68 | Boss: the Verdant Colossus |
-| 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), kept whole | - | No monsters; Keeper Odalric and his five tables |
-| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), kept whole | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
-| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), kept whole | 80-88 | Boss: the Azure Seraph |
-| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), kept whole | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch on the long carpet |
+| 2F Ember Stair | `rebirth_tower_2f` | `rugi` (Rogue's Tower), built from scratch (37 x 40) | 50-55 | Boss: the Cinder Warden; the forge and the ash shrine |
+| 3F Hanging Garden | `rebirth_tower_3f` | `teien` (Sky Gardens), built from scratch (39 x 40) | 55-60 | The Garden Gauntlet (four waves), the Gilded Herd |
+| 4F Verdant Vault | `rebirth_tower_4f` | `concnow` (Conkram), built from scratch (49 x 37) | 60-68 | Boss: the Verdant Colossus; the Root Archive and the Flooded Cloister |
+| 5F Gambler's Rest | `rebirth_tower_5f` | `koin1` (Sol Tower rooms), built from scratch (37 x 30) | - | No monsters; Keeper Odalric and his five tables |
+| 6F Engine Deep | `rebirth_tower_6f` | `chitei2` (Jette's Fortress), built from scratch (35 x 37) | 70-78 | Boss: the Iron Regent; the Engine Gauntlet (six refills) |
+| 7F Sanctum of Echoes | `rebirth_tower_7f` | `korb3` (Sol Tower underground), built from scratch (33 x 34) | 80-88 | Boss: the Azure Seraph |
+| 8F Hollow Throne | `rebirth_tower_8f` | `taiku2` (Zora's Floating Castle), built from scratch (31 x 36) | 88-99 | Superboss: the Hollow Sovereign, in two waves; the Herald Watch in the nave |
 
-1F and 2F carry the detail layer
-([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)):
-the Atrium's walls stand (the tower's stone blocks and a low south parapet),
+Every floor carries the detail layer
+([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#decorations)).
+The Atrium's walls stand (the tower's stone blocks and a low south parapet),
 Rogue's Tower torches line them and light the hall under enhanced lighting,
 vines, grass, rubble and Rim Elm's barrels and crates dress the floor (props
 from three scenes, their textures copied into free VRAM), four ember
 crystals - the pack's own glTF model, `assets/models/ember_crystal.glb` from
 `scripts/models/generate_ember_crystal.py` - float, turn and glow round the
 dais, a rune ring turns before the Warden's Stone, the dais flagstones
-drift, and mist curls over the outer ring. The Ember Stair keeps its retail
-hall and adds the brazier's turning fire ring, two orbiting pyre wisps,
-embers on the middle pillars, stalagmites, rubble, red lamps and smoke down
-the aisles.
+drift, and mist curls over the outer ring. Its pillars are decorations
+wearing octagonal stone decals over the retail mesh's black caps, moss and
+worn-stone decals break up its floor, embers rise from the crystals and
+sparks hang round the Warden's Stone.
 
-The Atrium's pillars are decorations wearing octagonal stone decals over
-the retail mesh's black caps, moss and worn-stone decals break up its floor,
-embers rise from the crystals and sparks hang round the Warden's Stone. The
-floors above keep their retail rooms and play the rooms' own animated
-scenery (`base.scenery`), with a theme each: falling leaves, fireflies,
-flower beds and a turning cloud ring in the Hanging Garden; drips, spores
-and a green ring of light in the Verdant Vault; hearth smoke and sparks in
-the Gambler's Rest; spark showers, steam and two flywheels in the Engine
-Deep; three orbiting echo crystals and blue motes in the Sanctum; dust,
-violet motes and a low haze in the Hollow Throne.
+The floors above are laid out from scratch (`geometry = "none"`) out of
+their base scenes' textures and meshes, each bigger than the retail room it
+borrows and each a set of rooms on several floor tiers, laid for the follow
+camera: a low parapet on every room's north (camera) edge, full walls on
+its far and side edges.
+
+- **2F Ember Stair** climbs away from the camera in four flights: the
+  lower hall between two lava moats (the Rogue's Tower's water turned to
+  fire and set flowing by `[[materials]]` tint and scroll), the forge and
+  the ash shrine off it, the middle hall between lava runs and four ember
+  pillars, the upper terrace with the Cinder Warden's brazier on its dais
+  (the tower's flame ring turning, two pyre wisps, a rune circle).
+- **3F Hanging Garden** steps up three terraces: the lower garden's
+  parterre round a fountain, the orchard and the rose arbour's brick
+  arches either side of the raised sundial plaza, the upper terrace's
+  reflecting basin and the belvedere open to the sky.
+- **4F Verdant Vault** is climbed down into: a high gallery rings the
+  colonnade, steps drop into the sunken court where the moss over the
+  Colossus breathes under the vault's heart; off the galleries, the Root
+  Archive and the Flooded Cloister.
+- **5F Gambler's Rest** is a hall with the keeper's long bar, the High
+  Table and the hearth; the card room (the Warden's Duel table, the card
+  dealer) and the games room (Tower Game Night, the arcade cabinets, its
+  own music) off it; the lounge's piano stage and the stair up behind the
+  bar. Old Mott, a Sol casino slot player whose motion stream seats him,
+  waits on a bar stool.
+- **6F-8F**: spark showers, steam and two flywheels in the Engine Deep;
+  three orbiting echo crystals and blue motes in the Sanctum; dust, violet
+  motes and a low haze in the Hollow Throne.
 
 Each floor's stairs chain to the next (`exits` with `to = { kind = "map" }`);
 the 1F stair down leads to Rim Elm. The 1F stair up is the seal Ysolde
@@ -101,10 +120,10 @@ ambience (`[audio]`: surf, wind, drips, birdsong, the village's murmur):
 
 | Map | Base | Size | What is there |
 |---|---|---|---|
-| `isles_beach` Saltwind Beach | `town01` | 64 x 36 | The sea-stair landing, dunes and palms, surf, a ruined jetty, the ferrywoman; shore encounters |
-| `isles_village` Tolva's Haven | `town01` | 52 x 42 | Huts, the well and windmill, the lodge (`rest`), Pell's Trading Post (`shop` `isles_trader`), villagers; a dusk mood |
-| `isles_thornwood` The Thornwood | `vell` | 88 x 34 | A forest path walled by trees, three clearings, the ruined court, the hermit's camp and the Thornwood Queen (`isles_hive_queen`) in the gate |
-| `isles_grotto` The Singing Grotto | `cave01` | 40 x 36 | A cavern under the ruins, its pool and the Pearl |
+| `isles_beach` Saltwind Beach | `town01` | 64 x 36 | The sea-stair landing, marram dunes and palms, the fishers' cove (two rowboats drawn up, a net rack), a weed-dark tideline with driftwood, shells and rock clusters, surf, a ruined jetty, the ferrywoman; shore encounters |
+| `isles_village` Tolva's Haven | `town01` | 64 x 50 | Huts, the well and windmill, the lodge (`rest`), Pell's Trading Post (`shop` `isles_trader`), villagers; the Village Duel table under the great tree and the Mist Lantern Table below the lodge (`modes.toml`); a dusk mood |
+| `isles_thornwood` The Thornwood | `vell` | 112 x 56 | A lane winding through clumped old forest: Mushroom Hollow, a ford, the old shrine and its lookout, the hermit's camp round his log (Hermit Ost, Rim Elm's old man borrowed into the forest), a fern dell, and the ruined court with the Thornwood Queen (`isles_hive_queen`) inside the gate |
+| `isles_grotto` The Singing Grotto | `cave01` | 72 x 60 | Four chambers under the ruins linked by passages: the antechamber, the crystal gallery, the mushroom grotto round its spring, and the singing pool with the Pearl on its islet; a floor of moss, scree and seep stains, with rock shelves and standing pools |
 
 The region's monsters, formations, encounter tables and mini-boss are
 `isles_*` entries in `battle.toml`; its four quests (`isles_landfall`,
@@ -178,8 +197,10 @@ payoff line - and each floor's arrival line - names the level the next one
 asks for, so the player always knows where to go and when.
 
 The Isles quests open as soon as Ysolde has spoken (**Landfall**, **Torn
-Nets**, **The Thornwood Queen** from level 35, **The Pearl Below**): the
-region is the bridge from the tower's opening at 30 to the trial at 40. A
+Nets**, **The Thornwood Queen**, **The Pearl Below**): the region is the
+bridge from the tower's opening at 30 to the trial at 40. The elder's
+welcome that closes Landfall also sends the party into the Thornwood, one
+talk and one box, its Queen tuned for 35. A
 few NPCs answer progress through `line_after`: the Warden's familiar once the
 throne is empty, the 5F card room once the engine stops and the throne
 falls.
@@ -201,7 +222,7 @@ choice on their fight's own offer (`challenge = ...` beside `battle` /
 `boss`), so the challenge applies to that fight.
 
 Rest points (`kind = "rest"`, with a save) stand on the 1F stair landing,
-by the 5F hearth and in a 7F alcove.
+by the 5F hearth and in a 7F alcove off the landing.
 
 Quest and boss rewards hand out cards by id from `cards.toml`, among them
 the four legendaries.
@@ -330,7 +351,9 @@ In play, the tower is entered from the retail game: once the party reaches
 level 30, the tiles behind the woodpile by Rim Elm's south gate (`town01`,
 field-grid tiles 17-18 x 43) lead up into the Atrium - the 1F map's
 `[[entrances]]` table - and the Atrium's stair down returns beside them. The
-Journal's Travel page enters the tower from anywhere once it is open.
+Journal's Travel page returns to any of the pack's maps the party has been
+to, from anywhere, and offers the Atrium itself once the party reaches level
+30 (`--cheat-travel` lists every map, for testing).
 
 ```bash
 # Validate (no disc needed)

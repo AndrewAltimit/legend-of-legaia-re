@@ -34,6 +34,7 @@ fn table(facing: u8) -> DuelTableFrame {
             cheer: Some(6),
             ..Default::default()
         }],
+        chair_height: 34.0,
     }
 }
 
@@ -288,4 +289,27 @@ fn a_watcher_reads_the_winner_by_name() {
             .any(|b| b == "Vahn wins!" || b == "Rival wins!" || b == "Draw"),
         "{banners:?}"
     );
+}
+
+/// An opponent with a `sit` clip sits in a chair at its seat facing the
+/// board; without one it stands and no chair is drawn.
+#[test]
+fn a_seated_opponent_sits_in_a_chair_facing_the_board() {
+    let s = session(2);
+    let f = DuelStage::default().step(&table(2), &s.view(), 0);
+    assert!(f.chairs.is_empty());
+    let mut t = table(2);
+    if let Some(o) = t.opponent.as_mut() {
+        o.sit = Some(11);
+        o.think = None;
+    }
+    let f = DuelStage::default().step(&t, &s.view(), 0);
+    assert_eq!(f.chairs.len(), 1);
+    let o = f.npcs.iter().find(|n| n.npc == "rival").unwrap();
+    assert_eq!(o.clip, Some(11));
+    let ch = f.chairs[0];
+    let c = t.centre();
+    let d = [c[0] - ch.pos[0], c[1] - ch.pos[1]];
+    assert!(d[0] * ch.toward[0] + d[1] * ch.toward[1] > 0.99 * d[0].hypot(d[1]));
+    assert_eq!(ch.seat, t.chair_height);
 }

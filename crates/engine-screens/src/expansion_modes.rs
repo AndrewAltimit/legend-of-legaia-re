@@ -20,7 +20,6 @@
 //! world.
 
 use legaia_engine_core::world::World;
-use legaia_engine_expansion::modes::{ModeSource, ModeStage};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_modes::cards::CardBook;
 use legaia_engine_ui::TextDraw;
@@ -28,7 +27,7 @@ use legaia_engine_ui::expansion_modes::party::{PartyCard, party_card, party_prim
 use legaia_engine_ui::expansion_modes::{
     CardScreenView, ItemCompareView, ItemMemberView, ItemRowView, ItemScreenView, ModeScreen,
     PortraitRef, card_screen_prims, card_screen_texts, card_toast_texts, item_screen_prims,
-    item_screen_texts, mode_screen_prims, mode_screen_texts,
+    item_screen_texts, mode_screen_prims, mode_screen_texts, seat_screen,
 };
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
@@ -37,64 +36,7 @@ pub fn pack_mode_screen(world: &World) -> Option<ModeScreen<'_>> {
     if world.mode != SceneMode::Expansion {
         return None;
     }
-    let seat = world.expansion.mode_seat.as_deref()?;
-    Some(match &seat.stage {
-        ModeStage::Picker {
-            entries,
-            cursor,
-            error,
-        } => ModeScreen::Picker {
-            heading: match seat.source {
-                ModeSource::Pack => "Pack modes",
-                ModeSource::Builtin => "Practice modes",
-            },
-            entries,
-            cursor: *cursor,
-            error: error.as_deref(),
-        },
-        // Played on its pack map: the field draws the game, the screen only
-        // its HUD.
-        ModeStage::Playing { mode, quit_prompt } if seat.stage_frame.is_some() => {
-            ModeScreen::InWorld {
-                mode,
-                log: &seat.log,
-                quit_prompt: *quit_prompt,
-                banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
-                outro: seat
-                    .stage_frame
-                    .as_ref()
-                    .and_then(|f| f.duel.as_ref())
-                    .is_some_and(|d| d.outro),
-            }
-        }
-        ModeStage::Playing { mode, quit_prompt } => ModeScreen::Playing {
-            mode,
-            log: &seat.log,
-            quit_prompt: *quit_prompt,
-        },
-        ModeStage::Results {
-            name,
-            kind,
-            rows,
-            granted,
-            completed,
-            local_seat,
-            seat_names,
-        } => ModeScreen::Results {
-            name,
-            kind: *kind,
-            rows,
-            granted,
-            completed: *completed,
-            local_seat: *local_seat,
-            seat_names,
-            // A duel at a table: the reaction shot, then the card over it.
-            over_world: seat.stage_frame.is_some(),
-            holding: seat.world_stage.holds_results(),
-            banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
-            names: &seat.seat_names,
-        },
-    })
+    world.expansion.mode_seat.as_deref().map(seat_screen)
 }
 
 /// Run `f` on the card screen's view, when the card seat owns the frame.

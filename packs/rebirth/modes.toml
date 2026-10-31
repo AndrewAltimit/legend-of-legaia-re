@@ -12,6 +12,26 @@ currency = "coins"
 chip_value = 1
 ai_tier = "regular"
 blind_double_every = 10
+# Dealt by lantern light on the meadow below the lodge in Tolva's Haven:
+# three islanders round a plank table, the player's place at its south
+# edge, looking up at the lodge's hedge.
+map = "isles_village"
+spawn = "from_thornwood"
+
+[poker.table]
+tile = [56, 32]
+facing = 0
+radius = 90
+# The game is dealt on the table's own felt; the plank table that stands
+# on that tile between games (the map's `lantern_table` prop) is put away
+# while the seat is taken.
+hide = ["lantern_table"]
+height = 90
+players = [
+  { npc = "lantern_wenna", name = "Wenna", sit = 34 },
+  { npc = "lantern_harl", name = "Harl" },
+  { npc = "lantern_ysel", name = "Ysel" },
+]
 
 [[card_duels]]
 id = "rim-elm-duel"
@@ -22,6 +42,21 @@ elemental_cells = true
 chain = false
 stakes = false
 win_booster = "rebirth-starter"
+# Played at the plank table under the great tree in Tolva's Haven's west
+# meadow, Brin across the board and two islanders looking on.
+map = "isles_village"
+spawn = "from_beach"
+
+[card_duels.table]
+tile = [11, 10]
+facing = 6
+# The duel lays its own table; the map's `duel_table` prop on that tile
+# is put away while the duel is played.
+hide = ["duel_table"]
+height = 64
+seat_distance = 150
+opponent = { npc = "duel_brin", name = "Brin", sit = 34 }
+spectators = [{ npc = "duel_onlooker_a" }, { npc = "duel_onlooker_b" }]
 
 [[golf]]
 id = "windmill-links"
@@ -135,12 +170,17 @@ map = "rebirth_tower_5f"
 spawn = "from_below"
 
 [poker.table]
-tile = [10, 5]
+tile = [18, 10]
 facing = 0
 radius = 92
+# Dealt on the table's own felt; the hall's card table that stands there
+# between games (the map's `high_table` prop) is put away while the seat
+# is taken.
+hide = ["high_table"]
+height = 84
 players = [
-  { npc = "high_table_odile", name = "Odile" },
-  { npc = "high_table_brann", name = "Brann" },
+  { npc = "high_table_odile", name = "Odile", sit = 31 },
+  { npc = "high_table_brann", name = "Brann", sit = 46 },
   { npc = "high_table_sefa", name = "Sefa" },
   { npc = "high_table_corwin", name = "Corwin" },
   { npc = "high_table_mott", name = "Old Mott" },
@@ -163,9 +203,9 @@ map = "rebirth_tower_5f"
 spawn = "from_below"
 
 [card_duels.table]
-tile = [6, 7]
+tile = [3, 12]
 offset = [-96, 0, 64]
-facing = 6
+facing = 0
 opponent = { npc = "duel_second", name = "The Warden's Second" }
 spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
 
@@ -396,7 +436,7 @@ ai_tier = "regular"
 # The night ends on a podium in the Rest's hall (5F), facing the stair the
 # party came up: the top three's leaders on the blocks, the rivals played
 # by the Rest's regulars.
-podium = { map = "rebirth_tower_5f", tile = [5, 5], facing = 4, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
+podium = { map = "rebirth_tower_5f", tile = [24, 10], facing = 0, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
 
 [[party_nights.rounds]]
 mode = "tower-green"

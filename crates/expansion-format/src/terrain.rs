@@ -903,13 +903,30 @@ impl MapDef {
 
     /// The map's terrain resolved for drawing ([`TerrainSurface`]), `None`
     /// with no `[terrain]`.
+    ///
+    /// The surface is a pure function of the map's `terrain`, `tiles`,
+    /// `size` and `floor_heights`, and building it is the costly half of a
+    /// terrain map's preparation, which asks for it several times over (the
+    /// validator, the rest checks, the mesh library); the last few built are
+    /// kept ([`SURFACE_MEMO`]) and handed back for an equal input.
     pub fn terrain_surface(&self) -> Result<Option<TerrainSurface>> {
         let Some(t) = &self.terrain else {
             return Ok(None);
         };
+        let key = SurfaceKey {
+            terrain: t.clone(),
+            tiles: self.tiles.clone(),
+            size: self.size,
+            floor_heights: self.floor_heights.clone(),
+        };
+        if let Some(s) = surface_memo_get(&key) {
+            return Ok(Some((*s).clone()));
+        }
         let grid = self.tile_grid()?;
         let field = heightfield(self, t, &grid)?;
-        Ok(Some(surface(self, t, &grid, field)))
+        let s = surface(self, t, &grid, field);
+        surface_memo_put(key, std::sync::Arc::new(s.clone()));
+        Ok(Some(s))
     }
 
     /// The wall quarters the terrain adds to each tile (row-major, the
@@ -917,11 +934,21 @@ impl MapDef {
     /// than `max_step`, or under more than `wade` of water. All zero with no
     /// `[terrain]`.
     pub fn terrain_walls(&self, grid: &TileGrid) -> Result<Vec<u8>> {
-        let mut out = vec![0u8; grid.width * grid.height];
         let Some(t) = &self.terrain else {
-            return Ok(out);
+            return Ok(vec![0u8; grid.width * grid.height]);
         };
         let field = heightfield(self, t, grid)?;
+        Ok(self.terrain_walls_in(grid, &field))
+    }
+
+    /// [`MapDef::terrain_walls`] over a heightfield already built for this
+    /// map ([`MapDef::terrain_heightfield`]), so a caller that wants both
+    /// builds it once.
+    pub fn terrain_walls_in(&self, grid: &TileGrid, field: &Heightfield) -> Vec<u8> {
+        let mut out = vec![0u8; grid.width * grid.height];
+        let Some(t) = &self.terrain else {
+            return out;
+        };
         let res = field.res as f32;
         for row in 0..grid.height {
             for col in 0..grid.width {
@@ -952,7 +979,7 @@ impl MapDef {
                 out[row * grid.width + col] = walls;
             }
         }
-        Ok(out)
+        out
     }
 }
 
@@ -990,6 +1017,47 @@ fn tile_heights(def: &MapDef, t: &TerrainDef, grid: &TileGrid) -> Vec<f32> {
         }
     }
     out
+}
+
+/// Everything [`MapDef::terrain_surface`] reads of a map.
+#[derive(PartialEq)]
+struct SurfaceKey {
+    terrain: TerrainDef,
+    tiles: crate::map::TileLayer,
+    size: Option<[u16; 2]>,
+    floor_heights: Vec<i16>,
+}
+
+/// How many built surfaces [`MapDef::terrain_surface`] keeps: room for every
+/// terrain map of a pack the size of Rebirth, which a validation pass walks
+/// before the entry asks for its own.
+const SURFACE_MEMO: usize = 8;
+
+type SurfaceMemo = Vec<(SurfaceKey, std::sync::Arc<TerrainSurface>)>;
+
+fn surface_memo() -> std::sync::MutexGuard<'static, SurfaceMemo> {
+    static MEMO: std::sync::Mutex<SurfaceMemo> = std::sync::Mutex::new(Vec::new());
+    MEMO.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn surface_memo_get(key: &SurfaceKey) -> Option<std::sync::Arc<TerrainSurface>> {
+    let mut memo = surface_memo();
+    let i = memo.iter().position(|(k, _)| k == key)?;
+    // Most recently used last.
+    let hit = memo.remove(i);
+    let s = hit.1.clone();
+    memo.push(hit);
+    Some(s)
+}
+
+fn surface_memo_put(key: SurfaceKey, s: std::sync::Arc<TerrainSurface>) {
+    let mut memo = surface_memo();
+    memo.retain(|(k, _)| *k != key);
+    memo.push((key, s));
+    while memo.len() > SURFACE_MEMO {
+        memo.remove(0);
+    }
 }
 
 fn heightfield(def: &MapDef, t: &TerrainDef, grid: &TileGrid) -> Result<Heightfield> {

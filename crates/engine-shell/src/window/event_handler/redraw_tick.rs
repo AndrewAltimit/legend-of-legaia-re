@@ -558,6 +558,11 @@ impl PlayWindowApp {
             Ok(_) => {}
             Err(e) => log::error!("session tick: {e:#}"),
         }
+        // The pack maps an entered map's exits lead to start preparing on
+        // worker threads once this tick's own scene rebuild is done, and
+        // finished ones move into the host's cache
+        // (`legaia_engine_scene_host::expansion_preload`). Reads no world.
+        self.session.host.step_expansion_preload();
         if let Some(sc) = self.screenshot.as_ref()
             && let Some(drive) = sc.battle_drive
         {

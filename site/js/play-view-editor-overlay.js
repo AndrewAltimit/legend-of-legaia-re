@@ -57,6 +57,7 @@ void main() {
   /* Layer colours, RGBA 0..1: the 2D painter's (expansion-workbench-map.js). */
   const COLOR = {
     walls: [0.72, 0.80, 0.95, 0.26],
+    collision: [0.95, 0.22, 0.22, 0.34],
     encounters: [0.88, 0.38, 0.35, 0.28],
     triggers: [0.90, 0.64, 0.24, 0.36],
     exits: [0.29, 0.64, 0.91, 0.40],
@@ -64,12 +65,17 @@ void main() {
     npcs: [0.61, 0.42, 0.94, 0.70],
     props: [0.85, 0.77, 0.42, 0.45],
     select: [1.00, 1.00, 1.00, 0.30],
+    grid: [1.00, 1.00, 1.00, 0.22],
+    slope: [0.98, 0.78, 0.30, 0.20],
     path: [1.00, 0.95, 0.55, 0.85],
     marker: [1.00, 0.30, 0.20, 0.90],
   };
   /* Default layer set: every volume but the props (the props draw as
-   * themselves). */
-  const DEFAULT_LAYERS = { walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false };
+   * themselves), and the tile grid. */
+  const DEFAULT_LAYERS = { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false, collision: false };
+  /* What a workbench draft may replace in the engine's reading of the map
+   * (`defs`, see `setEditorOverlay`). */
+  const DRAFT_LISTS = ['spawns', 'exits', 'triggers', 'encounters', 'props', 'npcs'];
 
   function invert4(m) {
     const a = m, o = new Float32Array(16);
@@ -158,17 +164,36 @@ void main() {
         }
       } catch (e) { ov = null; }
       this._editorMap = ov;
+      /* The engine's reading supersedes a draft of the same edits; the
+       * workbench sends the draft of any later ones again. */
+      this._editorDraft = null;
       this._buildEditorOverlay();
       return ov;
     }
 
-    /* What the workbench asks for: `{ layers, select, path, marker }`.
+    /* What the workbench asks for: `{ layers, select, path, marker, grid,
+     * defs }`.
      * `layers` maps a layer name to on / off; `select` is
      * `{ tile: [c, r] }` or `{ rect: [c0, r0, c1, r1] }`; `path` is a list
      * of map tiles a cutscene's camera visits and `marker` the point on it
-     * the timeline is scrubbed to (`[c, r]`, fractional). */
+     * the timeline is scrubbed to (`[c, r]`, fractional).
+     *
+     * `grid` is the tile grid with its corner heights, from the workbench's
+     * `map_preview` (the synthetic field image the engine enters, or the
+     * terrain's heightfield): `{ width, height, corners }`, `corners` four
+     * heights a tile (world units up; low-X low-Z, high-X low-Z, low-X
+     * high-Z, high-X high-Z) - and `slopes`, whether a ramp cell is filled
+     * (a tier map; a terrain map slopes everywhere). `defs` is the workbench's draft of the map
+     * as edited since the last rebuild - the object lists of the map
+     * definition, and `cells`, `[index, walls, void, floor]` for each
+     * tile the edit changed (floor world units up, `null` to keep the
+     * engine's) - drawn in place of the engine's
+     * reading until the rebuild lands, so an edit shows at once. Either is
+     * ignored when its size is not the built map's. */
     setEditorOverlay(opts) {
       const o = opts || {};
+      if (o.grid !== undefined) this._editorGrid = o.grid;
+      if (o.defs !== undefined) this._editorDraft = o.defs;
       this._editorOpts = {
         layers: Object.assign({}, DEFAULT_LAYERS, (this._editorOpts && this._editorOpts.layers) || {}, o.layers || {}),
         select: o.select !== undefined ? o.select : (this._editorOpts && this._editorOpts.select),
@@ -188,8 +213,30 @@ void main() {
       return [(m.origin[0] + c) * u + u / 2, m.floor[ri * m.width + ci] || 0, (m.origin[1] + r) * u + u / 2];
     }
 
-    _buildEditorOverlay() {
+    /* The map the volumes draw: the engine's reading with the workbench's
+     * draft over it, when the draft is of a map that size. */
+    _editorDrawnMap() {
       const m = this._editorMap;
+      const d = this._editorDraft;
+      if (!m || !d || d.width !== m.width || d.height !== m.height) return m;
+      const out = Object.assign({}, m);
+      for (const k of DRAFT_LISTS) if (Array.isArray(d[k])) out[k] = d[k];
+      if (Array.isArray(d.cells) && d.cells.length) {
+        out.walls = m.walls.slice();
+        out.void = m.void.slice();
+        out.floor = m.floor.slice();
+        for (const [i, walls, vd, floor] of d.cells) {
+          if (i < 0 || i >= m.width * m.height) continue;
+          out.walls[i] = walls;
+          out.void[i] = vd;
+          if (floor != null) out.floor[i] = -floor;
+        }
+      }
+      return out;
+    }
+
+    _buildEditorOverlay() {
+      const m = this._editorDrawnMap();
       const o = this._editorOpts || { layers: DEFAULT_LAYERS };
       const L = o.layers || DEFAULT_LAYERS;
       const soup = new Soup();
@@ -201,6 +248,28 @@ void main() {
         const isVoid = (c, r) => c < 0 || r < 0 || c >= W || r >= H || !!m.void[r * W + c];
         const full = (c, r) => !isVoid(c, r) && m.walls[r * W + c] === 15;
         const WALL_H = 96;
+        /* The tile grid at its corner heights: each tile's low-X and low-Z
+         * edges (and the far edges of the last column and row) as thin
+         * ribbons, and a cell whose corners disagree - a ramp - filled. */
+        const g = this._editorGrid;
+        if (L.grid && g && g.width === W && g.height === H && g.corners && g.corners.length >= W * H) {
+          const LIFT = 3, LW = 5;
+          const k = (c, r) => g.corners[r * W + c];
+          for (let r = 0; r < H; r++) {
+            for (let c = 0; c < W; c++) {
+              if (isVoid(c, r)) continue;
+              const q = k(c, r);
+              if (!q) continue;
+              const p00 = [tx(c), -q[0] - LIFT, tz(r)], p10 = [tx(c + 1), -q[1] - LIFT, tz(r)];
+              const p01 = [tx(c), -q[2] - LIFT, tz(r + 1)], p11 = [tx(c + 1), -q[3] - LIFT, tz(r + 1)];
+              soup.ribbon(p00, p10, LW, COLOR.grid);
+              soup.ribbon(p00, p01, LW, COLOR.grid);
+              if (c === W - 1 || isVoid(c + 1, r)) soup.ribbon(p10, p11, LW, COLOR.grid);
+              if (r === H - 1 || isVoid(c, r + 1)) soup.ribbon(p01, p11, LW, COLOR.grid);
+              if (g.slopes && (q[0] !== q[1] || q[0] !== q[2] || q[0] !== q[3])) soup.quad(p00, p10, p11, p01, COLOR.slope);
+            }
+          }
+        }
         if (L.walls) {
           for (let r = 0; r < H; r++) {
             for (let c = 0; c < W; c++) {
@@ -221,6 +290,28 @@ void main() {
               if (mask & 2) soup.box(tx(c) + hh, tz(r), tx(c + 1), tz(r) + hh, y, WALL_H, COLOR.walls, 16);
               if (mask & 4) soup.box(tx(c), tz(r) + hh, tx(c) + hh, tz(r + 1), y, WALL_H, COLOR.walls, 16);
               if (mask & 8) soup.box(tx(c) + hh, tz(r) + hh, tx(c + 1), tz(r + 1), y, WALL_H, COLOR.walls, 16);
+            }
+          }
+        }
+        /* What the player collides with (`blocked`, the engine's collision
+         * grid: tile walls, solid props and decorations, terrain walls), a
+         * quarter tile at a time - the quarters the Walls layer already
+         * draws left out while it is on. Always the last build's reading:
+         * a draft does not move it. */
+        if (L.collision && Array.isArray(m.blocked) && m.blocked.length === W * H) {
+          const hh = u / 2, CH = 64;
+          for (let r = 0; r < H; r++) {
+            for (let c = 0; c < W; c++) {
+              if (isVoid(c, r)) continue;
+              let mask = m.blocked[r * W + c] & 15;
+              if (L.walls) mask &= ~m.walls[r * W + c];
+              if (!mask) continue;
+              const y = floorAt(c, r);
+              const x0 = tx(c), z0 = tz(r);
+              if (mask & 1) soup.box(x0 + 2, z0 + 2, x0 + hh - 2, z0 + hh - 2, y, CH, COLOR.collision, 16);
+              if (mask & 2) soup.box(x0 + hh + 2, z0 + 2, x0 + u - 2, z0 + hh - 2, y, CH, COLOR.collision, 16);
+              if (mask & 4) soup.box(x0 + 2, z0 + hh + 2, x0 + hh - 2, z0 + u - 2, y, CH, COLOR.collision, 16);
+              if (mask & 8) soup.box(x0 + hh + 2, z0 + hh + 2, x0 + u - 2, z0 + u - 2, y, CH, COLOR.collision, 16);
             }
           }
         }

@@ -1,246 +1,539 @@
-# Tower of Rebirth, third floor: the Hanging Garden. The terraces of the
-# retail Sky Gardens (`teien`), kept whole, with the garden's own walls
-# re-traced. The sundial on the middle terrace runs the Garden Gauntlet:
-# four waves in one battle, as often as the party asks for it.
+# Tower of Rebirth, third floor: the Hanging Garden. Laid out from scratch
+# (`geometry = "none"`) out of the retail Sky Gardens' (`teien`) flagstones,
+# lawns, hedges and brick arches: three terraces stepping up away from the
+# camera. The lower garden opens off the landing, its flower beds and
+# hedge blocks round a fountain. A flight climbs to the middle terrace: the
+# orchard to the west (where the Gilded Herd grazes), the rose arbour's
+# arches to the east, and between them the raised sundial plaza that runs
+# the Garden Gauntlet. A second flight climbs to the upper terrace: a lawn
+# round a reflecting basin, the belvedere on the east edge open to the sky
+# past a low balustrade, and the stair up under an arch in the far wall.
+#
+# The follow camera looks south from the north side: each terrace's north
+# edge is a low balustrade, its far and side edges hedge or stone walls.
 
 name = "Tower of Rebirth 3F - Hanging Garden"
-base = { scene = { kind = "scene", name = "teien" }, geometry = "keep", scenery = true }
+size = [39, 40]
+base = { scene = { kind = "scene", name = "teien" }, geometry = "none" }
 # Sound-test track 12, "The Sacred Realm".
 bgm = { kind = "bgm", id = 12 }
-camera = "default"
+camera = "far"
+# Tier 0 the landing and lower garden, tier 1 the middle terrace, tier 2 the
+# sundial plaza and upper terrace, tier 3 the belvedere.
+floor_heights = [0, 64, 128, 160]
+
+# Past the terraces' edge the gardens of the floors below, far down, and
+# the stone of the terrace walls dropping to them.
+[surround]
+ground = { tpage = 28, clut = 32461, tile = 34 }
+side = { tpage = 28, clut = 32453, tile = 8 }
+depth = 512
+shade = 64
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 28, clut = 32453, tile = 8, height = 1152, distance = 2, shade = 96 }
+
+# The vault overhead: the belvedere's lanterns hang on chains from it. The follow camera
+# looks down from under it, so only the chains show, rising out of the
+# frame; the underside is wound to face down and drawn only from beneath.
+[ceiling]
+height = 2048
+cell = { tpage = 28, clut = 32453, tile = 8 }
+shade = 40
+chain = { tpage = 28, clut = 32453, tile = 8, width = 6, shade = 72, items = ["belvedere_lantern_n", "belvedere_lantern_s"] }
 
 [tiles]
-origin = [31, 28]
+origin = [20, 20]
 rows = [
-  "     #............a#",
-  "   #b#.####cd####..a",
-  "  #b.#.............e#",
-  " #b..#....f...f.....###",
-  "#b.#.######...#.......a#",
-  "b....#....#g.e#####....a",
-  ".##....#..#h.i#..#...#.#",
-  ".......#..#...#..#...#..",
-  "#......#.........#...##.",
-  "#.####.#....f....#f..#..",
-  "###....#############.#.#",
-  "  #....#.........#.#.#..",
-  "  #....#.#.........#.##.",
-  "  #....##..........#.#..",
-  "  #.####.......#########",
-  "  #..................#",
-  "###....##............#",
-  "g.#.#####........#...#",
-  "c.......ibh..ia####..#",
-  "###....#.g....e......#",
-  "  #g.#...g....e.a...##",
-  "   c.....g....ec...e#",
-  "   #c..#.g....e#g#.d",
-  "    #c...g....e   d#",
+  "              ___________              ",
+  "              H.........H              ",
+  "              >.........H              ",
+  "              H.........H              ",
+  "              H.........H              ",
+  "  _____________........._____________  ",
+  "  Hgggggggggggg.........ggggggggggggH  ",
+  "  Hgbbbbgbbbbgh.........hgbbbbgbbbbgH  ",
+  "  Hgbbbbgbbbbgg.........ggbbbbgbbbbgH  ",
+  "  H.................................H  ",
+  "  Hgggggggggggg.........ggggggggggggH  ",
+  "  Hgbbbbgbbbbgg.........ggbbbbgbbbbgH  ",
+  "  Hgbbbbgbbbbgh.........hgbbbbgbbbbgH  ",
+  "  Hgggggggggggg.........ggggggggggggH  ",
+  "  Hbbbbbbbbbbbb.........bbbbbbbbbbbbH  ",
+  "  RRRRRRRRRRRRRaSSSSSSSaaRRRRRRRRRRRR  ",
+  "  Ioooooooooooo,,,,,,,,,rrrrr,,rrrrrI  ",
+  "  Ioooooooooooo,,,,,,,,,rrrrk,,krrrrI  ",
+  "  Ioooooooooooo,,PPPPP,,rrrrr,,rrrrrI  ",
+  "  Ioooooooooooo,PPPPPPP,rrrrk,,krrrrI  ",
+  "  Ioooooooooooo,PPPPPPP,rrrrr,,rrrrrI  ",
+  "  I,,,,,,,,,,,,,PPPPPPP,,,,,,,,,,,,,I  ",
+  "  Ioooooooooooo,PPPPPPP,rrrrr,,rrrrrI  ",
+  "  Ioooooooooooo,PPPPPPP,rrrrk,,krrrrI  ",
+  "  Ioooooooooooo,,PPPPP,,rrrrr,,rrrrrI  ",
+  "  Ioooooooooooo,,,,,,,,,rrrrk,,krrrrI  ",
+  "  Ioooooooooooo,,,,,,,,,rrrrr,,rrrrrI  ",
+  "  Jddddddddddddddsssssddddddddddddddd  ",
+  "     #:::::::::::::::::::::::::::#     ",
+  "     #:::::::::::::::::::::::::::e     ",
+  "     #::uuuuuuu:::::::::fVVVVVc::e     ",
+  "     #::uuuuuuu:::::::::VVVVVVV::e     ",
+  "     #::uuwwwuu:::::::::VVVVVVV::e     ",
+  "     #::uuwwwuu:::::::::VVVVVVV::e     ",
+  "     #::uuwwwuu:::::::::VVVVVVV::e     ",
+  "     #::uuuuuuu:::::::::VVVVVVV::e     ",
+  "     #::uuuuuuu:::::::::cVVVVVc::e     ",
+  "     #:::::::::::::::::::::::::::e     ",
+  "     #:::::::::::q:::q:::::::::::#     ",
+  "     ##############<##############     ",
 ]
 
 [tiles.legend]
-"#" = { label = "wall", walls = "all" }
-"." = { label = "floor" }
-"a" = { label = "wall nook", walls = ["tl", "tr", "br"] }
-"b" = { label = "wall nook", walls = ["tl", "tr", "bl"] }
-"c" = { label = "wall nook", walls = ["tl", "bl", "br"] }
-"d" = { label = "wall nook", walls = ["tr", "bl", "br"] }
-"e" = { label = "wall edge", walls = ["tr", "br"] }
-"f" = { label = "wall edge", walls = ["bl", "br"] }
-"g" = { label = "wall edge", walls = ["tl", "bl"] }
-"h" = { label = "wall corner", walls = ["tl"] }
-"i" = { label = "wall corner", walls = ["tr"] }
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
+"_" = { label = "balustrade", walls = "all", wall = { kind = "box", height = 48, tpage = 27, clut = 32323, tile = 3 } }
+"e" = { label = "balustrade (belvedere side)", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 27, clut = 32323, tile = 3 } }
+"H" = { label = "hedge wall", walls = "all", wall = { kind = "box", height = 224, tpage = 28, clut = 32459, tile = 6 } }
+"I" = { label = "hedge wall (terrace)", height = 1, walls = "all", wall = { kind = "box", height = 224, tpage = 28, clut = 32459, tile = 6 } }
+"#" = { label = "stone wall", height = 2, walls = "all", wall = { kind = "box", height = 288, tpage = 28, clut = 32453, tile = 8 } }
+"R" = { label = "terrace balustrade", height = 1, walls = "all", wall = { kind = "box", height = 48, tpage = 27, clut = 32323, tile = 3 } }
+"a" = { label = "terrace balustrade (garden side)", walls = "all", wall = { kind = "box", height = 80, tpage = 27, clut = 32323, tile = 3 } }
+"J" = { label = "upper balustrade", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 27, clut = 32323, tile = 3 } }
+"d" = { label = "upper balustrade (terrace side)", height = 1, walls = "all", wall = { kind = "box", height = 80, tpage = 27, clut = 32323, tile = 3 } }
+"." = { label = "flagstones", ground = { kind = "texture", tpage = 28, clut = 32453, tile = 0 } }
+"g" = { label = "lawn", ground = { kind = "texture", tpage = 28, clut = 32461, tile = 34 } }
+# The parterre's clipped box hedges and the hedge blocks at its corners: solid.
+"b" = { label = "parterre hedge", walls = "all", wall = { kind = "box", height = 48, tpage = 23, clut = 31682, tile = 18 } }
+"h" = { label = "hedge block", walls = "all", wall = { kind = "box", height = 160, tpage = 28, clut = 32459, tile = 5 } }
+"S" = { label = "first flight", ground = { kind = "texture", tpage = 27, clut = 32322, tile = 2 } }
+"," = { label = "terrace walk", height = 1, ground = { kind = "texture", tpage = 28, clut = 32463, tile = 34 } }
+"o" = { label = "orchard", height = 1, ground = { kind = "texture", tpage = 28, clut = 32461, tile = 34 } }
+"r" = { label = "rose arbour", height = 1, ground = { kind = "texture", tpage = 28, clut = 32461, tile = 26 } }
+# Under each arch post: the arch is a decoration, its posts close here.
+"k" = { label = "arch post", height = 1, walls = "all", ground = { kind = "texture", tpage = 28, clut = 32461, tile = 26 } }
+"P" = { label = "sundial plaza", height = 2, ground = { kind = "texture", tpage = 28, clut = 32458, tile = 20 } }
+"s" = { label = "second flight", height = 1, ground = { kind = "texture", tpage = 27, clut = 32322, tile = 2 } }
+":" = { label = "upper terrace", height = 2, ground = { kind = "texture", tpage = 28, clut = 32453, tile = 0 } }
+"u" = { label = "basin lawn", height = 2, ground = { kind = "texture", tpage = 28, clut = 32461, tile = 26 } }
+"w" = { label = "reflecting basin", height = 2, walls = "all", wall = { kind = "box", height = 24, tpage = 27, clut = 32323, tile = 3 } }
+"V" = { label = "belvedere", height = 3, ground = { kind = "texture", tpage = 28, clut = 32458, tile = 20 } }
+"c" = { label = "belvedere pillar", height = 3, walls = "all", wall = { kind = "box", height = 256, tpage = 27, clut = 32323, tile = 3 } }
+"f" = { label = "belvedere pillar (terrace side)", height = 2, walls = "all", wall = { kind = "box", height = 256, tpage = 27, clut = 32323, tile = 3 } }
+"q" = { label = "arch post (stair)", height = 2, walls = "all", ground = { kind = "texture", tpage = 28, clut = 32453, tile = 0 } }
+">" = { label = "stair down", ground = { kind = "texture", tpage = 27, clut = 32322, tile = 2 } }
+"<" = { label = "stair up", height = 2, ground = { kind = "texture", tpage = 27, clut = 32322, tile = 2 } }
 
 [[spawns]]
 id = "from_below"
-tile = [11, 21]
+tile = [19, 2]
 facing = 4
 
 [[spawns]]
 id = "from_above"
-tile = [11, 2]
+tile = [19, 37]
 
 [[exits]]
 id = "stair_down"
-rect = [10, 23, 13, 23]
+rect = [14, 2, 14, 2]
 to = { kind = "map", map = "rebirth_tower_2f", spawn = "from_above" }
 
 [[exits]]
 id = "stair_up"
-rect = [8, 0, 15, 0]
+rect = [19, 39, 19, 39]
 to = { kind = "map", map = "rebirth_tower_4f", spawn = "from_below" }
 
 [[triggers]]
 id = "arrival"
-rect = [9, 19, 14, 20]
-event = { kind = "dialog", line = "floor_3f_intro" }
+rect = [15, 3, 23, 3]
+event = { kind = "toast", line = "floor_3f_intro" }
 once = true
 
+# The sundial on its plaza: examining it offers the Garden Gauntlet.
 [[triggers]]
 id = "sundial"
-rect = [10, 12, 15, 13]
+rect = [19, 21, 19, 21]
 event = { kind = "dialog", line = "sundial_offer" }
+press = true
+
+[[encounters]]
+id = "lower_garden"
+rect = [3, 6, 35, 13]
+table = "tower_3f"
 
 [[encounters]]
 id = "west_terrace"
-rect = [0, 4, 9, 9]
+rect = [3, 16, 14, 26]
 table = "tower_3f"
 
 [[encounters]]
 id = "east_terrace"
-rect = [15, 4, 23, 13]
+rect = [24, 16, 35, 26]
 table = "tower_3f"
-
-[[encounters]]
-id = "lower_garden"
-rect = [2, 15, 20, 18]
-table = "tower_3f"
-
-# ---------------------------------------------------------------------------
-# Detail: the garden in late summer. Leaves fall from the terraces' trees,
-# fireflies hang over the lower garden, and a shard of sky-glass turns
-# slowly over the sundial. The garden's own animated scenery plays (`scenery`).
-# All of it draws only.
-# ---------------------------------------------------------------------------
-
-[[props]]
-id = "sky_glass"
-mesh = { asset = "models/ember_crystal.glb" }
-tile = [12, 12]
-offset = [0, 250, 128]
-scale = 2.4
-animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 16, period = 240 }]
-light = { color = [170, 220, 255], radius = 1200, height = 0, flicker = 0.08, period = 90 }
-
-# Young trees in clumps on the lower garden.
-[[scatter]]
-id = "saplings"
-rect = [2, 14, 20, 21]
-on = "."
-density = 0.5
-seed = 301
-jitter = 50
-scale = [0.4, 0.65]
-tilt = 4.0
-cluster = { centre = [6.0, 17.0], radius = 5.0, falloff = 1.5 }
-meshes = [{ mesh = { object = 5 }, weight = 3 }, { mesh = { object = 8 }, weight = 1 }]
-
-# Flower beds round the sundial (the garden's flowering grass).
-[[decals]]
-id = "flowers"
-cell = { tpage = 8, clut = 32512, tile = 0 }
-cells = [{ tpage = 8, clut = 32512, tile = 1 }, { tpage = 8, clut = 32512, tile = 8 }]
-rect = [8, 9, 16, 14]
-on = "."
-density = 0.5
-seed = 302
-size = [96, 96]
-size_jitter = 0.3
-sides = 10
-jitter = 40
-
-[[emitters]]
-kind = "leaves"
-rect = [2, 2, 21, 21]
-count = 36
-seed = 303
-
-[[emitters]]
-kind = "sparkles"
-rect = [3, 14, 20, 21]
-height = [20, 90]
-count = 36
-color = [210, 255, 120]
-seed = 304
-
-[[emitters]]
-kind = "dust"
-rect = [8, 9, 16, 14]
-count = 30
-color = [255, 240, 190]
-seed = 305
-
-[lighting]
-mood = "day"
-
-# Sound: water runs in the garden's two channels.
-[[audio.ambient]]
-id = "upper_channel"
-sound = { kind = "sound", id = "water" }
-tile = [12, 7]
-radius = 640
-inner = 128
-volume = 0.5
-
-[[audio.ambient]]
-id = "lower_channel"
-sound = { kind = "sound", id = "water" }
-tile = [11, 20]
-radius = 640
-inner = 128
-volume = 0.5
 
 # ---------------------------------------------------------------------------
 # The sundial: the Gauntlet's own clock, a stepped stone plinth with a brass
 # dial (`assets/models/sundial.glb`, `scripts/models/generate_rebirth_props.py`)
-# under the turning sky-glass, a brass armillary ring circling between them.
-# A fountain plays in the lower garden, its spray catching the light.
+# in the middle of its plaza, a brass armillary ring circling over it and a
+# shard of sky-glass turning above both.
 # ---------------------------------------------------------------------------
 
 [[props]]
 id = "sundial"
 mesh = { asset = "models/sundial.glb" }
-# Two rows south of the terrace hedge, so the follow camera (which looks
-# south across the garden) sees it over the hedge.
-tile = [12, 13]
-# A prop's height counts from the floor the player walks (on a kept room,
-# its retail floor steps included), so the plinth stands at 0.
-offset = [0, 0, 0]
+tile = [19, 21]
 scale = 1.7
+# The plinth is a thing to walk round, not through.
+solid = true
 light = { color = [255, 230, 170], radius = 520, height = 100, flicker = 0.05, period = 80 }
 
 [[props]]
 id = "sundial_ring"
 mesh = { asset = "models/armillary_ring.glb" }
-tile = [13, 13]
-offset = [-128, 230, 0]
+tile = [19, 20]
+hangs = true
+offset = [0, 230, 128]
 scale = 0.9
 animate = [{ kind = "spin", axis = "y", period = 600 }, { kind = "sway", axis = "x", degrees = 24.0, period = 420 }]
 
 [[props]]
-id = "fountain_west"
-mesh = { asset = "models/fountain.glb" }
-tile = [8, 15]
-offset = [0, 0, 0]
-scale = 1.1
-solid = true
-light = { color = [170, 220, 255], radius = 420, height = 90, flicker = 0.08, period = 50 }
+id = "sky_glass"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [19, 22]
+hangs = true
+offset = [0, 380, -128]
+scale = 2.4
+animate = [{ kind = "spin", period = 900 }, { kind = "bob", amplitude = 16, period = 240 }]
+light = { color = [170, 220, 255], radius = 1200, height = 0, flicker = 0.08, period = 90 }
 
-# The fountain's spray.
+# The lower garden's fountain, in the middle of the walk up from the
+# landing, and the upper terrace's basin fountain.
+[[props]]
+id = "fountain_lower"
+mesh = { asset = "models/fountain.glb" }
+tile = [19, 7]
+scale = 1.4
+solid = true
+light = { color = [170, 220, 255], radius = 460, height = 90, flicker = 0.08, period = 50 }
+
+[[props]]
+id = "fountain_basin"
+mesh = { asset = "models/fountain.glb" }
+tile = [11, 33]
+scale = 1.2
+solid = true
+light = { color = [170, 220, 255], radius = 420, height = 90, flicker = 0.08, period = 55 }
+
+# The belvedere: lanterns hang between its pillars, and the brass ring of
+# the garden's second dial turns over its floor.
+[[props]]
+id = "belvedere_ring"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [27, 33]
+hangs = true
+offset = [0, 220, 0]
+scale = 1.2
+animate = [{ kind = "spin", axis = "z", period = 720 }, { kind = "bob", amplitude = 12, period = 200 }]
+
+[[props]]
+id = "belvedere_lantern_n"
+mesh = { asset = "models/lantern.glb" }
+tile = [27, 30]
+hangs = true
+offset = [0, 230, 0]
+scale = 1.2
+animate = [{ kind = "sway", axis = "x", degrees = 6.0, period = 170 }]
+light = { color = [255, 220, 160], radius = 420, height = 0, flicker = 0.1, period = 30 }
+
+[[props]]
+id = "belvedere_lantern_s"
+mesh = { asset = "models/lantern.glb" }
+tile = [27, 36]
+hangs = true
+offset = [0, 230, 0]
+scale = 1.2
+animate = [{ kind = "sway", axis = "x", degrees = 6.0, period = 190, phase = 0.4 }]
+light = { color = [255, 220, 160], radius = 420, height = 0, flicker = 0.1, period = 33 }
+
+# The rose arbour: the Sky Gardens' brick arches (`teien` mesh 4) over its
+# path, their posts closing the tiles beside it. One more arch frames the
+# stair up.
+[[decor]]
+mesh = { object = 4 }
+tile = [29, 17]
+offset = [64, 0, 0]
+
+[[decor]]
+mesh = { object = 4 }
+tile = [29, 19]
+offset = [64, 0, 0]
+
+[[decor]]
+mesh = { object = 4 }
+tile = [29, 23]
+offset = [64, 0, 0]
+
+[[decor]]
+mesh = { object = 4 }
+tile = [29, 25]
+offset = [64, 0, 0]
+
+[[decor]]
+mesh = { object = 4 }
+tile = [19, 38]
+scale = 1.15
+
+# The orchard: the garden's young trees (`teien` mesh 5) planted in rows,
+# four to a row either side of the cross walk, with a lane between rows
+# and columns. Solid.
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 17]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 17]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 17]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 17]
+scale = 0.95
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 19]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 19]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 19]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 19]
+scale = 0.95
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 23]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 23]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 23]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 23]
+scale = 0.95
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 25]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 25]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 25]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 25]
+scale = 0.95
+solid = true
+
+# Four older trees shade the arbour's lawns, one at each corner of the
+# arches.
+[[decor]]
+mesh = { object = 5 }
+tile = [25, 18]
+scale = 1.25
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [34, 18]
+scale = 1.25
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [25, 24]
+scale = 1.25
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [34, 24]
+scale = 1.25
+solid = true
+
+# Flower patches on the lawns and round the plaza.
+[[decals]]
+id = "flowers"
+cell = { tpage = 28, clut = 32461, tile = 27 }
+cells = [{ tpage = 28, clut = 32461, tile = 34 }, { tpage = 28, clut = 32461, tile = 35 }]
+rect = [3, 6, 35, 13]
+on = "g"
+density = 0.4
+seed = 303
+size = [96, 96]
+size_jitter = 0.3
+sides = 10
+jitter = 40
+
+[[decals]]
+id = "plaza_moss"
+cell = { tpage = 28, clut = 32461, tile = 26 }
+rect = [16, 18, 22, 24]
+on = "P"
+density = 0.3
+seed = 304
+size = [80, 80]
+size_jitter = 0.4
+sides = 8
+jitter = 40
+
+[[emitters]]
+kind = "leaves"
+rect = [3, 6, 35, 38]
+count = 48
+seed = 305
+
+[[emitters]]
+kind = "sparkles"
+rect = [3, 16, 14, 26]
+height = [20, 110]
+count = 36
+color = [210, 255, 120]
+seed = 306
+
+[[emitters]]
+kind = "sparkles"
+rect = [24, 16, 35, 26]
+height = [20, 110]
+count = 30
+color = [255, 220, 150]
+seed = 307
+
+[[emitters]]
+kind = "dust"
+rect = [16, 18, 22, 24]
+count = 30
+color = [255, 240, 190]
+seed = 308
+
+# The fountains' spray.
 [[emitters]]
 kind = "drips"
-rect = [8, 15, 8, 15]
+rect = [19, 7, 19, 7]
+height = [90, 120]
+count = 18
+velocity = [0.0, 1.2, 0.0]
+spread = [0.9, 0.4, 0.9]
+gravity = 0.06
+color = [190, 230, 255]
+seed = 309
+
+[[emitters]]
+kind = "drips"
+rect = [11, 33, 11, 33]
 height = [80, 110]
 count = 16
 velocity = [0.0, 1.2, 0.0]
 spread = [0.9, 0.4, 0.9]
 gravity = 0.06
 color = [190, 230, 255]
-seed = 306
+seed = 310
 
-# The fountain splashes; a light wind moves through the terraces.
+[lighting]
+mood = "day"
+lamps = [
+  { id = "plaza", tile = [19, 21], offset = [0, 200, 0], color = [255, 240, 200], radius = 700, flicker = 0.03, period = 90 },
+]
+
+# Mist blows in over the belvedere's open edge.
+[fog]
+regions = [{ rect = [24, 29, 32, 37], angle = 270.0, spread = 30.0, speed = 10 }]
+
+# Sound: birdsong in the orchard and arbour, the two fountains, and wind
+# over the belvedere.
 [[audio.ambient]]
-id = "fountain_west"
+id = "fountain_lower"
 sound = { kind = "sound", id = "water" }
-tile = [8, 15]
-radius = 560
-inner = 96
+tile = [19, 7]
+radius = 640
+inner = 128
 volume = 0.6
 
 [[audio.ambient]]
-id = "terrace_wind"
+id = "fountain_basin"
+sound = { kind = "sound", id = "water" }
+tile = [11, 33]
+radius = 560
+inner = 96
+volume = 0.55
+
+[[audio.ambient]]
+id = "orchard_birds"
+sound = { kind = "sound", id = "birds" }
+tile = [8, 21]
+radius = 900
+inner = 256
+volume = 0.45
+
+[[audio.ambient]]
+id = "arbour_birds"
+sound = { kind = "sound", id = "birds" }
+tile = [30, 21]
+radius = 800
+inner = 256
+volume = 0.35
+
+[[audio.ambient]]
+id = "belvedere_wind"
 sound = { kind = "sound", id = "wind" }
-tile = [12, 6]
-radius = 1800
-inner = 900
-volume = 0.25
+tile = [30, 33]
+radius = 900
+inner = 300
+volume = 0.45

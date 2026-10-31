@@ -3,7 +3,7 @@
 # to the north, a long white beach, the surf, and a ruined jetty running out
 # into the sea. The sea stair from the tower's west wall lands on the stone
 # platform at the west end; the dune path climbs north-east to the village.
-# Palms and ferns are the West Voz Forest's (`vell`), the boats, crates and
+# Palms and ferns are the West Voz Forest's (`vell`), the wreck, crates and
 # driftwood Rim Elm's.
 
 name = "Rebirth Isles - Saltwind Beach"
@@ -38,17 +38,17 @@ rows = [
   "<ppppp........sss..sss............sss......dddssss.........sss.#",
   "<ppppp......ssssssssss..sssss...sss..ss.....d..ssssrrr....sssss#",
   "#ppppp......ssssssssss..sssssr..ss...ss.jj.....ssssrrr....sssss#",
-  "#ppppp......ss...ss....ssss.rrr.....sss,jj......sssrrr.........#",
-  "#sssss......r....ss...ssss...,,,,,,,,,,,jj.....................#",
-  "#ssss......rrr.............,,,,,,,,,,,,,jj,....ssss............#",
-  "#sss...sssssrsss....s....,,,,,~~~~~,,~~~jj,,..ssssss........ss.#",
-  "#sss...sssssssss....,,,,,,,~~~~~~~~~~~~~jj~,,.ssssss.......sss.#",
-  "#ss....sssssssss...,,,,,,,~~~~~~~~~~~~~~jj~~,,,sssss...s...sss.#",
-  "#,,,...ss,,sssss.,,,~~~~~~~~~~~~~~~~~~~~jj~~~,,,,sss...sssssss,#",
-  "#,,,,,,,,,,,,,s,,,,~~~~~~~~~~~~~~~~~~~~~jj~~~~~,,,,....sssss,,,#",
-  "~~~,,,,,,,,,,,,,,,~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~,,,,,....ss,,,~~",
-  "~~~~~~~~~~~~~,,,~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~,,,...,,,,~~~",
-  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~,,,,,,,~~~~~",
+  "#ppppp......ss...ss....ssss.rrr.....sss;jj......sssrrr.........#",
+  "#sssss......r....ss...ssss...,,;;;;;;;;,jj.....................#",
+  "#ssss......rrr.............;;,,,,,,,,,,,jj;....ssss............#",
+  "#sss...sssssrsss....s....;;,,,~~~~~,,~~~jj,;..ssssss........ss.#",
+  "#sss...sssssssss....;;;;;,,~~~~~~~~~~~~~jj~,;.ssssss.......sss.#",
+  "#ss....sssssssss...;,,,,,,~~~~~~~~~~~~~~jj~~,;;sssss...s...sss.#",
+  "#;;;...ss;;sssss.;;,~~~~~~~~~~~~~~~~~~~~jj~~~,,;;sss...sssssss;#",
+  "#,,,;;;;;,,;;;s;;,,~~~~~~~~~~~~~~~~~~~~~jj~~~~~,,;;....sssss;;,#",
+  "~~~,,,,,,,,,,,;,,,~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~,,,;;....ss;,,~~",
+  "~~~~~~~~~~~~~,,,~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~,,;...;;,,~~~",
+  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~,,;;;,,~~~~~",
   "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~,,,~~~~~~~",
   "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~~~~~~~~~",
   "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~~~~~~~~~",
@@ -65,6 +65,7 @@ rows = [
 "." = { label = "sand", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 38 } }
 "s" = { label = "sand (pale)", ground = { kind = "texture", tpage = 12, clut = 32005, tile = 30 } }
 "," = { label = "wet sand", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
+";" = { label = "wet sand (tideline)", ground = { kind = "texture", tpage = 12, clut = 32004, tile = 13 } }
 "~" = { label = "sea", walls = "all", height = 3, ground = { kind = "texture", tpage = 9, clut = 31880, tile = 56 } }
 "j" = { label = "jetty", height = 1, ground = { kind = "texture", tpage = 27, clut = 32128, tile = 9 } }
 "p" = { label = "landing", height = 1, ground = { kind = "texture", tpage = 12, clut = 32004, tile = 20 } }
@@ -95,13 +96,15 @@ to = { kind = "map", map = "isles_village", spawn = "from_beach" }
 [[triggers]]
 id = "arrival"
 rect = [2, 14, 5, 19]
-event = { kind = "dialog", line = "isles_beach_intro" }
+event = { kind = "toast", line = "isles_beach_intro" }
 once = true
 
 [[npcs]]
 id = "isles_ferrywoman"
 label = "Ferrywoman Maro"
 model = { kind = "npc", scene = "town01", index = 36 }
+# The placement's own clip lies her flat on the sand; 18 is her idle.
+clip = 18
 tile = [6, 18]
 facing = 6
 line = "isles_ferry_idle"
@@ -111,35 +114,32 @@ id = "east_strand"
 rect = [24, 8, 62, 26]
 table = "isles_beach"
 
-# The jetty's end: a beached boat, crates and a lantern post.
+# The jetty's end: crates and a lantern post. Up the strand, the stern of a
+# wreck lies half sunk in the sand, its broken bow buried (Rim Elm's boat is
+# a set piece cut open at the bow, which here reads as the break).
 [[props]]
-id = "boat"
+id = "boat_wreck"
 mesh = { scene = "town01", object = 48 }
-tile = [37, 30]
-rotation = [0.0, 70.0, 0.0]
-scale = 1.3
+tile = [33, 20]
+offset = [0, -26, 0]
+rotation = [14.0, -35.0, 6.0]
+scale = 1.2
 solid = true
 
 [[props]]
-id = "boat_wreck"
-mesh = { scene = "town01", object = 47 }
-tile = [33, 20]
-rotation = [8.0, -35.0, 0.0]
-scale = 1.2
-
-[[props]]
 id = "jetty_lantern"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [41, 32]
-offset = [40, 40, 0]
-light = { color = [255, 200, 130], radius = 520, height = 60, flicker = 0.25, period = 14 }
+offset = [40, 0, 20]
+light = { color = [255, 200, 130], radius = 520, height = 120, flicker = 0.25, period = 14 }
 
 [[props]]
 id = "landing_lantern"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [5, 14]
-offset = [30, 40, -30]
-light = { color = [255, 210, 150], radius = 600, height = 60, flicker = 0.2, period = 17 }
+offset = [30, 0, -30]
+rotation = [0.0, 180.0, 0.0]
+light = { color = [255, 210, 150], radius = 600, height = 120, flicker = 0.2, period = 17 }
 
 # A sea-glass shard on the landing - the tower's light, washed up.
 [[props]]
@@ -156,11 +156,38 @@ mesh = { scene = "town01", object = 46 }
 tile = [40, 31]
 offset = [-20, 0, 10]
 scale = 0.8
+solid = true
 
 [[decor]]
-mesh = { scene = "town01", object = 34 }
+mesh = { scene = "town01", object = 33 }
 tile = [42, 31]
-scale = 0.75
+offset = [-10, 0, -10]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [38, 32]
+offset = [-40, 0, 40]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [43, 32]
+offset = [40, 0, 40]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [40, 26]
+offset = [-60, 0, 0]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [41, 26]
+offset = [60, 0, 0]
+scale = 0.32
 
 [[decor]]
 mesh = { scene = "town01", object = 83 }
@@ -168,10 +195,397 @@ tile = [43, 32]
 scale = 0.8
 
 [[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [1, 14]
+rotation = [0.0, 15.0, 0.0]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [1, 15]
+scale = 0.8
+solid = true
+
+[[decor]]
 mesh = { scene = "town01", object = 81 }
 tile = [4, 15]
 rotation = [0.0, 30.0, 0.0]
 scale = 0.8
+solid = true
+
+# The fishers' cove west of the jetty: two rowboats drawn up on the sand
+# above the wet line, oars shipped, a drying rack hung with nets between
+# them, and the gear the fishers leave by it - crates, a barrel, a basket
+# of the morning's catch on the crates.
+[[props]]
+id = "cove_boat_w"
+mesh = { asset = "models/rowboat.glb" }
+tile = [22, 21]
+offset = [10, 0, 20]
+rotation = [0.0, 74.0, 5.0]
+scale = 0.95
+solid = true
+
+[[props]]
+id = "cove_boat_e"
+mesh = { asset = "models/rowboat.glb" }
+tile = [46, 22]
+offset = [0, 0, -10]
+rotation = [0.0, 112.0, -6.0]
+scale = 0.9
+solid = true
+
+[[props]]
+id = "cove_rack"
+mesh = { asset = "models/net_rack.glb" }
+tile = [17, 20]
+rotation = [0.0, 8.0, 0.0]
+scale = 1.35
+solid = true
+
+[[decor]]
+id = "cove_crates"
+mesh = { scene = "town01", object = 46 }
+tile = [19, 19]
+offset = [20, 0, 10]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [19, 19]
+offset = [10, 0, 0]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.6
+on = "cove_crates"
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [20, 19]
+offset = [-10, 0, 30]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [47, 21]
+offset = [-30, 0, -20]
+rotation = [0.0, 15.0, 0.0]
+scale = 0.6
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [49, 22]
+offset = [0, 0, 20]
+rotation = [0.0, 30.0, 0.0]
+scale = 1.1
+
+# Above the landing, an old boat turned keel-up on the sand for a shelter,
+# and a fire pit the fishers sit round: a ring of stones on its ash, two
+# driftwood logs for benches.
+[[props]]
+id = "upturned_boat"
+mesh = { asset = "models/rowboat.glb" }
+tile = [9, 17]
+offset = [0, 56, 0]
+rotation = [180.0, 20.0, 0.0]
+scale = 1.0
+solid = true
+
+[[decals]]
+cell = { tpage = 12, clut = 32008, tile = 3 }
+tile = [15, 14]
+offset = [0, 2, 0]
+size = [130, 130]
+sides = 10
+color = [44, 40, 38]
+yaw = [0.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [15, 13]
+offset = [0, 0, 10]
+rotation = [0.0, 4.0, 0.0]
+scale = 0.8
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [16, 14]
+offset = [30, 0, 10]
+rotation = [0.0, 96.0, 0.0]
+scale = 0.75
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [48, 0, 0]
+rotation = [0.0, 0.0, 0.0]
+scale = 0.1
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [30, 0, 38]
+rotation = [0.0, 53.0, 0.0]
+scale = 0.1
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [-11, 0, 47]
+rotation = [0.0, 106.0, 0.0]
+scale = 0.1
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [-43, 0, 21]
+rotation = [0.0, 159.0, 0.0]
+scale = 0.1
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [-43, 0, -21]
+rotation = [0.0, 212.0, 0.0]
+scale = 0.1
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [-11, 0, -47]
+rotation = [0.0, 265.0, 0.0]
+scale = 0.1
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [15, 14]
+offset = [30, 0, -38]
+rotation = [0.0, 318.0, 0.0]
+scale = 0.1
+
+# Two old groynes of weathered posts run down the beach into the surf,
+# the sea's side of them leaning and broken off short.
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 22]
+offset = [-12, 0, 5]
+rotation = [0.0, 57.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 23]
+offset = [7, 0, -9]
+rotation = [0.0, 46.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 24]
+offset = [0, 0, 10]
+rotation = [0.0, 50.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 25]
+offset = [-11, 0, -5]
+rotation = [0.0, 26.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 26]
+offset = [1, 0, -4]
+rotation = [6.9, 87.0, 2.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 27]
+offset = [-8, 0, 5]
+rotation = [-3.8, 78.0, 1.8]
+scale = 0.31
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 28]
+offset = [-6, 0, 7]
+rotation = [0.6, 89.0, 4.5]
+scale = 0.31
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 29]
+offset = [-6, 0, -9]
+rotation = [7.8, 65.0, -3.1]
+scale = 0.28
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 30]
+offset = [-7, 0, -4]
+rotation = [-1.1, 10.0, 3.0]
+scale = 0.28
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [7, 31]
+offset = [6, 0, 8]
+rotation = [2.9, 38.0, -4.2]
+scale = 0.22
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 24]
+offset = [7, 0, 9]
+rotation = [0.0, 39.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 25]
+offset = [-3, 0, 8]
+rotation = [0.0, 82.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 26]
+offset = [9, 0, -5]
+rotation = [0.0, 38.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 27]
+offset = [12, 0, -1]
+rotation = [0.0, 10.0, 0.0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 28]
+offset = [9, 0, 3]
+rotation = [-8.7, 1.0, -0.7]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 29]
+offset = [14, 0, 8]
+rotation = [0.5, 30.0, -5.5]
+scale = 0.25
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 30]
+offset = [12, 0, 3]
+rotation = [7.0, 48.0, 1.1]
+scale = 0.23
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [52, 31]
+offset = [-1, 0, 5]
+rotation = [-7.0, 64.0, -0.0]
+scale = 0.29
+
+# Weed-dark rocks at the tide's edge, in clusters, and bleached logs the
+# storms have thrown up the beach.
+[[decor]]
+mesh = { scene = "vell", object = 39 }
+tile = [9, 25]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.22
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [10, 25]
+offset = [20, 0, 30]
+rotation = [0.0, 200.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [8, 24]
+offset = [-20, 0, 10]
+rotation = [0.0, 110.0, 0.0]
+scale = 0.14
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [11, 26]
+offset = [10, 0, -10]
+rotation = [0.0, 300.0, 0.0]
+scale = 0.10
+
+[[decor]]
+mesh = { scene = "vell", object = 39 }
+tile = [57, 27]
+rotation = [0.0, 150.0, 0.0]
+scale = 0.25
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [58, 26]
+offset = [30, 0, 0]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [56, 26]
+offset = [-10, 0, 30]
+rotation = [0.0, 80.0, 0.0]
+scale = 0.12
+
+[[decor]]
+mesh = { scene = "vell", object = 39 }
+tile = [36, 20]
+offset = [0, 0, 20]
+rotation = [0.0, 260.0, 0.0]
+scale = 0.16
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 22 }
+tile = [37, 21]
+rotation = [0.0, 10.0, 0.0]
+scale = 0.11
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [14, 22]
+rotation = [0.0, 165.0, 0.0]
+scale = 1.3
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [27, 19]
+offset = [0, 0, 30]
+rotation = [0.0, 80.0, 0.0]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [53, 24]
+rotation = [0.0, 10.0, 0.0]
+scale = 1.4
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [5, 21]
+offset = [0, 0, 20]
+rotation = [0.0, 120.0, 0.0]
+scale = 1.2
 
 # Palms and ferns along the dunes, thickest round the path's foot.
 [[scatter]]
@@ -186,40 +600,198 @@ scale = [0.3, 0.45]
 meshes = [
   { mesh = { scene = "vell", object = 12 }, weight = 3 },
   { mesh = { scene = "vell", object = 15 }, weight = 3 },
-  { mesh = { scene = "vell", object = 13 }, weight = 2, scale = [0.35, 0.5] },
+  { mesh = { asset = "models/fern.glb" }, weight = 2, scale = [1.8, 2.6] },
 ]
+
+# Palms line both sides of the dune path, every third row.
+[[decor]]
+mesh = { scene = "vell", object = 12 }
+tile = [53, 6]
+offset = [-30, 0, 0]
+rotation = [0.0, 251.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 12 }
+tile = [59, 6]
+offset = [30, 0, 0]
+rotation = [0.0, 329.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [49, 9]
+offset = [-30, 0, 0]
+rotation = [0.0, 340.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 12 }
+tile = [54, 9]
+offset = [30, 0, 0]
+rotation = [0.0, 45.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [46, 12]
+offset = [-30, 0, 0]
+rotation = [0.0, 82.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [50, 12]
+offset = [30, 0, 0]
+rotation = [0.0, 134.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [43, 15]
+offset = [-30, 0, 0]
+rotation = [0.0, 184.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "vell", object = 15 }
+tile = [47, 15]
+offset = [30, 0, 0]
+rotation = [0.0, 236.0, 0.0]
+scale = 0.42
+solid = true
+
+# What the sea leaves along the tideline, where the dry sand meets the wet:
+# a wrack of sticks, shells and pebbles, and more of the same below it.
 
 [[scatter]]
-id = "path_palms"
-rect = [38, 4, 62, 18]
-on = "gG.s"
-density = 0.5
-seed = 4102
-jitter = 50
+id = "tideline_wrack"
+rect = [0, 0, 63, 35]
+on = ";"
+density = 0.55
+seed = 4130
+jitter = 46
 yaw = [0.0, 360.0]
-scale = [0.35, 0.5]
-cluster = { centre = [48.0, 12.0], radius = 9.0, falloff = 1.5 }
+scale = [0.5, 0.9]
+keep_clear = true
 meshes = [
-  { mesh = { scene = "vell", object = 12 }, weight = 2 },
-  { mesh = { scene = "vell", object = 15 }, weight = 2 },
-  { mesh = { scene = "vell", object = 18 }, weight = 1, scale = [0.35, 0.5] },
+  { mesh = { asset = "models/driftwood.glb" }, weight = 2, scale = [0.4, 0.7] },
+  { mesh = { asset = "models/shells.glb" }, weight = 3, scale = [0.9, 1.3] },
+  { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.08, 0.16] },
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 1, scale = [0.5, 0.8] },
 ]
-
 [[scatter]]
 id = "beach_drift"
-rect = [6, 8, 62, 28]
-on = ".s,"
+rect = [1, 8, 62, 30]
+on = ",;"
 density = 0.07
 seed = 4103
 jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.4, 0.8]
+scale = [0.8, 1.2]
+keep_clear = true
 meshes = [
-  { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.3, 0.5] },
-  { mesh = { scene = "vell", object = 10 }, weight = 2, scale = [0.3, 0.5] },
-  { mesh = { scene = "town01", object = 47 }, weight = 1, scale = [0.5, 0.8] },
+  { mesh = { asset = "models/driftwood.glb" }, weight = 2, scale = [0.6, 1.0] },
+  { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.14, 0.24] },
 ]
 
+[[scatter]]
+id = "beach_shells"
+rect = [1, 8, 62, 30]
+on = ",;s"
+density = 0.1
+seed = 4107
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.9, 1.4]
+keep_clear = true
+meshes = [
+  { mesh = { asset = "models/shells.glb" }, weight = 1 },
+]
+
+# Marram grass binds the dunes and straggles down onto the dry sand below.
+[[scatter]]
+id = "dune_marram"
+rect = [1, 1, 62, 14]
+on = "gG"
+density = 0.55
+seed = 4108
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [1.0, 1.7]
+meshes = [
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 1 },
+]
+
+[[scatter]]
+id = "beach_grass"
+rect = [1, 5, 62, 20]
+on = ".s"
+density = 0.06
+seed = 4106
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [0.8, 1.3]
+keep_clear = true
+meshes = [
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 1 },
+]
+
+# Marram binding the low dunes out on the beach.
+[[scatter]]
+id = "beach_dune_w"
+rect = [5, 9, 19, 14]
+on = ".s"
+density = 0.5
+seed = 4109
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [1.0, 1.6]
+keep_clear = true
+cluster = { centre = [12.0, 11.8], radius = 6.5, falloff = 1.0 }
+meshes = [
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 3 },
+  { mesh = { asset = "models/fern.glb" }, weight = 1, scale = [1.2, 1.8] },
+]
+
+[[scatter]]
+id = "beach_dune_m"
+rect = [23, 11, 37, 16]
+on = ".s"
+density = 0.5
+seed = 4110
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [1.0, 1.6]
+keep_clear = true
+cluster = { centre = [30.0, 13.5], radius = 7.0, falloff = 1.0 }
+meshes = [
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 3 },
+  { mesh = { asset = "models/fern.glb" }, weight = 1, scale = [1.2, 1.8] },
+]
+
+[[scatter]]
+id = "beach_dune_e"
+rect = [51, 13, 62, 18]
+on = ".s"
+density = 0.5
+seed = 4114
+jitter = 50
+yaw = [0.0, 360.0]
+scale = [1.0, 1.6]
+keep_clear = true
+cluster = { centre = [56.5, 16.0], radius = 6.0, falloff = 1.0 }
+meshes = [
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 3 },
+  { mesh = { asset = "models/fern.glb" }, weight = 1, scale = [1.2, 1.8] },
+]
 [[scatter]]
 id = "outcrop_rocks"
 rect = [1, 1, 62, 30]
@@ -235,13 +807,13 @@ meshes = [
 
 [[edges]]
 id = "cliff_ferns"
-mesh = { scene = "vell", object = 14 }
+mesh = { asset = "models/fern.glb" }
 walls = "#"
 every = 2
 inset = 24
 jitter = 40
 yaw_jitter = 180.0
-scale_range = [0.3, 0.5]
+scale_range = [1.6, 2.6]
 seed = 4105
 
 [[emitters]]
@@ -292,7 +864,7 @@ regions = [
 resolution = 4
 smooth = 2
 max_step = 44
-skirt = 5
+skirt = 12
 seed = 4120
 variation = 0.22
 blend = 0.75
@@ -308,7 +880,12 @@ shapes = [
   { kind = "ridge", from = [55.0, 9.0], to = [62.0, 7.0], radius = 2.0, height = 18 },
   { kind = "raise", at = [22.0, 16.0], radius = 5.0, height = 14 },
   { kind = "raise", at = [50.0, 18.0], radius = 6.0, height = 12 },
+  { kind = "ridge", from = [7.0, 12.5], to = [17.0, 11.0], radius = 2.4, height = 20 },
+  { kind = "ridge", from = [25.0, 14.5], to = [35.0, 12.5], radius = 2.6, height = 22 },
+  { kind = "ridge", from = [52.0, 17.0], to = [61.0, 15.0], radius = 2.4, height = 20 },
+  { kind = "raise", at = [14.0, 17.0], radius = 3.0, height = 8 },
   { kind = "noise", rect = [1, 5, 62, 24], amplitude = 5, scale = 0.7, octaves = 2, seed = 2 },
+  { kind = "noise", rect = [1, 8, 62, 24], amplitude = 3, scale = 0.35, seed = 6 },
   { kind = "noise", amplitude = 9, scale = 5.0, seed = 3 },
   { kind = "plateau", rect = [1, 14, 5, 19], height = 26, edge = 0.4 },
   { kind = "plateau", rect = [40, 18, 41, 33], height = 22, edge = 0.18 },
@@ -320,10 +897,10 @@ materials = [
   { name = "sand", chars = ".r", tint = [136, 132, 124], cells = [
     { tpage = 12, clut = 32005, tile = 3 }, { tpage = 12, clut = 32005, tile = 5 }, { tpage = 12, clut = 32005, tile = 19 }, { tpage = 12, clut = 32005, tile = 21 }, { tpage = 12, clut = 32005, tile = 27 }, { tpage = 12, clut = 32005, tile = 28 },
   ] },
-  { name = "pale sand", chars = "s", tint = [90, 88, 86], cells = [
-    { tpage = 12, clut = 32005, tile = 30 }, { tpage = 12, clut = 32005, tile = 31 },
+  { name = "pale sand", chars = "s", tint = [150, 146, 134], cells = [
+    { tpage = 12, clut = 32005, tile = 3 }, { tpage = 12, clut = 32005, tile = 5 }, { tpage = 12, clut = 32005, tile = 19 }, { tpage = 12, clut = 32005, tile = 21 },
   ] },
-  { name = "wet sand", chars = ",~", tint = [104, 106, 116], cells = [
+  { name = "wet sand", chars = ",;~", tint = [104, 106, 116], cells = [
     { tpage = 12, clut = 32008, tile = 3 }, { tpage = 12, clut = 32008, tile = 5 }, { tpage = 12, clut = 32008, tile = 11 }, { tpage = 12, clut = 32008, tile = 19 }, { tpage = 12, clut = 32008, tile = 21 }, { tpage = 12, clut = 32008, tile = 48 },
   ] },
   { name = "dune grass", chars = "g", tint = [130, 134, 118], cells = [
@@ -344,7 +921,7 @@ cliff = { slope = 0.95, tint = [126, 120, 112], cells = [
   { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 }, { tpage = 12, clut = 32006, tile = 48 }, { tpage = 12, clut = 32006, tile = 49 }, { tpage = 12, clut = 32006, tile = 56 }, { tpage = 12, clut = 32006, tile = 57 },
 ] }
 water = { level = -10, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [150, 175, 170], deep = [70, 92, 128], depth = 56, foam = 18, foam_color = [150, 150, 146], wade = 5 }
-sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4 }
+sky = { tpage = 10, clut = 31104, radius = 10, span = [-3200, 2800], repeat = 4 }
 
 # The surf breaking along the shore, and the wind off the cliffs.
 [audio]

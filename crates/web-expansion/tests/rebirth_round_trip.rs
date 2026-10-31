@@ -95,7 +95,8 @@ fn the_tower_map_previews_with_the_corner_rule() {
     let p = core.map_preview(&map.to_string());
     assert!(p["error"].is_null(), "{p}");
     let (w, h) = (p["width"].as_u64().unwrap(), p["height"].as_u64().unwrap());
-    assert_eq!((w, h), (15, 13));
+    // The Atrium (columns 0..=14) and the Hall of Trials east of it.
+    assert_eq!((w, h), (29, 13));
     let at = |k: &str, c: u64, r: u64| p[k][(r * w + c) as usize].clone();
     // The wall ring is all four quarters; the dais is tier 1 at 48 up.
     assert_eq!(at("walls", 0, 0), 0xF);

@@ -26,7 +26,7 @@ use std::path::PathBuf;
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
         Playing:      play-window, play-str, config, save, load, packs\n  \
-        Exploring:    list-scenes, info, record, replay, export-glb\n  \
+        Exploring:    list-scenes, info, record, replay, export-glb, mesh-catalog\n  \
         Diagnostics (engine development; not needed to play):\n    \
         scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
         parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
@@ -752,6 +752,34 @@ pub(crate) enum Cmd {
         #[arg(long)]
         disc: Option<PathBuf>,
     },
+    /// Measure every mesh of a field scene's geometry pack for the
+    /// expansion-pack mesh catalog: per object its base footprint, height
+    /// and whether it stands in the player's way, merged into a catalog
+    /// file (labels already there are kept), plus a numbered contact sheet
+    /// PNG per scene to read the labels from. The sheet is Sony-derived -
+    /// keep it local. See docs/formats/expansion-pack-maps.md#the-mesh-catalog.
+    #[command(display_order = 7, name = "mesh-catalog")]
+    MeshCatalog {
+        /// CDNAME scene name. Repeat for several scenes.
+        #[arg(long, required = true)]
+        scene: Vec<String>,
+        /// The catalog file to merge into and rewrite (created if missing).
+        #[arg(long)]
+        catalog: Option<PathBuf>,
+        /// Write `<dir>/<scene>.png` contact sheets.
+        #[arg(long)]
+        sheet_dir: Option<PathBuf>,
+        /// Contact-sheet cell size in pixels.
+        #[arg(long, default_value_t = 160)]
+        cell: usize,
+        /// Render each object alone as `<dir>/<scene>_<object>.png` too.
+        #[arg(long, action = clap::ArgAction::SetTrue)]
+        singles: bool,
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        #[arg(long)]
+        disc: Option<PathBuf>,
+    },
     /// Save the current world's empty/default party to a slot file.
     /// Useful as a smoke test for the disk save path; engines drive this
     /// from menu mode at runtime.
@@ -1266,12 +1294,14 @@ pub(crate) enum Cmd {
         /// the launch's flags.
         #[arg(long, value_name = "ID", requires = "expansion")]
         play_cutscene: Option<String>,
-        /// Load an expansion pack (a pack directory or an `.lxpack` bundle)
-        /// before anything else runs: New Game, Continue and `--resume-save`
+        /// Load an expansion pack (a pack directory or an `.lxpack` bundle,
+        /// or the id of an installed or bundled pack: `--expansion rebirth`
+        /// finds the Rebirth the release archive ships) before anything else
+        /// runs: New Game, Continue and `--resume-save`
         /// all play with it (a save made on a pack map returns there). With
         /// `--map`, boot straight into one of its maps in place of the
         /// `--scene` entry.
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH|ID")]
         expansion: Option<PathBuf>,
         /// Watch the `--expansion` pack (its folder, or the `.lxpack` file)
         /// and reload it in place whenever a file in it changes, the player
@@ -1381,6 +1411,11 @@ pub(crate) enum Cmd {
         /// walls, bodies and props (doors still trigger when walked into).
         #[arg(long)]
         cheat_noclip: bool,
+        /// Cheat: the expansion Journal's Travel page (Select on the pause
+        /// menu) lists every map of the active pack, not only the ones the
+        /// party has been to.
+        #[arg(long)]
+        cheat_travel: bool,
         /// Disable the camera-occlusion fade ENHANCEMENT (see-through
         /// walls). By default, field scene geometry between the camera and
         /// the player dissolves to a screen-door dither in a circle around
@@ -1402,6 +1437,14 @@ pub(crate) enum Cmd {
         /// with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
+        /// Disable the screen-space ambient occlusion ENHANCEMENT for this
+        /// session, whatever the options file says. On by default: opaque
+        /// scene geometry darkens softly where other geometry closes over it
+        /// (a wall's foot, the floor under a table, a character's feet).
+        /// Pure presentation. Toggle (and persist) at runtime with the
+        /// `Home` key.
+        #[arg(long, default_value_t = false)]
+        no_ssao: bool,
         /// Start in PSX-faithful rasterisation: the whole frame drawn at the
         /// display's own 320x240 and magnified nearest-neighbour, with the
         /// vertex snap, the GPU's fill rule and 15-bit ordered dithering (the
@@ -1435,7 +1478,7 @@ pub(crate) enum Cmd {
             long,
             default_value_t = false,
             conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
-                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "smart_monsters",
+                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
                 "arts_saved_list",
                 "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
@@ -1493,13 +1536,14 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = 480)]
         height: u32,
     },
-    /// List the installed expansion packs: every `.lxpack` and pack folder
-    /// in the packs folder (`packs/` under the data directory), with its
-    /// version, authors, pack format and whether it plays on this engine.
-    /// `play-window --expansion <id>` plays one by its id.
+    /// List the expansion packs: every `.lxpack` and pack folder in the
+    /// packs folder (`packs/` under the data directory) and in the `packs/`
+    /// folder the game ships beside it (the release archive's Rebirth), with
+    /// its version, authors, pack format and whether it plays on this
+    /// engine. `play-window --expansion <id>` plays one by its id.
     #[command(display_order = 5)]
     Packs {
-        /// The folder to list instead of the packs folder.
+        /// The folder to list instead of the packs folders.
         #[arg(long)]
         dir: Option<PathBuf>,
         /// Print JSON instead of text.

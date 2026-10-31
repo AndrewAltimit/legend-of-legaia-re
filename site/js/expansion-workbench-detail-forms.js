@@ -11,7 +11,7 @@
  * meshes sample (`dctx.cells()`, from `scene_objects`): the picker writes the
  * three words of the coordinate and never a texel.
  */
-import { h, grid, field, listEd, tintField } from './expansion-workbench-forms.js';
+import { h, grid, field, listEd, tintField, freshId } from './expansion-workbench-forms.js';
 import { helpLink } from './expansion-workbench-help.js';
 
 const MAPS_DOC = '../formats/expansion-pack-maps.html';
@@ -97,6 +97,115 @@ function clutField(dctx, owner, path) {
   return field(dctx, owner, { k: 'clut', t: 'sel', num: true, opts, label: 'Palette (CLUT word)', hint: 'the palettes the base scene samples' }, path);
 }
 
+/**
+ * Where a prop or a `[[decor]]` rests (`on`, `hangs`;
+ * docs/formats/expansion-pack-maps.md, "Resting placement"): the support it
+ * stands on, picked from the map's props and decorations or by clicking it
+ * on the painter, a button that rests it on what its footprint is over, and
+ * the resting check's word on it. What is under it and the check come from
+ * the painter's `map_preview` (`dctx.rest(at)`, measured off the disc's
+ * meshes in the worker); without a disc only the reference is checked.
+ * `at` is the item's field path (`props[3]`, `decor[12]`).
+ */
+export function restBox(dctx, map, owner, at) {
+  const box = h('div', { class: 'xw-box xw-rest', 'data-path': `${at}.on` });
+  const all = [].concat(
+    (map.props || []).map((x, i) => ({ at: `props[${i}]`, x, label: x.id || `prop ${i + 1}` })),
+    (map.decor || []).map((x, i) => ({ at: `decor[${i}]`, x, label: x.id || `decor ${i + 1} (no id yet)` })),
+  ).filter((e) => e.at !== at);
+  const taken = () => [].concat((map.props || []).map((x) => x.id), (map.decor || []).map((x) => x.id)).filter(Boolean);
+  // `on` names an id: an item without one is given one when picked.
+  const idOf = (e) => {
+    if (!e.x.id) e.x.id = freshId(e.at.startsWith('props') ? 'prop' : 'decor', taken());
+    return e.x.id;
+  };
+  const restOn = (e) => {
+    owner.on = idOf(e);
+    (owner.offset = owner.offset || [0, 0, 0])[1] = 0;
+    delete owner.hangs;
+    dctx.changed(true);
+  };
+  const sel = h('select', { 'aria-label': 'Rests on' },
+    h('option', { value: '', selected: !owner.on }, '(the floor: offset y lifts it from there)'),
+    ...all.map((e) => h('option', { value: e.at, selected: !!owner.on && e.x.id === owner.on }, e.label)));
+  if (owner.on && !all.some((e) => e.x.id === owner.on)) sel.append(h('option', { value: '', selected: true }, `${owner.on} (no such prop or decoration)`));
+  sel.addEventListener('change', () => {
+    const e = all.find((q) => q.at === sel.value);
+    if (e) restOn(e); else { delete owner.on; dctx.changed(true); }
+  });
+  const pick = dctx.pickItem ? h('button', {
+    type: 'button', class: 'wb-mini', title: 'Click the prop or decoration it stands on, on the painter',
+    onclick: () => dctx.pickItem({
+      prompt: 'Click the prop or decoration it rests on.',
+      done: (hitAt) => { const e = all.find((q) => q.at === hitAt); if (e) restOn(e); },
+    }),
+  }, 'Pick on map') : null;
+  let top = null;
+  const auto = h('button', {
+    type: 'button', class: 'wb-mini',
+    onclick: () => {
+      if (!top) return;
+      const e = top.at ? all.find((q) => q.at === top.at) : null;
+      if (e) { restOn(e); return; }
+      // A wall box has no id: lift the item onto its top instead.
+      delete owner.on;
+      (owner.offset = owner.offset || [0, 0, 0])[1] = Math.round(top.lift);
+      dctx.changed(true);
+    },
+  }, 'Rest on what is under it');
+  box.append(h('div', { class: 'xw-box-head' }, 'Rests on', h('span', { class: 'xw-hint' }, ' its lowest point on the support\'s top; offset y lifts it from there'), helpLink(`${MAPS_DOC}#resting-placement`, 'resting placement')));
+  box.append(h('div', { class: 'xw-rest-row' }, h('label', { class: 'xw-field' }, h('span', {}, 'Support'), sel), pick, auto));
+  box.append(field(dctx, owner, { k: 'hangs', t: 'bool', label: 'Hangs or is mounted', hint: 'a lantern on a chain, a banner on a wall: the resting check passes it over', drop: true }, at));
+  const note = h('p', { class: 'xw-note' });
+  const warn = h('p', { class: 'xw-note is-warn' });
+  box.append(note, warn);
+  // Filled from the painter's latest map_preview, and again whenever a
+  // newer one lands (`refreshRest`): the measurement runs in the worker.
+  const f = (v) => Math.round(v);
+  box._refresh = () => {
+    const info = dctx.rest ? dctx.rest(at) : null;
+    const under = info ? info.under || [] : [];
+    top = under[0] || null;
+    auto.disabled = !top || !!(top.id && top.id === owner.on);
+    auto.title = top ? `Rest it on ${top.name}, the surface its footprint is most over` : (dctx.cat ? 'Nothing measured stands under its footprint' : 'Load your disc to measure the meshes');
+    let say;
+    if (!info) say = dctx.cat ? 'Measuring the meshes ...' : 'Load your disc to measure where it stands.';
+    else if (info.base == null) say = 'Its mesh is not measured here (a model asset, or a scene not read yet): the check passes it over.';
+    else {
+      const on = owner.on ? (all.find((e) => e.x.id === owner.on) || {}).label : null;
+      say = (on ? `On ${on}: ` : '') + `its base stands at ${f(info.base)}${info.top != null ? `, its top at ${f(info.top)}` : ''} (world units up).`;
+      const up = info.ground != null ? info.base - info.ground : null;
+      if (up != null && Math.abs(up) > 1) say += ` That is ${f(Math.abs(up))} ${up > 0 ? 'over' : 'under'} the ground under it.`;
+      if (under.length) say += ` Under its footprint: ${under.slice(0, 3).map((u) => `${u.name} (top ${f(u.top)})`).join(', ')}.`;
+      else say += up != null && up > 10 ? ' Nothing measured is under its footprint.' : ' It stands on the floor.';
+    }
+    note.textContent = say;
+    const issue = dctx.restIssue ? dctx.restIssue(at) : null;
+    warn.textContent = issue || '';
+    warn.hidden = !issue;
+  };
+  box._refresh();
+  return box;
+}
+
+/** A brush's resting-check line at field path `at`, kept current like
+ * `restBox`'s. */
+function restLine(dctx, at) {
+  const p = h('p', { class: 'xw-note is-warn xw-rest' });
+  p._refresh = () => {
+    const issue = dctx.restIssue ? dctx.restIssue(at) : null;
+    p.textContent = issue || '';
+    p.hidden = !issue;
+  };
+  p._refresh();
+  return p;
+}
+
+/** Re-read every resting box on the page from the latest map preview. */
+export function refreshRest() {
+  for (const el of document.querySelectorAll('.xw-rest')) if (el._refresh) el._refresh();
+}
+
 /** A mesh source (`PropMesh`) at `owner.mesh`, via the painter's prop mesh editor. */
 function meshBox(dctx, owner, path) {
   owner.mesh = owner.mesh || { object: 0 };
@@ -124,7 +233,7 @@ const ORECT4 = { t: 'otuple', n: 4, names: ['col0', 'row0', 'col1', 'row1'] };
 
 /** `[[decor]]`: one mesh at a time. */
 export function decorEd(dctx, box, map) {
-  const sec = section(box, 'decor', 'Decorations', 'one mesh a tile at a time; draw only', (map.decor || []).length, 'decorations');
+  const sec = section(box, 'decor', 'Decorations', 'one mesh a tile at a time; draw only unless Solid', (map.decor || []).length, 'decorations');
   listEd(dctx, sec, map, 'decor', '', {
     add: 'Decoration', fold: true, dup: freshOf('decor'),
     make: () => ({ id: '', mesh: { object: 0 }, tile: [0, 0], offset: [0, 0, 0], rotation: [0, 0, 0], scale: null }),
@@ -136,9 +245,11 @@ export function decorEd(dctx, box, map) {
         { k: 'offset', t: 'tuple', n: 3, names: ['x', 'y', 'z'], label: 'Offset', hint: 'from the tile centre, y up' },
         { k: 'rotation', t: 'tuple', n: 3, float: true, names: ['x', 'y', 'z'], label: 'Rotation (deg)', hint: 'y is the yaw' },
         { k: 'scale', t: 'ofloat', label: 'Scale', ph: '1' },
+        { k: 'solid', t: 'bool', label: 'Solid', hint: 'blocks the ground under the mesh' },
       ], p);
       g.prepend(tileField(dctx, d, { k: 'tile', t: 'tuple', n: 2, names: ['col', 'row'], label: 'Tile' }, p));
       b.append(g);
+      b.append(restBox(dctx, map, d, p));
     },
   });
 }
@@ -161,6 +272,8 @@ export function scatterEd(dctx, box, map) {
         { k: 'tilt', t: 'float', label: 'Tilt (deg)', hint: 'off upright, each way' },
         { k: 'on', label: 'Paints on', hint: 'legend characters; empty: every floor tile', ph: '.,' },
         { k: 'keep_clear', t: 'dbool', label: 'Keep spawns, exits, NPCs and props clear' },
+        { k: 'solid', t: 'bool', label: 'Solid', hint: 'every mesh blocks the ground under it' },
+        { k: 'hangs', t: 'bool', label: 'Hangs', hint: 'what it places is mounted, not standing: the resting check passes it over', drop: true },
       ], p);
       g.prepend(tileField(dctx, s, Object.assign({ k: 'rect', label: 'Tiles' }, RECT4), p));
       b.append(g);
@@ -203,6 +316,7 @@ export function scatterEd(dctx, box, map) {
             { k: 'scale', t: 'otuple', n: 2, float: true, names: ['min', 'max'], label: 'Own scale range', hint: 'empty: the brush\'s' },
             { k: 'y', t: 'int', label: 'Height', hint: 'above the floor' },
           ], p2));
+          b2.append(restLine(dctx, p2));
         },
       });
     },
@@ -232,9 +346,12 @@ export function edgesEd(dctx, box, map) {
         { k: 'yaw_jitter', t: 'float', label: 'Yaw jitter (deg)' },
         { k: 'scale_range', t: 'otuple', n: 2, float: true, names: ['min', 'max'], label: 'Scale range', hint: 'overrides scale' },
         { k: 'seed', t: 'int', label: 'Seed' },
+        { k: 'solid', t: 'bool', label: 'Solid', hint: 'each copy blocks the ground under it' },
+        { k: 'hangs', t: 'bool', label: 'Mounted on the wall', hint: 'a sconce, a banner: the resting check passes the copies over', drop: true },
       ], p);
       g.prepend(tileField(dctx, e, Object.assign({ k: 'rect', label: 'Only inside', hint: 'empty: the whole map' }, ORECT4), p));
       b.append(g);
+      b.append(restLine(dctx, p));
     },
   });
 }
@@ -395,5 +512,84 @@ export function animatorsEd(dctx, box, prop, path) {
       b.append(g);
     },
   });
+  box.append(sec);
+}
+
+/**
+ * `[surround]`: the drop drawn past the floor of a map with no base
+ * geometry, its edge faces and the `backdrop` wall standing round it
+ * (docs/formats/expansion-pack-maps.md, "Surround"). Off, the key is left
+ * out; the cells are picked like a decal's.
+ */
+export function surroundEd(dctx, box, map) {
+  const on = h('input', { type: 'checkbox' });
+  on.checked = map.surround != null;
+  on.addEventListener('change', () => {
+    if (on.checked) map.surround = { ground: Object.assign({ tpage: 0, clut: 0, tile: 0 }, ((dctx.cells && dctx.cells()) || [])[0] ? { tpage: dctx.cells()[0].tpage, clut: dctx.cells()[0].clut, tile: dctx.cells()[0].tile } : {}), depth: 384, reach: 8, shade: 80 };
+    else delete map.surround;
+    dctx.changed(true);
+  });
+  const sr = map.surround;
+  const geom = map.base && map.base.geometry;
+  const sec = h('details', { class: 'xw-box', 'data-path': 'surround', open: sr ? true : null },
+    h('summary', { class: 'xw-box-head' }, `Surround${sr ? (sr.backdrop ? ' (with a backdrop)' : '') : ' (off)'}`, h('span', { class: 'xw-hint' }, ' what the camera sees past the floor\'s edge'), helpLink(`${MAPS_DOC}#surround`, 'the surround')));
+  sec.append(h('label', { class: 'xw-check xw-field' }, on, 'Draw a drop past the floor'));
+  if (!sr) {
+    sec.append(h('p', { class: 'xw-note' }, geom !== 'keep'
+      ? 'This map draws nothing past its floor: a follow camera at its edge frames the clear colour there as a black void. A surround lays a ground far below on every void tile and round the map, the floor\'s edge reads as a ledge, and a backdrop can wall it in.'
+      : 'The map keeps its base scene\'s geometry, which draws past its floor already; a surround is for a map with base geometry "none".'));
+    box.append(sec);
+    return;
+  }
+  if (map.terrain) sec.append(h('p', { class: 'xw-note is-warn' }, 'A terrain draws its own skirt past the map; the validator warns of a surround beside one.'));
+  sec.append(cellField(dctx, sr, 'ground', 'surround', 'Drop ground'));
+  sec.append(grid(dctx, sr, [
+    { k: 'depth', t: 'int', label: 'Depth', hint: 'world units below tier 0' },
+    { k: 'reach', t: 'int', label: 'Reach', hint: 'tiles past the map\'s edges, at most 16' },
+    { k: 'shade', t: 'int', label: 'Shade', hint: '128 draws the texel as is; lower darkens' },
+  ], 'surround'));
+  const side = h('input', { type: 'checkbox' });
+  side.checked = sr.side != null;
+  side.addEventListener('change', () => { if (side.checked) sr.side = Object.assign({}, sr.ground); else delete sr.side; dctx.changed(true); });
+  const sb = h('div', { class: 'xw-box', 'data-path': 'surround.side' }, h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, side, 'Edge faces'), h('span', { class: 'xw-hint' }, 'the floor\'s edge drops to the ground as a face, a ledge with depth under it')));
+  if (sr.side) sb.append(cellField(dctx, sr, 'side', 'surround', 'Edge face'));
+  sec.append(sb);
+  const bd = h('input', { type: 'checkbox' });
+  bd.checked = sr.backdrop != null;
+  bd.addEventListener('change', () => {
+    if (bd.checked) sr.backdrop = Object.assign({}, sr.side || sr.ground, { height: 1024, distance: Math.min(2, sr.reach || 8), sides: 'esw', shade: 96, fade: 0 });
+    else delete sr.backdrop;
+    dctx.changed(true);
+  });
+  const bp = 'surround.backdrop';
+  const bb = h('div', { class: 'xw-box', 'data-path': bp }, h('div', { class: 'xw-box-head' }, h('label', { class: 'xw-check xw-field' }, bd, 'Backdrop'), h('span', { class: 'xw-hint' }, 'a wall round the drop: the far side of a hall, where the camera looks past the room\'s own walls')));
+  const b = sr.backdrop;
+  if (b) {
+    bb.append(cellField(dctx, sr, 'backdrop', 'surround', 'Wall texture'));
+    bb.append(grid(dctx, b, [
+      { k: 'height', t: 'int', label: 'Height', hint: 'its top, above tier 0 (up to 4096)' },
+      { k: 'distance', t: 'int', label: 'Distance', hint: `tiles past the map, 1..${sr.reach || 8} (the reach)` },
+      { k: 'shade', t: 'int', label: 'Shade' },
+      { k: 'fade', t: 'int', label: 'Fade to', hint: 'the colour at its top; 0 fades into the dark' },
+    ], bp));
+    // Its sides as four boxes: the camera stands on the map's -Z side.
+    const sides = h('div', { class: 'xw-field', 'data-path': `${bp}.sides` }, h('span', {}, 'Sides', h('span', { class: 'xw-hint' }, ' the follow camera stands on the north (-Z) side, so leave it open there')));
+    const row = h('div', { class: 'xw-rest-row' });
+    for (const [k, l] of [['n', 'North (-Z)'], ['e', 'East (+X)'], ['s', 'South (+Z)'], ['w', 'West (-X)']]) {
+      const cb = h('input', { type: 'checkbox' });
+      cb.checked = (b.sides || '').toLowerCase().includes(k);
+      cb.addEventListener('change', () => {
+        const cur = new Set((b.sides || '').toLowerCase());
+        if (cb.checked) cur.add(k); else cur.delete(k);
+        b.sides = ['n', 'e', 's', 'w'].filter((x) => cur.has(x)).join('');
+        dctx.changed(true);
+      });
+      row.append(h('label', { class: 'xw-check xw-field' }, cb, l));
+    }
+    sides.append(row);
+    bb.append(sides);
+    if ((b.sides || '').toLowerCase().includes('n')) bb.append(h('p', { class: 'xw-note is-warn' }, 'A north wall stands between the follow camera and the map: it walls the camera out unless the map is entered facing away from it.'));
+  }
+  sec.append(bb);
   box.append(sec);
 }

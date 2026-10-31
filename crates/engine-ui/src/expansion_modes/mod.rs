@@ -29,6 +29,7 @@ pub mod party;
 mod poker;
 mod race;
 
+use legaia_engine_expansion::modes::{ModeSource, ModeStage, PackModeSeat};
 use legaia_engine_modes::active::{ActiveMode, ModeEntry, ModeKind, ModeView, score_unit};
 use legaia_engine_modes::session::Placement;
 use legaia_render_kernels::screen_prim::{FlatQuad, ScreenPrim, line_quad};
@@ -48,6 +49,8 @@ pub use items::{
 pub const STAGE_W: i32 = 320;
 /// Stage height.
 pub const STAGE_H: i32 = 240;
+/// The highest a banner over the world sits.
+const STAGE_BANNER_Y: i32 = 52;
 /// Where a duel's reaction-shot banner sits.
 const REACTION_BANNER_Y: i32 = 196;
 /// One text line's pitch.
@@ -82,20 +85,40 @@ pub(crate) mod pen {
 
 /// How a label sits on its pen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Align {
+pub enum Align {
     Left,
     Centre,
     Right,
 }
 
-/// One label of the composition.
+/// One label of the composition: the text, its pen in stage pixels (the
+/// top of the line, `x` where `align` anchors it) and its colour.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Label {
+pub struct Label {
     pub text: String,
     pub x: i32,
     pub y: i32,
     pub color: [f32; 4],
     pub align: Align,
+    /// The width of the box the label sits in, stage pixels, when it has
+    /// one: the box spans `max_w` pixels from `x` the way `align` anchors
+    /// it (rightward from a left pen, leftward from a right pen, both ways
+    /// from a centred one). A label measured wider than its box is cut and
+    /// marked `..` ([`fit_text`]), so a long name never runs into the label
+    /// beside it or off a plate.
+    pub max_w: Option<i32>,
+}
+
+impl Label {
+    /// The label's box `(left, right)` in stage pixels, when it has one.
+    pub fn span(&self) -> Option<(i32, i32)> {
+        let w = self.max_w?;
+        Some(match self.align {
+            Align::Left => (self.x, self.x + w),
+            Align::Centre => (self.x - w / 2, self.x + w - w / 2),
+            Align::Right => (self.x - w, self.x),
+        })
+    }
 }
 
 /// The composition both halves come from.
@@ -184,6 +207,26 @@ impl Canvas {
         self.label(text, x, y, color, Align::Right);
     }
 
+    /// A label held to a box `w` pixels wide (see [`Label::max_w`]).
+    pub fn text_in(
+        &mut self,
+        text: impl Into<String>,
+        x: i32,
+        y: i32,
+        w: i32,
+        color: [f32; 4],
+        align: Align,
+    ) {
+        self.labels.push(Label {
+            text: text.into(),
+            x,
+            y,
+            color,
+            align,
+            max_w: Some(w.max(0)),
+        });
+    }
+
     fn label(&mut self, text: impl Into<String>, x: i32, y: i32, color: [f32; 4], align: Align) {
         self.labels.push(Label {
             text: text.into(),
@@ -191,6 +234,7 @@ impl Canvas {
             y,
             color,
             align,
+            max_w: None,
         });
     }
 }
@@ -264,10 +308,111 @@ pub fn mode_screen_strings(screen: &ModeScreen<'_>) -> Vec<String> {
     compose(screen).labels.into_iter().map(|l| l.text).collect()
 }
 
+/// The screen's labels unmeasured, in draw order: for a host that sets
+/// them in a font of its own rather than the dialog font (the modes page,
+/// which runs with no disc).
+pub fn mode_screen_labels(screen: &ModeScreen<'_>) -> Vec<Label> {
+    compose(screen).labels
+}
+
+/// The seat's screen: the picker, the session in play (its in-world HUD
+/// while the seat stages it on a pack map) or the results card. The one
+/// projection of a [`PackModeSeat`] both play hosts and the World-free
+/// modes page draw from.
+pub fn seat_screen(seat: &PackModeSeat) -> ModeScreen<'_> {
+    match &seat.stage {
+        ModeStage::Picker {
+            entries,
+            cursor,
+            error,
+        } => ModeScreen::Picker {
+            heading: match seat.source {
+                ModeSource::Pack => "Pack modes",
+                ModeSource::Builtin => "Practice modes",
+            },
+            entries,
+            cursor: *cursor,
+            error: error.as_deref(),
+        },
+        // Played on its pack map: the field draws the game, the screen only
+        // its HUD.
+        ModeStage::Playing { mode, quit_prompt } if seat.stage_frame.is_some() => {
+            ModeScreen::InWorld {
+                mode,
+                log: &seat.log,
+                quit_prompt: *quit_prompt,
+                banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+                outro: seat
+                    .stage_frame
+                    .as_ref()
+                    .and_then(|f| f.duel.as_ref())
+                    .is_some_and(|d| d.outro),
+            }
+        }
+        ModeStage::Playing { mode, quit_prompt } => ModeScreen::Playing {
+            mode,
+            log: &seat.log,
+            quit_prompt: *quit_prompt,
+        },
+        ModeStage::Results {
+            name,
+            kind,
+            rows,
+            granted,
+            completed,
+            local_seat,
+            seat_names,
+        } => ModeScreen::Results {
+            name,
+            kind: *kind,
+            rows,
+            granted,
+            completed: *completed,
+            local_seat: *local_seat,
+            seat_names,
+            // A duel at a table: the reaction shot, then the card over it.
+            over_world: seat.stage_frame.is_some(),
+            holding: seat.world_stage.holds_results(),
+            banner: seat.stage_frame.as_ref().and_then(|f| f.banner.as_deref()),
+            names: &seat.seat_names,
+        },
+    }
+}
+
+/// `text` as it fits `max_w` pixels in `font`: whole when it fits, else cut
+/// at the longest prefix that leaves room for a `..` mark (trailing spaces
+/// dropped), or nothing when not even the mark fits.
+pub fn fit_text(font: &legaia_font::Font, text: &str, max_w: i32) -> String {
+    let width = |s: &str| font.layout_ascii(s).advance_x as i32;
+    if width(text) <= max_w {
+        return text.to_string();
+    }
+    let mark = width("..");
+    if mark > max_w {
+        return String::new();
+    }
+    let mut cut: Vec<(usize, char)> = text.char_indices().collect();
+    while let Some((i, _)) = cut.pop() {
+        let head = text[..i].trim_end();
+        if width(head) + mark <= max_w {
+            return format!("{head}..");
+        }
+    }
+    "..".to_string()
+}
+
 pub(crate) fn labels_to_draws(font: &legaia_font::Font, labels: &[Label]) -> Vec<TextDraw> {
     let mut out = Vec::new();
     for l in labels {
-        let layout = font.layout_ascii(&l.text);
+        let fitted;
+        let text = match l.max_w {
+            Some(w) => {
+                fitted = fit_text(font, &l.text, w);
+                &fitted
+            }
+            None => &l.text,
+        };
+        let layout = font.layout_ascii(text);
         let w = layout.advance_x as i32;
         let x = match l.align {
             Align::Left => l.x,
@@ -300,18 +445,20 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
             banner,
             outro,
         } => {
-            match mode.view() {
+            let top_band = match mode.view() {
                 ModeView::Golf(v) => golf::hud(&mut c, mode, &v, log),
                 ModeView::Race(v) => race::hud(&mut c, mode, &v),
                 ModeView::Duel(v) => duel::hud(&mut c, mode, &v, outro),
                 ModeView::Poker(v) => poker::hud(&mut c, mode, &v),
-                _ => {}
-            }
+                _ => 0,
+            };
             if let Some(text) = banner {
                 if outro {
                     stage_banner_at(&mut c, text, REACTION_BANNER_Y)
                 } else {
-                    stage_banner(&mut c, text)
+                    // Clear of the HUD's top band (a poker table's pot, a
+                    // long scorecard).
+                    stage_banner_at(&mut c, text, (top_band + 4).max(STAGE_BANNER_Y))
                 }
             }
             if quit_prompt {
@@ -389,28 +536,34 @@ pub(crate) fn compose(screen: &ModeScreen<'_>) -> Canvas {
 pub(crate) fn header(c: &mut Canvas, name: &str, kind: &str) {
     c.rect(0, 0, STAGE_W, 16, ink::BAR);
     c.rect(0, 16, STAGE_W, 1, ink::PANEL_EDGE);
-    c.text(name, 6, 1, pen::GOLD);
-    c.text_right(kind, STAGE_W - 6, 1, pen::DIM);
+    // The kind's box first: a mode kind is a short word, the name takes
+    // the rest of the bar.
+    let kind_w = 90;
+    c.text_in(
+        name,
+        6,
+        1,
+        STAGE_W - 12 - kind_w - 6,
+        pen::GOLD,
+        Align::Left,
+    );
+    c.text_in(kind, STAGE_W - 6, 1, kind_w, pen::DIM, Align::Right);
 }
 
-/// A banner across the upper middle of the stage, over the world.
-pub(crate) fn stage_banner(c: &mut Canvas, text: &str) {
-    stage_banner_at(c, text, 52);
-}
-
-/// [`stage_banner`] at row `y`: a duel's reaction shot puts it low, clear
-/// of the opponent's face.
+/// A banner across the stage at row `y`, over the world: under the HUD's
+/// top band, or low for a duel's reaction shot, clear of the opponent's
+/// face.
 pub(crate) fn stage_banner_at(c: &mut Canvas, text: &str, y: i32) {
-    let (w, h) = (180, 22);
+    let (w, h) = (240, 22);
     let x = (STAGE_W - w) / 2;
     c.panel(x, y, w, h, [10, 14, 24, 200], ink::HIGHLIGHT);
-    c.text_centre(text, STAGE_W / 2, y + 4, pen::GOLD);
+    c.text_in(text, STAGE_W / 2, y + 4, w - 8, pen::GOLD, Align::Centre);
 }
 
 /// The control hint bar along the bottom.
 pub(crate) fn footer(c: &mut Canvas, hint: &str) {
     c.rect(0, STAGE_H - 15, STAGE_W, 15, ink::BAR);
-    c.text(hint, 6, STAGE_H - 15, pen::DIM);
+    c.text_in(hint, 6, STAGE_H - 15, STAGE_W - 12, pen::DIM, Align::Left);
 }
 
 /// Break `s` into lines of at most `width` characters on spaces; a word
@@ -470,11 +623,13 @@ pub(crate) fn log_box(c: &mut Canvas, x: i32, y: i32, w: i32, lines: usize, log:
     let start = log.len().saturating_sub(lines);
     for (i, l) in log[start..].iter().enumerate() {
         let newest = start + i + 1 == log.len();
-        c.text(
+        c.text_in(
             l.clone(),
             x + 4,
             y + 1 + i as i32 * LINE,
+            w - 8,
             if newest { pen::WHITE } else { pen::DIM },
+            Align::Left,
         );
     }
 }
@@ -486,11 +641,25 @@ pub(crate) fn modal(c: &mut Canvas, title: &str, body: &[&str], hint: &str) {
     let (w, x) = (260, (STAGE_W - 260) / 2);
     let y = (STAGE_H - h) / 2;
     c.panel(x, y, w, h, ink::PANEL, ink::HIGHLIGHT);
-    c.text_centre(title, STAGE_W / 2, y + 4, pen::GOLD);
+    c.text_in(title, STAGE_W / 2, y + 4, w - 8, pen::GOLD, Align::Centre);
     for (i, line) in body.iter().enumerate() {
-        c.text_centre(*line, STAGE_W / 2, y + 22 + i as i32 * LINE, pen::WHITE);
+        c.text_in(
+            *line,
+            STAGE_W / 2,
+            y + 22 + i as i32 * LINE,
+            w - 8,
+            pen::WHITE,
+            Align::Centre,
+        );
     }
-    c.text_centre(hint, STAGE_W / 2, y + h - LINE - 4, pen::DIM);
+    c.text_in(
+        hint,
+        STAGE_W / 2,
+        y + h - LINE - 4,
+        w - 8,
+        pen::DIM,
+        Align::Centre,
+    );
 }
 
 fn picker(

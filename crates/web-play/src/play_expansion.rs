@@ -41,6 +41,15 @@ fn info_json(pack: Option<&ExpansionPack>, errors: &[String], warnings: &[String
             "min_engine": p.manifest.min_engine,
             "cover": p.manifest.cover,
             "maps": p.maps.iter().map(|(id, m)| json!({ "id": id, "name": m.name })).collect::<Vec<_>>(),
+            // The instances played in the world - at a table or on a
+            // course of one of the pack's maps - for the page's 3D list.
+            "world_modes": legaia_engine_modes::active::entries(&p.modes)
+                .into_iter()
+                .filter_map(|e| {
+                    let (map, _) = legaia_engine_modes::active::instance_map(&p.modes, &e.id)?;
+                    Some(json!({ "id": e.id, "name": e.name, "kind": e.kind.label(), "map": map }))
+                })
+                .collect::<Vec<_>>(),
             "quests": p.quests.quests.len(),
             "challenges": p.quests.challenges.len(),
         })
@@ -143,8 +152,41 @@ pub fn library_dependency_report(library: &serde_json::Value) -> serde_json::Val
     serde_json::Value::Object(out)
 }
 
+/// A pack tree (`path -> bytes`, the files of a pack folder) as the
+/// `.lxpack` bytes `asset expansion bundle` writes for it: only the pack
+/// layout's files ([`legaia_expansion_format::is_known_path`]), through the
+/// format's one deterministic writer. The play page builds the built-in
+/// Rebirth this way from the tree the site serves (`packs/rebirth.json`), so
+/// the browser plays the same bytes the release archive ships.
+pub fn bundle_pack_tree(
+    files: impl IntoIterator<Item = (String, Vec<u8>)>,
+) -> anyhow::Result<Vec<u8>> {
+    let files: legaia_expansion_format::PackFiles = files
+        .into_iter()
+        .filter(|(p, _)| legaia_expansion_format::is_known_path(p))
+        .collect();
+    legaia_expansion_format::bundle::write_bundle(&files)
+}
+
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// [`bundle_pack_tree`] for the page: `paths[i]` names the file whose
+    /// bytes are `data[i]` (a `Uint8Array`). Needs no disc; the bundle is
+    /// checked when [`Self::load_expansion`] loads it.
+    pub fn expansion_bundle_from_files(
+        paths: Vec<String>,
+        data: js_sys::Array,
+    ) -> Result<Vec<u8>, JsValue> {
+        if paths.len() != data.length() as usize {
+            return Err(JsValue::from_str("paths and data differ in length"));
+        }
+        let tree = paths
+            .into_iter()
+            .zip(data.iter())
+            .map(|(p, d)| (p, js_sys::Uint8Array::new(&d).to_vec()));
+        bundle_pack_tree(tree).map_err(|e| JsValue::from_str(&format!("{e:#}")))
+    }
+
     /// The pack library's dependency check ([`library_dependency_report`]):
     /// `library` JSON in, the per-pack report JSON out (`{}` on bad input).
     pub fn expansion_library_check(&self, library: &str) -> String {
@@ -380,6 +422,32 @@ mod tests {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
         let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
         legaia_expansion_format::bundle::write_bundle(&files).expect("bundle")
+    }
+
+    /// The page's built-in Rebirth: every file of the pack folder (README
+    /// included, as the site's `packs/rebirth.json` carries it) bundles to
+    /// the bytes `asset expansion bundle` writes for the release archive.
+    #[test]
+    fn the_page_tree_bundles_like_the_release_cli() {
+        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        let mut all = legaia_expansion_format::read_dir_files(dir).expect("read");
+        // A stray file outside the layout is dropped, as the CLI drops it.
+        all.insert("notes.txt".into(), b"scratch".to_vec());
+        let cli: legaia_expansion_format::PackFiles = all
+            .iter()
+            .filter(|(p, _)| legaia_expansion_format::is_known_path(p))
+            .map(|(p, b)| (p.clone(), b.clone()))
+            .collect();
+        let want = legaia_expansion_format::bundle::write_bundle(&cli).unwrap();
+        let mut reversed: Vec<(String, Vec<u8>)> = all.into_iter().collect();
+        reversed.reverse();
+        let got = bundle_pack_tree(reversed).unwrap();
+        assert_eq!(got, want);
+        let rt = LegaiaRuntime::new();
+        let info: serde_json::Value =
+            serde_json::from_str(&rt.expansion_bundle_info(&got)).unwrap();
+        assert_eq!(info["ok"], true, "{info}");
+        assert_eq!(info["summary"]["id"], "rebirth");
     }
 
     /// The library's read of a bundle: Rebirth's summary and cover, and a

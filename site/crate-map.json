@@ -114,7 +114,8 @@
      "label": "rank 5",
      "crates": [
       "engine-battle-menus",
-      "engine-menus"
+      "engine-menus",
+      "engine-ui"
      ]
     },
     {
@@ -132,8 +133,7 @@
       "engine-battle",
       "engine-cast",
       "engine-effects",
-      "engine-field",
-      "engine-ui"
+      "engine-field"
      ]
     },
     {
@@ -1638,9 +1638,11 @@
     "engine-scene-host",
     "engine-screens",
     "engine-session",
+    "engine-ui",
     "engine-world-views",
     "parity",
-    "web-expansion"
+    "web-expansion",
+    "web-minigames"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-expansion/README.md"
   },
@@ -1658,12 +1660,14 @@
     "tmd"
    ],
    "dev_deps": [
-    "engine-world-views"
+    "engine-world-views",
+    "expansion-format"
    ],
    "bins": [],
    "lib": true,
    "modules": [
-    "glb_export"
+    "glb_export",
+    "mesh_catalog"
    ],
    "band": "top",
    "track": "engine",
@@ -2174,7 +2178,9 @@
     "engine-netplay",
     "engine-screens",
     "engine-ui",
-    "engine-world-views"
+    "engine-world-views",
+    "web-minigames",
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-modes/README.md"
   },
@@ -2402,6 +2408,7 @@
     "field_view_window",
     "fog_ground",
     "man_census",
+    "mesh_memo",
     "model_bank",
     "npc_catalog",
     "overlay_loader",
@@ -2496,6 +2503,7 @@
    "lib": true,
    "modules": [
     "disc_readers",
+    "expansion_preload",
     "fishing_venue",
     "place_name_banner",
     "resume",
@@ -2872,6 +2880,7 @@
    "package": "legaia-engine-ui",
    "deps": [
     "engine-battle-vm",
+    "engine-expansion",
     "engine-modes",
     "expansion-format",
     "font",
@@ -2919,7 +2928,7 @@
    ],
    "band": "kernels",
    "track": "engine",
-   "rank": 3,
+   "rank": 5,
    "role": "renderer-agnostic draw-list builders",
    "scope": "Renderer-agnostic UI draw-list builders over the wgpu-free kernels of <code>render-kernels</code> and the battle HUD model in <code>engine-battle-vm</code> - the draw layer both the native renderer and the browser play page use.",
    "dependents": [
@@ -3084,8 +3093,11 @@
     "map",
     "map_detail",
     "map_detail_rules",
+    "map_rest",
     "map_rules",
+    "mesh_catalog",
     "modes",
+    "npc_postures",
     "progression",
     "quest",
     "refs",
@@ -3113,6 +3125,7 @@
     "engine-ui",
     "engine-world-views",
     "web-expansion",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/expansion-format/README.md"
@@ -4064,6 +4077,7 @@
     "shatter",
     "shutter_bars",
     "sprite_arm",
+    "ssao",
     "streak_pass",
     "ui_tint",
     "vram_capture",
@@ -4540,6 +4554,7 @@
    "lib": true,
    "modules": [
     "catalog",
+    "npc_posture",
     "session",
     "wasm",
     "xref"
@@ -4563,16 +4578,19 @@
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
+    "engine-expansion",
     "engine-field",
     "engine-fishing",
     "engine-menus",
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-scene",
     "engine-session",
     "engine-system",
     "engine-ui",
+    "expansion-format",
     "font",
     "game-tables",
     "gamedata",
@@ -4598,7 +4616,7 @@
    "modules": [],
    "band": "hosts",
    "track": "engine",
-   "scope": "The browser minigames page: <code>LegaiaMinigames</code>, a JSON shell over the minigame rules engines with no <code>World</code>. The play page holds one for in-world minigame art. An rlib below <code>web-play</code>.",
+   "scope": "The browser minigames page: <code>LegaiaMinigames</code>, a JSON shell over the minigame rules engines with no <code>World</code>. The play page holds one for in-world minigame art. Also <code>LegaiaModes</code>, the disc-free game-modes page's mode seat. An rlib below <code>web-play</code>.",
    "dependents": [
     "web-play"
    ],
@@ -4666,6 +4684,7 @@
     "engine-minigame-scenes",
     "engine-minigames",
     "engine-mode",
+    "engine-modes",
     "engine-netplay",
     "engine-save-state",
     "engine-scene",
@@ -4745,6 +4764,7 @@
     "play_run_rules",
     "play_sfx",
     "play_shop",
+    "play_ssao",
     "play_tile_board",
     "play_toggles",
     "play_world_map_markers",

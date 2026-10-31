@@ -991,6 +991,18 @@ void main() { o_color = texture(u_layer, v_uv); }
       this.bloom = !!on;
     }
 
+    /* Ambient occlusion + contact shadows (the native window's Home): the
+     * scene pass asks the engine for this frame's packet through the hook
+     * (`play_ssao_frame`, empty while the persisted option is off) and runs
+     * webgl-ssao.js between its opaque and blend draws. */
+    setSsao(on) {
+      this.ssao = !!on;
+      this.renderer.ssaoFrame = this.ssao
+        ? (vp) => (this.rt && typeof this.rt.play_ssao_frame === 'function'
+          ? this.rt.play_ssao_frame(vp) : null)
+        : null;
+    }
+
     /* Stage this frame's camera.
      *
      * Default: the ENGINE's. `play_camera_vp` resolves which camera owns the

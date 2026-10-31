@@ -116,6 +116,32 @@ fn a_solid_prop_closes_its_tile() {
     assert_eq!(byte(&img, 13, 22) >> 4, 0xF);
 }
 
+/// `collision_grid` is the build's grid region, and a solid prop moved to
+/// another tile takes its closed tile with it.
+#[test]
+fn the_collision_grid_rebuilds_alone_as_the_build_writes_it() {
+    let mut d = def();
+    let grid = d.tile_grid().unwrap();
+    let base = || BaseInputs {
+        base_map: None,
+        geometry_entry: Some(99),
+        geometry_len: Some(20),
+        library: None,
+    };
+    let out = build_field_image(&d, &grid, base()).unwrap();
+    let region = &out.image[COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM];
+    assert_eq!(collision_grid(&d, &grid, &out.collision), region);
+    let i = d.props.iter().position(|p| p.solid).unwrap();
+    d.props[i].tile = [1, 1];
+    let moved = collision_grid(&d, &grid, &out.collision);
+    let rebuilt = build_field_image(&d, &grid, base()).unwrap();
+    assert_eq!(
+        moved,
+        &rebuilt.image[COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM]
+    );
+    assert_ne!(moved, region, "the closed tile moved");
+}
+
 #[test]
 fn props_come_back_as_placements_at_their_tiles() {
     let img = image(&def());
@@ -242,7 +268,14 @@ fn wall_tiles_name_a_generated_box_past_the_geometry_pack() {
         },
     )
     .unwrap();
-    assert_eq!(out.added_tmds.len(), 1, "one box for every wall tile");
+    // One box for the walls on flat cells, and one reaching on down for
+    // the wall beside the raised tile, whose cell draws at its corners'
+    // mean height.
+    assert_eq!(
+        out.added_tmds.len(),
+        2,
+        "one box for the flat walls, one at the tier edge"
+    );
     let tiles = legaia_scene_formats::field_objects::parse_terrain_tiles(&out.image);
     let walls = def
         .tiles
@@ -252,9 +285,12 @@ fn wall_tiles_name_a_generated_box_past_the_geometry_pack() {
         .filter(|&c| c == '#')
         .count();
     assert_eq!(
-        tiles.iter().filter(|p| p.pack_index == Some(20)).count(),
+        tiles
+            .iter()
+            .filter(|p| matches!(p.pack_index, Some(20 | 21)))
+            .count(),
         walls,
-        "every wall cell draws pack mesh 20, the first past the pack"
+        "every wall cell draws a generated box, past the pack"
     );
     // Without the pack's length there is nowhere to put the box.
     assert!(build_field_image(&def, &grid, BaseInputs::default()).is_err());
@@ -291,6 +327,58 @@ fn a_wall_box_is_a_textured_tmd_of_the_tile_footprint() {
             .all(|uv| (32..64).contains(&uv[0]) && (32..64).contains(&uv[1]))
     );
     assert!(wall_box_tmd(0, 28, 0, 0).is_err());
+}
+
+#[test]
+fn a_wall_between_two_floors_reaches_down_to_the_lower() {
+    // The box's sides run from `foot` below its cell's floor.
+    let raw = wall_box_tmd_from(100, 36, 28, 32576, 9).unwrap();
+    let tmd = legaia_tmd::parse(&raw).unwrap();
+    let ys: Vec<i16> = tmd.objects[0].vertices.iter().map(|p| p.y).collect();
+    assert_eq!((ys.iter().min(), ys.iter().max()), (Some(&-100), Some(&36)));
+    // A balustrade on the high floor's tier, north of a floor 64 lower:
+    // its cell draws at the mean of its corners (32), so its box reaches
+    // 32 further down, to the low floor.
+    let def: MapDef = toml::from_str(
+        r#"
+name = "step"
+base = { scene = { kind = "scene", name = "dolk" } }
+floor_heights = [0, 64]
+
+[tiles]
+origin = [10, 10]
+rows = [
+  "...",
+  "JJJ",
+  ",,,",
+]
+[tiles.legend]
+"." = { ground = { kind = "texture", tpage = 12, clut = 0x7C40, tile = 5 } }
+"," = { height = 1, ground = { kind = "texture", tpage = 12, clut = 0x7C40, tile = 5 } }
+"J" = { walls = "all", wall = { kind = "box", height = 80, tpage = 12, clut = 0x7C40, tile = 5 } }
+"#,
+    )
+    .unwrap();
+    let grid = def.tile_grid().unwrap();
+    let img = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            geometry_entry: Some(99),
+            geometry_len: Some(20),
+            ..BaseInputs::default()
+        },
+    )
+    .unwrap();
+    let foot = |raw: &[u8]| {
+        let t = legaia_tmd::parse(raw).unwrap();
+        t.objects[0].vertices.iter().map(|p| p.y).max().unwrap()
+    };
+    let feet: Vec<i16> = img.added_tmds.iter().map(|m| foot(m)).collect();
+    assert!(
+        feet.contains(&32),
+        "a box reaches 32 below its cell: {feet:?}"
+    );
 }
 
 /// A base pack of small textured quads: mesh `i` is a 20-unit plate on
@@ -405,9 +493,10 @@ fn a_decorated_wall_tile_keeps_its_box() {
         },
     )
     .unwrap();
-    // The box, plus one bake of box + plate.
-    assert_eq!(out.added_tmds.len(), 2);
-    let baked = legaia_tmd::parse(&out.added_tmds[1]).unwrap();
+    // The two boxes (flat, and at the tier edge), plus one bake of box +
+    // plate.
+    assert_eq!(out.added_tmds.len(), 3);
+    let baked = legaia_tmd::parse(&out.added_tmds[2]).unwrap();
     let boxed = legaia_tmd::parse(&out.added_tmds[0]).unwrap();
     assert_eq!(baked.objects.len(), boxed.objects.len() + 1);
 }
@@ -658,4 +747,92 @@ fn no_mesh_record_takes_a_protagonist_object_id() {
     let placed = parse_placements(&img);
     assert!(placed.iter().any(|p| p.pack_index == Some(7)));
     assert!(placed.iter().all(|p| p.obj_idx >= 4));
+}
+
+/// A ceiling bakes its underside over the map's rectangle at its height and
+/// a chain from a hung prop's top up to it; the chain anchors off the
+/// prop's own placed cell so the bake keeps it.
+#[test]
+fn a_ceiling_bakes_its_underside_and_the_hung_props_chain() {
+    use legaia_expansion_format::map_detail::{AtlasCell, CeilingDef, ChainDef};
+    let mut def = def();
+    // A lamp hung 100 up on tile (3, 1) (the first prop), its mesh 0 a
+    // plate at the origin (top 0).
+    def.props[0].hangs = true;
+    def.props[0].id = "lamp".into();
+    def.props[0].mesh = PropMesh::Object { object: 0 };
+    def.props[0].offset = [0, 100, 0];
+    def.props[0].rotation = [0.0; 3];
+    def.ceiling = Some(CeilingDef {
+        height: 900,
+        cell: Some(AtlasCell {
+            tpage: 12,
+            clut: 0x7C40,
+            tile: 5,
+        }),
+        shade: 40,
+        chain: Some(ChainDef {
+            tpage: 12,
+            clut: 0x7C40,
+            tile: 5,
+            width: 8,
+            shade: 72,
+            items: vec!["lamp".into()],
+        }),
+    });
+    let grid = def.tile_grid().unwrap();
+    let pack = plate_pack(8);
+    let lib = MeshLibrary::from_base_pack(pack.clone(), &def);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(pack.len()),
+            library: Some(&lib),
+        },
+    )
+    .unwrap();
+    assert_eq!(out.dropped_decorations, 0);
+    // Every baked mesh, read back with each object's vertices.
+    let objects: Vec<Vec<[i16; 3]>> = out
+        .added_tmds
+        .iter()
+        .filter_map(|raw| legaia_tmd::parse(raw).ok())
+        .flat_map(|t| {
+            t.objects
+                .into_iter()
+                .map(|o| o.vertices.iter().map(|v| [v.x, v.y, v.z]).collect())
+        })
+        .collect();
+    // Mesh frames are each cell's own: a cell draws at the mean of its four
+    // corner tiles' heights, so a tier-0 cell with one tier-1 (128) corner
+    // draws 32 up and its items sit 32 lower in its mesh to land in place.
+    let world = |y: i16, drawn: i16| -y + drawn;
+    // The underside: flat pieces, each 900 up in the world.
+    let flats: Vec<i16> = objects
+        .iter()
+        .filter(|v| v.len() >= 4 && v.iter().all(|p| p[1] == v[0][1]) && v[0][1] < -500)
+        .map(|v| v[0][1])
+        .collect();
+    assert!(!flats.is_empty(), "the underside");
+    assert!(
+        flats
+            .iter()
+            .all(|&y| world(y, 0) == 900 || world(y, 32) == 900),
+        "{flats:?}"
+    );
+    // The chain: an 8-wide shaft 800 tall - from the lamp's 100 up to 900.
+    let chain = objects
+        .iter()
+        .find(|v| {
+            let lo = v.iter().map(|p| p[1]).min().unwrap_or(0);
+            let hi = v.iter().map(|p| p[1]).max().unwrap_or(0);
+            hi - lo == 800 && (world(hi, 0) == 100 || world(hi, 32) == 100)
+        })
+        .expect("a chain from 100 up to 900");
+    let xs: Vec<i16> = chain.iter().map(|p| p[0]).collect();
+    let span = xs.iter().max().unwrap() - xs.iter().min().unwrap();
+    assert_eq!(span, 8, "8 wide");
 }

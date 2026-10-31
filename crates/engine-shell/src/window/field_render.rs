@@ -210,6 +210,7 @@ impl PlayWindowApp {
         // no glide pose survives the door - the next scene's first scripted
         // shot snaps in, as on the browser page (`CutsceneGlide::reset`).
         self.cutscene_glide.reset();
+        let started = std::time::Instant::now();
         match build_window_scene_resources(&self.session) {
             Ok(res) => {
                 // Spawn-slot drain state is per-scene (the new scene's field
@@ -219,6 +220,10 @@ impl PlayWindowApp {
                 self.scene_res = Some(res);
                 self.scene_actors_pending = true;
                 self.upload_assets();
+                log::info!(
+                    "play-window: scene render state rebuilt in {:.1} ms",
+                    started.elapsed().as_secs_f64() * 1e3
+                );
             }
             Err(e) => log::warn!("play-window: scene-resource rebuild failed: {e:#}"),
         }

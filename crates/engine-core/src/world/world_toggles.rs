@@ -258,6 +258,13 @@ pub struct WorldToggles {
     /// [`crate::world::ACTION_DASH_BUTTON`]. Off under [`Self::pin_retail`];
     /// off, the walk is untouched.
     pub action_movement: bool,
+    /// The "Unlock Travel" cheat (`PlayerCheat::UnlockTravel`): the
+    /// expansion Journal's Travel page lists every map of the active pack,
+    /// not only the ones the party has entered
+    /// (`legaia_engine_expansion::journal::visited_flag`). Off by default;
+    /// pack-only, so not a fidelity toggle and untouched by
+    /// [`Self::pin_retail`].
+    pub travel_all_maps: bool,
     /// The options screen's nine config words as the host last pushed them
     /// (`crate::options::apply_to_world`) or a save last loaded them. The
     /// rows the simulation reads have their own mirrors here and on
@@ -393,6 +400,7 @@ impl WorldToggles {
             save_anywhere: false,
             battle_entry_off_axis: true,
             action_movement: false,
+            travel_all_maps: false,
             retail_options: legaia_save::card::RetailOptions::default(),
             loaded_options: None,
         }

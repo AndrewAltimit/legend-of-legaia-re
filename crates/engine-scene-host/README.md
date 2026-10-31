@@ -22,6 +22,14 @@ scene, tick it, drain what the tick queued.
     builds the player's rig mesh (`player_rig`);
   - adds the field-overlay strings to the submode screens' line lists
     (`submode_lines`: the code lock, the flag window, the coin counter).
+- **`expansion_preload`** - expansion-pack maps prepared ahead of their
+  entry: `PreparedMap` (everything the entry builds off the disc and the
+  pack alone, the scene's resource build included), the bounded cache
+  `MapPreloader` every entry fills, and the background preparation of the
+  maps an entered map's exits lead to (a worker thread natively, idle-tick
+  phases on the browser build). Reads no `World`; a map entered from it plays
+  as one built cold
+  ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#entry-cost-and-preparing-ahead)).
 - **`resume`** - where a loaded save resumes and where a New Game starts:
   the scene-entry choreography both hosts run, and the card-load seam
   (`CardLoadHost`).

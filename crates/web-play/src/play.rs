@@ -112,6 +112,10 @@ pub struct FieldRender {
     /// ([`legaia_engine_field::overworld_ground_cue::decoration_draw_cue`]),
     /// the native window's `world_map_deco_start` twin.
     pub decoration_start: usize,
+    /// The content key of the scene VRAM the env meshes build against, for
+    /// [`LegaiaRuntime::field_mesh_key`]: taken on the first ask after a
+    /// rebuild and dropped by the next tick, which may animate the VRAM.
+    pub mesh_key_vram: Option<legaia_engine_scene::mesh_memo::ContentKey>,
 }
 
 /// The lead party member's field-form actor: the object-local mesh, its
@@ -365,6 +369,7 @@ pub fn build_field_render(
         coplanar_offsets,
         placement_scales,
         decoration_start,
+        mesh_key_vram: None,
     }
 }
 
