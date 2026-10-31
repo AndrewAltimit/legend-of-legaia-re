@@ -669,7 +669,7 @@ scale = 0.42
 solid = true
 
 # What the sea leaves along the tideline, where the dry sand meets the wet:
-# a wrack of sticks, shells and pebbles, and more of the same below it.
+# a wrack of sticks, shells and pebbles, and a few shells on the wet sand below it.
 
 [[scatter]]
 id = "tideline_wrack"
@@ -687,26 +687,12 @@ meshes = [
   { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.08, 0.16] },
   { mesh = { asset = "models/dune_grass.glb" }, weight = 1, scale = [0.5, 0.8] },
 ]
-[[scatter]]
-id = "beach_drift"
-rect = [1, 8, 62, 30]
-on = ",;"
-density = 0.07
-seed = 4103
-jitter = 50
-yaw = [0.0, 360.0]
-scale = [0.8, 1.2]
-keep_clear = true
-meshes = [
-  { mesh = { asset = "models/driftwood.glb" }, weight = 2, scale = [0.6, 1.0] },
-  { mesh = { scene = "vell", object = 22 }, weight = 2, scale = [0.14, 0.24] },
-]
 
 [[scatter]]
 id = "beach_shells"
 rect = [1, 8, 62, 30]
-on = ",;s"
-density = 0.1
+on = ","
+density = 0.06
 seed = 4107
 jitter = 50
 yaw = [0.0, 360.0]
@@ -726,20 +712,6 @@ seed = 4108
 jitter = 50
 yaw = [0.0, 360.0]
 scale = [1.0, 1.7]
-meshes = [
-  { mesh = { asset = "models/dune_grass.glb" }, weight = 1 },
-]
-
-[[scatter]]
-id = "beach_grass"
-rect = [1, 5, 62, 20]
-on = ".s"
-density = 0.06
-seed = 4106
-jitter = 50
-yaw = [0.0, 360.0]
-scale = [0.8, 1.3]
-keep_clear = true
 meshes = [
   { mesh = { asset = "models/dune_grass.glb" }, weight = 1 },
 ]

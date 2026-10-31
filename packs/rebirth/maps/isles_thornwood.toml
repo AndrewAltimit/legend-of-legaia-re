@@ -895,8 +895,10 @@ meshes = [
 [[scatter]]
 id = "turf"
 rect = [0, 0, 87, 55]
-on = ",."
-density = 0.14
+# Clearings only: the lane itself stays a clean trodden path, lined by
+# the verge runs along its edges.
+on = ","
+density = 0.12
 seed = 4302
 jitter = 50
 yaw = [0.0, 360.0]
