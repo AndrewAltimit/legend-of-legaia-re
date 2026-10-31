@@ -42,7 +42,7 @@
 const CHANNEL = 'legaia-expansion-live';
 const LAYERS = [
   ['grid', 'Grid'], ['walls', 'Walls'], ['zones', 'Encounter zones'], ['triggers', 'Triggers + exits'],
-  ['npcs', 'NPCs'], ['spawns', 'Spawns'], ['props', 'Props'],
+  ['npcs', 'NPCs'], ['spawns', 'Spawns'], ['props', 'Props'], ['collision', 'Collision'],
 ];
 const RELOAD_MS = 450;
 const VIEWS = [
@@ -210,7 +210,7 @@ export function createPreview3d(env) {
   // env: { exportBundle() -> Uint8Array (throws on errors), pack(), storePlay(bytes, map) -> Promise, playUrl(map) }
   const P = {
     open: false, ready: false, visible: false, frame: null, map: null, spawn: '',
-    dirty: true, timer: null, sent: null, layers: { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false },
+    dirty: true, timer: null, sent: null, layers: { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false, collision: false },
     select: null, path: null, marker: null, mode: 'orbit', onPick: null, stats: null, last: null, live: false, liveTimer: null,
     auto: true, painter: true, arrival: false, edits: 0, builtEdits: -1, view: '2d', grid: null, defs: null, overlayKey: '',
   };
@@ -319,6 +319,7 @@ export function createPreview3d(env) {
     cb.type = 'checkbox';
     cb.checked = !!P.layers[k];
     cb.dataset.layer = k;
+    if (k === 'collision') lab.title = 'What the player bumps into, read from the engine\'s collision grid after the last build: red where solid props, decorations or terrain close the ground beyond the painted walls';
     cb.addEventListener('change', () => { P.layers[k] = cb.checked; sendOverlay(); });
     lab.append(cb, document.createTextNode(label));
     layerBox.append(lab);
@@ -642,11 +643,15 @@ export function createPreview3d(env) {
         const n = (m.props || 0) + (m.npcs || 0) + (m.spawns || 0) + (m.lamps || 0);
         setStatus(`${P.map}: moved ${n} object(s) in place in ${P.lastMove.ms} ms, no rebuild.${P.stale ? ' A moved prop\'s collision updates on the next rebuild (Reload, Player or Walk).' : (m.props ? ' Its collision moved with it.' : '')}`);
       }
+    } else if (m.type === 'xw-collision') {
+      P.collision = m;
+      if (P.onCollision) P.onCollision(m);
     } else if (m.type === 'xw-pick') {
       P.select = { tile: m.tile };
       if (P.onPick) P.onPick(m.tile[0], m.tile[1]);
     } else if (m.type === 'xw-action') {
-      const what = { cutscene: `Cutscene ${m.id}`, fight: `Fight ${m.id}`, cards: 'The card binder' }[m.what] || m.what;
+      const what = { cutscene: `Cutscene ${m.id}`, fight: `Fight ${m.id}`, cards: 'The card binder', mode: `Mode ${m.id}` }[m.what] || m.what;
+      if (m.what === 'mode' && !m.ok) { setStatus(`Mode ${m.id} did not start in the preview: ${m.why || 'the field is busy'}`, true); return; }
       setStatus(m.ok ? `${what}: running in the preview (field camera; Orbit to look around).${m.what === 'cards' ? ` ${m.added} card(s) put in its collection.` : ''}`
         : `${what} did not start in the preview (another scene or fight may own it).`, !m.ok);
     } else if (m.type === 'xw-stats') {
@@ -811,6 +816,9 @@ export function createPreview3d(env) {
       sendOverlay();
     },
     onPick(fn) { P.onPick = fn; },
+    /* The engine's collision reading of the last build (or in-place move):
+     * `{ map, width, height, blocked, walls }`, a quarter mask a tile. */
+    onCollision(fn) { P.onCollision = fn; if (fn && P.collision) fn(P.collision); },
     /* A cutscene's camera path on the map, and the scrub point. */
     setPath(path, marker) {
       const first = !P.path && path;
@@ -824,6 +832,12 @@ export function createPreview3d(env) {
     playCutscene(id) { act({ type: 'xw-cutscene', id }); },
     /* Start a pack fight (`kind` "formation" or "boss") in the frame. */
     fight(kind, id) { act({ type: 'xw-fight', kind, id }); },
+    /* Start mode instance `id` in the frame, on pack map `map` (built
+     * first) when it is played on one. */
+    mode(id, map) {
+      if (map) this.setMap(map, '');
+      act({ type: 'xw-mode', id });
+    },
     /* Every pack card into the frame's collection, and its binder open. */
     cards() { act({ type: 'xw-cards' }); },
     /* The 3D editor: its state for the frame (merged), the handler of the

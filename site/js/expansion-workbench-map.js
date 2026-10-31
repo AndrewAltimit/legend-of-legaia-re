@@ -25,6 +25,7 @@ import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-
 import { propMeshEditor, propDetail, renderDetail, entrancesEd } from './expansion-workbench-detail.js';
 import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
+import { nudge } from './expansion-workbench-layout.js';
 import { walkThrough, walkOnDialogs } from './expansion-workbench-hints.js';
 import { mountMapEditor, editorChanged, select as editSelect, selection as editSelection, objectsIn, deleteObjects, duplicateObjects, drawSelection, clearSelection, layoutRow } from './expansion-workbench-gizmos.js';
 
@@ -32,6 +33,8 @@ const QUARTERS = ['tl', 'tr', 'bl', 'br'];
 const QBIT = { tl: 1, tr: 2, bl: 4, br: 8 };
 const SPARE_CHARS = '#.,^=~*+o%&@:;abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const SWATCH = ['#6b8f71', '#8a9a5b', '#b08d57', '#7d8fa6', '#a37a74', '#6f9fa0', '#9c8bb0', '#b5a26e', '#7fa86b', '#a88a9c'];
+// The arrow keys' nudge, in painter columns and rows (row 0 at the top).
+const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 const TOOLS = [
   ['paint', 'Paint', 'B'], ['rect', 'Fill rect', 'R'], ['pick', 'Pick', 'I'], ['select', 'Select / move', 'V'],
   ['spawn', 'Spawn', 'S'], ['exit', 'Exit', 'E'], ['trigger', 'Trigger', 'T'], ['encounter', 'Encounters', 'N'], ['prop', 'Prop', 'P'],
@@ -43,6 +46,8 @@ const V = {
   map: null, tool: 'paint', brush: '.', cell: 22, heights: true, walk: true, sel: null,
   scroll: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null, pick: null,
   propObject: 0, drag: null, npcs: {}, npcModel: null,
+  // The engine's collision reading per map, from the 3D preview's builds.
+  collide: false, blocked: {},
 };
 
 function legendKeys(map) {
@@ -305,6 +310,7 @@ function draw(ctx, cv) {
     const [c0, r0, c1, r1] = V.drag.box;
     zone([c0, r0, c1, r1], '#ffffff', 'rgba(255,255,255,0.08)', [2, 2]);
   }
+  if (V.collide) drawCollision(g, w, ht, cs);
   drawSelection(g, map, cs);
   if (V.walk) drawWalkThrough(g, map, cs);
   // The tile last clicked here or in the 3D preview, with nothing selected.
@@ -488,9 +494,13 @@ export function renderMaps(ctx, el) {
     h('button', { type: 'button', class: 'wb-mini', title: 'Undo (Ctrl+Z)', disabled: !ctx.canUndo(), onclick: () => undo(ctx, -1) }, 'Undo'),
     h('button', { type: 'button', class: 'wb-mini', title: 'Redo (Ctrl+Y)', disabled: !ctx.canRedo(), onclick: () => undo(ctx, 1) }, 'Redo'),
     h('span', { class: 'xw-sep' }), h('label', { class: 'xw-check xw-field' }, hcb, 'Heights'),
-    walkToggle(redraw));
+    walkToggle(redraw), collisionToggle(() => redraw(), pv));
 
   const wrap = h('div', { class: 'xw-canvas-wrap', tabindex: '0' }, cv);
+  if (V.refocus) {
+    V.refocus = false;
+    setTimeout(() => { if (wrap.isConnected) wrap.focus({ preventScroll: true }); }, 0);
+  }
   const hover = h('div', { class: 'xw-hover' });
   const note = h('p', { class: 'xw-note' }, 'Heights: the number is each tile\'s floor tier; lighter is higher. The floor reads a tile\'s tier at its top-left corner (low X, low Z) and slopes across the cell to its neighbours\' corners, so a cell is flat only where its four corners agree. Hatched cells slope: along a raised block\'s top and left edges the cell outside it ramps up onto it, and along its bottom and right edges its own last row and column ramp down. Drag with the right or middle button (or hold Space) to pan; Ctrl+wheel zooms.');
   const pickBar = V.pick ? h('div', { class: 'xw-pickbar', role: 'status' }, V.pick.prompt || (V.pick.rect ? 'Drag a rectangle on the map to fill the field.' : 'Click a tile on the map to fill the field.'),
@@ -649,6 +659,7 @@ export function renderMaps(ctx, el) {
         if (o.rect) o.rect = [o.rect[0] + dc, o.rect[1] + dr, o.rect[2] + dc, o.rect[3] + dr];
       }
       d.from = [c, r];
+      d.moved = true;
       mctx.changed();
     }
   };
@@ -689,7 +700,10 @@ export function renderMaps(ctx, el) {
       if (d.kind === 'encounter') list.push({ id, rect: q, table: '' });
       V.sel = { type: d.kind + 's', i: list.length - 1 };
       ctx.changed(true);
-    } else if (d.move || d.paint) {
+    } else if (d.paint || (d.move && d.moved)) {
+      // The tab draws again; the canvas takes the keys back (the arrows'
+      // nudge, Delete). A click that moved nothing changes nothing.
+      V.refocus = true;
       ctx.changed(true);
     }
   };
@@ -723,6 +737,29 @@ export function renderMaps(ctx, el) {
       return;
     }
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    const arrow = ARROWS[ev.key];
+    if (arrow && (V.sel || editSelection().length) && wrap.contains(document.activeElement)) {
+      // Arrows nudge the selection a tile; Shift a quarter tile (32 units).
+      ev.preventDefault();
+      const many = editSelection().length ? editSelection() : [V.sel];
+      const step = ev.shiftKey ? 0.25 : 1;
+      if (ctx.commit) ctx.commit();
+      const r = nudge(map, many, arrow[0] * step, arrow[1] * step);
+      if (!r.moved) return;
+      // One undo step a press; the canvas keeps the focus for the next.
+      mctx.changed();
+      if (ctx.commit) ctx.commit();
+      renderSelection(ctx, mctx, side, map);
+      editorChanged();
+      return;
+    }
+    if (k === 'escape' && (V.sel || editSelection().length)) {
+      V.sel = null;
+      editSelect([]);
+      renderSelection(ctx, mctx, side, map);
+      redraw();
+      return;
+    }
     const tool = TOOLS.find((x) => x[2].toLowerCase() === k);
     if (tool) { V.tool = tool[0]; ctx.rerender(); }
   };
@@ -763,6 +800,10 @@ export function renderMaps(ctx, el) {
         draw(ctx, cv);
       },
       ids: () => ctx.ids('npc'),
+    });
+    pv.onCollision((m) => {
+      V.blocked[m.map] = m;
+      if (V.collide && cv.isConnected && m.map === V.map) redraw();
     });
     pv.onPick((c, r) => {
       if (!cv.isConnected) return;
@@ -846,6 +887,45 @@ function drawWalkThrough(g, map, cs) {
     g.fill();
   }
   g.restore();
+}
+
+/* The quarters the engine's collision grid closes past the tile's own
+ * walls (solid props, decorations, terrain walls), from the 3D preview's
+ * last build of this map: red, a quarter tile each. */
+function drawCollision(g, w, ht, cs) {
+  const c = V.blocked[V.map];
+  if (!c || c.width !== w || c.height !== ht) return;
+  const hh = cs / 2;
+  g.save();
+  g.fillStyle = 'rgba(232, 52, 52, 0.55)';
+  g.strokeStyle = 'rgba(120, 10, 10, 0.9)';
+  g.lineWidth = 1;
+  for (let r = 0; r < ht; r++) {
+    for (let col = 0; col < w; col++) {
+      const k = r * w + col;
+      const extra = (c.blocked[k] & 15) & ~(c.walls[k] || 0);
+      if (!extra) continue;
+      for (const [q, bit] of Object.entries(QBIT)) {
+        if (!(extra & bit)) continue;
+        const x = col * cs + (q[1] === 'r' ? hh : 0), y = r * cs + (q[0] === 'b' ? hh : 0);
+        g.fillRect(x + 1, y + 1, hh - 2, hh - 2);
+        g.strokeRect(x + 1.5, y + 1.5, hh - 3, hh - 3);
+      }
+    }
+  }
+  g.restore();
+}
+
+function collisionToggle(redraw, pv) {
+  const cb = h('input', { type: 'checkbox' });
+  cb.checked = V.collide;
+  cb.addEventListener('change', () => {
+    V.collide = cb.checked;
+    // The marks come from the engine: open the preview to get them.
+    if (V.collide && pv && !V.blocked[V.map] && !pv.isOpen()) pv.open();
+    redraw();
+  });
+  return h('label', { class: 'xw-check xw-field', title: 'Mark in red what the player bumps into beyond the painted walls - solid props, decorations and terrain - as the engine\'s collision grid has it after the 3D preview\'s last build (it opens the preview)' }, cb, 'Collision');
 }
 
 function walkToggle(redraw) {

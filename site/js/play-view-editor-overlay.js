@@ -57,6 +57,7 @@ void main() {
   /* Layer colours, RGBA 0..1: the 2D painter's (expansion-workbench-map.js). */
   const COLOR = {
     walls: [0.72, 0.80, 0.95, 0.26],
+    collision: [0.95, 0.22, 0.22, 0.34],
     encounters: [0.88, 0.38, 0.35, 0.28],
     triggers: [0.90, 0.64, 0.24, 0.36],
     exits: [0.29, 0.64, 0.91, 0.40],
@@ -71,7 +72,7 @@ void main() {
   };
   /* Default layer set: every volume but the props (the props draw as
    * themselves), and the tile grid. */
-  const DEFAULT_LAYERS = { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false };
+  const DEFAULT_LAYERS = { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false, collision: false };
   /* What a workbench draft may replace in the engine's reading of the map
    * (`defs`, see `setEditorOverlay`). */
   const DRAFT_LISTS = ['spawns', 'exits', 'triggers', 'encounters', 'props', 'npcs'];
@@ -289,6 +290,28 @@ void main() {
               if (mask & 2) soup.box(tx(c) + hh, tz(r), tx(c + 1), tz(r) + hh, y, WALL_H, COLOR.walls, 16);
               if (mask & 4) soup.box(tx(c), tz(r) + hh, tx(c) + hh, tz(r + 1), y, WALL_H, COLOR.walls, 16);
               if (mask & 8) soup.box(tx(c) + hh, tz(r) + hh, tx(c + 1), tz(r + 1), y, WALL_H, COLOR.walls, 16);
+            }
+          }
+        }
+        /* What the player collides with (`blocked`, the engine's collision
+         * grid: tile walls, solid props and decorations, terrain walls), a
+         * quarter tile at a time - the quarters the Walls layer already
+         * draws left out while it is on. Always the last build's reading:
+         * a draft does not move it. */
+        if (L.collision && Array.isArray(m.blocked) && m.blocked.length === W * H) {
+          const hh = u / 2, CH = 64;
+          for (let r = 0; r < H; r++) {
+            for (let c = 0; c < W; c++) {
+              if (isVoid(c, r)) continue;
+              let mask = m.blocked[r * W + c] & 15;
+              if (L.walls) mask &= ~m.walls[r * W + c];
+              if (!mask) continue;
+              const y = floorAt(c, r);
+              const x0 = tx(c), z0 = tz(r);
+              if (mask & 1) soup.box(x0 + 2, z0 + 2, x0 + hh - 2, z0 + hh - 2, y, CH, COLOR.collision, 16);
+              if (mask & 2) soup.box(x0 + hh + 2, z0 + 2, x0 + u - 2, z0 + hh - 2, y, CH, COLOR.collision, 16);
+              if (mask & 4) soup.box(x0 + 2, z0 + hh + 2, x0 + hh - 2, z0 + u - 2, y, CH, COLOR.collision, 16);
+              if (mask & 8) soup.box(x0 + hh + 2, z0 + hh + 2, x0 + u - 2, z0 + u - 2, y, CH, COLOR.collision, 16);
             }
           }
         }

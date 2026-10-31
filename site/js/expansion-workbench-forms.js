@@ -1705,6 +1705,10 @@ export function renderModes(ctx, el) {
       render: (box, it, p) => {
         box.append(grid(ctx, it, specs, p));
         const onMap = it.map && ctx.pack.maps && ctx.pack.maps[it.map];
+        // The instance as a player meets it: its map built, the seat taken.
+        box.append(preview3dButton(ctx, onMap ? (key === 'poker' || key === 'card_duels' ? 'Sit at the table in 3D' : 'Play on the map in 3D') : 'Play in 3D',
+          `Start ${it.name || it.id} in the 3D preview (above)${onMap ? `, on ${it.map} where its seats stand` : ''}: the engine's own mode seat and camera. Start leaves it.`,
+          (pv) => pv.mode(it.id, onMap ? it.map : null)));
         if (onMap && key !== 'prop_hunt') box.append(grid(ctx, it, [spawnSpec(onMap)], p));
         if ((key === 'card_duels' || key === 'poker') && onMap) tableEd(ctx, box, it, p, onMap, key === 'poker');
         if (key === 'golf') {

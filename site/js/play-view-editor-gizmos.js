@@ -68,6 +68,10 @@ void main() {
     paint: [0.45, 0.95, 1.0, 0.5],
   };
   const FLIP = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+  /* The Select tool's keys in the frame (the painter's letters are its own). */
+  const TOOL_KEYS = { w: 'move', e: 'rotate', r: 'scale' };
+  /* An arrow key's direction on screen (client pixels, Y down). */
+  const ARROW_DIR = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
 
   function inv4(m) {
     const a = m, o = new Float32Array(16);
@@ -278,6 +282,23 @@ void main() {
         if (k === 'Delete' || k === 'Backspace' || ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'z' || k === 'y')) || k === '[' || k === ']') {
           consume(e);
           post({ type: 'xw-key', key: k, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+          return;
+        }
+        if (E.mode !== 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
+        /* Under the orbit camera the arrows nudge the selection along the
+         * map axis that runs closest to the arrow on screen (the field
+         * camera keeps them for walking); W / E / R pick move, rotate and
+         * scale; Escape drops the selection. */
+        const nudge = this.debugCamera ? this._edArrowAxis(k) : null;
+        if (nudge) {
+          consume(e);
+          post({ type: 'xw-key', key: 'nudge', dc: nudge[0], dr: nudge[1], fine: e.shiftKey });
+        } else if (TOOL_KEYS[k.toLowerCase()]) {
+          consume(e);
+          post({ type: 'xw-key', key: 'tool', tool: TOOL_KEYS[k.toLowerCase()] });
+        } else if (k === 'Escape') {
+          consume(e);
+          post({ type: 'xw-key', key: 'deselect' });
         }
       }, { capture: true });
     }
@@ -287,6 +308,28 @@ void main() {
     _edVp() {
       const c = this.renderer.canvas;
       return mulMat4(buildWorldOrbitVp(c.width, c.height, this._ext, this.cam), FLIP);
+    }
+
+    /* The map step `[dc, dr]` (one of the four axis directions) whose
+     * direction on screen is closest to arrow key `key`, from the map's
+     * middle; null for another key or with no map. */
+    _edArrowAxis(key) {
+      const want = ARROW_DIR[key];
+      const m = this._editorMap;
+      if (!want || !m) return null;
+      const vp = this._edVp();
+      const c = this.editorTileCentre(m.width / 2, m.height / 2);
+      const o = c && this._edScreen(c, vp);
+      if (!o) return null;
+      let best = null, bestDot = -Infinity;
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const s = this._edScreen([c[0] + dc * m.unit, c[1], c[2] + dr * m.unit], vp);
+        if (!s) continue;
+        const vx = s[0] - o[0], vy = s[1] - o[1], len = Math.hypot(vx, vy) || 1;
+        const dot = (vx * want[0] + vy * want[1]) / len;
+        if (dot > bestDot) { bestDot = dot; best = [dc, dr]; }
+      }
+      return best;
     }
 
     /* The ray under client point (x, y), retail world. */

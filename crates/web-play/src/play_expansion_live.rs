@@ -20,6 +20,7 @@
 //! encounter zones, props and NPCs of the definition the engine runs.
 
 use legaia_engine_scene_host::scene_host::ExpansionReloadSeat;
+use legaia_scene_formats::field_map::GRID_DIM as COLLISION_GRID_DIM;
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
@@ -265,9 +266,22 @@ impl LegaiaRuntime {
         let mut floor = Vec::with_capacity(gw * gh);
         let mut walls = Vec::with_capacity(gw * gh);
         let mut void = Vec::with_capacity(gw * gh);
+        // What the player collides with: each tile's four quarter bits in
+        // the collision grid the world walks (the tile walls, every solid
+        // prop's tile and footprint, every solid decoration's footprint,
+        // a terrain's walls), one byte row below the tile.
+        let mut blocked = Vec::with_capacity(gw * gh);
+        let cg = &w.terrain.collision_grid;
+        let [ox, oy] = def.tiles.origin.map(usize::from);
         for row in 0..gh {
             for col in 0..gw {
                 let t = &grid.tiles[row * gw + col];
+                let at = (oy + row + 1) * COLLISION_GRID_DIM + ox + col;
+                blocked.push(if ox + col < COLLISION_GRID_DIM {
+                    cg.get(at).map_or(0, |b| b >> 4)
+                } else {
+                    0
+                });
                 let (x, z) = def.tile_centre(col as u16, row as u16);
                 floor.push(if t.void {
                     0
@@ -299,6 +313,7 @@ impl LegaiaRuntime {
             "unit": 128,
             "floor": floor,
             "walls": walls,
+            "blocked": blocked,
             "void": void,
             "spawns": def.spawns.iter().map(|s| json!({ "id": s.id, "tile": s.tile, "facing": s.facing })).collect::<Vec<_>>(),
             "exits": def.exits.iter().map(|e| json!({ "id": e.id, "rect": e.rect })).collect::<Vec<_>>(),
@@ -749,6 +764,83 @@ mod tests {
         {
             assert!(!rt.expansion_place_npc_core(p as u32, 0, 0, 0));
         }
+    }
+
+    /// Disc-gated: the overlay's `blocked` layer is the collision grid the
+    /// player walks - every tile wall is in it, a solid prop with no top
+    /// closes its whole tile, and a prop moved in place takes its closed
+    /// quarters along.
+    #[test]
+    fn overlay_blocked_layer_is_the_walked_collision_grid() {
+        let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+            eprintln!("[skip] LEGAIA_DISC_BIN unset");
+            return;
+        };
+        let bytes = std::fs::read(disc).expect("read the disc");
+        let files = rebirth_files();
+        let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
+        let mut rt = LegaiaRuntime::new();
+        assert!(rt.load_disc(bytes, String::new()).is_ok());
+        let _ = rt.load_expansion_core(&bundle(&files));
+        let mut checked = 0;
+        for (map, def) in &pack.maps {
+            let Some(si) = def.props.iter().position(|p| p.solid && p.top.is_none()) else {
+                continue;
+            };
+            rt.enter_expansion_map_core(map, "").expect("enter");
+            let ov = rt.expansion_overlay();
+            let (w, h) = (
+                ov["width"].as_u64().unwrap() as usize,
+                ov["height"].as_u64().unwrap() as usize,
+            );
+            let blocked: Vec<u8> = serde_json::from_value(ov["blocked"].clone()).unwrap();
+            let walls: Vec<u8> = serde_json::from_value(ov["walls"].clone()).unwrap();
+            assert_eq!(blocked.len(), w * h, "{map}");
+            for (i, (&b, &wl)) in blocked.iter().zip(&walls).enumerate() {
+                assert_eq!(b & wl, wl, "{map}: tile {i}'s walls are blocked");
+            }
+            let at = |t: [u16; 2]| usize::from(t[1]) * w + usize::from(t[0]);
+            let from = def.props[si].tile;
+            assert_eq!(
+                blocked[at(from)],
+                0xF,
+                "{map}: a solid prop closes its tile"
+            );
+            // An open tile with no prop and no wall, to move the prop onto.
+            let grid = def.tile_grid().unwrap();
+            let free = (0..h)
+                .flat_map(|r| (0..w).map(move |c| [c as u16, r as u16]))
+                .find(|&t| {
+                    let g = grid.get(usize::from(t[0]), usize::from(t[1])).unwrap();
+                    !g.void
+                        && blocked[at(t)] == 0
+                        && !def.props.iter().any(|p| p.tile == t)
+                        && !def
+                            .decorations()
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|d| d.tile == t)
+                });
+            let Some(to) = free else { continue };
+            let o = def.props[si].offset;
+            assert!(rt.expansion_place_prop_core(
+                si as u32,
+                u32::from(to[0]),
+                u32::from(to[1]),
+                i32::from(o[0]),
+                i32::from(o[2]),
+                def.props[si].rotation[1],
+            ));
+            let moved: Vec<u8> =
+                serde_json::from_value(rt.expansion_overlay()["blocked"].clone()).unwrap();
+            assert_eq!(
+                moved[at(to)],
+                0xF,
+                "{map}: the moved prop closes its new tile"
+            );
+            checked += 1;
+        }
+        assert!(checked > 0, "no Rebirth map has a solid prop to move");
     }
 
     /// Disc-gated: a solid prop, a standable prop, a lamp and a spawn moved

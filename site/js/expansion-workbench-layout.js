@@ -144,6 +144,28 @@ export function distribute(map, sel, axis) {
   return { ...r, made: 0, sel: ss };
 }
 
+/** Move the selection by `dc` columns and `dr` rows (tile units; a
+ * fraction moves only what carries an offset, a zone and an NPC by whole
+ * tiles). The arrow keys' nudge in the painter and the 3D editor. */
+export function nudge(map, sel, dc, dr) {
+  const ss = live(map, sel);
+  const [W, H] = mapSize(map);
+  let off = 0;
+  const moves = [];
+  for (const s of ss) {
+    const o = listOf(map, s.type)[s.i];
+    const [x, z] = posOf(s.type, o);
+    // Off the map's edge the object stays where it is.
+    const inside = o.rect
+      ? Math.min(o.rect[0], o.rect[2]) + Math.round(dc) >= 0 && Math.max(o.rect[0], o.rect[2]) + Math.round(dc) < W
+        && Math.min(o.rect[1], o.rect[3]) + Math.round(dr) >= 0 && Math.max(o.rect[1], o.rect[3]) + Math.round(dr) < H
+      : x + dc >= 0 && x + dc < W && z + dr >= 0 && z + dr < H;
+    if (inside) moves.push([s, x + dc, z + dr]); else off++;
+  }
+  const r = applyMoves(map, moves);
+  return { ...r, skipped: r.skipped + off, made: 0, sel: ss };
+}
+
 function freshId(stem, used) {
   const base = String(stem || 'obj').replace(/_\d+$/, '');
   let n = 1;

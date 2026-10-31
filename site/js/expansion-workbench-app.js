@@ -289,7 +289,7 @@ function rerender() {
   $('xw-pack-ver').textContent = `${m.version || ''}${S.label ? ' - ' + S.label : ''}`;
   renderTabs();
   if (S.preview) {
-    S.preview.show(['maps', 'cutscenes', 'battle', 'cards'].includes(S.tab));
+    S.preview.show(['maps', 'cutscenes', 'battle', 'cards', 'modes'].includes(S.tab));
     // The 3D editor belongs to the Maps tab.
     if (S.preview.suspendEdit) S.preview.suspendEdit(S.tab !== 'maps');
   }

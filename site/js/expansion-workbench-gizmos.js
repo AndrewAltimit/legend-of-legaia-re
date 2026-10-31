@@ -28,7 +28,7 @@
  * after, which close the page history's step around it.
  */
 import { h } from './expansion-workbench-forms.js';
-import { layoutTools, layoutSummary } from './expansion-workbench-layout.js';
+import { layoutTools, layoutSummary, nudge } from './expansion-workbench-layout.js';
 
 const UNIT = 128;
 const TYPES = ['props', 'decor', 'npcs', 'spawns', 'lamps', 'emitters', 'triggers', 'exits', 'encounters'];
@@ -353,6 +353,22 @@ function onFrame(m) {
     else if (m.ctrl && m.key === 'd') duplicateSel();
     else if (m.ctrl && m.key === 'z') api.undo(m.shift ? 1 : -1);
     else if (m.ctrl && m.key === 'y') api.undo(1);
+    else if (m.key === 'nudge' && G.sel.length) {
+      // One tile, or a quarter (32 units) with Shift or the 32-unit snap.
+      const step = m.fine || G.snap === 'sub' ? 0.25 : 1;
+      runLayout(api, G.sel, (map, sel) => nudge(map, sel, (m.dc | 0) * step, (m.dr | 0) * step));
+      G.layoutMsg = '';
+      renderBar();
+    } else if (m.key === 'tool' && ['move', 'rotate', 'scale'].includes(m.tool)) {
+      G.tool = m.tool;
+      renderBar();
+      sync();
+    } else if (m.key === 'deselect' && G.sel.length) {
+      G.sel = [];
+      api.selected(G.sel);
+      renderBar();
+      sync(true);
+    }
     else if (m.key === '[' || m.key === ']') {
       G.brush.radius = Math.max(0.25, Math.min(16, G.brush.radius * (m.key === ']' ? 1.25 : 0.8)));
       renderBar();
@@ -417,12 +433,12 @@ function renderBar() {
     const snap = h('select', { 'aria-label': 'Snap' },
       ...[['tile', 'Snap: tile'], ['sub', 'Snap: 32 units'], ['free', 'Free']].map(([k, l]) => h('option', { value: k, selected: G.snap === k }, l)));
     snap.addEventListener('change', () => { G.snap = snap.value; sync(); });
-    bar.append(h('span', { class: 'xw-sep' }), tool('move', 'Move', 'Arrows move on one axis, the square on both; drag an object to move it'),
-      tool('rotate', 'Rotate', 'Drag the ring: 15 degree steps (NPCs and spawns by facing sector)'),
-      tool('scale', 'Scale', 'Drag the corner handle; a zone\'s corner resizes it'), snap,
+    bar.append(h('span', { class: 'xw-sep' }), tool('move', 'Move', 'Arrows move on one axis, the square on both; drag an object to move it (W)'),
+      tool('rotate', 'Rotate', 'Drag the ring: 15 degree steps (NPCs and spawns by facing sector) (E)'),
+      tool('scale', 'Scale', 'Drag the corner handle; a zone\'s corner resizes it (R)'), snap,
       b('Duplicate', false, 'Copy the selection one tile over (Ctrl+D)', duplicateSel),
       b('Delete', false, 'Remove the selection (Delete)', removeSel),
-      h('span', { class: 'xw-hint' }, ` ${G.sel.length ? `${G.sel.length} selected` : 'click an object; Shift adds'}; Shift while dragging places freely`));
+      h('span', { class: 'xw-hint' }, ` ${G.sel.length ? `${G.sel.length} selected; arrows nudge (Shift a quarter tile)` : 'click an object; Shift adds'}; Shift while dragging places freely; W / E / R move, rotate, scale`));
     if (G.sel.length) {
       bar.append(layoutTools(Object.assign(G.layout, { h, sel: () => G.sel, run: (fn) => runLayout(api, G.sel, fn) })));
       if (G.layoutMsg) bar.append(h('span', { class: 'xw-hint' }, ' ' + G.layoutMsg));

@@ -442,7 +442,7 @@ cell's four corner heights.
 
 ## The 3D preview
 
-**Open 3D preview** on the Maps tab (and the Cutscenes, Battle and Cards tabs) frames the play
+**Open 3D preview** on the Maps tab (and the Cutscenes, Battle, Cards and Modes tabs) frames the play
 page itself, as `play.html?xwpreview=1`, above the editor. It is not a second
 renderer: the framed page runs its own `LegaiaRuntime`, reads the disc from
 the site's shared disc cache, loads the working pack's `.lxpack` and enters
@@ -463,7 +463,7 @@ enhancements.
 | Fit map | Back to the whole map in the orbit camera. |
 | Walk from selection | Stands the player on the selected tile (`expansion_seat_player`) and switches to the field camera; the arrow keys walk in the picture. |
 | 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview, in the editor's **Select** mode. |
-| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props: translucent volumes over the picture. |
+| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision: translucent volumes over the picture. |
 
 **Orientation.** The game draws the world with screen X mirrored (the
 retail horizontal flip, `buildWorldOrbitVp`), so its picture of a map seen
@@ -550,6 +550,22 @@ its corners) - in place of its reading of the last build. Tiles the edit
 left alone keep the engine's reading. The rebuild's own reading replaces the draft when it lands. A
 draft of a map of another size than the built one waits for the rebuild.
 
+**Collision.** The Collision layer (off by default) draws what the player
+bumps into: the overlay's `blocked`, each tile's four quarter bits read from
+the collision grid the world walks (`terrain.collision_grid`, one byte row
+below the tile) - the tile walls, every solid prop's tile and mesh
+footprint, every solid decoration's footprint and a terrain's walls - as
+red quarter-tile blocks, leaving out the quarters the Walls layer draws
+while it is on. It is the engine's reading of the last build, or of the
+last in-place move (which writes the grid again), never the draft. The
+frame also posts it to the workbench (`xw-collision`), and the painter's
+**Collision** box marks the same quarters in red beyond each tile's own
+walls, so a house the player walks into shows as a house with no red
+under it. Ticking the box opens the preview when no build has reported.
+`play_expansion_live::tests::overlay_blocked_layer_is_the_walked_collision_grid`
+(disc-gated) checks that every tile wall is in the layer, that a solid prop
+closes its tile, and that a prop moved in place closes its new one.
+
 **Selection runs both ways.** A click in the picture ray-casts the frame's
 own view-projection against the tile floors and selects that tile in the
 painter (the first object on it, as the Select tool picks, else the tile);
@@ -576,7 +592,13 @@ that is also a picker (the colour a mid-grey texel takes). Its **Fight on
 this stage in 3D** starts the fight on the stage as set. **Card faces in
 3D** on the Cards tab puts one of each pack card into the frame's collection
 and opens the binder (`expansion_preview_cards`): the card faces the engine
-draws, portraits included. The frame's world is the workbench's own, never a
+draws, portraits included. Each mode instance on the Modes tab has **Play in 3D** (**Sit at the table in
+3D** for a poker table or a card duel on a map, **Play on the map in 3D** for
+a course): the preview builds the instance's map and enters it through the
+play page's own mode entry (`play_pack_mode_enter`), so the table, its
+seats, the opponents and the seat camera are the engine's, with the editor's
+volumes off until the mode ends. Start leaves it; the next rebuild leaves a
+mode the preview started by itself. The frame's world is the workbench's own, never a
 player's save. With no map open on the Maps tab, the pack's first map stands
 in under the fight or the binder.
 
@@ -613,6 +635,16 @@ so it never covers the map being edited; the Player camera shows it.
 | Select | A click picks the object under it - a prop, decoration, NPC, spawn, lamp, emitter, trigger, exit or encounter zone; Shift or Ctrl adds or takes away. The selection gets a gizmo: **Move** (two arrows for one axis, a square for both; dragging an object moves it), **Rotate** (a ring: props and decorations in 15-degree steps, NPCs and spawns by facing sector), **Scale** (a corner handle: props and decorations; a zone's corner resizes it). A drag snaps to the tile or to the 32-unit sub-tile grid (**Snap**); Shift places freely. **Duplicate** (Ctrl+D) copies the selection one tile over (a prop to the nearest free tile); **Delete** removes it. |
 | Sculpt | A ring cursor of the brush's radius rides the ground, an inner ring at its strength; `[` and `]` size it. A drag lays one stroke: raise, lower, smooth and flatten write a `stroke` along the drag (a click writes the single-point shape), flatten levelling to the height where the drag starts; ridge and ramp drag from one point to another (a ramp from the ground under its start to the ground under its end plus **Height**); plateau and noise drag a rectangle. |
 | Paint | The tiles under the ring take a legend character: a terrain material's (named by the material) or any walkable style's. |
+
+**Keys.** With the picture focused in **Select**, `W`, `E` and `R` pick
+Move, Rotate and Scale, `Escape` drops the selection, and under the orbit
+camera the arrow keys nudge the selection a tile (a quarter tile with
+Shift or the 32-unit snap) along the map axis whose direction on screen is
+closest to the arrow, so they follow a turned camera; under the Player
+camera they walk. In the painter, with its canvas focused, the arrows nudge
+along its rows and columns. A nudge is `nudge` in
+`expansion-workbench-layout.js` (an object that would leave the map stays)
+and one undo step a press; its moves go to the frame in place.
 
 Objects stand on the ground: the frame samples the heightfield `map_preview`
 returns (with the terrain map's `origin` and `step`) the way

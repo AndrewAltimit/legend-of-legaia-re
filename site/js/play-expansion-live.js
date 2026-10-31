@@ -111,6 +111,12 @@
      * (`xw-arrival`): off, the preview enters quietly. */
     let matchPainter = true;
     let arrival = false;
+    /* Whether the mode seat was opened by the workbench (`xw-mode`). */
+    let previewMode = false;
+    const modeOpen = () => {
+      const rt = api.runtime();
+      try { return !!(rt && JSON.parse(rt.play_pack_modes_json()).open); } catch (e) { return false; }
+    };
 
     function viewReady() {
       const v = api.view();
@@ -151,6 +157,9 @@
           rest = Math.max(1, Math.min(3, Math.floor(d / 16)));
           acc += d; n++; if (d > worst) worst = d;
           if (t - last >= 1000) {
+            /* A mode the workbench started that the player left (Start):
+             * the editor's volumes come back. */
+            if (previewMode && !modeOpen()) { previewMode = false; this.editorOverlayOn = true; }
             post({ type: 'xw-stats', frameMs: acc / Math.max(n, 1), worstMs: worst, fps: n * 1000 / (t - last) });
             acc = 0; n = 0; worst = 0; last = t;
           }
@@ -270,6 +279,15 @@
      * refuses answers `ok: false`, and the workbench rebuilds instead. The
      * props are matched before anything moves. `collision` is false when
      * the bundle cannot move a prop's engine copy (an older wasm). */
+    /* The engine's collision reading of the map just built or moved
+     * (`blocked`, play-view-editor-overlay.js), for the painter's
+     * Collision marks. */
+    function postCollision(v) {
+      const ov = v && v._editorMap;
+      if (!ov || !Array.isArray(ov.blocked)) return;
+      post({ type: 'xw-collision', map: ov.map, width: ov.width, height: ov.height, blocked: ov.blocked, walls: ov.walls });
+    }
+
     function moveInPlace(rt, v, m) {
       if (!rt || !v || !v.staticDraws) return { ok: false, why: 'no map' };
       const picks = [];
@@ -302,7 +320,7 @@
         const o = l.offset || [0, 96, 0];
         if (!rt.expansion_place_lamp(l.n, l.tile[0], l.tile[1], o[0] || 0, o[1] || 0, o[2] || 0)) return { ok: false, why: `lamp ${l.n} refused`, partial: true };
       }
-      if (typeof v.refreshEditorOverlay === 'function') v.refreshEditorOverlay();
+      if (typeof v.refreshEditorOverlay === 'function') { v.refreshEditorOverlay(); postCollision(v); }
       return { ok: true, collision, props: picks.length, npcs: (m.npcs || []).length, spawns: (m.spawns || []).length, lamps: (m.lamps || []).length };
     }
 
@@ -315,6 +333,13 @@
         if (!rt) { post({ type: 'xw-loaded', ok: false, errors: ['the preview has no disc yet'] }); return; }
         const t0 = performance.now();
         const cur = packId(rt);
+        /* A mode the workbench started is the preview's own session, not
+         * anybody's game: leave it, so the build is not held up by it. */
+        if (previewMode) {
+          previewMode = false;
+          if (modeOpen()) rt.play_pack_mode_exit();
+          if (v) v.editorOverlayOn = true;
+        }
         let r;
         /* A first load, or the workbench moved to another map: activate and
          * enter it. Otherwise the same map hot-reloads where the player is. */
@@ -336,6 +361,7 @@
         const vv = viewReady();
         if (vv) {
           vv.refreshEditorOverlay();
+          postCollision(vv);
           if (r.ok && typeof vv.editorRebuilt === 'function') vv.editorRebuilt();
           applyCamera(vv);
         }
@@ -372,6 +398,13 @@
         const ok = !!(rt && typeof rt.expansion_preview_cutscene === 'function' && rt.expansion_preview_cutscene(m.id));
         if (ok && v) { wantOrbit = false; applyCamera(v); }
         post({ type: 'xw-action', what: 'cutscene', id: m.id, ok });
+      } else if (m.type === 'xw-mode') {
+        /* A pack mode instance, as the play page's own mode list enters it. */
+        let why = 'this page build has no game modes';
+        if (rt && typeof rt.play_pack_mode_enter === 'function') why = rt.play_pack_mode_enter(m.id);
+        /* The mode's own picture: the editor's volumes stand down. */
+        if (!why) { previewMode = true; if (v) { v.editorOverlayOn = false; wantOrbit = false; applyCamera(v); } }
+        post({ type: 'xw-action', what: 'mode', id: m.id, ok: !why, why });
       } else if (m.type === 'xw-fight') {
         const ok = !!(rt && typeof rt.expansion_preview_fight === 'function' && rt.expansion_preview_fight(m.kind, m.id));
         if (ok && v) { wantOrbit = false; applyCamera(v); }
