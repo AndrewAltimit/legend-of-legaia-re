@@ -791,10 +791,10 @@ fn the_rebirth_isles_chain_plays_from_the_sea_gate_to_the_pearl() {
         "the Thornwood Queen falls; log:\n{}",
         run.log.join("\n")
     );
-    run.press("hermit");
+    run.talk_npc("isles_hermit", |r| r.completed("isles_thornwood"));
     run.expect_done("isles_thornwood");
     if !active(&run, "isles_pearl") {
-        run.press("hermit");
+        run.talk_npc("isles_hermit", |r| active(r, "isles_pearl"));
     }
     run.take_exit("grotto_stair");
     run.press("pearl");
