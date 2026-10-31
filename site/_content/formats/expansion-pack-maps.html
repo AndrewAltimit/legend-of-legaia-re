@@ -432,6 +432,17 @@ backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1152, distance = 2, s
   <p>A map with no base geometry draws nothing past its floor, which a follow camera at its edge frames as a black void. The surround lays a flat ground <code>depth</code> below tier <code>0</code> on every void tile and up to <code>reach</code> tiles past the map, with <code>side</code> a face from the floor's edge down to it, so the floor reads as a ledge. <code>backdrop</code> stands a wall <code>distance</code> tiles past the map along its <code>sides</code>, rising to <code>height</code> and darkening over its top two fifths to <code>fade</code>: the far side of a hall the camera looks over. The default <code>"esw"</code> leaves the camera's <code>-Z</code> side open. Both are drawn, never walked, through the decoration-cell path (<code>expansion_map::surround</code>).</p>
 </section>
 
+<section class="doc-section" id="ceiling" data-doc="ceiling">
+  <h2>Ceiling</h2>
+<pre><code>[ceiling]
+height = 2048                                    # world units above tier 0
+cell = { tpage = 11, clut = 32517, tile = 27 }   # the underside, one cell a tile
+shade = 48
+chain = { tpage = 11, clut = 32517, tile = 27, width = 6, shade = 64, items = ["lantern_hall"] }</code></pre>
+  <p>A room built from scratch has no ceiling, so a lantern marked <code>hangs</code> hangs from nothing. <code>chain</code> gives every hung prop and decoration named in <code>items</code> (every one when <code>items</code> is empty) a square shaft <code>width</code> units across from the item's top up to <code>height</code>; <code>items</code> keeps chains off wall-mounted items such as banners. The chain does not follow a prop's <code>sway</code>.</p>
+  <p><code>cell</code> draws a flat underside over the map's rectangle at <code>height</code>, wound to face down, so only a camera below it sees it. The follow camera looks down from above the walls, so it never sees the underside, and the camera-occlusion gate leaves out faces seen only from beneath. Both go in through the decoration bake and draw on both hosts. The validator holds <code>height</code> to <code>1..=4096</code>, the atlas cells to <code>0..64</code> and <code>width</code> to <code>1..=64</code>, and errors on an <code>items</code> id that names no hung prop or decoration.</p>
+</section>
+
 <section class="doc-section" id="particles" data-doc="particles">
   <h2>Particles</h2>
 <pre><code>[[emitters]]
