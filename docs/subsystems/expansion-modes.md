@@ -527,7 +527,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --expansion packs/rebirth --map rebirth_tower_5f --mode tower-high-table
 ```
 
-The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt.
+The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt, with the hall's own card table put away while it plays (`hide = ["high_table"]`); the Mist Lantern Table and the Village Duel do the same with Tolva's Haven's plank tables.
 
 ## Tests
 

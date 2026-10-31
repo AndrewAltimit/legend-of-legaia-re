@@ -343,12 +343,14 @@ tile = [18, 16]
 offset = [0, 0, -40]
 
 # The High Table: the Rest's long card table (`koin1` mesh 120, a table
-# on its own legs) on its tile. Its top is clear: the Tower High Table
-# (`modes.toml`) deals onto it.
-[[decor]]
+# on its own legs) on its tile. A prop, so the Tower High Table
+# (`modes.toml`) can put it away while its own felt is dealt on.
+[[props]]
+id = "high_table"
 mesh = { object = 120 }
 tile = [18, 10]
 scale = 1.3
+solid = true
 
 # Barrels at the bar's ends, a display case at the armory.
 [[props]]
@@ -554,10 +556,12 @@ light = { color = [255, 190, 120], radius = 520, height = 0, flicker = 0.1, peri
 
 # The casino's red rugs (`koin1` mesh 25) under the High Table and the
 # game-night table.
+# (The High Table's rug is baked on the tile south of it: the table's
+# prop takes its own tile's cell.)
 [[decor]]
 mesh = { object = 25 }
-tile = [18, 10]
-offset = [0, 2, 0]
+tile = [18, 11]
+offset = [0, 2, -128]
 scale = 2.0
 
 [[decor]]

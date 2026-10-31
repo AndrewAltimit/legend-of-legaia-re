@@ -22,9 +22,10 @@ spawn = "from_thornwood"
 tile = [56, 32]
 facing = 0
 radius = 90
-# The plank table on that tile (the map's `lantern_table` prop) is the
-# table: the felt and the cards lie on its top.
-draw_table = false
+# The game is dealt on the table's own felt; the plank table that stands
+# on that tile between games (the map's `lantern_table` prop) is put away
+# while the seat is taken.
+hide = ["lantern_table"]
 height = 90
 players = [
   { npc = "lantern_wenna", name = "Wenna" },
@@ -49,8 +50,9 @@ spawn = "from_beach"
 [card_duels.table]
 tile = [11, 10]
 facing = 6
-# The map's `duel_table` prop on that tile is the table.
-draw_table = false
+# The duel lays its own table; the map's `duel_table` prop on that tile
+# is put away while the duel is played.
+hide = ["duel_table"]
 height = 64
 seat_distance = 150
 opponent = { npc = "duel_brin", name = "Brin" }
@@ -171,9 +173,10 @@ spawn = "from_below"
 tile = [18, 10]
 facing = 0
 radius = 92
-# The hall's own card table (the map's decor at this tile) is the table:
-# the cards and chips go on its top rather than on a second, built-in one.
-draw_table = false
+# Dealt on the table's own felt; the hall's card table that stands there
+# between games (the map's `high_table` prop) is put away while the seat
+# is taken.
+hide = ["high_table"]
 height = 84
 players = [
   { npc = "high_table_odile", name = "Odile" },
