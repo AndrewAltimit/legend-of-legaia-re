@@ -227,7 +227,7 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 | `[[poker]]` | `seats` (4, `2..=6` with the player), `buy_in` (1000), `small_blind` (10), `big_blind` (20), `currency` (`gold` / `coins`), `chip_value` (1), `ai_tier` (`novice` / `regular` / `expert`), `max_hands`, `blind_double_every` |
 | `[[card_duels]]` | `deck` (the opponent's five `cards.toml` ids), `ai_tier`, `elemental_cells`, `chain`, `stakes`, `win_booster`, `map`, `spawn`, `[card_duels.table]` |
 | `[[golf]]` | `[[golf.holes]]`, each `par` (3), `rows` (tile strings), `heights` (digit strings of the same shape), `max_strokes` (0 = `par + 5`) |
-| `[[races]]` | `laps` (3), `points` (closed centerline, world units), `half_width` (64), `boost_segments`, `racers` (4), `ai_tier` |
+| `[[races]]` | `course` (`circuit` / `sprint`), `laps` (3, circuits), `points` (centerline, world units), `half_width` (64), `boost_segments`, `pickups`, `racers` (4), `ai_tier` |
 | `[[prop_hunt]]` | `props` (`id`, `mesh`, `radius`), `decoys` (`prop`, `x`, `y`), `bounds`, `blockers`, `rounds` (3), `hunters` (1), `players` (4), `hide_frames`, `round_frames`, `hunter_health` (100), `miss_penalty` (10), `ai_tier` |
 | `[[party_nights]]` | `order` (`fixed` / `shuffle`), `points` ([10, 6, 4, 2]), `last_place_picks` (false), `double_final` (true), `players` (4, a night alone's seats), `rivals` (names), `ai_tier`, `podium`, `[[party_nights.rounds]]`, `[[party_nights.prizes]]` |
 | `podium` | `map` (a pack map), `tile` (the first-place block), `facing` (compass sector), `bodies` (map NPCs that play the rivals, in rival order): where a night played alone ends, in the world ([expansion-modes.md](../subsystems/expansion-modes.md#the-podium-in-the-world)) |
@@ -236,9 +236,9 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 
 A golf hole's tile legend is one character per tile: `.` fairway, `,` rough, `s` sand, `w` water, `#` wall, space out of bounds, `T` tee, `O` cup, and `^` `v` `<` `>` fairway sloping downhill that way.
 
-The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards) and the duel tables (the `map` exists, the `tile` is on it, the `facing` is a compass sector, every NPC seated is one of the map's), and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
+The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards), the duel tables (the `map` exists, the `tile` is on it, the `facing` is a compass sector, every NPC seated is one of the map's) and the races (below), and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
 
-A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
+A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds; a race may instead name a kingdom overworld (`scene`) and run across it ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
 
 | Key | On | Meaning |
 |---|---|---|
@@ -247,8 +247,31 @@ A golf course or a race may name a pack map, and is then played in the 3D field 
 | `surfaces` | `[[golf]]` | Map legend character -> `fairway`, `rough`, `sand`, `water`, `wall` or `out` |
 | `tee`, `cup` | `[[golf.holes]]` | Map tiles `[column, row]` of the tee and the cup; both required on a map course |
 | `area` | `[[golf.holes]]` | Inclusive map-tile rectangle `[col0, row0, col1, row1]` the hole plays in; the whole map when left out |
-| `waypoints` | `[[races]]` | The centerline as map tiles, in driving order, closing back on the first; replaces `points` |
+| `scene` | `[[races]]` | A kingdom overworld (`map01`, `map02`, `map03`) the race runs across, over its own ground; exclusive with `map` |
+| `waypoints` | `[[races]]` | The centerline as map tiles (on an overworld, its 128-unit tiles), in driving order - a circuit closes back on the first; replaces `points` |
 | `bodies` | `[[golf]]`, `[[races]]` | Map NPC ids (`[[npcs]]` of the map) that play the other seats, in seat order with the player's skipped |
+
+#### Courses and power-ups
+
+A race's `course` is a `circuit`, a closed loop run for `laps`, or a `sprint`, run once from the first point to the last; every point is a checkpoint gate the racers pass in order, and a sprint's last is its finish line. `pickups` are the power-ups lying on and beside the course ([racing](../subsystems/expansion-modes.md#power-ups)):
+
+| Key (default) | Meaning |
+|---|---|
+| `kind` (`boost`) | `boost`, `hop`, `shield` or `slow` |
+| `at` | Where it lies: a tile `[column, row]` (its centre) on a map or overworld race, world units on a board race |
+| `respawn` (0 = 600) | Frames until it comes back once taken |
+
+```toml
+[[races]]
+id = "drake-dash"
+scene = "map01"
+course = "sprint"
+half_width = 70
+waypoints = [[91, 20], [94, 28], [98, 31], [92, 36], [70, 40]]
+pickups = [{ kind = "hop", at = [96, 30] }, { kind = "boost", at = [80, 37] }]
+```
+
+The validator checks each race: `map` and `scene` are not both set, a `scene` is a kingdom overworld, a circuit has at least three points and a sprint two, no two consecutive points coincide, `half_width` is at least 20, `racers` is `1..=8`, every boost segment exists, and every waypoint and pickup is on its map. It warns on `points` given beside `waypoints`, `bodies` on an overworld race (it has no map NPCs; its rivals draw as stand-ins), a pickup farther from the course than a hop reaches (twice the half-width), and a party round's `laps` on a sprint.
 
 A Grid Duel may name a pack map and a table on it, and is then played on a board laid on that table in the 3D field scene ([Grid Duel at a table](../subsystems/expansion-modes.md#grid-duel-at-a-table)). `map` and `spawn` work as above; `[card_duels.table]` places the table:
 

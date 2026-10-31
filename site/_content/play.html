@@ -1263,7 +1263,7 @@ div.play-vis-head { cursor: default; }
         parts.push('<div class="play-scene-group is-pack">Custom game modes in 3D <span class="play-scene-pack-tag">expansion pack</span> <span class="play-experimental">experimental</span></div>');
         for (const m of wm) {
           parts.push(
-            `<button class="play-scene-item is-pack" type="button" data-pack-mode="${window.escapeHtml(m.id)}" data-mode-map="${window.escapeHtml(m.map)}">` +
+            `<button class="play-scene-item is-pack" type="button" data-pack-mode="${window.escapeHtml(m.id)}" data-mode-map="${window.escapeHtml(m.map || '')}" data-mode-scene="${window.escapeHtml(m.scene || '')}">` +
             `<span>${window.escapeHtml(m.name || m.id)}</span><span class="play-scene-code">${window.escapeHtml(m.kind || '')}</span></button>`);
         }
       }
@@ -1289,7 +1289,7 @@ div.play-vis-head { cursor: default; }
   listEl.addEventListener('click', (e) => {
     const b = e.target.closest('.play-scene-item');
     if (!b) return;
-    if (b.dataset.packMode) expansionEnterMode(b.dataset.packMode, b.dataset.modeMap);
+    if (b.dataset.packMode) expansionEnterMode(b.dataset.packMode, b.dataset.modeMap, b.dataset.modeScene);
     else if (b.dataset.packMap) expansionEnterMap(b.dataset.packMap, '');
     else enter(b.dataset.scene);
   });
@@ -1511,16 +1511,18 @@ div.play-vis-head { cursor: default; }
     /* `&map=<id>` (the workbench's Play here): straight onto that map,
      * at `&spawn=<id>` or its first spawn. */
     /* `&mode=<id>` (the modes page's Play in 3D): seat that game mode at
-     * its table or course, entering `&map` first. */
-    if (expansionBytes && q.get('mode')) expansionEnterMode(q.get('mode'), q.get('map') || '');
+     * its table or course, entering `&map` (or a race's overworld, `&scene`)
+     * first. */
+    if (expansionBytes && q.get('mode')) expansionEnterMode(q.get('mode'), q.get('map') || '', q.get('scene') || '');
     else if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
   }
 
   /* Seat the pack's game mode `id` in the world. The engine walks the
-   * party onto the mode's map itself (`World::pack_mode_wants_map`), but it
-   * needs a running scene to start from: with none, enter `map` first and
-   * seat the mode once the session is up. */
-  function expansionEnterMode(id, map) {
+   * party onto the mode's map itself (`World::pack_mode_wants_map`; a race
+   * run on an overworld, `pack_mode_wants_scene`), but it needs a running
+   * scene to start from: with none, enter `map` (or the race's overworld
+   * `scene`) first and seat the mode once the session is up. */
+  function expansionEnterMode(id, map, scene) {
     if (!runtime || !id) return;
     const seat = () => {
       let err = '';
@@ -1532,6 +1534,7 @@ div.play-vis-head { cursor: default; }
     try { hasScene = JSON.parse(runtime.play_pack_modes_json()).modes.length > 0; } catch (e) { hasScene = false; }
     if (hasScene && view) { showStage(); seat(); return; }
     if (map) expansionEnterMap(map, '');
+    else if (scene) enter(scene);
     let tries = 0;
     const wait = setInterval(() => {
       let up = false;

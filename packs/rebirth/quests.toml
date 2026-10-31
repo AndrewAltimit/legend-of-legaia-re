@@ -305,7 +305,7 @@ objectives = [
     { kind = "win_mode", mode = "tower-high-table", text = "Win at the Tower High Table" },
     { kind = "win_mode", mode = "wardens-duel", text = "Win the Warden's Duel" },
     { kind = "win_mode", mode = "rebirth-links", text = "Win the Rebirth Links" },
-    { kind = "win_mode", mode = "spiral-circuit", text = "Win the Spiral Circuit" },
+    { kind = "win_mode", mode = "spiral-circuit", text = "Win the Monastery Run" },
     { kind = "win_mode", mode = "old-vault", text = "Win hide and seek in the Old Vault" },
 ]
 complete_dialog = "keeper_done"

@@ -103,18 +103,32 @@ heights = [
   "0000000000",
 ]
 
+# A sprint across Drake's overworld (map01), from the fields under Rim Elm
+# to the water gate: out east round the bluff, a hairpin back west along
+# the northern plain, past Hunter's Spring and down the western strip.
+# Every waypoint is a checkpoint gate. A hop at the hairpin cuts it; the
+# boost two tiles off the plain's long straight needs one.
 [[races]]
 id = "drake-circuit"
-name = "Drake Circuit"
-laps = 3
-half_width = 90
+name = "Drake Dash"
+scene = "map01"
+course = "sprint"
+half_width = 70
 racers = 4
 ai_tier = "regular"
-points = [
-  [0, 0], [800, 0], [1400, 200], [1600, 700],
-  [1300, 1200], [600, 1300], [100, 1000], [-200, 500],
+waypoints = [
+  [91, 20], [94, 28], [98, 31], [102, 32], [92, 36],
+  [80, 38], [70, 40], [60, 46], [57, 51], [57, 56],
 ]
-boost_segments = [0, 4]
+boost_segments = [5]
+pickups = [
+  { kind = "shield", at = [96, 30] },
+  { kind = "hop", at = [99, 31] },
+  { kind = "boost", at = [86, 35] },
+  { kind = "boost", at = [75, 39] },
+  { kind = "slow", at = [65, 43] },
+  { kind = "shield", at = [58, 48] },
+]
 
 [[prop_hunt]]
 id = "storehouse"
@@ -327,22 +341,37 @@ heights = [
 ]
 max_strokes = 9
 
-# A spiral of the tower's floors, run as a closed circuit: a long back
-# straight with a boost pad, a hairpin at the top, and a fast sweep home.
+# The keeper's race, run on Drake's overworld (map01) for six expert
+# racers: from the water gate's southern landing to the Biron Monastery -
+# across the southern plain and back, out over the narrow neck into the
+# eastern valley, round its northern hairpin and down to the monastery's
+# gate. Picked at the table, it takes the party out onto the overworld and
+# back to the 5F when it is over. The id keeps the keeper's quests and
+# card reward.
 [[races]]
 id = "spiral-circuit"
-name = "The Spiral Circuit"
-location = { kind = "scene", name = "tower" }
-laps = 3
-half_width = 100
+name = "The Monastery Run"
+scene = "map01"
+course = "sprint"
+half_width = 70
 racers = 6
 ai_tier = "expert"
-points = [
-  [0, 0], [1200, 0], [2000, 300], [2400, 900],
-  [2200, 1600], [1500, 1900], [900, 1600], [1100, 1100],
-  [600, 800], [-200, 1300], [-700, 900], [-500, 300],
+waypoints = [
+  [62, 63], [67, 56], [67, 52], [80, 50], [88, 60], [91, 51],
+  [93, 50], [99, 50], [103, 43], [102, 51], [100, 57], [101, 61],
 ]
-boost_segments = [0, 5, 10]
+boost_segments = [2, 6]
+pickups = [
+  { kind = "shield", at = [65, 59] },
+  { kind = "hop", at = [67, 54] },
+  { kind = "boost", at = [74, 51] },
+  { kind = "boost", at = [74, 49] },
+  { kind = "slow", at = [84, 55] },
+  { kind = "hop", at = [90, 55] },
+  { kind = "boost", at = [96, 50] },
+  { kind = "slow", at = [101, 47] },
+  { kind = "shield", at = [101, 54] },
+]
 
 # Hide and seek among the Old Vault's urns and crates: a wide hall broken
 # by pillar rows, two hunters against four hiders.
@@ -403,7 +432,8 @@ tee = [5, 8]
 cup = [9, 4]
 area = [5, 4, 9, 8]
 
-# Three laps of the 1F arena floor, round the dais between the pillars.
+# Three laps of the 1F arena floor, round the dais between the pillars: the
+# tower's own warm-up circuit, a power-up on each side.
 [[races]]
 id = "sol-ring"
 name = "Sol Ring"
@@ -415,6 +445,12 @@ half_width = 90
 ai_tier = "regular"
 waypoints = [[4, 3], [10, 3], [10, 9], [4, 9]]
 boost_segments = [0, 2]
+pickups = [
+  { kind = "boost", at = [7, 3] },
+  { kind = "shield", at = [10, 6] },
+  { kind = "slow", at = [7, 9] },
+  { kind = "hop", at = [4, 6] },
+]
 
 
 # --- Tower Game Night ---------------------------------------------------------
@@ -470,7 +506,6 @@ holes = [2]
 [[party_nights.rounds]]
 mode = "drake-circuit"
 name = "Drake Dash"
-laps = 1
 
 [[party_nights.prizes]]
 place = 1

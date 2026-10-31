@@ -57,10 +57,11 @@
       ],
     },
     'Race': {
-      blurb: 'Checkpoint racing. Finish the laps first.',
+      blurb: 'Checkpoint racing: laps of a circuit, or a sprint through gates across the overworld. Run over power-ups to carry one.',
       controls: [
         '{Cross}: accelerate, {Square}: brake',
         '{Left} / {Right}: steer, {R1}: boost',
+        '{Triangle}: use the power-up you carry (boost, hop, shield, slow)',
       ],
     },
     'Prop Hunt': {
@@ -214,7 +215,7 @@
   function list3d() {
     const host = $('gm-3d-cards');
     const lib = playLib();
-    const world = lib ? modes.filter((m) => m.map) : [];
+    const world = lib ? modes.filter((m) => m.map || m.scene) : [];
     if (!world.length) {
       host.innerHTML = `<p class="gm-hint">${lib
         ? 'These rules lay no game out on a map.'
@@ -227,7 +228,7 @@
         <span class="gm-kind">${esc(m.kind)}</span>
         <h3>${esc(m.name)}</h3>
         <p>${esc(h.blurb)}</p>
-        <p class="gm-map">At its place on <code>${esc(m.map)}</code>.</p>
+        <p class="gm-map">${m.map ? `At its place on <code>${esc(m.map)}</code>.` : `Across the overworld, <code>${esc(m.scene)}</code>.`}</p>
         <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play3d="${esc(m.id)}"
           ${discReady ? '' : 'disabled title="Load your disc above first"'}>Play in 3D</button></div>
       </div>`;
@@ -240,10 +241,11 @@
   function enter3d(id) {
     const m = modes.find((x) => x.id === id);
     const lib = playLib();
-    if (!m || !m.map || !lib || !discReady) return;
+    if (!m || !(m.map || m.scene) || !lib || !discReady) return;
     leave();
     const frame = $('gm-3d-frame');
-    const q = new URLSearchParams({ embed: '1', expansion: '1', lib, map: m.map, mode: m.id });
+    const where = m.map ? { map: m.map } : { scene: m.scene };
+    const q = new URLSearchParams({ embed: '1', expansion: '1', lib, ...where, mode: m.id });
     frame.src = 'play.html?' + q.toString();
     frame.hidden = false;
     $('gm-3d-bar').hidden = false;
@@ -286,7 +288,7 @@
         <h3>${esc(m.name)}</h3>
         <p>${esc(h.blurb)}</p>
         <ul>${lines.map((l) => `<li>${controlLine(l)}</li>`).join('')}</ul>
-        ${m.map ? `<p class="gm-map">Also in 3D above, at its place on <code>${esc(m.map)}</code>.</p>` : ''}
+        ${m.map ? `<p class="gm-map">Also in 3D above, at its place on <code>${esc(m.map)}</code>.</p>` : (m.scene ? `<p class="gm-map">Also in 3D above, across the overworld <code>${esc(m.scene)}</code>.</p>` : '')}
         <div class="gm-foot"><button class="gm-btn gm-primary" type="button" data-play="${esc(m.id)}">Play flat</button></div>
       </div>`;
     }).join('');

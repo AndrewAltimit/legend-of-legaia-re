@@ -394,7 +394,7 @@ race, or hide and seek in the
 old vault."""
 choices = [
     { label = "The Rebirth Links.", mode = "rebirth-links" },
-    { label = "The Spiral Circuit.", mode = "spiral-circuit" },
+    { label = "The Monastery Run.", mode = "spiral-circuit" },
     { label = "The Old Vault.", mode = "old-vault" },
     { label = "Not now.", reply = "\"Come back when you are\nfeeling lucky.\"" },
 ]

@@ -247,8 +247,12 @@ regulars, confetti and a slow shot round them (`modes.toml` `podium`).
   green, a dogleg, an island green behind a bridge, stepped terraces
   (height grid), conveyor ramps round a wall (slope tiles), and a long par
   5 to a green that slopes away.
-- **The Spiral Circuit** (`spiral-circuit`): a twelve-checkpoint circuit for
-  six racers with three boost pads.
+- **The Monastery Run** (`spiral-circuit`): a sprint for six expert racers
+  across Drake's overworld (`map01`), from the water gate's southern landing
+  to the Biron Monastery through twelve checkpoint gates, with nine
+  power-ups along the way.
+  Picking it at the table takes the party out onto the overworld, and back
+  to the 5F when the race is over.
 - **The Old Vault** (`old-vault`): six-player prop hunt, two hunters, among
   urns, crates, chests and braziers between pillar rows.
 
@@ -258,6 +262,12 @@ Table's empty seat deals in on a step (`kind = "mode"`). Two more instances
 play on the tower itself, in the 3D field: **Tower Green** (`tower-green`),
 one hole across the 1F dais, and **Sol Ring** (`sol-ring`), three laps of
 the 1F floor round the dais; both open from the mode picker.
+
+Sol Ring stays in the tower as its short warm-up circuit; the long races
+run on the overworld, where there is room to run to. **Drake Dash**
+(`drake-circuit`) is the gentler of the two: four racers from the fields
+under Rim Elm to the water gate, a hairpin to cut with a hop and a boost
+lying off the plain's long straight for whoever hopped to it.
 
 The earlier village instances (`mist-lantern-table`, `rim-elm-duel`,
 `windmill-links`, `drake-circuit`, `storehouse`) stay as the gentler set.

@@ -221,14 +221,26 @@
 
 <section class="doc-section" id="racing" data-doc="racing">
   <h2>Racing</h2>
-  <p>A track is a closed centerline polyline with a half-width; every point within the half-width of a segment is drivable, and every centerline point is a checkpoint.</p>
+  <p>A track is a centerline polyline with a half-width: a <strong>circuit</strong> closes back on its first point and is run for laps, a <strong>sprint</strong> runs once from the first point to the last. Every point within the half-width of a segment is drivable, and every centerline point is a checkpoint gate.</p>
   <ul class="bullets">
-    <li><strong>Checkpoints.</strong> A racer passes the next checkpoint when the segment nearest to it becomes the segment leaving that checkpoint. The switch happens on the corner's bisector, so a cut corner still counts and a skipped segment never does; only the next checkpoint in order counts. Passing checkpoint 0 closes a lap.</li>
-    <li><strong>Driving.</strong> Heading plus scalar speed: Cross accelerates, Square brakes, Left / Right steer, R1 spends a full boost meter (it refills a unit a frame), and boost-pad segments give a short boost free.</li>
+    <li><strong>Checkpoints.</strong> A racer passes the next checkpoint when the segment nearest to it becomes the segment leaving that checkpoint. The switch happens on the corner's bisector, so a cut corner still counts and a skipped segment never does; only the next checkpoint in order counts. On a circuit, passing checkpoint 0 closes a lap; a sprint finishes on crossing the line through its last point.</li>
+    <li><strong>Driving.</strong> Heading plus scalar speed: Cross accelerates, Square brakes, Left / Right steer, R1 spends a full boost meter (it refills a unit a frame), and boost-pad segments give a short boost free. Triangle uses the power-up the racer carries.</li>
     <li><strong>Contact.</strong> At the edge the racer is pushed back inside, the velocity's outward component is dropped and the rest turns the heading along the edge at seven eighths speed. Overlapping racers are pushed apart and the one behind loses a quarter of its speed. A finished racer coasts and no longer collides.</li>
     <li><strong>End.</strong> All racers finished, <code>finish_grace</code> frames after the first finisher, or the time limit; unfinished racers place behind the finishers by laps, checkpoints and distance to the next one.</li>
   </ul>
   <p>AI racers steer by pure pursuit at a point two half-widths ahead along the centerline, offset by a per-racer line; tiers cap their top speed, brake for sharp turns and use the boost.</p>
+  <h3 id="power-ups">Power-ups</h3>
+  <p>A race's <code>pickups</code> lie on and beside the course. A racer with nothing in hand takes one by running over it, carries it and uses it with Triangle; the spot stands empty for its respawn delay (600 frames by default) and comes back.</p>
+  <table>
+    <thead><tr><th>Power-up</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Boost</td><td>100 frames at boost speed</td></tr>
+      <tr><td>Hop</td><td>40 frames in the air: no bumps, and the edge lets the racer run a half-width wider - to cut a corner or reach a pickup off the course</td></tr>
+      <tr><td>Shield</td><td>600 frames of free bumps; blocks the next slow, and is spent doing so</td></tr>
+      <tr><td>Slow</td><td>Every rival runs 120 frames at 55% of its top speed; a shielded rival loses its shield instead</td></tr>
+    </tbody>
+  </table>
+  <p>AI racers reach for a ready power-up lying on the track just ahead and use what they carry by rule: a boost on a straight, a hop into a sharp turn or over a rival, a shield at once, a slow when not leading. The spots and every racer's power-ups are in the state hash, so a race with them replays and runs in lockstep like any other.</p>
 </section>
 
 <section class="doc-section" id="prop-hunt" data-doc="prop-hunt">
@@ -246,12 +258,13 @@
 
 <section class="doc-section" id="in-world-golf-and-racing" data-doc="in-world-golf-and-racing">
   <h2>In-world golf and racing</h2>
-  <p>A golf course or a race that names a pack map (<code>map = "&lt;id&gt;"</code> in <code>modes.toml</code>) is played in the 3D field scene that map builds instead of on a top-down board. The session stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. An instance with no map is always the top-down screen.</p>
+  <p>A golf course or a race that names a pack map (<code>map = "&lt;id&gt;"</code> in <code>modes.toml</code>) is played in the 3D field scene that map builds instead of on a top-down board; a race may instead name a kingdom overworld (<code>scene = "map01"</code>) and run across it. The session stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. An instance with no map is always the top-down screen.</p>
   <ul class="bullets">
     <li><strong>Laying it out.</strong> A map hole is the map's tile grid inside the hole's <code>area</code>, one golf tile per map tile: a walled tile is a wall, a void tile or anything outside the area is out of bounds, and an open tile plays as its legend surface. A race's centerline is its waypoints' tile centres. <code>MapFrame</code> places the mode units on the field - four world units a mode unit for golf, two for racing.</li>
-    <li><strong>The stage.</strong> <code>WorldStage</code> turns the view into a frame: in golf the party leader stands at the player's ball facing the aim, swings and walks to the new lie, other seats stand at their balls, and the camera sits behind the ball looking down its aim; in a race the leader is the player's racer and the camera chases from behind. Banners carry the hole, par, countdown, laps and results.</li>
+    <li><strong>The stage.</strong> <code>WorldStage</code> turns the view into a frame: in golf the party leader stands at the player's ball facing the aim, swings and walks to the new lie, other seats stand at their balls, and the camera sits behind the ball looking down its aim; in a race the leader is the player's racer, lifted through a hop, and the camera chases from behind; the track carries a gate over every checkpoint, the next in gold, and the power-ups floating over their spots. Banners carry the hole, par, countdown, laps and results.</li>
     <li><strong>Bodies and online play.</strong> The leader is the session's local seat, so a networked peer stands its own golfer or racer. An instance's <code>bodies</code> names map NPCs that stand in for the other seats, posed and animated by <code>World::stage_pack_mode</code>.</li>
     <li><strong>Entering the map.</strong> <code>World::pack_mode_wants_map</code> names the map and the scene host enters it at the instance's spawn, then puts the seat back under the expansion mode; a map that fails to enter falls back to the top-down screen.</li>
+    <li><strong>On the overworld.</strong> <code>World::pack_mode_wants_scene</code> names a race's overworld; the scene host enters it under the seat, noting where the party stood, and takes the party back there - scene, pack map, pose and mode - when the seat closes. The racers, kerbs, gates and power-ups follow the overworld's heightfield through the floor sampler, the native window draws the overworld under the seat as in the overworld walk, and nothing of the walk runs (no encounters, no entrances). Rebirth's courses are checked against <code>map01</code>'s collision grid by a disc-gated test.</li>
     <li><strong>Drawing it.</strong> Both hosts draw the field as for any scene, with the camera from the shared resolver's venue arm, and the balls, cup, aim arrow, bodies and boost trail as depth-tested screen primitives built in code from no disc bytes, under the in-world HUD.</li>
   </ul>
 </section>
@@ -330,7 +343,7 @@
       <tr><td>Poker</td><td>Left / Right: Fold, Check-Call, Raise, All-in. Up / Down: raise size in big blinds. Cross: act, or skip the showdown.</td></tr>
       <tr><td>Grid Duel</td><td>Left / Right: hand card. Cross: lift it, then D-pad to a cell and Cross to place. Circle: put it back.</td></tr>
       <tr><td>Golf</td><td>Left / Right: aim (hold Square for fine steps). Cross: start the power meter, Cross again to strike. Circle: back to aiming.</td></tr>
-      <tr><td>Racing</td><td>Cross: accelerate. Square: brake. Left / Right: steer. R1: boost.</td></tr>
+      <tr><td>Racing</td><td>Cross: accelerate. Square: brake. Left / Right: steer. R1: boost. Triangle: use the power-up carried.</td></tr>
       <tr><td>Prop hunt</td><td>Choose: Left / Right and Cross. Then the D-pad moves; a hunter inspects with Cross, a hider taunts with Triangle.</td></tr>
     </tbody>
   </table>
@@ -343,7 +356,7 @@
       <tr><td>Poker</td><td>Opponent plates along the far rail (chips, dealer button, card backs, bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu, the event log.</td></tr>
       <tr><td>Grid Duel</td><td>The 3x3 grid on its board with elemental cells, both hands fanned down the sides, the score plates, the turn line and the selected card's panel; cards are the card page's faces.</td></tr>
       <tr><td>Golf</td><td>The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard.</td></tr>
-      <tr><td>Racing</td><td>A functional top-down track map with boost segments and the start line, every racer, and the lap / place / speed / boost panel.</td></tr>
+      <tr><td>Racing</td><td>A functional top-down track map with boost segments, the start and finish lines and the ready power-ups, every racer, and the lap or gate / place / speed / boost / power-up panel.</td></tr>
       <tr><td>Prop hunt</td><td>A functional top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts.</td></tr>
       <tr><td>Results</td><td>Placements with each mode's score, and what was won.</td></tr>
     </tbody>
