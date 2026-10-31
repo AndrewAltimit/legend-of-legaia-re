@@ -228,7 +228,7 @@ sides = [8, 6, 6, 6]
 art = { kind = "monster", id = 167 }
 
 # --- The Hollow Court: the tower's own monsters -----------------------------
-# Won from the Tower of Rebirth's fights; the art is the retail monster
+# Won from Genesis Tower's fights; the art is the retail monster
 # each pack monster is built on (battle.toml `base`).
 
 [[cards]]
@@ -268,7 +268,7 @@ sides = [8, 7, 7, 7]
 art = { kind = "monster", id = 138 }
 
 # --- The tower's floors and keepers ------------------------------------------
-# Bosses and floor monsters of the Tower of Rebirth; the art is the retail
+# Bosses and floor monsters of Genesis Tower; the art is the retail
 # monster each pack monster is built on (battle.toml `base`).
 
 [[cards]]
@@ -437,7 +437,7 @@ art = { kind = "monster", id = 112 }
 
 [[boosters]]
 id = "genesis-starter"
-name = "Rebirth Starter Pack"
+name = "Genesis Starter Pack"
 cards_per_pack = 5
 weights = { common = 70, uncommon = 23, rare = 6, legendary = 1 }
 guaranteed = "uncommon"

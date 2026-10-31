@@ -962,7 +962,7 @@ outro = "breath_fallen"
 # storm-swept peak.
 stage = { scene = "uru" }
 
-# --- The Rebirth Isles (party level 30-40) -----------------------------------
+# --- The Lantern Isles (party level 30-40) -----------------------------------
 #
 # An outdoor region past the tower's sea gate (maps/isles_*.toml): a beach,
 # a fishing village, the Thornwood and its ruins, and a grotto under the

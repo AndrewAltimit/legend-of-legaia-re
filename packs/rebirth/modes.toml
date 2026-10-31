@@ -166,7 +166,7 @@ decoys = [
   { prop = "barrel", x = 480, y = 300 },
 ]
 
-# --- The Gambler's Rest (Tower of Rebirth, 5F) -------------------------------
+# --- The Gambler's Rest (Genesis Tower, 5F) ----------------------------------
 #
 # Keeper Odalric's five tables. The keeper's quests (quests.toml,
 # `keeper_tables`, `high_roller`) count wins at each of them by id.
@@ -247,7 +247,7 @@ spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher", cheer = 25, slum
 # terraces, a run of ramps, and a long finishing hole with a sloped green.
 [[golf]]
 id = "genesis-links"
-name = "The Rebirth Links"
+name = "The Genesis Links"
 location = { kind = "scene", name = "teien" }
 
 # 1 - Atrium Approach: straight in, with a bunker either side of the green.

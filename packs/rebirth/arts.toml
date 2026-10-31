@@ -1,5 +1,5 @@
-# Rebirth's Tactical Arts: one art per hero learned on the climb, and one
-# "Rebirth" finisher each, reached by chaining that art into a retail one.
+# The tower's Tactical Arts: one art per hero learned on the climb, and one
+# "Knell" finisher each, reached by chaining that art into a retail one.
 # The arts come at level 55 once the Cinder Warden is out; the finishers at
 # 80 once the Iron Regent has fallen - both land on the climb's own pace.
 #
@@ -31,8 +31,8 @@ learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
 [arts.knell_blaze]
 character = "vahn"
-name = "Rebirth Blaze"
-description = "The tower's fire, given back."
+name = "Knell Blaze"
+description = "Fire that tolls like a bell."
 ap = 30
 segments = [
     { art = "Tornado Flame (Miracle)", power = ["U28", "L28", "U28", "L28"] },
@@ -65,7 +65,7 @@ learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
 [arts.knell_tempest]
 character = "noa"
-name = "Rebirth Tempest"
+name = "Knell Tempest"
 description = "Every wind the Mist held."
 ap = 30
 segments = [
@@ -98,7 +98,7 @@ learn = { level = 55, requires = { bosses = ["cinder_warden"] } }
 
 [arts.knell_thunder]
 character = "gala"
-name = "Rebirth Thunder"
+name = "Knell Thunder"
 description = "Biron's own storm."
 ap = 30
 segments = [
