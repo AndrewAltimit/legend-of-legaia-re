@@ -35,7 +35,7 @@ lockfile; the advisories gate reports it as a warning, not a failure (see
 | Input | Pin |
 |---|---|
 | Rust crates | `Cargo.lock` (committed). Requirements live once in the root `[workspace.dependencies]`. |
-| GitHub Actions | Every `uses:` names a full commit SHA, the release tag as a trailing comment. |
+| GitHub Actions | Only GitHub's own `actions/*`; every `uses:` names a full commit SHA, the release tag as a trailing comment. Anything else runs through the runner's `gh` CLI (the release upload). |
 | CI tools | `cargo install <tool> --version <x.y.z> --locked` - an exact crates.io version, built from the lockfile it ships with. No `curl \| sh` installers. |
 | Ghidra container | `docker/ghidra.Dockerfile` builds `FROM blacktop/ghidra:<tag>@sha256:<digest>`. |
 | Site scripts | The static site loads no third-party script; the only external request is the Google Fonts stylesheet. |

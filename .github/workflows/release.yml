@@ -266,7 +266,7 @@ jobs:
 
       - name: Refuse to publish a non-tag
         # A dispatch may build a branch as a dry run, but publishing one would
-        # make action-gh-release mint a new tag. Only an existing tag publishes.
+        # make the release step mint a new tag. Only an existing tag publishes.
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -280,14 +280,23 @@ jobs:
         # Tag pushes always publish. workflow_dispatch publishes only when
         # explicitly asked, so the dispatch path is a safe dry run by default.
         if: github.event_name == 'push' || inputs.publish
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: ${{ env.RELEASE_TAG }}
-          draft: false
-          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
-          fail_on_unmatched_files: true
-          files: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/SHA256SUMS
+        # The runner's own `gh` CLI, so the job runs no third-party action.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(dist/*.tar.gz dist/*.zip dist/SHA256SUMS)
+          if [ ! -f dist/SHA256SUMS ] || [ "${#files[@]}" -lt 2 ]; then
+            echo "ERROR: no release archives in dist/" >&2
+            exit 1
+          fi
+          prerelease=()
+          if [[ "${RELEASE_TAG}" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag --title "${RELEASE_TAG}" --notes "" "${prerelease[@]}"
+          fi
