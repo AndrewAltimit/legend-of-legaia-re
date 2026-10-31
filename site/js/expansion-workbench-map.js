@@ -982,7 +982,7 @@ function loadNpcs(ctx, scene, done) {
 function npcModelPicker(ctx, model, onPick) {
   const list = V.npcs[model.scene];
   const wrap = h('div', {});
-  wrap.append(field(ctx, model, { k: 'scene', t: 'scenename', label: 'Model scene', hint: 'the map\'s base scene, unless a party member' }, ''));
+  wrap.append(field(ctx, model, { k: 'scene', t: 'scenename', label: 'Model scene', hint: 'the map\'s base scene, or one other scene for all its townsfolk' }, ''));
   if (!list || !list.npcs.length) {
     wrap.append(field(ctx, model, { k: 'index', t: 'int', label: 'Placement', hint: list && list.error ? list.error : (ctx.cat ? 'reading the scene...' : 'load your disc to list NPCs') }, ''));
     return wrap;

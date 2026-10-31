@@ -289,9 +289,20 @@ byte is not always the rest clip - Rim Elm's old man (`town01` placement
 tick - and a pack map runs no stream, so a borrowed NPC without this marks
 time in place and a patrol glides in its idle pose. A placement whose
 stream installs nothing keeps its clip byte.
-The model scene must be the base scene - the mesh indexes the base scene's
-pool and samples its VRAM - unless the placement is a party member or save
-point (model byte `0xF0` and up), whose mesh is the resident global pool.
+A placement's mesh is its model byte's entry of its scene's model pool and
+its clips are records of that scene's ANM bundle. A party member or save
+point (model byte `0xF0` and up) draws from the resident global pool in
+any scene. Townsfolk of another scene than the base are carried in
+(`expansion_map::detail::NpcBank`): each model joins the map's pool right
+after the base scene's own models, its textures copied into free VRAM the
+way a [foreign mesh's](#meshes-from-other-scenes) are, and the borrowed
+scene's ANM bundle stands in for the base scene's
+(`npc_catalog::scene_anm_bundle`), so the clip ids a pack writes for them
+are that scene's own. One bundle poses a map's townsfolk, so they come
+from one scene - the base, or one other - and a map borrowing from another
+scene cannot also keep the base scene's animated props (`base.scenery`);
+entry refuses either mix. The Thornwood's hermit is Rim Elm's old man over
+the West Voz Forest, which has no townsfolk of its own.
 
 At entry the engine reads each NPC's placement off the disc
 (`legaia_engine_scene::expansion_map::resolve_map_npcs`) and seats it as an
@@ -416,7 +427,7 @@ the sections it names, with or without a disc:
 | Disc refs: the base scene, retail exit scenes, NPC models, BGM, prop TMDs (range rules, then the disc when one is loaded) | error |
 | One prop and one NPC a tile; a style with both a `mesh` ground and a `wall` | error |
 | Wall box height `1..=512`; standable footprint `1..=1024` a side | error |
-| An NPC model from a scene other than the base scene | warning |
+| NPC models from two different scenes (the townsfolk pose from one clip bank; party-member placements excepted) | warning |
 | A seated clip with no decoration or standable prop on the NPC's tile; a patrol `walk_clip` that does not walk; a `clip` the model cannot play ([NPC clip postures](#npc-clip-postures)) | warning |
 | A spawn, NPC or waypoint on a void or fully walled tile; an NPC on a prop's tile | warning |
 | With a disc: a geometry-pack index (`{ object = N }` props, `mesh` grounds and walls) past the base scene's pack | error |

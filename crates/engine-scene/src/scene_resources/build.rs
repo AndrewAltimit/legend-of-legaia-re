@@ -273,6 +273,10 @@ impl SceneResources {
         // special range), so the shared blocks' head TMDs (the retail
         // `player_data` character pack) append after the scene's own.
         parse_scene_tmds_anms(scene, &mut tmds, &mut anm_packs, &mut 0usize, true);
+        // Townsfolk a pack map borrows from another scene take the model
+        // indices right after the scene's own (`SceneOverride::npc_model_base`,
+        // counted off the same scan).
+        tmds.extend(override_npc_tmds(scene));
         // A pack map's generated wall boxes join the geometry pack, after
         // its own meshes.
         tmds.extend(override_tmds(scene));

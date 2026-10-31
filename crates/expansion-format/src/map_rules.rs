@@ -598,12 +598,18 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
             None => cx.error(&format!("{at}.model"), "the NPC names no model"),
             Some(r @ DiscRef::Npc { scene, .. }) => {
                 cx.disc_ref(&format!("{at}.model"), r);
-                if base.is_some_and(|b| b != scene) {
+                if base.is_some()
+                    && let Some(other) = m.npcs[..i].iter().find_map(|o| match &o.model {
+                        Some(DiscRef::Npc { scene: s, .. }) if s != scene => Some(s.as_str()),
+                        _ => None,
+                    })
+                {
                     cx.warning(
                         &format!("{at}.model"),
                         format!(
-                            "the model is from `{scene}`, not the base scene; only a party-member \
-                             placement draws outside its own scene"
+                            "the NPCs borrow from `{scene}` and `{other}`: townsfolk come from one \
+                             scene, the base or one other (party-member placements excepted), \
+                             since one clip bank poses them"
                         ),
                     );
                 }

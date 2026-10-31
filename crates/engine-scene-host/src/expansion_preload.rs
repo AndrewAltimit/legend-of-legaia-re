@@ -351,7 +351,9 @@ fn npc_phase(index: &ProtIndex, def: &MapDef, map_id: &str, i: ImageDone) -> Res
     // name, where the pack names none.
     fill_borrowed_npc_clips(index, &mut live_def)
         .with_context(|| format!("map '{map_id}' NPC clips"))?;
-    let mut npcs = resolve_map_npcs(index, &live_def, &base_name)
+    let mut library = library;
+    let bank = library.as_mut().and_then(|l| l.npc_bank.take());
+    let mut npcs = resolve_map_npcs(index, &live_def, &base_name, bank.as_ref())
         .with_context(|| format!("map '{map_id}' NPCs"))?;
     // The base scene's own animated props, as scenery after the NPCs.
     let scenery_props = base_scenery(index, def, &base_name, 1 + def.npcs.len())
@@ -371,6 +373,9 @@ fn npc_phase(index: &ProtIndex, def: &MapDef, map_id: &str, i: ImageDone) -> Res
         geometry_entry: geometry.map(|(e, _)| e),
         vram_patches: library.map(|l| l.vram_patches).unwrap_or_default(),
         prop_records: prop_records_at(def, &image.prop_anchors),
+        npc_model_base: bank.as_ref().map_or(0, |b| b.first),
+        npc_clips: bank.as_ref().and_then(|b| b.clips.clone()),
+        npc_tmds: bank.map(|b| b.tmds).unwrap_or_default(),
     };
     Ok(PreparedMap {
         map_id: map_id.to_string(),

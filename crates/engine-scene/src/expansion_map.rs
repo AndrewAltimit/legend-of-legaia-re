@@ -213,6 +213,17 @@ pub struct SceneOverride {
     /// VRAM the added meshes sample, written over the base scene's build
     /// ([`detail::apply_vram_patches`]).
     pub vram_patches: Vec<VramPatch>,
+    /// Models of townsfolk borrowed from another scene ([`detail::NpcBank`])
+    /// as `(source PROT entry, TMD bytes)`: the resource build puts them in
+    /// the model pool right after the base scene's own, at index
+    /// [`Self::npc_model_base`] on.
+    pub npc_tmds: Vec<(u32, Vec<u8>)>,
+    /// The base scene's own model count, where [`Self::npc_tmds`] start.
+    pub npc_model_base: usize,
+    /// The borrowed scene's ANM bundle (decoded bytes): the clip bank the
+    /// map's NPCs pose from in place of the base scene's
+    /// (`npc_catalog::scene_anm_bundle`).
+    pub npc_clips: Option<Vec<u8>>,
     /// The draw-record key of each animated prop, by the field-grid tile its
     /// placement anchors on ([`prop_records`]): what a host hands
     /// `World::object_draw_turn_matrices` / `object_draw_displacements` to
@@ -1737,14 +1748,16 @@ pub fn fill_borrowed_npc_clips(index: &ProtIndex, def: &mut MapDef) -> Result<()
 /// retail placement read off its scene's MAN for the model byte and idle
 /// clip, seated on the NPC's tile in placement slot [`npc_slot`].
 ///
-/// Fails on an NPC with no model, a placement the scene does not have, or a
-/// model from another scene than `base_scene` that is not a party member:
-/// that mesh indexes another scene's model pool and samples another scene's
-/// VRAM, neither of which the map loads.
+/// A placement of another scene than `base_scene` that is not a party
+/// member takes the model index `bank` carried its model in at
+/// ([`detail::NpcBank`]). Fails on an NPC with no model, a placement the
+/// scene does not have, or another scene's townsperson `bank` does not
+/// carry.
 pub fn resolve_map_npcs(
     index: &ProtIndex,
     def: &MapDef,
     base_scene: &str,
+    bank: Option<&detail::NpcBank>,
 ) -> Result<Vec<ActorPlacement>> {
     let mut lists: std::collections::BTreeMap<String, Vec<ActorPlacement>> = Default::default();
     let mut out = Vec::with_capacity(def.npcs.len());
@@ -1764,12 +1777,20 @@ pub fn resolve_map_npcs(
             .iter()
             .find(|p| p.index == usize::from(*pi))
             .with_context(|| format!("npc {:?}: scene `{scene}` has no placement {pi}", npc.id))?;
+        let mut model_index = src.model_index;
         if scene != base_scene && !src.special_model {
-            bail!(
-                "npc {:?}: placement {pi} of `{scene}` draws only in its own scene \
+            if let Some(&at) = bank
+                .filter(|b| b.scene == *scene)
+                .and_then(|b| b.models.get(&src.model_index))
+            {
+                model_index = at;
+            } else {
+                bail!(
+                    "npc {:?}: placement {pi} of `{scene}` draws only in its own scene \
                  (the map's base scene is `{base_scene}`)",
-                npc.id
-            );
+                    npc.id
+                );
+            }
         }
         let slot = npc_slot(n).context("too many NPCs on one map")?;
         let (gc, gr) = grid_tile(def, npc.tile[0], npc.tile[1]);
@@ -1778,7 +1799,7 @@ pub fn resolve_map_npcs(
             index: usize::from(slot),
             record_offset: 0,
             local_count: 0,
-            model_index: src.model_index,
+            model_index,
             special_model: src.special_model,
             anim_id: npc.clip.unwrap_or(src.anim_id),
             tile_x: gc as u8,
