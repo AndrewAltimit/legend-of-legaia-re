@@ -475,6 +475,43 @@ with_lighting = false    # true: part of the enhanced-lighting layer, drawn only
   <p>Each particle is a camera-facing sprite drawn through the field screen-effect pass the retail fog sheets use (<code>HostView::fog_prims</code>, both hosts), projected by the same view. Its whole life is a pure function of the seed, its index and <code>World::frame</code> - no state, no random stream - so it is the same on both hosts and in every run. The sprites are the engine's own (a soft dot, a spark, a leaf, a drop, drawn at load into free VRAM), additive for the glowing kinds, opaque for leaves.</p>
 </section>
 
+<section class="doc-section" id="light-beams" data-doc="light-beams">
+  <h2>Light beams</h2>
+<pre><code>[[beams]]
+tile = [30, 22]            # the tile the shaft lands on
+offset = [0, 0, 0]         # from the tile centre on its floor, y up
+height = 900               # length from the foot up
+tilt = 12.0                # degrees from vertical
+angle = 200.0              # heading the top leans toward, 0 = +Z
+width = [80, 150]          # at the top, at the foot
+color = [255, 236, 190]
+intensity = 80             # peak additive brightness
+profile = "fall"           # fall (from above) or rise (a glow from below)
+pool = true
+breathe = 0.15
+sway = 1.5
+period = 480
+motes = 10</code></pre>
+  <p>A soft shaft of light falling through a gap, with dust drifting in it. It is an enhancement: both hosts draw it only with enhanced lighting on (<code>HostView::beam_prims</code>), and with it off nothing of it draws, so the faithful frame is untouched. The shaft is a camera-facing ribbon of additive Gouraud quads through the field screen-effect pass - dark at both edges, shaped along its length by <code>profile</code> - each corner carrying its axis point's scene depth, so the scene in front hides it. A falling beam can pool light on the floor at its foot; the motes are the particle sheet's soft dot.</p>
+  <p>The lean, the breath and every mote are pure functions of the frame, the same on both hosts and invisible to a replay. A negative <code>offset[1]</code> sinks the foot into a pit: with <code>profile = "rise"</code> it is a glow far below. A beam costs a few dozen screen quads and no VRAM of its own.</p>
+</section>
+
+<section class="doc-section" id="pits-and-water" data-doc="pits-and-water">
+  <h2>Pits and water</h2>
+<pre><code>[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }
+side = { tpage = 11, clut = 32523, tile = 38 }
+depth = 448
+fade = 20                  # the faces darken to this at the drop
+
+[[surround.regions]]       # void tiles inside rect take this drop instead
+rect = [10, 6, 18, 14]
+depth = 1600
+fade = 4</code></pre>
+  <p>A void tile inside the map is a wall for every mover and draws the surround's drop, so a walkway over a pit is walkway tiles with void tiles beside them: collision stops the player at the edge and the walk height is the walkway's own tier. <code>fade</code> shades the edge faces from <code>shade</code> at their top down to <code>fade</code> at the drop, so a pit's walls go down into the dark; a region gives the void tiles of a rectangle a drop of their own (its <code>ground</code>, <code>side</code> and <code>shade</code> optional over the surround's), the first region holding a tile winning.</p>
+  <p>Water round a jetty or a stilt platform is a shallow region with an animated water cell for its ground. On a terrain map, a standable prop's top over the water keeps it from walling the deck's footprint, and <code>abyss</code> darkens a sculpted pit with depth.</p>
+</section>
+
 <section class="doc-section" id="terrain" data-doc="terrain">
   <h2>Terrain</h2>
 <pre><code>[terrain]

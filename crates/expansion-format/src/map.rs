@@ -142,6 +142,10 @@ pub struct MapDef {
     /// What hangs over the floor ([`crate::map_detail::CeilingDef`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ceiling: Option<crate::map_detail::CeilingDef>,
+    /// Light beams falling through gaps ([`crate::map_beams::BeamDef`]),
+    /// drawn with enhanced lighting on.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub beams: Vec<crate::map_beams::BeamDef>,
 }
 
 /// A cutscene a map plays on arrival.

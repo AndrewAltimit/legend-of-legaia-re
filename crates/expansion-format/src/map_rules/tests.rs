@@ -400,3 +400,38 @@ fn a_breathing_light_wants_a_depth_and_a_period() {
     let e = errors(&validate(&pack(&lamp)));
     assert!(e.iter().any(|m| m.contains("breathe_period")), "{e:#?}");
 }
+
+#[test]
+fn beams_hold_their_ranges() {
+    let good = format!(
+        "{MAP}\n[[beams]]\ntile = [2, 1]\ntilt = 12.0\nangle = 200.0\n\n[[beams]]\ntile = [1, 2]\noffset = [0, -600, 0]\nprofile = \"rise\"\npool = false\n"
+    );
+    let issues = validate(&pack(&good));
+    assert!(errors(&issues).is_empty(), "{issues:#?}");
+    assert!(
+        issues.iter().all(|i| !i.path.contains("beams")),
+        "{issues:#?}"
+    );
+    let bad = format!(
+        "{MAP}\n[[beams]]\ntile = [9, 1]\nheight = 0\nwidth = [0, 10]\ntilt = 80.0\nperiod = 5\nmotes = 200\nbreathe = 2.0\n\n[[beams]]\ntile = [1, 1]\nintensity = 0\n"
+    );
+    let issues = validate(&pack(&bad));
+    let e = errors(&issues);
+    for want in [
+        "tile [9, 1]",
+        "height 0",
+        "width [0, 10]",
+        "tilt 80",
+        "period 5",
+        "200 motes",
+        "breathe 2",
+    ] {
+        assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
+    }
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.message.contains("the beam adds no light")),
+        "{issues:#?}"
+    );
+}

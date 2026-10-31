@@ -42,7 +42,8 @@ Sample: [`packs/rebirth/maps/genesis_1f.toml`](../../packs/rebirth/maps/genesis_
 | `decals` | Flat textured floor polygons, one by one or by brush ([Decals](#decals)). |
 | `emitters` | Particle emitters ([Particles](#particles)). |
 | `terrain` | A sculpted floor in place of the tier grid: heights, ground materials, water, horizon ([Terrain](#terrain)). |
-| `surround` | The ground past the floor's edge: a drop below it and the edge faces down to it ([Surround](#surround)). |
+| `surround` | The ground past the floor's edge: a drop below it and the edge faces down to it, with regions of their own for pits and water ([Surround](#surround), [Pits and water](#pits-and-water)). |
+| `beams` | Soft shafts of light with dust in them, drawn with enhanced lighting on ([Light beams](#light-beams)). |
 | `ceiling` | A ceiling over the floor and the chains hung items hang from ([Ceiling](#ceiling)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
@@ -1433,6 +1434,100 @@ spark, a leaf, a drop) drawn at load into free VRAM
 STP bit (the glowing kinds and smoke blend additively, ABR 1)
 and one without (leaves draw opaque). The packet colour tints them.
 
+## Light beams
+
+```toml
+[[beams]]
+tile = [30, 22]            # the tile the shaft lands on
+offset = [0, 0, 0]         # from the tile centre on its floor, y up
+height = 900               # length from the foot up
+tilt = 12.0                # degrees from vertical
+angle = 200.0              # heading the top leans toward, 0 = +Z, 90 = +X
+width = [80, 150]          # at the top, at the foot
+color = [255, 236, 190]
+intensity = 80             # peak additive brightness, 0..=255
+profile = "fall"           # fall (light from above) or rise (a glow from below)
+pool = true                # a lit pool on the floor at the foot
+breathe = 0.15             # depth of a slow brightness swell
+sway = 1.5                 # degrees the lean drifts either way
+period = 480               # frames a breath and sway cycle
+motes = 10                 # dust motes drifting in the shaft
+seed = 3
+```
+
+A beam is a soft shaft of light falling through a gap, with dust drifting
+in it ([`legaia_expansion_format::map_beams`](../../crates/expansion-format/src/map_beams.rs)).
+It is an enhancement, not retail art: both hosts draw it only with enhanced
+lighting on (`HostView::beam_prims`, called beside `fog_prims` with each
+host's lighting toggle), and with it off nothing of it draws, so the
+faithful frame is untouched.
+
+The shaft is a camera-facing ribbon round its axis, through the field
+screen-effect pass: a grid of additive (ABR 1) Gouraud quads whose corners
+carry the falloff - dark at both edges, and along the length the
+`profile`: `fall` fades in below the top and softens a little toward the
+foot, `rise` is brightest at the foot and fades out upward. Each corner
+carries the scene depth of its axis point, so a wall or a pillar in front
+of the beam hides it. A `fall` beam with `pool` lays a soft diamond of
+light on the floor round its foot. The motes are the
+[particle sheet](#particles)'s soft dot, additive; a map with beams loads
+the sheet whether or not it has emitters. A beam costs a few dozen screen
+quads and no VRAM of its own, so several on one map stay cheap.
+
+Nothing of it is stateful: the lean, the breath and every mote are pure
+functions of the definition and `World::frame` (`BeamDef::shaft`,
+`BeamDef::mote`), the same on both hosts and invisible to a replay. A
+negative `offset[1]` sinks the foot below the floor: with
+`profile = "rise"` in a pit it is a glow far below. The follow camera
+looks into a pit at a slant, so the near rim hides what lies deep under
+it: a glow reads best with its foot a few hundred units down toward the
+pit's far side, and a long rising shaft carries the light up into view. The validator holds
+`height` to `1..=4096`, `width` to `1..=1024`, `tilt` to `0..=60`,
+`sway` to `0..=15`, `breathe` to `0..=1`, `period` to at least `30` and
+`motes` to at most `64`, and warns of a beam that adds no light and of a
+`pool` on a rising glow.
+
+## Pits and water
+
+A void tile inside the map is a wall for every mover and draws the
+[surround](#surround)'s drop, so a walkway over a pit is walkway tiles
+with void tiles beside them: collision stops the player at the edge and
+the walk height is the walkway's own tier. Two fields make the drop read
+as what it is:
+
+```toml
+[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }
+side = { tpage = 11, clut = 32523, tile = 38 }
+depth = 448
+fade = 20                  # the faces darken to this at the drop
+
+[[surround.regions]]       # void tiles inside rect take this drop instead
+rect = [10, 6, 18, 14]
+depth = 1600               # below tier 0, 1..=2048
+fade = 4
+# optional over the surround's own: ground, side, shade
+```
+
+`fade` shades the edge faces from `shade` at their top to `fade` at the
+drop and draws the drop's ground at it, so a pit's walls go down into the
+dark; without it the faces and ground keep the flat `shade` they always
+had, byte for byte. A region gives the void tiles inside its rectangle a
+drop of their own - the first region holding a tile wins, and tiles in
+none take the surround's - so one map carries a deep shaft beside a
+walkway and a shallow edge elsewhere. A region's records are shared like
+the surround's: one per shape.
+
+Water round a jetty or a stilt platform is a shallow region: a `depth` a
+few dozen units under the boards' tier, a water cell for `ground`
+animated by an [animated material](#animated-materials), a wood or stone
+`side` for the boards' edge, no `fade`. The boards are floor tiles, the
+water is void, so the water shows round the platform and nothing walks
+on it. The validator holds a region's `depth` to `1..=2048`, its atlas
+cells to `0..64` and its rectangle to the map, and warns of a rectangle
+holding no void tile. A terrain map draws no surround; its pits and decks
+are in [Walking the terrain](#walking-the-terrain).
+
 ## Terrain
 
 ```toml
@@ -1509,7 +1604,10 @@ higher.
 Steepness is collision: every `64 x 64` sub-cell whose heights span more
 than `max_step` is a wall quarter, and so is one whose centre lies more
 than `water.wade` under the water (`MapDef::terrain_walls`, OR-ed into the
-style's own quarters). A gentle slope walks; a cliff face and deep water
+style's own quarters) - unless a standable prop's top at or above
+`water.level - water.wade` covers that centre: a jetty or a stilt deck
+over open water walks, with the water drawn all round it, and the floor
+sampler answers the deck's top. A gentle slope walks; a cliff face and deep water
 block, for the retail walk and action movement alike. The validator warns
 of a spawn or NPC the terrain walls in and an exit it closes.
 
@@ -1542,6 +1640,14 @@ width, so a boundary is a dithered, organic edge about a tile wide rather
 than the tile grid's step. Each tile turns and mirrors its cell one of
 eight ways (`rotate`, on by default) against visible repeats. A quad
 steeper than `cliff.slope` (rise over run) takes the cliff material.
+
+**Depth.** `abyss = { from = -60, to = -700, shade = 0.06 }` darkens
+the ground below `from` toward the brightness factor `shade` at `to` and
+below (`AbyssDef::factor`, a smoothstep over the vertex colours), so a
+sculpted pit's walls fade into the dark as they go down rather than
+holding the brightness of the floor above. A glow far below is a
+`rise` [light beam](#light-beams) whose foot sits on the pit's floor.
+The validator holds `to` below `from` and `shade` to `0..=1`.
 
 **Boundary detail.** A quad is `32` units across (at `resolution = 4`), so a
 material boundary steps in `32`-unit stairs however its noise meanders.

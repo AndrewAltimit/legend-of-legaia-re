@@ -6,7 +6,7 @@
 use crate::map::{MAX_WALL_HEIGHT, MapDef, TileGrid};
 use crate::map_detail::{
     BACKDROP_MAX_HEIGHT, CEILING_MAX_HEIGHT, CHAIN_MAX_WIDTH, MAX_DECORATIONS, MaterialFx,
-    SURROUND_MAX_REACH,
+    SURROUND_MAX_REACH, SURROUND_REGION_MAX_DEPTH,
 };
 use crate::map_rules::{check_light, check_mesh};
 use crate::validate::Checker;
@@ -394,6 +394,57 @@ fn check_surround(m: &MapDef, cx: &mut Checker<'_>) {
                 "surround.backdrop.sides",
                 "no side named: the backdrop is not drawn",
             );
+        }
+    }
+    for (i, r) in s.regions.iter().enumerate() {
+        let at = format!("surround.regions[{i}]");
+        if r.depth == 0 || r.depth > SURROUND_REGION_MAX_DEPTH {
+            cx.error(
+                &format!("{at}.depth"),
+                format!(
+                    "depth {} is not in 1..={SURROUND_REGION_MAX_DEPTH}",
+                    r.depth
+                ),
+            );
+        }
+        for (what, cell) in [("ground", r.ground), ("side", r.side)] {
+            if let Some(c) = cell
+                && c.tile >= 64
+            {
+                cx.error(
+                    &format!("{at}.{what}.tile"),
+                    format!("atlas cell {} is past 63", c.tile),
+                );
+            }
+        }
+        let size = m.tiles.rows.len();
+        let width = m
+            .tiles
+            .rows
+            .iter()
+            .map(|r| r.chars().count())
+            .max()
+            .unwrap_or(0);
+        if usize::from(r.rect[0].max(r.rect[2])) >= width
+            || usize::from(r.rect[1].max(r.rect[3])) >= size
+        {
+            cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
+        }
+        if let Ok(grid) = m.tile_grid() {
+            let (c0, c1) = (r.rect[0].min(r.rect[2]), r.rect[0].max(r.rect[2]));
+            let (r0, r1) = (r.rect[1].min(r.rect[3]), r.rect[1].max(r.rect[3]));
+            let any_void = (r0..=r1).any(|row| {
+                (c0..=c1).any(|col| {
+                    grid.get(usize::from(col), usize::from(row))
+                        .is_some_and(|t| t.void)
+                })
+            });
+            if !any_void {
+                cx.warning(
+                    &format!("{at}.rect"),
+                    "no void tile inside the rectangle: the region draws nothing",
+                );
+            }
         }
     }
     if m.terrain.is_some() {

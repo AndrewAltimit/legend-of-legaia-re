@@ -706,3 +706,36 @@ fn the_stage_and_tint_forms_round_trip() {
     edited["maps"][map]["materials"][tint_at] = before;
     assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
 }
+
+#[test]
+fn beams_and_surround_regions_round_trip_through_the_json() {
+    let mut core = Core::new();
+    let (_, mut pack) = load(&mut core);
+    let map = &mut pack["maps"]["genesis_1f"];
+    map["beams"] = serde_json::json!([
+        { "tile": [3, 3], "tilt": 12.0, "angle": 200.0, "motes": 8 },
+        { "tile": [5, 5], "offset": [0, -600, 0], "profile": "rise", "pool": false }
+    ]);
+    map["surround"] = serde_json::json!({
+        "ground": { "tpage": 5, "clut": 30720, "tile": 0 },
+        "depth": 448,
+        "fade": 20,
+        "regions": [{ "rect": [0, 0, 2, 2], "depth": 1600, "fade": 4 }]
+    });
+    let json = pack.to_string();
+    let edited = core.pack_from_json(&json).unwrap();
+    let m = &edited.maps["genesis_1f"];
+    assert_eq!(m.beams.len(), 2);
+    assert_eq!(m.beams[0].motes, 8);
+    assert_eq!(m.beams[0].height, 900, "the defaults fill in");
+    assert_eq!(
+        m.beams[1].profile,
+        legaia_expansion_format::map_beams::BeamProfile::Rise
+    );
+    let s = m.surround.as_ref().unwrap();
+    assert_eq!(s.fade, Some(20));
+    assert_eq!(s.regions[0].depth, 1600);
+    let bytes = core.export_bundle(&json).unwrap();
+    let back = bundle::read_bundle(&bytes).unwrap();
+    assert_eq!(ExpansionPack::from_files(&back).unwrap(), edited);
+}

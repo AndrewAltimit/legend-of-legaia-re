@@ -49,6 +49,7 @@ pub mod ground_motion;
 pub mod items;
 pub mod manifest;
 pub mod map;
+pub mod map_beams;
 pub mod map_detail;
 pub mod map_detail_rules;
 pub mod map_rest;

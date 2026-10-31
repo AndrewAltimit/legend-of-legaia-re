@@ -1106,6 +1106,17 @@ pub struct SurroundDef {
     /// A wall standing round the drop, `None` for none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub backdrop: Option<BackdropDef>,
+    /// The vertex colour the edge faces darken to at the drop, from
+    /// [`Self::shade`] at their top; the drop's ground draws at it. `None`
+    /// keeps the faces and the ground at `shade`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fade: Option<u8>,
+    /// Drops of their own for the void tiles inside a rectangle of the map:
+    /// a deep pit beside a walkway, open water round a jetty. The first
+    /// region holding a void tile wins; tiles in none take the surround's
+    /// own drop.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub regions: Vec<SurroundRegion>,
 }
 
 impl Default for SurroundDef {
@@ -1117,7 +1128,61 @@ impl Default for SurroundDef {
             reach: SURROUND_DEFAULT_REACH,
             shade: 80,
             backdrop: None,
+            fade: None,
+            regions: Vec::new(),
         }
+    }
+}
+
+/// The deepest drop a surround region takes, world units below tier `0`.
+pub const SURROUND_REGION_MAX_DEPTH: u16 = 2048;
+
+/// A surround's drop for the void tiles of one rectangle of the map. Every
+/// field but `rect` and `depth` falls back to the surround's own.
+///
+/// ```toml
+/// [[surround.regions]]
+/// rect = [10, 6, 18, 14]
+/// depth = 1600
+/// fade = 4
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SurroundRegion {
+    /// Inclusive map-local tile rectangle.
+    pub rect: TileRect,
+    /// How far below tier `0` the region's drop lies, world units.
+    pub depth: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ground: Option<AtlasCell>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<AtlasCell>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shade: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fade: Option<u8>,
+}
+
+impl SurroundDef {
+    /// The surround as it draws for a void tile inside region `r`: the
+    /// region's fields over the surround's own, with no regions of its own.
+    pub fn for_region(&self, r: &SurroundRegion) -> SurroundDef {
+        SurroundDef {
+            ground: r.ground.unwrap_or(self.ground),
+            side: r.side.or(self.side),
+            depth: r.depth,
+            shade: r.shade.unwrap_or(self.shade),
+            fade: r.fade.or(self.fade),
+            regions: Vec::new(),
+            ..self.clone()
+        }
+    }
+
+    /// The index of the first region holding map-local tile `(col, row)`.
+    pub fn region_at(&self, col: u16, row: u16) -> Option<usize> {
+        self.regions
+            .iter()
+            .position(|r| crate::map::rect_contains(&r.rect, col, row))
     }
 }
 

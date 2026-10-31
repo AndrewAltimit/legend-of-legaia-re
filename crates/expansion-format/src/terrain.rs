@@ -115,6 +115,52 @@ pub struct TerrainDef {
     pub water: Option<WaterDef>,
     /// A horizon ring around the map ([`SkyDef`]).
     pub sky: Option<SkyDef>,
+    /// Darkening with depth ([`AbyssDef`]): a pit's walls fade into the
+    /// dark as they go down.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub abyss: Option<AbyssDef>,
+}
+
+/// Darkening with depth: ground below `from` darkens toward `shade` (a
+/// brightness factor) at `to` and below, so a sculpted pit's walls fade
+/// into the dark rather than holding the brightness of the floor above.
+///
+/// ```toml
+/// abyss = { from = -60, to = -700, shade = 0.06 }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AbyssDef {
+    /// The height, world units up, where the darkening starts.
+    pub from: f32,
+    /// The height where it reaches `shade`; below `from`.
+    pub to: f32,
+    /// The brightness factor at `to` and below, `0..=1`.
+    pub shade: f32,
+}
+
+impl Default for AbyssDef {
+    fn default() -> Self {
+        Self {
+            from: -60.0,
+            to: -700.0,
+            shade: 0.06,
+        }
+    }
+}
+
+impl AbyssDef {
+    /// The brightness factor at height `h`: `1` at and above `from`,
+    /// easing to `shade` at `to`.
+    pub fn factor(&self, h: f32) -> f32 {
+        let span = self.from - self.to;
+        if span <= 0.0 || h >= self.from {
+            return 1.0;
+        }
+        let t = ((self.from - h) / span).clamp(0.0, 1.0);
+        let t = t * t * (3.0 - 2.0 * t);
+        1.0 - t * (1.0 - self.shade.clamp(0.0, 1.0))
+    }
 }
 
 impl Default for TerrainDef {
@@ -137,6 +183,7 @@ impl Default for TerrainDef {
             cliff: None,
             water: None,
             sky: None,
+            abyss: None,
         }
     }
 }
@@ -950,6 +997,15 @@ impl MapDef {
             return out;
         };
         let res = field.res as f32;
+        // A standable top over the water (a jetty, a stilt deck) keeps the
+        // water from walling the sub-cells under its footprint.
+        let tops = self.floor_tops();
+        let decked = |i: f32, j: f32, w: &WaterDef| -> bool {
+            let x = field.origin[0] + (i * field.step as f32) as i32;
+            let z = field.origin[1] + (j * field.step as f32) as i32;
+            tops.iter()
+                .any(|t| f32::from(t.top) >= w.level - w.wade && t.contains(x, z))
+        };
         for row in 0..grid.height {
             for col in 0..grid.width {
                 let mut walls = 0u8;
@@ -971,7 +1027,9 @@ impl MapDef {
                     }
                     let centre = field.sample_vertex(i0 + res / 4.0, j0 + res / 4.0);
                     let steep = hi - lo > t.max_step;
-                    let drowned = t.water.as_ref().is_some_and(|w| centre < w.level - w.wade);
+                    let drowned = t.water.as_ref().is_some_and(|w| {
+                        centre < w.level - w.wade && !decked(i0 + res / 4.0, j0 + res / 4.0, w)
+                    });
                     if steep || drowned {
                         walls |= 1 << q;
                     }
@@ -1528,7 +1586,10 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
             let shade = (1.0 + t.shading * (ndl - sun[1]) / sun[1].max(0.2)).clamp(0.45, 1.45);
             let macro_v =
                 1.0 + t.variation * (fbm(t.seed ^ 0x4D41_4352, u / 3.0, v / 3.0, 3) - 0.5) * 2.0;
-            let k = shade * macro_v;
+            let mut k = shade * macro_v;
+            if let Some(a) = &t.abyss {
+                k *= a.factor(f32::from(field.at(ii, jj)));
+            }
             colors.push(tint.map(|c| (c * k).round().clamp(0.0, 255.0) as u8));
         }
     }
