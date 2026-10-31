@@ -106,7 +106,11 @@
 .play-canvas-wrap { position: relative; }
 /* `?embed=1` (the minigames page's arena): the picture alone, filling the
  * frame it is embedded in. */
-body.play-embedded { margin: 0; background: #000; overflow: hidden; }
+/* No topbar is drawn here, so none of its height is reserved
+   (styles.css pads every body by `--topbar-h`): kept, it pushed the picture
+   down by that much and the frame cut off the stage's bottom rows - a mode
+   table's action menu and hint bar. */
+body.play-embedded { margin: 0; padding: 0; background: #000; overflow: hidden; }
 body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); margin: 0 auto; }
 body.play-embedded .play-canvas-wrap { max-width: none; }
 body.play-embedded .play-canvas { border: 0; }
