@@ -27,10 +27,13 @@ radius = 90
 # while the seat is taken.
 hide = ["lantern_table"]
 height = 90
+# Reactions (cheer on a won pot, slump on a lost one) are clips picked
+# from front renders of each NPC's own rig: the islanders throw their arms
+# out (25) or hang their heads (22).
 players = [
   { npc = "lantern_wenna", name = "Wenna", sit = 34, cheer = 35, slump = 53 },
-  { npc = "lantern_harl", name = "Harl" },
-  { npc = "lantern_ysel", name = "Ysel" },
+  { npc = "lantern_harl", name = "Harl", cheer = 25, slump = 22 },
+  { npc = "lantern_ysel", name = "Ysel", cheer = 25, slump = 22 },
 ]
 
 [[card_duels]]
@@ -58,7 +61,9 @@ seat_distance = 200
 # Brin reacts in his chair: 35 throws his hands up when he takes the
 # duel, 53 folds his arms when he loses it.
 opponent = { npc = "duel_brin", name = "Brin", sit = 34, cheer = 35, slump = 53 }
-spectators = [{ npc = "duel_onlooker_a" }, { npc = "duel_onlooker_b" }]
+# The onlookers cheer the player's captures and win (25) and hang their
+# heads at a loss (22); the second onlooker's rig has only two plain idles.
+spectators = [{ npc = "duel_onlooker_a", cheer = 25, slump = 22 }, { npc = "duel_onlooker_b" }]
 
 [[golf]]
 id = "windmill-links"
@@ -195,12 +200,16 @@ radius = 92
 # is taken.
 hide = ["high_table"]
 height = 84
+# Reactions picked from front renders of each regular's rig. Odile reacts
+# in his chair (29 chin in hand while he thinks, 30 a fist on a win, 33 a
+# hand over his face on a loss); Brann's rig has one seated clip, his sit,
+# so he takes his results sitting still.
 players = [
-  { npc = "high_table_odile", name = "Odile", sit = 31 },
+  { npc = "high_table_odile", name = "Odile", sit = 31, think = 29, cheer = 30, slump = 33 },
   { npc = "high_table_brann", name = "Brann", sit = 46 },
-  { npc = "high_table_sefa", name = "Sefa" },
+  { npc = "high_table_sefa", name = "Sefa", cheer = 27, slump = 28 },
   { npc = "high_table_corwin", name = "Corwin", cheer = 35, slump = 37 },
-  { npc = "high_table_mott", name = "Old Mott" },
+  { npc = "high_table_mott", name = "Old Mott", cheer = 25, slump = 28 },
 ]
 
 # The keeper plays the tower's own breed, hands face up, captures chaining
@@ -229,7 +238,9 @@ hide = ["card_table"]
 # The second spreads his arms wide on a win (35) and bows his head over
 # the board on a loss (37).
 opponent = { npc = "duel_second", name = "The Warden's Second", cheer = 35, slump = 37 }
-spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
+# The watcher throws his arms out for the player (25) and folds them
+# against (13); the regular's rig has only two plain idles.
+spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher", cheer = 25, slump = 13 }]
 
 # Six holes up the tower's side. Each is a real-looking golf hole in
 # miniature: bunkers guarding the green, a dogleg, an island green,
