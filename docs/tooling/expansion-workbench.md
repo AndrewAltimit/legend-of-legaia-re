@@ -158,7 +158,7 @@ follow as before.
 | Place objects | painter Prop, 3D Select | the map's props, each a jump to its form |
 | NPCs | painter NPC, 3D Select | the map's people |
 | Zones & exits | painter Trigger, 3D Select | add an exit, start point, step-on event or monster zone; the map's own |
-| Test-play | the preview's player camera | walk in 3D, play the map in a tab, play the pack |
+| Test-play | the preview's Test play | walk in 3D, play the map in a tab, play the pack |
 
 **The build tools seam.** The toolbar never reaches into the painter or the
 3D editor. A click calls the registered tools' `setMode(mode, env)` and then
@@ -168,7 +168,10 @@ playHere, playPack }`. `registerBuildTools(impl)` in the shell replaces the
 fallback set, which is built on three one-function hooks: `setPainterTool`
 (map.js), `setEditMode` (gizmos.js) and the preview's `setCamera('orbit' |
 'player')`. Tools that change the mode themselves (a key) call
-`syncBuildMode(mode)` so the toolbar follows.
+`syncBuildMode(mode)` so the toolbar follows. The 3D editor registers
+itself through `window.xwBuild` (`expansion-workbench-gizmos.js`):
+`setTool`, `catalog`, `arm`, `disarm`, `testPlay`, `topDown`, `barEl`,
+`catalogEl`, `showCatalogInBar` and `state`.
 
 **Starting.** With no pack open the page offers three one-click starts, each
 landing on the Build area: **Open the Rebirth example**, **Start a new pack**
@@ -567,14 +570,22 @@ enhancements.
 
 | Control | Does |
 |---|---|
-| Orbit | The free camera: the play page's debug orbit turned around a focus of its own (drag turns, wheel zooms out to a whole map, right or middle drag pans). Opens on the whole map. |
+| Edit | The editor camera, with no player on the map: right drag orbits, middle drag (or Space with a drag) pans, the wheel zooms; W A S D and the arrows pan, Q / E turn, T looks straight down, F frames the selection. Opens on the whole map. |
 | Match painter | On (the default), the orbit view reads as the painter's grid: row 0 the far edge at the top, columns left to right. Off, the map from its low-Z side with the game's own handedness, as the field camera looks. |
 | Arrival | Off (the default), the preview enters a map without its arrival cutscene and place-name banner. Ticked, the map is entered again at its spawn as a player arrives. |
-| Player | The field camera: the follow view the game draws the map with, on the player. |
 | Fit map | Back to the whole map in the orbit camera. |
-| Walk from selection | Stands the player on the selected tile (`expansion_seat_player`) and switches to the field camera; the arrow keys walk in the picture. |
+| Test play | Stands the party on the selected tile (else the first spawn), switches to the field camera and hands the keys to the game; **Stop test** comes back to Edit. The one time the lead is on the map. |
+| Top view | The editor camera straight down (`T`); again to tilt back. |
 | 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview, in the editor's **Select** mode. |
 | Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision: translucent volumes over the picture. |
+
+**No player while editing.** Under the editor camera the frame is the
+editor's alone (`PlayView.editorNoPlayer`): the lead is not drawn, the pad
+word the engine ticks with is zero, and every key but the function keys is
+taken by the editor before the page's pad and hotkeys see it, so nothing an
+editor presses walks anyone. The preview is also silent until its first
+Test play: the BGM mixer runs in a ScriptProcessorNode on the page's main
+thread, which the framed page shares with the workbench.
 
 **Orientation.** The game draws the world with screen X mirrored (the
 retail horizontal flip, `buildWorldOrbitVp`), so its picture of a map seen
@@ -582,7 +593,7 @@ from above is the painter's grid flipped top to bottom - no camera turn makes
 the two agree. *Match painter* turns the orbit to the map's high-Z side and
 mirrors the frame's canvas back (a CSS flip, so the renderer's winding parity
 is untouched): screen right is +X and row 0 is at the top, as painted. The
-click-to-tile pick and the pan read the flip back (`mirrorView`); the Player
+click-to-tile pick and the pan read the flip back (`mirrorView`); the Test play
 camera is never flipped.
 
 **Arrivals.** The preview sets `SceneHost::quiet_expansion_arrivals`
@@ -643,12 +654,11 @@ offset) is the text the build was sent - goes to the frame at once as
 each Rebirth map in place and checks the whole collision grid, the standable
 tops, the lights and the overlay's spawns against a rebuild with the edited
 definition. A move costs a few milliseconds where a rebuild costs seconds,
-so **Walk from selection** right after a move walks into the moved prop.
+so **Test play** right after a move walks into the moved prop.
 A prop with no single plain draw at its old place (a tilted or script-moved
 one), an NPC that patrols or is scenery, or a frame without the export
 answers `ok: false` and the map rebuilds; a frame whose bundle has no
-`expansion_place_prop` moves the draw only, and the **Player** camera and
-**Walk from selection** rebuild first. Decorations are baked into their
+`expansion_place_prop` moves the draw only, and **Test play** rebuilds first. Decorations are baked into their
 tile's cell mesh at the build, so moving one rebuilds.
 
 **Drafts.** Between rebuilds the volumes follow the editor at once: each
@@ -731,29 +741,41 @@ cleared only **Reload** rebuilds.
 
 The **Edit** bar under the preview's head turns the picture into an editor.
 **View** leaves it a picture (a click picks a tile, as above). The other
-modes take the left button; Alt with a drag still turns the camera, and a
-drag that starts on nothing in **Select** turns it too.
+modes take the left button; the right drag turns the camera, and a click on
+empty ground drops the selection.
 
 The editor belongs to the Maps tab: on the Cutscenes, Battle and Cards tabs
 the frame drops to **View** and the bar hides (`suspendEdit`), and back on
 Maps both return as they were. While a mode other than **View** is on, and
-under the Orbit camera in any mode, the field HUD - the party readout and
+under the editor camera in any mode, the field HUD - the party readout and
 the passive-ability badges - stays off the frame (`set_editor_hud_hidden`),
-so it never covers the map being edited; the Player camera shows it.
+so it never covers the map being edited; Test play shows it.
 
 | Mode | Does |
 |---|---|
 | Select | A click picks the object under it - a prop, decoration, NPC, spawn, lamp, emitter, trigger, exit or encounter zone; Shift or Ctrl adds or takes away. The selection gets a gizmo: **Move** (two arrows for one axis, a square for both; dragging an object moves it), **Rotate** (a ring: props and decorations in 15-degree steps, NPCs and spawns by facing sector), **Scale** (a corner handle: props and decorations; a zone's corner resizes it). A drag snaps to the tile or to the 32-unit sub-tile grid (**Snap**); Shift places freely. **Duplicate** (Ctrl+D) copies the selection one tile over (a prop to the nearest free tile); **Delete** removes it. |
+| Place | A piece from the catalog under the bar: a ghost of it follows the pointer snapped to the tile grid, green where it can stand and red where it cannot (off the map or over void, another prop on the tile, a solid footprint over another solid one, a person on a wall block or another person). A click places it (one undo step) and keeps it armed; `R` turns it a quarter turn (`Shift+R` 15 degrees, `Shift` + wheel a quarter turn); Escape or a right click puts it away. |
 | Sculpt | A ring cursor of the brush's radius rides the ground, an inner ring at its strength; `[` and `]` size it. A drag lays one stroke: raise, lower, smooth and flatten write a `stroke` along the drag (a click writes the single-point shape), flatten levelling to the height where the drag starts; ridge and ramp drag from one point to another (a ramp from the ground under its start to the ground under its end plus **Height**); plateau and noise drag a rectangle. |
 | Paint | The tiles under the ring take a legend character: a terrain material's (named by the material) or any walkable style's. |
 
-**Keys.** With the picture focused in **Select**, `W`, `E` and `R` pick
-Move, Rotate and Scale, `Escape` drops the selection, and under the orbit
-camera the arrow keys nudge the selection a tile (a quarter tile with
+**The catalog** groups what can be placed: Buildings, Large props and Small
+props (each mesh the pack already uses, named by the prop that uses it, then
+the rest of the base scene's geometry pack, sorted by size), People (the
+pack's NPCs, then the base scene's retail placements by what each first
+says) and Markers (spawn, lamp, trigger zone, encounter zone, exit). A tile
+shows the mesh's footprint from above. A placed piece copies the pack's own
+example where there is one (scale, solid, top, light, clip and line).
+
+**Keys.** With the picture focused in **Select**, `G` picks Move, `R` turns
+the selection a quarter turn (`Shift+R` 15 degrees), `Escape` drops the
+selection, and a drop where a piece cannot stand puts it back. Under the
+editor camera the arrow keys nudge the selection a tile (a quarter tile with
 Shift or the 32-unit snap) along the map axis whose direction on screen is
-closest to the arrow, so they follow a turned camera; under the Player
-camera they walk. In the painter, with its canvas focused, the arrows nudge
-along its rows and columns. A nudge is `nudge` in
+closest to the arrow, so they follow a turned camera; under Test play they
+walk. In the painter, with its canvas focused, the arrows nudge
+along its rows and columns. A select-tool drag or a paint stroke edits the
+map and redraws the canvas only; validation, the 3D preview's in-place move
+and the history hear of it once, on release. A nudge is `nudge` in
 `expansion-workbench-layout.js` (an object that would leave the map stays)
 and one undo step a press; its moves go to the frame in place.
 

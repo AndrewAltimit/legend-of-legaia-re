@@ -304,19 +304,34 @@ export function createPreview3d(env) {
     return b;
   };
   const toggleBtn = btn('Open 3D preview', 'Render this map as the engine builds it, in the play page framed here. It reads your disc from the site\'s disc cache: the first open takes a few seconds.', () => setOpen(!P.open));
-  const orbitBtn = btn('Orbit', 'Free camera: drag to turn, wheel to zoom, right-drag to pan', () => setMode('orbit'));
-  const playerBtn = btn('Player', 'The field camera: the follow view the game draws the map with', () => setMode('player'));
+  /* The editor's camera has no player on the map; Test play is the one
+   * way the party enters the picture (and the game's keys drive it). */
+  const orbitBtn = btn('Edit', 'The editor camera: right drag orbits, middle drag (or Space + drag) pans, the wheel zooms; T looks straight down, F frames the selection. No player on the map.', () => setMode('orbit'));
+  const playerBtn = btn('Test play', 'Put the party on the map - on the selected tile, else at the first spawn - and play it with the game\'s keys and field camera. Edit (or this button) comes back.', () => testPlay(P.mode !== 'player'));
+  const topBtn = btn('Top view', 'Look straight down on the map (T); again to tilt back', () => {
+    if (P.mode !== 'orbit') setMode('orbit');
+    P.top = !P.top;
+    topBtn.classList.toggle('is-on', P.top);
+    post({ type: 'xw-camera', mode: 'orbit', painter: P.painter, top: P.top });
+  });
   const fitBtn = btn('Fit map', 'Frame the whole map', () => {
     setMode('orbit', true);
     post({ type: 'xw-camera', mode: 'orbit', focus: null, painter: P.painter });
   });
-  const walkBtn = btn('Walk from selection', 'Stand the player on the selected tile and switch to the field camera: walk with the arrow keys in the picture', () => {
-    const t = selTile();
-    if (!t) return;
+  /* Test play on or off: on stands the player on the selected tile (or
+   * the first spawn) and switches to the field camera. */
+  function testPlay(on) {
+    if (!on) { setMode('orbit'); return; }
+    const t = selTile() || firstSpawn();
     rebuildIfStale();
-    post({ type: 'xw-seat', tile: t });
+    if (t) post({ type: 'xw-seat', tile: t });
     setMode('player');
-  });
+  }
+  function firstSpawn() {
+    const m = P.map && pack() && pack().maps && pack().maps[P.map];
+    const s = m && (m.spawns || [])[0];
+    return s && s.tile ? s.tile : null;
+  }
   const reloadBtn = btn('Reload', 'Rebuild the map from the pack now', () => { P.dirty = true; P.forceFull = true; flush(); });
   const layerBox = document.createElement('span');
   layerBox.className = 'xw-3d-layers';
@@ -383,7 +398,7 @@ export function createPreview3d(env) {
     post({ type: 'xw-arrival', on });
     if (on && P.sent) { P.sent = null; P.dirty = true; flush(); }
   });
-  ctrls.append(orbitBtn, playerBtn, fitBtn, walkBtn, reloadBtn, autoLab, painterLab, arrivalLab);
+  ctrls.append(orbitBtn, playerBtn, topBtn, fitBtn, reloadBtn, autoLab, painterLab, arrivalLab);
   // The map editor's bar (expansion-workbench-gizmos.js), under the head.
   const editSlot = document.createElement('div');
   editSlot.className = 'xw-3d-editslot';
@@ -424,6 +439,8 @@ export function createPreview3d(env) {
     if (mode === 'player') rebuildIfStale();
     orbitBtn.classList.toggle('is-on', mode === 'orbit');
     playerBtn.classList.toggle('is-on', mode === 'player');
+    playerBtn.textContent = mode === 'player' ? 'Stop test' : 'Test play';
+    if (P.onMode) P.onMode(mode);
     if (!refit) post({ type: 'xw-camera', mode, painter: P.painter });
     if (mode === 'player' && P.frame) P.frame.focus();
   }
@@ -480,6 +497,16 @@ export function createPreview3d(env) {
 
   function pack() { return env.pack(); }
 
+  /* The pack's stripped JSON (strippedJson) as it is now: made once an
+   * edit (the pack serialised is the cost; a decision and its flush ask
+   * for the same text). */
+  function stripped() {
+    if (P.stripAt && P.stripAt.edits === P.edits && P.stripAt.map === P.map && P.stripAt.pack === pack()) return P.stripAt.json;
+    const json = strippedJson(pack(), P.map);
+    P.stripAt = { edits: P.edits, map: P.map, pack: pack(), json };
+    return json;
+  }
+
   /* Export and post the pack to the frame now. */
   function flush() {
     clearTimeout(P.timer);
@@ -514,7 +541,7 @@ export function createPreview3d(env) {
       made = env.exportBundleAsync ? env.exportBundleAsync() : Promise.resolve(env.exportBundle());
     } catch (e) { fail(e); return; }
     // What the build is measured against: the pack as it is now.
-    const snap = { map: P.map, edits: P.edits, stripped: strippedJson(pack(), P.map), shown: objectPoses(pack().maps[P.map]) };
+    const snap = { map: P.map, edits: P.edits, stripped: stripped(), shown: objectPoses(pack().maps[P.map]) };
     made.then((bytes) => {
       if (seq !== P.buildSeq) return;
       P.building = false;
@@ -560,7 +587,7 @@ export function createPreview3d(env) {
   function moveObjects() {
     if (P.building || !P.sent || P.sent.map !== P.map || !P.shown || !P.sentStripped) return false;
     const def = pack().maps[P.map];
-    if (strippedJson(pack(), P.map) !== P.sentStripped) return false;
+    if (stripped() !== P.sentStripped) return false;
     const now = objectPoses(def);
     for (const k of ['props', 'npcs', 'spawns', 'lamps']) if (now[k].length !== P.shown[k].length) return false;
     const mv = objectMoves(P.shown, now, P.grid);
@@ -597,7 +624,7 @@ export function createPreview3d(env) {
   function decide() {
     // An object-only edit costs nothing to show: send it at once, Auto or not.
     const def = P.map && pack() && pack().maps && pack().maps[P.map];
-    if (P.sent && P.shown && def && P.sent.map === P.map && strippedJson(pack(), P.map) === P.sentStripped) {
+    if (P.sent && P.shown && def && P.sent.map === P.map && stripped() === P.sentStripped) {
       flush();
       return;
     }
@@ -672,7 +699,10 @@ export function createPreview3d(env) {
     } else if (m.type === 'xw-stats') {
       P.stats = m;
       paintStatus();
-    } else if (/^xw-(select|transform|sculpt|paint|key)$/.test(m.type)) {
+    } else if (m.type === 'xw-key' && m.key === 'topdown') {
+      P.top = !!m.on;
+      topBtn.classList.toggle('is-on', P.top);
+    } else if (/^xw-(select|transform|sculpt|paint|key|place)$/.test(m.type)) {
       // The frame's editing layer answered (expansion-workbench-gizmos.js).
       if (P.onEdit) P.onEdit(m);
     }
@@ -883,8 +913,26 @@ export function createPreview3d(env) {
       editSlot.hidden = !bar || !P.open || !!P.editOff;
     },
     isOpen: () => P.open,
+    /* A line on the preview's status (the editor's notes). */
+    note: (text, bad) => setStatus(text, bad),
+    /* Test play on / off (the party on the map, the game's keys), and
+     * whether it is running. */
+    testPlay: (on) => testPlay(on === undefined ? P.mode !== 'player' : !!on),
+    testing: () => P.mode === 'player',
+    /* The editor camera straight down (`on`) or tilted back. */
+    topDown(on) {
+      P.top = !!on;
+      topBtn.classList.toggle('is-on', P.top);
+      if (P.mode !== 'orbit') setMode('orbit');
+      post({ type: 'xw-camera', mode: 'orbit', painter: P.painter, top: P.top });
+    },
+    onMode(fn) { P.onMode = fn; },
     /* The camera, `orbit` or `player` (the shell's Test-play mode). */
-    setCamera: (mode) => { if (mode === 'player' && !P.open) setOpen(true); if (mode === 'orbit' || mode === 'player') setMode(mode); },
+    setCamera: (mode) => {
+      if (mode === 'player' && !P.open) setOpen(true);
+      if (mode === 'player') testPlay(true);
+      else if (mode === 'orbit') setMode('orbit');
+    },
     open: () => { if (!P.open) setOpen(true); },
     playHere,
     setLive(on) { P.live = !!on; pushLive(); },

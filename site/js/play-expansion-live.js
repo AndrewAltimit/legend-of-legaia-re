@@ -165,7 +165,6 @@
           }
           return out;
         };
-        attachPicking(v);
       }
       /* The map editor's layer (play-view-editor-gizmos.js): its pointer
        * handlers go on first, so an edit drag is not also a camera turn. */
@@ -190,6 +189,17 @@
 
     function applyCamera(v) {
       v.debugCamera = wantOrbit;
+      /* The orbit camera is the editor's: no lead on the map and no key
+       * reaching the pad (play-view-editor-gizmos.js takes the mouse and
+       * keys). The field camera is Test play, a cutscene, a fight or a mode:
+       * the party is there and the game's own input drives it. */
+      v.editorNoPlayer = wantOrbit;
+      if (!wantOrbit) {
+        // Test play is the first time the preview may sound.
+        if (!v.editorAudio) { v.editorAudio = true; if (typeof v._enableAudio === 'function') v._enableAudio(); }
+        if (v._edTop && typeof v.editorTopDown === 'function') v.editorTopDown(false);
+        try { v.canvas.focus({ preventScroll: true }); } catch (_) { /* no focus */ }
+      }
       if (typeof v.syncEditorHud === 'function') v.syncEditorHud();
       /* Match painter: the orbit sits on the map's high-Z side
        * (`focusEditorTile`, yaw pi) and the canvas is mirrored, so screen
@@ -206,41 +216,6 @@
         if (focusTile) v.focusEditorTile(focusTile[0], focusTile[1]);
         else if (!v.editorFocus) v.focusEditorTile();
       }
-    }
-
-    /* A click (a press and release with almost no travel) picks the tile
-     * under it; a right or middle drag pans the orbit focus. */
-    function attachPicking(v) {
-      const cv = v.canvas;
-      let down = null;
-      cv.addEventListener('pointerdown', (e) => {
-        down = { x: e.clientX, y: e.clientY, b: e.button };
-      });
-      cv.addEventListener('contextmenu', (e) => e.preventDefault());
-      cv.addEventListener('pointermove', (e) => {
-        if (!down || down.b === 0 || !v.debugCamera || !v.editorFocus) return;
-        const dx = (e.clientX - down.x) * (v.mirrorView ? -1 : 1), dy = e.clientY - down.y;
-        down.x = e.clientX; down.y = e.clientY;
-        down.moved = true;
-        const k = (v.cam.halfWidth * 2) / Math.max(cv.clientWidth, 1);
-        const sy = Math.sin(v.cam.yaw), cy = Math.cos(v.cam.yaw);
-        /* Screen X is mirrored on this camera (buildWorldOrbitVp), and
-         * mirrored back by the canvas under Match painter. */
-        v.editorFocus[0] += (dx * cy + dy * sy) * k;
-        v.editorFocus[2] += (dx * sy - dy * cy) * k;
-        focusTile = null;
-      });
-      cv.addEventListener('pointerup', (e) => {
-        const d = down;
-        down = null;
-        if (!d || d.moved || e.button !== 0) return;
-        if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
-        const t = v.pickTile(e.clientX, e.clientY);
-        if (t) {
-          v.setEditorOverlay({ select: { tile: t } });
-          post({ type: 'xw-pick', tile: t });
-        }
-      });
     }
 
     function setQuiet() {
@@ -389,6 +364,7 @@
         if (v) {
           if (m.focus === null) v.editorFocus = null;
           applyCamera(v);
+          if (m.top !== undefined && wantOrbit && typeof v.editorTopDown === 'function') v.editorTopDown(!!m.top);
         }
       } else if (m.type === 'xw-seat') {
         if (rt && m.tile && typeof rt.expansion_seat_player === 'function') {

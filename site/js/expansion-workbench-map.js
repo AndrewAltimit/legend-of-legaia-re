@@ -746,6 +746,8 @@ export function renderMaps(ctx, el) {
         V.sel = hit[0];
         if (!inSel) editSelect([hit[0]]);
         V.drag = { move: true, from: [c, r], group: inSel && cur.length > 1 ? cur : null };
+        // What the drag undoes to: anything edited before it is its own step.
+        if (ctx.commit) ctx.commit();
       } else {
         // A drag on empty ground selects what its box holds.
         V.sel = null;
@@ -786,7 +788,10 @@ export function renderMaps(ctx, el) {
     if (inside) hover.textContent = describe(ctx, map, c, r);
     if (!d || !inside) return;
     if (d.paint) {
-      if (setChar(map, c, r, V.brush)) { syncSize(map); mctx.changed(); }
+      // A stroke edits the rows in place and redraws the canvas; the rest
+      // of the page (validation, the 3D preview, the history) hears of it
+      // once, on release.
+      if (setChar(map, c, r, V.brush)) { syncSize(map); d.painted = true; redrawSoon(); }
     } else if (d.sculpt) {
       const b = cv.getBoundingClientRect();
       d.to = [(ev.clientX - b.left) / V.cell, (ev.clientY - b.top) / V.cell];
@@ -807,7 +812,9 @@ export function renderMaps(ctx, el) {
       }
       d.from = [c, r];
       d.moved = true;
-      mctx.changed();
+      // Only the canvas follows a drag; the edit is made known once, on
+      // release (onUp).
+      redrawSoon();
     }
   };
   const onUp = () => {
@@ -847,9 +854,18 @@ export function renderMaps(ctx, el) {
       if (d.kind === 'encounter') list.push({ id, rect: q, table: '' });
       V.sel = { type: d.kind + 's', i: list.length - 1 };
       ctx.changed(true);
-    } else if (d.paint || (d.move && d.moved)) {
-      // The tab draws again; the canvas takes the keys back (the arrows'
-      // nudge, Delete). A click that moved nothing changes nothing.
+    } else if (d.move && d.moved) {
+      // One undo step a drag (the history was closed when it started), and
+      // no re-render of the tab: the selection's forms and the 3D editor's
+      // objects follow; the canvas keeps the keys (the arrows' nudge, Delete).
+      // A click that moved nothing changes nothing.
+      mctx.changed();
+      if (ctx.commit) ctx.commit();
+      renderSelection(ctx, mctx, side, map);
+      editorChanged();
+      redraw();
+    } else if (d.paint) {
+      // The tab draws again; the canvas takes the keys back.
       V.refocus = true;
       ctx.changed(true);
     }
@@ -947,6 +963,14 @@ export function renderMaps(ctx, el) {
         draw(ctx, cv);
       },
       ids: () => ctx.ids('npc'),
+      idsOf: (kind) => ctx.ids(kind),
+      pack: () => ctx.pack,
+      // The catalog's base-scene pieces (cached by the page per scene).
+      sceneObjects: (scene) => (ctx.cat ? ctx.sceneObjects(scene) : { scene, objects: [] }),
+      sceneNpcs: (scene) => {
+        if (!V.npcs[scene] && ctx.cat) loadNpcs(ctx, scene, () => {});
+        return V.npcs[scene] || { scene, npcs: [] };
+      },
     });
     pv.onCollision((m) => {
       V.blocked[m.map] = m;
@@ -1478,5 +1502,8 @@ function renderSelection(ctx, mctx, side, map) {
 /** The shell's mode toolbar (expansion-workbench-shell.js): the painter's
  * tool, by its id in TOOLS. The caller re-renders. */
 export function setPainterTool(id) {
-  if (TOOLS.some((t) => t[0] === id)) V.tool = id;
+  if (!TOOLS.some((t) => t[0] === id)) return false;
+  if (V.tool === id) return false;
+  V.tool = id;
+  return true;
 }

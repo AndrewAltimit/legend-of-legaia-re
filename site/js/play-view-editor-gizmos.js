@@ -66,6 +66,7 @@ void main() {
     lamp: [1.0, 0.85, 0.35, 0.75], emitter: [0.45, 0.9, 0.95, 0.35], decor: [0.45, 0.85, 0.45, 0.55],
     brush: [1, 1, 1, 0.9], inner: [1, 0.85, 0.4, 0.8], up: [0.55, 0.85, 0.45, 0.55], down: [0.85, 0.45, 0.35, 0.55],
     paint: [0.45, 0.95, 1.0, 0.5],
+    ok: [0.35, 0.95, 0.45, 0.95], okFill: [0.35, 0.95, 0.45, 0.35], bad: [1.0, 0.3, 0.25, 0.95], badFill: [1.0, 0.3, 0.25, 0.4],
   };
   const FLIP = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
   /* The Select tool's keys in the frame (the painter's letters are its own). */
@@ -218,7 +219,8 @@ void main() {
      * keep their value. */
     setEditorEdit(msg) {
       const E = this._ed || (this._ed = { mode: 'view', tool: 'move', snap: 'tile', objects: [], selected: [], brush: null, terrain: null });
-      for (const k of ['mode', 'tool', 'snap', 'objects', 'selected', 'brush']) if (msg[k] !== undefined) E[k] = msg[k];
+      for (const k of ['mode', 'tool', 'snap', 'objects', 'selected', 'brush', 'place']) if (msg[k] !== undefined) E[k] = msg[k];
+      if (E.mode !== 'place') E.ghost = null;
       if (msg.terrain !== undefined) {
         const t = msg.terrain;
         E.terrain = t && t.heights ? Object.assign({}, t, { h: Float32Array.from(t.heights) }) : null;
@@ -247,60 +249,243 @@ void main() {
     }
 
     /* `post(msg)` reaches the workbench. Called once by
-     * play-expansion-live.js with the canvas ready. */
+     * play-expansion-live.js with the canvas ready.
+     *
+     * While the preview is an editor (`editorNoPlayer`: no Test play
+     * running) the picture is the editor's alone: the lead is not drawn,
+     * no key reaches the pad or the page's hotkeys, and the mouse drives
+     * the editor camera - right drag orbits, middle drag (or Space with the
+     * left button) pans, the wheel zooms - and the edit mode's left button.
+     * Test play hands the canvas back to the game's own input. */
     attachEditorEditing(post) {
       if (this._edAttached) return;
       this._edAttached = true;
       this._edPost = post;
       const cv = this.canvas;
       const consume = (e) => { e.stopImmediatePropagation(); e.preventDefault(); };
+      this._edSpace = false;
+      cv.addEventListener('contextmenu', (e) => { if (this.editorNoPlayer) e.preventDefault(); });
       cv.addEventListener('pointerdown', (e) => {
-        const E = this._ed;
-        if (!E || E.mode === 'view' || e.button !== 0 || e.altKey || !this._editorMap) return;
-        if (this._edDown(e)) {
-          consume(e);
-          try { cv.setPointerCapture(e.pointerId); } catch (_) { /* no capture */ }
-        }
-      }, { capture: true });
-      cv.addEventListener('pointermove', (e) => {
-        const E = this._ed;
-        if (!E || E.mode === 'view') return;
-        if (this._edDrag) { consume(e); this._edMove(e); return; }
-        this._edHover(e);
-      }, { capture: true });
-      cv.addEventListener('pointerup', (e) => {
-        if (!this._edDrag) return;
+        if (!this.editorNoPlayer) return;
         consume(e);
-        try { cv.releasePointerCapture(e.pointerId); } catch (_) { /* no capture */ }
-        this._edUp(e);
-      }, { capture: true });
-      cv.addEventListener('pointerleave', () => { if (this._ed) { this._ed.cursor = null; this._edDirty = true; } });
-      cv.addEventListener('keydown', (e) => {
+        try { cv.focus({ preventScroll: true }); } catch (_) { cv.focus(); }
+        try { cv.setPointerCapture(e.pointerId); } catch (_) { /* no capture */ }
         const E = this._ed;
-        if (!E || E.mode === 'view') return;
-        const k = e.key;
-        if (k === 'Delete' || k === 'Backspace' || ((e.ctrlKey || e.metaKey) && (k === 'd' || k === 'z' || k === 'y')) || k === '[' || k === ']') {
-          consume(e);
-          post({ type: 'xw-key', key: k, ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+        if (e.button === 2 || e.button === 1 || (e.button === 0 && (this._edSpace || e.altKey))) {
+          this._edCam = { kind: e.button === 2 || (e.button === 0 && e.altKey) ? 'orbit' : 'pan', x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, b: e.button };
           return;
         }
-        if (E.mode !== 'select' || e.ctrlKey || e.metaKey || e.altKey) return;
-        /* Under the orbit camera the arrows nudge the selection along the
-         * map axis that runs closest to the arrow on screen (the field
-         * camera keeps them for walking); W / E / R pick move, rotate and
-         * scale; Escape drops the selection. */
-        const nudge = this.debugCamera ? this._edArrowAxis(k) : null;
-        if (nudge) {
-          consume(e);
-          post({ type: 'xw-key', key: 'nudge', dc: nudge[0], dr: nudge[1], fine: e.shiftKey });
-        } else if (TOOL_KEYS[k.toLowerCase()]) {
-          consume(e);
-          post({ type: 'xw-key', key: 'tool', tool: TOOL_KEYS[k.toLowerCase()] });
-        } else if (k === 'Escape') {
-          consume(e);
-          post({ type: 'xw-key', key: 'deselect' });
+        if (e.button !== 0) return;
+        if (E && E.mode !== 'view' && this._editorMap && this._edDown(e)) return;
+        // A left click on nothing: picks the tile (View) or drops the
+        // selection (the edit modes) on release.
+        this._edCam = { kind: 'click', x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, b: 0 };
+      }, { capture: true });
+      cv.addEventListener('pointermove', (e) => {
+        if (!this.editorNoPlayer) return;
+        consume(e);
+        if (this._edCam) { this._edCamMove(e); return; }
+        const E = this._ed;
+        if (!E || !this._editorMap) return;
+        if (this._edDrag) { this._edMove(e); return; }
+        if (E.mode !== 'view') this._edHover(e);
+        // Placing: the keys (R turns the piece, Escape stops) belong to the
+        // picture the pointer is over, unless the page is taking text.
+        if (E.mode === 'place' && document.activeElement !== cv) {
+          let typing = false;
+          try { const a = window.parent && window.parent.document.activeElement; typing = !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); } catch (_) { typing = false; }
+          if (!typing) { try { cv.focus({ preventScroll: true }); } catch (_) { /* no focus */ } }
         }
       }, { capture: true });
+      const up = (e) => {
+        if (!this.editorNoPlayer) return;
+        consume(e);
+        try { cv.releasePointerCapture(e.pointerId); } catch (_) { /* no capture */ }
+        const c = this._edCam;
+        if (c) {
+          this._edCam = null;
+          const still = Math.hypot(e.clientX - c.x0, e.clientY - c.y0) <= 4;
+          if (still) this._edClick(e, c);
+          return;
+        }
+        if (this._edDrag) this._edUp(e);
+      };
+      cv.addEventListener('pointerup', up, { capture: true });
+      cv.addEventListener('pointercancel', up, { capture: true });
+      cv.addEventListener('pointerleave', () => { if (this._ed) { this._ed.cursor = null; this._ed.ghost = null; this._edDirty = true; } });
+      cv.addEventListener('wheel', (e) => {
+        if (!this.editorNoPlayer) return;
+        const E = this._ed;
+        // Shift with the wheel turns the piece being placed (or the
+        // selection) a quarter turn a notch; the plain wheel zooms.
+        if (E && e.shiftKey && (E.mode === 'place' || (E.mode === 'select' && E.selected.length))) {
+          consume(e);
+          this._edRotate(e.deltaY > 0 ? 90 : -90);
+          return;
+        }
+        consume(e);
+        const f = e.deltaY > 0 ? 1.12 : 0.89;
+        this.cam.halfWidth = Math.max(220, Math.min(this.maxOrbitHalf || 16000, this.cam.halfWidth * f));
+        this.cam.halfHeight = this.cam.halfWidth;
+      }, { capture: true, passive: false });
+      const key = (e, down) => this._edKey(e, down);
+      window.addEventListener('keydown', (e) => key(e, true), { capture: true });
+      window.addEventListener('keyup', (e) => key(e, false), { capture: true });
+      window.addEventListener('blur', () => { this._edSpace = false; });
+    }
+
+    /* The editor's keys (window capture: nothing below sees a key the
+     * editor takes, so the pad never walks the lead). Function keys other
+     * than F3 (the debug camera, which the editor owns) pass to the page. */
+    _edKey(e, down) {
+      if (!this.editorNoPlayer) return;
+      const k = e.key;
+      if (/^F\d+$/.test(k) && k !== 'F3') return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      e.stopImmediatePropagation();
+      if (k === ' ' || e.code === 'Space') { this._edSpace = down; e.preventDefault(); return; }
+      if (!down) return;
+      e.preventDefault();
+      const E = this._ed || { mode: 'view', selected: [] };
+      const post = this._edPost;
+      const ctrl = e.ctrlKey || e.metaKey;
+      const lk = k.toLowerCase();
+      if (ctrl && (lk === 'z' || lk === 'y' || lk === 'd')) { post({ type: 'xw-key', key: lk, ctrl: true, shift: e.shiftKey }); return; }
+      if (ctrl) return;
+      if (k === 'Delete' || k === 'Backspace') { post({ type: 'xw-key', key: 'Delete' }); return; }
+      if (k === '[' || k === ']') { post({ type: 'xw-key', key: k }); return; }
+      if (k === 'Escape') {
+        if (E.mode === 'place') post({ type: 'xw-key', key: 'cancel-place' });
+        else post({ type: 'xw-key', key: 'deselect' });
+        return;
+      }
+      if (/^[1-6]$/.test(k)) { post({ type: 'xw-key', key: 'digit', n: +k }); return; }
+      if (lk === 'r') { this._edRotate(e.shiftKey ? 15 : 90); return; }
+      if (lk === 't') { this.editorTopDown(!this._edTop); return; }
+      if (lk === 'f') { this._edFrame(); return; }
+      if (lk === 'q' || lk === 'e') {
+        this.cam.yaw += (lk === 'q' ? -1 : 1) * Math.PI / 4 * (this.mirrorView ? -1 : 1);
+        return;
+      }
+      if (lk === 'g') { post({ type: 'xw-key', key: 'tool', tool: 'move' }); return; }
+      // Arrows: nudge a selection along the map axis closest on screen;
+      // with nothing selected they pan, as W A S D always do.
+      const arrow = ARROW_DIR[k];
+      if (arrow && E.mode === 'select' && E.selected.length && this.debugCamera) {
+        const n = this._edArrowAxis(k);
+        if (n) post({ type: 'xw-key', key: 'nudge', dc: n[0], dr: n[1], fine: e.shiftKey });
+        return;
+      }
+      const pan = arrow || { w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0] }[lk];
+      if (pan) this._edPanBy(pan[0] * 60, pan[1] * 60);
+    }
+
+    /* The editor camera's drag: orbit (yaw and tilt) or pan. */
+    _edCamMove(e) {
+      const c = this._edCam;
+      const dx = e.clientX - c.x, dy = e.clientY - c.y;
+      c.x = e.clientX; c.y = e.clientY;
+      if (c.kind === 'orbit') {
+        this.cam.yaw += dx * 0.006 * (this.mirrorView ? -1 : 1);
+        this.cam.pitch = Math.max(0.02, Math.min(1.35, this.cam.pitch + dy * 0.004));
+        this._edTop = false;
+      } else if (c.kind === 'pan') {
+        this._edPanBy(-dx, -dy);
+      }
+    }
+
+    /* Pan the orbit focus by a screen offset (client pixels): the ground
+     * moves with the pointer. */
+    _edPanBy(dxPx, dyPx) {
+      if (!this.editorFocus) return;
+      const cv = this.canvas;
+      const dx = dxPx * (this.mirrorView ? -1 : 1);
+      const k = (this.cam.halfWidth * 2) / Math.max(cv.clientWidth, 1);
+      const sy = Math.sin(this.cam.yaw), cy = Math.cos(this.cam.yaw);
+      /* Screen X is mirrored on this camera (buildWorldOrbitVp), and
+       * mirrored back by the canvas under Match painter. */
+      this.editorFocus[0] -= (dx * cy + dyPx * sy) * k;
+      this.editorFocus[2] -= (dx * sy - dyPx * cy) * k;
+    }
+
+    /* Straight down on the map (and back to the tilt it had). */
+    editorTopDown(on) {
+      if (on && !this._edTop) {
+        this._edTopPrev = this.cam.pitch;
+        this.cam.pitch = 0.02;
+        this.cam.yaw = Math.round(this.cam.yaw / (Math.PI / 2)) * (Math.PI / 2);
+      } else if (!on && this._edTop) {
+        this.cam.pitch = this._edTopPrev || 0.62;
+      }
+      this._edTop = !!on;
+      if (this._edPost) this._edPost({ type: 'xw-key', key: 'topdown', on: this._edTop });
+    }
+
+    /* The selection framed, else the whole map. */
+    _edFrame() {
+      const P = this._ed && this._ed.selected.length ? this._edPivot() : null;
+      if (P) {
+        const t = this._edTile(P.x, P.z);
+        this.focusEditorTile(t[0], t[1]);
+        this.cam.halfWidth = this.cam.halfHeight = Math.max(500, Math.min(this.cam.halfWidth, 1400));
+      } else {
+        const keep = [this.cam.yaw, this.cam.pitch];
+        this.focusEditorTile();
+        [this.cam.yaw, this.cam.pitch] = keep;
+      }
+    }
+
+    /* A click with no travel: the left button picks a tile (View), drops
+     * the selection (the edit modes); the right one puts the piece being
+     * placed down. */
+    _edClick(e, c) {
+      const E = this._ed;
+      if (c.b === 2) {
+        if (E && E.mode === 'place') this._edPost({ type: 'xw-key', key: 'cancel-place' });
+        return;
+      }
+      if (c.kind !== 'click') return;
+      if (!E || E.mode === 'view') {
+        const t = this.pickTile(e.clientX, e.clientY);
+        if (t) {
+          this.setEditorOverlay({ select: { tile: t } });
+          this._edPost({ type: 'xw-pick', tile: t });
+        }
+      } else if (E.mode === 'select' && E.selected.length && !(e.shiftKey || e.ctrlKey || e.metaKey)) {
+        E.selected = [];
+        this._edPost({ type: 'xw-select', keys: [] });
+        this._edDirty = true;
+      }
+    }
+
+    /* Turn the piece being placed, or the selection, by `deg` (the
+     * painter's sense). NPCs and spawns turn by facing sector. */
+    _edRotate(deg) {
+      const E = this._ed;
+      if (!E) return;
+      if (E.mode === 'place' && E.place) {
+        const step = E.place.facing ? 45 : 1;
+        E.place.yaw = (((Math.round(((E.place.yaw || 0) + deg) / step) * step) % 360) + 360) % 360;
+        this._edPost({ type: 'xw-key', key: 'place-yaw', yaw: E.place.yaw });
+        this._edDirty = true;
+        return;
+      }
+      if (E.mode !== 'select' || !E.selected.length) return;
+      const P = this._edPivot();
+      if (!P) return;
+      const edits = [];
+      for (const o of P.sel) {
+        if (o.rect || o.noRotate) continue;
+        const p = this._edPose(o);
+        const d = o.facing ? Math.sign(deg) * Math.max(45, Math.abs(deg) >= 90 ? 90 : 45) : deg;
+        edits.push({ key: o.key, x: p.x, z: p.z, yaw: (((p.yaw || 0) + d) % 360 + 360) % 360 });
+      }
+      if (!edits.length) return;
+      E.poses = Object.assign({}, E.poses || {});
+      for (const ed of edits) E.poses[ed.key] = Object.assign({}, this._edPose(P.sel.find((o) => o.key === ed.key)), { yaw: ed.yaw });
+      this._edDirty = true;
+      this._edPost({ type: 'xw-transform', edits });
     }
 
     /* --- Geometry --- */
@@ -382,11 +567,22 @@ void main() {
     _edGroundHit(cx, cy) {
       const ray = this._edRay(cx, cy);
       if (!ray) return null;
-      const len = Math.hypot(ray.d[0], ray.d[1], ray.d[2]) || 1;
-      const n = Math.min(4000, Math.ceil(len / 24));
-      let prev = 0;
+      /* March only the stretch of the ray between the highest and the
+       * lowest ground (a fine step there, not a coarse one over the whole
+       * far-plane-long ray, which stepped over raised tiles). */
+      const [yTop, yBot] = this._edGroundSpan();
+      let ta = 0, tb = 1;
+      if (Math.abs(ray.d[1]) > 1e-9) {
+        const t1 = (yTop - 2 - ray.o[1]) / ray.d[1], t2 = (yBot + 2 - ray.o[1]) / ray.d[1];
+        ta = Math.max(0, Math.min(t1, t2));
+        tb = Math.min(1, Math.max(t1, t2));
+        if (tb <= ta) return null;
+      }
+      const len = Math.hypot(ray.d[0], ray.d[1], ray.d[2]) * (tb - ta) || 1;
+      const n = Math.min(4000, Math.max(8, Math.ceil(len / 8)));
+      let prev = ta;
       for (let k = 1; k <= n; k++) {
-        const t = k / n;
+        const t = ta + (tb - ta) * k / n;
         const p = [ray.o[0] + ray.d[0] * t, ray.o[1] + ray.d[1] * t, ray.o[2] + ray.d[2] * t];
         if (p[1] >= this._edGround(p[0], p[2])) {
           let lo = prev, hi = t;
@@ -400,6 +596,22 @@ void main() {
         prev = t;
       }
       return null;
+    }
+
+    /* The ground's retail Y range `[top, bottom]` (Y down): the
+     * heightfield's or the tile floors', kept with the data it reads. */
+    _edGroundSpan() {
+      const E = this._ed;
+      const t = E && E.terrain;
+      const src = t ? ((E.proxy && E.proxy.h) || t.h) : (this._editorMap && this._editorMap.floor);
+      if (!src) return [-4096, 4096];
+      if (this._edSpanOf !== src) {
+        let lo = Infinity, hi = -Infinity;
+        for (const v of src) { const y = t ? -v : v; if (y < lo) lo = y; if (y > hi) hi = y; }
+        this._edSpanOf = src;
+        this._edSpan = Number.isFinite(lo) ? [lo, hi] : [-4096, 4096];
+      }
+      return this._edSpan;
     }
 
     /* Where the ray meets the level plane at retail Y `y`. */
@@ -538,6 +750,13 @@ void main() {
 
     _edDown(e) {
       const E = this._ed;
+      if (E.mode === 'place') {
+        const g = this._edGhostAt(e.clientX, e.clientY);
+        E.ghost = g;
+        this._edDirty = true;
+        if (g && g.ok) this._edPost({ type: 'xw-place', tile: g.tile, yaw: (E.place && E.place.yaw) || 0 });
+        return true;
+      }
       if (E.mode === 'sculpt' || E.mode === 'paint') {
         const hit = this._edGroundHit(e.clientX, e.clientY);
         if (!hit) return false;
@@ -654,6 +873,20 @@ void main() {
       }
       E.poses = Object.assign({}, E.poses || {}, poses);
       d.poses = poses;
+      // Where a moved prop, NPC or spawn cannot stand (red while dragged).
+      if (d.kind !== 'scale') {
+        const skip = new Set(Object.keys(poses));
+        const m = this._editorMap;
+        d.blocked = [];
+        for (const o of P.sel) {
+          if (o.rect || !['props', 'npcs', 'spawns'].includes(o.kind)) continue;
+          const p = poses[o.key];
+          const c = Math.floor(p.x / m.unit) - m.origin[0], r = Math.floor(p.z / m.unit) - m.origin[1];
+          const pl = { kind: o.kind === 'props' ? 'prop' : 'npc', size: o.size ? [o.size[0] * (p.scale || 1), o.size[1] * (p.scale || 1)] : null, solid: o.solid };
+          const why = this._edBlocked(pl, c, r, p.yaw || 0, skip);
+          if (why) { d.blocked.push(o.key); d.why = `${o.key} at [${c}, ${r}]: ${why}`; }
+        }
+      }
       this._edDirty = true;
     }
 
@@ -673,12 +906,24 @@ void main() {
         return;
       }
       if (!d.moved || !d.poses) return;
+      // Dropped where a piece cannot stand: everything goes back.
+      if (d.blocked && d.blocked.length) {
+        E.poses = null;
+        this._edDirty = true;
+        this._edPost({ type: 'xw-key', key: 'blocked', why: d.why || '' });
+        return;
+      }
       const edits = Object.entries(d.poses).map(([key, p]) => ({ key, x: p.x, z: p.z, yaw: p.yaw, scale: p.scale, rect: p.rect }));
       this._edPost({ type: 'xw-transform', edits });
     }
 
     _edHover(e) {
       const E = this._ed;
+      if (E.mode === 'place') {
+        E.ghost = this._edGhostAt(e.clientX, e.clientY);
+        this._edDirty = true;
+        return;
+      }
       if (E.mode === 'sculpt' || E.mode === 'paint') {
         const hit = this._edGroundHit(e.clientX, e.clientY);
         E.cursor = hit ? { x: hit[0], z: hit[2] } : null;
@@ -779,6 +1024,75 @@ void main() {
       }
     }
 
+    /* --- Placing --- */
+
+    /* The piece being placed (`E.place`: `{ kind, size, hgt, yaw,
+     * facing, zone }`) at the tile under the point: `{ tile, x, z, ok,
+     * why }`, or null off the map. */
+    _edGhostAt(cx, cy) {
+      const E = this._ed;
+      const m = this._editorMap;
+      const pl = E && E.place;
+      if (!pl || !m) return null;
+      const hit = this._edGroundHit(cx, cy);
+      if (!hit) return null;
+      const c = Math.floor(hit[0] / m.unit) - m.origin[0], r = Math.floor(hit[2] / m.unit) - m.origin[1];
+      if (c < 0 || r < 0 || c >= m.width || r >= m.height) return null;
+      const x = (m.origin[0] + c) * m.unit + m.unit / 2, z = (m.origin[1] + r) * m.unit + m.unit / 2;
+      const why = this._edBlocked(pl, c, r, pl.yaw || 0, null);
+      return { tile: [c, r], x, z, ok: !why, why };
+    }
+
+    /* Why piece `pl` cannot stand at tile (c, r) turned `yaw`, or '' when
+     * it can: off the map or over void, another prop on its tile (one prop
+     * a tile), a solid prop's footprint over another solid one's, a person
+     * on a wall block or on another person's tile. `skip` holds the keys being moved. */
+    _edBlocked(pl, c, r, yaw, skip) {
+      const E = this._ed;
+      const m = this._editorDrawnMap ? this._editorDrawnMap() : this._editorMap;
+      if (!m) return 'no map';
+      const W = m.width, H = m.height;
+      const at = (cc, rr) => rr * W + cc;
+      if (c < 0 || r < 0 || c >= W || r >= H || m.void[at(c, r)]) return 'off the map';
+      if (pl.zone) return '';
+      const u = m.unit;
+      const cxw = (m.origin[0] + c) * u + u / 2, czw = (m.origin[1] + r) * u + u / 2;
+      const quarter = Math.round(((yaw % 180) + 180) % 180 / 90) % 2 === 1;
+      const sz = pl.size || [96, 96];
+      const hw = (quarter ? sz[1] : sz[0]) / 2, hd = (quarter ? sz[0] : sz[1]) / 2;
+      const box = [cxw - hw, czw - hd, cxw + hw, czw + hd];
+      if (pl.kind === 'prop') {
+        // The tiles under the footprint stand on the map. (Walls under it
+        // are not in the way: a building's own tiles are often walled.)
+        const c0 = Math.floor(box[0] / u) - m.origin[0], c1 = Math.floor((box[2] - 1) / u) - m.origin[0];
+        const r0 = Math.floor(box[1] / u) - m.origin[1], r1 = Math.floor((box[3] - 1) / u) - m.origin[1];
+        for (let rr = r0; rr <= r1; rr++) {
+          for (let cc = c0; cc <= c1; cc++) {
+            if (cc < 0 || rr < 0 || cc >= W || rr >= H || m.void[at(cc, rr)]) return 'its footprint leaves the map';
+          }
+        }
+      } else if (m.walls[at(c, r)] === 15) {
+        return 'a wall fills the tile';
+      }
+      const shrink = 10;
+      for (const o of E.objects || []) {
+        if (o.rect || (skip && skip.has(o.key))) continue;
+        const p = this._edPose(o);
+        const oc = Math.floor(p.x / u) - m.origin[0], or = Math.floor(p.z / u) - m.origin[1];
+        if (pl.kind === 'prop' && o.kind === 'props') {
+          if (oc === c && or === r) return 'another prop holds the tile';
+          if (pl.solid === false || o.solid === false) continue;
+          const b = this._edBox(o);
+          const q = Math.round((((b.yaw * 180 / Math.PI) % 180) + 180) % 180 / 90) % 2 === 1;
+          const ow = (q ? b.hd : b.hw), od = (q ? b.hw : b.hd);
+          if (box[0] + shrink < b.cx + ow && box[2] - shrink > b.cx - ow && box[1] + shrink < b.cz + od && box[3] - shrink > b.cz - od) return 'it overlaps another prop';
+        } else if (pl.kind !== 'prop' && (o.kind === 'npcs' || o.kind === 'spawns') && oc === c && or === r) {
+          return 'someone already stands there';
+        }
+      }
+      return '';
+    }
+
     /* --- Drawing --- */
 
     _edBuild() {
@@ -848,6 +1162,41 @@ void main() {
             const s = g * 0.08;
             soup.box(hx - s, hz - s, hx + s, hz + s, y + s, 2 * s, hot('scale') || COL.scale);
           }
+        }
+      }
+      // The piece being placed: its box at the snapped tile, green where it
+      // can stand and red where it cannot, its footprint's tiles on the
+      // ground and its facing.
+      if (E.mode === 'place' && E.ghost && E.place) {
+        const g = E.ghost, pl = E.place;
+        const col = g.ok ? COL.okFill : COL.badFill;
+        const line = g.ok ? COL.ok : COL.bad;
+        const y0 = ground(g.x, g.z);
+        if (pl.zone) {
+          const n = pl.zone;
+          const x0 = g.x - m.unit / 2, z0 = g.z - m.unit / 2;
+          const x1 = x0 + m.unit * n[0], z1 = z0 + m.unit * n[1];
+          soup.quad([x0, y0 - 4, z0], [x1, y0 - 4, z0], [x1, y0 - 4, z1], [x0, y0 - 4, z1], col);
+          soup.ribbon([x0, y0 - 6, z0], [x1, y0 - 6, z0], 10, line); soup.ribbon([x1, y0 - 6, z0], [x1, y0 - 6, z1], 10, line);
+          soup.ribbon([x1, y0 - 6, z1], [x0, y0 - 6, z1], 10, line); soup.ribbon([x0, y0 - 6, z1], [x0, y0 - 6, z0], 10, line);
+        } else {
+          const yaw = (pl.yaw || 0) * Math.PI / 180;
+          const sz = pl.size || [96, 96];
+          soup.obox(g.x, g.z, sz[0] / 2, sz[1] / 2, y0 + 1, pl.hgt || 80, yaw, col);
+          const a = yaw, L = Math.max(sz[0], sz[1]) / 2 + 40;
+          soup.ribbon([g.x, y0 - 4, g.z], [g.x + Math.cos(a) * L, y0 - 4, g.z + Math.sin(a) * L], 12, line);
+          const u = m.unit, x0 = g.x - u / 2, z0 = g.z - u / 2;
+          soup.ribbon([x0, y0 - 5, z0], [x0 + u, y0 - 5, z0], 8, line); soup.ribbon([x0 + u, y0 - 5, z0], [x0 + u, y0 - 5, z0 + u], 8, line);
+          soup.ribbon([x0 + u, y0 - 5, z0 + u], [x0, y0 - 5, z0 + u], 8, line); soup.ribbon([x0, y0 - 5, z0 + u], [x0, y0 - 5, z0], 8, line);
+        }
+      }
+      // A move drag: the dragged pieces' tiles, red where one cannot stand.
+      if (E.mode === 'select' && this._edDrag && this._edDrag.blocked) {
+        for (const k of this._edDrag.blocked) {
+          const o = (E.objects || []).find((x) => x.key === k);
+          if (!o) continue;
+          const b = this._edBox(o);
+          soup.obox(b.cx, b.cz, b.hw, b.hd, ground(b.cx, b.cz) + 1, b.hgt, b.yaw, COL.badFill);
         }
       }
       // The sculpt proxy: the stroke's patch at its new heights, tinted by
@@ -969,9 +1318,21 @@ void main() {
     }
   });
 
+  const P = window.PlayView.prototype;
+  /* The workbench's preview stays silent while it is an editor: the BGM
+   * mixer runs in a ScriptProcessorNode on this page's main thread - the
+   * workbench's own, the frame being same-origin - and was most of a drag's
+   * cost (the frame's own time under a drag, measured). Its first Test play
+   * (`editorAudio`) brings the sound up. */
+  const enableAudio = P._enableAudio;
+  if (typeof enableAudio === 'function' && /[?&]xwpreview=1\b/.test(location.search)) {
+    P._enableAudio = function () {
+      if (!this.editorAudio) return undefined;
+      return enableAudio.call(this);
+    };
+  }
   /* Draw the editing layer with the overlay (play-view-frame.js calls the
    * overlay's draw after the fog pass). */
-  const P = window.PlayView.prototype;
   const drawOverlay = P._drawEditorOverlay;
   P._drawEditorOverlay = function () {
     drawOverlay.call(this);
