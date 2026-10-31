@@ -236,6 +236,13 @@ const ctx = {
   mapPreview: (map) => {
     try { return JSON.parse(S.wb.map_preview(JSON.stringify(map))); } catch (e) { return { error: String(e) }; }
   },
+  // The same from the map's JSON, off this thread when the worker is up:
+  // `done(preview)` with the answer to the latest request for map `id` only
+  // (an older one still waiting is dropped). Here, at once, without it.
+  mapPreviewLater: (id, json, done) => mapPreviewLater(id, json, done),
+  // Bumped by every change to the session's own files (an asset import):
+  // a map preview reads the heightmap images among them.
+  sessionGen: () => V.gen,
   cutsceneTimeline: (id, picks) => {
     try {
       return JSON.parse(S.wb.cutscene_timeline(JSON.stringify(S.pack), id, new Uint32Array(picks || [])));
@@ -313,12 +320,31 @@ function rerender() {
   // not an edit, so the committed present absorbs it.
   S.hist.cur = JSON.stringify(S.pack);
   if (wasClean) S.clean = S.hist.cur;
-  updateDirty();
-  if (S.find) S.find.refresh();
+  updateDirty(S.hist.cur);
+  if (S.find) refreshFindSoon();
 }
 
 // The reference model's sites for the pack as it stands, cached per pack JSON.
 let xrefCache = { json: null, sites: [] };
+const xrefAsk = { seq: 0, json: null, done: null };
+
+/* The Find box after an edit: a moment later, with the sites built in the
+ * worker when it is up, so an edit's re-render does not wait on them. */
+let findTimer = null;
+function refreshFindSoon() {
+  clearTimeout(findTimer);
+  findTimer = setTimeout(() => {
+    if (!S.find || !S.pack) return;
+    const json = JSON.stringify(S.pack);
+    if (xrefCache.json === json || !V.worker || !V.ready || !S.wb.xref_sites) { S.find.refresh(); return; }
+    syncWorkerFiles();
+    xrefAsk.seq++;
+    xrefAsk.json = json;
+    xrefAsk.done = () => S.find.refresh();
+    V.worker.postMessage({ type: 'xref_sites', seq: xrefAsk.seq, json });
+  }, 200);
+}
+
 function xrefSites() {
   if (!S.wb || !S.pack || !S.wb.xref_sites) return [];
   const json = JSON.stringify(S.pack);
@@ -348,14 +374,14 @@ function commitHistory() {
   if (!S.pack) return;
   const now = JSON.stringify(S.pack);
   const H = S.hist;
-  if (H.cur == null) { H.cur = now; updateDirty(); return; }
-  if (now === H.cur) { updateDirty(); return; }
+  if (H.cur == null) { H.cur = now; updateDirty(now); return; }
+  if (now === H.cur) { updateDirty(now); return; }
   H.past.push(H.cur);
   H.bytes += H.cur.length;
   H.cur = now;
   H.future = [];
   while (H.past.length > HIST_STEPS || (H.bytes > HIST_BYTES && H.past.length > 1)) H.bytes -= H.past.shift().length;
-  updateDirty();
+  updateDirty(now);
 }
 
 function resetHistory() {
@@ -385,17 +411,21 @@ function stepHistory(dir) {
   return true;
 }
 
-function updateDirty() {
+/* `json`, when the caller has it, is the pack's JSON as it is now (the
+ * history's present just taken): it saves serialising the pack again. */
+function updateDirty(json) {
   const el = $('xw-dirty');
   if (!el || !S.pack) return;
   // While a burst of typing coalesces the pack is not serialised on every
   // key (a few hundred kilobytes of JSON): an edit underway counts as a
   // change, and the commit that closes the burst decides.
-  const dirty = S.clean != null && (S.hist.timer != null || JSON.stringify(S.pack) !== S.clean);
+  const now = () => (json != null ? json : (json = JSON.stringify(S.pack)));
+  const dirty = S.clean != null && (S.hist.timer != null || now() !== S.clean);
   el.hidden = !dirty;
   const u = $('xw-undo');
   const r = $('xw-redo');
-  if (u) u.disabled = !ctx.canUndo();
+  // Undo: a step behind, an edit coalescing, or one not yet committed.
+  if (u) u.disabled = !(S.hist.past.length > 0 || S.hist.timer != null || (S.hist.cur != null && now() !== S.hist.cur));
   if (r) r.disabled = !ctx.canRedo();
   const sv = $('xw-saved');
   if (sv) {
@@ -504,9 +534,13 @@ function renderIssues() {
   const errs = S.issues.filter((i) => i.severity === 'error').length;
   const warns = S.issues.length - errs;
   const hints = S.hints || [];
-  $('xw-issue-sum').textContent = `${errs} error(s), ${warns} warning(s)${hints.length ? `, ${hints.length} hint(s)` : ''}${S.cat ? '' : ' - load a disc to check coordinates'}`;
+  $('xw-issue-sum').textContent = S.checking && !S.issues.length ? 'checking ...'
+    : `${errs} error(s), ${warns} warning(s)${hints.length ? `, ${hints.length} hint(s)` : ''}${S.cat ? '' : ' - load a disc to check coordinates'}`;
   if (hints.length) box.append(renderHints(hints));
-  if (!S.issues.length) { box.append(h('div', { class: 'xw-ok' }, 'No issues: the pack loads.')); return; }
+  if (!S.issues.length) {
+    box.append(S.checking ? h('div', { class: 'xw-dim' }, 'Checking the pack ...') : h('div', { class: 'xw-ok' }, 'No issues: the pack loads.'));
+    return;
+  }
   const by = new Map();
   for (const i of S.issues) {
     if (!by.has(i.path)) by.set(i.path, []);
@@ -601,12 +635,12 @@ function placeParseError(issue) {
  * answer for a pack that has changed since is dropped (a newer one is on
  * its way). Without the worker (an older bundle, a worker that failed) it
  * runs here. An export or a hand-off still validates here, at once. */
-const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [] };
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [] };
 
 // Count every change to the session's own files (the loaded tree, assets,
 // documents), so the worker is handed them again before its next check.
 function trackSession(wb) {
-  for (const k of ['begin_files', 'add_file', 'finish_files', 'load_bundle', 'import_bundle', 'start_fresh', 'add_asset', 'set_doc']) {
+  for (const k of ['begin_files', 'add_file', 'finish_files', 'finish_files_unchecked', 'load_bundle', 'import_bundle', 'start_fresh', 'add_asset', 'set_doc']) {
     const f = wb[k];
     if (typeof f !== 'function') continue;
     wb[k] = function (...a) { V.gen++; return f.apply(wb, a); };
@@ -625,6 +659,15 @@ function stopValidator() {
   for (const b of owed) {
     try { b.res(S.wb.export_bundle(b.json)); } catch (e) { b.rej(e); }
   }
+  // ... and the Find box's sites and a map preview.
+  if (xrefAsk.done) { const done = xrefAsk.done; xrefAsk.done = null; done(); }
+  const waiting = [...V.previews.values()];
+  V.previews.clear();
+  for (const p of waiting) {
+    let pv;
+    try { pv = JSON.parse(S.wb.map_preview(p.json)); } catch (e) { pv = { error: String(e) }; }
+    p.done(pv);
+  }
 }
 
 /* Hand the worker the session's files when they changed since it had them. */
@@ -633,6 +676,20 @@ function syncWorkerFiles() {
     V.worker.postMessage({ type: 'files', data: S.wb.session_files() });
     V.synced = V.gen;
   }
+}
+
+/* `map_preview` in the worker (see ctx.mapPreviewLater). */
+function mapPreviewLater(id, json, done) {
+  if (!V.worker || !V.ready) {
+    let pv;
+    try { pv = JSON.parse(S.wb.map_preview(json)); } catch (e) { pv = { error: String(e) }; }
+    done(pv);
+    return;
+  }
+  syncWorkerFiles();
+  const seq = ++V.previewSeq;
+  V.previews.set(id, { seq, done, json });
+  V.worker.postMessage({ type: 'map_preview', seq, map: id, json });
 }
 
 /* The `.lxpack` of the pack as it is now, built in the worker when it is
@@ -681,6 +738,21 @@ function startValidator(parts) {
       S.hintLoad = null;
       computeHints();
       renderIssues();
+    } else if (m.type === 'xref_sites') {
+      if (m.seq !== xrefAsk.seq) return;
+      const done = xrefAsk.done;
+      xrefAsk.done = null;
+      if (m.json != null) {
+        try { xrefCache = { json: xrefAsk.json, sites: JSON.parse(m.json).sites }; } catch (e) { /* built here on demand */ }
+      }
+      if (done) done();
+    } else if (m.type === 'map_preview') {
+      const p = V.previews.get(m.map);
+      if (!p || p.seq !== m.seq || m.dropped) return;
+      V.previews.delete(m.map);
+      V.previewMs.push(m.ms);
+      if (V.previewMs.length > 20) V.previewMs.shift();
+      p.done(m.preview);
     } else if (m.type === 'bundle') {
       const b = V.bundles.get(m.seq);
       if (!b) return;
@@ -712,6 +784,7 @@ function startValidator(parts) {
 let validateTimer = null;
 function scheduleValidate() {
   V.edited = true;
+  V.current = false;
   clearTimeout(validateTimer);
   validateTimer = setTimeout(validateSoon, 250);
 }
@@ -739,6 +812,10 @@ function runValidate() {
 }
 
 function applyIssues(raw) {
+  // Every path here answers the pack as it is now (a stale worker answer
+  // never reaches it), until the next edit.
+  V.current = true;
+  S.checking = false;
   try {
     S.issues = raw.map(placeParseError);
   } catch (e) {
@@ -952,7 +1029,17 @@ function showPack(pack, label, msg, opts) {
   $('xw-empty').hidden = true;
   $('xw-new').hidden = true;
   resetHistory();
-  runValidate();
+  // The checks of a pack just opened: in the worker when it is up (the
+  // list the load itself made stands until they land), else here.
+  if (V.worker && V.ready) {
+    applyIssues(o.issues || []);
+    V.current = false;
+    if (!S.issues.length) { S.checking = true; renderIssues(); }
+    clearTimeout(validateTimer);
+    validateSoon();
+  } else {
+    runValidate();
+  }
   rerender();
   resetHistory();
   // A resumed pack keeps its unsaved state: `clean` is what it was opened as.
@@ -979,13 +1066,16 @@ async function loadResult(res, label, tree) {
   $('xw-resume').hidden = true;
   // What a resume reloads the session from: the tree, or the bundle.
   await savePut('source', Object.assign({ label, savedAt: Date.now() }, tree.bundle ? { bundle: tree.bundle } : { files: tree }));
-  showPack(res.pack, label, `${label}: ${res.files.length} file(s) loaded.`);
+  showPack(res.pack, label, `${label}: ${res.files.length} file(s) loaded.`, { issues: res.issues });
 }
 
 async function loadTree(tree, label) {
   S.wb.begin_files();
   for (const [p, b] of Object.entries(tree)) S.wb.add_file(p, b);
-  await loadResult(JSON.parse(S.wb.finish_files()), label, tree);
+  // With the worker up the checks run there (showPack asks for them): the
+  // load itself only says why a tree does not load.
+  const quick = V.worker && V.ready && typeof S.wb.finish_files_unchecked === 'function';
+  await loadResult(JSON.parse(quick ? S.wb.finish_files_unchecked() : S.wb.finish_files()), label, tree);
 }
 
 async function loadRebirth(as) {
@@ -1023,8 +1113,12 @@ async function loadRebirth(as) {
 // An export, a play or a hand-off is refused while the pack has an error:
 // say so and open the first error's field rather than only quoting it.
 function blockedByErrors(what) {
-  clearTimeout(validateTimer);
-  runValidate();
+  // The checks already answer the pack as it stands unless an edit came
+  // after them.
+  if (!V.current) {
+    clearTimeout(validateTimer);
+    runValidate();
+  }
   const errs = S.issues.filter((i) => i.severity === 'error');
   if (!errs.length) return false;
   S.issueAt = 0;
@@ -1201,9 +1295,17 @@ function init() {
 }
 
 async function downloadBundle() {
-  if (blockedByErrors('Not downloaded')) return;
+  // Built in the worker when it is up; the export refuses a pack with an
+  // error, and only then do the checks run here to open the first one.
+  if (V.current && blockedByErrors('Not downloaded')) return;
   try {
-    const bytes = await exportBundle();
+    let bytes;
+    try {
+      bytes = await exportBundleAsync();
+    } catch (e) {
+      if (blockedByErrors('Not downloaded')) return;
+      throw e;
+    }
     const name = `${S.pack.manifest.id || 'pack'}.lxpack`;
     downloadFile(new Blob([bytes], { type: 'application/octet-stream' }), name);
     setStatus(`Downloaded ${name} (${bytes.length} bytes). It holds no game data: share it freely.`, 'ok', 'xw-export-status');
