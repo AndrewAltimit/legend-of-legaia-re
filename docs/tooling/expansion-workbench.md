@@ -890,9 +890,12 @@ with an installed pack, the active one in red; the engine plays
 input, or a drop on the expansion card) reads the bundle through the import
 gates with `LegaiaRuntime::expansion_bundle_info` / `expansion_bundle_cover`,
 replaces any version installed under the same id, and plays it; the list shows
-each pack's cover, version and authors with Play and Remove. With no
-`?expansion=1` hand-off, the page loads the active pack once its disc is up;
-**Unload** clears the active pack. Every load re-reads the stored bytes
+each pack's cover, version and authors with Enable and Remove, and marks the
+pack the engine has loaded as on. Nothing loads a pack on its own: with no
+`?expansion=1` hand-off every visit starts with the game as it shipped, and
+only a row's **Enable** turns a pack on (its maps and custom game modes then
+join the Scenes list as a section marked experimental); **Disable** turns it
+off. Every load re-reads the stored bytes
 through the engine, never trusting the stored copy.
 
 ## The example pack
