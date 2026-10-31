@@ -180,6 +180,10 @@ CLOTH_RED = ((220, 60, 60), (110, 20, 30))
 CLOTH_GOLD = ((250, 210, 90), (170, 110, 30))
 PAPER = ((255, 236, 180), (240, 150, 60))
 WATER = ((200, 240, 255), (40, 110, 200))
+WOOD = ((176, 124, 72), (92, 58, 30))
+DARK_WOOD = ((120, 82, 48), (58, 36, 20))
+APPLE = ((236, 80, 50), (140, 30, 20))
+PEAR = ((214, 210, 90), (120, 130, 40))
 
 
 def sundial(out):
@@ -279,6 +283,45 @@ def lantern(out):
     write_glb(out, m, img, "lantern")
 
 
+def lamp_post(out):
+    """The Isles: a timber post with a crossarm and a paper lantern hung
+    from its end; its foot stands on the ground at the origin."""
+    img, b = strip([WOOD, DARK_WOOD, PAPER, BRASS], 57)
+    m = Mesh()
+    m.prism(4, 0.07, 0.06, 0.0, 1.62, b[0], twist=math.pi / 4, cap=b[1])
+    m.prism(4, 0.10, 0.08, 0.0, 0.12, b[1], twist=math.pi / 4, cap=b[1])
+    m.box(-0.04, 1.48, -0.035, 0.42, 1.55, 0.035, b[1])
+    m.box(0.33, 1.36, -0.01, 0.35, 1.48, 0.01, b[3])
+    prof = [(1.06, 0.06), (1.10, 0.11), (1.17, 0.13), (1.27, 0.13), (1.33, 0.10), (1.36, 0.06)]
+    for (y0, r0), (y1, r1) in zip(prof, prof[1:]):
+        m.prism(8, r0, r1, y0, y1, b[2], cx=0.34)
+    m.prism(8, 0.065, 0.065, 1.36, 1.39, b[3], cx=0.34, cap=b[3])
+    m.prism(8, 0.065, 0.065, 1.03, 1.06, b[3], cx=0.34, cap=b[3])
+    write_glb(out, m, img, "lamp_post")
+
+
+def produce_crate(out):
+    """An open slatted crate heaped with fruit, for a stall top or a stack
+    on the ground: 0.5 x 0.36, 0.26 high, its base at the origin."""
+    img, b = strip([WOOD, DARK_WOOD, APPLE, PEAR], 67)
+    m = Mesh()
+    hx, hz, h = 0.25, 0.18, 0.16
+    m.box(-hx, 0.0, -hz, hx, 0.02, hz, b[1])
+    for (x0, z0, x1, z1) in ((-hx, -hz, hx, -hz + 0.02), (-hx, hz - 0.02, hx, hz),
+                             (-hx, -hz, -hx + 0.02, hz), (hx - 0.02, -hz, hx, hz)):
+        m.box(x0, 0.0, z0, x1, h, z1, b[0])
+    rnd = random.Random(68)
+    for i in range(14):
+        x = rnd.uniform(-hx + 0.06, hx - 0.06)
+        z = rnd.uniform(-hz + 0.06, hz - 0.06)
+        y = h - 0.04 + rnd.uniform(0.0, 0.06)
+        r = rnd.uniform(0.045, 0.06)
+        band = b[2] if i % 3 else b[3]
+        m.prism(6, r * 0.6, r, y - r * 0.5, y, band, cx=x, cz=z)
+        m.prism(6, r, r * 0.5, y, y + r * 0.7, band, cx=x, cz=z, cap=band)
+    write_glb(out, m, img, "produce_crate")
+
+
 def fountain(out):
     """3F / 4F: a round basin with a spout column and a water sheet."""
     img, b = strip([STONE, WATER, DARK_STONE], 33)
@@ -317,6 +360,8 @@ def main(out_dir):
     lantern(os.path.join(out_dir, "lantern.glb"))
     fountain(os.path.join(out_dir, "fountain.glb"))
     throne_brazier(os.path.join(out_dir, "brazier.glb"))
+    lamp_post(os.path.join(out_dir, "lamp_post.glb"))
+    produce_crate(os.path.join(out_dir, "produce_crate.glb"))
 
 
 if __name__ == "__main__":

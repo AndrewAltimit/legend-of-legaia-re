@@ -39,7 +39,7 @@ Rebirth is built for the climb from there to 99.
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
 | `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips, surf, birdsong) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
 | `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
-| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers (`scripts/models/generate_rebirth_props.py`). |
+| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers, and the Isles' lamp posts and produce crates (`scripts/models/generate_rebirth_props.py`). |
 | `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Iron Regent), chained from that art into a retail one; all on the heroes' own retail clips. |
 | `spells.toml` | Four tower Seru - Hearthfire, Verdant Bloom, Grove Fang, Tempest Dive - each cast as the retail Seru it grew from and taught by capturing its pack monster once that floor's keeper falls. |
 
