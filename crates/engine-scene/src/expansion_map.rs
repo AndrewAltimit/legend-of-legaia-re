@@ -48,6 +48,7 @@ use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
 use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 
+pub mod ceiling;
 pub mod detail;
 pub mod footprint;
 pub mod gltf;
@@ -616,6 +617,15 @@ pub fn build_field_image(
     if surface.is_none() {
         surround::write_surround(&mut img, def, grid, &mut added, &mut free)?;
     }
+    // Over the floor: the ceiling's underside and the chains its hung items
+    // hang from, baked with the decorations.
+    cell_items.extend(ceiling::ceiling_items(
+        &img,
+        def,
+        grid,
+        base.library,
+        surface,
+    )?);
     if let Some(s) = surface {
         let foam = base.library.and_then(|l| l.foam_sheet.as_ref());
         let no_stp = Default::default();

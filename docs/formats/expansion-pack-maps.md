@@ -42,6 +42,7 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `emitters` | Particle emitters ([Particles](#particles)). |
 | `terrain` | A sculpted floor in place of the tier grid: heights, ground materials, water, horizon ([Terrain](#terrain)). |
 | `surround` | The ground past the floor's edge: a drop below it and the edge faces down to it ([Surround](#surround)). |
+| `ceiling` | A ceiling over the floor and the chains hung items hang from ([Ceiling](#ceiling)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
 from the first character of the first row: column grows with world `+X`, row
@@ -1215,6 +1216,45 @@ view fades into the dark instead of ending on a line. The faces ride the
 surround's own cells, one record for each shape, and are drawn, never
 walked. The validator holds `height` to `1..=4096`, `distance` to
 `1..=reach` and `sides` to those four letters.
+
+## Ceiling
+
+```toml
+[ceiling]
+height = 2048                                    # world units above tier 0
+cell = { tpage = 11, clut = 32517, tile = 27 }   # the underside, one cell a tile
+shade = 48
+chain = { tpage = 11, clut = 32517, tile = 27, width = 6, shade = 64, items = ["lantern_hall"] }
+```
+
+A room built from scratch has no ceiling, so a lantern marked `hangs`
+hangs from nothing. `chain` gives every hung prop and decoration named in
+`items` (every one when `items` is empty) a square shaft `width` units
+across from the item's top up to `height`. `hangs` marks wall-mounted
+items too - a banner, a cog set in a wall - which a chain would spoil,
+which is what `items` is for. The item's top is its mesh's highest vertex
+above its origin, scaled; a tilted item's chain starts at its origin. The
+chain does not follow a prop's `sway`, which moves a lantern's top by a
+few units.
+
+`cell` draws the ceiling itself: a flat underside over the map's
+rectangle at `height`, in pieces of 4 x 4 tiles
+([`expansion_map::ceiling`](../../crates/engine-scene/src/expansion_map/ceiling.rs)),
+wound to face down. The field pass culls back faces, so the underside is
+drawn only to a camera below it. The follow camera looks down on a room
+from above its walls (the tower floors' eye stands 700 to 1700 units up),
+so it never sees the underside and is never walled out by it, whatever the
+distance preset; and the camera-occlusion gate leaves out any flat face
+seen only from beneath
+([`FieldOccluders`](../../crates/engine-scene/src/field_occlusion.rs)), so
+a ceiling between the eye and the player does not arm the fade. A
+`height` above the eye is the usual choice: the chains run up out of the
+frame, as a chain from a high vault does.
+
+Both go in through the decoration bake, as items on a tile no placed prop
+holds, and draw on both hosts. The validator holds `height` to
+`1..=4096`, the atlas cells to `0..64` and `width` to `1..=64`, and errors
+on an `items` id that names no hung prop or decoration.
 
 ## Particles
 

@@ -4,7 +4,10 @@
 //! ([`crate::map_rules`]).
 
 use crate::map::{MAX_WALL_HEIGHT, MapDef, TileGrid};
-use crate::map_detail::{BACKDROP_MAX_HEIGHT, MAX_DECORATIONS, MaterialFx, SURROUND_MAX_REACH};
+use crate::map_detail::{
+    BACKDROP_MAX_HEIGHT, CEILING_MAX_HEIGHT, CHAIN_MAX_WIDTH, MAX_DECORATIONS, MaterialFx,
+    SURROUND_MAX_REACH,
+};
 use crate::map_rules::{check_light, check_mesh};
 use crate::validate::Checker;
 
@@ -32,6 +35,7 @@ pub(crate) fn check_detail(
         check_scale(cx, &format!("{at}.scale"), d.scale);
     }
     check_surround(m, cx);
+    check_ceiling(m, cx);
     for (i, s) in m.scatter.iter().enumerate() {
         let at = format!("scatter[{i}]");
         if s.meshes.is_empty() {
@@ -281,6 +285,64 @@ fn check_surround(m: &MapDef, cx: &mut Checker<'_>) {
         cx.warning(
             "surround",
             "a terrain draws its own skirt past the map's edges; the surround is not drawn",
+        );
+    }
+}
+
+/// A ceiling: a height in range, real atlas cells, a chain with a width,
+/// and something for it to do.
+fn check_ceiling(m: &MapDef, cx: &mut Checker<'_>) {
+    let Some(c) = &m.ceiling else {
+        return;
+    };
+    if c.height == 0 || c.height > CEILING_MAX_HEIGHT {
+        cx.error(
+            "ceiling.height",
+            format!("height {} is not in 1..={CEILING_MAX_HEIGHT}", c.height),
+        );
+    }
+    if let Some(cell) = &c.cell
+        && cell.tile >= 64
+    {
+        cx.error(
+            "ceiling.cell.tile",
+            format!("atlas cell {} is past 63", cell.tile),
+        );
+    }
+    if let Some(ch) = &c.chain {
+        if ch.tile >= 64 {
+            cx.error(
+                "ceiling.chain.tile",
+                format!("atlas cell {} is past 63", ch.tile),
+            );
+        }
+        if ch.width == 0 || ch.width > CHAIN_MAX_WIDTH {
+            cx.error(
+                "ceiling.chain.width",
+                format!("width {} is not in 1..={CHAIN_MAX_WIDTH}", ch.width),
+            );
+        }
+        if !m.props.iter().any(|p| p.hangs) && !m.decor.iter().any(|d| d.hangs) {
+            cx.warning(
+                "ceiling.chain",
+                "no prop or decoration is marked `hangs`: no chain is drawn",
+            );
+        }
+        for (i, id) in ch.items.iter().enumerate() {
+            let hung = m.props.iter().any(|p| p.hangs && p.id == *id)
+                || m.decor.iter().any(|d| d.hangs && d.id == *id);
+            if !hung {
+                cx.error(
+                    &format!("ceiling.chain.items[{i}]"),
+                    format!("{id:?} names no prop or decoration marked `hangs`"),
+                );
+            }
+        }
+    }
+    if c.cell.is_none() && c.chain.is_none() {
+        cx.warning(
+            "ceiling",
+            "neither `cell` nor `chain`: the ceiling draws nothing",
         );
     }
 }

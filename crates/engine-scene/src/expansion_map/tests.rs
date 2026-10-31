@@ -748,3 +748,91 @@ fn no_mesh_record_takes_a_protagonist_object_id() {
     assert!(placed.iter().any(|p| p.pack_index == Some(7)));
     assert!(placed.iter().all(|p| p.obj_idx >= 4));
 }
+
+/// A ceiling bakes its underside over the map's rectangle at its height and
+/// a chain from a hung prop's top up to it; the chain anchors off the
+/// prop's own placed cell so the bake keeps it.
+#[test]
+fn a_ceiling_bakes_its_underside_and_the_hung_props_chain() {
+    use legaia_expansion_format::map_detail::{AtlasCell, CeilingDef, ChainDef};
+    let mut def = def();
+    // A lamp hung 100 up on tile (3, 1) (the first prop), its mesh 0 a
+    // plate at the origin (top 0).
+    def.props[0].hangs = true;
+    def.props[0].id = "lamp".into();
+    def.props[0].mesh = PropMesh::Object { object: 0 };
+    def.props[0].offset = [0, 100, 0];
+    def.props[0].rotation = [0.0; 3];
+    def.ceiling = Some(CeilingDef {
+        height: 900,
+        cell: Some(AtlasCell {
+            tpage: 12,
+            clut: 0x7C40,
+            tile: 5,
+        }),
+        shade: 40,
+        chain: Some(ChainDef {
+            tpage: 12,
+            clut: 0x7C40,
+            tile: 5,
+            width: 8,
+            shade: 72,
+            items: vec!["lamp".into()],
+        }),
+    });
+    let grid = def.tile_grid().unwrap();
+    let pack = plate_pack(8);
+    let lib = MeshLibrary::from_base_pack(pack.clone(), &def);
+    let out = build_field_image(
+        &def,
+        &grid,
+        BaseInputs {
+            base_map: None,
+            geometry_entry: Some(99),
+            geometry_len: Some(pack.len()),
+            library: Some(&lib),
+        },
+    )
+    .unwrap();
+    assert_eq!(out.dropped_decorations, 0);
+    // Every baked mesh, read back with each object's vertices.
+    let objects: Vec<Vec<[i16; 3]>> = out
+        .added_tmds
+        .iter()
+        .filter_map(|raw| legaia_tmd::parse(raw).ok())
+        .flat_map(|t| {
+            t.objects
+                .into_iter()
+                .map(|o| o.vertices.iter().map(|v| [v.x, v.y, v.z]).collect())
+        })
+        .collect();
+    // Mesh frames are each cell's own: a cell draws at the mean of its four
+    // corner tiles' heights, so a tier-0 cell with one tier-1 (128) corner
+    // draws 32 up and its items sit 32 lower in its mesh to land in place.
+    let world = |y: i16, drawn: i16| -y + drawn;
+    // The underside: flat pieces, each 900 up in the world.
+    let flats: Vec<i16> = objects
+        .iter()
+        .filter(|v| v.len() >= 4 && v.iter().all(|p| p[1] == v[0][1]) && v[0][1] < -500)
+        .map(|v| v[0][1])
+        .collect();
+    assert!(!flats.is_empty(), "the underside");
+    assert!(
+        flats
+            .iter()
+            .all(|&y| world(y, 0) == 900 || world(y, 32) == 900),
+        "{flats:?}"
+    );
+    // The chain: an 8-wide shaft 800 tall - from the lamp's 100 up to 900.
+    let chain = objects
+        .iter()
+        .find(|v| {
+            let lo = v.iter().map(|p| p[1]).min().unwrap_or(0);
+            let hi = v.iter().map(|p| p[1]).max().unwrap_or(0);
+            hi - lo == 800 && (world(hi, 0) == 100 || world(hi, 32) == 100)
+        })
+        .expect("a chain from 100 up to 900");
+    let xs: Vec<i16> = chain.iter().map(|p| p[0]).collect();
+    let span = xs.iter().max().unwrap() - xs.iter().min().unwrap();
+    assert_eq!(span, 8, "8 wide");
+}

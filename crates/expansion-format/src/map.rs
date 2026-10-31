@@ -135,6 +135,9 @@ pub struct MapDef {
     /// What draws past the floor's edge ([`crate::map_detail::SurroundDef`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub surround: Option<crate::map_detail::SurroundDef>,
+    /// What hangs over the floor ([`crate::map_detail::CeilingDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ceiling: Option<crate::map_detail::CeilingDef>,
 }
 
 /// A cutscene a map plays on arrival.

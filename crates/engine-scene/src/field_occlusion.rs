@@ -239,6 +239,9 @@ impl FieldOccluders {
                 continue;
             };
             let w = [xf(*a), xf(*b), xf(*cc)];
+            if faces_only_down(&w) {
+                continue;
+            }
             for v in &w {
                 for ax in 0..3 {
                     lo[ax] = lo[ax].min(v[ax]);
@@ -377,6 +380,22 @@ fn segment_hits_aabb(a: [f32; 3], dir: [f32; 3], lo: [f32; 3], hi: [f32; 3]) -> 
     true
 }
 
+/// Whether a world-space triangle is a flat face wound to be seen only from
+/// beneath (a ceiling's underside): its visible side, `-cross(e1, e2)` of the
+/// emitted winding, points straight down (`+Y`, the frame is Y-down).
+///
+/// The field pass culls back faces (`camera_frame::nclip_cull_mode`), so
+/// from any eye above such a face it is not drawn, and the gate's segments
+/// all come down from the eye to the player: a face of this kind can never
+/// be what hides the character. Left in, a pack map's ceiling under the
+/// follow camera's eye blocked every sample and armed the fade over a
+/// plainly visible player.
+fn faces_only_down(t: &[[f32; 3]; 3]) -> bool {
+    let c = cross(sub(t[1], t[0]), sub(t[2], t[0]));
+    let len = dot(c, c).sqrt();
+    len > 1e-6 && -c[1] / len > 0.99
+}
+
 /// Möller-Trumbore, double-sided (the corpus' winding is mixed - see the
 /// renderers' no-cull default), over the trimmed segment parameter range.
 fn segment_hits_triangle(a: [f32; 3], dir: [f32; 3], tri: &[[f32; 3]; 3]) -> bool {
@@ -493,6 +512,30 @@ mod tests {
         o.add_instanced_mesh(&p, &i, &draw_at(-190, 0, 0, 0));
         assert!(o.segment_blocked(EYE, PLAYER));
         assert!(!o.fully_occluded(EYE, PLAYER));
+    }
+
+    /// A ceiling's underside (wound to face down) between the eye and the
+    /// player is not an occluder; the same slab wound to face up - a roof
+    /// the eye looks down on - is.
+    #[test]
+    fn an_underside_seen_from_above_does_not_arm_the_gate() {
+        // A 4000-wide slab at Y -300 (between the eye at -500 and the
+        // player at -65), perimeter-ordered so `-cross(e1, e2)` is `+Y`.
+        let p = vec![
+            [-2000.0, -300.0, -2000.0],
+            [2000.0, -300.0, -2000.0],
+            [2000.0, -300.0, 2000.0],
+            [-2000.0, -300.0, 2000.0],
+        ];
+        let down = vec![0, 1, 2, 0, 2, 3];
+        let up = vec![0, 2, 1, 0, 3, 2];
+        let mut o = FieldOccluders::default();
+        o.add_instanced_mesh(&p, &down, &draw_at(0, 0, 0, 0));
+        assert!(o.is_empty(), "the underside is left out");
+        assert!(!o.fully_occluded(EYE, PLAYER));
+        let mut o = FieldOccluders::default();
+        o.add_instanced_mesh(&p, &up, &draw_at(0, 0, 0, 0));
+        assert!(o.fully_occluded(EYE, PLAYER), "a roof still hides");
     }
 
     /// Yaw instancing: the wall rotated a quarter turn lies along the

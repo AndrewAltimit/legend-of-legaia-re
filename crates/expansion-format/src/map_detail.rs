@@ -1162,6 +1162,93 @@ impl BackdropDef {
     }
 }
 
+/// The highest ceiling, world units above tier `0`.
+pub const CEILING_MAX_HEIGHT: u16 = 4096;
+
+/// The widest chain, world units.
+pub const CHAIN_MAX_WIDTH: u8 = 64;
+
+/// What hangs over a map's floor: a ceiling `height` above tier `0` and,
+/// with `chain`, a chain from every hung item (a prop or decoration marked
+/// `hangs`) up to it, so a lantern hangs from something rather than from
+/// nothing.
+///
+/// With `cell` the ceiling itself draws: a flat underside over the map's
+/// rectangle, wound to face down. The field pass culls back faces, so it
+/// reads from beneath and is not drawn from above - the follow camera, which
+/// looks down on the room from over its walls, sees through it instead of
+/// being walled out, and the camera-occlusion gate skips it for the same
+/// reason. Without `cell` only the chains draw, rising out of the frame.
+///
+/// ```toml
+/// [ceiling]
+/// height = 1536
+/// cell = { tpage = 28, clut = 32576, tile = 2 }
+/// shade = 48
+/// chain = { tpage = 28, clut = 32576, tile = 2, width = 6, shade = 72, items = ["lantern_hall"] }
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CeilingDef {
+    /// The ceiling's height above tier `0`, world units.
+    pub height: u16,
+    /// The underside's atlas cell, one a tile. `None` draws no underside.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell: Option<AtlasCell>,
+    /// Vertex colour of the underside (`128` draws the texel as is).
+    pub shade: u8,
+    /// The chain every hung item hangs from. `None` hangs none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chain: Option<ChainDef>,
+}
+
+impl Default for CeilingDef {
+    fn default() -> Self {
+        Self {
+            height: 1024,
+            cell: None,
+            shade: 64,
+            chain: None,
+        }
+    }
+}
+
+/// A ceiling's chain ([`CeilingDef::chain`]): a square shaft `width` units
+/// across from a hung item's top up to the ceiling, its four sides textured
+/// with one atlas cell.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChainDef {
+    /// Texture page of the chain's atlas cell.
+    pub tpage: u8,
+    /// Palette (CBA word) of the chain's atlas cell.
+    pub clut: u16,
+    /// Atlas cell, `0..64`.
+    pub tile: u8,
+    /// Width of the shaft, `1..=64` world units.
+    pub width: u8,
+    /// Vertex colour of the chain (`128` draws the texel as is).
+    pub shade: u8,
+    /// The ids of the hung props and decorations that take a chain; empty
+    /// for every one. `hangs` also marks a wall-mounted item, which a chain
+    /// would only spoil.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<String>,
+}
+
+impl Default for ChainDef {
+    fn default() -> Self {
+        Self {
+            tpage: 0,
+            clut: 0,
+            tile: 0,
+            width: 6,
+            shade: 80,
+            items: Vec::new(),
+        }
+    }
+}
+
 /// One decoration as the engine bakes it: a mesh on a tile at a transform.
 /// [`crate::map::MapDef::decorations`] expands every `[[decor]]`,
 /// `[[scatter]]` and `[[edges]]` entry into these.

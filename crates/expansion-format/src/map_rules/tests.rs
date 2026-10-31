@@ -347,3 +347,34 @@ fn resting_is_judged_with_the_resolvers_meshes_and_on_without_one() {
         "{issues:#?}"
     );
 }
+
+#[test]
+fn a_ceiling_holds_its_ranges_and_names_hung_items() {
+    let hung = "\n[[props]]\nid = \"lamp\"\nmesh = { object = 3 }\ntile = [2, 1]\nhangs = true\n\n[[props]]\nid = \"crate\"\nmesh = { object = 4 }\ntile = [1, 2]\n";
+    let good = format!(
+        "{MAP}{hung}\n[ceiling]\nheight = 2048\ncell = {{ tpage = 28, clut = 32576, tile = 2 }}\nchain = {{ tpage = 28, clut = 32576, tile = 2, width = 6, items = [\"lamp\"] }}\n"
+    );
+    let issues = validate(&pack(&good));
+    assert!(errors(&issues).is_empty(), "{issues:#?}");
+    let bad = format!(
+        "{MAP}{hung}\n[ceiling]\nheight = 5000\ncell = {{ tpage = 28, clut = 32576, tile = 70 }}\nchain = {{ tpage = 28, clut = 32576, tile = 2, width = 0, items = [\"crate\", \"gone\"] }}\n"
+    );
+    let e = errors(&validate(&pack(&bad)));
+    for want in [
+        "height 5000",
+        "atlas cell 70",
+        "width 0",
+        "\"crate\" names no prop",
+        "\"gone\" names no prop",
+    ] {
+        assert!(e.iter().any(|m| m.contains(want)), "{want} in {e:#?}");
+    }
+    let empty = format!("{MAP}\n[ceiling]\nheight = 900\n");
+    let issues = validate(&pack(&empty));
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.message.contains("the ceiling draws nothing")),
+        "{issues:#?}"
+    );
+}
