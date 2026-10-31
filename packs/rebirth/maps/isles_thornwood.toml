@@ -278,49 +278,49 @@ solid = true
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [41, 32]
-offset = [-15, 4, -15]
+offset = [-15, -18, -15]
 rotation = [0.0, 0.0, 0.0]
 scale = 0.75
 
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [42, 32]
-offset = [2, 4, 8]
+offset = [2, -18, 8]
 rotation = [0.0, 53.0, 0.0]
 scale = 0.75
 
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [41, 33]
-offset = [-11, 4, 1]
+offset = [-11, -18, 1]
 rotation = [0.0, 106.0, 0.0]
 scale = 0.75
 
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [42, 33]
-offset = [6, 4, -6]
+offset = [6, -18, -6]
 rotation = [0.0, 159.0, 0.0]
 scale = 0.75
 
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [41, 34]
-offset = [-7, 4, -13]
+offset = [-7, -18, -13]
 rotation = [0.0, 212.0, 0.0]
 scale = 0.75
 
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [42, 34]
-offset = [10, 4, 10]
+offset = [10, -18, 10]
 rotation = [0.0, 265.0, 0.0]
 scale = 0.75
 
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [43, 34]
-offset = [-3, 4, 3]
+offset = [-3, -18, 3]
 rotation = [0.0, 318.0, 0.0]
 scale = 0.75
 
@@ -381,7 +381,7 @@ solid = true
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [54, 23]
-offset = [45, 0, 41]
+offset = [45, -34, 41]
 rotation = [0.0, 90.0, 0.0]
 scale = 1.5
 
@@ -406,7 +406,7 @@ solid = true
 [[decor]]
 mesh = { scene = "uru", object = 34 }
 tile = [54, 17]
-offset = [45, 0, -41]
+offset = [45, -34, -41]
 rotation = [0.0, 225.0, 0.0]
 scale = 1.5
 
@@ -489,15 +489,16 @@ solid = true
 
 [[props]]
 id = "hermit_lantern"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [77, 38]
-offset = [0, 40, 40]
-light = { color = [255, 190, 120], radius = 520, height = 60, flicker = 0.3, period = 12 }
+offset = [0, 0, 40]
+rotation = [0.0, 180.0, 0.0]
+light = { color = [255, 190, 120], radius = 520, height = 120, flicker = 0.3, period = 12 }
 
 [[decor]]
 mesh = { scene = "town01", object = 90 }
 tile = [79, 36]
-offset = [0, 2, -40]
+offset = [0, -4, -40]
 rotation = [0.0, 20.0, 0.0]
 scale = 1.1
 
@@ -574,7 +575,7 @@ solid = true
 [[decor]]
 mesh = { scene = "town01", object = 35 }
 tile = [76, 39]
-offset = [30, 0, 20]
+offset = [110, -57, 30]
 scale = 0.7
 
 [[decor]]
@@ -605,6 +606,8 @@ light = { color = [255, 200, 60], radius = 760, height = 140, flicker = 0.35, pe
 
 [[props]]
 id = "court_crystal"
+# A crystal held in the air by its own light: it hangs on nothing.
+hangs = true
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [98, 32]
 offset = [0, 80, 0]
@@ -897,8 +900,8 @@ jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.3, 0.45]
 meshes = [
-  { mesh = { object = 10 }, weight = 3 },
-  { mesh = { object = 16 }, weight = 3 },
+  { mesh = { object = 9 }, weight = 3 },
+  { mesh = { object = 17 }, weight = 3 },
   { mesh = { object = 41 }, weight = 1, scale = [0.8, 1.2] },
 ]
 
@@ -1105,7 +1108,7 @@ seed = 4322
 resolution = 4
 smooth = 2
 max_step = 44
-skirt = 4
+skirt = 10
 seed = 4320
 variation = 0.28
 blend = 0.7

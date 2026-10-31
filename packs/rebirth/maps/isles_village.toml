@@ -374,47 +374,211 @@ tile = [8, 39]
 offset = [20, 0, -20]
 scale = 0.6
 
-# Market stalls: tables in two rows facing the square, crates and barrels
-# stacked behind them.
-[[props]]
+# Market stalls: plank tables in two rows along the aisle, long side to
+# it, each laid with its wares resting on its top,
+# crates and barrels stacked behind them.
+[[decor]]
 id = "stall_0"
 mesh = { scene = "town01", object = 57 }
-tile = [14, 28]
+tile = [13, 28]
+rotation = [0.0, 90.0, 0.0]
 scale = 0.9
 solid = true
 
-[[props]]
+[[decor]]
 id = "stall_1"
 mesh = { scene = "town01", object = 57 }
-tile = [17, 28]
+tile = [16, 28]
+rotation = [0.0, 90.0, 0.0]
 scale = 0.9
 solid = true
 
-[[props]]
+[[decor]]
 id = "stall_2"
 mesh = { scene = "town01", object = 57 }
-tile = [20, 28]
+tile = [19, 28]
+rotation = [0.0, 90.0, 0.0]
 scale = 0.9
 solid = true
 
-[[props]]
+[[decor]]
 id = "stall_3"
 mesh = { scene = "town01", object = 57 }
-tile = [14, 33]
+tile = [13, 33]
+rotation = [0.0, 90.0, 0.0]
 scale = 0.9
 solid = true
 
-[[props]]
+[[decor]]
 id = "stall_4"
 mesh = { scene = "town01", object = 57 }
-tile = [17, 33]
+tile = [16, 33]
+rotation = [0.0, 90.0, 0.0]
 scale = 0.9
 solid = true
+
+[[decor]]
+id = "stall_5"
+mesh = { scene = "town01", object = 57 }
+tile = [19, 33]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { asset = "models/produce_crate.glb" }
+tile = [13, 28]
+on = "stall_0"
+offset = [-62, 0, 12]
+rotation = [0.0, 8.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/produce_crate.glb" }
+tile = [13, 28]
+on = "stall_0"
+offset = [0, 0, 6]
+rotation = [0.0, -6.0, 0.0]
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [13, 28]
+on = "stall_0"
+offset = [64, 0, 0]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.5
+
+[[decor]]
+mesh = { scene = "town01", object = 35 }
+tile = [16, 28]
+on = "stall_1"
+offset = [34, 0, 22]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [16, 28]
+on = "stall_1"
+offset = [26, 0, 0]
+rotation = [0.0, 15.0, 0.0]
+scale = 0.45
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [16, 28]
+on = "stall_1"
+offset = [72, 0, 0]
+scale = 0.4
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [19, 28]
+on = "stall_2"
+offset = [-60, 0, 0]
+rotation = [0.0, -20.0, 0.0]
+scale = 0.5
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [19, 28]
+on = "stall_2"
+offset = [-6, 0, 10]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.45
+
+[[decor]]
+mesh = { asset = "models/produce_crate.glb" }
+tile = [19, 28]
+on = "stall_2"
+offset = [60, 0, 0]
+rotation = [0.0, 4.0, 0.0]
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [13, 33]
+on = "stall_3"
+offset = [-50, 0, 0]
+scale = 0.7
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [13, 33]
+on = "stall_3"
+offset = [0, 0, -14]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.55
+
+[[decor]]
+mesh = { scene = "vell", object = 43 }
+tile = [13, 33]
+on = "stall_3"
+offset = [46, 0, 6]
+rotation = [0.0, 75.0, 0.0]
+scale = 0.65
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [13, 33]
+on = "stall_3"
+offset = [84, 0, 0]
+scale = 0.35
+
+[[decor]]
+mesh = { asset = "models/produce_crate.glb" }
+tile = [16, 33]
+on = "stall_4"
+offset = [-68, 0, 0]
+rotation = [0.0, 180.0, 0.0]
+
+[[decor]]
+mesh = { asset = "models/produce_crate.glb" }
+tile = [16, 33]
+on = "stall_4"
+offset = [-10, 0, -4]
+rotation = [0.0, 170.0, 0.0]
+
+[[decor]]
+mesh = { scene = "town01", object = 35 }
+tile = [16, 33]
+on = "stall_4"
+offset = [-14, 0, -12]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.6
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [19, 33]
+on = "stall_5"
+offset = [-70, 0, 0]
+scale = 0.4
+
+[[decor]]
+mesh = { scene = "town01", object = 80 }
+tile = [19, 33]
+on = "stall_5"
+offset = [-26, 0, -8]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.36
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [19, 33]
+on = "stall_5"
+offset = [36, 0, 0]
+rotation = [0.0, 10.0, 0.0]
+scale = 0.5
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [19, 33]
+on = "stall_5"
+offset = [82, 0, 0]
+rotation = [0.0, 60.0, 0.0]
+scale = 0.35
 
 [[props]]
 id = "market_goods_0"
 mesh = { scene = "town01", object = 46 }
-tile = [13, 27]
+tile = [11, 27]
 scale = 0.8
 solid = true
 
@@ -578,90 +742,95 @@ tile = [60, 33]
 rotation = [0.0, 30.0, 0.0]
 scale = 0.8
 
-# Lantern posts at the lane corners.
+# Lamp posts at the lane corners and the gates: a timber post with its
+# paper lantern hung off the arm, standing on the ground.
 [[props]]
 id = "lantern_0"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [22, 21]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 11 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 11 }
 
 [[props]]
 id = "lantern_1"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [34, 21]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 12 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 12 }
 
 [[props]]
 id = "lantern_2"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [22, 27]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 13 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 13 }
 
 [[props]]
 id = "lantern_3"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [34, 27]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 14 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 14 }
 
 [[props]]
 id = "lantern_4"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [29, 36]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 15 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 15 }
 
 [[props]]
 id = "lantern_5"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [14, 25]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 11 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 11 }
 
 [[props]]
 id = "lantern_6"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [49, 24]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 12 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 12 }
 
 [[props]]
 id = "lantern_7"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [4, 21]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 13 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 13 }
 
 [[props]]
 id = "lantern_8"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [45, 24]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 14 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 14 }
 
 [[props]]
 id = "lantern_9"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [26, 15]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 15 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 15 }
 
 [[props]]
 id = "lantern_10"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [29, 15]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 11 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 11 }
 
 [[props]]
 id = "lantern_11"
-mesh = { scene = "rugi", object = 15 }
+mesh = { asset = "models/lamp_post.glb" }
 tile = [55, 15]
-offset = [0, 40, 0]
-light = { color = [255, 196, 130], radius = 420, height = 60, flicker = 0.2, period = 12 }
+light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, period = 12 }
+
+# Lamp posts at the jetty ends.
+[[props]]
+id = "jetty_lamp_w"
+mesh = { asset = "models/lamp_post.glb" }
+tile = [20, 45]
+offset = [148, 0, -30]
+rotation = [0.0, 180.0, 0.0]
+light = { color = [255, 210, 150], radius = 460, height = 120, flicker = 0.2, period = 16 }
+
+[[props]]
+id = "jetty_lamp_e"
+mesh = { asset = "models/lamp_post.glb" }
+tile = [33, 46]
+offset = [-148, 0, -30]
+light = { color = [255, 210, 150], radius = 460, height = 120, flicker = 0.2, period = 18 }
 
 # The orchard: fruit trees in rows behind the hedge.
 [[decor]]
@@ -782,12 +951,296 @@ solid = true
 [[decor]]
 mesh = { scene = "town01", object = 30 }
 tile = [26, 14]
+offset = [0, 0, -56]
 solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 30 }
 tile = [29, 14]
+offset = [0, 0, -56]
 solid = true
+
+# Yards: each cottage keeps its woodpile and water barrel by the wall and a
+# shade tree in a back corner; the elder's terrace has its bench log.
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [3, 18]
+offset = [10, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [7, 18]
+offset = [20, 0, 10]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [3, 15]
+offset = [10, 0, 0]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [11, 18]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [15, 18]
+offset = [10, 0, 0]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [15, 19]
+offset = [-10, 0, -30]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.6
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [15, 15]
+rotation = [0.0, 200.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [18, 18]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [21, 16]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [36, 27]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [40, 26]
+offset = [0, 0, 10]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [36, 30]
+offset = [10, 0, 0]
+rotation = [0.0, 120.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 81 }
+tile = [48, 27]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [44, 26]
+offset = [0, 0, 10]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [48, 30]
+offset = [-20, 0, 0]
+scale = 0.6
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [44, 30]
+rotation = [0.0, 300.0, 0.0]
+scale = 0.5
+solid = true
+
+# Shade trees in clumps on the meadows, clear of the lanes, the game
+# tables and the windmill's knoll.
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [2, 3]
+rotation = [0.0, 10.0, 0.0]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [4, 4]
+rotation = [0.0, 80.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [3, 9]
+rotation = [0.0, 150.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [20, 3]
+rotation = [0.0, 200.0, 0.0]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [21, 5]
+rotation = [0.0, 250.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [19, 11]
+rotation = [0.0, 300.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [2, 12]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [35, 12]
+rotation = [0.0, 60.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [37, 15]
+rotation = [0.0, 130.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [43, 12]
+rotation = [0.0, 170.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [41, 33]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [43, 36]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [47, 34]
+rotation = [0.0, 140.0, 0.0]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [50, 36]
+rotation = [0.0, 210.0, 0.0]
+scale = 0.42
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [62, 35]
+rotation = [0.0, 260.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [2, 26]
+rotation = [0.0, 300.0, 0.0]
+scale = 0.5
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [3, 31]
+rotation = [0.0, 330.0, 0.0]
+scale = 0.45
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 75 }
+tile = [2, 35]
+rotation = [0.0, 15.0, 0.0]
+scale = 0.55
+solid = true
+
+# The jetties' ends: mooring posts at the corners, a crate and a basket of
+# the morning's catch on the east one.
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [16, 45]
+offset = [-40, 0, 40]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [21, 45]
+offset = [40, 0, 40]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [32, 46]
+offset = [-40, 0, 40]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [37, 46]
+offset = [40, 0, 40]
+scale = 0.32
+
+[[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [36, 46]
+offset = [0, 0, -30]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.55
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [34, 46]
+offset = [10, 0, -20]
+scale = 0.6
 
 # Trees and bushes along the wooded rise, palms on the shore.
 [[edges]]
@@ -805,12 +1258,12 @@ seed = 4202
 id = "rise_trees"
 rect = [0, 0, 63, 38]
 on = "#"
-density = 0.5
+density = 0.85
 seed = 4206
 jitter = 40
 yaw = [0.0, 360.0]
 scale = [0.1, 0.14]
-clearance = { radius = 0.6, front = 2.5, keep = 0.0 }
+clearance = { radius = 0.6, front = 1.6, keep = 0.0 }
 meshes = [
   { mesh = { scene = "town01", object = 88 }, weight = 3, scale = [0.22, 0.34] },
   { mesh = { scene = "vell", object = 12 }, weight = 1, scale = [0.35, 0.5] },
@@ -833,14 +1286,15 @@ meshes = [{ mesh = { scene = "town01", object = 88 }, weight = 1 }]
 id = "meadow_flowers"
 rect = [1, 2, 62, 37]
 on = "gG"
-density = 0.08
+density = 0.12
 seed = 4203
 jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.6, 1.0]
+scale = [0.8, 1.3]
+keep_clear = true
 meshes = [
-  { mesh = { scene = "vell", object = 13 }, weight = 3, scale = [0.25, 0.4] },
-  { mesh = { scene = "vell", object = 10 }, weight = 3, scale = [0.3, 0.5] },
+  { mesh = { scene = "vell", object = 41 }, weight = 4 },
+  { mesh = { scene = "town01", object = 89 }, weight = 1, scale = [0.3, 0.45] },
 ]
 
 [[scatter]]
@@ -851,10 +1305,10 @@ density = 0.06
 seed = 4204
 jitter = 50
 yaw = [0.0, 360.0]
-scale = [0.25, 0.4]
+scale = [0.7, 1.0]
+keep_clear = true
 meshes = [
-  { mesh = { scene = "vell", object = 13 }, weight = 1 },
-  { mesh = { scene = "vell", object = 10 }, weight = 1 },
+  { mesh = { scene = "vell", object = 41 }, weight = 1 },
 ]
 
 # Potted flowers stand along the inside of each yard's hedge, not out in
@@ -956,7 +1410,7 @@ lamps = [
 resolution = 4
 smooth = 3
 max_step = 44
-skirt = 5
+skirt = 12
 seed = 4220
 variation = 0.24
 blend = 0.6
@@ -981,7 +1435,7 @@ shapes = [
   { kind = "flatten", at = [28.5, 22.5], radius = 2.0 },
   { kind = "flatten", at = [7.5, 6.5], radius = 2.0 },
   { kind = "flatten", at = [16.5, 8.5], radius = 2.0 },
-  { kind = "flatten", at = [14.0, 31.0], radius = 5.0 },
+  { kind = "flatten", at = [14.5, 31.0], radius = 10.0 },
   { kind = "noise", rect = [0, 41, 63, 49], amplitude = 16, scale = 1.6, seed = 5 },
   { kind = "plateau", rect = [13, 37, 41, 38], height = 16, edge = 0.2 },
   { kind = "plateau", rect = [18, 39, 19, 46], height = 16, edge = 0.15 },
@@ -1020,7 +1474,7 @@ cliff = { slope = 1.05, tint = [120, 114, 106], cells = [
   { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 }, { tpage = 12, clut = 32006, tile = 48 }, { tpage = 12, clut = 32006, tile = 49 }, { tpage = 12, clut = 32006, tile = 56 }, { tpage = 12, clut = 32006, tile = 57 },
 ] }
 water = { level = -8, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [140, 160, 160], deep = [64, 84, 120], depth = 50, foam = 14, foam_color = [140, 140, 136], wade = 4 }
-sky = { tpage = 10, clut = 31104, radius = 6, span = [-300, 2200], repeat = 4, color = [150, 120, 110] }
+sky = { tpage = 10, clut = 31104, radius = 0, span = [-1200, 2200], repeat = 4, color = [150, 120, 110] }
 
 # Village life: the bay's surf at the dock, the wind in the wooded rise, and
 # a murmur round the lodge, the market and the green.
