@@ -100,7 +100,10 @@ pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) ->
     use std::collections::HashMap;
     type Key = (i32, i32, i32);
     let key_of = |p: &[f32; 3]| -> Key { (p[0] as i32, p[1] as i32, p[2] as i32) };
-    let mut bins: HashMap<Key, [f32; 3]> = HashMap::new();
+    // The bins are only ever looked up, never walked, so the hasher cannot
+    // change the result: a multiply-rotate hash in place of SipHash.
+    let mut bins: HashMap<Key, [f32; 3], std::hash::BuildHasherDefault<BinHasher>> =
+        HashMap::with_capacity_and_hasher(positions.len(), Default::default());
     for tri in indices.as_chunks::<3>().0 {
         let (a, b, c) = (tri[0] as usize, tri[1] as usize, tri[2] as usize);
         if a >= positions.len() || b >= positions.len() || c >= positions.len() {
@@ -139,6 +142,32 @@ pub(crate) fn compute_smooth_normals(positions: &[[f32; 3]], indices: &[u32]) ->
             }
         })
         .collect()
+}
+
+/// A fast non-cryptographic hasher for integer keys (the FxHash mix): the
+/// smooth-normal bins key on quantised positions a mesh build hashes once
+/// per corner, where SipHash was a measurable share of a scene build.
+#[derive(Default)]
+struct BinHasher(u64);
+
+impl std::hash::Hasher for BinHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.write_u64(u64::from(b));
+        }
+    }
+    fn write_u32(&mut self, v: u32) {
+        self.write_u64(u64::from(v));
+    }
+    fn write_i32(&mut self, v: i32) {
+        self.write_u64(u64::from(v as u32));
+    }
+    fn write_u64(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
 }
 
 #[cfg(test)]

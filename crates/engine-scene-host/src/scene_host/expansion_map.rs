@@ -55,8 +55,9 @@ impl SceneHost {
     /// can then be entered with [`Self::enter_expansion_map`]. Fails with the
     /// pack's own problem list, leaving no pack active.
     pub fn activate_expansion_pack(&mut self, pack: Arc<ExpansionPack>) -> Result<()> {
-        // Maps prepared from the pack this one replaces are stale.
-        self.expansion_preload.clear();
+        // The prepared-map cache keeps the maps this version of the pack
+        // leaves as they were (`MapPreloader::sync_pack`) and drops the rest
+        // when the new pack is first asked for a map.
         self.expansion_entry_build = None;
         self.world.activate_expansion(pack).map_err(|problems| {
             anyhow::anyhow!(

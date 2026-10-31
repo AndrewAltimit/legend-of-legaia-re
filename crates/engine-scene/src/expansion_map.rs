@@ -1538,6 +1538,8 @@ fn write_decorations(
             }
         }
     }
+    // The distinct meshes the decorations place, each read once.
+    let mut bake_cache = tmd_ops::BakeCache::default();
     for (key, list) in &groups {
         // The anchor: the cell's decorated tile nearest the cell's centre.
         let anchor = if let Some(&t) = anchors.get(key) {
@@ -1601,10 +1603,7 @@ fn write_decorations(
         } else {
             tier_height(anchor[0], anchor[1])
         };
-        // (bytes, offset, rotation, scale) of each decoration.
-        type Part = (Vec<u8>, [f32; 3], [f32; 3], f32);
-        let mut owned: Vec<Part> = Vec::new();
-        for d in list {
+        for d in list.iter() {
             let raw: &[u8] = match &d.src {
                 ItemSrc::Mesh(m) => lib
                     .raw(m)
@@ -1615,26 +1614,16 @@ fn write_decorations(
             let dz = (f32::from(d.tile[1]) - f32::from(anchor[1])) * 128.0;
             let lift = item_floor(d) - h0;
             // Map frame (y up) to the retail field frame (y down).
-            owned.push((
-                raw.to_vec(),
-                [d.offset[0] + dx, -(d.offset[1] + lift), d.offset[2] + dz],
-                d.rotation,
-                d.scale,
-            ));
+            parts.push(tmd_ops::Placed {
+                raw,
+                offset: [d.offset[0] + dx, -(d.offset[1] + lift), d.offset[2] + dz],
+                rotation: d.rotation,
+                scale: d.scale,
+                frame,
+            });
         }
-        parts.extend(
-            owned
-                .iter()
-                .map(|(raw, offset, rotation, scale)| tmd_ops::Placed {
-                    raw,
-                    offset: *offset,
-                    rotation: *rotation,
-                    scale: *scale,
-                    frame,
-                }),
-        );
-        let baked =
-            tmd_ops::bake(&parts).with_context(|| format!("decorations of tile {anchor:?}"))?;
+        let baked = tmd_ops::bake_cached(&parts, &mut bake_cache)
+            .with_context(|| format!("decorations of tile {anchor:?}"))?;
         drop(parts);
         let mesh = added.index(baked, "a decoration")?;
         let slot = free

@@ -2408,6 +2408,7 @@
     "field_view_window",
     "fog_ground",
     "man_census",
+    "mesh_memo",
     "model_bank",
     "npc_catalog",
     "overlay_loader",

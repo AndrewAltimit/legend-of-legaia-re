@@ -429,8 +429,8 @@ pub struct MapPreloader {
     /// Off by default (tests and tools enter maps directly); the play hosts
     /// turn it on.
     pub enabled: bool,
-    /// The pack the cache belongs to: a different pack active - a hot
-    /// reload included - empties it.
+    /// The pack the cache belongs to: a different pack active empties it of
+    /// the maps that pack defines differently ([`Self::sync_pack`]).
     pack: Option<Arc<ExpansionPack>>,
     /// Most recently used last.
     ready: VecDeque<Arc<PreparedMap>>,
@@ -447,10 +447,24 @@ impl MapPreloader {
         self.pack = None;
     }
 
+    /// Make `pack` the cache's pack. A prepared map is a function of the
+    /// disc, the map's definition and the pack's assets alone, so a new
+    /// version of the pack - a hot reload - keeps every prepared map whose
+    /// definition it did not change, when its assets are the same; the rest
+    /// go, as does every preparation under way.
     fn sync_pack(&mut self, pack: &Arc<ExpansionPack>) {
-        if !self.pack.as_ref().is_some_and(|p| Arc::ptr_eq(p, pack)) {
-            self.clear();
-            self.pack = Some(pack.clone());
+        if self.pack.as_ref().is_some_and(|p| Arc::ptr_eq(p, pack)) {
+            return;
+        }
+        let old = self.pack.replace(pack.clone());
+        self.pending.clear();
+        match old {
+            Some(old) if old.assets == pack.assets => self.ready.retain(|p| {
+                old.maps
+                    .get(&p.map_id)
+                    .is_some_and(|d| pack.maps.get(&p.map_id) == Some(d))
+            }),
+            _ => self.ready.clear(),
         }
     }
 

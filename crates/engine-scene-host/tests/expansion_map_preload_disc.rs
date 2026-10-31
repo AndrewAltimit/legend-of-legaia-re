@@ -179,6 +179,45 @@ fn an_entry_asks_for_its_exits_and_the_cache_stays_bounded() {
     }
 }
 
+/// A hot reload - the same pack activated again as a new value - keeps the
+/// maps it prepared; a version that changes one map's definition drops that
+/// map and keeps the rest, and the map built again plays as one built cold.
+#[test]
+fn a_reload_keeps_the_maps_it_left_unchanged() {
+    let pack = rebirth();
+    let Some(mut host) = host(&pack) else {
+        return;
+    };
+    host.enter_expansion_map("rebirth_tower_1f", "")
+        .expect("enter 1f");
+    host.enter_expansion_map("rebirth_tower_2f", "")
+        .expect("enter 2f");
+    let cold = scene_snapshot(&host);
+    // The same pack again.
+    let same = Arc::new((*pack).clone());
+    host.activate_expansion_pack(same.clone())
+        .expect("reactivates");
+    host.enter_expansion_map("rebirth_tower_2f", "")
+        .expect("re-enter");
+    let mut ready = host.expansion_preload.ready_maps();
+    ready.sort();
+    assert_eq!(ready, ["rebirth_tower_1f", "rebirth_tower_2f"]);
+    assert!(scene_snapshot(&host) == cold, "the kept map differs");
+    // 1f edited: it goes, 2f stays.
+    let mut edited = (*same).clone();
+    edited
+        .maps
+        .get_mut("rebirth_tower_1f")
+        .expect("1f")
+        .name
+        .push_str(" (edited)");
+    host.activate_expansion_pack(Arc::new(edited))
+        .expect("the edit activates");
+    host.enter_expansion_map("rebirth_tower_2f", "")
+        .expect("enter 2f");
+    assert_eq!(host.expansion_preload.ready_maps(), ["rebirth_tower_2f"]);
+}
+
 #[test]
 fn time_rebirth_map_entries() {
     let pack = rebirth();
@@ -201,6 +240,43 @@ fn time_rebirth_map_entries() {
             cold.as_secs_f64() * 1e3,
             warm.as_secs_f64() * 1e3,
             bytes as f64 / (1024.0 * 1024.0)
+        );
+    }
+}
+
+/// The cold preparation of every Rebirth map phase by phase (library, field
+/// image, NPCs, resource build), then the entry from the cache: where a
+/// map's entry time goes (printed with `--nocapture`; no timing is
+/// asserted).
+#[test]
+fn time_rebirth_map_phases() {
+    use legaia_engine_scene_host::expansion_preload::PrepareJob;
+    let pack = rebirth();
+    let Some(mut host) = host(&pack) else {
+        return;
+    };
+    let index = host.index.clone();
+    let mut ids: Vec<String> = pack.maps.keys().cloned().collect();
+    ids.sort();
+    for id in &ids {
+        let mut job = PrepareJob::new(id);
+        let mut phases = Vec::new();
+        loop {
+            let t = Instant::now();
+            let done = job.step(&index, &pack).expect("phase");
+            phases.push(t.elapsed().as_secs_f64() * 1e3);
+            if done.is_some() {
+                break;
+            }
+        }
+        host.expansion_preload.clear();
+        host.enter_expansion_map(id, "").expect("enter cold");
+        let t = Instant::now();
+        host.enter_expansion_map(id, "").expect("enter prepared");
+        let warm = t.elapsed().as_secs_f64() * 1e3;
+        eprintln!(
+            "{id:18} library {:7.1}  image {:7.1}  npcs {:7.1}  build {:7.1}  | entry from cache {:7.1} ms",
+            phases[0], phases[1], phases[2], phases[3], warm
         );
     }
 }

@@ -23,6 +23,7 @@
 //! nudge magnitude is safe (retail art authors ~1-unit decal offsets itself).
 
 use crate::field_env::EnvDraw;
+use crate::mesh_memo::{ContentKey, MeshMemo};
 use std::collections::HashMap;
 
 /// World-units offset per coplanar rank. Larger than the intra-mesh prim
@@ -91,6 +92,50 @@ struct Plane {
 #[derive(Debug, Clone, Default)]
 pub struct MeshPlanes {
     planes: Vec<Plane>,
+    /// The content key of the mesh the planes were read from, when
+    /// [`draw_plane_summaries_with`] built them: what lets
+    /// [`coplanar_draw_offsets`] recognise a draw list it has walked.
+    key: Option<ContentKey>,
+}
+
+/// Each mesh's planes by its bytes ([`crate::mesh_memo`]).
+static PLANES_MEMO: MeshMemo<MeshPlanes> = MeshMemo::new(32 << 20);
+
+/// The lifts of the last draw lists walked, by the draws and their meshes.
+static OFFSETS_MEMO: MeshMemo<HashMap<EnvDraw, [f32; 3]>> = MeshMemo::new(16 << 20);
+
+/// A [`std::hash::Hasher`] that keeps the bytes it is fed: a value's `Hash`
+/// impl as a byte string for [`ContentKey`].
+#[derive(Default)]
+struct ByteSink(Vec<u8>);
+
+impl std::hash::Hasher for ByteSink {
+    fn finish(&self) -> u64 {
+        0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.extend_from_slice(bytes);
+    }
+}
+
+/// The key of a draw list walked over `planes_of`: every draw and the key
+/// of its mesh's planes. `None` when a draw's planes carry no key (built
+/// outside [`draw_plane_summaries_with`]).
+fn offsets_key(draws: &[EnvDraw], planes_of: &HashMap<usize, MeshPlanes>) -> Option<ContentKey> {
+    use std::hash::Hash;
+    let mut sink = ByteSink(Vec::with_capacity(draws.len() * 96));
+    for d in draws {
+        d.hash(&mut sink);
+        match planes_of.get(&d.res_tmd) {
+            None => sink.0.push(0),
+            Some(mp) => {
+                let k = mp.key?;
+                sink.0.push(1);
+                k.hash(&mut sink);
+            }
+        }
+    }
+    Some(ContentKey::of_bytes(&sink.0))
 }
 
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -200,6 +245,7 @@ pub fn mesh_planes(positions: &[[f32; 3]], indices: &[u32]) -> MeshPlanes {
                 hi: a.hi,
             })
             .collect(),
+        key: None,
     }
 }
 
@@ -344,7 +390,19 @@ pub fn coplanar_draw_offsets(
     draws: &[EnvDraw],
     planes_of: &HashMap<usize, MeshPlanes>,
 ) -> HashMap<EnvDraw, [f32; 3]> {
-    offsets_walk(draws, planes_of, PairWalk::Grouped)
+    // The walk is a pure function of the draws and their planes: a draw list
+    // walked in the last build - the same scene rebuilt - takes its lifts
+    // back.
+    let Some(key) = offsets_key(draws, planes_of) else {
+        return offsets_walk(draws, planes_of, PairWalk::Grouped);
+    };
+    OFFSETS_MEMO.begin_build();
+    let lifts = OFFSETS_MEMO.get_or(key, || {
+        let o = offsets_walk(draws, planes_of, PairWalk::Grouped);
+        let bytes = o.len() * (std::mem::size_of::<EnvDraw>() + 16);
+        (o, bytes)
+    });
+    (*lifts).clone()
 }
 
 /// A bucket key - a quantized normal `k` (each component within `+-129`)
@@ -994,6 +1052,23 @@ where
     ids.sort_unstable();
     ids.dedup();
     ids.retain(|&i| i < res.tmds.len());
+    // A mesh whose bytes the last build read keeps its planes
+    // ([`PLANES_MEMO`]); only the rest go to `map`.
+    PLANES_MEMO.begin_build();
+    let keys: HashMap<usize, ContentKey> = ids
+        .iter()
+        .map(|&i| (i, ContentKey::of_bytes(&res.tmds[i].raw)))
+        .collect();
+    let mut out: HashMap<usize, MeshPlanes> = HashMap::with_capacity(ids.len());
+    let mut missing = Vec::new();
+    for &i in &ids {
+        match PLANES_MEMO.get(&keys[&i]) {
+            Some(mp) => {
+                out.insert(i, (*mp).clone());
+            }
+            None => missing.push(i),
+        }
+    }
     let planes_of = |i: usize| {
         let rt = &res.tmds[i];
         let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&rt.tmd, &rt.raw);
@@ -1003,9 +1078,16 @@ where
         let base = positions.len() as u32;
         positions.extend_from_slice(&cmesh.positions);
         indices.extend(cmesh.indices.iter().map(|i| i + base));
-        mesh_planes(&positions, &indices)
+        let mut mp = mesh_planes(&positions, &indices);
+        mp.key = Some(keys[&i]);
+        mp
     };
-    map(&ids, &planes_of).into_iter().collect()
+    for (i, mp) in map(&missing, &planes_of) {
+        let bytes = mp.planes.len() * std::mem::size_of::<Plane>() + 64;
+        PLANES_MEMO.put(keys[&i], std::sync::Arc::new(mp.clone()), bytes);
+        out.insert(i, mp);
+    }
+    out
 }
 
 #[cfg(test)]

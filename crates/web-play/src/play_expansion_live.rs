@@ -1076,12 +1076,14 @@ mod tests {
         );
     }
 
-    /// Disc-gated, ignored (a measurement, not a check): each Isles map's
-    /// entry cost on the play page's path - the engine's map entry, the
-    /// page's scene build and the arrays it uploads - with the triangle
-    /// count drawn and a hash of the uploaded arrays (a change of output
-    /// shows as a change of hash): `cargo test -p legaia-web-play --profile
-    /// release-test --lib isles_map_entry_cost -- --ignored --nocapture`.
+    /// Disc-gated, ignored (a measurement): each Isles map's entry cost on
+    /// the play page's path - the engine's map entry, the page's scene build
+    /// and the arrays it uploads - then the workbench's rebuild of it (a
+    /// reload of the same pack), with the triangle count drawn and a hash of
+    /// everything the build made (a change of output shows as a change of
+    /// hash; the rebuild must make what the entry made): `cargo test -p
+    /// legaia-web-play --profile release-test --lib isles_map_entry_cost --
+    /// --ignored --nocapture`.
     #[test]
     #[ignore]
     fn isles_map_entry_cost() {
@@ -1095,26 +1097,27 @@ mod tests {
         assert!(rt.load_disc(bytes, String::new()).is_ok());
         let v: Value = serde_json::from_str(&rt.load_expansion_core(&pack)).unwrap();
         assert_eq!(v["ok"], true, "{v}");
-        for map in [
-            "isles_beach",
-            "isles_village",
-            "isles_grotto",
-            "isles_thornwood",
-        ] {
-            let t = std::time::Instant::now();
-            rt.scene_host
-                .host_mut()
-                .unwrap()
-                .enter_expansion_map(map, "")
-                .expect("enter");
-            let engine = t.elapsed();
-            let t = std::time::Instant::now();
-            assert!(rt.rebuild_render_state().is_ok());
-            let page = t.elapsed();
-            let t = std::time::Instant::now();
-            let arrays = scene_build(&rt);
+        // Everything a build makes that the page draws or queries: the
+        // uploaded arrays and meshes, the occluders, the coplanar lifts and
+        // the fog ground, as one hash (a change of output shows as a change
+        // of hash).
+        let fingerprint = |rt: &mut LegaiaRuntime| -> (u64, usize) {
             let mut h = std::collections::hash_map::DefaultHasher::new();
-            std::hash::Hash::hash(&arrays, &mut h);
+            std::hash::Hash::hash(&scene_build(rt), &mut h);
+            let f = rt.field.as_ref().unwrap();
+            std::hash::Hash::hash(&format!("{:?}", f.occluders), &mut h);
+            let mut lifts: Vec<String> = f
+                .coplanar_offsets
+                .iter()
+                .map(|(d, o)| format!("{d:?} {o:?}"))
+                .collect();
+            lifts.sort();
+            std::hash::Hash::hash(&lifts, &mut h);
+            let fog = rt
+                .scene_host
+                .host()
+                .and_then(|h| h.world.fog_volume.ground_field().map(|g| format!("{g:?}")));
+            std::hash::Hash::hash(&fog, &mut h);
             // Each distinct mesh the page uploads, as `ensure` builds it.
             let mut slots: Vec<(u32, u32)> = rt
                 .field_terrain_slots()
@@ -1146,12 +1149,42 @@ mod tests {
                 std::hash::Hash::hash(&rt.field_mesh_cba_tsb(), &mut h);
                 std::hash::Hash::hash(&rt.field_mesh_flat_rgba(), &mut h);
             }
+            (std::hash::Hasher::finish(&h), tris)
+        };
+        for map in [
+            "isles_beach",
+            "isles_village",
+            "isles_grotto",
+            "isles_thornwood",
+        ] {
+            let t = std::time::Instant::now();
+            rt.scene_host
+                .host_mut()
+                .unwrap()
+                .enter_expansion_map(map, "")
+                .expect("enter");
+            let engine = t.elapsed();
+            let t = std::time::Instant::now();
+            assert!(rt.rebuild_render_state().is_ok());
+            let page = t.elapsed();
+            let t = std::time::Instant::now();
+            let (cold, tris) = fingerprint(&mut rt);
             let upload = t.elapsed();
+            // The workbench's rebuild: the same pack again, re-entered where
+            // the player stands.
+            let t = std::time::Instant::now();
+            let r = rt.reload_expansion_core(&pack);
+            let reload = t.elapsed();
+            assert_eq!(r["reentered"], true, "{r}");
+            let t = std::time::Instant::now();
+            let (again, _) = fingerprint(&mut rt);
+            let upload_again = t.elapsed();
             eprintln!(
                 "{map}: engine entry {engine:?}, page build {page:?}, arrays {upload:?}; \
-                 ~{tris} triangles, output hash {:016x}",
-                std::hash::Hasher::finish(&h)
+                 reload {reload:?}, arrays {upload_again:?}; ~{tris} triangles, \
+                 output hash {cold:016x} / after the reload {again:016x}"
             );
+            assert_eq!(cold, again, "{map}: the reload builds what the entry built");
         }
     }
 }
