@@ -344,7 +344,7 @@ The session runs in its own mode units, exactly as for a tile-string course, and
 `WorldStage::step` turns the session's view into a `StageFrame` once a frame, while the session's map is the one the player is in:
 
 - **Golf.** The party leader stands beside the player's ball facing the aim, plays the swing for 24 frames after a strike, and runs to the ball's new lie once it rests; holed, it waits by the cup. The other seats stand at their own balls as bodies, on the far side from where the leader would stand. Every ball not yet holed draws, the rolling one at the session's rolling position. The aim arrow lies on the ground from the ball to play, lengthening with the power meter and warming from yellow to red as it fills. The camera sits behind the ball to play looking down its aim, follows a rolling ball along the shot's line, and settles on the cup between holes; it eases toward each target. Banners name the hole and par at its start and the score as a ball drops ("Birdie!", "Hole in one!").
-- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it. The other racers are bodies. A boosting racer leaves a fading ribbon of its last positions. The camera chases from behind on the heading, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
+- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it. The other racers are bodies. A boosting racer leaves a fading ribbon of its last positions. The camera chases from behind and above on the heading, high enough that the map's walls rarely stand between it and the racer, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
 
 The party bank has no swing clip, so the swing plays the landing clip (clip base `7`, the hop phase machine's landing), whose crouch and rise reads as a putt. The leader's walk to its ball, the camera ease and the banner timers are the stage's own memory; nothing the stage keeps reaches the session.
 
@@ -370,9 +370,13 @@ Both hosts draw the field under the seat as they draw any field scene, the leade
 |---|---|
 | Ball | A shaded disc facing the camera with a band of the seat's colour, over a blob shadow |
 | Cup | A dark disc with a white rim, a flagpole and a red pennant |
+| Hole | Every playable tile tinted by its surface over the map's floor (fairway mown in a checker, rough, sand, water), a white line where play ends, a chevron down each sloped tile, a lighter putting green round the cup, the tee's mat and two red markers |
+| Track | Red-and-white kerbs along both edges of the session's corridor, a chequered start line across the first segment, cyan chevrons down each boost segment |
 | Aim arrow | A ground strip and head, translucent |
-| Body | A capsule billboard in the seat's colour with a head, over a blob shadow |
+| Body | A stand-in figure facing the camera - legs, a tunic in the seat's colour with a belt, arms, a head with hair - over a blob shadow; a body under way swings its legs and arms with the ground it covers |
 | Boost trail | A translucent cyan ribbon |
+
+The hole and the track come from the session (`StageFrame::course` off `ActiveMode::golf_course`, `StageFrame::track` off `ActiveMode::race_track`), so they mark exactly where the ball rolls and the racers are held, whatever the map draws under them; they link in one ground band past every standing piece and draw first.
 
 They are built in code from no disc bytes. `screen_layers::compose_screen_prims` puts them, with the drop shadows, under the seat's HUD, which is `ModeScreen::InWorld`: the hole, par and whose stroke, a compact scorecard, the power meter; or the lap and place, the running order and the boost gauge; and the stage's banner. The native window fills `HostScreenPrims::pack_mode_world` from `HostView::pack_mode_world_prims`, and the browser play page from the same call (`play_field_fx.rs`).
 
@@ -388,7 +392,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 
 ### Gaps
 
-- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a capsule billboard in its seat's colour.
+- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a flat stand-in figure in its seat's colour.
 - **Racer collision is the session's.** Racers keep to the track by its half-width, not by the map's walls, so a map draws its corridor to the track.
 - **The browser host enters no pack map** yet ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#gaps)); its draw path for the stage is in place for when it does.
 
@@ -446,7 +450,7 @@ The seat holds its results card until the reaction shot is over (`WorldStage::ho
 
 Everything is screen primitives projected through the stage's frame with per-corner scene depth, so an NPC or a wall in front of the table hides it.
 
-Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
+Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, each with an inset lip shadowed on its far and left edges and lit on the near and right; or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
 
 The HUD is the score plates, the turn prompt and the selected card's panel, clean of the table; it steps aside for the reaction shot, leaving the stage's banner.
 
@@ -492,7 +496,9 @@ The dealer button sits on the felt before the button's chair, and a pulsing ring
 
 ### Drawing the table
 
-The table is an oval: a felt fan lit brightest in the middle, a gold betting line, a padded rail and its wooden outer face, on four legs. Chips are stacked discs, a side band per chip with a white stripe every third and a face on top, coloured by the stack's size against the big blind. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
+The table is an oval: a felt fan lit brightest in the middle with a gold betting line, a polished wooden racetrack round it, and a padded leather rail whose crown rises between its two lips; with `draw_table` also the wooden apron under the rail, its shadowed underside, and a pedestal on a cross foot.
+
+Chips are stacked discs with a casino chip's white edge spots, turned a little per chip, and an inlaid face on top, coloured by the stack's size against the big blind; a stack of six chips or more lies as a pile of two or three columns, its top denomination tallest and the two below it beside it, a pure function of the stack so every frame and every peer draws the same pile. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
 
 The HUD is a plate per other seat along the top (its name, chips or state, its street bet on a row of its own, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
 

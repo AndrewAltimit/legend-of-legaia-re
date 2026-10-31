@@ -298,7 +298,40 @@ fn board(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
         );
         match tb.surface {
             Some(surf) => surface_cell(out, t, rect, top + 0.8, surf, BAND_BOARD),
-            None => lit_rect(out, t, rect, top + 0.8, 2, FELT, w * 1.6, BAND_BOARD),
+            None => {
+                lit_rect(out, t, rect, top + 0.8, 2, FELT, w * 1.6, BAND_BOARD);
+                cell_bevel(out, t, rect, top + 0.85);
+            }
+        }
+    }
+}
+
+/// A felt cell's inset edge: the far and left lips in shadow, the near and
+/// right lips catching the lamp, so each cell reads as a tile sunk into
+/// the board rather than a painted square.
+fn cell_bevel(
+    out: &mut Vec<ScreenPrim>,
+    t: &Table<'_, '_>,
+    (r0, a0, r1, a1): (f32, f32, f32, f32),
+    h: f32,
+) {
+    let e = ((r1 - r0).min(a1 - a0) * 0.06).max(1.0);
+    let dark = rgba(shade(FELT, 0.45), 255);
+    let light = rgba(shade(FELT, 1.6), 255);
+    for ((q0, q1, q2, q3), c) in [
+        ((r0, a1 - e, r1, a1), dark),
+        ((r0, a0 + e, r0 + e, a1 - e), dark),
+        ((r0, a0, r1, a0 + e), light),
+        ((r1 - e, a0 + e, r1, a1 - e), light),
+    ] {
+        let pts = [
+            t.at(q0, q3, h),
+            t.at(q2, q3, h),
+            t.at(q0, q1, h),
+            t.at(q2, q1, h),
+        ];
+        if let [Some(p0), Some(p1), Some(p2), Some(p3)] = pts {
+            out.push(flat([p0, p1, p2, p3], [c; 4], None, BAND_BOARD - 1));
         }
     }
 }

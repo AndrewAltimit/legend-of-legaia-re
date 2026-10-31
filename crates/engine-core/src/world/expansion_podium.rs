@@ -225,6 +225,8 @@ impl World {
             cup: None,
             aim: None,
             trails: Vec::new(),
+            track: None,
+            course: None,
             shot: pod.shot,
             banner: None,
             duel: None,

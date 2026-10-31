@@ -27,6 +27,10 @@ const CHIP_SEGMENTS: usize = 10;
 /// A chip's radius and thickness, world units.
 const CHIP_R: f32 = 5.5;
 const CHIP_T: f32 = 1.6;
+/// A stack of this many chips or more lies as a pile of columns.
+const PILE_MIN: u8 = 6;
+/// The white of a chip's edge spots and face inlay.
+const CHIP_SPOT: [u8; 3] = [236, 232, 218];
 
 /// The oval's point at angle `a` (radians, `0` toward the player) scaled by
 /// `k`, table-local.
@@ -35,64 +39,122 @@ fn oval(t: &PokerStageFrame, a: f32, k: f32) -> (f32, f32) {
     (-a.sin() * r * OVAL * k, -a.cos() * r * k)
 }
 
-/// The table: legs, the wooden rail round the oval, the felt lit brightest
-/// in the middle, and a gold betting line.
+/// The rail's outer edge, the wooden racetrack's outer edge, and the
+/// apron's foot, as fractions of the oval.
+const RAIL_OUT: f32 = 1.2;
+const RAIL_MID: f32 = 1.135;
+const TRACK_OUT: f32 = 1.07;
+/// The rail's heights over the felt: its inner lip, its crown, its outer
+/// lip; and how far the apron drops below the felt.
+const RAIL_IN_H: f32 = 2.2;
+const RAIL_CROWN_H: f32 = 6.0;
+const RAIL_OUT_H: f32 = 3.6;
+const APRON: f32 = 11.0;
+/// The rail's leather and the pedestal's half-width.
+const LEATHER: [u8; 3] = [78, 34, 26];
+const PEDESTAL: f32 = 13.0;
+
+/// The table: a pedestal on a cross foot, the wooden apron round the oval
+/// and its shadowed underside (only with `draw_table`); and always the
+/// padded rail with its rounded crown, the polished wooden racetrack inside
+/// it, the felt lit brightest under the lamp, and a gold betting line.
 fn table(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &PokerStageFrame) {
     let top = s.table.top();
     let r = s.table.radius;
+    let lift = s.table.lift;
     if s.table.draw_table {
-        for (lr, la) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
-            let (cr, ca) = (lr * r * OVAL * 0.6, la * r * 0.55);
+        // The foot: two crossed planks on the floor, then the column.
+        let (fw, fd) = (r * OVAL * 0.52, r * 0.42);
+        for (r0, a0, r1, a1) in [(-fw, -8.0, fw, 8.0), (-8.0, -fd, 8.0, fd)] {
             box_sides(
                 out,
                 t,
-                (cr - 10.0, ca - 10.0, cr + 10.0, ca + 10.0),
-                top - 12.0,
-                s.table.lift,
+                (r0, a0, r1, a1),
+                lift + 6.0,
+                lift,
                 WOOD_DARK,
-                BAND_TABLE + 4,
+                BAND_TABLE + 6,
             );
         }
+        box_sides(
+            out,
+            t,
+            (-PEDESTAL, -PEDESTAL, PEDESTAL, PEDESTAL),
+            top - APRON - 2.0,
+            lift + 6.0,
+            shade(WOOD_DARK, 1.15),
+            BAND_TABLE + 5,
+        );
     }
     let n = OVAL_SEGMENTS;
     let ang = |i: usize| i as f32 / n as f32 * std::f32::consts::TAU;
+    // How a band facing the lamp (behind the viewer's left shoulder)
+    // brightens.
+    let lamp = |a: f32| 0.72 + 0.28 * (a - 0.6).cos();
     for i in 0..n {
         let (a0, a1) = (ang(i), ang(i + 1));
-        // The rail's outer face, where it turns to the camera.
+        let k = lamp((a0 + a1) * 0.5);
+        let ring = |k0: f32, h0: f32, k1: f32, h1: f32| {
+            let (p0, p1, q0, q1) = (
+                oval(s, a0, k0),
+                oval(s, a1, k0),
+                oval(s, a0, k1),
+                oval(s, a1, k1),
+            );
+            match (
+                t.at(p0.0, p0.1, h0),
+                t.at(p1.0, p1.1, h0),
+                t.at(q0.0, q0.1, h1),
+                t.at(q1.0, q1.1, h1),
+            ) {
+                (Some(a), Some(b), Some(c), Some(d)) => Some([a, b, c, d]),
+                _ => None,
+            }
+        };
         if s.table.draw_table {
-            let (p0, p1) = (oval(s, a0, 1.16), oval(s, a1, 1.16));
-            let q = [
-                t.at(p1.0, p1.1, top + 3.0),
-                t.at(p0.0, p0.1, top + 3.0),
-                t.at(p1.0, p1.1, top - 12.0),
-                t.at(p0.0, p0.1, top - 12.0),
-            ];
-            if let [Some(a), Some(b), Some(c), Some(d)] = q
-                && front(&[a, b, c, d])
+            // The apron: the wooden outer face, where it turns to the
+            // camera, and the shadowed underside below it.
+            if let Some([p0, p1, q0, q1]) = ring(RAIL_OUT, top + RAIL_OUT_H, RAIL_OUT, top - APRON)
             {
-                let hi = rgba(WOOD, 255);
-                let lo = rgba(shade(WOOD, 0.5), 255);
-                out.push(flat([a, b, c, d], [hi, hi, lo, lo], None, BAND_TABLE + 3));
+                let q = [p1, p0, q1, q0];
+                if front(&q) {
+                    let hi = rgba(shade(WOOD, k * 1.1), 255);
+                    let lo = rgba(shade(WOOD, k * 0.55), 255);
+                    out.push(flat(q, [hi, hi, lo, lo], None, BAND_TABLE + 4));
+                }
+            }
+            if let Some([p0, p1, q0, q1]) =
+                ring(RAIL_OUT, top - APRON, RAIL_OUT - 0.1, top - APRON - 4.0)
+            {
+                let q = [p1, p0, q1, q0];
+                if front(&q) {
+                    let c = rgba(shade(WOOD_DARK, 0.6), 255);
+                    out.push(flat(q, [c; 4], None, BAND_TABLE + 4));
+                }
             }
         }
-        // The rail's top: a padded leather ring.
-        let ring = [
-            oval(s, a0, 1.16),
-            oval(s, a1, 1.16),
-            oval(s, a0, 1.0),
-            oval(s, a1, 1.0),
-        ];
-        let pts = ring.map(|(x, z)| t.at(x, z, top + 3.0));
-        if let [Some(a), Some(b), Some(c), Some(d)] = pts {
-            let k = 0.75 + 0.25 * (a0 - 0.6).cos();
-            let rail = rgba(shade([88, 40, 30], k), 255);
-            let inner = rgba(shade([120, 60, 42], k), 255);
-            out.push(flat(
-                [a, b, c, d],
-                [rail, rail, inner, inner],
-                None,
-                BAND_TABLE + 2,
-            ));
+        // The rail: an outer slope up to the crown, an inner slope down to
+        // the racetrack, so the leather reads rounded.
+        if let Some(q) = ring(RAIL_OUT, top + RAIL_OUT_H, RAIL_MID, top + RAIL_CROWN_H) {
+            let lo = rgba(shade(LEATHER, k * 0.7), 255);
+            let hi = rgba(shade(LEATHER, k * 1.25), 255);
+            out.push(flat(q, [lo, lo, hi, hi], None, BAND_TABLE + 2));
+        }
+        if let Some(q) = ring(RAIL_MID, top + RAIL_CROWN_H, TRACK_OUT, top + RAIL_IN_H) {
+            let hi = rgba(shade(LEATHER, k * 1.35), 255);
+            let lo = rgba(shade(LEATHER, k * 0.8), 255);
+            out.push(flat(q, [hi, hi, lo, lo], None, BAND_TABLE + 2));
+        }
+        // The racetrack: polished wood between the rail and the felt, with
+        // a dark seam at the felt's edge.
+        if let Some(q) = ring(TRACK_OUT, top + RAIL_IN_H, 1.0, top + 0.6) {
+            let hi = rgba(shade(WOOD, k * 1.3), 255);
+            let lo = rgba(shade(WOOD, k * 0.95), 255);
+            out.push(flat(q, [hi, hi, lo, lo], None, BAND_TABLE + 1));
+        }
+        if let Some(q) = ring(1.005, top + 0.65, 0.985, top + 0.1) {
+            let c = rgba([20, 14, 10], 255);
+            out.push(flat(q, [c; 4], None, BAND_TABLE));
         }
         // The felt: a fan from the middle, bright under the lamp.
         let mid = t.at(0.0, 0.0, top);
@@ -108,16 +170,9 @@ fn table(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &PokerStageFrame) {
             ));
         }
         // The gold betting line.
-        let line = [
-            oval(s, a0, 0.66),
-            oval(s, a1, 0.66),
-            oval(s, a0, 0.64),
-            oval(s, a1, 0.64),
-        ];
-        let pts = line.map(|(x, z)| t.at(x, z, top + 0.3));
-        if let [Some(a), Some(b), Some(c), Some(d)] = pts {
+        if let Some(q) = ring(0.665, top + 0.3, 0.645, top + 0.3) {
             let g = rgba([150, 120, 50], 255);
-            out.push(flat([a, b, c, d], [g; 4], Some(1), BAND_BOARD + 1));
+            out.push(flat(q, [g; 4], Some(1), BAND_BOARD + 1));
         }
     }
 }
@@ -155,25 +210,30 @@ fn disc(
     }
 }
 
-/// A chip stack: a side band per chip, alternating with a white stripe,
-/// and the top chip's face.
-fn stack(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &ChipStack) {
-    let at = s.at;
-    let base = s.height;
-    let dist = t.dist([at[0], t.floor - base, at[1]]);
-    let ot = BAND_CARDS + (dist * 4.0) as u32 * 4 + 2;
-    let main = CHIP_COLOURS[usize::from(s.colour) % CHIP_COLOURS.len()];
-    for k in 0..s.chips {
+/// One column of chips: a side band per chip with the edge spots of a
+/// casino chip (white inserts, turned a little per chip so the column does
+/// not stripe), and the top chip's face with its inlay.
+#[allow(clippy::too_many_arguments)]
+fn column(
+    out: &mut Vec<ScreenPrim>,
+    t: &Table<'_, '_>,
+    at: [f32; 2],
+    base: f32,
+    chips: u8,
+    main: [u8; 3],
+    ot: u32,
+) {
+    if chips == 0 {
+        return;
+    }
+    let seg = |i: usize| i as f32 / CHIP_SEGMENTS as f32 * std::f32::consts::TAU;
+    for k in 0..chips {
         let (h0, h1) = (
             base + f32::from(k) * CHIP_T,
             base + f32::from(k + 1) * CHIP_T,
         );
-        let colour = if k % 3 == 2 { [232, 228, 214] } else { main };
         for i in 0..CHIP_SEGMENTS {
-            let (a0, a1) = (
-                i as f32 / CHIP_SEGMENTS as f32 * std::f32::consts::TAU,
-                (i + 1) as f32 / CHIP_SEGMENTS as f32 * std::f32::consts::TAU,
-            );
+            let (a0, a1) = (seg(i), seg(i + 1));
             let p = |a: f32, h: f32| {
                 t.pr.at([
                     at[0] + a.cos() * CHIP_R,
@@ -185,14 +245,16 @@ fn stack(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &ChipStack) {
                 (p(a1, h1), p(a0, h1), p(a1, h0), p(a0, h0))
                 && front(&[a, b, c, d])
             {
+                let spot = (i + usize::from(k) * 3) % 5 == 0;
+                let colour = if spot { CHIP_SPOT } else { main };
                 let k2 = 0.7 + 0.3 * (a0 + 0.8).cos().max(0.0);
                 let col = rgba(shade(colour, k2), 255);
-                let dark = rgba(shade(colour, k2 * 0.7), 255);
+                let dark = rgba(shade(colour, k2 * 0.62), 255);
                 out.push(flat([a, b, c, d], [col, col, dark, dark], None, ot));
             }
         }
     }
-    let top = base + f32::from(s.chips) * CHIP_T;
+    let top = base + f32::from(chips) * CHIP_T;
     disc(
         out,
         t,
@@ -208,8 +270,8 @@ fn stack(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &ChipStack) {
         t,
         at,
         top + 0.05,
-        CHIP_R * 0.55,
-        rgba([236, 230, 210], 255),
+        CHIP_R * 0.62,
+        rgba(CHIP_SPOT, 255),
         None,
         ot - 2,
     );
@@ -218,11 +280,61 @@ fn stack(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &ChipStack) {
         t,
         at,
         top + 0.1,
-        CHIP_R * 0.4,
+        CHIP_R * 0.48,
         rgba(shade(main, 1.0), 255),
         None,
         ot - 3,
     );
+}
+
+/// A chip stack. A small one (or one in flight) is a single column; a
+/// larger one is a pile of up to three columns, its top denomination
+/// tallest and the two below it beside it - so a seat's chips read as a
+/// stack of money rather than a single tube. The split is a pure function
+/// of the stack, so every frame and every peer draws the same pile.
+fn stack(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &ChipStack, felt: f32) {
+    let at = s.at;
+    let dist = t.dist([at[0], t.floor - s.height, at[1]]);
+    let ot = BAND_CARDS + (dist * 4.0) as u32 * 4 + 8;
+    let colour = |step: u8| CHIP_COLOURS[usize::from(step) % CHIP_COLOURS.len()];
+    let n = s.chips;
+    if n < PILE_MIN || s.height > felt + 0.5 {
+        column(out, t, at, s.height, n, colour(s.colour), ot);
+        return;
+    }
+    // Heights: the top denomination about half, the rest shared.
+    let cols: u8 = if n >= 9 { 3 } else { 2 };
+    let first = n.div_ceil(2);
+    let rest = n - first;
+    let second = if cols == 3 { rest.div_ceil(2) } else { rest };
+    let third = rest - second;
+    // The steps below the top one, wrapping past the lowest so a white
+    // stack still shows two colours.
+    let below = |d: u8| (s.colour + CHIP_COLOURS.len() as u8 - d) % CHIP_COLOURS.len() as u8;
+    let gap = CHIP_R * 2.08;
+    let off = |r: f32, a: f32| {
+        [
+            at[0] + t.right[0] * r + t.across[0] * a,
+            at[1] + t.right[1] * r + t.across[1] * a,
+        ]
+    };
+    // Back to front from the table's centre, so the near column is drawn
+    // last within the pile.
+    let mut piles = vec![
+        (off(0.0, 0.0), first, colour(s.colour)),
+        (off(gap, 0.0), second, colour(below(1))),
+    ];
+    if cols == 3 {
+        piles.push((off(gap * 0.5, -gap * 0.87), third, colour(below(2))));
+    }
+    piles.sort_by(|a, b| {
+        let da = t.dist([a.0[0], t.floor - s.height, a.0[1]]);
+        let db = t.dist([b.0[0], t.floor - s.height, b.0[1]]);
+        db.total_cmp(&da)
+    });
+    for (i, (p, chips, c)) in piles.into_iter().enumerate() {
+        column(out, t, p, s.height, chips, c, ot - 4 * i as u32);
+    }
 }
 
 /// A glyph strip quad (`table_art::tpage`) on four projected corners.
@@ -361,7 +473,7 @@ pub(super) fn poker_pieces(pr: &Projector<'_>, s: &PokerStageFrame) -> Vec<Scree
         card(&mut out, &t, (top, s.local, s.clock), card_);
     }
     for st in &s.stacks {
-        stack(&mut out, &t, st);
+        stack(&mut out, &t, st, top);
     }
     for b in &s.bursts {
         burst(&mut out, &t, s.local, b);

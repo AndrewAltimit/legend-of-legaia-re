@@ -1,12 +1,13 @@
 //! The in-world stage of a golf round or a race
 //! ([`legaia_engine_expansion::mode_stage`]) as the hosts draw it: the
-//! camera shot it frames through, and its world pieces - balls, the cup and
-//! flag, the aim arrow, the other seats' bodies, the boost trails - as
-//! screen primitives projected through that frame.
+//! camera shot it frames through, and its world pieces - the hole's tinted
+//! tiles or the track's kerbs and start line, balls, the cup and flag, the
+//! aim arrow, the other seats' bodies, the boost trails - as screen
+//! primitives projected through that frame.
 //!
 //! None of these are retail objects, and none carry disc bytes: each is a
 //! small shape built here (a shaded disc for a ball, a ground strip for the
-//! arrow, a capsule billboard for a body). Every corner carries its scene
+//! arrow, a flat stand-in figure for a body). Every corner carries its scene
 //! depth ([`legaia_render_kernels::screen_prim::CornerDepth`]), so a host
 //! depth-tests them against the field it already drew - a ball rolling
 //! behind a wall is hidden by it - the same way both hosts draw the
@@ -22,9 +23,11 @@ use legaia_engine_field::camera_frame::{self, FIELD_CAM_DEPTH, FIELD_H, FieldCam
 use legaia_engine_field::world_map_markers::{DISPLAY_H, DISPLAY_W, depth_toward};
 use legaia_render_kernels::screen_prim::{CornerDepth, FlatQuad, ScreenPrim};
 
+mod course;
 mod duel;
 mod podium;
 mod poker;
+mod track;
 
 /// The ball's radius, world units.
 pub const BALL_RADIUS: f32 = 11.0;
@@ -33,8 +36,8 @@ pub const CUP_RADIUS: f32 = 22.0;
 /// The flagpole's height, world units.
 pub const FLAG_HEIGHT: f32 = 110.0;
 /// An AI body's height and half-width, world units.
-pub const BODY_HEIGHT: f32 = 100.0;
-pub const BODY_HALF_WIDTH: f32 = 16.0;
+pub const BODY_HEIGHT: f32 = 128.0;
+pub const BODY_HALF_WIDTH: f32 = 19.0;
 /// The aim arrow's half-width, world units.
 pub const ARROW_HALF_WIDTH: f32 = 6.0;
 /// Segments of a disc.
@@ -42,6 +45,10 @@ const DISC_SEGMENTS: usize = 10;
 /// The ordering-table bucket the nearest stage piece links at; a piece
 /// links `depth`-many buckets past it, so farther pieces draw first.
 const STAGE_OT_BASE: u32 = 16;
+/// The band the marks laid on the ground (a hole's tints, a track's kerbs)
+/// link in, past every standing piece, so they draw first, in their own
+/// layer order, whatever their distance.
+const GROUND_BAND: u32 = 0x8_0000;
 
 /// The colour each seat's ball and body take (the top-down screen's).
 pub fn seat_color(seat: usize) -> [u8; 4] {
@@ -206,10 +213,23 @@ fn ground_disc(
     layer: u32,
 ) {
     let c = pr.on_floor(centre[0], centre[1], 0.5);
+    ground_disc_ot(out, pr, centre, r, color, blend, pr.ot(c, layer));
+}
+
+/// [`ground_disc`] at an explicit ordering-table bucket.
+fn ground_disc_ot(
+    out: &mut Vec<ScreenPrim>,
+    pr: &Projector<'_>,
+    centre: [f32; 2],
+    r: f32,
+    color: [u8; 4],
+    blend: bool,
+    ot: u32,
+) {
+    let c = pr.on_floor(centre[0], centre[1], 0.5);
     let Some(cp) = pr.at(c) else {
         return;
     };
-    let ot = pr.ot(c, layer);
     let rim: Vec<Option<Pt>> = (0..DISC_SEGMENTS)
         .map(|i| {
             let a = i as f32 / DISC_SEGMENTS as f32 * std::f32::consts::TAU;
@@ -378,56 +398,12 @@ fn arrow(
     }
 }
 
-/// Another seat's body: a capsule standing on its shadow, in its seat's
-/// colour, with a head.
+/// Another seat's body: a stand-in figure on its shadow, facing the
+/// camera - legs, a tunic in the seat's colour with a belt, arms, hands,
+/// and a head with a cap of hair. A body under way swings its legs and
+/// arms with the ground it covers, so a racer reads as running.
 fn body(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, pos: [f32; 2], seat: usize, boosting: bool) {
     ground_disc(out, pr, pos, BODY_HALF_WIDTH * 1.4, [0, 0, 0, 150], true, 3);
-    let feet = pr.on_floor(pos[0], pos[1], 0.0);
-    let Some(up) = pr.screen_up(feet) else {
-        return;
-    };
-    let (Some(f), Some(n), Some(h)) = (
-        pr.at(feet),
-        pr.at([feet[0], feet[1] - BODY_HEIGHT * 0.72, feet[2]]),
-        pr.at([feet[0], feet[1] - BODY_HEIGHT * 0.86, feet[2]]),
-    ) else {
-        return;
-    };
-    let scale = ((n.x - f.x).powi(2) + (n.y - f.y).powi(2)).sqrt() / (BODY_HEIGHT * 0.72);
-    let half = BODY_HALF_WIDTH * scale;
-    let side = (-up.1, up.0);
-    let off = |p: Pt, s: f32| Pt {
-        x: p.x + side.0 * s,
-        y: p.y + side.1 * s,
-        depth: p.depth,
-    };
-    let ot = pr.ot(feet, 1);
-    let tint = seat_color(seat);
-    let shade = [tint[0] / 2, tint[1] / 2, tint[2] / 2, 255];
-    out.push(quad(
-        [
-            off(n, -half),
-            off(n, half),
-            off(f, -half * 0.8),
-            off(f, half * 0.8),
-        ],
-        [tint, tint, shade, shade],
-        false,
-        ot,
-    ));
-    // The head: a disc above the shoulders.
-    let r = half * 0.8;
-    let skin = [236, 200, 160, 255];
-    for i in 0..DISC_SEGMENTS {
-        let a0 = i as f32 / DISC_SEGMENTS as f32 * std::f32::consts::TAU;
-        let a1 = (i + 1) as f32 / DISC_SEGMENTS as f32 * std::f32::consts::TAU;
-        let p = |a: f32| Pt {
-            x: h.x + a.cos() * r,
-            y: h.y + a.sin() * r,
-            depth: h.depth,
-        };
-        out.push(tri(h, p(a0), p(a1), [skin; 3], false, ot.saturating_sub(1)));
-    }
     if boosting {
         ground_disc(
             out,
@@ -439,6 +415,208 @@ fn body(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, pos: [f32; 2], seat: usiz
             3,
         );
     }
+    let feet = pr.on_floor(pos[0], pos[1], 0.0);
+    let Some(up) = pr.screen_up(feet) else {
+        return;
+    };
+    // A point `y` of the body's height up, `x` half-widths to the side.
+    let at_h = |y: f32| pr.at([feet[0], feet[1] - BODY_HEIGHT * y, feet[2]]);
+    let (Some(f), Some(n)) = (at_h(0.0), at_h(0.72)) else {
+        return;
+    };
+    let scale = ((n.x - f.x).powi(2) + (n.y - f.y).powi(2)).sqrt() / (BODY_HEIGHT * 0.72);
+    let half = BODY_HALF_WIDTH * scale;
+    let side = (-up.1, up.0);
+    let base_ot = pr.ot(feet, 1);
+    // The figure's own points, all at the feet's depth so the parts never
+    // fight each other.
+    let fig = |x: f32, y: f32| Pt {
+        x: f.x + side.0 * x * half + up.0 * y * BODY_HEIGHT * scale,
+        y: f.y + side.1 * x * half + up.1 * y * BODY_HEIGHT * scale,
+        depth: f.depth,
+    };
+    let part = |out: &mut Vec<ScreenPrim>, c: [Pt; 4], top: [u8; 4], bot: [u8; 4], z: u32| {
+        out.push(quad(
+            c,
+            [top, top, bot, bot],
+            false,
+            base_ot.saturating_sub(z),
+        ));
+    };
+    let tint = seat_color(seat);
+    let sh = |c: [u8; 4], k: f32| {
+        let m = |v: u8| (f32::from(v) * k).clamp(0.0, 255.0) as u8;
+        [m(c[0]), m(c[1]), m(c[2]), 255]
+    };
+    let trousers = [58, 50, 46, 255];
+    let skin = [236, 200, 160, 255];
+    let hair = [70, 46, 30, 255];
+    // The stride: a function of where the body stands, so it swings only
+    // as the body moves and holds still at rest.
+    let stride = ((pos[0] + pos[1]) * 0.06).sin() * 0.35;
+    // Legs, each from the hip to a foot that swings with the stride.
+    for (hip, swing) in [(-0.38f32, stride), (0.38, -stride)] {
+        let foot = hip * 0.7 + swing;
+        part(
+            out,
+            [
+                fig(hip - 0.24, 0.46),
+                fig(hip + 0.24, 0.46),
+                fig(foot - 0.2, 0.0),
+                fig(foot + 0.2, 0.0),
+            ],
+            trousers,
+            sh(trousers, 0.6),
+            0,
+        );
+    }
+    // Arms behind the torso's edges, swinging against the legs.
+    for (sx, swing) in [(-1.0f32, -stride), (1.0, stride)] {
+        let hand = sx * 1.1 + swing * 0.8;
+        part(
+            out,
+            [
+                fig(sx * 0.95 - 0.2, 0.7),
+                fig(sx * 0.95 + 0.2, 0.7),
+                fig(hand - 0.18, 0.4),
+                fig(hand + 0.18, 0.4),
+            ],
+            sh(tint, 0.8),
+            sh(tint, 0.55),
+            1,
+        );
+        let hc = fig(hand, 0.37);
+        let r = half * 0.2;
+        part(
+            out,
+            [
+                Pt {
+                    x: hc.x - r,
+                    y: hc.y - r,
+                    ..hc
+                },
+                Pt {
+                    x: hc.x + r,
+                    y: hc.y - r,
+                    ..hc
+                },
+                Pt {
+                    x: hc.x - r,
+                    y: hc.y + r,
+                    ..hc
+                },
+                Pt {
+                    x: hc.x + r,
+                    y: hc.y + r,
+                    ..hc
+                },
+            ],
+            skin,
+            skin,
+            1,
+        );
+    }
+    // The tunic, broad at the shoulders and flaring a little at the hem,
+    // and a belt.
+    part(
+        out,
+        [
+            fig(-1.0, 0.74),
+            fig(1.0, 0.74),
+            fig(-0.82, 0.42),
+            fig(0.82, 0.42),
+        ],
+        sh(tint, 1.1),
+        sh(tint, 0.62),
+        2,
+    );
+    part(
+        out,
+        [
+            fig(-0.86, 0.5),
+            fig(0.86, 0.5),
+            fig(-0.84, 0.46),
+            fig(0.84, 0.46),
+        ],
+        [80, 52, 30, 255],
+        [60, 40, 24, 255],
+        3,
+    );
+    // The neck, the head and its cap of hair.
+    part(
+        out,
+        [
+            fig(-0.2, 0.78),
+            fig(0.2, 0.78),
+            fig(-0.24, 0.72),
+            fig(0.24, 0.72),
+        ],
+        sh(skin, 0.8),
+        sh(skin, 0.8),
+        3,
+    );
+    let Some(h) = at_h(0.86) else {
+        return;
+    };
+    let r = half * 0.62;
+    // A disc (or a slice of one, `from..to` radians) on the screen, at the
+    // feet's depth like every other part.
+    let disc_at = |out: &mut Vec<ScreenPrim>,
+                   c: Pt,
+                   r: f32,
+                   k0: [u8; 4],
+                   k1: [u8; 4],
+                   z: u32,
+                   from: f32,
+                   to: f32| {
+        let steps = DISC_SEGMENTS;
+        for i in 0..steps {
+            let a0 = from + (to - from) * i as f32 / steps as f32;
+            let a1 = from + (to - from) * (i + 1) as f32 / steps as f32;
+            let p = |a: f32| Pt {
+                x: c.x + a.cos() * r,
+                y: c.y + a.sin() * r,
+                depth: c.depth,
+            };
+            out.push(tri(
+                c,
+                p(a0),
+                p(a1),
+                [k0, k1, k1],
+                false,
+                base_ot.saturating_sub(z),
+            ));
+        }
+    };
+    let h = Pt {
+        depth: f.depth,
+        ..h
+    };
+    disc_at(
+        out,
+        h,
+        r,
+        skin,
+        sh(skin, 0.82),
+        4,
+        0.0,
+        std::f32::consts::TAU,
+    );
+    // The hair: the upper half of the head, a little wider.
+    let tau = std::f32::consts::TAU;
+    disc_at(
+        out,
+        Pt {
+            y: h.y - r * 0.1,
+            ..h
+        },
+        r * 1.08,
+        sh(hair, 1.2),
+        hair,
+        5,
+        tau * 0.5,
+        tau,
+    );
 }
 
 /// A boost trail: a fading ribbon through the racer's recent positions.
@@ -495,6 +673,12 @@ fn stage_pieces(pr: &Projector<'_>, stage: &StageFrame) -> Vec<ScreenPrim> {
         return podium::podium_pieces(pr, stage, p);
     }
     let mut out = Vec::new();
+    if let Some(c) = &stage.course {
+        course::course_pieces(&mut out, pr, c, stage.cup);
+    }
+    if let Some(t) = &stage.track {
+        track::track_pieces(&mut out, pr, t);
+    }
     for t in &stage.trails {
         trail(&mut out, pr, &t.points);
     }
