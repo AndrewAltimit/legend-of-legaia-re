@@ -226,16 +226,17 @@ inner = 200
 volume = 0.3
 
 # --- The card room's duel table (`modes.toml` `wardens-duel`) ---------------
-# The Warden's Duel is played at a table on the card room's floor: the
-# Warden's second sits across it, two regulars watch from beside it, and
-# the tower's card dealer keeps his counter by the west wall.
+# The Warden's Duel is played at the card table in the middle of the
+# room (`card_table`, put away while the duel lays its own): the Warden's
+# second waits across it, two regulars stand at its west side, and the
+# tower's card dealer keeps his counter by the west wall.
 
 [[npcs]]
 id = "duel_second"
 label = "the Warden's second"
 model = { kind = "npc", scene = "koin1", index = 18 }
-tile = [5, 13]
-facing = 2
+tile = [3, 10]
+facing = 4
 line = "duel_second_hello"
 line_after = "duel_second_after"
 after = { flags = ["tables_beaten"] }
@@ -244,8 +245,8 @@ after = { flags = ["tables_beaten"] }
 id = "duel_regular"
 label = "a card-room regular"
 model = { kind = "npc", scene = "koin1", index = 12 }
-tile = [6, 12]
-facing = 2
+tile = [2, 11]
+facing = 5
 line = "duel_regular_hello"
 line_after = "duel_regular_after"
 after = { flags = ["sovereign_fallen"] }
@@ -254,8 +255,8 @@ after = { flags = ["sovereign_fallen"] }
 id = "duel_watcher"
 label = "a watching gambler"
 model = { kind = "npc", scene = "koin1", index = 14 }
-tile = [6, 14]
-facing = 2
+tile = [2, 13]
+facing = 7
 line = "duel_watcher_hello"
 line_after = "duel_watcher_after"
 after = { flags = ["hollow_heard"] }
@@ -270,31 +271,35 @@ line = "card_room_dealer_hello"
 shop = "tower"
 
 # --- The High Table (`modes.toml` `tower-high-table`) ------------------------
-# Four regulars wait round the High Table in the hall; Old Mott sits at the
-# bar. The table seats them itself, so these tiles are only where they wait
+# Four regulars wait round the High Table in the hall, two along its far
+# side and one at each end, the player's place on the near side left
+# open; Old Mott sits at the bar. The table seats them itself, so these tiles are only where they wait
 # between games.
 
 [[npcs]]
 id = "high_table_odile"
 label = "Odile, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 22 }
-tile = [16, 9]
-facing = 6
+tile = [17, 9]
+facing = 4
 line = "high_table_hello"
 
 [[npcs]]
 id = "high_table_brann"
 label = "Brann, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 19 }
-tile = [20, 9]
-facing = 2
+# His placement's motion stream and its own clip (56) both lay him flat
+# on the floor; 2 is a standing idle on his rig.
+clip = 2
+tile = [19, 9]
+facing = 4
 line = "high_table_hello"
 
 [[npcs]]
 id = "high_table_sefa"
 label = "Sefa, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 4 }
-tile = [16, 11]
+tile = [16, 10]
 facing = 6
 line = "high_table_hello"
 
@@ -302,7 +307,7 @@ line = "high_table_hello"
 id = "high_table_corwin"
 label = "Corwin, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 18 }
-tile = [20, 11]
+tile = [20, 10]
 facing = 2
 line = "high_table_hello"
 
@@ -392,6 +397,9 @@ hangs = true
 id = "high_table"
 mesh = { object = 120 }
 tile = [18, 10]
+# The mesh is built off its origin, its middle 64 units toward -Z (83 at
+# this scale): the offset centres the table on its tile.
+offset = [0, 0, 83]
 scale = 1.3
 solid = true
 
@@ -439,7 +447,17 @@ solid = true
 
 # The card room: the dealer's glass case along the west wall, a bench
 # under the painting on the south wall, a barrel stack and plants in the
-# corners. The middle of the room is the duel table's.
+# corners. The middle of the room is the duel table's: the Rest's long
+# table, turned along the room, at the spot `modes.toml` deals on.
+[[props]]
+id = "card_table"
+mesh = { object = 120 }
+# Turned along the room, the mesh's off-origin middle lands 64 units to
+# -X: on the next tile's centre it stands where the duel deals.
+tile = [4, 12]
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
 [[props]]
 id = "card_case"
 mesh = { object = 144 }
@@ -506,45 +524,45 @@ rotation = [0.0, 90.0, 0.0]
 mesh = { object = 27 }
 tile = [33, 12]
 offset = [-130, 0, -98]
-rotation = [0.0, 90.0, 0.0]
+rotation = [0.0, 180.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
 tile = [33, 12]
 offset = [-130, 0, 62]
-rotation = [0.0, 90.0, 0.0]
+rotation = [0.0, 180.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
 tile = [33, 12]
 offset = [130, 0, -62]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
 tile = [33, 12]
 offset = [130, 0, 98]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
 
 [[props]]
 id = "arcade_n"
 mesh = { object = 78 }
 tile = [35, 8]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
 solid = true
 
 [[props]]
 id = "arcade_mid"
 mesh = { object = 78 }
 tile = [35, 10]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
 solid = true
 
 [[props]]
 id = "arcade_s"
 mesh = { object = 78 }
 tile = [35, 15]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, 0.0, 0.0]
 solid = true
 
 [[decor]]
@@ -588,14 +606,14 @@ offset = [0, 0, -1]
 mesh = { object = 27 }
 tile = [20, 21]
 offset = [-102, 0, -18]
-rotation = [0.0, 90.0, 0.0]
+rotation = [0.0, 170.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 27 }
 tile = [20, 21]
 offset = [102, 0, 18]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, -10.0, 0.0]
 solid = true
 
 [[decor]]
@@ -621,14 +639,14 @@ on = "lounge_table_e"
 mesh = { object = 27 }
 tile = [24, 24]
 offset = [-102, 0, -18]
-rotation = [0.0, 90.0, 0.0]
+rotation = [0.0, 170.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 27 }
 tile = [24, 24]
 offset = [102, 0, 18]
-rotation = [0.0, -90.0, 0.0]
+rotation = [0.0, -10.0, 0.0]
 solid = true
 
 [[decor]]
@@ -646,13 +664,14 @@ offset = [0, 0, -1]
 mesh = { object = 27 }
 tile = [19, 26]
 offset = [-102, 0, -18]
-rotation = [0.0, 90.0, 0.0]
+rotation = [0.0, 170.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 27 }
 tile = [19, 26]
 offset = [18, 0, -102]
+rotation = [0.0, 80.0, 0.0]
 solid = true
 
 [[decor]]

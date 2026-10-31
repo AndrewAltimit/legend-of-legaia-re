@@ -28,7 +28,7 @@ radius = 90
 hide = ["lantern_table"]
 height = 90
 players = [
-  { npc = "lantern_wenna", name = "Wenna", sit = 34 },
+  { npc = "lantern_wenna", name = "Wenna", sit = 34, cheer = 35, slump = 53 },
   { npc = "lantern_harl", name = "Harl" },
   { npc = "lantern_ysel", name = "Ysel" },
 ]
@@ -54,8 +54,10 @@ facing = 6
 # is put away while the duel is played.
 hide = ["duel_table"]
 height = 64
-seat_distance = 150
-opponent = { npc = "duel_brin", name = "Brin", sit = 34 }
+seat_distance = 200
+# Brin reacts in his chair: 35 throws his hands up when he takes the
+# duel, 53 folds his arms when he loses it.
+opponent = { npc = "duel_brin", name = "Brin", sit = 34, cheer = 35, slump = 53 }
 spectators = [{ npc = "duel_onlooker_a" }, { npc = "duel_onlooker_b" }]
 
 [[golf]]
@@ -196,7 +198,7 @@ players = [
   { npc = "high_table_odile", name = "Odile", sit = 31 },
   { npc = "high_table_brann", name = "Brann", sit = 46 },
   { npc = "high_table_sefa", name = "Sefa" },
-  { npc = "high_table_corwin", name = "Corwin" },
+  { npc = "high_table_corwin", name = "Corwin", cheer = 35, slump = 37 },
   { npc = "high_table_mott", name = "Old Mott" },
 ]
 
@@ -218,9 +220,14 @@ spawn = "from_below"
 
 [card_duels.table]
 tile = [3, 12]
-offset = [-96, 0, 64]
+offset = [64, 0, 0]
 facing = 0
-opponent = { npc = "duel_second", name = "The Warden's Second" }
+# The duel lays its own table; the card room's `card_table` that stands
+# there between duels is put away while it is played.
+hide = ["card_table"]
+# The second spreads his arms wide on a win (35) and bows his head over
+# the board on a loss (37).
+opponent = { npc = "duel_second", name = "The Warden's Second", cheer = 35, slump = 37 }
 spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
 
 # Six holes up the tower's side. Each is a real-looking golf hole in
