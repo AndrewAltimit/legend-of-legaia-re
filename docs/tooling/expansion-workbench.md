@@ -155,6 +155,7 @@ validator path, so a check clicks through to the field.
 | `modes.toml` | Races: centre-line points, or a map race (spawn, waypoints over the map's tiles, racers) | Point list / Form |
 | `modes.toml` | Prop hunt blockers (drawn on the pad among the decoys) | Point list |
 | `modes.toml` | Table seats: NPC, name, clips side by side | Form |
+| `modes.toml` | A table's `hide`: the map props it hides while seated | Map of the props round the table, list by distance |
 | `audio.toml` | Tracks, sounds, music picks | Form, playback |
 | `maps/<id>.toml` | Settings, base, arrival cutscenes | Form |
 | `maps/<id>.toml` | Entrances from retail scenes | Form (list) |
@@ -162,6 +163,8 @@ validator path, so a check clicks through to the field.
 | `maps/<id>.toml` | Map `[audio]` | Form (Sound box) |
 | `maps/<id>.toml` | Lighting (mood, lamps), fog regions, particle emitters | Form (lists) |
 | `maps/<id>.toml` | Prop mesh source and light | Form |
+| `maps/<id>.toml` | Resting: a prop's or decoration's `on` and `hangs`, a brush's or run's `hangs` | Form: support list, Pick on the painter, rest on what is under it |
+| `maps/<id>.toml` | `[surround]` and its `backdrop` | Form, texture-cell picker |
 | `maps/<id>.toml` | Terrain: sculpt strokes, resolution and settings | Sculpt tool, form |
 | `maps/<id>.toml` | Terrain materials, cliff, water table, horizon, shape list | JSON |
 | `maps/<id>.toml` | Decorations, scatter brushes (meshes, cluster), edge runs, decals, animated materials (cycle, hsv, tint, scroll), prop animators | Form (lists), tile and rectangle Pick on the painter, texture-cell picker |
@@ -419,6 +422,31 @@ every decoration (green dots) and decal (blue dots) where the map bakes it:
 returns the positions (`decor`), so a brush's coverage shows as it is
 edited. It builds the field image without decorations and with every
 non-base prop mesh as mesh `0` (neither touches the collision grid it reads).
+
+A prop's selection form and each decoration's form have a **Rests on** box
+([Resting placement](../formats/expansion-pack-maps.md#resting-placement)):
+the support picked from the map's props and decorations (one with no id is
+given one, since `on` names an id), **Pick on map** (the next click on the
+canvas names the item standing on that tile), **Rest on what is under it**
+(the surface its footprint is most over: `on` that item with `offset[1]`
+`0`, or for a wall box the lift onto its top), the **Hangs** checkbox, and a
+line saying where its base and top stand and what is under it. A scatter
+brush and an edge run have **Hangs** too, and each brush mesh and run shows
+its resting report under its fields. The figures come from `map_preview`'s
+`rest` and `rest_issues` (`map_rest::rest_report` and `rest_issues` over the
+disc catalog's `mesh_shape`, which measures each scene's geometry pack the
+way the engine does at map load), so they are measured in the worker and the
+boxes refresh when a preview lands. The canvas draws a dashed line from each
+item resting `on` another to its support (red when the id names nothing)
+and a red ring round each item the check reports; the same reports are
+warnings in the Checks list (the validator over the same resolver), and a
+click opens the field.
+
+The **Surround** box turns the map's `[surround]` on and off and edits its
+drop ground, edge faces, depth, reach and shade, then its `backdrop` wall:
+its texture cell, height, distance, shade, fade and the four sides as
+checkboxes, with a warning when the north side, the follow camera's, is
+walled ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#surround)).
 
 The **Terrain** box turns a map's `[terrain]` on and holds its knobs, the
 water level, and the `materials`, `cliff`, `water`, `sky` and `shapes`

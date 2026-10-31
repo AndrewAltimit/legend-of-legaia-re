@@ -23,6 +23,7 @@
 
 import { h, field, grid, freshId, gateBox, listEd } from './expansion-workbench-forms.js';
 import { propMeshEditor, propDetail, renderDetail, entrancesEd } from './expansion-workbench-detail.js';
+import { restBox, refreshRest } from './expansion-workbench-detail-forms.js';
 import { TERRAIN_TOOL, drawTerrain, renderTerrain, sculptDown, sculptUp } from './expansion-workbench-terrain.js';
 import { renderMapAudio } from './expansion-workbench-audio.js';
 import { nudge } from './expansion-workbench-layout.js';
@@ -114,6 +115,76 @@ function objectsAt(map, c, r) {
   (map.spawns || []).forEach((p, i) => { if (p.tile[0] === c && p.tile[1] === r) out.push({ type: 'spawns', i }); });
   for (const t of ['exits', 'triggers', 'encounters']) (map[t] || []).forEach((z, i) => { if (inRect(z.rect)) out.push({ type: t, i }); });
   return out;
+}
+
+/* The prop or decoration standing on tile `(c, r)` (by where its origin
+ * is), as its field path: a prop first, then the decoration nearest the
+ * tile's centre. */
+function itemAt(map, c, r) {
+  const at = (x) => {
+    const o = x.offset || [0, 0, 0];
+    return [x.tile[0] + 0.5 + (o[0] || 0) / 128, x.tile[1] + 0.5 + (o[2] || 0) / 128];
+  };
+  let best = null, bd = Infinity;
+  const look = (list, kind) => (list || []).forEach((x, i) => {
+    if (!x.tile) return;
+    const [x0, z0] = at(x);
+    if (Math.floor(x0) !== c || Math.floor(z0) !== r) return;
+    const d = Math.hypot(x0 - c - 0.5, z0 - r - 0.5) + (kind === 'decor' ? 1 : 0);
+    if (d < bd) { bd = d; best = `${kind}[${i}]`; }
+  });
+  look(map.props, 'props');
+  look(map.decor, 'decor');
+  return best;
+}
+
+/* Resting placement on the canvas: a dashed line from each prop or
+ * decoration resting `on` another to its support (red when the id names
+ * nothing), and a red ring round each item the resting check reports. */
+function drawRest(g, map, cs, pv) {
+  const pos = (x) => {
+    const o = x.offset || [0, 0, 0];
+    return [(x.tile[0] + 0.5 + (o[0] || 0) / 128) * cs, (x.tile[1] + 0.5 + (o[2] || 0) / 128) * cs];
+  };
+  const items = [].concat((map.props || []).map((x, i) => [`props[${i}]`, x]), (map.decor || []).map((x, i) => [`decor[${i}]`, x]));
+  const byId = new Map(items.filter(([, x]) => x.id).map(([, x]) => [x.id, x]));
+  g.lineWidth = 1.5;
+  g.setLineDash([3, 2]);
+  for (const [, x] of items) {
+    if (!x.on || !x.tile) continue;
+    const s = byId.get(x.on);
+    const [ax, ay] = pos(x);
+    g.strokeStyle = s ? '#f0e6a0' : '#e0605a';
+    g.beginPath();
+    g.moveTo(ax, ay);
+    if (s && s.tile) g.lineTo(...pos(s)); else g.lineTo(ax + cs * 0.4, ay - cs * 0.4);
+    g.stroke();
+  }
+  g.setLineDash([]);
+  if (!pv || !pv.rest_issues) return;
+  const at = new Map(items);
+  g.strokeStyle = '#e0605a';
+  g.lineWidth = 2;
+  for (const i of pv.rest_issues) {
+    const x = at.get(i.at);
+    if (!x || !x.tile) continue;
+    const [cx, cy] = pos(x);
+    g.beginPath();
+    g.arc(cx, cy, Math.max(4, cs * 0.45), 0, Math.PI * 2);
+    g.stroke();
+  }
+}
+
+/* The open map's latest map_preview reading of where item `at` rests,
+ * and the resting check's message for `at`. */
+function restOf(at) {
+  const q = V.preview[V.map];
+  return q && !q.error && q.rest ? q.rest.find((x) => x.at === at) || null : null;
+}
+function restIssueOf(at) {
+  const q = V.preview[V.map];
+  const i = q && !q.error && q.rest_issues ? q.rest_issues.find((x) => x.at === at) : null;
+  return i ? i.message : null;
 }
 
 function baseScene(map) {
@@ -307,6 +378,7 @@ function draw(ctx, cv) {
     g.fill();
     g.stroke();
   });
+  drawRest(g, map, cs, good ? pv : null);
   (map.spawns || []).forEach((s, i) => {
     const cx = (s.tile[0] + 0.5) * cs, cy = (s.tile[1] + 0.5) * cs;
     g.fillStyle = i === 0 ? '#3ecf8e' : '#2a9d6f';
@@ -488,6 +560,14 @@ export function renderMaps(ctx, el) {
   mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx); redrawSoon(); } };
   // The side boxes' undo step (the terrain's heightmap import).
   mctx.snapshot = () => { if (ctx.commit) ctx.commit(); };
+  // The rest forms' reads of the latest map_preview (measured in the
+  // worker) and their pick of an item on the canvas.
+  mctx.rest = (at) => restOf(at);
+  mctx.restIssue = (at) => restIssueOf(at);
+  mctx.pickItem = (req) => {
+    V.pick = { prompt: req.prompt, done: ([c, r]) => { const hit = itemAt(map, c, r); if (hit) req.done(hit); else ctx.rerender(); } };
+    ctx.rerender();
+  };
 
   // Settings.
   const settings = h('details', { class: 'xw-box', open: ids.length === 1 && !(map.tiles.rows || []).length ? true : null });
@@ -939,6 +1019,7 @@ function requestPreview(ctx) {
     V.preview[id] = pv;
     if (V.map !== id || !V.redraw) return;
     V.redraw();
+    refreshRest();
     if (first) refreshTierLabels(pv);
   };
   if (ctx.mapPreviewLater) ctx.mapPreviewLater(id, json, answer);
@@ -1360,6 +1441,7 @@ function renderSelection(ctx, mctx, side, map) {
       { k: 'top', t: 'oint', label: 'Standable top', hint: 'world units up; action movement stands on it' },
       { k: 'footprint', t: 'tuple', n: 2, label: 'Top footprint', hint: '[x, z] world units; untouched = the tile' },
     ], p));
+    box.append(restBox(mctx, map, o, p));
     box.append(propDetail(mctx, o, p));
   } else if (sel.type === 'npcs') {
     box.append(grid(mctx, o, [{ k: 'id', label: 'Id', hint: 'the quest talk key' }, { k: 'label', label: 'Label' }, { k: 'tile', t: 'tuple', n: 2, label: 'Tile' },

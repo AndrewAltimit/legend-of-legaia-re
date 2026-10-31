@@ -147,12 +147,18 @@ export function draftDefs(map, pv, built) {
 /* Object-only edits. The pack as JSON with the open map's object poses
  * blanked - each prop's tile, offset and turn, each NPC's tile and facing:
  * two packs that differ only in those give the same text, and the
- * preview moves the drawn objects instead of rebuilding the map. */
+ * preview moves the drawn objects instead of rebuilding the map. A prop
+ * resting `on` another, or one another rests on, keeps its pose: where it
+ * stands sets a height the engine resolves when it builds the map (the
+ * support's top under the item), so moving it rebuilds. */
 export function strippedJson(pack, mapId) {
   const m = pack && pack.maps && pack.maps[mapId];
   if (!m) return JSON.stringify(pack);
   const props = m.props, npcs = m.npcs, spawns = m.spawns, lighting = m.lighting;
-  m.props = (props || []).map((p) => Object.assign({}, p, { tile: null, offset: p.offset ? [0, p.offset[1] || 0, 0] : null, rotation: p.rotation ? [p.rotation[0] || 0, 0, p.rotation[2] || 0] : null }));
+  const rested = new Set();
+  for (const x of (props || []).concat(m.decor || [])) if (x.on) rested.add(x.on);
+  const keeps = (p) => !!p.on || (p.id && rested.has(p.id));
+  m.props = (props || []).map((p) => (keeps(p) ? p : Object.assign({}, p, { tile: null, offset: p.offset ? [0, p.offset[1] || 0, 0] : null, rotation: p.rotation ? [p.rotation[0] || 0, 0, p.rotation[2] || 0] : null })));
   m.npcs = (npcs || []).map((n) => Object.assign({}, n, { tile: null, facing: null }));
   m.spawns = (spawns || []).map((n) => Object.assign({}, n, { tile: null, facing: null }));
   if (lighting && lighting.lamps) m.lighting = Object.assign({}, lighting, { lamps: lighting.lamps.map((l) => Object.assign({}, l, { tile: null, offset: null })) });

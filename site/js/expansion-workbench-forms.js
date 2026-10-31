@@ -1822,6 +1822,7 @@ function tableEd(ctx, box, it, p, map, poker) {
     ]).concat([
       { k: 'draw_table', t: 'dbool', label: 'Draw a table (off when a prop is the table)' },
     ]), tp));
+    tb.append(tableHideEd(ctx, t, tp, map));
     const npcs = npcOpts(map);
     // A seat: who sits there, then its clips side by side (short number
     // boxes in one row, so a seat stays a few lines tall on a phone).
@@ -1883,6 +1884,92 @@ function tableEd(ctx, box, it, p, map, poker) {
     tb.append(sb);
   }
   box.append(tb);
+}
+
+// A table's `hide`: the map's props whose draw goes while the seat is
+// taken (the decor table the built-in one stands in for, its chairs). The
+// props round the table are drawn on a small map, nearest first in a list;
+// a click on either toggles one. A prop needs an id to be named; picking
+// one without gives it one.
+function tableHideEd(ctx, t, tp, map) {
+  const hp = joinPath(tp, 'hide');
+  const box = h('div', { class: 'xw-box', 'data-path': hp });
+  if (!Array.isArray(t.hide)) t.hide = [];
+  const props = (map.props || []).map((x, i) => ({ x, i }));
+  const pos = (x) => {
+    const o = x.offset || [0, 0, 0];
+    return [x.tile[0] + 0.5 + (o[0] || 0) / 128, x.tile[1] + 0.5 + (o[2] || 0) / 128];
+  };
+  const tc = [t.tile[0] + 0.5 + ((t.offset || [0])[0] || 0) / 128, t.tile[1] + 0.5 + ((t.offset || [0, 0, 0])[2] || 0) / 128];
+  const dist = (x) => { const [a, b] = pos(x); return Math.hypot(a - tc[0], b - tc[1]); };
+  const near = props.filter((q) => q.x.tile).sort((a, b) => dist(a.x) - dist(b.x));
+  const hidden = (q) => !!q.x.id && t.hide.includes(q.x.id);
+  const toggle = (q) => {
+    if (!q.x.id) q.x.id = freshId('prop', (map.props || []).map((x) => x.id).filter(Boolean));
+    const k = t.hide.indexOf(q.x.id);
+    if (k >= 0) t.hide.splice(k, 1); else t.hide.push(q.x.id);
+    ctx.changed(true);
+  };
+  box.append(h('div', { class: 'xw-box-head' }, `Hidden while seated (${t.hide.length})`,
+    h('span', { class: 'xw-hint' }, ' props whose draw goes while the game is seated - a decor table the built-in one stands in for, its chairs; their collision stays'),
+    h('span', { class: 'xw-sp' }),
+    h('button', {
+      type: 'button', class: 'wb-mini', title: 'Hide every prop within a tile and a half of the table\'s centre',
+      onclick: () => { for (const q of near) if (dist(q.x) <= 1.5 && !hidden(q)) toggle(q); },
+    }, 'Hide what stands at the table')));
+  // The props within five tiles, drawn round the table: click to toggle.
+  const R = 5, cs = 22;
+  const cv = h('canvas', { class: 'xw-hide-map', width: (2 * R + 1) * cs, height: (2 * R + 1) * cs, 'aria-label': 'Props round the table: click one to hide or show it' });
+  const local = (x) => { const [a, b] = pos(x); return [(a - tc[0] + R + 0.5) * cs, (b - tc[1] + R + 0.5) * cs]; };
+  const inView = near.filter((q) => dist(q.x) <= R + 0.5);
+  const paint = () => {
+    const g = cv.getContext('2d');
+    const css = getComputedStyle(cv);
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.strokeStyle = css.getPropertyValue('--border') || '#888';
+    g.lineWidth = 1;
+    // Tile edges: world tile line `n` sits at `(n - centre + R + 0.5) * cs`.
+    for (let n = Math.floor(tc[0] - R - 1); n <= tc[0] + R + 1; n++) {
+      const o = Math.round((n - tc[0] + R + 0.5) * cs);
+      g.beginPath(); g.moveTo(o + 0.5, 0); g.lineTo(o + 0.5, cv.height); g.stroke();
+    }
+    for (let n = Math.floor(tc[1] - R - 1); n <= tc[1] + R + 1; n++) {
+      const o = Math.round((n - tc[1] + R + 0.5) * cs);
+      g.beginPath(); g.moveTo(0, o + 0.5); g.lineTo(cv.width, o + 0.5); g.stroke();
+    }
+    // The table's felt or board.
+    g.fillStyle = 'rgba(62,207,142,0.35)';
+    g.fillRect((R + 0.5) * cs - cs * 0.8, (R + 0.5) * cs - cs * 0.6, cs * 1.6, cs * 1.2);
+    for (const q of inView) {
+      const [x, y] = local(q.x);
+      g.beginPath();
+      g.arc(x, y, cs * 0.3, 0, Math.PI * 2);
+      g.fillStyle = hidden(q) ? '#e0605a' : '#d9c46a';
+      g.fill();
+      if (hidden(q)) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y + 4); g.moveTo(x + 4, y - 4); g.lineTo(x - 4, y + 4); g.stroke(); }
+    }
+  };
+  cv.addEventListener('click', (ev) => {
+    const r = cv.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) * (cv.width / r.width), my = (ev.clientY - r.top) * (cv.height / r.height);
+    let best = null, bd = cs * 0.6;
+    for (const q of inView) { const [x, y] = local(q.x); const d = Math.hypot(x - mx, y - my); if (d < bd) { bd = d; best = q; } }
+    if (best) toggle(best);
+  });
+  const list = h('div', { class: 'xw-hide-list' });
+  for (const q of near.slice(0, 24)) {
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = hidden(q);
+    cb.addEventListener('change', () => toggle(q));
+    list.append(h('label', { class: 'xw-check xw-field' }, cb, `${q.x.id || `prop ${q.i + 1} (no id yet)`}`, h('span', { class: 'xw-hint' }, ` ${dist(q.x).toFixed(1)} tiles`)));
+  }
+  const gone = t.hide.filter((id) => !props.some((q) => q.x.id === id));
+  box.append(h('div', { class: 'xw-hide' }, cv, list));
+  if (!near.length) box.append(h('p', { class: 'xw-note' }, 'The map has no props to hide.'));
+  if (gone.length) box.append(h('p', { class: 'xw-note is-warn' }, `Not props of the map: ${gone.join(', ')}.`));
+  if (t.hide.length && t.draw_table === false) box.append(h('p', { class: 'xw-note' }, 'The built-in table is off, so a hidden prop leaves the game laid on no table: hide the props that stand in its way, keep the one that is the table.'));
+  requestAnimationFrame(paint);
+  return box;
 }
 
 // A map course's legend characters and the surface each plays as.

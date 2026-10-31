@@ -12,7 +12,7 @@
  * round-trips through the page.
  */
 import { h, grid, listEd, gateBox } from './expansion-workbench-forms.js';
-import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd, tileField } from './expansion-workbench-detail-forms.js';
+import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd, tileField, surroundEd } from './expansion-workbench-detail-forms.js';
 import { helpLink } from './expansion-workbench-help.js';
 
 const MESH_KINDS = [
@@ -130,6 +130,7 @@ export function renderDetail(ctx, mctx, side, map, tools) {
   lightingEd(dctx, box, map);
   fogEd(mctx, box, map);
   emittersEd(mctx, box, map);
+  surroundEd(dctx, box, map);
   if (ctx.assetPaths) {
     const paths = ctx.assetPaths();
     box.append(h('p', { class: 'xw-note' }, paths.length ? `Pack assets: ${paths.join(', ')}` : 'No pack assets yet: import a glTF model on a prop to add one.'));

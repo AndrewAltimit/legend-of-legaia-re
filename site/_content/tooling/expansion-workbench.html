@@ -352,6 +352,12 @@
   /* A texture cell: the picker, the three words, the page's 8 x 8 atlas. */
   .xw-cell select { margin-bottom: 0.25rem; }
   .xw-cell-words .xw-grid { grid-template-columns: repeat(auto-fill, minmax(min(8rem, 100%), 1fr)); }
+  .xw-rest-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.35rem 0.5rem; }
+  .xw-rest-row > .xw-field:first-child { flex: 1 1 12rem; min-width: 0; }
+  .xw-rest-row select { max-width: 100%; }
+  .xw-hide { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-start; }
+  .xw-hide-map { width: min(15rem, 100%); height: auto; aspect-ratio: 1; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-code); cursor: pointer; }
+  .xw-hide-list { flex: 1 1 12rem; min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(11rem, 100%), 1fr)); gap: 0.1rem 0.5rem; max-height: 15rem; overflow: auto; }
   .xw-atlas { display: grid; grid-template-columns: repeat(8, 1.3rem); gap: 2px; margin-top: 0.3rem; }
   .xw-atlas-c { width: 1.3rem; height: 1.3rem; padding: 0; border: 1px solid var(--border); border-radius: 2px; background: var(--bg-code); cursor: pointer; }
   .xw-atlas-c.is-used { background: var(--accent-soft); border-color: var(--accent-line); }
