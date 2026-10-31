@@ -17,6 +17,7 @@ use serde::Serialize;
 use legaia_actor_formats::monster_archive;
 use legaia_engine_scene::npc_catalog::{NpcPick, scene_npc_picks};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_expansion_format::map::PropMesh;
 use legaia_expansion_format::refs::{BGM_COUNT, DiscRef, DiscResolver, PROT_ENTRY_COUNT};
 use legaia_game_tables::item_names::ItemNameTable;
 use legaia_game_tables::spell_names::SpellNameTable;
@@ -117,6 +118,16 @@ pub struct DiscCatalog {
     /// Per scene, read once: its geometry pack's length and the placements
     /// a pack NPC can borrow (`None` for a scene that has none to read).
     scenes: std::cell::RefCell<BTreeMap<String, SceneFacts>>,
+    /// Per scene, read on first use: its geometry pack's meshes as the
+    /// field load registers them (PROT entry, raw TMDs in index order) -
+    /// what the resting check measures (`None` for a scene with none).
+    packs: std::cell::RefCell<BTreeMap<String, Option<std::rc::Rc<GeometryPack>>>>,
+}
+
+/// A scene's geometry pack: the PROT entry holding it and its raw TMDs.
+struct GeometryPack {
+    entry: Option<u32>,
+    meshes: Vec<Vec<u8>>,
 }
 
 /// What the validator and the NPC picker read off one scene.
@@ -230,6 +241,42 @@ impl DiscCatalog {
             index,
             lists,
             scenes: Default::default(),
+            packs: Default::default(),
+        })
+    }
+
+    /// Scene `name`'s geometry pack, read on first use (the engine's own
+    /// read of it, [`legaia_engine_scene::expansion_map::detail::field_resources`]).
+    fn geometry_pack(&self, name: &str) -> Option<std::rc::Rc<GeometryPack>> {
+        if let Some(p) = self.packs.borrow().get(name) {
+            return p.clone();
+        }
+        let pack = Scene::load(&self.index, name).ok().and_then(|scene| {
+            let res =
+                legaia_engine_scene::expansion_map::detail::field_resources(&self.index, &scene)
+                    .ok()?;
+            let meshes: Vec<Vec<u8>> =
+                legaia_engine_scene::field_env::env_pack_tmd_indices(&scene, &res)
+                    .into_iter()
+                    .map(|i| res.tmds[i].raw.clone())
+                    .collect();
+            Some(std::rc::Rc::new(GeometryPack {
+                entry: legaia_engine_scene::scene_resources::field_geometry_pack(&scene)
+                    .map(|(e, _)| e),
+                meshes,
+            }))
+        });
+        self.packs
+            .borrow_mut()
+            .insert(name.to_string(), pack.clone());
+        pack
+    }
+
+    /// The field scene whose CDNAME block holds PROT extraction entry `prot`.
+    fn scene_of_entry(&self, prot: u32) -> Option<String> {
+        self.lists.scenes.iter().find_map(|s| {
+            let (a, b) = self.index.block_range_extraction(&s.name)?;
+            (a..b).contains(&prot).then(|| s.name.clone())
         })
     }
 
@@ -541,6 +588,34 @@ impl DiscResolver for DiscCatalog {
     fn battle_stage_count(&self, scene: &str) -> Option<usize> {
         let row = self.lists.scenes.iter().find(|s| s.name == scene)?;
         Some(row.stages.len())
+    }
+
+    /// Off the scene's geometry pack, as the engine measures it at map load
+    /// ([`legaia_engine_scene::expansion_map::footprint::rest_shape`]). A
+    /// model asset is the pack's, not the disc's: unmeasured.
+    fn mesh_shape(
+        &self,
+        base_scene: &str,
+        mesh: &PropMesh,
+        rotation: [f32; 3],
+        scale: f32,
+    ) -> Option<legaia_expansion_format::map_rest::Shape> {
+        let (pack, object) = match mesh {
+            PropMesh::Object { object } => (self.geometry_pack(base_scene)?, *object),
+            PropMesh::SceneObject { scene, object } => (self.geometry_pack(scene)?, *object),
+            PropMesh::Tmd {
+                tmd: DiscRef::Tmd { prot, index },
+            } => {
+                let pack = self.geometry_pack(&self.scene_of_entry(u32::from(*prot))?)?;
+                if pack.entry != Some(u32::from(*prot)) {
+                    return None;
+                }
+                (pack, *index)
+            }
+            _ => return None,
+        };
+        let raw = pack.meshes.get(usize::from(object))?;
+        legaia_engine_scene::expansion_map::footprint::rest_shape(raw, rotation, scale)
     }
 }
 

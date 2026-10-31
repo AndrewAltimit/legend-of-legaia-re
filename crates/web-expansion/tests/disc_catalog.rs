@@ -91,3 +91,61 @@ fn catalog_and_rebirth_against_the_disc() {
     let p = core.map_preview(&map.to_string());
     assert!(p["error"].is_null(), "{p}");
 }
+
+/// The resting check in the workbench: the catalog measures the meshes off
+/// the disc, so a raised torch is a warning in the Checks list (at its field
+/// path, for click-to-field) and the painter's preview says where each item
+/// stands and what is under it.
+#[test]
+fn the_workbench_measures_where_things_rest() {
+    let Some(image) = disc() else {
+        eprintln!("LEGAIA_DISC_BIN unset; skipping");
+        return;
+    };
+    let mut core = Core::new();
+    core.open_disc(&image).unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    let loaded = core.load_files(read_dir_files(&root).unwrap());
+    let mut pack = loaded["pack"].clone();
+    let rest_warnings = |issues: &[legaia_web_expansion::session::IssueRow]| {
+        issues
+            .iter()
+            .filter(|i| {
+                i.path == "maps/isles_village.toml" && i.message.contains("over the ground")
+            })
+            .map(|i| i.field.clone())
+            .collect::<Vec<_>>()
+    };
+    assert!(rest_warnings(&core.validate(&pack.to_string())).is_empty());
+    // Lift a corner torch of the lantern table off the ground.
+    let props = pack["maps"]["isles_village"]["props"]
+        .as_array_mut()
+        .unwrap();
+    let k = props
+        .iter()
+        .position(|p| p["id"] == "lantern_table_nw")
+        .unwrap();
+    props[k]["offset"] = serde_json::json!([0, 40, 0]);
+    let at = format!("props[{k}]");
+    assert_eq!(
+        rest_warnings(&core.validate(&pack.to_string())),
+        vec![at.clone()]
+    );
+
+    let map = &pack["maps"]["isles_village"];
+    let p = core.map_preview(&map.to_string());
+    assert!(p["error"].is_null(), "{p}");
+    assert!(
+        p["rest_issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["at"] == at)
+    );
+    let rest = p["rest"].as_array().unwrap();
+    let torch = rest.iter().find(|r| r["at"] == at).unwrap();
+    assert!(torch["base"].is_number(), "{torch}");
+    // The table stands on the floor with its top measured.
+    let table = rest.iter().find(|r| r["id"] == "lantern_table").unwrap();
+    assert!(table["top"].as_f64().unwrap() > 40.0, "{table}");
+}

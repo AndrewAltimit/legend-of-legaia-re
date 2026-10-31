@@ -919,6 +919,29 @@ impl Core {
                 corners.push(k.map(|n| ladder[usize::from(n)]));
             }
         }
+        // Where each prop and decoration rests, measured off the disc's
+        // meshes when one is loaded: the painter's `on` links and resting
+        // marks, and the form's "rest on what is under it".
+        let (rest, rest_issues) = {
+            use legaia_expansion_format::map_rest::{rest_issues, rest_report};
+            use legaia_expansion_format::refs::DiscResolver;
+            let base = def.base.scene_name();
+            let shapes = |m: &PropMesh, r: [f32; 3], s: f32| {
+                self.catalog
+                    .as_ref()
+                    .zip(base)
+                    .and_then(|(c, b)| c.mesh_shape(b, m, r, s))
+            };
+            let issues: Vec<Value> = if self.catalog.is_some() {
+                rest_issues(&def, &shapes)
+                    .iter()
+                    .map(|i| json!({ "at": i.at, "message": i.to_string() }))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            (rest_report(&def, &shapes), issues)
+        };
         let off_grid: Vec<Value> = def
             .off_grid_refs(&grid)
             .into_iter()
@@ -941,6 +964,8 @@ impl Core {
             "ladder_from_base": def.floor_heights.is_empty() && base_lut.is_some(),
             "tiers": FLOOR_TIERS,
             "off_grid": off_grid,
+            "rest": rest,
+            "rest_issues": rest_issues,
             // The sculpted floor (`[terrain]`): the heightfield over the
             // map and its skirt, `cols x rows` vertices `res` a tile, and
             // the water level, for the painter's relief shading.
