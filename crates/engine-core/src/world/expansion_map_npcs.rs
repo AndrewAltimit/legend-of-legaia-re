@@ -20,6 +20,14 @@ use legaia_scene_formats::man_section::ActorPlacement;
 
 use super::World;
 
+/// The glide speed a pack NPC's patrol leg walks at: base step 4
+/// (`field_npc_glide_speed(3)`), the pace most of Rim Elm's (`town01`)
+/// wandering townsfolk walk at by their own walk-kernel operands (base
+/// steps 2 and 4 cover most of them). The motion VM's stand-in
+/// `FIELD_NPC_MOTION_SPEED` (8) is a placement with no operand at all, and
+/// read as a patrol pace it hurries a villager along at twice a stroll.
+pub(crate) const PACK_PATROL_SPEED: u16 = 4;
+
 impl World {
     /// Seat a pack map's NPCs: clear the field NPC state the previous scene
     /// left (a pack map runs no MAN, so the scene entry installs none) and
@@ -196,6 +204,12 @@ impl World {
                 }
                 PatrolStep::Wait => {}
                 PatrolStep::SetOut((x, z)) => {
+                    // A pack map runs no MAN, so the leg has no walk-kernel
+                    // operand to pace it; it strolls at the townsfolk pace.
+                    self.npcs
+                        .glide_speeds
+                        .entry(slot)
+                        .or_insert(PACK_PATROL_SPEED);
                     if self.start_field_npc_motion(slot, x, z) {
                         if let Some(m) = self.expansion.map.as_mut() {
                             m.patrol_set_out(n);

@@ -185,12 +185,13 @@ line = "isles_villager_b"
 id = "isles_child"
 label = "Child"
 model = { kind = "npc", scene = "town01", index = 15 }
+# He stands by the well watching the water, in 18, the placement's own
+# idle. Walked on a patrol his rig's walk cycles pitch him flat on the
+# ground every few steps, so he keeps still.
 tile = [26, 24]
+facing = 7
+clip = 18
 line = "isles_child"
-patrol = [[30, 24], [30, 20], [26, 20]]
-# The placement installs no walk, so name the model's run of steps.
-walk_clip = 19
-pause = 45
 
 # The Village Duel's table under the great tree (`modes.toml`
 # `rim-elm-duel`): Brin across the board, two islanders looking on.
