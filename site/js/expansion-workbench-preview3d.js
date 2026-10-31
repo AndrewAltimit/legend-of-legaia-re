@@ -883,6 +883,8 @@ export function createPreview3d(env) {
       editSlot.hidden = !bar || !P.open || !!P.editOff;
     },
     isOpen: () => P.open,
+    /* The camera, `orbit` or `player` (the shell's Test-play mode). */
+    setCamera: (mode) => { if (mode === 'player' && !P.open) setOpen(true); if (mode === 'orbit' || mode === 'player') setMode(mode); },
     open: () => { if (!P.open) setOpen(true); },
     playHere,
     setLive(on) { P.live = !!on; pushLive(); },

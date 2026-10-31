@@ -501,3 +501,13 @@ export function setEditor(o) {
 
 // Headless-verification hook.
 if (typeof window !== 'undefined') window.__xwEdit = { state: editorState, set: setEditor, select, layout: (fn) => runLayout(G.api, G.sel, fn) };
+
+/** The shell's mode toolbar (expansion-workbench-shell.js): the 3D edit
+ * mode, `view`, `select`, `sculpt` or `paint` (the last two on a terrain map). */
+export function setEditMode(mode) {
+  if (!['view', 'select', 'sculpt', 'paint'].includes(mode) || G.mode === mode) return;
+  G.mode = mode;
+  G.picked = true;
+  renderBar();
+  sync();
+}

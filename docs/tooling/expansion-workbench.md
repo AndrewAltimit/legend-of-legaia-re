@@ -10,6 +10,7 @@ tab, and nothing is uploaded.
 |---|---|
 | Page | `site/_content/tooling/expansion-workbench.html` |
 | App, state, history, persistence, shortcuts, templates, export | `site/js/expansion-workbench-app.js` |
+| The frame: area and page navigation, breadcrumb, map picker, mode toolbar, catalog strip | `site/js/expansion-workbench-shell.js` |
 | Validation and bundle worker | `site/js/expansion-workbench-validate-worker.js` |
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
 | Rename with references | `site/js/expansion-workbench-rename.js` |
@@ -96,15 +97,15 @@ one. Every export also runs the validator's
 
 ## Editors
 
-One tab per file, plus a Files tab. Every field carries `data-path`, its dotted
+One page per file, grouped into areas (below), plus a Pack files page. Every field carries `data-path`, its dotted
 path in the validator's spelling (`monsters.ogre.hp`,
 `quests[2].objectives[0]`), so clicking an issue opens its tab, selects the item
 it is in and focuses the field with the longest matching path. Pickers for pack
 content offer only ids the pack defines.
 
-| Tab | Edits |
+| Page | Edits |
 |---|---|
-| Manifest | `pack.toml`. |
+| Pack details | `pack.toml`. |
 | Battle | Derived monsters (base picker, each stat unset / set / scaled with the retail value beside it, drop, steal, element, spells, the boss-script phase editor with the base's swings and the disc's spells in its move pickers and each phase's screen flash and tint), formations as four seats of pack or retail monsters and their later waves, encounter overrides per scene, bosses (music, intro and outro cutscenes, rewards), and a formation's or a boss's battle stage. |
 | Progression | Multipliers, the curve (retail, scaled, banded, explicit) with a live chart against retail, enemy scaling, level-up rewards. |
 | Quests | Quests (prerequisites, objectives by kind, rewards, repeat, dialogue and battle hooks) and challenges. |
@@ -119,6 +120,62 @@ content offer only ids the pack defines.
 | Maps | The tile painter; map settings with arrival cutscenes and the entrances from retail scenes; the detail layer; a Sound box for the map's `[audio]`: map music, the zone fade, music zones and ambient sources. |
 | Flow | No file: the progression graph over the whole pack, with the flow lints on it (below). |
 | Files | Each exported file, to copy or download on its own. |
+
+## Layout
+
+The page is a map builder first. A pack opens on the **Build** area with its
+first map in the 3D view (`setView('3d')` on the preview); a resumed pack
+returns to the page it was saved on. Every other editor sits one level down,
+so the top row stays short.
+
+| Area | Pages (the editor tab each is) |
+|---|---|
+| Build | Maps |
+| Story | Quests, Dialogue, Cutscenes, Story map (the Flow graph) |
+| Battle | Monsters & fights (`battle.toml`), Level curve (`progression.toml`), Arts, Seru spells |
+| Items & cards | Items & shops, Trading cards |
+| Modes & music | Game modes, Music & sound |
+| Pack settings | Pack details (`pack.toml`), Pack files |
+
+The area row carries each area's error count, the page row each page's,
+and a line under the page row says what the page is for. The pack bar holds
+the pack's name, a breadcrumb (area, page, the open map), Undo and Redo, the
+**checks button** (the validator's count; a click shows or hides the Find and
+problems column, which the Build area hides by default so the 3D view takes
+the width), **Save .lxpack** and **Play pack**; Play this map, Live, Files, Share
+and Keys follow, folded under **More** at phone width.
+
+**The Build area.** Over the 3D view sit a strip of the pack's maps (name,
+size, base scene, how many people, objects and exits, an error badge) with
+**+ New map** (a walled 11 x 7 room over the disc's first scene), and the mode
+toolbar; under the view a catalog strip; the painter and the map's forms
+follow as before.
+
+| Mode | Fallback tools | Catalog |
+|---|---|---|
+| Build | painter Select, 3D Select | how to pick up, move, turn and scale |
+| Paint terrain | painter Paint, 3D Sculpt on a terrain map | Paint tiles, Fill a rectangle, Pick a ground type, Sculpt |
+| Place objects | painter Prop, 3D Select | the map's props, each a jump to its form |
+| NPCs | painter NPC, 3D Select | the map's people |
+| Zones & exits | painter Trigger, 3D Select | add an exit, start point, step-on event or monster zone; the map's own |
+| Test-play | the preview's player camera | walk in 3D, play the map in a tab, play the pack |
+
+**The build tools seam.** The toolbar never reaches into the painter or the
+3D editor. A click calls the registered tools' `setMode(mode, env)` and then
+their `catalog(mode, el, env)` (true when it filled the strip; otherwise the
+fallback catalog draws). `env` is `{ map, preview, pack, rerender, jump,
+playHere, playPack }`. `registerBuildTools(impl)` in the shell replaces the
+fallback set, which is built on three one-function hooks: `setPainterTool`
+(map.js), `setEditMode` (gizmos.js) and the preview's `setCamera('orbit' |
+'player')`. Tools that change the mode themselves (a key) call
+`syncBuildMode(mode)` so the toolbar follows.
+
+**Starting.** With no pack open the page offers three one-click starts, each
+landing on the Build area: **Open the Rebirth example**, **Start a new pack**
+(the minimal template under id `my_pack`, renamed later under Pack
+settings) and **Import a .lxpack**. A line under them opens the new-pack
+form (empty, minimal or a clone of Rebirth under an id of the modder's own)
+or a pack folder.
 
 ## Coverage
 
@@ -178,9 +235,7 @@ terrain's tables stay JSON while the terrain editor's own tools are built.
 
 ## The page
 
-**Starting.** Before a pack is open the page offers three starting points:
-*Rebirth example*, *New pack ...* (the id, name and template form) and *Open your pack*
-(an `.lxpack` or a folder). A choice made before the disc is read waits for
+**Before the disc.** A start chosen before the disc is read waits for
 it and runs once the disc is in, instead of being refused; step 1 of the
 panel says whether the disc is read. Once a pack is open, the disc picker and
 the pack buttons fold to one summary line ("Disc and pack", the disc's file
@@ -195,8 +250,8 @@ checks are marked (the other maps' stay in the Checks list). A fold built
 late (below) takes its marks as it opens. A value the format's types refuse, such as
 `999` in a `u8` field, fails the whole pack's parse in the session; the page
 maps the column serde reports back to the JSON path it wrote and lists it as
-an ordinary check on that field, with the field's range. **Download**,
-**Play in browser** and **Play here** refuse while the pack has an error and
+an ordinary check on that field, with the field's range. **Save .lxpack**,
+**Play pack** and **Play this map** refuse while the pack has an error and
 open the first one, with `F8` to step through the rest.
 
 **Hints.** Above the checks, a **Hints** fold lists advice that is not a
@@ -260,14 +315,15 @@ checks and bundles waiting, but never ahead of the `init`, `disc` and
 `files` messages before it. With the worker up, a tree opened as a folder or
 the example loads without its checks (`finish_files_unchecked`: the issues
 come back only for a tree that does not load) and the worker's first answer
-fills the Checks list. **Download** builds its `.lxpack` there as well; the
+fills the Checks list. **Save .lxpack** builds its `.lxpack` there as well; the
 page validates only when the export refuses or no check has answered the
 pack as it stands, to open the first error. The Find box refreshes a moment
 after an edit's re-render, from the worker's sites.
 
-**Phone width.** Below 44rem the pack bar keeps Undo, Redo, Download and
-Play in browser and folds Keys, TOML files, Share, Play here and Live under
-**More**.
+**Phone width.** Below 44rem the pack bar keeps Undo, Redo, the checks
+button, Save .lxpack and Play pack and folds Play this map, Live,
+Files, Share and Keys under **More**; the area row wraps, and the
+map strip and the mode toolbar scroll sideways.
 
 **Undo and redo** cover the whole pack: every edit, a painter stroke as one
 step, a burst of typing as one step (`Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z`;
@@ -320,8 +376,9 @@ sections). The links open the site's format pages in a new tab.
 The pack bar shows **unsaved changes** while the pack differs from what was
 loaded or last downloaded, and the autosave's state (saved at a time, or
 unavailable without browser storage). `Ctrl+S` downloads the `.lxpack`, `F8`
-steps through the checks, `Alt+1` .. `Alt+0` and `Alt+[` / `Alt+]` switch
-tabs, `?` lists the keys.
+steps through the checks, `Alt+1` .. `Alt+6` switch areas, `Alt+[` /
+`Alt+]` step through the pages, `1` .. `6` pick a build mode on the Build
+area, and `?` opens the key list over the page.
 
 **New pack** starts empty (the manifest), from the **minimal template** (a
 derived monster in a formation, a dialogue line, a quest to win the fight
@@ -822,11 +879,11 @@ the disc picker.
 - **Download sources (.zip)**: the editable tree under one `<id>/` folder,
   deterministic; unzipped, **Open folder** reads it back.
 - **Add to play library** stores the bundle as an installed pack and makes it
-  active; **Play** is Play in browser.
+  active; **Play** is Play pack.
 
 ## Play here
 
-**Play here** plays the map the Maps tab is on in a play tab, for an
+**Play this map** plays the map the Maps tab is on in a play tab, for an
 edit-and-look loop with the game's own controls (the native window's twin is
 `--expansion-watch`, [below](#native-hot-reload)). It posts the bundle on
 BroadcastChannel `legaia-expansion-live` as `{ type: "reload", nonce, id,
@@ -868,7 +925,7 @@ resume reopens the tab it was on and keeps the **unsaved changes** mark. A
 record without `edited` counts as edited. Every access is wrapped; without
 storage the page still works.
 
-**Play in browser** (and Play here with no play tab open) exports the bundle
+**Play pack** (and Play here with no play tab open) exports the bundle
 and installs it in the play page's pack library below - an older version
 under the same id replaced, the pack made active - then opens
 `play.html?expansion=1&lib=<id>`, which plays the library's copy once its

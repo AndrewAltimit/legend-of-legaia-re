@@ -42,6 +42,9 @@ import { renderFlow } from './expansion-workbench-graph.js';
 import { attachShare } from './expansion-workbench-share.js';
 import { addSectionHelp } from './expansion-workbench-help.js';
 import { authoringHints, hintScenes } from './expansion-workbench-hints.js';
+import {
+  AREAS, BUILD_MODES, renderNav, renderBuildHead, crumbs, setBuildMode, blankMap, areaOf,
+} from './expansion-workbench-shell.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -91,7 +94,7 @@ const S = {
   issues: [],
   hints: [],         // authoring hints (expansion-workbench-hints.js), not checks
   sceneObj: {},      // scene_objects per scene, shared by the painter and the hints
-  tab: 'manifest',
+  tab: 'maps',
   sel: {},           // split-editor selections, by file:path
   jump: null,        // { file, field } while jumping to an issue
   chart: null,
@@ -272,18 +275,94 @@ function setStatus(msg, kind, id) {
 const errText = (e) => (e && e.message ? e.message : String(e));
 
 // --- Rendering ----------------------------------------------------------------------
+// Per page: its checks' error and warning counts (a check on no page's file
+// counts on the Pack files page).
+function tabCounts(tab) {
+  const t = TABS.find((x) => x[0] === tab);
+  const file = t && t[2];
+  const mine = S.issues.filter((i) => (file === 'maps/' ? i.path.startsWith('maps/') : file ? i.path === file : !TABS.some((x) => x[2] && (x[2] === i.path || (x[2] === 'maps/' && i.path.startsWith('maps/'))))));
+  const errs = mine.filter((i) => i.severity === 'error').length;
+  return [errs, mine.length - errs];
+}
+
+function goTab(tab) {
+  if (!TABS.some((t) => t[0] === tab)) return;
+  S.tab = tab;
+  rerender();
+}
+
 function renderTabs() {
-  const nav = $('xw-tabs');
-  nav.innerHTML = '';
-  for (const [id, label, file] of TABS) {
-    const mine = S.issues.filter((i) => (file === 'maps/' ? i.path.startsWith('maps/') : file ? i.path === file : !TABS.some((t) => t[2] && (t[2] === i.path || (t[2] === 'maps/' && i.path.startsWith('maps/'))))));
-    const errs = mine.filter((i) => i.severity === 'error').length;
-    const warns = mine.length - errs;
-    nav.append(h('button', {
-      type: 'button', role: 'tab', class: 'xw-tab' + (S.tab === id ? ' is-active' : ''), 'aria-selected': String(S.tab === id),
-      onclick: () => { S.tab = id; rerender(); },
-    }, label, errs ? h('span', { class: 'xw-badge' }, errs) : warns ? h('span', { class: 'xw-badge is-warn' }, warns) : null));
-  }
+  renderNav($('xw-tabs'), { tab: S.tab, counts: tabCounts, go: goTab });
+  const map = S.tab === 'maps' ? openMapId() : null;
+  const m = map && S.pack && S.pack.maps ? S.pack.maps[map] : null;
+  crumbs($('xw-crumbs'), { tab: S.tab, map, mapName: m && m.name });
+  renderCheckChip();
+}
+
+// The pack bar's checks chip: the validator's answer at a glance; a click
+// shows or hides the Find and checks column.
+function renderCheckChip() {
+  const el = $('xw-checks-btn');
+  if (!el) return;
+  const errs = S.issues.filter((i) => i.severity === 'error').length;
+  const warns = S.issues.length - errs;
+  el.textContent = S.checking && !S.issues.length ? 'Checking ...' : errs ? `${errs} problem${errs === 1 ? '' : 's'}` : warns ? `${warns} warning${warns === 1 ? '' : 's'}` : 'Pack checks out';
+  el.className = 'wb-mini xw-checks-btn' + (errs ? ' is-err' : warns ? ' is-warn' : ' is-ok');
+  el.setAttribute('aria-expanded', String(asideOpen()));
+}
+
+// The Find and checks column: hidden on the Build area by default (the 3D
+// view takes the width), shown elsewhere; the chip overrides it per area.
+function asideOpen() {
+  const a = areaOf(S.tab).id;
+  return S.aside && a in S.aside ? S.aside[a] : a !== 'build';
+}
+
+function applyAside() {
+  const open = asideOpen();
+  const work = document.querySelector('.xw-work');
+  if (work) work.classList.toggle('is-wide', !open);
+  const aside = document.querySelector('.xw-issues');
+  if (aside) aside.hidden = !open;
+}
+
+// The Build area's head: the map picker and the mode toolbar.
+function renderBuild() {
+  const head = $('xw-build');
+  const cat = $('xw-catalog');
+  const on = S.tab === 'maps';
+  head.hidden = !on;
+  cat.hidden = !on;
+  if (!on) return;
+  const maps = S.pack.maps || (S.pack.maps = {});
+  const ids = Object.keys(maps);
+  renderBuildHead(head, {
+    pack: S.pack,
+    cat: S.cat,
+    open: openMapId() && ids.includes(openMapId()) ? openMapId() : ids[0] || null,
+    choose: (id) => openMap(id),
+    add: () => {
+      let n = ids.length + 1;
+      while (maps[`map_${n}`]) n++;
+      const id = `map_${n}`;
+      maps[id] = blankMap(S.cat);
+      maps[id].name = `Map ${n}`;
+      S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
+      ctx.changed(true);
+    },
+    errorsOf: (id) => S.issues.filter((i) => i.severity === 'error' && i.path === `maps/${id}.toml`).length,
+    catalog: cat,
+    env: () => ({
+      map: openMapId(), preview: S.preview, pack: S.pack, rerender, jump: jumpTo, playHere, playPack: playInBrowser,
+    }),
+  });
+}
+
+// Open map `id` on the Build area, without a jump's scroll and flash.
+function openMap(id) {
+  S.tab = 'maps';
+  S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
+  rerender();
 }
 
 function rerender() {
@@ -294,7 +373,8 @@ function rerender() {
   $('xw-pack-title').textContent = m.name || '(unnamed pack)';
   $('xw-pack-id').textContent = m.id || '';
   $('xw-pack-ver').textContent = `${m.version || ''}${S.label ? ' - ' + S.label : ''}`;
-  renderTabs();
+  document.body.classList.toggle('xw-on-build', S.tab === 'maps');
+  applyAside();
   if (S.preview) {
     S.preview.show(['maps', 'cutscenes', 'battle', 'cards', 'modes'].includes(S.tab));
     // The 3D editor belongs to the Maps tab.
@@ -313,7 +393,11 @@ function rerender() {
     console.error(e);
   }
   if (S.tab === 'progression') updateChart();
+  // After the panel: the map picker and the breadcrumb name the map it opened.
+  renderTabs();
+  renderBuild();
   markFieldIssues();
+  if (S.jump && S.jump.quiet) S.jump = null;
   if (S.jump) finishJump(panel);
   else window.scrollTo(0, y);
   // An editor may fill in a default as it draws (an empty gate box): that is
@@ -824,6 +908,7 @@ function applyIssues(raw) {
   computeHints();
   renderIssues();
   renderTabs();
+  if (S.tab === 'maps') renderBuild();
   markFieldIssues();
   if (S.tab === 'progression') updateChart();
   if (S.share) S.share.refresh();
@@ -1024,7 +1109,11 @@ function showPack(pack, label, msg, opts) {
   S.label = label;
   S.sel = {};
   ctx.sel = S.sel;
-  if (o.tab && TABS.some((t) => t[0] === o.tab)) S.tab = o.tab;
+  // A pack opens on the Build area, its first map in the 3D view (a resume
+  // returns to the page it was saved on).
+  S.tab = o.tab && TABS.some((t) => t[0] === o.tab) ? o.tab : 'maps';
+  for (const a of AREAS) a.last = null;
+  document.body.classList.add('xw-has-pack');
   $('xw-main').hidden = false;
   $('xw-empty').hidden = true;
   $('xw-new').hidden = true;
@@ -1041,6 +1130,7 @@ function showPack(pack, label, msg, opts) {
     runValidate();
   }
   rerender();
+  if (S.tab === 'maps' && Object.keys(S.pack.maps || {}).length && S.preview && S.preview.setView) S.preview.setView('3d');
   resetHistory();
   // A resumed pack keeps its unsaved state: `clean` is what it was opened as.
   if (o.clean != null) { S.clean = o.clean; updateDirty(); }
@@ -1050,9 +1140,22 @@ function showPack(pack, label, msg, opts) {
   const setup = $('xw-setup');
   if (setup) setup.open = false;
   // The editor, not the page's header, fills the screen.
-  const work = $('xw-main');
-  const top = work.getBoundingClientRect().top + window.scrollY - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 56) - 8;
-  window.scrollTo({ top: Math.max(0, top) });
+  // Again once the 3D view has opened and laid itself out.
+  const toWork = () => {
+    const work = $('xw-main');
+    const top = work.getBoundingClientRect().top + window.scrollY - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 56) - 8;
+    window.scrollTo({ top: Math.max(0, top) });
+  };
+  toWork();
+  requestAnimationFrame(toWork);
+  // The 3D view opening and the play page in its frame starting both
+  // scroll this page toward the frame: keep the work in view for the first
+  // seconds, until the reader scrolls, types or clicks themselves.
+  let held = true;
+  const release = () => { held = false; for (const t of ['wheel', 'keydown', 'pointerdown', 'touchstart']) window.removeEventListener(t, release, true); };
+  for (const t of ['wheel', 'keydown', 'pointerdown', 'touchstart']) window.addEventListener(t, release, true);
+  for (const ms of [500, 2000, 5000, 10000, 20000]) setTimeout(() => { if (held) toWork(); }, ms);
+  setTimeout(release, 20500);
 }
 
 async function loadResult(res, label, tree) {
@@ -1240,6 +1343,7 @@ function init() {
     if (!b) return;
     const what = b.dataset.start;
     if (what === 'rebirth') whenDisc('the Rebirth example opens', () => loadRebirth(), 'rebirth');
+    else if (what === 'quick') whenDisc('your pack is created', quickPack, 'quick');
     else if (what === 'new') openNewForm();
     else if (what === 'bundle') { if (!needDisc()) $('xw-bundle-file').click(); }
     else if (what === 'folder') { if (!needDisc()) $('xw-dir-file').click(); }
@@ -1279,7 +1383,14 @@ function init() {
   $('xw-dl').addEventListener('click', downloadBundle);
   $('xw-undo').addEventListener('click', () => stepHistory(-1));
   $('xw-redo').addEventListener('click', () => stepHistory(1));
-  $('xw-keys').addEventListener('click', () => { $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; });
+  $('xw-keys').addEventListener('click', () => toggleKeys());
+  $('xw-keyhelp-close').addEventListener('click', () => toggleKeys(false));
+  $('xw-checks-btn').addEventListener('click', () => {
+    const a = areaOf(S.tab).id;
+    S.aside = Object.assign(S.aside || {}, { [a]: !asideOpen() });
+    applyAside();
+    renderCheckChip();
+  });
   S.find = createFind($('xw-findbox'), {
     pack: () => S.pack,
     sites: () => xrefSites(),
@@ -1355,6 +1466,15 @@ function minimalPack(pack) {
   return pack;
 }
 
+// One click: a pack from the minimal template under a default id, open on
+// its map. Pack settings renames it.
+function quickPack() {
+  let pack = JSON.parse(S.wb.start_fresh('my_pack', 'My expansion'));
+  pack = minimalPack(pack);
+  saveDel('source');
+  showPack(pack, 'new pack', 'Started a new pack with one small map to build on, a monster, a fight, a line and a quest. Name it under Pack settings.', { tab: 'maps' });
+}
+
 function openNewForm() {
   const box = $('xw-new');
   box.hidden = false;
@@ -1395,6 +1515,14 @@ function jumpIssue(dir) {
   jumpTo(list[S.issueAt]);
 }
 
+// The keyboard list, a panel over the page (`?`, the pack bar's Keys).
+function toggleKeys(on) {
+  const box = $('xw-keyhelp');
+  const show = on == null ? box.hidden : on;
+  box.hidden = !show;
+  if (show) box.focus({ preventScroll: true });
+}
+
 function onShortcut(ev) {
   if (!S.pack || $('xw-main').hidden) return;
   const k = ev.key.toLowerCase();
@@ -1408,25 +1536,30 @@ function onShortcut(ev) {
   if (mod && k === 's') { ev.preventDefault(); downloadBundle(); return; }
   if ((mod && k === 'k') || (k === '/' && !TEXT_INPUT(ev.target))) {
     ev.preventDefault();
+    if (!asideOpen()) { S.aside = Object.assign(S.aside || {}, { [areaOf(S.tab).id]: true }); applyAside(); renderCheckChip(); }
     S.find.input.focus();
     S.find.input.select();
     return;
   }
   if (k === 'f8') { ev.preventDefault(); jumpIssue(ev.shiftKey ? -1 : 1); return; }
-  if (ev.altKey && !mod && /^[0-9]$/.test(ev.key)) {
-    const i = ev.key === '0' ? 9 : parseInt(ev.key, 10) - 1;
-    if (TABS[i]) { ev.preventDefault(); S.tab = TABS[i][0]; rerender(); }
+  if (ev.altKey && !mod && /^[1-9]$/.test(ev.key)) {
+    const a = AREAS[parseInt(ev.key, 10) - 1];
+    if (a) { ev.preventDefault(); goTab(a.last || a.tabs[0]); }
     return;
+  }
+  // 1 .. 6 pick a build mode on the Build area.
+  if (!ev.altKey && !mod && !ev.shiftKey && S.tab === 'maps' && !TEXT_INPUT(ev.target) && ev.target.tagName !== 'SELECT') {
+    const m = BUILD_MODES.find((x) => x.key === ev.key);
+    if (m) { ev.preventDefault(); setBuildMode(m.id); return; }
   }
   if (ev.altKey && !mod && (ev.key === '[' || ev.key === ']')) {
     ev.preventDefault();
     const i = TABS.findIndex((t) => t[0] === S.tab);
-    S.tab = TABS[(i + (ev.key === ']' ? 1 : -1) + TABS.length) % TABS.length][0];
-    rerender();
+    goTab(TABS[(i + (ev.key === ']' ? 1 : -1) + TABS.length) % TABS.length][0]);
     return;
   }
-  if (k === '?' && !TEXT_INPUT(ev.target)) { ev.preventDefault(); $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; return; }
-  if (k === 'escape') { $('xw-keyhelp').hidden = true; }
+  if (k === '?' && !TEXT_INPUT(ev.target)) { ev.preventDefault(); toggleKeys(); return; }
+  if (k === 'escape') toggleKeys(false);
 }
 
 // The pack bar's More menu (a phone folds the secondary buttons into it):
@@ -1456,7 +1589,8 @@ function initRest() {
     storePlay,
     playUrl: playLibUrl,
   });
-  $('xw-panel').before(S.preview.el);
+  // The 3D view sits between the Build head and its catalog strip.
+  $('xw-catalog').before(S.preview.el);
   S.share = attachShare({
     S,
     changed: (structural) => ctx.changed(structural),

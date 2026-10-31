@@ -1474,3 +1474,9 @@ function renderSelection(ctx, mctx, side, map) {
   }
   side.append(box);
 }
+
+/** The shell's mode toolbar (expansion-workbench-shell.js): the painter's
+ * tool, by its id in TOOLS. The caller re-renders. */
+export function setPainterTool(id) {
+  if (TOOLS.some((t) => t[0] === id)) V.tool = id;
+}
