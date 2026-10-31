@@ -1,4 +1,4 @@
-//! Disc-gated: every solid thing on every Rebirth tower floor stops the
+//! Disc-gated: every solid thing on every Genesis Tower floor stops the
 //! party.
 //!
 //! A pack prop carries no collision box of its own (`solid` closes its

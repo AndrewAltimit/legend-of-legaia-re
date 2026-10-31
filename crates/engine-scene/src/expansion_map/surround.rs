@@ -411,7 +411,7 @@ reach = 3
     /// The floor sorts by its own depth, so the drop below it cannot paint
     /// over it: a far-bucket ground cell draws under every primitive, and
     /// the follow camera sees the drop past the map's far edge projected onto
-    /// the floor rows before that edge (Rebirth tower 1F's rows 9..=11 went
+    /// the floor rows before that edge (Genesis Tower 1F's rows 9..=11 went
     /// to the drop's faces that way).
     #[test]
     fn the_floor_is_depth_sorted_over_the_drop() {
