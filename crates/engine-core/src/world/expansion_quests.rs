@@ -315,9 +315,10 @@ impl World {
         if !self.expansion.is_active() {
             return;
         }
-        // A table in the world holds its card toasts (a lent starter, a
-        // stake) until the game is over: they would lie over its HUD.
-        if !self.table_stage_up() {
+        // A game in play - at a table, on a course, on its board - holds
+        // its card toasts (a lent starter, a stake) until it is over: they
+        // would lie over its HUD.
+        if !self.pack_mode_holds_toasts() {
             self.expansion.cards.tick_toasts();
         }
         self.tick_expansion_audio();

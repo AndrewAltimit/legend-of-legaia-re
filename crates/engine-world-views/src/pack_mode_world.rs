@@ -712,6 +712,20 @@ fn stage_pieces(pr: &Projector<'_>, stage: &StageFrame) -> Vec<ScreenPrim> {
     for t in &stage.trails {
         trail(&mut out, pr, &t.points);
     }
+    // A hopping leader's shadow stays on the ground under it (its field
+    // drop shadow rides up with it).
+    if let Some(l) = stage.leader.filter(|l| l.lift > 0.0) {
+        let k = (1.0 - l.lift / 200.0).clamp(0.4, 1.0);
+        ground_disc(
+            &mut out,
+            pr,
+            l.pos,
+            BODY_HALF_WIDTH * 1.6 * k,
+            [0, 0, 0, (170.0 * k) as u8],
+            true,
+            3,
+        );
+    }
     if let Some(c) = stage.cup {
         cup(&mut out, pr, c);
     }

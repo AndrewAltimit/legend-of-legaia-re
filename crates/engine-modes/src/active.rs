@@ -224,6 +224,9 @@ pub struct ActiveMode {
     duel_table: Option<DuelTableFrame>,
     /// A poker table on its pack map.
     poker_table: Option<PokerTableFrame>,
+    /// The names the instance gives its AI seats (a race's rivals), by
+    /// seat; read under [`Self::seat_names`].
+    rival_names: Vec<String>,
 }
 
 /// A view of whichever session is running. A per-frame snapshot, built
@@ -273,6 +276,7 @@ impl ActiveMode {
     ) -> Result<Self, BuildError> {
         let book = CardBook::new(cards.clone());
         let mut race_frame = None;
+        let mut rival_names = Vec::new();
         let mut duel_table = None;
         let mut poker_table = None;
         let invalid = |e: &dyn std::fmt::Debug| BuildError::Invalid(format!("{id}: {e:?}"));
@@ -320,6 +324,15 @@ impl ActiveMode {
                 }
                 (None, None) => RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?,
             };
+            rival_names = (0..cfg.seats.len())
+                .map(|s| {
+                    if s == 0 {
+                        String::new()
+                    } else {
+                        crate::racing::rival_name(r, s)
+                    }
+                })
+                .collect();
             (&r.name, ModeRunner::Race(Box::new(RaceSession::new(cfg))))
         } else if let Some(a) = modes.prop_hunt.iter().find(|a| a.id == id) {
             let cfg = PropHuntConfig::from_arena(a, seed).map_err(|e| invalid(&e))?;
@@ -349,6 +362,7 @@ impl ActiveMode {
             race_frame,
             duel_table,
             poker_table,
+            rival_names,
         })
     }
 
@@ -520,7 +534,8 @@ impl ActiveMode {
 
     /// Seat `seat` as this machine's player reads it: "You" for
     /// [`Self::local_seat`] (unless [`Self::watching`]), else the name a
-    /// table gives its NPC, else the seat's player name, else "Seat N".
+    /// table gives its NPC, else the seat's player name, else the name the
+    /// instance gives the seat (a race's rivals), else "Seat N".
     pub fn seat_name(&self, seat: usize) -> String {
         self.seat_label(seat, &format!("Seat {}", seat + 1))
     }
@@ -561,7 +576,10 @@ impl ActiveMode {
         }
         match self.seat_names.get(seat) {
             Some(n) if !n.is_empty() => n.clone(),
-            _ => fallback.to_string(),
+            _ => match self.rival_names.get(seat) {
+                Some(n) if !n.is_empty() && seat != self.local_seat => n.clone(),
+                _ => fallback.to_string(),
+            },
         }
     }
 

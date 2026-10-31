@@ -78,6 +78,22 @@ pub const VERGE_RECOVER: Fx = 3 * FX_ONE;
 /// What a power-up does when used.
 pub use legaia_expansion_format::modes::RacePickupKind as PowerKind;
 
+/// The names AI racers take when the race names none (`rivals`), in seat
+/// order with the player's skipped.
+pub const STOCK_RIVALS: [&str; 7] = [
+    "Kestrel", "Mara", "Old Bram", "Juno", "Talin", "Wren", "Corvo",
+];
+
+/// The name of racer `seat` (`1..`) of pack race `t`: its `rivals` entry,
+/// else a stock name.
+pub fn rival_name(t: &legaia_expansion_format::modes::RaceTrack, seat: usize) -> String {
+    let i = seat.saturating_sub(1);
+    match t.rivals.get(i).filter(|n| !n.trim().is_empty()) {
+        Some(n) => n.clone(),
+        None => STOCK_RIVALS[i % STOCK_RIVALS.len()].to_string(),
+    }
+}
+
 /// Where a power-up lies on the course, and how long it stays away.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PickupSpot {

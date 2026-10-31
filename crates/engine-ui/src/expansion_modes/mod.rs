@@ -55,6 +55,10 @@ const STAGE_BANNER_Y: i32 = 52;
 const REACTION_BANNER_Y: i32 = 196;
 /// One text line's pitch.
 pub const LINE: i32 = 14;
+/// The top of the in-world HUDs' bottom band (golf's power meter, a race's
+/// boost gauge and power-up slot): nothing the screens lay over a mode -
+/// the card toasts - comes below it.
+pub const MODE_HUD_BOTTOM_BAND: i32 = 186;
 
 /// The ordering-table bucket the first prim links at; each later prim
 /// links one bucket nearer, so the list draws in the order it is built.

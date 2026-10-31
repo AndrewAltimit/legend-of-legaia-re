@@ -118,6 +118,7 @@ course = "sprint"
 half_width = 70
 racers = 4
 ai_tier = "regular"
+rivals = ["Lysa", "Brannoc", "Old Pell"]
 waypoints = [
   [91, 20], [94, 28], [98, 31], [102, 32], [92, 36],
   [80, 38], [70, 40], [60, 46], [57, 51], [57, 56],
@@ -363,6 +364,7 @@ course = "sprint"
 half_width = 70
 racers = 6
 ai_tier = "expert"
+rivals = ["Sable", "Hask", "Mirela", "Ivo", "Old Tobin"]
 waypoints = [
   [62, 63], [67, 56], [67, 52], [80, 50], [88, 60], [91, 51],
   [93, 50], [99, 50], [103, 43], [102, 51], [100, 57], [101, 61],
@@ -450,6 +452,7 @@ laps = 3
 racers = 3
 half_width = 90
 ai_tier = "regular"
+rivals = ["Mirela", "Old Tobin"]
 waypoints = [[4, 3], [10, 3], [10, 9], [4, 9]]
 boost_segments = [0, 2]
 pickups = [

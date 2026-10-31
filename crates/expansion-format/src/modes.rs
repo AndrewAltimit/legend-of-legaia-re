@@ -514,6 +514,9 @@ pub struct RaceTrack {
     /// runs its `walk_clip` while it moves. A seat with none draws as a
     /// stand-in figure.
     pub bodies: Vec<String>,
+    /// The AI racers' names, in seat order with the player's seat skipped;
+    /// a seat past the list takes a stock name.
+    pub rivals: Vec<String>,
     pub racers: u8,
     pub ai_tier: AiTier,
 }
@@ -535,6 +538,7 @@ impl Default for RaceTrack {
             boost_segments: Vec::new(),
             pickups: Vec::new(),
             bodies: Vec::new(),
+            rivals: Vec::new(),
             racers: 4,
             ai_tier: AiTier::Regular,
         }
@@ -1004,6 +1008,12 @@ fn check_races(modes: &ModeSection, cx: &mut crate::validate::Checker<'_>) {
         }
         if !(1..=8).contains(&r.racers) {
             cx.error(&format!("{at}.racers"), "a race seats 1..=8 racers");
+        }
+        if r.rivals.len() + 1 > usize::from(r.racers.max(1)) {
+            cx.warning(
+                &format!("{at}.rivals"),
+                "more rival names than the race seats AI racers",
+            );
         }
         for (k, &b) in r.boost_segments.iter().enumerate() {
             if usize::from(b) >= segments {

@@ -60,6 +60,21 @@ impl World {
         }
     }
 
+    /// Whether the card toasts wait: a mode session is in play (in the
+    /// world or on its board), or a table's stage still plays out. They
+    /// show once the session has left play - over the results card or the
+    /// field - so they never lie over a mode's HUD.
+    pub fn pack_mode_holds_toasts(&self) -> bool {
+        self.table_stage_up()
+            || (self.mode == SceneMode::Expansion
+                && self.expansion.mode_seat.as_deref().is_some_and(|s| {
+                    matches!(
+                        s.stage,
+                        legaia_engine_expansion::modes::ModeStage::Playing { .. }
+                    )
+                }))
+    }
+
     /// Whether a duel or poker table in the world owns the frame.
     pub fn table_stage_up(&self) -> bool {
         self.pack_mode_stage()

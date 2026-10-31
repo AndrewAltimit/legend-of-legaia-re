@@ -461,3 +461,40 @@ fn in_world_hud_text_reads_whole_in_the_dialog_font() {
         }
     }
 }
+
+/// The card toasts over a mode stack upward from above the in-world HUDs'
+/// bottom band, so nothing the golf and race HUDs draw at the bottom - the
+/// power meter, the boost gauge, the power-up slot, the footer - starts
+/// above that band, and no toast row reaches into it.
+#[test]
+fn mode_toasts_sit_clear_of_the_in_world_huds_bottom_band() {
+    for id in ["builtin-golf", "builtin-race"] {
+        for c in in_world_frames(id) {
+            for p in &c.prims {
+                let ys = p.corners().map(|(_, y)| i32::from(y));
+                let top = *ys.iter().min().unwrap();
+                if top > STAGE_H / 2 {
+                    assert!(
+                        top >= MODE_HUD_BOTTOM_BAND,
+                        "{id}: a bottom prim at row {top}"
+                    );
+                }
+            }
+            for l in c.labels.iter().filter(|l| l.y > STAGE_H / 2) {
+                assert!(
+                    l.y >= MODE_HUD_BOTTOM_BAND,
+                    "{id}: `{}` at row {}",
+                    l.text,
+                    l.y
+                );
+            }
+        }
+    }
+    let lines = [
+        "Got card: Reed Skimmer (new!)",
+        "Got card: Ember Moth (new!)",
+    ];
+    for l in binder::toast_canvas(&lines, false).labels {
+        assert!(l.y + LINE <= MODE_HUD_BOTTOM_BAND, "a toast at row {}", l.y);
+    }
+}

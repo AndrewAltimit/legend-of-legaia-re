@@ -261,7 +261,7 @@ pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &RaceView) -> i32 {
         );
         // The power-up slot, left of the boost gauge: the one held (its
         // gem's colour, a pip under it), or an empty slot.
-        let (sx, sy, sw) = (4, 196, 48);
+        let (sx, sy, sw) = (6, 196, 46);
         c.panel(sx, sy, sw, 24, plate, ink::PANEL_EDGE);
         match me.held {
             Some(k) => {

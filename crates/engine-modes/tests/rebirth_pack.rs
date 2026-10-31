@@ -165,3 +165,19 @@ fn rebirth_tower_game_night_builds_every_round() {
         }
     }
 }
+
+#[test]
+fn rebirth_racers_carry_their_names() {
+    use legaia_engine_modes::active::{ActiveMode, BuildOptions};
+    let (m, c) = (rebirth_modes(), rebirth_cards());
+    let race = ActiveMode::build(&m, &c, "drake-circuit", 1, &BuildOptions::default()).unwrap();
+    let names: Vec<String> = (0..4).map(|s| race.seat_name(s)).collect();
+    assert_eq!(names, ["You", "Lysa", "Brannoc", "Old Pell"]);
+    // A race naming no rivals falls back on the stock names, never "Seat N".
+    let mut bare = m.clone();
+    bare.races.iter_mut().for_each(|r| r.rivals.clear());
+    let race = ActiveMode::build(&bare, &c, "spiral-circuit", 1, &BuildOptions::default()).unwrap();
+    for s in 1..6 {
+        assert!(!race.seat_name(s).starts_with("Seat"), "{}", race.seat_name(s));
+    }
+}

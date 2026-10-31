@@ -152,6 +152,19 @@ pub struct StageTrack {
     pub pickups: Vec<StagePickup>,
     /// The session's frame, for the spots' spin and bob.
     pub clock: u32,
+    /// Each hopping racer's leap: the arc from where it left the ground to
+    /// where it lands, as world `(X, Z)` and height over the floor.
+    pub hops: Vec<StageHop>,
+}
+
+/// A racer's hop, drawn as a dotted arc over the ground.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StageHop {
+    pub seat: usize,
+    /// `[x, z, lift]` along the leap, takeoff first.
+    pub arc: Vec<[f32; 3]>,
+    /// How far along the arc the racer is, `0..=1`.
+    pub done: f32,
 }
 
 /// A power-up spot on the track.
@@ -304,6 +317,8 @@ pub struct WorldStage {
     last_lap: Option<(u8, bool)>,
     banner: Option<(String, u32)>,
     trails: Vec<Vec<[f32; 2]>>,
+    /// Each seat's hop arc while it is in the air.
+    hops: Vec<Option<Vec<[f32; 3]>>>,
     /// A duel table's memory.
     pub duel: DuelStage,
     /// A poker table's memory.
@@ -345,7 +360,7 @@ pub fn hop_lift(frames_left: u32) -> f32 {
 }
 
 /// A hop's top height, world units.
-pub const HOP_HEIGHT: f32 = 56.0;
+pub const HOP_HEIGHT: f32 = 96.0;
 
 /// A golf result as a player names it, against `par`.
 pub fn score_name(strokes: u8, par: u8) -> String {
@@ -393,6 +408,21 @@ impl WorldStage {
                         })
                         .collect(),
                     clock: v.frame,
+                    hops: self
+                        .hops
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(seat, h)| {
+                            let arc = h.clone()?;
+                            let left = v.racers.get(seat)?.hop_frames;
+                            let total = legaia_engine_modes::racing::HOP_FRAMES as f32;
+                            Some(StageHop {
+                                seat,
+                                arc,
+                                done: 1.0 - left as f32 / total,
+                            })
+                        })
+                        .collect(),
                 });
                 f
             }
@@ -699,6 +729,29 @@ impl WorldStage {
     fn race(&mut self, frame: &MapFrame, v: &RaceView, local: usize) -> StageFrame {
         let w = |p| frame.to_world_f(p);
         self.trails.resize(v.racers.len(), Vec::new());
+        self.hops.resize(v.racers.len(), None);
+        for (seat, r) in v.racers.iter().enumerate() {
+            let h = &mut self.hops[seat];
+            if r.hop_frames == 0 {
+                *h = None;
+            } else if h.is_none() {
+                // The leap from here, along the heading at the racer's
+                // speed, over the frames it has left in the air.
+                let at = w(r.pos);
+                let step = frame.len_to_world(r.speed);
+                let a = angle_rad(f32::from(r.heading));
+                let n = r.hop_frames;
+                *h = Some(
+                    (0..=n)
+                        .step_by(2)
+                        .map(|k| {
+                            let d = step * k as f32;
+                            [at[0] + a.cos() * d, at[1] + a.sin() * d, hop_lift(n - k)]
+                        })
+                        .collect(),
+                );
+            }
+        }
         for (seat, r) in v.racers.iter().enumerate() {
             let t = &mut self.trails[seat];
             if r.boost_frames > 0 {

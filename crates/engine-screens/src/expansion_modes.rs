@@ -154,7 +154,7 @@ pub fn pack_mode_stage_texts(world: &World, font: &legaia_font::Font) -> Vec<Tex
         .unwrap_or_default();
     // The card screen marks new cards itself; its toasts wait out unseen.
     let toasts = world.expansion.cards.toast_lines();
-    if !toasts.is_empty() && !world.card_screen_open() && !world.table_stage_up() {
+    if !toasts.is_empty() && !world.card_screen_open() && !world.pack_mode_holds_toasts() {
         out.extend(card_toast_texts(
             font,
             &toasts,

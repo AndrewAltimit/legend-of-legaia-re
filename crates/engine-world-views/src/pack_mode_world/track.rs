@@ -10,7 +10,7 @@
 //! them; every mark follows the floor (a kingdom overworld's heightfield
 //! included).
 
-use legaia_engine_expansion::mode_stage::{StagePickup, StageTrack};
+use legaia_engine_expansion::mode_stage::{StageHop, StagePickup, StageTrack};
 use legaia_engine_modes::racing::PowerKind;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
@@ -490,6 +490,47 @@ pub(super) fn track_pieces(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &St
     gates(out, pr, t);
     for (k, p) in t.pickups.iter().enumerate() {
         pickup(out, pr, p, t.clock, k);
+    }
+    for h in &t.hops {
+        hop_arc(out, pr, h);
+    }
+}
+
+/// A hop's leap: a dotted arc from takeoff to landing over its ground
+/// path - the dots behind the racer dimmed - and a ring where it lands.
+fn hop_arc(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, h: &StageHop) {
+    let col = power_color(PowerKind::Hop);
+    let n = h.arc.len().max(2) as f32 - 1.0;
+    for (i, p) in h.arc.iter().enumerate() {
+        let behind = (i as f32 / n) < h.done;
+        let a = if behind { 90 } else { 230 };
+        let c = pr.on_floor(p[0], p[1], p[2]);
+        let Some(cp) = pr.at(c) else {
+            continue;
+        };
+        let r = 2.5;
+        let at = |x: f32, y: f32| Pt {
+            x: cp.x + x,
+            y: cp.y + y,
+            depth: cp.depth,
+        };
+        out.push(quad(
+            [at(-r, -r), at(r, -r), at(-r, r), at(r, r)],
+            [[col[0], col[1], col[2], a]; 4],
+            true,
+            pr.ot(c, 0),
+        ));
+    }
+    if let Some(end) = h.arc.last() {
+        ground_disc(
+            out,
+            pr,
+            [end[0], end[1]],
+            26.0,
+            [col[0], col[1], col[2], 110],
+            true,
+            3,
+        );
     }
 }
 
