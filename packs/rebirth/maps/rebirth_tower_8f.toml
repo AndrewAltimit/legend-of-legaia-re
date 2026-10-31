@@ -32,6 +32,10 @@ ground = { tpage = 24, clut = 31170, tile = 3 }
 side = { tpage = 24, clut = 31168, tile = 0 }
 depth = 512
 shade = 56
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 24, clut = 31168, tile = 0, height = 1152, distance = 2, shade = 96 }
 
 [tiles]
 origin = [20, 20]
@@ -50,17 +54,17 @@ rows = [
   "      #.......===.......#      ",
   "      #.......===.......#      ",
   "_______....o..===..o...._______",
-  "#:::::#.......===.......#:::::_",
-  "#:::::#.......===.......#:::::_",
-  "#:::::#....o..===..o....#:::::_",
-  "#:::::........===........:::::_",
-  "#:::::........===........:::::_",
-  "#:::::.....o..===..o.....:::::_",
-  "#:::::........===........:::::_",
-  "#:::::#.......===.......#:::::_",
-  "#:::::#....o..===..o....#:::::_",
-  "#:::::#.......===.......#:::::_",
-  "#######.......===.......#######",
+  "#:::::a.......===.......#:::::b",
+  "#:::::a.......===.......#:::::b",
+  "#:::::a....o..===..o....#:::::b",
+  "#:::::........===........:::::b",
+  "#:::::........===........:::::b",
+  "#:::::.....o..===..o.....:::::b",
+  "#:::::........===........:::::b",
+  "#:::::#.......===.......#:::::b",
+  "#:::::a....o..===..o....#:::::b",
+  "#:::::a.......===.......#:::::b",
+  "#aaaaaa.......===.......#aaaaaa",
   "      #....o..===..o....#      ",
   "      #.......===.......#      ",
   "      #.......===.......#      ",
@@ -71,15 +75,22 @@ rows = [
   "      #...^^AAAAAAA^^...#      ",
   "      #...^^AAAAAAA^^...#      ",
   "      #...^^AAAAAAA^^...#      ",
-  "       %%%%%%%%%%%%%%%%%       ",
+  "       cccdd%%%%%%%%dccc       ",
 ]
 
 [tiles.legend]
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
 # Full-height castle stone on the side and far walls; a low parapet of the
 # same stone on every camera-side edge, so the camera sees over it.
 "#" = { label = "wall", walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
+"a" = { label = "wall (chapel)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
 "%" = { label = "wall (throne)", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
+"d" = { label = "wall (throne, dais side)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
+"c" = { label = "wall (throne, floor side)", walls = "all", wall = { kind = "box", height = 320, tpage = 24, clut = 31168, tile = 0 } }
 "_" = { label = "parapet", walls = "all", wall = { kind = "box", height = 64, tpage = 24, clut = 31168, tile = 1 } }
+"b" = { label = "parapet (chapel)", height = 1, walls = "all", wall = { kind = "box", height = 64, tpage = 24, clut = 31168, tile = 1 } }
 "." = { label = "flagstones", ground = { kind = "texture", tpage = 24, clut = 31170, tile = 3 } }
 "=" = { label = "carpet", ground = { kind = "texture", tpage = 25, clut = 31235, tile = 28 } }
 ":" = { label = "chapel floor", height = 1, ground = { kind = "texture", tpage = 25, clut = 31234, tile = 4 } }
@@ -162,7 +173,7 @@ light = { color = [255, 200, 120], radius = 560, height = 200, flicker = 0.1, pe
 [[props]]
 id = "brazier_dais_w"
 mesh = { asset = "models/brazier.glb" }
-tile = [9, 28]
+tile = [8, 28]
 scale = 1.2
 solid = true
 light = { color = [255, 130, 50], radius = 640, height = 140, flicker = 0.4, period = 9 }
@@ -170,7 +181,7 @@ light = { color = [255, 130, 50], radius = 640, height = 140, flicker = 0.4, per
 [[props]]
 id = "brazier_dais_e"
 mesh = { asset = "models/brazier.glb" }
-tile = [21, 28]
+tile = [22, 28]
 scale = 1.2
 solid = true
 light = { color = [255, 130, 50], radius = 640, height = 140, flicker = 0.4, period = 11 }
@@ -208,36 +219,42 @@ light = { color = [255, 140, 60], radius = 460, height = 140, flicker = 0.35, pe
 [[decor]]
 mesh = { asset = "models/banner_red.glb" }
 tile = [11, 13]
+hangs = true
 offset = [0, 60, -70]
 scale = 1.1
 
 [[decor]]
 mesh = { asset = "models/banner_red.glb" }
 tile = [19, 13]
+hangs = true
 offset = [0, 60, -70]
 scale = 1.1
 
 [[decor]]
 mesh = { asset = "models/banner_red.glb" }
 tile = [11, 19]
+hangs = true
 offset = [0, 60, -70]
 scale = 1.1
 
 [[decor]]
 mesh = { asset = "models/banner_red.glb" }
 tile = [19, 19]
+hangs = true
 offset = [0, 60, -70]
 scale = 1.1
 
 [[decor]]
 mesh = { asset = "models/banner_red.glb" }
 tile = [11, 25]
+hangs = true
 offset = [0, 60, -70]
 scale = 1.1
 
 [[decor]]
 mesh = { asset = "models/banner_red.glb" }
 tile = [19, 25]
+hangs = true
 offset = [0, 60, -70]
 scale = 1.1
 
@@ -281,6 +298,7 @@ solid = true
 id = "crown_relic"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [2, 18]
+hangs = true
 offset = [64, 120, 64]
 scale = 1.6
 animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 12, period = 180 }]
@@ -296,6 +314,7 @@ light = { color = [190, 120, 255], radius = 600, height = 0, flicker = 0.15, per
 id = "gallery_ring"
 mesh = { asset = "models/armillary_ring.glb" }
 tile = [27, 18]
+hangs = true
 offset = [0, 220, 64]
 scale = 1.6
 animate = [{ kind = "spin", axis = "y", period = 600 }, { kind = "sway", axis = "z", degrees = 14.0, period = 300 }]
@@ -319,6 +338,7 @@ light = { color = [255, 130, 50], radius = 520, height = 140, flicker = 0.5, per
 id = "narthex_lantern_1"
 mesh = { asset = "models/lantern.glb" }
 tile = [4, 7]
+hangs = true
 offset = [0, 230, 64]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 170 }]
@@ -328,6 +348,7 @@ light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, peri
 id = "narthex_lantern_2"
 mesh = { asset = "models/lantern.glb" }
 tile = [9, 7]
+hangs = true
 offset = [0, 230, 64]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 190, phase = 0.4 }]
@@ -337,6 +358,7 @@ light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, peri
 id = "narthex_lantern_3"
 mesh = { asset = "models/lantern.glb" }
 tile = [21, 7]
+hangs = true
 offset = [0, 230, 64]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 180, phase = 0.7 }]
@@ -346,6 +368,7 @@ light = { color = [255, 180, 110], radius = 480, height = 0, flicker = 0.1, peri
 id = "narthex_lantern_4"
 mesh = { asset = "models/lantern.glb" }
 tile = [26, 7]
+hangs = true
 offset = [0, 230, 64]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 160, phase = 0.2 }]
@@ -397,7 +420,7 @@ seed = 805
 
 [[emitters]]
 kind = "embers"
-rect = [9, 28, 9, 28]
+rect = [8, 28, 8, 28]
 height = [130, 170]
 count = 20
 velocity = [0.2, 1.6, 0.0]
@@ -405,7 +428,7 @@ seed = 811
 
 [[emitters]]
 kind = "embers"
-rect = [21, 28, 21, 28]
+rect = [22, 28, 22, 28]
 height = [130, 170]
 count = 20
 velocity = [0.2, 1.6, 0.0]
@@ -466,7 +489,7 @@ volume = 0.5
 [[audio.ambient]]
 id = "brazier_dais_w"
 sound = { kind = "sound", id = "torch" }
-tile = [9, 28]
+tile = [8, 28]
 radius = 512
 inner = 96
 volume = 0.55
@@ -474,7 +497,7 @@ volume = 0.55
 [[audio.ambient]]
 id = "brazier_dais_e"
 sound = { kind = "sound", id = "torch" }
-tile = [21, 28]
+tile = [22, 28]
 radius = 512
 inner = 96
 volume = 0.55

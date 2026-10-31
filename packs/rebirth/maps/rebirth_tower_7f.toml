@@ -26,6 +26,10 @@ ground = { tpage = 8, clut = 30976, tile = 39 }
 side = { tpage = 8, clut = 30976, tile = 30 }
 depth = 448
 shade = 56
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 8, clut = 30976, tile = 30, height = 1152, distance = 2, shade = 96 }
 
 [tiles]
 origin = [20, 20]
@@ -42,21 +46,21 @@ rows = [
   "  __.........................__  ",
   " __..s.....................s..__ ",
   "__.............................__",
-  "_.........iiiii:::iiiii........._",
-  "#........ii:::::::::::ii........#",
-  "#.......ii:::::::::::::ii.......#",
-  "#......ii:::::::::::::::ii......#",
-  "#......i:::o:::::::::o:::i......#",
-  "#......i:::::::AAA:::::::i......#",
-  "#......i::::::AAAAA::::::i......#",
-  "#......I::::::AAAAA::::::I......#",
-  "#......I::::::AAAAA::::::I......#",
-  "#......I:::::::AAA:::::::I......#",
-  "#......I:::o:::::::::o:::I......#",
-  "#......II:::::::::::::::II......#",
-  "#.......II:::::::::::::II.......#",
-  "#........II:::::::::::II........#",
-  "#.........IIIIIIIIIIIII.........#",
+  "_.........aaaaa:::iaaaa........._",
+  "#........aa:::::::::::ia........#",
+  "#.......aa:::::::::::::ia.......#",
+  "#......aa:::::::::::::::ia......#",
+  "#......a:::o:::::::::o:::i......#",
+  "#......a:::::::AAA:::::::i......#",
+  "#......a::::::AAAAA::::::i......#",
+  "#......b::::::AAAAA::::::I......#",
+  "#......b::::::AAAAA::::::I......#",
+  "#......b:::::::AAA:::::::I......#",
+  "#......b:::o:::::::::o:::I......#",
+  "#......bI:::::::::::::::II......#",
+  "#.......bI:::::::::::::II.......#",
+  "#........bI:::::::::::II........#",
+  "#.........bIIIIIIIIIIII.........#",
   "##.............................##",
   " ##..s.....................s..## ",
   "  ##.........................##  ",
@@ -67,11 +71,16 @@ rows = [
 ]
 
 [tiles.legend]
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
 "#" = { label = "outer wall", walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30976, tile = 30 } }
 "_" = { label = "outer parapet", walls = "all", wall = { kind = "box", height = 64, tpage = 8, clut = 30976, tile = 38 } }
 "%" = { label = "outer wall (stair)", walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30976, tile = 30 } }
 "i" = { label = "sanctum parapet", height = 1, walls = "all", wall = { kind = "box", height = 48, tpage = 8, clut = 30849, tile = 42 } }
+"a" = { label = "sanctum parapet (ring side)", walls = "all", wall = { kind = "box", height = 48, tpage = 8, clut = 30849, tile = 42 } }
 "I" = { label = "sanctum wall", height = 1, walls = "all", wall = { kind = "box", height = 160, tpage = 8, clut = 30849, tile = 42 } }
+"b" = { label = "sanctum wall (ring side)", walls = "all", wall = { kind = "box", height = 160, tpage = 8, clut = 30849, tile = 42 } }
 "." = { label = "ring floor (steel)", ground = { kind = "texture", tpage = 8, clut = 30976, tile = 39 } }
 ":" = { label = "sanctum floor", height = 1, ground = { kind = "texture", tpage = 8, clut = 30976, tile = 2 } }
 "A" = { label = "the heart", height = 2, ground = { kind = "texture", tpage = 8, clut = 30849, tile = 18 } }
@@ -160,6 +169,7 @@ table = "tower_7f"
 id = "echo_1"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [16, 19]
+hangs = true
 offset = [0, 150, 0]
 scale = 2.0
 animate = [{ kind = "orbit", radius = 150, period = 360 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90 }]
@@ -169,6 +179,7 @@ light = { color = [120, 170, 255], radius = 640, flicker = 0.15, period = 30 }
 id = "echo_2"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [16, 18]
+hangs = true
 offset = [0, 150, 128]
 scale = 2.0
 animate = [{ kind = "orbit", radius = 150, period = 360, phase = 0.333 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.33 }]
@@ -178,6 +189,7 @@ light = { color = [120, 170, 255], radius = 640, flicker = 0.15, period = 30 }
 id = "echo_3"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [16, 20]
+hangs = true
 offset = [0, 150, -128]
 scale = 2.0
 animate = [{ kind = "orbit", radius = 150, period = 360, phase = 0.667 }, { kind = "spin", period = 120 }, { kind = "bob", amplitude = 16, period = 90, phase = 0.67 }]
@@ -187,6 +199,7 @@ light = { color = [120, 170, 255], radius = 640, flicker = 0.15, period = 30 }
 id = "heart_ring"
 mesh = { asset = "models/armillary_ring.glb" }
 tile = [15, 19]
+hangs = true
 offset = [128, 280, 0]
 scale = 1.8
 animate = [{ kind = "spin", axis = "y", period = 720 }, { kind = "sway", axis = "z", degrees = 18.0, period = 360 }]
@@ -232,6 +245,7 @@ light = { color = [110, 160, 255], radius = 520, height = 180, flicker = 0.1, pe
 id = "shrine_nw"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [5, 10]
+hangs = true
 offset = [0, 110, 0]
 scale = 1.2
 animate = [{ kind = "spin", period = 240 }, { kind = "bob", amplitude = 10, period = 120 }]
@@ -241,6 +255,7 @@ light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, peri
 id = "shrine_ne"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [27, 10]
+hangs = true
 offset = [0, 110, 0]
 scale = 1.2
 animate = [{ kind = "spin", period = -240 }, { kind = "bob", amplitude = 10, period = 120, phase = 0.25 }]
@@ -250,6 +265,7 @@ light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, peri
 id = "shrine_sw"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [5, 28]
+hangs = true
 offset = [0, 110, 0]
 scale = 1.2
 animate = [{ kind = "spin", period = -240 }, { kind = "bob", amplitude = 10, period = 120, phase = 0.5 }]
@@ -259,6 +275,7 @@ light = { color = [140, 180, 255], radius = 520, height = 0, flicker = 0.2, peri
 id = "shrine_se"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [27, 28]
+hangs = true
 offset = [0, 110, 0]
 scale = 1.2
 animate = [{ kind = "spin", period = 240 }, { kind = "bob", amplitude = 10, period = 120, phase = 0.75 }]
@@ -299,6 +316,7 @@ light = { color = [255, 150, 70], radius = 520, height = 140, flicker = 0.35, pe
 id = "rest_lantern"
 mesh = { asset = "models/lantern.glb" }
 tile = [25, 2]
+hangs = true
 offset = [0, 220, 64]
 scale = 1.3
 animate = [{ kind = "sway", axis = "z", degrees = 4.0, period = 180 }]

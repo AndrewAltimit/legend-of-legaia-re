@@ -28,6 +28,10 @@ ground = { tpage = 9, clut = 32206, tile = 3 }
 side = { tpage = 25, clut = 32199, tile = 0 }
 depth = 384
 shade = 64
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 25, clut = 32199, tile = 0, height = 1152, distance = 2, shade = 96 }
 
 [tiles]
 origin = [20, 20]
@@ -42,28 +46,28 @@ rows = [
   "        #:::::::::::::::::::::::::::::::#        ",
   "        #::::eeeeeeeeDDDDDDDeeeeeeee::::#        ",
   "        #:::e,,,,,,,,,,,,,,,,,,,,,,,e:::#        ",
-  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,e:::#        ",
-  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,e:::#        ",
-  "_________:::e,,,,,,,,,,,,,,,,,,,,,,,e:::_________",
-  "#aaaaaaa#:::e,,,,fffffuuuuufffff,,,,e:::#kkkkkkk#",
-  "#aaaaaaa#:::e,,,,fww.........wwf,,,,e:::#kkkkkkk#",
-  "#araaara#:::e,,c,fww.........wwf,c,,e:::#kkpppkk#",
-  "#aaaaaaa#:::e,,,,f.............f,,,,e:::#kkpppkk#",
-  "#aaaaaaaa:::e,,,,f.............f,,,,e:::kkkpppkk#",
-  "#aaaaaaaa:::e,,,,f.............f,,,,e:::kkkkkkkk#",
-  "#aaaaaaaa:::D,,,,f.....MMM.....f,,,,d:::kkkkkkkk#",
-  "#aaaaaaa#:::D,,,,f.....MMM.....f,,,,d:::#kkkkkkk#",
-  "#araaara#:::D,,,,f.....MMM.....f,,,,d:::#kkpppkk#",
-  "#aaaaaaa#:::e,,,,f.............f,,,,e:::#kkpppkk#",
-  "#aaaaaaa#:::e,,,,f.............f,,,,e:::#kkpppkk#",
-  "#########:::e,,,,f.............f,,,,e:::#kkkkkkk#",
-  "        #:::e,,c,fww.........wwf,c,,e:::#kkkkkkk#",
-  "        #:::e,,,,fww.........wwf,,,,e:::#########",
-  "        #:::e,,,,fffffuuuuufffff,,,,e:::#        ",
-  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,e:::#        ",
-  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,e:::#        ",
-  "        #:::e,,,,,,,,UUUUUUU,,,,,,,,e:::#        ",
-  "        #::::eeeeeeee:::::::eeeeeeee::::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
+  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
+  "_________:::e,,,,,,,,,,,,,,,,,,,,,,,b:::_________",
+  "#aaaaaaa#:::e,,,,fffffuuuuufffff,,,,b:::#kkkkkkkg",
+  "#aaaaaaa#:::e,,,,fww.........wwf,,,,b:::#kkkkkkkg",
+  "#araaara#:::e,,c,fww.........wwf,c,,b:::#kkpppkkg",
+  "#aaaaaaa#:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkpppkkg",
+  "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkkkkkkg",
+  "#aaaaaaaa:::D,,,,f.....MMM.....h,,,,d:::kkkkkkkkg",
+  "#aaaaaaa#:::D,,,,f.....MMM.....h,,,,d:::#kkkkkkkg",
+  "#araaara#:::D,,,,f.....MMM.....h,,,,d:::#kkpppkkg",
+  "#aaaaaaa#:::e,,,,f.............h,,,,e:::#kkpppkkg",
+  "#aaaaaaa#:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#########:::e,,,,f.............h,,,,b:::#kkkkkkkg",
+  "        #:::e,,c,fww.........wwh,c,,b:::#kkkkkkkg",
+  "        #:::e,,,,fww.........wwf,,,,b:::#gggggggg",
+  "        #:::e,,,,fffhhuuuuufhhff,,,,b:::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
+  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
+  "        #:::e,,,,,,,,UUUUUUU,,,,,,,,b:::#        ",
+  "        #::::ebbbbbbb:::::::ebbbbbbb::::#        ",
   "        #:::::::::::::::::::::::::::::::#        ",
   "        #:::::::::::::::::::::::::::::::#        ",
   "        #:::::::::::::::::::::::::::::::#        ",
@@ -72,16 +76,22 @@ rows = [
 ]
 
 [tiles.legend]
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
 "#" = { label = "wall", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 25, clut = 32199, tile = 0 } }
+"g" = { label = "wall (cloister)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 25, clut = 32199, tile = 0 } }
 "_" = { label = "parapet", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 24, clut = 32258, tile = 28 } }
 ":" = { label = "gallery", height = 2, ground = { kind = "texture", tpage = 10, clut = 32070, tile = 48 } }
 "e" = { label = "gallery ledge", height = 2, walls = "all", wall = { kind = "box", height = 40, tpage = 24, clut = 32258, tile = 28 } }
+"b" = { label = "gallery ledge (colonnade side)", height = 1, walls = "all", wall = { kind = "box", height = 40, tpage = 24, clut = 32258, tile = 28 } }
 "D" = { label = "stair down", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
 "d" = { label = "stair down (east)", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
 "," = { label = "colonnade", height = 1, ground = { kind = "texture", tpage = 5, clut = 30785, tile = 33 } }
 "U" = { label = "stair up", height = 1, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
 "c" = { label = "column", height = 1, walls = "all", ground = { kind = "texture", tpage = 5, clut = 30785, tile = 33 } }
 "f" = { label = "court rim", height = 1, walls = "all", wall = { kind = "box", height = 32, tpage = 9, clut = 32196, tile = 41 } }
+"h" = { label = "court rim (court side)", walls = "all", wall = { kind = "box", height = 32, tpage = 9, clut = 32196, tile = 41 } }
 "u" = { label = "court steps", height = 1, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
 "." = { label = "sunken court", ground = { kind = "texture", tpage = 10, clut = 32070, tile = 40 } }
 "w" = { label = "court pool", walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
@@ -160,6 +170,7 @@ table = "tower_4f"
 id = "verdant_ring"
 mesh = { object = 127 }
 tile = [24, 18]
+hangs = true
 offset = [0, 24, 128]
 rotation = [90.0, 0.0, 0.0]
 scale = 0.75
@@ -170,6 +181,7 @@ light = { color = [120, 255, 150], radius = 1300, height = 40, flicker = 0.12, p
 id = "vault_heart"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [24, 17]
+hangs = true
 offset = [0, 220, 384]
 scale = 2.2
 animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 18, period = 200 }]
@@ -179,6 +191,7 @@ light = { color = [120, 255, 140], radius = 1000, height = 0, flicker = 0.12, pe
 id = "heart_ring_a"
 mesh = { asset = "models/armillary_ring.glb" }
 tile = [23, 17]
+hangs = true
 offset = [128, 220, 384]
 scale = 1.1
 animate = [{ kind = "spin", axis = "x", period = 360 }, { kind = "bob", amplitude = 18, period = 200 }]
@@ -187,6 +200,7 @@ animate = [{ kind = "spin", axis = "x", period = 360 }, { kind = "bob", amplitud
 id = "heart_ring_b"
 mesh = { asset = "models/armillary_ring.glb" }
 tile = [25, 17]
+hangs = true
 offset = [-128, 220, 384]
 scale = 1.3
 animate = [{ kind = "spin", axis = "z", period = -480 }, { kind = "bob", amplitude = 18, period = 200 }]
@@ -265,6 +279,7 @@ rotation = [0.0, 45.0, 0.0]
 id = "archive_tablet"
 mesh = { object = 110 }
 tile = [4, 18]
+offset = [-42, 15, 24]
 rotation = [0.0, 30.0, 0.0]
 solid = true
 
@@ -274,39 +289,113 @@ mesh = { object = 122 }
 tile = [4, 23]
 solid = true
 
-[[props]]
-id = "archive_lamp"
-mesh = { object = 98 }
+# The archive's lamp: a lantern standing on a white marble pedestal
+# (`concnow` mesh 69); its light is the `archive_lamp` lamp below.
+[[decor]]
+id = "archive_pedestal"
+mesh = { object = 69 }
 tile = [4, 13]
 offset = [0, 0, 40]
-light = { color = [210, 255, 200], radius = 520, height = 80, flicker = 0.1, period = 40 }
 solid = true
 
-# The Flooded Cloister: urns on columns between the pools, planters along
-# its walls, a pale lamp.
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [4, 13]
+offset = [0, 0, 40]
+on = "archive_pedestal"
+
+# The Flooded Cloister, laid out round its two pools: an urn on its column
+# between them, a lantern on a marble pedestal against the east wall
+# facing the door, planters (`concnow` mesh 41) in the four corners and a
+# smaller one (mesh 77) at the middle of the north and south walls, and
+# ferns (mesh 17) against the side walls by each pool. The walks round the
+# pools and the door from the gallery stay clear.
 [[props]]
 id = "cloister_urn_n"
 mesh = { object = 44 }
 tile = [44, 19]
 solid = true
 
-[[props]]
-id = "cloister_lamp"
-mesh = { object = 98 }
+[[decor]]
+id = "cloister_pedestal"
+mesh = { object = 69 }
 tile = [47, 19]
-light = { color = [200, 240, 255], radius = 520, height = 80, flicker = 0.1, period = 45 }
+offset = [24, 0, 0]
 solid = true
 
-[[scatter]]
-id = "cloister_planters"
-rect = [41, 13, 47, 25]
-on = "k"
-density = 0.18
-seed = 404
-jitter = 30
-keep_clear = true
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [47, 19]
+offset = [24, 0, 0]
+on = "cloister_pedestal"
+
+[[decor]]
+mesh = { object = 41 }
+tile = [41, 13]
+scale = 0.55
 solid = true
-meshes = [{ mesh = { object = 18 } }, { mesh = { object = 19 } }, { mesh = { object = 41 }, scale = [0.6, 0.8] }]
+
+[[decor]]
+mesh = { object = 41 }
+tile = [47, 13]
+scale = 0.55
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [41, 25]
+scale = 0.55
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [47, 25]
+scale = 0.55
+rotation = [0.0, 270.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 77 }
+tile = [44, 13]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { object = 77 }
+tile = [44, 25]
+scale = 0.7
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 17 }
+tile = [41, 16]
+offset = [-24, 0, 0]
+rotation = [0.0, -90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [41, 22]
+offset = [-24, 0, 0]
+rotation = [0.0, -90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [47, 16]
+offset = [24, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [47, 22]
+offset = [24, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.4
 
 # Planters along the galleries, urns at their corners.
 [[edges]]
@@ -398,6 +487,9 @@ lamps = [
   # A pale shaft over the heart, so the vault is not one green.
   { id = "heart_shaft", tile = [24, 20], offset = [0, 360, 0], color = [235, 245, 210], radius = 560, flicker = 0.05, period = 90 },
   { id = "archive", tile = [4, 18], offset = [0, 160, 0], color = [200, 255, 190], radius = 600, flicker = 0.1, period = 70 },
+  # The lanterns on their pedestals in the archive and the cloister.
+  { id = "archive_lamp", tile = [4, 13], offset = [0, 150, 40], color = [210, 255, 200], radius = 520, flicker = 0.1, period = 40 },
+  { id = "cloister_lamp", tile = [47, 19], offset = [24, 150, 0], color = [200, 240, 255], radius = 520, flicker = 0.1, period = 45 },
   { id = "cloister", tile = [44, 19], offset = [0, 180, 0], color = [180, 220, 255], radius = 700, flicker = 0.05, period = 80 },
 ]
 

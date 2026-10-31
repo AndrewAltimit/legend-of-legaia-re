@@ -29,6 +29,10 @@ ground = { tpage = 5, clut = 30720, tile = 0 }
 side = { tpage = 11, clut = 32523, tile = 38 }
 depth = 448
 shade = 112
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1152, distance = 2, shade = 104 }
 
 [tiles]
 origin = [20, 20]
@@ -50,35 +54,41 @@ rows = [
   "########...LL...........LL...########",
   "       #.....................#       ",
   "       ######SSSSSSSSSSS######       ",
-  "         #,,,,,,,,,,,,,,,,,#         ",
-  "         #ll,,,,,,,,,,,,,ll#         ",
+  "         #,,,,,,,,,,,,,,,,,b         ",
+  "         #ll,,,,,,,,,,,,,llb         ",
   "         #ll,,p,,,,,,,p,,ll#         ",
   "         #ll,,,,,,,,,,,,,ll#         ",
   "         #ll,,,,,,,,,,,,,ll#         ",
   "         #ll,,,,,,,,,,,,,ll#         ",
   "         #ll,,p,,,,,,,p,,ll#         ",
   "         #ll,,,,,,,,,,,,,ll#         ",
-  "         #,,,,,,,,,,,,,,,,,#         ",
-  "     --------sssssssssss--------     ",
-  "     #:::::::::::::::::::::::::#     ",
-  "     #:::::::::::::::::::::::::#     ",
-  "     #::o:::::::::::::::::::o::#     ",
-  "     #:::::::^^^^^^^^^^^:::::::#     ",
-  "     #:::::::^^^^^^^^^^^:::::::#     ",
-  "     #:::::::^^^^^B^^^^^:::::::#     ",
-  "     #::o::::^^^^^^^^^^^::::o::#     ",
-  "     #:::::::^^^^^^^^^^^:::::::#     ",
-  "     #:::::::^^^^^^^^^^^:::::::#     ",
-  "     #:::::::::::::::::::::::::#     ",
-  "     #::o:::::::::::::::::::o::#     ",
-  "     #::::::::::K:::K::::::::::#     ",
-  "     #############<#############     ",
+  "         #,,,,,,,,,,,,,,,,,b         ",
+  "     -----cccssssssssssscccc----     ",
+  "     #:::::::::::::::::::::::::d     ",
+  "     #:::::::::::::::::::::::::d     ",
+  "     #::e:::::::::::::::::::e::d     ",
+  "     #:::::::^^^^^^^^^^^:::::::d     ",
+  "     #:::::::^^^^^^^^^^^:::::::d     ",
+  "     #:::::::^^^^^B^^^^^:::::::d     ",
+  "     #::e::::^^^^^^^^^^^::::e::d     ",
+  "     #:::::::^^^^^^^^^^^:::::::d     ",
+  "     #:::::::^^^^^^^^^^^:::::::d     ",
+  "     #:::::::::::::::::::::::::d     ",
+  "     #::e:::::::::::::::::::e::d     ",
+  "     #::::::::::K:::K::::::::::d     ",
+  "     #dddddddddddd<ddddddddddddd     ",
 ]
 
 [tiles.legend]
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
 "#" = { label = "wall", walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32523, tile = 38 } }
+"d" = { label = "wall (terrace)", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32523, tile = 38 } }
+"b" = { label = "wall (middle hall)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 11, clut = 32523, tile = 38 } }
 "_" = { label = "parapet", walls = "all", wall = { kind = "box", height = 48, tpage = 12, clut = 32576, tile = 0 } }
 "-" = { label = "parapet (terrace)", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 12, clut = 32576, tile = 0 } }
+"c" = { label = "parapet (terrace edge)", height = 1, walls = "all", wall = { kind = "box", height = 76, tpage = 12, clut = 32576, tile = 0 } }
 "." = { label = "hall floor", ground = { kind = "texture", tpage = 12, clut = 32576, tile = 8 } }
 "," = { label = "middle hall", height = 1, ground = { kind = "texture", tpage = 12, clut = 32576, tile = 1 } }
 ":" = { label = "upper terrace", height = 2, ground = { kind = "texture", tpage = 11, clut = 32523, tile = 46 } }
@@ -101,6 +111,7 @@ rows = [
 "Q" = { label = "slag trough", walls = "all", ground = { kind = "texture", tpage = 5, clut = 30720, tile = 0 } }
 # Solid stone: piers, the ember pillars, anvils, the ash altar, the brazier.
 "o" = { label = "pier", walls = "all", wall = { kind = "box", height = 288, tpage = 11, clut = 32523, tile = 46 } }
+"e" = { label = "pier (terrace)", height = 2, walls = "all", wall = { kind = "box", height = 288, tpage = 11, clut = 32523, tile = 46 } }
 "p" = { label = "ember pillar", height = 1, walls = "all", wall = { kind = "box", height = 256, tpage = 12, clut = 32576, tile = 1 } }
 "F" = { label = "anvil", walls = "all", wall = { kind = "box", height = 64, tpage = 8, clut = 32256, tile = 8 } }
 "A" = { label = "ash altar", walls = "all", wall = { kind = "box", height = 96, tpage = 8, clut = 32256, tile = 0 } }
@@ -181,7 +192,7 @@ id = "brazier_fire"
 mesh = { object = 32 }
 tile = [18, 32]
 offset = [0, 44, 0]
-scale = 0.45
+scale = 0.36
 animate = [{ kind = "spin", period = 180 }, { kind = "pulse", amount = 0.12, period = 46 }]
 light = { color = [255, 90, 30], radius = 900, height = 60, flicker = 0.45, period = 9 }
 
@@ -189,6 +200,7 @@ light = { color = [255, 90, 30], radius = 900, height = 60, flicker = 0.45, peri
 id = "wisp_w"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [17, 31]
+hangs = true
 offset = [40, 110, 40]
 scale = 0.8
 animate = [{ kind = "orbit", radius = 90, period = 240 }, { kind = "bob", amplitude = 14, period = 70 }, { kind = "spin", period = 90 }]
@@ -198,6 +210,7 @@ light = { color = [255, 140, 60], radius = 420, flicker = 0.3, period = 12 }
 id = "wisp_e"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [19, 33]
+hangs = true
 offset = [-40, 110, -40]
 scale = 0.8
 animate = [{ kind = "orbit", radius = 90, period = -240, phase = 0.5 }, { kind = "bob", amplitude = 14, period = 70, phase = 0.5 }, { kind = "spin", period = -90 }]
@@ -267,6 +280,7 @@ light = { color = [255, 110, 40], radius = 600, height = 120, flicker = 0.5, per
 id = "forge_banner"
 mesh = { asset = "models/banner_red.glb" }
 tile = [3, 13]
+hangs = true
 offset = [0, 60, 50]
 animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 150 }]
 
@@ -286,6 +300,7 @@ solid = true
 id = "shrine_ember"
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [33, 11]
+hangs = true
 offset = [64, 170, 0]
 scale = 1.2
 animate = [{ kind = "spin", period = 300 }, { kind = "bob", amplitude = 10, period = 120 }]
@@ -295,24 +310,24 @@ light = { color = [255, 170, 120], radius = 520, height = 0, flicker = 0.15, per
 [[decor]]
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [14, 19]
-offset = [0, 270, 0]
+offset = [0, 291, 0]
 
 [[decor]]
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [22, 19]
-offset = [0, 270, 0]
+offset = [0, 291, 0]
 rotation = [0.0, 30.0, 0.0]
 
 [[decor]]
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [14, 23]
-offset = [0, 270, 0]
+offset = [0, 291, 0]
 rotation = [0.0, 15.0, 0.0]
 
 [[decor]]
 mesh = { asset = "models/ember_crystal.glb" }
 tile = [22, 23]
-offset = [0, 270, 0]
+offset = [0, 291, 0]
 rotation = [0.0, 45.0, 0.0]
 
 # The Rogue's Tower's wall torches (`rugi` mesh 15) down every hall.
@@ -336,7 +351,9 @@ every = 3
 phase = 1
 inset = 40
 jitter = 30
-scale_range = [0.45, 0.7]
+# The cone's origin is a third of the way up it: lift each onto the floor.
+y = 30
+scale_range = [0.5, 0.62]
 seed = 2202
 
 # Fallen rock heaps in the lower hall's side aisles and the terrace's far
@@ -355,7 +372,7 @@ cluster = { centre = [8.0, 14.0], radius = 3.0, falloff = 1.0 }
 meshes = [
   { mesh = { object = 17 }, scale = [0.3, 0.45] },
   { mesh = { object = 18 } },
-  { mesh = { object = 19 } },
+  { mesh = { object = 19 }, y = 12 },
   { mesh = { object = 20 } },
 ]
 
@@ -373,7 +390,7 @@ cluster = { centre = [28.0, 7.0], radius = 3.0, falloff = 1.0 }
 meshes = [
   { mesh = { object = 17 }, scale = [0.3, 0.45] },
   { mesh = { object = 18 } },
-  { mesh = { object = 19 } },
+  { mesh = { object = 19 }, y = 12 },
   { mesh = { object = 20 } },
 ]
 
@@ -390,7 +407,7 @@ keep_clear = true
 cluster = { centre = [7.0, 38.0], radius = 4.0, falloff = 1.2 }
 meshes = [
   { mesh = { object = 17 }, scale = [0.3, 0.45] },
-  { mesh = { object = 19 } },
+  { mesh = { object = 19 }, y = 12 },
   { mesh = { object = 20 } },
 ]
 

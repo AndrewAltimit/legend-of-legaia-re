@@ -26,6 +26,10 @@ ground = { tpage = 12, clut = 32448, tile = 0 }
 side = { tpage = 11, clut = 32517, tile = 27 }
 depth = 384
 shade = 48
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 11, clut = 32517, tile = 27, height = 1024, distance = 2, shade = 88 }
 
 [tiles]
 origin = [20, 20]
@@ -306,41 +310,71 @@ facing = 0
 line = "high_table_hello"
 
 # --- Furniture ------------------------------------------------------------------
+# Every piece stands on the floor or on what holds it: koin1's furniture is
+# authored where the Sol rooms stood it (a plant on its sill, a stool's legs
+# below its origin, a case on its counter), so each offset here sets the
+# piece's foot on its surface and its middle on its spot.
 
 # Bar stools (`koin1` mesh 81) along the bar; Old Mott's is the east one.
 [[decor]]
 mesh = { object = 81 }
 tile = [12, 14]
+offset = [0, 51, 0]
 
 [[decor]]
 mesh = { object = 81 }
 tile = [15, 14]
-offset = [-40, 0, 0]
+offset = [-40, 51, 0]
 
 [[decor]]
 mesh = { object = 81 }
 tile = [17, 14]
-offset = [40, 0, 0]
+offset = [40, 51, 0]
 
 [[decor]]
 mesh = { object = 81 }
 tile = [19, 14]
+offset = [0, 51, 0]
 
-# Bottle shelves (`koin1` mesh 130) on the bar's back wall.
+# On the bar's top (88 up): tankards at either end, a bottle and a plate
+# by the keeper's place.
+[[decor]]
+mesh = { object = 132 }
+tile = [12, 15]
+offset = [-20, 46, 21]
+scale = 0.65
+
+[[decor]]
+mesh = { object = 133 }
+tile = [15, 15]
+offset = [47, 30, 23]
+scale = 0.75
+
+[[decor]]
+mesh = { object = 132 }
+tile = [18, 15]
+offset = [20, 46, -21]
+scale = 0.65
+rotation = [0.0, 180.0, 0.0]
+
+# Bottle shelves (`koin1` mesh 130) on the back wall, hung over the bar.
 [[decor]]
 mesh = { object = 130 }
 tile = [12, 16]
-offset = [0, 0, -40]
+offset = [0, 100, -124]
+hangs = true
 
 [[decor]]
 mesh = { object = 130 }
 tile = [15, 16]
-offset = [0, 0, -40]
+offset = [0, 100, -124]
+hangs = true
 
 [[decor]]
 mesh = { object = 130 }
 tile = [18, 16]
-offset = [0, 0, -40]
+offset = [0, 100, -124]
+hangs = true
 
 # The High Table: the Rest's long card table (`koin1` mesh 120, a table
 # on its own legs) on its tile. A prop, so the Tower High Table
@@ -352,90 +386,136 @@ tile = [18, 10]
 scale = 1.3
 solid = true
 
-# Barrels at the bar's ends, a display case at the armory.
+# A barrel stack at the bar's west end, barrels by the hall's south door,
+# and the armory's small glass case on its counter.
 [[props]]
 id = "barrels_bar"
-mesh = { object = 89 }
+mesh = { object = 111 }
 tile = [10, 15]
+offset = [62, 0, 26]
 solid = true
 
 [[props]]
 id = "barrels_hall"
 mesh = { object = 131 }
 tile = [27, 17]
+offset = [-19, 0, -22]
 solid = true
 
-[[props]]
-id = "armory_case"
+[[decor]]
 mesh = { object = 144 }
-tile = [9, 13]
+tile = [8, 15]
+offset = [21, 46, 20]
 rotation = [0.0, 90.0, 0.0]
-solid = true
+scale = 0.33
 
-# Plants in the hall's corners and by the doors.
+# Plants (`koin1` meshes 136 and 142, a pot on the floor) in the hall's
+# corners and by the doors.
 [[decor]]
 mesh = { object = 136 }
 tile = [9, 6]
+offset = [38, -91, -38]
 
 [[decor]]
 mesh = { object = 142 }
 tile = [27, 6]
+offset = [-63, -127, 64]
 solid = true
 
 [[decor]]
 mesh = { object = 142 }
 tile = [21, 17]
+offset = [-63, -127, 64]
 solid = true
 
-# The card room: the dealer's display case, a plant.
+# The card room: the dealer's glass case along the west wall, a bench
+# under the painting on the south wall, a barrel stack and plants in the
+# corners. The middle of the room is the duel table's.
 [[props]]
 id = "card_case"
 mesh = { object = 144 }
 tile = [1, 11]
+offset = [49, -95, 46]
 rotation = [0.0, 90.0, 0.0]
+scale = 0.75
 solid = true
 
 [[decor]]
 mesh = { object = 136 }
 tile = [1, 16]
+offset = [38, -91, -38]
 
-# The games room: the game-night table (the Rest's round table, `koin1`
-# mesh 120, with four chairs, mesh 27) and the casino's arcade cabinets
-# (mesh 78) on the east wall.
+[[decor]]
+mesh = { object = 142 }
+tile = [6, 9]
+offset = [-63, -127, 64]
+solid = true
+
+[[decor]]
+mesh = { object = 118 }
+tile = [3, 16]
+offset = [1, -1, 64]
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 140 }
+tile = [3, 16]
+offset = [-2, 0, 60]
+hangs = true
+
+[[decor]]
+mesh = { object = 111 }
+tile = [6, 16]
+offset = [62, 0, 26]
+solid = true
+
+# The games room: the game-night table (the Rest's long table, `koin1`
+# mesh 120, turned along the room) with a bottle, a plate and tankards on
+# its top (83 up) and two chairs (mesh 27) down each side, and the
+# casino's arcade cabinets (mesh 78) on the east wall.
 [[decor]]
 mesh = { object = 120 }
 tile = [33, 12]
+offset = [83, 0, -1]
 rotation = [0.0, 90.0, 0.0]
 scale = 1.3
 
 [[decor]]
 mesh = { object = 32 }
 tile = [33, 12]
-offset = [0, 84, 0]
+offset = [32, 6, -122]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 132 }
+tile = [33, 12]
+offset = [32, 18, 100]
 rotation = [0.0, 90.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
-tile = [32, 12]
-offset = [-30, 0, 0]
+tile = [33, 12]
+offset = [-130, 0, -98]
 rotation = [0.0, 90.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
-tile = [34, 12]
-offset = [30, 0, 0]
+tile = [33, 12]
+offset = [-130, 0, 62]
+rotation = [0.0, 90.0, 0.0]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [33, 12]
+offset = [130, 0, -62]
 rotation = [0.0, -90.0, 0.0]
 
 [[decor]]
 mesh = { object = 27 }
-tile = [33, 11]
-offset = [0, 0, -30]
-
-[[decor]]
-mesh = { object = 27 }
-tile = [33, 13]
-offset = [0, 0, 30]
-rotation = [0.0, 180.0, 0.0]
+tile = [33, 12]
+offset = [130, 0, 98]
+rotation = [0.0, -90.0, 0.0]
 
 [[props]]
 id = "arcade_n"
@@ -461,10 +541,23 @@ solid = true
 [[decor]]
 mesh = { object = 131 }
 tile = [30, 16]
+offset = [-19, 0, -22]
 solid = true
 
-# The lounge: the piano on its stage, small round tables (`koin1` mesh
-# 75, a solid drum standing on the floor) with chairs, plants.
+[[decor]]
+mesh = { object = 47 }
+tile = [32, 16]
+offset = [64, 0, 54]
+hangs = true
+
+[[decor]]
+mesh = { object = 136 }
+tile = [34, 16]
+offset = [38, -91, -38]
+
+# The lounge: the piano on its stage, small round tables (`koin1` mesh 76,
+# a pedestal, under mesh 75, its top) with chairs, plants, paintings on
+# the south wall.
 [[props]]
 id = "piano"
 mesh = { object = 24 }
@@ -472,83 +565,153 @@ tile = [13, 24]
 solid = true
 
 [[decor]]
+mesh = { object = 76 }
+tile = [20, 21]
+offset = [0, 0, -2]
+solid = true
+
+[[decor]]
 mesh = { object = 75 }
 tile = [20, 21]
-solid = true
+offset = [0, 0, -1]
 
 [[decor]]
 mesh = { object = 27 }
-tile = [19, 21]
+tile = [20, 21]
+offset = [-102, 0, -18]
 rotation = [0.0, 90.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 27 }
-tile = [21, 21]
+tile = [20, 21]
+offset = [102, 0, 18]
 rotation = [0.0, -90.0, 0.0]
 solid = true
 
 [[decor]]
+mesh = { object = 76 }
+tile = [24, 24]
+offset = [0, 0, -2]
+solid = true
+
+[[decor]]
+id = "lounge_table_e"
 mesh = { object = 75 }
 tile = [24, 24]
-solid = true
+offset = [0, 0, -1]
+
+[[decor]]
+mesh = { object = 133 }
+tile = [24, 24]
+offset = [38, 0, 19]
+scale = 0.6
+on = "lounge_table_e"
 
 [[decor]]
 mesh = { object = 27 }
-tile = [23, 24]
+tile = [24, 24]
+offset = [-102, 0, -18]
 rotation = [0.0, 90.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 27 }
-tile = [25, 24]
+tile = [24, 24]
+offset = [102, 0, 18]
 rotation = [0.0, -90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 76 }
+tile = [19, 26]
+offset = [0, 0, -2]
 solid = true
 
 [[decor]]
 mesh = { object = 75 }
 tile = [19, 26]
+offset = [0, 0, -1]
+
+[[decor]]
+mesh = { object = 27 }
+tile = [19, 26]
+offset = [-102, 0, -18]
+rotation = [0.0, 90.0, 0.0]
 solid = true
 
 [[decor]]
 mesh = { object = 27 }
-tile = [18, 26]
-rotation = [0.0, 90.0, 0.0]
+tile = [19, 26]
+offset = [18, 0, -102]
 solid = true
 
 [[decor]]
 mesh = { object = 136 }
 tile = [10, 19]
+offset = [38, -91, -38]
 
 [[decor]]
 mesh = { object = 142 }
 tile = [26, 19]
+offset = [-63, -127, 64]
 solid = true
 
 [[decor]]
 mesh = { object = 136 }
 tile = [26, 28]
+offset = [38, -91, -38]
 
-# The landing: plants, barrels and a lantern at the top of the stair.
+[[decor]]
+mesh = { object = 140 }
+tile = [18, 28]
+offset = [-2, 0, 60]
+hangs = true
+
+[[decor]]
+mesh = { object = 45 }
+tile = [21, 28]
+offset = [64, 0, 54]
+hangs = true
+
+[[decor]]
+mesh = { object = 47 }
+tile = [15, 28]
+offset = [64, 0, 54]
+hangs = true
+
+# The landing: plants, barrels and the tavern's sign at the top of the
+# stair.
 [[decor]]
 mesh = { object = 136 }
 tile = [14, 1]
+offset = [38, -91, -38]
 
 [[decor]]
 mesh = { object = 142 }
 tile = [22, 1]
+offset = [-63, -127, 64]
 solid = true
 
 [[decor]]
 mesh = { object = 131 }
 tile = [22, 4]
+offset = [-22, 0, 19]
 rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 155 }
+tile = [15, 4]
+offset = [0, -1, 0]
+rotation = [0.0, 30.0, 0.0]
 solid = true
 
 [[props]]
 id = "lantern_landing"
 mesh = { asset = "models/lantern.glb" }
 tile = [18, 3]
+hangs = true
 offset = [0, 250, 0]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 180 }]
@@ -576,6 +739,7 @@ scale = 2.2
 id = "lantern_hall_w"
 mesh = { asset = "models/lantern.glb" }
 tile = [12, 9]
+hangs = true
 offset = [0, 250, 0]
 scale = 1.4
 animate = [{ kind = "sway", axis = "z", degrees = 5.0, period = 170 }, { kind = "spin", period = 900 }]
@@ -585,6 +749,7 @@ light = { color = [255, 180, 100], radius = 560, height = 0, flicker = 0.12, per
 id = "lantern_hall_e"
 mesh = { asset = "models/lantern.glb" }
 tile = [24, 12]
+hangs = true
 offset = [0, 250, 0]
 scale = 1.4
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 190, phase = 0.3 }, { kind = "spin", period = -1100 }]
@@ -594,6 +759,7 @@ light = { color = [255, 180, 100], radius = 560, height = 0, flicker = 0.12, per
 id = "lantern_cards"
 mesh = { asset = "models/lantern.glb" }
 tile = [4, 10]
+hangs = true
 offset = [0, 240, 0]
 scale = 1.3
 animate = [{ kind = "sway", axis = "z", degrees = 5.0, period = 150, phase = 0.6 }]
@@ -603,6 +769,7 @@ light = { color = [255, 210, 150], radius = 520, height = 0, flicker = 0.1, peri
 id = "lantern_games"
 mesh = { asset = "models/lantern.glb" }
 tile = [32, 9]
+hangs = true
 offset = [0, 240, 0]
 scale = 1.3
 animate = [{ kind = "sway", axis = "x", degrees = 5.0, period = 160, phase = 0.5 }]
@@ -612,6 +779,7 @@ light = { color = [255, 140, 170], radius = 520, height = 0, flicker = 0.1, peri
 id = "lantern_lounge"
 mesh = { asset = "models/lantern.glb" }
 tile = [20, 23]
+hangs = true
 offset = [0, 250, 0]
 scale = 1.4
 animate = [{ kind = "sway", axis = "x", degrees = 4.0, period = 200, phase = 0.2 }]
