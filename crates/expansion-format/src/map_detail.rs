@@ -106,6 +106,10 @@ pub struct ScatterBrush {
     /// Every mesh the brush places blocks the ground under it
     /// ([`DecorDef::solid`]): an orchard the player walks round.
     pub solid: bool,
+    /// What it places hangs or is mounted ([`crate::map::PropDef::hangs`]):
+    /// the resting check passes it over.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A [`ScatterBrush`]'s clearance round the walkable floor (every tile
@@ -220,6 +224,7 @@ impl Default for ScatterBrush {
             cluster: None,
             clearance: None,
             solid: false,
+            hangs: false,
         }
     }
 }
@@ -290,6 +295,11 @@ pub struct EdgeDecor {
     pub seed: u64,
     /// Each copy blocks the ground under it ([`DecorDef::solid`]).
     pub solid: bool,
+    /// The copies are mounted on the wall they run along (a sconce, a
+    /// banner) rather than standing: the resting check passes them over
+    /// ([`crate::map::PropDef::hangs`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 impl Default for EdgeDecor {
@@ -311,6 +321,7 @@ impl Default for EdgeDecor {
             scale_range: None,
             seed: 0,
             solid: false,
+            hangs: false,
         }
     }
 }
@@ -1168,6 +1179,29 @@ pub struct Decoration {
     pub solid: bool,
 }
 
+/// The map entry a [`Decoration`] comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DecorSource {
+    /// `decor[i]`.
+    Decor(usize),
+    /// Mesh `mesh` of `scatter[brush]`.
+    Scatter { brush: usize, mesh: usize },
+    /// `edges[i]`.
+    Edges(usize),
+}
+
+impl DecorSource {
+    /// The entry's field path: `decor[3]`, `scatter[1].meshes[0]`,
+    /// `edges[2]`.
+    pub fn path(&self) -> String {
+        match self {
+            Self::Decor(i) => format!("decor[{i}]"),
+            Self::Scatter { brush, mesh } => format!("scatter[{brush}].meshes[{mesh}]"),
+            Self::Edges(i) => format!("edges[{i}]"),
+        }
+    }
+}
+
 /// A [`Cluster`]'s density factor at map-local tile `(col, row)` of a
 /// brush over `rect`.
 pub fn cluster_weight(k: &Cluster, rect: &TileRect, col: u16, row: u16) -> f32 {
@@ -1234,18 +1268,33 @@ impl crate::map::MapDef {
     /// total weight, or the map expands past [`MAX_DECORATIONS`] (or a tile
     /// past [`MAX_DECORATIONS_PER_TILE`]).
     pub fn decorations(&self) -> anyhow::Result<Vec<Decoration>> {
+        Ok(self
+            .decorations_sourced()?
+            .into_iter()
+            .map(|(_, d)| d)
+            .collect())
+    }
+
+    /// [`Self::decorations`], each with the entry that placed it.
+    pub fn decorations_sourced(&self) -> anyhow::Result<Vec<(DecorSource, Decoration)>> {
         use anyhow::bail;
         let grid = self.tile_grid()?;
-        let mut out: Vec<Decoration> = self
+        let mut out: Vec<(DecorSource, Decoration)> = self
             .decor
             .iter()
-            .map(|d| Decoration {
-                mesh: d.mesh.clone(),
-                tile: d.tile,
-                offset: d.offset.map(f32::from),
-                rotation: d.rotation,
-                scale: d.scale.unwrap_or(1.0),
-                solid: d.solid,
+            .enumerate()
+            .map(|(i, d)| {
+                (
+                    DecorSource::Decor(i),
+                    Decoration {
+                        mesh: d.mesh.clone(),
+                        tile: d.tile,
+                        offset: d.offset.map(f32::from),
+                        rotation: d.rotation,
+                        scale: d.scale.unwrap_or(1.0),
+                        solid: d.solid,
+                    },
+                )
             })
             .collect();
         let floor = |c: usize, r: usize| grid.get(c, r).is_some_and(|t| !t.void && t.walls != 0xF);
@@ -1303,10 +1352,11 @@ impl crate::map::MapDef {
                     let jitter = f32::from(brush.jitter.min(256));
                     for _ in 0..n {
                         let mut pick = (rng.unit() * total as f32) as u64;
-                        let m = brush
+                        let (mi, m) = brush
                             .meshes
                             .iter()
-                            .find(|m| {
+                            .enumerate()
+                            .find(|(_, m)| {
                                 let w = u64::from(m.weight);
                                 if pick < w {
                                     true
@@ -1315,7 +1365,10 @@ impl crate::map::MapDef {
                                     false
                                 }
                             })
-                            .unwrap_or(&brush.meshes[brush.meshes.len() - 1]);
+                            .unwrap_or((
+                                brush.meshes.len() - 1,
+                                &brush.meshes[brush.meshes.len() - 1],
+                            ));
                         let [s0, s1] = m.scale.unwrap_or(brush.scale);
                         let dx = rng.range(-jitter, jitter);
                         let dz = rng.range(-jitter, jitter);
@@ -1323,14 +1376,17 @@ impl crate::map::MapDef {
                         let pitch = rng.range(-brush.tilt, brush.tilt);
                         let roll = rng.range(-brush.tilt, brush.tilt);
                         let scale = rng.range(s0, s1);
-                        out.push(Decoration {
-                            mesh: m.mesh.clone(),
-                            tile: [col, row],
-                            offset: [dx, f32::from(m.y), dz],
-                            rotation: [pitch, yaw, roll],
-                            scale,
-                            solid: brush.solid,
-                        });
+                        out.push((
+                            DecorSource::Scatter { brush: b, mesh: mi },
+                            Decoration {
+                                mesh: m.mesh.clone(),
+                                tile: [col, row],
+                                offset: [dx, f32::from(m.y), dz],
+                                rotation: [pitch, yaw, roll],
+                                scale,
+                                solid: brush.solid,
+                            },
+                        ));
                     }
                 }
             }
@@ -1385,18 +1441,21 @@ impl crate::map::MapDef {
                             Some([a, b]) => rng.range(a, b),
                             None => edge.scale.unwrap_or(1.0),
                         };
-                        out.push(Decoration {
-                            mesh: edge.mesh.clone(),
-                            tile: [mc, mr],
-                            offset: [
-                                px * (reach - inward) + pz.abs() * along,
-                                f32::from(edge.y),
-                                pz * (reach - inward) + px.abs() * along,
-                            ],
-                            rotation: [0.0, (yaw + edge.yaw + turn).rem_euclid(360.0), 0.0],
-                            scale,
-                            solid: edge.solid,
-                        });
+                        out.push((
+                            DecorSource::Edges(e),
+                            Decoration {
+                                mesh: edge.mesh.clone(),
+                                tile: [mc, mr],
+                                offset: [
+                                    px * (reach - inward) + pz.abs() * along,
+                                    f32::from(edge.y),
+                                    pz * (reach - inward) + px.abs() * along,
+                                ],
+                                rotation: [0.0, (yaw + edge.yaw + turn).rem_euclid(360.0), 0.0],
+                                scale,
+                                solid: edge.solid,
+                            },
+                        ));
                     }
                 }
             }
@@ -1408,7 +1467,7 @@ impl crate::map::MapDef {
             );
         }
         let mut per_tile: std::collections::BTreeMap<[u16; 2], usize> = Default::default();
-        for d in &out {
+        for (_, d) in &out {
             let n = per_tile.entry(d.tile).or_default();
             *n += 1;
             if *n > MAX_DECORATIONS_PER_TILE {

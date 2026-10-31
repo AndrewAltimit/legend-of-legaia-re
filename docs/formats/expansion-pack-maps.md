@@ -265,17 +265,36 @@ or resting an item on itself, is a validation error.
 
 The placement is also checked
 ([`map_rest::rest_issues`](../../crates/expansion-format/src/map_rest.rs)). An
-item whose lowest point is more than `10` units over the ground under it must
-be on the top of a support whose area holds it: a prop or decoration (the
-floor-plane hull of its mesh, or a standable top's footprint), or a tile
-whose whole area is a wall box (a counter, a ledge). Otherwise it is
-reported:
+item whose base is more than `10` units over the highest ground under its
+footprint must be on the top of a support its footprint is over: a prop or
+decoration (the floor-plane hull of its mesh, or a standable top's
+footprint), or a tile whose whole area is a wall box (a counter, a ledge).
+The support is the one holding the most of the item's footprint (of those
+holding as much, the one whose top is nearest its base), not the one under
+its origin, so a mesh built off its origin is judged where it draws.
+Otherwise it is reported:
 
 | Report | Means |
 |---|---|
 | floats N units over the ground | Nothing is under it. Rest it with `on`, or mark it `hangs` (a lantern on a chain, a banner on a wall). |
-| hovers N units over / sinks N units into the top of X | It stands over X but not on its top. |
+| hovers N units over / sinks N units into the top of X | It stands over X but not on its top. Sunk, it is reported only when X holds at least half its footprint: a rock leaning into the next one of a pile is not a mug sunk into a table. |
 | reaches N units past the edge of X | It rests on X and is wider than X's top by more than `12` units. |
+
+The base is the mesh's lowest point, except on a flat card - a picture
+drawn on one upright plane, a flame or a sprite tree, whose floor-plane
+hull has no area. Its lowest vertex says little about where the picture
+stands (`rugi`'s torch card, object 15, reaches 64 units below its origin,
+under the floor of any tile it is set on), so a card is read from its
+origin when it spans the origin, else from its nearer end
+([`map_rest::visual_base`](../../crates/expansion-format/src/map_rest.rs)).
+
+Every placement of a `[[scatter]]` mesh and of an `[[edges]]` run is
+judged the same way, and each brush mesh or run is reported once, at its
+worst placement, with how many placements rest badly
+(`scatter[2].meshes[0] ("grass"), 14 placements, the worst floats ...`).
+A brush has no `on`; its fix is its `y`, or `hangs = true` on the brush or
+the run (a run of sconces mounted on the walls it follows). Brush
+placements are judged, never supports.
 
 A mesh's origin is not always its base: a retail mesh can be built standing
 well above its origin (a plant pot whose lowest vertex is `91` units up), so
@@ -284,8 +303,14 @@ the meshes, so it runs where they are: the engine logs each report when it
 prepares the map (`expansion: map '<id>': rest: ...`), the disc-gated
 `expansion_rest_rebirth_disc` test lists the flagship pack's, and the
 validator warns with a resolver that measures meshes
-(`DiscResolver::mesh_shape`); without one it judges nothing. An item or
-support whose mesh is not measured is not judged either.
+(`DiscResolver::mesh_shape`, which the workbench's disc catalog implements
+off each scene's geometry pack); without one it judges nothing. An item or
+support whose mesh is not measured (a model asset in the workbench) is not
+judged either.
+[`map_rest::rest_report`](../../crates/expansion-format/src/map_rest.rs) is
+the editor's side of the same reading: each prop's and decoration's
+resolved height, base and top, and the surfaces under its footprint, most
+held first, with the `offset[1]` that rests it on each.
 
 ## NPCs
 
@@ -864,6 +889,7 @@ phase = 0                                   # ...where (col + row + phase) % eve
 inset = 6                                   # world units from the wall face
 y = 120
 yaw = 0.0                                   # added to facing into the room
+hangs = true                                # mounted on the wall: not on anything
 ```
 
 A brush's draw for a tile is a pure function of its `seed`, its index and

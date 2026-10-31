@@ -276,6 +276,7 @@ footprint = [128, 128]                      # the top's extent, world units</cod
   <h3 id="standable-props">Standable props</h3>
   <p>A prop with a <code>top</code> is a floor box: a flat surface <code>top</code> world units up (the <code>floor_heights</code> convention) over its <code>footprint</code>, centred on the tile centre plus <code>offset</code>, the whole tile when the footprint is left out. It does not close its tile, so <code>solid</code> is unread.</p>
   <p>The floor sampler (<code>World::sample_field_floor_height</code>, the <code>FUN_80019278</code> port, and its camera-ladder sibling) answers the higher of the grid floor and the top inside the box. The tier grid is untouched: a top is not a corner height, so it neither slopes into its neighbours nor bends the ground mesh around it, which is why it is a separate surface rather than a raised tier. The prop's mesh draws on the tile's floor as before; matching <code>top</code> to the mesh's visible height is the modder's call.</p>
+  <p><b>Resting placement.</b> <code>on = "&lt;id&gt;"</code> sets an item's lowest point on another prop's or decoration's top (a standable <code>top</code>, else its mesh's highest point), <code>offset[1]</code> lifting it from there; the engine resolves it from the meshes' vertices at map load (<code>map_rest::rest_on</code>). The resting check (<code>map_rest::rest_issues</code>) reports an item more than <code>10</code> units over the highest ground under its footprint that is not on the top of the support its footprint is most over: floating, hovering over or sunk into a top, or overhanging it. A flat card (a flame, a sprite tree) is read from its origin, not its lowest vertex. Every <code>[[scatter]]</code> mesh and <code>[[edges]]</code> run is judged over its placements and reported once at its worst. <code>hangs = true</code> on an item, a brush or a run passes it over: a lantern on a chain, sconces on a wall.</p>
   <table>
     <thead><tr><th>Mover</th><th>On a standable prop</th></tr></thead>
     <tbody>
@@ -417,6 +418,18 @@ kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, p
 <pre><code>[fog]
 regions = [{ rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 }]</code></pre>
   <p>Arms the retail field fog pool over the map: each region becomes a MAN-section-4 region record and the ambient particle gate goes up (<code>World::arm_expansion_fog</code>). The wisps are the pool's own, drawn by both hosts through <code>World::fog_render_step</code>; the pool draws from the world's random stream as retail's does.</p>
+</section>
+
+<section class="doc-section" id="surround" data-doc="surround">
+  <h2>Surround</h2>
+<pre><code>[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }      # the drop's floor, one cell a tile
+side = { tpage = 11, clut = 32523, tile = 38 }      # the floor edge's face down to it
+depth = 448                                         # world units below tier 0
+reach = 8                                           # tiles past the map's edges
+shade = 72                                          # vertex colour, 128 = the texel as is
+backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1152, distance = 2, sides = "esw", shade = 96, fade = 0 }</code></pre>
+  <p>A map with no base geometry draws nothing past its floor, which a follow camera at its edge frames as a black void. The surround lays a flat ground <code>depth</code> below tier <code>0</code> on every void tile and up to <code>reach</code> tiles past the map, with <code>side</code> a face from the floor's edge down to it, so the floor reads as a ledge. <code>backdrop</code> stands a wall <code>distance</code> tiles past the map along its <code>sides</code>, rising to <code>height</code> and darkening over its top two fifths to <code>fade</code>: the far side of a hall the camera looks over. The default <code>"esw"</code> leaves the camera's <code>-Z</code> side open. Both are drawn, never walked, through the decoration-cell path (<code>expansion_map::surround</code>).</p>
 </section>
 
 <section class="doc-section" id="particles" data-doc="particles">

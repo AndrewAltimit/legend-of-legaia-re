@@ -340,6 +340,7 @@ every = 3
 inset = 6
 y = 150
 seed = 2201
+hangs = true
 
 # Stalagmites (`rugi` mesh 24) along the rock walls, between the torches.
 [[edges]]

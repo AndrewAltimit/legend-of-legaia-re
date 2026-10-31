@@ -292,6 +292,7 @@ inset = 6
 y = 120
 jitter = 20
 seed = 21
+hangs = true
 
 # Hanging vines (`tower` mesh 16) down the walls between the torches.
 [[edges]]

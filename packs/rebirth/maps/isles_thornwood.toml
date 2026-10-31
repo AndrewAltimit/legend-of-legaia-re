@@ -620,6 +620,7 @@ id = "gate_torch_w"
 mesh = { scene = "rugi", object = 15 }
 tile = [96, 11]
 offset = [0, 40, -50]
+hangs = true
 light = { color = [255, 170, 90], radius = 420, height = 60, flicker = 0.35, period = 14 }
 
 [[props]]
@@ -627,6 +628,7 @@ id = "gate_torch_e"
 mesh = { scene = "rugi", object = 15 }
 tile = [100, 11]
 offset = [0, 40, -50]
+hangs = true
 light = { color = [255, 170, 90], radius = 420, height = 60, flicker = 0.35, period = 14 }
 
 [[props]]

@@ -701,28 +701,24 @@ solid = true
 id = "lantern_table_nw"
 mesh = { scene = "rugi", object = 15 }
 tile = [54, 30]
-offset = [0, 40, 0]
 light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 13 }
 
 [[props]]
 id = "lantern_table_ne"
 mesh = { scene = "rugi", object = 15 }
 tile = [58, 30]
-offset = [0, 40, 0]
 light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 15 }
 
 [[props]]
 id = "lantern_table_sw"
 mesh = { scene = "rugi", object = 15 }
 tile = [54, 34]
-offset = [0, 40, 0]
 light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 17 }
 
 [[props]]
 id = "lantern_table_se"
 mesh = { scene = "rugi", object = 15 }
 tile = [58, 34]
-offset = [0, 40, 0]
 light = { color = [255, 214, 160], radius = 420, height = 60, flicker = 0.2, period = 11 }
 
 [[decor]]
