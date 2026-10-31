@@ -396,8 +396,11 @@ mood = "cave"                               # day, dusk, night, cave
 lamps = [{ tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 }]
 
 [[props]]
-light = { color = [255, 150, 70], radius = 560, flicker = 0.25, period = 18 }</code></pre>
-  <p>Enhanced lighting lights a pack map as it lights a retail scene - from the emitter primitives of the meshes it draws, so a torch carried in from another scene lights its wall - plus the map's lamps and prop lights. <code>mood</code> stands in for the base scene's under the time of day <code>Auto</code>. Both hosts read mood and lights through one kernel (<code>engine-screens::field_frame</code>). With enhanced lighting off the map renders retail-faithful: baked colours, no lamps.</p>
+light = { color = [255, 150, 70], radius = 560, flicker = 0.25, period = 18 }
+
+# a slow, even breath instead of a flame's waver (a rootlight shrub)
+lamps = [{ tile = [12, 9], offset = [0, 40, 0], color = [120, 255, 150], radius = 360, breathe = 0.6, breathe_period = 260 }]</code></pre>
+  <p>Enhanced lighting lights a pack map as it lights a retail scene - from the emitter primitives of the meshes it draws, so a torch carried in from another scene lights its wall - plus the map's lamps and prop lights. <code>mood</code> stands in for the base scene's under the time of day <code>Auto</code>. <code>flicker</code> wavers a light like a flame; <code>breathe</code> swells and fades it evenly every <code>breathe_period</code> frames (default 240), each light at its own place in the breath, and its halo breathes with it. Both hosts read mood and lights through one kernel (<code>engine-screens::field_frame</code>). With enhanced lighting off the map renders retail-faithful: baked colours, no lamps, and no emitter marked <code>with_lighting</code>.</p>
 </section>
 
 <section class="doc-section" id="animated-materials" data-doc="animated-materials">
@@ -467,7 +470,8 @@ height = [40, 90]
 count = 14
 seed = 11
 # optional over the kind's preset: life, velocity, spread, gravity, sway,
-# size, color, color_end, additive</code></pre>
+# size, color, color_end, additive
+with_lighting = false    # true: part of the enhanced-lighting layer, drawn only with it on</code></pre>
   <p>Each particle is a camera-facing sprite drawn through the field screen-effect pass the retail fog sheets use (<code>HostView::fog_prims</code>, both hosts), projected by the same view. Its whole life is a pure function of the seed, its index and <code>World::frame</code> - no state, no random stream - so it is the same on both hosts and in every run. The sprites are the engine's own (a soft dot, a spark, a leaf, a drop, drawn at load into free VRAM), additive for the glowing kinds, opaque for leaves.</p>
 </section>
 

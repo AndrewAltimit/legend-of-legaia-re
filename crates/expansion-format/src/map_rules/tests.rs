@@ -378,3 +378,25 @@ fn a_ceiling_holds_its_ranges_and_names_hung_items() {
         "{issues:#?}"
     );
 }
+
+#[test]
+fn a_breathing_light_wants_a_depth_and_a_period() {
+    let ok = MAP.replace(
+        "top = 48",
+        "top = 48\nlight = { color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 }",
+    );
+    let issues = validate(&pack(&ok));
+    assert!(errors(&issues).is_empty(), "{issues:#?}");
+    let bad = MAP.replace(
+        "top = 48",
+        "top = 48\nlight = { color = [120, 255, 160], radius = 340, breathe = 1.5, flicker = 0.2, period = 0 }",
+    );
+    let e = errors(&validate(&pack(&bad)));
+    assert!(e.iter().any(|m| m.contains("breathe 1.5")), "{e:#?}");
+    assert!(e.iter().any(|m| m.contains("needs a period")), "{e:#?}");
+    let lamp = format!(
+        "{MAP}\n[lighting]\nlamps = [{{ tile = [2, 1], radius = 300, breathe = 0.4, breathe_period = 0 }}]\n"
+    );
+    let e = errors(&validate(&pack(&lamp)));
+    assert!(e.iter().any(|m| m.contains("breathe_period")), "{e:#?}");
+}

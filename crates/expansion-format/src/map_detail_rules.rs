@@ -111,7 +111,13 @@ pub(crate) fn check_detail(
                 format!("tile {:?} is off the map", l.tile),
             );
         }
-        check_light(cx, &at, l.radius, l.flicker, l.period);
+        check_light(
+            cx,
+            &at,
+            l.radius,
+            [l.flicker, l.breathe],
+            [l.period, l.breathe_period],
+        );
     }
     for (i, fx) in m.materials.iter().enumerate() {
         let at = format!("materials[{i}]");

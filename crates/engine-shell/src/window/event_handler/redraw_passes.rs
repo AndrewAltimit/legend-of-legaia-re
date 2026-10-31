@@ -855,7 +855,7 @@ impl PlayWindowApp {
             let centre = self.host_view().centre();
             self.session.seat_field_fog(&fog, centre);
         }
-        self.host_view().fog_prims()
+        self.host_view().fog_prims(self.dynamic_lighting)
     }
 
     /// This frame's actor drop shadows (retail's `FUN_8001C394` blob), the

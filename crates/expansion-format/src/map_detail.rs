@@ -463,6 +463,9 @@ pub struct EmitterDef {
     pub color_end: Option<[u8; 3]>,
     /// Additive blend (glows); otherwise averaged with the scene.
     pub additive: Option<bool>,
+    /// The particles belong to the enhanced-lighting layer: drawn only
+    /// while it is on (a glow's motes), never in the retail-faithful look.
+    pub with_lighting: Option<bool>,
     pub seed: u64,
 }
 
@@ -482,6 +485,7 @@ pub struct Emitter {
     pub color: [u8; 3],
     pub color_end: [u8; 3],
     pub additive: bool,
+    pub with_lighting: bool,
     pub seed: u64,
 }
 
@@ -710,6 +714,7 @@ impl EmitterDef {
                 .color_end
                 .unwrap_or(if self.color.is_some() { color } else { p.9 }),
             additive: self.additive.unwrap_or(p.10),
+            with_lighting: self.with_lighting.unwrap_or(false),
             seed: self.seed,
         }
     }
@@ -836,7 +841,16 @@ pub struct LampDef {
     pub flicker: f32,
     /// Flicker speed: frames per waver.
     pub period: i32,
+    /// Breath depth `0..=1`: the light swells and dims by this much on a
+    /// slow, even cycle (a living glow rather than a flame).
+    pub breathe: f32,
+    /// Breath speed: frames per full breath.
+    pub breathe_period: i32,
 }
+
+/// The breath period a light takes when its file names none: four
+/// seconds at 60 frames a second.
+pub const DEFAULT_BREATHE_PERIOD: i32 = 240;
 
 impl Default for LampDef {
     fn default() -> Self {
@@ -848,6 +862,8 @@ impl Default for LampDef {
             radius: 640,
             flicker: 0.0,
             period: 24,
+            breathe: 0.0,
+            breathe_period: DEFAULT_BREATHE_PERIOD,
         }
     }
 }
@@ -863,6 +879,8 @@ pub struct PropLight {
     pub height: i16,
     pub flicker: f32,
     pub period: i32,
+    pub breathe: f32,
+    pub breathe_period: i32,
 }
 
 impl Default for PropLight {
@@ -874,6 +892,8 @@ impl Default for PropLight {
             height: l.offset[1],
             flicker: 0.0,
             period: l.period,
+            breathe: 0.0,
+            breathe_period: l.breathe_period,
         }
     }
 }

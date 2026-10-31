@@ -483,7 +483,13 @@ fn check_props(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>) {
         check_mesh(cx, &format!("{at}.mesh"), &p.mesh, base);
         check_animators(cx, &format!("{at}.animate"), &p.animate);
         if let Some(l) = &p.light {
-            check_light(cx, &format!("{at}.light"), l.radius, l.flicker, l.period);
+            check_light(
+                cx,
+                &format!("{at}.light"),
+                l.radius,
+                [l.flicker, l.breathe],
+                [l.period, l.breathe_period],
+            );
         }
         if let Some(s) = p.scale
             && !(s.is_finite() && s > 0.0)
@@ -572,22 +578,35 @@ pub(crate) fn check_animators(
     }
 }
 
-/// A light's reach, flicker depth and flicker period.
-pub(crate) fn check_light(cx: &mut Checker<'_>, at: &str, radius: u16, flicker: f32, period: i32) {
+/// A light's reach, its flicker and breath depths (`depth`) and their
+/// periods (`period`).
+pub(crate) fn check_light(
+    cx: &mut Checker<'_>,
+    at: &str,
+    radius: u16,
+    depth: [f32; 2],
+    period: [i32; 2],
+) {
     if radius == 0 {
         cx.error(&format!("{at}.radius"), "a light needs a radius");
     }
-    if !(0.0..=1.0).contains(&flicker) {
-        cx.error(
-            &format!("{at}.flicker"),
-            format!("flicker {flicker} is outside 0..=1"),
-        );
-    }
-    if flicker > 0.0 && period < 1 {
-        cx.error(
-            &format!("{at}.period"),
-            "a flickering light needs a period of at least 1",
-        );
+    for ((name, d), (pname, p)) in ["flicker", "breathe"]
+        .into_iter()
+        .zip(depth)
+        .zip(["period", "breathe_period"].into_iter().zip(period))
+    {
+        if !(0.0..=1.0).contains(&d) {
+            cx.error(
+                &format!("{at}.{name}"),
+                format!("{name} {d} is outside 0..=1"),
+            );
+        }
+        if d > 0.0 && p < 1 {
+            cx.error(
+                &format!("{at}.{pname}"),
+                format!("a light with {name} needs a {pname} of at least 1"),
+            );
+        }
     }
 }
 

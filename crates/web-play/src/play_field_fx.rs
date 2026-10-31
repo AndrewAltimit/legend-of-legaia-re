@@ -81,8 +81,9 @@ impl LegaiaRuntime {
         // Recorded whether or not the gate let the step run: the drop
         // shadows project through the same field-FX view either way.
         self.fx_depth_affine = Some(fx.depth_affine());
+        let lit = self.options_state.enhanced_lighting;
         self.host_view_at(self.field_pass_box())
-            .map(|v| v.fog_prims())
+            .map(|v| v.fog_prims(lit))
             .unwrap_or_default()
     }
 }

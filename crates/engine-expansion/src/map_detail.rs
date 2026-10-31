@@ -1,7 +1,7 @@
 //! The presentation kernels of a pack map's detail layer
 //! ([`legaia_expansion_format::map_detail`]): an animated prop's pose, a
-//! flickering light's strength and a palette cycle's words, each a pure
-//! function of the world's frame counter.
+//! flickering or breathing light's strength and a palette cycle's words,
+//! each a pure function of the world's frame counter.
 //!
 //! Nothing here touches simulation state: the world reads these to tell the
 //! hosts how to draw a prop or light a frame, and to rewrite VRAM words, so
@@ -154,6 +154,20 @@ pub fn flicker_gain(flicker: f32, period: i32, seed: u32, frame: u64) -> f32 {
     1.0 - flicker * wave.clamp(0.0, 1.0)
 }
 
+/// A breathing light's strength on `frame`: `1` for a steady light, and
+/// for one of depth `breathe` a value in `1 - breathe ..= 1` that swells
+/// and dims on an even cosine every `period` frames - a living glow, not a
+/// flame. `seed` (the light's index) sets each light's place in the
+/// breath, so a row of lights breathes as a ripple rather than in step.
+pub fn breathe_gain(breathe: f32, period: i32, seed: u32, frame: u64) -> f32 {
+    if breathe <= 0.0 || period < 1 {
+        return 1.0;
+    }
+    let t = (frame % period as u64) as f32 / period as f32 + seed as f32 * 0.618;
+    let swell = 0.5 - 0.5 * (t * std::f32::consts::TAU).cos();
+    1.0 - breathe.clamp(0.0, 1.0) * (1.0 - swell)
+}
+
 /// Palette entries `start .. start + count` of `src` rotated `steps` places
 /// (toward higher entries; `reverse` the other way). Entries outside the
 /// range keep their words.
@@ -261,6 +275,19 @@ mod tests {
         let m = p.turn_matrix();
         assert_eq!(&m[0..4], &[1.0, 4.0, 7.0, 0.0]);
         assert_eq!(m[15], 1.0);
+    }
+
+    #[test]
+    fn breath_is_slow_even_and_out_of_step() {
+        assert_eq!(breathe_gain(0.0, 240, 0, 77), 1.0);
+        let g: Vec<f32> = (0..240).map(|f| breathe_gain(0.5, 240, 0, f)).collect();
+        assert!(g.iter().all(|v| (0.5..=1.0).contains(v)));
+        // Bottom of the breath at the cycle's start, top half-way.
+        assert!((g[0] - 0.5).abs() < 1e-4 && (g[120] - 1.0).abs() < 1e-4);
+        // Even: no frame-to-frame step larger than the cosine's slope.
+        assert!(g.windows(2).all(|w| (w[1] - w[0]).abs() < 0.01));
+        assert_eq!(breathe_gain(0.5, 240, 0, 240), g[0]);
+        assert_ne!(breathe_gain(0.5, 240, 1, 0), g[0]);
     }
 
     #[test]

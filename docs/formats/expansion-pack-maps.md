@@ -1102,13 +1102,29 @@ light = { color = [255, 150, 70], radius = 560, height = 0, flicker = 0.25, peri
 `Auto`; a time the player picks (`F8`) still wins. A lamp sits at its tile
 centre plus `offset` above the floor; a prop's light rides the prop's
 animated move. `flicker` is the depth of a flame-like waver
-(`map_detail::flicker_gain`), deterministic per lamp. Both hosts read the
+(`map_detail::flicker_gain`), deterministic per lamp. `breathe` is the depth
+of a slow, even swell and fade every `breathe_period` frames (default
+`240`; `map_detail::breathe_gain`): a living glow rather than a flame. Each
+light starts at its own place in the breath, so a row of them ripples
+instead of pulsing together. A light may carry both; the two strengths
+multiply.
+
+```toml
+# Rootlight: a shrub over a Genesis root, breathing green.
+lamps = [{ tile = [12, 9], offset = [0, 40, 0], color = [120, 255, 150], radius = 360, breathe = 0.6, breathe_period = 260 }]
+``` Both hosts read the
 mood and the lights through one kernel (`engine-screens::field_frame`), and
 the nearest lights to the player shade each frame, as in a retail scene.
 
+Each light the frame picks also draws the layer's glow sprites - a halo
+round it and a soft shaft below - scaled by the mood's glow, so a breathing
+lamp's halo breathes with it.
+
 With enhanced lighting off the map renders retail-faithful: baked texel
 colours through the depth cue, no light at all. Placed lamps then draw
-nothing; a torch's flame still reads because its glow is in the art.
+nothing; a torch's flame still reads because its glow is in the art. An
+emitter marked `with_lighting = true` ([Particles](#particles)) belongs to
+the same layer and draws nothing either.
 
 ## Animated materials
 
@@ -1394,6 +1410,7 @@ size = [10, 4]
 color = [255, 150, 60]
 color_end = [160, 30, 10]
 additive = true
+with_lighting = false    # true: drawn only under enhanced lighting
 ```
 
 Each particle is a camera-facing sprite drawn through the field
@@ -1405,7 +1422,10 @@ function of the emitter's seed, its index and `World::frame`
 draw the same on both hosts and in every run, and a replay never sees them.
 The kinds are presets of the other fields - embers rise and fade, sparkles
 hang and twinkle, dust drifts, leaves fall and sway, drips fall, smoke
-swells - any of which the file overrides.
+swells - any of which the file overrides. An emitter `with_lighting`
+belongs to the enhanced-lighting layer, the motes round a glowing lamp: the
+hosts pass their enhanced-lighting switch to the pass
+(`HostView::fog_prims`), and with it off the emitter draws nothing.
 
 The sprites are the engine's own: four `16 x 16` 4bpp shapes (a soft dot, a
 spark, a leaf, a drop) drawn at load into free VRAM

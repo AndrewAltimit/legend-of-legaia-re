@@ -115,12 +115,13 @@ impl World {
         })
     }
 
-    /// The map's placed lamps and prop lights on this frame, flicker
-    /// applied, in the retail field frame the scene's derived lights use.
+    /// The map's placed lamps and prop lights on this frame, flicker and
+    /// breath applied, in the retail field frame the scene's derived lights
+    /// use.
     pub fn expansion_map_lights(
         &self,
     ) -> Vec<legaia_render_kernels::scene_lighting::ScenePointLight> {
-        use legaia_engine_expansion::map_detail::{flicker_gain, pose};
+        use legaia_engine_expansion::map_detail::{breathe_gain, flicker_gain, pose};
         let Some(map) = self.expansion.map.as_ref() else {
             return Vec::new();
         };
@@ -130,12 +131,13 @@ impl World {
                      offset: [f32; 3],
                      color: [u8; 3],
                      radius: u16,
-                     flicker: f32,
-                     period: i32| {
+                     [flicker, breathe]: [f32; 2],
+                     [period, breathe_period]: [i32; 2]| {
             let (cx, cz) = def.tile_centre(tile[0], tile[1]);
             let (x, z) = (cx as f32 + offset[0], cz as f32 + offset[2]);
             let floor = self.sample_field_floor_height(x as i32, z as i32) as f32;
-            let g = flicker_gain(flicker, period, seed, self.frame);
+            let g = flicker_gain(flicker, period, seed, self.frame)
+                * breathe_gain(breathe, breathe_period, seed, self.frame);
             legaia_render_kernels::scene_lighting::ScenePointLight {
                 pos: [x, floor - offset[1], z],
                 color: color.map(|c| f32::from(c) / 255.0 * g),
@@ -154,8 +156,8 @@ impl World {
                     l.offset.map(f32::from),
                     l.color,
                     l.radius,
-                    l.flicker,
-                    l.period,
+                    [l.flicker, l.breathe],
+                    [l.period, l.breathe_period],
                 )
             })
             .collect();
@@ -181,8 +183,8 @@ impl World {
                 ],
                 l.color,
                 l.radius,
-                l.flicker,
-                l.period,
+                [l.flicker, l.breathe],
+                [l.period, l.breathe_period],
             ));
         }
         out
@@ -381,10 +383,12 @@ impl World {
     /// sheets take, so both hosts draw them through the same field
     /// screen-effect pass. Empty off a map, outside the field, or for a map
     /// with no emitters. Each particle is a pure function of the frame
-    /// (`Emitter::particle`).
+    /// (`Emitter::particle`). An emitter `with_lighting` (a glow's motes)
+    /// draws only while `enhanced_lighting` is on.
     pub fn expansion_particle_quads(
         &self,
         view: &legaia_engine_field::fog_particles::FogView,
+        enhanced_lighting: bool,
     ) -> Vec<legaia_engine_field::fog_particles::FogQuad> {
         let Some(map) = self.expansion.map.as_ref() else {
             return Vec::new();
@@ -400,6 +404,9 @@ impl World {
         let mut out = Vec::new();
         for (e, emitter) in def.emitters.iter().enumerate() {
             let em = emitter.resolved();
+            if em.with_lighting && !enhanced_lighting {
+                continue;
+            }
             // ABR 1 (additive) for the glowing kinds; a solid one (leaves)
             // draws through the STP-less ramp, opaque.
             let abr: u16 = u16::from(em.additive);
