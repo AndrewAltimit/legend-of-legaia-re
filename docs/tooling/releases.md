@@ -32,7 +32,7 @@ The workflow has four jobs:
 | `verify` | self-hosted | `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace` |
 | `build-cross` | self-hosted (arm64 Linux) | the two Linux targets and Windows; uploads the archives as a workflow artifact |
 | `build-macos` | GitHub-hosted `macos-14` | the universal macOS archive; uploads it as a workflow artifact |
-| `publish` | GitHub-hosted `ubuntu-latest` | `needs` all three; checks every archive's hash, writes `SHA256SUMS`, makes the one release edit |
+| `publish` | self-hosted | `needs` all three; checks every archive's hash, writes `SHA256SUMS`, makes the one release edit through the REST API ([`publish-release.py`](../../scripts/ci/publish-release.py)) |
 
 The build jobs never touch the release. Only `publish` does, and it waits for
 the test gate and for **both** build jobs, so a release never appears with a

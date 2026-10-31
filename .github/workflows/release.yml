@@ -10,7 +10,7 @@
 #   verify          self-hosted   fmt + clippy + test gate
 #   build-cross     self-hosted   the three Linux-hosted targets below
 #   build-macos     macos-14      universal-apple-darwin (arm64 + x86_64, lipo)
-#   publish         ubuntu-latest SHA256SUMS over every archive + one release edit
+#   publish         self-hosted   SHA256SUMS over every archive + one release edit
 #
 # The self-hosted runner is arm64 Linux, which makes both of its non-native
 # targets cross-compiles:
@@ -216,9 +216,17 @@ jobs:
   publish:
     name: Checksums + Release
     needs: [verify, build-cross, build-macos]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 30
     steps:
+      # For scripts/ci/publish-release.py; the clean checkout also clears a
+      # dist/ an earlier run left in the runner's persistent workspace.
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          clean: true
+
       - name: Download archives
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -269,34 +277,19 @@ jobs:
         # make the release step mint a new tag. Only an existing tag publishes.
         if: github.event_name == 'workflow_dispatch' && inputs.publish
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null; then
-            echo "ERROR: '${RELEASE_TAG}' is not an existing tag; refusing to publish" >&2
-            exit 1
-          fi
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/publish-release.py --repo "${GITHUB_REPOSITORY}" --tag "${RELEASE_TAG}" --check-tag
 
       - name: Attach to GitHub release
         # Tag pushes always publish. workflow_dispatch publishes only when
         # explicitly asked, so the dispatch path is a safe dry run by default.
         if: github.event_name == 'push' || inputs.publish
-        # The runner's own `gh` CLI, so the job runs no third-party action.
+        # Through the REST API (scripts/ci/publish-release.py): no
+        # third-party action, and no `gh`, which on the self-hosted runner's
+        # PATH may be a wrapper meant for interactive use.
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          files=(dist/*.tar.gz dist/*.zip dist/SHA256SUMS)
-          if [ ! -f dist/SHA256SUMS ] || [ "${#files[@]}" -lt 2 ]; then
-            echo "ERROR: no release archives in dist/" >&2
-            exit 1
-          fi
-          prerelease=()
-          if [[ "${RELEASE_TAG}" == *-* ]]; then
-            prerelease=(--prerelease)
-          fi
-          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" --clobber
-          else
-            gh release create "${RELEASE_TAG}" "${files[@]}" --repo "${GITHUB_REPOSITORY}" \
-              --verify-tag --title "${RELEASE_TAG}" --notes "" "${prerelease[@]}"
-          fi
+          python3 scripts/ci/publish-release.py --repo "${GITHUB_REPOSITORY}" --tag "${RELEASE_TAG}" \
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS
