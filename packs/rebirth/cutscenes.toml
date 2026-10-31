@@ -296,10 +296,6 @@ frames = 240
 wait = false
 
 [[cutscenes.sovereign_falls.steps]]
-do = "say"
-line = "sovereign_falls_after"
-
-[[cutscenes.sovereign_falls.steps]]
 do = "fade"
 to = "white"
 frames = 120

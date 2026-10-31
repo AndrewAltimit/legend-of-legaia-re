@@ -158,12 +158,6 @@ choices = [
     { label = "Not now.", reply = "The shadow creeps back to where\nit started." },
 ]
 
-[lines.garden_done]
-speaker = "Warden Ysolde"
-text = """
-(The garden is quiet. The vault
-above wakes at level 60.)"""
-
 [lines.engine_offer]
 speaker = "The Lever"
 text = """
@@ -197,12 +191,6 @@ choices = [
     { label = "Step back.", reply = "The flame sinks, but does not\ngo out." },
 ]
 
-[lines.ember_done]
-speaker = "Warden Ysolde"
-text = """
-(The fire is out. The garden's
-sundial above is turning.)"""
-
 [lines.vault_offer]
 speaker = "The Sunken Court"
 text = """
@@ -213,12 +201,6 @@ choices = [
     { label = "Stand and fight.", boss = "verdant_colossus" },
     { label = "Back away quietly.", reply = "The court settles. The moss\nkeeps breathing." },
 ]
-
-[lines.vault_done]
-speaker = "Warden Ysolde"
-text = """
-(It sleeps for good. Above is a
-hall where nothing hunts.)"""
 
 [lines.regent_offer]
 speaker = "The Iron Regent"
@@ -233,12 +215,6 @@ choices = [
     { label = "Leave him be.", reply = "\"Run along. The engine will\nstill be here.\"" },
 ]
 
-[lines.regent_done]
-speaker = "Warden Ysolde"
-text = """
-(The engine winds down. The
-sanctum above sings at level 80.)"""
-
 [lines.seraph_offer]
 speaker = "The Azure Seraph"
 text = """
@@ -252,12 +228,6 @@ choices = [
     { label = "We will, humbly.", challenge = "humble_seraph", boss = "azure_seraph" },
     { label = "Not yet.", reply = "\"Then I will keep singing.\"" },
 ]
-
-[lines.seraph_done]
-speaker = "Warden Ysolde"
-text = """
-(The sanctum is silent. Only the
-throne is left. Be level 88.)"""
 
 [lines.guide_sovereign]
 speaker = "The Hollow Throne"
@@ -322,14 +292,8 @@ text = """
 Visitors, this high up! I am
 Odalric. I keep the tables here.
 
-Win one of each, and I will make
-it worth your while."""
-
-[lines.keeper_tables]
-speaker = "Keeper Odalric"
-text = """
-The card room is by the bar, the
-games room past it. Win them all."""
+Win at every table - the card room
+by the bar, the games room past it."""
 
 [lines.keeper_done]
 speaker = "Keeper Odalric"
@@ -437,35 +401,17 @@ choices = [
 
 # --- Bounties and errands ----------------------------------------------------
 
-[lines.bounty_ogres_start]
-speaker = "Warden Ysolde"
-text = """
-The Ironhide breed is spreading.
-Thin out six packs for me."""
-
 [lines.bounty_ogres_done]
 speaker = "Warden Ysolde"
 text = """
 Six packs fewer. Come back when
 they breed again."""
 
-[lines.remedy_start]
-speaker = "Warden Ysolde"
-text = """
-The stone is cracking. Bring me
-five Healing Fruit."""
-
 [lines.remedy_done]
 speaker = "Warden Ysolde"
 text = """
 The cracks are closing. Take
 these, with my thanks."""
-
-[lines.sentinel_hunt_start]
-speaker = "Warden Ysolde"
-text = """
-(Break eight Brass Sentinel lines
-marching out of the Engine Deep.)"""
 
 # --- Boss battle lines ---------------------------------------------------------
 #
@@ -561,11 +507,8 @@ lifted from under it.)"""
 [lines.hollow_stirs_voice]
 speaker = "The Hollow Voice"
 text = """
-...I hear you. Every step up my
-tower, I hear you.
-
-Climb, then. I am so tired of
-being only what I took."""
+...I hear every step up my tower.
+Climb, then. I am so tired."""
 
 [lines.sovereign_rises]
 speaker = "The Hollow Sovereign"
@@ -581,13 +524,6 @@ text = """
 
 So that is what it feels like,
 to let go."""
-
-[lines.sovereign_falls_after]
-speaker = "Narration"
-text = """
-(The throne cracks. Light pours
-out of the walls, and far below,
-an old bell rings once.)"""
 
 # --- The Rebirth Isles -------------------------------------------------------
 
