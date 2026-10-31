@@ -178,6 +178,10 @@ fn rebirth_racers_carry_their_names() {
     bare.races.iter_mut().for_each(|r| r.rivals.clear());
     let race = ActiveMode::build(&bare, &c, "spiral-circuit", 1, &BuildOptions::default()).unwrap();
     for s in 1..6 {
-        assert!(!race.seat_name(s).starts_with("Seat"), "{}", race.seat_name(s));
+        assert!(
+            !race.seat_name(s).starts_with("Seat"),
+            "{}",
+            race.seat_name(s)
+        );
     }
 }
