@@ -22,6 +22,14 @@ camera = "far"
 # sundial plaza and upper terrace, tier 3 the belvedere.
 floor_heights = [0, 64, 128, 160]
 
+# Past the terraces' edge the gardens of the floors below, far down, and
+# the stone of the terrace walls dropping to them.
+[surround]
+ground = { tpage = 28, clut = 32461, tile = 34 }
+side = { tpage = 28, clut = 32453, tile = 8 }
+depth = 512
+shade = 64
+
 [tiles]
 origin = [20, 20]
 rows = [
@@ -250,33 +258,130 @@ mesh = { object = 4 }
 tile = [19, 38]
 scale = 1.15
 
-# The orchard: the garden's young trees (`teien` mesh 5) in loose rows,
-# solid.
-[[scatter]]
-id = "orchard"
-rect = [3, 16, 14, 26]
-on = "o"
-density = 0.28
-seed = 301
-jitter = 40
-scale = [0.8, 1.1]
-tilt = 3.0
+# The orchard: the garden's young trees (`teien` mesh 5) planted in rows,
+# four to a row either side of the cross walk, with a lane between rows
+# and columns. Solid.
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 17]
+scale = 1.0
 solid = true
-keep_clear = true
-meshes = [{ mesh = { object = 5 } }]
 
-# A few older trees shade the arbour's lawns.
-[[scatter]]
-id = "arbour_trees"
-rect = [24, 16, 35, 26]
-on = "r"
-density = 0.15
-seed = 302
-jitter = 40
-scale = [1.0, 1.3]
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 17]
+scale = 0.9
 solid = true
-keep_clear = true
-meshes = [{ mesh = { object = 5 } }]
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 17]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 17]
+scale = 0.95
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 19]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 19]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 19]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 19]
+scale = 0.95
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 23]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 23]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 23]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 23]
+scale = 0.95
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [4, 25]
+scale = 1.0
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [7, 25]
+scale = 0.9
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [10, 25]
+scale = 1.05
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [13, 25]
+scale = 0.95
+solid = true
+
+# Four older trees shade the arbour's lawns, one at each corner of the
+# arches.
+[[decor]]
+mesh = { object = 5 }
+tile = [25, 18]
+scale = 1.25
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [34, 18]
+scale = 1.25
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [25, 24]
+scale = 1.25
+solid = true
+
+[[decor]]
+mesh = { object = 5 }
+tile = [34, 24]
+scale = 1.25
+solid = true
 
 # Flower patches on the lawns and round the plaza.
 [[decals]]

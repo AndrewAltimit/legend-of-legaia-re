@@ -20,6 +20,13 @@ camera = "far"
 # the Regent's dais, tier 2 the Regent's own step.
 floor_heights = [0, 64, 112]
 
+# Past the engine hall's edge, the machine floor of the deep below it.
+[surround]
+ground = { tpage = 9, clut = 31110, tile = 19 }
+side = { tpage = 8, clut = 30979, tile = 27 }
+depth = 448
+shade = 56
+
 [tiles]
 origin = [20, 20]
 rows = [

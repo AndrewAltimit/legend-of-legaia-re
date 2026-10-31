@@ -20,6 +20,13 @@ camera = "far"
 # Tier 1 is the lounge's stage.
 floor_heights = [0, 40]
 
+# Past the Rest's edge, the dark boards of the floor below.
+[surround]
+ground = { tpage = 12, clut = 32448, tile = 0 }
+side = { tpage = 11, clut = 32517, tile = 27 }
+depth = 384
+shade = 48
+
 [tiles]
 origin = [20, 20]
 rows = [
@@ -288,18 +295,19 @@ line = "high_table_hello"
 
 # Old Mott is a koin1 slot player: his placement's motion stream seats him
 # (the retail Sol casino's players sit at the machines), so he waits on a
-# bar stool, turned to the hall.
+# bar stool, turned to the hall - the east one, three stools clear of the
+# keeper's place at the bar, so a word with the keeper reaches the keeper.
 [[npcs]]
 id = "high_table_mott"
 label = "Old Mott, a High Table regular"
 model = { kind = "npc", scene = "koin1", index = 11 }
-tile = [12, 14]
+tile = [19, 14]
 facing = 0
 line = "high_table_hello"
 
 # --- Furniture ------------------------------------------------------------------
 
-# Bar stools (`koin1` mesh 81) along the bar; Old Mott's is the west one.
+# Bar stools (`koin1` mesh 81) along the bar; Old Mott's is the east one.
 [[decor]]
 mesh = { object = 81 }
 tile = [12, 14]
@@ -453,8 +461,8 @@ mesh = { object = 131 }
 tile = [30, 16]
 solid = true
 
-# The lounge: the piano on its stage, small tables with
-# chairs, plants.
+# The lounge: the piano on its stage, small round tables (`koin1` mesh
+# 75, a solid drum standing on the floor) with chairs, plants.
 [[props]]
 id = "piano"
 mesh = { object = 24 }
@@ -464,7 +472,7 @@ solid = true
 [[decor]]
 mesh = { object = 75 }
 tile = [20, 21]
-offset = [0, 64, 0]
+solid = true
 
 [[decor]]
 mesh = { object = 27 }
@@ -481,7 +489,7 @@ solid = true
 [[decor]]
 mesh = { object = 75 }
 tile = [24, 24]
-offset = [0, 64, 0]
+solid = true
 
 [[decor]]
 mesh = { object = 27 }
@@ -498,7 +506,7 @@ solid = true
 [[decor]]
 mesh = { object = 75 }
 tile = [19, 26]
-offset = [0, 64, 0]
+solid = true
 
 [[decor]]
 mesh = { object = 27 }

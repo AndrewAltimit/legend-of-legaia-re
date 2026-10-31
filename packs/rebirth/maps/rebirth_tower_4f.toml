@@ -22,6 +22,13 @@ camera = "far"
 # and the Flooded Cloister; tier 0 the sunken court.
 floor_heights = [0, 72, 144]
 
+# Past the vault's edge, rainwater pooled at the foot of its walls.
+[surround]
+ground = { tpage = 9, clut = 32206, tile = 3 }
+side = { tpage = 25, clut = 32199, tile = 0 }
+depth = 384
+shade = 64
+
 [tiles]
 origin = [20, 20]
 rows = [

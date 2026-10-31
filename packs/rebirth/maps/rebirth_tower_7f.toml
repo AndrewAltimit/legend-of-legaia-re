@@ -20,6 +20,13 @@ camera = "far"
 # Tier 0 is the ring, tier 1 the sanctum, tier 2 the heart.
 floor_heights = [0, 32, 72]
 
+# Past the ring's edge, cold steel far below, the outer wall dropping to it.
+[surround]
+ground = { tpage = 8, clut = 30976, tile = 39 }
+side = { tpage = 8, clut = 30976, tile = 30 }
+depth = 448
+shade = 56
+
 [tiles]
 origin = [20, 20]
 rows = [
@@ -66,13 +73,13 @@ rows = [
 "i" = { label = "sanctum parapet", height = 1, walls = "all", wall = { kind = "box", height = 48, tpage = 8, clut = 30849, tile = 42 } }
 "I" = { label = "sanctum wall", height = 1, walls = "all", wall = { kind = "box", height = 160, tpage = 8, clut = 30849, tile = 42 } }
 "." = { label = "ring floor (steel)", ground = { kind = "texture", tpage = 8, clut = 30976, tile = 39 } }
-":" = { label = "sanctum floor", height = 1, ground = { kind = "texture", tpage = 23, clut = 31681, tile = 4 } }
-"A" = { label = "the heart", height = 2, ground = { kind = "texture", tpage = 8, clut = 30979, tile = 60 } }
+":" = { label = "sanctum floor", height = 1, ground = { kind = "texture", tpage = 8, clut = 30976, tile = 2 } }
+"A" = { label = "the heart", height = 2, ground = { kind = "texture", tpage = 8, clut = 30849, tile = 18 } }
 "," = { label = "landing planks", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
 "r" = { label = "rest alcove", ground = { kind = "texture", tpage = 8, clut = 30850, tile = 4 } }
 # Echo shrines and the sanctum's obelisk bases: solid.
 "s" = { label = "echo shrine", walls = "all", wall = { kind = "box", height = 40, tpage = 8, clut = 30849, tile = 42 } }
-"o" = { label = "obelisk base", height = 1, walls = "all", ground = { kind = "texture", tpage = 23, clut = 31681, tile = 4 } }
+"o" = { label = "obelisk base", height = 1, walls = "all", ground = { kind = "texture", tpage = 8, clut = 30976, tile = 2 } }
 ">" = { label = "stair down", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
 "<" = { label = "stair up", ground = { kind = "texture", tpage = 8, clut = 30915, tile = 54 } }
 

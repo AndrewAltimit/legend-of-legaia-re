@@ -22,6 +22,14 @@ camera = "far"
 # before the next tier: tiers are corner heights, so that row is the slope.
 floor_heights = [0, 56, 112, 160]
 
+# Past the floor's edge the tower falls away to a lake of lava far below,
+# the stair's own walls dropping to it.
+[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }
+side = { tpage = 11, clut = 32523, tile = 38 }
+depth = 448
+shade = 112
+
 [tiles]
 origin = [20, 20]
 rows = [
