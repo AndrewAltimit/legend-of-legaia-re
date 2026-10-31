@@ -37,6 +37,15 @@ shade = 56
 # dark, rather than on the clear colour.
 backdrop = { tpage = 24, clut = 31168, tile = 0, height = 1152, distance = 2, shade = 96 }
 
+# The vault overhead: the narthex lanterns hang on chains from it. The follow camera
+# looks down from under it, so only the chains show, rising out of the
+# frame; the underside is wound to face down and drawn only from beneath.
+[ceiling]
+height = 2048
+cell = { tpage = 24, clut = 31168, tile = 0 }
+shade = 40
+chain = { tpage = 24, clut = 31168, tile = 0, width = 6, shade = 72, items = ["narthex_lantern_1", "narthex_lantern_2", "narthex_lantern_3", "narthex_lantern_4"] }
+
 [tiles]
 origin = [20, 20]
 rows = [

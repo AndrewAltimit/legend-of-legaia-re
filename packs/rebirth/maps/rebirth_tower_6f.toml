@@ -31,6 +31,15 @@ shade = 56
 # dark, rather than on the clear colour.
 backdrop = { tpage = 8, clut = 30979, tile = 27, height = 1152, distance = 2, shade = 96 }
 
+# The vault overhead: the lever's lamp hang on chains from it. The follow camera
+# looks down from under it, so only the chains show, rising out of the
+# frame; the underside is wound to face down and drawn only from beneath.
+[ceiling]
+height = 2048
+cell = { tpage = 8, clut = 30979, tile = 27 }
+shade = 40
+chain = { tpage = 8, clut = 30979, tile = 27, width = 6, shade = 72, items = ["lever_light"] }
+
 [tiles]
 origin = [20, 20]
 rows = [

@@ -19,6 +19,26 @@ camera = "default"
 # cells is a ramp up into the hall and the niche's rim slopes down to it.
 floor_heights = [0, 48, 96]
 
+# The Atrium floats in the dark: past its parapet the hall's stone falls
+# away to a floor far below, and the tower's outer wall stands round it on
+# every side but the camera's, so the view over the south parapet ends on
+# stone fading into the dark rather than on the clear colour.
+[surround]
+ground = { tpage = 28, clut = 32576, tile = 1 }
+side = { tpage = 28, clut = 32576, tile = 2 }
+depth = 448
+shade = 40
+backdrop = { tpage = 28, clut = 32576, tile = 2, height = 1152, distance = 2, shade = 72 }
+
+# The vault overhead: the gauntlet bell hang on chains from it. The follow camera
+# looks down from under it, so only the chains show, rising out of the
+# frame; the underside is wound to face down and drawn only from beneath.
+[ceiling]
+height = 2048
+cell = { tpage = 28, clut = 32576, tile = 2 }
+shade = 40
+chain = { tpage = 28, clut = 32576, tile = 2, width = 6, shade = 72, items = ["gauntlet_bell"] }
+
 [tiles]
 origin = [16, 16]
 rows = [
