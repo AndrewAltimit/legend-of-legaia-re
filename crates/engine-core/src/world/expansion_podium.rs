@@ -210,6 +210,9 @@ impl World {
                 boosting: f.cheer,
                 moving: false,
                 actor: npc,
+                lift: 0.0,
+                shielded: false,
+                slowed: false,
             });
         }
         Some(StageFrame {
@@ -218,6 +221,7 @@ impl World {
                 spawn: String::new(),
                 origin: [cx, cz],
                 unit: 1,
+                scene: false,
             },
             leader: None,
             bodies,

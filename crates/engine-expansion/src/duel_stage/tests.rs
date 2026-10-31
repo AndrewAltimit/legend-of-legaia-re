@@ -13,6 +13,7 @@ fn table(facing: u8) -> DuelTableFrame {
             spawn: String::new(),
             origin: [4000, 3000],
             unit: 1,
+            scene: false,
         },
         facing: sector_to_mode_angle(facing),
         lift: 0.0,

@@ -12,6 +12,7 @@ fn table() -> PokerTableFrame {
             spawn: String::new(),
             origin: [3000, 3000],
             unit: 1,
+            scene: false,
         },
         facing: sector_to_mode_angle(6),
         lift: 0.0,

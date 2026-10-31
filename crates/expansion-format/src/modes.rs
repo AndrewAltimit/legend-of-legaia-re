@@ -474,7 +474,8 @@ impl Default for GolfHole {
     }
 }
 
-/// A checkpoint race track: a closed centerline.
+/// A checkpoint race: a closed circuit run for laps, or a sprint run once
+/// from start to finish through checkpoint gates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RaceTrack {
@@ -484,20 +485,30 @@ pub struct RaceTrack {
     /// A pack map the race runs on, in 3D; the centerline is then
     /// [`Self::waypoints`].
     pub map: Option<String>,
+    /// A kingdom overworld the race runs on, in 3D ([`OVERWORLD_SCENES`]):
+    /// the racers run over the scene's own ground and the centerline is
+    /// [`Self::waypoints`] in the overworld's 128-unit tiles. Exclusive with
+    /// [`Self::map`].
+    pub scene: Option<String>,
     /// The spawn the map is entered at (its first when empty).
     pub spawn: String,
+    /// The course's shape: a closed circuit run for [`Self::laps`], or a
+    /// sprint from the first waypoint to the last.
+    pub course: RaceCourse,
     pub laps: u8,
-    /// Centerline points in world units, in driving order; the last joins
-    /// the first. Each is a checkpoint.
+    /// Centerline points in world units, in driving order; on a circuit the
+    /// last joins the first. Each is a checkpoint.
     pub points: Vec<[i32; 2]>,
-    /// On a map race: the centerline as map tiles `[column, row]` (each
-    /// tile's centre), in driving order, closing back on the first.
+    /// On a map or overworld race: the centerline as tiles `[column, row]`
+    /// (each tile's centre), in driving order. Each is a checkpoint gate.
     pub waypoints: Vec<[u16; 2]>,
-    /// Half the track width in world units (in race units on a map race,
-    /// where one unit is two field world units).
+    /// Half the track width in world units (in race units on a map or
+    /// overworld race, where one unit is two field world units).
     pub half_width: u32,
     /// Segment indices (`points[i] -> points[i+1]`) carrying a boost pad.
     pub boost_segments: Vec<u16>,
+    /// Power-ups lying on and beside the course.
+    pub pickups: Vec<RacePickup>,
     /// On a map race: the map NPC ids (`[[npcs]]`) that drive the other
     /// seats' racers, in seat order with the player's seat skipped; each
     /// runs its `walk_clip` while it moves. A seat with none draws as a
@@ -514,15 +525,88 @@ impl Default for RaceTrack {
             name: String::new(),
             location: None,
             map: None,
+            scene: None,
             spawn: String::new(),
+            course: RaceCourse::Circuit,
             laps: 3,
             points: Vec::new(),
             waypoints: Vec::new(),
             half_width: 64,
             boost_segments: Vec::new(),
+            pickups: Vec::new(),
             bodies: Vec::new(),
             racers: 4,
             ai_tier: AiTier::Regular,
+        }
+    }
+}
+
+/// The scenes a race may name as its `scene`: the three kingdom overworlds
+/// (`docs/subsystems/world-map.md`).
+pub const OVERWORLD_SCENES: [&str; 3] = ["map01", "map02", "map03"];
+
+/// A race course's shape.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RaceCourse {
+    /// A closed loop run for laps; passing the first point closes a lap.
+    #[default]
+    Circuit,
+    /// One run from the first point to the last; laps do not apply.
+    Sprint,
+}
+
+/// A power-up lying on the course. A racer holding nothing takes it by
+/// driving over it and uses it with Triangle; it comes back
+/// [`Self::respawn`] frames later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RacePickup {
+    pub kind: RacePickupKind,
+    /// Where it lies: a tile `[column, row]` (its centre) on a map or
+    /// overworld race, world units on a board race.
+    pub at: [i32; 2],
+    /// Frames until it comes back once taken; `0` = 600 (ten seconds).
+    pub respawn: u32,
+}
+
+impl Default for RacePickup {
+    fn default() -> Self {
+        Self {
+            kind: RacePickupKind::Boost,
+            at: [0, 0],
+            respawn: 0,
+        }
+    }
+}
+
+/// What a power-up does when used.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RacePickupKind {
+    /// A long burst at boost speed.
+    #[default]
+    Boost,
+    /// A leap: no bumps while airborne, and the track edge lets the racer
+    /// run a full track width wide to cut a corner or reach a pickup off
+    /// the course.
+    Hop,
+    /// Bumps cost no speed, and the next slow aimed at the racer is
+    /// blocked, for ten seconds.
+    Shield,
+    /// Every rival runs slowed for two seconds (a shielded one loses its
+    /// shield instead).
+    Slow,
+}
+
+impl RacePickupKind {
+    /// The power-up's name on the HUD.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Boost => "Boost",
+            Self::Hop => "Hop",
+            Self::Shield => "Shield",
+            Self::Slow => "Slow",
         }
     }
 }
@@ -799,12 +883,174 @@ fn check_podium(pd: &PartyPodium, at: &str, cx: &mut crate::validate::Checker<'_
     }
 }
 
+/// A centerline's points in race units: tile centres at two world units a
+/// race unit on a map or overworld race, the raw points on a board race.
+fn race_line(r: &RaceTrack) -> Vec<[i64; 2]> {
+    let centre = |c: u16| (i64::from(c) * 128 + 64) / 2;
+    if r.map.is_some() || r.scene.is_some() {
+        r.waypoints
+            .iter()
+            .map(|w| [centre(w[0]), centre(w[1])])
+            .collect()
+    } else {
+        r.points
+            .iter()
+            .map(|p| [i64::from(p[0]), i64::from(p[1])])
+            .collect()
+    }
+}
+
+/// The distance from `p` to the segment `a -> b`, race units.
+fn segment_distance(p: [i64; 2], a: [i64; 2], b: [i64; 2]) -> f64 {
+    let (ax, ay) = ((b[0] - a[0]) as f64, (b[1] - a[1]) as f64);
+    let (px, py) = ((p[0] - a[0]) as f64, (p[1] - a[1]) as f64);
+    let len = ax * ax + ay * ay;
+    let t = if len == 0.0 {
+        0.0
+    } else {
+        ((px * ax + py * ay) / len).clamp(0.0, 1.0)
+    };
+    ((px - ax * t).powi(2) + (py - ay * t).powi(2)).sqrt()
+}
+
+/// `modes.toml`'s races: where each runs, its centerline, boost pads and
+/// power-ups.
+fn check_races(modes: &ModeSection, cx: &mut crate::validate::Checker<'_>) {
+    for (i, r) in modes.races.iter().enumerate() {
+        let at = format!("races[{i}]");
+        if r.map.is_some() && r.scene.is_some() {
+            cx.error(
+                &at,
+                "a race runs on a pack map or an overworld scene, not both",
+            );
+        }
+        if let Some(scene) = &r.scene {
+            if OVERWORLD_SCENES.contains(&scene.as_str()) {
+                cx.disc_ref(
+                    &format!("{at}.scene"),
+                    &DiscRef::Scene {
+                        name: scene.clone(),
+                    },
+                );
+            } else {
+                cx.error(
+                    &format!("{at}.scene"),
+                    format!(
+                        "{scene:?} is not a kingdom overworld (one of {})",
+                        OVERWORLD_SCENES.join(", ")
+                    ),
+                );
+            }
+            if !r.bodies.is_empty() {
+                cx.warning(
+                    &format!("{at}.bodies"),
+                    "an overworld race has no map NPCs; its rivals draw as stand-ins",
+                );
+            }
+            for (k, w) in r.waypoints.iter().enumerate() {
+                if w[0] >= 128 || w[1] >= 128 {
+                    cx.error(
+                        &format!("{at}.waypoints[{k}]"),
+                        format!("tile {w:?} is off the 128 x 128 overworld"),
+                    );
+                }
+            }
+        }
+        let on_ground = r.map.is_some() || r.scene.is_some();
+        // The ground's tile grid: the overworld's, or the pack map's.
+        let grid = match &r.map {
+            Some(m) => cx
+                .pack()
+                .maps
+                .get(m)
+                .and_then(|d| d.tile_grid().ok())
+                .map(|g| (g.width as i32, g.height as i32)),
+            None => r.scene.as_ref().map(|_| (128, 128)),
+        };
+        if on_ground && !r.points.is_empty() {
+            cx.warning(
+                &format!("{at}.points"),
+                "a map or overworld race takes its centerline from `waypoints`",
+            );
+        }
+        let line = race_line(r);
+        let sprint = r.course == RaceCourse::Sprint;
+        let need = if sprint { 2 } else { 3 };
+        let field = if on_ground { "waypoints" } else { "points" };
+        if line.len() < need {
+            cx.error(
+                &format!("{at}.{field}"),
+                format!(
+                    "a {} needs at least {need} points",
+                    if sprint { "sprint" } else { "circuit" }
+                ),
+            );
+            continue;
+        }
+        let segments = if sprint { line.len() - 1 } else { line.len() };
+        for k in 0..segments {
+            if line[k] == line[(k + 1) % line.len()] {
+                cx.error(
+                    &format!("{at}.{field}[{k}]"),
+                    "two consecutive points coincide",
+                );
+            }
+        }
+        if r.half_width < 20 {
+            cx.error(
+                &format!("{at}.half_width"),
+                "a track is at least 20 units each side of its line",
+            );
+        }
+        if !(1..=8).contains(&r.racers) {
+            cx.error(&format!("{at}.racers"), "a race seats 1..=8 racers");
+        }
+        for (k, &b) in r.boost_segments.iter().enumerate() {
+            if usize::from(b) >= segments {
+                cx.error(
+                    &format!("{at}.boost_segments[{k}]"),
+                    format!("the course has segments 0..{segments}"),
+                );
+            }
+        }
+        for (k, p) in r.pickups.iter().enumerate() {
+            let pos = if on_ground {
+                let (w, h) = grid.unwrap_or((i32::MAX, i32::MAX));
+                if p.at[0] < 0 || p.at[1] < 0 || p.at[0] >= w || p.at[1] >= h {
+                    cx.error(
+                        &format!("{at}.pickups[{k}].at"),
+                        format!("tile {:?} is off the map", p.at),
+                    );
+                    continue;
+                }
+                [
+                    (i64::from(p.at[0]) * 128 + 64) / 2,
+                    (i64::from(p.at[1]) * 128 + 64) / 2,
+                ]
+            } else {
+                [i64::from(p.at[0]), i64::from(p.at[1])]
+            };
+            let off = (0..segments)
+                .map(|s| segment_distance(pos, line[s], line[(s + 1) % line.len()]))
+                .fold(f64::INFINITY, f64::min);
+            // A hop lets a racer run a full track width past the edge.
+            if off > f64::from(r.half_width) * 2.0 {
+                cx.warning(
+                    &format!("{at}.pickups[{k}].at"),
+                    "lies beyond a hop's reach of the course; no racer can take it",
+                );
+            }
+        }
+    }
+}
+
 /// `modes.toml`'s rules: the party nights. (Instance ids are the section's
 /// own, hyphenated ones included, so they are checked here rather than
 /// declared as pack-wide content ids.)
 impl crate::validate::SectionRules for ModeSection {
     fn check(&self, cx: &mut crate::validate::Checker<'_>) {
         crate::validate::check_duel_tables(self, cx);
+        check_races(self, cx);
         let mut seen = std::collections::BTreeSet::new();
         for (i, n) in self.party_nights.iter().enumerate() {
             let at = format!("party_nights[{i}]");
@@ -874,6 +1120,16 @@ impl crate::validate::SectionRules for ModeSection {
                 );
                 misfit("laps", r.laps.is_some(), kind == InstanceKind::Race);
                 misfit("rounds", r.rounds.is_some(), kind == InstanceKind::PropHunt);
+                let sprint = self
+                    .races
+                    .iter()
+                    .any(|t| t.id == r.mode && t.course == RaceCourse::Sprint);
+                if r.laps.is_some() && sprint {
+                    cx.warning(
+                        &format!("{at}.laps"),
+                        format!("{:?} is a sprint, run once; `laps` does nothing", r.mode),
+                    );
+                }
                 if let InstanceKind::Golf { holes } = kind {
                     for (k, &h) in r.holes.iter().enumerate() {
                         if h == 0 || usize::from(h) > holes {

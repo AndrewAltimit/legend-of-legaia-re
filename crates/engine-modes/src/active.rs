@@ -115,6 +115,13 @@ pub fn instance_map(section: &ModeSection, id: &str) -> Option<(String, String)>
     r.map.clone().map(|m| (m, r.spawn.clone()))
 }
 
+/// The retail scene instance `id` is played on, when it is a race run on a
+/// kingdom overworld (`scene = "map01"`).
+pub fn instance_scene(section: &ModeSection, id: &str) -> Option<String> {
+    let r = section.races.iter().find(|r| r.id == id)?;
+    r.scene.clone().filter(|_| r.map.is_none())
+}
+
 const BUILTIN_MODES: &str = include_str!("../builtin/modes.toml");
 const BUILTIN_CARDS: &str = include_str!("../builtin/cards.toml");
 
@@ -295,8 +302,14 @@ impl ActiveMode {
             .map_err(|e| invalid(&e))?;
             (&c.name, ModeRunner::Golf(Box::new(GolfSession::new(cfg))))
         } else if let Some(r) = modes.races.iter().find(|r| r.id == id) {
-            let cfg = match &r.map {
-                Some(map) => {
+            let cfg = match (&r.map, &r.scene) {
+                (None, Some(scene)) => {
+                    let (cfg, frame) =
+                        RaceConfig::from_scene(r, scene, seed).map_err(|e| invalid(&e))?;
+                    race_frame = Some(frame);
+                    cfg
+                }
+                (Some(map), _) => {
                     let def = maps.get(map).ok_or_else(|| {
                         BuildError::Invalid(format!("{id}: the pack has no map `{map}`"))
                     })?;
@@ -305,7 +318,7 @@ impl ActiveMode {
                     race_frame = Some(frame);
                     cfg
                 }
-                None => RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?,
+                (None, None) => RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?,
             };
             (&r.name, ModeRunner::Race(Box::new(RaceSession::new(cfg))))
         } else if let Some(a) = modes.prop_hunt.iter().find(|a| a.id == id) {
@@ -339,9 +352,10 @@ impl ActiveMode {
         })
     }
 
-    /// Where the session is played on its pack map: the golf hole in play,
-    /// or the race track. `None` for an instance with no map, which a host
-    /// draws as its top-down screen.
+    /// Where the session is played on its pack map (or, for a race run on
+    /// an overworld, its retail scene - [`MapFrame::scene`]): the golf hole
+    /// in play, or the race track. `None` for an instance with no map, which
+    /// a host draws as its top-down screen.
     pub fn map_frame(&self) -> Option<&MapFrame> {
         match &self.runner {
             ModeRunner::Golf(s) => s.frame(),
@@ -826,6 +840,10 @@ fn race_line(e: &RaceEvent, n: &Namer<'_>) -> Option<String> {
         RaceEvent::Finished { seat, place, .. } => {
             format!("{} finished #{place}", n.name(*seat))
         }
+        RaceEvent::Used {
+            seat,
+            kind: crate::racing::PowerKind::Slow,
+        } => format!("{} slowed the field", n.name(*seat)),
         RaceEvent::RaceOver => "Race over".to_string(),
         _ => return None,
     })

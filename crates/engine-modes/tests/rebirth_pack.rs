@@ -71,7 +71,21 @@ fn rebirth_modes_convert_to_sessions() {
         assert_eq!(g.holes.len(), c.holes.len(), "{}", c.id);
     }
     for r in m.races.iter().filter(|r| r.map.is_none()) {
-        RaceConfig::from_def(r, 0).unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+        match &r.scene {
+            Some(scene) => {
+                let (cfg, frame) = RaceConfig::from_scene(r, scene, 0)
+                    .unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+                assert!(
+                    frame.scene && !cfg.track.closed,
+                    "{}: an overworld sprint",
+                    r.id
+                );
+                assert_eq!(cfg.pickups.len(), r.pickups.len(), "{}", r.id);
+            }
+            None => {
+                RaceConfig::from_def(r, 0).unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+            }
+        }
     }
     for a in &m.prop_hunt {
         let ph = PropHuntConfig::from_arena(a, 0).unwrap_or_else(|e| panic!("{}: {e:?}", a.id));

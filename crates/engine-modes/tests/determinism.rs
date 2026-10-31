@@ -73,7 +73,7 @@ fn racing_is_deterministic() {
     let modes = rebirth_modes();
     check(
         |seed| {
-            let mut cfg = RaceConfig::from_def(&modes.races[0], seed).unwrap();
+            let (mut cfg, _) = RaceConfig::from_scene(&modes.races[0], "map01", seed).unwrap();
             cfg.finish_grace = 600;
             RaceSession::new(cfg)
         },
