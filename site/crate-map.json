@@ -3092,6 +3092,7 @@
     "map",
     "map_detail",
     "map_detail_rules",
+    "map_rest",
     "map_rules",
     "mesh_catalog",
     "modes",

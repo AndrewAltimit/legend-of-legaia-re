@@ -157,6 +157,11 @@ pub struct PokerTableLayout {
     pub radius: u16,
     /// Draw the built-in table; off when a prop of the map is the table.
     pub draw_table: bool,
+    /// Props of the map (`[[props]]` ids) hidden while the game is seated
+    /// on it - the decor table the built-in one stands in for, the chairs
+    /// it replaces - and drawn again when the seat closes. Only their draw
+    /// goes: collision and a standable top stay.
+    pub hide: Vec<String>,
     /// The map NPCs seated in the other seats, in seat order with the
     /// player's seat skipped. A seat with none sits empty-chaired.
     pub players: Vec<DuelSeatNpc>,
@@ -179,6 +184,7 @@ impl Default for PokerTableLayout {
             height: 64,
             radius: 130,
             draw_table: true,
+            hide: Vec::new(),
             players: Vec::new(),
             spectators: Vec::new(),
             surface: None,
@@ -269,6 +275,9 @@ pub struct DuelTable {
     /// Draw a table under the board (a wooden top on four legs). Leave it
     /// off when a prop of the map already is the table.
     pub draw_table: bool,
+    /// Props of the map (`[[props]]` ids) hidden while the duel is seated
+    /// on it, drawn again when the seat closes ([`PokerTableLayout::hide`]).
+    pub hide: Vec<String>,
     /// The map NPC seated across the board.
     pub opponent: Option<DuelSeatNpc>,
     /// Map NPCs watching from where they stand: each turns to the table and
@@ -292,6 +301,7 @@ impl Default for DuelTable {
             board: 132,
             seat_distance: 120,
             draw_table: true,
+            hide: Vec::new(),
             opponent: None,
             spectators: Vec::new(),
             surface: None,

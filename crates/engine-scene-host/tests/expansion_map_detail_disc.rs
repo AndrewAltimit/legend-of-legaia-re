@@ -185,7 +185,11 @@ fn an_animated_prop_turns_and_moves_over_frames() {
     let mut vram = field_resources(&host.index, host.scene.as_ref().unwrap())
         .unwrap()
         .vram;
-    assert_eq!(o.prop_records.len(), 1, "only the crystal animates");
+    assert_eq!(
+        o.prop_records.len(),
+        2,
+        "the crystal animates and the barrel is named"
+    );
     assert_eq!(o.prop_records[0].1, key);
     let sample = |host: &SceneHost| {
         let turns = host.world.object_draw_turn_matrices();

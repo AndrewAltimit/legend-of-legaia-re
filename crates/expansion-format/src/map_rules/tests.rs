@@ -299,3 +299,51 @@ line = "hello"
         "{seated:#?}"
     );
 }
+
+/// A disc whose every mesh is a 32-unit cube on its origin.
+struct CubeDisc;
+
+impl DiscResolver for CubeDisc {
+    fn resolve(&self, _r: &DiscRef) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn mesh_shape(
+        &self,
+        _base_scene: &str,
+        _mesh: &crate::map::PropMesh,
+        _rotation: [f32; 3],
+        scale: f32,
+    ) -> Option<crate::map_rest::Shape> {
+        let h = 16.0 * scale;
+        Some(crate::map_rest::Shape {
+            hull: vec![[-h, -h], [h, -h], [h, h], [-h, h]],
+            bottom: 0.0,
+            top: 2.0 * h,
+        })
+    }
+}
+
+#[test]
+fn resting_is_judged_with_the_resolvers_meshes_and_on_without_one() {
+    let map = format!(
+        "{MAP}\n[[props]]\nid = \"cup\"\nmesh = {{ object = 1 }}\ntile = [1, 2]\noffset = [0, 40, 0]\n\n[[props]]\nid = \"lost\"\nmesh = {{ object = 1 }}\ntile = [2, 1]\non = \"nothing\"\n"
+    );
+    let p = pack(&map);
+    // No disc: the broken `on` is an error, the floating cup unjudged.
+    let issues = validate(&p);
+    assert!(
+        errors(&issues)
+            .iter()
+            .any(|m| m.contains("props[2].on") && m.contains("no prop")),
+        "{issues:#?}"
+    );
+    assert!(!issues.iter().any(|i| i.message.contains("floats")));
+    let issues = validate_with(&p, Some(&CubeDisc));
+    assert!(
+        issues.iter().any(|i| i.severity == Severity::Warning
+            && i.field == "props[1]"
+            && i.message.contains("floats 40")),
+        "{issues:#?}"
+    );
+}

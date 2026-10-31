@@ -463,6 +463,22 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 
 The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
 
+### Hidden props
+
+A table drawn by the stage often stands where the map already has furniture: the hall's own card table, a plank table on a meadow. A table's `hide` names the map's props (`[[props]]` ids) whose draws go while the seat is open, so the stage's table replaces the decor one instead of standing inside it:
+
+```toml
+[poker.table]
+tile = [56, 32]
+hide = ["lantern_table"]      # the plank table the stage's felt replaces
+```
+
+The first frame the stage stands on the instance's map, `World::stage_pack_mode` notes the named props' indices on the seat (`PackModeSeat::hidden_props`), and `World::hidden_object_records` lists their draw-record keys (`PROP_RECORD_BASE + n`, which every named prop draws under) while the world is in the seat. Both hosts already skip a placed draw whose record is in that set each frame (the native window's placed-object pass, the play page's `field_placement_parked`), so the hiding is one model with no host code of its own.
+
+A hidden prop's light goes with it. The seat's results stage keeps them hidden while the table plays its last moves; when the seat closes the set empties and they draw again. Collision is never touched: the player is seated at the table, and the walk past it afterwards meets the same footprint as before.
+
+A decoration cannot hide: its tile's cell bakes it with every other decoration there into one mesh. The validator refuses a `hide` naming a `[[decor]]` id (make it a `[[props]]` entry) or an id the map does not have, and warns when a table hides props but draws none of its own (`draw_table = false`).
+
 ## Poker at a table
 
 A poker instance that names a pack map and a table (`map`, `[poker.table]`) is dealt on an oval felt table in the 3D field scene, the other seats' NPCs in chairs round it. It is built the way the duel table is: the session is unchanged and the only authority, `cards::table`'s sibling `poker::table::PokerTableFrame` places the table, and `legaia_engine_expansion::poker_stage::PokerStage` turns each frame's view into cards, chips, NPC poses, sounds and a shot.

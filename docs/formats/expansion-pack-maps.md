@@ -174,6 +174,8 @@ scale = 0.75                                # uniform; 1 when left out
 solid = true                                # close the ground under the mesh
 top = 64                                    # standable: a floor 64 units up
 footprint = [128, 128]                      # the top's extent, world units
+on = "table"                                # rest on that prop's or decoration's top
+hangs = false                               # hung or wall-mounted: not on anything
 ```
 
 `mesh` takes four forms ([`PropMesh`](../../crates/expansion-format/src/map.rs)):
@@ -248,6 +250,42 @@ mesh's visible height is the modder's call.
 | Action movement | Stands, walks across, climbs a rise up to its step height, jumps onto a taller top and lands on it, falls off its edge. |
 | The retail walk | Refused at the edge of any top higher than the one it stands on: the walk climbs nothing. Walking off a top is not refused. |
 | NPC patrols | Walk the sampled floor; route them around a top. |
+
+### Resting placement
+
+A prop or a `[[decor]]` that stands on something names it: `on = "<id>"`, the
+id of a prop or a decoration of the same map. Its lowest point is set on the
+support's top - a standable prop's `top`, else the highest point of the
+support's mesh - and `offset[1]` lifts it from there, so a cup is placed on a
+table without knowing how tall the table's mesh is. A support may itself rest
+on another. The engine resolves it when the map loads, from the meshes'
+vertices ([`map_rest::rest_on`](../../crates/expansion-format/src/map_rest.rs)),
+and builds and runs the map from the resolved offsets; an `on` naming no item,
+or resting an item on itself, is a validation error.
+
+The placement is also checked
+([`map_rest::rest_issues`](../../crates/expansion-format/src/map_rest.rs)). An
+item whose lowest point is more than `10` units over the ground under it must
+be on the top of a support whose area holds it: a prop or decoration (the
+floor-plane hull of its mesh, or a standable top's footprint), or a tile
+whose whole area is a wall box (a counter, a ledge). Otherwise it is
+reported:
+
+| Report | Means |
+|---|---|
+| floats N units over the ground | Nothing is under it. Rest it with `on`, or mark it `hangs` (a lantern on a chain, a banner on a wall). |
+| hovers N units over / sinks N units into the top of X | It stands over X but not on its top. |
+| reaches N units past the edge of X | It rests on X and is wider than X's top by more than `12` units. |
+
+A mesh's origin is not always its base: a retail mesh can be built standing
+well above its origin (a plant pot whose lowest vertex is `91` units up), so
+the check measures the vertices rather than trusting `offset[1]`. That needs
+the meshes, so it runs where they are: the engine logs each report when it
+prepares the map (`expansion: map '<id>': rest: ...`), the disc-gated
+`expansion_rest_rebirth_disc` test lists the flagship pack's, and the
+validator warns with a resolver that measures meshes
+(`DiscResolver::mesh_shape`); without one it judges nothing. An item or
+support whose mesh is not measured is not judged either.
 
 ## NPCs
 
@@ -434,6 +472,8 @@ the sections it names, with or without a disc:
 | With a disc: a geometry-pack index (`{ object = N }` props, `mesh` grounds and walls) past the base scene's pack | error |
 | Decorations: brushes have meshes and a weight; the map expands within 8192 decorations and 32 a tile; rectangles on the map; scales positive | error |
 | Decorations on a placed prop's tile (left out at load) | warning |
+| An `on` naming no prop or decoration of the map, or resting an item on itself | error |
+| With a resolver that measures meshes: an item floating, off its support's top, or overhanging it ([Resting placement](#resting-placement)) | warning |
 | A model asset is in the pack, a glTF 2.0 binary or JSON, `colors` 16 or 256 | error |
 | Animator periods at least 1 (a spin may be negative); pulse amount `0..1`; light radius, flicker `0..=1` | error |
 | Materials: periods at least 1, palette ranges inside 256 entries | error |

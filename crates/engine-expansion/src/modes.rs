@@ -116,6 +116,10 @@ pub struct PackModeSeat {
     /// Each seat's name as the results card reads it ("You", a table
     /// NPC's name), noted as the session leaves play.
     pub seat_names: Vec<String>,
+    /// The map (its id) and the indices of its props the instance's table
+    /// hides (`hide`) while the seat is open, noted once the stage stands
+    /// on that map. Presentation only.
+    pub hidden_props: Option<(String, Vec<usize>)>,
 }
 
 /// A card grant waiting for the card economy.
@@ -160,6 +164,7 @@ impl PackModeSeat {
             body_idle: Vec::new(),
             body_heading: Vec::new(),
             seat_names: Vec::new(),
+            hidden_props: None,
             networked: false,
         }
     }
@@ -188,6 +193,7 @@ impl PackModeSeat {
             body_idle: Vec::new(),
             body_heading: Vec::new(),
             seat_names: Vec::new(),
+            hidden_props: None,
             networked: false,
         }
     }

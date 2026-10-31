@@ -159,10 +159,15 @@ impl World {
                 )
             })
             .collect();
+        // A prop a mode table hides takes its light with it.
+        let hidden = self.pack_mode_hidden_prop_records();
         for (i, p) in def.props.iter().enumerate() {
             let Some(l) = &p.light else {
                 continue;
             };
+            if hidden.contains(&(legaia_engine_scene::expansion_map::PROP_RECORD_BASE + i)) {
+                continue;
+            }
             // A light rides its prop's animated move (a bobbing lantern).
             let moved = pose(&p.animate, self.frame).offset;
             let o = p.offset.map(f32::from);

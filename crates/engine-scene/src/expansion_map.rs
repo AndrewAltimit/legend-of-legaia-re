@@ -225,15 +225,16 @@ pub struct SceneOverride {
     /// map's NPCs pose from in place of the base scene's
     /// (`npc_catalog::scene_anm_bundle`).
     pub npc_clips: Option<Vec<u8>>,
-    /// The draw-record key of each animated prop, by the field-grid tile its
-    /// placement anchors on ([`prop_records`]): what a host hands
-    /// `World::object_draw_turn_matrices` / `object_draw_displacements` to
-    /// find the prop's live transform.
+    /// The draw-record key of each animated or named prop, by the
+    /// field-grid tile its placement anchors on ([`prop_records`]): what a
+    /// host hands `World::object_draw_turn_matrices` /
+    /// `object_draw_displacements` to find the prop's live transform, and
+    /// `World::hidden_object_records` to find it hidden.
     pub prop_records: Vec<((u8, u8), usize)>,
 }
 
 impl SceneOverride {
-    /// The draw-record key of the animated prop anchored on `anchor`.
+    /// The draw-record key of the prop anchored on `anchor`.
     pub fn prop_record(&self, anchor: (u8, u8)) -> Option<usize> {
         self.prop_records
             .iter()
@@ -241,7 +242,7 @@ impl SceneOverride {
             .map(|&(_, r)| r)
     }
 
-    /// Give each placed draw of an animated prop its draw-record key
+    /// Give each placed draw of a keyed prop its draw-record key
     /// ([`Self::prop_records`]) where it has no bind record of its own.
     /// `anchors` and `records` are a host's parallel per-draw lists.
     pub fn fill_prop_records(
@@ -290,12 +291,13 @@ pub fn prop_scales_at(def: &MapDef, anchors: &[(u16, u16)]) -> Vec<((u8, u8), f3
         .collect()
 }
 
-/// The draw-record key a pack map's animated prop `n` draws under: past every
-/// retail bind record (a MAN record index is a byte), so the two never meet.
+/// The draw-record key a pack map's prop `n` draws under: past every retail
+/// bind record (a MAN record index is a byte), so the two never meet.
 pub const PROP_RECORD_BASE: usize = 0x1_0000;
 
-/// The draw-record key of every prop that animates, keyed by its field-grid
-/// tile - [`SceneOverride::prop_records`].
+/// The draw-record key of every prop that animates or has an id (which a
+/// mode table can hide, `World::hidden_object_records`), keyed by its
+/// field-grid tile - [`SceneOverride::prop_records`].
 pub fn prop_records(def: &MapDef) -> Vec<((u8, u8), usize)> {
     let anchors: Vec<(u16, u16)> = def.props.iter().map(|p| (p.tile[0], p.tile[1])).collect();
     prop_records_at(def, &anchors)
@@ -308,7 +310,7 @@ pub fn prop_records_at(def: &MapDef, anchors: &[(u16, u16)]) -> Vec<((u8, u8), u
         .iter()
         .zip(anchors)
         .enumerate()
-        .filter(|(_, (p, _))| !p.animate.is_empty())
+        .filter(|(_, (p, _))| !p.animate.is_empty() || !p.id.is_empty())
         .filter_map(|(i, (_, &(ac, ar)))| {
             let (c, r) = grid_tile(def, ac, ar);
             Some((
@@ -755,6 +757,18 @@ pub const OPEN_PROP_WARN_EXTENT: f32 = 192.0;
 
 /// The file bytes a solid mesh's footprint is measured from: the library's
 /// copy, or for a base-pack `{ object = N }` the base pack's.
+/// A map mesh's placed shape off the library's bytes, for the resting check
+/// ([`legaia_expansion_format::map_rest`]): `None` for a mesh the library
+/// does not hold.
+pub fn mesh_rest_shape(
+    lib: &MeshLibrary,
+    mesh: &PropMesh,
+    rotation: [f32; 3],
+    scale: f32,
+) -> Option<legaia_expansion_format::map_rest::Shape> {
+    footprint::rest_shape(solid_mesh_raw(lib, mesh)?, rotation, scale)
+}
+
 fn solid_mesh_raw<'a>(lib: &'a MeshLibrary, mesh: &PropMesh) -> Option<&'a [u8]> {
     lib.raw(mesh).or_else(|| match mesh {
         PropMesh::Object { object } => lib.base_raw.get(usize::from(*object)).map(Vec::as_slice),

@@ -310,6 +310,23 @@ impl<'a> Checker<'a> {
                 );
             }
         }
+        // Resting placement needs the meshes' shapes, which only a disc
+        // gives (warnings).
+        for (name, def) in &self.pack.maps {
+            let Some(base) = def.base.scene_name() else {
+                continue;
+            };
+            let shapes =
+                |m: &crate::map::PropMesh, r: [f32; 3], s: f32| resolver.mesh_shape(base, m, r, s);
+            for issue in crate::map_rest::rest_issues(def, &shapes) {
+                self.push(
+                    Severity::Warning,
+                    &format!("maps/{name}.toml"),
+                    &issue.at,
+                    issue.to_string(),
+                );
+            }
+        }
         for (path, field, scene, index) in std::mem::take(&mut self.stage_refs) {
             match resolver.battle_stage_count(&scene) {
                 Some(0) => self.push(
@@ -895,6 +912,7 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
                     );
                 }
             }
+            check_table_hide(cx, &at, map_id, map, &t.hide, t.draw_table);
         }
         for (i, p) in modes.poker.iter().enumerate() {
             let at = format!("poker[{i}]");
@@ -951,7 +969,46 @@ pub(crate) fn check_duel_tables(modes: &crate::modes::ModeSection, cx: &mut Chec
                     );
                 }
             }
+            check_table_hide(cx, &at, map_id, map, &t.hide, t.draw_table);
         }
+    }
+}
+
+/// A mode table's `hide` list: each names a prop of the table's map, once.
+/// A decoration cannot hide (its tile's cell bakes it with the others), so
+/// naming one is an error that says so. Hiding props while drawing no table
+/// of its own leaves the cards on nothing: a warning.
+fn check_table_hide(
+    cx: &mut Checker<'_>,
+    at: &str,
+    map_id: &str,
+    map: &crate::map::MapDef,
+    hide: &[String],
+    draw_table: bool,
+) {
+    for (k, id) in hide.iter().enumerate() {
+        let field = format!("{at}.table.hide[{k}]");
+        if hide[..k].contains(id) {
+            cx.warning(&field, format!("{id:?} is listed twice"));
+        } else if map.props.iter().any(|p| !p.id.is_empty() && p.id == *id) {
+            continue;
+        } else if map.decor.iter().any(|d| !d.id.is_empty() && d.id == *id) {
+            cx.error(
+                &field,
+                format!(
+                    "{id:?} is a decoration of map {map_id:?}; decorations bake into their \
+                     tile's cell and cannot hide - make it a [[props]] entry"
+                ),
+            );
+        } else {
+            cx.error(&field, format!("map {map_id:?} has no prop {id:?}"));
+        }
+    }
+    if !hide.is_empty() && !draw_table {
+        cx.warning(
+            &format!("{at}.table.draw_table"),
+            "props are hidden but the table draws none of its own (`draw_table = false`)",
+        );
     }
 }
 
@@ -1360,6 +1417,45 @@ laps = 1
         pack.modes.card_duels = vec![duel];
         let e = errors(&validate(&pack));
         assert!(!e.iter().any(|m| m.contains("card_duels")), "{e:?}");
+    }
+
+    #[test]
+    fn a_table_hides_props_of_its_map_only() {
+        let mut pack = good_pack();
+        let map: crate::map::MapDef = toml::from_str(
+            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[props]]\nid = \"plank\"\nmesh = { object = 1 }\ntile = [1, 1]\n[[decor]]\nid = \"rug\"\nmesh = { object = 2 }\ntile = [1, 1]\n",
+        )
+        .unwrap();
+        pack.maps.insert("room".into(), map);
+        let poker = |hide: &[&str], draw_table: bool| modes::PokerTable {
+            id: "p".into(),
+            map: Some("room".into()),
+            table: Some(modes::PokerTableLayout {
+                tile: [1, 1],
+                hide: hide.iter().map(|s| s.to_string()).collect(),
+                draw_table,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        pack.modes.poker = vec![poker(&["plank"], true)];
+        let issues = validate(&pack);
+        assert!(
+            !issues.iter().any(|i| i.field.contains("hide")),
+            "{issues:?}"
+        );
+        pack.modes.poker = vec![poker(&["plank", "nothing", "rug"], true)];
+        let e = errors(&validate(&pack));
+        assert!(e.iter().any(|m| m.contains("no prop \"nothing\"")), "{e:?}");
+        assert!(e.iter().any(|m| m.contains("cannot hide")), "{e:?}");
+        pack.modes.poker = vec![poker(&["plank"], false)];
+        let issues = validate(&pack);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i.severity == Severity::Warning && i.field.ends_with("draw_table")),
+            "{issues:?}"
+        );
     }
 
     #[test]

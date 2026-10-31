@@ -404,6 +404,17 @@ pub struct PropDef {
     pub animate: Vec<crate::map_detail::Animator>,
     /// A light the prop carries under enhanced lighting.
     pub light: Option<crate::map_detail::PropLight>,
+    /// Rest the prop on another's top: the id of a prop or a `[[decor]]`
+    /// of this map. The mesh's lowest point sits on the support's top (its
+    /// standable `top`, else its mesh's highest point), and
+    /// [`Self::offset`]`[1]` lifts it from there
+    /// ([`crate::map_rest`]). Empty stands it on the floor.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub on: String,
+    /// The prop hangs or is mounted (a lantern on a chain, a torch on a
+    /// wall): the resting check passes it over off the floor.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A field NPC a pack places on a map.

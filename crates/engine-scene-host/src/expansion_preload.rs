@@ -29,7 +29,7 @@ use legaia_engine_scene::expansion_map::detail::{
 };
 use legaia_engine_scene::expansion_map::{
     BaseInputs, SceneOverride, base_scenery, build_field_image, fill_borrowed_npc_clips, floor_lut,
-    prop_records_at, prop_scales_at, resolve_map_npcs,
+    mesh_rest_shape, prop_records_at, prop_scales_at, resolve_map_npcs,
 };
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_resources::SceneResources;
@@ -267,6 +267,15 @@ fn library_phase(
 }
 
 fn image_phase(def: &MapDef, map_id: &str, l: LibraryDone) -> Result<ImageDone> {
+    // Items resting `on` another stand on its measured top; the map is
+    // built and run from the resolved placement.
+    let shapes = |m: &legaia_expansion_format::map::PropMesh, r: [f32; 3], s: f32| {
+        l.library
+            .as_ref()
+            .and_then(|lib| mesh_rest_shape(lib, m, r, s))
+    };
+    let (rested, unresolved) = legaia_expansion_format::map_rest::rest_on(def, &shapes);
+    let def = &rested;
     let image = build_field_image(
         def,
         &l.grid,
@@ -280,6 +289,19 @@ fn image_phase(def: &MapDef, map_id: &str, l: LibraryDone) -> Result<ImageDone> 
     .with_context(|| format!("map '{map_id}' field image"))?;
     drop(l.base);
     let mut notes = Vec::new();
+    for p in &unresolved {
+        notes.push((
+            log::Level::Warn,
+            format!("expansion: map '{map_id}': {}: {}", p.field, p.message),
+        ));
+    }
+    // What rests on nothing, measured off the meshes themselves.
+    for issue in legaia_expansion_format::map_rest::rest_issues(def, &shapes) {
+        notes.push((
+            log::Level::Warn,
+            format!("expansion: map '{map_id}': rest: {issue}"),
+        ));
+    }
     // Materials naming another scene's VRAM point at the copies the
     // library made; the map runtime animates the resolved list.
     let mut live_def = def.clone();
@@ -367,12 +389,12 @@ fn npc_phase(index: &ProtIndex, def: &MapDef, map_id: &str, i: ImageDone) -> Res
         map_id: map_id.to_string(),
         field_map: image.image,
         floor_lut: floor_lut(def, base_lut),
-        prop_scales: prop_scales_at(def, &image.prop_anchors),
+        prop_scales: prop_scales_at(&live_def, &image.prop_anchors),
         npcs,
         added_tmds: image.added_tmds,
         geometry_entry: geometry.map(|(e, _)| e),
         vram_patches: library.map(|l| l.vram_patches).unwrap_or_default(),
-        prop_records: prop_records_at(def, &image.prop_anchors),
+        prop_records: prop_records_at(&live_def, &image.prop_anchors),
         npc_model_base: bank.as_ref().map_or(0, |b| b.first),
         npc_clips: bank.as_ref().and_then(|b| b.clips.clone()),
         npc_tmds: bank.map(|b| b.tmds).unwrap_or_default(),

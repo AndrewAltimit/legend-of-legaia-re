@@ -310,8 +310,9 @@ pub fn needs_library(def: &MapDef, base_entry: Option<u32>) -> bool {
         || !def.edges.is_empty()
         || !def.decals.is_empty()
         || !def.emitters.is_empty()
-        // A solid prop's footprint is measured off its mesh.
-        || def.props.iter().any(|p| p.solid && p.top.is_none())
+        // A solid prop's footprint is measured off its mesh, and so are the
+        // tops `on` rests things on.
+        || def.props.iter().any(|p| (p.solid && p.top.is_none()) || !p.on.is_empty())
         // Townsfolk from another scene bring their models' textures.
         || def.npcs.iter().any(|n| {
             matches!(&n.model, Some(DiscRef::Npc { scene, .. })

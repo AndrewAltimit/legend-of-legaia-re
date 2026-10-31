@@ -82,6 +82,41 @@ pub fn footprint(raw: &[u8], rotation: [f32; 3], scale: f32) -> Option<Footprint
     })
 }
 
+/// `raw`'s whole placed shape for the resting check
+/// ([`legaia_expansion_format::map_rest`]): the floor-plane hull of every
+/// vertex (a table's top, not only its legs), and its lowest and highest
+/// point above the origin, once turned by `rotation` and scaled by `scale`.
+pub fn rest_shape(
+    raw: &[u8],
+    rotation: [f32; 3],
+    scale: f32,
+) -> Option<legaia_expansion_format::map_rest::Shape> {
+    let tmd = legaia_tmd::parse(raw).ok()?;
+    let m = rotation_deg(rotation);
+    let pts: Vec<[f32; 3]> = tmd
+        .objects
+        .iter()
+        .flat_map(|o| o.vertices.iter())
+        .map(|v| {
+            let p = [f32::from(v.x), f32::from(v.y), f32::from(v.z)].map(|c| c * scale);
+            std::array::from_fn(|i| m[i][0] * p[0] + m[i][1] * p[1] + m[i][2] * p[2])
+        })
+        .collect();
+    if pts.is_empty() {
+        return None;
+    }
+    // Retail frame: Y down.
+    let (lo, hi) = pts.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| {
+        (lo.min(p[1]), hi.max(p[1]))
+    });
+    let mut flat: Vec<[f32; 2]> = pts.iter().map(|p| [p[0], p[2]]).collect();
+    Some(legaia_expansion_format::map_rest::Shape {
+        hull: convex_hull(&mut flat),
+        bottom: -hi,
+        top: -lo,
+    })
+}
+
 /// The hull of [`footprint`].
 pub fn base_hull(raw: &[u8], rotation: [f32; 3], scale: f32) -> Option<Vec<[f32; 2]>> {
     footprint(raw, rotation, scale).map(|f| f.hull)

@@ -53,6 +53,12 @@ pub struct DecorDef {
     /// Block the ground under the mesh: the lower half of its drawn hull
     /// closes the collision sub-cells it covers, as a solid prop's does.
     pub solid: bool,
+    /// Rest it on another's top ([`crate::map::PropDef::on`]).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub on: String,
+    /// It hangs or is mounted ([`crate::map::PropDef::hangs`]).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A seeded brush: scatter a weighted set of meshes over a tile rectangle.
