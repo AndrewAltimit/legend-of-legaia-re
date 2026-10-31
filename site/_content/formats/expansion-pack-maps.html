@@ -410,7 +410,22 @@ kind = "hsv"          # hue / brightness: clut, start, count, period, hue, value
 kind = "tint"         # standing recolour: clut, start, count, hue, value, color = [r, g, b]
 [[materials]]
 kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, period</code></pre>
-  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>tint</code> recolours entries once and holds them (a static hue turn and brightness shift through that kernel, then a per-channel multiply, <code>128</code> unchanged), so a kept room's art takes the map's mood; <code>scroll</code> rotates an atlas cell by whole texels. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
+  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>tint</code> recolours entries once and holds them (a static hue turn and brightness shift through that kernel, then a per-channel multiply, <code>128</code> unchanged), so a kept room's art takes the map's mood; <code>scroll</code> rotates an atlas cell by whole texels - texture flowing over still geometry; a floor that moves is a <a href="#living-ground">ground motion</a>. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
+</section>
+
+<section class="doc-section" id="living-ground" data-doc="living-ground">
+  <h2>Living ground</h2>
+<pre><code>[[ground_motion]]
+kind = "swell"        # breathe, swell or ripple
+chars = "LlQ"         # legend characters whose tiles move
+amplitude = 10        # world units either side of rest
+period = 150          # frames a cycle
+phases = 4            # phase steps: ladder rungs per tier
+wavelength = 4.0      # tiles crest to crest
+angle = 0.0           # swell direction, 0 = +Z; a ripple takes centre = [x, z]</code></pre>
+  <p>A living floor moves its <strong>geometry</strong>, not its texture - the way retail animates its own. <code>jou</code>'s organic floor, <code>jouina</code>'s pulsing path and <code>concnow</code>'s flesh pits ride the scene's floor-height ladder, which field-VM op <code>4C 90</code> sets oscillating one rung at a time; the ground pass takes every ground vertex's corner tile through the live ladder each frame, the decoration sweep lifts decoration cells by it, and the floor sampler reads it, so what moves is drawn and walked as one shape (<a href="../subsystems/script-vm-menuctrl.html">menu-control nibble 9</a>).</p>
+  <p>A ground motion takes free rungs of the sixteen - one per phase step for every tier its characters stand on, each resting at that tier's height - writes its tiles' collision nibbles as those rungs, and every tick the world sets them to rest plus the wave (<code>ActiveMap::ground_motion_ladder</code>). Both hosts already redraw the ground and decoration cells from the live ladder, so neither draws anything new. <code>breathe</code> moves every tile together, <code>swell</code> rolls crests along <code>angle</code>, <code>ripple</code> spreads rings from <code>centre</code>; a step lags the one before by <code>period / phases</code> frames. The wave is the closed form of retail's rung oscillator <code>FUN_801DA930</code> (constant acceleration toward rest, no damping: parabolic arcs), integer arithmetic on <code>World::frame</code>.</p>
+  <p>As in retail, the party rides a walkable moving floor (the validator warns past 24 units), a still tile beside a moving one leans toward it, and placed props stand still. A terrain map, or one without its own <code>floor_heights</code>, takes none. Rebirth's Atrium dais ripples out from the Warden's Stone and the Ember Stair's lava heaves; <code>scroll</code> stays for texture flowing over still geometry - the terrain's water - as retail's own water is a VRAM animation.</p>
 </section>
 
 <section class="doc-section" id="fog" data-doc="fog">

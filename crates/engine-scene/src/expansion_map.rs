@@ -690,16 +690,27 @@ fn write_collision_grid(
     terrain_walls: Option<&[u8]>,
 ) {
     let [ox, oy] = def.tiles.origin.map(usize::from);
+    // A living-ground tile stands on its phase rung, which rests at its
+    // tier's height ([`legaia_expansion_format::ground_motion`]).
+    let motion = def.ground_motion_plan();
+    let floor_of = |c: usize, r: usize, t: &legaia_expansion_format::map::Tile| -> u8 {
+        grid.char_at(c, r)
+            .and_then(|ch| motion.rung_at(def, c as u16, r as u16, ch, t.tier))
+            .unwrap_or(t.tier)
+    };
     let tier = |c: usize, r: usize| -> u8 {
         if terrain_walls.is_some() {
             return 0;
         }
         let t = grid.get(c, r).expect("in range");
         if !t.void {
-            return t.tier;
+            return floor_of(c, r, t);
         }
         let floor = |c: Option<usize>, r: Option<usize>| {
-            grid.get(c?, r?).filter(|t| !t.void).map(|t| t.tier)
+            let (c, r) = (c?, r?);
+            grid.get(c, r)
+                .filter(|t| !t.void)
+                .map(|t| floor_of(c, r, t))
         };
         floor(c.checked_sub(1), Some(r))
             .or_else(|| floor(Some(c), r.checked_sub(1)))

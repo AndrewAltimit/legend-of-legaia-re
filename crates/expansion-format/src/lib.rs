@@ -45,6 +45,7 @@ pub mod cutscene;
 pub mod dialog;
 pub mod diff;
 pub mod flow;
+pub mod ground_motion;
 pub mod items;
 pub mod manifest;
 pub mod map;

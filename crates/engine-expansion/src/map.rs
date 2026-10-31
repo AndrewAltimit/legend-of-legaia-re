@@ -86,6 +86,12 @@ pub struct ActiveMap {
     /// set by the map's load when its water foams: what the surf pulse
     /// rewrites (`World::step_expansion_materials`).
     pub foam_cluts: Option<[u16; legaia_expansion_format::terrain::FOAM_BANDS]>,
+    /// The living-ground rungs the world drives every tick
+    /// ([`MapDef::ground_motion_plan`]), empty with no ground motion.
+    pub ground_motion: legaia_expansion_format::ground_motion::GroundMotionPlan,
+    /// The map's ladder at rest (MAN convention, up positive), what each
+    /// rung swings about.
+    pub rest_ladder: [i16; legaia_expansion_format::map::FLOOR_TIERS],
 }
 
 /// What talking to a pack NPC does ([`ActiveMap::talk`]).
@@ -147,6 +153,8 @@ impl ActiveMap {
             material_captures: Default::default(),
             particle_sheet: None,
             foam_cluts: None,
+            ground_motion: Default::default(),
+            rest_ladder: [0; legaia_expansion_format::map::FLOOR_TIERS],
         };
         m.patrol_next = vec![0; m.def.npcs.len()];
         m.patrol_walking = vec![false; m.def.npcs.len()];
@@ -155,7 +163,23 @@ impl ActiveMap {
         // A terrain that does not build was refused by the map's load.
         m.terrain = m.def.terrain_heightfield().ok().flatten().map(Arc::new);
         m.encounter = m.encounter_zone_at(spawn);
+        m.ground_motion = m.def.ground_motion_plan();
+        m.rest_ladder = m.def.floor_ladder().unwrap_or_default();
         m
+    }
+
+    /// The live heights of the map's living-ground rungs on `frame`, as
+    /// `(rung, height)` in the runtime ladder's convention (scratchpad
+    /// frame, the negation of the MAN header's): what the world writes into
+    /// its floor-height ladder every tick, which both hosts' ground and
+    /// decoration draws and the floor sampler read.
+    pub fn ground_motion_ladder(&self, frame: u64) -> impl Iterator<Item = (usize, i16)> + '_ {
+        self.ground_motion.rungs.iter().map(move |r| {
+            (
+                usize::from(r.rung),
+                r.height(&self.def, &self.rest_ladder, frame).wrapping_neg(),
+            )
+        })
     }
 
     /// The map-local tile under world `(x, z)` ([`MapDef::tile_at_world`]).

@@ -836,3 +836,61 @@ fn a_ceiling_bakes_its_underside_and_the_hung_props_chain() {
     let span = xs.iter().max().unwrap() - xs.iter().min().unwrap();
     assert_eq!(span, 8, "8 wide");
 }
+
+/// A living-ground tile stands on a phase rung of its own that rests at its
+/// tier's height: at rest the ground is the motion-less map's to the unit,
+/// and moving the rung moves exactly that tile's corner.
+#[test]
+fn a_ground_motion_tile_rides_its_own_rung_and_rests_where_its_tier_does() {
+    use legaia_scene_formats::field_objects::build_walk_heightfield;
+    let still = def();
+    let mut moving = def();
+    moving.ground_motion = vec![legaia_expansion_format::ground_motion::GroundMotionDef {
+        chars: "^".into(),
+        amplitude: 12,
+        ..Default::default()
+    }];
+    let (a, b) = (image(&still), image(&moving));
+    // `^` (map tile (2, 1), grid (12, 21)) leaves tier 1 for the top rung;
+    // every other byte of the grid is the motion-less map's.
+    assert_eq!(byte(&a, 12, 21) & 0x0F, 1);
+    assert_eq!(byte(&b, 12, 21) & 0x0F, 15);
+    let cg = COLLISION_GRID_OFFSET..COLLISION_GRID_OFFSET + GRID_DIM * GRID_DIM;
+    let diffs = a[cg.clone()]
+        .iter()
+        .zip(&b[cg])
+        .filter(|(x, y)| x != y)
+        .count();
+    assert_eq!(diffs, 1);
+    // The ladder holds the rung at the tier's height, so the ground at rest
+    // is the same surface.
+    let (la, lb) = (
+        floor_lut(&still, None).map(i16::wrapping_neg),
+        floor_lut(&moving, None).map(i16::wrapping_neg),
+    );
+    assert_eq!(lb[15], la[1]);
+    let (ha, hb) = (
+        build_walk_heightfield(&a, &la),
+        build_walk_heightfield(&b, &lb),
+    );
+    assert_eq!(ha.positions, hb.positions);
+    // Swinging the rung moves the drawn ground's corners on that tile and
+    // nothing else.
+    let mut live = lb;
+    live[15] -= 12;
+    let lifted = crate::field_ground::live_render_positions(&hb, &live);
+    let rest = crate::field_ground::live_render_positions(&hb, &lb);
+    let moved: Vec<_> = lifted
+        .iter()
+        .zip(&rest)
+        .filter(|(p, q)| p != q)
+        .map(|(p, q)| (p[0], p[2], p[1] - q[1]))
+        .collect();
+    assert!(!moved.is_empty());
+    assert!(
+        moved
+            .iter()
+            .all(|&(x, z, dy)| x == 12.0 * 128.0 && z == 21.0 * 128.0 && (dy + 12.0).abs() < 1e-3),
+        "{moved:?}"
+    );
+}

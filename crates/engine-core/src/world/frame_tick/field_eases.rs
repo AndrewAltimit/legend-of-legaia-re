@@ -237,6 +237,17 @@ impl World {
             bobs.append(&mut self.terrain.floor_tier_bobs);
             self.terrain.floor_tier_bobs = bobs;
         }
+
+        // A pack map's living ground: its rungs swing on the same ladder,
+        // one wave per motion (`legaia_expansion_format::ground_motion`).
+        // No map, no motion, no write.
+        if let Some(map) = self.expansion.map.as_ref() {
+            for (rung, h) in map.ground_motion_ladder(self.frame) {
+                if let Some(slot) = self.terrain.floor_height_lut.get_mut(rung) {
+                    *slot = h;
+                }
+            }
+        }
     }
 
     /// Write one eased-move frame through its `+0x90` back-link.

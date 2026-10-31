@@ -37,6 +37,7 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `decor`, `scatter`, `edges` | Decorations: any number of meshes a tile, placed one by one, by seeded brush, or along wall edges ([Decorations](#decorations)). |
 | `lighting` | Enhanced-lighting mood and placed lamps ([Lights](#lights)). |
 | `materials` | Animated texture words: palette cycling, hue cycling, texel scrolling ([Animated materials](#animated-materials)). |
+| `ground_motion` | Living ground: tiles whose floor geometry swells, breathes or ripples on ladder rungs of their own ([Living ground](#living-ground)). |
 | `fog` | The retail field fog pool over tile regions ([Fog](#fog)). |
 | `decals` | Flat textured floor polygons, one by one or by brush ([Decals](#decals)). |
 | `emitters` | Particle emitters ([Particles](#particles)). |
@@ -526,6 +527,8 @@ the sections it names, with or without a disc:
 | A model asset is in the pack, a glTF 2.0 binary or JSON, `colors` 16 or 256 | error |
 | Animator periods at least 1 (a spin may be negative); pulse amount `0..1`; light radius, flicker `0..=1` | error |
 | Materials: periods at least 1, palette ranges inside 256 entries | error |
+| Ground motion: on a tier-floored map with its own `floor_heights`, characters the legend names, amplitude at most 64, period at least 2, phases `1..=8`, a positive wavelength, rungs enough on the ladder | error |
+| Ground motion: a character an earlier motion moves; amplitude 0; a walkable floor swinging more than 24 units | warning |
 | A `{ scene, object = N }` mesh, with a disc: `N` past that scene's pack | error |
 | Decals: `tile` / `rect` on the map, `sides` `3..=16`, size `1..=1024`, density `0..=8`; a decal placing nothing | error / warning |
 | Emitters: rectangle on the map, at most 512 particles, life at least 1 frame | error |
@@ -1151,7 +1154,9 @@ mode-3 HSV cell kernel (`FUN_80019D50`'s port,
 static hue turn and brightness shift through the same kernel, then a
 per-channel multiply (`legaia_tim::tint::tint_bgr555`), so a kept room's
 art takes the map's mood; `scroll` rotates an atlas
-cell's texels by whole texels, wrapping, at any page depth. The words named
+cell's texels by whole texels, wrapping, at any page depth - texture
+flowing over still geometry; a floor that itself moves is a
+[ground motion](#living-ground). The words named
 are the base scene's VRAM, unless the material says `from`:
 
 ```toml
@@ -1172,6 +1177,84 @@ cell to the VRAM rectangle (`rect`) its texels now occupy, clipped to the
 copied rectangle. A palette or page the base scene already held is not
 copied and keeps its address. A scene none of the map's meshes came from,
 or a cell outside every copy, logs a warning and animates nothing.
+
+## Living ground
+
+```toml
+[[ground_motion]]
+kind = "swell"          # breathe, swell or ripple
+chars = "LlQ"           # the legend characters whose tiles move
+amplitude = 10          # world units either side of rest, up positive
+period = 150            # frames a cycle
+phases = 4              # phase steps: ladder rungs per tier
+wavelength = 4.0        # tiles crest to crest (swell, ripple)
+angle = 0.0             # the way a swell's crests travel, 0 = +Z, 90 = +X
+# centre = [7.5, 6.5]   # a ripple's centre; default the tiles' middle
+```
+
+A living floor moves its **geometry**, not its texture. That is how the
+retail field animates its own: `jou`'s organic floor, `jouina`'s pulsing
+path and `concnow`'s flesh pits ride the scene's floor-height ladder, which
+field-VM op `4C 90` sets oscillating one rung at a time
+([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#nibble-9-is-the-floor-height-ladder-not-a-fade)).
+The ground pass takes each ground vertex's corner tile through the live
+ladder every frame, the decoration sweep lifts each decoration cell by it,
+and the floor sampler reads it - so what moves is drawn and walked as one
+shape. `jou`'s entry script sets consecutive rungs going with rising
+phases: a wave travelling across the floor. (Its "pulsating flesh"
+colour is a palette cycle, the [`hsv`](#animated-materials) material's
+kernel; the [VDF morphs](../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain)
+bend whole meshes, its flesh walls among them.)
+
+A ground motion is that mechanism authored per legend character
+([`legaia_expansion_format::ground_motion`](../../crates/expansion-format/src/ground_motion.rs)).
+The map's own tiers keep their rungs; each motion takes **free rungs** of
+the sixteen, one per phase step for every tier its characters stand on,
+from the top of the ladder down, each resting at the height of the tier it
+stands in for (`MapDef::floor_ladder` fills them). The field image writes
+each moving tile's collision nibble as its phase rung, and every tick the
+world sets the rungs to rest height plus the wave
+(`ActiveMap::ground_motion_ladder`, in `World::tick_field_timer_actors`
+beside retail's own rung oscillators). Neither host draws anything new:
+both already re-resolve the walk ground and the decoration cells through
+the live ladder.
+
+| Kind | Phase step of a tile corner |
+|---|---|
+| `breathe` | One step: every tile rises and falls together. |
+| `swell` | The corner's distance along `angle`, in `wavelength`s: crests roll that way. |
+| `ripple` | The corner's distance from `centre`, in `wavelength`s: rings spread out. |
+
+A step lags the one before it by `period / phases` frames. The wave is the
+closed form of retail's rung oscillator `FUN_801DA930`, which accelerates
+the rung toward its rest height by a constant step and never damps: a
+parabolic arc above rest, the mirrored arc below, meeting at rest with
+equal slope (`ground_motion::parabolic_wave`). It is integer arithmetic, a
+pure function of `World::frame`, so both hosts and every run move the same
+floor on the same frame.
+
+The ground moves as retail's does, which fixes three things:
+
+- **Walk height moves with it.** The party stands on the drawn surface and
+  rides it; a walkable floor wants a small swing (the validator warns past
+  24 units).
+- **The edge tilts.** A ground vertex takes its corner tile's rung, so a
+  still tile beside a moving one leans toward it over its own width rather
+  than tearing from it.
+- **Placed props stand still.** A prop's height is set once at spawn, as a
+  retail placed object's is; decorations on a moving tile ride it.
+
+A terrain floors on its heightfield, not the ladder, and takes no ground
+motion; a map that takes its base scene's ladder has no rest heights to
+swing about. The validator errors on both, and on a ladder too full for
+the phase steps asked of it.
+
+The Rebirth tower's Atrium dais pulses out from the Warden's Stone
+(`ripple`); the Ember Stair's lava moats, runs and slag trough heave
+(`swell`). A `scroll` material stays the tool for texture that flows over
+still geometry - the terrain's water, a waterfall sheet - which is what
+retail's own water does (the CLUT-walk table and the render-mode-4 rect
+scroller, [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md)).
 
 ## Fog
 
@@ -1517,7 +1600,8 @@ once, with no streaming.
 ## Gaps
 - **Terrain.** The water surface is flat (its waves are texture and foam
   animation, not vertex motion): the terrain draws through baked
-  decoration cells, which neither host deforms per frame.
+  decoration cells, which neither host deforms per frame, so a
+  [ground motion](#living-ground) cannot reach it.
 - **Camera preset on an in-world entry.** A map entered through an entrance
   or a Travel pick keeps the follow camera's distance; the map's `camera`
   preset applies on a host's direct entry (`--map`, a pack map row in the

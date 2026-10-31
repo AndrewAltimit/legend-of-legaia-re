@@ -960,8 +960,9 @@ pub enum MaterialFx {
         color: [u8; 3],
     },
     /// Texel scrolling: rotate an atlas cell's texels `dx` / `dy` whole
-    /// texels every `period` frames, wrapping - flowing water, a moving
-    /// energy floor. (Retail's mode-4 rotator `FUN_80021DF4` moves halfword
+    /// texels every `period` frames, wrapping - water flowing, a waterfall
+    /// sheet: texture moving over still geometry. A floor that itself
+    /// moves is a [`crate::ground_motion::GroundMotionDef`]. (Retail's mode-4 rotator `FUN_80021DF4` moves halfword
     /// strips; this moves texels, so a 4bpp cell scrolls one texel at a
     /// time.)
     Scroll {

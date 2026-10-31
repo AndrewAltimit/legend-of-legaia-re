@@ -115,6 +115,10 @@ pub struct MapDef {
     pub lighting: crate::map_detail::MapLighting,
     /// Animated materials ([`crate::map_detail::MaterialFx`]).
     pub materials: Vec<crate::map_detail::MaterialFx>,
+    /// Living ground: tiles whose floor geometry moves on ladder rungs of
+    /// their own ([`crate::ground_motion::GroundMotionDef`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ground_motion: Vec<crate::ground_motion::GroundMotionDef>,
     /// The retail field fog pool over the map ([`crate::map_detail::MapFog`]).
     pub fog: crate::map_detail::MapFog,
     /// Flat textured floor decals ([`crate::map_detail::DecalDef`]).
@@ -969,7 +973,8 @@ impl MapDef {
     }
 
     /// The floor-tier ladder as 16 heights (up positive), or `None` when the
-    /// map takes the base scene's.
+    /// map takes the base scene's. A ground motion's rungs hold their rest
+    /// heights.
     pub fn floor_ladder(&self) -> Option<[i16; FLOOR_TIERS]> {
         if self.floor_heights.is_empty() {
             return None;
@@ -977,6 +982,11 @@ impl MapDef {
         let mut out = [0i16; FLOOR_TIERS];
         for (slot, h) in out.iter_mut().zip(&self.floor_heights) {
             *slot = *h;
+        }
+        // A ground motion's rungs rest at the height of the tier each
+        // stands in for ([`crate::ground_motion`]).
+        for r in self.ground_motion_plan().rungs {
+            out[usize::from(r.rung)] = out[usize::from(r.base_tier)];
         }
         Some(out)
     }

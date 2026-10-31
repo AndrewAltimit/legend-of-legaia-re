@@ -36,6 +36,7 @@ pub(crate) fn check_detail(
     }
     check_surround(m, cx);
     check_ceiling(m, cx);
+    check_ground_motion(m, cx);
     for (i, s) in m.scatter.iter().enumerate() {
         let at = format!("scatter[{i}]");
         if s.meshes.is_empty() {
@@ -222,6 +223,114 @@ pub(crate) fn check_detail(
         if !on([f.rect[0], f.rect[1]]) || !on([f.rect[2], f.rect[3]]) {
             cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
         }
+    }
+}
+
+/// Living ground ([`crate::ground_motion`]): characters the legend names,
+/// a wave that moves, and rungs enough on the ladder for every phase step.
+fn check_ground_motion(m: &MapDef, cx: &mut Checker<'_>) {
+    use crate::ground_motion::{
+        GroundMotionKind, MAX_GROUND_MOTION_AMPLITUDE, MAX_GROUND_MOTION_PHASES,
+    };
+    if m.ground_motion.is_empty() {
+        return;
+    }
+    if m.terrain.is_some() {
+        cx.error(
+            "ground_motion",
+            "a terrain floors on its heightfield, not the tier ladder ground motion moves",
+        );
+        return;
+    }
+    if m.floor_heights.is_empty() {
+        cx.error(
+            "ground_motion",
+            "ground motion needs the map's own `floor_heights`: its rungs rest at those heights",
+        );
+        return;
+    }
+    let mut claimed = String::new();
+    for (i, d) in m.ground_motion.iter().enumerate() {
+        let at = format!("ground_motion[{i}]");
+        if d.chars.is_empty() {
+            cx.error(
+                &format!("{at}.chars"),
+                "the motion names no legend character",
+            );
+        }
+        for c in d.chars.chars() {
+            if m.style(c).is_none() {
+                cx.error(
+                    &format!("{at}.chars"),
+                    format!("{c:?} is not a legend character"),
+                );
+            } else if claimed.contains(c) {
+                cx.warning(
+                    &format!("{at}.chars"),
+                    format!("{c:?} moves with an earlier motion; this one leaves it"),
+                );
+            }
+        }
+        claimed.push_str(&d.chars);
+        if d.amplitude == 0 {
+            cx.warning(&format!("{at}.amplitude"), "an amplitude of 0 never moves");
+        } else if d.amplitude.unsigned_abs() > MAX_GROUND_MOTION_AMPLITUDE.unsigned_abs() {
+            cx.error(
+                &format!("{at}.amplitude"),
+                format!(
+                    "amplitude {} is past {MAX_GROUND_MOTION_AMPLITUDE} world units",
+                    d.amplitude
+                ),
+            );
+        } else if d.amplitude.unsigned_abs() > 24
+            && d.chars
+                .chars()
+                .filter_map(|c| m.style(c))
+                .any(|s| s.walls.mask() != 0xF)
+        {
+            cx.warning(
+                &format!("{at}.amplitude"),
+                format!(
+                    "the party walks this floor and rides a {}-unit swing; props on it stay put",
+                    d.amplitude
+                ),
+            );
+        }
+        if d.period < 2 {
+            cx.error(
+                &format!("{at}.period"),
+                format!("period {} frames; a cycle is at least 2", d.period),
+            );
+        }
+        if d.kind != GroundMotionKind::Breathe {
+            if !(1..=MAX_GROUND_MOTION_PHASES).contains(&d.phases) {
+                cx.error(
+                    &format!("{at}.phases"),
+                    format!(
+                        "phases {} is outside 1..={MAX_GROUND_MOTION_PHASES}",
+                        d.phases
+                    ),
+                );
+            }
+            if !(d.wavelength.is_finite() && d.wavelength > 0.0) {
+                cx.error(
+                    &format!("{at}.wavelength"),
+                    format!("wavelength {} is not a length in tiles", d.wavelength),
+                );
+            }
+        }
+    }
+    let plan = m.ground_motion_plan();
+    if plan.short > 0 {
+        cx.error(
+            "ground_motion",
+            format!(
+                "the motions need {} ladder rungs more than the map's {} tiers leave free; \
+                 fewer phases or fewer tiers under the moving characters",
+                plan.short,
+                crate::map::FLOOR_TIERS
+            ),
+        );
     }
 }
 
