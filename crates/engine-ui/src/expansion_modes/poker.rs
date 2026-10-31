@@ -365,13 +365,18 @@ pub(super) fn hud(
             );
         }
     }
+    // The pot sits bottom-centre between the player's plate and the action
+    // menu: under the plates it would cover the far seats' bets and the
+    // pile on the felt.
     if v.pot > 0 {
-        let (w, y) = (88, SEAT_PLATE_Y + SEAT_PLATE_H + 3);
-        c.panel((STAGE_W - w) / 2, y, w, 16, plate, ink::PANEL_EDGE);
+        let (w, h) = (POT_W, 2 * LINE + 4);
+        let (x, y) = ((STAGE_W - w) / 2, STAGE_H - 4 - h);
+        c.panel(x, y, w, h, plate, ink::PANEL_EDGE);
+        c.text_in("Pot", STAGE_W / 2, y + 1, w - 8, pen::DIM, Align::Centre);
         c.text_in(
-            format!("Pot {}", v.pot),
+            v.pot.to_string(),
             STAGE_W / 2,
-            y,
+            y + 1 + LINE,
             w - 8,
             pen::GOLD,
             Align::Centre,
@@ -432,8 +437,12 @@ pub(super) fn hud(
         }
     }
     action_menu(c, v, me, STAGE_W - 4 - 130, STAGE_H - 56);
-    SEAT_PLATE_Y + SEAT_PLATE_H + 3 + 16
+    SEAT_PLATE_Y + SEAT_PLATE_H + 3
 }
+
+/// The pot box's width: the gap between the player's plate (`4..124`) and
+/// the action menu (`186..316`), less a margin each side.
+const POT_W: i32 = 56;
 
 /// The top of the other seats' plates, and their height: three rows (name,
 /// stack, bet).
