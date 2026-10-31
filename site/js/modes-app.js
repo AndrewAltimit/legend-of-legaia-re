@@ -375,7 +375,49 @@
     return '..';
   }
 
+  /* A prim's fill: flat, or for a gouraud quad a linear gradient from its
+   * top edge's colour to its bottom edge's (the corners' pairs averaged),
+   * which is what the engine's panels and bars shade along. */
+  function fillFor(p) {
+    const g = p[14];
+    if (!g) return `rgb(${p[8]},${p[9]},${p[10]})`;
+    const mix = (i, j) => [0, 1, 2].map((k) => (g[i * 4 + k] + g[j * 4 + k]) >> 1);
+    const top = mix(0, 1), bot = mix(2, 3);
+    const grad = ctx.createLinearGradient(
+      (p[0] + p[2]) / 2, (p[1] + p[3]) / 2, (p[4] + p[6]) / 2, (p[5] + p[7]) / 2);
+    grad.addColorStop(0, `rgb(${top[0]},${top[1]},${top[2]})`);
+    grad.addColorStop(1, `rgb(${bot[0]},${bot[1]},${bot[2]})`);
+    return grad;
+  }
+
+  /* The open duel's card page (the faces the play hosts write into VRAM,
+   * here with no portraits), copied into a canvas whenever its key moves;
+   * a card prim stretches its rectangle of it over the card. */
+  const page = { key: '', canvas: null };
+  function syncCardPage() {
+    const info = JSON.parse(rt.card_page_info());
+    if (info.key === page.key) return;
+    page.key = info.key;
+    if (!info.key) return;
+    const px = rt.card_page_rgba();
+    if (!page.canvas) page.canvas = document.createElement('canvas');
+    page.canvas.width = info.w;
+    page.canvas.height = info.h;
+    page.canvas.getContext('2d').putImageData(
+      new ImageData(new Uint8ClampedArray(px.buffer, px.byteOffset, px.length), info.w, info.h), 0, 0);
+  }
+
+  function drawCard(p) {
+    if (!page.key || !page.canvas) return;
+    const [u0, v0, u1, v1] = p[15];
+    const xs = [p[0], p[2], p[4], p[6]], ys = [p[1], p[3], p[5], p[7]];
+    const x = Math.min(...xs), y = Math.min(...ys);
+    ctx.drawImage(page.canvas, u0, v0, u1 - u0 + 1, v1 - v0 + 1,
+      x, y, Math.max(...xs) - x, Math.max(...ys) - y);
+  }
+
   function draw() {
+    syncCardPage();
     const f = JSON.parse(rt.frame_json());
     const sx = canvas.width / STAGE_W, sy = canvas.height / STAGE_H;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -383,10 +425,22 @@
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(sx, 0, 0, sy, 0, 0);
+    ctx.imageSmoothingEnabled = false;
     for (const p of f.prims) {
-      /* POLY_F4 order: TL, TR, BL, BR -> path TL, TR, BR, BL. */
-      ctx.globalAlpha = p[12] ? 0.5 : 1;
-      ctx.fillStyle = `rgb(${p[8]},${p[9]},${p[10]})`;
+      if (p[15]) {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        drawCard(p);
+        continue;
+      }
+      /* POLY_F4 order: TL, TR, BL, BR -> path TL, TR, BR, BL. A blended
+       * prim keeps its PSX mode: additive and quarter-add light the stage
+       * ('lighter'), subtractive darkens it by its own brightness (black
+       * at that alpha), the half blend is half alpha. */
+      const abr = p[12] ? (p[13] | 0) : -1;
+      ctx.globalCompositeOperation = abr === 1 || abr === 3 ? 'lighter' : 'source-over';
+      ctx.globalAlpha = abr === 0 ? 0.5 : abr === 3 ? 0.25 : abr === 2 ? (p[8] + p[9] + p[10]) / 765 : 1;
+      ctx.fillStyle = abr === 2 ? '#000' : fillFor(p);
       ctx.beginPath();
       ctx.moveTo(p[0], p[1]);
       ctx.lineTo(p[2], p[3]);
@@ -396,6 +450,7 @@
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
     /* Labels: the dialog font is disc data, so a web font stands in at the
      * dialog font's size (a 12px line; LINE = 14 stage px between rows). */
     ctx.font = '600 10px "Trebuchet MS", "Segoe UI", system-ui, sans-serif';

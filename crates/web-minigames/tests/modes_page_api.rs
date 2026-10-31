@@ -25,7 +25,12 @@ fn frame(rt: &LegaiaModes) -> (usize, Vec<String>) {
     let v: Value = serde_json::from_str(&rt.frame_json()).unwrap();
     let prims = v["prims"].as_array().unwrap();
     for p in prims {
-        assert_eq!(p.as_array().unwrap().len(), 13);
+        let p = p.as_array().unwrap();
+        assert_eq!(p.len(), 16);
+        // A gradient carries its four corners; a flat fill carries none.
+        assert!(p[14].is_null() || p[14].as_array().unwrap().len() == 16);
+        // A card face carries its rectangle on the card page.
+        assert!(p[15].is_null() || p[15].as_array().unwrap().len() == 4);
     }
     let labels = v["labels"]
         .as_array()
@@ -150,4 +155,46 @@ fn rebirth_tree_plays_every_mode() {
     rt.use_builtin();
     let v: Value = serde_json::from_str(&rt.modes_json()).unwrap();
     assert_eq!(v["source"], "builtin");
+}
+
+#[test]
+fn a_duel_hands_the_page_its_card_faces() {
+    let mut rt = LegaiaModes::new();
+    rt.set_seed(3.0);
+    let duel = modes(&rt)
+        .into_iter()
+        .find(|(_, k)| k == "Grid Duel")
+        .expect("a duel")
+        .0;
+    let info: Value = serde_json::from_str(&rt.card_page_info()).unwrap();
+    assert_eq!(info["key"], "", "no page before a duel");
+    assert!(rt.card_page_rgba().is_empty());
+    assert_eq!(rt.enter(&duel), "");
+    rt.tick(0);
+    let info: Value = serde_json::from_str(&rt.card_page_info()).unwrap();
+    let (w, h) = (
+        info["w"].as_u64().unwrap() as usize,
+        info["h"].as_u64().unwrap() as usize,
+    );
+    assert_ne!(info["key"], "");
+    let rgba = rt.card_page_rgba();
+    assert_eq!(rgba.len(), w * h * 4);
+    // Faces are drawn (opaque texels) with transparent windows over the
+    // owner's colour.
+    let opaque = rgba.chunks(4).filter(|p| p[3] == 255).count();
+    let clear = rgba.chunks(4).filter(|p| p[3] == 0).count();
+    assert!(opaque > w * h / 4 && clear > 0, "{opaque} {clear}");
+    // Every card the screen draws off the page names a rectangle inside it.
+    let v: Value = serde_json::from_str(&rt.frame_json()).unwrap();
+    let tex: Vec<_> = v["prims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|p| p[15].as_array().cloned())
+        .collect();
+    assert!(tex.len() >= 10, "both hands draw: {}", tex.len());
+    for t in tex {
+        let r: Vec<u64> = t.iter().map(|x| x.as_u64().unwrap()).collect();
+        assert!(r[0] < r[2] && r[1] < r[3] && (r[2] as usize) < w && (r[3] as usize) < h);
+    }
 }

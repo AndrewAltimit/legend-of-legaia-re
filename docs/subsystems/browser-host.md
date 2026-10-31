@@ -1179,7 +1179,9 @@ Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
 
 ## The game-modes page (`modes_page`)
 
-`LegaiaModes` runs the port's own game modes flat for `site/modes.html`, with no disc and no `World`. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own. The screen is the one projection every host draws, `legaia_engine_ui::expansion_modes::seat_screen`; `frame_json` hands its flat quads (in draw order) and its labels unmeasured (`mode_screen_labels`), and the page fills the quads and sets the labels in a web font, since the dialog font is disc data.
+`LegaiaModes` runs the port's own game modes flat for `site/modes.html`, with no disc and no `World`. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own.
+
+The screen is the one projection every host draws, `legaia_engine_ui::expansion_modes::seat_screen`; `frame_json` hands its flat quads (in draw order, each with its blend mode and, for a gradient, its four corner colours) and its labels unmeasured (`mode_screen_labels`), and the page fills the quads - a gradient as a linear fill from its top edge's colour to its bottom edge's, an additive blend lighter, a subtractive one darker - and sets the labels in a web font, since the dialog font is disc data. A duel's cards are textured off its card page (`legaia_engine_modes::cards::table_art`); `card_page_rgba` composes that page as the play hosts write it into VRAM, minus the portraits a disc would give, and the page stretches each card prim's page rectangle over the card.
 
 The page's 3D section is not this class: it frames the play page (`play.html?embed=1&expansion=1&lib=<pack>&map=<map>&mode=<id>`), whose `LegaiaRuntime` boots off the site's disc cache and seats the instance at its table or course (`World::enter_pack_mode`, the scene host entering the mode's map); the pack report's `world_modes` lists which instances have one.
 
@@ -1191,6 +1193,7 @@ The page's 3D section is not this class: it frames the play page (`play.html?emb
 | `enter(id)` / `open_picker()` / `leave()` | Seat an instance, the in-game picker, or nothing. |
 | `tick(pad)` | One frame off a `PadButton` word; returns the stage (`closed`, `picker`, `playing`, `results`). |
 | `state_json()` / `frame_json()` | The seat's stage, instance and quit prompt; the screen's quads and labels in the 320x240 stage. |
+| `card_page_info()` / `card_page_rgba()` | An open duel's card page: its key (changing with the faces) and size, and its RGBA8 texels. |
 
 A golf course, race or table laid out on a pack map builds from that map (`ActiveMode::build_with_maps`) and, with no world to stage it in, draws as its top-down screen. Nothing is granted: a page session has no save. Netplay stays on the play page, which joins rooms through `engine-netplay` over a running `World`. Tests: `crates/web-minigames/tests/modes_page_api.rs` plays every instance of the practice set and of Rebirth through the seat.
 

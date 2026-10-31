@@ -26,8 +26,10 @@ use std::sync::Arc;
 use legaia_engine_expansion::modes::{ModeSource, ModeStage, PackModeSeat, SeatStep};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_modes::active::{
-    ActiveMode, BuildOptions, builtin_sections, entries, instance_map,
+    ActiveMode, BuildOptions, ModeView, builtin_sections, entries, instance_map,
 };
+use legaia_engine_modes::cards::duel::DuelCard;
+use legaia_engine_modes::cards::table_art;
 use legaia_engine_modes::session::ModeRng;
 use legaia_engine_ui::expansion_modes::{
     Align, mode_screen_labels, mode_screen_prims, seat_screen,
@@ -122,6 +124,30 @@ impl LegaiaModes {
         self.rules = rules;
         self.seat = None;
     }
+
+    /// The open duel's hands, while a duel is being played.
+    fn duel_hands(&self) -> Option<[Vec<DuelCard>; 2]> {
+        match &self.seat.as_ref()?.stage {
+            ModeStage::Playing { mode, .. } => match mode.view() {
+                ModeView::Duel(v) => Some(v.hands),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// A 15-bit page texel as RGBA8; texel `0` is transparent, as the GPU
+/// draws it.
+fn texel_rgba(v: u16) -> [u8; 4] {
+    if v == 0 {
+        return [0; 4];
+    }
+    let c = |s: u16| {
+        let x = ((v >> s) & 31) as u8;
+        (x << 3) | (x >> 2)
+    };
+    [c(0), c(5), c(10), 255]
 }
 
 #[wasm_bindgen]
@@ -314,11 +340,63 @@ impl LegaiaModes {
         .to_string()
     }
 
+    /// The open duel's card page: `{"key": "...", "w": W, "h": H}`, the
+    /// key changing whenever the faces do and empty while no duel is open,
+    /// so the page rebuilds its copy of [`Self::card_page_rgba`] only then.
+    pub fn card_page_info(&self) -> String {
+        let Some(hands) = self.duel_hands() else {
+            return r#"{"key":"","w":0,"h":0}"#.into();
+        };
+        let mut h: u64 = 0xCBF2_9CE4_8422_2325;
+        for c in hands.iter().flatten() {
+            for b in c.id.bytes().chain(c.sides) {
+                h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01B3);
+            }
+        }
+        let (_, _, w, ph) = table_art::PAGE_RECT;
+        json!({ "key": format!("{h:016x}"), "w": w, "h": ph }).to_string()
+    }
+
+    /// The open duel's card page as the play hosts write it into VRAM -
+    /// both hands' faces and the back, with no portraits since this page
+    /// has no disc - in RGBA8 over `table_art::PAGE_RECT`, row by row
+    /// (`w * h * 4` bytes, a transparent texel at alpha `0`). Empty while
+    /// no duel is open.
+    pub fn card_page_rgba(&self) -> Vec<u8> {
+        let Some(hands) = self.duel_hands() else {
+            return Vec::new();
+        };
+        let (px, py, pw, ph) = table_art::PAGE_RECT;
+        let (pw, ph) = (usize::from(pw), usize::from(ph));
+        let mut out = vec![0u8; pw * ph * 4];
+        for (x, y, w, h, texels) in table_art::compose_page(&hands, &|_| None) {
+            let (x0, y0) = (usize::from(x - px), usize::from(y - py));
+            for row in 0..usize::from(h) {
+                for col in 0..usize::from(w) {
+                    let (tx, ty) = (x0 + col, y0 + row);
+                    if tx >= pw || ty >= ph {
+                        continue;
+                    }
+                    let px = texel_rgba(texels[row * usize::from(w) + col]);
+                    out[(ty * pw + tx) * 4..][..4].copy_from_slice(&px);
+                }
+            }
+        }
+        out
+    }
+
     /// The seat's screen in the 320x240 stage, `{"prims": [[x0, y0, x1, y1,
-    /// x2, y2, x3, y3, r, g, b, a, semi]...], "labels": [[text, x, y, r, g,
-    /// b, a, align, max_w]...]}`. Prims come in draw order, corners in
-    /// `POLY_F4` order (top-left, top-right, bottom-left, bottom-right);
-    /// `semi` is a half blend (`ABR 0`). A label's `y` is the top of its
+    /// x2, y2, x3, y3, r, g, b, a, semi, abr, gouraud, tex]...], "labels":
+    /// [[text, x, y, r, g, b, a, align, max_w]...]}`. Prims come in draw
+    /// order, corners in `POLY_F4` order (top-left, top-right, bottom-left,
+    /// bottom-right); `semi` marks a blended prim and `abr` its PSX blend
+    /// mode (`0` half, `1` additive, `2` subtractive, `3` quarter add);
+    /// `gouraud` is `null` for a flat fill or the four corners' `[r, g, b,
+    /// a]` flattened in corner order (`r, g, b` above are then their
+    /// average, for a reader that fills flat); `tex` is `null`, or for a
+    /// card drawn off the duel's card page its page rectangle `[u0, v0, u1,
+    /// v1]` (inclusive texels of [`Self::card_page_rgba`]) to stretch over
+    /// the quad's bounds. A label's `y` is the top of its
     /// line, `align` is `0` left, `1` centre, `2` right of `x`, and `max_w`
     /// the width of its box (`0`: none) the page fits it to. Empty lists
     /// while no seat is open.
@@ -330,8 +408,34 @@ impl LegaiaModes {
         let prims = mode_screen_prims(&screen);
         let mut out_prims = Vec::with_capacity(prims.len());
         for i in order_primitives(&prims) {
-            let ScreenPrim::Flat(q) = &prims[i] else {
-                continue;
+            let q = match &prims[i] {
+                ScreenPrim::Flat(q) => q,
+                // A card face off the duel's page, which the page draws
+                // from its copy of `card_page_rgba`.
+                ScreenPrim::Textured(t) if t.tpage == table_art::tpage() => {
+                    let [a, b, cc, d] = t.xy;
+                    let [(u0, v0), _, _, (u1, v1)] = t.uv;
+                    out_prims.push(json!([
+                        a.0,
+                        a.1,
+                        b.0,
+                        b.1,
+                        cc.0,
+                        cc.1,
+                        d.0,
+                        d.1,
+                        128,
+                        128,
+                        128,
+                        255,
+                        0,
+                        0,
+                        null,
+                        [u0, v0, u1, v1]
+                    ]));
+                    continue;
+                }
+                _ => continue,
             };
             let c = match q.gouraud {
                 // A gradient reads as its average on the page's flat fill.
@@ -360,7 +464,10 @@ impl LegaiaModes {
                 c[1],
                 c[2],
                 c[3],
-                u8::from(q.semi_transparent)
+                u8::from(q.semi_transparent),
+                q.abr_mode,
+                q.gouraud.map(|g| g.concat()),
+                null
             ]));
         }
         let labels: Vec<_> = mode_screen_labels(&screen)
