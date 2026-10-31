@@ -1,4 +1,4 @@
-# Rebirth Isles: Tolva's village at dusk, a fishing village on a low hill
+# Lantern Isles: Tolva's village at dusk, a fishing village on a low hill
 # over the bay. Laid out from scratch over Rim Elm's (`town01`) grass and
 # earth: the lane from the beach runs east past a row of hedged cottages to
 # the green, where the well stands and the elder's house looks down from its
@@ -7,7 +7,7 @@
 # keeps the east end, and the climb past the orchard leads into the
 # Thornwood. The windmill turns on its knoll in the north-west.
 
-name = "Rebirth Isles - Tolva's Haven"
+name = "Lantern Isles - Tolva's Haven"
 size = [64, 50]
 base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
 # Sound-test track 6, "Rim Elm".

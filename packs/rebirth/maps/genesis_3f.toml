@@ -1,4 +1,4 @@
-# Tower of Rebirth, third floor: the Hanging Garden. Laid out from scratch
+# Genesis Tower, third floor: the Hanging Garden. Laid out from scratch
 # (`geometry = "none"`) out of the retail Sky Gardens' (`teien`) flagstones,
 # lawns, hedges and brick arches: three terraces stepping up away from the
 # camera. The lower garden opens off the landing, its flower beds and
@@ -12,7 +12,7 @@
 # The follow camera looks south from the north side: each terrace's north
 # edge is a low balustrade, its far and side edges hedge or stone walls.
 
-name = "Tower of Rebirth 3F - Hanging Garden"
+name = "Genesis Tower 3F - Hanging Garden"
 size = [39, 40]
 base = { scene = { kind = "scene", name = "teien" }, geometry = "none" }
 # Sound-test track 12, "The Sacred Realm".

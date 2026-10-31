@@ -1,4 +1,4 @@
-# Rebirth Isles: the arrival beach. Laid out from scratch over Rim Elm's
+# Lantern Isles: the arrival beach. Laid out from scratch over Rim Elm's
 # (`town01`) grass, sand and water textures: dune grass under a cliff line
 # to the north, a long white beach, the surf, and a ruined jetty running out
 # into the sea. The sea stair from the tower's west wall lands on the stone
@@ -6,7 +6,7 @@
 # Palms and ferns are the West Voz Forest's (`vell`), the wreck, crates and
 # driftwood Rim Elm's.
 
-name = "Rebirth Isles - Saltwind Beach"
+name = "Lantern Isles - Saltwind Beach"
 size = [64, 36]
 base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
 # Sound-test track 6, "Rim Elm" - the sea wind over the old village tune.

@@ -1,4 +1,4 @@
-# Tower of Rebirth, second floor: the Ember Stair. Laid out from scratch
+# Genesis Tower, second floor: the Ember Stair. Laid out from scratch
 # (`geometry = "none"`) out of the retail Rogue's Tower (`rugi`) brick and
 # rock: a stair of fire that climbs away from the camera in four flights.
 # The landing opens on the lower hall, its centre aisle walled from the side
@@ -11,7 +11,7 @@
 # The follow camera looks south from the north side: every room's north
 # edge is a low parapet, its far and side walls stand full height.
 
-name = "Tower of Rebirth 2F - Ember Stair"
+name = "Genesis Tower 2F - Ember Stair"
 size = [37, 40]
 base = { scene = { kind = "scene", name = "rugi" }, geometry = "none" }
 # Sound-test track 7, "The Fire Fortress".

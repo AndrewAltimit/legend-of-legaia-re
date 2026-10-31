@@ -1,4 +1,4 @@
-# Tower of Rebirth, fourth floor: the Verdant Vault. Laid out from scratch
+# Genesis Tower, fourth floor: the Verdant Vault. Laid out from scratch
 # (`geometry = "none"`) out of present-day Conkram's (`concnow`) veined
 # green stone, carved white marble, columns, planters and roots: a vault
 # the party climbs down into. The stair from below opens on a high gallery
@@ -12,7 +12,7 @@
 # The follow camera looks south from the north side: each room's north edge
 # is a low parapet, the vault's far and side walls stand full height.
 
-name = "Tower of Rebirth 4F - Verdant Vault"
+name = "Genesis Tower 4F - Verdant Vault"
 size = [49, 37]
 base = { scene = { kind = "scene", name = "concnow" }, geometry = "none" }
 # Sound-test track 8, "Call of the Ruins".

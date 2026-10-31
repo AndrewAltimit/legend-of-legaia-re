@@ -1,4 +1,4 @@
-# Tower of Rebirth, seventh floor: the Sanctum of Echoes. Laid out from
+# Genesis Tower, seventh floor: the Sanctum of Echoes. Laid out from
 # scratch (`geometry = "none"`) out of the retail Sol Tower vault's
 # (`korb3`) pale stone and blue steel: an octagonal ring corridor runs round
 # a walled inner sanctum, where the Azure Seraph keeps the raised heart. The
@@ -11,7 +11,7 @@
 # rooms over them; the sanctum's south wall is half height, so the camera
 # keeps the party in view walking the south arc behind it.
 
-name = "Tower of Rebirth 7F - Sanctum of Echoes"
+name = "Genesis Tower 7F - Sanctum of Echoes"
 size = [33, 34]
 base = { scene = { kind = "scene", name = "korb3" }, geometry = "none" }
 # Sound-test track 11, "The Profane Realm".

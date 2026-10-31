@@ -1,4 +1,4 @@
-# Tower of Rebirth, sixth floor: the Engine Deep. Laid out from scratch
+# Genesis Tower, sixth floor: the Engine Deep. Laid out from scratch
 # (`geometry = "none"`) out of the retail Jette's Fortress (`chitei2`)
 # marble, riveted plate and machinery: a long engine hall whose sunken floor
 # runs between two raised walkways, crossed by two bridges and ringed with
@@ -10,7 +10,7 @@
 # The follow camera looks south from the north side: the hall's and the side
 # rooms' north walls are low, so the camera sees in over them.
 
-name = "Tower of Rebirth 6F - Engine Deep"
+name = "Genesis Tower 6F - Engine Deep"
 size = [35, 37]
 base = { scene = { kind = "scene", name = "chitei2" }, geometry = "none" }
 # Sound-test track 13, "Bio-Castle".

@@ -1,4 +1,4 @@
-# Tower of Rebirth, eighth floor: the Hollow Throne. The summit is laid out
+# Genesis Tower, eighth floor: the Hollow Throne. The summit is laid out
 # from scratch (`geometry = "none"`) out of the retail Zora's Floating
 # Castle's (`taiku2`) stone, carpet and carved throne: the stair from below
 # opens on a landing, a narthex runs the width of the tower, and a pillared
@@ -14,7 +14,7 @@
 # side walls stand full height; the throne sits at the south end, ahead of
 # the party all the way up the nave.
 
-name = "Tower of Rebirth 8F - Hollow Throne"
+name = "Genesis Tower 8F - Hollow Throne"
 size = [31, 36]
 base = { scene = { kind = "scene", name = "taiku2" }, geometry = "none" }
 # Sound-test track 52, "Ominous Presence".

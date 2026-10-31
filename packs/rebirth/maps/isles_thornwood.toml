@@ -1,4 +1,4 @@
-# Rebirth Isles: the Thornwood. Laid out over the West Voz Forest (`vell`)
+# Lantern Isles: the Thornwood. Laid out over the West Voz Forest (`vell`)
 # as a walk with a shape: the lane leaves the village's fields at the wood's
 # edge and winds east under clumped old growth - through Mushroom Hollow, a
 # sunken glade ringed with toadstools; across a brook at a ford of
@@ -9,7 +9,7 @@
 # north gate. Past the gate a stair runs down to the grotto. A side trail
 # off the first bend drops to a fern dell with a spring.
 
-name = "Rebirth Isles - The Thornwood"
+name = "Lantern Isles - The Thornwood"
 size = [112, 56]
 base = { scene = { kind = "scene", name = "vell" }, geometry = "none" }
 # Sound-test track 8, "Call of the Ruins".

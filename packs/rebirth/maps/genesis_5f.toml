@@ -1,4 +1,4 @@
-# Tower of Rebirth, fifth floor: the Gambler's Rest. Laid out from scratch
+# Genesis Tower, fifth floor: the Gambler's Rest. Laid out from scratch
 # (`geometry = "none"`) out of the retail Sol Tower rooms' (`koin1`) dark
 # planks, brick and furniture. No monster climbs this high: the stair from
 # below opens on the hall, where Keeper Odalric pours behind the long bar,
@@ -11,7 +11,7 @@
 # The follow camera looks south from the north side: each room's north edge
 # is a low rail, the far and side walls stand full height.
 
-name = "Tower of Rebirth 5F - Gambler's Rest"
+name = "Genesis Tower 5F - Gambler's Rest"
 size = [37, 30]
 base = { scene = { kind = "scene", name = "koin1" }, geometry = "none" }
 # Sound-test track 24, "Where Everyone Drinks".

@@ -1,4 +1,4 @@
-# Rebirth Isles: the Singing Grotto, under the ruins. Laid out over the
+# Lantern Isles: the Singing Grotto, under the ruins. Laid out over the
 # Snowdrift Cave's (`cave01`) rock as four chambers linked by passages: the
 # antechamber at the foot of the stair; the crystal gallery to the west,
 # its walls grown with crystal clusters that light the rock; the mushroom
@@ -7,7 +7,7 @@
 # stones, where the Pearl turns over its rune circle among a crown of
 # crystals. A low tunnel runs straight from the antechamber to the pool.
 
-name = "Rebirth Isles - The Singing Grotto"
+name = "Lantern Isles - The Singing Grotto"
 size = [72, 60]
 base = { scene = { kind = "scene", name = "cave01" }, geometry = "none" }
 # Sound-test track 20.

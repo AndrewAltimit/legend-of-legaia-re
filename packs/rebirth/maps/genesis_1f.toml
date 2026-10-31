@@ -1,4 +1,4 @@
-# Tower of Rebirth, first floor: the Atrium. Unlike the floors above, this
+# Genesis Tower, first floor: the Atrium. Unlike the floors above, this
 # one is laid out from scratch (`geometry = "none"`): a walled hall with a
 # raised dais floating in the dark, built from the retail Sky Gardens
 # Tower's (`tower`) textures and meshes. The Warden's Stone stands on the
@@ -8,7 +8,7 @@
 # obelisk in the middle of the floor, and the card dealer's stall against
 # the far wall - each a place the party walks to, not a tile it trips over.
 
-name = "Tower of Rebirth 1F - Atrium"
+name = "Genesis Tower 1F - Atrium"
 size = [29, 13]
 base = { scene = { kind = "scene", name = "tower" }, geometry = "none" }
 # Sound-test track 45, "The Sol Tower".
@@ -92,7 +92,7 @@ rows = [
 ">" = { label = "stair down", ground = { kind = "base_cell", cell = [8, 11] } }
 "<" = { label = "stair up", ground = { kind = "base_cell", cell = [8, 11] } }
 # The sea gate: a crack in the west wall, salt wind and a stair down to
-# the Rebirth Isles (maps/isles_beach.toml).
+# the Lantern Isles (maps/isles_beach.toml).
 "w" = { label = "sea gate", ground = { kind = "texture", tpage = 28, clut = 32576, tile = 1 } }
 
 [[spawns]]
@@ -107,7 +107,7 @@ tile = [7, 2]
 # parapet rather than from behind the tall north wall.
 facing = 4
 
-# Inside the sea gate, back up from the Rebirth Isles.
+# Inside the sea gate, back up from the Lantern Isles.
 [[spawns]]
 id = "from_sea"
 tile = [1, 6]
@@ -141,7 +141,7 @@ rect = [17, 43, 18, 43]
 spawn = "entrance"
 requires = { min_level = 30 }
 
-# The sea gate in the west wall opens once Ysolde has spoken: the Rebirth
+# The sea gate in the west wall opens once Ysolde has spoken: the Lantern
 # Isles beyond it are where a level-30 party grows into the Warden's Trial.
 [[exits]]
 id = "sea_gate"
