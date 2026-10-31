@@ -3,8 +3,8 @@
 //! animated materials and fog. Called from the map's own rules
 //! ([`crate::map_rules`]).
 
-use crate::map::{MapDef, TileGrid};
-use crate::map_detail::{MAX_DECORATIONS, MaterialFx};
+use crate::map::{MAX_WALL_HEIGHT, MapDef, TileGrid};
+use crate::map_detail::{MAX_DECORATIONS, MaterialFx, SURROUND_MAX_REACH};
 use crate::map_rules::{check_light, check_mesh};
 use crate::validate::Checker;
 
@@ -31,6 +31,7 @@ pub(crate) fn check_detail(
         }
         check_scale(cx, &format!("{at}.scale"), d.scale);
     }
+    check_surround(m, cx);
     for (i, s) in m.scatter.iter().enumerate() {
         let at = format!("scatter[{i}]");
         if s.meshes.is_empty() {
@@ -217,6 +218,32 @@ pub(crate) fn check_detail(
         if !on([f.rect[0], f.rect[1]]) || !on([f.rect[2], f.rect[3]]) {
             cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
         }
+    }
+}
+
+/// A surround: a drop at all, within reach of the field grid's margin, and
+/// not on a terrain, which draws its own skirt.
+fn check_surround(m: &MapDef, cx: &mut Checker<'_>) {
+    let Some(s) = &m.surround else {
+        return;
+    };
+    if s.depth == 0 || s.depth > MAX_WALL_HEIGHT * 4 {
+        cx.error(
+            "surround.depth",
+            format!("depth {} is not in 1..={}", s.depth, MAX_WALL_HEIGHT * 4),
+        );
+    }
+    if s.reach > SURROUND_MAX_REACH {
+        cx.error(
+            "surround.reach",
+            format!("reach {} is past {SURROUND_MAX_REACH}", s.reach),
+        );
+    }
+    if m.terrain.is_some() {
+        cx.warning(
+            "surround",
+            "a terrain draws its own skirt past the map's edges; the surround is not drawn",
+        );
     }
 }
 

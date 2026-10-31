@@ -49,6 +49,7 @@ use crate::scene::{FIELD_MAP_LEN, ProtIndex, Scene};
 pub mod detail;
 pub mod footprint;
 pub mod gltf;
+pub mod surround;
 pub mod terrain;
 pub mod tmd_ops;
 pub mod vram_alloc;
@@ -591,6 +592,11 @@ pub fn build_field_image(
         surface,
         &mut cell_items,
     )?;
+    // Past the floor's edge: the map's surround (a terrain draws its own
+    // skirt instead).
+    if surface.is_none() {
+        surround::write_surround(&mut img, def, grid, &mut added, &mut free)?;
+    }
     if let Some(s) = surface {
         let foam = base.library.and_then(|l| l.foam_sheet.as_ref());
         let no_stp = Default::default();

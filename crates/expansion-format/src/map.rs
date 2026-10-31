@@ -132,6 +132,9 @@ pub struct MapDef {
     /// Music, music zones and ambient sources ([`crate::audio::MapAudio`]).
     #[serde(skip_serializing_if = "crate::audio::MapAudio::is_empty")]
     pub audio: crate::audio::MapAudio,
+    /// What draws past the floor's edge ([`crate::map_detail::SurroundDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surround: Option<crate::map_detail::SurroundDef>,
 }
 
 /// A cutscene a map plays on arrival.

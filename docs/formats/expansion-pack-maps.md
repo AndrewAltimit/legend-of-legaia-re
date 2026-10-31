@@ -41,6 +41,7 @@ Sample: [`packs/rebirth/maps/rebirth_tower_1f.toml`](../../packs/rebirth/maps/re
 | `decals` | Flat textured floor polygons, one by one or by brush ([Decals](#decals)). |
 | `emitters` | Particle emitters ([Particles](#particles)). |
 | `terrain` | A sculpted floor in place of the tier grid: heights, ground materials, water, horizon ([Terrain](#terrain)). |
+| `surround` | The ground past the floor's edge: a drop below it and the edge faces down to it ([Surround](#surround)). |
 
 Every coordinate a map carries is a **map-local tile** `[column, row]`, counted
 from the first character of the first row: column grows with world `+X`, row
@@ -1079,6 +1080,40 @@ wisps are the pool's own: they drift at `speed` toward `angle` (degrees,
 `World::fog_render_step`. The pool draws from the world's random stream, as
 retail's does, so a fogged map's rolls differ from an unfogged one's -
 deterministically.
+
+## Surround
+
+```toml
+[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }      # the drop's floor, one cell a tile
+side = { tpage = 11, clut = 32523, tile = 38 }      # the floor edge's face down to it
+depth = 448                                         # world units below tier 0
+reach = 8                                           # tiles past the map's edges
+shade = 72                                          # vertex colour, 128 = the texel as is
+```
+
+A map with `geometry = "none"` draws nothing past its floor, so a follow
+camera standing near the map's edge - an arrival landing beside the low
+parapet the camera looks over - frames the clear colour there as a black
+void. The surround fills it with a drop: a flat ground `depth` below tier
+`0` on every void tile of the map and on every grid tile up to `reach`
+past its edges (clipped to the field grid), and, with `side`, a face from
+the floor down to the drop along every edge where such a tile borders the
+map's floor or walls, so the floor reads as a ledge with depth below it
+rather than a sheet hung in nothing. `shade` darkens both the
+`texel * colour / 128` way; an [animated material](#animated-materials) on
+the ground's cell animates the drop with it - a lava floor far below a
+stair of fire.
+
+It is drawn, never walked: the tiles it covers are walls already (void
+tiles and everything off the map). It goes in through the decoration-cell
+path ([`expansion_map::surround`](../../crates/engine-scene/src/expansion_map/surround.rs)):
+a cell that already draws something - a kept retail cell, a wall, a
+decoration - keeps it, and one shared record serves every cell of the
+same bordered sides and floor height (a cell draws at its corners' mean
+tier height, so the mesh carries the rest of the drop), which costs a
+handful of the map's object records. A terrain draws its own `skirt`
+instead, and the validator warns of a surround on one.
 
 ## Particles
 

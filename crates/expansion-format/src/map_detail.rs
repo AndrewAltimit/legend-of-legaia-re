@@ -1025,6 +1025,58 @@ impl Default for FogRegionDef {
     }
 }
 
+/// The tiles past the floor's edge to which a surround reaches when the
+/// map names none: enough to fill the follow camera's widest preset.
+pub const SURROUND_DEFAULT_REACH: u8 = 8;
+
+/// The most tiles a surround reaches past the map's edges.
+pub const SURROUND_MAX_REACH: u8 = 16;
+
+/// What a map built with no base geometry shows past its floor: a flat
+/// ground `depth` world units below the floor's edge on every void tile and
+/// every tile up to `reach` past the map's edges, and, with `side`, the
+/// floor's own edge faces dropping to it. Without one the view past the
+/// floor is the clear colour, which a follow camera at a map's edge frames
+/// as a black void.
+///
+/// ```toml
+/// [surround]
+/// ground = { tpage = 12, clut = 32576, tile = 8 }
+/// side = { tpage = 11, clut = 32523, tile = 38 }
+/// depth = 384
+/// reach = 8
+/// shade = 72
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SurroundDef {
+    /// The drop's ground: one atlas cell a tile.
+    pub ground: AtlasCell,
+    /// The floor edge's face from the floor down to the drop. `None` leaves
+    /// the edge open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<AtlasCell>,
+    /// How far below the floor's edge the drop lies, world units.
+    pub depth: u16,
+    /// Tiles past the map's edges the drop reaches.
+    pub reach: u8,
+    /// Vertex colour of the drop and its faces (`128` draws the texel as
+    /// is; lower darkens it, the retail `texel * colour / 128` law).
+    pub shade: u8,
+}
+
+impl Default for SurroundDef {
+    fn default() -> Self {
+        Self {
+            ground: AtlasCell::default(),
+            side: None,
+            depth: 384,
+            reach: SURROUND_DEFAULT_REACH,
+            shade: 80,
+        }
+    }
+}
+
 /// One decoration as the engine bakes it: a mesh on a tile at a transform.
 /// [`crate::map::MapDef::decorations`] expands every `[[decor]]`,
 /// `[[scatter]]` and `[[edges]]` entry into these.
