@@ -15,7 +15,7 @@
 //!
 //! [arts.knell_blaze]
 //! character = "vahn"
-//! name = "Rebirth Blaze"
+//! name = "Knell Blaze"
 //! segments = [{ art = "Tornado Flame (Miracle)" }]
 //! damage_pct = 160
 //!

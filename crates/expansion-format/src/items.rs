@@ -3,7 +3,7 @@
 //!
 //! ```toml
 //! [items.vigil_blade]
-//! name = "Rebirth Blade"
+//! name = "Vigil Blade"
 //! description = "Forged in the tower's heart."
 //! kind = "weapon"
 //! icon = { kind = "item", id = 0x27 }   # borrows the Chaos Breaker's look
@@ -21,7 +21,7 @@
 //! all_party = true
 //!
 //! [sets.vigil]
-//! name = "Rebirth Regalia"
+//! name = "Vigil Regalia"
 //! bonuses = [{ pieces = 2, attack = 8 }, { pieces = 3, defence = 12, passives = [0x24] }]
 //!
 //! [[shops]]
@@ -681,7 +681,7 @@ mod tests {
 
     const SAMPLE: &str = r#"
 [items.vigil_blade]
-name = "Rebirth Blade"
+name = "Vigil Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 price = 64000
@@ -690,7 +690,7 @@ attack = 108
 set = "vigil"
 
 [items.vigil_mail]
-name = "Rebirth Mail"
+name = "Vigil Mail"
 kind = "armor"
 icon = { kind = "item", id = 0x4A }
 defence = 90
@@ -705,7 +705,7 @@ effect = { kind = "revive", percent = 50 }
 all_party = true
 
 [sets.vigil]
-name = "Rebirth Regalia"
+name = "Vigil Regalia"
 bonuses = [{ pieces = 2, attack = 8, passives = [0x24] }]
 
 [[shops]]
