@@ -1194,6 +1194,19 @@ lamps = [
   { id = "dell", tile = [19, 45], offset = [0, 180, 0], color = [160, 255, 200], radius = 600 },
   { id = "shrine", tile = [56, 20], offset = [0, 240, 0], color = [190, 210, 255], radius = 900 },
   { id = "camp_fire", tile = [75, 38], offset = [0, 60, -20], color = [255, 150, 70], radius = 760, flicker = 0.35, period = 9 },
+  # Rootlight: a breathing green over each shrub on the Genesis root.
+  { id = "rootlight_0", tile = [6, 38], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_1", tile = [15, 31], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_2", tile = [21, 22], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_3", tile = [29, 24], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_4", tile = [39, 31], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_5", tile = [50, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_6", tile = [62, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_7", tile = [72, 34], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_8", tile = [80, 33], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_9", tile = [90, 30], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_10", tile = [96, 8], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_11", tile = [100, 8], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
 ]
 
 [fog]
@@ -1285,3 +1298,110 @@ tile = [98, 16]
 radius = 1200
 inner = 300
 volume = 0.45
+
+# ---------------------------------------------------------------------------
+# Rootlight. The root follows the forest path: by the village gate,
+# through the hollow, past the ford, round the shrine stones and the
+# hermit's clearing, and into the ruin court, where a pair glows either
+# side of the stair it dives down into the grotto.
+# Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
+# own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
+# lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.
+# ---------------------------------------------------------------------------
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [6, 38]
+rotation = [0.0, 0.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [15, 31]
+rotation = [0.0, 137.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [21, 22]
+rotation = [0.0, 274.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [29, 24]
+rotation = [0.0, 51.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [39, 31]
+rotation = [0.0, 188.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [50, 21]
+rotation = [0.0, 325.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [62, 21]
+rotation = [0.0, 102.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [72, 34]
+rotation = [0.0, 239.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [80, 33]
+rotation = [0.0, 16.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [90, 30]
+rotation = [0.0, 153.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [96, 8]
+rotation = [0.0, 290.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [100, 8]
+rotation = [0.0, 67.0, 0.0]
+scale = 1.80
+
+# What the player can stop and look at (dialog.toml).
+[[triggers]]
+id = "rootlight_shrub"
+rect = [21, 22, 21, 22]
+event = { kind = "dialog", line = "rootlight_shrub" }
+press = true
+
+[[emitters]]
+id = "rootlight_motes_7131"
+kind = "dust"
+rect = [95, 6, 101, 9]
+height = [10, 140]
+count = 10
+life = 300
+velocity = [0.0, 0.25, 0.0]
+spread = [0.15, 0.1, 0.15]
+sway = 18.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 7131
+

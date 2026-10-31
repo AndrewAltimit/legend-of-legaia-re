@@ -444,3 +444,14 @@ tile = [32, 18]
 radius = 600
 inner = 96
 volume = 0.5
+
+# ---------------------------------------------------------------------------
+# Ysolde's journal. A page of it lies in the furnace room (dialog.toml).
+# ---------------------------------------------------------------------------
+
+[[triggers]]
+id = "journal_6f"
+rect = [31, 21, 31, 21]
+event = { kind = "dialog", line = "journal_6f" }
+press = true
+once = true

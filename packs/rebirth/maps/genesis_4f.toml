@@ -491,6 +491,11 @@ lamps = [
   { id = "archive_lamp", tile = [4, 13], offset = [0, 150, 40], color = [210, 255, 200], radius = 520, flicker = 0.1, period = 40 },
   { id = "cloister_lamp", tile = [47, 19], offset = [24, 150, 0], color = [200, 240, 255], radius = 520, flicker = 0.1, period = 45 },
   { id = "cloister", tile = [44, 19], offset = [0, 180, 0], color = [180, 220, 255], radius = 700, flicker = 0.05, period = 80 },
+  # Rootlight: a breathing green over each shrub on the Genesis root.
+  { id = "rootlight_0", tile = [3, 16], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_1", tile = [5, 16], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_2", tile = [3, 20], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_3", tile = [5, 20], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
 ]
 
 [fog]
@@ -535,3 +540,44 @@ tile = [24, 20]
 radius = 700
 inner = 160
 volume = 0.35
+
+# ---------------------------------------------------------------------------
+# Rootlight. In the Root Archive the root's own trunks split the
+# shelves, and a shrub glows at the inner foot of each.
+# Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
+# own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
+# lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.
+# ---------------------------------------------------------------------------
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [3, 16]
+rotation = [0.0, 0.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [5, 16]
+rotation = [0.0, 137.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [3, 20]
+rotation = [0.0, 274.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [5, 20]
+rotation = [0.0, 51.0, 0.0]
+scale = 1.60
+
+# What the player can stop and look at (dialog.toml).
+[[triggers]]
+id = "journal_4f"
+rect = [4, 19, 4, 19]
+event = { kind = "dialog", line = "journal_4f" }
+press = true
+once = true
+

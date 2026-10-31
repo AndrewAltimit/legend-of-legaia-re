@@ -459,3 +459,14 @@ tile = [16, 31]
 radius = 512
 inner = 96
 volume = 0.45
+
+# ---------------------------------------------------------------------------
+# Ysolde's journal. A page of it lies at the back of the rest alcove (dialog.toml).
+# ---------------------------------------------------------------------------
+
+[[triggers]]
+id = "journal_7f"
+rect = [27, 3, 27, 3]
+event = { kind = "dialog", line = "journal_7f" }
+press = true
+once = true

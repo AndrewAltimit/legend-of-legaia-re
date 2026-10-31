@@ -585,6 +585,19 @@ lamps = [
   # dealer's stall.
   { id = "hall", tile = [23, 4], offset = [0, 260, 0], color = [255, 190, 130], radius = 900 },
   { id = "stall", tile = [23, 10], offset = [0, 200, 0], color = [255, 210, 150], radius = 480, flicker = 0.08, period = 45 },
+  # Rootlight: a breathing green over each shrub on the Genesis root.
+  { id = "rootlight_0", tile = [1, 5], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_1", tile = [1, 7], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_2", tile = [4, 5], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_3", tile = [4, 7], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_4", tile = [5, 5], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_5", tile = [9, 5], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_6", tile = [5, 7], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_7", tile = [9, 7], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_8", tile = [6, 8], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_9", tile = [8, 8], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_10", tile = [6, 4], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_11", tile = [8, 4], offset = [0, 40, 0], color = [120, 255, 160], radius = 520, breathe = 0.6, breathe_period = 280 },
 ]
 
 # The dais breathes: a slow pulse rolls out from the Warden's Stone across
@@ -912,3 +925,145 @@ size = [90, 90]
 size_jitter = 0.35
 sides = 9
 jitter = 40
+
+# ---------------------------------------------------------------------------
+# Rootlight. The tower stands on a root of the first Genesis Tree, and
+# the Warden's Stone was cut from it. The root comes up the sea stair:
+# shrubs grown in the cracks inside the sea gate, then a ring of them on
+# the dais round the stone, where the glow is strongest.
+# Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
+# own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
+# lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.
+# ---------------------------------------------------------------------------
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [1, 5]
+rotation = [0.0, 0.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [1, 7]
+rotation = [0.0, 137.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [4, 5]
+rotation = [0.0, 274.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [4, 7]
+rotation = [0.0, 51.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [5, 5]
+rotation = [0.0, 188.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [9, 5]
+rotation = [0.0, 325.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [5, 7]
+rotation = [0.0, 102.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [9, 7]
+rotation = [0.0, 239.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [6, 8]
+rotation = [0.0, 16.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [8, 8]
+rotation = [0.0, 153.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [6, 4]
+rotation = [0.0, 290.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [8, 4]
+rotation = [0.0, 67.0, 0.0]
+scale = 1.80
+
+# What the player can stop and look at (dialog.toml).
+[[triggers]]
+id = "rootlight_stone"
+rect = [6, 8, 6, 8]
+event = { kind = "dialog", line = "rootlight_stone" }
+press = true
+
+[[triggers]]
+id = "mural_roots"
+rect = [2, 1, 2, 1]
+event = { kind = "dialog", line = "mural_roots" }
+press = true
+
+[[triggers]]
+id = "mural_stone"
+rect = [12, 1, 12, 1]
+event = { kind = "dialog", line = "mural_stone" }
+press = true
+
+[[triggers]]
+id = "mural_bell"
+rect = [13, 3, 13, 3]
+event = { kind = "dialog", line = "mural_bell" }
+press = true
+
+[[emitters]]
+id = "rootlight_motes_7141"
+kind = "dust"
+rect = [5, 4, 9, 8]
+height = [10, 140]
+count = 18
+life = 300
+velocity = [0.0, 0.25, 0.0]
+spread = [0.15, 0.1, 0.15]
+sway = 18.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 7141
+
+[[emitters]]
+id = "rootlight_motes_7142"
+kind = "dust"
+rect = [0, 5, 2, 7]
+height = [10, 140]
+count = 6
+life = 300
+velocity = [0.0, 0.25, 0.0]
+spread = [0.15, 0.1, 0.15]
+sway = 18.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 7142
+

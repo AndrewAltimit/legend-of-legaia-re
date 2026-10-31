@@ -526,3 +526,15 @@ tile = [3, 18]
 radius = 700
 inner = 160
 volume = 0.3
+
+# ---------------------------------------------------------------------------
+# Ysolde's journal. A page of it lies on the dais, once the throne is empty (dialog.toml).
+# ---------------------------------------------------------------------------
+
+[[triggers]]
+id = "journal_8f"
+rect = [11, 31, 11, 31]
+event = { kind = "dialog", line = "journal_8f" }
+press = true
+once = true
+requires = { flags = ["throne_broken"] }

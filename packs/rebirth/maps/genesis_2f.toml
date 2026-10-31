@@ -604,3 +604,14 @@ tile = [33, 11]
 radius = 480
 inner = 96
 volume = 0.3
+
+# ---------------------------------------------------------------------------
+# Ysolde's journal. A page of it lies in the ash shrine (dialog.toml).
+# ---------------------------------------------------------------------------
+
+[[triggers]]
+id = "journal_2f"
+rect = [32, 12, 32, 12]
+event = { kind = "dialog", line = "journal_2f" }
+press = true
+once = true

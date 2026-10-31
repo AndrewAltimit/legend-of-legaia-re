@@ -1404,6 +1404,16 @@ lamps = [
   { id = "market", tile = [15, 31], offset = [0, 160, 0], color = [255, 200, 140], radius = 700, flicker = 0.2, period = 13 },
   { id = "dock", tile = [27, 38], offset = [0, 140, 0], color = [255, 210, 150], radius = 700, flicker = 0.2, period = 15 },
   { id = "jetty_e", tile = [35, 46], offset = [0, 120, 0], color = [255, 210, 150], radius = 480, flicker = 0.2, period = 17 },
+  # Rootlight: a breathing green over each shrub on the Genesis root.
+  { id = "rootlight_0", tile = [7, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_1", tile = [15, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_2", tile = [25, 23], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_3", tile = [31, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_4", tile = [40, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_5", tile = [40, 24], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_6", tile = [46, 18], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_7", tile = [56, 16], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_8", tile = [59, 11], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
 ]
 
 # The ground: the village sits on a low hill over the bay, ringed by a
@@ -1531,3 +1541,105 @@ tile = [49, 6]
 radius = 1200
 inner = 300
 volume = 0.5
+
+# ---------------------------------------------------------------------------
+# Rootlight. The root crosses Tolva's Haven under the lane, from the
+# beach road past the well on the green to the Thornwood road; the
+# villagers tend the shrubs that glow over it, and two stand on the green
+# either side of the well that draws its water.
+# Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
+# own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
+# lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.
+# ---------------------------------------------------------------------------
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [7, 21]
+rotation = [0.0, 0.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [15, 21]
+rotation = [0.0, 137.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [25, 23]
+rotation = [0.0, 274.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [31, 21]
+rotation = [0.0, 51.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [40, 21]
+rotation = [0.0, 188.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [40, 24]
+rotation = [0.0, 325.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [46, 18]
+rotation = [0.0, 102.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [56, 16]
+rotation = [0.0, 239.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [59, 11]
+rotation = [0.0, 16.0, 0.0]
+scale = 1.80
+
+# What the player can stop and look at (dialog.toml).
+[[triggers]]
+id = "rootlight_shrub"
+rect = [15, 21, 15, 21]
+event = { kind = "dialog", line = "rootlight_shrub" }
+press = true
+
+# Scholar Imre from the mainland, who studies the Genesis Trees, stands
+# between the two rootlight shrubs east of the green.
+[[npcs]]
+id = "isles_scholar"
+label = "Scholar Imre"
+model = { kind = "npc", scene = "town01", index = 29 }
+clip = 15
+tile = [41, 22]
+facing = 4
+line = "isles_scholar"
+line_after = "isles_scholar_after"
+after = { flags = ["isles_pearl_heard"] }
+
+[[emitters]]
+id = "rootlight_motes_7121"
+kind = "dust"
+rect = [25, 21, 31, 23]
+height = [10, 140]
+count = 8
+life = 300
+velocity = [0.0, 0.25, 0.0]
+spread = [0.15, 0.1, 0.15]
+sway = 18.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 7121
+

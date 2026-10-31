@@ -490,6 +490,11 @@ seed = 310
 mood = "day"
 lamps = [
   { id = "plaza", tile = [19, 21], offset = [0, 200, 0], color = [255, 240, 200], radius = 700, flicker = 0.03, period = 90 },
+  # Rootlight: a breathing green over each shrub on the Genesis root.
+  { id = "rootlight_0", tile = [8, 30], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_1", tile = [14, 30], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_2", tile = [8, 36], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_3", tile = [14, 36], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
 ]
 
 # Mist blows in over the belvedere's open edge.
@@ -537,3 +542,61 @@ tile = [30, 33]
 radius = 900
 inner = 300
 volume = 0.45
+
+# ---------------------------------------------------------------------------
+# Rootlight. The root rises through the tower's core under the upper
+# terrace: four shrubs at the corners of the basin lawn glow over it.
+# Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
+# own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
+# lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.
+# ---------------------------------------------------------------------------
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [8, 30]
+rotation = [0.0, 0.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [14, 30]
+rotation = [0.0, 137.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [8, 36]
+rotation = [0.0, 274.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [14, 36]
+rotation = [0.0, 51.0, 0.0]
+scale = 1.60
+
+# What the player can stop and look at (dialog.toml).
+[[triggers]]
+id = "journal_3f"
+rect = [11, 30, 11, 30]
+event = { kind = "dialog", line = "journal_3f" }
+press = true
+once = true
+
+[[emitters]]
+id = "rootlight_motes_7151"
+kind = "dust"
+rect = [9, 31, 13, 35]
+height = [10, 140]
+count = 8
+life = 300
+velocity = [0.0, 0.25, 0.0]
+spread = [0.15, 0.1, 0.15]
+sway = 18.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 7151
+
