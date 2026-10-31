@@ -319,6 +319,14 @@ impl Core {
         self.load_files(files)
     }
 
+    /// [`Self::finish_files`] leaving the checks to a second session (the
+    /// page's validation worker): `issues` is empty when the tree loads as a
+    /// pack, and says why when it does not.
+    pub fn finish_files_unchecked(&mut self) -> Value {
+        let files = std::mem::take(&mut self.staged);
+        self.load_files_with(files, false)
+    }
+
     /// Load a `.lxpack` bundle.
     pub fn load_bundle(&mut self, bytes: &[u8]) -> Result<Value> {
         let files = bundle::read_bundle(bytes).context("reading the .lxpack")?;
@@ -329,15 +337,26 @@ impl Core {
     /// tree does not parse (the issues say why); otherwise it becomes the
     /// session's original.
     pub fn load_files(&mut self, files: PackFiles) -> Value {
+        self.load_files_with(files, true)
+    }
+
+    fn load_files_with(&mut self, files: PackFiles, check: bool) -> Value {
         // A folder picked in the browser arrives under its own name
         // (`rebirth/pack.toml`): strip one shared leading directory.
         let files = strip_common_root(files);
-        let issues = self.check_files(&files);
         let list: Vec<Value> = files
             .iter()
             .map(|(p, b)| json!({ "path": p, "size": b.len() }))
             .collect();
-        match ExpansionPack::from_files(&files) {
+        let parsed = ExpansionPack::from_files(&files);
+        // Unchecked, a tree that loads leaves its checks to the caller; one
+        // that does not is checked here, for the reason.
+        let issues = if check || parsed.is_err() {
+            self.check_files(&files)
+        } else {
+            Vec::new()
+        };
+        match parsed {
             Ok(mut pack) => {
                 canonicalise(&mut pack);
                 self.original_canonical = pack.to_files().unwrap_or_default();
@@ -833,11 +852,12 @@ impl Core {
         // The terrain's own meshes bake from nothing the preview loads
         // either; its walls and floor come back below, from the same pure
         // functions the engine's image builder runs.
-        let terrain_walls = match &def.terrain {
-            Some(_) => Some(def.terrain_walls(&grid)?),
-            None => None,
-        };
+        // One heightfield serves both the terrain's wall quarters and the
+        // relief the painter shades.
         let terrain_field = def.terrain_heightfield()?;
+        let terrain_walls = terrain_field
+            .as_ref()
+            .map(|f| def.terrain_walls_in(&grid, f));
         probe.terrain = None;
         probe.edges.clear();
         probe.decals.clear();

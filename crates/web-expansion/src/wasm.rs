@@ -122,6 +122,12 @@ impl ExpansionWorkbench {
         self.core.finish_files().to_string()
     }
 
+    /// The same with `issues` left to the validation worker when the tree
+    /// loads (`Core::finish_files_unchecked`).
+    pub fn finish_files_unchecked(&mut self) -> String {
+        self.core.finish_files_unchecked().to_string()
+    }
+
     /// Load a `.lxpack`: `{ pack, files, issues }`.
     pub fn load_bundle(&mut self, bytes: Vec<u8>) -> Result<String, JsValue> {
         self.core

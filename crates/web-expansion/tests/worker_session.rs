@@ -70,3 +70,33 @@ fn disc_parts_open_the_same_catalog() {
     }
     assert_ne!(main.validate(&edited), main.validate(&json));
 }
+
+#[test]
+fn an_unchecked_load_is_the_checked_one_without_its_issues() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    let files = read_dir_files(&root).unwrap();
+    let mut checked = Core::new();
+    for (p, b) in &files {
+        checked.add_file(p, b.clone());
+    }
+    let a = checked.finish_files();
+    let mut quick = Core::new();
+    for (p, b) in &files {
+        quick.add_file(p, b.clone());
+    }
+    let b = quick.finish_files_unchecked();
+    assert_eq!(a["pack"], b["pack"]);
+    assert_eq!(a["files"], b["files"]);
+    assert_eq!(b["issues"], serde_json::json!([]));
+    // The session it leaves validates (and exports) as the checked one.
+    let json = a["pack"].to_string();
+    assert_eq!(quick.validate(&json), checked.validate(&json));
+    assert_eq!(quick.session_files(), checked.session_files());
+
+    // A tree that does not load still says why.
+    let mut broken = Core::new();
+    broken.add_file("pack.toml", b"not = [toml".to_vec());
+    let r = broken.finish_files_unchecked();
+    assert!(r["pack"].is_null());
+    assert!(!r["issues"].as_array().unwrap().is_empty());
+}

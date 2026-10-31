@@ -917,11 +917,21 @@ impl MapDef {
     /// than `max_step`, or under more than `wade` of water. All zero with no
     /// `[terrain]`.
     pub fn terrain_walls(&self, grid: &TileGrid) -> Result<Vec<u8>> {
-        let mut out = vec![0u8; grid.width * grid.height];
         let Some(t) = &self.terrain else {
-            return Ok(out);
+            return Ok(vec![0u8; grid.width * grid.height]);
         };
         let field = heightfield(self, t, grid)?;
+        Ok(self.terrain_walls_in(grid, &field))
+    }
+
+    /// [`MapDef::terrain_walls`] over a heightfield already built for this
+    /// map ([`MapDef::terrain_heightfield`]), so a caller that wants both
+    /// builds it once.
+    pub fn terrain_walls_in(&self, grid: &TileGrid, field: &Heightfield) -> Vec<u8> {
+        let mut out = vec![0u8; grid.width * grid.height];
+        let Some(t) = &self.terrain else {
+            return out;
+        };
         let res = field.res as f32;
         for row in 0..grid.height {
             for col in 0..grid.width {
@@ -952,7 +962,7 @@ impl MapDef {
                 out[row * grid.width + col] = walls;
             }
         }
-        Ok(out)
+        out
     }
 }
 
