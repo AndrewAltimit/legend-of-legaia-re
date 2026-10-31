@@ -22,7 +22,10 @@
 //!   camera follows it along the shot's line; between shots it returns
 //!   behind the next ball to play, looking down its aim.
 //! - **Racing.** The leader is the player's racer, facing its heading, its
-//!   run clip at speed. The camera chases from behind on the heading.
+//!   run clip at speed, lifted off the floor through a hop. The camera
+//!   chases from behind on the heading. The track carries the checkpoint
+//!   gates (the next one the leader must pass marked out) and the power-up
+//!   spots.
 //! - **Grid Duel.** A duel at a table ([`crate::duel_stage`]): the leader
 //!   stands at the player's side, the cards and NPCs are the table's.
 
@@ -75,6 +78,8 @@ pub struct StagePose {
     /// Facing as a mode angle (`0` = world `+X`, a quarter turn = `+Z`).
     pub facing: u16,
     pub clip: LeaderClip,
+    /// Height above the floor, world units (a racer's hop).
+    pub lift: f32,
 }
 
 /// Another seat's body: an AI golfer at its ball, an AI racer.
@@ -89,6 +94,12 @@ pub struct StageBody {
     /// The field NPC slot that draws this body, when the instance names one
     /// (`bodies`; the world fills it in). `None` draws a stand-in figure.
     pub actor: Option<u8>,
+    /// Height above the floor, world units (a racer's hop).
+    pub lift: f32,
+    /// A racer's shield is up.
+    pub shielded: bool,
+    /// A racer runs slowed.
+    pub slowed: bool,
 }
 
 /// A golf ball.
@@ -119,17 +130,38 @@ pub struct StageTrail {
 }
 
 /// A race's track laid on the ground, for the hosts to mark out: the
-/// session's centerline (a closed loop), its half-width and its boost
-/// segments, in world units. Drawn only; the session keeps racers on it.
+/// session's centerline, its half-width, its boost segments, its
+/// checkpoint gates and its power-up spots, in world units. Drawn only; the
+/// session keeps racers on it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StageTrack {
-    /// World `(X, Z)` of each waypoint, in lap order; segment `i` runs from
-    /// point `i` to point `i + 1` (the last back to the first).
+    /// World `(X, Z)` of each waypoint, in driving order; segment `i` runs
+    /// from point `i` to point `i + 1` (on a circuit the last back to the
+    /// first).
     pub points: Vec<[f32; 2]>,
     /// Half the track's width, world units.
     pub half_width: f32,
     /// Segments that boost a racer running along them.
     pub boost_segments: Vec<usize>,
+    /// A circuit (closed loop) rather than a sprint.
+    pub closed: bool,
+    /// The checkpoint the leader must pass next (a gate at that point), or
+    /// `None` once it has finished.
+    pub next_gate: Option<usize>,
+    /// The power-up spots.
+    pub pickups: Vec<StagePickup>,
+    /// The session's frame, for the spots' spin and bob.
+    pub clock: u32,
+}
+
+/// A power-up spot on the track.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StagePickup {
+    /// World `(X, Z)`.
+    pub pos: [f32; 2],
+    pub kind: legaia_engine_modes::racing::PowerKind,
+    /// Lying there to be taken (else waiting to come back).
+    pub ready: bool,
 }
 
 /// One playable tile of a golf hole, for the hosts to tint on the ground.
@@ -301,6 +333,20 @@ fn ease(from: [f32; 2], to: [f32; 2], k: f32) -> [f32; 2] {
     ]
 }
 
+/// How high a hopping racer is, world units: a parabola over the hop's
+/// frames, [`HOP_HEIGHT`] at its top.
+pub fn hop_lift(frames_left: u32) -> f32 {
+    use legaia_engine_modes::racing::HOP_FRAMES;
+    if frames_left == 0 {
+        return 0.0;
+    }
+    let t = 1.0 - frames_left as f32 / HOP_FRAMES as f32;
+    HOP_HEIGHT * 4.0 * t * (1.0 - t)
+}
+
+/// A hop's top height, world units.
+pub const HOP_HEIGHT: f32 = 56.0;
+
 /// A golf result as a player names it, against `par`.
 pub fn score_name(strokes: u8, par: u8) -> String {
     if strokes == 1 {
@@ -330,10 +376,23 @@ impl WorldStage {
             }
             ModeView::Race(v) => {
                 let mut f = self.race(&frame, &v, mode.local_seat);
+                let me = v.racers.get(mode.local_seat);
                 f.track = mode.race_track().map(|t| StageTrack {
                     points: t.points.iter().map(|&p| frame.to_world_f(p)).collect(),
                     half_width: frame.len_to_world(t.half_width),
                     boost_segments: t.boost_segments.clone(),
+                    closed: t.closed,
+                    next_gate: me.filter(|r| r.finished.is_none()).map(|r| r.next_cp),
+                    pickups: v
+                        .pickups
+                        .iter()
+                        .map(|p| StagePickup {
+                            pos: frame.to_world_f(p.pos),
+                            kind: p.kind,
+                            ready: p.ready,
+                        })
+                        .collect(),
+                    clock: v.frame,
                 });
                 f
             }
@@ -568,6 +627,7 @@ impl WorldStage {
             pos,
             facing: if walking { walk_facing } else { facing },
             clip,
+            lift: 0.0,
         };
         let bodies = v
             .balls
@@ -585,6 +645,9 @@ impl WorldStage {
                     boosting: false,
                     moving: false,
                     actor: None,
+                    lift: 0.0,
+                    shielded: false,
+                    slowed: false,
                 }
             })
             .collect();
@@ -672,6 +735,7 @@ impl WorldStage {
             StagePose {
                 pos,
                 facing,
+                lift: hop_lift(r.hop_frames),
                 clip: if r.speed > MAX_SPEED / 2 {
                     LeaderClip::Run
                 } else if r.speed > 0 {
@@ -695,6 +759,9 @@ impl WorldStage {
                     boosting: r.boost_frames > 0,
                     moving: r.speed > 0,
                     actor: None,
+                    lift: hop_lift(r.hop_frames),
+                    shielded: r.shield_frames > 0,
+                    slowed: r.slow_frames > 0,
                 }
             })
             .collect();

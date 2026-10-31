@@ -803,6 +803,7 @@ impl PokerStage {
             ],
             facing: a as u16,
             clip: LeaderClip::Idle,
+            lift: 0.0,
         }
     }
 

@@ -17,7 +17,7 @@
 
 use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_core::world::World;
-use legaia_engine_expansion::mode_stage::{StageFrame, StageShot};
+use legaia_engine_expansion::mode_stage::{StageBody, StageFrame, StageShot};
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame::{self, FIELD_CAM_DEPTH, FIELD_H, FieldCameraFrame, to_rad};
 use legaia_engine_field::world_map_markers::{DISPLAY_H, DISPLAY_W, depth_toward};
@@ -402,8 +402,10 @@ fn arrow(
 /// camera - legs, a tunic in the seat's colour with a belt, arms, hands,
 /// and a head with a cap of hair. A body under way swings its legs and
 /// arms with the ground it covers, so a racer reads as running.
-fn body(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, pos: [f32; 2], seat: usize, boosting: bool) {
+fn body(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, b: &StageBody) {
+    let (pos, seat, boosting) = (b.pos, b.seat, b.boosting);
     ground_disc(out, pr, pos, BODY_HALF_WIDTH * 1.4, [0, 0, 0, 150], true, 3);
+    racer_rings(out, pr, b);
     if boosting {
         ground_disc(
             out,
@@ -415,7 +417,7 @@ fn body(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, pos: [f32; 2], seat: usiz
             3,
         );
     }
-    let feet = pr.on_floor(pos[0], pos[1], 0.0);
+    let feet = pr.on_floor(pos[0], pos[1], b.lift);
     let Some(up) = pr.screen_up(feet) else {
         return;
     };
@@ -619,6 +621,34 @@ fn body(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, pos: [f32; 2], seat: usiz
     );
 }
 
+/// A racer's power-up rings on the ground: gold under a shield, violet
+/// while slowed. Drawn under a stand-in figure and under a map NPC body
+/// alike.
+fn racer_rings(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, b: &StageBody) {
+    if b.shielded {
+        ground_disc(
+            out,
+            pr,
+            b.pos,
+            BODY_HALF_WIDTH * 2.3,
+            [255, 210, 70, 120],
+            true,
+            4,
+        );
+    }
+    if b.slowed {
+        ground_disc(
+            out,
+            pr,
+            b.pos,
+            BODY_HALF_WIDTH * 1.9,
+            [200, 110, 255, 140],
+            true,
+            4,
+        );
+    }
+}
+
 /// A boost trail: a fading ribbon through the racer's recent positions.
 fn trail(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, points: &[[f32; 2]]) {
     let n = points.len();
@@ -690,8 +720,12 @@ fn stage_pieces(pr: &Projector<'_>, stage: &StageFrame) -> Vec<ScreenPrim> {
     }
     // A body a map NPC draws is the field's actor; only the rest are
     // stand-in figures.
-    for b in stage.bodies.iter().filter(|b| b.actor.is_none()) {
-        body(&mut out, pr, b.pos, b.seat, b.boosting);
+    for b in &stage.bodies {
+        if b.actor.is_none() {
+            body(&mut out, pr, b);
+        } else {
+            racer_rings(&mut out, pr, b);
+        }
     }
     // The player's ball last, so a shared tee shows it on top.
     let mut balls: Vec<_> = stage.balls.iter().collect();

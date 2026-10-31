@@ -141,7 +141,7 @@ impl PlayWindowApp {
     /// browser play page re-uploads through it too. Drops the cropped upload
     /// so [`Self::sync_ground_crop`] rebuilds it from the moved positions.
     pub(in crate::window) fn sync_ground_wave(&mut self) {
-        if self.session.host.world.mode == SceneMode::WorldMap {
+        if self.session.host.world.shows_overworld() {
             return;
         }
         let live = self.session.host.world.terrain.floor_height_lut;

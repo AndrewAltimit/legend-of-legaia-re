@@ -18,16 +18,17 @@ use legaia_render_kernels::world_map_sky::{SKY_DIM_FLAG, SkySprite, sky_band_spr
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame::FieldCameraFrame;
-use legaia_engine_mode::mode::SceneMode;
 
 /// This frame's sky sprites, or none outside the overworld walk / timeline
 /// views.
 pub fn sky_band(world: &World, cam: &Camera, frame: &FieldCameraFrame) -> Vec<SkySprite> {
-    if world.mode != SceneMode::WorldMap {
+    if !world.shows_overworld() {
         return Vec::new();
     }
     match frame {
         FieldCameraFrame::WorldMapWalk { .. } | FieldCameraFrame::Cutscene(_) => {}
+        // A race run on the overworld frames through its stage's shot.
+        FieldCameraFrame::Venue(_) if world.pack_mode_on_overworld() => {}
         _ => return Vec::new(),
     }
     sky_band_sprites(&cam.globals.0, world.system_flag_test(SKY_DIM_FLAG))

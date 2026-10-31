@@ -14,7 +14,11 @@
 //!
 //! The map itself is the scene host's to enter
 //! (`SceneHost::sync_pack_mode_map`), off [`World::pack_mode_wants_map`];
-//! until it is entered the instance draws as its top-down screen.
+//! until it is entered the instance draws as its top-down screen. A race
+//! run on a kingdom overworld names a retail scene instead
+//! ([`World::pack_mode_wants_scene`]); the scene host enters it, notes
+//! where the party stood, and takes it back there when the seat closes
+//! ([`legaia_engine_expansion::ExpansionState::mode_return`]).
 
 use legaia_engine_expansion::mode_stage::{LeaderClip, StageFrame};
 use legaia_engine_expansion::modes::PackModeSeat;
@@ -74,9 +78,48 @@ impl World {
         let Some(seat) = self.expansion.mode_seat.as_deref() else {
             return self.party_podium_wants_map();
         };
-        let frame = seat.active()?.map_frame()?;
+        let frame = seat.active()?.map_frame().filter(|f| !f.scene)?;
         let here = self.expansion.map.as_ref().map(|m| m.map_id.as_str());
         (here != Some(frame.map_id.as_str())).then(|| (frame.map_id.clone(), frame.spawn.clone()))
+    }
+
+    /// The retail scene the running instance is run on (a race on a kingdom
+    /// overworld), when the player is not in it yet - the scene host enters
+    /// it.
+    pub fn pack_mode_wants_scene(&self) -> Option<String> {
+        if self.mode != SceneMode::Expansion {
+            return None;
+        }
+        let frame = self
+            .expansion
+            .mode_seat
+            .as_deref()?
+            .active()?
+            .map_frame()
+            .filter(|f| f.scene)?;
+        (!self.on_mode_scene(&frame.map_id)).then(|| frame.map_id.clone())
+    }
+
+    /// Whether the player stands in retail scene `scene` itself, on no pack
+    /// map built over it.
+    fn on_mode_scene(&self, scene: &str) -> bool {
+        self.expansion.map.is_none() && self.active_scene_label == scene
+    }
+
+    /// Whether a mode seat holds the frame over a kingdom overworld (a race
+    /// run on one): the hosts draw the overworld - its ground, landmarks
+    /// and sky - under it, as they do in [`SceneMode::WorldMap`].
+    pub fn pack_mode_on_overworld(&self) -> bool {
+        self.mode == SceneMode::Expansion
+            && self.expansion.mode_seat.is_some()
+            && self.expansion.map.is_none()
+            && legaia_engine_scene::scene::is_world_map_scene(&self.active_scene_label)
+    }
+
+    /// Whether the frame shows a kingdom overworld: the overworld walk, or
+    /// a mode played over one ([`Self::pack_mode_on_overworld`]).
+    pub fn shows_overworld(&self) -> bool {
+        self.mode == SceneMode::WorldMap || self.pack_mode_on_overworld()
     }
 
     /// Note the player's pose on the open seat, to restore when it closes.
@@ -91,6 +134,12 @@ impl World {
         if let Some(seat) = self.expansion.mode_seat.as_deref_mut() {
             seat.player_return = pose;
         }
+    }
+
+    /// Put the player at field pose `[x, y, z, facing]` with the idle clip
+    /// on: the scene host's way back from a mode run in another scene.
+    pub fn restore_player_pose(&mut self, pose: Option<[i16; 4]>) {
+        self.restore_pack_mode_player_from(pose);
     }
 
     /// Put the player back where the seat found it (the in-world stage moved
@@ -325,10 +374,13 @@ impl World {
     /// runs only while the session's map is the one the player is in.
     pub(in crate::world) fn stage_pack_mode(&mut self, seat: &mut PackModeSeat) {
         let here = self.expansion.map.as_ref().map(|m| m.map_id.clone());
-        let on_map = seat
-            .active()
-            .and_then(|m| m.map_frame())
-            .is_some_and(|f| Some(&f.map_id) == here.as_ref());
+        let on_map = seat.active().and_then(|m| m.map_frame()).is_some_and(|f| {
+            if f.scene {
+                self.on_mode_scene(&f.map_id)
+            } else {
+                Some(&f.map_id) == here.as_ref()
+            }
+        });
         let after = matches!(
             seat.stage,
             legaia_engine_expansion::modes::ModeStage::Results { .. }
@@ -361,7 +413,7 @@ impl World {
             return;
         };
         let (x, z) = (leader.pos[0] as i32, leader.pos[1] as i32);
-        let y = self.sample_field_floor_height(x, z);
+        let y = self.sample_field_floor_height(x, z) - leader.lift as i32;
         if let Some(a) = self.actors.get_mut(slot) {
             let m = &mut a.move_state;
             m.world_x = x.clamp(i16::MIN.into(), i16::MAX.into()) as i16;

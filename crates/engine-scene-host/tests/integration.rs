@@ -163,6 +163,7 @@ mod organic_jou_door_records_disc;
 mod organic_zeto_encounter_disc;
 mod overworld_placed_visibility_disc;
 mod overworld_portal_branches_disc;
+mod overworld_race_disc;
 mod picker_door_arrival_disc;
 mod picker_park_bgm_disc;
 mod place_name_banner_disc;

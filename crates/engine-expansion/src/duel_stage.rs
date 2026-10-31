@@ -919,6 +919,7 @@ impl DuelStage {
             pos,
             facing: ang.rem_euclid(4096.0) as u16,
             clip: LeaderClip::Idle,
+            lift: 0.0,
         }
     }
 

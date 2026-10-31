@@ -231,7 +231,7 @@ impl<'a> HostView<'a> {
     /// depth-tested at the far plane, so it fills only what the terrain left
     /// clear - retail's farthest-bucket draw order.
     pub fn world_map_sky_prims(&self) -> Vec<ScreenPrim> {
-        if self.world.mode != SceneMode::WorldMap {
+        if !self.world.shows_overworld() {
             return Vec::new();
         }
         sky_band_prims(&crate::world_map_sky::sky_band(

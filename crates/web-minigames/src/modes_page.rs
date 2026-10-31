@@ -26,7 +26,7 @@ use std::sync::Arc;
 use legaia_engine_expansion::modes::{ModeSource, ModeStage, PackModeSeat, SeatStep};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_modes::active::{
-    ActiveMode, BuildOptions, ModeView, builtin_sections, entries, instance_map,
+    ActiveMode, BuildOptions, ModeView, builtin_sections, entries, instance_map, instance_scene,
 };
 use legaia_engine_modes::cards::duel::DuelCard;
 use legaia_engine_modes::cards::table_art;
@@ -210,14 +210,16 @@ impl LegaiaModes {
     }
 
     /// `{"source": "builtin"|"pack", "pack": name, "modes": [{"id", "name",
-    /// "kind", "map"}]}` - `map` the pack map a golf course, race or table
-    /// is laid out on (drawn top-down here), or `null`.
+    /// "kind", "map", "scene"}]}` - `map` the pack map a golf course, race or
+    /// table is laid out on, `scene` the overworld a race is run across
+    /// (both drawn top-down here), or `null`.
     pub fn modes_json(&self) -> String {
         let modes: Vec<_> = entries(&self.rules.modes)
             .into_iter()
             .map(|e| {
                 let map = instance_map(&self.rules.modes, &e.id).map(|(m, _)| m);
-                json!({ "id": e.id, "name": e.name, "kind": e.kind.label(), "map": map })
+                let scene = instance_scene(&self.rules.modes, &e.id);
+                json!({ "id": e.id, "name": e.name, "kind": e.kind.label(), "map": map, "scene": scene })
             })
             .collect();
         json!({

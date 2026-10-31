@@ -1,15 +1,20 @@
 //! A race's track marked out on the ground
 //! ([`legaia_engine_expansion::mode_stage::StageTrack`]): red-and-white
 //! kerbs along both edges, a chequered start line across the first
-//! segment, and cyan chevrons down every boost segment pointing the way
-//! round. The track is the session's centerline and half-width, so the
-//! marks show exactly where a racer is held, whatever the map draws under
-//! them.
+//! segment (and a finish line across a sprint's last point), cyan chevrons
+//! down every boost segment pointing the way, a gate standing over every
+//! checkpoint - the next one the leader must pass in gold, the ones a
+//! sprint has left behind dimmed - and the power-ups floating over their
+//! spots. The track is the session's centerline and half-width, so the
+//! marks show exactly where a racer is held, whatever the ground under
+//! them; every mark follows the floor (a kingdom overworld's heightfield
+//! included).
 
-use legaia_engine_expansion::mode_stage::StageTrack;
+use legaia_engine_expansion::mode_stage::{StagePickup, StageTrack};
+use legaia_engine_modes::racing::PowerKind;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
-use super::{GROUND_BAND, Projector, quad};
+use super::{GROUND_BAND, Projector, Pt, ground_disc, quad, tri};
 
 /// A kerb's width across the edge, and one dash's length, world units.
 const KERB_W: f32 = 14.0;
@@ -28,6 +33,28 @@ const KERB_WHITE: [u8; 4] = [236, 232, 224, 255];
 const CHECK_DARK: [u8; 4] = [24, 24, 28, 255];
 const CHECK_LIGHT: [u8; 4] = [240, 240, 236, 255];
 const BOOST: [u8; 4] = [70, 190, 255, 255];
+/// A gate's post height and its banner's depth, world units.
+const GATE_HEIGHT: f32 = 150.0;
+const GATE_BANNER: f32 = 26.0;
+/// A post's half-width on screen, pixels.
+const POST_HALF: f32 = 1.5;
+const GATE_NEXT: [u8; 4] = [255, 206, 60, 255];
+const GATE_AHEAD: [u8; 4] = [226, 232, 244, 255];
+const GATE_PASSED: [u8; 4] = [96, 100, 112, 255];
+/// A power-up's float height over its spot, and its gem's half-size, world
+/// units.
+const PICKUP_FLOAT: f32 = 64.0;
+const PICKUP_GEM: f32 = 30.0;
+
+/// A power-up's colour.
+pub fn power_color(kind: PowerKind) -> [u8; 4] {
+    match kind {
+        PowerKind::Boost => [80, 200, 255, 255],
+        PowerKind::Hop => [120, 236, 110, 255],
+        PowerKind::Shield => [255, 210, 70, 255],
+        PowerKind::Slow => [200, 110, 255, 255],
+    }
+}
 
 fn sub(a: [f32; 2], b: [f32; 2]) -> [f32; 2] {
     [a[0] - b[0], a[1] - b[1]]
@@ -64,12 +91,21 @@ pub(super) fn ground_quad(
 
 /// Where the edge `side` (`+1` left, `-1` right) of the track meets at
 /// waypoint `i`: the mitre of the two segments' offsets, held to twice the
-/// half-width at a sharp corner.
-fn edge_at(points: &[[f32; 2]], i: usize, off: f32) -> [f32; 2] {
+/// half-width at a sharp corner. An open course's ends take their one
+/// segment's offset.
+fn edge_at(points: &[[f32; 2]], closed: bool, i: usize, off: f32) -> [f32; 2] {
     let n = points.len();
     let p = points[i];
-    let d_in = unit(sub(p, points[(i + n - 1) % n]));
-    let d_out = unit(sub(points[(i + 1) % n], p));
+    let d_out = if !closed && i + 1 == n {
+        unit(sub(p, points[i - 1]))
+    } else {
+        unit(sub(points[(i + 1) % n], p))
+    };
+    let d_in = if !closed && i == 0 {
+        d_out
+    } else {
+        unit(sub(p, points[(i + n - 1) % n]))
+    };
     let (n0, n1) = (normal(d_in), normal(d_out));
     let m = unit([n0[0] + n1[0], n0[1] + n1[1]]);
     let cos = (m[0] * n1[0] + m[1] * n1[1]).max(0.5);
@@ -84,15 +120,15 @@ fn kerbs(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
     let hw = t.half_width;
     for side in [1.0f32, -1.0] {
         let mut phase = 0usize;
-        for i in 0..n {
+        for i in 0..segments(t) {
             let j = (i + 1) % n;
             let outer = (
-                edge_at(&t.points, i, side * (hw + KERB_W * 0.5)),
-                edge_at(&t.points, j, side * (hw + KERB_W * 0.5)),
+                edge_at(&t.points, t.closed, i, side * (hw + KERB_W * 0.5)),
+                edge_at(&t.points, t.closed, j, side * (hw + KERB_W * 0.5)),
             );
             let inner = (
-                edge_at(&t.points, i, side * (hw - KERB_W * 0.5)),
-                edge_at(&t.points, j, side * (hw - KERB_W * 0.5)),
+                edge_at(&t.points, t.closed, i, side * (hw - KERB_W * 0.5)),
+                edge_at(&t.points, t.closed, j, side * (hw - KERB_W * 0.5)),
             );
             let len = {
                 let d = sub(t.points[j], t.points[i]);
@@ -124,14 +160,27 @@ fn kerbs(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
     }
 }
 
-/// The chequered start line across the start of segment `0`.
-fn start_line(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
-    let n = t.points.len();
-    if n < 2 {
-        return;
+/// The segments a track has: one per point on a circuit, one fewer on a
+/// sprint.
+fn segments(t: &StageTrack) -> usize {
+    if t.closed {
+        t.points.len()
+    } else {
+        t.points.len().saturating_sub(1)
     }
-    let p = t.points[0];
-    let d = unit(sub(t.points[1], p));
+}
+
+/// A chequered line across the track at point `at`, square to `toward`.
+fn chequer_line(
+    out: &mut Vec<ScreenPrim>,
+    pr: &Projector<'_>,
+    t: &StageTrack,
+    at_point: usize,
+    toward: usize,
+) {
+    let p = t.points[at_point];
+    let d = unit(sub(t.points[toward], p));
+    let d = if toward < at_point { [-d[0], -d[1]] } else { d };
     let nrm = normal(d);
     let hw = t.half_width;
     let at = |across: f32, along: f32| {
@@ -165,12 +214,239 @@ fn start_line(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
     }
 }
 
+/// The chequered start line across the start of segment `0`, and a
+/// sprint's finish line across its last point.
+fn start_line(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
+    let n = t.points.len();
+    if n < 2 {
+        return;
+    }
+    chequer_line(out, pr, t, 0, 1);
+    if !t.closed {
+        chequer_line(out, pr, t, n - 1, n - 2);
+    }
+}
+
+/// A vertical post from `base` up `height`, `half` pixels each side.
+fn post(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, base: [f32; 3], height: f32, col: [u8; 4]) {
+    let top = [base[0], base[1] - height, base[2]];
+    let (Some(up), Some(b), Some(tp)) = (pr.screen_up(base), pr.at(base), pr.at(top)) else {
+        return;
+    };
+    let side = (-up.1, up.0);
+    let off = |p: Pt, s: f32| Pt {
+        x: p.x + side.0 * s,
+        y: p.y + side.1 * s,
+        depth: p.depth,
+    };
+    let lo = [col[0] / 3 * 2, col[1] / 3 * 2, col[2] / 3 * 2, 255];
+    out.push(quad(
+        [
+            off(tp, -POST_HALF),
+            off(tp, POST_HALF),
+            off(b, -POST_HALF),
+            off(b, POST_HALF),
+        ],
+        [col, col, lo, lo],
+        false,
+        pr.ot(base, 1),
+    ));
+}
+
+/// The gates: a pair of posts either side of the track over each
+/// checkpoint and a banner between their tops. The start (and a sprint's
+/// finish) carry the chequered lines instead of a ground stripe.
+fn gates(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
+    let n = t.points.len();
+    let off = t.half_width + KERB_W;
+    for i in 0..n {
+        let col = match t.next_gate {
+            Some(g) if g == i => GATE_NEXT,
+            Some(g) if !t.closed && i < g => GATE_PASSED,
+            None if !t.closed => GATE_PASSED,
+            _ => GATE_AHEAD,
+        };
+        let l = edge_at(&t.points, t.closed, i, off);
+        let r = edge_at(&t.points, t.closed, i, -off);
+        let (lb, rb) = (pr.on_floor(l[0], l[1], 0.0), pr.on_floor(r[0], r[1], 0.0));
+        post(out, pr, lb, GATE_HEIGHT, col);
+        post(out, pr, rb, GATE_HEIGHT, col);
+        // The banner: a strip between the post tops, its lower edge a
+        // banner's depth down. Both posts' tops stand on their own floor.
+        let top = |b: [f32; 3], k: f32| [b[0], b[1] - GATE_HEIGHT + k, b[2]];
+        let c = [
+            pr.at(top(lb, 0.0)),
+            pr.at(top(rb, 0.0)),
+            pr.at(top(lb, GATE_BANNER)),
+            pr.at(top(rb, GATE_BANNER)),
+        ];
+        if let [Some(a), Some(b), Some(cc), Some(d)] = c {
+            let lo = [col[0] / 4 * 3, col[1] / 4 * 3, col[2] / 4 * 3, 255];
+            let mid = [
+                (lb[0] + rb[0]) * 0.5,
+                (lb[1] + rb[1]) * 0.5 - GATE_HEIGHT,
+                (lb[2] + rb[2]) * 0.5,
+            ];
+            out.push(quad(
+                [a, b, cc, d],
+                [col, col, lo, lo],
+                false,
+                pr.ot(mid, 0),
+            ));
+        }
+        // The next gate also marks its line on the ground.
+        let is_line = i == 0 || (!t.closed && i + 1 == n);
+        if t.next_gate == Some(i) && !is_line {
+            let li = edge_at(&t.points, t.closed, i, t.half_width);
+            let ri = edge_at(&t.points, t.closed, i, -t.half_width);
+            let d = unit(sub(ri, li));
+            let a = [-d[1] * 6.0, d[0] * 6.0];
+            let glow = [col[0], col[1], col[2], 170];
+            ground_quad(
+                out,
+                pr,
+                [
+                    [li[0] - a[0], li[1] - a[1]],
+                    [ri[0] - a[0], ri[1] - a[1]],
+                    [li[0] + a[0], li[1] + a[1]],
+                    [ri[0] + a[0], ri[1] + a[1]],
+                ],
+                [glow; 4],
+                true,
+                2,
+            );
+        }
+    }
+}
+
+/// One power-up: a coloured ring on the ground and a gem floating and
+/// turning over it, shaped by kind - a diamond for a boost, an arrowhead
+/// for a hop, a square for a shield, an hourglass for a slow. A spot
+/// waiting to come back shows its ring faintly and no gem.
+fn pickup(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, p: &StagePickup, clock: u32, k: usize) {
+    let col = power_color(p.kind);
+    if !p.ready {
+        ground_disc(
+            out,
+            pr,
+            p.pos,
+            PICKUP_GEM * 1.4,
+            [col[0], col[1], col[2], 60],
+            true,
+            3,
+        );
+        return;
+    }
+    ground_disc(
+        out,
+        pr,
+        p.pos,
+        PICKUP_GEM * 1.6,
+        [col[0], col[1], col[2], 150],
+        true,
+        3,
+    );
+    let phase = clock as f32 * 0.07 + k as f32 * 1.7;
+    let bob = phase.sin() * 6.0;
+    let c = pr.on_floor(p.pos[0], p.pos[1], PICKUP_FLOAT + bob);
+    let (Some(cp), Some(top)) = (pr.at(c), pr.at([c[0], c[1] - PICKUP_GEM, c[2]])) else {
+        return;
+    };
+    let r = ((top.x - cp.x).powi(2) + (top.y - cp.y).powi(2))
+        .sqrt()
+        .max(3.0);
+    // The turn: the gem's width breathes with the cosine of its spin.
+    let w = r * (0.35 + 0.65 * phase.cos().abs());
+    let at = |x: f32, y: f32| Pt {
+        x: cp.x + x,
+        y: cp.y + y,
+        depth: cp.depth,
+    };
+    let hi = [
+        (col[0] as u16 / 2 + 128).min(255) as u8,
+        (col[1] as u16 / 2 + 128).min(255) as u8,
+        (col[2] as u16 / 2 + 128).min(255) as u8,
+        255,
+    ];
+    let lo = [col[0] / 2, col[1] / 2, col[2] / 2, 255];
+    let ot = pr.ot(c, 0);
+    match p.kind {
+        PowerKind::Boost => {
+            out.push(tri(
+                at(0.0, -r),
+                at(-w, 0.0),
+                at(w, 0.0),
+                [hi, col, col],
+                false,
+                ot,
+            ));
+            out.push(tri(
+                at(-w, 0.0),
+                at(w, 0.0),
+                at(0.0, r),
+                [col, col, lo],
+                false,
+                ot,
+            ));
+        }
+        PowerKind::Hop => {
+            out.push(tri(
+                at(0.0, -r),
+                at(-w, r * 0.6),
+                at(0.0, r * 0.15),
+                [hi, col, lo],
+                false,
+                ot,
+            ));
+            out.push(tri(
+                at(0.0, -r),
+                at(w, r * 0.6),
+                at(0.0, r * 0.15),
+                [hi, col, lo],
+                false,
+                ot,
+            ));
+        }
+        PowerKind::Shield => {
+            out.push(quad(
+                [
+                    at(-w, -r * 0.8),
+                    at(w, -r * 0.8),
+                    at(-w * 0.8, r),
+                    at(w * 0.8, r),
+                ],
+                [hi, hi, lo, lo],
+                false,
+                ot,
+            ));
+        }
+        PowerKind::Slow => {
+            out.push(tri(
+                at(-w, -r),
+                at(w, -r),
+                at(0.0, 0.0),
+                [hi, hi, col],
+                false,
+                ot,
+            ));
+            out.push(tri(
+                at(0.0, 0.0),
+                at(-w, r),
+                at(w, r),
+                [col, lo, lo],
+                false,
+                ot,
+            ));
+        }
+    }
+}
+
 /// Chevrons down each boost segment, pointing along it.
 fn chevrons(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &StageTrack) {
     let n = t.points.len();
     let hw = t.half_width * 0.45;
     for &seg in &t.boost_segments {
-        if seg >= n {
+        if seg >= segments(t) {
             continue;
         }
         let (a, b) = (t.points[seg], t.points[(seg + 1) % n]);
@@ -211,6 +487,10 @@ pub(super) fn track_pieces(out: &mut Vec<ScreenPrim>, pr: &Projector<'_>, t: &St
     kerbs(out, pr, t);
     start_line(out, pr, t);
     chevrons(out, pr, t);
+    gates(out, pr, t);
+    for (k, p) in t.pickups.iter().enumerate() {
+        pickup(out, pr, p, t.clock, k);
+    }
 }
 
 #[cfg(test)]
@@ -223,21 +503,33 @@ mod tests {
         // corner the left edge sits on the corner's diagonal, the track's
         // half-width from both segments.
         let pts = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0], [0.0, 100.0]];
-        let e = edge_at(&pts, 1, 10.0);
+        let e = edge_at(&pts, true, 1, 10.0);
         assert!(
             (e[0] - 90.0).abs() < 1e-3 && (e[1] - 10.0).abs() < 1e-3,
             "{e:?}"
         );
-        let e = edge_at(&pts, 1, -10.0);
+        let e = edge_at(&pts, true, 1, -10.0);
         assert!(
             (e[0] - 110.0).abs() < 1e-3 && (e[1] + 10.0).abs() < 1e-3,
             "{e:?}"
         );
         // A straight run offsets square to it.
         let line = [[0.0, 0.0], [50.0, 0.0], [100.0, 0.0], [50.0, 40.0]];
-        let e = edge_at(&line, 1, 10.0);
+        let e = edge_at(&line, true, 1, 10.0);
         assert!(
             (e[0] - 50.0).abs() < 1e-3 && (e[1] - 10.0).abs() < 1e-3,
+            "{e:?}"
+        );
+    }
+
+    #[test]
+    fn an_open_course_ends_square_to_its_one_segment() {
+        let line = [[0.0, 0.0], [100.0, 0.0], [100.0, 100.0]];
+        let e = edge_at(&line, false, 0, 10.0);
+        assert!((e[0]).abs() < 1e-3 && (e[1] - 10.0).abs() < 1e-3, "{e:?}");
+        let e = edge_at(&line, false, 2, 10.0);
+        assert!(
+            (e[0] - 90.0).abs() < 1e-3 && (e[1] - 100.0).abs() < 1e-3,
             "{e:?}"
         );
     }

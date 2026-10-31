@@ -18,6 +18,7 @@
 //! (`World::expansion_encounter_key`).
 
 use super::*;
+use legaia_engine_expansion::modes::ModeReturnPlace;
 
 use legaia_engine_expansion::map::{ActiveMap, FiredTrigger};
 use legaia_engine_expansion::quest::QuestEvent;
@@ -340,6 +341,12 @@ impl SceneHost {
     /// `World::enter_pack_mode` or the picker opened this frame is on its map
     /// by the next.
     pub fn sync_pack_mode_map(&mut self) -> Option<SceneTickEvent> {
+        if let Some(event) = self.sync_pack_mode_return() {
+            return Some(event);
+        }
+        if let Some(scene) = self.world.pack_mode_wants_scene() {
+            return self.enter_pack_mode_scene(&scene);
+        }
         let (map, spawn) = self.world.pack_mode_wants_map()?;
         if self.failed_pack_mode_map.as_deref() == Some(map.as_str()) {
             return None;
@@ -362,6 +369,86 @@ impl SceneHost {
         }
         // The seat closes onto the map's spawn, not the scene it left.
         self.world.remember_pack_mode_player();
+        let name = self
+            .scene
+            .as_ref()
+            .map(|s| s.name.clone())
+            .unwrap_or_default();
+        Some(SceneTickEvent::SceneEntered { name })
+    }
+
+    /// Enter retail scene `scene` the running instance is run on (a race on
+    /// a kingdom overworld, `World::pack_mode_wants_scene`) under the mode
+    /// seat, as [`Self::sync_pack_mode_map`] does for a pack map. The seat
+    /// notes where the party stood ([`ModeReturnPlace`]) the first time it
+    /// leaves for another scene, and the world hands that back when the
+    /// seat closes ([`Self::sync_pack_mode_return`]).
+    fn enter_pack_mode_scene(&mut self, scene: &str) -> Option<SceneTickEvent> {
+        if self.failed_pack_mode_map.as_deref() == Some(scene) {
+            return None;
+        }
+        let mut seat = self.world.expansion.mode_seat.take()?;
+        if seat.return_place.is_none() && !self.world.active_scene_label.is_empty() {
+            seat.return_place = Some(ModeReturnPlace {
+                scene: self.world.active_scene_label.clone(),
+                pack_map: self
+                    .world
+                    .expansion
+                    .map
+                    .as_ref()
+                    .map(|m| (m.map_id.clone(), String::new())),
+                mode: seat.return_mode,
+                pose: seat.player_return,
+            });
+        }
+        let entered = self.enter_retail_scene(scene);
+        self.world.expansion.mode_seat = Some(seat);
+        self.world.mode = legaia_engine_mode::mode::SceneMode::Expansion;
+        if let Err(e) = entered {
+            log::warn!("expansion: mode scene '{scene}' did not enter: {e:#}");
+            self.failed_pack_mode_map = Some(scene.to_string());
+            return None;
+        }
+        Some(SceneTickEvent::SceneEntered {
+            name: scene.to_string(),
+        })
+    }
+
+    /// A retail scene through its own entry: the overworld's for a kingdom
+    /// map, the field's for the rest.
+    fn enter_retail_scene(&mut self, scene: &str) -> Result<()> {
+        if legaia_engine_scene::scene::is_world_map_scene(scene) {
+            self.enter_world_map_scene(scene)
+        } else {
+            self.enter_field_scene(scene, 0)
+        }
+    }
+
+    /// Take the party back where a closed mode seat found it
+    /// (`ExpansionState::mode_return`): the pack map or retail scene it
+    /// stood in, its pose there and the mode it was in.
+    fn sync_pack_mode_return(&mut self) -> Option<SceneTickEvent> {
+        // A seat still open (a party night's next round) keeps the party
+        // where it is; the way back waits for it to close.
+        if self.world.expansion.mode_seat.is_some() {
+            return None;
+        }
+        let place = self.world.expansion.mode_return.take()?;
+        let entered = match &place.pack_map {
+            Some((map, spawn)) => self.enter_expansion_map(map, spawn),
+            None => self.enter_retail_scene(&place.scene),
+        };
+        if let Err(e) = entered {
+            log::warn!(
+                "expansion: the way back to '{}' did not enter: {e:#}",
+                place.scene
+            );
+            return None;
+        }
+        if place.mode != legaia_engine_mode::mode::SceneMode::Expansion {
+            self.world.mode = place.mode;
+        }
+        self.world.restore_player_pose(place.pose);
         let name = self
             .scene
             .as_ref()
