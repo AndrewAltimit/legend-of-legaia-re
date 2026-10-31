@@ -907,8 +907,13 @@ impl DuelStage {
     pub fn leader(&self, t: &DuelTableFrame) -> StagePose {
         let (across, right) = t.axes(self.local);
         let c = t.centre();
-        // Beside the near corner of the table, clear of the hand.
-        let (r, a) = (-(t.board * 0.5 + 44.0), -t.board_depth() * 0.5 - 36.0);
+        // Beside the table's left side near its corner, clear of the hand
+        // and of the top.
+        let (hw, hd) = t.table_half_extent();
+        let (r, a) = (
+            -(hw + legaia_engine_modes::cards::table::SEAT_CLEARANCE),
+            -(hd - 40.0).max(0.0),
+        );
         let pos = [
             c[0] + right[0] * r + across[0] * a,
             c[1] + right[1] * r + across[1] * a,

@@ -32,6 +32,15 @@ pub fn sector_to_mode_angle(sector: u8) -> u16 {
 /// too (height over width).
 pub const CELL_ASPECT: f32 = 1.36;
 
+/// How far the drawn table's top reaches past the board's side and its
+/// near / far edge, world units (`pack_mode_world`'s `duel` table).
+pub const TABLE_MARGIN: [f32; 2] = [58.0, 64.0];
+
+/// How far a seated or standing body keeps from the table's edge, world
+/// units: a townsfolk model's half depth, knees included, so no part of
+/// the body reaches into the top.
+pub const SEAT_CLEARANCE: f32 = 46.0;
+
 /// The table's placement on the field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DuelTableFrame {
@@ -98,7 +107,11 @@ impl DuelTableFrame {
             lift: t.offset[1] as f32,
             height: f32::from(t.height),
             board: f32::from(t.board.max(48)),
-            seat_distance: f32::from(t.seat_distance.max(40)),
+            seat_distance: Self::clear_seat_distance(
+                f32::from(t.seat_distance.max(40)),
+                f32::from(t.board.max(48)),
+                t.draw_table,
+            ),
             draw_table: t.draw_table,
             surface: t.surface,
             sfx: t.sfx.clone(),
@@ -106,6 +119,26 @@ impl DuelTableFrame {
             spectators: t.spectators.clone(),
             chair_height: f32::from(t.chair_height),
         }))
+    }
+
+    /// `seat_distance` pushed out past the drawn table's edge: a seat the
+    /// pack set inside the table would stand its NPC in the top (the
+    /// reaction shot frames the opponent there). A table the map's own
+    /// prop draws (`draw_table = false`) keeps the pack's distance.
+    fn clear_seat_distance(seat_distance: f32, board: f32, draw_table: bool) -> f32 {
+        if !draw_table {
+            return seat_distance;
+        }
+        seat_distance.max(board * CELL_ASPECT * 0.5 + TABLE_MARGIN[1] + SEAT_CLEARANCE)
+    }
+
+    /// The drawn table top's half extent `(right, across)` from the board's
+    /// centre, world units.
+    pub fn table_half_extent(&self) -> (f32, f32) {
+        (
+            self.board * 0.5 + TABLE_MARGIN[0],
+            self.board_depth() * 0.5 + TABLE_MARGIN[1],
+        )
     }
 
     /// The board's centre, world `(X, Z)`.

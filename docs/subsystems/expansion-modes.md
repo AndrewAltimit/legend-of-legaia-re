@@ -443,7 +443,7 @@ The table is placed in its own axes: `across` from the player's seat toward the 
 
 - **Cards.** A card is a quad `0.86` of a cell wide at the face's aspect. Each hand is fanned along its seat's edge of the board, tilted up toward its holder; the selected card rises and reaches toward the board, and a held card hovers face up over the cursor's cell. Grid cards lie flat, reading from the near seat.
 - **Faces and backs.** Whether a card shows its face or its back is the projected quad's winding: the near hand turns its faces to the camera, the far hand its backs, and a capture flip shows the back at its half turn.
-- **Seats.** The opponent NPC takes its seat, `seat_distance` from the board's centre - seated in a chair the stage draws when it names a `sit` clip, standing otherwise ([Seated NPCs](#seated-npcs)); the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
+- **Seats.** The opponent NPC takes its seat, `seat_distance` from the board's centre and never nearer than the drawn table's edge plus a body's depth (`cards::table::SEAT_CLEARANCE`), so the reaction shot frames it behind the top rather than in it - seated in a chair the stage draws when it names a `sit` clip, standing otherwise ([Seated NPCs](#seated-npcs)); the leader stands beside the table's left side near the player's corner, clear of the top, turned to the board; spectators keep their own tiles and turn to the board.
 
 ### The timeline
 

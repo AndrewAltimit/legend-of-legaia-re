@@ -201,7 +201,7 @@ pub(super) const FELT: [u8; 3] = [30, 98, 70];
 /// The table: legs, apron and top.
 fn table(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, s: &DuelStageFrame) {
     let tb = &s.table;
-    let (hw, hd) = (tb.board * 0.5 + 58.0, tb.board_depth() * 0.5 + 64.0);
+    let (hw, hd) = tb.table_half_extent();
     let top = tb.top();
     let lift = tb.lift;
     let leg = 9.0;
