@@ -258,6 +258,28 @@ fn amount(out: &mut Vec<ScreenPrim>, t: &Table<'_, '_>, at: [f32; 2], h: f32, va
     let gw = gh * f32::from(art::GLYPH_W) / f32::from(art::GLYPH_H);
     let digits: Vec<u8> = value.to_string().bytes().map(|b| b - b'0').collect();
     let total = gw * digits.len() as f32;
+    // A dark plate under the digits, so the amount reads as a tag over the
+    // stack rather than print on the felt behind it.
+    let pad = (gh * 0.25).max(2.0);
+    let (l, r) = (c.x - total / 2.0 - pad, c.x + total / 2.0 + pad);
+    let (top, bot) = (c.y - gh / 2.0 - pad * 0.6, c.y + gh / 2.0 + pad * 0.6);
+    let corner = |x: f32, y: f32| Pt {
+        x,
+        y,
+        depth: c.depth,
+    };
+    let shade_ = rgba([8, 10, 16], 255);
+    out.push(flat(
+        [
+            corner(l, top),
+            corner(r, top),
+            corner(l, bot),
+            corner(r, bot),
+        ],
+        [shade_; 4],
+        Some(0),
+        BAND_SPARKS + 101,
+    ));
     for (i, d) in digits.iter().enumerate() {
         let x0 = c.x - total / 2.0 + i as f32 * gw;
         let y0 = c.y - gh / 2.0;

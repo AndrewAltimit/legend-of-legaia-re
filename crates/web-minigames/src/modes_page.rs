@@ -316,11 +316,12 @@ impl LegaiaModes {
 
     /// The seat's screen in the 320x240 stage, `{"prims": [[x0, y0, x1, y1,
     /// x2, y2, x3, y3, r, g, b, a, semi]...], "labels": [[text, x, y, r, g,
-    /// b, a, align]...]}`. Prims come in draw order, corners in `POLY_F4`
-    /// order (top-left, top-right, bottom-left, bottom-right); `semi` is a
-    /// half blend (`ABR 0`). A label's `y` is the top of its line and
-    /// `align` is `0` left, `1` centre, `2` right of `x`. Empty lists while
-    /// no seat is open.
+    /// b, a, align, max_w]...]}`. Prims come in draw order, corners in
+    /// `POLY_F4` order (top-left, top-right, bottom-left, bottom-right);
+    /// `semi` is a half blend (`ABR 0`). A label's `y` is the top of its
+    /// line, `align` is `0` left, `1` centre, `2` right of `x`, and `max_w`
+    /// the width of its box (`0`: none) the page fits it to. Empty lists
+    /// while no seat is open.
     pub fn frame_json(&self) -> String {
         let Some(seat) = self.seat.as_ref() else {
             return r#"{"prims":[],"labels":[]}"#.into();
@@ -371,7 +372,12 @@ impl LegaiaModes {
                     Align::Centre => 1,
                     Align::Right => 2,
                 };
-                json!([l.text, l.x, l.y, col[0], col[1], col[2], col[3], align])
+                // The label's box width (`0`: none), which the page fits
+                // the text to in its own font.
+                let max_w = l.max_w.unwrap_or(0);
+                json!([
+                    l.text, l.x, l.y, col[0], col[1], col[2], col[3], align, max_w
+                ])
             })
             .collect();
         json!({ "prims": out_prims, "labels": labels }).to_string()

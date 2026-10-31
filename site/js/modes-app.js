@@ -363,6 +363,18 @@
 
   function rgba(r, g, b, a) { return `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`; }
 
+  /* A label held to its box (`max_w` stage px, 0 = none), cut and marked
+   * `..` the way the engine's `fit_text` cuts it in the dialog font. */
+  function fitLabel(text, maxW) {
+    if (!maxW || ctx.measureText(text).width <= maxW) return text;
+    if (ctx.measureText('..').width > maxW) return '';
+    for (let n = text.length - 1; n > 0; n--) {
+      const head = text.slice(0, n).trimEnd() + '..';
+      if (ctx.measureText(head).width <= maxW) return head;
+    }
+    return '..';
+  }
+
   function draw() {
     const f = JSON.parse(rt.frame_json());
     const sx = canvas.width / STAGE_W, sy = canvas.height / STAGE_H;
@@ -391,7 +403,7 @@
     for (const l of f.labels) {
       ctx.textAlign = l[7] === 1 ? 'center' : l[7] === 2 ? 'right' : 'left';
       ctx.fillStyle = rgba(l[3], l[4], l[5], l[6]);
-      ctx.fillText(l[0], l[1], l[2] + 1.5);
+      ctx.fillText(fitLabel(l[0], l[8]), l[1], l[2] + 1.5);
     }
   }
 

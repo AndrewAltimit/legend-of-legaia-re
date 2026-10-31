@@ -494,7 +494,9 @@ The dealer button sits on the felt before the button's chair, and a pulsing ring
 
 The table is an oval: a felt fan lit brightest in the middle, a gold betting line, a padded rail and its wooden outer face, on four legs. Chips are stacked discs, a side band per chip with a white stripe every third and a face on top, coloured by the stack's size against the big blind. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
 
-The HUD is a plate per other seat along the top (its name, chips or state, its street bet, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
+The HUD is a plate per other seat along the top (its name, chips or state, its street bet on a row of its own, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
+
+Every label of the in-world HUDs sits in a box of its own (`Label::max_w`): the hosts set it in the dialog font and cut anything wider than its box with a `..` mark (`expansion_modes::fit_text`; the modes page does the same in its web font), so a long table name is shortened, never run into a score or off a plate. A banner starts under the HUD's top band. The engine-ui tests lay out each mode's in-world HUD across a session with long names and assert every box on the stage, no two labels sharing a row's pixels, and - with the extracted dialog font - every non-name label whole.
 
 ### Running it
 
