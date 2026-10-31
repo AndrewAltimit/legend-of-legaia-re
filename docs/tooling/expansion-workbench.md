@@ -248,6 +248,20 @@ older bundle, a worker that failed) validation runs on the page, and an
 export, a play or a hand-off still validates on the page at once, so it is
 never refused on a stale answer.
 
+The worker also builds the painter's `map_preview` (`map_preview`, answered
+parsed) and the Find box's reference sites (`xref_sites`). It runs one
+request at a time, in order, with two exceptions that keep it from working
+for nobody: a `validate` or `xref_sites` drops an older one still waiting,
+and a `map_preview` drops an older one of the same map and runs ahead of the
+checks and bundles waiting, but never ahead of the `init`, `disc` and
+`files` messages before it. With the worker up, a tree opened as a folder or
+the example loads without its checks (`finish_files_unchecked`: the issues
+come back only for a tree that does not load) and the worker's first answer
+fills the Checks list. **Download** builds its `.lxpack` there as well; the
+page validates only when the export refuses or no check has answered the
+pack as it stands, to open the first error. The Find box refreshes a moment
+after an edit's re-render, from the worker's sites.
+
 **Phone width.** Below 44rem the pack bar keeps Undo, Redo, Download and
 Play in browser and folds Keys, TOML files, Share, Play here and Live under
 **More**.
@@ -424,7 +438,19 @@ painter's wall quarters include the ones the terrain adds (too steep, too
 deep), so what is walkable reads off the canvas. The relief is one image a
 `map_preview` (a pixel per heightfield sample inside the skirt, built once
 and kept with that preview) drawn scaled over the tiles, so a hover's redraw
-costs one image draw. The 3D preview draws the
+costs one image draw.
+
+The canvas keeps its **tile layer** (colours, tiers, walls, slope hatching)
+in a canvas of its own, keyed by everything it reads - the rows, the legend,
+the preview, the cell size and the Heights toggle - so a selection, a drag or
+a hover redraws only the objects and zones over one image of the tiles. A
+drag's edits draw once a frame. The `map_preview` behind the overlays is
+asked a moment after an edit, built in the validation worker, and drawn when
+it lands; a map whose JSON (and the session's files) are what the last
+request was made from is not asked again, so a re-render of the tab costs
+none, and an answer for a map edited since it was asked is dropped. A map
+opened for the first time draws from its legend until its first preview
+lands. The 3D preview draws the
 sculpted ground as the engine builds it, and its volumes stand on the
 terrain's floor.
 

@@ -1354,10 +1354,13 @@ div.play-vis-head { cursor: default; }
     statusEl.textContent = 'Loading the engine…';
     const prog = LoadProgress.create(statusEl);
     try {
+      /* The engine's module compiles while the image is read. */
+      const wasmLoad = wasm ? null : LegaiaWasm.load();
+      if (wasmLoad) wasmLoad.catch(() => {});
       const bytes = await prog.read(file, `Reading ${file.name}`);
       prog.indeterminate('Starting the engine…');
       if (!wasm) {
-        wasm = await LegaiaWasm.load();
+        wasm = await wasmLoad;
       }
       runtime = new wasm.LegaiaRuntime();
       prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
@@ -2554,6 +2557,9 @@ div.play-vis-head { cursor: default; }
    * when the cached faces land. */
   let portraitHarvestBusy = false;
   function harvestPortraits() {
+    /* The workbench's 3D preview shows the picture alone: no save bar to
+     * draw faces in (each decode hands the engine the whole image). */
+    if (embedQuery.get('xwpreview') === '1') return false;
     if (LegaiaSaves.portraitCanvases()) return false;
     if (portraitHarvestBusy || !discBytes) return false;
     portraitHarvestBusy = true;

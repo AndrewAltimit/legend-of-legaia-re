@@ -46,6 +46,9 @@ const V = {
   map: null, tool: 'paint', brush: '.', cell: 22, heights: true, walk: true, sel: null,
   scroll: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null, pick: null,
   propObject: 0, drag: null, npcs: {}, npcModel: null,
+  // The JSON (and session generation) each map's last preview request was
+  // made from, and the open render's redraw (a late preview draws there).
+  previewKey: {}, redraw: null,
   // The engine's collision reading per map, from the 3D preview's builds.
   collide: false, blocked: {},
 };
@@ -119,24 +122,62 @@ function baseScene(map) {
 }
 
 // --- Drawing ------------------------------------------------------------------------
-function draw(ctx, cv) {
-  const map = ctx.pack.maps[V.map];
-  if (!map || !cv) return;
-  const { w, h: ht } = dims(map);
-  const cs = V.cell;
-  cv.width = Math.max(1, w * cs);
-  cv.height = Math.max(1, ht * cs);
+/* A sloped cell's hatching, one cell's worth drawn once per cell size and
+ * filled as a pattern (a pattern repeats from the canvas origin, and every
+ * cell starts on a multiple of the cell size): clipping and stroking each
+ * cell's lines was most of a terrain map's redraw. */
+const HATCH = new Map();
+function hatchPattern(g, cs) {
+  let p = HATCH.get(cs);
+  if (p) return p;
+  const t = document.createElement('canvas');
+  t.width = cs;
+  t.height = cs;
+  const tg = t.getContext('2d');
+  tg.strokeStyle = 'rgba(255,240,180,0.55)';
+  tg.lineWidth = 1;
+  for (let k = -cs; k < cs; k += 5) { tg.beginPath(); tg.moveTo(k, cs); tg.lineTo(k + cs, 0); tg.stroke(); }
+  p = g.createPattern(t, 'repeat');
+  HATCH.set(cs, p);
+  return p;
+}
+
+/* The tile pass, drawn into a canvas of its own and kept: its key is all
+ * it reads (the rows, the legend, the preview, the cell size and the
+ * heights toggle), so a redraw that changed none of them is one blit. */
+const TILES = { key: null, canvas: null, pv: null, pvId: 0 };
+function tileLayer(map, w, ht, cs, pv, good) {
+  if (pv !== TILES.pv) { TILES.pv = pv; TILES.pvId++; }
+  const key = [w, ht, cs, V.heights ? 1 : 0, good ? TILES.pvId : 0, JSON.stringify(map.tiles.legend), (map.tiles.rows || []).join('\n')].join('\u0001');
+  if (TILES.key === key && TILES.canvas) return TILES.canvas;
+  const cv = TILES.canvas || document.createElement('canvas');
+  TILES.canvas = cv;
+  TILES.key = key;
+  if (cv.width !== w * cs || cv.height !== ht * cs) { cv.width = Math.max(1, w * cs); cv.height = Math.max(1, ht * cs); }
   const g = cv.getContext('2d');
   g.clearRect(0, 0, cv.width, cv.height);
-  const pv = V.preview[V.map];
-  const good = pv && !pv.error && pv.width === w && pv.height === ht;
+  // The tile pass looks every tile up: each row split once, each legend
+  // character's colour and wall mask once (not per tile).
+  const rows = (map.tiles.rows || []).map((row) => [...row]);
+  const look = new Map();
+  const styleOf = (ch) => {
+    let e = look.get(ch);
+    if (!e) { const st = map.tiles.legend[ch]; e = { st, col: colourOf(map, ch), mask: wallMask(st) }; look.set(ch, e); }
+    return e;
+  };
+  // Nothing in the tile pass sets another font: set the tier digits' once.
+  g.font = `${Math.round(cs * 0.42)}px monospace`;
   const ladder = good ? pv.ladder : null;
   const top = ladder ? Math.max(1, ...ladder.map(Math.abs)) : 1;
+  const lift = ladder ? ladder.map((v) => `rgba(255,255,255,${Math.min(0.45, (Math.abs(v) / top) * 0.45)})`) : null;
+  const hatch = hatchPattern(g, cs);
   for (let r = 0; r < ht; r++) {
+    const rowCh = rows[r] || [];
     for (let c = 0; c < w; c++) {
-      const ch = charAt(map, c, r);
+      const ch = c < rowCh.length ? rowCh[c] : ' ';
       const x = c * cs, y = r * cs;
-      const col = colourOf(map, ch);
+      const look1 = styleOf(ch);
+      const col = look1.col;
       if (!col) {
         g.fillStyle = (c + r) % 2 ? '#1b1d22' : '#23262c';
         g.fillRect(x, y, cs, cs);
@@ -144,14 +185,14 @@ function draw(ctx, cv) {
       }
       g.fillStyle = col;
       g.fillRect(x, y, cs, cs);
-      const st = map.tiles.legend[ch];
+      const st = look1.st;
       const tier = good ? pv.tier[r * w + c] : (st ? st.height || 0 : 0);
       if (V.heights && ladder && ladder[tier]) {
         // Higher floors lighter.
-        g.fillStyle = `rgba(255,255,255,${Math.min(0.45, (Math.abs(ladder[tier]) / top) * 0.45)})`;
+        g.fillStyle = lift[tier];
         g.fillRect(x, y, cs, cs);
       }
-      const mask = good ? pv.walls[r * w + c] : wallMask(st);
+      const mask = good ? pv.walls[r * w + c] : look1.mask;
       if (mask && mask !== 15) {
         g.fillStyle = 'rgba(20,22,26,0.85)';
         const hh = cs / 2;
@@ -165,14 +206,8 @@ function draw(ctx, cv) {
       }
       if (V.heights && good && !pv.void[r * w + c] && !pv.flat[r * w + c] && mask !== 15) {
         // A sloped cell: its four corners disagree.
-        g.save();
-        g.beginPath();
-        g.rect(x, y, cs, cs);
-        g.clip();
-        g.strokeStyle = 'rgba(255,240,180,0.55)';
-        g.lineWidth = 1;
-        for (let k = -cs; k < cs; k += 5) { g.beginPath(); g.moveTo(x + k, y + cs); g.lineTo(x + k + cs, y); g.stroke(); }
-        g.restore();
+        g.fillStyle = hatch;
+        g.fillRect(x, y, cs, cs);
       }
       if (st && st.wall) {
         // A visible wall: the box or mesh the tile draws.
@@ -182,11 +217,29 @@ function draw(ctx, cv) {
       }
       if (V.heights && cs >= 18 && mask !== 15) {
         g.fillStyle = 'rgba(0,0,0,0.7)';
-        g.font = `${Math.round(cs * 0.42)}px monospace`;
         g.fillText(String(tier), x + 2, y + cs * 0.45);
       }
     }
   }
+  return cv;
+}
+
+function draw(ctx, cv) {
+  const map = ctx.pack.maps[V.map];
+  if (!map || !cv) return;
+  const { w, h: ht } = dims(map);
+  const cs = V.cell;
+  // A resize clears the canvas and reallocates it: only when it changed.
+  const cw = Math.max(1, w * cs), ch0 = Math.max(1, ht * cs);
+  if (cv.width !== cw) cv.width = cw;
+  if (cv.height !== ch0) cv.height = ch0;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, cv.width, cv.height);
+  const pv = V.preview[V.map];
+  const good = pv && !pv.error && pv.width === w && pv.height === ht;
+  // The tiles themselves, from a layer kept while they are unchanged: a
+  // selection, a drag or a hover redraws only what lies over them.
+  g.drawImage(tileLayer(map, w, ht, cs, pv, good), 0, 0);
   if (cs >= 8) {
     g.strokeStyle = 'rgba(0,0,0,0.25)';
     g.lineWidth = 1;
@@ -399,7 +452,12 @@ export function renderMaps(ctx, el) {
   for (const k of ['props', 'npcs', 'spawns', 'exits', 'triggers', 'encounters']) map[k] = map[k] || [];
   const path = '';
 
-  const cv = h('canvas', {});
+  // One canvas for every render of the tab: a fresh one is a new canvas
+  // surface to allocate and fill on each structural edit (a stroke's end,
+  // a drop). What an older render left listening checks `live()`.
+  const token = V.renderSeq = (V.renderSeq || 0) + 1;
+  const cv = V.canvas || (V.canvas = h('canvas', {}));
+  const live = () => token === V.renderSeq && cv.isConnected;
   // The 3D preview (expansion-workbench-preview3d.js) follows the painter's
   // selection: the selected object's tile or zone, else the last tile clicked.
   const pv = ctx.preview;
@@ -411,14 +469,23 @@ export function renderMaps(ctx, el) {
   };
   // It also takes each map_preview the painter computes: the tile grid and a
   // draft of the edit, drawn at once while the rebuild runs.
+  let frame = 0;
   const redraw = () => {
+    if (frame) { cancelAnimationFrame(frame); frame = 0; }
+    if (token !== V.renderSeq) return;
     draw(ctx, cv);
     if (pv) { pv.select(selShape()); if (pv.setMapPreview) pv.setMapPreview(map, V.preview[V.map]); }
     editorChanged();
   };
+  // A drag's edits come faster than frames: draw once a frame.
+  const redrawSoon = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; if (live()) redraw(); });
+  };
+  V.redraw = redraw;
   // Edits from the side forms redraw the canvas without a re-render.
   const mctx = Object.create(ctx);
-  mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx, redraw); redraw(); } };
+  mctx.changed = (structural) => { ctx.changed(structural); if (!structural) { schedulePreview(ctx); redrawSoon(); } };
   // The side boxes' undo step (the terrain's heightmap import).
   mctx.snapshot = () => { if (ctx.commit) ctx.commit(); };
 
@@ -544,8 +611,8 @@ export function renderMaps(ctx, el) {
   let space = false;
   wrap.addEventListener('keydown', (ev) => { if (ev.code === 'Space') { space = true; ev.preventDefault(); } });
   wrap.addEventListener('keyup', (ev) => { if (ev.code === 'Space') space = false; });
-  cv.addEventListener('contextmenu', (ev) => ev.preventDefault());
-  cv.addEventListener('mousedown', (ev) => {
+  cv.oncontextmenu = (ev) => ev.preventDefault();
+  cv.onmousedown = (ev) => {
     wrap.focus({ preventScroll: true });
     if (ev.button === 1 || ev.button === 2 || space) {
       V.drag = { pan: true, x: ev.clientX, y: ev.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop };
@@ -624,9 +691,9 @@ export function renderMaps(ctx, el) {
       V.sel = { type: 'props', i: map.props.length - 1 };
       ctx.changed(true);
     }
-  });
+  };
   const onMove = (ev) => {
-    if (!cv.isConnected) return;
+    if (!live()) return;
     const d = V.drag;
     if (d && d.pan) {
       wrap.scrollLeft = d.sl - (ev.clientX - d.x);
@@ -645,10 +712,10 @@ export function renderMaps(ctx, el) {
       d.to = [(ev.clientX - b.left) / V.cell, (ev.clientY - b.top) / V.cell];
     } else if (d.rect) {
       d.rect[2] = c; d.rect[3] = r;
-      redraw();
+      redrawSoon();
     } else if (d.box) {
       d.box[2] = c; d.box[3] = r;
-      redraw();
+      redrawSoon();
     } else if (d.move && V.sel && (c !== d.from[0] || r !== d.from[1])) {
       const dc = c - d.from[0], dr = r - d.from[1];
       for (const s of d.group || [V.sel]) {
@@ -664,7 +731,7 @@ export function renderMaps(ctx, el) {
     }
   };
   const onUp = () => {
-    if (!cv.isConnected) return;
+    if (!live()) return;
     if (pv) pv.hold(false);
     const d = V.drag;
     V.drag = null;
@@ -714,7 +781,7 @@ export function renderMaps(ctx, el) {
     document.removeEventListener('keydown', V.listeners.key);
   }
   const onKey = (ev) => {
-    if (!cv.isConnected || ev.defaultPrevented) return;
+    if (!live() || ev.defaultPrevented) return;
     const t = ev.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     const k = ev.key.toLowerCase();
@@ -803,10 +870,10 @@ export function renderMaps(ctx, el) {
     });
     pv.onCollision((m) => {
       V.blocked[m.map] = m;
-      if (V.collide && cv.isConnected && m.map === V.map) redraw();
+      if (V.collide && live() && m.map === V.map) redraw();
     });
     pv.onPick((c, r) => {
-      if (!cv.isConnected) return;
+      if (!live()) return;
       V.cursor = { map: V.map, tile: [c, r] };
       const hit = objectsAt(map, c, r);
       V.sel = hit.length ? hit[0] : null;
@@ -822,11 +889,12 @@ export function renderMaps(ctx, el) {
     });
   }
   loadObjects(ctx, baseScene(map), () => { renderSelection(ctx, mctx, side, map); redraw(); });
-  if (!V.preview[V.map]) V.preview[V.map] = ctx.mapPreview(map);
   redraw();
   const sc = V.scroll[V.map];
   if (sc) requestAnimationFrame(() => { wrap.scrollLeft = sc[0]; wrap.scrollTop = sc[1]; });
-  schedulePreview(ctx, redraw);
+  // A map opened for the first time asks for its preview at once (the
+  // canvas draws from the legend meanwhile).
+  schedulePreview(ctx, !V.preview[V.map]);
 }
 
 function newMap(ctx) {
@@ -845,14 +913,51 @@ function newMap(ctx) {
   };
 }
 
-function schedulePreview(ctx, redraw) {
+/* The open map's `map_preview`, a moment after an edit: built in the
+ * validation worker (ctx.mapPreviewLater) and drawn when it lands. A map
+ * whose JSON (and the session's files) are what the last request was made
+ * from is not asked again: a re-render of the tab costs no preview. An
+ * answer for a map edited since it was asked is dropped - the edit asked
+ * for the next one. */
+function schedulePreview(ctx, now) {
   clearTimeout(V.previewTimer);
-  V.previewTimer = setTimeout(() => {
-    const map = ctx.pack.maps && ctx.pack.maps[V.map];
-    if (!map) return;
-    V.preview[V.map] = ctx.mapPreview(map);
-    redraw();
-  }, 140);
+  V.previewTimer = setTimeout(() => requestPreview(ctx), now ? 0 : 140);
+}
+
+function requestPreview(ctx) {
+  const id = V.map;
+  const map = id && ctx.pack.maps && ctx.pack.maps[id];
+  if (!map) return;
+  const json = JSON.stringify(map);
+  const key = (ctx.sessionGen ? ctx.sessionGen() : 0) + ':' + json;
+  if (V.previewKey[id] === key) return;
+  V.previewKey[id] = key;
+  const answer = (pv) => {
+    const cur = ctx.pack && ctx.pack.maps && ctx.pack.maps[id];
+    if (!cur || JSON.stringify(cur) !== json) return;
+    const first = !V.preview[id];
+    V.preview[id] = pv;
+    if (V.map !== id || !V.redraw) return;
+    V.redraw();
+    if (first) refreshTierLabels(pv);
+  };
+  if (ctx.mapPreviewLater) ctx.mapPreviewLater(id, json, answer);
+  else answer(ctx.mapPreview(map));
+}
+
+const tierOpts = (ladder) => Array.from({ length: 16 }, (_, i) => [String(i), `tier ${i}${ladder[i] != null ? ` (${ladder[i]} up)` : ''}`]);
+
+/* The legend entry's floor-tier labels, drawn before the map's first
+ * preview, take its ladder when it lands. */
+function refreshTierLabels(pv) {
+  if (!pv || pv.error || !pv.ladder) return;
+  const sel = document.querySelector(`[data-path="tiles.legend.${CSS.escape(V.brush)}.height"] select`);
+  if (!sel) return;
+  const opts = tierOpts(pv.ladder);
+  for (const o of sel.options) {
+    const hit = opts.find((x) => x[0] === o.value);
+    if (hit) o.textContent = hit[1];
+  }
 }
 
 /* The walk-through check (expansion-workbench-hints.js) on the canvas: a
@@ -1081,7 +1186,7 @@ function renderPalette(ctx, mctx, side, map) {
     }
     ed.append(h('label', { class: 'xw-field', 'data-path': `${p}.walls` }, h('span', {}, 'Wall quarters', h('span', { class: 'xw-hint' }, ' a tile is four 64x64 sub-cells')), q));
     const ladder = (V.preview[V.map] && V.preview[V.map].ladder) || map.floor_heights || [];
-    ed.append(grid(lctx, st, [{ k: 'height', t: 'sel', num: true, opts: Array.from({ length: 16 }, (_, i) => [String(i), `tier ${i}${ladder[i] != null ? ` (${ladder[i]} up)` : ''}`]), label: 'Floor tier' }], p));
+    ed.append(grid(lctx, st, [{ k: 'height', t: 'sel', num: true, opts: tierOpts(ladder), label: 'Floor tier' }], p));
     // Ground.
     const g = st.ground;
     const kind = h('select', {}, ...['', 'texture', 'base_cell', 'mesh'].map((k) => h('option', { value: k, selected: (g ? g.kind : '') === k }, k || 'nothing')));

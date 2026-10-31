@@ -45,6 +45,8 @@ const LAYERS = [
   ['npcs', 'NPCs'], ['spawns', 'Spawns'], ['props', 'Props'], ['collision', 'Collision'],
 ];
 const RELOAD_MS = 450;
+// The pause after an edit before the preview decides how to show it.
+const DECIDE_MS = 30;
 const VIEWS = [
   ['2d', '2D', 'The painter, with the 3D preview docked above the tab'],
   ['split', 'Split', 'The painter and the 3D view side by side: the picture stays in view while the forms scroll'],
@@ -580,17 +582,24 @@ export function createPreview3d(env) {
    * with the last build's time. With Auto off only Reload rebuilds. */
   function schedule() {
     clearTimeout(P.timer);
+    // Which wait applies is decided once a burst of edits pauses (a drag
+    // or a stroke edits every frame), not per edit: telling an object-only
+    // edit apart serialises the pack.
+    P.timer = setTimeout(decide, DECIDE_MS);
+  }
+
+  function decide() {
     // An object-only edit costs nothing to show: send it at once, Auto or not.
     const def = P.map && pack() && pack().maps && pack().maps[P.map];
     if (P.sent && P.shown && def && P.sent.map === P.map && strippedJson(pack(), P.map) === P.sentStripped) {
-      P.timer = setTimeout(flush, 30);
+      flush();
       return;
     }
     if (!P.auto && P.sent) return;
     // The last hot reload's time (a first entry builds more and says
     // nothing about the next edit).
     const last = P.reloadMs || 0;
-    P.timer = setTimeout(flush, Math.max(RELOAD_MS, Math.min(5000, last * 1.5)));
+    P.timer = setTimeout(flush, Math.max(RELOAD_MS, Math.min(5000, last * 1.5)) - DECIDE_MS);
   }
 
   function sendOverlay() {
