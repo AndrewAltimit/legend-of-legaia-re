@@ -910,7 +910,10 @@ impl Core {
                     byte(c, r + 1) & 0x0F,
                     byte(c + 1, r + 1) & 0x0F,
                 ];
-                flat.push(k.iter().all(|&x| x == k[0]));
+                // Flat by height at rest, not by rung: a living-ground tile
+                // sits on a rung of its own that rests at its tier's height.
+                let ck = k.map(|n| ladder[usize::from(n)]);
+                flat.push(ck.iter().all(|&x| x == ck[0]));
                 let t0 = if terrain_walls.is_some() {
                     0
                 } else {
@@ -920,7 +923,7 @@ impl Core {
                     i32::from(ladder[usize::from(t0)])
                         + kept.step_up_on(&def, c as u16, r as u16, 0, 0),
                 );
-                corners.push(k.map(|n| ladder[usize::from(n)]));
+                corners.push(ck);
             }
         }
         // Where each prop and decoration rests, measured off the disc's

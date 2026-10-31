@@ -98,10 +98,12 @@ fn the_tower_map_previews_with_the_corner_rule() {
     // The Atrium (columns 0..=14) and the Hall of Trials east of it.
     assert_eq!((w, h), (29, 13));
     let at = |k: &str, c: u64, r: u64| p[k][(r * w + c) as usize].clone();
-    // The wall ring is all four quarters; the dais is tier 1 at 48 up.
+    // The wall ring is all four quarters; the dais stands 48 up, on a
+    // rung of its own (its living-ground ripple swings that rung).
     assert_eq!(at("walls", 0, 0), 0xF);
-    assert_eq!(at("tier", 6, 5), 1);
-    assert_eq!(p["ladder"][1], 48);
+    let dais = at("tier", 6, 5).as_u64().unwrap();
+    assert_ne!(dais, 0);
+    assert_eq!(p["ladder"][dais as usize], 48);
     // The dais spans columns 5..=9, rows 4..=8: flat inside, and its last
     // column and row slope down to the arena floor.
     assert_eq!(at("flat", 6, 5), true);
@@ -546,17 +548,28 @@ fn the_detail_forms_open_without_an_edit() {
     // The material kind switch rebuilds the item: a scroll turned into a
     // cycle and back keeps the cell only if the form carries it, so the
     // revert is the loaded scroll exactly.
+    let (scrolled, at) = pack["maps"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find_map(|(id, m)| {
+            let i = m["materials"]
+                .as_array()?
+                .iter()
+                .position(|x| x["kind"] == "scroll")?;
+            Some((id.clone(), i))
+        })
+        .expect("a Rebirth map with a scroll material");
     let mut edited = pack.clone();
-    let m = &mut edited["maps"]["rebirth_tower_1f"]["materials"][0];
+    let m = &mut edited["maps"][&scrolled]["materials"][at];
     let before = m.clone();
-    assert_eq!(before["kind"], "scroll");
     *m = serde_json::json!({ "kind": "cycle", "clut": before["cell"]["clut"], "start": 0, "count": 16, "period": 8, "reverse": false });
     assert!(
         core.validate(&edited.to_string())
             .iter()
             .all(|i| i.severity != "error")
     );
-    edited["maps"]["rebirth_tower_1f"]["materials"][0] = before;
+    edited["maps"][&scrolled]["materials"][at] = before;
     assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
 
     // The podium box and the boss cutscene pickers: unticked / cleared and
