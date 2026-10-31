@@ -561,11 +561,12 @@ the gulls; they bite.
 [lines.isles_elder_hello]
 speaker = "Elder Tolva"
 text = """
-Strangers! From the tower, Maro
-says. Then the old stair is open.
+Strangers, from the tower! Then
+the old stair is open at last.
 
-Rest at the lodge, and buy what
-Pell can spare. You are welcome.
+Rest at the lodge, then see to
+the Thornwood east: a hive queen
+rules it. The hermit there knows.
 """
 
 [lines.isles_elder_idle]
@@ -575,15 +576,6 @@ The isles remember the Mist, but
 we will not let it be all they
 remember.
 """
-
-[lines.isles_elder_thorns]
-speaker = "Elder Tolva"
-text = """
-The Thornwood swallowed our path
-east, and a hive queen rules it.
-
-A hermit camps below the ruins.
-He knows more. Will you go?"""
 
 [lines.isles_elder_thorns_active]
 speaker = "Elder Tolva"

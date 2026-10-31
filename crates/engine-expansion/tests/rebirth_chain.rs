@@ -23,6 +23,8 @@ struct Play {
     rt: QuestRuntime,
     started: BTreeSet<String>,
     completed: BTreeSet<String>,
+    /// Every line the tracker asked to show, in order.
+    lines: Vec<String>,
 }
 
 impl Play {
@@ -45,6 +47,7 @@ impl Play {
             rt: QuestRuntime::default(),
             started: BTreeSet::new(),
             completed: BTreeSet::new(),
+            lines: Vec::new(),
         }
     }
 
@@ -52,12 +55,15 @@ impl Play {
         self.rt.handle(&self.pack, &self.world, e);
         for n in self.rt.notices.drain(..) {
             match n {
-                QuestNotice::Started { quest, .. } => {
+                QuestNotice::Started { quest, dialog } => {
                     self.started.insert(quest);
+                    self.lines.extend(dialog);
                 }
-                QuestNotice::Completed { quest, .. } => {
+                QuestNotice::Completed { quest, dialog } => {
                     self.completed.insert(quest);
+                    self.lines.extend(dialog);
                 }
+                QuestNotice::Reminder { dialog, .. } => self.lines.push(dialog),
                 _ => {}
             }
         }
@@ -131,8 +137,13 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
     p.enter("isles_beach");
     p.talk("isles_ferrywoman");
     p.enter("isles_village");
+    let before = p.lines.len();
     p.talk("isles_elder");
     assert!(p.done("isles_landfall"), "landfall at 30");
+    // The elder's welcome also sends the party into the Thornwood: one
+    // talk, one line, the next quest already under way.
+    assert!(p.started.contains("isles_thornwood"));
+    assert_eq!(p.lines[before..], ["isles_elder_hello".to_string()]);
     p.talk("isles_fisher");
     for _ in 0..3 {
         p.win("isles_shore");

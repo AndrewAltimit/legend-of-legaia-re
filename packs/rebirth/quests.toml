@@ -425,8 +425,9 @@ id = "isles_thornwood"
 title = "The Thornwood Queen"
 description = "The path inland is choked with thorn and wasps. The hermit camped below the ruins says the hive's queen has grown into the old gate itself."
 giver = "isles_elder"
-prerequisites = { quests = ["isles_landfall"], min_level = 35 }
-start_dialog = "isles_elder_thorns"
+# Offered in the same breath as Landfall's welcome (`isles_elder_hello`),
+# so the elder speaks once.
+prerequisites = { quests = ["isles_landfall"] }
 active_dialog = "isles_elder_thorns_active"
 objectives = [
     { kind = "enter_scene", scene = "isles_thornwood", text = "Follow the Thornwood path to the ruins" },
