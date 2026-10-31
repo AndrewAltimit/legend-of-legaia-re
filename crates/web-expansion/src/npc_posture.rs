@@ -54,6 +54,32 @@ pub const WALKING_LEGS: f32 = 25.0;
 /// body, or float it off).
 pub const MAX_HEAD_SINK: f32 = 0.3;
 
+/// Clips the measurement passes that a render shows broken on the
+/// placement's model: `(scene, placement, clips)`, `None` for every
+/// placement of the scene. The head check sees only the head and its
+/// neighbour, so a clip made for another rig that keeps the neck but lays
+/// the body flat, or flings the arms and legs off the trunk, measures as a
+/// standing or crouched clip; each entry here was seen so in a front
+/// render of the posed model and is left out of the table.
+pub const EXCLUDED: &[(&str, Option<u16>, &[u8])] = &[
+    // Lays the koin1 townsmen flat on the floor (Brann, the second): its
+    // lowest point measures 43 to 81 units under their standing floor.
+    // A sink threshold would also drop walk cycles that dip below it, so
+    // the clip is named rather than ruled out by a number.
+    ("koin1", None, &[56]),
+    // The bunny girl: arms and legs thrown off the trunk.
+    ("koin1", Some(4), &[44, 46, 50, 52, 55]),
+    // The boy in purple: the second's own gestures, limbs off the trunk.
+    ("koin1", Some(14), &[34, 35, 36, 37, 47]),
+];
+
+/// `clip` of `scene`'s placement `index` is listed in [`EXCLUDED`].
+pub fn excluded(scene: &str, index: u16, clip: u8) -> bool {
+    EXCLUDED
+        .iter()
+        .any(|(s, i, c)| *s == scene && i.is_none_or(|i| i == index) && c.contains(&clip))
+}
+
 /// One clip's measurement.
 #[derive(Debug, Clone, Serialize)]
 pub struct ClipMetrics {
@@ -169,6 +195,10 @@ pub fn measure_scene(index: &ProtIndex, name: &str) -> Result<Vec<PlacementMetri
                 c
             }
         };
+        let clips: Vec<ClipMetrics> = clips
+            .into_iter()
+            .filter(|c| !excluded(name, p.index, c.clip))
+            .collect();
         if clips.is_empty() {
             continue;
         }

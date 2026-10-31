@@ -437,8 +437,12 @@ joint, so their centroids keep their distance in every clip made for the
 rig: a nod or a bow moves them by about a quarter of it at most. A clip
 that moves them closer or apart by more than 0.3 of it is left out of the
 table. Clips made for other rigs measure 0.45 and up. The check looks at
-the head only, so a clip that keeps the head but flings the limbs still
-passes; the screenshot of a seated table is the final word.
+the head only, so a clip that keeps the head but flings the limbs, or
+lays the body flat through the floor, still passes. Clips seen broken so
+in a front render of the posed model are listed in
+`npc_posture::EXCLUDED` and left out of the table: koin1 clip 56 on every
+placement (it lays the townsmen flat), and the limb-flinging clips of
+koin1 placements 4 and 14. A screenshot of the NPC is the final word.
 
 | Pose | Rule |
 |---|---|
