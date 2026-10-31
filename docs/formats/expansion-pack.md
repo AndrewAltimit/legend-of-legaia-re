@@ -282,7 +282,7 @@ A Grid Duel may name a pack map and a table on it, and is then played on a board
 | `facing` (0) | Compass sector `0..8` (an NPC's facing table) the player looks across the board in |
 | `height` (64) | The table top above the floor, world units |
 | `board` (132) | The board's width, world units; its depth is 1.36 times that |
-| `seat_distance` (120) | Each seat's distance from the board's centre |
+| `seat_distance` (120) | Each seat's distance from the board's centre; with `draw_table` it is pushed out to clear the drawn table's edge (`DuelTableFrame::from_duel`), so no body stands in the top |
 | `draw_table` (true) | Draw the built-in wooden table under the board; off when a prop of the map is the table |
 | `hide` (`[]`) | Prop ids of the map (`[[props]] id`) whose draw goes while the duel is seated, back when the seat closes: the decor table the built-in one stands in for ([Hidden props](../subsystems/expansion-modes.md#hidden-props)) |
 | `opponent` | `{ npc, name, think, cheer, slump, sit }`: the map NPC across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss; with `sit` it sits in a chair at its seat ([Seated NPCs](#seated-npcs)) |
@@ -305,7 +305,7 @@ A poker table names a map and a table the same way (`map`, `spawn`, `[poker.tabl
 
 A table NPC with `sit` sits: the stage draws a wooden chair at its seat (seat, legs, a back on the side away from the table, in the table's wood) and the NPC plays the `sit` clip in place of its idle while the game is seated, back to its own clip and tile when the seat closes. The chair is part of the stage, like the built-in table, so it needs no prop on the map and stands only while someone sits on it. `sit` is a clip id of the NPC's borrowed placement (the `clip` numbering) that the [posture table](expansion-pack-maps.md#npc-clip-postures) lists as `seated`; the validator warns on any other, and on `sit` given to a spectator.
 
-A reaction clip still plays over `sit`, so a seated NPC's `think` / `cheer` / `slump` / `fold` / `all_in` should be seated clips too, or left out. The party leader stands at the player's side: the party's field bank has no seated clip, and no scene bank a pack map borrows from has one for its rig.
+A reaction clip still plays over `sit`, so a seated NPC's `think` / `cheer` / `slump` / `fold` / `all_in` should be seated clips too, or left out; a standing NPC's should be standing clips. The validator warns on a reaction clip the posture table measures in the other pose (or as a walk), and on one the NPC's model does not play. The posture table cannot see a clip that flings the limbs while keeping the head, so a reaction is picked from the table's close-up: the duel's reaction shot frames the opponent at the end. The party leader stands at the player's side: the party's field bank has no seated clip, and no scene bank a pack map borrows from has one for its rig.
 
 A table prop of the map should not be standable (`top`): the board sits `height` above the floor the sampler answers at the table's centre. Sample: the `duel_table` test pack, `crates/engine-modes/tests/fixtures/duel_table/`.
 

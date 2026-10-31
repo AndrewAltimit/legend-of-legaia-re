@@ -984,6 +984,7 @@ fn check_table_seat(
         );
         return;
     };
+    check_reaction_clips(cx, at, seat, def, n);
     let Some(sit) = n.sit else {
         return;
     };
@@ -1019,6 +1020,57 @@ fn check_table_seat(
                     p.map_or("not a clip its model plays", |p| p.word())
                 ),
             );
+        }
+    }
+}
+
+/// The clips a table NPC reacts with (`think`, `cheer`, `slump`, `fold`,
+/// `all_in`): each must be a clip the NPC's model plays (the posture
+/// table, [`crate::npc_postures`]), and in the NPC's own pose - a seated
+/// NPC's reaction plays in its chair, so it is a seated clip; a standing
+/// one's is not, nor a walk cycle that would march it in place.
+fn check_reaction_clips(
+    cx: &mut Checker<'_>,
+    at: &str,
+    seat: &str,
+    def: &crate::map::NpcDef,
+    n: &crate::modes::DuelSeatNpc,
+) {
+    use crate::npc_postures::{Posture, table};
+    let Some(DiscRef::Npc { scene, index }) = &def.model else {
+        return;
+    };
+    let Some(row) = table().get(scene, *index) else {
+        return;
+    };
+    let seated = n.sit.is_some() && !seat.starts_with("spectators");
+    let reactions = [
+        ("think", n.think),
+        ("cheer", n.cheer),
+        ("slump", n.slump),
+        ("fold", n.fold),
+        ("all_in", n.all_in),
+    ];
+    for (name, clip) in reactions {
+        let Some(clip) = clip else {
+            continue;
+        };
+        let field = format!("{at}.table.{seat}.{name}");
+        let want = if seated { "seated" } else { "standing" };
+        match row.posture(Some(clip)) {
+            None => cx.warning(
+                &field,
+                format!("clip {clip} is not a clip `{scene}` placement {index} plays"),
+            ),
+            Some(Posture::Seated) if seated => {}
+            Some(Posture::Standing) if !seated => {}
+            Some(p) => cx.warning(
+                &field,
+                format!(
+                    "clip {clip} is {} for `{scene}` placement {index}; this NPC reacts {want}",
+                    p.word()
+                ),
+            ),
         }
     }
 }
@@ -1516,6 +1568,59 @@ laps = 1
         pack.modes.card_duels = vec![duel(34, true)];
         let w = sit_issues(&pack);
         assert!(w.len() == 1 && w[0].contains("spectator"), "{w:?}");
+    }
+
+    /// A table NPC's reaction clips play in its own pose: a seated NPC
+    /// reacts with seated clips, a standing one with standing clips, and a
+    /// clip its model does not play warns.
+    #[test]
+    fn a_table_npc_reacts_in_its_own_pose() {
+        let mut pack = good_pack();
+        // town01 placement 43: standing 36 / 37, seated 34 / 35, walking 44.
+        let map: crate::map::MapDef = toml::from_str(
+            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[npcs]]\nid = \"rival\"\nmodel = { kind = \"npc\", scene = \"town01\", index = 43 }\ntile = [0, 0]\n",
+        )
+        .unwrap();
+        pack.maps.insert("room".into(), map);
+        let duel = |sit: Option<u8>, cheer: u8, slump: u8| modes::CardDuel {
+            id: "d".into(),
+            map: Some("room".into()),
+            table: Some(modes::DuelTable {
+                tile: [1, 1],
+                opponent: Some(modes::DuelSeatNpc {
+                    npc: "rival".into(),
+                    sit,
+                    cheer: Some(cheer),
+                    slump: Some(slump),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let issues = |pack: &ExpansionPack| -> Vec<String> {
+            validate(pack)
+                .iter()
+                .filter(|i| i.field.ends_with(".cheer") || i.field.ends_with(".slump"))
+                .map(ToString::to_string)
+                .collect()
+        };
+        pack.modes.card_duels = vec![duel(Some(34), 35, 34)];
+        assert!(issues(&pack).is_empty(), "{:?}", issues(&pack));
+        pack.modes.card_duels = vec![duel(None, 36, 37)];
+        assert!(issues(&pack).is_empty(), "{:?}", issues(&pack));
+        pack.modes.card_duels = vec![duel(Some(34), 36, 35)];
+        let w = issues(&pack);
+        assert!(
+            w.len() == 1 && w[0].contains("cheer") && w[0].contains("seated"),
+            "{w:?}"
+        );
+        pack.modes.card_duels = vec![duel(None, 44, 200)];
+        let w = issues(&pack);
+        assert!(
+            w.len() == 2 && w[0].contains("walking") && w[1].contains("not a clip"),
+            "{w:?}"
+        );
     }
 
     #[test]
