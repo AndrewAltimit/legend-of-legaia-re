@@ -381,7 +381,7 @@ slots. From there the NPC is a field NPC on every path a retail one takes:
 | Draw | The live-scene placement list (`npc_catalog::live_scene_placements`, `catalog_live_scene_npcs`) both hosts build their NPC meshes and clips from, posed by the base scene's ANM bundle. |
 | Collision | Its anchor in `World::npcs.positions`: the moving-actor box (`FUN_801CFC40`'s moving arm, ±40 units) blocks the player as a village NPC does. |
 | Talk | The facing probe (`FUN_801CF9F4`'s port) picks it on Cross; `World::trigger_field_interact` turns it to the player and hands the talk to the map. |
-| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. At each stop the NPC turns back to `clip` and stands `pause` ticks (`ActiveMap::patrol_tick`). A leg starts only while no dialogue holds the field. |
+| Patrol | A loop of scripted walk legs through the motion VM (`World::start_field_npc_motion`): tile, each waypoint, back, each leg cueing `walk_clip` the way a `4C 51` walk cues its move clip. A leg strolls at base step 4 (`PACK_PATROL_SPEED`), the pace most of `town01`'s wandering townsfolk walk at by their own walk-kernel operands: a pack map runs no MAN to give the leg one. At each stop the NPC turns back to `clip` and stands `pause` ticks (`ActiveMap::patrol_tick`). A leg starts only while no dialogue holds the field. |
 
 Talking to an NPC raises the quest event `Talked(id)`
 (`World::expansion_talked`), so a quest naming the NPC as `giver` or in a
