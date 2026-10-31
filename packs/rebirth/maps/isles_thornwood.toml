@@ -845,7 +845,7 @@ on = "Tt"
 density = 0.6
 seed = 4308
 jitter = 50
-yaw = [0.0, 360.0]
+yaw = [-22.0, 22.0]
 scale = [0.5, 0.8]
 clearance = { radius = 0.9, front = 3.0, keep = 0.0 }
 meshes = [
@@ -862,7 +862,7 @@ on = "Tt"
 density = 0.32
 seed = 4307
 jitter = 48
-yaw = [0.0, 360.0]
+yaw = [-22.0, 22.0]
 scale = [0.4, 0.6]
 clearance = { radius = 0.5, front = 1.2, keep = 0.3 }
 meshes = [
@@ -880,7 +880,7 @@ on = "Tt"
 density = 0.35
 seed = 4309
 jitter = 50
-yaw = [0.0, 360.0]
+yaw = [-22.0, 22.0]
 scale = [0.4, 0.6]
 clearance = { radius = 0.6, front = 1.5, keep = 0.2 }
 meshes = [
@@ -900,8 +900,8 @@ jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.3, 0.45]
 meshes = [
-  { mesh = { object = 9 }, weight = 3 },
-  { mesh = { object = 17 }, weight = 3 },
+  { mesh = { asset = "models/fern.glb" }, weight = 4, scale = [1.2, 1.9] },
+  { mesh = { asset = "models/dune_grass.glb" }, weight = 2, scale = [0.9, 1.4] },
   { mesh = { object = 41 }, weight = 1, scale = [0.8, 1.2] },
 ]
 
@@ -930,8 +930,7 @@ jitter = 50
 yaw = [0.0, 360.0]
 scale = [0.45, 0.65]
 meshes = [
-  { mesh = { object = 8 }, weight = 2 },
-  { mesh = { object = 17 }, weight = 2 },
+  { mesh = { asset = "models/fern.glb" }, weight = 4, scale = [1.8, 2.8] },
   { mesh = { object = 41 }, weight = 1, scale = [1.0, 1.4] },
 ]
 
@@ -966,19 +965,19 @@ meshes = [
 
 [[edges]]
 id = "path_verge"
-mesh = { object = 13 }
+mesh = { asset = "models/fern.glb" }
 walls = "Tt"
 on = ".,"
 every = 2
 inset = 10
 jitter = 60
 yaw_jitter = 180.0
-scale_range = [0.35, 0.55]
+scale_range = [1.6, 2.4]
 seed = 4315
 
 [[edges]]
 id = "path_ferns"
-mesh = { object = 9 }
+mesh = { asset = "models/dune_grass.glb" }
 walls = "Tt"
 on = ".,"
 every = 2
@@ -986,7 +985,7 @@ phase = 1
 inset = 24
 jitter = 50
 yaw_jitter = 180.0
-scale_range = [0.4, 0.6]
+scale_range = [1.0, 1.5]
 seed = 4316
 
 [[edges]]
@@ -1180,6 +1179,9 @@ cliff = { slope = 0.9, tint = [104, 100, 112], cells = [
   { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
 ] }
 water = { level = -22, from = "cave01", cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [44, 70, 72], deep = [14, 28, 34], depth = 40, foam = 8, foam_color = [40, 70, 60], wade = 6 }
+# The West Voz Forest's own cloud card (its backdrop mesh 26) as the
+# horizon, so the far edge of the wide view is sky, not the clear colour.
+sky = { tpage = 25, clut = 32194, rect = [0, 64, 127, 127], radius = 20, span = [-4000, 4000], repeat = 10, color = [120, 128, 120] }
 
 [lighting]
 mood = "dusk"

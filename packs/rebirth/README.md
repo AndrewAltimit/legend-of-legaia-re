@@ -39,7 +39,7 @@ Rebirth is built for the climb from there to 99.
 | `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
 | `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips, surf, birdsong) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
 | `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
-| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers, and the Isles' lamp posts and produce crates (`scripts/models/generate_rebirth_props.py`). |
+| `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers, and the Isles' lamp posts, produce crates, rowboats, driftwood, shells, ferns and marram grass (`scripts/models/generate_rebirth_props.py`). |
 | `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Iron Regent), chained from that art into a retail one; all on the heroes' own retail clips. |
 | `spells.toml` | Four tower Seru - Hearthfire, Verdant Bloom, Grove Fang, Tempest Dive - each cast as the retail Seru it grew from and taught by capturing its pack monster once that floor's keeper falls. |
 
@@ -120,10 +120,10 @@ ambience (`[audio]`: surf, wind, drips, birdsong, the village's murmur):
 
 | Map | Base | Size | What is there |
 |---|---|---|---|
-| `isles_beach` Saltwind Beach | `town01` | 64 x 36 | The sea-stair landing, dunes and palms, surf, a ruined jetty, the ferrywoman; shore encounters |
+| `isles_beach` Saltwind Beach | `town01` | 64 x 36 | The sea-stair landing, marram dunes and palms, the fishers' cove (two rowboats drawn up, a net rack), a weed-dark tideline with driftwood, shells and rock clusters, surf, a ruined jetty, the ferrywoman; shore encounters |
 | `isles_village` Tolva's Haven | `town01` | 64 x 50 | Huts, the well and windmill, the lodge (`rest`), Pell's Trading Post (`shop` `isles_trader`), villagers; the Village Duel table under the great tree and the Mist Lantern Table below the lodge (`modes.toml`); a dusk mood |
 | `isles_thornwood` The Thornwood | `vell` | 112 x 56 | A lane winding through clumped old forest: Mushroom Hollow, a ford, the old shrine and its lookout, the hermit's camp round his log (Hermit Ost, Rim Elm's old man borrowed into the forest), a fern dell, and the ruined court with the Thornwood Queen (`isles_hive_queen`) inside the gate |
-| `isles_grotto` The Singing Grotto | `cave01` | 72 x 60 | Four chambers under the ruins linked by passages: the antechamber, the crystal gallery, the mushroom grotto round its spring, and the singing pool with the Pearl on its islet |
+| `isles_grotto` The Singing Grotto | `cave01` | 72 x 60 | Four chambers under the ruins linked by passages: the antechamber, the crystal gallery, the mushroom grotto round its spring, and the singing pool with the Pearl on its islet; a floor of moss, scree and seep stains, with rock shelves and standing pools |
 
 The region's monsters, formations, encounter tables and mini-boss are
 `isles_*` entries in `battle.toml`; its four quests (`isles_landfall`,
@@ -197,8 +197,10 @@ payoff line - and each floor's arrival line - names the level the next one
 asks for, so the player always knows where to go and when.
 
 The Isles quests open as soon as Ysolde has spoken (**Landfall**, **Torn
-Nets**, **The Thornwood Queen** from level 35, **The Pearl Below**): the
-region is the bridge from the tower's opening at 30 to the trial at 40. A
+Nets**, **The Thornwood Queen**, **The Pearl Below**): the region is the
+bridge from the tower's opening at 30 to the trial at 40. The elder's
+welcome that closes Landfall also sends the party into the Thornwood, one
+talk and one box, its Queen tuned for 35. A
 few NPCs answer progress through `line_after`: the Warden's familiar once the
 throne is empty, the 5F card room once the engine stops and the throne
 falls.
