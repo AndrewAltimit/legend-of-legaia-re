@@ -587,14 +587,17 @@ lamps = [
   { id = "stall", tile = [23, 10], offset = [0, 200, 0], color = [255, 210, 150], radius = 480, flicker = 0.08, period = 45 },
 ]
 
-# The dais's flagstones drift: its atlas cell scrolls a texel every eighth
-# frame, so the floor under the stone seems to flow.
-[[materials]]
-kind = "scroll"
-cell = { tpage = 28, clut = 32576, tile = 0 }
-dx = 1
-dy = 1
-period = 8
+# The dais breathes: a slow pulse rolls out from the Warden's Stone across
+# its flagstones, the stone itself lifting and settling, the way the
+# Juggernaut's floor heaves (the floor's own geometry, on rungs of its own).
+[[ground_motion]]
+kind = "ripple"
+chars = "^"
+centre = [7.5, 6.5]
+amplitude = 6
+period = 180
+phases = 4
+wavelength = 4.0
 
 # Mist curls over the outer ring and the entrance hall.
 [fog]

@@ -543,12 +543,17 @@ hue = 175.0
 value = 8
 color = [255, 150, 70]
 
-[[materials]]
-kind = "scroll"
-cell = { tpage = 5, clut = 30720, tile = 0 }
-dx = 1
-dy = 1
-period = 6
+# The lava heaves: swells roll down the moats, runs and the slag trough,
+# the molten floor itself rising and falling rather than its texture
+# sliding.
+[[ground_motion]]
+kind = "swell"
+chars = "LlQ"
+amplitude = 10
+period = 150
+phases = 4
+wavelength = 4.0
+angle = 0.0
 
 # Sound: the brazier roars loudest; the lava hisses along its moats and
 # runs; the forge's coals crackle.
