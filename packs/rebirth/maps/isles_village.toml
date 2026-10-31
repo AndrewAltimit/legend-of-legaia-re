@@ -575,108 +575,147 @@ offset = [82, 0, 0]
 rotation = [0.0, 60.0, 0.0]
 scale = 0.35
 
+# The market's stock waits at the four corners of the stall rows: a crate
+# stack with a barrel and a basket beside it at each end of each row, off
+# the aisle so the lane through the market stays clear. Trader Pell's own
+# goods stand against his post.
 [[props]]
-id = "market_goods_0"
+id = "market_goods_nw"
 mesh = { scene = "town01", object = 46 }
-tile = [11, 27]
+tile = [11, 28]
 scale = 0.8
 solid = true
 
 [[props]]
-id = "market_goods_1"
-mesh = { scene = "town01", object = 33 }
-tile = [18, 27]
-scale = 0.8
-solid = true
-
-[[props]]
-id = "market_goods_2"
+id = "market_goods_ne"
 mesh = { scene = "town01", object = 46 }
-tile = [21, 30]
-rotation = [0.0, 90.0, 0.0]
+tile = [21, 28]
+rotation = [0.0, 180.0, 0.0]
 scale = 0.8
 solid = true
 
 [[props]]
-id = "market_goods_3"
-mesh = { scene = "town01", object = 33 }
-tile = [13, 34]
-scale = 0.8
-solid = true
-
-[[props]]
-id = "market_goods_4"
+id = "market_goods_sw"
 mesh = { scene = "town01", object = 46 }
-tile = [19, 34]
+tile = [11, 33]
 scale = 0.8
 solid = true
 
 [[props]]
-id = "market_goods_5"
+id = "market_goods_se"
+mesh = { scene = "town01", object = 46 }
+tile = [21, 33]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.8
+solid = true
+
+[[props]]
+id = "market_goods_pell"
 mesh = { scene = "town01", object = 46 }
 tile = [7, 34]
+scale = 0.8
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [11, 27]
+offset = [0, 0, 20]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [11, 27]
+offset = [60, 0, 30]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.6
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [21, 27]
+offset = [0, 0, 20]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [21, 27]
+offset = [-60, 0, 30]
+rotation = [0.0, -20.0, 0.0]
+scale = 0.6
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [11, 34]
+offset = [0, 0, -20]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [21, 34]
+offset = [0, 0, -20]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [21, 34]
+offset = [-60, 0, -30]
+rotation = [0.0, 40.0, 0.0]
+scale = 0.6
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [8, 34]
+offset = [-20, 0, 0]
+scale = 0.7
+solid = true
+
+# The dock: the cargo waits in two piles at the back of the boardwalk, one
+# at the head of each jetty - a crate stack with barrels beside it.
+[[props]]
+id = "dock_cargo_w"
+mesh = { scene = "town01", object = 46 }
+tile = [18, 36]
+scale = 0.85
+solid = true
+
+[[props]]
+id = "dock_cargo_e"
+mesh = { scene = "town01", object = 46 }
+tile = [35, 36]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.85
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [17, 36]
+offset = [20, 0, 0]
+scale = 0.75
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [17, 36]
+offset = [-50, 0, 10]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 33 }
+tile = [36, 36]
+offset = [-20, 0, 0]
+scale = 0.75
+solid = true
+
+[[decor]]
+mesh = { scene = "town01", object = 83 }
+tile = [36, 36]
+offset = [40, 0, 20]
 rotation = [0.0, 30.0, 0.0]
-scale = 0.8
-solid = true
-
-[[props]]
-id = "market_goods_6"
-mesh = { scene = "town01", object = 33 }
-tile = [10, 34]
-scale = 0.8
-solid = true
-
-# The dock: cargo along the back of the boardwalk.
-[[props]]
-id = "dock_cargo_0"
-mesh = { scene = "town01", object = 46 }
-tile = [14, 36]
-scale = 0.85
-solid = true
-
-[[props]]
-id = "dock_cargo_1"
-mesh = { scene = "town01", object = 33 }
-tile = [16, 36]
-scale = 0.85
-solid = true
-
-[[props]]
-id = "dock_cargo_2"
-mesh = { scene = "town01", object = 46 }
-tile = [24, 36]
-rotation = [0.0, 90.0, 0.0]
-scale = 0.85
-solid = true
-
-[[props]]
-id = "dock_cargo_3"
-mesh = { scene = "town01", object = 33 }
-tile = [31, 36]
-scale = 0.85
-solid = true
-
-[[props]]
-id = "dock_cargo_4"
-mesh = { scene = "town01", object = 46 }
-tile = [33, 36]
-scale = 0.85
-solid = true
-
-[[props]]
-id = "dock_cargo_5"
-mesh = { scene = "town01", object = 46 }
-tile = [39, 36]
-rotation = [0.0, 45.0, 0.0]
-scale = 0.85
-solid = true
-
-[[props]]
-id = "dock_cargo_6"
-mesh = { scene = "town01", object = 33 }
-tile = [40, 37]
-scale = 0.85
-solid = true
+scale = 0.6
 
 # The Village Duel's plank table under the great tree.
 [[props]]
@@ -1071,8 +1110,9 @@ rotation = [0.0, 300.0, 0.0]
 scale = 0.5
 solid = true
 
-# Shade trees in clumps on the meadows, clear of the lanes, the game
-# tables and the windmill's knoll.
+# Shade trees: a line along the west edge of the meadows, and two small
+# groves - one on the east meadow below the orchard, one by the east
+# shore - clear of the lanes, the game tables and the windmill's knoll.
 [[decor]]
 mesh = { scene = "town01", object = 75 }
 tile = [2, 3]
@@ -1110,13 +1150,6 @@ solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 75 }
-tile = [19, 11]
-rotation = [0.0, 300.0, 0.0]
-scale = 0.5
-solid = true
-
-[[decor]]
-mesh = { scene = "town01", object = 75 }
 tile = [2, 12]
 rotation = [0.0, 20.0, 0.0]
 scale = 0.45
@@ -1131,51 +1164,37 @@ solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 75 }
-tile = [37, 15]
+tile = [37, 13]
 rotation = [0.0, 130.0, 0.0]
 scale = 0.42
 solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 75 }
-tile = [43, 12]
+tile = [36, 14]
 rotation = [0.0, 170.0, 0.0]
 scale = 0.5
 solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 75 }
-tile = [41, 33]
+tile = [44, 34]
 rotation = [0.0, 30.0, 0.0]
 scale = 0.5
 solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 75 }
-tile = [43, 36]
+tile = [45, 33]
 rotation = [0.0, 90.0, 0.0]
 scale = 0.45
 solid = true
 
 [[decor]]
 mesh = { scene = "town01", object = 75 }
-tile = [47, 34]
+tile = [46, 35]
 rotation = [0.0, 140.0, 0.0]
 scale = 0.55
-solid = true
-
-[[decor]]
-mesh = { scene = "town01", object = 75 }
-tile = [50, 36]
-rotation = [0.0, 210.0, 0.0]
-scale = 0.42
-solid = true
-
-[[decor]]
-mesh = { scene = "town01", object = 75 }
-tile = [62, 35]
-rotation = [0.0, 260.0, 0.0]
-scale = 0.5
 solid = true
 
 [[decor]]
@@ -1278,11 +1297,13 @@ scale = [0.08, 0.11]
 keep_clear = false
 meshes = [{ mesh = { scene = "town01", object = 88 }, weight = 1 }]
 
+# Ferns grow in the long grass only: the short
+# grass along the lanes and round the houses stays clean.
 [[scatter]]
 id = "meadow_flowers"
 rect = [1, 2, 62, 37]
-on = "gG"
-density = 0.12
+on = "G"
+density = 0.1
 seed = 4203
 jitter = 50
 yaw = [0.0, 360.0]
@@ -1291,20 +1312,6 @@ keep_clear = true
 meshes = [
   { mesh = { scene = "vell", object = 41 }, weight = 4 },
   { mesh = { scene = "town01", object = 89 }, weight = 1, scale = [0.3, 0.45] },
-]
-
-[[scatter]]
-id = "yard_flowers"
-rect = [1, 2, 62, 37]
-on = "y"
-density = 0.06
-seed = 4204
-jitter = 50
-yaw = [0.0, 360.0]
-scale = [0.7, 1.0]
-keep_clear = true
-meshes = [
-  { mesh = { scene = "vell", object = 41 }, weight = 1 },
 ]
 
 # Potted flowers stand along the inside of each yard's hedge, not out in
