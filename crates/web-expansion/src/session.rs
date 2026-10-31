@@ -849,6 +849,10 @@ impl Core {
         // not load.
         probe.decor.clear();
         probe.scatter.clear();
+        // So do the surround past the floor's edge and the ceiling's
+        // underside and chains.
+        probe.surround = None;
+        probe.ceiling = None;
         // The terrain's own meshes bake from nothing the preview loads
         // either; its walls and floor come back below, from the same pure
         // functions the engine's image builder runs.
