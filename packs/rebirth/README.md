@@ -8,17 +8,43 @@ can do.
 
 ## The story
 
-When the Mist was torn away it did not simply vanish. Everything it had
-swallowed - the places it smothered, the beasts it twisted, the prayers it
-drowned - gathered in one spot and rose as a tower that was never there
-before: the **Tower of Rebirth**.
+Long before the Mist, a sea tower stood on the cliffs past Rim Elm, looking
+west over a scatter of islands. Its keepers, the **Genesis Wardens**, were
+root-tenders before they were bell-keepers: the islanders' tale says the
+tower stands on a root of the first Genesis Tree, and that its foundation
+stone was cut from that root. Later the Wardens hung a great bronze bell
+over the stone, to call the fishing boats home through the sea fog.
 
-Its first hall holds the **Warden's Stone**, the last of Warden Ysolde, who
-kept the tower's seal before the Mist and now speaks only through the stone.
-She opens the stair to a party strong enough to climb it. Each floor above is
-a memory of a place the Mist held, each kept by something that would rather
-not let go, and at the top sits the **Hollow Sovereign**, made of everything
-the Mist took.
+When the Mist came, its first breath came in off the sea and reached the
+tower before anything else. The last Warden, **Ysolde**, could not stop
+the Mist, but she could hold that first breath: she sealed it under the
+foundation stone and bound herself into the stone to keep it there. That
+is the **Warden's Stone**. The bell has not rung since, and Rim Elm half
+forgot the tower behind the Mist.
+
+Now the Genesis Trees are pushing the Mist back, and the last of it sinks
+toward the oldest thing that still holds a piece of it: the tower. It
+brings what it swallowed - a beacon's fire, an overgrown grove, the engine
+that turned the bell, the prayers of drowned sailors - and each settles on
+a floor and will not let go. At the top, the Mist's grip on the tower
+takes a shape, the **Hollow Sovereign**. The party climbs to make it let
+go, floor by floor. Ysolde asks one more thing after the throne: she can
+release her seal only once someone strong enough stands ready to meet
+what is under it. When that is done, the bell rings once.
+
+Behind the tower's sea gate lie the **Lantern Isles**, which the Mist
+covered longest. The islanders lived through it by keeping lanterns lit
+along every path, where the **rootlight** grows: ordinary green shrubs
+that drink from a root running close under the ground, and glow faintly
+with it. The Mist never took ground over a living root. The root surfaces
+in the **Singing Grotto**, where the Pearl once sang back to the tower's
+bell across the water.
+
+The pack tells that history in pieces the player can pass by: Ysolde's
+journal pages on the floors, the Atrium's murals, Imre the scholar in
+Tolva's Haven, the rootlight itself and the root in the grotto. It is fan
+lore standing beside the retail story: the Genesis Trees push the Mist
+back, as they do in the game, and nothing here says what the Mist is.
 
 The retail game ends with nothing left worth fighting past level 60 or so.
 Rebirth is built for the climb from there to 99.
@@ -36,11 +62,11 @@ Rebirth is built for the climb from there to 99.
 | `cutscenes.toml` | The tower intro on the first arrival in the Atrium, the voice on the throne speaking at the Gambler's Rest, the Sovereign rising before the last fight and the throne breaking after it, and each floor keeper's intro and fall. |
 | `modes.toml` | Two poker tables, two card duels, three golf courses, three race tracks (one each on the 1F floor), two prop-hunt arenas. |
 | `cards.toml` | The trading cards, boosters, dealer and drop rules. |
-| `items.toml` | 20 pack items (consumables, the Warden and Rebirth gear, accessories), the Rebirth set and the 5F Tower Armory. |
+| `items.toml` | 20 pack items (consumables, the Warden and Vigil gear, accessories), the Vigil set and the 5F Tower Armory. |
 | `audio.toml` | The pack's own drone track, its ambient loops (fire, water, wind, crowd, engine, drips, surf, birdsong) and boss stings, the tower bosses' victory music, the mode music at the Rest's tables. |
 | `assets/audio/` | WAV files synthesised by `scripts/models/generate_rebirth_audio.py`. |
 | `assets/models/` | glTF models: the ember crystal (`scripts/models/generate_ember_crystal.py`) and the floors' set pieces - sundial, fountain, armillary ring, lanterns, cogs, banners, obelisks, braziers, and the Isles' lamp posts, produce crates, rowboats, driftwood, shells, ferns and marram grass (`scripts/models/generate_rebirth_props.py`). |
-| `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher each (level 80, after the Iron Regent), chained from that art into a retail one; all on the heroes' own retail clips. |
+| `arts.toml` | One Tactical Art per hero learned on the climb (level 55, after the Cinder Warden) and one Knell finisher each (level 80, after the Iron Regent), chained from that art into a retail one; all on the heroes' own retail clips. |
 | `spells.toml` | Four tower Seru - Hearthfire, Verdant Bloom, Grove Fang, Tempest Dive - each cast as the retail Seru it grew from and taught by capturing its pack monster once that floor's keeper falls. |
 
 ### The tower
@@ -105,7 +131,7 @@ the 1F stair down leads to Rim Elm. The 1F stair up is the seal Ysolde
 lifts: it stays shut (`requires = { flags = ["tower_open"] }`, with a locked
 line) until the Warden's Trial is done.
 
-### The Rebirth Isles
+### The Lantern Isles
 
 Past a sea gate in the Atrium's west wall (open once Ysolde has first
 spoken, so a level-30 party grows here into the Warden's Trial) lies an
@@ -189,7 +215,7 @@ whatever MP the boss has left.
 The main chain climbs the tower: **A Tower Wakes** (starts on its own at
 level 30) -> **The Warden's Trial** -> **The Ember Stair** -> **The Hanging
 Garden** -> **The Verdant Vault** -> **The Gambler's Rest** -> **The Engine
-Deep** -> **The Sanctum of Echoes** -> **The Hollow Throne** -> **Rebirth**
+Deep** -> **The Sanctum of Echoes** -> **The Hollow Throne** -> **The Last Vigil**
 (reach level 99 and return to the stone) -> **The First Breath** (what
 Ysolde's seal held under the stone all along). Each boss quest has a minimum
 level (50, 60, 70, 80, 88), so the chain paces the climb, and every keeper's
@@ -243,7 +269,7 @@ regulars, confetti and a slow shot round them (`modes.toml` `podium`).
   card room's table on the 5F floor: the Warden's second across the board,
   two regulars watching, the tower's card dealer beside them (talk to the
   second to sit down).
-- **The Rebirth Links** (`genesis-links`): six holes - bunkers guarding a
+- **The Genesis Links** (`genesis-links`): six holes - bunkers guarding a
   green, a dogleg, an island green behind a bridge, stepped terraces
   (height grid), conveyor ramps round a wall (slope tiles), and a long par
   5 to a green that slopes away.
@@ -276,7 +302,7 @@ The earlier village instances (`mist-lantern-table`, `haven-duel`,
 
 `items.toml` is the gear worth chasing between 60 and 99 (the format is
 [`expansion-pack-items.md`](../../docs/formats/expansion-pack-items.md)).
-Retail's best is the Ra-Seru set; the Rebirth set sits about 12-15% above
+Retail's best is the Ra-Seru set; the Vigil set sits about 12-15% above
 it a piece and rewards wearing it together.
 
 | Where | What |
@@ -284,12 +310,12 @@ it a piece and rewards wearing it together.
 | 5F Tower Armory, from the start | Tower Draught (2,500 HP), Mist Tonic (300 MP), Phoenix Plume (party revive at 50%), Healing Berry, the Warden Mail / Robe / Plate (body armour between Triumph and Ra-Seru) |
 | Armory, after the Verdant Colossus | Sovereign Nectar (full HP, party), Ysolde's Seal (Master Guard + HP Boost 1) |
 | Armory, after the Engine Deep | Tower Sigil (AP Boost 2 + HP After) |
-| Armory, after the Iron Regent | Rebirth Mail / Robe / Plate (UDF/LDF 86-96 against Ra-Seru's 75-84) and the Rebirth Crown (UDF 71, INT 70) |
-| Armory, after the Azure Seraph | Rebirth Greaves (ATK 98, LDF 70, SPD 35 against Ra-Seru Thongs 88/64/32) |
-| Boss rewards | Cinder Warden: Ember Heart (Fire Guard, +15 ATK). Verdant Colossus: Rebirth Maul (Gala, ATK 114 against the Ra-Seru Club's 100). Iron Regent: Rebirth Blade (Vahn, 112 against 98). Azure Seraph: Rebirth Talon (Noa, 110 against 96). Hollow Sovereign: Sovereign's Eye (Attack x2 + Arts Power). |
+| Armory, after the Iron Regent | Vigil Mail / Robe / Plate (UDF/LDF 86-96 against Ra-Seru's 75-84) and the Vigil Crown (UDF 71, INT 70) |
+| Armory, after the Azure Seraph | Vigil Greaves (ATK 98, LDF 70, SPD 35 against Ra-Seru Thongs 88/64/32) |
+| Boss rewards | Cinder Warden: Ember Heart (Fire Guard, +15 ATK). Verdant Colossus: Vigil Maul (Gala, ATK 114 against the Ra-Seru Club's 100). Iron Regent: Vigil Blade (Vahn, 112 against 98). Azure Seraph: Vigil Talon (Noa, 110 against 96). Hollow Sovereign: Sovereign's Eye (Attack x2 + Arts Power). |
 | Quests and drops | Every Floor: the Mist Lantern (EXP Boost + Items Up, for the climb to 99). A Remedy for Stone: two Phoenix Plumes. Throne Heralds drop Phoenix Plumes; Storm Giliums can be robbed of Mist Tonics. |
 
-The Rebirth set (each hero's weapon and body armour, the crown, the greaves)
+The Vigil set (each hero's weapon and body armour, the crown, the greaves)
 adds +10 ATK at two pieces, +12 UDF and LDF at three and All Guard at four.
 Open the bag from the Journal's Items page; the Gear tab shows each stat
 before and after a piece goes on.
@@ -349,9 +375,9 @@ against the superbosses - winnable with Spirit and healing, and no single
 blow at any preset lands for a full-HP member's whole HP.
 
 **Rewards on the way.** Level 55 brings the tower's arts and a Power and
-Guardian Water, 80 the Rebirth finishers, 99 the Warden's last request and
+Guardian Water, 80 the Knell finishers, 99 the Warden's last request and
 the First Breath; the gear chase runs from the Ra-Seru set through the
-Rebirth set (see Gear).
+Vigil set (see Gear).
 
 ## Playing it
 
@@ -474,4 +500,4 @@ stair seal and arms the dais guardian, `rest_open` opens the 5F tables,
 turn NPC lines, `throne_broken` and `vigil_kept` gate the last two quests, the
 Isles flags gate the next Isles quest and Pell's late stock, and the
 `bosses_felled`, `bounties` and `echoes_broken` counters are objectives of
-**Rebirth**, **Tower Bounty Hunter** and **Echo Breaker**.
+**The Last Vigil**, **Tower Bounty Hunter** and **Echo Breaker**.

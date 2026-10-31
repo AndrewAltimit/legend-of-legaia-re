@@ -252,8 +252,10 @@ zoom = 0.85
 frames = 160
 
 # After the superboss falls (`tower_sovereign`'s `complete_cutscene`): the
-# throne breaks, the light goes out of the tower, and Ysolde speaks her
-# last at the top of it.
+# throne breaks, the light goes out of the tower, and Ysolde's voice comes
+# up to the top of it: the bell stirred but did not ring, because one
+# thing is still held under her stone. The bell rings at the very end
+# (`breath_fallen`).
 [cutscenes.sovereign_falls]
 title = "The Throne Breaks"
 map = "genesis_8f"
@@ -490,6 +492,8 @@ steps = [
 # --- 1F: the First Breath ------------------------------------------------------
 
 # The pack's last fight opens on the Warden's Stone, the seal lifting.
+# It closes on the bell: the chime is the tower's bell ringing once, for
+# the first time since the Mist came, as Ysolde lets go.
 [cutscenes.breath_intro]
 title = "The First Breath"
 map = "genesis_1f"
@@ -503,13 +507,16 @@ steps = [
 ]
 
 [cutscenes.breath_fallen]
-title = "The Seal Sleeps"
+title = "The Bell Rings Once"
 map = "genesis_1f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [255, 255, 255], frames = 50 },
+    { do = "wait", frames = 40 },
+    { do = "sound", sound = { kind = "sound", id = "chime" } },
+    { do = "shake", amplitude = 4, frames = 40 },
     { do = "banner", line = "fallen_first_breath" },
     { do = "wait", frames = 120 },
     { do = "camera_reset", frames = 50 },

@@ -1,6 +1,6 @@
 # Legend of Legaia: Rebirth - quests and challenges.
 #
-# The main chain climbs the Tower of Rebirth floor by floor; side quests
+# The main chain climbs Genesis Tower floor by floor; side quests
 # hang off the floors' NPCs. Dialogue is kept for what the player asks for
 # and for story beats: a quest that starts or completes on its own (an
 # auto-started quest, a count or a floor reached in the field) says nothing,
@@ -26,7 +26,7 @@
 [[quests]]
 id = "tower_rumour"
 title = "A Tower Wakes"
-description = "Since the Mist lifted, travellers speak of a tower that was never there before. Something inside it is waiting to be heard."
+description = "With the Mist pushed back, Rim Elm can see the old sea tower on the western cliffs again, the one its grandparents half forgot. Something inside it is waiting to be heard."
 auto_start = true
 prerequisites = { min_level = 30 }
 objectives = [
@@ -38,7 +38,7 @@ rewards = { set_flags = ["tower_heard"] }
 [[quests]]
 id = "tower_trial"
 title = "The Warden's Trial"
-description = "Warden Ysolde will lift the tower's seal for a party that proves itself in battle and grows strong enough to survive the climb. The sea gate in the Atrium's west wall leads to the Rebirth Isles, a gentler place to grow."
+description = "Warden Ysolde will lift the tower's seal for a party that proves itself in battle and grows strong enough to survive the climb. The sea gate in the Atrium's west wall leads to the Lantern Isles, a gentler place to grow."
 giver = "tower_guide"
 prerequisites = { quests = ["tower_rumour"] }
 start_dialog = "guide_trial"
@@ -148,8 +148,8 @@ rewards = { cards = ["hollow-sovereign"], set_flags = ["sovereign_fallen"], coun
 
 [[quests]]
 id = "last_vigil"
-title = "Rebirth"
-description = "The throne is empty. Warden Ysolde asks one last thing: reach the peak of your own strength."
+title = "The Last Vigil"
+description = "The throne is empty, but Ysolde's watch is not over. Before she lets go of what she holds, she has to be sure someone can meet it: reach the peak of your own strength."
 auto_start = true
 # After the ending cutscene, not under it.
 prerequisites = { quests = ["tower_sovereign"], flags = ["throne_broken"] }
@@ -164,7 +164,7 @@ rewards = { gold = 99999, set_flags = ["vigil_kept"] }
 [[quests]]
 id = "first_breath"
 title = "The First Breath"
-description = "Ysolde's seal was never on the stair. Under the Warden's Stone lies the first breath the Mist ever drew, and she has held it down alone since before the Mist came."
+description = "Ysolde's seal was never on the stair. Under the Warden's Stone, cut from the oldest root there is, lies the first breath the Mist ever drew, and she has held it down alone since before the Mist came."
 giver = "tower_guide"
 prerequisites = { quests = ["last_vigil"], flags = ["vigil_kept"] }
 start_dialog = "breath_offer"
@@ -180,7 +180,7 @@ rewards = { cards = ["heart-of-the-mist"], set_flags = ["breath_released"], coun
 [[quests]]
 id = "every_floor"
 title = "Every Floor"
-description = "Set foot on all eight floors of the Tower of Rebirth."
+description = "Set foot on all eight floors of Genesis Tower."
 auto_start = true
 prerequisites = { flags = ["tower_open"] }
 ordered = false
@@ -212,7 +212,7 @@ repeat = { repeatable = true, cooldown_seconds = 1800 }
 [[quests]]
 id = "warden_remedy"
 title = "A Remedy for Stone"
-description = "The Warden's Stone is cracking. Ysolde asks for Healing Fruit to close the cracks."
+description = "The Warden's Stone was cut from a living root, and it is cracking. Ysolde says it still drinks like one: Healing Fruit would close the cracks."
 giver = "tower_guide"
 prerequisites = { flags = ["tower_open"] }
 objectives = [
@@ -304,7 +304,7 @@ ordered = false
 objectives = [
     { kind = "win_mode", mode = "tower-high-table", text = "Win at the Tower High Table" },
     { kind = "win_mode", mode = "wardens-duel", text = "Win the Warden's Duel" },
-    { kind = "win_mode", mode = "genesis-links", text = "Win the Rebirth Links" },
+    { kind = "win_mode", mode = "genesis-links", text = "Win the Genesis Links" },
     { kind = "win_mode", mode = "spiral-circuit", text = "Win the Monastery Run" },
     { kind = "win_mode", mode = "old-vault", text = "Win hide and seek in the Old Vault" },
 ]
@@ -379,10 +379,12 @@ rules = { turn_limit = 15, enemy_scale_permille = 1500 }
 score = { base = 10000, turn_bonus = 500 }
 rewards = { gold = 100000, items = [{ item = 235, count = 1 }], counters = [{ counter = "challenges_cleared" }] }
 
-# --- The Rebirth Isles -------------------------------------------------------
+# --- The Lantern Isles -------------------------------------------------------
 #
 # Past the tower's sea gate (1F west wall) lies the region the Mist hid
-# longest. It opens as soon as the party has heard Ysolde (`tower_rumour`),
+# longest. The islanders lived through it by lighting their paths where
+# the rootlight grows, over the root that runs from the grotto to the
+# tower. It opens as soon as the party has heard Ysolde (`tower_rumour`),
 # and it is where a level-30 party grows into the Warden's Trial. NPC ids and where they stand:
 #   isles_ferrywoman  isles_beach    by the sea gate's landing
 #   isles_elder       isles_village  the elder's porch
@@ -440,7 +442,7 @@ rewards = { gold = 15000, set_flags = ["isles_gate_open"] }
 [[quests]]
 id = "isles_pearl"
 title = "The Pearl Below"
-description = "Under the ruins a stair runs down to a grotto where the sea still sings. Something there remembers the islands before the Mist."
+description = "Under the ruins a stair runs down to a grotto where the sea still sings, and where the islanders say the old root comes up to breathe. Something there remembers the islands before the Mist."
 giver = "isles_hermit"
 prerequisites = { flags = ["isles_gate_open"] }
 # The Thornwood's closing words lead straight on; the stair's directions

@@ -5,9 +5,22 @@
 # warns past 36 characters.
 # Format: docs/formats/expansion-pack-quests.md.
 #
-# The tower's guide is Warden Ysolde, a keeper who once held the tower's
-# seal and now speaks through the Warden's Stone on the first floor. Every
-# word here is the pack's own.
+# The tower's guide is Warden Ysolde, last of the Genesis Wardens: an
+# order of island root-tenders who kept the old root under the tower long
+# before they hung a bell over it. When the Mist came she sealed its first
+# breath under the Warden's Stone and bound herself into the stone to hold
+# it there; she speaks through it on the first floor. Every word here is
+# the pack's own, original fan writing that quotes no retail line.
+#
+# The Genesis Trees' deep history (the roots that run tree to tree under
+# land and sea, the oldest of them under the tower, the rootlight shrubs
+# that drink from a root near the surface, why the Mist never took the
+# isles) is told in pieces the player can walk past: Ysolde's journal
+# pages on the floors, the Atrium murals, Imre the scholar in Tolva's
+# Haven, rootlight shrubs, and the grotto where the root comes up. Every
+# one is an examined object (`press = true`) or an NPC's idle line, so none
+# of it stops the player. It stands beside the retail story: the Trees push
+# the Mist back, and nothing here says what the Mist is.
 
 # --- The Warden's Stone (1F) -------------------------------------------------
 
@@ -15,10 +28,11 @@
 speaker = "Warden Ysolde"
 text = """
 ...So the stone wakes. I am
-Ysolde. I kept this tower's seal.
+Ysolde, last Warden of Genesis.
 
-What the Mist swallowed is here
-now. Will you hear what it asks?"""
+The bell above has been silent
+since the Mist. What it took is
+here now. Will you hear it?"""
 
 [lines.guide_trial]
 speaker = "Warden Ysolde"
@@ -27,7 +41,7 @@ Win three battles and reach
 level 40. Then come back to me.
 
 The sea gate in the west wall
-leads to gentler isles."""
+leads to the Lantern Isles."""
 
 [lines.guide_trial_active]
 speaker = "Warden Ysolde"
@@ -50,9 +64,12 @@ text = """
 There is nothing more the tower
 can teach you.
 
-The true seal is on this stone:
-the Mist's first breath. I held
-it alone. Help me let it go?"""
+Under this stone lies the Mist's
+first breath. I have held it so
+long I forget what hands are.
+
+You can meet it now, and I can
+finally let go. Stand ready."""
 
 [lines.gauntlet_offer]
 speaker = "The Bell"
@@ -79,8 +96,11 @@ choices = [
 [lines.breath_done]
 speaker = "Warden Ysolde"
 text = """
-...It is gone. The stone is light.
-Thank you. Go on, reborn."""
+...Do you hear it? The bell.
+First time since the Mist came.
+
+The watch is kept. I can let go
+now. Thank you, all of you."""
 
 [lines.breath_wind]
 text = "The Breath turns to a howling gale!"
@@ -242,8 +262,11 @@ choices = [
 [lines.guide_sovereign_done]
 speaker = "Warden Ysolde"
 text = """
-The throne is empty at last. Come
-back to the stone at level 99."""
+The throne is empty at last.
+The bell stirred. It did not ring.
+
+Come back to the stone at level
+99. One thing is still held."""
 
 [lines.echo_offer]
 speaker = "The Hollow Throne"
@@ -393,7 +416,7 @@ The games room. Six holes, a
 race, or hide and seek in the
 old vault."""
 choices = [
-    { label = "The Rebirth Links.", mode = "genesis-links" },
+    { label = "The Genesis Links.", mode = "genesis-links" },
     { label = "The Monastery Run.", mode = "spiral-circuit" },
     { label = "The Old Vault.", mode = "old-vault" },
     { label = "Not now.", reply = "\"Come back when you are\nfeeling lucky.\"" },
@@ -410,8 +433,9 @@ they breed again."""
 [lines.remedy_done]
 speaker = "Warden Ysolde"
 text = """
-The cracks are closing. Take
-these, with my thanks."""
+The stone drinks it in. Old root
+remembers being fed. Thank you.
+Take these."""
 
 # --- Boss battle lines ---------------------------------------------------------
 #
@@ -525,7 +549,7 @@ text = """
 So that is what it feels like,
 to let go."""
 
-# --- The Rebirth Isles -------------------------------------------------------
+# --- The Lantern Isles -------------------------------------------------------
 
 [lines.isles_sea_gate]
 text = """
@@ -539,7 +563,7 @@ The tower is gone.)"""
 [lines.isles_ferry_hello]
 speaker = "Ferrywoman Maro"
 text = """
-These are the Rebirth Isles. The
+These are the Lantern Isles. The
 village is up over the dunes.
 
 Tell the elder Maro sent you."""
@@ -548,7 +572,8 @@ Tell the elder Maro sent you."""
 speaker = "Ferrywoman Maro"
 text = """
 Over the dunes, to the north-east.
-Follow the lanterns.
+Follow the lanterns. They keep
+to the rootlight.
 """
 
 [lines.isles_ferry_idle]
@@ -575,6 +600,10 @@ text = """
 The isles remember the Mist, but
 we will not let it be all they
 remember.
+
+It never sat on our paths. We lit
+them where the rootlight grows.
+My mother's mother did the same.
 """
 
 [lines.isles_elder_thorns_active]
@@ -680,6 +709,9 @@ speaker = "Child"
 text = """
 I found a pearl once! It sang.
 Then it rolled into the sea.
+
+Gran says never pick rootlight.
+It's busy drinking.
 """
 
 [lines.isles_thornwood_intro]
@@ -714,6 +746,9 @@ text = """
 The stair past the gate runs down
 to the grotto. Whatever sings
 there has waited a long time.
+
+Follow the green light down. The
+root comes up to breathe there.
 """
 
 [lines.isles_grotto_intro]
@@ -727,8 +762,13 @@ text = """
 ...You are not the Mist. Then I
 may sing again.
 
+I sang to the tower's bell, and
+it rang back across the water.
+Then it stopped. So did I.
+
 Take my voice back to the tower.
-The isles are awake.
+Tell the stone the isles are
+still listening.
 """
 
 [lines.isles_pearl_idle]
@@ -784,4 +824,168 @@ text = "The echo fades"
 text = "The First Breath"
 
 [lines.fallen_first_breath]
-text = "The stone is light at last"
+text = "The bell rings once"
+
+# --- Genesis Tree lore (examined objects and NPC lines) ----------------------
+#
+# Each is meant for a `press = true` dialog trigger on a map, or an NPC's
+# `line`: something the player chooses to look at. Shown in any order, they
+# tell one history; none depends on another.
+
+# Rootlight: green shrubs that drink from a root running near the surface
+# and glow with it. The generic line, for any glowing shrub.
+[lines.rootlight_shrub]
+text = """
+(A low green shrub, lit from
+inside. The glow swells and
+fades, slow as a sleeper.)
+
+(The islanders call it rootlight.)"""
+
+# The rootlight round the Warden's Stone (1F), thickest in the pack.
+[lines.rootlight_stone]
+text = """
+(Rootlight grows thick here,
+pressed close around the stone,
+as if to keep it warm.)"""
+
+# The Atrium murals (1F): three panels, oldest to newest.
+[lines.mural_roots]
+speaker = "Atrium Mural"
+text = """
+(A worn mural. Robed figures
+kneel around a great root with
+ladles, watering it.)
+
+(Above them, very small, a tree
+so tall it leaves the frame.)"""
+
+[lines.mural_stone]
+speaker = "Atrium Mural"
+text = """
+(Masons cut a block from the
+root itself. It has turned to
+stone, but they lift it gently.)
+
+(Carved under it: GENESIS.)"""
+
+[lines.mural_bell]
+speaker = "Atrium Mural"
+text = """
+(The newest panel. A bronze bell
+hangs over the stone, and boats
+turn home through the fog.)"""
+
+# Ysolde's journal, one page on each of five floors (2F, 3F, 4F, 6F, 7F)
+# and the last at the throne (8F, once it is empty).
+[lines.journal_2f]
+speaker = "Ysolde's Journal"
+text = """
+(A page in a careful hand.)
+
+Old Hesk took me under the floor
+today, to the root. He says we
+tended roots before we rang bells.
+
+The bell only calls the boats
+home, he says. The root is the
+watch."""
+
+[lines.journal_3f]
+speaker = "Ysolde's Journal"
+text = """
+(A page, pressed between leaves.)
+
+Planted rootlight on the cliff
+path. Where it takes, the fog
+thins. Hesk says it always has."""
+
+[lines.journal_4f]
+speaker = "Ysolde's Journal"
+text = """
+(A page, green with moss.)
+
+Hesk's tale: every Genesis Tree
+reaches for the others, root to
+root, under the sea and stone.
+
+Ours is the oldest root. Cut a
+stone from it, the first Wardens
+said, and build on the tree."""
+
+[lines.journal_6f]
+speaker = "Ysolde's Journal"
+text = """
+(A page, smudged with grease.)
+
+The bell engine jammed again. I
+rang it by hand all night. My
+arms will forgive me.
+
+The boats came home."""
+
+[lines.journal_7f]
+speaker = "Ysolde's Journal"
+text = """
+(A page, the ink run with damp.)
+
+Fog off the sea, but not fog. It
+does not lift at noon. The boats
+do not answer the bell.
+
+The Trees inland have gone quiet.
+Only our root still breathes. I
+know what I have to do."""
+
+[lines.journal_8f]
+speaker = "Ysolde's Journal"
+text = """
+(The last page.)
+
+I will go into the stone, and
+hold the breath there, over the
+root. The Mist cannot sit on it.
+
+Whoever reads this: ring the bell
+when it is over. I would like to
+hear it once more."""
+
+# Imre, a scholar from the mainland, in Tolva's Haven: `line`, then
+# `line_after` once the Pearl has been heard (`isles_pearl_heard`).
+[lines.isles_scholar]
+speaker = "Scholar Imre"
+text = """
+Mind the shrubs! Sorry. I am
+Imre. I study the Genesis Trees.
+
+Everyone knows the Trees push the
+Mist back. Nobody asks what they
+do underground.
+
+Roots, I think, tree to tree. And
+rootlight grows right over them."""
+
+[lines.isles_scholar_after]
+speaker = "Scholar Imre"
+text = """
+The grotto root runs east, under
+the sea, straight to the tower.
+
+So the old tale is true. Genesis
+Tower stands on the oldest root
+there is. I need a bigger book."""
+
+# Where the root breaks through in the Singing Grotto, by the Pearl's pool.
+[lines.grotto_root]
+speaker = "The Root"
+text = """
+(A root as thick as a ferry hull
+breaks from the cave wall and
+dips into the pool.)
+
+(It is warm. Rootlight moss grows
+thick along it, and it beats
+under your hand, slow as breath.)
+
+(It runs east, under the sea,
+toward the tower.)"""
