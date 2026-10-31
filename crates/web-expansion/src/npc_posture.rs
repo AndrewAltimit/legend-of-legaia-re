@@ -19,6 +19,16 @@
 //! floor is the model's own rather than the actor origin. The classes follow
 //! [`classify`]'s thresholds.
 //!
+//! A clip authored for another rig poses this one's parts at that rig's
+//! joints, which a height test alone reads as a sit: on a taller rig the
+//! head sinks into the chest. So each clip is also checked against the
+//! placement's own clip, the one retail plays on it: the head (the object
+//! highest in that pose) and its neighbour (the object nearest it) are rigid
+//! parts meeting at a joint, so their centroids keep their distance in every
+//! clip made for this rig. A clip that moves them closer or apart by more
+//! than [`MAX_HEAD_SINK`] of it is left out of the table, as a clip the model
+//! does not play.
+//!
 //! [`tmd_to_vram_mesh_posed_rot`]: legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot
 
 use std::collections::BTreeMap;
@@ -38,6 +48,11 @@ pub const SEATED_HEIGHT: f32 = 0.85;
 pub const CROUCHED_HEIGHT: f32 = 0.8;
 /// A walk moves the lower body at least this far (world units).
 pub const WALKING_LEGS: f32 = 25.0;
+/// A clip made for this rig keeps the head-to-neighbour centroid distance
+/// within this share of the placement clip's (a nod or a bow stays near
+/// 0.25; clips made for other rigs sink the head 0.45 and more into the
+/// body, or float it off).
+pub const MAX_HEAD_SINK: f32 = 0.3;
 
 /// One clip's measurement.
 #[derive(Debug, Clone, Serialize)]
@@ -48,6 +63,9 @@ pub struct ClipMetrics {
     pub height: f32,
     pub raise: f32,
     pub legs: f32,
+    /// How far the head moves from its neighbour, as a share of their
+    /// distance in the placement's own clip; `0.0` with no reference.
+    pub head_sink: f32,
     pub posture: Posture,
 }
 
@@ -107,6 +125,7 @@ struct Raw {
     height: f32,
     floor: f32,
     legs: f32,
+    head_sink: f32,
 }
 
 fn upper_quartile(mut v: Vec<f32>) -> f32 {
@@ -144,7 +163,7 @@ pub fn measure_scene(index: &ProtIndex, name: &str) -> Result<Vec<PlacementMetri
         let clips = match by_model.get(&p.model_index) {
             Some(c) => c.clone(),
             None => {
-                let c = measure_model(&bundle, &t.tmd, &t.raw, nobj)
+                let c = measure_model(&bundle, &t.tmd, &t.raw, nobj, p.anim_id)
                     .with_context(|| format!("{name} model {}", p.model_index))?;
                 by_model.insert(p.model_index, c.clone());
                 c
@@ -163,12 +182,80 @@ pub fn measure_scene(index: &ProtIndex, name: &str) -> Result<Vec<PlacementMetri
     Ok(out)
 }
 
+/// Object `b`'s centroid in clip record `r`, frame `f`: the rest centroid
+/// through the bone's `Rz·Ry·Rx` + offset, as the posed mesh moves it.
+fn posed_centroid(
+    bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
+    rest: &[[f32; 3]],
+    r: usize,
+    f: usize,
+    b: usize,
+) -> [f32; 3] {
+    let Some(t) = bundle.bone_transform(r, f, b) else {
+        return rest[b];
+    };
+    let a = |v: i32| (v as f32) * std::f32::consts::TAU / 4096.0;
+    let (sx, cx) = a(t.r_x).sin_cos();
+    let (sy, cy) = a(t.r_y).sin_cos();
+    let (sz, cz) = a(t.r_z).sin_cos();
+    let p = legaia_tmd::mesh::rot_zyx(rest[b], cx, sx, cy, sy, cz, sz);
+    [
+        p[0] + t.t_x as f32,
+        p[1] + t.t_y as f32,
+        p[2] + t.t_z as f32,
+    ]
+}
+
+fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
+    (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f32>().sqrt()
+}
+
+/// The head and its neighbour in clip `own`'s first frame, and their
+/// centroid distance: `None` when the clip is not one this model plays.
+fn head_pair(
+    bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
+    rest: &[[f32; 3]],
+    nobj: usize,
+    own: u8,
+) -> Option<(usize, usize, f32)> {
+    let r = usize::from(own.checked_sub(1)?);
+    let rec = bundle.record(r).ok()?;
+    if usize::from(rec.bone_count) != nobj || rec.frame_count == 0 {
+        return None;
+    }
+    let c: Vec<[f32; 3]> = (0..nobj)
+        .map(|b| posed_centroid(bundle, rest, r, 0, b))
+        .collect();
+    let head = (0..nobj).min_by(|&a, &b| c[a][1].total_cmp(&c[b][1]))?;
+    let next = (0..nobj)
+        .filter(|&b| b != head)
+        .min_by(|&a, &b| dist(c[a], c[head]).total_cmp(&dist(c[b], c[head])))?;
+    let d = dist(c[head], c[next]);
+    (d > 0.0).then_some((head, next, d))
+}
+
 fn measure_model(
     bundle: &legaia_actor_formats::player_anm::PlayerAnmBundle,
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
     nobj: usize,
+    own: u8,
 ) -> Result<Vec<ClipMetrics>> {
+    let rest: Vec<[f32; 3]> = tmd
+        .objects
+        .iter()
+        .map(|o| {
+            let n = o.vertices.len().max(1) as f32;
+            o.vertices.iter().fold([0f32; 3], |c, v| {
+                [
+                    c[0] + v.x as f32 / n,
+                    c[1] + v.y as f32 / n,
+                    c[2] + v.z as f32 / n,
+                ]
+            })
+        })
+        .collect();
+    let pair = head_pair(bundle, &rest, nobj, own);
     let mut rows = Vec::new();
     for r in 0..bundle.record_count as usize {
         let Ok(rec) = bundle.record(r) else { continue };
@@ -176,6 +263,20 @@ fn measure_model(
             continue;
         }
         let frames = usize::from(rec.frame_count);
+        let head_sink = pair.map_or(0.0, |(head, next, d0)| {
+            (0..frames)
+                .map(|f| {
+                    let d = dist(
+                        posed_centroid(bundle, &rest, r, f, head),
+                        posed_centroid(bundle, &rest, r, f, next),
+                    );
+                    (d0 - d).abs() / d0
+                })
+                .fold(0f32, f32::max)
+        });
+        if head_sink > MAX_HEAD_SINK {
+            continue;
+        }
         let mut base: Vec<[f32; 3]> = Vec::new();
         let mut legs_mask: Vec<bool> = Vec::new();
         let mut travel: Vec<f32> = Vec::new();
@@ -237,6 +338,7 @@ fn measure_model(
             height: height_sum / counted as f32,
             floor,
             legs: legs.get(legs.len() * 9 / 10).copied().unwrap_or(0.0),
+            head_sink,
         });
     }
     let standing_height = upper_quartile(rows.iter().map(|r| r.height).collect());
@@ -251,6 +353,7 @@ fn measure_model(
                 height: r.height,
                 raise,
                 legs: r.legs,
+                head_sink: r.head_sink,
                 posture: classify(r.height, raise, r.legs, standing_height),
             }
         })

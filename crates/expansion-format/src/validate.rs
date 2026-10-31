@@ -1474,9 +1474,9 @@ laps = 1
     #[test]
     fn a_table_npc_sits_on_a_seated_clip() {
         let mut pack = good_pack();
-        // town01 placement 15: standing 18, seated 34 (data/npc_postures.toml).
+        // town01 placement 43: standing 36, seated 34 (data/npc_postures.toml).
         let map: crate::map::MapDef = toml::from_str(
-            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[npcs]]\nid = \"rival\"\nmodel = { kind = \"npc\", scene = \"town01\", index = 15 }\ntile = [0, 0]\n",
+            "name = \"r\"\n[tiles]\nrows = [\"...\", \"...\"]\n[tiles.legend]\n\".\" = { label = \"floor\" }\n[[npcs]]\nid = \"rival\"\nmodel = { kind = \"npc\", scene = \"town01\", index = 43 }\ntile = [0, 0]\n",
         )
         .unwrap();
         pack.maps.insert("room".into(), map);
@@ -1507,7 +1507,7 @@ laps = 1
         };
         pack.modes.card_duels = vec![duel(34, false)];
         assert!(sit_issues(&pack).is_empty(), "{:?}", sit_issues(&pack));
-        pack.modes.card_duels = vec![duel(18, false)];
+        pack.modes.card_duels = vec![duel(36, false)];
         let w = sit_issues(&pack);
         assert!(
             w.len() == 1 && w[0].contains("standing") && w[0].contains("34"),

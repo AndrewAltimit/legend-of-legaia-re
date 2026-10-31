@@ -285,7 +285,7 @@ line = "high_table_hello"
 [[npcs]]
 id = "high_table_brann"
 label = "Brann, a High Table regular"
-model = { kind = "npc", scene = "koin1", index = 15 }
+model = { kind = "npc", scene = "koin1", index = 19 }
 tile = [20, 9]
 facing = 2
 line = "high_table_hello"

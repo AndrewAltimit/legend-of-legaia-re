@@ -426,6 +426,19 @@ mixes clips authored for other rigs of the same bone count, whose origins
 sit at other heights, so the reference is the model's own clips rather
 than the actor origin.
 
+A clip authored for another rig of the same bone count poses this model's
+parts at that rig's joints. On a taller rig the head sinks into the chest,
+and the shorter outline passes the `seated` test, so a height test alone
+lists the clip as a sit. Each clip is therefore also checked against the
+placement's own clip, the one retail plays on it. The head (the object
+highest in that pose) and its nearest object are rigid parts meeting at a
+joint, so their centroids keep their distance in every clip made for the
+rig: a nod or a bow moves them by about a quarter of it at most. A clip
+that moves them closer or apart by more than 0.3 of it is left out of the
+table. Clips made for other rigs measure 0.45 and up. The check looks at
+the head only, so a clip that keeps the head but flings the limbs still
+passes; the screenshot of a seated table is the final word.
+
 | Pose | Rule |
 |---|---|
 | `seated` | Lowest point at least 20 units above the model's standing floor, height at most 0.85 of the standing height. |
@@ -438,10 +451,9 @@ extracted <scene>...` regenerates the table, and a disc-gated test checks
 the committed one against the disc. The validator reads it (rows below), and
 the workbench's NPC form lists the borrowed placement's clips by pose,
 measured live off the loaded disc. A pose the table names is the vertices'
-shape, not the animator's intent: a clip authored for another model of the
-same bone count is listed under whatever shape it gives this one, and a
-placement that is not a figure (town01's windmill sails) is classed all
-the same, which is why the validator skips `scenery` NPCs.
+shape, not the animator's intent: a placement that is not a figure
+(town01's windmill sails) is classed all the same, which is why the
+validator skips `scenery` NPCs.
 
 ## Visible walls
 

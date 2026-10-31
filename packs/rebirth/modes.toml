@@ -28,9 +28,9 @@ radius = 90
 hide = ["lantern_table"]
 height = 90
 players = [
-  { npc = "lantern_wenna", name = "Wenna", sit = 36 },
-  { npc = "lantern_harl", name = "Harl", sit = 36 },
-  { npc = "lantern_ysel", name = "Ysel", sit = 36 },
+  { npc = "lantern_wenna", name = "Wenna", sit = 34 },
+  { npc = "lantern_harl", name = "Harl" },
+  { npc = "lantern_ysel", name = "Ysel" },
 ]
 
 [[card_duels]]
@@ -55,7 +55,7 @@ facing = 6
 hide = ["duel_table"]
 height = 64
 seat_distance = 150
-opponent = { npc = "duel_brin", name = "Brin", sit = 18 }
+opponent = { npc = "duel_brin", name = "Brin", sit = 34 }
 spectators = [{ npc = "duel_onlooker_a" }, { npc = "duel_onlooker_b" }]
 
 [[golf]]
@@ -180,10 +180,10 @@ hide = ["high_table"]
 height = 84
 players = [
   { npc = "high_table_odile", name = "Odile", sit = 31 },
-  { npc = "high_table_brann", name = "Brann", sit = 50 },
-  { npc = "high_table_sefa", name = "Sefa", sit = 34 },
-  { npc = "high_table_corwin", name = "Corwin", sit = 50 },
-  { npc = "high_table_mott", name = "Old Mott", sit = 34 },
+  { npc = "high_table_brann", name = "Brann", sit = 46 },
+  { npc = "high_table_sefa", name = "Sefa" },
+  { npc = "high_table_corwin", name = "Corwin" },
+  { npc = "high_table_mott", name = "Old Mott" },
 ]
 
 # The keeper plays the tower's own breed, hands face up, captures chaining
@@ -206,7 +206,7 @@ spawn = "from_below"
 tile = [3, 12]
 offset = [-96, 0, 64]
 facing = 0
-opponent = { npc = "duel_second", name = "The Warden's Second", sit = 50 }
+opponent = { npc = "duel_second", name = "The Warden's Second" }
 spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher" }]
 
 # Six holes up the tower's side. Each is a real-looking golf hole in
