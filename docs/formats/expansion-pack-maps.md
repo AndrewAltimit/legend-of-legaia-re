@@ -1253,7 +1253,7 @@ motion; a map that takes its base scene's ladder has no rest heights to
 swing about. The validator errors on both, and on a ladder too full for
 the phase steps asked of it.
 
-The Rebirth tower's Atrium dais pulses out from the Warden's Stone
+Genesis Tower's Atrium dais pulses out from the Warden's Stone
 (`ripple`); the Ember Stair's lava moats, runs and slag trough heave
 (`swell`). A `scroll` material stays the tool for texture that flows over
 still geometry - the terrain's water, a waterfall sheet - which is what

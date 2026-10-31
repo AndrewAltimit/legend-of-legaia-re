@@ -21,7 +21,7 @@ use legaia_save::character::LiveStats;
 
 const ITEMS_TOML: &str = r#"
 [items.vigil_blade]
-name = "Rebirth Blade"
+name = "Vigil Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 price = 1000
@@ -30,7 +30,7 @@ attack = 108
 set = "vigil"
 
 [items.vigil_mail]
-name = "Rebirth Mail"
+name = "Vigil Mail"
 kind = "armor"
 defence = 20
 set = "vigil"
@@ -42,7 +42,7 @@ price = 50
 effect = { kind = "heal_hp", amount = 300 }
 
 [sets.vigil]
-name = "Rebirth"
+name = "Vigil"
 bonuses = [{ pieces = 2, attack = 6, passives = [0x06] }]
 
 [[shops]]
@@ -174,10 +174,7 @@ fn pack_gear_displaces_retail_gear_and_folds_into_the_battle_seed() {
     assert_eq!(w.party.roster.members[0].equipment().slots[2], 0);
     assert_eq!(w.party.inventory.get(&0x27).copied(), Some(1));
     // The retail screens name the slot the pack item fills.
-    assert_eq!(
-        w.pack_worn_item_name(0, 2).as_deref(),
-        Some("Rebirth Blade")
-    );
+    assert_eq!(w.pack_worn_item_name(0, 2).as_deref(), Some("Vigil Blade"));
     assert_eq!(w.pack_worn_item_name(0, 3), None);
     // The look is the borrowed Chaos Breaker; the stats are the pack's.
     assert_eq!(w.member_look_equipment(0)[2], 0x27);
@@ -220,7 +217,7 @@ fn the_item_screen_buys_and_equips_through_the_tick() {
     let m = w.item_screen_view().unwrap();
     assert_eq!(m.title, "Armory");
     let names: Vec<&str> = m.rows.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names[..2], ["Rebirth Blade", "Tonic"]);
+    assert_eq!(names[..2], ["Vigil Blade", "Tonic"]);
     press(&mut w, PadButton::Cross);
     press(&mut w, PadButton::Cross);
     assert_eq!(w.pack_item_progress().count("vigil_blade"), 1);
@@ -278,7 +275,7 @@ fn a_pack_drop_and_a_boss_reward_land_in_the_pack_bag() {
     // The results window can still name it.
     assert_eq!(
         w.tables.item_catalog.get(alias).map(|e| e.name),
-        Some("Rebirth Blade")
+        Some("Vigil Blade")
     );
 }
 

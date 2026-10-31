@@ -45,12 +45,12 @@ The proof is `world::tests::expansion_arts`: every retail combo, alone and behin
 
 ### Chains
 
-`[chains.<key>]` is the pack's Super Art: when the arts a turn performs (retail constants and pack arts, in queue order) **end with** the chain's `arts`, the queue gets `0x1A` and the finisher's segment bytes appended. The `0x1A` carries the Super tail-replace's starter mark (`4`), so its commit raises the same `SUPER` banner and freeze a retail Super Art does. The pass runs after the retail finish, so a retail Super Art resolves first and a chain reads what it left; the longest matching chain wins. The Rebirth chain on Vahn, `R U R D U` then `L R L` (Hyper Elbow), Hyper Elbow already known:
+`[chains.<key>]` is the pack's Super Art: when the arts a turn performs (retail constants and pack arts, in queue order) **end with** the chain's `arts`, the queue gets `0x1A` and the finisher's segment bytes appended. The `0x1A` carries the Super tail-replace's starter mark (`4`), so its commit raises the same `SUPER` banner and freeze a retail Super Art does. The pass runs after the retail finish, so a retail Super Art resolves first and a chain reads what it left; the longest matching chain wins. The Knell Blaze chain on Vahn, `R U R D U` then `L R L` (Hyper Elbow), Hyper Elbow already known:
 
 ```text
 0D 0F 0D 0E 19 33 34 0C 0D 19 29 1A 35 00
                ^^^^^       ^^^^^ ^^^^^
-           Ember Cascade  Hyper  Rebirth Blaze
+           Ember Cascade  Hyper  Knell Blaze
 ```
 
 A finisher with no `commands` is reached only through its chain.
@@ -199,15 +199,15 @@ The arts and spells known are part of the pack's progress, so they save, park an
 - A pack spell keeps its base's presentation, except where its `target` widens a one-enemy base to `all_enemies`: there the cast runs as a player Seru whose own shape is every enemy - of the base's element first, then an elementless one (the catalog files captured Seru as neutral), then any - nearest the base in MP (`World::widened_presentation`; Gimard widens to Gola Gola), so the creature and camera strike the row the damage folds on. The roll the pack's `power` scales is that Seru's. With no such Seru the base's module plays, aimed at one.
 - The pause menu lists a hero's known pack arts (name, commands and AP) under the saved chains of the arts screen Triangle opens from the Status page (`World::expansion_known_arts_lines`); the Journal's Arts page lists the known arts and spells. The port draws no retail Moves page for either to join.
 
-## Rebirth's arts and Seru
+## The flagship pack's arts and Seru
 
-[`packs/rebirth/arts.toml`](../../packs/rebirth/arts.toml) gives each hero one art learned on the climb (level 55, after the Cinder Warden) and one Rebirth finisher (level 80, after the Azure Seraph) reached by chaining that art into a retail one:
+[`packs/rebirth/arts.toml`](../../packs/rebirth/arts.toml) gives each hero one art learned on the climb (level 55, after the Cinder Warden) and one Knell finisher (level 80, after the Azure Seraph) reached by chaining that art into a retail one:
 
 | Hero | Art | Commands | Clips | Finisher (chain) |
 |---|---|---|---|---|
-| Vahn | Ember Cascade, 30 AP, fire | `R U R D U` | Pyro Pummel U22 L22, Somersault L28 | Rebirth Blaze: Tornado Flame (Miracle) U28 L28 U28 L28, Power Slash L28, 140% (Ember Cascade, Hyper Elbow) |
-| Noa | Gale Waltz, 30 AP, wind, Numb 20% | `L U L D U` | Mirage Lancer U22 U22, Swan Driver L28 | Rebirth Tempest: Super Tempest, Dragon Fangs, 140% (Gale Waltz, Sonic Javelin) |
-| Gala | Iron Avalanche, 30 AP, thunder | `R U R D D` | Battering Ram L22, Super Ironhead U28 L28 | Rebirth Thunder: Thunder Punch (Miracle), Heaven's Drop, 140% (Iron Avalanche, Ironhead) |
+| Vahn | Ember Cascade, 30 AP, fire | `R U R D U` | Pyro Pummel U22 L22, Somersault L28 | Knell Blaze: Tornado Flame (Miracle) U28 L28 U28 L28, Power Slash L28, 140% (Ember Cascade, Hyper Elbow) |
+| Noa | Gale Waltz, 30 AP, wind, Numb 20% | `L U L D U` | Mirage Lancer U22 U22, Swan Driver L28 | Knell Tempest: Super Tempest, Dragon Fangs, 140% (Gale Waltz, Sonic Javelin) |
+| Gala | Iron Avalanche, 30 AP, thunder | `R U R D D` | Battering Ram L22, Super Ironhead U28 L28 | Knell Thunder: Thunder Punch (Miracle), Heaven's Drop, 140% (Iron Avalanche, Ironhead) |
 
 Against retail ([`data/gamedata/arts.toml`](../../data/gamedata/arts.toml), [art-data.md](art-data.md)): a four- or five-arrow regular art costs 24-30 AP for one or two beats at `x20`-`x28`, a Super Art 54-66 AP for four ascending beats. The mid arts sit at the top of the regular tier with one beat more; the finishers cost 60 AP across the two arts and land five beats at `x28` and 140%, just above the Super tier, as the reward for chaining.
 

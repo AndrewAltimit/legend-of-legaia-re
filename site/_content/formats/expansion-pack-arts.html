@@ -29,7 +29,7 @@ segments    0D 0F 0D 0E 19 33 34 00    the second segment</code></pre>
   <h3>Chains</h3>
   <p>A chain is the pack's Super Art: when the arts a turn performs end with its links, the queue gets <code>0x1A</code> (carrying the Super starter mark, so the <code>SUPER</code> banner and freeze play) and the finisher's bytes. It runs after the retail Super tail-replace.</p>
 <pre><code>0D 0F 0D 0E 19 33 34 0C 0D 19 29 1A 35 00
-               Ember Cascade  Hyper Elbow  Rebirth Blaze</code></pre>
+               Ember Cascade  Hyper Elbow  Knell Blaze</code></pre>
   <h3>Cost and damage</h3>
   <p>Retail computes an art's Spirit cost; a pack art states it (<code>ap</code>), halved under AP Used Down. Its hits use the retail power-byte encoding (<code>U12..U28</code> upper, <code>L12..L28</code> lower, <a href="art-data.html">art data</a>) through the retail damage kernel, then the pack's <code>damage_pct</code>, its element through the affinity matrix, and a status rider rolled per damaging hit.</p>
 </section>
@@ -109,14 +109,14 @@ u16    known spell count, then u8 roster slot + str key + u8 level + u32 XP each
   </ul>
 </section>
 
-<section class="doc-section" id="rebirths-arts-and-seru" data-doc="rebirths-arts-and-seru">
-  <h2>Rebirth's arts and Seru</h2>
+<section class="doc-section" id="the-flagship-packs-arts-and-seru" data-doc="the-flagship-packs-arts-and-seru">
+  <h2>The flagship pack's arts and Seru</h2>
   <table class="data">
     <thead><tr><th>Hero</th><th>Art (level 55, after the Cinder Warden)</th><th>Finisher (level 80, after the Azure Seraph)</th></tr></thead>
     <tbody>
-      <tr><td>Vahn</td><td>Ember Cascade <code>R U R D U</code>: Pyro Pummel, Somersault</td><td>Rebirth Blaze, after Hyper Elbow</td></tr>
-      <tr><td>Noa</td><td>Gale Waltz <code>L U L D U</code>: Mirage Lancer, Swan Driver</td><td>Rebirth Tempest, after Sonic Javelin</td></tr>
-      <tr><td>Gala</td><td>Iron Avalanche <code>R U R D D</code>: Battering Ram, Super Ironhead</td><td>Rebirth Thunder, after Ironhead</td></tr>
+      <tr><td>Vahn</td><td>Ember Cascade <code>R U R D U</code>: Pyro Pummel, Somersault</td><td>Knell Blaze, after Hyper Elbow</td></tr>
+      <tr><td>Noa</td><td>Gale Waltz <code>L U L D U</code>: Mirage Lancer, Swan Driver</td><td>Knell Tempest, after Sonic Javelin</td></tr>
+      <tr><td>Gala</td><td>Iron Avalanche <code>R U R D D</code>: Battering Ram, Super Ironhead</td><td>Knell Thunder, after Ironhead</td></tr>
     </tbody>
   </table>
   <table class="data">

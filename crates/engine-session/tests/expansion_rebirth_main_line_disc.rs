@@ -790,7 +790,7 @@ fn the_rebirth_isles_chain_plays_from_the_sea_gate_to_the_pearl() {
     run.press("pearl");
     run.expect_done("isles_pearl");
     eprintln!(
-        "[ran] Rebirth Isles: {} fights; {}",
+        "[ran] Lantern Isles: {} fights; {}",
         run.battles,
         run.log.join(" | ")
     );

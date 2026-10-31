@@ -156,7 +156,7 @@ from `map01` into Rim Elm.
 Retail frames the balloon at a fixed `0x58 x 0x90` and centres the line on
 the whole screen, so a line wider than the frame overhangs both of its sides.
 No retail section-2 name does: the longest measures 103 pixels in the dialog
-font. An expansion map's name (`Tower of Rebirth 7F - Sanctum of Echoes`) can,
+font. An expansion map's name (`Genesis Tower 7F - Sanctum of Echoes`) can,
 so the port fits the frame to the line (`TextBalloon::fitted`): a line with
 8 pixels to spare each side draws exactly as retail, a longer one widens the
 frame about the screen centre up to 304 pixels with the pen unchanged, and a

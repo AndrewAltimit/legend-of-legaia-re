@@ -29,7 +29,7 @@ fn pack() -> Arc<ExpansionPack> {
         "items.toml".into(),
         br#"
 [items.vigil_blade]
-name = "Rebirth Blade"
+name = "Vigil Blade"
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 characters = ["vahn"]

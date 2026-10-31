@@ -831,7 +831,7 @@ With a pack loaded:
   lists every map, for testing). The pack's
   name and version head the screen, with the count of new cards.
 - **Toasts**: a line at the top of the screen says when a quest starts, an
-  objective moves ("The Rebirth Tower: 2/3") and a quest completes.
+  objective moves ("The Warden's Trial: 2/3") and a quest completes.
 
 ## Related docs
 

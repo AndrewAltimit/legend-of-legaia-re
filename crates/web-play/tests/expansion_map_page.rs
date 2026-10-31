@@ -31,10 +31,7 @@ fn a_pack_map_names_itself_and_rolls_its_zones() {
     )
     .unwrap();
     assert_eq!(state["expansion_map"]["id"], "genesis_1f");
-    assert_eq!(
-        state["expansion_map"]["name"],
-        "Tower of Rebirth 1F - Atrium"
-    );
+    assert_eq!(state["expansion_map"]["name"], "Genesis Tower 1F - Atrium");
     assert!(rt.scene_rolls_encounters(), "the Atrium's zones roll");
 
     // A retail town is unchanged: no map in the state, and Rim Elm rolls

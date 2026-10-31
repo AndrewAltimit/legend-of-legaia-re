@@ -79,7 +79,7 @@ fn every_banner_line_stays_inside_its_frame() {
     assert!(retail.len() > 50 && pack.len() >= 10, "names read");
     assert!(
         pack.iter()
-            .any(|n| n == "Tower of Rebirth 7F - Sanctum of Echoes"),
+            .any(|n| n == "Genesis Tower 7F - Sanctum of Echoes"),
         "the longest pack name is in the set"
     );
     for name in retail.iter().chain(&pack) {

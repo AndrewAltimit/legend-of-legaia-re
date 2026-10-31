@@ -863,7 +863,7 @@ GPU draws the same 1152 draws in a few milliseconds.
 `play_expansion_live::tests::big_map_reload_cost` (ignored, disc-gated)
 builds the same map natively and splits the reload into the engine's map
 entry and the page's scene build.
-`isles_map_entry_cost` does the same for Rebirth's Isles maps, with a hash of
+`isles_map_entry_cost` does the same for the Lantern Isles maps, with a hash of
 the arrays the page uploads, which the grouped pass leaves unchanged on every
 map. The pass's share of each entry:
 

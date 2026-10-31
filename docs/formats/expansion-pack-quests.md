@@ -15,7 +15,7 @@ Pack flags and counters are the pack's own store (`PackFlags`), saved under the 
 ```toml
 [[quests]]
 id = "tower_trial"
-title = "The Rebirth Tower"
+title = "The Warden's Trial"
 description = "..."
 giver = "tower_guide"
 prerequisites = { quests = ["tower_rumour"], min_level = 30 }
