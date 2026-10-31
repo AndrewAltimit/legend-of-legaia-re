@@ -408,6 +408,37 @@ reach = 3
         assert!((2..=16).contains(&added), "{added} surround meshes");
     }
 
+    /// The floor sorts by its own depth, so the drop below it cannot paint
+    /// over it: a far-bucket ground cell draws under every primitive, and
+    /// the follow camera sees the drop past the map's far edge projected onto
+    /// the floor rows before that edge (Rebirth tower 1F's rows 9..=11 went
+    /// to the drop's faces that way).
+    #[test]
+    fn the_floor_is_depth_sorted_over_the_drop() {
+        use legaia_scene_formats::field_objects::{
+            CELL_GROUND_DEPTH_SORTED, CELL_WALK_VISIBLE, build_walk_heightfield,
+        };
+        let def: MapDef = toml::from_str(MAP).unwrap();
+        let img = build(&def).image;
+        let mut ground = 0;
+        for r in 0..GRID_DIM {
+            for c in 0..GRID_DIM {
+                let w = cell(&img, c, r);
+                if w & CELL_WALK_VISIBLE != 0 {
+                    ground += 1;
+                    assert_ne!(w & CELL_GROUND_DEPTH_SORTED, 0, "({c}, {r}) sorts");
+                }
+            }
+        }
+        assert_eq!(ground, 5, "the map's five floor tiles");
+        let hf = build_walk_heightfield(&img, &def.floor_ladder().unwrap());
+        assert!(!hf.far_bucket.is_empty());
+        assert!(
+            hf.far_bucket.iter().all(|&f| !f),
+            "no ground cell in the far bucket"
+        );
+    }
+
     #[test]
     fn the_drop_lies_depth_below_tier_zero_and_faces_rise_to_the_neighbour() {
         let s = SurroundDef {

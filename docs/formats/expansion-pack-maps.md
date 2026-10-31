@@ -1193,6 +1193,15 @@ tier height, so the mesh carries the rest of the drop), which costs a
 handful of the map's object records. A terrain draws its own `skirt`
 instead, and the validator warns of a surround on one.
 
+A pack map's ground cells carry the depth-sort bit `0x8000`
+([`CELL_GROUND_DEPTH_SORTED`](../../crates/scene-formats/src/field_objects.rs)),
+which few retail floors do. A cell without it goes into the ground pass's
+far bucket and draws under every other primitive whatever its depth -
+harmless when nothing lies below the floor, but from the follow camera the
+drop past the map's far edge projects onto the floor rows in front of that
+edge, and a far-bucket floor let the drop and its faces paint over them.
+Sorted by its own depth, the floor covers what lies under it.
+
 An interior's far walls stop where the follow camera still looks: past
 their tops it frames the clear colour, a black sky over a room that has
 none. `backdrop` stands a wall round the drop, `distance` tiles past the

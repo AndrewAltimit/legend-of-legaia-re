@@ -24,7 +24,9 @@
 //!   texture, decoration mesh and prop, each cell naming its record in its low
 //!   nine bits and carrying the draw gates `0x1000` / `0x2000` the grid-mark
 //!   refresh derives from the record's flags. A retail map ships them
-//!   stamped, and the draw side reads the scene's image unrefreshed.
+//!   stamped, and the draw side reads the scene's image unrefreshed. Every
+//!   ground cell the pack writes also carries the depth-sort bit `0x8000`
+//!   ([`set_cell`]).
 //! - `+0x10000` trigger block: the empty four-table chain. A pack map's exits
 //!   and zones are the map runtime's, not `.MAP` triggers.
 //!
@@ -38,8 +40,8 @@ use legaia_expansion_format::map::{
 };
 use legaia_expansion_format::refs::DiscRef;
 use legaia_scene_formats::field_objects::{
-    COLLISION_GRID_OFFSET, GRID_DIM, OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, OBJECT_RECORD_STRIDE,
-    ObjectRecord, TILE_CENTER,
+    CELL_GROUND_DEPTH_SORTED, CELL_WALK_VISIBLE, COLLISION_GRID_OFFSET, GRID_DIM,
+    OBJECT_GRID_OFFSET, OBJECT_INDEX_MASK, OBJECT_RECORD_STRIDE, ObjectRecord, TILE_CENTER,
 };
 
 use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
@@ -94,9 +96,24 @@ fn cell_gates(flags: u16) -> u16 {
 /// Write cell word `value` at `o`, keeping the cell's elevation-override bit
 /// (`0x800`, a kept retail stair or raised floor) so the floor sampler still
 /// reads the tile's kind-2 record.
+///
+/// A ground cell (`0x1000`) also takes the depth-sort bit
+/// [`CELL_GROUND_DEPTH_SORTED`]. Without it the field ground pass links the
+/// cell into the far ordering-table bucket, under every other primitive
+/// whatever its depth - right for a retail floor, which nothing is drawn
+/// below, and wrong for a pack map with a [`surround`]: the drop and its
+/// faces lie hundreds of units under the floor, and from the follow camera
+/// the drop past a far edge projects onto the floor in front of it, so a far
+/// bucket floor let it paint straight over the rows before that edge. Sorted
+/// by its own depth, the floor covers what lies below it.
 fn set_cell(img: &mut [u8], o: usize, value: u16) {
     let old = u16::from_le_bytes([img[o], img[o + 1]]);
-    let v = value | (old & CELL_ELEVATION_OVERRIDE);
+    let sort = if value & CELL_WALK_VISIBLE != 0 {
+        CELL_GROUND_DEPTH_SORTED
+    } else {
+        0
+    };
+    let v = value | sort | (old & CELL_ELEVATION_OVERRIDE);
     img[o..o + 2].copy_from_slice(&v.to_le_bytes());
 }
 
