@@ -586,7 +586,8 @@ validator checks the scene coordinate, the tile range, the spawn and the
 quests `requires` names; it cannot see the scene's walls without the disc.
 
 The pause menu's **Travel** page (the Journal, Select on the root list)
-enters a pack map the party has been to on this save directly; the *Unlock
+enters a pack map the party has been to on this save directly, and lists a
+map whose entrance gate holds now before its first visit; the *Unlock
 all Travel maps* cheat (`--cheat-travel`, the play page's Cheats panel) lists
 every map, which is the way in for testing a map whose entrance is out of
 reach ([`field-menu.md`](../subsystems/field-menu.md#expansion-pack-journal-engine-extension)).

@@ -170,7 +170,7 @@ fn a_retail_npc_talk_and_a_mode_win_reach_the_quests_and_toast() {
 }
 
 /// The Rebirth journal follows the pack's own content: every challenge
-/// listed, every map behind the Travel gate, the auto-start quest opening on its level, and its talk
+/// listed, every map but the open ways in behind the Travel gate, the auto-start quest opening on its level, and its talk
 /// opening the quest that names it as a prerequisite. Derived from the pack
 /// files, so the content can grow without the test pinning its shape.
 #[test]
@@ -191,9 +191,29 @@ fn the_rebirth_journal_lists_its_chain_and_challenge() {
         .collect();
     assert_eq!(titles, want);
     assert!(empty.challenges.iter().all(|c| c.best.is_none()));
-    // Travel offers no map before the party has been on one; the Unlock
-    // Travel cheat lists them all.
-    assert!(empty.maps.is_empty(), "no map visited yet");
+    // Before any visit, Travel offers only the maps whose retail-scene
+    // entrance is open to this level-30 party; the Unlock Travel cheat lists
+    // them all.
+    let open: Vec<&str> = pack
+        .maps
+        .iter()
+        .filter(|(_, m)| {
+            m.entrances
+                .iter()
+                .any(|e| e.requires.min_level.is_none_or(|l| l <= 30))
+        })
+        .map(|(id, _)| id.as_str())
+        .collect();
+    assert!(!open.is_empty(), "Rebirth has a way in at level 30");
+    let listed: Vec<&str> = empty.maps.iter().map(|m| m.map_id.as_str()).collect();
+    assert_eq!(listed, open, "only the open ways in, before any visit");
+    let mut shut = field_world(29);
+    shut.activate_expansion(pack.clone())
+        .expect("Rebirth activates");
+    assert!(
+        shut.expansion_journal().unwrap().maps.is_empty(),
+        "a level-29 party is offered nothing"
+    );
     assert_eq!(empty.maps_total, pack.maps.len());
     w.toggles.travel_all_maps = true;
     let unlocked = w.expansion_journal().unwrap();

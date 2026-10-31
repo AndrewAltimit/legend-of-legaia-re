@@ -2197,7 +2197,11 @@ on a **Travel** row closes the menu and asks the scene host for the map
 page lists the maps the party has entered on this save: the quest runtime
 raises the pack flag `@visited:<map>` (`journal::visited_flag`) on the first
 entry, by any route, and the save's expansion block carries it with the other
-pack flags. A player cannot skip an entrance's gate through it. The *Unlock
+pack flags. A map with a retail-scene entrance whose gate holds now is listed
+before its first visit too (`journal::journal_view_with`), so a party that
+qualifies reaches it from the pause menu on every path into the game - a New
+Game, a loaded save, a launcher start - and a player cannot skip an
+entrance's gate through it. The *Unlock
 all Travel maps* cheat (`WorldToggles::travel_all_maps`) lists every map - the
 way onto a map whose entrance is out of reach
 ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#entrances)). The **Items** page lists the pack

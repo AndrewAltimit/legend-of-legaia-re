@@ -769,8 +769,10 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
 
 **Where Rebirth starts.** Rebirth is made for a late-game party: its way in is
 an entrance in Rim Elm that opens at party level 30, so *Continue* a late save
-(or play a New Game up to it). Once you have been on one of its maps, the
-Journal's *Travel* page (Select on the pause menu) takes you back there from
+(or play a New Game up to it). From level 30 the Journal's *Travel* page
+(Select on the pause menu) lists the tower's Atrium, so you can go straight
+there from wherever your save stands, from the launcher as from a terminal;
+once you have been on one of its maps, Travel takes you back there from
 anywhere. To look around before that, start the game from a terminal straight
 onto a map (`--map`, above) or add `--cheat-travel`, which lists every map on
 the Travel page.
@@ -824,8 +826,9 @@ With a pack loaded:
   objective's progress and the reward; *Challenges* lists the challenges with
   their best scores, and Cross arms one for the next battle; *Cards* shows the
   trading-card collection and opens the card menu; *Travel* lists the pack
-  maps you have been to on this save and takes you straight back to one
-  (the *Unlock all Travel maps* cheat lists every map, for testing). The pack's
+  maps you have been to on this save, and any whose entrance is open to the
+  party, and takes you straight to one (the *Unlock all Travel maps* cheat
+  lists every map, for testing). The pack's
   name and version head the screen, with the count of new cards.
 - **Toasts**: a line at the top of the screen says when a quest starts, an
   objective moves ("The Rebirth Tower: 2/3") and a quest completes.

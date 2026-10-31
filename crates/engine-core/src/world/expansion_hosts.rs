@@ -7,7 +7,7 @@
 //! tested, no toast queues, no talk is reported, and the Journal is `None`.
 
 use legaia_engine_expansion::entrance::EntranceHit;
-use legaia_engine_expansion::journal::{JournalView, journal_view};
+use legaia_engine_expansion::journal::{JournalView, journal_view_with};
 use legaia_engine_expansion::quest::QuestEvent;
 use legaia_engine_expansion::quest_save::ExpansionProgress;
 use legaia_engine_expansion::toast::notice_text;
@@ -166,7 +166,12 @@ impl World {
         let pack = self.expansion.pack.as_deref()?;
         let mut rt = self.expansion.quests.clone();
         rt.sync_pack(pack);
-        Some(journal_view(pack, &rt, self.toggles.travel_all_maps))
+        Some(journal_view_with(
+            pack,
+            &rt,
+            self.toggles.travel_all_maps,
+            |p| self.expansion_prerequisites_hold(p),
+        ))
     }
 
     /// The quest toast on screen, if any.

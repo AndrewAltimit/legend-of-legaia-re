@@ -162,6 +162,22 @@ impl JournalView {
 /// ([`visited_flag`]); `all_maps` lists every map instead (the "Unlock
 /// Travel" cheat, for testing a map whose entrance is out of reach).
 pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime, all_maps: bool) -> JournalView {
+    journal_view_with(pack, rt, all_maps, |_| false)
+}
+
+/// [`journal_view`] with the pack's ways in: a map with a retail-scene
+/// entrance (`[[entrances]]`) whose gate `entrance_open` says holds now is
+/// on the Travel page before its first visit, so a party that qualifies for
+/// the entrance reaches the map from the pause menu on every path into the
+/// game (a New Game, a loaded save, a launcher start), not only by walking
+/// to the retail tiles. A shut gate keeps the map off the page, so Travel
+/// skips no entrance's requirement.
+pub fn journal_view_with(
+    pack: &ExpansionPack,
+    rt: &QuestRuntime,
+    all_maps: bool,
+    entrance_open: impl Fn(&legaia_expansion_format::quest::Prerequisites) -> bool,
+) -> JournalView {
     let mut quests: Vec<QuestRow> = rt
         .journal(&pack.quests)
         .into_iter()
@@ -217,7 +233,11 @@ pub fn journal_view(pack: &ExpansionPack, rt: &QuestRuntime, all_maps: bool) -> 
         maps: pack
             .maps
             .iter()
-            .filter(|(id, _)| all_maps || rt.progress.flags.is_set(&visited_flag(id)))
+            .filter(|(id, m)| {
+                all_maps
+                    || rt.progress.flags.is_set(&visited_flag(id))
+                    || m.entrances.iter().any(|e| entrance_open(&e.requires))
+            })
             .map(|(id, m)| TravelRow {
                 map_id: id.clone(),
                 name: non_empty(&m.name, id),
@@ -654,6 +674,44 @@ title = "Chal"
         assert!(back.flags.is_set(&visited_flag("b_map")));
         // Unlocked, every map is offered.
         assert_eq!(journal_view(&p, &rt, true).maps.len(), 2);
+    }
+
+    #[test]
+    fn travel_offers_a_map_whose_entrance_is_open() {
+        let mut p = pack();
+        let gated: legaia_expansion_format::map::MapDef = toml::from_str(
+            r#"
+name = "Tower"
+base = { scene = { kind = "scene", name = "tower" } }
+[tiles]
+rows = ["..."]
+[[spawns]]
+id = "door"
+tile = [1, 0]
+[[entrances]]
+id = "stair"
+scene = { kind = "scene", name = "town01" }
+rect = [10, 20, 11, 20]
+spawn = "door"
+requires = { min_level = 30 }
+"#,
+        )
+        .expect("map parses");
+        p.maps.insert("tower".into(), gated);
+        p.maps.insert("inner".into(), Default::default());
+        let mut rt = QuestRuntime::default();
+        rt.sync_pack(&p);
+        let ids = |open: bool| -> Vec<String> {
+            journal_view_with(&p, &rt, false, |_| open)
+                .maps
+                .into_iter()
+                .map(|m| m.map_id)
+                .collect()
+        };
+        // A shut gate keeps the entry map off the page; an open one lists it
+        // before any visit. A map with no entrance waits for its visit.
+        assert!(ids(false).is_empty());
+        assert_eq!(ids(true), ["tower"]);
     }
 
     #[test]
