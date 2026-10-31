@@ -79,7 +79,7 @@ const NAV = [
       { href: 'world.html',                     text: 'Game world',               key: 'world' },
       { href: 'shops.html',                     text: 'Shops & vendors',          key: 'shops' },
       { href: 'minigames.html',                 text: 'Minigames',                key: 'minigames' },
-      { href: 'modes.html',                     text: 'Game modes',               key: 'modes' },
+      { href: 'modes.html',                     text: 'Custom game modes',        key: 'modes' },
       { href: 'arts.html',                      text: 'Tactical Arts',            key: 'arts' },
       { href: 'magic.html',                     text: 'Seru magic & summons',     key: 'magic' },
       { href: 'monsters.html',                  text: 'Enemy table',              key: 'monsters' },
