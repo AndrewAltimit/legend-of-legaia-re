@@ -69,7 +69,6 @@
 .play-mode[disabled] { opacity: 0.45; cursor: not-allowed; }
 .play-mode.is-active { border-color: var(--accent); background: var(--accent-soft); }
 .play-mode-name { font-weight: 600; font-size: 0.92rem; }
-.play-mode-pack .play-mode-tag { color: var(--accent); }
 /* Expansion packs are the port's own, still-moving feature: every place
  * the page offers one says so. */
 .play-experimental {
@@ -450,16 +449,6 @@ div.play-vis-head { cursor: default; }
           console) - ending at the naming prompt. Continue loads a save from an inserted memory
           card. Idle on the title for 25 seconds, at the prompt or on the menu, and the attract movie plays, as on the console.</span>
       </button>
-      <button class="play-mode play-mode-pack" type="button" data-mode="rebirth" id="play-mode-rebirth"
-              title="Load the Rebirth expansion pack this site serves, then boot to the title screen. The Expansion pack card below switches packs or unloads it.">
-        <span class="play-mode-tag">expansion pack <span class="play-experimental">experimental</span></span>
-        <span class="play-mode-name">Legend of Legaia: Rebirth</span>
-        <span class="play-mode-desc">The same New Game with the project's flagship expansion pack
-          loaded: a tower that rose where the Mist died, built for the climb from level 60 to 99, with
-          its own quests, bosses, items and game modes. The pack points at your disc, it brings
-          no game data; Select in the pause menu opens its Journal. Experimental: expansion packs
-          are still changing, so expect rough edges, and keep a save from before the tower.</span>
-      </button>
       <button class="play-mode" type="button" data-mode="scene">
         <span class="play-mode-tag">explore</span>
         <span class="play-mode-name">Scene picker</span>
@@ -759,15 +748,15 @@ div.play-vis-head { cursor: default; }
                 <option value="6">Dance</option>
               </select>
             </label>
-            <label title="The port's own game modes - poker, Grid Duel, golf, racing, prop hunt - from the loaded expansion pack, or the built-in practice set without one (the native backquote key and --mode flag). Start inside a mode asks to leave.">
-              Game mode
+            <label title="The port's custom game modes (experimental, not part of the original game) - poker, Grid Duel, golf, racing, prop hunt - from the loaded expansion pack, or the built-in practice set without one (the native backquote key and --mode flag). Start inside a mode asks to leave.">
+              Custom game mode
               <select id="play-pack-mode">
                 <option value="">enter...</option>
                 <option value="picker">Mode picker</option>
                 <option value="exit">Leave the mode</option>
               </select>
             </label>
-            <a href="modes.html" title="Play the game modes on their own page, no disc needed">modes page</a>
+            <a href="modes.html" title="Play the custom game modes on their own page, no disc needed">custom modes page</a>
             <label title="The loaded expansion pack's trading cards: the card menu (binder, boosters, sell, deck) or the binder alone, drawn by the engine (the native backslash key). Circle backs out, Start leaves.">
               <span id="play-cards-label">Cards</span>
               <select id="play-cards">
@@ -898,7 +887,7 @@ div.play-vis-head { cursor: default; }
 
       <div class="play-rail">
         <div class="play-card" id="play-scene-card">
-          <h3>Scenes</h3>
+          <h3 id="play-scene-title">Scenes</h3>
           <input type="search" id="play-scene-search" class="play-scene-search"
                  placeholder="Filter…" autocomplete="off">
           <div class="play-scene-list" id="play-scene-list"></div>
@@ -916,16 +905,16 @@ div.play-vis-head { cursor: default; }
         </div>
 
         <div class="play-card" id="play-expansion-card">
-          <h3>Expansion pack <span class="play-experimental">experimental</span></h3>
+          <h3>Expansion pack <span class="play-experimental">experimental, incomplete</span></h3>
           <label class="play-save-import">Install another pack (.lxpack, or drop one on this card)
             <input type="file" id="expansion-import" accept=".lxpack" disabled>
           </label>
           <div class="play-lib" id="expansion-library" aria-label="Installed packs"></div>
           <div class="play-btn-row">
             <button id="expansion-unload" type="button" disabled
-                    title="Play the game as it shipped. The pack's progress stays in your saves.">Unload</button>
+                    title="Turn the expansion pack off: the game as it shipped. The pack's progress stays in your saves.">Disable</button>
           </div>
-          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. Expansion packs are experimental. A pack adds maps, quests and fights made for the port; New Game and Continue play with it, and Select in the pause menu opens its Journal.</div>
+          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. Off by default. Expansion packs are experimental and incomplete: enabling one adds its maps and custom game modes to the Scenes list, and New Game and Continue play with it.</div>
         </div>
 
         <!-- Collapsed by default: the key list is long and most visitors only
@@ -1046,10 +1035,11 @@ div.play-vis-head { cursor: default; }
       <a href="minigames.html">minigames page</a> runs, with your points, casts and lure carried
       between sessions. <kbd>X</kbd> casts and locks the power meter, <kbd>Z</kbd> and
       <kbd>V</kbd> reel (<a href="subsystems/minigame-fishing.html">fishing</a>).</li>
-    <li><strong>The port's own game modes.</strong> Hold'em, Grid Duel, golf, racing and prop
-      hunt open from the <em>Game mode</em> control, from the loaded pack or the built-in
-      practice set; Rebirth lays some of them out on its maps. The
-      <a href="modes.html">game modes page</a> plays each one on its own, with no disc.</li>
+    <li><strong>The port's custom game modes.</strong> Hold'em, Grid Duel, golf, racing and prop
+      hunt - the port's own, experimental and not part of the original game - open from the
+      <em>Custom game mode</em> control, from the loaded pack or the built-in practice set;
+      Rebirth lays some of them out on its maps (enable it on the Expansion pack card). The
+      <a href="modes.html">custom game modes page</a> plays each one on its own, with no disc.</li>
     <li><strong>The overworld.</strong> Picking a kingdom map walks it with the world-map
       controller: step-driven encounters, ports and town doors
       (<a href="subsystems/world-map.html">world map</a>).</li>
@@ -1235,11 +1225,15 @@ div.play-vis-head { cursor: default; }
     renderList('');
   }).catch(() => {});
 
-  /* The active expansion pack's maps, listed in the picker as a section of
-   * their own above the disc's (`expansionShow` sets it on a load and
-   * clears it on an unload): `{ name, maps: [{ id, name }] }` or null. A
-   * click enters the map through the same call the workbench's Play here
-   * uses (`enterExpansionMap`). */
+  /* The enabled expansion pack, `{ name, maps: [{ id, name }], modes }` or
+   * null (`expansionShow` sets it on a load and clears it on an unload). A
+   * pack is enabled only from the Expansion pack card (or a hand-off that
+   * names one: the workbench, the custom game modes page); never on its
+   * own. Enabled, its maps and custom game modes are one more section of
+   * this same list, marked experimental, above the disc's scenes; disabled,
+   * the list is the disc's scenes alone and New game is the game as it
+   * shipped. A map click enters through the same call the workbench's
+   * Play here uses (`enterExpansionMap`). */
   let pickerPack = null;
   /* The pack map running now (its id), from the entry's state. */
   let activePackMap = null;
@@ -1247,11 +1241,11 @@ div.play-vis-head { cursor: default; }
   function renderList(filter) {
     const f = (filter || '').trim().toLowerCase();
     const parts = [];
-    if (pickerPack && pickerPack.maps.length) {
+    if (pickerPack) {
       const maps = pickerPack.maps
         .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f));
       if (maps.length) {
-        parts.push(`<div class="play-scene-group is-pack">${window.escapeHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack</span> <span class="play-experimental">experimental</span></div>`);
+        parts.push(`<div class="play-scene-group is-pack">${window.escapeHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack maps</span> <span class="play-experimental">experimental</span></div>`);
         for (const m of maps) {
           const cls = m.id === activePackMap ? 'play-scene-item is-pack is-active' : 'play-scene-item is-pack';
           parts.push(
@@ -1266,7 +1260,7 @@ div.play-vis-head { cursor: default; }
         .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f)
           || (m.kind || '').toLowerCase().includes(f));
       if (wm.length) {
-        parts.push('<div class="play-scene-group is-pack">Game modes in 3D <span class="play-scene-pack-tag">played at their tables and courses</span></div>');
+        parts.push('<div class="play-scene-group is-pack">Custom game modes in 3D <span class="play-scene-pack-tag">expansion pack</span> <span class="play-experimental">experimental</span></div>');
         for (const m of wm) {
           parts.push(
             `<button class="play-scene-item is-pack" type="button" data-pack-mode="${window.escapeHtml(m.id)}" data-mode-map="${window.escapeHtml(m.map)}">` +
@@ -1305,23 +1299,7 @@ div.play-vis-head { cursor: default; }
     if (!b) return;
     for (const el of modesEl.querySelectorAll('.play-mode')) el.classList.remove('is-active');
     b.classList.add('is-active');
-    if (b.dataset.mode === 'rebirth') {
-      /* The built-in Rebirth pack (play-pack-library.js BUILTIN), then the
-       * same boot chain as New game. A pack that fails to load says why on
-       * the expansion card and boots nothing. */
-      if (!runtime || !packLibrary) return;
-      b.disabled = true;
-      packLibrary.playBuiltin('rebirth').then((ok) => {
-        b.disabled = false;
-        if (!ok) {
-          document.getElementById('play-expansion-card').scrollIntoView({ block: 'nearest' });
-          return;
-        }
-        supersedeStarts();
-        if (view) { try { view.stop(); } catch (e) {} }
-        runBootTitle(onTitleOutcome);
-      });
-    } else if (b.dataset.mode === 'newgame') {
+    if (b.dataset.mode === 'newgame') {
       /* Boot chain: show the retail title card (New Game / Continue) off the
        * disc's own title art, then run the prologue cutscene chain (falling
        * back to Rim Elm directly if the cutscene scene fails to enter).
@@ -1437,6 +1415,8 @@ div.play-vis-head { cursor: default; }
     if (!ok) activePackMap = null;
     renderList(searchEl.value);
     expansionUnloadBtn.disabled = !ok;
+    const title = document.getElementById('play-scene-title');
+    if (title) title.textContent = ok ? `Scenes + ${pickerPack.name}` : 'Scenes';
   }
 
   /* The engine's answer to the last load (`load_expansion`'s JSON). */
@@ -1463,8 +1443,7 @@ div.play-vis-head { cursor: default; }
     const p = info.pack;
     const by = p.authors && p.authors.length ? ` by ${p.authors.join(', ')}` : '';
     const warn = info.warnings && info.warnings.length ? ` (${info.warnings.length} warning(s))` : '';
-    const where = p.maps && p.maps.length ? ` Its maps are listed first in the Scenes list.` : '';
-    expansionMsg(`${p.name} ${p.version}${by}${warn}. New Game and Continue play with it; Select in the pause menu opens its Journal.${where}`);
+    expansionMsg(`On: ${p.name} ${p.version}${by}${warn} - experimental and incomplete, still changing. Its maps and custom game modes are added to the Scenes list, New Game and Continue play with it, and Select in the pause menu opens its Journal. Disable turns it off.`);
     expansionShow(info);
   }
 
@@ -1507,13 +1486,13 @@ div.play-vis-head { cursor: default; }
 
   async function expansionDiscReady() {
     expansionInput.disabled = false;
-    expansionMsg('No expansion pack: the game as it shipped. Play Rebirth from the list, or install an .lxpack.');
+    expansionMsg('Off: the game as it shipped. Enable a pack above to add its maps and custom game modes to the Scenes list (experimental, incomplete).');
     if (packLibrary) packLibrary.render();
-    /* Without the workbench's hand-off, play with the library's active pack. */
-    if (!/[?&]expansion=1\b/.test(location.search)) {
-      if (packLibrary) await packLibrary.loadActive();
-      return;
-    }
+    /* Nothing enables a pack on its own: every visit starts off, and only
+     * the card's Enable turns one on. A hand-off that names one - the
+     * workbench's Play in browser, the custom game modes page's Play in 3D
+     * (`?expansion=1`) - is that explicit choice made elsewhere. */
+    if (!/[?&]expansion=1\b/.test(location.search)) return;
     const q = new URLSearchParams(location.search);
     /* `&lib=<id>`: the workbench installed the pack in the library and made
      * it active - play the library's copy. Without it, the older hand-off
@@ -1633,11 +1612,16 @@ div.play-vis-head { cursor: default; }
 
   expansionUnloadBtn.addEventListener('click', () => {
     if (!runtime) return;
+    const onPackMap = !!activePackMap;
     try { runtime.unload_expansion(); } catch (e) { console.warn(e); }
     expansionBytes = null;
     expansionShow(null);
     if (packLibrary) packLibrary.deactivate();
-    expansionMsg('No expansion pack: the game as it shipped. Its progress stays in your saves.');
+    if (onPackMap) {
+      supersedeStarts();
+      if (view) { try { view.stop(); } catch (e) {} }
+    }
+    expansionMsg('Off: the game as it shipped. The pack\'s progress stays in your saves.');
   });
 
   /* Slice a named ISO file's raw Mode2/2352 sectors out of the disc bytes
