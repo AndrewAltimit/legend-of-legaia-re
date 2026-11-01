@@ -394,7 +394,12 @@ engine verdict:
   engine's). `kor5_post_43a_checkpoint` was played through `kor5` `P2[3]`,
   whose last `A3 0E 20 5D` stands Old Deez at `(4160, 11968)` where his head
   bytes `20 DC` spawn him at `(4160, 11904)` (`npcs` `.977` to `1`, `image`
-  `.986` to `1.000`).
+  `.986` to `1.000`). The off-map park literal is seated the same way: a
+  placement retail holds on the park seat, whose flat a partition-2 beat
+  parks (`A3 <flat> 7F 7F`, or the run-to-tile `CC <flat> 51 7F 7F`), is
+  stood on retail's park coordinates with retail's heading, which the beat's
+  last walk turned and nothing draws there
+  ([the npcs channel](#the-npcs-channel)).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -3070,41 +3075,40 @@ Its misses fall into three shapes:
 - **A record that ran on other flags.** A placement's record places it at
   scene entry from the story flags of that moment (`town01` `P1[33]`: a
   `4C 51` per flag arm, none for the parked case). The seed enters the scene
-  with the capture's flags, which can be later ones: in
-  `town01_tetsu_topic_prompt` the engine takes `P1[33]`'s `0x226`-set arm and
-  draws flats 69 / 70 at `(12608, 1728)` / `(12608, 1984)`, while retail,
-  which entered the town before the conversation, still has them parked.
-  The flags channel reads the bitmap now, not at entry, so it cannot see
-  this.
-- **A cutscene that ran earlier in the visit.** `nivora_cutscene_delilas_intro`
-  is parked in `nilboa` `P2[3]`, and its three misses are what ran before it.
-  Gala (flat 50, `P1[24]`) holds `+0x94` on `P2[0]` `+0x5D8`, his compass
-  walk in the first-visit cutscene `P2[0]` - gated on, and setting, system
-  flag `0x47C` - which ends by parking him (`A3 32 7F 7F`, `+0x990`). The
-  seed enters with `0x47C` already set, so `P2[0]` never runs and he stays on
-  his header tile `(0x50, 0x64)`. The two pushable blocks (flats 39 / 40,
-  `P1[13]` / `P1[14]`, model 116) sit on the park seat with `+0x8C` / `+0x8D`
-  at `7F 7F` and their records looping at the `0x457` test; with `0x457` set
-  their own prologue moves them to the pushed tiles, which is where the
-  engine draws them. The one record that parks both and lays the bridge
-  tiles under them is `P2[26]` (global record `0x68`: `A3 27 7F 7F`,
-  `A3 28 7F 7F`, then `4C 83` fills and `4C 70` / `4C 71` wall paints), and
-  no op-`0x44` site in `nilboa` names `0x68` - the entry spawns only
-  `P2[17]`, the ravine selector (`0x10` / `0x11` / `0x12` pick Fire, Wind or
-  Thunder Ravine; the Wind arm parks the blocks too, but this state is in
-  Thunder Ravine, `0x12`). `P2[26]` is a **walk-on** record: six kind-1
-  records in `nilboa`'s `.PCH` sidecar ([scene-v12-table](../formats/scene-v12-table.md);
+  with the capture's flags, which can be later ones. The flags channel reads
+  the bitmap now, not at entry, so it cannot see this.
+- **A cutscene that ran earlier in the visit and parked its cast.** The
+  beat's latch is up in the save, so a card load never runs it again, and
+  the cast's own records spawn them over the flags it raised.
+  `town01_tetsu_topic_prompt` is caught in Tetsu's talk (`P1[10]`, flat
+  `46`), not in the beat: `P2[4]` sets `0x226` as its first op (`+0x12`) and
+  ends by parking flats `70` / `69` with `CC 46 51 7F 7F` / `CC 45 51 7F 7F`
+  (`+0x6F7` / `+0x6FE`), and with `0x226` up and `0x227` down `P1[33]`'s
+  arm at `+0x45` stands them at tile `(98, 13)`. In
+  `nivora_cutscene_delilas_intro` (parked in `nilboa` `P2[3]`) Gala (flat
+  50, `P1[24]`) holds `+0x94` on `P2[0]` `+0x5D8`, his compass walk in the
+  first-visit cutscene `P2[0]` - gated on, and setting, system flag `0x47C` -
+  which ends by parking him (`A3 32 7F 7F`, `+0x990`); the seed enters with
+  `0x47C` already set, so `P2[0]` never runs and he stands on his header
+  tile `(0x50, 0x64)`. The two pushable blocks (flats 39 / 40, `P1[13]` /
+  `P1[14]`, model 116) sit on the park seat with `+0x8C` / `+0x8D` at
+  `7F 7F` and their records looping at the `0x457` test; with `0x457` set
+  their own prologue moves them to the pushed tiles. The record that parks
+  both and lays the bridge tiles under them is `P2[26]` (global record
+  `0x68`: `A3 27 7F 7F`, `A3 28 7F 7F`, then `4C 83` fills and `4C 70` /
+  `4C 71` wall paints), a **walk-on** record: six kind-1 records in
+  `nilboa`'s `.PCH` sidecar ([scene-v12-table](../formats/scene-v12-table.md);
   extraction `0636`, filed under `jou` by the +2 label shift) name `b2 =
   0x1A` on tiles `(46, 63..=65)` and `(54, 62..=64)`, the two ends of the
-  pushed-block bridge. Retail's player crossed them on the way to Thunder
-  Ravine; the seat stands the player at row `114` and stamps its own tile
-  into the walk-on pair, so nothing crosses them. A card load of the save
-  draws the blocks where the engine does, so this miss is visit history. The flags
-  channel's two bits are `P1[0]`'s region flags: retail holds `0x52C`
-  (box `[26, 0 .. 126, 87]`) although the player stands at tile row `114`,
-  and the engine `0x52B` (box `[16, 88 .. 126, 126]`, the player's tile), so
-  retail's last region pass ran before the cutscene walked the player in and
-  the engine's ran after.
+  pushed-block bridge, which retail's player crossed on the way to Thunder
+  Ravine. No op-`0x44` site in `nilboa` names `0x68`. All of these are seated
+  ([`scripted_seats`](#the-seeding-model)'s park arm), and both states read
+  `npcs` `1.000`. The walk-on's wall paints are not: the seed's grid keeps
+  the unbridged walls. The `nivora` flags channel's two bits are `P1[0]`'s
+  region flags: retail holds `0x52C` (box `[26, 0 .. 126, 87]`) although the
+  player stands at tile row `114`, and the engine `0x52B` (box
+  `[16, 88 .. 126, 126]`, the player's tile), so retail's last region pass
+  ran before the cutscene walked the player in and the engine's ran after.
 - **A cutscene's closing placement.** A placement can stand 64 units (half
   a tile) off the tile its spawn decodes (`(b & 0x7F) * 0x80 + 0x40`,
   `+ 0x80` instead with bit 7, `0x8003A330..0x8003A384`) for two reasons. Most are

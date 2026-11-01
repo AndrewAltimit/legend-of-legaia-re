@@ -325,7 +325,10 @@ fn seed_and_settle(
     // A placement a finished cutscene beat stood on a script-literal tile is
     // history the card load does not replay ([`scripted_seats`]).
     for w in &retail.scripted_seats {
-        session.host.world.seed_placement_seat(w.flat, w.x, w.z);
+        session
+            .host
+            .world
+            .seed_placement_seat(w.flat, w.x, w.z, w.heading);
     }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`legaia_engine_capture::script_gate::ScriptGate`]):

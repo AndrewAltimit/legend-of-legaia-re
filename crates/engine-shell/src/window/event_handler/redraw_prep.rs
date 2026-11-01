@@ -227,7 +227,7 @@ impl PlayWindowApp {
                     self.session
                         .host
                         .world
-                        .seed_placement_seat(w.flat, w.x, w.z);
+                        .seed_placement_seat(w.flat, w.x, w.z, w.heading);
                 }
                 for w in &sc.seat_walkers {
                     self.session

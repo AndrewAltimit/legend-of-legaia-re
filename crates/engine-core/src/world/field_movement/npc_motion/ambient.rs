@@ -69,10 +69,12 @@ impl World {
     /// Capture alignment for the retail comparison
     /// (`LEGAIA_SEAT_PLACEMENTS`): stand the placement whose flat MAN index
     /// is `flat` on `(x, z)`, a tile a finished cutscene beat's `MOVE_TO`
-    /// left it on - history a card load does not replay. The heading stays
-    /// the engine's, so the facing channel still scores it. Returns whether
-    /// the placement moved.
-    pub fn seed_placement_seat(&mut self, flat: u16, x: i16, z: i16) -> bool {
+    /// left it on - history a card load does not replay. On a tile the
+    /// heading stays the engine's, so the facing channel still scores it; on
+    /// the off-map park seat (a beat that parked its cast) the retail-space
+    /// `heading` is taken too, the beat's last walk turned it and nothing
+    /// draws it there. Returns whether the placement moved.
+    pub fn seed_placement_seat(&mut self, flat: u16, x: i16, z: i16, heading: u16) -> bool {
         let Some(slot) = self
             .channel_view()
             .iter()
@@ -87,9 +89,19 @@ impl World {
         }
         self.npcs.positions.insert(slot, (x, z));
         self.npcs.motions.remove(&slot);
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+        let parked = x >= hide - 64 && z >= hide - 64;
+        if parked {
+            self.npcs
+                .headings
+                .insert(slot, (heading as i16).wrapping_add(0x800));
+        }
         if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
             chan.vm.x = x;
             chan.vm.z = z;
+            if parked {
+                chan.vm.heading = heading;
+            }
         }
         true
     }
