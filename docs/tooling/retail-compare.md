@@ -4441,6 +4441,24 @@ not yet armed: `battle_chitei2_kemaro_lv2_strike` reads Kemaro on clip `0x06`
 at cursor `-24`. The idle and walk clips (`0` / `1`) are left ungated, since
 the engine may hold them under another id.
 
+The clip that gate names is the first byte of the strike stream the picker
+drew (`+0x1DF..`, its swing picks as archive entry indices), and a replay on
+another stream draws other picks, so the gate held only on a stream whose
+picks happened to start on retail's. When no stream reaches the phase, the
+search runs the streams again with the attacker's stream stood on the
+capture's own from the seed to the approach's end
+(`RetailBattle::strike_stream_steer`, `ActionSteer::queue` on a monster
+seat); the picks are drawn by then, so no draw moves. It is a fallback, not
+the rule: stood on the capture's stream from the start, every strike of that
+seat matched the gate and the fight reached the phase rounds earlier, which
+moved the strikes a stream already reached both ways
+(`battle_korb2_medusa_strike` `.874` to `.953`,
+`battle_doman_killer_wolf_strike` `.973` to `.954`).
+`battle_tower_guardian_strike` reached its phase on one stream of the list,
+which the Guardian's corrected cast clip
+([above](#monster-casts-the-drive-relies-on)) took away; it reaches on the
+fallback.
+
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's
 (`battle_noa_miracle_art_combo`'s yaw endpoint stays unaligned: it carries

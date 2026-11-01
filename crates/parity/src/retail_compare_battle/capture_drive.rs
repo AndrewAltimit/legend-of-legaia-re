@@ -109,6 +109,18 @@ impl RetailBattle {
         (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
     }
 
+    /// Whether the capture is a monster strike gated on its first swing
+    /// clip (`0x1E` at accumulator `0`, a swing clip committed), whose
+    /// strike stream the drive can stand on the capture's
+    /// ([`Self::strike_stream_steer`]).
+    pub fn strike_stream_steerable(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            && self.queued_category == 3
+            && self.action_state == 0x1E
+            && self.caster_clip > 1
+            && self.span_gate == SpanGate::Age { accum: 0 }
+    }
+
     /// Whether the image child takes the frame the display showed - the
     /// drive's tick less [`Self::display_lag`] - rather than the RAM's
     /// (`LEGAIA_CAPTURE_DISPLAY_LAG`; the child keeps the gate's own frame
@@ -840,8 +852,9 @@ impl RetailBattle {
                         && self.queued_category == 3
                         && (3..8).contains(&self.target_code))
                     .then(|| self.target_code - 3),
-                    queue: (seat < 3 && self.queued_category == 3 && self.arts_queue)
-                        .then_some(self.committed_queue),
+                    queue: ((seat < 3 && self.queued_category == 3 && self.arts_queue)
+                        || (self.strike_stream_steer && self.strike_stream_steerable()))
+                    .then_some(self.committed_queue),
                     cursor: ((seat < 3
                         && self.queued_category == 3
                         && self.arts_queue

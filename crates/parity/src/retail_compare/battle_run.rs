@@ -212,6 +212,46 @@ pub(super) fn run_battle(
         reached = Some(e);
         reached_victims = victims;
     }
+    // A monster strike gated on its first swing clip that no stream reached
+    // on the picks the replay drew: the streams again, with the attacker's
+    // strike stream stood on the capture's (`RetailBattle::strike_stream_steer`).
+    // Only here, so every state a stream reaches keeps the fight it had.
+    let steered;
+    let battle = if reached.is_none() && battle.strike_stream_steerable() {
+        let mut b = battle.clone();
+        b.strike_stream_steer = true;
+        for &seed in &seeds {
+            let run = crate::retail_compare_battle::run_engine_battle(
+                opts.extracted,
+                retail,
+                &b,
+                seed,
+                false,
+            );
+            if seed_trace()
+                && let Ok(e) = &run
+            {
+                eprintln!(
+                    "[seed] {} strike-stream seed={seed:#010X} driven={:?}",
+                    entry.label, e.driven
+                );
+            }
+            if let Ok(e) = run
+                && e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                && e.prompt_tick.is_some()
+                && !e.surprise_opening
+                && e.driven.is_some_and(|d| d.is_some())
+            {
+                reached = Some(e);
+                reached_victims = false;
+                break;
+            }
+        }
+        steered = b;
+        &steered
+    } else {
+        battle
+    };
     // A driven action replays the pushes its capture already holds; run the
     // same stream once more from the ground the replay says retail started
     // on (`RetailBattle::undrift`), under each rule for the acting seat, and

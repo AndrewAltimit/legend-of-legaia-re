@@ -263,6 +263,7 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     ("battle_melee_hit_spark", 0x9E37_79B9),
+    ("gaza2_pre_neo_star_slash", 0x3C6E_F372),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];
 
@@ -517,6 +518,12 @@ pub struct RetailBattle {
     pub committed_queue: [u8; 16],
     /// `ctx[+0x15]` - the strike cursor into that queue.
     pub strike_cursor: u8,
+    /// A monster strike gated on its first swing clip has its strike stream
+    /// stood on [`Self::committed_queue`] by the drive
+    /// (`ActionSteer::queue`). Not a capture fact: the battle search raises
+    /// it only when no stream reaches the phase on the picks the replay drew
+    /// itself, so every state a stream reaches keeps its own fight.
+    pub strike_stream_steer: bool,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts

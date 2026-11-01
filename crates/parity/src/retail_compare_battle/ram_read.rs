@@ -936,6 +936,7 @@ impl RetailBattle {
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
+            strike_stream_steer: false,
             committed_queue: std::array::from_fn(|i| {
                 active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
             }),

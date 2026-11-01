@@ -170,6 +170,12 @@ pub enum BattleDrive {
 /// when neither saved band holds them, writes them into both, so the replay
 /// tokenizes the captured turn.
 ///
+/// On a monster seat `queue` is the attacker's strike stream instead - its
+/// swing picks as archive entry indices - on a capture gated on the first
+/// swing's clip ([`Self::clip`]): [`BattleDrive::steer`] stands the stream
+/// on it from the seed to the approach's end, so the gate does not hang on
+/// which picks the replay's stream drew.
+///
 /// `cursor` is that queue's strike cursor `ctx[+0x15]` on an
 /// [`SpanGate::Age`] capture inside the strike loop. With the queue
 /// replayed byte for byte, the age alone matches the first clip of the turn
@@ -1356,6 +1362,20 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // A monster strike gated on its first swing clip
+        // ([`ActionSteer::queue`] on a monster seat): from the seed to the
+        // approach's end, the stream the strike loop stages its swings from
+        // is the capture's own. The picker drew its picks already, so the
+        // stream moves no draw.
+        if seat >= 3
+            && ours
+            && (0x0C..0x1E).contains(&state)
+            && let Some(queue) = steer.queue
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+        {
+            let n = a.battle.params.len().min(queue.len());
+            a.battle.params[..n].copy_from_slice(&queue[..n]);
+        }
         // The parked approach ([`ActionSteer::park`]): from the seat's Attack
         // arm `0x14` to the poll, its walk is held where it stands.
         world.battle.approach_hold =
