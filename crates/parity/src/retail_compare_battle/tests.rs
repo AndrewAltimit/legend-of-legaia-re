@@ -1407,3 +1407,40 @@ fn a_prompt_on_its_far_framing_arm_names_the_frames_left() {
     put32(&mut ram, 0x8008_40C0, 7800);
     assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
 }
+
+/// A party Attack capture's yaw counter climbs from the Attack arm's
+/// `0x200` unless one of the acting seat's action entries carries the
+/// `+0x87 == 2` byte the swing re-seed fires on (`FUN_8004E13C`); the drive
+/// pins the counter only on a rung both sides stand on.
+#[test]
+fn an_attacks_yaw_rung_holds_without_a_reseed_entry() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x51);
+    put8(&mut ram, ctx + 0x13, 0);
+    put16(&mut ram, ctx + 0x6DA, 1114);
+    put8(&mut ram, FORMATION_CELL, 0xB5);
+    let actor = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, actor);
+    put8(&mut ram, actor + 0x1DE, 3);
+    let table = 0x8018_7A14;
+    put32(&mut ram, PARTY_ENTRY_TABLES, table);
+    for slot in 0..PARTY_ENTRY_SLOTS {
+        put32(&mut ram, table + slot * 4, 0x8018_8000 + slot * 0x100);
+    }
+    let rung = |ram: &[u8]| {
+        let b = RetailBattle::from_ram(ram).expect("seedable");
+        match b.battle_drive() {
+            Some(BattleDrive::Action { steer, .. }) => steer.rung,
+            other => panic!("not an action drive: {other:?}"),
+        }
+    };
+    assert_eq!(rung(&ram), Some(0x200));
+    // An art entry that re-seeds the counter leaves the rung unknown.
+    put8(&mut ram, 0x8018_8000 + 0x10 * 0x100 + 0x87, 2);
+    assert_eq!(rung(&ram), None);
+}

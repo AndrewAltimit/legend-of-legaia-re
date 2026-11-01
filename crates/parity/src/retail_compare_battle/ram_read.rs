@@ -801,6 +801,15 @@ impl RetailBattle {
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            swing_reseed_entry: active_actor < 3 && {
+                let table =
+                    game_anchors::u32_at(ram, PARTY_ENTRY_TABLES + u32::from(active_actor) * 4);
+                in_ram(table)
+                    && (0..PARTY_ENTRY_SLOTS).any(|slot| {
+                        let e = game_anchors::u32_at(ram, table + slot * 4);
+                        in_ram(e) && game_anchors::u8_at(ram, e + 0x87) == 2
+                    })
+            },
             backdrop_cue: {
                 let rec = game_anchors::u32_at(ram, ctx + 0x106C);
                 in_ram(rec).then(|| game_anchors::u16_at(ram, rec + 0x78))

@@ -128,6 +128,12 @@ const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// The party seats' action-entry tables (`lui 0x801d; addiu -0x6ca0` at
+/// `0x8004BD7C`): `seat * 4` holds the table, `slot * 4` in it the entry.
+const PARTY_ENTRY_TABLES: u32 = 0x801C_9360;
+/// The entry slots a party commit indexes (`+0x1DA`): the base clips and the
+/// two dynamic art slots `0x10` / `0x11`.
+const PARTY_ENTRY_SLOTS: u32 = 0x12;
 /// A battle actor's position history ring: 32 `(i32 X, i32 Z)` slots
 /// (`FUN_80047430`, `0x80047E58..0x80048060`).
 const POSITION_RING: u32 = 0x4C;
@@ -410,6 +416,12 @@ pub struct RetailBattle {
     pub caster_clip: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// Whether the active party seat's action-entry table
+    /// (`0x801C9360[seat][slot]`) holds an entry whose `+0x87` byte is `2`:
+    /// the only commit `FUN_8004E13C` re-seeds the yaw counter on
+    /// (`0x8004E254..0x8004E2B4`). `false` for a monster seat, which the
+    /// re-seed's `ctx[+0x13] < 3` gate excludes.
+    pub swing_reseed_entry: bool,
     /// The backdrop pair's depth-cue weight, the record `ctx[+0x106C]`'s
     /// `+0x78` ([`Self::capture_band_backdrop_cue`]).
     pub backdrop_cue: Option<u16>,

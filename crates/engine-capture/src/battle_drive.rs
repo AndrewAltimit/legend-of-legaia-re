@@ -226,6 +226,17 @@ pub struct ActionSteer {
     /// `yaw` places the capture instead: met once the engine's counter has
     /// run to retail's, and not pinned to it before.
     pub walk_clock: bool,
+    /// The rung of the per-action yaw ladder retail's counter `yaw` climbed
+    /// from, when the capture pins it: an Attack's `0x200`
+    /// (`0x801E2F20`) with no swing re-seed possible since - a monster seat
+    /// (the re-seed is gated on `ctx[+0x13] < 3`) or a party seat none of
+    /// whose action entries carries the `+0x87 == 2` byte `FUN_8004E13C`
+    /// re-seeds on. With the engine's counter on the same rung, the two are
+    /// one clock read at different instants, however far apart they have
+    /// run - retail's action can take longer than the engine's, and its
+    /// adaptive frame step drifts the counter faster - so the capture's
+    /// word is taken outright rather than only within [`YAW_CLOCK_SLACK`].
+    pub rung: Option<u16>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -775,6 +786,9 @@ impl BattleDrive {
                 if steer.walk_clock {
                     s.push_str(",w");
                 }
+                if let Some(n) = steer.rung {
+                    s.push_str(&format!(",n{n}"));
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -834,6 +848,8 @@ impl BattleDrive {
                 steer.walk_clock = true;
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
+            } else if let Some(n) = last.strip_prefix('n') {
+                steer.rung = Some(n.parse().ok()?);
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -1280,11 +1296,19 @@ impl BattleDrive {
                             sr,
                         ))
                     });
+                    // The same rung on both sides ([`ActionSteer::rung`]):
+                    // retail's word is this counter further along.
+                    let same_rung = steer.rung.is_some_and(|r| {
+                        let rung = i32::from(r);
+                        cam.action_yaw_base() - cam.action_yaw_drift() == rung
+                            && i32::from(yaw) >= rung
+                    });
                     let clock_held =
                         steer.walk_clock && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
                     if !clock_held
                         && ((state == want && (steer.park || near(cam.action_yaw_base())))
-                            || rescaled)
+                            || rescaled
+                            || same_rung)
                     {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the

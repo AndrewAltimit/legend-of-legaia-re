@@ -4312,6 +4312,25 @@ pinned from the Done arm `0x50`, since `0x51`'s first pass arms case 8 off the
 counter and the gate tick is that pass (`camera` `.973` to `1.0`, `image` `.635`
 to `.669`).
 
+The slack guards the rung, so where the rung is known on both sides the pin
+does not need it. An Attack's counter climbs from the Attack arm's `0x200`
+(`0x801E2F20`), and the only later store is the swing re-seed, which fires
+on a party seat's commit of an entry whose `+0x87` byte is `2`
+(`FUN_8004E13C`, `0x8004E254..0x8004E2B4`; a monster seat never re-seeds).
+When none of the acting seat's entries `0x801C9360[seat][0..0x12]` carries
+that byte (`RetailBattle::swing_reseed_entry`), the drive hands the rung
+(`n<rung>`, `ActionSteer::rung`), and an engine counter standing on the same
+rung (`action_yaw_base - action_yaw_drift`) takes retail's word however far
+it has run. `cort_evolved_card_pre_doomsday` is the case: Gala's ten-hit
+combo (`0d 0c 0f 19 25 0e 0d 19 20`, no entry with `+0x87 = 2` in RAM) left
+retail's counter at `1114`, the engine's at `912` on the same `0x200` rung.
+Retail's ring mixes steps `3` and `4` (no `r<step>`), and even a steady
+step `3` puts the engine's drift at `1045`, outside the slack: retail's
+action ran longer than the replay's as well as at a coarser step. Pinned,
+case 8's yaw lands on retail's (`camera` `.903` to `1.0`, `image` `.514` to
+`.600`), and `gaza2_card_pre_neo_star_slash` with it (`.886` to `1.0`, `.668`
+to `.810`).
+
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and
 module shots measured worse aligned (`shiny_refactor_gimard_precast` `.904`

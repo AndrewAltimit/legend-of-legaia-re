@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// The rung the Attack arm stands the yaw counter `ctx[+0x6DA]` on as the
+/// seed enters `0x14` (`0x801E2F20`).
+const ATTACK_YAW_RUNG: u16 = 0x200;
+
 impl RetailBattle {
     /// The hits a party **melee** capture's action had landed, in push order
     /// ([`RetailBattle::action_hit_sequence`]), for the replay to deal again
@@ -777,6 +781,10 @@ impl RetailBattle {
                         || (seat >= 3 && self.queued_category == 2 && self.target_code == seat))
                         .then_some(self.target_code),
                     yaw: Some(self.walk_yaw_base),
+                    // An Attack's counter climbs from the arm's `0x200`
+                    // unless a swing re-seed could have moved it.
+                    rung: (self.queued_category == 3 && !self.swing_reseed_entry)
+                        .then_some(ATTACK_YAW_RUNG),
                     coin: Some(self.track_coin),
                     message: self.timed_message,
                     // An empty content word is the counter swap's only on
