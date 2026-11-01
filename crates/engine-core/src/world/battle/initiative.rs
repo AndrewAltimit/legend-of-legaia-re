@@ -8,7 +8,58 @@ use super::*;
 /// whole status word is the `0x1000` bit.
 pub(in crate::world) const INITIATIVE_HALVING_STATUS: u16 = 0x1000;
 
+/// The turn the initiative pick `FUN_801DABA4` made ahead of its dispatch.
+///
+/// Retail's pick runs the picked monster's AI on the spot (`jal 0x801E9FD4`
+/// at `0x801DAF48`, then the redirect `FUN_801DB124` and the counter roll),
+/// and its first pick of a round runs at the round start, at the seeder's
+/// tail (`jal 0x801DABA4` at `0x801DAB80`, from `FUN_801D0748`'s `0x14`),
+/// before the party enters a command. The action SM dispatches `ctx[+0x274]`
+/// only at `0xFE`. The port parks both until the dispatch.
+#[derive(Debug, Clone, Default)]
+pub struct ParkedTurn {
+    /// The round start's pick and the key it spent.
+    pick: Option<(u8, u16)>,
+    /// A picked monster's decided action.
+    pub(crate) monster: Option<(u8, MonsterAction)>,
+}
+
 impl World {
+    /// One initiative pick as retail's `FUN_801DABA4` makes it: the counter
+    /// latch dropped (`sw zero,0x6970(v0)` at `0x801DABB4`), the pick, and a
+    /// picked monster's AI decided on the spot while both sides stand (the
+    /// side scans clear `ctx[+0x276]` otherwise, `0x801DADEC` / `0x801DAE74`).
+    /// Returns the pick and the key it spent.
+    pub(in crate::world) fn initiative_pick_and_decide(&mut self) -> Option<(u8, u16)> {
+        self.battle_ctx.counter_pending = 0;
+        self.parked_turn.monster = None;
+        let before: Vec<u16> = self.actors.iter().map(|a| a.battle.init_key).collect();
+        let pick = self.next_combatant_by_initiative()?;
+        let key = before.get(usize::from(pick)).copied().unwrap_or(0);
+        let pc = self.party.party_count.max(1);
+        if pick >= pc && self.battle_both_sides_alive() {
+            let action = self.decide_monster_turn(pick);
+            self.parked_turn.monster = Some((pick, action));
+        }
+        Some((pick, key))
+    }
+
+    /// The round start's pick (`FUN_801DA780`'s tail): made and parked for
+    /// the round's first dispatch.
+    pub(in crate::world) fn park_round_start_pick(&mut self) {
+        self.parked_turn.pick = self.initiative_pick_and_decide();
+    }
+
+    /// The next turn of the execution band: the round start's parked pick,
+    /// or a fresh pick (the action SM's re-pick at `0x801E5D58`). Returns the
+    /// pick and the key it spent.
+    pub(in crate::world) fn next_turn_pick(&mut self) -> Option<(u8, u16)> {
+        if let Some(p) = self.parked_turn.pick.take() {
+            return Some(p);
+        }
+        self.initiative_pick_and_decide()
+    }
+
     /// `ctx+0x290` - the formation advantage `FUN_80051D84` rolls at battle
     /// setup, read straight off the battle context the action SM owns.
     ///
@@ -491,10 +542,22 @@ impl World {
             self.battle.round_flow.flat_walk_last = Some(pick as u8);
             return Some(pick as u8);
         }
-        let keys: Vec<u16> = (0..PICK_SEATS)
-            .map(|i| self.actors.get(i).map_or(0, |a| a.battle.init_key))
+        // The pick walks retail's seven pool seats, so with a party of one or
+        // two the empty party seats sit in the walk between the party and
+        // the monsters, as their zero keys do in retail's. A live maximum
+        // resets the list past them, so they only reach the draw beside a
+        // key of `0x8000` or more, which the next seat walked beats.
+        let seats = self.battle_seat_map();
+        let keys: Vec<u16> = (0..PICK_SEATS as u8)
+            .map(|r| {
+                seats
+                    .engine(r)
+                    .and_then(|e| self.actors.get(usize::from(e)))
+                    .map_or(0, |a| a.battle.init_key)
+            })
             .collect();
-        let pick = initiative_tie_pick(|i| keys[i], || self.next_rand())?;
+        let seat = initiative_tie_pick(|i| keys[i], || self.next_rand())?;
+        let pick = seats.engine(seat)?;
         if let Some(a) = self.actors.get_mut(pick as usize) {
             a.battle.init_key = 0; // consume this turn
         }
@@ -581,6 +644,27 @@ mod tie_pick_tests {
             None
         );
         assert_eq!(draws, 1, "retail draws before it learns every key is spent");
+    }
+
+    /// The round start picks: a picked monster's action is decided there,
+    /// its key spent, and the execution band's first turn is that pick.
+    #[test]
+    fn the_round_start_pick_decides_a_monster_ahead_of_the_commands() {
+        let mut w = World::new();
+        w.enter_battle(1, 1);
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        for (i, (speed, key)) in [(10u16, 5u16), (90, 50)].into_iter().enumerate() {
+            w.battle.speed[i] = speed;
+            w.actors[i].battle.hp = 100;
+            w.actors[i].battle.max_hp = 100;
+            w.actors[i].battle.liveness = 1;
+            w.actors[i].battle.init_key = key;
+        }
+        w.park_round_start_pick();
+        assert!(matches!(w.parked_turn.monster, Some((1, _))));
+        assert_eq!(w.actors[1].battle.init_key, 0, "the pick spends its key");
+        assert_eq!(w.next_turn_pick(), Some((1, 50)), "the band opens on it");
+        assert_eq!(w.actors[0].battle.init_key, 5);
     }
 
     #[test]

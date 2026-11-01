@@ -70,7 +70,7 @@ impl World {
                 let pick = if std::mem::take(&mut self.battle.round_flow.leader_first) {
                     self.leader_first_combatant()
                 } else {
-                    self.next_combatant_by_initiative()
+                    self.next_turn_pick().map(|(p, _)| p)
                 };
                 if let Some(next) = pick {
                     self.dispatch_battle_turn(next);
@@ -94,24 +94,23 @@ impl World {
     /// (`sh zero,0x16c` at `0x801E2CDC`). A leader who cannot act (dead, or
     /// already spent) leaves the pick standing.
     pub(in crate::world) fn leader_first_combatant(&mut self) -> Option<u8> {
-        let keys: Vec<u16> = self.actors.iter().map(|a| a.battle.init_key).collect();
         let walk = self.battle.round_flow.flat_walk_last;
-        let picked = self.next_combatant_by_initiative()?;
+        let (picked, key) = self.next_turn_pick()?;
         let leader_can_act = self
             .actors
             .first()
-            .is_some_and(|a| a.battle.liveness != 0 && keys[0] != 0);
+            .is_some_and(|a| a.battle.liveness != 0 && a.battle.init_key != 0);
         if picked == 0 || !leader_can_act {
             return Some(picked);
         }
         // Give the pick back the key the engine spent on it (the sweep's
-        // dead-slot zeroing is kept), then spend the leader's.
-        if let (Some(a), Some(&k)) = (
-            self.actors.get_mut(usize::from(picked)),
-            keys.get(usize::from(picked)),
-        ) {
-            a.battle.init_key = k;
+        // dead-slot zeroing is kept), then spend the leader's. A monster's
+        // decided action goes with the overwritten pick: its AI ran (and
+        // drew) at the pick, and runs again when its key next wins.
+        if let Some(a) = self.actors.get_mut(usize::from(picked)) {
+            a.battle.init_key = key;
         }
+        self.parked_turn.monster = None;
         self.battle.round_flow.flat_walk_last = walk;
         self.actors[0].battle.init_key = 0;
         Some(0)
@@ -194,13 +193,15 @@ impl World {
         if !self.any_living_initiative_key() {
             self.reseed_initiative();
         }
+        // The seeder's tail clears the round-skip count `ctx[+0x25]` every
+        // round (`sb zero,0x25(v0)` at `0x801DAB84`, the delay slot of the
+        // pick's `jal`), keys re-rolled or not - and makes the round's first
+        // pick, whose monster AI draws ahead of the command band.
+        self.battle_ctx.round_skip = 0;
+        self.park_round_start_pick();
         // `FUN_801D388C(0, 0)` (`0x801D0EE4`): the formation squash +
         // recentre, between the seeder and the DoT tick. RNG-free.
         self.normalize_battle_formation();
-        // The seeder's tail clears the round-skip count `ctx[+0x25]` every
-        // round (`sb zero,0x25(v0)` at `0x801DAB84`, the delay slot of the
-        // pick's `jal`), keys re-rolled or not.
-        self.battle_ctx.round_skip = 0;
         self.battle.round_flow.clear_pending();
         self.battle.round_flow.cursor = 0;
         // `FUN_801E752C` - the per-round status DoT ticker, skipped on round
@@ -245,11 +246,11 @@ impl World {
 
     /// Hand the round to the action SM - retail's `0x6E` begin arm storing
     /// `0xFE` (`0x801D31AC`) and `0xFE` storing `ctx[+0x07] = 0`
-    /// (`0x801D3224`). The first pick happens here: retail's seeder made it
-    /// at `0x14` (`FUN_801DA780` ends in `jal 0x801DABA4`) and the SM's
-    /// `0x0C` dispatches whatever `ctx[+0x274]` names; the engine picks and
-    /// dispatches on one call, and the command band draws no RNG in between,
-    /// so the stream is retail's.
+    /// (`0x801D3224`). The round's first pick was made at its start, as
+    /// retail's seeder makes it at `0x14` (`FUN_801DA780` ends in
+    /// `jal 0x801DABA4`, a picked monster's AI and its draws included); the
+    /// SM's `0x0C` dispatches what `ctx[+0x274]` names, and the engine
+    /// dispatches the parked pick (`World::next_turn_pick`).
     ///
     /// PORT: FUN_801D0748 (state `0xFE`, `0x801D31E8..0x801D3224`)
     pub(in crate::world) fn begin_round_execution(&mut self) {
@@ -524,9 +525,8 @@ impl World {
     /// `0x380` re-target `FUN_801E7320` only for a seat `>= 3`)
     pub(in crate::world) fn dispatch_battle_turn(&mut self, next: u8) {
         let party_count = self.party.party_count.max(1);
-        // The turn picker's head drops any counter latch the last pick left
-        // unconsumed (`sw zero,0x6970(v0)` at `0x801DABB4`).
-        self.battle_ctx.counter_pending = 0;
+        // The turn picker's head dropped any counter latch the last pick
+        // left unconsumed (`World::initiative_pick_and_decide`).
         // Start-of-turn: age this actor's buffs / debuffs, reverting any
         // that expire this turn.
         self.battle.tick_battle_buffs_on_turn(next);
@@ -537,8 +537,16 @@ impl World {
             // the no-speed walk past it. The status duration ticks once per
             // round at the round start (`tick_status_effects`), so the
             // affliction still wears off. The SM stays at EndOfAction (no
-            // action armed) - exactly the "skipped turn" outcome.
+            // action armed) - exactly the "skipped turn" outcome. A monster's
+            // pick decided its action anyway (the AI runs at the pick,
+            // whatever the status word); nothing arms it, and the category
+            // it wrote is dropped so no strike path reads it.
             self.battle_ctx.active_actor = next;
+            if self.parked_turn.monster.take().is_some()
+                && let Some(a) = self.actors.get_mut(usize::from(next))
+            {
+                a.battle.action_category = 0;
+            }
             return;
         }
         if next >= party_count {
