@@ -54,6 +54,7 @@ Flags worth knowing:
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
+| `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
@@ -289,6 +290,18 @@ the same id within the tolerance. A second pass pairs what is left within
 are **missing** (retail only) or **extra** (engine only). The channel's
 number is `2 * matched / (retail cues + engine cues)`; `id score` is the same
 over the id multisets alone, whatever the time.
+
+A missing cue is traced back with `--sfx-callers`. Zenoir (`0x86`) on
+`party_basic_attack_vs_gobu_gobu` missed ring `0x21C` on module phase 10's
+first pass: the router logged it as cue `0x80`, category `3`, from
+`0x80050B44`, the anim cue player `FUN_800508DC` - the victim's clip track.
+PROT 0908's arm 9 drops the **victim's** clip to entry `0`
+(`sb zero,0x1da(s6)` at `0x801F787C`, `s6` the latched victim), which the
+engine had applied to the creature. With the seat put right the cue still
+does not sound: the engine's anim cue walk (`World::step_actor_anim_cues`)
+does not take the victim's return to entry `0` as a new clip's track. Static cue `0x0D`, late in the last
+module phase of every summon recorded there, comes through none of the four
+entries: an inline ring store, not yet located.
 
 ## Reading the report
 
