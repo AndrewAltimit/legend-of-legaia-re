@@ -2,9 +2,10 @@
 //! `switch` in the action picker `FUN_801E9FD4`
 //! (`ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`).
 //!
-//! The picker has two layers. The **generic decision core** (ported inline in
-//! `crate::world::World::pick_monster_action`) rolls physical-vs-cast over the
-//! monster's own `+0x21` magic ids. After it, a large `switch` keyed on
+//! The picker has two layers. The **generic decision core** ([`generic_core`],
+//! driven by `legaia_engine_core::world::World::pick_monster_action`) rolls
+//! physical-vs-cast over the monster's own `+0x21` magic slots and walks its
+//! tag-`0x23` archive entries for the cast. After it, a large `switch` keyed on
 //! `DAT_8007BD0C[slot]` can **override** the choice with a bespoke scripted
 //! cast. `DAT_8007BD0C[slot]` is the **per-slot monster id** - `FUN_801DA51C`
 //! fills it from the encounter record's `[+4 + slot]` ids - so each case is AI
@@ -75,6 +76,8 @@
     clippy::manual_is_multiple_of,
     clippy::manual_range_patterns
 )]
+
+pub mod generic_core;
 
 /// Battle-scoped monster-AI state - the globals the `FUN_801E9FD4` `switch`
 /// reads and writes across turns. Reset at battle start

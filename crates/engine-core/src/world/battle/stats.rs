@@ -198,7 +198,7 @@ impl World {
     }
 
     /// The enemy-side flee decision for the monster in `slot` - the roll the
-    /// action picker's once-per-pass checkpoint makes (`FUN_801E9FD4` calling
+    /// action picker's flee checkpoint makes on every monster pick (`FUN_801E9FD4` calling
     /// `FUN_801EC0DC` with the monster's pool slot).
     ///
     /// Side scores fold live HP/max-HP off the actors and live ATK off the

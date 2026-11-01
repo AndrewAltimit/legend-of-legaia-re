@@ -137,9 +137,11 @@ tag-`0x23` entry from the `k`-th on. The Tower Guardian (slots `0x57`,
 `0x34`; tag-`0x23` entries `0x0A`, `0x0B`) stages entry `0x0B` for both
 spells: `battle_tower_guardian_windhash_mid_cast` holds `34 0B 0E FF` and
 `battle_tower_guardian_v_windhash_mid_cast` `57 0B 07 FF`. A re-match also
-re-runs the target-class arm: the single-target arm draws its target again,
-and the heal (class `0x00`) and `0x20` arms loop on `s1`, so the slot the
-next match reads (`+0x21 + s1 - 1`) is no longer the `k`-th one.
+re-runs the MP test and the target-class arm: the single-target arm draws its
+target again, and the heal (class `0x00`) and `0x20` arms loop on `s1`, so the
+slot the next match reads (`+0x21 + s1 - 1`) is no longer the `k`-th one. The
+port walks it as the picker does (`legaia_engine_battle::monster_ai::generic_core`)
+and stages the clip the last match stored.
 
 ### Which byte a cast actually plays
 

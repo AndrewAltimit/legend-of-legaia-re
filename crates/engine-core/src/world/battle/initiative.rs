@@ -437,13 +437,14 @@ impl World {
     /// maximum resets the list to `[s]` *and then* matches it, appending `s`
     /// again. So a maximum first set by a seat above 0 sits in the list twice
     /// and wins `2 / (ties + 2)` of the `rand % (count + 1)` draw rather than an
-    /// even share, while a maximum held by seat 0 draws evenly. `None` once
-    /// every key is spent: that is the round's end, and it is the caller's to
-    /// close (retail's `0x5A` bound test -> `0xFF` -> `0x14`); the keys are
-    /// re-seeded by the *round start* (`FUN_801DA780` from `FUN_801D0748`'s
-    /// `0x14` arm, `0x801D0ED8`), never by the pick itself. Retail draws its
-    /// `rand` before it learns the maximum was zero; the port's generator is
-    /// its own LCG, so the round-end draw is not reproduced. A battle with no
+    /// even share, while a maximum held by seat 0 draws evenly; the compare is
+    /// mixed-sign, so a key of `0x8000` or more never wins. `None` once the
+    /// draw lands on a spent key: that is the round's end, and it is the
+    /// caller's to close (retail's `0x5A` bound test -> `0xFF` -> `0x14`); the
+    /// keys are re-seeded by the *round start* (`FUN_801DA780` from
+    /// `FUN_801D0748`'s `0x14` arm, `0x801D0ED8`), never by the pick itself.
+    /// The draw is taken on every pick, the round-end one included, as
+    /// retail takes it before it learns the maximum was zero. A battle with no
     /// SPD walks its flat turn tokens in slot order after the last acting
     /// actor - the historical round-robin.
     ///
@@ -490,7 +491,7 @@ impl World {
             self.battle.round_flow.flat_walk_last = Some(pick as u8);
             return Some(pick as u8);
         }
-        let keys: Vec<u16> = (0..BATTLE_SLOTS)
+        let keys: Vec<u16> = (0..PICK_SEATS)
             .map(|i| self.actors.get(i).map_or(0, |a| a.battle.init_key))
             .collect();
         let pick = initiative_tie_pick(|i| keys[i], || self.next_rand())?;
@@ -501,32 +502,45 @@ impl World {
     }
 }
 
+/// The seats `FUN_801DABA4`'s loops walk: the seven actor-table entries
+/// (`sltiu v0,s0,0x7` at `0x801DAC70` / `0x801DAD00`).
+const PICK_SEATS: usize = 7;
+
 /// `FUN_801DABA4`'s maximum-and-tie pick over the seats' initiative keys
-/// (see [`World::next_combatant_by_initiative`]): retail's list construction,
-/// duplicate included, then `rand % (count + 1)`. `None` when every key is
-/// zero. The keys are compared as the unsigned halfwords they are stored as;
-/// retail sign-extends the running maximum (`sra` at `0x801DACAC`), which
-/// agrees for every key below `0x8000`.
+/// (see [`World::next_combatant_by_initiative`]), from the bytes
+/// (`0x801DAC7C..0x801DAEF4`):
+///
+/// - The running maximum starts at seat 0's key and the list at `[0]`. Each
+///   later seat whose key beats it resets the list to `[s]` and then matches
+///   it, appending `s` again; each seat equal to it is appended.
+/// - The compare is **mixed-sign**: the maximum is sign-extended
+///   (`sll` / `sra` at `0x801DACA4` / `0x801DACAC`), the candidate
+///   zero-extended (`lhu` at `0x801DACA8`). A key of `0x8000` or more is
+///   taken as the maximum and then never equals itself, so it is not
+///   appended, and the next seat walked beats it.
+/// - The draw `rand % (count + 1)` is taken whatever the keys hold
+///   (`jal 0x80056798` at `0x801DAD0C`), and the pick dispatches only when
+///   the seat it lands on holds a live key (`lhu v0,0x16c(v0); beq v0,zero`
+///   at `0x801DAEEC`). With every key spent the list is every seat and the
+///   draw lands on a spent one: `None`, the round's end.
 fn initiative_tie_pick(key: impl Fn(usize) -> u16, mut rand: impl FnMut() -> u32) -> Option<u8> {
     let mut best = key(0);
-    let mut list = [0u8; BATTLE_SLOTS + 1];
+    let mut list = [0u8; PICK_SEATS + 1];
     let mut count = 0usize;
-    for s in 1..BATTLE_SLOTS {
+    for s in 1..PICK_SEATS {
         let k = key(s);
-        if best < k {
+        if i32::from(best as i16) < i32::from(k) {
             best = k;
             count = 0;
             list[0] = s as u8;
         }
-        if best == k {
+        if i32::from(best as i16) == i32::from(k) {
             count += 1;
             list[count] = s as u8;
         }
     }
-    if best == 0 {
-        return None;
-    }
-    Some(list[rand() as usize % (count + 1)])
+    let pick = list[rand() as usize % (count + 1)];
+    (key(usize::from(pick)) != 0).then_some(pick)
 }
 
 #[cfg(test)]
@@ -557,7 +571,26 @@ mod tie_pick_tests {
     }
 
     #[test]
-    fn every_key_spent_ends_the_round() {
-        assert_eq!(initiative_tie_pick(keys(&[0, 0, 0]), || 0), None);
+    fn every_key_spent_ends_the_round_on_a_drawn_seat() {
+        let mut draws = 0;
+        assert_eq!(
+            initiative_tie_pick(keys(&[0, 0, 0]), || {
+                draws += 1;
+                3
+            }),
+            None
+        );
+        assert_eq!(draws, 1, "retail draws before it learns every key is spent");
+    }
+
+    #[test]
+    fn a_key_of_0x8000_or_more_never_wins() {
+        // Seat 1's 0x9000 becomes the maximum, matches nothing (sign-extended
+        // against its own zero-extension), and seat 2's 5 beats it.
+        let k = [3, 0x9000, 5];
+        assert_eq!(initiative_tie_pick(keys(&k), || 0), Some(2));
+        // Held by seat 0, it loses to the first seat walked.
+        let k = [0x9000, 1, 0];
+        assert_eq!(initiative_tie_pick(keys(&k), || 0), Some(1));
     }
 }

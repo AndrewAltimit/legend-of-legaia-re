@@ -197,6 +197,18 @@ pub struct BattleState {
     /// stream by its arming. Empty when the catalog carries no aligned
     /// entry list.
     pub monster_strike_entries: Vec<u8>,
+    /// The cast clips the AI picker's generic core stored for the cast it
+    /// picked: `(slot, spell, +0x1E0, +0x1E7)`, as the walk's last match left
+    /// them (`legaia_engine_battle::monster_ai::generic_core`). The cast arm
+    /// stages them in place of its own walk; a cast armed for another seat
+    /// or spell (a scripted override) ignores them.
+    pub monster_core_clip: Option<(u8, u8, u8, u8)>,
+    /// The monster seat whose swing budget the AI picker's core already
+    /// rolled (its physical arm runs the budget loop before the flee
+    /// checkpoint and the switch, `FUN_801E9FD4` `0x801EA1FC..0x801EA3CC`):
+    /// [`Self::monster_strike_budget`] / [`Self::monster_strike_entries`]
+    /// hold its picks, and the strike arm takes them rather than roll again.
+    pub monster_budget_armed: Option<u8>,
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
     pub prev_action_cleared: bool,
@@ -883,14 +895,6 @@ pub struct BattleState {
     /// entry is kept (hosts and tests use it to pin a fight). Cleared by
     /// `World::finish_battle`.
     pub no_escape: bool,
-    /// One-per-pass latch for the monster flee roll (`FUN_801EC0DC`). Retail's
-    /// action picker `FUN_801E9FD4` keeps a balance counter (`s8`, cleared at
-    /// entry) and attempts the flee roll exactly once per picker pass, at the
-    /// first monster iteration that reaches the loop-bottom checkpoint with the
-    /// counter still zero. The engine picks per-slot, so the latch lives here
-    /// and `crate::battle_round::BattleRound::boundary` re-arms it each round
-    /// (retail re-enters the picker per round from `FUN_801DABA4`).
-    pub monster_flee_attempted: bool,
     // The formation advantage (`ctx+0x290`) and its latched copy (`ctx+0x291`)
     // are **not** fields here. Retail has exactly one of each, both inside the
     // battle context the action SM owns, so the engine keeps them on
@@ -1184,6 +1188,8 @@ impl BattleState {
             evasion: [0; 8],
             monster_strike_budget: 1,
             monster_strike_entries: Vec::new(),
+            monster_core_clip: None,
+            monster_budget_armed: None,
             prev_action_cleared: true,
             end: None,
             hit_fx: Vec::new(),
@@ -1205,7 +1211,6 @@ impl BattleState {
             escaped: false,
             scripted_fight: false,
             no_escape: false,
-            monster_flee_attempted: false,
             intro: None,
             intro_effects: Vec::new(),
             intro_mode_handoff: false,

@@ -194,9 +194,6 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     world.actors[1].battle.liveness = 1;
     world.actors[1].battle_monster_id = Some(0xb6);
     world.rng_state = 1;
-    // Spend the once-per-pass flee checkpoint: this test drives the scripted
-    // phase table, not the flee roll.
-    world.battle.monster_flee_attempted = true;
 
     assert_eq!(world.battle_mode(), 0, "fresh battle starts in phase 0");
     world.take_monster_turn(1);
@@ -209,15 +206,16 @@ fn advancing_the_battle_mode_drives_a_boss_to_its_next_phase() {
     assert_eq!(world.actors[1].battle.params[0], 0xa3, "phase 1 cast");
 }
 
-/// The picker's once-per-pass flee checkpoint (`FUN_801E9FD4` loop bottom ->
-/// `FUN_801EC0DC`): a wounded, outmatched monster can roll a flee, the roll
-/// happens at most once per round, and a success arms the Run band
-/// (category 5). Stats are shaped so the score compare can pass (strong
-/// healthy party, weak wounded monster); the 1-in-8 gate means only some
-/// seeds flee, so the test scans seeds for one and then re-runs that seed
-/// with the latch already spent to prove the once-per-pass gate.
+/// The picker's flee checkpoint (`FUN_801E9FD4` loop exit -> `FUN_801EC0DC`
+/// at `0x801EA980`): a wounded, outmatched monster can roll a flee, and a
+/// success arms the Run band (category 5). The checkpoint has no round
+/// latch - the picker's balance counter `s8` is cleared on entry
+/// (`0x801EA044`) and the picker runs once per monster turn - so the same
+/// stream flees on every pick. Stats are shaped so the score compare can
+/// pass (strong healthy party, weak wounded monster); the 1-in-8 gate means
+/// only some seeds flee, so the test scans seeds for one.
 #[test]
-fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
+fn monster_flee_checkpoint_rolls_on_every_pick_and_arms_run_band() {
     let build = || {
         let mut world = World {
             party: legaia_engine_menus::party_state::PartyState {
@@ -254,26 +252,14 @@ fn monster_flee_checkpoint_rolls_once_and_arms_run_band() {
     world.rng_state = seed;
     assert!(matches!(world.pick_monster_action(1), MonsterAction::Flee));
     assert_eq!(world.actors[1].battle.action_category, 5);
-    assert!(
-        world.battle.monster_flee_attempted,
-        "the pass latch is spent"
-    );
 
-    // Same seed, latch already spent: the checkpoint is skipped entirely.
-    let mut world = build();
+    // A second pick in the same round rolls again: the stream is re-seeded
+    // and the same seed flees again.
     world.rng_state = seed;
-    world.battle.monster_flee_attempted = true;
     assert!(
-        !matches!(world.pick_monster_action(1), MonsterAction::Flee),
-        "a spent latch skips the flee roll until the round boundary re-arms it"
+        matches!(world.pick_monster_action(1), MonsterAction::Flee),
+        "every pick runs the checkpoint"
     );
-
-    // The round boundary re-arms the latch (retail re-enters the picker with
-    // its balance counter cleared each round).
-    let mut world = build();
-    world.battle.monster_flee_attempted = true;
-    crate::battle_round::BattleRound::boundary(&mut world);
-    assert!(!world.battle.monster_flee_attempted);
 }
 
 /// The flee roll's monster side is averaged over the **seated** monster count
@@ -303,7 +289,6 @@ fn a_lone_strong_monster_is_not_diluted_by_the_empty_pool() {
     for hp in [999u16, 100, 1] {
         for seed in 0..2_000u32 {
             world.actors[1].battle.hp = hp;
-            world.battle.monster_flee_attempted = false;
             world.rng_state = seed;
             assert!(
                 !matches!(world.pick_monster_action(1), MonsterAction::Flee),

@@ -184,7 +184,6 @@ impl World {
         self.battle.capture_reseat_bars.clear();
         self.battle.capture_approach_yaw = None;
         self.battle.capture_approach_due = false;
-        self.battle.monster_flee_attempted = false;
         // No pass has drawn this fight's bodies yet.
         self.battle.readout_trios.clear();
         // The battle scene setup re-seeds object-effect row 0

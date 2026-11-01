@@ -880,11 +880,13 @@ The global pseudo-action `case 0xFF` increments the battle-mode counter `_DAT_80
 **Monster-AI action picker** (battle overlay 0898). The `overlay_magic_capture` /
 `overlay_magic_level_up` / `overlay_muscle_dome` dumps at this address are the
 same body, not a second routine - each of those images holds 0898 in slot A.
-Called per monster from `FUN_801DABA4`. Generic core: rolls
-`rand % (1 + live_magic_count)` over the record's `+0x21..=+0x23` global magic
-ids → physical strike or a cast (gated on MP `actor[+0x150]` vs
-`spell_table[id*0xC+3]`), target by shape `spell_table[id*0xC+2] & 0x60`. Then a
-`switch` on `DAT_8007BD0C[slot]` overrides with scripted casts.
+Called per monster from `FUN_801DABA4`. Generic core: a gate roll
+`rand % (1 + nonzero_slots)` over the record's `+0x21..=+0x23` global magic
+ids → physical strike, or a second roll `k` that walks the tag-`0x23` archive
+entries to the cast (gated on MP `actor[+0x150]` vs `spell_table[id*0xC+3]`,
+target by shape `spell_table[id*0xC+2] & 0x60`; a failed pass redraws). Then
+the flee roll `FUN_801EC0DC` and a `switch` on `DAT_8007BD0C[slot]` that
+overrides with scripted casts ([battle round loop](../../subsystems/battle-round-loop.md#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)).
 `DAT_8007BD0C[slot]` is the **per-slot monster id** (`FUN_801DA51C` copies the
 encounter record's `[+4+slot]` ids into it), so each `switch` case is bespoke AI
 for a specific monster id - not an abstract AI-type. Writes `actor[+0x1DD]`

@@ -290,7 +290,7 @@ fn setup(
     // The seeded cast is armed before the fight, as the play host's
     // `LEGAIA_BATTLE_MONSTER_CAST` seam arms it, so the monster's first pick
     // is the cast. A pick the AI made on its own is a draw off the world
-    // stream (`FUN_801E9FD4`'s magic roll, then its once-per-pass flee
+    // stream (`FUN_801E9FD4`'s magic roll, then its flee
     // checkpoint `FUN_801EC0DC`): whether that turn struck, cast something
     // else or fled the fight would be the seed's outcome, not the cast's.
     w.battle.forced_monster_cast = Some((seat as u8, spell));

@@ -118,7 +118,15 @@ impl World {
     ) {
         let code = self.cast_target_code(def, &targets, slot);
         self.expansion_end_pack_cast();
-        let clip = self.monster_cast_clip(slot, def.id).unwrap_or(0xFF);
+        // The picker's own stores when it picked this cast; the walk again
+        // for a cast it did not (a scripted override, a forced seed).
+        let (clip, spirit_clip) = match self.battle.monster_core_clip.take() {
+            Some((s, spell, clip, spirit)) if s == slot && spell == def.id => (clip, spirit),
+            _ => {
+                let c = self.monster_cast_clip(slot, def.id).unwrap_or(0xFF);
+                (c, c)
+            }
+        };
         // A table that was not read stages the terminator in the shot's
         // place, the stream the port carried before the shot existed.
         let shot = self
@@ -143,8 +151,8 @@ impl World {
             // `0x801E3B4C..0x801E3B54`), which every monster cast of a
             // class-`< 0x14` record below id `0x65` - the heals and buffs -
             // runs through. A walk that found no entry writes neither byte.
-            if clip != 0xFF {
-                a.battle.queued_anim_b = clip;
+            if spirit_clip != 0xFF {
+                a.battle.queued_anim_b = spirit_clip;
             }
         }
         self.casting.pending_cast = Some(PendingCast {

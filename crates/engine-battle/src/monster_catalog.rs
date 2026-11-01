@@ -108,6 +108,16 @@ pub struct MonsterDef {
     /// battle monster-AI chooses among the entries it can afford to fold a
     /// real spell cast onto the party. Empty = physical attacker only.
     pub magic_attacks: Vec<u8>,
+    /// The record bytes `+0x20..+0x28` as stored
+    /// ([`legaia_actor_formats::monster_archive::MonsterRecord::ai_bytes`]):
+    /// the window the AI picker's generic core reads its magic slots from
+    /// ([`crate::monster_ai::generic_core`]). All-zero without a record.
+    pub ai_bytes: [u8; 8],
+    /// The first byte (the action **tag**) of each archive entry the record's
+    /// `+0x4C` table points at, indexed by entry, `+0x4A` long; `0` for an
+    /// entry the parser could not reach. The picker's cast walk counts the
+    /// `0x23` tags in it. Empty without a record.
+    pub entry_tags: Vec<u8>,
     /// Element id (`0..=7`, monster record `+0x1D`): the attacker element the
     /// affinity scale (`FUN_801dd864`) reads to look up
     /// `matrix[attacker][defender]`. Defaults to `7` (neutral) for synthetic
@@ -216,6 +226,8 @@ impl MonsterDef {
             drop_chance_pct: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
+            ai_bytes: [0; 8],
+            entry_tags: Vec::new(),
             element: 7,
             swing_class: 0,
             size_class: 0,
@@ -395,6 +407,13 @@ pub fn monster_def_from_record(
     // Castable spells: the record's 3-slot global-id array (`+0x21..=+0x23`);
     // the parser already filters out the empty `<= 1` slots.
     def.magic_attacks = rec.magic_attacks.clone();
+    def.ai_bytes = rec.ai_bytes;
+    def.entry_tags = vec![0; usize::from(rec.magic_count)];
+    for sp in &rec.spells {
+        if let Some(t) = def.entry_tags.get_mut(usize::from(sp.entry_index)) {
+            *t = sp.id;
+        }
+    }
     def.element = rec.element;
     // Record `+0x1E` - the limb-vs-height class the queue builder and the
     // damage kernel's apply-mode look-ahead both read record-direct.
@@ -657,6 +676,8 @@ pub fn vanilla_monster_catalog() -> MonsterCatalog {
             drop_chance_pct: 0,
             seru_id: None,
             magic_attacks: Vec::new(),
+            ai_bytes: [0; 8],
+            entry_tags: Vec::new(),
             element: 7,
             swing_class: 0,
             size_class: 0,

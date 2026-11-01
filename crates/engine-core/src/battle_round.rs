@@ -152,10 +152,6 @@ impl BattleRound {
         let party_count = (world.party.party_count as usize).max(1);
         let slots = world.actors.len().min(8);
 
-        // Re-arm the picker's once-per-pass monster flee checkpoint: retail
-        // re-enters `FUN_801E9FD4` each round with its balance counter cleared.
-        world.battle.monster_flee_attempted = false;
-
         // Loop A: every slot - gauge restore + action-stream clear.
         for slot in 0..slots {
             let a = &mut world.actors[slot].battle;

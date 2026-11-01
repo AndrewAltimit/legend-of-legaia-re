@@ -63,7 +63,17 @@ impl World {
             MonsterAction::Physical { target } => {
                 // AGL-driven multi-action budget: how many swings this monster
                 // lands this turn (single swing when it has no AGL / swing data).
-                self.arm_monster_strike_budget(slot);
+                // The picker's core ran it already when its physical arm
+                // picked; the `0xB3` arm's cut, stored by the switch after
+                // it, applies to those picks now.
+                if self.battle.monster_budget_armed.take() == Some(slot) {
+                    if std::mem::take(&mut self.battle.monster_ai_state.cut_strike_stream) {
+                        self.battle.monster_strike_entries.truncate(1);
+                        self.battle.monster_strike_budget = 1;
+                    }
+                } else {
+                    self.arm_monster_strike_budget(slot);
+                }
                 self.clear_action_stream(slot);
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();

@@ -166,7 +166,7 @@ fn battle_world(
     w.actors[CASTER as usize].battle_monster_id = Some(monster_id);
     w.mode = SceneMode::Battle;
     w.toggles.live_gameplay_loop = true;
-    // The caster must not leave before it casts: the picker's once-per-pass
+    // The caster must not leave before it casts: the picker's
     // flee checkpoint (`FUN_801EC0DC`) is a live roll on the battle stream,
     // and the scripted no-escape flag (`ctx+0x287`) is the gate retail tests
     // first.
@@ -272,7 +272,20 @@ fn drive_contrast(c: &Corpus, ids: &[u8]) -> (u16, u8, u16, u16, usize) {
         .expect("the seeded monster exists");
     // The seeded gate, and the only thing seeded: one record's move list. The
     // ids themselves, their class bytes and their baked powers are the disc's.
-    def.magic_attacks = ids.to_vec();
+    // The picker's core reads the list off the record's slot window
+    // `+0x21..=+0x23` and walks the tag-`0x23` entries for the cast, so the
+    // window carries the first ids and the walk an entry to land on; the
+    // disc-free fallback (no spell table) rolls over the same ids.
+    let seeded: Vec<u8> = ids.iter().copied().take(3).collect();
+    def.magic_attacks = seeded.clone();
+    def.ai_bytes = [0; 8];
+    def.ai_bytes[1..=seeded.len()].copy_from_slice(&seeded);
+    while def.entry_tags.len() < 2 + seeded.len() {
+        def.entry_tags.push(0);
+    }
+    for t in def.entry_tags.iter_mut().skip(2).take(seeded.len()) {
+        *t = 0x23;
+    }
     catalog.insert(def);
 
     let mut routed = battle_world(&c.scus, &c.overlay, &catalog, monster_id, ids, true);

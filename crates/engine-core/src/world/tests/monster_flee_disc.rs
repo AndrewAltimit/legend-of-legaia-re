@@ -71,13 +71,11 @@ fn seat_lone(rec: &legaia_actor_formats::monster_archive::MonsterRecord) -> Worl
 
 /// Count the seeds (of `seeds`) on which the monster in slot 1 rolls a flee
 /// at `hp`.
-/// Each roll re-arms the once-per-pass checkpoint and reseeds the stream, so
-/// every seed is one fresh picker pass.
+/// Each roll reseeds the stream, so every seed is one fresh picker pass.
 fn flee_count(w: &mut World, hp: u16, seeds: u32) -> u32 {
     (0..seeds)
         .filter(|&seed| {
             w.actors[1].battle.hp = hp;
-            w.battle.monster_flee_attempted = false;
             w.rng_state = seed.wrapping_mul(2_654_435_761);
             matches!(w.pick_monster_action(1), MonsterAction::Flee)
         })
