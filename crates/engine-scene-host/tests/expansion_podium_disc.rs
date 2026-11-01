@@ -29,6 +29,12 @@ fn the_game_night_ends_on_a_podium_in_the_rest() {
         let m = &host.world.actors[0].move_state;
         (m.world_x, m.world_y, m.world_z)
     };
+    // The hall floor under the podium (`modes.toml` puts it at 5F tile
+    // [24, 10]; the map's origin is [20, 20]): the player arrives on the
+    // gallery above the hall, so the lift is measured from the hall.
+    let hall_y = host
+        .world
+        .sample_field_floor_height((20 + 24) * 128 + 64, (20 + 10) * 128 + 64);
     host.world
         .enter_pack_mode("tower-game-night")
         .expect("the night opens");
@@ -69,9 +75,8 @@ fn the_game_night_ends_on_a_podium_in_the_rest() {
     assert!((f32::from(m.world_z) - block.centre[1]).abs() < 1.0);
     let floor_off = i32::from(m.world_y);
     assert!(
-        i32::from(before.1) - floor_off >= 100,
-        "lifted onto the block: {} -> {floor_off}",
-        before.1
+        hall_y - floor_off >= 100,
+        "lifted onto the block: {hall_y} -> {floor_off}"
     );
     // Cross closes the finished night; the podium comes down.
     let mut closed = false;
