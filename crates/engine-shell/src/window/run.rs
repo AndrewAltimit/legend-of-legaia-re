@@ -408,7 +408,10 @@ pub(super) fn cmd_play_window_with_record(
         extracted_root,
         disc,
         enable_audio,
-        audio_detached: false,
+        // `LEGAIA_AUDIO_DETACHED=1`: the director over a device-less output,
+        // so a capture child (the cast-sequence recorder's `sfx.csv`) routes
+        // every cue on a machine whose sound device it must not hold.
+        audio_detached: std::env::var_os("LEGAIA_AUDIO_DETACHED").is_some_and(|v| v != "0"),
         world_map,
         boot_ui,
         save_dir,
@@ -545,6 +548,15 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
                 enable_audio,
             },
         )?,
+        None if audio_detached && extracted_root.join("PROT.DAT").exists() => {
+            NativeSession::open_extracted_detached_audio(
+                extracted_root,
+                &legaia_engine_session::BootConfig {
+                    scene: scene.to_string(),
+                    enable_audio,
+                },
+            )?
+        }
         _ => crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?,
     };
     apply_launch_toggles(

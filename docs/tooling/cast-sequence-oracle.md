@@ -13,6 +13,7 @@ metric cannot see under.
 | retail recorder | [`autorun_cast_sequence.lua`](../../scripts/pcsx-redux/autorun_cast_sequence.lua) | PCSX-Redux probe: inject the cast, dump the displayed frame and per-vsync metadata |
 | engine recorder | `LEGAIA_DIAG_CAST_SEQ` in [`redraw_present.rs`](../../crates/engine-shell/src/window/event_handler/redraw_present.rs) | `play-window` writes the same metadata and the cropped frame per tick |
 | pairing + score | [`cast_sequence.rs`](../../crates/parity/src/cast_sequence.rs) | `legaia-engine cast-sequence-score`: pair, score, report, strip |
+| sound channel | [`cast_sequence_sound.rs`](../../crates/parity/src/cast_sequence_sound.rs) | the two sides' sound cues matched on id and on the same clock ([below](#the-sound-channel)) |
 | driver | [`scripts/ci/cast-sequence.py`](../../scripts/ci/cast-sequence.py) | Runs the three stages with caching |
 | pairing test | [`cast_sequence_pairing.rs`](../../crates/parity/tests/cast_sequence_pairing.rs) | Disc-free: synthetic recordings pin the pairing rule |
 
@@ -51,6 +52,8 @@ Flags worth knowing:
 | `--recapture` / `--reseed` | Re-run the retail capture / the retail-compare seed instead of using the cache |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
+| `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
+| `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
@@ -256,6 +259,37 @@ frames past the arm's entry holds retail's rise older than the engine's
 the whole arm-4 segment scores low on the brighter retail frame. The
 `vera_summon_mid_cast` still, gated on the rise's own age, matches it.
 
+## The sound channel
+
+Both sides also write `sfx.csv`, one row per sound cue played:
+
+- **Retail.** The probe samples the cue ring every vsync: the ids
+  `DAT_8007B6D8[4]` (`i16`) and their countdowns `DAT_8007C338[4]` (`u32`).
+  The drainer `FUN_80016B6C` plays a slot whose countdown is zero and whose
+  id is not negative (`0x80016BF8..0x80016C20`), and the next frame's ager
+  `FUN_8001698C` clears it, so each edge into that condition is one cue
+  ([the ring](../formats/sfx-table.md#the-ring-is-two-arrays-aged-by-one-function-and-drained-by-another)).
+  The row's `drain` column is the drainer's own gate
+  (`0x8007BABC == 0x8007BAA0`, `0x80016BC0..0x80016BD4`); a cue that came due
+  behind a closed gate was not played and is not scored. The ring carries
+  every battle cue the router `FUN_8004FE5C` enqueues and every script cue;
+  a voice keyed straight through `FUN_800250D4` is not on it.
+- **Engine.** The recorder reads the audio director's command record each
+  tick: the cues that came due (`SfxDue` off the delay scheduler, `RingDue`
+  off the retail ring, `SfxNow`). The driver drops the child's `--no-audio`
+  and sets `LEGAIA_AUDIO_DETACHED=1`, which opens the director over an
+  output with no device.
+
+Both ids are descriptor indices (the ring value is the index the drainer
+reads the table with). A retail cue is placed into engine time the way a
+frame is: its segment, its offset on the game clock, the same offset into
+the aligned engine segment. It matches the nearest unmatched engine cue of
+the same id within the tolerance. A second pass pairs what is left within
+`120` ticks and lists those as **timing** misses with their offset; the rest
+are **missing** (retail only) or **extra** (engine only). The channel's
+number is `2 * matched / (retail cues + engine cues)`; `id score` is the same
+over the id multisets alone, whatever the time.
+
 ## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
@@ -269,6 +303,8 @@ come:
 - **Strip.** The rows of `strip.png`, each `retail | engine | |diff|`: the
   worst pair of each of the worst segments, plus evenly spaced pairs, in time
   order.
+- **Sound.** The cue score, then the timing misses and the lone cues with
+  their segment key.
 
 `report.json` carries every pair (retail vsync, shown vsync, engine tick, key,
 offset, both states, class, `within`, `mae`, both lumas) for scripts.

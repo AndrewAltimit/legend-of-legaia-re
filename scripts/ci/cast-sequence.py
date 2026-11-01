@@ -15,7 +15,8 @@ Three stages, each cached under `--out`:
              `LEGAIA_DIAG_CAST_SEQ` recorder (`<out>/engine/`). Seconds.
 3. score   - `legaia-engine cast-sequence-score`: pair the frames on the
              action-SM clock, score each pair with the retail-compare block
-             metric, write `report.md` / `report.json` / `strip.png`.
+             metric, match the two sides' sound cues (`sfx.csv`), write
+             `report.md` / `report.json` / `strip.png`.
 
     scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
     scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --engine-only
@@ -206,6 +207,11 @@ def run_engine(a, out: Path) -> bool:
             env[k] = v
         i += 1
     args = rest[i + 1:]
+    # The sound channel reads the audio director's command record, so the
+    # child keeps its director, routed to no device (`LEGAIA_AUDIO_DETACHED`).
+    if not a.no_sound:
+        args = [t for t in args if t != "--no-audio"]
+        env["LEGAIA_AUDIO_DETACHED"] = "1"
     exe = str(EXE)
     for j, t in enumerate(args):
         if t == "--screenshot-tick":
@@ -273,12 +279,21 @@ def score(a, out: Path) -> int:
            "--label", out.name, "--strip", str(a.strip)]
     if a.retail_lag is not None:
         cmd += ["--retail-lag", str(a.retail_lag)]
+    if a.sound_tolerance is not None:
+        cmd += ["--sound-tolerance", str(a.sound_tolerance)]
     r = subprocess.run(cmd, cwd=REPO)
     if r.returncode == 0:
         rep = json.loads((out / "report.json").read_text())
         print(f"[score] {out.name}: mean {rep['mean_within']:.3f} over {rep['valid_pairs']} pairs "
               f"(min {rep['min_within']:.3f}; white {rep['white_pairs']}, dark {rep['dark_pairs']}, "
               f"unpaired {rep['unpaired_retail']}) -> {out / 'report.md'}")
+        snd = rep.get("sound")
+        if snd:
+            print(f"[score] {out.name}: sound cue score {snd['score']:.3f} (id {snd['id_score']:.3f}): "
+                  f"retail {snd['retail_cues']} engine {snd['engine_cues']} matched {len(snd['matched'])} "
+                  f"timing {len(snd['timing'])} missing {len(snd['missing'])} extra {len(snd['extra'])}")
+        else:
+            print(f"[score] {out.name}: no sound channel (a side has no sfx.csv)")
     return r.returncode
 
 
@@ -316,6 +331,10 @@ def main() -> int:
     ap.add_argument("--engine-timeout", type=int, default=600, help="engine child wall-clock cap, seconds")
     ap.add_argument("--retail-lag", help="display lag in vsyncs, or 'auto' (2 * frame step, the default)")
     ap.add_argument("--strip", type=int, default=12, help="pairs in strip.png")
+    ap.add_argument("--sound-tolerance", type=int,
+                    help="sound channel: ticks a cue still matches at (default 6)")
+    ap.add_argument("--no-sound", action="store_true",
+                    help="engine: keep the child's --no-audio (no audio director, no sfx.csv)")
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")
     ap.add_argument("--guard", default="", metavar="SEATS",
                     help="engine: party seats in the Spirit stance at the cast (comma list; retail's +0x1DE == 4)")

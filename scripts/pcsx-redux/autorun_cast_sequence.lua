@@ -29,6 +29,14 @@
 --                steps). `shot` names the frame taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
+--   sfx.csv      one row per sound cue the drainer FUN_80016B6C plays: the
+--                cue ring DAT_8007B6D8[4] (i16 ids) with its countdowns
+--                DAT_8007C338[4] (u32, vsyncs), sampled every vsync. A slot
+--                plays when its countdown is zero and its id >= 0
+--                (0x80016BF8..0x80016C20) and the next frame's ager clears
+--                it, so the edge into that condition is one cue. `drain`
+--                is the drainer's own gate (0x8007BABC == 0x8007BAA0,
+--                0x80016BC0..0x80016BD4).
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -174,7 +182,11 @@ local function tou32(v)
     return v
 end
 
-local meta, body, cam, pre
+local meta, body, cam, pre, sfx
+local SFX_RING     = 0x8007B6D8   -- i16 ids[4]
+local SFX_TIMERS   = 0x8007C338   -- u32 countdowns[4]
+local sfx_ready = { false, false, false, false }
+local sfx_prev_id = { -1, -1, -1, -1 }
 local injected, cast_seen, done_seen = false, false, false
 local inject_vsync, cast_vsync, done_vsync = -1, -1, -1
 local forced_row = false
@@ -243,6 +255,7 @@ probe.run({
         -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
         cam = probe.csv_open(probe.out_path("cam.csv"),
             "vsync,st7,phase,step,pitch,yaw,trx,try,trz,yaw_inc,yaw_end,trz_inc,trz_end")
+        sfx = probe.csv_open(probe.out_path("sfx.csv"), "vsync,frame,st7,phase,slot,id,drain")
         if PRE_TRACE then
             pre = probe.csv_open(probe.out_path("pre.csv"),
                 "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
@@ -419,6 +432,16 @@ probe.run({
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
+        -- The cue ring's ready edges (see sfx.csv in the header).
+        for i = 0, 3 do
+            local id = s16(SFX_RING + i * 2)
+            local ready = id >= 0 and u32(SFX_TIMERS + i * 4) == 0
+            if ready and (not sfx_ready[i + 1] or sfx_prev_id[i + 1] ~= id) then
+                sfx:row("%d,%d,%d,%d,%d,%d,%d", elapsed, u32(FRAME_COUNTER), st7, u8(cx + 0x279),
+                    i, id, u32(0x8007BABC) == u32(0x8007BAA0) and 1 or 0)
+            end
+            sfx_ready[i + 1], sfx_prev_id[i + 1] = ready, id
+        end
         local function sh(a)
             local v = u16(a)
             if v >= 0x8000 then v = v - 0x10000 end
@@ -463,6 +486,7 @@ probe.run({
         if meta then meta:close() end
         if body then body:close() end
         if cam then cam:close() end
+        if sfx then sfx:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
             fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\nground=%s\nparked=%d\n",
