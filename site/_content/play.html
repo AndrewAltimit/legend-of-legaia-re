@@ -756,7 +756,7 @@ div.play-vis-head { cursor: default; }
                 <option value="exit">Leave the mode</option>
               </select>
             </label>
-            <a href="modes.html" title="Play the custom game modes on their own page, no disc needed">custom modes page</a>
+            <a href="modes.html" title="Play the custom game modes laid out in the world on their own page, in 3D">custom modes page</a>
             <label title="The loaded expansion pack's trading cards: the card menu (binder, boosters, sell, deck) or the binder alone, drawn by the engine (the native backslash key). Circle backs out, Start leaves.">
               <span id="play-cards-label">Cards</span>
               <select id="play-cards">
@@ -1039,7 +1039,7 @@ div.play-vis-head { cursor: default; }
       hunt - the port's own, experimental and not part of the original game - open from the
       <em>Custom game mode</em> control, from the loaded pack or the built-in practice set;
       Rebirth lays some of them out on its maps (enable it on the Expansion pack card). The
-      <a href="modes.html">custom game modes page</a> plays each one on its own, with no disc.</li>
+      <a href="modes.html">custom game modes page</a> plays the ones laid out in the world on their own, in 3D.</li>
     <li><strong>The overworld.</strong> Picking a kingdom map walks it with the world-map
       controller: step-driven encounters, ports and town doors
       (<a href="subsystems/world-map.html">world map</a>).</li>
@@ -1254,8 +1254,8 @@ div.play-vis-head { cursor: default; }
         }
       }
       /* The pack's game modes played in the world: at a table or on a
-       * course of one of its maps, in 3D. The modes page draws the same
-       * games flat without a disc. */
+       * course of one of its maps, in 3D. The modes page frames this page
+       * to play the same games. */
       const wm = (pickerPack.modes || [])
         .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f)
           || (m.kind || '').toLowerCase().includes(f));

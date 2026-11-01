@@ -282,7 +282,7 @@ itself a few frames later (`World::age_net_podium`).
 
 ## Hosts
 
-Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page runs the same seat with no `World` and no disc, and draws the same composition through `seat_screen`.
+Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page plays the instances laid out in the world by framing the browser play host; `LegaiaModes` can also run the seat with no `World` and no disc, drawing the same composition through `seat_screen`, which no site page draws.
 
 ### The seat
 
@@ -302,7 +302,7 @@ When a session finishes, the seat settles it: the session's own rewards, plus, w
 |---|---|
 | Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
 | Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
-| Browser modes page | `site/modes.html`: the instances laid out on a pack map first, played in 3D in the play page's runtime framed with `?embed=1&mode=<id>` off the site's disc cache; then every instance flat, with no disc and no `World` (`LegaiaModes`, [`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)) |
+| Browser modes page | `site/modes.html`: the instances laid out on a pack map or an overworld, each played in 3D in the play page's runtime framed with `?embed=1&mode=<id>` off the site's disc cache; the instance list comes from `LegaiaModes::modes_json` ([`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)). Instances laid out nowhere play from the play page's select |
 | Card screens | Native: `\` (backslash) opens the card menu and closes it; `--mode cards`, `--mode cards-binder` and `--mode cards-dealer[:ID]` open a card screen at launch. Browser: `play_cards_open("menu" / "binder" / "dealer:ID")`, `play_cards_close`, with `play_cards_json` (counts, completion) and `play_card_notices_json`. A pack map opens a dealer through its `card_dealer` trigger |
 
 ### Controls

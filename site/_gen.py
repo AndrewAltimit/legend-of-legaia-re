@@ -76,7 +76,7 @@ TITLE_OVERRIDES: dict[str, str] = {
     "characters": "Legend of Legaia Characters - Field & Battle Models",
     "npcs": "Legend of Legaia NPCs - Every Townsperson in 3D",
     "minigames": "Play Legend of Legaia Minigames in the Browser",
-    "modes": "Legend of Legaia Port Custom Game Modes (Experimental) - Hold'em, Grid Duel, Golf, Racing & Prop Hunt in the Browser",
+    "modes": "Legend of Legaia Port Custom Game Modes (Experimental) - Hold'em, Grid Duel, Golf & Racing in 3D in the Browser",
     "world": "Legend of Legaia World Guide - Towns, Enemies, Shops & Fishing",
     "world-overview": "Legend of Legaia World Map in 3D - WebGL Viewer",
     "disc-map": "Legend of Legaia Disc Map - Every Sector, File and PROT.DAT Entry",
@@ -131,9 +131,9 @@ DESCRIPTIONS: dict[str, str] = {
         "charts, odds, and payout tables read from your disc."
     ),
     "modes": (
-        "Play the Legend of Legaia port's custom game modes - part of the experimental, unfinished Rebirth expansion pack - in your browser, no "
-        "disc needed: Texas Hold'em, the Grid Duel card game, mini-golf, "
-        "checkpoint racing and prop hunt, from the practice set or the Rebirth pack."
+        "Play the Legend of Legaia port's custom game modes - part of the experimental, unfinished expansion pack - in 3D in your browser, "
+        "from your own disc: Texas Hold'em, the Grid Duel card game, mini-golf "
+        "and checkpoint racing, laid out in the world."
     ),
     "world": (
         "Town-by-town guide to Legend of Legaia's world, assembled from the "
