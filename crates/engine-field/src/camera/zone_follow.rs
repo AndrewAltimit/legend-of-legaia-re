@@ -282,6 +282,20 @@ impl Camera {
         );
         g[6] = clamped[0];
         g[8] = clamped[1];
+        // A seat stands the player on the spot before its footing has
+        // conformed, so the seat's own snap can compose at a height the
+        // player leaves on the next tick (`deene_field_card_walk`: seated at
+        // `Y = -160`, standing on `512`). The footing settling under an
+        // unmoved player is not a walk away from the seat: the hold moves
+        // to the settled height and the pose composed there, so the region
+        // selector's `4C 39` re-snap still re-lands the seat.
+        if let Some(h) = zone.seat_hold.as_mut()
+            && [h.player[0], h.player[2]] == [x, z]
+            && h.player[1] != y
+        {
+            h.player = [x, y, z];
+            h.target = t;
+        }
         if zone.seat_hold.is_some_and(|h| h.player != [x, y, z]) {
             zone.seat_hold = None;
         }

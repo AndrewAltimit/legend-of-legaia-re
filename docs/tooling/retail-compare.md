@@ -3972,6 +3972,23 @@ pitch exactly, with its eye `28` / `8` off the descriptor where the live pose
 is `87` / `19` off it, so the bulk of both misses is the frozen ease, not the
 compose.
 
+The walking captures settle the same way, all of their residue on the ease
+side. The engine's seat composes the descriptor to the unit in every one:
+
+| State | Descriptor (= engine) | Retail live |
+|---|---|---|
+| `kor_field_route_walk` | yaw `1605`, eye Y `768` | yaw `1702`, eye Y `681` |
+| `kor3_field_route_walk` | yaw `621`, eye Y `1152` | yaw `511`, eye Y `1292` |
+| `kor4_field_route_walk` | yaw `816`, eye Y `1152` | yaw `731`, eye Y `1163` |
+| `tower_field_walk` | eye `(-135, 714, 17303)` | eye `(-135, 609, 17284)` |
+| `deene_field_card_walk` | eye `(-76, -1894, 9770)` | eye `(-76, -1837, 9769)` |
+| `retockin_field_route_walk` | eye `(-124, 2040, 15897)` | eye `(-124, 1999, 15895)` |
+
+The headless `camera` channel keeps the snap's pose, so it scores these as
+misses by design; the image child seats the live pose, taken back two ease
+steps for a player who moved on its last pass ([the seeding
+model](#the-seeding-model), `walk_rewind`).
+
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat
 ([below](#the-region-selector-band-and-the-entry-order)), and in `town01` and
@@ -3986,6 +4003,17 @@ pose there. `town01_npc16_dialogue_first_page` read `0.939` to `1.000`,
 `v0_1_pre_battle_tetsu` `0.972` to `1.000`, and the two Mei house doors
 `0.971` / `0.982` to `1.000`; the card-boot states that snap again move a few
 thousandths each.
+
+The hold keys on the player's footing as well as the spot, and a seat stands
+the player before the footing conforms. `deene_field_card_walk` is seated at
+`Y = -160` and stands on `512` a tick later; its seat snap composed at the
+first height (pitch `340`), the region selector's `4C 39` re-snapped at the
+second (pitch `424`, eye `(-76, -1894, 9770)`, the state's own staging
+descriptor), and the hold, keyed on `-160`, no longer matched, so the frame
+was drawn under the composed eye rather than retail's live `-1837`: three
+pixels high. The footing settling under an unmoved player now moves the hold
+to the settled height and the pose composed there (`SeatHold`, in
+`ZoneFollow`'s snap epilogue), so the re-snap re-lands the seat.
 
 ### Arrival states are captured before the town runs
 
