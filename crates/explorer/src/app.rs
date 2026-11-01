@@ -2593,86 +2593,104 @@ fn third_party_licenses() -> Option<PathBuf> {
 impl App {
     fn about_window(&mut self, ctx: &egui::Context) {
         let mut open = self.about_open;
+        let max_h = about_max_height(ctx.content_rect().height());
         egui::Window::new("About Legaia Explorer")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .max_height(max_h)
             .show(ctx, |ui| {
-                ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
-                ui.label(
-                    "Browse, preview and extract the assets on your own Legend of Legaia disc.",
-                );
-                ui.add_space(6.0);
-                ui.label(format!("License: {}", env!("CARGO_PKG_LICENSE")));
-                ui.label(
-                    "The third-party crates this program is built from keep their own \
-                     licenses; their texts and notices ship in THIRD-PARTY-LICENSES.txt \
-                     next to the program.",
-                );
-                match third_party_licenses() {
-                    Some(p) => {
-                        ui.horizontal(|ui| {
-                            ui.monospace(p.display().to_string());
-                            if ui.small_button("Copy path").clicked() {
-                                ui.ctx().copy_text(p.display().to_string());
+                // Scrolls when the window is shorter than the box (the
+                // minimum window at a large zoom pushed its title bar and
+                // last rows off the screen).
+                egui::ScrollArea::vertical()
+                    .max_height(max_h - ABOUT_CHROME_H)
+                    .show(ui, |ui| {
+                    ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
+                    ui.label(
+                        "Browse, preview and extract the assets on your own Legend of Legaia disc.",
+                    );
+                    ui.add_space(6.0);
+                    ui.label(format!("License: {}", env!("CARGO_PKG_LICENSE")));
+                    ui.label(
+                        "The third-party crates this program is built from keep their own \
+                         licenses; their texts and notices ship in THIRD-PARTY-LICENSES.txt \
+                         next to the program.",
+                    );
+                    match third_party_licenses() {
+                        Some(p) => {
+                            ui.horizontal(|ui| {
+                                ui.monospace(p.display().to_string());
+                                if ui.small_button("Copy path").clicked() {
+                                    ui.ctx().copy_text(p.display().to_string());
+                                }
+                            });
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new(
+                                    "(not found beside this binary - it is part of every release \
+                                     archive; a source build can generate it with \
+                                     scripts/ci/third-party-licenses.py)",
+                                )
+                                .weak(),
+                            );
+                        }
+                    }
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new(
+                            "No game data ships with this program; it reads only the disc image you \
+                             choose, and writes only into folders you pick.",
+                        )
+                        .weak(),
+                    );
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Keyboard").strong());
+                    egui::Grid::new("about_keys")
+                        .num_columns(2)
+                        .spacing([16.0, 3.0])
+                        .show(ui, |ui| {
+                            for (keys, what) in [
+                                ("Ctrl+O", "open a disc image"),
+                                ("Ctrl+L", "type a path to open"),
+                                ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
+                                ("F5", "play the open disc"),
+                                ("Ctrl+F, Esc", "search the archive, clear the search"),
+                                ("Ctrl+Tab, Ctrl+Shift+Tab", "next, previous preview tab"),
+                                (
+                                    "Up / Down, PgUp / PgDn, Home / End",
+                                    "walk the archive tree",
+                                ),
+                                (
+                                    "Ctrl+= / Ctrl+- / Ctrl+0",
+                                    "zoom in, out, reset (also View)",
+                                ),
+                                ("F1", "this box"),
+                            ] {
+                                // Key names in the palette's key ink, as the
+                                // launcher's Controls panel and the play
+                                // window's F12 panel draw them.
+                                let ink = crate::theme::c(crate::theme::palette(ui).info);
+                                ui.label(RichText::new(keys).monospace().color(ink));
+                                ui.label(what);
+                                ui.end_row();
                             }
                         });
-                    }
-                    None => {
-                        ui.label(
-                            RichText::new(
-                                "(not found beside this binary - it is part of every release \
-                                 archive; a source build can generate it with \
-                                 scripts/ci/third-party-licenses.py)",
-                            )
-                            .weak(),
-                        );
-                    }
-                }
-                ui.add_space(6.0);
-                ui.label(
-                    RichText::new(
-                        "No game data ships with this program; it reads only the disc image you \
-                         choose, and writes only into folders you pick.",
-                    )
-                    .weak(),
-                );
-                ui.add_space(6.0);
-                ui.label(RichText::new("Keyboard").strong());
-                egui::Grid::new("about_keys")
-                    .num_columns(2)
-                    .spacing([16.0, 3.0])
-                    .show(ui, |ui| {
-                        for (keys, what) in [
-                            ("Ctrl+O", "open a disc image"),
-                            ("Ctrl+L", "type a path to open"),
-                            ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
-                            ("F5", "play the open disc"),
-                            ("Ctrl+F, Esc", "search the archive, clear the search"),
-                            ("Ctrl+Tab, Ctrl+Shift+Tab", "next, previous preview tab"),
-                            (
-                                "Up / Down, PgUp / PgDn, Home / End",
-                                "walk the archive tree",
-                            ),
-                            (
-                                "Ctrl+= / Ctrl+- / Ctrl+0",
-                                "zoom in, out, reset (also View)",
-                            ),
-                            ("F1", "this box"),
-                        ] {
-                            // Key names in the palette's key ink, as the
-                            // launcher's Controls panel and the play
-                            // window's F12 panel draw them.
-                            let ink = crate::theme::c(crate::theme::palette(ui).info);
-                            ui.label(RichText::new(keys).monospace().color(ink));
-                            ui.label(what);
-                            ui.end_row();
-                        }
                     });
             });
         self.about_open = open;
     }
+}
+
+/// Points the About box's title bar and frame take beyond its body.
+const ABOUT_CHROME_H: f32 = 40.0;
+
+/// The About box's tallest size in a window `screen_h` points tall: the
+/// window less a margin, with room for at least a few lines.
+fn about_max_height(screen_h: f32) -> f32 {
+    (screen_h - 40.0).max(ABOUT_CHROME_H + 80.0)
 }
 
 fn theme_preference(t: crate::settings::Theme) -> egui::ThemePreference {
@@ -2968,6 +2986,13 @@ mod layout_tests {
         assert_eq!(cycle_tab(Tab::Overview, false, has), Tab::Hex);
         assert_eq!(cycle_tab(Tab::Hex, false, has), Tab::Model);
         assert_eq!(cycle_tab(Tab::Hex, true, |t| t == Tab::Hex), Tab::Hex);
+    }
+
+    #[test]
+    fn about_box_fits_a_short_window() {
+        // 480 points at 1.25 zoom is 384 points tall.
+        assert!(about_max_height(384.0) <= 384.0 - 20.0);
+        assert!(about_max_height(50.0) > ABOUT_CHROME_H);
     }
 
     #[test]
