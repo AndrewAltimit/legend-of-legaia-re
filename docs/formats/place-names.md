@@ -96,7 +96,7 @@ if (record.region == current_kingdom &&
 ```
 
 So the name is drawn **at the place's own map position**, gated on having
-discovered it, inside a dialog-skin window as wide as the name. `see
+discovered it, inside a class-0 window (opaque blue marble, gold border) as wide as the name. `see
 ghidra/scripts/funcs/overlay_monster_test_0981_801ce850.txt`. The screen
 around the loop, and the port, are on
 [`world-map.md`](../subsystems/world-map.md#the-map-display---prot-0981).
@@ -153,8 +153,10 @@ the first other instruction). That is what raises flag 2 on the crossing. Disc
 pins: `crates/engine-scene-host/tests/place_name_banner_disc.rs`, including the walk
 from `map01` into Rim Elm.
 
-Retail frames the balloon at a fixed `0x58 x 0x90` and centres the line on
-the whole screen, so a line wider than the frame overhangs both of its sides.
+Retail frames the balloon at a fixed `0x58 x 0x90` in widget record `3`
+(`FUN_80034B6C(3)` at `0x801DA904`): the class-0 frame, opaque blue marble
+under the gold border, not the dialog reading box's translucent gradient. It
+centres the line on the whole screen, so a line wider than the frame overhangs both of its sides.
 No retail section-2 name does: the longest measures 103 pixels in the dialog
 font. An expansion map's name (`Genesis Tower 7F - Sanctum of Echoes`) can,
 so the port fits the frame to the line (`TextBalloon::fitted`): a line with

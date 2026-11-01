@@ -12,8 +12,11 @@
 //! FUN_8002C69C(sx, sy, FUN_80035F04(name), 8) ; the box
 //! ```
 //!
-//! Style `0`'s descriptor is the dialog skin's, so the box is the dialog
-//! window chrome around a `width x 8` centre rect. The emitter links at the
+//! Widget record `0` is class `0`, tile-set `0`, palette `2`, fill texel
+//! `(128, 0)`, bias `(-8, -8)` - the class-0 frame (opaque blue marble under
+//! the gold border) the `4C E1` balloon and the battle message banner wear,
+//! not the dialog reading box's translucent gradient (record `0x61`, class
+//! `6`). So the box is the class-0 frame around a `width x 8` centre rect. The emitter links at the
 //! head of its ordering-table bucket, so the name sits over its own box and
 //! an earlier record's box over a later one's; [`map_label_chrome_draws_for`]
 //! returns the boxes last record first to keep that.
@@ -45,7 +48,7 @@ pub fn map_label_chrome_draws_for(
         if name.is_empty() {
             continue;
         }
-        out.extend(dialog_window_chrome_draws_for(
+        out.extend(crate::battle_hud_chrome::text_actor_frame_draws_for(
             rects,
             (sx, sy, map_label_text_width(font, name), 8),
             stage_origin,

@@ -569,8 +569,12 @@ engine verdict:
   timer short of its total: `kor4_field_route_walk` holds `Elevator 7F` at
   `5` and shows the killed `Sol Dayschool` at `75`. It goes to the child as
   `LEGAIA_SEAT_BALLOON` (`none` for a frame that drew none) and replaces the
-  field's balloon on the capture frame. `kor3_field_route_walk` rose from
-  `.917` to `.954` and `kor4_field_route_walk` from `.918` to `.955`.
+  field's balloon on the capture frame, measured on the spot as the spawner
+  measures before the first draw (a seated balloon is unmeasured, and an
+  unmeasured one draws its window without its line). The window is widget
+  record `3`, the class-0 marble frame, not the dialog box's gradient
+  ([place-names](../formats/place-names.md)). With the line and the frame
+  `kor3_field_route_walk` reads `.988` and `kor4_field_route_walk` `.984`.
 
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,

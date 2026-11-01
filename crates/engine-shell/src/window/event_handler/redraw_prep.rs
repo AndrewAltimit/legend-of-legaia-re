@@ -71,6 +71,15 @@ impl PlayWindowApp {
             // (`LEGAIA_SEAT_BALLOON`).
             if due && let Some(b) = sc.seat_balloon.take() {
                 self.session.host.world.cutscene.text_balloon = b;
+                // A seated balloon arrives unmeasured, as a spawned one
+                // does, and the tick's own measure pass has already run
+                // this frame: retail's spawner measures before the first
+                // draw (`FUN_8003C764` -> `FUN_80035F04`), so measure now
+                // or the captured frame shows the window without its line.
+                legaia_engine_screens::field_messages::commit_text_balloon_measure(
+                    &mut self.session.host.world,
+                    &self.font,
+                );
             }
             // ... and a captured cast's parts where retail's passes had put
             // them (`LEGAIA_SEAT_CAST_PARTS`).

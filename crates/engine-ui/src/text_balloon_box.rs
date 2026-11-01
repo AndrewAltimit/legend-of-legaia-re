@@ -50,16 +50,30 @@ pub fn text_balloon_text_width(font: &legaia_font::Font, text: &[u8]) -> i16 {
     font.layout(text).advance_x.min(i16::MAX as u32) as i16
 }
 
-/// Window chrome for the balloon: the same gradient fill + gold 9-slice the
-/// dialog reading box uses, at the engine's `frame_rect`
-/// (`TextBalloon::frame_rect`, i.e. `FUN_8002C69C`'s four arguments).
+/// Window chrome for the balloon at the engine's `frame_rect`
+/// (`TextBalloon::frame_rect`, i.e. `FUN_8002C69C`'s four arguments): the
+/// class-0 frame - opaque blue marble fill under the gold tile-set-0 border,
+/// the centre rect inflated by 8 on every side.
+///
+/// The handler stages widget kind `3` (`FUN_80034B6C(3)`) and widget record
+/// `3` is class `0`, tile-set `0`, palette `2`, fill texel `(128, 0)`, bias
+/// `(-8, -8)` - byte for byte the record the battle message banner and the
+/// sparring-tutorial prompts draw. The dialog reading box is a different
+/// record (`0x61`, class `6`, a translucent gradient), so a balloon drawn in
+/// the dialog skin reads lavender where retail's place-name banner is navy
+/// (`kor3_field_route_walk`'s `Sol Broadway`).
 pub fn text_balloon_chrome_draws_for(
     rects: &SaveMenuAtlasRects,
     frame_rect: (i32, i32, i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    dialog_window_chrome_draws_for(rects, frame_rect, stage_origin, stage_scale)
+    crate::battle_hud_chrome::text_actor_frame_draws_for(
+        rects,
+        frame_rect,
+        stage_origin,
+        stage_scale,
+    )
 }
 
 /// The balloon's single line at `pen` (`TextBalloon::pen`), in the staged

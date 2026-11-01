@@ -350,9 +350,12 @@ installs. Byte layout and the other two carriers a place name has are on
 | Name | `FUN_80036888(&record.name, 0, 0, sx, sy - 1)` | the shared glyph renderer |
 | Box | `FUN_80034B6C(0)`, `FUN_8002C69C(sx, sy, FUN_80035F04(&name), 8)` | window style `0`, as wide as the name |
 
-Window style `0` is descriptor `0x800732A4[0]`, byte for byte the dialog
-skin's (`0x44`): each name sits in an ordinary gradient-filled window, not on
-an underline.
+Window style `0` is descriptor `0x800732A4[0]`, byte for byte record `0x44`:
+class `0`, tile-set `0`, palette `2`, fill texel `(128, 0)`. Each name sits in
+the class-0 frame - opaque blue marble under the gold border, the frame the
+battle message banner and the `4C E1` balloon wear - not on an underline, and
+not in the dialog reading box's translucent gradient (record `0x61`, class
+`6`).
 
 A marker's label, position and visibility are one record. Renaming a place is
 a same-size overwrite of its 24-byte name field, which the

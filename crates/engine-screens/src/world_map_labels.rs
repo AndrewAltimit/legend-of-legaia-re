@@ -13,9 +13,10 @@
 //! FUN_8002C69C(sx, sy, FUN_80035F04(name), 8); its box
 //! ```
 //!
-//! Window style `0` is descriptor `0x800732A4[0]`, byte-identical to the
-//! dialog skin `0x44`: the box is the ordinary gradient-filled 9-slice window
-//! around a `width x 8` centre rect, not an underline.
+//! Window style `0` is descriptor `0x800732A4[0]`, byte-identical to record
+//! `0x44`: the class-0 frame (opaque blue marble under the gold border)
+//! around a `width x 8` centre rect, not an underline and not the dialog
+//! reading box's translucent gradient (record `0x61`, class `6`).
 //!
 //! This module is the gate and the projection; the two draws are
 //! `legaia_engine_ui::map_label_*`. The projection is the frame's own matrix
