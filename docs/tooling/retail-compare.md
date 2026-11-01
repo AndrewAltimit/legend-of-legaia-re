@@ -879,6 +879,18 @@ started from:
   therefore taken early on the same rule as a resume
   ([below](#a-record-that-took-the-player-at-the-install-pass)) - left to the
   settle tick, the loop selected `0x19D` first.
+  A placed object's record is engaged the same way: retail's touched object
+  (`FUN_801D5B5C` raises its `+0x10 |= 0x100`) is a partition-0 context like
+  a talk, and the engine keeps its idle body on the object-bind channel and
+  runs a touch on the inline runner with a prop binding
+  (`World::start_prop_interaction`). The seat stands the player where
+  retail's stood, so no movement contact posts that touch; a gate the engine
+  finds only on an object channel touches the prop whose record carries the
+  capture's head bytes. `tower_field_walk` is caught in the lift's `P0[17]`
+  at `+0xF4`, the `B3 F8 0A` arrival test after the player's walk onto the
+  platform (`C7 F8 1F 0F 02`); left on its channel at `+0x14` the gate was
+  never met in the deadline, and touched it is met a few ticks after the
+  settle.
 - **Paging.** From the settle tick on, while the record sits in a dialog box
   short of the gate PC, `Cross` is pressed every other tick - the presses
   the player made to page the conversation to where it was captured. A
