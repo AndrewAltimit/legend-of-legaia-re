@@ -468,6 +468,10 @@ pub struct ScreenshotConfig {
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub seat_battle_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
+    /// `LEGAIA_SEAT_DISPLAYED_CLIPS=slot:clip:cursor,...`: a body the
+    /// displayed frame shows on another clip than the RAM's, posed on it
+    /// after the camera is aligned (`RetailBattle::engine_image_displayed_clips`).
+    pub seat_displayed_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
     /// `LEGAIA_SEAT_GHOST_RING=slot:clip:depth:drawn:cursor:x:z,...`: each after-image
     /// ghost as the capture's history ring holds it, seated on the capture
     /// frame ([`legaia_engine_capture::ghost_ring`]); taken once.
@@ -1069,6 +1073,9 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             battle_bars_seeded: std::cell::Cell::new(false),
             seat_battle_clips: std::env::var("LEGAIA_SEAT_BATTLE_CLIPS")
+                .map(|v| legaia_engine_capture::clip_cursors::clip_cursors_from_env(&v))
+                .unwrap_or_default(),
+            seat_displayed_clips: std::env::var("LEGAIA_SEAT_DISPLAYED_CLIPS")
                 .map(|v| legaia_engine_capture::clip_cursors::clip_cursors_from_env(&v))
                 .unwrap_or_default(),
             battle_melee_hits: std::env::var("LEGAIA_BATTLE_MELEE_HITS")

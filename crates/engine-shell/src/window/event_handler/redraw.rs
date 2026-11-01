@@ -201,7 +201,7 @@ impl PlayWindowApp {
         {
             eprintln!(
                 "capture body {i}: pos ({}, {}) body {:?} facing {} hp {} anim {} reaction {:?} entry {:?} \
-                 frame {:?} tint {} colour {:08X} blend {:04X}",
+                 frame {:?} cursor {:?} tint {} colour {:08X} blend {:04X} flag {:08X} status {:04X} {:?}",
                 a.move_state.world_x,
                 a.move_state.world_z,
                 a.battle.seat,
@@ -211,9 +211,13 @@ impl PlayWindowApp {
                 a.battle_reaction,
                 a.battle_reaction_entry,
                 a.battle_animation.as_ref().map(|p| p.current_frame()),
+                a.battle_animation.as_ref().map(|p| p.cursor_sixteenths()),
                 a.battle.render_flag,
                 a.battle.render_color,
                 a.battle.render_blend,
+                a.battle.flag_word,
+                a.battle.field_flags,
+                w.battle.status_effects.statuses(i as u8),
             );
         }
         for (rgb, abr, ot) in w.screen_fade_draws() {

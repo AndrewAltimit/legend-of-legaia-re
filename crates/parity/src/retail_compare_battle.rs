@@ -594,6 +594,17 @@ pub struct RetailBattle {
     /// the bearing to the target in one pass, so a seat that recommitted in
     /// that window drew on the ring's pair, not on the RAM's.
     pub displayed_recommit: Vec<bool>,
+    /// Each pool slot's clip and cursor on the **displayed** frame, read
+    /// off the history rings rather than walked back from the RAM's cursor:
+    /// slot [`DISPLAYED_FRAMES_BACK`] of the clip-record ring `+0x234` (the
+    /// committed entry pointer, a word a frame), resolved to its index in
+    /// the monster record's entry array (at `+0x4C` of the record
+    /// `0x801C9348[slot - 3]`), and the same slot of the cursor ring
+    /// `+0x17A`. A monster
+    /// seat only (`None` for the party and for a pointer the array does not
+    /// hold). It differs from the RAM's clip where the anim node committed
+    /// inside the display lag, which the walk back cannot see.
+    pub displayed_clips: Vec<Option<(u8, u16)>>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

@@ -405,6 +405,39 @@ pub(super) fn retail_action_fx_parts(
 const RING_ID: u32 = 0x1FB;
 /// Its anim-cursor history `+0x17A`: one halfword a battle frame.
 const RING_CURSOR: u32 = 0x17A;
+/// The clip-record history ring: the committed entry pointer, a word a
+/// battle frame, slot 0 the live one (`FUN_80047430`, `0x80047E58..0x80048060`).
+const RING_RECORD: u32 = 0x234;
+/// Entries the displayed-clip lookup searches in a monster record's entry
+/// array (`+0x4C`): the archive's own action count bound.
+const MONSTER_ENTRY_SEARCH: u32 = 64;
+
+/// Pool slot `slot`'s clip and cursor on the displayed frame
+/// ([`RetailBattle::displayed_clips`]): slot [`DISPLAYED_FRAMES_BACK`] of the
+/// clip-record ring resolved through the monster record's entry array, and
+/// the same slot of the cursor ring. `None` for a party slot, an empty seat,
+/// or a pointer the array does not hold.
+fn displayed_monster_clip(ram: &[u8], slot: u32) -> Option<(u8, u16)> {
+    if slot < 3 {
+        return None;
+    }
+    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+    if !in_ram(p) {
+        return None;
+    }
+    let record = game_anchors::u32_at(ram, 0x801C_9348 + (slot - 3) * 4);
+    if !in_ram(record) {
+        return None;
+    }
+    let shown = game_anchors::u32_at(ram, p + RING_RECORD + DISPLAYED_FRAMES_BACK * 4);
+    if !in_ram(shown) {
+        return None;
+    }
+    let idx = (0..MONSTER_ENTRY_SEARCH)
+        .find(|&i| game_anchors::u32_at(ram, record + 0x4C + i * 4) == shown)?;
+    let cursor = game_anchors::u16_at(ram, p + RING_CURSOR + DISPLAYED_FRAMES_BACK * 2);
+    Some((idx as u8, cursor))
+}
 /// The ring's depth (`0x1F` shifts and slot 0).
 const RING_SLOTS: u32 = 32;
 /// The lowest ring id the ghost walk draws (`sltiu v0,v0,0x11` at
@@ -1065,6 +1098,9 @@ impl RetailBattle {
                         ]
                     })
                 })
+                .collect(),
+            displayed_clips: (0..8u32)
+                .map(|slot| displayed_monster_clip(ram, slot))
                 .collect(),
             displayed_recommit: (0..8u32)
                 .map(|slot| {

@@ -532,6 +532,15 @@ pub(super) fn battle_image(
             legaia_engine_capture::clip_cursors::clip_cursors_to_env(&seeds),
         ));
     }
+    // ... and a body the display shows on the clip before a commit the
+    // RAM already holds.
+    let shown = battle.engine_image_displayed_clips();
+    if !shown.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_DISPLAYED_CLIPS",
+            legaia_engine_capture::clip_cursors::clip_cursors_to_env(&shown),
+        ));
+    }
     // A party melee capture's landed hits, so the replayed combo deals
     // retail's amounts (`legaia_engine_capture::melee_hits`).
     let hits = battle.melee_hit_seeds();

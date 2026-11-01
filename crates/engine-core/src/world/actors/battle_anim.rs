@@ -155,6 +155,42 @@ impl World {
         true
     }
 
+    /// Pose battle slot `slot` on action clip `clip` at node cursor `cursor`
+    /// (12.4 sixteenths of a keyframe) whatever clip it plays: the frame a
+    /// capture's display shows, when the anim node committed another clip
+    /// between that frame and the RAM's. The playing clip is swapped for
+    /// the shown one with its cursor seated, the staged-anim and action
+    /// state left as they are. A capture seat for the frame it is taken on,
+    /// not a commit: no clip-tag ladder, no root step, no effect script.
+    /// Returns whether it landed (`false` with no such clip).
+    pub fn seat_displayed_battle_clip(&mut self, slot: usize, clip: u8, cursor: i32) -> bool {
+        let Some(a) = self.actors.get_mut(slot) else {
+            return false;
+        };
+        let Some(anim) = a
+            .battle_action_clips
+            .as_ref()
+            .and_then(|c| c.get(usize::from(clip)))
+            .and_then(|c| c.as_ref())
+        else {
+            return false;
+        };
+        let Some(mut player) = legaia_engine_battle::battle_anim::MonsterAnimPlayer::new(anim)
+        else {
+            return false;
+        };
+        let total = (player.frame_count() * 16).max(1) as i32;
+        a.pose_frame = Some(player.seat_cursor(cursor.rem_euclid(total) as u16));
+        step_model_table(
+            &mut a.battle_model_table,
+            &mut a.battle_drawn_objects,
+            player.variant_track(),
+            player.current_frame(),
+        );
+        a.battle_animation = Some(player);
+        true
+    }
+
     /// Advance the per-object battle animation of every actor carrying one,
     /// folding the result into `pose_frame`. The battle render path then
     /// deforms each actor's mesh through `tmd_to_vram_mesh_posed_rot`. Call once

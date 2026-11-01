@@ -378,6 +378,18 @@ impl RetailBattle {
     pub fn engine_image_displayed_seats(
         &self,
     ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
+        // A monster whose strike clip committed inside the display lag drew
+        // the clip before it, on the ring's pair
+        // ([`Self::engine_image_displayed_clips`]).
+        if let Some((seed, Some(then))) = self.displayed_strike_clip() {
+            return vec![legaia_engine_capture::ground_snap::GroundSnap {
+                slot: seed.slot,
+                x: then[0],
+                z: then[1],
+                facing: None,
+                body: None,
+            }];
+        }
         let pool = usize::from(self.active_actor);
         if pool >= 3
             || pool >= usize::from(self.party_count.clamp(1, 3))
@@ -397,6 +409,82 @@ impl RetailBattle {
             facing: None,
             body: None,
         }]
+    }
+
+    /// The acting monster's clip on the **displayed** frame, for the image
+    /// child to pose it on (`LEGAIA_SEAT_DISPLAYED_CLIPS`,
+    /// `World::seat_displayed_battle_clip`): slot two of the history rings
+    /// ([`Self::displayed_clips`]), in the strike loop of a monster's
+    /// Attack gated on its clip age.
+    ///
+    /// Such a gate keeps its own frame (the hit rays and the rest of the
+    /// shot run on the engine's clock), so the child draws the attacker on
+    /// the clip the RAM holds. Two captures show another one:
+    ///
+    /// - **A commit inside the display lag.** On the strike loop's first
+    ///   pass (`0x1E` at accumulator `0`) the RAM holds the strike entry at
+    ///   the commit's cursor `0`, while the frame on screen predates the
+    ///   commit: the rings show the arrival's idle stage committed one pass
+    ///   before the strike, at cursor `0` on the displayed slot and `24` on
+    ///   the next (`battle_noaru_gilium_lv2_strike`: entry `0` at `0`, then
+    ///   `24`, then the strike entry `8` at `0` on the live slot; the same
+    ///   on every first-pass monster strike in the library). The walk back
+    ///   from the RAM's cursor cannot see across a commit, so the ring
+    ///   names the clip. Posed on the idle's `24` instead, the Gilium reads
+    ///   `.840` against `.902` on its `0`.
+    /// - **A walk the engine has already ended.** A capture still on its
+    ///   walk ([`Self::walk_clock_capture`]) whose replay reached the clock
+    ///   on the strike clip (`battle_map02_mad_ogre_strike`'s Mad Ogre on
+    ///   entry `7` at cursor `16`, retail's on its walk at `24`): the
+    ///   cursor seat lands only on the clip the body plays.
+    pub fn engine_image_displayed_clips(
+        &self,
+    ) -> Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed> {
+        self.displayed_strike_clip()
+            .map(|(seed, _)| vec![seed])
+            .unwrap_or_default()
+    }
+
+    /// [`Self::engine_image_displayed_clips`]' seed, with the displayed
+    /// frame's live pair of the seat when the clip committed inside the
+    /// lag (a walker's ring pair is the ground snap's already).
+    fn displayed_strike_clip(
+        &self,
+    ) -> Option<(
+        legaia_engine_capture::clip_cursors::ClipCursorSeed,
+        Option<[i16; 2]>,
+    )> {
+        let pool = usize::from(self.active_actor);
+        if pool < 3
+            || !matches!(self.seed_plan(), SeedPlan::Action { state: 0x1E, .. })
+            || self.queued_category != 3
+            || !matches!(self.span_gate, SpanGate::Age { .. })
+        {
+            return None;
+        }
+        let (clip, cursor) = (*self.displayed_clips.get(pool)?)?;
+        let committed = clip != self.caster_clip;
+        if !committed && !self.walk_clock_capture() {
+            return None;
+        }
+        let m = pool - 3;
+        if m >= usize::from(self.monster_count) {
+            return None;
+        }
+        let slot = self.party_count.clamp(1, 3) + m as u8;
+        let then = if committed {
+            Some((*self.displayed_ground.get(pool)?)?)
+        } else {
+            None
+        };
+        Some((
+            legaia_engine_capture::clip_cursors::ClipCursorSeed {
+                slot,
+                clip,
+                cursor: i32::from(cursor),
+            },
+            then,
+        ))
     }
 
     /// `displayed` stands every combatant on the displayed frame's pair,

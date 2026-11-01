@@ -4459,6 +4459,28 @@ which the Guardian's corrected cast clip
 ([above](#monster-casts-the-drive-relies-on)) took away; it reaches on the
 fallback.
 
+The frame such a gate keeps is the RAM's, and on that first pass the RAM's
+attacker stands on the strike entry at the commit's cursor `0` - a clip the
+frame on screen never showed. The history rings say what it did show: slot
+two of the clip-record ring `+0x234` (the committed entry pointer, a word a
+battle frame) and of the cursor ring `+0x17A`. On every first-pass monster
+strike in the library they read the arrival's idle, committed one pass before
+the strike: entry `0` at cursor `0` on the displayed slot, `24` on the next,
+the strike entry at `0` on the live one (`battle_noaru_gilium_lv2_strike`'s
+Gilium `0`, `0` / `0`, `24` / `8`, `0`). The cursor walk back
+([above](#the-keyframe-each-body-stands-on)) cannot see across a commit, so
+the image child poses the attacker on the ring's entry and cursor, resolved
+through the record's entry array `*(0x801C9348 + (slot - 3) * 4) + 0x4C`, and
+stands it on the position ring's displayed pair
+(`RetailBattle::engine_image_displayed_clips`, `LEGAIA_SEAT_DISPLAYED_CLIPS`,
+`World::seat_displayed_battle_clip`), after the camera is aligned. Posed on
+the idle's `24` instead, the Gilium frame reads `.840` against `.902` on its
+`0`, which places the screen on slot two. The same seat lands a capture still
+on its walk whose replay reached the clock already on the strike
+(`battle_map02_mad_ogre_strike`: the engine's Mad Ogre on entry `7` at cursor
+`16`, retail's on the walk at `24`), where the cursor seat refuses a clip the
+body does not play.
+
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's
 (`battle_noa_miracle_art_combo`'s yaw endpoint stays unaligned: it carries

@@ -447,9 +447,17 @@ impl PlayWindowApp {
                 .as_ref()
                 .map(|sc| sc.battle_displayed_seat.clone())
                 .unwrap_or_default();
-            if !seats.is_empty() {
+            // ... and posed on the clip that frame shows
+            // (`LEGAIA_SEAT_DISPLAYED_CLIPS`).
+            let clips = self
+                .screenshot
+                .as_ref()
+                .map(|sc| sc.seat_displayed_clips.clone())
+                .unwrap_or_default();
+            if !seats.is_empty() || !clips.is_empty() {
                 let world = &mut self.session.host.world;
                 let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &seats);
+                legaia_engine_capture::clip_cursors::apply_displayed_clips(world, &clips);
                 if mask == 0xFF {
                     world.refresh_battle_camera_ghost();
                 }

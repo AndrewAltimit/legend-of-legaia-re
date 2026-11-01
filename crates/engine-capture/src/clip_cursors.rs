@@ -30,6 +30,23 @@ pub fn apply_clip_cursors(world: &mut legaia_engine_core::world::World, seeds: &
     }
 }
 
+/// Pose each seed's slot on the seed's clip at its cursor whatever clip it
+/// plays (`World::seat_displayed_battle_clip`): the clip the displayed frame
+/// shows where the RAM's anim node has committed another since
+/// (`LEGAIA_SEAT_DISPLAYED_CLIPS`, same env form as [`clip_cursors_to_env`]).
+pub fn apply_displayed_clips(
+    world: &mut legaia_engine_core::world::World,
+    seeds: &[ClipCursorSeed],
+) {
+    let mut any = false;
+    for s in seeds {
+        any |= world.seat_displayed_battle_clip(usize::from(s.slot), s.clip, s.cursor);
+    }
+    if any {
+        world.settle_seated_clips();
+    }
+}
+
 /// `LEGAIA_SEAT_BATTLE_CLIPS`: `slot:clip:cursor`, `,`-joined.
 pub fn clip_cursors_to_env(seeds: &[ClipCursorSeed]) -> String {
     seeds
