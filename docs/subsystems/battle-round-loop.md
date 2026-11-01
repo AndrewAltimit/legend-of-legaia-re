@@ -759,11 +759,17 @@ A magic-rank-up + character-level-up save triplet, diffed with the `mednafen-sta
 | Magic-rank up | `+0x9C` | `0x09 -> 0x0A` | magic-rank counter (+1) |
 | Magic-rank up | `+0x10A` | `0x1B -> 0x11` | low byte of `mp_cur` (cast cost spent) |
 | Magic-rank up | `+0x161` | `0x02 -> 0x03` | spell-level array (`spell_levels[0]` +1) |
-| Level-up, 4-level jump | `+0x00` | `0x4F -> 0x73` | unconfirmed (+0x24 does not match a single-level granularity) |
-| Level-up | `+0x04..+0x06` | `0x016D -> 0x02DA` | u16 LE XP delta (+365) |
+| Level-up | `+0x00` | `0x4F -> 0x73` | low byte of the cumulative XP `u32` (+36 from the fight) |
+| Level-up | `+0x04..+0x06` | `0x016D -> 0x02DA` | next-level threshold, rewritten `365 -> 730` (Vahn's L3 and L4 thresholds) |
 | Level-up | `+0x10E` | `0x3A -> 0x42` | low byte of `ap_cur` (AP / arts gauge refill, +8) |
 | Level-up | `+0x11C..+0x12C` | six per-byte +1..+4 | per-stat increments at byte stride 2 |
 | Level-up | `+0x130` | `0x02 -> 0x03` | displayed character level (+1) |
+
+It is one level, `2 -> 3`. The applier `FUN_801E9504` compares the cumulative XP at record
+`+0x00` against the threshold (`lw v0,0x5C8(s7)`; `sltu v0,v0,a2` at `0x801E9F68..0x801E9F70`,
+looping while the XP still reaches it), stores the next threshold to `+0x04` on exit
+(`sw a2,0x5CC(v0)` at `0x801E9FA0`) and zeroes it at level 99 (`0x801E9698`); `0x80084140 +
+slot * 0x414 + 0x5C8` is the record's `+0x00`.
 
 The growth source is in `SCUS_942.54`: the per-stat 98-entry curves at `DAT_800769CC` (stride `0x62`) and the parameter block at `DAT_80076918` that selects each stat's curve row, read and applied by the overlay level-up function `FUN_801E9504` (see [`level-up.md`](level-up.md#stat-gains)). `legaia_game_tables::level_up_tables::growth_tables_from_scus` parses them, and `LevelUpTracker::with_growth_tables` installs per-character `StatGrowthCurve::PerLevel` (all 8 stats) at boot, byte-validated against the captured Noa L2 -> L3 single-level deltas.
 

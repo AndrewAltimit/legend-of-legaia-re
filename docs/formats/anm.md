@@ -257,7 +257,7 @@ A handler in the field overlay's script VM (`FUN_801DE840`, overlay 0897) also r
 2. Calls `FUN_800204F8` (`a0 = actor`).
 3. Loads `s6 = actor[+0x4C]`.
 4. Calls `FUN_80056798` (BIOS vector `0xa0/0x2F`) while advancing the field-VM PC by 2 in the delay slot.
-5. A 40-byte body at `801e2630..801e2670` uses `s6` and the return value. **Unknown:** that body is not decoded.
+5. The body at `0x801E2630..0x801E2670` stores `(rand() % frames) << 4` into the frame cursor `actor[+0x68]`, `frames` being the bound clip's halfword `+0x02` (`lhu v1,2(s6)`, `div`, `mfhi`, `sll 4`, `sh v1,0x68(s5)`). This is arm `0` of the table, op `4C C0`, which seats a clip at a random phase - [`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#4c-c0-seats-the-clip-at-a-random-phase).
 
 See `ghidra/scripts/funcs/overlay_0897_801de840.txt`.
 

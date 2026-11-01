@@ -228,8 +228,12 @@ unequipped slots - see
 **The section index is not a fixed equipment kind.** Sections 0 (body), 1 (head) and 4 (footwear)
 agree across Vahn, Noa and Gala. Vahn and Gala carry generic weapons in section 2 and Ra-Seru
 tiers in section 3; **Noa has those two the other way round** (section 2 = Ra-Seru Terra
-`$1..$8`, section 3 = the Fangs / Feral / club / nail family). The grouping is measured; why
-Noa's differ is not traced (**Unknown**).
+`$1..$8`, section 3 = the Fangs / Feral / club / nail family). The files follow the character
+record: section `k` is matched against record byte `+0x196 + k` (`FUN_80052770` case 4,
+`lbu v1,0x75E(v0)` at `0x800529D0` off `0x80084140 + (char - 1) * 0x414 + k`), and Noa's record
+keeps her Ra-Seru in byte 2 and her weapon in byte 3. The two per-character halfword tables in
+`SCUS_942.54` say so: weapon byte `0x8007B42C` = `2, 3, 2`, Ra-Seru byte `0x8007B424` = `3, 2, 3`
+([`field-menu.md`](../subsystems/field-menu.md), [`save-record.md`](save-record.md)).
 
 ### Every section is bone geometry - the item is not its own object
 
@@ -978,8 +982,10 @@ Inside the window the mouth pass walks **sixteen** 3-byte records from the stati
 rows start at `+0x330`; char stride `0x180` is exactly 8 bands × `0x30`, so the 24 rows tile
 contiguously. The frame counter for both passes (the eye pass still reads the entry's `+0x8C`
 records) becomes the global victory counter `gp[+0x9EA] >> 1`, reset to 0 when the sequencer
-stages the win pose and still clamped at `0xFE`; its per-frame incrementer is not in the dumped
-corpus. The record shape and mouth-frame indexing are unchanged. The retail rows only ever select
+stages the win pose (`sh zero,0x9EA(gp)` at `0x8004EF18`) and clamped at `0xFE` by the reader.
+The battle tick `FUN_80046A20` advances it on entry, every battle frame and with no gate:
+`gp[+0x9EA] += DAT_1F800393`, the frame step (`0x80046A58..0x80046A7C`). So the counter runs on
+vsyncs, and its `>> 1` is a 30 Hz clock whatever the frame step. The record shape and mouth-frame indexing are unchanged. The retail rows only ever select
 non-neutral in-range mouth frames, some held to end `0xFF` - the win-quote mouth flap.
 
 **Port.** `legaia_actor_formats::face_anim` carries:
@@ -1411,16 +1417,13 @@ the player files.
 
 ## Open questions
 
-- **Why Noa's sections 2 and 3 are swapped** relative to Vahn's and Gala's
-  ([Descriptor table](#descriptor-table)). The grouping is measured; the cause is not traced.
-- **The victory counter's incrementer.** `gp[+0x9EA]` is reset when the sequencer stages the win
-  pose; the routine that advances it per frame is not in the dumped corpus
-  ([Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98)).
 - **A pre-biased `+0x5C` reader** is the one shape the
   [no-reader sweep](#the-0x5c-no-reader-sweep) cannot exclude by scanning; a read-watchpoint on
   the word would settle it.
 
-Settled, with the section that carries the evidence: texture placement is per section
+Settled, with the section that carries the evidence: Noa's swapped sections 2 and 3 follow her
+record's equip bytes ([Descriptor table](#descriptor-table)); the victory counter is advanced by
+the battle tick ([Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98)); texture placement is per section
 ([placement](#texture-pool-vram-placement)); slot ids are item ids
 ([Descriptor table](#descriptor-table)); `data_base = 0x8000` is a loader constant
 ([File layout](#file-layout)); slot words `+0x04`/`+0x08` are swing records

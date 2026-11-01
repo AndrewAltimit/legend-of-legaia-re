@@ -1,52 +1,34 @@
 //! TMD-with-size-prefix detector.
 //!
 //! Sister to [`legaia_scene_formats::scene_tmd_stream`] - same outer shape (`[u32 prefix][TMD
-//! magic 0x80000002 at +4]`), but the on-disc payload is **shorter than the
-//! prefix claims**. The runtime is presumably either (a) streaming the
-//! remainder from another PROT entry, or (b) using the prefix as an
-//! "in-RAM allocation size" hint and zero-filling the tail.
+//! magic 0x80000002 at +4]`), but the leading word claims **more bytes than
+//! the entry holds**.
 //!
-//! ### Layout (empirically verified)
+//! ### Layout tested for
 //!
 //! ```text
-//! +0x00   u32  total_size       ; claimed total in-memory size, > on-disc len
+//! +0x00   u32  total_size       ; claimed size, > on-disc len
 //! +0x04   u32  0x80000002       ; Legaia TMD magic
 //! +0x08   u32  0x00000000       ; TMD flags (on-disc)
-//! +0x0C   u32  nobj             ; small (typically 2 or 4)
-//! +0x10   object_table[nobj]    ; 28 bytes per object (PsyQ TMD layout)
-//!                                ; (vert_top, n_vert, norm_top, n_norm,
-//!                                ;  prim_top, n_prim, scale)
-//! +0x10 + nobj*0x1C             ; primitive data (truncated)
+//! +0x0C   u32  nobj             ; 1..=8
+//! +0x10   object_table[nobj]    ; 28 bytes per object (PsyQ TMD layout),
+//!                                ; every range inside `total_size`
 //! ```
 //!
-//! All object pointers (`vert_top`, `norm_top`, `prim_top`) point **within
-//! the prefix-claimed total size** - so the on-disc file is genuinely a
-//! prefix of a larger logical resource, not a malformed header.
+//! ### No retail entry has this shape
 //!
-//! ### Provenance
-//!
-//! ~30 PROT entries match this shape. They cluster as 12 KB files (6 sectors)
-//! across scene-named PROT entries - `izumi`, `cave01`, `dolk2`, `suimon`,
-//! `vozz`, `keikoku`, `dream`, `tunnel*`, `kor*`, `koin*`, `bubu*`, `map0*`,
-//! and similar. The shared shape suggests a per-scene "primary mesh" slot
-//! that's always the same on-disc size but expands to a variable-size mesh
-//! at load time.
-//!
-//! Distinct from [`Class::SceneTmdStream`](legaia_disc_audit::categorize::Class::SceneTmdStream)
-//! by the strict invariant `prefix_size > on-disc len`. That subset of
-//! `scene_tmd_stream`-shaped files is the exact set this detector catches -
-//! `scene_tmd_stream`'s `tmd_end > buf.len()` rejection branch.
-//!
-//! ### Format meaning - open
-//!
-//! The runtime consumer hasn't been located. The on-disc file is a *prefix*
-//! of a logical TMD-with-streaming-tail; what supplies the missing tail
-//! (a sibling PROT entry? A descriptor table elsewhere? Zero-fill?) is
-//! still TBD.
+//! Every PROT entry that opens with a type-0 chunk header and the TMD magic
+//! at `+4` (the 182 `scene_tmd_stream` entries) holds its whole TMD chunk
+//! inside its own sectors, so this detector matches nothing on the retail
+//! disc and there is no truncated mesh for a runtime consumer to complete.
+//! It stays as a regression guard, pinned at zero by
+//! `crates/extract/tests/validation_suite.rs`: an extraction or reader that
+//! cut a `scene_tmd_stream` entry short would land here
+//! (`docs/formats/scene-bundles.md`).
 
 use serde::Serialize;
 
-/// Maximum sane object count. Real hits sit at 2 or 4; 8 is generous headroom.
+/// Maximum sane object count; the stream-TMD sister sees 2 or 4, and 8 is headroom.
 const MAX_TMD_OBJECTS: u32 = 8;
 
 /// Maximum sane claimed total size. The largest plausible TMD resource is

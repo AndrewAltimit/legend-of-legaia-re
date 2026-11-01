@@ -174,6 +174,12 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     ("scene_event_scripts", 101),
     // `summon_readef` - `summon.dat` / `readef.DAT` (extraction 893 / 894).
     ("summon_readef", 2),
+    // `tmd_size_prefix` **0**. Every entry that opens with a type-0 chunk
+    // header and the TMD magic holds its whole TMD inside its own sectors
+    // (they are the 182 `scene_tmd_stream` entries), so a truncated TMD
+    // prefix matches nothing. Pinned at 0: a hit means an extraction or
+    // reader cut a stream entry short.
+    ("tmd_size_prefix", 0),
     // `tim_pack` 7 → **0**, and nothing was lost. The heuristic
     // (`byte[3]==0x01 && byte[2]<0x10`, count at `+4`, members at
     // `word_index * 4 + 4`) is a test for a `TIM_LIST` chunk header followed

@@ -329,6 +329,9 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | What does the dome's contest restore (`FUN_801D0ED8`) do? | resolved (one-shot per contest, and it leaves the accessories alone) | `disassembly` | The caller `FUN_801CEA6C` tests `_DAT_8007BAC0` at `0x801CEB58` and jumps past the `jal 0x801D0ED8` at `0x801CEBF0` when it is already non-zero, so a contest refills once when it opens and a leg boundary never does. It refills party slot 0's HP / MP / SP to their maxima (`+0x104` / `+0x108` / `+0x10C`), and its stripped arm zeroes only `+0x196` / `+0x197` / `+0x198` / `+0x19A` - the Seru-lock byte `+0x199` and the accessories survive. Detail in [`functions/minigames-debug.md`](../functions/minigames-debug.md#801d0ed8). |
 | Do the dome's hub screens run on frame counts? | resolved (no - they are fade / hold / fade envelopes) | `disassembly` | `DAT_801D1A80` and its siblings are `0..0x80` **brightness** levels, not durations (`slti 0x81` / `li 0x80` at `0x801CF944..0x801CF958`), and the two card holds end on `pad & 0xF4` (`0x801CFBE0`, `0x801CFFE4`) rather than on a timer. The tally arm tests the same mask a third time (`0x801CFD60..0x801CFD7C`) to latch the fast roll `DAT_801D1AB4`. A frame-count port ends the screens at the wrong instants and cannot be ended early by a button. See [`minigame-muscle-dome.md`](../../subsystems/minigame-muscle-dome.md#the-hub-screens-are-envelopes-not-frame-counts). |
 | Which dome chip seats does the AP-cost re-centring apply to? | resolved (both `x` seats, `+0x2` and `+0xA`) | `disassembly` | The term is `(cost - 30) * K[slot] / 2` with `K = DAT_8007B650 = [2, 1, 1, 0]` and truncate-toward-zero halving, applied to each of the record's two seat-x halfwords; anchors are `176 / 216 / 216 / 256` from `0x80076BBC`. `K` makes the arm chip grow away from the D-pad glyph between the pair. |
+| What advances the victory counter `gp[+0x9EA]` the win-pose mouth flap clocks on? | resolved (the battle tick, by the frame step) | `disassembly` | The battle tick `FUN_80046A20` adds the frame step `DAT_1F800393` on entry, every battle frame and ungated (`lhu v0,0x9EA(gp)` / `addu` / `sh` at `0x80046A60..0x80046A7C`); the win-pose stage zeroes it (`sh zero,0x9EA(gp)` at `0x8004EF18`) and the stamp pass reads it halved (`0x8004C87C..0x8004C884`). It counts vsyncs, so the halved value is a 30 Hz clock; the port's per-vsync `+1` mirror matches it. [`battle-data-pack.md`](../../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98) |
+| Why are Noa's battle-file sections 2 and 3 swapped against Vahn's and Gala's? | resolved (the file follows her record's equip bytes) | `disassembly` | The battle-file loader matches section `k` against record byte `+0x196 + k` (`FUN_80052770` case 4: `lbu v1,0x75E(v0)` at `0x800529D0`, `0x80084140 + (char - 1) * 0x414 + k`). Noa's record keeps her Ra-Seru in byte 2 and her weapon in byte 3, as the SCUS halfword tables say: weapon byte `0x8007B42C` = `2, 3, 2`, Ra-Seru byte `0x8007B424` = `3, 2, 3`. [`battle-data-pack.md`](../../formats/battle-data-pack.md#descriptor-table) |
+| What do the record's `+0x00` and `+0x04` hold across a captured level-up? | resolved (cumulative XP and the next threshold; one level, not four) | `disassembly` | `FUN_801E9504` compares the cumulative XP at `+0x00` with the threshold (`lw v0,0x5C8(s7)` / `sltu` at `0x801E9F68..0x801E9F70`, looping while it still reaches it), stores the next threshold to `+0x04` (`sw a2,0x5CC(v0)` at `0x801E9FA0`) and zeroes it at level 99 (`0x801E9698`). The captured `0x16D -> 0x2DA` is Vahn's L3 to L4 threshold beside a level byte `2 -> 3`, so the `+0x00` step `0x4F -> 0x73` is 36 XP, not a four-level jump. [`battle-round-loop.md`](../../subsystems/battle-round-loop.md#captured-stat-growth-observations) |
 
 ### The battle hit tint - what a landing hit writes and how it reaches the pixel
 
@@ -1674,9 +1677,14 @@ monster special attacks, not to magic or party arts.
 
 **The roll (`FUN_801dd0ac`, `overlay_battle_action_801dd0ac.txt`)**
 
-- Summon path (`param_2 == 7`):
-  `roll = rand % (INT@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_INT * 2`; returns
-  `roll - defender_mitigation`.
+- Summon path (attacker slot `7`, the summon creature's seat in `DAT_801C9370`): `roll = rand %
+  (INT@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_INT * 2`, the `HP` and `INT` being the
+  creature's and the second `INT` the caster's; returns `roll - defender_mitigation`. Re-read
+  against the listing: `bne a1,7` at `0x801DD104`, `lhu 0x168(s1)` + `div` + `mfhi` at
+  `0x801DD114..0x801DD148`, `lhu 0x14C(s1)` unshifted at `0x801DD16C`, the caster's
+  `lhu 0x168` doubled at `0x801DD170..0x801DD17C`, and a store of `2` to `0x80084448` on the way
+  (`0x801DD178`). The non-summon path is different in kind: two draws, `rand % ((power >> 2) +
+  1) + rand % ((INT >> 1) + 1) + (HP >> 8) + power + INT * 2` (`0x801DD18C..0x801DD25C`).
 - Non-summon path reads the 26-byte-stride move-power table at `0x801F4F5C` (static battle-overlay
   data, PROT 0898; parser `legaia_game_tables::move_power`) through the 128-byte id → index map at
   `0x801F4E63` (`param_1 = map[actor[+0x1df]]`).
