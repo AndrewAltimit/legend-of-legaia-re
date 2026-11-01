@@ -3,15 +3,18 @@
 # earth: the lane from the beach runs east past a row of hedged cottages to
 # the green, where the well stands and the elder's house looks down from its
 # terrace; the market square and Pell's trading post sit south-west of it,
-# the south lane runs down to the boardwalk and the two jetties, the lodge
-# keeps the east end, and the climb past the orchard leads into the
-# Thornwood. The windmill turns on its knoll in the north-west.
+# the lodge keeps the east end, and the climb past the orchard leads into the
+# Thornwood. The windmill turns on its knoll in the north-west. Below the
+# meadow the village walks out over the bay: the shore boardwalk, the west
+# pier to the net loft, Dunn's house on its stilt deck, the east jetty, and
+# the lantern float at the end of a plank where the islanders light the way
+# home for the boats - water all round and under the boards.
 
 name = "Lantern Isles - Tolva's Haven"
 size = [64, 50]
 base = { scene = { kind = "scene", name = "town01" }, geometry = "none" }
-# Sound-test track 6, "Rim Elm".
-bgm = { kind = "bgm", id = 6 }
+# Sound-test track 62 (M105, "The Misty Valley"): Buma's calm, over the water.
+bgm = { kind = "bgm", id = 62 }
 camera = "far"
 # Tiers: the meadow, the green, the wooded rise round the village, the bay.
 floor_heights = [0, 16, 210, -60]
@@ -57,17 +60,17 @@ rows = [
   "#gggggmmmmmmmmmmmmmmmmdddddddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
   "#ggggggggggggggggggggggggggddgggggggggggGGGGGGGGGGGGGGGGGGGGGGG#",
   "#ggggggggggggkkkkkkkkkkkkkkkkkkkkkkkkkkkkkGGGGGGGGGGGGGGGGGGGGG#",
-  "#ggggggggggggkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgggggg,,,,,,,,,,,,,,,#",
-  ",,,,,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,,,,,,,,,,,,,,,",
-  ",,,,,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,jj,,,,,,,,,,,,,,~~~~~~~~~~~,,,",
-  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~jjjjjj~~~~~~~~~~~~~~~~~~~~~~~~~~",
-  "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "#,,,,,,,,,,,gkkkkkkkkkkkkkkkkkkkkkkkkkkkkkgggggg,,,,,,,,,,,,,,,#",
+  ",,,,,,,~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~,,,,,,,,,,,",
+  ",,,,,,,~~~~~~~~~~~jj~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~,,,,,,,,,,,",
+  ",,,,,,,jjkkkkkkk~~jj~~~kkkkkkkk~~~jj~~~~~~~~~~~~~~~~~~~~~,,,,,,,",
+  ",,,,~~~~~kkkkkkk~~jjjjjkkkkkkkk~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~kkkkkkkjjjj~~~kkkkkkkk~~~jj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~kkkkkkk~~jj~~~kkkkkkkkjjjjj~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+  "~~~~~~~~~kkkkkkk~~jj~~~kkkkkkkk~~~jj~~~~~~~~kkkkk~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~kkkkkkkk~kkkkkk~~~~~~kkkkk~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~kkkkkkjjjjjjkkkkk~~~~~~~~~~~~~~~",
+  "~~~~~~~~~~~~~~~~~~jj~~~~~~~~~~~~~~~~~~~~~~~~kkkkk~~~~~~~~~~~~~~~",
   "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
 ]
 
@@ -185,11 +188,11 @@ line = "isles_villager_b"
 id = "isles_child"
 label = "Child"
 model = { kind = "npc", scene = "town01", index = 15 }
-# He stands by the well watching the water, in 18, the placement's own
-# idle. Walked on a patrol his rig's walk cycles pitch him flat on the
-# ground every few steps, so he keeps still.
-tile = [26, 24]
-facing = 7
+# He stands at the net loft's rail watching the water for his pearl, in
+# 18, the placement's own idle. Walked on a patrol his rig's walk cycles
+# pitch him flat on the ground every few steps, so he keeps still.
+tile = [12, 44]
+facing = 3
 clip = 18
 line = "isles_child"
 
@@ -343,7 +346,7 @@ animate = [{ kind = "sway", axis = "x", degrees = 1.5, period = 260 }]
 [[props]]
 id = "catch_crates_a"
 mesh = { scene = "town01", object = 46 }
-tile = [5, 39]
+tile = [4, 40]
 rotation = [0.0, 70.0, 0.0]
 scale = 0.9
 solid = true
@@ -351,29 +354,10 @@ solid = true
 [[props]]
 id = "catch_crates_b"
 mesh = { scene = "town01", object = 46 }
-tile = [10, 40]
+tile = [13, 42]
 rotation = [0.0, -15.0, 0.0]
-scale = 0.8
-solid = true
-
-[[decor]]
-mesh = { scene = "town01", object = 83 }
-tile = [7, 40]
-rotation = [0.0, 30.0, 0.0]
-scale = 0.8
-
-[[decor]]
-mesh = { scene = "town01", object = 83 }
-tile = [7, 40]
-offset = [50, 0, 30]
-rotation = [0.0, 75.0, 0.0]
 scale = 0.7
-
-[[decor]]
-mesh = { scene = "town01", object = 33 }
-tile = [8, 39]
-offset = [20, 0, -20]
-scale = 0.6
+solid = true
 
 # Market stalls: plank tables in two rows along the aisle, long side to
 # it, each laid with its wares resting on its top,
@@ -719,6 +703,32 @@ rotation = [0.0, 30.0, 0.0]
 scale = 0.6
 
 # The Village Duel's plank table under the great tree.
+# The water quarter: Dunn's stilt house, the net loft's rack, and the
+# lantern float's light.
+
+[[props]]
+id = "stilt_house"
+mesh = { scene = "town01", object = 43 }
+tile = [26, 42]
+offset = [0, 0, 20]
+rotation = [0.0, 180.0, 0.0]
+scale = 0.6
+solid = true
+light = { color = [255, 180, 110], radius = 480, height = 80, flicker = 0.2, period = 14 }
+
+[[props]]
+id = "net_rack"
+mesh = { asset = "models/net_rack.glb" }
+tile = [10, 42]
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[props]]
+id = "float_lantern"
+mesh = { asset = "models/lamp_post.glb" }
+tile = [46, 46]
+light = { color = [255, 214, 150], radius = 620, height = 120, flicker = 0.15, period = 19 }
+
 [[props]]
 id = "duel_table"
 mesh = { scene = "town01", object = 57 }
@@ -856,16 +866,16 @@ light = { color = [255, 196, 130], radius = 460, height = 120, flicker = 0.2, pe
 [[props]]
 id = "jetty_lamp_w"
 mesh = { asset = "models/lamp_post.glb" }
-tile = [20, 45]
-offset = [148, 0, -30]
+tile = [19, 47]
+offset = [60, 0, 0]
 rotation = [0.0, 180.0, 0.0]
 light = { color = [255, 210, 150], radius = 460, height = 120, flicker = 0.2, period = 16 }
 
 [[props]]
 id = "jetty_lamp_e"
 mesh = { asset = "models/lamp_post.glb" }
-tile = [33, 46]
-offset = [-148, 0, -30]
+tile = [33, 47]
+offset = [-60, 0, 30]
 light = { color = [255, 210, 150], radius = 460, height = 120, flicker = 0.2, period = 18 }
 
 # The orchard: fruit trees in rows behind the hedge.
@@ -1221,43 +1231,6 @@ solid = true
 
 # The jetties' ends: mooring posts at the corners, a crate and a basket of
 # the morning's catch on the east one.
-[[decor]]
-mesh = { scene = "rugi", object = 13 }
-tile = [16, 45]
-offset = [-40, 0, 40]
-scale = 0.32
-
-[[decor]]
-mesh = { scene = "rugi", object = 13 }
-tile = [21, 45]
-offset = [40, 0, 40]
-scale = 0.32
-
-[[decor]]
-mesh = { scene = "rugi", object = 13 }
-tile = [32, 46]
-offset = [-40, 0, 40]
-scale = 0.32
-
-[[decor]]
-mesh = { scene = "rugi", object = 13 }
-tile = [37, 46]
-offset = [40, 0, 40]
-scale = 0.32
-
-[[decor]]
-mesh = { scene = "town01", object = 46 }
-tile = [36, 46]
-offset = [0, 0, -30]
-rotation = [0.0, 20.0, 0.0]
-scale = 0.55
-
-[[decor]]
-mesh = { scene = "town01", object = 83 }
-tile = [34, 46]
-offset = [10, 0, -20]
-scale = 0.6
-
 # Trees and bushes along the wooded rise, palms on the shore.
 [[edges]]
 id = "rise_bushes"
@@ -1377,9 +1350,9 @@ seed = 4213
 
 [[emitters]]
 kind = "sparkles"
-rect = [2, 41, 62, 48]
-height = [0, 20]
-count = 50
+rect = [2, 40, 62, 49]
+height = [0, 24]
+count = 70
 color = [255, 230, 160]
 seed = 4214
 
@@ -1404,6 +1377,9 @@ lamps = [
   { id = "market", tile = [15, 31], offset = [0, 160, 0], color = [255, 200, 140], radius = 700, flicker = 0.2, period = 13 },
   { id = "dock", tile = [27, 38], offset = [0, 140, 0], color = [255, 210, 150], radius = 700, flicker = 0.2, period = 15 },
   { id = "jetty_e", tile = [35, 46], offset = [0, 120, 0], color = [255, 210, 150], radius = 480, flicker = 0.2, period = 17 },
+  { id = "net_loft", tile = [12, 43], offset = [0, 130, 0], color = [255, 206, 150], radius = 520, flicker = 0.15, period = 21 },
+  # The lantern float's ring of lanterns, reflected on the bay.
+  { id = "float_ring", tile = [46, 46], offset = [0, 40, 0], color = [255, 220, 160], radius = 700, breathe = 0.25, breathe_period = 200 },
   # Rootlight: a breathing green over each shrub on the Genesis root.
   { id = "rootlight_0", tile = [7, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
   { id = "rootlight_1", tile = [15, 21], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
@@ -1450,12 +1426,23 @@ shapes = [
   { kind = "flatten", at = [7.5, 6.5], radius = 2.0 },
   { kind = "flatten", at = [16.5, 8.5], radius = 2.0 },
   { kind = "flatten", at = [14.5, 31.0], radius = 10.0 },
-  { kind = "noise", rect = [0, 41, 63, 49], amplitude = 16, scale = 1.6, seed = 5 },
+  { kind = "noise", rect = [0, 40, 63, 49], amplitude = 14, scale = 1.6, seed = 5 },
   { kind = "plateau", rect = [13, 37, 41, 38], height = 16, edge = 0.2 },
-  { kind = "plateau", rect = [18, 39, 19, 46], height = 16, edge = 0.15 },
-  { kind = "plateau", rect = [16, 46, 21, 46], height = 16, edge = 0.15 },
-  { kind = "plateau", rect = [34, 39, 35, 47], height = 16, edge = 0.15 },
-  { kind = "plateau", rect = [32, 47, 37, 47], height = 16, edge = 0.15 },
+  { kind = "plateau", rect = [0, 38, 6, 41], height = 2, edge = 0.9 },
+  { kind = "plateau", rect = [53, 38, 63, 40], height = 2, edge = 0.9 },
+  { kind = "plateau", rect = [18, 39, 19, 48], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [9, 41, 15, 45], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [16, 43, 17, 43], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [7, 41, 8, 41], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [23, 41, 30, 46], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [20, 42, 22, 42], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [31, 44, 33, 44], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [34, 39, 35, 46], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [32, 46, 37, 47], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [38, 47, 43, 47], height = 16, edge = 0.12 },
+  { kind = "plateau", rect = [44, 45, 48, 48], height = 16, edge = 0.12 },
+  { kind = "flatten", at = [21.5, 46.5], radius = 1.6, height = -42, strength = 1.0 },
+  { kind = "flatten", at = [39.5, 44.5], radius = 1.6, height = -42, strength = 1.0 },
 ]
 materials = [
   { name = "turf", chars = "g", tint = [130, 136, 120], cells = [
@@ -1487,8 +1474,442 @@ materials = [
 cliff = { slope = 1.05, tint = [120, 114, 106], cells = [
   { tpage = 12, clut = 32006, tile = 27 }, { tpage = 12, clut = 32006, tile = 28 }, { tpage = 12, clut = 32006, tile = 35 }, { tpage = 12, clut = 32006, tile = 36 }, { tpage = 12, clut = 32006, tile = 48 }, { tpage = 12, clut = 32006, tile = 49 }, { tpage = 12, clut = 32006, tile = 56 }, { tpage = 12, clut = 32006, tile = 57 },
 ] }
-water = { level = -8, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [140, 160, 160], deep = [64, 84, 120], depth = 50, foam = 14, foam_color = [140, 140, 136], wade = 4 }
+water = { level = -8, cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [150, 176, 172], deep = [60, 90, 126], depth = 60, foam = 14, foam_color = [150, 146, 136], wade = 4 }
 sky = { tpage = 10, clut = 31104, radius = 0, span = [-1200, 2200], repeat = 4, color = [150, 120, 110] }
+
+# The water quarter's piles - the decks stand on them over open water - the
+# boats moored between the decks and the dressing on the boards.
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [9, 41]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [9, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [9, 43]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [9, 45]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [9, 45]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [11, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [11, 45]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [13, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [13, 45]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [15, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [15, 41]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [15, 43]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [15, 45]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [15, 45]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [23, 41]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [23, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [23, 43]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [23, 45]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [23, 46]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [25, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [25, 46]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [27, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [27, 46]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [29, 41]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [29, 46]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [30, 41]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [30, 43]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [30, 45]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [32, 46]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [32, 46]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [32, 47]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [34, 46]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [34, 47]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [36, 46]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [36, 47]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [37, 46]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [44, 45]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [44, 45]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [44, 47]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [44, 48]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [46, 45]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [46, 48]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [48, 45]
+offset = [0, -40, -70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [48, 45]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [48, 47]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [48, 48]
+offset = [0, -40, 70]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [18, 40]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [19, 40]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [18, 42]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [19, 42]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [18, 44]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [19, 44]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [18, 46]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [19, 46]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [34, 40]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [35, 40]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [34, 42]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [35, 42]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [34, 44]
+offset = [-70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { scene = "rugi", object = 13 }
+tile = [35, 44]
+offset = [70, -40, 0]
+scale = 0.34
+
+[[decor]]
+mesh = { asset = "models/rowboat.glb" }
+tile = [21, 46]
+offset = [0, 34, 0]
+rotation = [0.0, 10.0, 0.0]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/rowboat.glb" }
+tile = [39, 44]
+offset = [0, 34, 0]
+rotation = [0.0, 80.0, 0.0]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/rowboat.glb" }
+tile = [8, 39]
+offset = [0, 0, 20]
+rotation = [0.0, 120.0, 3.0]
+scale = 1.0
+
+[[decor]]
+mesh = { scene = "town01", object = 46 }
+tile = [36, 47]
+offset = [0, 0, -10]
+rotation = [0.0, 20.0, 0.0]
+scale = 0.55
+
+[[decor]]
+mesh = { asset = "models/produce_crate.glb" }
+tile = [29, 45]
+offset = [10, 0, 0]
+rotation = [0.0, 30.0, 0.0]
+scale = 0.9
+
+[[decor]]
+mesh = { asset = "models/shells.glb" }
+tile = [24, 45]
+rotation = [0.0, 120.0, 0.0]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [44, 45]
+offset = [-30, 0, -30]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [48, 48]
+offset = [30, 0, 30]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [48, 45]
+offset = [30, 0, -30]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [44, 48]
+offset = [-30, 0, 30]
+scale = 1.0
+
+[[decor]]
+mesh = { asset = "models/driftwood.glb" }
+tile = [3, 41]
+rotation = [0.0, 60.0, 0.0]
+scale = 1.0
 
 # Village life: the bay's surf at the dock, the wind in the wooded rise, and
 # a murmur round the lodge, the market and the green.
@@ -1509,6 +1930,22 @@ tile = [50, 42]
 radius = 1300
 inner = 300
 volume = 0.6
+
+[[audio.ambient]]
+id = "under_boards"
+sound = { kind = "sound", id = "water" }
+tile = [26, 43]
+radius = 1000
+inner = 240
+volume = 0.45
+
+[[audio.ambient]]
+id = "float_chimes"
+sound = { kind = "sound", id = "chime" }
+tile = [46, 46]
+radius = 700
+inner = 140
+volume = 0.25
 
 [[audio.ambient]]
 id = "rise_wind"
