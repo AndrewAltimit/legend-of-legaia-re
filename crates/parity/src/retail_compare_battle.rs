@@ -459,6 +459,10 @@ pub struct RetailBattle {
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// [`Self::cam_tween`]'s endpoints as the displayed frame's own pass
+    /// armed them: the RAM's, moved where a walker moved them
+    /// ([`walker_end_shift`]).
+    pub displayed_cam_end: legaia_engine_camera::projection::BattleCamPose,
     /// [`Self::cam_tween`]'s live pose walked back to the displayed frame
     /// along a table built once, as a slot-B module's shot is
     /// ([`displayed_module_cam_live`]).

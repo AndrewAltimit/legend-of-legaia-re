@@ -237,6 +237,7 @@ pub(super) fn displayed_cam_live(
         &vec![frame_step; usize::from(passes)],
         false,
         prior_end,
+        [0; 9],
     )
 }
 
@@ -252,12 +253,18 @@ pub(super) fn displayed_cam_live(
 /// on `12`). It goes with steps the floor confirmed
 /// ([`older_table_step`]); the history-max steps keep the largest
 /// increment's own estimate, which they were measured with.
+///
+/// `end_shift` is how far each component's endpoint stood from the RAM's on
+/// the pass before it, in the walker's raw space ([`walker_end_shift`]): a
+/// framing re-armed on a body still walking chased an endpoint that moved
+/// with it. Pass `n` back walks against `n` such shifts.
 pub(super) fn displayed_cam_live_steps(
     ram: &[u8],
     ctx: u32,
     steps: &[u8],
     shot_divisor: bool,
     prior_end: [Option<i32>; 9],
+    end_shift: [i32; 9],
 ) -> legaia_engine_camera::projection::BattleCamPose {
     let (live, _) = retail_cam_tween(ram, ctx);
     let passes = steps.len();
@@ -342,7 +349,8 @@ pub(super) fn displayed_cam_live_steps(
                 moved += earlier(p);
                 continue;
             }
-            let wide = g.abs() + moved;
+            // The gap pass `n` armed, to the endpoint it chased.
+            let wide = (g.abs() + moved + dir * end_shift[k as usize] * n as i32).max(0);
             let step = (wide + (d - fs_n) - 1) / (d - fs_n);
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
@@ -501,4 +509,92 @@ pub(super) fn displayed_module_cam_live(
             live.focus[2] + back[8] as f32,
         ],
     }
+}
+
+/// The strike loop's framing case (`jal 0x801D5854` with `a1 = 7` at
+/// `0x801E36E8`), armed on every `0x1E` pass.
+const STRIKE_LOOP_STATE: u8 = 0x1E;
+/// The anim-cursor ring (`+0x17A`, one halfword a pass, slot `0` live).
+const CURSOR_RING: u32 = 0x17A;
+/// Case 7's focus endpoint off the midpoint the RAM's arm read, within which
+/// the walker's body pair is taken as the one the framing read.
+const STRIKE_FOCUS_FIT: i32 = 4;
+
+/// How far the strike loop's focus endpoint stood, on the pass before the
+/// RAM's, from the RAM's own - [`displayed_cam_live_steps`]'s `end_shift`,
+/// in the walker's raw space - while the acting seat still walks.
+///
+/// State `0x1E` re-arms case 7 every pass, its focus the midpoint of the
+/// attacker's and the target's body pairs (`post_action::recover_framing`).
+/// A pass frames the body pair the previous pass's decode left
+/// ([`super::framing_body`]), so the RAM's arm read the attacker on the
+/// position ring's slot `1` with the pose at the cursor ring's slot `1`,
+/// and the pass before it slot `2`. A monster captured still on its walk
+/// clip moves between the two, and the endpoint that pass chased stood half
+/// that move from the RAM's: `battle_retona_king_frog_strike`'s Frog walked
+/// `32` units of z between them, its focus endpoint `16` off.
+///
+/// The yaw endpoint moves too (the counter's drift, the heading the walker
+/// re-faced onto), but only by a few units, and is left on the RAM's: the
+/// image child tests its yaw on the gate tick's framing, which is the RAM's.
+///
+/// `None` off the strike loop, on a seat that has not moved over those
+/// slots, or when the RAM's focus endpoint is not the midpoint of the body
+/// pair slot `1` names and the target's (another framing owns the table).
+pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if seat > 7 || !in_ram(actor) {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot.min(7) * 4);
+    if target_slot > 7 || !in_ram(target) {
+        return None;
+    }
+    let ring = |k: u32| {
+        let at = actor + POSITION_RING + k * 8;
+        [
+            game_anchors::u32_at(ram, at) as i32 as i16 as i32,
+            game_anchors::u32_at(ram, at + 4) as i32 as i16 as i32,
+        ]
+    };
+    if ring(1) == ring(2) {
+        return None;
+    }
+    let live = [
+        i32::from(game_anchors::i16_at(ram, actor + 0x34)),
+        i32::from(game_anchors::i16_at(ram, actor + 0x38)),
+    ];
+    // The body pair the decode of cursor-ring slot `k` left, on the live
+    // pair position-ring slot `k` holds.
+    let body = |k: u32| {
+        let cursor = game_anchors::u16_at(ram, actor + CURSOR_RING + k * 2);
+        let b = super::framing_body::body_pair_at(ram, actor, cursor)?;
+        let p = ring(k);
+        Some([
+            i32::from(b[0]) - live[0] + p[0],
+            i32::from(b[1]) - live[1] + p[1],
+        ])
+    };
+    let target_body = [
+        i32::from(game_anchors::i16_at(ram, target + 0x3C)),
+        i32::from(game_anchors::i16_at(ram, target + 0x40)),
+    ];
+    let (b1, b2) = (body(1)?, body(2)?);
+    // The focus records hold the midpoint negated.
+    let end = |k: u32| i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2) as i16);
+    let fits = [(6u32, 0usize), (8, 1)]
+        .iter()
+        .all(|&(k, i)| (-end(k) - (b1[i] + target_body[i]) / 2).abs() <= STRIKE_FOCUS_FIT);
+    if !fits {
+        return None;
+    }
+    let mut shift = [0i32; 9];
+    shift[6] = -((b2[0] - b1[0]) / 2);
+    shift[8] = -((b2[1] - b1[1]) / 2);
+    Some(shift)
 }

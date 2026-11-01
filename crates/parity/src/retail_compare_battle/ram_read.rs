@@ -919,8 +919,26 @@ impl RetailBattle {
                         &steps,
                         confirmed,
                         summon_route_prior_end(ram, ctx, action_state),
+                        walker_end_shift(ram, ctx).unwrap_or([0; 9]),
                     )
                 }
+            },
+            displayed_cam_end: {
+                // The endpoints the displayed frame's own pass chased, where
+                // a walker moved them ([`walker_end_shift`]): the image child
+                // stands the walker on the displayed ground, and its framing
+                // arms those.
+                let (_, end) = retail_cam_tween(ram, ctx);
+                walker_end_shift(ram, ctx).map_or(end, |s| {
+                    legaia_engine_camera::projection::BattleCamPose {
+                        focus: [
+                            end.focus[0] - s[6] as f32,
+                            end.focus[1] - s[7] as f32,
+                            end.focus[2] - s[8] as f32,
+                        ],
+                        ..end
+                    }
+                })
             },
             displayed_module_cam_live: displayed_module_cam_live(
                 ram,

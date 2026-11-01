@@ -739,7 +739,14 @@ pub(super) fn battle_image(
         env.push((
             "LEGAIA_BATTLE_CAM_ALIGN",
             legaia_engine_capture::camera_align::cam_align_to_env(&if battle.displayed_camera() {
-                (battle.displayed_cam_live, battle.cam_tween.1)
+                // A walker the child stands on the displayed ground arms the
+                // displayed pass's endpoints, not the RAM's.
+                let end = if battle.walk_clock_capture() {
+                    battle.displayed_cam_end
+                } else {
+                    battle.cam_tween.1
+                };
+                (battle.displayed_cam_live, end)
             } else {
                 battle.cam_tween
             }),
