@@ -252,6 +252,50 @@ pub(super) fn run_battle(
     } else {
         battle
     };
+    // A party Attack's Done-band capture walked from where its seed's
+    // recentre stood it, and the replay, seated near its end-of-string pair,
+    // barely walks: with the string measured on the first run, the same
+    // stream runs again from the walk's start
+    // (`RetailBattle::party_approach`) and is kept when it still reaches.
+    let walked;
+    let (battle, reached) = match reached {
+        Some(first_run) if battle.wants_party_combo() => {
+            let b = first_run
+                .party_combo_ticks
+                .map(|t| battle.with_party_combo(t))
+                .filter(|b| b.capture_approach_yaw().is_some());
+            let rerun = b.as_ref().map(|b| {
+                crate::retail_compare_battle::run_engine_battle(
+                    opts.extracted,
+                    retail,
+                    b,
+                    first_run.rng_seed,
+                    reached_victims,
+                )
+            });
+            if seed_trace() {
+                eprintln!(
+                    "[seed] {} party walk: string {:?} ticks, approach {:?}, re-run driven {:?}",
+                    entry.label,
+                    first_run.party_combo_ticks,
+                    b.as_ref().and_then(|b| b.capture_approach_yaw()),
+                    rerun.as_ref().map(|r| r.as_ref().ok().map(|e| e.driven)),
+                );
+            }
+            match (b, rerun) {
+                (Some(b), Some(Ok(e)))
+                    if e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                        && e.driven.is_some_and(|d| d.is_some())
+                        && e.age_short.is_none() =>
+                {
+                    walked = b;
+                    (&walked, Some(e))
+                }
+                _ => (battle, Some(first_run)),
+            }
+        }
+        r => (battle, r),
+    };
     // A driven action replays the pushes its capture already holds; run the
     // same stream once more from the ground the replay says retail started
     // on (`RetailBattle::undrift`), under each rule for the acting seat, and
@@ -742,6 +786,9 @@ pub(super) fn battle_image(
     let displayed_menu = battle.displayed_menu_flow().is_some();
     if battle.hud_glides_landed || displayed_menu {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
+    }
+    if battle.move_label_unseen() {
+        env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
     }
     // Glides still in flight: each seated on the elapsed the displayed
     // frame shows (`HudGlideSeat`).

@@ -426,6 +426,17 @@ pub struct RetailBattle {
     /// (`0x8004E254..0x8004E2B4`). `false` for a monster seat, which the
     /// re-seed's `ctx[+0x13] < 3` gate excludes.
     pub swing_reseed_entry: bool,
+    /// The steps of the capture's last sixteen passes, newest first
+    /// ([`frame_step::recent_pass_steps`]): the rate the yaw counter
+    /// `ctx[+0x6DA]` climbed at near the capture, `max(1, 4 * step / 3)` an
+    /// SM pass of `step` vsyncs (`0x801E29E4..0x801E2A24`).
+    pub ring_steps: [u8; 16],
+    /// A party attack capture's strike string as the replay ran it: vsyncs
+    /// from the acting seat's first strike-loop pass `0x1E` to the capture's
+    /// phase, measured on a first run ([`Self::with_party_combo`]). `None`
+    /// until measured; [`Self::capture_approach_yaw`] needs it for a party
+    /// seat.
+    pub party_combo_vsyncs: Option<u32>,
     /// The backdrop pair's depth-cue weight, the record `ctx[+0x106C]`'s
     /// `+0x78` ([`Self::capture_band_backdrop_cue`]).
     pub backdrop_cue: Option<u16>,

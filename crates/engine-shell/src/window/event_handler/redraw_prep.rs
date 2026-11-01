@@ -142,6 +142,9 @@ impl PlayWindowApp {
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.battle.land_battle_hud_glides();
             }
+            if due && sc.seat_move_label_unseen {
+                self.session.host.world.battle.move_label_closed = true;
+            }
             if due {
                 for g in &sc.seat_hud_glides {
                     // The combo cluster's anchor (placement record 80) glides

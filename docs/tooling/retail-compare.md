@@ -1921,6 +1921,15 @@ An unknown amount ahead of a known one leaves the known tail its room, and
 the last unknown hit ahead of a tail the ring still holds whole takes what
 the total leaves after it, so that tail lands its own captured amounts.
 
+A string longer than the ring has wrapped it: push `i` sits in entry
+`i mod 8`, the cursor `ctx[+0x262]` folding from the seed's zero, so the
+newest eight are read there and each older push is an unknown amount on the
+slot its overwriter struck. The count still names the string and the total
+still lands. `gaza2_card_pre_neo_star_slash` (nine pushes, Noa's Hyper Art)
+replayed `5 HIT` / `TOTAL 507` unseeded against retail's `9 HIT` /
+`TOTAL 766`, and `cort_evolved_card_pre_doomsday` (ten) `TOTAL 1897` against
+`1978`.
+
 The ring also counts the string. A blocked swing skips the melee kernel's
 damage body (`bne s7,zero,0x801EE6D4` at `0x801ECB60`) and with it the push,
 so the ring holds one entry per hit that connected, and the block itself is a
@@ -2202,6 +2211,14 @@ same state byte. Three refinements:
   Art `0x1E` at accumulator `0`, the pass it committed, and on clip and cursor
   alone the drive took the first `0x1F` pass, with the SpecialStarter `0x1A`
   still playing (`image` `.184` to `.642`).
+- **Label.** That pass is also the one the art-constant arm of the anim
+  commit places and opens the art's name label on (`FUN_8004C650`, then
+  `FUN_801D8DE8(0x4C, 0)`, `0x8004BB5C..0x8004BC40`), and the displayed
+  frame is older than the commit: the frame shows no label. When the
+  latched id is the queue's first art constant and the close-up accumulator
+  (zeroed by the same commit, `8` a vsync) is younger than the display lag
+  (`RetailBattle::move_label_unseen`), the image child closes the engine's
+  label on the captured frame (`LEGAIA_SEAT_MOVE_LABEL_UNSEEN`).
 
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the
@@ -4407,6 +4424,23 @@ is the gap: about 400 vsyncs from `0x14` to `0x50` in the replay against
 case 8's yaw lands on retail's (`camera` `.903` to `1.0`, `image` `.514` to
 `.600`), and `gaza2_card_pre_neo_star_slash` with it (`.886` to `1.0`, `.668`
 to `.810`).
+
+So a party Attack captured in its Done band also places the walk's start
+(`RetailBattle::party_approach`, through the same `CaptureApproach` a
+monster strike uses), once a first run has measured the string: the ticks
+from the acting seat's first strike-loop pass `0x1E` to the capture's phase
+(`EngineBattle::party_combo_ticks`, a vsync a tick). The counter's span from
+the `0x200` rung, turned into vsyncs at the frame-time ring's rate (`inc(s)`
+units per `s`-vsync pass over the ring's sixteen passes), less that string,
+is the walk; the same stream runs again from its start and is kept when it
+still reaches. The walk's ray is the captured end pairs' (the string's
+pushes run along it), anchored on the target's re-seated pair, since the
+string has pushed the target on from where the walk met it
+(`World::capture_approach_anchor`). `cort_evolved_card_pre_doomsday`'s
+string measures 394 ticks and the ring's mixed `3` / `4` steps put the walk
+at 81 vsyncs against retail's 63 - the ring holds the string's tail, not
+the walk's step. A walk under eight vsyncs is left to the replay
+(`koru_pre_*`: Lightning Storm's span is its string).
 
 The same capture is the Done arm's own pass: its countdown `ctx[+0x6D8]`
 still holds the `0x3C` the arm seeds in the pass that stores `0x51`, with

@@ -251,6 +251,11 @@ pub struct ScreenshotConfig {
     /// (`BattleState::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
+    /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
+    /// label opened on a commit younger than its displayed frame, so the
+    /// captured frame closes the engine's (`BattleState::move_label_closed`).
+    /// Set by the retail-compare image channel.
+    pub seat_move_label_unseen: bool,
     /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
     /// HUD widget glides still in flight, each at the elapsed its displayed
     /// frame shows; the captured frame seats the engine's on them
@@ -937,6 +942,7 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),
             seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")
                 .ok()
                 .and_then(|v| {

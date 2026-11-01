@@ -6,6 +6,9 @@ use super::*;
 /// The rung the Attack arm stands the yaw counter `ctx[+0x6DA]` on as the
 /// seed enters `0x14` (`0x801E2F20`).
 const ATTACK_YAW_RUNG: u16 = 0x200;
+/// The shortest walk [`RetailBattle::party_approach`] places: under a few
+/// passes the replay's own arrival is as near as the estimate.
+const PARTY_WALK_MIN_VSYNCS: u32 = 8;
 
 impl RetailBattle {
     /// The hits a party **melee** capture's action had landed, in push order
@@ -756,10 +759,13 @@ impl RetailBattle {
         let SeedPlan::Action { seat, state } = self.seed_plan() else {
             return None;
         };
+        if seat < 3 {
+            return self.party_approach(state);
+        }
         let SpanGate::Age { accum } = self.span_gate else {
             return None;
         };
-        if seat < 3 || self.queued_category != 3 || !(0x1E..=0x20).contains(&state) {
+        if self.queued_category != 3 || !(0x1E..=0x20).contains(&state) {
             return None;
         }
         let step = if self.step_run.1 >= 16 {
@@ -805,6 +811,113 @@ impl RetailBattle {
                     target_ground,
                 },
             )
+    }
+
+    /// [`Self::capture_approach_yaw`] for a party Attack captured in its
+    /// Done band (`0x50` / `0x51`), once a first run has measured the
+    /// string ([`Self::party_combo_vsyncs`]).
+    ///
+    /// A party seat's counter also climbs from the Attack arm's `0x200`
+    /// when none of its entries can re-seed it (`swing_reseed_entry`), so
+    /// `counter - 0x200` units are the action's whole span: the walk, then
+    /// the string. The string's clips run as long on both sides - a
+    /// PCSX-Redux replay of `cort_evolved_card_pre_doomsday` lands every
+    /// clip of Gala's combo within a pass of the engine's - but at retail's
+    /// coarser step, so the span is turned into vsyncs at the ring's rate
+    /// ([`Self::ring_steps`]) and the replay's string taken off it. What is
+    /// left is the walk, which retail ran from where state `0x0C`'s recentre
+    /// stood the attacker (that replay: Gala from `(-985, -2047)` onto Cort
+    /// on the origin, 21 passes, counter `512 -> 596`); the replay, seated
+    /// near its end-of-string pair, arrived in a pass or two.
+    ///
+    /// The arrival reading is in the engine's own counter at step `2` (one
+    /// a vsync). `strike` / `target_ground` are the captured end pairs, the
+    /// walk's ray as the string's pushes left it; the engine anchors that
+    /// ray on the target's re-seated pair (`World::seat_capture_approach_start`).
+    fn party_approach(
+        &self,
+        state: u8,
+    ) -> Option<legaia_engine_battle_loop::battle_state::CaptureApproach> {
+        if self.queued_category != 3
+            || self.swing_reseed_entry
+            || !matches!(state, 0x50 | 0x51)
+            || self.target_code < 3
+            || self.target_code >= 8
+        {
+            return None;
+        }
+        let combo = self.party_combo_vsyncs?;
+        let (units, vsyncs) = self.ring_steps.iter().fold((0u32, 0u32), |(u, v), &s| {
+            let s = s.max(1);
+            (
+                u + u32::from(
+                    legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(s),
+                ),
+                v + u32::from(s),
+            )
+        });
+        let span = u32::from(self.walk_yaw_base.checked_sub(ATTACK_YAW_RUNG)?);
+        let total = (span * vsyncs + units / 2) / units.max(1);
+        let walk = total.checked_sub(combo)?;
+        if walk < PARTY_WALK_MIN_VSYNCS {
+            return None;
+        }
+        let target = legaia_engine_capture::battle_drive::engine_seat(
+            self.target_code,
+            self.party_count.clamp(1, 3),
+        );
+        let strike = self
+            .captured
+            .get(usize::from(self.active_actor))?
+            .as_ref()?
+            .0;
+        let target_ground = self
+            .captured
+            .get(usize::from(self.target_code))?
+            .as_ref()?
+            .0;
+        Some(legaia_engine_battle_loop::battle_state::CaptureApproach {
+            arrive: ATTACK_YAW_RUNG.saturating_add(u16::try_from(walk).ok()?),
+            target,
+            strike,
+            target_ground,
+        })
+    }
+
+    /// Whether the art-name label the RAM holds is younger than the
+    /// displayed frame: a party Attack whose latched id `+0x1DB` is the
+    /// queue's first art constant (`>= 0x1B`), committed fewer vsyncs ago
+    /// than the frame lags. The art-constant arm of the anim commit places
+    /// and opens the label on that commit (`FUN_8004C650`, then
+    /// `FUN_801D8DE8(0x4C, 0)`, `0x8004BB5C..0x8004BC40`), and the
+    /// close-up accumulator `ctx[+0x87C]` the same commit zeroes counts `8`
+    /// a vsync since. `minigame_muscle_dome_retail_skeleton_hyper_arts`
+    /// holds the Hyper Art `0x1E` at accumulator `0`: its frame shows no
+    /// label.
+    pub fn move_label_unseen(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat < 3)
+            && self.queued_category == 3
+            && self.caster_latched >= 0x1B
+            && self.committed_queue.iter().find(|&&b| b >= 0x1B) == Some(&self.caster_latched)
+            && self.cam_accum / 8 < u32::from(self.display_phase_lag)
+    }
+
+    /// Whether this capture's approach waits on a measured string
+    /// ([`Self::party_combo_vsyncs`]): a party Attack in its Done band.
+    pub fn wants_party_combo(&self) -> bool {
+        matches!(self.seed_plan(), SeedPlan::Action { seat, state: 0x50 | 0x51 } if seat < 3)
+            && self.queued_category == 3
+            && !self.swing_reseed_entry
+            && (3..8).contains(&self.target_code)
+            && self.party_combo_vsyncs.is_none()
+    }
+
+    /// This capture with the replay's measured string
+    /// ([`Self::party_combo_vsyncs`]).
+    pub fn with_party_combo(&self, vsyncs: u32) -> Self {
+        let mut out = self.clone();
+        out.party_combo_vsyncs = Some(vsyncs);
+        out
     }
 
     /// The backdrop pair's depth-cue weight a capture-band capture
@@ -1038,12 +1151,18 @@ impl RetailBattle {
 
 /// Run `drive` from the round prompt through the pad path. The ticks it took,
 /// or `None` when the phase was never reached (or the fight ended first).
+///
+/// `strike` is `(engine seat, out)`: the tick that seat's latest action
+/// first entered the strike loop `0x1E` lands in `out`, on the same clock
+/// as the return value ([`RetailBattle::party_combo_vsyncs`]).
 pub(super) fn run_drive(
     session: &mut NativeSession,
     director: &mut crate::retail_compare::RecordingDirector,
     drive: BattleDrive,
     age_short: &mut Option<u16>,
+    strike: Option<(u8, &mut Option<u32>)>,
 ) -> Result<Option<u32>> {
+    let mut strike = strike;
     drive.prime(&mut session.host.world);
     let mut reached = None;
     let mut held = 0;
@@ -1052,6 +1171,16 @@ pub(super) fn run_drive(
     let mut aged = None;
     for t in 0..drive.budget() {
         let world = &session.host.world;
+        if reached.is_none()
+            && let Some((seat, entry)) = strike.as_mut()
+            && world.battle_ctx.active_actor == *seat
+        {
+            match world.battle_ctx.action_state {
+                0x0C => **entry = None,
+                0x1E if entry.is_none() => **entry = Some(t),
+                _ => {}
+            }
+        }
         if reached.is_none() {
             if drive.in_aged_state(world) {
                 aged = Some(active_clip_age(world));

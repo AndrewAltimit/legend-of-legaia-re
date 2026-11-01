@@ -1630,3 +1630,66 @@ fn an_arts_capture_on_the_art_slot_gates_on_the_latched_id() {
     put8(&mut ram, actor + 0x1DB, 0x0F);
     assert_eq!(steer(&ram).latched, None);
 }
+
+/// A party Attack's Done-band capture places its walk once a first run has
+/// measured the string: the counter's span from the Attack arm's `0x200`,
+/// turned into vsyncs at the ring's rate, less the replay's string, is the
+/// walk (`RetailBattle::party_approach`).
+#[test]
+fn a_party_done_capture_places_its_walk_from_the_measured_string() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x51);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, FORMATION_CELL, 0xB5);
+    let actor = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, actor);
+    put8(&mut ram, actor + 0x1DD, 3);
+    put8(&mut ram, actor + 0x1DE, 3);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.ring_steps = [3; 16];
+    // 60 vsyncs of walk and a 400-vsync string at step 3: `4 / 3` a vsync.
+    b.walk_yaw_base = 0x200 + 460 * 4 / 3;
+    b.captured = vec![None; 8];
+    b.captured[0] = Some(([-125, -254], [0, 0], 0, 0));
+    b.captured[3] = Some(([170, 375], [0, 0], 0, 0));
+    assert!(b.wants_party_combo());
+    assert_eq!(b.capture_approach_yaw(), None, "unmeasured");
+    let app = b
+        .with_party_combo(400)
+        .capture_approach_yaw()
+        .expect("a walk to place");
+    assert_eq!(app.arrive, 0x200 + 60);
+    assert_eq!((app.strike, app.target_ground), ([-125, -254], [170, 375]));
+    // A string as long as the whole span leaves no walk to place.
+    assert_eq!(b.with_party_combo(458).capture_approach_yaw(), None);
+}
+
+/// A string longer than the damage ring has wrapped it: the newest eight
+/// pushes sit at `i mod 8`, each older one is an unknown amount
+/// (`ram_read::action_hit_sequence`).
+#[test]
+fn a_wrapped_damage_ring_reads_its_newest_eight_pushes() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x51);
+    put8(&mut ram, ctx + 0x273, 10);
+    for e in 0..8u32 {
+        put16(&mut ram, ctx + 0x318 + e * 2, 3);
+        put16(&mut ram, ctx + 0x83C + e * 4, 100 + e as u16);
+    }
+    let seq = ram_read::action_hit_sequence(&ram, ctx);
+    assert_eq!(seq.len(), 10);
+    assert_eq!(
+        &seq[..2],
+        &[(3, 0), (3, 0)],
+        "overwritten by pushes 8 and 9"
+    );
+    assert_eq!(seq[2], (3, 102));
+    assert_eq!(&seq[8..], &[(3, 100), (3, 101)]);
+}

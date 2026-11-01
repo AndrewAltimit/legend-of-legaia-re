@@ -792,9 +792,12 @@ impl World {
         if self.actors[slot].battle.active_target != app.target {
             return;
         }
-        let [px, pz] = app.strike.map(i32::from);
+        let Some([px, pz]) = self.capture_approach_anchor(slot, &app) else {
+            return;
+        };
         let [tx, tz] = app.target_ground.map(i32::from);
-        let (ux, uz) = ((px - tx) as f32, (pz - tz) as f32);
+        let [sx, sz] = app.strike.map(i32::from);
+        let (ux, uz) = ((sx - tx) as f32, (sz - tz) as f32);
         let len = (ux * ux + uz * uz).sqrt();
         let Some(counter) = self.battle.camera.as_ref().map(|c| c.action_yaw_base()) else {
             return;
@@ -812,6 +815,30 @@ impl World {
         ms.world_x = (px as f32 + ux / len * back).round() as i16;
         ms.world_z = (pz as f32 + uz / len * back).round() as i16;
         self.refresh_battle_body_pairs_now();
+    }
+
+    /// Where [`Self::seat_capture_approach_start`]'s walk ends: a monster's
+    /// captured strike pair (a strike-loop capture, taken as the walk
+    /// ended), or for a party attacker - a Done-band capture, taken after
+    /// its string pushed both bodies on - the same distance off its target
+    /// along the same ray, from the target's re-seated live pair, which is
+    /// where the walk met it.
+    fn capture_approach_anchor(
+        &self,
+        slot: usize,
+        app: &legaia_engine_battle_loop::battle_state::CaptureApproach,
+    ) -> Option<[i32; 2]> {
+        let strike = app.strike.map(i32::from);
+        if self.actors.get(slot)?.battle_monster_id.is_some() {
+            return Some(strike);
+        }
+        let t = self.actors.get(usize::from(app.target))?;
+        let [tx, tz] = app.target_ground.map(i32::from);
+        let [lx, lz] = [
+            i32::from(t.move_state.world_x),
+            i32::from(t.move_state.world_z),
+        ];
+        Some([lx + strike[0] - tx, lz + strike[1] - tz])
     }
 
     /// Capture alignment at the captured attacker's seed: stand it where
@@ -842,12 +869,27 @@ impl World {
             return;
         }
         let [px, pz] = app.strike.map(f32::from);
-        let [tx, tz] = app.target_ground.map(f32::from);
-        let (ux, uz) = (px - tx, pz - tz);
+        let [cx, cz] = app.target_ground.map(f32::from);
+        let (ux, uz) = (px - cx, pz - cz);
         let len = (ux * ux + uz * uz).sqrt();
         if len < 1.0 {
             return;
         }
+        // A party attacker's target has been re-seated off its captured
+        // pair (the string pushed it on): the ray starts where it stands
+        // ([`Self::capture_approach_anchor`]).
+        let [tx, tz] = match self.actors.get(usize::from(actor)) {
+            Some(a) if a.battle_monster_id.is_none() => self
+                .actors
+                .get(usize::from(app.target))
+                .map_or([cx, cz], |t| {
+                    [
+                        f32::from(t.move_state.world_x),
+                        f32::from(t.move_state.world_z),
+                    ]
+                }),
+            _ => [cx, cz],
+        };
         let walk_speed = self.actors.get(usize::from(actor)).and_then(|a| {
             let clips = a.battle_action_clips.as_ref()?;
             let tags: Vec<u8> = clips

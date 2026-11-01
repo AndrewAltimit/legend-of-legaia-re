@@ -636,26 +636,44 @@ const COMBO_TOTAL: u32 = 0x8007_BD14;
 /// HP). What the bank still holds is taken off the slot's sum.
 /// The ring's pushes in order, `(pool slot, amount)` - the hits the action
 /// in flight resolved, each as the melee kernel landed it, `0` where the
-/// number has left the screen and the ring no longer holds it. Empty where
-/// [`action_hits`] is (outside an action, or a ring that has wrapped).
+/// number has left the screen and the ring no longer holds it. Empty outside
+/// an action.
+///
+/// A string longer than the ring has wrapped it: push `i` sits in entry
+/// `i mod 8` (the cursor `ctx[+0x262]` folds `mod 8` from the seed's zero),
+/// so the newest eight are still read there and each older push is an
+/// unknown amount on the slot its overwriter struck
+/// (`cort_evolved_card_pre_doomsday`: ten pushes, `TOTAL 1978`). The count
+/// still names the string, and the total its closing hit completes.
 pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
     if game_anchors::u8_at(ram, ctx + 6) != 0xFF
         || PRE_SEED_STATES.contains(&state)
         || state == 0x0C
-        || count > RING_LEN
+        || count > RING_WRAP_MAX
     {
         return Vec::new();
     }
-    (0..u32::from(count))
+    let count = u32::from(count);
+    (0..count)
         .filter_map(|i| {
-            let value = game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16;
-            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + i * 2);
+            let e = i % u32::from(RING_LEN);
+            let value = if i + u32::from(RING_LEN) < count {
+                0
+            } else {
+                game_anchors::u16_at(ram, ctx + RING_VALUE + e * 4) as i16
+            };
+            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + e * 2);
             (seat < 8).then_some((seat as u8, value.max(0) as u16))
         })
         .collect()
 }
+
+/// The longest string [`action_hit_sequence`] reads through a wrapped
+/// ring: a party string's hits are its queue's swings and art beats, well
+/// under this.
+const RING_WRAP_MAX: u8 = 0x20;
 
 /// `ctx[+0x85C + i * 4]` - ring entry `i`'s timer, `0x10 * step` a pass
 /// (`0x801DF7B8..0x801DF7C8`).
@@ -844,6 +862,8 @@ impl RetailBattle {
                         in_ram(e) && game_anchors::u8_at(ram, e + 0x87) == 2
                     })
             },
+            ring_steps: recent_pass_steps(ram),
+            party_combo_vsyncs: None,
             backdrop_cue: {
                 let rec = game_anchors::u32_at(ram, ctx + 0x106C);
                 in_ram(rec).then(|| game_anchors::u16_at(ram, rec + 0x78))
