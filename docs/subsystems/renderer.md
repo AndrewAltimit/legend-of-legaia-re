@@ -1810,6 +1810,17 @@ row 485 on `dolk` / `ropeway`). On the four with a retail state in the library
 equals retail's VRAM and none did before. Both hosts build field VRAM through
 this kernel. Test: `engine-core/tests/scene_clut_over_shared_layer.rs`.
 
+**The merge is one rect's race, not a row's.** The over-collected race the
+merge settles is one palette rect written by several TIMs. A 16-colour palette
+laid inside another scene TIM's wider CLUT block is a palette of its own, and
+`LoadImage` lands it whole, its transparent entry 0 included; only a zero of
+the same rect, or of a slot the later block leaves empty, keeps the earlier
+word. `retockin` (Ratayu) uploads an 8bpp TIM whose 256-entry CLUT covers
+`(64..320, 485)` with `0x8021` at `x = 80`, then the plants' 4bpp TIM with its
+palette at `(80, 485)`, entry 0 `0x0000`: retail's VRAM holds the zero, and
+under the row-wide merge the fronds' cutouts drew as near-black wedges. Test:
+`legaia_tmd::vram_targeted`'s `a_palette_inside_another_scene_block_lands_its_zero`.
+
 #### Field static-object placement (town01)
 
 The field static-object table (`FUN_8003A55C`, `legaia_scene_formats::field_objects`)

@@ -113,6 +113,10 @@
   resident before the scene loads, so a scene palette's zeros replace their words, as the PSX
   <code>LoadImage</code> call does. Merging across that line left an opaque near-black under the Sky Gardens
   Tower's foliage palettes on row 484, and the vines drew on dark-brown cards.</p>
+  <p>Nor does it reach across two scene palettes of different shapes. A 16-colour palette laid inside
+  another TIM's wider palette block is a palette of its own, and <code>LoadImage</code> lands it whole,
+  its transparent first colour included. In the Ratayu interior an earlier 256-colour block covers the
+  plants' palette slot; merged, the fronds' see-through gaps drew as near-black wedges.</p>
 </section>
 
 <section class="doc-section" id="retail-dispatch">
