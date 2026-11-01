@@ -1480,9 +1480,12 @@ every ailment the captured word does not carry
 replay's rounds dealt off a combatant standing on both sides, whose bar the HUD
 draws (`battle_tower_guardian_strike`'s Vahn read `258` where retail's reads
 `498`). Medusa's frame reads `.885` to `.978` with both. What the Spirit
-rounds still leave apart is clocks no word pins: `battle_retona_king_frog_strike`
-reads `.957` to `.928` on the stage mist's phase alone, its Noa on retail's
-displayed keyframe.
+rounds still leave apart is the camera's own history: the focus is the one
+component the strike framing's moving endpoint keeps off retail's, and the
+replay's glide reaches it from wherever its rounds left it.
+`battle_retona_king_frog_strike` reads `.957` to `.928` on that alone (focus z
+`541` against `528` before and retail's displayed `512`), its Noa on retail's
+displayed keyframe and her body pair two units closer to retail's.
 
 ### The Mystic Shield a capture already holds
 
@@ -4519,9 +4522,9 @@ which the Guardian's corrected cast clip
 ([above](#monster-casts-the-drive-relies-on)) took away; it reaches on the
 fallback.
 
-The frame such a gate keeps is the RAM's, and on that first pass the RAM's
-attacker stands on the strike entry at the commit's cursor `0` - a clip the
-frame on screen never showed. The history rings say what it did show: slot
+Whichever stream reaches it, a first-pass gate keeps the RAM's frame, and
+there the attacker stands on the strike entry at the commit's cursor `0` - a
+clip the frame on screen never showed. The history rings say what it did show: slot
 two of the clip-record ring `+0x234` (the committed entry pointer, a word a
 battle frame) and of the cursor ring `+0x17A`. On every first-pass monster
 strike in the library they read the arrival's idle, committed one pass before
