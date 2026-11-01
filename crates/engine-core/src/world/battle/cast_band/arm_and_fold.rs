@@ -172,6 +172,17 @@ impl World {
     /// Tail Fire `0x27` plays his lone tag-`0x23` entry 8, which a search for
     /// tag `0x27` never finds (`battle_gimard_tail_fire_a` reads `+0x1E0 = 8`).
     ///
+    /// A match does not leave the walk. Its stores (`0x801EA528..0x801EA544`)
+    /// and the target-class arm fall through to the loop bottom
+    /// (`0x801EA948`), which steps on to the next entry; only the slot-empty
+    /// or MP-short arm (`0x801EA8B4`, `s2 = 0xFFFE`) exits. With `k` spent,
+    /// every later tag-`0x23` entry matches again and overwrites `+0x1E0`, so
+    /// the clip is the **last** tag-`0x23` entry from the `k`-th on: the
+    /// Tower Guardian's Windhash (`k = 0`) and V-Windhash (`k = 1`) both
+    /// stage entry `0x0B`, as `battle_tower_guardian_windhash_mid_cast`
+    /// (`34 0B 0E FF`) and `battle_tower_guardian_v_windhash_mid_cast`
+    /// (`57 0B 07 FF`) read.
+    ///
     /// A spell outside the record's magic slots (a per-monster scripted
     /// cast) falls back to the entry whose tag is the spell id.
     ///
@@ -195,7 +206,8 @@ impl World {
                 .enumerate()
                 .skip(FIRST_CAST_ENTRY)
                 .filter(|(_, c)| c.as_ref().is_some_and(|c| c.action_id == CAST_CLIP_TAG))
-                .nth(k)
+                .skip(k)
+                .last()
                 .and_then(|(i, _)| u8::try_from(i).ok());
         }
         clips

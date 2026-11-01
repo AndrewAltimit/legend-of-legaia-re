@@ -133,7 +133,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
     <li>Attack animations (tags <code>0x20</code> / <code>1</code> / <code>0x21</code> / <code>0x22</code>) use a different, <em>first</em>-match search with a <code>0xFF</code> not-found sentinel (ported as <code>find_action_by_tag</code>). Do not build the reaction map from it.</li>
   </ul>
   <h3 id="cast-clip">Which clip a monster's spell plays</h3>
-  <p>A cast's clip is not looked up by spell id. The AI picker counts the record's live magic slots, rolls <code>k = rand() % count</code>, and takes the <code>k</code>-th entry tagged <code>0x23</code> (counting from index 2) as the clip - the spell is magic slot <code>count - 1 - k</code>, so the pairing runs in reverse. It writes the clip to both <code>+0x1E0</code> and <code>+0x1E7</code>, and the cast route decides which is played:</p>
+  <p>A cast's clip is not looked up by spell id. The AI picker counts the record's live magic slots, rolls <code>k = rand() % count</code>, and walks to the <code>k</code>-th entry tagged <code>0x23</code> (counting from index 2) - the spell is magic slot <code>count - 1 - k</code>, so the pairing runs in reverse. A match does not end the walk: every later tag-<code>0x23</code> entry matches again and overwrites the clip, so the clip is the <em>last</em> tag-<code>0x23</code> entry from the <code>k</code>-th on (the Tower Guardian stages entry <code>0x0B</code> for both Windhash and V-Windhash). It writes the clip to both <code>+0x1E0</code> and <code>+0x1E7</code>, and the cast route decides which is played:</p>
   <table>
     <thead><tr><th>Route</th><th>Taken when</th><th>Caster clip</th></tr></thead>
     <tbody>

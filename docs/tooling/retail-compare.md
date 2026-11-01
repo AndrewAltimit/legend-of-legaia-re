@@ -2499,29 +2499,17 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   same entries, which gives Gimard's Tail Fire its `0x2A` / `0x2B` chain after
   `0x29`
   ([monster animation](../formats/monster-animation.md#action-tags-and-the-0x1ef-reaction-map)).
+- **The walk keeps going past its match.** The picker's stores fall through
+  to the loop bottom (`0x801EA948`), so every later tag-`0x23` entry matches
+  again and the clip is the last one from the `k`-th on
+  ([monster animation](../formats/monster-animation.md#a-magic-picks-cast-clip)).
+  The Tower Guardian's Windhash (`k = 0`) therefore plays entry `0x0B`, as
+  `battle_tower_guardian_windhash_mid_cast` holds (`34 0B 0E FF`), not the
+  first entry `0x0A`, whose hit landed on Noa on the first `0x2B` pass while
+  retail's frame still shows her unhurt (`image` `.608` to `.748`).
 
 #### Open cases
 
-- **The Guardian's Windhash clip.** `battle_tower_guardian_windhash_mid_cast`
-  holds the queue `34 0B 0E FF`: Windhash on archive entry `0x0B`. The
-  Guardian's magic slots read `+0x21 = 0x57`, `+0x22 = 0x34`, and its
-  tag-`0x23` entries are `0x0A` and `0x0B`, so the generic walk
-  (`0x801EA4A4..0x801EA548`) pairs Windhash with `0x0A` and V-Windhash with
-  `0x0B` - which `battle_tower_guardian_v_windhash_mid_cast` confirms
-  (`57 0B 07 FF`) - and the per-monster arm for id `0x11` is the default
-  (`0x801EBDAC`). The engine stages `0x0A`, whose hit lands on Noa on the
-  first `0x2B` pass, where retail's frame still shows her unhurt. Both
-  captures are one fight: V-Windhash on round 1 (the Guardian's MP `120` to
-  `40`), Windhash on round 2 (`40` to `20`). A PCSX-Redux run from the
-  V-Windhash state watched the Guardian's next pick (its rolls ended on a
-  strike, not retail's Windhash) walk to entry `0x0B` for V-Windhash
-  (`k = 1`), fail its MP test (`40 < 80`, `0x801EA520`) and restart at
-  `0x801EA058`, twice; every `+0x1E0` store in the battle overlay
-  (`0x801EA540`, the heal arm's `s2 - 1` at `0x801EA6C8`, `0x801EBE74`,
-  the queue builder `FUN_801EED1C`) is accounted for, and none pairs `0x34`
-  with `0x0B` on this record. What staged it is open; the next step is the
-  same probe with its breakpoints armed only from round 2, since the
-  interpreter core faults within some hundred vsyncs on most runs.
 - **Zeto's waves.** The forced cast is armed but never consumed inside the
   budget - the monster pick that would take it is not reached on Zeto's seat -
   so `0x70` is not reached. Why is open.

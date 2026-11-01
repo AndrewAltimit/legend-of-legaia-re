@@ -128,6 +128,19 @@ therefore plays entry 8, his only tag-`0x23` entry (the
 `battle_gimard_tail_fire_a` capture reads `+0x1E0 = 8`); no entry carries tag
 `0x27`. Engine: `World::monster_cast_clip`.
 
+A match does not end the walk. The stores and the target-class arm after
+them fall through to the loop bottom (`0x801EA948`), which steps on to the
+next entry; only the empty-slot or MP-short arm (`0x801EA8B4`, which sets
+`s2 = 0xFFFE`) leaves the loop. With `k` spent, every later tag-`0x23` entry
+matches again and overwrites `+0x1E0` / `+0x1E7`, so the clip is the **last**
+tag-`0x23` entry from the `k`-th on. The Tower Guardian (slots `0x57`,
+`0x34`; tag-`0x23` entries `0x0A`, `0x0B`) stages entry `0x0B` for both
+spells: `battle_tower_guardian_windhash_mid_cast` holds `34 0B 0E FF` and
+`battle_tower_guardian_v_windhash_mid_cast` `57 0B 07 FF`. A re-match also
+re-runs the target-class arm: the single-target arm draws its target again,
+and the heal (class `0x00`) and `0x20` arms loop on `s1`, so the slot the
+next match reads (`+0x21 + s1 - 1`) is no longer the `k`-th one.
+
 ### Which byte a cast actually plays
 
 The picker writes the clip twice - `+0x1E7` one instruction ahead of
