@@ -552,7 +552,6 @@ impl LegaiaMinigames {
             &mut self.fishing_venue_actors,
             p,
             &events,
-            false,
             0,
             &mut self.fx,
             || scene.as_ref().and_then(|s| s.map.clone()),

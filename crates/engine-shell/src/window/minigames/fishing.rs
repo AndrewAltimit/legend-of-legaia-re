@@ -21,8 +21,8 @@ impl PlayWindowApp {
 impl PlayWindowApp {
     /// The fishing venue's actor-side frame: the free-swimming fish wander
     /// and its retarget ripple, the venue floor solve, the retail camera
-    /// publish, the reeling-line actor and its catch bursts, and the
-    /// sub-screen idle sway.
+    /// publish, the reeling-line actor and its catch bursts, and the pond
+    /// swell.
     ///
     /// All of it is the shared engine kernel
     /// ([`legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host`]),

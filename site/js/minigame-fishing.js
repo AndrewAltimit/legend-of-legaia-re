@@ -217,6 +217,11 @@ window.MgFishing = (function () {
         out: pos,
         members,
         skyBase,
+        /* The walk ground's first vertex in `out`: the span the pond swell
+         * re-heights each frame (engine fishing_scene::swell_ground_positions). */
+        groundBase: (api.fishing_scene_ground_base && api.fishing_scene_ground_positions
+          && api.fishing_scene_ground_base() >= 0)
+          ? pCount + api.fishing_scene_ground_base() : -1,
         anchor: { x: 0, y: 0, z: 0, yaw: 0 },
         venue: -1,
         aabb: info.aabb,
@@ -266,6 +271,14 @@ window.MgFishing = (function () {
         if (m.cursor > c.frameCount * 16 - 1) m.cursor = 0;
         poseWorld(b.out, b.base, m.oid, c, frame, m.anchor, m.base);
         posed = true;
+      }
+      /* The pond swell: the water cells ride the venue's live floor ladder. */
+      if (b.groundBase >= 0) {
+        const g = api.fishing_scene_ground_positions();
+        if (g.length) {
+          b.out.set(g, b.groundBase * 3);
+          posed = true;
+        }
       }
       if (posed) b.renderer.updatePositions(b.out);
       b.vp = engineVp();

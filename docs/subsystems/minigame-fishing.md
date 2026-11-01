@@ -622,6 +622,26 @@ Three regions of the buffer at `_DAT_1f8003ec` matter:
 
 The height solver never reads the wall bits, and the collision probe never reads the height nibble.
 
+### The pond swell
+
+The water moves because its floor tiers do. `FUN_801d03b0`, called from the driver's shared tail (`jal 0x801D03B0` at `0x801D037C`, reached by every running state), rewrites the head of the 16-rung floor-height ladder at `0x1F80035C` (base register `0x1F800314`, offsets `+0x48..+0x4E`) each frame:
+
+```text
+ladder[0] = 0                                    sh zero,0x48(a1)
+ladder[1] = (sin[angle         & 0xFFF] >> 8) - 10   +0x4A
+ladder[2] = (sin[angle + 0x400 & 0xFFF] >> 8) - 10   +0x4C
+ladder[3] = (sin[angle + 0x800 & 0xFFF] >> 8) - 10   +0x4E
+angle += DAT_1F800393 << 4                       0x801D9118, unmasked
+```
+
+`sin` is the shared 4096-step table at `*_DAT_8007B81C`, and each shift rounds toward zero (`bgez` / `addiu 0xFF` / `sra 8`). The three rungs are one sine at three phases, each swinging `-26..+6` world units.
+
+The `other1` walk ground references floor tiers `0..=3` only: tier `0` is the shore, which the cleared rung holds flat, and tiers `1..=3` are the water cells. The field ground pass resolves each cell corner's tier through the ladder on every frame it draws ([renderer](renderer.md#the-field-ground-pass-two-emitters-one-gate)), so neighbouring corners on different tiers rise and fall out of phase and the water surface heaves. Texture memory stays still: a `minigame_fishing_retail_ready` run under PCSX-Redux logs no `MoveImage` / `LoadImage` / `StoreImage` call across 120 vsyncs and no VRAM word outside the framebuffers changes, while the semi-transparent water `POLY_FT4`s (tpage `0x3C`, CLUT `0x7BC5`) keep their UVs and move their corners.
+
+The ladder's other rungs hold `-(i * 0x20)` in that capture (`-128 .. -480`). The tile actors the floor pass `FUN_801d6bbc` spawns are seated once (it is called from the setup state only, at `0x801CF664`), so placed props keep the height they were spawned at; only the ground pass and the floor solver read the ladder live.
+
+Port: `fishing_chrome::water_swell` (pinned to the capture's ladder reads), run every venue frame by `fishing_venue::tick_venue_actors` into `FishingVenue::floor_ladder`, which the floor solves and `fishing_scene::swell_ground_positions` read. The venue frame is one vsync, so the angle steps `0x10` a frame, retail's rate in wall time; retail steps `DAT_1F800393 << 4` once per game frame.
+
 The solver reduces the actor's `+0x14` / `+0x18` world pair to a **half-cell** index (`>> 6`) and halves that toward zero for the grid index, so a floor cell is 128 world units and the half-cell's low bit is the quadrant. The sub-cell fraction is the raw coordinate's low seven bits.
 
 | Cell bit `0x800` | Height |
@@ -718,7 +738,7 @@ Each is pinned to PROT 0972 by content and reached from a fishing-overlay caller
 |---|---|---|
 | `FUN_801d74b0` | `(cx, y, w, val)` | Centred bar-widget draw. Skips when `y > 0xF0`; otherwise stages widget kind `0x44` via `FUN_80034b6c` and emits through the bar-widget dispatcher `FUN_8002c69c` at `(cx - w/2 - 2, y + 6)` with width `w` and fill `val`. Called by the driver and the shop / help helpers. |
 | `FUN_801d7964` | `(x, rgb0, rgb1, y, arg4, arg5)` | Coloured screen-fade spawn. Unpacks two packed 24-bit colours and the coordinates into an on-stack fade template, then spawns the fade actor via `FUN_80024e80(template, 1)`. |
-| `FUN_801d03b0` | - | Idle sway. Samples the shared sine table `*_DAT_8007B81C` at `angle`, `angle + 0x400` and `angle + 0x800`, scales each `>> 8` rounding toward zero, biases it `-0xA`, writes the triple to `0x1F80035E/60/62` after clearing `0x1F80035C`, and advances the angle at `0x801D9118` by `DAT_1F800393 << 4`. The stored angle is unmasked; only the table index is folded into a turn. |
+| `FUN_801d03b0` | - | The pond swell: rewrites the head of the floor-height ladder every frame, which heaves the water. See [The pond swell](#the-pond-swell). |
 | `FUN_801d7c30` | `(actor, mode)` | Ripple spawn hook. Non-zero mode does nothing; mode zero spawns the `0x801D899C` part at `(actor+0x14, 0, actor+0x18)` - world XZ, not a screen point. Installed, never called: see below. |
 | `FUN_801d7a5c` | `(.., packed)` | Splash burst: spawns the `0x801D899C` part three times and fans them apart (below). |
 
@@ -731,7 +751,7 @@ Each is pinned to PROT 0972 by content and reached from a fishing-overlay caller
 
 Each form leaves one of the three parts unmoved as the anchor, and the two forms use different rotation-word triples.
 
-Port: `fishing_chrome` (`sway_vector`, `venue_camera_reset`, `float_actor_tick`, `splash_burst`, `centred_panel`, and the cadence ring reset shared with `ReelCadence`).
+Port: `fishing_chrome` (`water_swell`, `venue_camera_reset`, `float_actor_tick`, `splash_burst`, `centred_panel`, and the cadence ring reset shared with `ReelCadence`).
 
 **`FUN_801d7c30` is installed and never called.** Its one reference is the lead's tick `FUN_801d2050`, which stores it in the slot-B hook `_DAT_8007BA2C` (`0x801D20B0..0x801D20B4`), and only the move VM's op `0x20` calls that slot ([`move-vm.md`](move-vm.md#0x20---slot-b-module-hook)). No part program the overlay seats issues op `0x20`: every part record the image addresses (the spawn records of all eighteen `FUN_80021B04` sites, the splash spawner's records, both ambient-ripple records and `0x801D899C` itself) runs to its op-`0x08` halt without one. The hook is therefore dead in retail, and the port carries no body for it; the row is in the ignore list's `unreferenced` section.
 
@@ -922,10 +942,11 @@ The session seeds from the persistent words the world keeps between sessions (`W
   The native window draws the rings through its effect-mesh pass (`World::active_effect_kind4_draws`).
   The browser play page draws the venue through its single-mesh path, which has no effect pass, so it draws the rings in the pond's own pass and camera: `FishingVenue::ripple_world_mesh` places every ring in raw world space (`play_mg_fishing_ripple_*`) and the page uploads pond and rings as one mesh while any ring is live. The minigames page, which runs the same step (`fishing_venue::tick_venue_actors`) over its own session, draws them as stage triangles (`FishingVenue::ripple_screen_tris`, `fishing_ripples_json`) with each triangle's mean packet colour.
   The catch bursts are world points seated in the shared minigame effect pool (`minigame_fx`) at their projection through the venue camera (`fishing_venue::project_to_retail_screen`);
-- the venue floor solve: the pond `.MAP`'s extended footprint is read at entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each frame through `fishing_chrome::float_actor_tick` -> `minigame_floor::ground_height`;
+- the venue floor solve: the pond `.MAP`'s extended footprint is read at entry (the `_DAT_1F8003EC` buffer) and the actor settles onto it each frame through `fishing_chrome::float_actor_tick` -> `minigame_floor::ground_height`, over the venue's live ladder `FishingVenue::floor_ladder`;
+- the pond swell (`fishing_chrome::water_swell`), every venue frame, into that ladder; `fishing_scene::swell_ground_positions` re-heights the drawn ground from it, so the water heaves on the native window, the browser play page (both through `FishingSurface`) and the minigames page (`fishing_scene_ground_positions`);
 - the camera: `venue_camera_reset` on entry and the per-frame `fish_camera` publish, folded into the engine camera's retail global trios (`Camera::globals`: the `_DAT_8007B790..` / `_DAT_800840B8..` / `_DAT_80089118..` axes);
 - the reeling-line actor (`LineActorSim`): armed on the hook (the `HOOK_CUE` arm phase), tracked through the fight, and run through the staged catch celebration on a landed fish - the `CELEBRATION_STAGE_FRAMES` timer firing `CELEBRATE_CUE` plus every unlocked `celebration_bursts` tier into the effect pool and SFX scheduler;
-- the strike splash (`fishing_chrome::splash_burst`) on the cadence-match event, the point-exchange panel framed by `centred_panel` and swayed by `sway_vector`, and the overlay's developer readout (`debug_tile` / `debug_readout_visible`) when the dev-menu session is up and the pad modifier is held.
+- the strike splash (`fishing_chrome::splash_burst`) on the cadence-match event, the point-exchange panel framed by `centred_panel` (it holds still: `FUN_801d74b0` reads no offset), and the overlay's developer readout (`debug_tile` / `debug_readout_visible`) when the dev-menu session is up and the pad modifier is held.
 
 **HUD consumer.** `fishing_hud_draws_for` (in [`engine-ui::fishing::hud`](../../crates/engine-ui/src/fishing/hud.rs)) renders the `HudDraw` list - the fishing sibling of `battle_hud_draws_for`. It draws `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (read from the disc by `legaia_minigame_formats::fishing_captions`), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame`. An id the host cannot place is dropped.
 

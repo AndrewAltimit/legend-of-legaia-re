@@ -155,8 +155,12 @@ pub(crate) struct FishingScene {
     env: FishingEnv,
     /// World AABB of the baked map (`[lo], [hi]`).
     aabb: ([f32; 3], [f32; 3]),
-    /// The walk-ground heightfield, kept for shore-anchor height queries.
+    /// The walk-ground heightfield, kept for shore-anchor height queries and
+    /// the pond swell.
     ground: Option<WalkHeightfield>,
+    /// First vertex of the walk ground inside [`FishingScene::env`] (the bake
+    /// appends it last).
+    ground_base: usize,
     /// The shore party: one body per spawned actor, in spawn order (lead
     /// first). A member whose field body does not decode is left out.
     party: Vec<FishingMember>,
@@ -474,10 +478,13 @@ impl LegaiaMinigames {
         let region_block = scene.field_map_region_block(&index).ok().flatten();
         let rod_mesh = legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene);
 
+        let ground_base = (env.positions.len() / 3)
+            .saturating_sub(ground.as_ref().map_or(0, |g| g.positions.len()));
         Some(FishingScene {
             env,
             aabb: (lo, hi),
             ground,
+            ground_base,
             party,
             vram: vram.as_bytes().to_vec(),
             map,
@@ -502,6 +509,34 @@ impl FishingScene {
 
 #[wasm_bindgen]
 impl LegaiaMinigames {
+    /// First vertex of the walk ground inside [`Self::fishing_scene_positions`],
+    /// or `-1` with no ground: the span [`Self::fishing_scene_ground_positions`]
+    /// rewrites each frame.
+    pub fn fishing_scene_ground_base(&self) -> i32 {
+        self.fishing_scene
+            .as_ref()
+            .filter(|s| s.ground.is_some())
+            .map_or(-1, |s| s.ground_base as i32)
+    }
+
+    /// The walk ground's drawn positions this frame (`[x, y, z, ...]`, the
+    /// span at [`Self::fishing_scene_ground_base`]): every corner through the
+    /// venue's live floor-height ladder, whose water rungs the pond swell
+    /// heaves (`fishing_scene::swell_ground_positions`, the play hosts'
+    /// kernel). Empty with no ground.
+    pub fn fishing_scene_ground_positions(&self) -> Vec<f32> {
+        let Some(hf) = self.fishing_scene.as_ref().and_then(|s| s.ground.as_ref()) else {
+            return Vec::new();
+        };
+        legaia_engine_minigame_scenes::fishing_scene::swell_ground_positions(
+            hf,
+            &self.fishing_venue_actors.floor_ladder,
+        )
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+
     /// Whether the fishing venue scene decoded off this disc.
     pub fn fishing_scene_ready(&self) -> bool {
         self.fishing_scene.is_some()

@@ -16,12 +16,13 @@
 //! - the reeling-line actor (`FUN_801D4948`,
 //!   [`legaia_engine_fishing::fishing_actors::LineActorSim`]) across hook, fight and the
 //!   catch celebration, whose **bursts** ride the session's lure;
-//! - the point-exchange sub-screen's idle sway
-//!   ([`legaia_engine_fishing::fishing_chrome::sway_vector`]).
+//! - the pond swell ([`legaia_engine_fishing::fishing_chrome::water_swell`]):
+//!   the head of the venue's floor-height ladder
+//!   ([`FishingVenue::floor_ladder`]), which heaves the water cells of the
+//!   drawn ground and moves whatever the floor solver settles on them.
 //!
 //! It used to live inside the native window's `tick_fishing_actors`, which
-//! made the ripples, the bursts, the venue camera and the swaying prize panel
-//! native-only. The step is host-agnostic - every input is world state, the
+//! made the ripples, the bursts and the venue camera native-only. The step is host-agnostic - every input is world state, the
 //! held pad or the scene's `.MAP` bytes - so it lives here and each host calls
 //! [`tick_fishing_venue`] from its own minigame frame, then applies the
 //! returned camera writes to its own [`legaia_engine_field::camera::Camera`].
@@ -183,10 +184,12 @@ pub struct FishingVenue {
     /// The venue scene's `.MAP` extended footprint (the engine's
     /// `_DAT_1F8003EC` floor buffer), loaded once at arm.
     floor: Option<Vec<u8>>,
-    /// The sub-screen sway phase (`0x801D9118`).
-    sway_angle: i32,
-    /// This frame's sway offset, applied to the point-exchange panel.
-    pub sway_offset: (i16, i16),
+    /// The pond swell's phase (`0x801D9118`).
+    swell_angle: i32,
+    /// The live floor-height ladder (`0x1F80035C`), in the scratchpad frame
+    /// the ground pass and the floor solver read it in: rungs `0..4` are this
+    /// frame's [`fc::water_swell`], rungs `4..16` [`venue_floor_ladder`]'s.
+    pub floor_ladder: [i16; 16],
     rng: u32,
     /// The two ambient-ripple part records off the fishing overlay
     /// ([`RippleRecords`]), when the host installed them.
@@ -260,8 +263,8 @@ impl Default for FishingVenue {
             wander: None,
             line: None,
             floor: None,
-            sway_angle: 0,
-            sway_offset: (0, 0),
+            swell_angle: 0,
+            floor_ladder: venue_floor_ladder(),
             rng: VENUE_RNG_SEED,
             ripple_records: None,
             ripple_fx: None,
@@ -430,10 +433,27 @@ impl VenueCameraWrites {
     }
 }
 
-/// The 4096-step sine table the sub-screen sway samples. Retail reads the
+/// The fishing scene's floor-height ladder outside the rungs the swell owns:
+/// `-(i * 0x20)`, the scratchpad ladder a retail fishing frame holds at rungs
+/// `4..16` (`minigame_fishing_retail_ready`: `-128, -160, .. -480`), with
+/// the swell's head at angle `0` over rungs `0..4` until the first venue frame
+/// runs it. The `other1` ground only references tiers `0..=3`, so the upper
+/// rungs matter only to a solve off the pond's own cells.
+pub fn venue_floor_ladder() -> [i16; 16] {
+    let mut ladder = [0i16; 16];
+    for (i, r) in ladder.iter_mut().enumerate() {
+        *r = -(i as i16) * legaia_engine_field::minigame_floor::HEIGHT_RAMP_STEP;
+    }
+    fc::water_swell(swell_sine_table(), 0, 0)
+        .0
+        .apply(&mut ladder);
+    ladder
+}
+
+/// The 4096-step sine table the pond swell samples. Retail reads the
 /// shared table through `*_DAT_8007B81C` (runtime data the port does not
 /// stage); this synthesizes an equivalent once.
-pub fn sway_sine_table() -> &'static [i16] {
+pub fn swell_sine_table() -> &'static [i16] {
     use std::sync::OnceLock;
     static TABLE: OnceLock<Vec<i16>> = OnceLock::new();
     TABLE.get_or_init(|| {
@@ -475,7 +495,6 @@ pub fn tick_fishing_venue(
         &mut mg.fishing_venue,
         session,
         &mg.fishing_events,
-        mg.fishing_exchange.is_some(),
         held_packed,
         &mut mg.fx,
         floor,
@@ -487,8 +506,7 @@ pub fn tick_fishing_venue(
 /// pool but no [`MinigameState`] - the minigames page. [`tick_fishing_venue`]
 /// is this over the world's own fields, so the two run one step.
 ///
-/// `events` is this tick's session events and `exchange_open` whether the
-/// point-exchange list is up. The retarget ripples and the catch bursts are
+/// `events` is this tick's session events. The retarget ripples and the catch bursts are
 /// world points; each is seated in `fx` at its projection through the venue
 /// camera over the lead ([`venue_camera_view`], the camera this frame
 /// publishes) by [`project_to_retail_screen`]. A point that does not project
@@ -497,13 +515,19 @@ pub fn tick_venue_actors(
     v: &mut FishingVenue,
     session: &legaia_engine_fishing::fishing::PondSession,
     events: &[PondEvent],
-    exchange_open: bool,
     held_packed: u16,
     fx: &mut legaia_engine_minigames::minigame_fx::MinigameFxPool,
     floor: impl FnOnce() -> Option<Vec<u8>>,
 ) -> VenueCameraWrites {
     let mut out = VenueCameraWrites::default();
     let phase = session.phase();
+    // The pond swell, from the driver's shared tail (`jal 0x801D03B0` at
+    // `0x801D037C`): every running frame, whatever the state or sub-screen.
+    // One venue frame is one vsync, so the step is `1` - the angle keeps
+    // retail's `0x10` per vsync (`DAT_1F800393 << 4` once per game frame).
+    let (swell, next) = fc::water_swell(swell_sine_table(), v.swell_angle, 1);
+    v.swell_angle = next;
+    swell.apply(&mut v.floor_ladder);
     // One-time venue arm: the wander actor, the floor buffer, and the venue
     // camera reset.
     if v.wander.is_none() {
@@ -549,9 +573,8 @@ pub fn tick_venue_actors(
     // Settle the actor onto the venue floor (the `.MAP` height grid through
     // the shared ground solver) and publish its camera.
     if let (Some(w), Some(buf)) = (v.wander.as_mut(), v.floor.as_ref()) {
-        let ramp = legaia_engine_field::minigame_floor::height_ramp();
         let grid = legaia_engine_field::minigame_floor::FloorGrid::new(buf);
-        let t = fc::float_actor_tick(grid, w.x, w.z, 0, &ramp);
+        let t = fc::float_actor_tick(grid, w.x, w.z, 0, &v.floor_ladder);
         w.y = t.y;
     }
     if let Some(w) = v.wander.as_ref() {
@@ -609,14 +632,6 @@ pub fn tick_venue_actors(
         if !f.done {
             v.line = Some(line);
         }
-    }
-    // Sub-screen idle sway while the point-exchange list is up.
-    if exchange_open {
-        let (sv, next) = fc::sway_vector(sway_sine_table(), v.sway_angle, 1);
-        v.sway_angle = next;
-        v.sway_offset = (sv.x, sv.y);
-    } else {
-        v.sway_offset = (0, 0);
     }
     out
 }
