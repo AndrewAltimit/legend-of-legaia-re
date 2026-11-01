@@ -96,7 +96,14 @@ the series a summon close-up's framing is read off. A third, `cam.csv`, holds
 per vsync the live pitch, yaw and TR trio with the yaw and TR z records of the
 tween table `ctx[+0x118C]` (increment, endpoint): the walk of a module's shot.
 At cast begin it also logs each pool slot's ground pair
-`+0x34` / `+0x38` (`done.txt`). The run uses the recompiler (`--fast`) unless a
+`+0x34` / `+0x38` (`done.txt`). With `LEGAIA_PRE_TRACE=1` the probe also
+writes `pre.csv`, one row per in-battle vsync **before** the inject: the
+action state, the acting seat, the frame step, the yaw counter `ctx[+0x6DA]`,
+the strike cursor `ctx[+0x15]`, and for seats `0..3` the committed and staged
+clip, the rate `+0x21D`, the node cursor, the live pair and the per-action
+total `+0x00` (seat 3's live HP). A monster-pick run from a `*_first_menu`
+state therefore records every party turn on the way to the cast - the retail
+timeline of a combo the capture only holds the end of. The run uses the recompiler (`--fast`) unless a
 formation is forced, and `run_probe.sh` stages the disc in a private directory,
 so no `.ppf` beside the image reaches it.
 

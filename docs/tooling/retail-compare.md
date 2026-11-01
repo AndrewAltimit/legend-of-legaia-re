@@ -4335,7 +4335,19 @@ combo (`0d 0c 0f 19 25 0e 0d 19 20`, no entry with `+0x87 = 2` in RAM) left
 retail's counter at `1114`, the engine's at `912` on the same `0x200` rung.
 Retail's ring mixes steps `3` and `4` (no `r<step>`), and even a steady
 step `3` puts the engine's drift at `1045`, outside the slack: retail's
-action ran longer than the replay's as well as at a coarser step. Pinned,
+action ran longer than the replay's as well as at a coarser step. The longer
+part is the walk, not the combo. Replayed on PCSX-Redux from
+`cort_evolved_card_first_menu` with the capture's own monster-pick run and
+`LEGAIA_PRE_TRACE=1` ([cast-sequence oracle](cast-sequence-oracle.md#what-each-side-records)),
+the run lands on the capture's words (counter `1114`, Gala at `(-125, -254)`,
+Cort at `(170, 375)`), and summed in frame steps every clip of the combo
+lasts what the replay's does to within a pass (`0x0C` 69 vsyncs against 66,
+the art `0x25` 80 against 78, the closing `0x20` 96 against 96). Retail's
+Gala, though, starts at `(-985, -2047)` after state `0x0C`'s recentre and
+walks 60 vsyncs (counter `512` to `596`) to her first swing. The replay
+stands her near her end-of-combo pair, and she arrives in under ten. That
+is the gap: about 400 vsyncs from `0x14` to `0x50` in the replay against
+465 in retail. Pinned,
 case 8's yaw lands on retail's (`camera` `.903` to `1.0`, `image` `.514` to
 `.600`), and `gaza2_card_pre_neo_star_slash` with it (`.886` to `1.0`, `.668`
 to `.810`).

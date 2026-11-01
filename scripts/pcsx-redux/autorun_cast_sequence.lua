@@ -78,6 +78,15 @@
 --                        inject: a pre-cast state with the cast already
 --                        queued, which replays on its own (back it up to the
 --                        save library with manage-states.py)
+--   LEGAIA_PRE_TRACE     1 = also write pre.csv, one row per vsync BEFORE the
+--                        inject: the action state, the acting seat, the frame
+--                        step, the yaw counter ctx[+0x6DA], the strike cursor
+--                        ctx[+0x15], and per seat 0..3 the committed / staged
+--                        clip (+0x1D9 / +0x1DA), the rate +0x21D, the node's
+--                        anim cursor (+0x22C -> +0x68), the ground pair and
+--                        the per-action damage total +0x00: the retail
+--                        timeline of whatever the party played on the way to
+--                        the cast (a combo's per-clip cadence)
 --   LEGAIA_PARK          quit when the action state and the module phase
 --                        have not moved for this
 --                        many vsyncs after the inject (900): a cast the
@@ -109,6 +118,7 @@ local SHOT_EVERY   = probe.getenv_num("LEGAIA_SHOT_EVERY", 2)
 local MAX_SHOTS    = probe.getenv_num("LEGAIA_MAX_SHOTS", 1500)
 local TAIL         = probe.getenv_num("LEGAIA_TAIL", 60)
 local PARK         = probe.getenv_num("LEGAIA_PARK", 900)
+local PRE_TRACE    = probe.getenv_num("LEGAIA_PRE_TRACE", 0) ~= 0
 local RAM_AT = {}
 for v in string.gmatch(probe.getenv("LEGAIA_RAM_AT", ""), "[^,]+") do
     RAM_AT[tonumber(v)] = true
@@ -164,7 +174,7 @@ local function tou32(v)
     return v
 end
 
-local meta, body, cam
+local meta, body, cam, pre
 local injected, cast_seen, done_seen = false, false, false
 local inject_vsync, cast_vsync, done_vsync = -1, -1, -1
 local forced_row = false
@@ -233,6 +243,12 @@ probe.run({
         -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
         cam = probe.csv_open(probe.out_path("cam.csv"),
             "vsync,st7,phase,step,pitch,yaw,trx,try,trz,yaw_inc,yaw_end,trz_inc,trz_end")
+        if PRE_TRACE then
+            pre = probe.csv_open(probe.out_path("pre.csv"),
+                "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
+                "s0clip,s0stg,s0rate,s0cur,s0x,s0z,s0tot,s1clip,s1stg,s1rate,s1cur,s1x,s1z,s1tot," ..
+                "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp")
+        end
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
@@ -326,6 +342,27 @@ probe.run({
             for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
+        end
+        if pre ~= nil and not injected and in_battle then
+            local cols = {}
+            for s = 0, 3 do
+                local a = actor(s)
+                if a ~= nil then
+                    local node = u32(a + 0x22C)
+                    local x, z = u16(a + 0x34), u16(a + 0x38)
+                    if x >= 0x8000 then x = x - 0x10000 end
+                    if z >= 0x8000 then z = z - 0x10000 end
+                    local last = s == 3 and u16(a + 0x14C) or u16(a)
+                    cols[#cols + 1] = string.format("%d,%d,%d,%d,%d,%d,%d",
+                        u8(a + 0x1D9), u8(a + 0x1DA), u8(a + 0x21D),
+                        ptr_ok(node) and u16(node + 0x68) or -1, x, z, last)
+                else
+                    cols[#cols + 1] = "-1,-1,-1,-1,0,0,0"
+                end
+            end
+            pre:row("%d,%d,%d,%d,%d,%d,%d,%d,%s", elapsed, u8(cx + 6), st7, acting,
+                probe.read_scratch_u8(0x1F800393), u16(cx + 0x6DA), u8(cx + 0x15),
+                u32(cx + 0x87C), table.concat(cols, ","))
         end
         if not injected then return end
         if SAVE_INJECT and not inject_saved then
