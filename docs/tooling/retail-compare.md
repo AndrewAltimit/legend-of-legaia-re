@@ -2243,6 +2243,16 @@ child keeps the gate's tick: a display-lag retake would land on `0x70`'s
 first tick, ahead of the shot. The three Koru mid-casts read `camera`
 `1.000` (`.862`) and `image` `.822` / `.790` / `.789` (`.719` each).
 
+The walk back stops at the shot's origin. Arm 2 builds its table once over
+`0xC` frame-step units (`WIND_UP_SHOT_FRAMES`), so a table holding `left`
+units to go (`ceil(gap / inc)` on the component that moves furthest a unit)
+has walked `0xC - left` since the arm, and the frame before the arm stood on
+the walk-in framing the shot set out from. `module_shot_frames` bounds the
+walk there for a charge body waiting in arm 3. The Koru mid-casts hold the
+table two units in, one step-`2` pass: walked back the lag's two passes their
+frames stood yaw `1970`, `198` units round of the shot's `2168` origin, and
+read `image` `.943` each at the origin.
+
 Neo Star Slash and Doomsday do gate on module words, which their directors
 carry in the countdown the gate reads: PROT 0960's `0x801F8E50` (`scalar *
 delta` a pass, the director's own unit) and PROT 0965's `0x801F8370`, which
@@ -4351,6 +4361,18 @@ is the gap: about 400 vsyncs from `0x14` to `0x50` in the replay against
 case 8's yaw lands on retail's (`camera` `.903` to `1.0`, `image` `.514` to
 `.600`), and `gaza2_card_pre_neo_star_slash` with it (`.886` to `1.0`, `.668`
 to `.810`).
+
+The same capture is the Done arm's own pass: its countdown `ctx[+0x6D8]`
+still holds the `0x3C` the arm seeds in the pass that stores `0x51`, with
+every HP bar settled, so nothing has stepped it (`done_arm_pass`). That pass
+was the first to walk the Done table; the pass before walked the strike
+band's framing, which the RAM no longer holds. The displayed pose is
+therefore walked back one pass and no further, as on the seed's own `0x14`
+pass (`tween_passes_back`). The image child takes the displayed pose when the
+replay's endpoints agree on the components the walk back moved
+(`BattleCamera::glide_endpoint_matches_walked`): the Done tail holds its
+pitch at the strike's residue (`-23` retail, `-26` replay), a component the
+displayed frame shows unchanged. `koru_pre_*` read `image` `.667` to `.740`.
 
 Replayed
 casts are left out but for the summon invoke `0x32`: their close-ups and

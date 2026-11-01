@@ -414,6 +414,62 @@ fn the_displayed_camera_walks_back_no_further_than_the_seed_arm() {
     assert_eq!(tween_passes_back(0x1E, 0x200, 2), 2);
 }
 
+/// The Done arm `0x50` seeds the tail countdown and stores `0x51` in one
+/// pass, so a `0x51` capture on the seed with every HP bar settled is that
+/// pass; a bar still draining freezes the countdown on later passes too.
+#[test]
+fn a_done_capture_on_the_seeded_countdown_is_the_arm_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let gala = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, gala);
+    put16(&mut ram, gala + 0x14C, 1446);
+    put16(&mut ram, gala + 0x172, 1446);
+    put16(&mut ram, ctx + 0x6D8, 0x3C);
+    assert!(done_arm_pass(&ram, ctx, 0x51));
+    assert!(!done_arm_pass(&ram, ctx, 0x52), "only the fade-down band");
+    put16(&mut ram, ctx + 0x6D8, 0x96);
+    assert!(done_arm_pass(&ram, ctx, 0x51), "the Spirit-turn seed");
+    put16(&mut ram, ctx + 0x6D8, 0x39);
+    assert!(!done_arm_pass(&ram, ctx, 0x51), "a later pass stepped it");
+    put16(&mut ram, ctx + 0x6D8, 0x3C);
+    put16(&mut ram, gala + 0x172, 1500);
+    assert!(!done_arm_pass(&ram, ctx, 0x51), "the settle gate holds it");
+}
+
+/// A PROT 0962 charge body waiting in arm 3 walks the wind-up shot arm 2
+/// built once over `0xC` units: `koru_blade_breath_mid_cast` holds it two
+/// units in (yaw `99` a unit, `979` to go), so a walk back of two step-`2`
+/// passes stops at the shot's origin, one pass back.
+#[test]
+fn a_charge_body_shot_walks_back_no_further_than_its_origin() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let koru = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x279, 3);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, koru);
+    put8(&mut ram, koru + 0x1DF, 0xA2);
+    // Live yaw `2366` walking to `3345` at `99` a unit; TR z `7285` to
+    // `3276` at `402`.
+    put16(&mut ram, 0x8007_B792, 2366);
+    put32(&mut ram, 0x8008_40C0, 7285);
+    put16(&mut ram, ctx + TWEEN_TABLE + 4, 99);
+    put16(&mut ram, ctx + TWEEN_TABLE + 4 + 2, 3345);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 402);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4 + 2, 3276);
+    assert_eq!(module_shot_frames(&ram, ctx), Some(0xC));
+    let shown = displayed_module_cam_live(&ram, ctx, &[2, 2]);
+    assert_eq!(shown.yaw, 2366.0 - 2.0 * 99.0);
+    // Another module's table walks the whole lag back.
+    put8(&mut ram, koru + 0x1DF, 0xA6);
+    assert_eq!(module_shot_frames(&ram, ctx), None);
+    let shown = displayed_module_cam_live(&ram, ctx, &[2, 2]);
+    assert_eq!(shown.yaw, 2366.0 - 4.0 * 99.0);
+}
+
 /// The magic band rewrites a party-wide `8` to the lone member's slot
 /// (`ctx[+0x24A] - 1`, `0x801E431C`); the seed read `8`, so the reader hands
 /// the replay `8` back - only for an all-allies spell on that slot.

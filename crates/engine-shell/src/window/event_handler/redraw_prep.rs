@@ -372,7 +372,14 @@ impl PlayWindowApp {
             let mask = match (world.battle.camera.as_mut(), target) {
                 (Some(cam), Some(target)) => {
                     let shown = match displayed {
-                        Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,
+                        // Judged on the components the walk back moved: one
+                        // retail holds still reads the same either way
+                        // (`BattleCamera::glide_endpoint_matches_walked`).
+                        Some((shown, _))
+                            if cam.glide_endpoint_matches_walked(end, target, live, shown) =>
+                        {
+                            shown
+                        }
                         _ => live,
                     };
                     // A capture-band module's own shot still walking (`0x70`

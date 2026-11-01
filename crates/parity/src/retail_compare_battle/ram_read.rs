@@ -828,6 +828,11 @@ impl RetailBattle {
                     game_anchors::u16_at(ram, ctx + 0x6DA),
                     DISPLAY_LAG_PASSES,
                 );
+                let passes = if done_arm_pass(ram, ctx, action_state) {
+                    passes.min(1)
+                } else {
+                    passes
+                };
                 // Each pass on its own step where the older ordering table's
                 // floor confirms the newest one; the history's largest entry
                 // for every pass otherwise.

@@ -305,6 +305,29 @@ fn glide_endpoint_match_needs_every_component() {
     }
 }
 
+/// The walked-components twin: an endpoint off on a component the walk
+/// back left where it was (retail's table holds it still) does not refuse
+/// the displayed pose; off on one the walk back moved, it does.
+#[test]
+fn glide_endpoint_match_skips_the_components_retail_holds() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Action, 0);
+    steps(&mut cam, 1);
+    let target = cam.glide_target();
+    let live = cam.pose();
+    let mut shown = live;
+    shown.yaw += 51.0;
+    shown.tr[2] += 249.0;
+    let mut end = target;
+    end.pitch += 3.0;
+    assert!(!cam.glide_endpoint_matches_to(end, target));
+    assert!(cam.glide_endpoint_matches_walked(end, target, live, shown));
+    end.yaw += 39.0;
+    assert!(!cam.glide_endpoint_matches_walked(end, target, live, shown));
+    let mut menu = cam.clone();
+    menu.set_phase(BattleCamPhase::Menu);
+    assert!(!menu.glide_endpoint_matches_walked(target, target, live, shown));
+}
+
 /// With the yaw on retail's endpoint, a focus endpoint a few units off
 /// takes retail's point in the ease: the engine's focus stands as far short
 /// of its own endpoint as retail's live focus stood from its. An endpoint
