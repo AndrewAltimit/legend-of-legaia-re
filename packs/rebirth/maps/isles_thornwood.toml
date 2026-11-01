@@ -1,19 +1,21 @@
 # Lantern Isles: the Thornwood. Laid out over the West Voz Forest (`vell`)
 # as a walk with a shape: the lane leaves the village's fields at the wood's
 # edge and winds east under clumped old growth - through Mushroom Hollow, a
-# sunken glade ringed with toadstools; across a brook at a ford of
-# stepping stones; up to the old shrine, a broken ring of standing stones
-# round an inscribed tablet, with a spur climbing to a lookout; down to the
+# sunken glade ringed with toadstools; over the brook's gorge on a plank
+# footbridge, the water running far below; up to the old shrine, a broken
+# ring of standing stones round an inscribed tablet, with a spur climbing
+# to a lookout high over the canopy; down to the
 # hermit's camp, pitched round the log he sits on; and on to the island's
 # ruined court, where the Thornwood Queen has grown her hive inside the
 # north gate. Past the gate a stair runs down to the grotto. A side trail
-# off the first bend drops to a fern dell with a spring.
+# off the first bend drops to a fern dell, where a spring has sunk a
+# deep well in the rock.
 
 name = "Lantern Isles - The Thornwood"
 size = [112, 56]
 base = { scene = { kind = "scene", name = "vell" }, geometry = "none" }
-# Sound-test track 8, "Call of the Ruins".
-bgm = { kind = "bgm", id = 8 }
+# Sound-test track 4 (M04B, "Forest of Mystery"): the old wood, hushed.
+bgm = { kind = "bgm", id = 4 }
 camera = "far"
 floor_heights = [0, 16, 32]
 
@@ -85,7 +87,7 @@ rows = [
 "," = { label = "clearing", ground = { kind = "texture", tpage = 12, clut = 32584, tile = 9 } }
 "d" = { label = "path", ground = { kind = "texture", tpage = 12, clut = 32578, tile = 17 } }
 "w" = { label = "brook", walls = "all", ground = { kind = "texture", tpage = 11, clut = 32515, tile = 9 } }
-"f" = { label = "ford stones", ground = { kind = "texture", tpage = 11, clut = 32512, tile = 28 } }
+"f" = { label = "footbridge", ground = { kind = "texture", tpage = 11, clut = 32512, tile = 28 } }
 "#" = { label = "ruin wall", walls = "all", wall = { kind = "box", height = 192, tpage = 11, clut = 32512, tile = 9 } }
 "q" = { label = "court", height = 1, ground = { kind = "texture", tpage = 11, clut = 32512, tile = 0 } }
 "Q" = { label = "inner court", height = 2, ground = { kind = "texture", tpage = 11, clut = 32513, tile = 1 } }
@@ -273,56 +275,51 @@ rotation = [0.0, 333.0, 0.0]
 scale = 0.82
 solid = true
 
-# The ford: flat stones across the brook, boulders on its banks.
+# The footbridge over the gorge: a post at each corner, a lantern either
+# end; boulders on the banks.
 
 [[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [41, 32]
-offset = [-15, -18, -15]
-rotation = [0.0, 0.0, 0.0]
-scale = 0.75
+mesh = { scene = "rugi", object = 13 }
+tile = [40, 32]
+offset = [50, 0, -60]
+scale = 0.3
 
 [[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [42, 32]
-offset = [2, -18, 8]
-rotation = [0.0, 53.0, 0.0]
-scale = 0.75
+mesh = { scene = "rugi", object = 13 }
+tile = [40, 34]
+offset = [50, 0, 60]
+scale = 0.3
 
 [[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [41, 33]
-offset = [-11, -18, 1]
-rotation = [0.0, 106.0, 0.0]
-scale = 0.75
+mesh = { scene = "rugi", object = 13 }
+tile = [44, 32]
+offset = [-50, 0, -60]
+scale = 0.3
 
 [[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [42, 33]
-offset = [6, -18, -6]
-rotation = [0.0, 159.0, 0.0]
-scale = 0.75
+mesh = { scene = "rugi", object = 13 }
+tile = [44, 34]
+offset = [-50, 0, 60]
+scale = 0.3
 
 [[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [41, 34]
-offset = [-7, -18, -13]
-rotation = [0.0, 212.0, 0.0]
-scale = 0.75
+mesh = { asset = "models/lantern.glb" }
+tile = [40, 33]
+offset = [40, 0, -50]
+scale = 1.0
 
 [[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [42, 34]
-offset = [10, -18, 10]
-rotation = [0.0, 265.0, 0.0]
-scale = 0.75
+mesh = { asset = "models/lantern.glb" }
+tile = [44, 33]
+offset = [-40, 0, 50]
+scale = 1.0
 
-[[decor]]
-mesh = { scene = "uru", object = 34 }
-tile = [43, 34]
-offset = [-3, -18, 3]
-rotation = [0.0, 318.0, 0.0]
-scale = 0.75
+
+
+
+
+
+
 
 [[decor]]
 mesh = { object = 5 }
@@ -1133,19 +1130,22 @@ shapes = [
   { kind = "raise", at = [25.5, 25.5], radius = 6.0, height = -18 },
   { kind = "ramp", from = [45.5, 33.0], to = [52.5, 24.0], radius = 3.0, height = [0, 64] },
   { kind = "flatten", at = [56.5, 20.5], radius = 7.5, height = 64, strength = 0.9 },
-  { kind = "ramp", from = [56.5, 13.5], to = [56.5, 9.0], radius = 2.2, height = [64, 132] },
-  { kind = "flatten", at = [56.5, 7.5], radius = 4.0, height = 132, strength = 0.9 },
+  { kind = "ramp", from = [56.5, 13.5], to = [56.5, 9.0], radius = 2.2, height = [64, 176] },
+  { kind = "flatten", at = [56.5, 7.5], radius = 4.0, height = 176, strength = 0.9 },
   { kind = "ramp", from = [60.5, 23.5], to = [70.0, 35.5], radius = 3.0, height = [64, 12] },
   { kind = "flatten", at = [75.5, 38.5], radius = 6.0, height = 12, strength = 0.9 },
-  { kind = "raise", at = [19.5, 46.5], radius = 2.0, height = -60 },
-  { kind = "ridge", from = [37.5, 0.5], to = [39.5, 8.5], radius = 1.3, height = -70 },
-  { kind = "ridge", from = [39.5, 8.5], to = [41.5, 16.5], radius = 1.3, height = -70 },
-  { kind = "ridge", from = [41.5, 16.5], to = [41.5, 24.5], radius = 1.3, height = -70 },
-  { kind = "ridge", from = [41.5, 24.5], to = [42.5, 33.5], radius = 1.3, height = -70 },
-  { kind = "ridge", from = [42.5, 33.5], to = [44.5, 42.5], radius = 1.3, height = -70 },
-  { kind = "ridge", from = [44.5, 42.5], to = [45.5, 50.5], radius = 1.3, height = -70 },
-  { kind = "ridge", from = [45.5, 50.5], to = [46.5, 55.5], radius = 1.3, height = -70 },
-  { kind = "flatten", at = [42.0, 33.0], radius = 2.6, height = -8, strength = 1.0 },
+  { kind = "raise", at = [19.5, 46.5], radius = 1.4, height = -180 },
+  { kind = "ridge", from = [37.5, 0.5], to = [39.5, 8.5], radius = 1.5, height = -230 },
+  { kind = "ridge", from = [39.5, 8.5], to = [41.5, 16.5], radius = 1.5, height = -230 },
+  { kind = "ridge", from = [41.5, 16.5], to = [41.5, 24.5], radius = 1.5, height = -230 },
+  { kind = "ridge", from = [41.5, 24.5], to = [42.5, 33.5], radius = 1.5, height = -230 },
+  { kind = "ridge", from = [42.5, 33.5], to = [44.5, 42.5], radius = 1.5, height = -230 },
+  { kind = "ridge", from = [44.5, 42.5], to = [45.5, 50.5], radius = 1.5, height = -230 },
+  { kind = "ridge", from = [45.5, 50.5], to = [46.5, 55.5], radius = 1.5, height = -230 },
+  # The footbridge, set level over the gorge after it is cut.
+  { kind = "plateau", rect = [41, 32, 43, 34], height = -4, edge = 0.12 },
+  { kind = "flatten", at = [40.0, 33.0], radius = 1.6, height = -4, strength = 1.0 },
+  { kind = "flatten", at = [45.0, 33.0], radius = 1.6, height = -4, strength = 1.0 },
 ]
 materials = [
   { name = "leaf litter", chars = ".", tint = [118, 116, 96], cells = [
@@ -1175,14 +1175,15 @@ materials = [
   { name = "brook bed", chars = "w", tint = [80, 96, 100], cells = [
     { tpage = 11, clut = 32515, tile = 0 }, { tpage = 11, clut = 32515, tile = 1 }, { tpage = 11, clut = 32515, tile = 2 }, { tpage = 11, clut = 32515, tile = 8 }, { tpage = 11, clut = 32515, tile = 9 }, { tpage = 11, clut = 32515, tile = 10 },
   ] },
-  { name = "ford stones", chars = "f", tint = [140, 140, 150], cells = [
-    { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 },
+  { name = "footbridge", chars = "f", from = "town01", rotate = false, tint = [230, 206, 178], cells = [
+    { tpage = 27, clut = 32128, tile = 27 }, { tpage = 27, clut = 32128, tile = 28 }, { tpage = 27, clut = 32128, tile = 35 }, { tpage = 27, clut = 32128, tile = 36 },
   ] },
 ]
 cliff = { slope = 0.9, tint = [104, 100, 112], cells = [
   { tpage = 11, clut = 32512, tile = 27 }, { tpage = 11, clut = 32512, tile = 28 }, { tpage = 11, clut = 32512, tile = 29 }, { tpage = 11, clut = 32512, tile = 30 }, { tpage = 11, clut = 32512, tile = 31 }, { tpage = 11, clut = 32512, tile = 36 }, { tpage = 11, clut = 32512, tile = 37 }, { tpage = 11, clut = 32512, tile = 38 }, { tpage = 11, clut = 32512, tile = 39 },
 ] }
-water = { level = -22, from = "cave01", cells = [{ tpage = 11, clut = 32454, tile = 1 }, { tpage = 11, clut = 32454, tile = 9 }], shallow = [44, 70, 72], deep = [14, 28, 34], depth = 40, foam = 8, foam_color = [40, 70, 60], wade = 6 }
+abyss = { from = -40, to = -200, shade = 0.25 }
+water = { level = -130, from = "town01", cells = [{ tpage = 9, clut = 31880, tile = 56 }], shallow = [60, 112, 120], deep = [16, 40, 56], depth = 90, foam = 12, foam_color = [90, 130, 120], wade = 6 }
 # The West Voz Forest's own cloud card (its backdrop mesh 26) as the
 # horizon, so the far edge of the wide view is sky, not the clear colour.
 sky = { tpage = 25, clut = 32194, rect = [0, 64, 127, 127], radius = 20, span = [-4000, 4000], repeat = 10, color = [120, 128, 120] }
@@ -1192,6 +1193,8 @@ mood = "dusk"
 lamps = [
   { id = "hollow", tile = [25, 25], offset = [0, 220, 0], color = [180, 255, 160], radius = 900 },
   { id = "dell", tile = [19, 45], offset = [0, 180, 0], color = [160, 255, 200], radius = 600 },
+  { id = "gorge_sun", tile = [42, 33], offset = [0, 420, 0], color = [255, 240, 200], radius = 900, breathe = 0.12, breathe_period = 400 },
+  { id = "well_glow", tile = [19, 46], offset = [0, 40, 0], color = [120, 230, 200], radius = 700, breathe = 0.3, breathe_period = 300 },
   { id = "shrine", tile = [56, 20], offset = [0, 240, 0], color = [190, 210, 255], radius = 900 },
   { id = "camp_fire", tile = [75, 38], offset = [0, 60, -20], color = [255, 150, 70], radius = 760, flicker = 0.35, period = 9 },
   # Rootlight: a breathing green over each shrub on the Genesis root.
@@ -1209,10 +1212,64 @@ lamps = [
   { id = "rootlight_11", tile = [100, 8], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
 ]
 
+# Sun shafts down through the canopy (enhanced lighting only).
+[[beams]]
+id = "hollow_sun"
+tile = [25, 25]
+height = 900
+tilt = 14.0
+angle = 90.0
+width = [90, 200]
+color = [255, 240, 200]
+intensity = 70
+pool = true
+motes = 14
+seed = 1
+
+[[beams]]
+id = "gorge_sun"
+tile = [42, 33]
+height = 1000
+tilt = 10.0
+angle = 270.0
+width = [60, 140]
+color = [255, 236, 190]
+intensity = 80
+motes = 10
+seed = 2
+
+[[beams]]
+id = "shrine_sun"
+tile = [56, 20]
+height = 1000
+tilt = 12.0
+angle = 90.0
+width = [100, 220]
+intensity = 70
+pool = true
+motes = 12
+seed = 3
+
+[[beams]]
+id = "well_glow"
+tile = [19, 46]
+offset = [0, -120, 0]
+height = 500
+width = [140, 70]
+color = [120, 230, 200]
+intensity = 60
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 300
+motes = 10
+seed = 4
+
 [fog]
 regions = [
   { rect = [16, 18, 34, 32], angle = 0.0, spread = 50.0, speed = 6 },
   { rect = [36, 26, 48, 40], angle = 180.0, spread = 40.0, speed = 8 },
+  { rect = [17, 44, 22, 49], angle = 90.0, spread = 40.0, speed = 4 },
 ]
 
 # The forest: birdsong in the glades, wind on the lookout, the brook at the
@@ -1247,9 +1304,9 @@ volume = 0.5
 id = "ford"
 sound = { kind = "sound", id = "water" }
 tile = [42, 33]
-radius = 900
-inner = 200
-volume = 0.6
+radius = 1100
+inner = 260
+volume = 0.5
 
 [[audio.ambient]]
 id = "spring"
