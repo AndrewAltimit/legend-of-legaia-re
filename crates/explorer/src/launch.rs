@@ -318,6 +318,20 @@ pub fn suggested_out_dir(bin: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    /// Held by every test that writes a script and runs it. A `fork` on
+    /// another test thread while a script is still open for writing hands
+    /// the child that write descriptor until it `exec`s, and running the
+    /// script then fails with `ETXTBSY` ("Text file busy").
+    #[cfg(unix)]
+    static SCRIPT_SPAWN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[cfg(unix)]
+    fn script_spawn_lock() -> std::sync::MutexGuard<'static, ()> {
+        SCRIPT_SPAWN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn finds_the_engine_in_the_release_layout_or_a_build_folder() {
         use legaia_app_theme::release_layout::TOOLS_DIR;
@@ -368,6 +382,7 @@ mod tests {
     #[test]
     fn a_failing_game_reports_its_exit_and_log() {
         use std::os::unix::fs::PermissionsExt;
+        let _spawn = script_spawn_lock();
         let dir = tempfile::tempdir().unwrap();
         let engine = dir.path().join(engine_file_name());
         std::fs::write(
@@ -413,6 +428,7 @@ mod tests {
     #[test]
     fn a_startup_race_death_is_relaunched_once() {
         use std::os::unix::fs::PermissionsExt;
+        let _spawn = script_spawn_lock();
         let dir = tempfile::tempdir().unwrap();
         let engine = dir.path().join(engine_file_name());
         let data = dir.path().join("data");
