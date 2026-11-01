@@ -455,6 +455,63 @@ next drain, unless a start in that drain replaces it, as the poller reads the
 latest word. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
 
+### The swap takes a settle and a read
+
+The poller walks one stage per call, one call per game frame, through the
+table at `0x800108C8`:
+
+| Stage | Arm | Does |
+|---|---|---|
+| 0 | `0x800245F0` | wait for CD idle (`FUN_8003DE7C(1)`), arm the settle `gp+0x768 = 0x1E` (`0x8002460C`) |
+| 1 | `0x80024818` | wait for CD idle |
+| 2 | `0x8002461C` | unless bit 0: detach and close the field-BGM slot (`0x80024648..0x8002465C`); kick the payload read `FUN_8001FC00`; under `cdmode == 2` the settle becomes 60 (`0x800246A4`) |
+| 3 | `0x80024818` | wait for the read |
+| 4 | `0x800246B4` | wait for the settle to reach zero, set bit 3, stall while bit 0 is up and bit 4 is not, then clear bits 0 / 3 / 4 |
+| 5 | `0x80024778` | install the SEQ (`FUN_8001E54C`) |
+| 6 | `0x80024790` | unless bit 1: re-attach the slot (`FUN_80026478`); latch loaded = requested |
+
+The settle counts down by the frame step on every call from stage 0 on
+(`0x80024880..0x80024894`; under `cdmode == 2` by one, with a `VSync`), so a
+mid-scene start sounds at stage 6, the settle or the read, whichever is
+longer, plus two frames after the start. The two script arms that wait on
+the walk re-run their own PC (`0x801DEE4C`): sub-op 9 while a swap is in
+flight (`0x801E0238`, requested against loaded) and sub-op `0xA` until bit
+3 (`0x801E0288`). Sub-op 1 waits on nothing: it stores the word
+(`0x801E012C`) and the next poller call starts the walk.
+
+A scene's entry start does not take this time on screen. The field init
+calls the poller in a loop with no `VSync` until requested and loaded agree
+(`0x801D72D4..0x801D7320`), so the settle runs down in microseconds and the
+read is part of the load; the first field frame comes after the install.
+
+Measured on retail with
+[`autorun_bgm_swap_latency.lua`](../../scripts/pcsx-redux/autorun_bgm_swap_latency.lua),
+which makes sub-op 1's store into the track word from a field state and logs
+the poller every vsync (frame step 2 throughout):
+
+| State, word | Entry | Stages 0..2 | Stage 3 (read) | Stage 4 | Stage 6 (attach) | Playing |
+|---|---|---|---|---|---|---|
+| `retock_field_card_boot`, `2001` | 989, 78 sectors | +1..+5 | +6..+61 | +62 | +66 | +69 |
+| `town01_field_card_boot`, `2045` | 1033, 74 sectors | +2..+6 | +7..+62 | +63 | +67 | +69 |
+
+The old track's slot closes at stage 2, about six vsyncs in. The read, not
+the settle, holds the walk: stage 3 waits 56 vsyncs on both entries, so the
+settle has long run out when stage 4 is reached, and a new track is first
+heard a little over a second after the op.
+
+Engine side: `legaia_engine_system::sound_state::BgmSwapPoller` is the walk
+on the vsync clock, seated at `AudioState::bgm_swap`, with the measured
+stage-4 time as `World::BGM_SWAP_READ_VSYNCS` (62) and two game frames to
+the attach. An op-`0x35` sub-op 1
+or 9 that changes the word outside the field init's install slice starts it
+(the park sentinel and the same word do not), `World::tick_bgm_swap` runs it
+once a tick, and `FieldAudioHost::bgm_ready` holds sub-ops 9 and `0xA` as
+retail does. `SceneHost::route_bgm_events` tears the old track down at the
+start and holds the new one (`pending_bgm_install`) until
+`World::take_bgm_install_due` reports stage 6; a committed sub-op 9 select
+moves there at the commit. A field init ends the walk and attaches what it
+held, unless the entry starts another track.
+
 ### A door keeps its music only behind sub-op 6
 
 Every field init decides the field BGM on bit 2 (`FUN_801D6704`, PROT 0897;
@@ -3092,8 +3149,8 @@ word `2015`); the sweep counts those as one track.
 
 | Channel | Scores | Result |
 |---|---|---|
-| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 84 of 85 walkable states |
-| `playing` | that sequence is playing exactly when the engine's gate is open | 84 of 85 |
+| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 85 of 85 walkable states |
+| `playing` | that sequence is playing exactly when the engine's gate is open | 85 of 85 |
 | `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 80 of 80 |
 | `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 80 of 80 |
 | `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 19 of 20 |
@@ -3138,13 +3195,13 @@ counts the other channels'.
 The sweep found the sub-op 9 defect: the port started a cutscene's new track
 at the select where retail holds it to the commit
 ([`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track)),
-the two `chapter2_garmel` states catching retail inside that window. What it
-still reports:
+the two `chapter2_garmel` states catching retail inside that window. The
+swap walk ([above](#the-swap-takes-a-settle-and-a-read)) settles
+`kor5_post_436_organic`, captured between a commit and the install (flags
+`0x19`, no field-BGM source open, requested `1009` against loaded `1023`):
+the engine seeded there holds the committed track as retail's poller does.
+What it still reports:
 
-- **`kor5_post_436_organic`** - captured between a commit and the install
-  (flags `0x19`, no field-BGM source open, requested `1009` against loaded
-  `1023`): the poller attaches `2019` a call or two later; the engine has it
-  attached already.
 - **`tower_field_walk`** - the one-shot on voice 22 reads as cue `0x30`
   (inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 /
   6 and its note is 63, which is static row `0x30` (program 2, tone 3, note
@@ -3189,15 +3246,8 @@ still reports:
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)); the track it picks is
   checked by the sweep's `battle_track` channel.
-- **The swap poller's latency is not modelled.** Retail arms a 30-vsync
-  settle (`gp+0x768 = 0x1E` at `0x8002460C`; 60 in one mode,
-  `0x800246A4`) and a CD read between a start and the install, so a track
-  sounds half a second or more after its op; and the commit stalls the
-  *script* (restore-PC at `0x801E0288`) until that settle has passed. The
-  engine installs at once and never stalls, so a scene's track and a
-  cutscene's beats after a `0xA` start earlier than retail's.
-- **The sweep's open rows** ([above](#the-audio-state-sweep)) are a
-  capture instant and `tower`'s lift cue, which sounded on a contact
+- **The sweep's open row** ([above](#the-audio-state-sweep)) is
+  `tower`'s lift cue, which sounded on a contact
   before the capture: seeding it means resuming the lift's context mid-record (`+0xF4`) with its cue voice
   still keyed, which no seed does yet.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the

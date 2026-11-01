@@ -52,8 +52,8 @@ mod tests {
     }
 
     /// A mid-scene sub-op 1 runs the swap poller's walk: the track attaches
-    /// the settle plus stages 4..6 (two frames at the field step) later, and
-    /// the same word again is no change.
+    /// the read (longer than the settle) plus stages 4..6 (two frames at the
+    /// field step) later, and the same word again is no change.
     #[test]
     fn a_mid_scene_start_installs_after_the_poller_walk() {
         let mut w = World::new();
@@ -69,10 +69,8 @@ mod tests {
                 w.take_bgm_install_due()
             })
             .unwrap();
-        assert_eq!(
-            due,
-            legaia_engine_system::sound_state::BGM_SWAP_SETTLE_VSYNCS + 4
-        );
+        // Retail's measured walk: the attach 66 vsyncs after the store.
+        assert_eq!(due, 66);
         op35(&mut w, 2001, 1);
         assert!(!w.audio.bgm_swap_in_flight(), "the same word is no change");
     }
@@ -95,10 +93,7 @@ mod tests {
                 "nothing installs before the commit"
             );
         }
-        assert_eq!(
-            passes,
-            legaia_engine_system::sound_state::BGM_SWAP_SETTLE_VSYNCS
-        );
+        assert_eq!(passes, World::BGM_SWAP_READ_VSYNCS);
         let due = (1..=10u16)
             .find(|_| {
                 w.tick_bgm_swap(1);
