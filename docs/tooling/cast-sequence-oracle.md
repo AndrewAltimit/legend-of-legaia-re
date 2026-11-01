@@ -291,20 +291,33 @@ are **missing** (retail only) or **extra** (engine only). The channel's
 number is `2 * matched / (retail cues + engine cues)`; `id score` is the same
 over the id multisets alone, whatever the time.
 
-A missing cue is traced back with `--sfx-callers`. Zenoir (`0x86`) on
-`party_basic_attack_vs_gobu_gobu` missed ring `0x21C` on module phase 10's
-first pass: the router logged it as cue `0x80`, category `3`, from
-`0x80050B44`, the anim cue player `FUN_800508DC` - the victim's clip track.
-PROT 0908's arm 9 drops the **victim's** clip to entry `0`
-(`sb zero,0x1da(s6)` at `0x801F787C`, `s6` the latched victim), which the
-engine had applied to the creature. With the seat put right the cue still
-does not sound, and why is not traced yet; the anim cue walk
-(`World::step_actor_anim_cues`) re-arming on the victim's return to entry
-`0` is the first place to look. Static cue `0x0D`, late in the last
-module phase of every summon recorded there, comes through none of the four
-entries: an inline ring store, not yet located.
+A missing cue is traced back with `--sfx-callers`, which also write-watches
+the ring's id half (a `store` row is any store into `0x8007B6D8..DF`, `a0`
+its pc; the ager `FUN_8001698C`'s clears at `0x80016AF4` are among them),
+and with `seats.csv`, which both sides write: every seat's clip `+0x1D9`,
+staged byte `+0x1DA` and cue cursor `+0x1F6` per vsync / tick (the engine
+adds its reaction-channel entry). What the recordings on
+`party_basic_attack_vs_gobu_gobu` and the monster-cast states found:
 
-## Reading the report
+- **The defeat cue.** Static `0x0D`, late in every summon that kills, is
+  stored by the clip commit `FUN_8004AD80` itself (`li v1,0xd` / `sh` at
+  `0x8004B27C`, called from the natural-end commit `0x80047B54`): its
+  monster-death arm writes the cue into ring slot `ctx[+0x09]` with its own
+  cursor, once (behind `+0x1DC` bit 3, which the arm raises). The engine's
+  death arm now does the same (`World::finish_battle_reaction`).
+- **A reacting seat read as idle.** A slot-B module reads `+0x1D9` to skip a
+  seat already reacting; the engine's mirror read the action channel, where
+  a hit reaction never shows, so PROT 0904's sweep (Theeder) struck the same
+  seat every pass and its reaction cue sounded on each.
+- **Zenoir's opener.** Retail's arm 8 hit (`0x801F76CC`) takes the victim to
+  1 HP and stages its reaction, whose clip cue `0x80` (ring `0x21C`, the
+  router from `FUN_800508DC`) sounds on arm 10's first pass. The engine
+  runs PROT 0908's damage sites with no rolls and resolves the spell's
+  damage elsewhere, so the opener stages nothing and the cue never sounds.
+- **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
+  retail recording has a cue behind it.
+
+## Reading the report## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
 come:

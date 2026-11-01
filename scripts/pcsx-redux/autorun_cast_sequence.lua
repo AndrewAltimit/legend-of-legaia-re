@@ -41,6 +41,11 @@
 --                into the cue producers FUN_80035B50 / FUN_80035BD0, the
 --                battle router FUN_8004FE5C and the dispatcher FUN_8004FCC8,
 --                with a0, a1 and ra - who fired each sfx.csv cue.
+--                A `store` row is a write into the ring's ids
+--                (0x8007B6D8..DF): `a0` is the storing pc.
+--   seats.csv    per vsync from the cast, seats 0..7: clip +0x1D9, staged
+--                +0x1DA, cue-track cursor +0x1F6 (the anim cue walk
+--                FUN_800508DC's).
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -211,6 +216,28 @@ local caster_at_cast = -1
 -- the engine's inflight seed seats every combatant there at its dispatch, so
 -- an action retail ran before the cast (a monster that struck first and was
 -- not walked home) leaves the same stage.
+probe.cast_seats = {
+    csv = nil,
+    row = function(self, elapsed, actor_of)
+        if self.csv == nil then
+            self.csv = probe.csv_open(probe.out_path("seats.csv"),
+                "vsync,s0clip,s0stg,s0cue,s1clip,s1stg,s1cue,s2clip,s2stg,s2cue,s3clip,s3stg,s3cue," ..
+                "s4clip,s4stg,s4cue,s5clip,s5stg,s5cue,s6clip,s6stg,s6cue,s7clip,s7stg,s7cue")
+        end
+        local cols = {}
+        for k = 0, 7 do
+            local a = actor_of(k)
+            if a ~= nil then
+                cols[#cols + 1] = string.format("%d,%d,%d", probe.read_u8(a + 0x1D9) or 0,
+                    probe.read_u8(a + 0x1DA) or 0, probe.read_u8(a + 0x1F6) or 0)
+            else
+                cols[#cols + 1] = "-1,-1,-1"
+            end
+        end
+        self.csv:row("%d,%s", elapsed, table.concat(cols, ","))
+    end,
+}
+
 local function ground_pairs()
     local t = {}
     for s = 0, 7 do
@@ -284,6 +311,14 @@ probe.run({
                         tou32(r.GPR.n.a1), tou32(r.GPR.n.ra))
                 end)
             end
+            -- Every store into the ring's id half (four i16 slots): an
+            -- inline writer no entry above sees. `fn` is `store`, `a0` the
+            -- pc of the store, `a1` the value the slot holds after it.
+            probe.arm_breakpoint(0x8007B6D8, "Write", 8, "ringw", function()
+                local r = PCSX.getRegisters()
+                calls:row("%d,store,%d,%d,0x%08X", last_elapsed, tou32(r.pc),
+                    -1, tou32(r.GPR.n.ra))
+            end)
         end
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
@@ -455,6 +490,7 @@ probe.run({
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
+        if cast_seen then probe.cast_seats:row(elapsed, actor) end
         -- The cue ring's ready edges (see sfx.csv in the header).
         for i = 0, 3 do
             local id = s16(probe.cast_sfx.ring + i * 2)
@@ -510,6 +546,7 @@ probe.run({
         if body then body:close() end
         if cam then cam:close() end
         if probe.cast_sfx.csv then probe.cast_sfx.csv:close() end
+        if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
             fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\nground=%s\nparked=%d\n",

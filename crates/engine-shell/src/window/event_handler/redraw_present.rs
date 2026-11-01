@@ -597,6 +597,32 @@ impl PlayWindowApp {
                 a.move_state.world_z,
             );
         }
+        // `seats.csv` (no header): per tick, then per retail seat 0..7 the
+        // clip, staged byte and cue-track cursor (`+0x1D9` / `+0x1DA` /
+        // `+0x1F6`) and the reaction channel's entry - the engine half of the
+        // probe's file: a missing anim cue is read off it.
+        if let Ok(f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(rec.dir.join("seats.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            // A fourth column per seat: the reaction channel's entry (`-1`
+            // idle), where a staged hit reaction plays in the engine.
+            let mut cols = vec!["-1,-1,-1,-1".to_string(); 8];
+            for (i, a) in w.actors.iter().enumerate().take(pc + 5) {
+                if let Some(c) = cols.get_mut(seat_of(i)) {
+                    *c = format!(
+                        "{},{},{},{}",
+                        a.battle.current_anim,
+                        a.battle.queued_anim,
+                        a.battle_anim_cue_cursor,
+                        a.battle_reaction_entry.map_or(-1, i32::from)
+                    );
+                }
+            }
+            let _ = writeln!(f, "{tick},{}", cols.join(","));
+        }
         // A `--screenshot` child exits on its capture tick without reaching
         // the recorder's own end: keep the files whole on every tick.
         let _ = rec.meta.flush();
