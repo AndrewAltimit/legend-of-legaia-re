@@ -88,7 +88,7 @@
     <svg viewBox="0 0 860 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The turn pick over seats 0 to 6 with keys 1, 3, 9, 0, 4, 9, 0. The running maximum starts at seat 0. Seat 2's 9 beats it, so the tie list restarts as seat 2 and seat 2 is appended again when it equals itself. Seat 5's 9 ties and joins. The list is 2, 2, 5 and the draw is rand modulo 3, so seat 2 acts two times in three. A key of 0x8000 or more reads as negative once it is the maximum, so it never joins the list. When every key is spent the list holds every seat and the draw lands on a spent seat: the round ends.">
       <defs><marker id="brl-pick-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text x="20" y="22" class="dg-sub dg-start">seat and its unspent key, walked left to right</text>
-      <rect x="20" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="70" y="55" class="dg-label">seat 0</text><text x="70" y="73" class="dg-sub">key 1: start max</text>
+      <rect x="20" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="70" y="55" class="dg-label">seat 0</text><text x="70" y="73" class="dg-sub">1: start max</text>
       <rect x="140" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="190" y="55" class="dg-label">seat 1</text><text x="190" y="73" class="dg-sub">3: new max</text>
       <rect x="260" y="34" width="100" height="50" rx="4" class="dg-node-accent"/><text x="310" y="55" class="dg-label">seat 2</text><text x="310" y="73" class="dg-sub">9: new max</text>
       <rect x="380" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="430" y="55" class="dg-label">seat 3</text><text x="430" y="73" class="dg-sub">0</text>
@@ -195,10 +195,10 @@
       <rect x="20" y="20" width="220" height="56" rx="4" class="dg-node-accent"/><text x="130" y="43" class="dg-label">Gate</text><text x="130" y="61" class="dg-sub">r = rand % (1 + filled slots)</text>
       <rect x="20" y="120" width="220" height="56" rx="4" class="dg-node"/><text x="130" y="143" class="dg-label">r = 0: physical strike</text><text x="130" y="161" class="dg-sub">target rand % party seats</text>
       <rect x="300" y="20" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="43" class="dg-label">r &gt; 0: second roll k</text><text x="425" y="61" class="dg-sub">which tag-0x23 entry to start from</text>
-      <rect x="300" y="120" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="143" class="dg-label">Walk entries from index 2</text><text x="425" y="161" class="dg-sub">the k-th tag 0x23 matches, and every later one</text>
-      <rect x="610" y="120" width="230" height="56" rx="4" class="dg-node-warn"/><text x="725" y="143" class="dg-label">Pass fails</text><text x="725" y="161" class="dg-sub">empty / unaffordable slot, no patient</text>
+      <rect x="300" y="120" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="143" class="dg-label">Walk entries from index 2</text><text x="425" y="161" class="dg-sub">k-th tag 0x23 and every later one</text>
+      <rect x="610" y="120" width="230" height="56" rx="4" class="dg-node-warn"/><text x="725" y="143" class="dg-label">Pass fails</text><text x="725" y="161" class="dg-sub">empty slot, short MP, no patient</text>
       <rect x="300" y="220" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="243" class="dg-label">Flee checkpoint</text><text x="425" y="261" class="dg-sub">one roll per monster turn</text>
-      <rect x="610" y="220" width="230" height="56" rx="4" class="dg-node-ok"/><text x="725" y="243" class="dg-label">Per-monster switch</text><text x="725" y="261" class="dg-sub">scripted casts, then anti-repeat ring</text>
+      <rect x="610" y="220" width="230" height="56" rx="4" class="dg-node-ok"/><text x="725" y="243" class="dg-label">Per-monster switch</text><text x="725" y="261" class="dg-sub">scripted casts, anti-repeat ring</text>
       <path d="M130 76 L130 118" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
       <path d="M240 48 L298 48" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
       <path d="M425 76 L425 118" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
