@@ -74,6 +74,11 @@ impl World {
     pub fn release_field_init_voices(&mut self) {
         let keep = std::mem::take(&mut self.audio.keep_audio_across_field_init);
         self.audio.bgm_entry_latch = keep;
+        // The init drives the swap poller to completion in a loop with no
+        // vsync wait (`0x801D72D4..0x801D7320`): a walk in flight ends with
+        // the load, and the install slice's own start loads the same way.
+        self.audio.bgm_swap.cancel();
+        self.audio.bgm_field_init_open = true;
         if !keep {
             self.audio.sfx_voice_stops.extend(0x10..=0x17);
             self.pending_field_events.push(FieldEvent::Bgm {

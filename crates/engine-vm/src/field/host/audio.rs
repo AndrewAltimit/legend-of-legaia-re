@@ -22,6 +22,17 @@ pub trait FieldAudioHost {
         let _ = (text_id, sub_op);
     }
 
+    /// Whether op 0x35's `sub_op` runs on this pass. Two arms re-run their
+    /// own PC until the swap poller `FUN_800243F0` lets them through
+    /// (`0x801DEE4C`, the restore-entry-PC exit): sub-op 9 while a track
+    /// change is in flight (`_DAT_8007BAB8 != _DAT_8007BA9C`, `0x801E0238`)
+    /// and sub-op `0xA` until the load-settled bit 3 is up
+    /// (`0x801E0284..0x801E0288`). A host with no poller lets every pass run.
+    fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        let _ = sub_op;
+        true
+    }
+
     /// Op 0x4C outer-nibble-C sub-7 - run the item-effect applier.
     ///
     /// 4-byte instruction `[4C, 0xC7, b1, b2]`. Calls

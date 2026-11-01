@@ -223,6 +223,9 @@ impl World {
         // The modelled CD drive under a field XA one-shot: one vsync of its
         // read span elapses per world tick (`World::push_field_xa_cue`).
         self.tick_field_xa_busy();
+        // The BGM swap poller's clock (`FUN_800243F0`, once a game frame,
+        // its settle and install counted in vsyncs).
+        self.tick_bgm_swap(self.clock.display_frame_step.clamp(1, 255));
         // Retail's frame-begin driver services the timed sound-source
         // auto-release before anything else in the frame (`FUN_800267FC`,
         // called at `0x800169FC`). Its accumulator advances by the frame step,

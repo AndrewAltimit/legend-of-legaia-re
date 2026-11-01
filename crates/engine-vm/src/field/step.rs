@@ -304,6 +304,9 @@ pub fn step<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let text_id = u16::from_le_bytes([lo, hi]);
+            if !host.bgm_ready(sub_op) {
+                return StepResult::Halt { final_pc: pc };
+            }
             host.bgm(text_id, sub_op);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,

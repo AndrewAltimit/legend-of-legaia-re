@@ -210,6 +210,21 @@ pub struct AudioState {
     /// [`crate::world::World::release_field_init_voices`] when it consumes
     /// bit 2; ended by the first system-script slice after the entry.
     pub(crate) bgm_entry_latch: bool,
+    /// The field init's script-install slice is open, whatever bit 2 holds:
+    /// a start the entry script makes there is loaded by the init's own run
+    /// of the swap poller to completion (`0x801D72D4..0x801D7320`), before
+    /// the scene's first frame, so it does not run [`Self::bgm_swap`]'s
+    /// clock. Raised by [`crate::world::World::release_field_init_voices`],
+    /// ended with [`Self::bgm_entry_latch`].
+    pub(crate) bgm_field_init_open: bool,
+    /// The swap poller `FUN_800243F0`'s clock between a mid-scene start and
+    /// its install ([`legaia_engine_system::sound_state::BgmSwapPoller`]):
+    /// armed by an op-`0x35` sub-op `1` / `9` that changes the track word
+    /// outside the field init, ticked once a vsync by the world tick.
+    pub(crate) bgm_swap: legaia_engine_system::sound_state::BgmSwapPoller,
+    /// The poller's stage 6 ran: the host attaches the held track
+    /// ([`crate::world::World::take_bgm_install_due`]).
+    pub(crate) bgm_install_due: bool,
     /// The five `gp` cells retail's **arm** half writes alongside
     /// [`crate::world::AudioState::sound_release`] (`gp+0x80C`/`0x810`), latched by
     /// [`crate::world::World::arm_sound_release`]. `None` until the field VM's BGM op
@@ -298,6 +313,13 @@ impl AudioState {
         self.start_pending_commit = on;
     }
 
+    /// A mid-scene track change is between its start and its install
+    /// ([`Self::bgm_swap`]): the BGM router holds the incoming track until
+    /// [`crate::world::World::take_bgm_install_due`].
+    pub fn bgm_swap_in_flight(&self) -> bool {
+        self.bgm_swap.in_flight()
+    }
+
     /// Whether the field script holds the BGM slot paused (sound-flags bit
     /// 1; see the field's doc).
     pub fn bgm_script_paused(&self) -> bool {
@@ -332,6 +354,9 @@ impl AudioState {
             bgm_script_paused: false,
             keep_audio_across_field_init: false,
             bgm_entry_latch: false,
+            bgm_field_init_open: false,
+            bgm_swap: legaia_engine_system::sound_state::BgmSwapPoller::default(),
+            bgm_install_due: false,
             sound_arm: None,
             levels: legaia_save::card::RetailAudioLevels::COLD_RESET,
             field_duck_pct: None,

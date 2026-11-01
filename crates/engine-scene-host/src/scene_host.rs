@@ -388,6 +388,11 @@ pub struct SceneHost {
     /// one only on the sub-op `0xA` release-ack or once the MAN loader ends
     /// the window ([`SceneHost::route_bgm_events`]).
     pub(crate) pending_bgm_swap: Option<(u16, std::sync::Arc<Vec<u8>>)>,
+    /// A mid-scene start the swap poller is still walking toward its
+    /// install: the id and its `music_01` entry, attached when the world's
+    /// clock reaches stage 6
+    /// ([`legaia_engine_core::world::World::take_bgm_install_due`]).
+    pub(crate) pending_bgm_install: Option<(u16, std::sync::Arc<Vec<u8>>)>,
     /// A start the swap poller latched without loading
     /// ([`legaia_engine_core::world::BGM_SUB_OP_ENGINE_LATCH`]): retail's
     /// loaded-index barrier `_DAT_8007BA9C` names this id while the slot
