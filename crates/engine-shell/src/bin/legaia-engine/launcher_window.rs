@@ -993,7 +993,8 @@ impl LauncherApp {
                 Item::Quit => "Quit",
                 Item::Opt(_) => "",
             };
-            c.text_centered(r, label, ink);
+            let label = fit_button_label(c, label, r.w);
+            c.text_centered(r, &label, ink);
         }
 
         // Left column, below the buttons: help for the focused control.
@@ -1964,6 +1965,31 @@ const BUTTON_ROWS: i32 = BUTTONS.len() as i32 - 1;
 
 /// Button `i`'s rect: one full-width row each, except the last two, which
 /// split the bottom row.
+/// A button label that fits a button `w` stage pixels wide, with a margin
+/// on each side: the label itself, else its short form, else the label
+/// ellipsized. The placeholder font the screen letters in before a disc is
+/// chosen is wider than the disc's, and "Saves folder" ran past the edges
+/// of its half-width button on a first run.
+fn fit_button_label(c: &Canvas, label: &str, w: i32) -> String {
+    let room = w - 2 * BUTTON_LABEL_MARGIN;
+    if c.width(label) <= room {
+        return label.to_string();
+    }
+    let short = match label {
+        "Saves folder" => Some("Saves"),
+        "Back to options" => Some("Options"),
+        "Expansion pack..." => Some("Expansion..."),
+        _ => None,
+    };
+    match short {
+        Some(s) if c.width(s) <= room => s.to_string(),
+        _ => c.ellipsize_right(label, room),
+    }
+}
+
+/// Stage pixels kept clear between a button's edge and its label.
+const BUTTON_LABEL_MARGIN: i32 = 3;
+
 fn button_rect(i: usize) -> Rect {
     let last_row = BUTTON_ROWS - 1;
     let y = COLUMNS_Y + (i as i32).min(last_row) * BUTTON_PITCH;
@@ -2486,6 +2512,38 @@ mod tests {
             }
         }
         assert!(cut.is_empty(), "the help box cuts off:\n{}", cut.join("\n"));
+    }
+
+    /// Every button label fits its button, in both fonts, in each of its
+    /// states (no disc / disc, options / controls panel, a pack loaded).
+    #[test]
+    fn every_button_label_fits_its_button() {
+        let labels = [
+            "Play",
+            "Play online",
+            "Choose disc...",
+            "Change disc...",
+            "Controls",
+            "Back to options",
+            "Expansion pack...",
+            "Pack: has errors",
+            "Saves folder",
+            "Quit",
+        ];
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            for (i, _) in BUTTONS.iter().enumerate() {
+                let r = button_rect(i);
+                for label in labels {
+                    let shown = fit_button_label(&c, label, r.w);
+                    assert!(
+                        c.width(&shown) <= r.w - 2 * BUTTON_LABEL_MARGIN,
+                        "{name}: {label:?} as {shown:?} is wider than button {i} ({} px)",
+                        r.w
+                    );
+                }
+            }
+        }
     }
 
     /// The controls table and its notes stay inside the panel, in both fonts.
