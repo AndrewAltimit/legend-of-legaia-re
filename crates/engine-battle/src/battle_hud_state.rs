@@ -112,6 +112,11 @@ pub struct BattleHud {
     combo_actor: Option<u8>,
     /// Hits land without opening the cluster ([`Self::hold_combo`]).
     combo_held: bool,
+    /// The action in flight is a melee string (armed [`ComboStyle::HitTotal`]):
+    /// its hits count on the cluster without opening it, and only the hit
+    /// that lands the target's accumulated total opens it
+    /// ([`Self::land_combo_total`]).
+    combo_melee: bool,
 }
 
 /// The combo counter cluster's running values.
@@ -172,6 +177,7 @@ impl BattleHud {
             combo_style: None,
             combo_actor: None,
             combo_held: false,
+            combo_melee: false,
         }
     }
 
@@ -294,23 +300,17 @@ impl BattleHud {
         // flight: one more `HIT`, its amount into `TOTAL` / `DAMAGE`. Heals
         // and status tags carry no numeral on the cluster.
         //
-        // Every landed hit also re-opens the cluster from its off-screen
-        // seat. The melee kernel's HP write raises `DAT_8007B64C = 0x78`
-        // beside the hit's damage in `DAT_8007BD14` (`FUN_801EC3E4`,
-        // `0x801EEA64..0x801EEA78`), and the readout pass the action SM's
-        // prologue calls every pass (`FUN_801E805C`, from `0x801E2A70`)
-        // answers a raised flag with `FUN_801D8DE8(0x50, 0)` and clears it
-        // (`0x801E808C..0x801E80B0`): mode `0` spawns placement record 80 at
-        // seat A and registers a fresh glide to seat B
-        // (`0x801D92E8..0x801D93D8`), so the slide starts over.
-        // `battle_melee_hit_spark` holds the third hit's numeral `15` with the
-        // cluster (`3 HIT`, `TOTAL 29`) twelve vsyncs into its slide.
+        // A cast's hit opens (and re-opens) the cluster as it lands: the
+        // finisher `FUN_801DDB30` raises the readout flag `DAT_8007B64C`
+        // per hit (`0x801DE39C` / `0x801DE428`). A melee hit does not
+        // ([`Self::land_combo_total`]): it is counted here and the cluster
+        // stays off the screen until the hit that lands the total.
         if !popup.is_heal
             && popup.status.is_none()
             && popup.amount > 0
             && let Some(style) = self.combo_style
         {
-            let held = self.combo_held;
+            let held = self.combo_held || self.combo_melee;
             let c = self.combo.get_or_insert(ComboReadout {
                 style,
                 hits: 0,
@@ -357,6 +357,33 @@ impl BattleHud {
         self.combo_held = held;
     }
 
+    /// The melee kernel landed `attacker`'s accumulated total on its
+    /// target's live HP: open the cluster (or start its slide over).
+    ///
+    /// The kernel raises the readout flag `DAT_8007B64C = 0x78` and stores
+    /// the total in `DAT_8007BD14` inside the arm that writes the total to
+    /// `+0x14C` (`0x801EEA10..0x801EEA78`), its only store to the flag; a
+    /// hit the apply mode leaves banked writes neither. The readout pass the
+    /// action SM's prologue calls every pass (`FUN_801E805C`, from
+    /// `0x801E2A70`) answers a raised flag with `FUN_801D8DE8(0x50, 0)` and
+    /// clears it (`0x801E808C..0x801E80B0`): mode `0` spawns placement
+    /// record 80 at seat A and registers a fresh glide to seat B
+    /// (`0x801D92E8..0x801D93D8`), so the slide starts over.
+    /// `battle_melee_hit_spark` holds the cluster (`3 HIT`, `TOTAL 29`)
+    /// twelve vsyncs into its slide on the Somersault's parked last beat;
+    /// `minigame_muscle_dome_retail_skeleton_hyper_arts` holds three swings'
+    /// `430` banked on the Skeleton (`+0x00`), full HP, `DAT_8007BD14 = 0`
+    /// and no cluster as the Hyper Art commits.
+    pub fn land_combo_total(&mut self, attacker: u8) {
+        if self.combo_actor != Some(attacker) || self.combo_held {
+            return;
+        }
+        if let Some(c) = self.combo.as_mut() {
+            c.hidden = false;
+            c.age = 0;
+        }
+    }
+
     /// Arm (or tear down) the combo cluster for the action the world is in.
     ///
     /// `style` is [`battle_combo_style`]'s answer this frame and `actor` the
@@ -370,6 +397,7 @@ impl BattleHud {
         }
         self.combo_style = style;
         self.combo_actor = owner;
+        self.combo_melee = style == Some(ComboStyle::HitTotal);
     }
 
     /// Close the cluster in the action SM's `0x51` fade-down, as retail

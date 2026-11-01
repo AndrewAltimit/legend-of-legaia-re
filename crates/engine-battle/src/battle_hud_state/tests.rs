@@ -532,19 +532,35 @@ fn the_combo_cluster_counts_landed_damage_of_one_action_and_drops_with_it() {
     h.push_heal(0, 20);
     let c = h.combo.expect("cluster armed by the first hit");
     assert_eq!((c.style, c.hits, c.total), (ComboStyle::HitTotal, 2, 29));
+    // A melee hit is banked: counted, not on the screen until the hit that
+    // lands the total (the kernel's only flag store, `0x801EEA68`).
+    assert!(c.hidden);
+    h.land_combo_total(1);
+    assert!(
+        h.combo.unwrap().hidden,
+        "another actor's total opens nothing"
+    );
+    h.tick();
+    h.land_combo_total(0);
+    let c = h.combo.unwrap();
+    assert!(!c.hidden);
     assert_eq!(c.age, 0);
     h.tick();
     assert_eq!(h.combo.unwrap().age, 1);
-    // The next landed hit re-opens the slide from the off-screen seat
-    // (`FUN_801E805C`'s `FUN_801D8DE8(0x50, 0)` on the melee kernel's
-    // flag), keeping the count.
     for _ in 0..20 {
         h.tick();
     }
     assert!(h.combo.unwrap().settled());
+    // A banked hit after the open counts without restarting the slide ...
     h.push_damage(3, 6);
     let c = h.combo.unwrap();
-    assert_eq!((c.hits, c.total, c.age), (3, 35, 0));
+    assert_eq!((c.hits, c.total), (3, 35));
+    assert!(c.settled() && !c.hidden);
+    // ... and the next landed total starts it over from the off-screen seat
+    // (`FUN_801E805C`'s `FUN_801D8DE8(0x50, 0)` on the flag).
+    h.land_combo_total(0);
+    let c = h.combo.unwrap();
+    assert_eq!(c.age, 0);
     assert!(!c.settled());
     // The `0x51` teardown slides it back out over sixteen frames, then
     // drops it; `0x52` lies past the teardown.
