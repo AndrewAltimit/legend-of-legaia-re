@@ -37,6 +37,10 @@
 --                it, so the edge into that condition is one cue. `drain`
 --                is the drainer's own gate (0x8007BABC == 0x8007BAA0,
 --                0x80016BC0..0x80016BD4).
+--   sfxcall.csv  with LEGAIA_SFX_CALLERS=1 (breakpoint core): every call
+--                into the cue producers FUN_80035B50 / FUN_80035BD0, the
+--                battle router FUN_8004FE5C and the dispatcher FUN_8004FCC8,
+--                with a0, a1 and ra - who fired each sfx.csv cue.
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -266,6 +270,20 @@ probe.run({
                 "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
                 "s0clip,s0stg,s0rate,s0cur,s0x,s0z,s0tot,s1clip,s1stg,s1rate,s1cur,s1x,s1z,s1tot," ..
                 "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp")
+        end
+        if probe.getenv_num("LEGAIA_SFX_CALLERS", 0) ~= 0 then
+            -- Who fills the cue ring: the producer FUN_80035B50 / its
+            -- replace FUN_80035BD0, the battle router FUN_8004FE5C and the
+            -- dispatcher FUN_8004FCC8, each with a0 / a1 and ra.
+            local calls = probe.csv_open(probe.out_path("sfxcall.csv"), "vsync,fn,a0,a1,ra")
+            for _, f in ipairs({ { 0x80035B50, "push" }, { 0x80035BD0, "replace" },
+                                  { 0x8004FE5C, "router" }, { 0x8004FCC8, "dispatch" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, f[2], function()
+                    local r = PCSX.getRegisters()
+                    calls:row("%d,%s,%d,%d,0x%08X", last_elapsed, f[2], tou32(r.GPR.n.a0),
+                        tou32(r.GPR.n.a1), tou32(r.GPR.n.ra))
+                end)
+            end
         end
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
