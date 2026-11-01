@@ -11,7 +11,10 @@
  * 1. pre-pass - the opaque draws again, through the scene program itself
  *    with `u_gbuf` set (same vertex stage, same discards; webgl-shaders.js
  *    `gbuf_word`), into this pass's RGBA32F G-buffer: `rgb` the view-space
- *    face normal, `a` the linear view depth (clip w);
+ *    face normal, `a` the linear view depth (clip w). Actor draws (the
+ *    `noOccl` placements: the player, NPCs, battle bodies) write their depth
+ *    with a zero normal, so they occlude the ground around them but take no
+ *    AO themselves, and the blur and the upsample leave their texels out;
  * 2. AO - the Alchemy estimator over a golden-angle spiral (full resolution
  *    up to a 540-row drawing buffer, half above), times the contact-shadow
  *    march toward enhanced lighting's key light;
@@ -121,6 +124,13 @@ float contact_from_hit(float hit, float ndl, float strength) {
   return 1.0 - strength * clamp(hit, 0.0, 1.0) * facing;
 }
 
+/* A G-buffer word from an actor draw: a surface with depth (it occludes)
+ * and a zero normal (it receives no AO). Every real surface writes a unit
+ * normal. */
+bool ssao_is_actor(vec4 g) {
+  return g.w > 0.0 && dot(g.xyz, g.xyz) < 0.25;
+}
+
 ivec2 gbuf_dims() { return textureSize(u_gbuf, 0); }
 ivec2 ao_dims() { return textureSize(u_ao, 0); }
 
@@ -158,7 +168,7 @@ float contact_shadow(vec3 p, vec3 n, float s) {
 void main() {
   ivec2 c = texel_pixel(ivec2(gl_FragCoord.xy));
   vec4 g = texelFetch(u_gbuf, c, 0);
-  if (g.w <= 0.0) { o_color = vec4(1.0); return; }
+  if (g.w <= 0.0 || ssao_is_actor(g)) { o_color = vec4(1.0); return; }
   vec2 pc = vec2(c) + vec2(0.5);
   vec3 p = ssao_view_pos(pc, g.w);
   float r = radius_px(p.z);
@@ -186,7 +196,7 @@ void main() {
   ivec2 t = ivec2(gl_FragCoord.xy);
   vec4 g0 = texelFetch(u_gbuf, texel_pixel(t), 0);
   float a0 = texelFetch(u_ao, t, 0).r;
-  if (g0.w <= 0.0) { o_color = vec4(a0); return; }
+  if (g0.w <= 0.0 || ssao_is_actor(g0)) { o_color = vec4(a0); return; }
   ivec2 axis = ivec2(u_pass_info.xy);
   ivec2 hi = ao_dims() - ivec2(1);
   int taps = int(u_p2.x);
@@ -196,7 +206,9 @@ void main() {
     if (k == 0) continue;
     ivec2 tt = clamp(t + axis * k, ivec2(0), hi);
     vec4 g = texelFetch(u_gbuf, texel_pixel(tt), 0);
-    float w = blur_weight(float(k), g0.w, g.w, g0.xyz, g.xyz);
+    /* An actor texel holds no AO: the ground beside a character's feet
+     * averages only its own kind. */
+    float w = ssao_is_actor(g) ? 0.0 : blur_weight(float(k), g0.w, g.w, g0.xyz, g.xyz);
     sum = sum + texelFetch(u_ao, tt, 0).r * w;
     wsum = wsum + w;
   }
@@ -222,7 +234,8 @@ float ao_at(ivec2 px, vec4 g) {
     float bx = o.x == 1 ? fr.x : 1.0 - fr.x;
     float by = o.y == 1 ? fr.y : 1.0 - fr.y;
     vec4 gt = texelFetch(u_gbuf, texel_pixel(t), 0);
-    float w = bx * by * blur_weight(0.0, g.w, gt.w, g.xyz, gt.xyz) + 1e-5 * bx * by;
+    float w = (ssao_is_actor(gt) ? 0.0 : bx * by * blur_weight(0.0, g.w, gt.w, g.xyz, gt.xyz))
+      + 1e-5 * bx * by;
     sum = sum + texelFetch(u_ao, t, 0).r * w;
     wsum = wsum + w;
   }
@@ -232,7 +245,7 @@ void main() {
   ivec2 px = ivec2(gl_FragCoord.xy);
   vec4 g = texelFetch(u_gbuf, px, 0);
   float a = 1.0;
-  if (g.w > 0.0) a = ao_at(px, g);
+  if (g.w > 0.0 && !ssao_is_actor(g)) a = ao_at(px, g);
   o_color = vec4(a, a, a, 1.0);
 }`;
 

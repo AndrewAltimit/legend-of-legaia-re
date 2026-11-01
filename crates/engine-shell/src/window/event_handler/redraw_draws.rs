@@ -151,6 +151,11 @@ impl<'m> DrawCtx<'_, 'm> {
         // Per-draw NCLIP words (`Renderer::set_draw_nclip`): the battle
         // bodies' single-sided rule over the battle pass's both-sided one.
 
+        // The actor-draw watermark (`Renderer::set_occlusion_env_draws`)
+        // starts each frame at every draw being environment; the field,
+        // battle and world-map branches lower it where their actors begin.
+        // Besides the occlusion fade it is what keeps SSAO off actor pixels.
+        self.r.set_occlusion_env_draws(usize::MAX, usize::MAX);
         let effect_clips = app.session.host.world.object_effect_clips();
         let cues = FrameCues {
             player_tint_cue,
@@ -248,6 +253,9 @@ impl<'m> DrawCtx<'_, 'm> {
             let in_battle = app.session.host.world.mode == SceneMode::Battle;
             if in_battle {
                 self.push_battle_backdrop(&mut out);
+                // Everything after the backdrop is a battle body.
+                self.r
+                    .set_occlusion_env_draws(out.draws.len(), out.color_draws.len());
             } else {
                 self.push_field_env(&mut out, &cues);
             }

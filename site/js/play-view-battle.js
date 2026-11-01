@@ -377,6 +377,9 @@
               nearZ: -1, farZ: 0, maxIr0: cursor[c + 4],
             }
             : null,
+          /* A battle body is an actor draw: no ambient occlusion on its own
+           * pixels (the native watermark after the backdrop). */
+          noOccl: true,
         });
         if (roll) {
           /* Retail's Rz (glam's from_rotation_z), nearest the raw vertices. */

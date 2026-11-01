@@ -196,6 +196,10 @@ impl<'m> DrawCtx<'_, 'm> {
         // the field branch. Hidden while a cutscene timeline owns
         // the map (the opening fly-in shows the bare continent) -
         // the same gate the marker overlay uses.
+        // Everything after the landmarks is the leader: an actor draw
+        // (no SSAO on it, as on the field).
+        self.r
+            .set_occlusion_env_draws(draws.len(), color_draws.len());
         if !app.session.host.world.cutscene_timeline_active() {
             let w = &app.session.host.world;
             let player = w.player_actor_slot.and_then(|pslot| {

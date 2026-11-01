@@ -13,7 +13,11 @@
 //!    (clip `w`). The fragment entries repeat the opaque entries' discards
 //!    (effect clip, NCLIP, double-sided copies, the occlusion fade's screen
 //!    door, transparent texels, the STP texels a semi prim defers), so the
-//!    G-buffer covers exactly the opaque fragments the frame shows.
+//!    G-buffer covers exactly the opaque fragments the frame shows. Actor
+//!    draws (`flags[2] == 0`, the [`Renderer::set_occlusion_env_draws`]
+//!    watermark: the player, NPCs, battle bodies) write their depth with a
+//!    zero normal: they occlude the ground around them but receive no AO,
+//!    which on a character's own folds reads as shadows across its face.
 //!    Normals are flat face normals from the derivatives of the
 //!    reconstructed view position - the TMDs author normals only on their
 //!    lit rows, and the depth tricks that keep retail's draw order
@@ -45,6 +49,13 @@ const AO_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R8Unorm;
 /// reconstruction. Shared by the pre-pass entries (at group 3) and the
 /// AO / blur / apply passes (at group 0).
 pub(crate) const SSAO_FRAME_WGSL: &str = r#"
+// A G-buffer word from an actor draw: a surface with depth (it occludes)
+// and a zero normal (it receives no AO). Every real surface writes a unit
+// normal.
+fn ssao_is_actor(g: vec4<f32>) -> bool {
+    return g.w > 0.0 && dot(g.xyz, g.xyz) < 0.25;
+}
+
 struct SsaoFrame {
     // (kx, ky, kw, 0): `legaia_render_kernels::ssao::view_scale`.
     view_k: vec4<f32>,
@@ -86,6 +97,13 @@ const SSAO_PREPASS_COMMON_WGSL: &str = r#"
 
 fn ssao_gbuffer_word(frag: vec4<f32>) -> vec4<f32> {
     let w = 1.0 / max(frag.w, 1e-8);
+    // An actor draw (`flags[2] == 0`: the player, NPCs, battle bodies)
+    // writes the receiver-less word: its depth, so it still occludes the
+    // ground around it, and a zero normal, which the passes read as "no
+    // AO on this pixel" (`ssao_is_actor`).
+    if (u.flags.z < 0.5) {
+        return vec4<f32>(0.0, 0.0, 0.0, w);
+    }
     let p = ssao_view_pos(ssao_frame, frag.xy, w);
     var n = cross(dpdx(p), dpdy(p));
     let len = length(n);
@@ -280,7 +298,7 @@ fn texel_pixel(t: vec2<i32>) -> vec2<i32> {
 fn fs_ao(in: VOut) -> @location(0) vec4<f32> {
     let c = texel_pixel(vec2<i32>(in.pos.xy));
     let g = textureLoad(t_gbuf, c, 0);
-    if (g.w <= 0.0) {
+    if (g.w <= 0.0 || ssao_is_actor(g)) {
         return vec4<f32>(1.0);
     }
     let pc = vec2<f32>(c) + vec2<f32>(0.5);
@@ -343,7 +361,7 @@ fn fs_blur(in: VOut) -> @location(0) vec4<f32> {
     let t = vec2<i32>(in.pos.xy);
     let g0 = textureLoad(t_gbuf, texel_pixel(t), 0);
     let a0 = textureLoad(t_ao, t, 0).r;
-    if (g0.w <= 0.0) {
+    if (g0.w <= 0.0 || ssao_is_actor(g0)) {
         return vec4<f32>(a0);
     }
     let axis = vec2<i32>(f.pass_info.xy);
@@ -357,7 +375,9 @@ fn fs_blur(in: VOut) -> @location(0) vec4<f32> {
         }
         let tt = clamp(t + axis * k, vec2<i32>(0), hi);
         let g = textureLoad(t_gbuf, texel_pixel(tt), 0);
-        let w = blur_weight(f32(k), g0.w, g.w, g0.xyz, g.xyz);
+        // An actor texel holds no AO: the ground beside a character's feet
+        // averages only its own kind.
+        let w = select(blur_weight(f32(k), g0.w, g.w, g0.xyz, g.xyz), 0.0, ssao_is_actor(g));
         sum = sum + textureLoad(t_ao, tt, 0).r * w;
         wsum = wsum + w;
     }
@@ -384,7 +404,8 @@ fn ao_at(px: vec2<i32>, g: vec4<f32>) -> f32 {
         let bx = select(1.0 - fr.x, fr.x, o.x == 1);
         let by = select(1.0 - fr.y, fr.y, o.y == 1);
         let gt = textureLoad(t_gbuf, texel_pixel(t), 0);
-        let w = bx * by * blur_weight(0.0, g.w, gt.w, g.xyz, gt.xyz) + 1e-5 * bx * by;
+        let w = select(bx * by * blur_weight(0.0, g.w, gt.w, g.xyz, gt.xyz), 0.0, ssao_is_actor(gt))
+            + 1e-5 * bx * by;
         sum = sum + textureLoad(t_ao, t, 0).r * w;
         wsum = wsum + w;
     }
@@ -393,13 +414,13 @@ fn ao_at(px: vec2<i32>, g: vec4<f32>) -> f32 {
 
 // Apply: the multiplier the blend state multiplies the framebuffer by
 // (`dst * src`). Pixels the pre-pass left empty (sky, backdrops, the
-// letterbox) take 1.
+// letterbox) and actor pixels take 1.
 @fragment
 fn fs_apply(in: VOut) -> @location(0) vec4<f32> {
     let px = vec2<i32>(in.pos.xy);
     let g = textureLoad(t_gbuf, px, 0);
     var a = 1.0;
-    if (g.w > 0.0) {
+    if (g.w > 0.0 && !ssao_is_actor(g)) {
         a = ao_at(px, g);
     }
     return vec4<f32>(a, a, a, 1.0);
@@ -1026,6 +1047,29 @@ mod tests {
             prepass_color_source().starts_with(&compose_scene_lit_shader(COLOR_MESH_SHADER_SRC))
         );
         {}
+    }
+
+    /// Actor draws receive no AO but still occlude: the pre-pass word of an
+    /// actor slot (`flags[2] == 0`) keeps its depth and zeroes its normal,
+    /// and every pass that reads a G-buffer word as a receiver - the AO
+    /// centre, the blur centre and taps, the upsample taps, the apply -
+    /// asks `ssao_is_actor` first. The occluder reads (the AO samples, the
+    /// contact march) take only the depth, so a character still shades the
+    /// ground at its feet.
+    #[test]
+    fn actor_pixels_occlude_but_receive_no_ao() {
+        assert!(SSAO_PREPASS_COMMON_WGSL.contains("if (u.flags.z < 0.5)"));
+        assert!(SSAO_PREPASS_COMMON_WGSL.contains("return vec4<f32>(0.0, 0.0, 0.0, w);"));
+        assert!(SSAO_FRAME_WGSL.contains("fn ssao_is_actor(g: vec4<f32>) -> bool"));
+        for gate in [
+            "if (g.w <= 0.0 || ssao_is_actor(g))",
+            "if (g0.w <= 0.0 || ssao_is_actor(g0))",
+            "0.0, ssao_is_actor(g));",
+            "0.0, ssao_is_actor(gt))",
+            "if (g.w > 0.0 && !ssao_is_actor(g))",
+        ] {
+            assert!(SSAO_PASS_WGSL.contains(gate), "passes lack {gate}");
+        }
     }
 
     /// The pre-pass entries keep the opaque entries' discards: every

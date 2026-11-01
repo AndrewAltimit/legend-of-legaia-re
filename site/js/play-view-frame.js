@@ -478,6 +478,9 @@
             meshId: TILE_MESH_BASE + slot,
             x: tb[i + 1], y: -tb[i + 2], z: tb[i + 3],
             rotY: 0, scale: tb[i + 4],
+            /* A tile actor: an actor draw, as natively (after the
+             * watermark) - no occlusion fade, no ambient occlusion. */
+            noOccl: true,
           });
         }
       }

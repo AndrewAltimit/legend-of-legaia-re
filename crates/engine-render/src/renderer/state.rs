@@ -590,6 +590,10 @@ impl Renderer {
     /// OCCL_DEPTH_MARGIN`] stay small enough that a wall hugging the
     /// character still opens up - the player mesh is protected by the
     /// watermark, not by depth slack.
+    ///
+    /// The same watermark keeps SSAO off actor pixels: the pre-pass writes
+    /// an actor slot's depth with a zero normal, so the character still
+    /// occludes the ground around it but receives no AO itself.
     pub fn set_occlusion_env_draws(&self, textured: usize, color: usize) {
         self.occl_env_counts.set((textured, color));
     }

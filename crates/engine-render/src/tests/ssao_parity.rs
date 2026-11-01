@@ -272,3 +272,23 @@ fn the_page_glsl_helpers_match_the_kernel() {
     );
     contact_cases(&mut m, &p);
 }
+
+/// The page's twin of `actor_pixels_occlude_but_receive_no_ao`: an actor
+/// placement (`noOccl`, `u_occl_allow == 0`) writes its depth with a zero
+/// normal, and every receiver read asks `ssao_is_actor` first.
+#[test]
+fn the_page_keeps_actor_pixels_free_of_ao() {
+    let shaders = site_js("webgl-shaders.js");
+    assert!(shaders.contains("if (u_occl_allow == 0) return vec4(0.0, 0.0, 0.0, w);"));
+    let page = site_js("webgl-ssao.js");
+    for gate in [
+        "bool ssao_is_actor(vec4 g)",
+        "if (g.w <= 0.0 || ssao_is_actor(g))",
+        "if (g0.w <= 0.0 || ssao_is_actor(g0))",
+        "ssao_is_actor(g) ? 0.0 :",
+        "ssao_is_actor(gt) ? 0.0 :",
+        "if (g.w > 0.0 && !ssao_is_actor(g))",
+    ] {
+        assert!(page.contains(gate), "webgl-ssao.js lacks {gate}");
+    }
+}

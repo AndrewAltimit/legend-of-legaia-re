@@ -473,6 +473,24 @@ pre-pass exists only to feed the screen-space pass:
    darken; pixels the pre-pass left empty (sky, backdrops, the letterbox)
    take `1`.
 
+**Characters receive none.** On a character mesh the estimator reads the
+mesh's own folds - an arm against the torso, a chin over the neck - as
+crevices and paints shadows across faces, so actor draws take no AO. The
+pre-pass knows a draw is an actor by the draw watermark the occlusion fade
+already reads (`Renderer::set_occlusion_env_draws`, `MeshUniforms.flags[2]
+== 0`): the player, NPCs, tile actors and spawned meshes on the field and
+on expansion maps, the leader on the world map, every body after the
+backdrop in battle. The play window restarts the watermark each frame at
+"all environment" and lowers it where each mode's actors begin. An actor
+fragment writes its depth with a zero normal (`ssao_is_actor`), so it
+still occludes - the ground under a character's feet keeps its contact
+shading and contact shadow - while the AO pass leaves its own pixels at
+`1`, the blur and the half-resolution upsample give its texels no weight
+(the ground beside a foot averages only ground), and the apply leaves its
+pixels untouched. Static world geometry and props keep their AO. The
+browser twin marks the same draws by its `noOccl` placements
+(`u_occl_allow == 0`).
+
 **Normals.** The TMDs author normals only on their lit rows, so every
 fragment takes the flat face normal: the cross product of the screen
 derivatives of its reconstructed view position, turned toward the camera.

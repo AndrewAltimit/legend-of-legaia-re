@@ -823,6 +823,11 @@ vec4 g_word;
  * depth (clip w). Taken ahead of any discard (native ssao_gbuffer_word). */
 vec4 gbuf_word() {
   float w = 1.0 / max(gl_FragCoord.w, 1e-8);
+  /* An actor draw (u_occl_allow == 0: the player, NPCs, battle bodies)
+   * writes its depth, so it still occludes the ground around it, and a zero
+   * normal, which the passes read as "no AO on this pixel"
+   * (webgl-ssao.js ssao_is_actor; native ssao_gbuffer_word). */
+  if (u_occl_allow == 0) return vec4(0.0, 0.0, 0.0, w);
   vec2 ndc = (gl_FragCoord.xy - u_gbuf_view.xy) / u_gbuf_view.zw * 2.0 - 1.0;
   vec3 p = vec3(ndc.x * w * u_gbuf_k.x, ndc.y * w * u_gbuf_k.y, w * u_gbuf_k.z);
   vec3 n = cross(dFdx(p), dFdy(p));
