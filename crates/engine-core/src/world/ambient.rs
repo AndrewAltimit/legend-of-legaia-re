@@ -241,8 +241,10 @@ impl World {
     /// emitter has put each sheet and how far its fade has come is the
     /// `rand()` stream's history since the entry, which no seed replays
     /// (`garmel`'s cave mist, `map01`'s ridge bank). A record with more
-    /// retail nodes than live ones clones one of its own; surplus live nodes
-    /// and nodes of a record retail holds none of are retired. The image
+    /// retail nodes than live ones clones one of its own, or - holding none
+    /// (`kor`'s steam emitter picks each sheet's record at random) - spawns
+    /// one from the stager record; surplus live nodes and nodes of a record
+    /// retail holds none of are retired. The image
     /// child of the retail comparison calls this on the frame it captures,
     /// as it installs the fog pool. A no-op for an empty snapshot.
     pub fn install_sprite_arm_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
@@ -261,14 +263,21 @@ impl World {
                 .collect();
             let idx = match live.get(*n) {
                 Some(&i) => i,
-                None => {
-                    let Some(&first) = live.first() else {
-                        continue;
-                    };
-                    let clone = self.ambient.fx[first].clone();
-                    self.ambient.fx.push(clone);
-                    self.ambient.fx.len() - 1
-                }
+                None => match live.first() {
+                    Some(&first) => {
+                        let clone = self.ambient.fx[first].clone();
+                        self.ambient.fx.push(clone);
+                        self.ambient.fx.len() - 1
+                    }
+                    // No live sheet of this record to clone: the emitter
+                    // re-seats itself and picks its next record at random,
+                    // so at the captured frame the engine may hold none.
+                    // Seat a fresh one from the stager record itself.
+                    None => match self.spawn_sprite_arm_sheet(off, seed.pos, seed.rot) {
+                        Some(i) => i,
+                        None => continue,
+                    },
+                },
             };
             *n += 1;
             let st = &mut self.ambient.fx[idx].state;
@@ -293,6 +302,39 @@ impl World {
                 p.finished = true;
             }
         }
+    }
+
+    /// Spawn the stager record at bundle offset `record_off` as a fresh
+    /// ambient part (its first move-VM slice run, as `FUN_80021B04` runs
+    /// it) and return its index when that slice made it a sprite-arm sheet;
+    /// anything else it seated is retired. The snapshot install's fallback
+    /// for a record the engine holds no live sheet of.
+    fn spawn_sprite_arm_sheet(
+        &mut self,
+        record_off: usize,
+        pos: [i16; 3],
+        rot: [i16; 3],
+    ) -> Option<usize> {
+        let id = self
+            .props
+            .stagers
+            .iter()
+            .position(|r| r.record_off == record_off)?;
+        let first_new = self.ambient.fx.len();
+        if !self.spawn_ambient_record_at(id, pos, rot) {
+            return None;
+        }
+        let sheet = |p: &AmbientPart| {
+            !p.finished && p.state.move_substate == 4 && p.state.field_9e & 0x4000 != 0
+        };
+        let found = (first_new..self.ambient.fx.len())
+            .find(|&i| self.ambient.fx[i].record_off == record_off && sheet(&self.ambient.fx[i]));
+        for i in first_new..self.ambient.fx.len() {
+            if Some(i) != found {
+                self.ambient.fx[i].finished = true;
+            }
+        }
+        found
     }
 
     /// Seat the render banks of the live ambient parts that turn on a

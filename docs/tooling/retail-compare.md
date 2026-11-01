@@ -536,7 +536,15 @@ engine verdict:
   position, rotation banks, render scale, far colour and depth-cue level,
   and for a keyframe-pose node (`+0x5A == 6`, `map01`'s ridge bank) the
   packed clip entries of its `+0x4C` block, seated as both keyframes of every
-  part so the mode-6 tail packs them back unchanged.
+  part so the mode-6 tail packs them back unchanged. An emitter that picks
+  each sheet's record at random can leave the engine holding none of a record
+  retail holds: `kor`'s steam emitter (stager record `0xEEC`) re-seats every
+  96 frames and spawns one of eight sheet records, and the state's two drawn
+  sheets (`0x12F4`, `0x124E`) were often not live in the child. A record with
+  no live sheet is spawned fresh from its stager record and its first slice
+  run (`World::spawn_sprite_arm_sheet`), then seated like the others;
+  `kor_field_route_walk` reads `.909` (`.862` before), the band of steam
+  across the stair rail drawn where retail's frame has it.
 
   A mesh-bearing ambient part that turns is a clock of the same kind. The
   part tick adds its bank rates `+0x80..+0x84` to the render banks every
