@@ -84,6 +84,32 @@
     <dt>Round start</dt><dd>Actor sweep <code>FUN_801D88CC</code>, key re-seed if none is live, the per-round poison ticker <code>FUN_801E752C</code> on every round but the first</dd>
   </dl>
   <p>The pick loop carries no HP or occupancy test of its own, which is the root of a traced <a href="../writeups/glitches/turn-order-and-arts.html">turn-order oddity</a>: when every remaining key is zero the result is a draw over the seats walked.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The turn pick over seats 0 to 6 with keys 1, 3, 9, 0, 4, 9, 0. The running maximum starts at seat 0. Seat 2's 9 beats it, so the tie list restarts as seat 2 and seat 2 is appended again when it equals itself. Seat 5's 9 ties and joins. The list is 2, 2, 5 and the draw is rand modulo 3, so seat 2 acts two times in three. A key of 0x8000 or more reads as negative once it is the maximum, so it never joins the list. When every key is spent the list holds every seat and the draw lands on a spent seat: the round ends.">
+      <defs><marker id="brl-pick-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text x="20" y="22" class="dg-sub dg-start">seat and its unspent key, walked left to right</text>
+      <rect x="20" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="70" y="55" class="dg-label">seat 0</text><text x="70" y="73" class="dg-sub">key 1: start max</text>
+      <rect x="140" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="190" y="55" class="dg-label">seat 1</text><text x="190" y="73" class="dg-sub">3: new max</text>
+      <rect x="260" y="34" width="100" height="50" rx="4" class="dg-node-accent"/><text x="310" y="55" class="dg-label">seat 2</text><text x="310" y="73" class="dg-sub">9: new max</text>
+      <rect x="380" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="430" y="55" class="dg-label">seat 3</text><text x="430" y="73" class="dg-sub">0</text>
+      <rect x="500" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="550" y="55" class="dg-label">seat 4</text><text x="550" y="73" class="dg-sub">4</text>
+      <rect x="620" y="34" width="100" height="50" rx="4" class="dg-node-accent"/><text x="670" y="55" class="dg-label">seat 5</text><text x="670" y="73" class="dg-sub">9: ties</text>
+      <rect x="740" y="34" width="100" height="50" rx="4" class="dg-node"/><text x="790" y="55" class="dg-label">seat 6</text><text x="790" y="73" class="dg-sub">0</text>
+      <path d="M310 84 L310 112 L404 112" class="dg-edge" marker-end="url(#brl-pick-ah)"/>
+      <path d="M670 84 L670 112 L536 112" class="dg-edge" marker-end="url(#brl-pick-ah)"/>
+      <rect x="406" y="96" width="128" height="34" rx="4" class="dg-node-ok"/><text x="470" y="118" class="dg-label">list [2, 2, 5]</text>
+      <path d="M470 130 L470 150" class="dg-edge" marker-end="url(#brl-pick-ah)"/>
+      <rect x="350" y="152" width="240" height="34" rx="4" class="dg-node"/><text x="470" y="174" class="dg-label">draw rand % 3, every pick</text>
+      <text x="470" y="204" class="dg-sub">a seat that beats the maximum is listed twice: here seat 2 acts two draws in three</text>
+      <rect x="20" y="220" width="400" height="40" rx="4" class="dg-node-warn"/>
+      <text x="36" y="237" class="dg-sub dg-start">key 0x8000 or more: taken as the maximum, then read as</text>
+      <text x="36" y="252" class="dg-sub dg-start">negative, never listed; the next seat walked takes over</text>
+      <rect x="440" y="220" width="400" height="40" rx="4" class="dg-node-warn"/>
+      <text x="456" y="237" class="dg-sub dg-start">every key spent: all seats tie at 0, the draw lands on a</text>
+      <text x="456" y="252" class="dg-sub dg-start">spent seat, nothing dispatches, and the round ends</text>
+    </svg>
+    <figcaption>The pick behind every execution-band turn. The draw is taken whatever the keys hold, and the pick dispatches only when the seat it drew still holds a live key; the port compares, draws and declines the same way, so the random stream stays aligned with retail&rsquo;s.</figcaption>
+  </figure>
 
   <h3>The loop in the port</h3>
   <p>One per-frame <code>World::tick</code> drives the whole Field &rarr; Battle &rarr; Field round trip, and both play hosts arm it through one kernel, <code>World::arm_live_loop</code>: the scene label, the loop and player-battle flags, the Seru registry and the battle-music swap. Per frame:</p>
@@ -163,6 +189,30 @@
 <section class="doc-section" id="ai" data-doc="monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver">
   <h2>Monster AI</h2>
   <p>Two routines. The <strong>action picker</strong> <code>FUN_801E9FD4</code> counts the filled magic slots in the monster record and rolls <code>rand % (1 + count)</code>: zero is a physical strike on a random party seat. Anything else rolls again to choose a slot and walks the monster's animation entries for the cast, checks the monster can afford it, and resolves the target from the spell's shape byte. The walk keeps going past its match, so each later cast entry matches again and redraws the target, and a cast with no valid target throws the whole pick away and starts over. The flee roll comes next, on every monster turn. A large switch on the monster id can then override the choice with bespoke scripted casts on cooldowns - each case is AI for one monster.</p>
+  <figure class="diagram">
+    <svg viewBox="0 -18 860 348" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The monster action picker. The gate rolls r = rand modulo one plus the number of filled magic slots. r = 0 is a physical strike on a random party seat. Otherwise a second roll k picks how many tag-0x23 cast entries to skip; the walk over the monster's animation entries from index 2 matches the k-th, and every later tag-0x23 entry matches again, so the clip is the last one from the k-th on. A slot that is empty or unaffordable, or a heal with no patient, fails the pass and goes back to the gate. A pass that holds runs the flee checkpoint, then the per-monster switch may override the choice, then the anti-repeat ring.">
+      <defs><marker id="brl-ai-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="20" y="20" width="220" height="56" rx="4" class="dg-node-accent"/><text x="130" y="43" class="dg-label">Gate</text><text x="130" y="61" class="dg-sub">r = rand % (1 + filled slots)</text>
+      <rect x="20" y="120" width="220" height="56" rx="4" class="dg-node"/><text x="130" y="143" class="dg-label">r = 0: physical strike</text><text x="130" y="161" class="dg-sub">target rand % party seats</text>
+      <rect x="300" y="20" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="43" class="dg-label">r &gt; 0: second roll k</text><text x="425" y="61" class="dg-sub">which tag-0x23 entry to start from</text>
+      <rect x="300" y="120" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="143" class="dg-label">Walk entries from index 2</text><text x="425" y="161" class="dg-sub">the k-th tag 0x23 matches, and every later one</text>
+      <rect x="610" y="120" width="230" height="56" rx="4" class="dg-node-warn"/><text x="725" y="143" class="dg-label">Pass fails</text><text x="725" y="161" class="dg-sub">empty / unaffordable slot, no patient</text>
+      <rect x="300" y="220" width="250" height="56" rx="4" class="dg-node"/><text x="425" y="243" class="dg-label">Flee checkpoint</text><text x="425" y="261" class="dg-sub">one roll per monster turn</text>
+      <rect x="610" y="220" width="230" height="56" rx="4" class="dg-node-ok"/><text x="725" y="243" class="dg-label">Per-monster switch</text><text x="725" y="261" class="dg-sub">scripted casts, then anti-repeat ring</text>
+      <path d="M130 76 L130 118" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <path d="M240 48 L298 48" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <path d="M425 76 L425 118" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <path d="M550 148 L608 148" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <path d="M725 120 L725 8 L130 8 L130 18" class="dg-edge-dim" marker-end="url(#brl-ai-ah)"/>
+      <text x="430" y="2" class="dg-edge-label" text-anchor="middle">a failed pass redraws everything from the gate</text>
+      <path d="M425 176 L425 218" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <path d="M130 176 L130 248 L298 248" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <path d="M550 248 L608 248" class="dg-edge" marker-end="url(#brl-ai-ah)"/>
+      <text x="20" y="306" class="dg-sub dg-start">Tower Guardian: slots 0x57, 0x34, cast entries 0x0A and 0x0B. Both spells play entry 0x0B, the last match,</text>
+      <text x="20" y="322" class="dg-sub dg-start">which is what both of its retail Windhash captures hold - not the first entry 0x0A a stop-at-first-match walk would stage.</text>
+    </svg>
+    <figcaption>The generic core of <code>FUN_801E9FD4</code>. A re-match also re-runs the MP test and the target arm with its draws, and the heal and all-ally arms leave the slot counter where the walk next reads it, so a later match can read another slot.</figcaption>
+  </figure>
   <p>The <strong>target resolver</strong> <code>FUN_801E7320</code> runs only for actors with the <code>0x380</code> delegation bits set. It expands the targeting class the picker left in actor <code>+0x1DD</code>: a living monster slot (<code>rand % monster_count + 3</code> - pool slot 3 is the first monster whatever the party size), a living party slot, or an all-target code.</p>
   <p>A data constraint hides in the cast path: after choosing magic the picker counts the rollable castable entries and divides by the count. A count of zero executes the divide-by-zero trap and the BIOS parks the machine. Retail data never has that shape; a rebuilt monster block must keep at least one rollable entry while its magic array is live.</p>
   <h3>Two gates the AI reads</h3>
@@ -170,7 +220,7 @@
     <li><strong>The battle-mode byte</strong> <code>ctx[+0x28A]</code> gates multi-phase boss scripts. Its only writer is the action machine&rsquo;s round-end arm, so it is a round counter, zero in the first round; advancing it walks a round-scripted boss to its next scripted cast.</li>
     <li><strong>The delegation bits</strong> <code>0x380</code> are not a monster flag. They are set only on party members whose record carries the Rage passive: the command ring skips that member, and at the round's start the auto assembler fills its turn with a random combo of its learned arts. A normal monster keeps them clear, so its scripted-cast cases fire.</li>
   </ul>
-  <p>The cooldown latches behind those scripted casts are cleared only at battle init, so a boss self-heals at most once per fight. In the port the picker&rsquo;s generic core and the per-monster switch are separate (<code>World::pick_monster_action</code>, <code>engine-battle::monster_ai</code>); a scripted cast the active spell catalog cannot fold degrades to a physical strike.</p>
+  <p>The cooldown latches behind those scripted casts are cleared only at battle init, so a boss self-heals at most once per fight. In the port the picker&rsquo;s generic core (<code>engine-battle::monster_ai::generic_core</code>, the gate, the walk with its re-matches and the redrawn pass), its driver (<code>World::pick_monster_action</code>: swing budget, flee checkpoint, ring) and the per-monster switch (<code>engine-battle::monster_ai</code>) are separate; a scripted cast the active spell catalog cannot fold degrades to a physical strike.</p>
   <p><strong>Targeting stays retail by default.</strong> A single-target monster attack goes to a uniformly random living party member. The <em>Smart monsters</em> toggle redirects it to the lowest-HP member instead, after the faithful pick has been rolled in full, so the random stream is byte-identical either way (<a href="engine.html#fidelity">engine options</a>).</p>
   <details class="disclosure">
     <summary>Details: the charm battle softlock</summary>

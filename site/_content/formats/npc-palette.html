@@ -117,6 +117,28 @@
   another TIM's wider palette block is a palette of its own, and <code>LoadImage</code> lands it whole,
   its transparent first colour included. In the Ratayu interior an earlier 256-colour block covers the
   plants' palette slot; merged, the fronds' see-through gaps drew as near-black wedges.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="VRAM row 485 in the Ratayu interior. An 8bpp TIM's 256-entry palette covers x 64 to 320, with the opaque near-black 0x8021 at x 80. The plants' 4bpp TIM then uploads a 16-entry palette at x 80 to 96 whose entry 0 is 0x0000, the transparent colour. Retail's LoadImage lands that palette whole, so x 80 holds 0x0000 and the fronds' cutouts stay see-through. A row-wide merge-zeros rule would have kept 0x8021 there and drawn the cutouts as near-black wedges.">
+      <text x="16" y="40" class="dg-sub dg-start">8bpp TIM, 256-entry CLUT</text>
+      <rect x="150" y="22" width="512" height="28" rx="2" class="dg-node"/>
+      <rect x="182" y="22" width="4" height="28" class="dg-node-warn"/>
+      <text x="420" y="41" class="dg-sub">x = 64 .. 320, row 485</text>
+      <text x="190" y="16" class="dg-edge-label">0x8021 at x = 80</text>
+      <text x="16" y="94" class="dg-sub dg-start">plants' 4bpp TIM</text>
+      <rect x="182" y="76" width="32" height="28" rx="2" class="dg-node-accent"/>
+      <text x="224" y="95" class="dg-edge-label">16-entry palette at (80, 485), entry 0 = 0x0000</text>
+      <text x="16" y="154" class="dg-sub dg-start">retail (LoadImage)</text>
+      <rect x="150" y="136" width="512" height="28" rx="2" class="dg-node"/>
+      <rect x="182" y="136" width="32" height="28" rx="2" class="dg-node-ok"/>
+      <text x="224" y="155" class="dg-edge-label">x = 80 holds 0x0000: the cutouts stay transparent</text>
+      <text x="16" y="214" class="dg-sub dg-start">row-wide merge</text>
+      <rect x="150" y="196" width="512" height="28" rx="2" class="dg-node"/>
+      <rect x="182" y="196" width="32" height="28" rx="2" class="dg-group"/>
+      <rect x="182" y="196" width="4" height="28" class="dg-node-warn"/>
+      <text x="224" y="215" class="dg-edge-label">the zero is dropped, 0x8021 survives: near-black wedges</text>
+    </svg>
+    <figcaption>The merge settles a race between TIMs writing the <em>same</em> palette rect. A palette nested inside another TIM&rsquo;s wider block is a different rect, and it lands whole; only a zero of the same rect, or one over a slot the later block leaves empty, keeps the earlier word.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="retail-dispatch">
