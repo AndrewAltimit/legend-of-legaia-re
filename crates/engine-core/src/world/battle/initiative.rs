@@ -33,6 +33,12 @@ impl World {
     pub(in crate::world) fn initiative_pick_and_decide(&mut self) -> Option<(u8, u16)> {
         self.battle_ctx.counter_pending = 0;
         self.parked_turn.monster = None;
+        // What the last pick's AI decided for its strike rides to that
+        // strike's arming. A parked turn dropped unrun (a blocked monster,
+        // the leader-first Run) never arms it, so the next pick starts clean:
+        // the `0xB3` cut and the pre-armed swing budget belong to one pick.
+        self.battle.monster_ai_state.cut_strike_stream = false;
+        self.battle.monster_budget_armed = None;
         let before: Vec<u16> = self.actors.iter().map(|a| a.battle.init_key).collect();
         let pick = self.next_combatant_by_initiative()?;
         let key = before.get(usize::from(pick)).copied().unwrap_or(0);
@@ -48,6 +54,11 @@ impl World {
     /// the round's first dispatch.
     pub(in crate::world) fn park_round_start_pick(&mut self) {
         self.parked_turn.pick = self.initiative_pick_and_decide();
+    }
+
+    /// The round start's parked pick, if it has not been dispatched yet.
+    pub(in crate::world) fn parked_turn_pick(&self) -> Option<(u8, u16)> {
+        self.parked_turn.pick
     }
 
     /// Drop the parked pick and its decided action, so the next dispatch
@@ -673,6 +684,51 @@ mod tie_pick_tests {
         assert_eq!(w.actors[1].battle.init_key, 0, "the pick spends its key");
         assert_eq!(w.next_turn_pick(), Some((1, 50)), "the band opens on it");
         assert_eq!(w.actors[0].battle.init_key, 5);
+    }
+
+    fn two_seat_battle(keys: [u16; 2]) -> World {
+        let mut w = World::new();
+        w.enter_battle(1, 1);
+        w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+        for (i, key) in keys.into_iter().enumerate() {
+            w.battle.speed[i] = 50;
+            w.actors[i].battle.hp = 100;
+            w.actors[i].battle.max_hp = 100;
+            w.actors[i].battle.liveness = 1;
+            w.actors[i].battle.init_key = key;
+        }
+        w
+    }
+
+    /// A lone hero's pre-emptive round: the seed leaves only the hero's key
+    /// and the round start's pick spends it. Execution must open on that
+    /// parked pick, not reseed the locked-out monster a key of its own.
+    #[test]
+    fn a_parked_pick_that_spent_the_last_key_is_not_reseeded() {
+        let mut w = two_seat_battle([40, 0]);
+        w.park_round_start_pick();
+        assert!(
+            !w.any_living_initiative_key(),
+            "the pick spent the only key"
+        );
+        w.begin_round_execution();
+        assert_eq!(
+            w.actors[1].battle.init_key, 0,
+            "the locked-out monster gains no key at execution"
+        );
+    }
+
+    /// The `0xB3` strike cut and the pre-armed swing budget belong to the
+    /// pick that decided them: a parked turn dropped unrun leaves neither for
+    /// the next pick's strike.
+    #[test]
+    fn a_dropped_turn_leaves_no_strike_cut_for_the_next_pick() {
+        let mut w = two_seat_battle([40, 0]);
+        w.battle.monster_ai_state.cut_strike_stream = true;
+        w.battle.monster_budget_armed = Some(1);
+        assert_eq!(w.initiative_pick_and_decide(), Some((0, 40)));
+        assert!(!w.battle.monster_ai_state.cut_strike_stream);
+        assert_eq!(w.battle.monster_budget_armed, None);
     }
 
     #[test]

@@ -308,9 +308,12 @@ impl World {
         // command surface on a hand-built battle) has no keys yet; retail
         // never reaches `0xFE` without `0x14`'s seed, so seed here rather
         // than let the first pick read an empty round and drop every
-        // commit. A round that came through `begin_battle_round` finds its
-        // keys live and this is a no-op.
-        if !self.any_living_initiative_key() {
+        // commit. A round that came through `begin_battle_round` either finds
+        // its keys live or holds the round start's parked pick, which may
+        // have spent the only live key (a lone hero's pre-emptive round):
+        // reseeding then would hand the locked-out side a turn and draw RNG
+        // retail never draws.
+        if self.parked_turn_pick().is_none() && !self.any_living_initiative_key() {
             self.reseed_initiative();
         }
         self.battle_ctx.action_state = ActionState::EndOfAction.as_byte();
