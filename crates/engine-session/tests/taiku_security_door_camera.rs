@@ -209,3 +209,90 @@ fn a_camera_less_record_after_the_beat_keeps_the_follow_camera() {
     assert!(fired > 0, "the bulkhead toggles ran");
     eprintln!("[ok] taiku P2[0] / P2[1] keep the follow camera");
 }
+
+/// Every drop shadow drawn while the door shot owns the frame sits under a
+/// body: each blob's centre grid point is the projection, through the shot
+/// the scene pass draws, of the player's origin or of a placed actor's draw
+/// pose (`World::field_npc_draw_pose`). Retail emits the blob from inside the
+/// actor renderer (`FUN_8001C394` hands `actor+0x14` to `FUN_800460AC` under
+/// the frame's GTE camera), so body and blob share one position and one
+/// camera. The follow frame projected the blobs one common screen offset
+/// away from the bodies for the length of the shot.
+#[test]
+fn the_door_shot_keeps_every_drop_shadow_under_its_body() {
+    use legaia_engine_world_views::screen_passes::HostView;
+    let Some(mut session) = at_the_bulkheads() else {
+        return;
+    };
+    let mut entered = false;
+    for _ in 0..120 {
+        step(&mut session, PadButton::Down.mask());
+        if session.host.world.cutscene_timeline_active() {
+            entered = true;
+            break;
+        }
+    }
+    assert!(entered, "walking onto (116, 35) spawns P2[4]");
+    let (mut checked, mut max_follow_off) = (0usize, 0i32);
+    let mut frames = 0;
+    while session.host.world.cutscene_timeline_active() {
+        assert!(frames < 2000, "P2[4] never ended");
+        step(&mut session, 0);
+        frames += 1;
+        let w = &session.host.world;
+        if !cutscene_owns_camera(w) {
+            continue;
+        }
+        let v = HostView::new(w, &session.camera, ([0.0; 3], [0.0; 3]));
+        let shot = v.scripted_target();
+        let drawn = v.frame(Some(shot)).field_view().expect("shot view");
+        let fx = w.field_fx_view(&drawn);
+        let follow = w.field_fx_view(&v.follow_frame().field_view().expect("follow view"));
+        let mut bodies: Vec<[i32; 3]> = Vec::new();
+        if let Some(a) = w
+            .player_actor_slot
+            .and_then(|s| w.actors.get(usize::from(s)))
+        {
+            let m = &a.move_state;
+            bodies.push([m.world_x.into(), m.world_y.into(), m.world_z.into()]);
+        }
+        for c in w.field_vm.channels.iter().filter(|c| !c.object_bind) {
+            let Ok(slot) = u8::try_from(c.placement_index) else {
+                continue;
+            };
+            let spawn = (c.ctx.world_x as i16, c.ctx.world_z as i16);
+            match w.field_npc_draw_pose(slot, spawn) {
+                Some(p) => bodies.push(p.pos.map(|c| c as i32)),
+                // A body collapsed to render scale 0 still casts its blob
+                // (`FUN_8001B964`'s `+0x72 == 0` test branches to the
+                // shadow gate), at the anchor it would draw at.
+                None if c.ctx.field_72 == 0 => {
+                    let (x, z) = w.npcs.positions.get(&slot).copied().unwrap_or(spawn);
+                    let y = w.field_npc_render_y(slot, x, z);
+                    bodies.push([x.into(), y, z.into()]);
+                }
+                None => {}
+            }
+        }
+        let on_screen = |view: &legaia_engine_field::fog_particles::FogView, p: [i32; 3]| {
+            view.project_gte(p).map(|(x, y, _)| (x, y))
+        };
+        for blob in v.drop_shadow_prims(Some(shot)).chunks(4) {
+            let centre = blob[0].corners()[3];
+            let body = bodies
+                .iter()
+                .find(|&&b| on_screen(&fx, b) == Some(centre))
+                .unwrap_or_else(|| panic!("frame {frames}: blob at {centre:?} under no body"));
+            if let Some((fx_, fy)) = on_screen(&follow, *body) {
+                let off = (i32::from(fx_) - i32::from(centre.0)).abs()
+                    + (i32::from(fy) - i32::from(centre.1)).abs();
+                max_follow_off = max_follow_off.max(off);
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "the shot drew drop shadows");
+    eprintln!(
+        "[ok] taiku door shot: {checked} blobs under their bodies; the follow frame put them up to {max_follow_off} px off"
+    );
+}

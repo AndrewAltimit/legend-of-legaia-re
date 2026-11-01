@@ -1182,11 +1182,23 @@ channel whose clip id `+0x5C` is non-zero - the port's stand-in for draw kind
 through `screen_prim::drop_shadow_prim` into their field screen-prim pass
 with each corner's scene depth taken six units above the floor, so the depth
 test does the job retail's ordering does: under the actor, over the ground.
+
+The blob and the body share one camera: the matrix `FUN_800460AC` projects
+through is the frame's, the one the actor's mesh just drew with, scripted
+shot or not. The shared pass `HostView::drop_shadow_prims` therefore takes
+the host's glided scripted shot and projects through the same frame the
+scene pass draws (`HostView::frame`); the light pools and the move strips
+take it the same way. Projected through the follow frame instead, every
+blob of a scripted event moves by one common screen offset while keeping
+its spacing to the others - the party's formation drawn beside the party.
+`crates/engine-session/tests/taiku_security_door_camera.rs` checks every
+blob of Zora Castle's door shot against a body's projection.
 `crates/parity/tests/drop_shadow_retail_capture_disc.rs` rebuilds the
 packets from `town01`, `map01` and `map03` states and matches every retail
 blob packet exactly (vertices and UVs), and checks the blob's texels and
 palette in the engine's scene VRAM against the state's VRAM word for word.
 See `ghidra/scripts/funcs/8001c394.txt`, `800460ac.txt` and `8001b964.txt`.
+
 ## The field view matrix: where `TR` comes from
 
 The field camera's ten globals become GTE control registers once a frame in

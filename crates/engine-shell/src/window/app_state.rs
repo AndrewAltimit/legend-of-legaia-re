@@ -617,6 +617,11 @@ pub(super) struct PlayWindowApp {
     /// through it (`World::queue_vram_grabs`): the frame a grab copies from
     /// is the last one drawn.
     pub(super) last_frame_field_view: Option<legaia_engine_camera::psx_camera::FieldCameraView>,
+    /// The glided scripted shot this frame draws through, `None` while no
+    /// timeline owns the camera. The screen passes retail draws under the
+    /// frame's GTE camera (drop shadows, light pools, move strips) project
+    /// through it, so they sit on the meshes under a scripted shot too.
+    pub(super) frame_cutscene_view: Option<legaia_engine_camera::psx_camera::FieldCameraView>,
     /// GPU upload of the intro's captured VRAM page, kept for the whole
     /// transition so every frame's strips / tiles sample the captured field
     /// frame (and the shatter's shade page), not just the capture frame's.

@@ -28,9 +28,10 @@ impl PlayWindowApp {
     /// ([`PlayWindowApp::last_frame_field_view`]), the view the next sim
     /// tick's framebuffer grabs project through.
     pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
+        self.frame_cutscene_view = cutscene_cam.map(cutscene_view);
         self.last_frame_field_view = self
             .host_view()
-            .frame(cutscene_cam.map(cutscene_view))
+            .frame(self.frame_cutscene_view)
             .field_view();
     }
 
@@ -870,7 +871,7 @@ impl PlayWindowApp {
     pub(super) fn field_drop_shadow_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        self.host_view().drop_shadow_prims()
+        self.host_view().drop_shadow_prims(self.frame_cutscene_view)
     }
 
     /// This frame's move-VM strip spans (`FUN_801D31B0`), the shared pass
@@ -879,7 +880,7 @@ impl PlayWindowApp {
     pub(super) fn take_move_strip_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        self.host_view().move_strip_prims()
+        self.host_view().move_strip_prims(self.frame_cutscene_view)
     }
 
     /// This frame's attached lights (op `0x34` sub-1, `FUN_801E3984`), the
@@ -888,7 +889,7 @@ impl PlayWindowApp {
     pub(super) fn field_light_screen_prims(
         &self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
-        self.host_view().light_prims()
+        self.host_view().light_prims(self.frame_cutscene_view)
     }
 
     /// Build this frame's arts after-image ghost meshes - the render half of
