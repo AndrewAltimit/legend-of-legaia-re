@@ -297,11 +297,11 @@ Random encounters come from `FUN_801D9E1C`, in the world-map overlay and co-resi
 | Region offset | Field |
 |---|---|
 | `+0..+3` | `(x_min, y_min, x_max, y_max)` tile AABB |
-| `+4` | per-step rate increment |
-| `+5` | not decoded (`RegionRecord::reserved_5`) |
+| `+4` | per-step rate increment (low byte of the `s16` at `+4`, `0x801DA18C`) |
+| `+5` | high half of the world-map return point: `(+5 & 0x7F) << 8` ORed with `+9` is the map word stored to `0x80084628` (`0x801DA108..0x801DA110`; `RegionRecord::return_map_high`) |
 | `+6` / `+7` | base / count of the formation slice the region rolls into |
 | `+8` | low 5 bits = battle stage id (→ `DAT_8007BD60`); bit 5 = `DAT_8007B64B`, the backdrop's keep-object-1 flag |
-| `+9..` | stride-dependent extras |
+| `+9..+0xB` | world-map return point: `+9` the map word's low byte, `+0xA` / `+0xB` its tile, stored to `0x80084628` / `0x80084624` / `0x8008462C` ([`script-vm.md`](../subsystems/script-vm.md)) |
 
 ### The condition array: story-flag-gated region groups
 
@@ -610,11 +610,11 @@ For a port:
 - Re-stamping on field entry with the primer's constants is right; the scene's own writers (a camera-region record's mask-kind side-write, op `0x46`) then replace it.
 - A fixture for this has to cross a scene. A Rim Elm house door does not: an intra-town interior is an intra-scene warp.
 
+Section 4 is not encounter data: it is the field-fog region table (`DAT_80073ED8`, count `DAT_80073EDC`, eleven-byte records), read by the fog spawner `FUN_801D629C` (`0x801D6338..0x801D6400`) and re-enabled per story flag by op `4C C1` (`0x801E2674..0x801E26EC`); layout in [`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass).
+
 ## What this doesn't tell us
 
 - **Per-opcode header bytes of the inline arm.** Each halt-acquire opcode packs its first 3 bytes differently (target selector / sub-op / flag bits). The count + ids layout at `+0x3..` is fixed by the reader.
-- **Section 4.** Its offset and length are pinned across all 80 scene bundles, but the interior layout behind `DAT_80073ED8` is open.
-- **Region byte `+5`**, and region bytes past `+8`.
 - **Whether anything writes `DAT_8007b7fc`** ([above](#scripted-battle-id-path-fun_8005567c)).
 - **A live mid-armed pointer.** No catalogued save state holds an actor with `+0x94` armed; capturing one needs the one-tick window between the roll and the `FUN_801DA51C` copy.
 

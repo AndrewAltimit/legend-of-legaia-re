@@ -126,8 +126,9 @@ voice, `+0x90` / `+0x92` its left / right level, and `+0x9C` / `+0xA0` /
 `_DAT_80089118` / `_DAT_80089120` against the box, scales each level by how
 deep inside the box the focus sits on each axis, and turns it into a **raw
 voice volume**, `((_DAT_80084580 >> 1) * level * falloff >> 7) * scale >> 7`
-clamped `0x3F80` (`scale` the per-row pair at `0x80091658`, `0x80` in every
-captured state). The first tick in range keys the descriptor's voices through
+clamped `0x3F80` (`scale` the per-row pair at `0x80091658 + row * 0x10`,
+`row` the part's `+0x22`; row 0 is `0x80, 0x80`, stored once at boot by
+`FUN_8001DCF8`). The first tick in range keys the descriptor's voices through
 `FUN_80065034` with that volume `>> 7`; every later tick writes it straight to
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
 the key-on chain; leaving the box, or the side-band request going unsettled,
@@ -1396,7 +1397,7 @@ and the library states pin each:
 | Register | Retail | Port |
 |---|---|---|
 | `SPUCNT` bit 0, CD audio enable | set in every state | XA is always mixed |
-| `0x1F801DB0/B2`, CD input volume | `0` between lines, `0x7FFE` while one plays, `0x75EA` in some battle states | every stream at unity (`XA_GAIN_UNITY`) |
+| `0x1F801DB0/B2`, CD input volume | `0` between lines, `0x75EA` while a one-shot cue plays, `0x7FFE` for a movie | cues at `XA_CUE_GAIN`, movies at `XA_GAIN_UNITY` ([the CD input volume](#the-cd-input-volume)) |
 | `SPUCNT` bit 2, CD audio reverb | set in the Baka Fighter duel and the Muscle Dome hub only | `Spu::cd_reverb`, from `World::cd_input_reverb` |
 
 The volume is libsnd's `SsSetSerialVol` (`FUN_800643C4`): `vol * 0x102`,
@@ -1404,11 +1405,13 @@ The volume is libsnd's `SsSetSerialVol` (`FUN_800643C4`): `vol * 0x102`,
 under mask `0xC0`. The clip starter `FUN_8003D53C` mutes it through
 `FUN_8003EE7C(0)` at `0x8003D6DC` while it seeks; the audio-context re-apply
 `FUN_8002614C` and `FUN_8002657C` raise it to `127` (`li a1,0x3fff`, clamped).
-`127 * 0x102 = 0x7FFE` is one LSB under unity, the gain the port mixes at.
-`0x75EA = 117 * 0x102` has no located writer: no `jal` to `FUN_800643C4`,
-`FUN_8003EE7C` or `SpuSetCommonAttr` (`FUN_8006BCB4`) on the disc, and no
-direct store to `0x1F801DB0`, passes `117`
-([open item](#open-items)).
+`127 * 0x102 = 0x7FFE` is one LSB under unity. `0x75EA = 117 * 0x102` is
+the one-shot cue level, written by the clip player's CD-ready state machine
+`FUN_8003D764`: state `6` loads `addiu a0,zero,0x75` at `0x8003D92C` once the
+drive status shows a read (bit `0x20`) and jumps to the state machine's one
+shared `jal 0x8003EE7C` at `0x8003D9F4`. The argument is set on a branch the
+call does not sit on, which is why a scan for `117` loaded just before a
+`jal` misses it ([the CD input volume](#the-cd-input-volume)).
 
 The reverb bit is `SpuCommonAttr.cd.reverb` under mask `0x100`. libsnd's
 wrapper `SsSetSerialAttr` (`FUN_80062A0C`) could write it, but every call site
@@ -3171,14 +3174,14 @@ still reports:
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
-- **The `0x75EA` CD input volume.** Seven battle states hold the CD input at
-  `117 * 0x102` against `127 * 0x102` everywhere else a line plays; the
-  writer is not located and the port mixes every XA stream at unity
-  ([above](#the-cd-input-enable-volume-and-reverb-send)). A write-watch on
-  `0x1F801DB0` across a battle voice cue names it.
-- **Two emitter inputs are constants.** The per-row scale pair `0x80091658`
-  reads `0x80` in every captured state and has no traced writer
-  ([above](#positional-sound-emitters)).
+- **Two emitter inputs are constants.** The per-row scale pair is set once:
+  the boot-time mode initialiser `FUN_8001DCF8` stores `0x80`, `0x80`, `0` at
+  `0x80091658..0x80091660` (`0x8001DD60..0x8001DD74`), the pair's only writer
+  in any image, so the `0x80` every state holds is its only value. The arm
+  indexes it by the part's `+0x22` halfword (`lh v0,0x22(s1)`, `sll 4` at
+  `0x800223F0..0x800223FC`); rows past `0` read zeros in every library state,
+  so an emitter whose `+0x22` were non-zero would be silent in retail, where
+  the port always takes row 0 ([above](#positional-sound-emitters)).
   The arm's other input, the options Sound word, reaches it: in Monaural it
   averages the two sides (`0x800224D4..0x800224E8`) and the direct voice
   write keeps that average, so a mono emitter sounds at the mean of its

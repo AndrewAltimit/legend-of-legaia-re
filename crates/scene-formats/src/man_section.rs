@@ -829,8 +829,11 @@ pub struct RegionRecord {
     pub aabb_y_max: u8,
     /// Per-step rate increment.
     pub rate_increment: u8,
-    /// `region[+5]` - role currently unknown (rate? terrain class?).
-    pub reserved_5: u8,
+    /// `region[+5]`: the high half of the world-map return point. The
+    /// encounter roll reads `+4..+5` as one `s16` (`FUN_8003CE9C`): its low
+    /// byte is the rate increment (`0x801DA18C`) and `(+5 & 0x7F) << 8`, ORed
+    /// with `+9`, is the map word stored to `0x80084628` (`0x801DA108`).
+    pub return_map_high: u8,
     /// First formation index this region rolls into.
     pub formation_range_base: u8,
     /// Number of formations in the roll range.
@@ -849,7 +852,7 @@ impl RegionRecord {
             aabb_x_max: record[2],
             aabb_y_max: record[3],
             rate_increment: record[4],
-            reserved_5: record[5],
+            return_map_high: record[5],
             formation_range_base: record[6],
             formation_range_count: record[7],
         })

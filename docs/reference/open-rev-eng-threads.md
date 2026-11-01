@@ -68,6 +68,11 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **The `0x75EA` CD input volume has a writer.** `FUN_8003D764` state `6`
+  sets `a0 = 0x75` at `0x8003D92C` and reaches the shared `jal 0x8003EE7C` at
+  `0x8003D9F4`; a scan for `117` loaded just before a call missed it, and the
+  audio page's open item said the port mixed every line at unity while the
+  port already mixed cues at that level ([settled](re-settled-threads/audio.md)).
 - **`.MAP` and `.PCH` are field files, not sound-tool intermediates.** The
   two strings in the sound-driver cluster are referenced once each, by the
   field-file loader `FUN_8001F7C0` (`0x8001F834`, `0x8001F8CC`): they name a

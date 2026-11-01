@@ -109,7 +109,7 @@
   <p>The region roller lives in the world-map overlay and runs once per movement update:</p>
   <ul class="bullets">
     <li>Walk the <a href="#condition-groups">condition array</a> to pick which slice of the scene's region table is live for the current story state.</li>
-    <li>Match the player's tile against each live region's bounding box; the hit supplies a per-step rate increment and a formation slice (base + count).</li>
+    <li>Match the player's tile against each live region's bounding box; the hit supplies a per-step rate increment and a formation slice (base + count). The same record carries the world-map return point the Doors of Light and Wind use: <code>(+5 &amp; 0x7F) &lt;&lt; 8 | +9</code> is the overworld's map word and <code>+0xA</code> / <code>+0xB</code> its tile (<code>0x801DA104..0x801DA128</code>).</li>
     <li>Scale the rate by the <a href="#rate-setting">setting byte</a> and four modifiers: High Encounter passive (Bad Luck Bell / Nemesis Gem) <code>&times;4</code>, Low Encounter passive (Good Luck Bell / Evil Talisman) <code>&divide;2</code>, and two system flags (<code>&times;2</code> / <code>&divide;2</code>).</li>
     <li>Subtract the scaled rate from a step counter; at <code>&le; 0</code>, two RNG draws pick a row in the slice, the roll installs it, and the counter resets to <code>0x3CE</code> minus a random <code>0..0x1E6</code>. A counter already at zero starts a battle on the next step even in a rate-0 region (the <code>bgtz</code> at <code>0x801DA218</code> falls through).</li>
   </ul>
@@ -305,8 +305,7 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong>Per-opcode header encoding.</strong> Each inline install opcode packs its first 3 bytes differently; a per-case decode is needed to read a window as "encounter from script X at PC Y".</li>
-        <li><strong>MAN section 4.</strong> Its offset and length are pinned in all 80 bundles, but the interior layout behind <code>DAT_80073ED8</code> is open. (Section 1 is the motion-VM script table, decoder <code>legaia_scene_formats::man_motion</code>; section 2 is the scene display name.)</li>
-        <li><strong>Region bytes.</strong> Region byte <code>+5</code>, and the region bytes past <code>+8</code>.</li>
+        <li><strong>Not open: MAN section 4.</strong> It is the field-fog region table (<code>DAT_80073ED8</code>, eleven-byte records) read by the fog spawner <code>FUN_801D629C</code>; see <a href="../subsystems/field-ambient-fx.html">field ambient effects</a>. (Section 1 is the motion-VM script table, decoder <code>legaia_scene_formats::man_motion</code>; section 2 is the scene display name.)</li>
         <li><strong>Mid-armed capture.</strong> No save state catches an entity with <code>+0x94</code> armed in the one-frame window between roll and copy.</li>
       </ul>
     </div>
