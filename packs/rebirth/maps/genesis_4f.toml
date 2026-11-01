@@ -25,23 +25,24 @@ camera = "far"
 # colonnade and the Flooded Cloister; tier 0 the sunken court.
 floor_heights = [0, 72, 144]
 
-# Past the vault's edge - and at the foot of the Root Archive's pit -
-# rainwater pooled far below, the walls dropping to it.
+# Past the vault's edge, rainwater pooled at the foot of its walls; under
+# the Root Archive the pit (the region below) goes down into the dark.
 [surround]
 ground = { tpage = 9, clut = 32206, tile = 3 }
 side = { tpage = 25, clut = 32199, tile = 0 }
-depth = 1152
+depth = 384
 shade = 56
-# 9F: fade = 10
-# 9F: [[surround.regions]]
-# 9F: rect = [1, 13, 7, 23]   # the Root Archive's pit
-# 9F: depth = 1792
-# 9F: shade = 64
-# 9F: fade = 4
+fade = 10
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
 backdrop = { tpage = 25, clut = 32199, tile = 0, height = 1152, distance = 2, shade = 96 }
+
+[[surround.regions]]
+rect = [1, 13, 7, 23]   # the Root Archive's pit
+depth = 1792
+shade = 64
+fade = 4
 
 [tiles]
 origin = [20, 20]
@@ -528,53 +529,53 @@ lamps = [
 ]
 
 # Light through the vault's broken roof onto the court, and the root's
-# glow rising round the archive's trunks. Lane 9F's `[[beams]]` (enhanced
-# lighting only), comments until the engine reads them; the `heart_shaft`
-# and `archive_deep` lamps carry the light meanwhile.
-# 9F: [[beams]]
-# 9F: id = "heart_shaft"
-# 9F: tile = [24, 20]
-# 9F: height = 1500
-# 9F: tilt = 8.0
-# 9F: angle = 180.0
-# 9F: width = [110, 240]
-# 9F: color = [235, 245, 210]
-# 9F: intensity = 75
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: breathe = 0.12
-# 9F: period = 540
-# 9F: motes = 16
-# 9F: seed = 401
-#
-# 9F: [[beams]]
-# 9F: id = "archive_light"
-# 9F: tile = [4, 18]
-# 9F: height = 1200
-# 9F: tilt = 12.0
-# 9F: angle = 150.0
-# 9F: width = [50, 110]
-# 9F: color = [230, 255, 220]
-# 9F: intensity = 55
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: period = 480
-# 9F: motes = 6
-# 9F: seed = 402
-#
-# 9F: [[beams]]
-# 9F: id = "archive_root_glow"
-# 9F: tile = [4, 18]
-# 9F: offset = [0, -1600, 0]
-# 9F: height = 1500
-# 9F: width = [320, 160]
-# 9F: color = [120, 255, 160]
-# 9F: intensity = 55
-# 9F: profile = "rise"
-# 9F: breathe = 0.35
-# 9F: period = 300
-# 9F: motes = 18
-# 9F: seed = 403
+# glow rising round the archive's trunks. Drawn only under enhanced
+# lighting; the `heart_shaft` and `archive_deep` lamps do the lighting.
+[[beams]]
+id = "heart_shaft"
+tile = [24, 20]
+height = 1500
+tilt = 8.0
+angle = 90.0
+width = [110, 240]
+color = [235, 245, 210]
+intensity = 95
+profile = "fall"
+pool = true
+breathe = 0.12
+period = 540
+motes = 16
+seed = 401
+
+[[beams]]
+id = "archive_light"
+tile = [4, 18]
+height = 1200
+tilt = 12.0
+angle = 270.0
+width = [50, 110]
+color = [230, 255, 220]
+intensity = 80
+profile = "fall"
+pool = true
+period = 480
+motes = 6
+seed = 402
+
+[[beams]]
+id = "archive_root_glow"
+tile = [2, 22]
+offset = [0, -250, 64]
+height = 900
+width = [160, 100]
+color = [120, 255, 160]
+intensity = 80
+profile = "rise"
+pool = false
+breathe = 0.35
+period = 300
+motes = 18
+seed = 403
 
 # Rootlight motes drift up the trunks out of the archive's pit.
 [[emitters]]

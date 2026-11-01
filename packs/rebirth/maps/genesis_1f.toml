@@ -27,20 +27,22 @@ floor_heights = [0, 48, 96]
 # away to a floor far below, and the tower's outer wall stands round it on
 # every side but the camera's, so the view over the south parapet ends on
 # stone fading into the dark rather than on the clear colour. The void
-# between the Atrium and the Hall of Trials is the root shaft: its walls
-# drop the same long way, and the bridge crosses it.
+# between the Atrium and the Hall of Trials is the root shaft (the region
+# below): its walls go down much further, into black, and the bridge
+# crosses it.
 [surround]
 ground = { tpage = 28, clut = 32576, tile = 1 }
 side = { tpage = 28, clut = 32576, tile = 2 }
-depth = 1280
+depth = 448
 shade = 40
-# 9F: fade = 12
-# 9F: [[surround.regions]]
-# 9F: rect = [15, 0, 18, 12]   # the root shaft
-# 9F: depth = 2048
-# 9F: shade = 48
-# 9F: fade = 4
+fade = 12
 backdrop = { tpage = 28, clut = 32576, tile = 2, height = 1152, distance = 2, shade = 72 }
+
+[[surround.regions]]
+rect = [15, 0, 18, 12]   # the root shaft
+depth = 2048
+shade = 48
+fade = 4
 
 # The vault overhead: the gauntlet bell hang on chains from it. The follow camera
 # looks down from under it, so only the chains show, rising out of the
@@ -608,73 +610,73 @@ wavelength = 4.0
 # ---------------------------------------------------------------------------
 # Light from the high windows. Three soft shafts fall from the vault onto
 # the dais - one on the Warden's Stone, one either side on the rootlight
-# ring - and the root's glow rises out of the shaft beside it. Beams are
-# lane 9F's `[[beams]]` (drawn only under enhanced lighting); until the
-# engine reads them they stay comments, and the `window_light` and
-# `root_deep` lamps above carry the light alone.
+# ring - and the root's glow rises out of the shaft beside it. Beams draw
+# only under enhanced lighting; the `window_light` and `root_deep` lamps
+# above do the actual lighting.
 # ---------------------------------------------------------------------------
-# 9F: [[beams]]
-# 9F: id = "window_stone"
-# 9F: tile = [7, 6]
-# 9F: height = 1400
-# 9F: tilt = 14.0
-# 9F: angle = 200.0
-# 9F: width = [90, 190]
-# 9F: color = [255, 240, 205]
-# 9F: intensity = 90
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: breathe = 0.12
-# 9F: sway = 1.0
-# 9F: period = 520
-# 9F: motes = 14
-# 9F: seed = 101
-#
-# 9F: [[beams]]
-# 9F: id = "window_west"
-# 9F: tile = [5, 5]
-# 9F: height = 1400
-# 9F: tilt = 14.0
-# 9F: angle = 200.0
-# 9F: width = [60, 120]
-# 9F: color = [255, 240, 205]
-# 9F: intensity = 60
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: breathe = 0.15
-# 9F: period = 600
-# 9F: motes = 6
-# 9F: seed = 102
-#
-# 9F: [[beams]]
-# 9F: id = "window_east"
-# 9F: tile = [9, 7]
-# 9F: height = 1400
-# 9F: tilt = 14.0
-# 9F: angle = 200.0
-# 9F: width = [60, 120]
-# 9F: color = [255, 240, 205]
-# 9F: intensity = 60
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: breathe = 0.15
-# 9F: period = 560
-# 9F: motes = 6
-# 9F: seed = 103
-#
-# 9F: [[beams]]
-# 9F: id = "root_glow"
-# 9F: tile = [16, 6]
-# 9F: offset = [0, -1200, 0]
-# 9F: height = 1300
-# 9F: width = [200, 120]
-# 9F: color = [120, 255, 160]
-# 9F: intensity = 70
-# 9F: profile = "rise"
-# 9F: breathe = 0.35
-# 9F: period = 300
-# 9F: motes = 16
-# 9F: seed = 104
+[[beams]]
+id = "window_stone"
+tile = [7, 6]
+height = 1400
+tilt = 14.0
+angle = 270.0
+width = [90, 190]
+color = [255, 240, 205]
+intensity = 105
+profile = "fall"
+pool = true
+breathe = 0.12
+sway = 1.0
+period = 520
+motes = 14
+seed = 101
+
+[[beams]]
+id = "window_west"
+tile = [5, 5]
+height = 1400
+tilt = 14.0
+angle = 270.0
+width = [60, 120]
+color = [255, 240, 205]
+intensity = 80
+profile = "fall"
+pool = true
+breathe = 0.15
+period = 600
+motes = 6
+seed = 102
+
+[[beams]]
+id = "window_east"
+tile = [9, 7]
+height = 1400
+tilt = 14.0
+angle = 270.0
+width = [60, 120]
+color = [255, 240, 205]
+intensity = 80
+profile = "fall"
+pool = true
+breathe = 0.15
+period = 560
+motes = 6
+seed = 103
+
+[[beams]]
+id = "root_glow"
+tile = [16, 10]
+offset = [0, -250, 0]
+height = 900
+width = [150, 100]
+color = [120, 255, 160]
+intensity = 95
+profile = "rise"
+pool = false
+breathe = 0.35
+period = 300
+motes = 16
+seed = 104
 
 # Rootlight motes rising up the shaft from the root far below, and dust
 # turning in the window light over the dais.

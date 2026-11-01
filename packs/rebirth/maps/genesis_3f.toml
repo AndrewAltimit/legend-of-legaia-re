@@ -26,24 +26,25 @@ camera = "far"
 # the belvedere. Each walk's last tile before the plaza ramps up to it.
 floor_heights = [0, 64, 128, 160]
 
-# Past the terraces' edge - and down the garden well round the plaza - the
-# gardens of the floors below, far down, and the stone of the terrace walls
-# dropping to them.
+# Past the terraces' edge the gardens of the floors below, far down, and
+# the stone of the terrace walls dropping to them; round the plaza the
+# garden well (the region below) drops much further, into the dark.
 [surround]
 ground = { tpage = 28, clut = 32461, tile = 34 }
 side = { tpage = 28, clut = 32453, tile = 8 }
-depth = 1280
+depth = 512
 shade = 56
-# 9F: fade = 16
-# 9F: [[surround.regions]]
-# 9F: rect = [14, 16, 24, 26]   # the garden well: a still pool at its foot
-# 9F: depth = 1536
-# 9F: shade = 72
-# 9F: fade = 8
+fade = 16
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
 backdrop = { tpage = 28, clut = 32453, tile = 8, height = 1152, distance = 2, shade = 96 }
+
+[[surround.regions]]
+rect = [14, 16, 24, 26]   # the garden well
+depth = 1536
+shade = 72
+fade = 8
 
 # The vault overhead: the belvedere's lanterns hang on chains from it. The follow camera
 # looks down from under it, so only the chains show, rising out of the
@@ -515,85 +516,85 @@ lamps = [
 
 # Sun through the leaves: soft shafts falling through the orchard's and
 # the arbour's canopies, one on the sundial, and the root's glow rising out
-# of the well. Lane 9F's `[[beams]]` (enhanced lighting only), comments
-# until the engine reads them.
-# 9F: [[beams]]
-# 9F: id = "sun_sundial"
-# 9F: tile = [19, 21]
-# 9F: height = 1300
-# 9F: tilt = 10.0
-# 9F: angle = 160.0
-# 9F: width = [100, 200]
-# 9F: color = [255, 244, 210]
-# 9F: intensity = 70
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: breathe = 0.1
-# 9F: period = 600
-# 9F: motes = 12
-# 9F: seed = 301
-#
-# 9F: [[beams]]
-# 9F: id = "sun_orchard_a"
-# 9F: tile = [8, 18]
-# 9F: height = 1000
-# 9F: tilt = 14.0
-# 9F: angle = 160.0
-# 9F: width = [50, 110]
-# 9F: color = [235, 255, 200]
-# 9F: intensity = 55
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: sway = 2.5
-# 9F: period = 360
-# 9F: motes = 6
-# 9F: seed = 302
-#
-# 9F: [[beams]]
-# 9F: id = "sun_orchard_b"
-# 9F: tile = [5, 24]
-# 9F: height = 1000
-# 9F: tilt = 14.0
-# 9F: angle = 160.0
-# 9F: width = [50, 110]
-# 9F: color = [235, 255, 200]
-# 9F: intensity = 50
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: sway = 2.5
-# 9F: period = 400
-# 9F: motes = 6
-# 9F: seed = 303
-#
-# 9F: [[beams]]
-# 9F: id = "sun_arbour"
-# 9F: tile = [30, 21]
-# 9F: height = 1000
-# 9F: tilt = 14.0
-# 9F: angle = 160.0
-# 9F: width = [50, 110]
-# 9F: color = [255, 235, 210]
-# 9F: intensity = 50
-# 9F: profile = "fall"
-# 9F: pool = true
-# 9F: sway = 2.0
-# 9F: period = 380
-# 9F: motes = 6
-# 9F: seed = 304
-#
-# 9F: [[beams]]
-# 9F: id = "well_glow"
-# 9F: tile = [19, 17]
-# 9F: offset = [0, -1500, 0]
-# 9F: height = 1500
-# 9F: width = [220, 140]
-# 9F: color = [120, 255, 160]
-# 9F: intensity = 60
-# 9F: profile = "rise"
-# 9F: breathe = 0.35
-# 9F: period = 320
-# 9F: motes = 16
-# 9F: seed = 305
+# of the well. Drawn only under enhanced lighting.
+[[beams]]
+id = "sun_sundial"
+tile = [19, 21]
+height = 1300
+tilt = 10.0
+angle = 90.0
+width = [100, 200]
+color = [255, 244, 210]
+intensity = 100
+profile = "fall"
+pool = true
+breathe = 0.1
+period = 600
+motes = 12
+seed = 301
+
+[[beams]]
+id = "sun_orchard_a"
+tile = [8, 18]
+height = 1000
+tilt = 14.0
+angle = 90.0
+width = [50, 110]
+color = [235, 255, 200]
+intensity = 85
+profile = "fall"
+pool = true
+sway = 2.5
+period = 360
+motes = 6
+seed = 302
+
+[[beams]]
+id = "sun_orchard_b"
+tile = [5, 24]
+height = 1000
+tilt = 14.0
+angle = 90.0
+width = [50, 110]
+color = [235, 255, 200]
+intensity = 80
+profile = "fall"
+pool = true
+sway = 2.5
+period = 400
+motes = 6
+seed = 303
+
+[[beams]]
+id = "sun_arbour"
+tile = [30, 21]
+height = 1000
+tilt = 14.0
+angle = 90.0
+width = [50, 110]
+color = [255, 235, 210]
+intensity = 80
+profile = "fall"
+pool = true
+sway = 2.0
+period = 380
+motes = 6
+seed = 304
+
+[[beams]]
+id = "well_glow"
+tile = [15, 26]
+offset = [64, -250, 0]
+height = 900
+width = [150, 100]
+color = [120, 255, 160]
+intensity = 90
+profile = "rise"
+pool = false
+breathe = 0.35
+period = 320
+motes = 16
+seed = 305
 
 # Rootlight motes drift up the garden well; petals fall into it.
 [[emitters]]

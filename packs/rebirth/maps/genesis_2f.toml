@@ -32,9 +32,11 @@ floor_heights = [0, 56, 112, 160]
 ground = { tpage = 5, clut = 30720, tile = 0 }
 side = { tpage = 11, clut = 32523, tile = 38 }
 depth = 1024
-# The lake lights itself: its floor and the walls nearest it draw full bright.
-shade = 128
-# 9F: fade = 24
+# The chasm walls go down from the rim into the dark, so each chasm reads
+# as a hole and not a block; the lake's glow comes from the lamps and the
+# rising embers.
+shade = 96
+fade = 0
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
@@ -374,37 +376,37 @@ sides = 16
 color = [110, 110, 110]
 yaw = [0.0, 0.0]
 
-# The lake's glow rising out of the two chasms and past the middle
-# landing: lane 9F's `[[beams]]` (enhanced lighting only), left as comments
-# until the engine reads them; the `moat_*` / `run_*` lamps carry the glow
-# alone meanwhile.
-# 9F: [[beams]]
-# 9F: id = "chasm_w"
-# 9F: tile = [11, 10]
-# 9F: offset = [0, -1000, 0]
-# 9F: height = 1100
-# 9F: width = [140, 90]
-# 9F: color = [255, 120, 50]
-# 9F: intensity = 70
-# 9F: profile = "rise"
-# 9F: breathe = 0.3
-# 9F: period = 200
-# 9F: motes = 12
-# 9F: seed = 211
-#
-# 9F: [[beams]]
-# 9F: id = "chasm_e"
-# 9F: tile = [25, 10]
-# 9F: offset = [0, -1000, 0]
-# 9F: height = 1100
-# 9F: width = [140, 90]
-# 9F: color = [255, 120, 50]
-# 9F: intensity = 70
-# 9F: profile = "rise"
-# 9F: breathe = 0.3
-# 9F: period = 220
-# 9F: motes = 12
-# 9F: seed = 212
+# The lake's glow rising out of the two chasms (enhanced lighting only;
+# the `moat_*` / `run_*` lamps do the lighting).
+[[beams]]
+id = "chasm_w"
+tile = [11, 13]
+offset = [64, -250, 0]
+height = 800
+width = [120, 80]
+color = [255, 120, 50]
+intensity = 90
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 200
+motes = 12
+seed = 211
+
+[[beams]]
+id = "chasm_e"
+tile = [24, 13]
+offset = [64, -250, 0]
+height = 800
+width = [120, 80]
+color = [255, 120, 50]
+intensity = 90
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 220
+motes = 12
+seed = 212
 
 [lighting]
 mood = "night"
