@@ -782,3 +782,49 @@ fn the_cabinet_arms_start_their_announcer_lines_once() {
     cab.state = ST_LOSE;
     assert_eq!(lines(&mut cab, 0x100, &idle), vec![GAME_OVER_XA]);
 }
+
+/// The all-clear announcer (`FUN_801D21FC`) is the five all-clear beats'
+/// own: entering `0xFA` starts its lines (the state-`0` and state-`1` lines
+/// land on the same frame, so `0x0B` is the one that sounds), the second
+/// fade crossing the gate runs the timer out, and the closing line is the
+/// ordinary-stage `0x0C` or, at displayed stage `0x0E`, the final `0x0D`.
+#[test]
+fn the_all_clear_beats_run_the_announcer_and_its_captions() {
+    use crate::baka_fighter_chrome::{
+        COUNTDOWN_FINAL_ROUND, COUNTDOWN_FINAL_XA, COUNTDOWN_LOADED_XA, COUNTDOWN_ROUND_XA,
+    };
+    let idle = CabinetInput {
+        frame_step: 1,
+        win_target: 2,
+        ..Default::default()
+    };
+    for (stage, closing, caption) in [
+        (3, COUNTDOWN_ROUND_XA, 0x1C),
+        (COUNTDOWN_FINAL_ROUND, COUNTDOWN_FINAL_XA, 0x1D),
+    ] {
+        let mut cab = BakaCabinet::new();
+        cab.state = ST_CLEAR_A;
+        cab.stage_display = stage;
+        let first = cab.tick(&idle);
+        assert_eq!(first.xa, Some(COUNTDOWN_LOADED_XA));
+        let ids: Vec<u8> = first.widgets.iter().map(|c| c.widget).collect();
+        assert_eq!(ids, vec![0x1A, caption]);
+        let mut lines = Vec::new();
+        for _ in 0..2000 {
+            if !(ST_CLEAR_A..=ST_CLEAR_E).contains(&cab.state) {
+                break;
+            }
+            lines.extend(cab.tick(&idle).xa);
+        }
+        assert_eq!(lines, vec![closing], "stage {stage}");
+    }
+    // Outside the all-clear beats the announcer neither speaks nor draws.
+    let mut cab = BakaCabinet::new();
+    cab.state = ST_DUEL;
+    let f = cab.tick(&idle);
+    assert!(
+        f.widgets
+            .iter()
+            .all(|c| ![0x1A, 0x1C, 0x1D].contains(&c.widget))
+    );
+}

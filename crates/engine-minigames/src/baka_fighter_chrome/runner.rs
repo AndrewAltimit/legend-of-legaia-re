@@ -1,9 +1,9 @@
-//! The runner that drives the three timelines and the banner actor pool.
+//! The runner that drives the two round timelines and the banner actor pool.
 
 use super::*;
 
 // ---------------------------------------------------------------------------
-// The runner that drives the three timelines and the banner actor pool
+// The runner that drives the two round timelines and the banner actor pool
 // ---------------------------------------------------------------------------
 
 /// Frame at which the intro title card has finished assembling and the
@@ -25,16 +25,9 @@ pub const ROUND_BANNER_SPRITE: u16 = 3;
 pub struct ChromeTick {
     /// The global frame step (`DAT_1F800393`).
     pub frame_step: i32,
-    /// `_DAT_8007BC20` - the scene-load flag that freezes the countdown walk.
-    pub loading: bool,
     /// `DAT_801DBF78` - `0` while the match is torn down, non-zero while it
     /// runs. The actor bind retires every pooled banner once it is set.
     pub match_phase: i32,
-    /// `DAT_801DBF8C` - the 0-based round index the banner announces.
-    pub round: i32,
-    /// `DAT_801DC110` - the round counter the countdown tests for its final
-    /// announcer line.
-    pub round_counter: i32,
     /// `DAT_801DBF70` / `DAT_801DBF74` - the two focused fighter ids the bind
     /// compares each actor's owner against.
     pub focus: (i16, i16),
@@ -44,10 +37,7 @@ impl Default for ChromeTick {
     fn default() -> Self {
         ChromeTick {
             frame_step: 1,
-            loading: false,
             match_phase: 0,
-            round: 0,
-            round_counter: 0,
             focus: (0, 1),
         }
     }
@@ -70,7 +60,7 @@ pub struct ChromeSprite {
 
 /// The Baka Fighter round chrome as one advancing object.
 ///
-/// Retail runs all three timelines off the overlay's own per-frame tick, in
+/// Retail runs both timelines off the overlay's own per-frame tick, in
 /// parallel with the resolution state machine, and spawns the round-result
 /// banners as sprite actors that the `_DAT_8007BA2C` draw hook services.
 /// [`BakaChrome`] is that arrangement: the duel
@@ -83,12 +73,10 @@ pub struct BakaChrome {
     /// The cabinet-driven card clock for the next step
     /// ([`Self::set_intro_clock`]), consumed by it.
     intro_live: Option<i32>,
-    banner_t: Option<i32>,
-    countdown: Countdown,
-    /// `DAT_801DBEB4` / `DAT_801DBEB0` - the two banner brightness globals
-    /// the countdown gates on and draws with.
-    banner_level: i32,
-    title_level: i32,
+    /// The round banner clock the cabinet drew this frame
+    /// ([`Self::round_banner_step`]); cleared at the top of every
+    /// [`Self::step`].
+    banner_live: Option<i32>,
     sprites: Vec<ChromeSprite>,
     /// The live round-result banner sprites ([`Self::raise_result`]).
     results: Vec<ChromeActor>,
@@ -96,9 +84,6 @@ pub struct BakaChrome {
     result_xa: Option<XaCue>,
     /// Frames the result banners still stand ([`RESULT_HOLD_FRAMES`]).
     result_hold: i32,
-    /// A round banner asked for while the result banners stand: retail draws
-    /// it from the next round's setup, after the hold, so it waits.
-    pending_round_banner: Option<u16>,
     /// Whether the banner's two sprite-actor visibility flags are up.
     banner_flags: bool,
     /// The last round whose banner line a prestage list named
@@ -156,15 +141,28 @@ impl BakaChrome {
         self.intro_live = t;
     }
 
-    /// Start the round banner timeline and spawn its sprite actor at the
-    /// screen centre through the shared spawn wrapper.
-    pub fn start_round_banner(&mut self, sprite_id: u16) {
-        if !self.results.is_empty() {
-            self.pending_round_banner = Some(sprite_id);
-            return;
+    /// One frame of the round banner (`FUN_801D5C7C`), on the cabinet's
+    /// clock: the four banner arms `0x33..0x36` call it with `DAT_801DC128`
+    /// (zeroed by the round setup `0x32`, stepped after each call) and the
+    /// round index `DAT_801DBF8C` the setup has already advanced
+    /// (`0x801D0640`), so the line `round_banner_xa(round)` starts on the
+    /// first banner frame of the round it names. Clock `0` also takes the
+    /// result banners down and spawns the banner's sprite actor.
+    pub fn round_banner_step(&mut self, t: i32, round: i32) -> ChromeFrame {
+        if t == 0 {
+            self.results.clear();
+            self.result_hold = 0;
+            self.sprites.retain(|s| s.actor.id != ROUND_BANNER_SPRITE);
+            self.spawn_round_banner_sprite(ROUND_BANNER_SPRITE);
         }
-        self.banner_t = Some(0);
-        self.countdown = Countdown::default();
+        self.banner_live = Some(t);
+        self.banner_flags = round_banner_flags(t);
+        round_banner_frame(t, round)
+    }
+
+    /// Spawn the round banner's sprite actor at the screen centre through
+    /// the shared spawn wrapper.
+    fn spawn_round_banner_sprite(&mut self, sprite_id: u16) {
         let spec = crate::baka_fighter::center_effect_spawn(sprite_id);
         self.sprites.push(ChromeSprite {
             actor: ChromeActor {
@@ -200,13 +198,6 @@ impl BakaChrome {
             .collect();
         self.result_xa = Some(result_xa(r));
         self.result_hold = RESULT_HOLD_FRAMES;
-        // A round banner already started for this round end (the duel books
-        // the round before the HP the banner tail reads settles) waits too:
-        // retail draws it from the next round's setup, after the hold.
-        if self.banner_t.take().is_some() {
-            self.countdown = Countdown::default();
-            self.pending_round_banner = Some(ROUND_BANNER_SPRITE);
-        }
         // The previous round's ROUND sprite actor leaves with it: the result
         // takes the screen centre the round banner stood at.
         self.sprites.retain(|s| s.actor.id != ROUND_BANNER_SPRITE);
@@ -217,7 +208,6 @@ impl BakaChrome {
         self.results.clear();
         self.result_xa = None;
         self.result_hold = 0;
-        self.pending_round_banner = None;
     }
 
     /// The live round-result banner sprites.
@@ -227,17 +217,12 @@ impl BakaChrome {
 
     /// `true` while any timeline is still running.
     pub fn busy(&self) -> bool {
-        self.intro_t.is_some() || self.intro_live.is_some() || self.banner_t.is_some()
+        self.intro_t.is_some() || self.intro_live.is_some() || self.banner_live.is_some()
     }
 
     /// The live banner sprite pool.
     pub fn sprites(&self) -> &[ChromeSprite] {
         &self.sprites
-    }
-
-    /// The countdown's own state, for a host that wants to show it.
-    pub fn countdown(&self) -> Countdown {
-        self.countdown
     }
 
     /// Advance every armed timeline one frame and service the sprite pool.
@@ -249,6 +234,7 @@ impl BakaChrome {
     /// other bind output still applies.
     pub fn step(&mut self, tick: &ChromeTick, banks: (&[u8], &[u8])) -> ChromeFrame {
         let mut out = ChromeFrame::default();
+        self.banner_live = None;
 
         if let Some(t) = self.intro_live.take() {
             let f = self.intro.frame(t);
@@ -257,31 +243,6 @@ impl BakaChrome {
             let f = self.intro.frame(t);
             merge_frame(&mut out, f);
             self.intro_t = if t + 1 < INTRO_END { Some(t + 1) } else { None };
-        }
-
-        if let Some(t) = self.banner_t {
-            let f = round_banner_frame(t, tick.round);
-            self.banner_flags = round_banner_flags(t);
-            merge_frame(&mut out, f);
-            // The banner brightness the countdown gates on is the same ramp
-            // the banner draws with, so it crosses COUNTDOWN_FADE_GATE a
-            // couple of frames into the slide-in.
-            self.banner_level = t.min(0xFF);
-            self.title_level = self.banner_level;
-            let cd = countdown_frame(
-                &mut self.countdown,
-                tick.frame_step,
-                tick.loading,
-                self.banner_level,
-                self.title_level,
-                tick.round_counter,
-            );
-            merge_frame(&mut out, cd);
-            self.banner_t = if t + 1 < BANNER_END {
-                Some(t + 1)
-            } else {
-                None
-            };
         }
 
         for a in &self.results {
@@ -295,12 +256,8 @@ impl BakaChrome {
         if !self.results.is_empty() {
             self.result_hold -= tick.frame_step;
             if self.result_hold <= 0 {
-                // The hold is over: the round setup's banner takes the screen.
                 self.results.clear();
                 self.result_hold = 0;
-                if let Some(id) = self.pending_round_banner.take() {
-                    self.start_round_banner(id);
-                }
             }
         }
 

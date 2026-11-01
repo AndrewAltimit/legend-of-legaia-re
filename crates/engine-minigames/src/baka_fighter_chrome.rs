@@ -1,5 +1,6 @@
-//! Baka Fighter **round chrome** - the intro title card, the round banner and
-//! the READY/FIGHT countdown that frame the duel proper.
+//! Baka Fighter **round chrome** - the intro title card and the round banner
+//! that frame the duel proper, plus the all-clear announcer the cabinet runs
+//! in its all-clear beats.
 //!
 //! All three are frame-counter timelines over the same primitive: the HUD
 //! textured-quad emitter `FUN_801D5ED0`, ported as

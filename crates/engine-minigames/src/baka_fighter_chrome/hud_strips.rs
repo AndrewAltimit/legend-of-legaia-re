@@ -58,10 +58,11 @@ pub fn hud_digit_placements(round: i32, tally: Option<(i32, i32)>) -> Vec<(i32, 
 ///
 /// Each `cells` entry is one `FUN_801D5ED0(x, y, widget, brightness, 0x1000)`
 /// call of the cabinet (the attract "PRESS START" prompt, the "PLAYER
-/// SELECT" banner, the "NEXT GAME / PAY OUT" sheet - `0x1000` is the size
+/// SELECT" banner, the "NEXT GAME / PAY OUT" sheet, the all-clear captions -
+/// `0x1000` is the size
 /// literal the attract arm stores at `0x801CF760`); each `draws` entry is one
 /// call of the round chrome ([`ChromeDraw`]: the intro title card, the ROUND
-/// banner, the countdown). A glyph draw first pages the [`GLYPH_WIDGET`]
+/// banner). A glyph draw first pages the [`GLYPH_WIDGET`]
 /// strip, `u = glyph_u(n)` - the byte store at [`GLYPH_U_VA`] retail makes
 /// before it emits - on a copy of the record, so the table stays pristine.
 /// Cells come first: the attract arm draws its prompt before it calls the

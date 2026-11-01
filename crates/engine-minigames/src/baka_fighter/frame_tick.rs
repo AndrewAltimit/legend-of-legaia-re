@@ -294,14 +294,20 @@ impl BakaFight {
         }
         let chrome_tick = crate::baka_fighter_chrome::ChromeTick {
             frame_step,
-            loading: false,
             match_phase: i32::from(matches!(self.phase, MatchPhase::MatchOver(_))),
-            round: self.round as i32,
-            round_counter: self.round as i32,
             focus: (0, 1),
         };
         self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
         self.tick_cabinet(frame_step);
+        // The round banner is the cabinet's banner arms' (`0x33..0x36`, one
+        // `FUN_801D5C7C(DAT_801DC128)` each), drawn the same frame they run,
+        // with the round index the setup advanced: its line names the round
+        // about to start. It draws ahead of the rest of the chrome.
+        if let Some(t) = self.cabinet_frame.round_banner {
+            let banner = self.chrome.round_banner_step(t, self.cabinet.round());
+            self.chrome_frame.draws.splice(0..0, banner.draws);
+            self.chrome_frame.xa = banner.xa.or(self.chrome_frame.xa);
+        }
         // A cabinet arm's announcer line (the FIGHT flash, NEXT GAME, GAME
         // OVER) rides the chrome frame's one XA slot, which every host
         // already plays; the chrome's own line keeps the slot on a frame

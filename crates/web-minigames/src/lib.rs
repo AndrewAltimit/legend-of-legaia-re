@@ -129,6 +129,9 @@ pub struct LegaiaMinigames {
     muscle_hub_xa_fired: u32,
     /// Announcer lines started (a read-out for the page's checks).
     baka_xa_fired: u32,
+    /// The last announcer line started: the request and the PCM frames its
+    /// retail read span cut (a read-out for the page's checks).
+    baka_xa_last: Option<(legaia_engine_minigames::baka_fighter_chrome::XaCue, usize)>,
     /// Parsed Baka roster + action tables (cached; the roster picker reads them
     /// before a fight starts).
     baka_tables: Option<(
@@ -440,6 +443,7 @@ impl LegaiaMinigames {
             muscle_hub: None,
             muscle_hub_xa_fired: 0,
             baka_xa_fired: 0,
+            baka_xa_last: None,
             baka_tables: None,
             slot: None,
             slot_payouts: None,

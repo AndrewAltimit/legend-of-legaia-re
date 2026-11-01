@@ -52,11 +52,16 @@ pub struct CabinetFrame {
     /// this frame (`DAT_801DBE94` before its increment), or `None` when no
     /// arm called it.
     pub title_card: Option<i32>,
+    /// The clock the round banner arms `0x33..0x36` called the banner
+    /// `FUN_801D5C7C` with this frame (`DAT_801DC128` before its step), or
+    /// `None` outside them.
+    pub round_banner: Option<i32>,
     /// Roster id the player-select pose state seated (`DAT_801DBF70`).
     pub install_player: Option<i32>,
     /// The announcer line a cabinet arm started this frame
-    /// (`FUN_8003D53C`): the FIGHT flash, NEXT GAME, GAME OVER. The chrome's
-    /// own lines (intro, round banner, countdown, results) are the chrome's.
+    /// (`FUN_8003D53C`): the FIGHT flash, NEXT GAME, GAME OVER and the
+    /// all-clear announcer's lines. The chrome's own lines (intro, round
+    /// banner, results) are the chrome's.
     pub xa: Option<crate::baka_fighter_chrome::XaCue>,
 }
 
@@ -132,6 +137,10 @@ pub struct BakaCabinet {
     /// `DAT_801DBEB0` / `DAT_801DBEB4` - the all-clear sequence's two fades.
     pub(super) clear_fade_in: i32,
     pub(super) clear_fade_out: i32,
+    /// `DAT_801DC134` / `DAT_801DC138` - the all-clear announcer walk
+    /// (`FUN_801D21FC`), called from the five all-clear beats only. Nothing
+    /// else in the overlay writes it, so it runs once per overlay load.
+    pub(super) clear_announcer: crate::baka_fighter_chrome::Countdown,
     /// `DAT_801DBF70` - the player-select cursor.
     pub(super) select_cursor: i32,
     /// `DAT_801DBF90` - the menu cursor (tally choice, pause, developer menu).
@@ -190,6 +199,7 @@ impl BakaCabinet {
             frames: 0,
             clear_fade_in: 0,
             clear_fade_out: 0,
+            clear_announcer: Default::default(),
             select_cursor: 0,
             menu_cursor: 0,
             stage: 2,

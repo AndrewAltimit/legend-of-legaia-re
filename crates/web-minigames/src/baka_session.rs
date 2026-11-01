@@ -184,7 +184,7 @@ impl LegaiaMinigames {
     }
 
     /// The round chrome's draws this frame (`BakaChrome` - the intro title
-    /// card, the ROUND banner and the READY / FIGHT countdown), the same
+    /// card and the ROUND banner), the same
     /// runner the native window and the play page draw from:
     ///
     /// ```json

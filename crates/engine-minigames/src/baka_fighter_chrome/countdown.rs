@@ -1,20 +1,27 @@
-//! The READY / FIGHT countdown.
+//! The all-clear announcer (`FUN_801D21FC`).
+//!
+//! Historically named the "READY / FIGHT countdown". Its four call sites are
+//! the tails of the cabinet's five all-clear beats `0xFA..0xFE`
+//! (`0x801D1B5C`, `0x801D1BD0`, `0x801D1C24`, `0x801D1C90`), so the cabinet
+//! drives it ([`crate::baka_cabinet::BakaCabinet::tick`]); the round banner
+//! never does.
 
 use super::*;
 
 // ---------------------------------------------------------------------------
-// READY / FIGHT countdown
+// All-clear announcer
 // ---------------------------------------------------------------------------
 
-/// The countdown's own gate: the banner brightness (`DAT_801DBEB4`) must reach
-/// this before the timer starts decaying.
+/// The announcer's own gate: the all-clear's second fade (`DAT_801DBEB4`)
+/// must reach this before the timer starts decaying.
 pub const COUNTDOWN_FADE_GATE: i32 = 0x11;
 /// Timer seeded when the countdown enters state 2.
 pub const COUNTDOWN_TIMER: i32 = 0x20;
-/// The value of the round counter (`DAT_801DC110`) that marks the final round.
+/// The value of the displayed stage counter (`DAT_801DC110`) that picks the
+/// final-stage line and caption.
 pub const COUNTDOWN_FINAL_ROUND: i32 = 0x0E;
 
-/// READY/FIGHT countdown state (`DAT_801DC134` / `DAT_801DC138`).
+/// All-clear announcer state (`DAT_801DC134` / `DAT_801DC138`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Countdown {
     /// `DAT_801DC134`: `0` fresh, `1` after the first line, `2` counting,
@@ -24,23 +31,23 @@ pub struct Countdown {
     pub timer: i32,
 }
 
-/// PORT: FUN_801D21FC - the READY/FIGHT countdown.
+/// PORT: FUN_801D21FC - the all-clear announcer.
 ///
 /// `frame_step` is the per-frame tick (`DAT_1F800393`), `loading` the scene
-/// load flag `_DAT_8007BC20`, `banner_level` / `title_level` the two banner
-/// brightness globals (`DAT_801DBEB4` / `DAT_801DBEB0`), and `round_counter`
-/// the round global `DAT_801DC110`.
+/// load flag `_DAT_8007BC20`, `banner_level` / `title_level` the all-clear
+/// sequence's two fades (`DAT_801DBEB4` / `DAT_801DBEB0`), and
+/// `round_counter` the displayed stage counter `DAT_801DC110`.
 ///
 /// While `loading` is clear the state advances: `0 -> 1` fires `XA33`
 /// channel `0x0A`; `1 -> 2` fires channel `0x0B` and seeds
 /// [`COUNTDOWN_TIMER`]; state `2` waits for `banner_level` to reach
 /// [`COUNTDOWN_FADE_GATE`], then decays the timer by `frame_step` and, on
-/// running out, fires channel `0x0D` on the final round (`round_counter ==
+/// running out, fires channel `0x0D` on the final stage (`round_counter ==
 /// 0x0E`) or `0x0C` otherwise and settles in state `3`.
 ///
 /// Every frame - loading or not - it draws the two banner widgets at half
 /// their level: `0x1A` at `(0xA0, 0x60)` and, at `(0xA0, 0xA0)`, `0x1D` on
-/// the final round or `0x1C` otherwise.
+/// the final stage or `0x1C` otherwise.
 pub fn countdown_frame(
     st: &mut Countdown,
     frame_step: i32,

@@ -437,9 +437,9 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     </tbody>
   </table>
   </div>
-  <p>Each banner comes with an announcer line. The round banner flies two halves together, holds and flies them out; the READY / FIGHT countdown that follows is presentation only, and the round never waits on it. The title card, the round banner and the countdown are pure frame-counter timelines.</p>
+  <p>Each banner comes with an announcer line. The round banner flies two halves together, holds and flies them out; its line is <code>XA32.XA</code> on the channel of the 0-based index of the round about to start, which the round setup has already advanced. The cabinet's banner states <code>0x33..0x36</code> drive the banner on their own clock. The title card and the round banner are pure frame-counter timelines. A third timeline long read as a per-round READY / FIGHT countdown is the all-clear announcer: only the five all-clear beats <code>0xFA..0xFE</code> call it, and run beside the round banner its <code>XA33</code> line cut the round number off.</p>
   <p>Both play hosts draw the duel HUD through one shared builder, whether the duel opened from a casino cabinet seat or from the launcher. Before that builder existed, a seated duel showed a lone round digit: the HUD model was ported and built every frame, but neither host drew it.</p>
-  <p class="dg-note">HUD renderer <code>FUN_801D2AFC</code> over the 51-record widget table <code>DAT_801D7160</code>; banner draw hook <code>FUN_801D67F0</code>; title card <code>FUN_801D59D4</code>, round banner <code>FUN_801D5C7C</code>, countdown <code>FUN_801D21FC</code>.</p>
+  <p class="dg-note">HUD renderer <code>FUN_801D2AFC</code> over the 51-record widget table <code>DAT_801D7160</code>; banner draw hook <code>FUN_801D67F0</code>; title card <code>FUN_801D59D4</code>, round banner <code>FUN_801D5C7C</code>, all-clear announcer <code>FUN_801D21FC</code>.</p>
 </section>
 
 <section class="doc-section" id="sound" data-doc="sound">

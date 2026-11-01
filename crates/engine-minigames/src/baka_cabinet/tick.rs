@@ -16,6 +16,7 @@ impl BakaCabinet {
         f.draw_arena = draws_arena(self.state);
         f.draw_hud = draws_hud(self.state);
 
+        let entry = self.state;
         match self.state {
             ST_BOOT => {
                 self.high_score = 0;
@@ -125,21 +126,31 @@ impl BakaCabinet {
             }
             ST_ROUND_SETUP => {
                 self.state_timer = 0;
+                // The banner clock `DAT_801DC128` restarts with every round
+                // (`0x801D0188`).
+                self.scene_timer = 0;
                 self.state = ST_ROUND_BANNER_A;
             }
+            // Each banner arm calls `FUN_801D5C7C(DAT_801DC128)` and then
+            // steps the clock (`0x801D01D8`, `0x801D0290`, `0x801D0344`,
+            // `0x801D0468`).
             ST_ROUND_BANNER_A => {
+                f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
                 self.state = ST_ROUND_BANNER_B;
             }
             ST_ROUND_BANNER_B => {
+                f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
                 self.state = ST_ROUND_BANNER_C;
             }
             ST_ROUND_BANNER_C => {
+                f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
                 self.state = ST_ROUND_BANNER_D;
             }
             ST_ROUND_BANNER_D => {
+                f.round_banner = Some(self.scene_timer);
                 self.scene_timer += step;
                 if self.scene_timer >= 0x79 {
                     self.scene_timer = 0;
@@ -348,6 +359,31 @@ impl BakaCabinet {
                 }
             }
             _ => {}
+        }
+
+        // The five all-clear beats each end their arm on the all-clear
+        // announcer `FUN_801D21FC(0)` (`0x801D1B5C` for `0xFA` / `0xFB`,
+        // `0x801D1BD0` / `0x801D1C24` / `0x801D1C90` for `0xFC` / `0xFD` /
+        // `0xFE`), after the arm has moved its fades. No other state calls
+        // it - the round banner states `0x33..0x36` call only the banner.
+        if (ST_CLEAR_A..=ST_CLEAR_E).contains(&entry) {
+            let cd = crate::baka_fighter_chrome::countdown_frame(
+                &mut self.clear_announcer,
+                step,
+                false,
+                self.clear_fade_out,
+                self.clear_fade_in,
+                self.stage_display,
+            );
+            if cd.xa.is_some() {
+                f.xa = cd.xa;
+            }
+            f.widgets.extend(cd.draws.iter().map(|d| SheetCell {
+                widget: d.widget,
+                x: i32::from(d.x),
+                y: i32::from(d.y),
+                brightness: d.brightness,
+            }));
         }
 
         // Epilogue. Retail re-reads the state word here, *after* the body, and

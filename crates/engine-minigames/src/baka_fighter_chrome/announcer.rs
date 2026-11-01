@@ -35,28 +35,29 @@ pub const INTRO_SUBTITLE_XA: XaCue = XaCue {
     chan: 0x0F,
     dur: 0x76,
 };
-/// The countdown's state-`0` line (`XA33` channel `0x0A`,
-/// [`countdown_frame`]).
+/// The all-clear announcer's state-`0` line (`XA33` channel `0x0A`,
+/// [`countdown_frame`]). The announcer runs in the cabinet's all-clear beats
+/// `0xFA..0xFE`, never beside a round banner.
 pub const COUNTDOWN_ARM_XA: XaCue = XaCue {
     clip: 0x20,
     chan: 0x0A,
     dur: 0x46,
 };
-/// The countdown's state-`1` line, once the scene load has cleared (`XA33`
-/// channel `0x0B`).
+/// The all-clear announcer's state-`1` line, once the scene load has
+/// cleared (`XA33` channel `0x0B`).
 pub const COUNTDOWN_LOADED_XA: XaCue = XaCue {
     clip: 0x20,
     chan: 0x0B,
     dur: 0x4D,
 };
-/// The countdown's timer-expiry line on an ordinary round (`XA33` channel
-/// `0x0C`).
+/// The all-clear announcer's timer-expiry line on an ordinary stage (`XA33`
+/// channel `0x0C`).
 pub const COUNTDOWN_ROUND_XA: XaCue = XaCue {
     clip: 0x20,
     chan: 0x0C,
     dur: 0x5A,
 };
-/// The countdown's timer-expiry line on the final round
+/// The all-clear announcer's timer-expiry line on the final stage
 /// ([`COUNTDOWN_FINAL_ROUND`], `XA33` channel `0x0D`).
 pub const COUNTDOWN_FINAL_XA: XaCue = XaCue {
     clip: 0x20,
@@ -93,7 +94,10 @@ pub const ROUND_BANNER_XA_CLIP: u8 = 0x1F;
 pub const ROUND_BANNER_XA_DURATION: u16 = 0x48;
 
 /// The round banner's announcer line for `round` (0-based): `XA32`, and the
-/// channel is the round index itself ([`round_banner_frame`]).
+/// channel is the round index itself ([`round_banner_frame`]):
+/// `FUN_8003D53C(0x1F, DAT_801DBF8C, 0x48)` at `0x801D5CB8..0x801D5CC8`.
+/// `DAT_801DBF8C` is zeroed at `0x801CFDB0` and stepped at the round setup
+/// (`0x801D0640`, clamped to `9`), so round 1 reads channel `0`.
 pub fn round_banner_xa(round: i32) -> XaCue {
     XaCue {
         clip: ROUND_BANNER_XA_CLIP,
@@ -182,7 +186,7 @@ pub fn result_banner_spawns(r: RoundResult) -> Vec<(u16, i16, i16)> {
 /// for a host that stages a clip ahead of the request that plays it (the
 /// browser page decodes a clip the bank lacks one request per frame, so a
 /// line first asked for at its frame sounds late there): the intro card's
-/// two lines, the countdown's four, and the banner lines for `round` and the
+/// two lines, the all-clear announcer's four, and the banner lines for `round` and the
 /// round after it, the four result lines and the cabinet's own three (the
 /// FIGHT flash, NEXT GAME, GAME OVER). The round-advance edge lists the next
 /// banner line again

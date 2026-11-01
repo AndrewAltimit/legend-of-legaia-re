@@ -136,3 +136,32 @@ fn the_pick_seats_the_cursor_fighter_and_starts_the_first_rung() {
     // Record 1's own stand-off places the player.
     assert_eq!(f.fighter_position(0)[0], -(4.0 + 200.0));
 }
+
+/// Through the front end the first rung's first round is announced too:
+/// the cabinet's round setup and banner arms run for it, and the banner's
+/// line is `XA32` channel `0` ("round 1"), the index the cabinet zeroed at
+/// the rung's start (`0x801CFDB0`).
+#[test]
+fn the_first_round_after_the_pick_announces_round_one() {
+    use legaia_engine_minigames::baka_fighter_chrome::{ROUND_BANNER_XA_CLIP, round_banner_xa};
+    let mut w = world();
+    for _ in 0..10 {
+        step(&mut w, 0);
+    }
+    press(&mut w, PadButton::Start);
+    for _ in 0..0x40 {
+        step(&mut w, 0);
+    }
+    press(&mut w, PadButton::Cross);
+    let mut line = None;
+    for _ in 0..0x400 {
+        step(&mut w, 0);
+        if let Some(c) = fight(&w).chrome_frame().xa
+            && c.clip == ROUND_BANNER_XA_CLIP
+        {
+            line = Some(c);
+            break;
+        }
+    }
+    assert_eq!(line, Some(round_banner_xa(0)));
+}
