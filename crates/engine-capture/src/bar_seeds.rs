@@ -82,6 +82,10 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
     if seeds.iter().any(|s| s.ground.is_some()) {
         world.battle.seed_recentre_held = true;
     }
+    // A round start that already picked did so on the engine's own keys.
+    if seeds.iter().any(|s| s.init_key.is_some()) {
+        world.forget_parked_turn();
+    }
     for s in seeds {
         if let Some(pool) = s.slot.checked_sub(EMPTY_SEAT_SLOT_BASE) {
             if let Some([x, z]) = s.ground {

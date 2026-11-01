@@ -50,6 +50,14 @@ impl World {
         self.parked_turn.pick = self.initiative_pick_and_decide();
     }
 
+    /// Drop the parked pick and its decided action, so the next dispatch
+    /// picks afresh. A capture seed that stands the combatants on its own
+    /// initiative keys after the round start's pick calls it: the parked
+    /// pick was made on keys the seed replaced.
+    pub fn forget_parked_turn(&mut self) {
+        self.parked_turn = ParkedTurn::default();
+    }
+
     /// The next turn of the execution band: the round start's parked pick,
     /// or a fresh pick (the action SM's re-pick at `0x801E5D58`). Returns the
     /// pick and the key it spent.
