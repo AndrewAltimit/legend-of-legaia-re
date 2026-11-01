@@ -4588,7 +4588,12 @@ the idle's `24` instead, the Gilium frame reads `.840` against `.902` on its
 on its walk whose replay reached the clock already on the strike
 (`battle_map02_mad_ogre_strike`: the engine's Mad Ogre on entry `7` at cursor
 `16`, retail's on the walk at `24`), where the cursor seat refuses a clip the
-body does not play.
+body does not play. And it lands a walked-in charge cast whose image child
+keeps the gate's frame (`RetailBattle::walk_in_shot_aligned`): the three Koru
+mid-casts hold the wind-up entry (`5` / `6` / `7`) at cursor `0` on the live
+slot and the run entry `1` at `136` on the displayed one, the run clip the
+walk-in played, with the gold ground ring around it (`image` `.943` to
+`.976` each).
 
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's

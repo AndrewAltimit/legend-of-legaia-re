@@ -1545,6 +1545,29 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
         "no commit in the window"
     );
 
+    // A walked-in charge cast past its walk (`koru_blade_breath_mid_cast`):
+    // the wind-up committed inside the lag, the display shows the run.
+    {
+        let mut c = b.clone();
+        c.action_state = 0x70;
+        c.module_phase = 3;
+        c.cam_landed = false;
+        c.queued_action = 0xA2;
+        c.queued_category = 2;
+        c.span_gate = SpanGate::None;
+        c.caster_clip = 5;
+        c.displayed_clips[3] = Some((1, 136));
+        assert!(c.walk_in_shot_aligned());
+        let clips = c.engine_image_displayed_clips();
+        assert_eq!(clips.len(), 1, "the walked cast's run clip");
+        assert_eq!((clips[0].clip, clips[0].cursor), (1, 136));
+        c.caster_clip = 1;
+        assert!(
+            c.engine_image_displayed_clips().is_empty(),
+            "still on the run"
+        );
+    }
+
     // The strike's target still idles: its loop is seated, as no hit has
     // staged its reaction yet; a cast's target keeps the replay's clock.
     b.span_gate = SpanGate::Age { accum: 0 };

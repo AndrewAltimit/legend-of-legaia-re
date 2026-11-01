@@ -440,6 +440,11 @@ impl RetailBattle {
     ///   on the strike clip (`battle_map02_mad_ogre_strike`'s Mad Ogre on
     ///   entry `7` at cursor `16`, retail's on its walk at `24`): the
     ///   cursor seat lands only on the clip the body plays.
+    /// - **A walked-in charge cast** ([`Self::walk_in_shot_aligned`]), whose
+    ///   image child keeps the gate's frame: the module's arm committed the
+    ///   wind-up after the frame on screen was built, which still shows the
+    ///   walk-in's run clip (`koru_blade_breath_mid_cast`: entry `5` at `0`
+    ///   live, the run entry `1` at `136` displayed; `.943` to `.976`).
     pub fn engine_image_displayed_clips(
         &self,
     ) -> Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed> {
@@ -458,16 +463,20 @@ impl RetailBattle {
         Option<[i16; 2]>,
     )> {
         let pool = usize::from(self.active_actor);
-        if pool < 3
-            || !matches!(self.seed_plan(), SeedPlan::Action { state: 0x1E, .. })
-            || self.queued_category != 3
-            || !matches!(self.span_gate, SpanGate::Age { .. })
-        {
+        let strike = matches!(self.seed_plan(), SeedPlan::Action { state: 0x1E, .. })
+            && self.queued_category == 3
+            && matches!(self.span_gate, SpanGate::Age { .. });
+        // A walked-in cast whose image child keeps the gate's frame
+        // ([`Self::walk_in_shot_aligned`]): the body's wind-up commits on
+        // the arm the RAM is in, after the frame on screen was built, so
+        // the display still shows the run clip the walk-in played.
+        let walked_cast = self.walk_in_shot_aligned();
+        if pool < 3 || !(strike || walked_cast) {
             return None;
         }
         let (clip, cursor) = (*self.displayed_clips.get(pool)?)?;
         let committed = clip != self.caster_clip;
-        if !committed && !self.walk_clock_capture() {
+        if !committed && (walked_cast || !self.walk_clock_capture()) {
             return None;
         }
         let m = pool - 3;
