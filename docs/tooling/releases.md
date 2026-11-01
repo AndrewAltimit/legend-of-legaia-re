@@ -82,7 +82,7 @@ legaia-tools-<version>-<target>/
     README-PLAY.txt
     LICENSE  LICENSE-MIT  THIRD-PARTY-LICENSES.txt
     packs/
-        rebirth.lxpack          the Rebirth expansion pack
+        sample.lxpack          the Sample Expansion Pack
     command-line-tools/
         README.txt              every tool, one line each
         legaia-engine           the engine: launcher, play-window, every subcommand
@@ -110,7 +110,7 @@ reaches the archive folder three levels up. The release smoke-runs the staged
 
 ### The bundled expansion pack
 
-`packs/rebirth.lxpack` is [`packs/rebirth/`](../../packs/rebirth/README.md)
+`packs/sample.lxpack` is [`packs/sample/`](../../packs/sample/README.md)
 bundled by `asset expansion bundle` while the archive is staged. The bundler
 is the format's one deterministic writer, so every archive carries the same
 bytes, and it refuses a pack that fails validation - the
@@ -128,7 +128,7 @@ folder in the four folders above the running program, the same walk as
 launcher's *Expansion pack* button steps through the packs it finds there
 and in the per-user packs folder (an installed copy of a pack id hides the
 bundled one), `legaia-engine packs` lists both folders, and
-`play-window --expansion rebirth` resolves the id in the same order.
+`play-window --expansion sample` resolves the id in the same order.
 
 ## Icons
 
@@ -343,7 +343,7 @@ project is `MIT OR Unlicense`), and three generated text files:
   button, the Escape-twice quit) and the display toggles. The launcher itself is described in
   [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
   It also points asset users at Legaia Explorer and the extraction guide, and
-  says how to play the bundled Rebirth pack.
+  says how to play the bundled sample pack.
 - `command-line-tools/README.txt` - the target, every command-line program
   with a one-line role, and the same bring-your-own-disc rule.
 - `THIRD-PARTY-LICENSES.txt` (top level) - the license texts and notices of every crate

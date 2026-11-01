@@ -14,7 +14,7 @@ Entry and per-tick step: `SceneHost::enter_expansion_map` in
 zone and NPC runtime: [`legaia_engine_expansion::map`](../../crates/engine-expansion/src/map.rs);
 validation: [`legaia_expansion_format::map_rules`](../../crates/expansion-format/src/map_rules.rs);
 the detail layer: [`legaia_expansion_format::map_detail`](../../crates/expansion-format/src/map_detail.rs).
-Sample: [`packs/rebirth/maps/genesis_1f.toml`](../../packs/rebirth/maps/genesis_1f.toml).
+Sample: [`packs/sample/maps/genesis_1f.toml`](../../packs/sample/maps/genesis_1f.toml).
 
 ## File layout
 
@@ -229,7 +229,7 @@ A prop that stands in the player's way - more than a tile and a half across
 on an axis, taller than a step, and reaching down to body height - but is
 neither `solid` nor standable is logged at entry
 (`FieldImage::open_large_props`): drawn buildings nobody closed. The
-disc-gated `expansion_solid_props_disc` test holds the flagship pack to it,
+disc-gated `expansion_solid_props_disc` test holds the sample pack to it,
 and walks the player at each solid prop from every side.
 
 ### Standable props
@@ -304,7 +304,7 @@ well above its origin (a plant pot whose lowest vertex is `91` units up), so
 the check measures the vertices rather than trusting `offset[1]`. That needs
 the meshes, so it runs where they are: the engine logs each report when it
 prepares the map (`expansion: map '<id>': rest: ...`), the disc-gated
-`expansion_rest_rebirth_disc` test lists the flagship pack's, and the
+`expansion_rest_sample_disc` test lists the sample pack's, and the
 validator warns with a resolver that measures meshes
 (`DiscResolver::mesh_shape`, which the workbench's disc catalog implements
 off each scene's geometry pack); without one it judges nothing. An item or
@@ -718,7 +718,7 @@ base scene.
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map genesis_1f [--spawn dais]
+    --expansion packs/sample --map genesis_1f [--spawn dais]
 ```
 
 `--expansion` takes a pack directory or an `.lxpack` bundle and activates it
@@ -824,7 +824,7 @@ is a bed and `object = 48` is the stern of a boat cut open where it meets a
 wall, and both have been placed as boats. The mesh catalog
 ([`legaia_expansion_format::mesh_catalog`](../../crates/expansion-format/src/mesh_catalog.rs),
 `crates/expansion-format/data/mesh_catalog.toml`) labels every mesh of the
-geometry packs the Rebirth pack borrows from (`town01`, `vell`, `rugi`,
+geometry packs the sample pack borrows from (`town01`, `vell`, `rugi`,
 `cave01`, `uru`), one entry per `(scene, object)`:
 
 | Field | Meaning |
@@ -875,8 +875,8 @@ it is the honest look for a mesh standing beside retail art.
 The validator checks the file is in the pack, has the `glTF` version-2
 header (or is JSON for `.gltf`), and that `colors` is 16 or 256; the
 conversion's own checks run at entry. [`scripts/models/generate_ember_crystal.py`](../../scripts/models/generate_ember_crystal.py)
-writes the Rebirth pack's crystal and is a worked example of a model a
-modder builds; [`scripts/models/generate_rebirth_props.py`](../../scripts/models/generate_rebirth_props.py)
+writes the sample pack's crystal and is a worked example of a model a
+modder builds; [`scripts/models/generate_sample_pack_props.py`](../../scripts/models/generate_sample_pack_props.py)
 builds its floors' set pieces from prisms, tori and gears over a banded
 texture strip.
 
@@ -1712,7 +1712,7 @@ about `32` units across and each vertex stands on the ground under it
 centre where the bake stands it, so a decal on a slope follows the slope.
 Off a terrain a decal is one flat polygon, as before.
 
-The Rebirth pack's Isles beach, village, grotto and Thornwood are built on
+The sample pack's Isles beach, village, grotto and Thornwood are built on
 it.
 
 ## How large a map can be

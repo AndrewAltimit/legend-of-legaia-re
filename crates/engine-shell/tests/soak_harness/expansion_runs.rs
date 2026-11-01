@@ -1,7 +1,7 @@
 //! Expansion runs: soak labels of the form
 //! `xp:<target>[+nopack][+am][+rt][+seat=<mode id>|+seat=picker][+cards]`.
 //!
-//! The run activates the soak's expansion pack (the repo's Rebirth pack, or
+//! The run activates the soak's expansion pack (the repo's sample pack, or
 //! `LEGAIA_SOAK_PACK`) through the hosts' one activation path, then enters
 //! `<target>` - one of the pack's maps, or a retail scene played with the
 //! pack active - and applies the session switches the suffixes name before
@@ -71,13 +71,13 @@ pub(super) fn split_expansion(label: &str) -> Option<ExpansionRun> {
 }
 
 /// The soak's expansion pack: `LEGAIA_SOAK_PACK` (a pack directory or
-/// `.lxpack`), else the repo's `packs/rebirth`.
+/// `.lxpack`), else the repo's `packs/sample`.
 pub(super) fn soak_pack() -> Arc<ExpansionPack> {
     static PACK: std::sync::OnceLock<Arc<ExpansionPack>> = std::sync::OnceLock::new();
     PACK.get_or_init(|| {
         let path = std::env::var_os("LEGAIA_SOAK_PACK")
             .map(PathBuf::from)
-            .unwrap_or_else(|| repo_root().join("packs").join("rebirth"));
+            .unwrap_or_else(|| repo_root().join("packs").join("sample"));
         let files = legaia_expansion_format::read_files(&path)
             .unwrap_or_else(|e| panic!("read the soak pack {}: {e:#}", path.display()));
         Arc::new(ExpansionPack::from_files(&files).expect("the soak pack parses"))

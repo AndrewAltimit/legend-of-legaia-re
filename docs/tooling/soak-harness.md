@@ -216,7 +216,7 @@ in port 2 (`HeadlessPlayWindow::open_boot_ui`'s card).
 
 A label `xp:<target>[+nopack][+am][+rt][+seat=<id>|+seat=picker][+cards]`
 soaks the expansion layer (`soak_harness/expansion_runs.rs`). The run
-activates the soak pack - `packs/rebirth`, or the pack directory or
+activates the soak pack - `packs/sample`, or the pack directory or
 `.lxpack` that `LEGAIA_SOAK_PACK` names - through the hosts' one activation
 path (`SceneHost::activate_expansion_pack`), then enters `<target>`: one of
 the pack's maps (`BootSession::enter_expansion_map_live`, at its first
@@ -436,7 +436,7 @@ LEGAIA_SOAK_SEEDS=30 LEGAIA_SOAK_FRAMES=18000 LEGAIA_SOAK_JOBS=8 LEGAIA_SOAK_TAG
 | `LEGAIA_SOAK_NO_ENCOUNTERS` | disarm the random-encounter roll (a triage control: a battle that still starts is scripted) |
 | `LEGAIA_SOAK_RETAIL` | soak under the hosts' retail mode (`--retail`, the play page's retail mode): the options screen's engine knobs pinned (`OptionsState::pin_retail`) and every fidelity toggle pinned (`WorldToggles::pin_retail`), so `retail_deviations` is empty |
 | `LEGAIA_SOAK_BARE` | skip the hosts' faithful-play arming and soak a bare `BootSession` (simplified talk, candidate-centre walls, walk-through NPCs) |
-| `LEGAIA_SOAK_EXPANSION` / `LEGAIA_SOAK_PACK` | `soak_expansion`'s long form / the pack its runs activate (default `packs/rebirth`) |
+| `LEGAIA_SOAK_EXPANSION` / `LEGAIA_SOAK_PACK` | `soak_expansion`'s long form / the pack its runs activate (default `packs/sample`) |
 | `LEGAIA_SOAK_REDUCE` / `LEGAIA_SOAK_REDUCE_SIG` / `LEGAIA_SOAK_REDUCE_OUT` | `soak_reduce`: reduce a saved replay again, towards that signature (default: its recorded one), into that file |
 
 Runs are cheap - the headless engine ticks far faster than real time - so a

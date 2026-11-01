@@ -617,7 +617,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("guides/playing-expansion-packs.html", "Playing an expansion pack", "guides/playing-expansion-packs", "guides/playing-expansion-packs.html"),
     ("guides/making-expansion-packs.html", "Making an expansion pack", "guides/making-expansion-packs", "guides/making-expansion-packs.html"),
     ("guides/playing-online.html", "Playing online",                 "guides/playing-online",      "guides/playing-online.html"),
-    ("guides/rebirth.html",        "Legend of Legaia: Rebirth",      "guides/rebirth",             "guides/rebirth.html"),
+    ("guides/sample-pack.html",    "Sample Expansion Pack",      "guides/sample-pack",         "guides/sample-pack.html"),
     # Technical write-ups (narrative deep-dives)
     ("writeups/index.html",        "Technical write-ups",           "writeups/index",             "writeups/index.html"),
     ("writeups/gaza-orbit-softlock.html", "The endless camera orbit - anatomy of a retail softlock", "writeups/gaza-orbit-softlock", "writeups/gaza-orbit-softlock.html"),
@@ -1706,16 +1706,16 @@ def build_image_port_status() -> str:
 
 
 # ---------------------------------------------------------------------------
-# The Rebirth showcase's content tables, read from packs/rebirth/ at build
+# The sample pack showcase's content tables, read from packs/sample/ at build
 # time so the page cannot fall behind the pack. Only the pack's own text
 # (names, titles, descriptions) and its coordinates are shown - a retail
 # monster is named by its archive id, as the pack itself names it.
 
-REBIRTH_DIR = REPO_ROOT / "packs" / "rebirth"
+SAMPLE_PACK_DIR = REPO_ROOT / "packs" / "sample"
 
 
 def _pack_toml(name: str) -> dict:
-    path = REBIRTH_DIR / name
+    path = SAMPLE_PACK_DIR / name
     if not path.exists():
         return {}
     with path.open("rb") as f:
@@ -1747,10 +1747,10 @@ def _table(head: list[str], rows: list[list[str]]) -> str:
     return f"<table><thead><tr>{th}</tr></thead><tbody>{body}</tbody></table>"
 
 
-def build_rebirth_contents() -> str:
-    """The <!--REBIRTH_CONTENTS--> expansion: what packs/rebirth holds."""
-    if not (REBIRTH_DIR / "pack.toml").exists():
-        return '<p class="hint">The Rebirth pack is not in this checkout.</p>'
+def build_sample_pack_contents() -> str:
+    """The <!--SAMPLE_PACK_CONTENTS--> expansion: what packs/sample holds."""
+    if not (SAMPLE_PACK_DIR / "pack.toml").exists():
+        return '<p class="hint">The sample pack is not in this checkout.</p>'
     manifest = _pack_toml("pack.toml")
     battle = _pack_toml("battle.toml")
     prog = _pack_toml("progression.toml")
@@ -1759,7 +1759,7 @@ def build_rebirth_contents() -> str:
     cards = _pack_toml("cards.toml")
     modes = _pack_toml("modes.toml")
     maps = []
-    for f in sorted((REBIRTH_DIR / "maps").glob("*.toml")):
+    for f in sorted((SAMPLE_PACK_DIR / "maps").glob("*.toml")):
         with f.open("rb") as fh:
             maps.append((f.stem, tomllib.load(fh)))
 
@@ -1771,8 +1771,8 @@ def build_rebirth_contents() -> str:
                   ("races", "Race track"), ("prop_hunt", "Prop-hunt arena")]
     mode_rows = [(label, m) for key, label in mode_kinds for m in modes.get(key, [])]
 
-    out = [f'<p class="dg-note">Generated from <code>packs/rebirth/</code> at site build: '
-           f'{_esc(manifest.get("name", "rebirth"))} version {_esc(str(manifest.get("version", "?")))}'
+    out = [f'<p class="dg-note">Generated from <code>packs/sample/</code> at site build: '
+           f'{_esc(manifest.get("name", "sample"))} version {_esc(str(manifest.get("version", "?")))}'
            + (f', licensed {_esc(manifest["license"])}' if manifest.get("license") else "") + ".</p>"]
     tiles = [
         (len(monsters), "monsters"), (len(formations), "formations"), (len(bosses), "bosses"),
@@ -1791,7 +1791,7 @@ def build_rebirth_contents() -> str:
         changed = [f"{k} {_stat_text(m[k])}" for k in
                    ("hp", "mp", "attack", "defence", "speed", "intelligence", "exp", "gold") if k in m]
         rows.append([_esc(m.get("name", key)), f"monster&nbsp;{base.get('id', '?')}", ", ".join(changed)])
-    out.append('<h3 id="rebirth-monsters">Monsters</h3>')
+    out.append('<h3 id="sample-monsters">Monsters</h3>')
     out.append(_table(["Name", "Built on", "Changes"], rows))
 
     # Formations and bosses
@@ -1804,7 +1804,7 @@ def build_rebirth_contents() -> str:
         rows.append([_esc(f.get("label", key)), _esc(", ".join(names)),
                      f"{len(waves)} more, {extra} monsters" if waves else "-",
                      "boss" if any(b.get("formation") == key for b in bosses.values()) else ""])
-    out.append('<h3 id="rebirth-formations">Formations</h3>')
+    out.append('<h3 id="sample-formations">Formations</h3>')
     out.append(_table(["Formation", "Opening seats", "Waves", ""], rows))
     enc = battle.get("encounters", [])
     if enc:
@@ -1815,7 +1815,7 @@ def build_rebirth_contents() -> str:
                  "pack steps " + "-".join(str(v) for v in e["steps"]) if "steps" in e
                  else f"retail rate, retail weight {e.get('retail_weight', 0)}"]
                 for e in enc]
-        out.append('<h3 id="rebirth-encounters">Encounters</h3>')
+        out.append('<h3 id="sample-encounters">Encounters</h3>')
         out.append(_table(["Where", "Formations", "Rate"], rows))
 
     # Progression
@@ -1838,7 +1838,7 @@ def build_rebirth_contents() -> str:
     if lv:
         items.append("item rewards at levels " + ", ".join(str(r["level"]) for r in lv))
     if items:
-        out.append('<h3 id="rebirth-progression">Progression</h3>')
+        out.append('<h3 id="sample-progression">Progression</h3>')
         out.append('<ul class="bullets">' + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
 
     # Quests and challenges
@@ -1852,7 +1852,7 @@ def build_rebirth_contents() -> str:
                  for r in pre.get("quests", [])]
         obj = "; ".join(o.get("text", o.get("kind", "")) for o in q.get("objectives", []))
         rows.append([_esc(q.get("title", q["id"])), _esc(", ".join(gate)) or "-", _esc(obj)])
-    out.append('<h3 id="rebirth-quests">Quests</h3>')
+    out.append('<h3 id="sample-quests">Quests</h3>')
     out.append(_table(["Quest", "Opens after", "Objectives"], rows))
     ch = quests.get("challenges", [])
     if ch:
@@ -1864,7 +1864,7 @@ def build_rebirth_contents() -> str:
         by_rarity: dict[str, int] = {}
         for c in card_list:
             by_rarity[c.get("rarity", "common")] = by_rarity.get(c.get("rarity", "common"), 0) + 1
-        out.append('<h3 id="rebirth-cards">Trading cards</h3>')
+        out.append('<h3 id="sample-cards">Trading cards</h3>')
         out.append("<p>" + f"{len(card_list)} cards: " + ", ".join(
             f"{n} {r}" for r, n in sorted(by_rarity.items(), key=lambda kv: ["common", "uncommon", "rare", "legendary"].index(kv[0])
                                           if kv[0] in ["common", "uncommon", "rare", "legendary"] else 9))
@@ -1878,14 +1878,14 @@ def build_rebirth_contents() -> str:
     # Cutscenes
     scenes = _pack_toml("cutscenes.toml").get("cutscenes", {})
     if scenes:
-        out.append('<h3 id="rebirth-cutscenes">Cutscenes</h3>')
+        out.append('<h3 id="sample-cutscenes">Cutscenes</h3>')
         out.append(_table(["Cutscene", "Plays on", "Steps"],
                           [[_esc(c.get("title", cid)), _esc(c.get("map", "any scene")),
                             str(len(c.get("steps", [])) + sum(len(t.get("steps", [])) for t in c.get("tracks", {}).values()))]
                            for cid, c in scenes.items()]))
 
     # Modes
-    out.append('<h3 id="rebirth-modes">Game modes</h3>')
+    out.append('<h3 id="sample-modes">Game modes</h3>')
     out.append(_table(["Instance", "Mode"], [[_esc(m.get("name", m.get("id", ""))), label] for label, m in mode_rows]))
 
     # Maps
@@ -1904,7 +1904,7 @@ def build_rebirth_contents() -> str:
                                (("props", "prop"), ("npcs", "NPC"), ("triggers", "trigger"),
                                 ("encounters", "encounter zone"))),
                      "; ".join(ways) or "Travel page"])
-    out.append('<h3 id="rebirth-maps">Maps</h3>')
+    out.append('<h3 id="sample-maps">Maps</h3>')
     out.append(_table(["Map", "Tiles", "Scenery from", "Holds", "Way in"], rows))
     return "\n".join(out)
 
@@ -2144,7 +2144,7 @@ def write_gitignore(generated: list[str]) -> None:
 
 
 # Example expansion packs the workbench offers, by directory under packs/.
-EXAMPLE_PACKS = ("rebirth",)
+EXAMPLE_PACKS = ("sample",)
 
 
 def build_example_packs() -> list[str]:
@@ -2214,8 +2214,8 @@ def main() -> int:
             body = body.replace("<!--PROGRESS_METER-->", progress_meter)
         if "<!--IMAGE_PORT_STATUS-->" in body:
             body = body.replace("<!--IMAGE_PORT_STATUS-->", image_port_status)
-        if "<!--REBIRTH_CONTENTS-->" in body:
-            body = body.replace("<!--REBIRTH_CONTENTS-->", build_rebirth_contents())
+        if "<!--SAMPLE_PACK_CONTENTS-->" in body:
+            body = body.replace("<!--SAMPLE_PACK_CONTENTS-->", build_sample_pack_contents())
 
         # Build search index entries from body fragment (first entry carries
         # the page's lede paragraph, which doubles as the meta description).

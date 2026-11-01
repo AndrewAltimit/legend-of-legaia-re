@@ -1,6 +1,6 @@
 //! The place-name banner (the `4C E1` text balloon) keeps its line inside
 //! its frame for every name the engine shows: the retail scene table's
-//! section-2 banners and the Rebirth pack's map names, the longest of which
+//! section-2 banners and the sample pack's map names, the longest of which
 //! overhang retail's fixed `0x90`-wide frame.
 //!
 //! Measured in the disc's dialog font when `extracted/font/` is present
@@ -28,7 +28,7 @@ fn retail_banners() -> Vec<String> {
 }
 
 fn pack_map_names() -> Vec<String> {
-    let dir = format!("{ROOT}/packs/rebirth/maps");
+    let dir = format!("{ROOT}/packs/sample/maps");
     let mut out = Vec::new();
     for e in std::fs::read_dir(dir).unwrap() {
         let text = std::fs::read_to_string(e.unwrap().path()).unwrap();

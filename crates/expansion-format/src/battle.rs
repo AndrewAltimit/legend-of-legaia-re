@@ -28,7 +28,7 @@
 //! ```
 //!
 //! Keys (`ashen_caruban`, `ash_court`) are local to the pack; the engine
-//! qualifies each one with the pack id (`rebirth:ashen_caruban`, see
+//! qualifies each one with the pack id (`sample:ashen_caruban`, see
 //! [`qualify`]). A reference may use either form.
 
 use std::collections::BTreeMap;
@@ -862,7 +862,7 @@ formations = [{ formation = "court", weight = 3 }]
 steps = [100, 200]
 
 [bosses.king]
-formation = "rebirth:court"
+formation = "sample:court"
 music = { kind = "bgm", id = 30 }
 reward_items = [{ item = { kind = "item", id = 5 } }]
 once = true
@@ -882,7 +882,7 @@ once = true
         let b = &s.bosses["king"];
         assert!(b.no_escape && b.once);
         assert_eq!(b.reward_items[0].count, 1);
-        assert_eq!(s.problems("rebirth"), Vec::<String>::new());
+        assert_eq!(s.problems("sample"), Vec::<String>::new());
     }
 
     #[test]
@@ -910,7 +910,7 @@ once = true
             }
         );
         s.bosses.insert("sky".into(), b);
-        assert_eq!(s.problems("rebirth"), Vec::<String>::new());
+        assert_eq!(s.problems("sample"), Vec::<String>::new());
         // An unknown key is refused.
         assert!(toml::from_str::<BattleStageRef>("scene = \"jou\"\nvariant = 2").is_err());
         // Without a stage the field stays out of the written form's meaning.
@@ -956,7 +956,7 @@ once = true
             MonsterRef::Disc(DiscRef::Monster { id: 2 }),
         ];
         s.bosses.get_mut("king").unwrap().formation = "other:court".into();
-        let p = s.problems("rebirth");
+        let p = s.problems("sample");
         assert!(p.iter().any(|l| l.contains("the limit is 4")), "{p:?}");
         assert!(p.iter().any(|l| l.contains("unknown monster `nobody`")));
         assert!(p.iter().any(|l| l.contains("two different versions")));
@@ -997,7 +997,7 @@ max_standing = 2
             (WaveArrival::Refill, Some(6), Some(2))
         );
         assert_eq!(f.all_monsters().count(), 7);
-        assert_eq!(s.problems("rebirth"), Vec::<String>::new());
+        assert_eq!(s.problems("sample"), Vec::<String>::new());
         // A formation without waves is unchanged by the field.
         let plain: BattleSection = toml::from_str(SAMPLE).unwrap();
         assert!(plain.formations["court"].waves.is_empty());
@@ -1017,7 +1017,7 @@ max_standing = 2
         f.waves[1].max_standing = Some(5);
         f.waves[1].count = Some(0);
         f.waves.push(WaveDef::default());
-        let p = s.problems("rebirth");
+        let p = s.problems("sample");
         let has = |needle: &str| p.iter().any(|l| l.contains(needle));
         assert!(has("two different versions of retail monster 73"), "{p:?}");
         assert!(has("wave 2 seats 5 monsters at once"), "{p:?}");
@@ -1029,10 +1029,10 @@ max_standing = 2
 
     #[test]
     fn qualify_and_local_key_round_trip() {
-        assert_eq!(qualify("rebirth", "court"), "rebirth:court");
-        assert_eq!(qualify("rebirth", "rebirth:court"), "rebirth:court");
-        assert_eq!(local_key("rebirth", "rebirth:court"), Some("court"));
-        assert_eq!(local_key("rebirth", "court"), Some("court"));
-        assert_eq!(local_key("rebirth", "other:court"), None);
+        assert_eq!(qualify("sample", "court"), "sample:court");
+        assert_eq!(qualify("sample", "sample:court"), "sample:court");
+        assert_eq!(local_key("sample", "sample:court"), Some("court"));
+        assert_eq!(local_key("sample", "court"), Some("court"));
+        assert_eq!(local_key("sample", "other:court"), None);
     }
 }

@@ -2,6 +2,6 @@
 
 mod disc_catalog;
 mod npc_postures_disc;
-mod rebirth_round_trip;
+mod sample_pack_round_trip;
 mod worker_session;
 mod xref_page;

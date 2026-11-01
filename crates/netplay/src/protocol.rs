@@ -98,7 +98,7 @@ impl fmt::Display for RoomCode {
 /// host's, byte for byte, or lockstep diverges on the first pack rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackIdentity {
-    /// The pack's manifest id (`rebirth`).
+    /// The pack's manifest id (`sample`).
     pub id: String,
     /// SHA-256 over the pack's canonical `.lxpack` bundle bytes.
     pub content_hash: [u8; 32],

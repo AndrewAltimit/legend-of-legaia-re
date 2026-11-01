@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Rebirth pack's ember crystal model (a glTF 2.0 binary).
+"""Generate the sample pack's ember crystal model (a glTF 2.0 binary).
 
 The crystal is a stretched octahedron split into two rings of facets, each
 facet textured from a 32 x 64 vertical gradient (white-hot core, amber,

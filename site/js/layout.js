@@ -63,7 +63,7 @@ const NAV = [
       { href: 'guides/playing-expansion-packs.html', text: 'Playing a pack', key: 'guides/playing-expansion-packs', indent: true },
       { href: 'guides/making-expansion-packs.html', text: 'Making a pack', key: 'guides/making-expansion-packs', indent: true },
       { href: 'guides/playing-online.html', text: 'Playing online', key: 'guides/playing-online', indent: true },
-      { href: 'guides/rebirth.html', text: 'Rebirth', key: 'guides/rebirth', indent: true },
+      { href: 'guides/sample-pack.html', text: 'Sample pack', key: 'guides/sample-pack', indent: true },
     ],
   },
   {

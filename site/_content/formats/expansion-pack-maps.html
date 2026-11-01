@@ -14,7 +14,7 @@
     <dt>Entry</dt><dd><code>SceneHost::enter_expansion_map</code> (<code>engine-scene-host</code>, <code>scene_host/expansion_map.rs</code>)</dd>
     <dt>Runtime</dt><dd>Zones and NPCs <code>legaia_engine_expansion::map</code>; entrances <code>legaia_engine_expansion::entrance</code></dd>
     <dt>Editor</dt><dd>The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s tile painter edits the file 1:1</dd>
-    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/rebirth/maps/genesis_1f.toml" target="_blank" rel="noopener"><code>packs/rebirth/maps/genesis_1f.toml</code></a></dd>
+    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/sample/maps/genesis_1f.toml" target="_blank" rel="noopener"><code>packs/sample/maps/genesis_1f.toml</code></a></dd>
   </dl>
 </section>
 
@@ -338,7 +338,7 @@ shop = "tower_dealer"                           # optional: a cards.toml dealer<
 <section class="doc-section" id="model-assets" data-doc="model-assets">
   <h2>Model assets</h2>
   <p><code>{ asset = "path" }</code> names a glTF 2.0 file under the pack's <code>assets/</code>, converted at entry (<code>expansion_map::gltf</code>): the default scene's node tree is baked into the vertices, triangle primitives (<code>POSITION</code>, <code>TEXCOORD_0</code>, <code>indices</code>) become <code>Ft3</code> primitives, and a material's PNG <code>baseColorTexture</code> is box-filtered to at most <code>256 x 256</code>, median-cut to <code>colors</code> (16 or 256) and written into free VRAM as a 4bpp or 8bpp page. One glTF unit is <code>100</code> world units, <code>+Y</code> up; at most <code>16384</code> triangles. Skins, morph targets and animations are not read.</p>
-  <p>A model is always palettised: there is no full-colour path, which keeps it inside the scene's one shading law - PSX mode snaps and dithers it like the disc's meshes, clean mode draws the same texels without the snap. <code>scripts/models/generate_ember_crystal.py</code> writes the Rebirth pack's crystal as a worked example.</p>
+  <p>A model is always palettised: there is no full-colour path, which keeps it inside the scene's one shading law - PSX mode snaps and dithers it like the disc's meshes, clean mode draws the same texels without the snap. <code>scripts/models/generate_ember_crystal.py</code> writes the sample pack's crystal as a worked example.</p>
 </section>
 
 <section class="doc-section" id="decorations" data-doc="decorations">
@@ -428,7 +428,7 @@ wavelength = 4.0      # tiles crest to crest
 angle = 0.0           # swell direction, 0 = +Z; a ripple takes centre = [x, z]</code></pre>
   <p>A living floor moves its <strong>geometry</strong>, not its texture - the way retail animates its own. <code>jou</code>'s organic floor, <code>jouina</code>'s pulsing path and <code>concnow</code>'s flesh pits ride the scene's floor-height ladder, which field-VM op <code>4C 90</code> sets oscillating one rung at a time; the ground pass takes every ground vertex's corner tile through the live ladder each frame, the decoration sweep lifts decoration cells by it, and the floor sampler reads it, so what moves is drawn and walked as one shape (<a href="../subsystems/script-vm-menuctrl.html">menu-control nibble 9</a>).</p>
   <p>A ground motion takes free rungs of the sixteen - one per phase step for every tier its characters stand on, each resting at that tier's height - writes its tiles' collision nibbles as those rungs, and every tick the world sets them to rest plus the wave (<code>ActiveMap::ground_motion_ladder</code>). Both hosts already redraw the ground and decoration cells from the live ladder, so neither draws anything new. <code>breathe</code> moves every tile together, <code>swell</code> rolls crests along <code>angle</code>, <code>ripple</code> spreads rings from <code>centre</code>; a step lags the one before by <code>period / phases</code> frames. The wave is the closed form of retail's rung oscillator <code>FUN_801DA930</code> (constant acceleration toward rest, no damping: parabolic arcs), integer arithmetic on <code>World::frame</code>.</p>
-  <p>As in retail, the party rides a walkable moving floor (the validator warns past 24 units), a still tile beside a moving one leans toward it, and placed props stand still. A terrain map, or one without its own <code>floor_heights</code>, takes none. Rebirth's Atrium dais ripples out from the Warden's Stone and the Ember Stair's lava heaves; <code>scroll</code> stays for texture flowing over still geometry - the terrain's water - as retail's own water is a VRAM animation.</p>
+  <p>As in retail, the party rides a walkable moving floor (the validator warns past 24 units), a still tile beside a moving one leans toward it, and placed props stand still. A terrain map, or one without its own <code>floor_heights</code>, takes none. The sample pack's Atrium dais ripples out from the Warden's Stone and the Ember Stair's lava heaves; <code>scroll</code> stays for texture flowing over still geometry - the terrain's water - as retail's own water is a VRAM animation.</p>
 </section>
 
 <section class="doc-section" id="fog" data-doc="fog">
@@ -677,7 +677,7 @@ requires = { min_level = 30 }</code></pre>
 
 <section class="doc-section" id="running-a-map" data-doc="running-a-map">
   <h2>Running a map</h2>
-  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/rebirth --map genesis_1f [--spawn dais]</code></div>
+  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/sample --map genesis_1f [--spawn dais]</code></div>
   <p><code>--expansion</code> takes a pack directory or an <code>.lxpack</code> bundle and activates it through <code>World::activate_expansion</code>; with <code>--resume-save</code> the save's own map (if any) is the landing instead of <code>--map</code>. Without <code>--map</code> the pack is simply active, for the title's New Game and Continue.</p>
   <p>The browser play page loads an <code>.lxpack</code> through <code>LegaiaRuntime::load_expansion</code> and enters a map through <code>enter_expansion_map</code>, the same <code>SceneHost::enter_expansion_map</code> entry; its scene build reads the map's ground, walls and props off the same <code>Scene</code> (<a href="../subsystems/browser-host.html">browser host</a>). Any scene change - an exit, a scene picker - leaves the map and drops its layer; a battle fought on the map returns to it. The map's <code>name</code> shows as the place-name banner on entry. Step-by-step: <a href="../guides/expansion-packs.html">expansion packs guide</a>.</p>
 </section>

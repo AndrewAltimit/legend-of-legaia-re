@@ -243,30 +243,30 @@ mod tests {
 }
 
 #[cfg(test)]
-mod rebirth {
+mod sample_pack {
     use super::*;
     use crate::battle::CompiledBattle;
     use legaia_expansion_format::battle::BattleSection;
 
-    const BATTLE: &str = include_str!("../../../packs/rebirth/battle.toml");
-    const PROGRESSION: &str = include_str!("../../../packs/rebirth/progression.toml");
+    const BATTLE: &str = include_str!("../../../packs/sample/battle.toml");
+    const PROGRESSION: &str = include_str!("../../../packs/sample/progression.toml");
 
-    /// The flagship pack's battle and progression files parse and compile
+    /// The sample pack's battle and progression files parse and compile
     /// with no problems.
     #[test]
-    fn the_rebirth_sections_compile_clean() {
+    fn the_sample_pack_sections_compile_clean() {
         let battle: BattleSection = toml::from_str(BATTLE).expect("battle.toml parses");
-        let compiled = CompiledBattle::compile("rebirth", &battle).expect("battle.toml compiles");
+        let compiled = CompiledBattle::compile("sample", &battle).expect("battle.toml compiles");
         assert!(compiled.boss("hollow_sovereign").is_some());
         let prog: ProgressionSection =
             toml::from_str(PROGRESSION).expect("progression.toml parses");
         assert_eq!(prog.problems(), Vec::<String>::new());
     }
 
-    /// Rebirth's curve keeps retail's to level 39 (the story's levels) and
+    /// The sample pack's curve keeps retail's to level 39 (the story's levels) and
     /// puts level 99 within a fraction of retail's total.
     #[test]
-    fn the_rebirth_curve_shortens_the_endgame() {
+    fn the_sample_pack_curve_shortens_the_endgame() {
         let prog: ProgressionSection = toml::from_str(PROGRESSION).unwrap();
         let retail = legaia_engine_battle::levelup::retail_xp_table();
         let t = xp_table(&prog.xp_curve, &retail);

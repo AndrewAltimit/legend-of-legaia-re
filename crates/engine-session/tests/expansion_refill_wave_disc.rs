@@ -1,4 +1,4 @@
-//! Disc-gated: the Rebirth 1F training gauntlet (`tower_gauntlet`: two
+//! Disc-gated: the sample pack's 1F training gauntlet (`tower_gauntlet`: two
 //! waves, then five refill arrivals with three standing at most) fought on
 //! auto through the native session on its pack map resolves, with no party
 //! member parked in an approach state while refills take freed seats.
@@ -41,13 +41,13 @@ fn open() -> Option<NativeSession> {
         enable_audio: false,
     };
     let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    let pack = ExpansionPack::from_files(&files).expect("the Rebirth pack parses");
+    let pack = ExpansionPack::from_files(&files).expect("the sample pack parses");
     session
         .host
         .activate_expansion_pack(Arc::new(pack))
-        .expect("the Rebirth pack activates");
+        .expect("the sample pack activates");
     Some(session)
 }
 

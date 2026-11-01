@@ -835,7 +835,7 @@ active_scene = "town01"
         file.push_switch(
             0,
             SwitchChange::Pack {
-                id: "rebirth".into(),
+                id: "sample".into(),
                 hash: "ab".repeat(32),
             },
         );

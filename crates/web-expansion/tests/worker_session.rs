@@ -7,8 +7,8 @@ use std::path::Path;
 use legaia_expansion_format::read_dir_files;
 use legaia_web_expansion::session::Core;
 
-fn rebirth(core: &mut Core) -> String {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+fn sample_pack(core: &mut Core) -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
     let loaded = core.load_files(read_dir_files(&root).unwrap());
     loaded["pack"].to_string()
 }
@@ -16,7 +16,7 @@ fn rebirth(core: &mut Core) -> String {
 #[test]
 fn session_files_carry_validation_to_a_second_session() {
     let mut main = Core::new();
-    let json = rebirth(&mut main);
+    let json = sample_pack(&mut main);
     // An edit that changes one file and breaks a reference.
     let mut pack: serde_json::Value = serde_json::from_str(&json).unwrap();
     pack["battle"]["monsters"]["ironhide_ogre"]["hp"] = serde_json::json!(5);
@@ -58,7 +58,7 @@ fn disc_parts_open_the_same_catalog() {
     worker.open_disc_parts(&parts).unwrap();
     assert_eq!(worker.catalog_json(), main.catalog_json());
 
-    let json = rebirth(&mut main);
+    let json = sample_pack(&mut main);
     worker.set_session_files(&main.session_files()).unwrap();
     // A coordinate the disc refuses shows up in both.
     let mut pack: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -73,7 +73,7 @@ fn disc_parts_open_the_same_catalog() {
 
 #[test]
 fn an_unchecked_load_is_the_checked_one_without_its_issues() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
     let files = read_dir_files(&root).unwrap();
     let mut checked = Core::new();
     for (p, b) in &files {

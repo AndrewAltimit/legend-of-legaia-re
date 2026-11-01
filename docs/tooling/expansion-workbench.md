@@ -29,7 +29,7 @@ tab, and nothing is uploaded.
 | Authoring hints (walk-through props, walk-on text) | `site/js/expansion-workbench-hints.js` |
 | Map terrain (sculpt brush, materials, water, horizon) | `site/js/expansion-workbench-terrain.js` |
 | wasm session | [`crates/web-expansion`](../../crates/web-expansion/README.md) (`ExpansionWorkbench`) |
-| Example pack | `site/packs/rebirth.json`, written by `site/_gen.py` from [`packs/rebirth/`](../../packs/rebirth/README.md) |
+| Example pack | `site/packs/sample.json`, written by `site/_gen.py` from [`packs/sample/`](../../packs/sample/README.md) |
 
 ## The session
 
@@ -174,10 +174,10 @@ itself through `window.xwBuild` (`expansion-workbench-gizmos.js`):
 `catalogEl`, `showCatalogInBar` and `state`.
 
 **Starting.** With no pack open the page offers three one-click starts, each
-landing on the Build area: **Open the Rebirth example**, **Start a new pack**
+landing on the Build area: **Open the sample pack**, **Start a new pack**
 (the minimal template under id `my_pack`, renamed later under Pack
 settings) and **Import a .lxpack**. A line under them opens the new-pack
-form (empty, minimal or a clone of Rebirth under an id of the modder's own)
+form (empty, minimal or a clone of the sample pack under an id of the modder's own)
 or a pack folder.
 
 ## Coverage
@@ -290,7 +290,7 @@ fields the first time it opens (or when a check's jump lands in it), so a
 re-render of the Battle tab builds the labels, not every phase's form.
 
 **Validation off the main thread.** The validator costs a few hundred
-milliseconds a run on a pack of Rebirth's size, so it runs in a module
+milliseconds a run on a pack of the sample pack's size, so it runs in a module
 worker (`expansion-workbench-validate-worker.js`) holding a second
 `ExpansionWorkbench` session. The page's session opens the disc with
 `open_disc_keep` and hands the three disc files its catalog reads
@@ -353,7 +353,7 @@ definition, every reference and the engine flags named after the id
 reference keeps its `pack:` prefix, and a taken or malformed id is refused.
 Changing an id in a tab's own Id box (a monster, a quest, a line, a mode, a
 map's file name) runs the same rename; **References** beside it opens Find
-on the id. Rebirth's tests rename ids of every kind and check that the pack
+on the id. The sample pack's tests rename ids of every kind and check that the pack
 still validates, that exactly the planned files export changed, and that
 renaming back gives the pack again.
 
@@ -386,8 +386,8 @@ area, and `?` opens the key list over the page.
 **New pack** starts empty (the manifest), from the **minimal template** (a
 derived monster in a formation, a dialogue line, a quest to win the fight
 and an 11 x 6 map whose trigger zones show the line and start the fight,
-over the disc's first scene), or as a **clone of Rebirth** under the
-modder's id, name and version 0.1.0; the clone's other files are Rebirth's
+over the disc's first scene), or as a **clone of the sample pack** under the
+modder's id, name and version 0.1.0; the clone's other files are the sample pack's
 own bytes until edited.
 
 ## Point lists
@@ -406,10 +406,10 @@ step of the page's undo.
 
 ## Round trip
 
-`crates/web-expansion/tests/rebirth_round_trip.rs` pins the export:
+`crates/web-expansion/tests/sample_pack_round_trip.rs` pins the export:
 
-- an unedited Rebirth exports the `.lxpack` the CLI builds
-  (`asset expansion bundle packs/rebirth`) byte for byte;
+- an unedited sample pack exports the `.lxpack` the CLI builds
+  (`asset expansion bundle packs/sample`) byte for byte;
 - an edit and its revert, in the manifest, a section, a cutscene and a map,
   export the loaded bytes again;
 - every section file the page edits exports its edit;
@@ -651,7 +651,7 @@ offset) is the text the build was sent - goes to the frame at once as
 
 `play_expansion_live::tests::props_lamps_spawns_moved_in_place_match_a_rebuild`
 (disc-gated) moves a solid prop, a standable prop, a lamp and a spawn of
-each Rebirth map in place and checks the whole collision grid, the standable
+each sample-pack map in place and checks the whole collision grid, the standable
 tops, the lights and the overlay's spawns against a rebuild with the edited
 definition. A move costs a few milliseconds where a rebuild costs seconds,
 so **Test play** right after a move walks into the moved prop.
@@ -831,7 +831,7 @@ history's step around each 3D edit (`ctx.commit`).
 Measured headless (Chromium with SwiftShader, the software GL, on the real
 disc) on the largest map the format allows: 120 x 120 tiles, walls round the
 edge and a wall pillar every 8 tiles, and a scatter brush at density 0.6 over
-its top half - 1152 draws. Rebirth's atrium (29 x 13) is the small case.
+its top half - 1152 draws. The sample pack's atrium (29 x 13) is the small case.
 
 | Step | Atrium | 120 x 120 |
 |---|---|---|
@@ -989,21 +989,21 @@ committed.
 
 - `crates/web-play/src/play_expansion_live.rs` (`play_expansion_live::tests`,
   disc-gated): the hot reload is the play page's own build - entering the
-  Rebirth atrium twice uploads the same scene arrays, a reload keeps the
+  The sample pack atrium twice uploads the same scene arrays, a reload keeps the
   player's seat and uploads exactly what a fresh entry uploads, an edited
   tile shows in the overlay the engine reads back, a reload waits as busy
   while the card binder is up or a fight is armed, and a pack with an error
   leaves the running map alone. Disc-free: a reload with no disc refuses.
 
-- `crates/web-expansion/tests/rebirth_round_trip.rs` (disc-free): Rebirth
+- `crates/web-expansion/tests/sample_pack_round_trip.rs` (disc-free): the sample pack
   loads, validates clean and exports its own bytes; an edit to a monster and a
   map round-trips through the bundle and touches only those two files; the
   tower map's preview shows the corner rule; the XP chart and the dialog check.
-- The same file, sharing (disc-free): a Rebirth `.lxpack` imported and
+- The same file, sharing (disc-free): a sample-pack `.lxpack` imported and
   exported again is the same bytes, and its sources zip holds every file; an
   empty section file survives the round trip; cutscene and audio edits reach
   the export; refused imports name their gate; the diff against an older
   bundle counts, bumps and drafts the changelog.
 - `crates/web-expansion/tests/disc_catalog.rs` (`LEGAIA_DISC_BIN`): the catalog
-  lists, Rebirth with no coordinate error on the real disc, the tower scene's
+  lists, the sample pack with no coordinate error on the real disc, the tower scene's
   geometry pack, the preview with the base scene's ladder.

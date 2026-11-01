@@ -10,7 +10,7 @@ use legaia_engine_modes::prop_hunt::{PropHuntConfig, PropHuntSession};
 use legaia_engine_modes::racing::{RaceConfig, RaceSession};
 use legaia_engine_modes::session::{AiTier, ModeSession};
 
-use crate::common::{PLAY_MASK, PadScript, rebirth_cards, rebirth_modes, run};
+use crate::common::{PLAY_MASK, PadScript, run, sample_pack_cards, sample_pack_modes};
 
 fn check<S: ModeSession>(build: impl Fn(u64) -> S, max_frames: usize) {
     let (a, sa) = run(build(7), &mut PadScript::new(1, PLAY_MASK), max_frames);
@@ -23,7 +23,7 @@ fn check<S: ModeSession>(build: impl Fn(u64) -> S, max_frames: usize) {
 
 #[test]
 fn poker_is_deterministic() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     check(
         |seed| {
             let mut cfg = PokerConfig::from_table(&modes.poker[0], seed);
@@ -38,8 +38,8 @@ fn poker_is_deterministic() {
 
 #[test]
 fn card_duel_is_deterministic() {
-    let modes = rebirth_modes();
-    let book = CardBook::new(rebirth_cards());
+    let modes = sample_pack_modes();
+    let book = CardBook::new(sample_pack_cards());
     let mine: Vec<String> = book.section().cards[..5]
         .iter()
         .map(|c| c.id.clone())
@@ -56,7 +56,7 @@ fn card_duel_is_deterministic() {
 
 #[test]
 fn golf_is_deterministic() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     check(
         |seed| {
             let mut cfg =
@@ -70,7 +70,7 @@ fn golf_is_deterministic() {
 
 #[test]
 fn racing_is_deterministic() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     check(
         |seed| {
             let (mut cfg, _) = RaceConfig::from_scene(&modes.races[0], "map01", seed).unwrap();
@@ -83,7 +83,7 @@ fn racing_is_deterministic() {
 
 #[test]
 fn prop_hunt_is_deterministic() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     check(
         |seed| {
             let mut cfg = PropHuntConfig::from_arena(&modes.prop_hunt[0], seed).unwrap();

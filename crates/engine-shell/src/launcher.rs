@@ -1594,8 +1594,8 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("legaia-packs-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
-        let files = legaia_expansion_format::read_dir_files(rebirth).unwrap();
+        let sample_pack = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample"));
+        let files = legaia_expansion_format::read_dir_files(sample_pack).unwrap();
         let bundle = legaia_expansion_format::bundle::write_bundle(&files).unwrap();
         std::fs::write(tmp.join("renamed.lxpack"), &bundle).unwrap();
         std::fs::write(tmp.join("broken.lxpack"), b"LXPACK\x1a\n junk").unwrap();
@@ -1605,13 +1605,13 @@ mod tests {
         let err = list[0].as_ref().unwrap_err();
         assert!(err.0.ends_with("broken.lxpack"));
         let ok = list[1].as_ref().unwrap();
-        assert_eq!((ok.id.as_str(), ok.schema), ("rebirth", 3));
-        assert_eq!(ok.short_name, "Rebirth", "the button's label");
+        assert_eq!((ok.id.as_str(), ok.schema), ("sample", 3));
+        assert_eq!(ok.short_name, "Sample", "the button's label");
         assert_eq!(ok.cover.as_deref(), Some("assets/cover.png"));
         assert!(ok.playable(), "{:?}", ok.errors);
         let dirs = [tmp.clone()];
         assert_eq!(
-            resolve_pack(Path::new("rebirth"), &dirs),
+            resolve_pack(Path::new("sample"), &dirs),
             Some(tmp.join("renamed.lxpack"))
         );
         assert_eq!(resolve_pack(Path::new("nope"), &dirs), None);
@@ -1620,7 +1620,7 @@ mod tests {
     }
 
     /// The installed packs folder and the bundled one are searched in that
-    /// order: the game's own Rebirth resolves by id with nothing installed,
+    /// order: the game's own sample pack resolves by id with nothing installed,
     /// and an installed copy of the same id hides it.
     #[test]
     fn bundled_packs_resolve_behind_installed_ones() {
@@ -1629,25 +1629,25 @@ mod tests {
         let (installed, bundled) = (tmp.join("installed"), tmp.join("bundled"));
         std::fs::create_dir_all(&installed).unwrap();
         std::fs::create_dir_all(&bundled).unwrap();
-        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
-        let files = legaia_expansion_format::read_dir_files(rebirth).unwrap();
+        let sample_pack = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample"));
+        let files = legaia_expansion_format::read_dir_files(sample_pack).unwrap();
         let bundle = legaia_expansion_format::bundle::write_bundle(&files).unwrap();
-        std::fs::write(bundled.join("rebirth.lxpack"), &bundle).unwrap();
+        std::fs::write(bundled.join("sample.lxpack"), &bundle).unwrap();
         let dirs = [installed.clone(), bundled.clone()];
         assert_eq!(
-            resolve_pack(Path::new("rebirth"), &dirs),
-            Some(bundled.join("rebirth.lxpack"))
+            resolve_pack(Path::new("sample"), &dirs),
+            Some(bundled.join("sample.lxpack"))
         );
         let list = discover_packs(&dirs);
         assert_eq!(list.len(), 1);
         assert_eq!(
             list[0].as_ref().unwrap().path,
-            bundled.join("rebirth.lxpack")
+            bundled.join("sample.lxpack")
         );
 
         std::fs::write(installed.join("mine.lxpack"), &bundle).unwrap();
         assert_eq!(
-            resolve_pack(Path::new("rebirth"), &dirs),
+            resolve_pack(Path::new("sample"), &dirs),
             Some(installed.join("mine.lxpack"))
         );
         let list = discover_packs(&dirs);
@@ -1665,7 +1665,7 @@ mod tests {
     fn the_expansion_pack_rides_the_play_args_and_round_trips() {
         let info = ok_info(Path::new("/g/l.bin"));
         let s = LauncherSettings {
-            expansion: Some("/packs/rebirth.lxpack".into()),
+            expansion: Some("/packs/sample.lxpack".into()),
             switches: PersistedSwitches {
                 retail: true,
                 ..Default::default()
@@ -1677,7 +1677,7 @@ mod tests {
             .iter()
             .position(|x| x == "--expansion")
             .expect("--expansion");
-        assert_eq!(a[at + 1], "/packs/rebirth.lxpack");
+        assert_eq!(a[at + 1], "/packs/sample.lxpack");
         assert!(a.iter().any(|x| x == "--retail"));
         let text = toml::to_string(&s).unwrap();
         assert!(text.contains("expansion"));
@@ -1688,24 +1688,27 @@ mod tests {
     }
 
     /// A chosen file names a pack as a bundle, a folder or its manifest; the
-    /// committed Rebirth pack inspects clean.
+    /// committed sample pack inspects clean.
     #[test]
-    fn expansion_choices_resolve_and_rebirth_inspects_clean() {
-        let rebirth = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
-        assert_eq!(expansion_pack_path(rebirth).as_deref(), Some(rebirth));
+    fn expansion_choices_resolve_and_sample_pack_inspects_clean() {
+        let sample_pack = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample"));
         assert_eq!(
-            expansion_pack_path(&rebirth.join("pack.toml")).as_deref(),
-            Some(rebirth)
+            expansion_pack_path(sample_pack).as_deref(),
+            Some(sample_pack)
+        );
+        assert_eq!(
+            expansion_pack_path(&sample_pack.join("pack.toml")).as_deref(),
+            Some(sample_pack)
         );
         assert_eq!(
             expansion_pack_path(Path::new("/x/y.LXPACK")).as_deref(),
             Some(Path::new("/x/y.LXPACK"))
         );
         assert_eq!(expansion_pack_path(Path::new("/x/game.bin")), None);
-        let info = inspect_expansion(rebirth).expect("reads");
+        let info = inspect_expansion(sample_pack).expect("reads");
         assert!(info.playable(), "{:?}", info.errors);
-        assert_eq!(info.id, "rebirth");
-        assert!(info.summary().starts_with("Legend of Legaia: Rebirth 0."));
+        assert_eq!(info.id, "sample");
+        assert!(info.summary().starts_with("Sample Expansion Pack 0."));
         // A pack with an error is not playable, and says why.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(

@@ -1197,14 +1197,14 @@ The page's play is not this class: it frames the play page (`play.html?embed=1&e
 | Export | Does |
 |---|---|
 | `new()` / `set_seed(seed)` | A runtime on the built-in practice set; the page seed every later session's seed mixes in. |
-| `use_builtin()` / `load_pack_tree(paths, data)` / `load_pack_bundle(bytes)` | The rules: the practice set, a pack tree (Rebirth as the site serves it, `packs/rebirth.json`), or `.lxpack` bytes through `share::import_bundle`. A pack contributes its `modes.toml`, its `cards.toml` as the duel's book and its maps. `""` or the reason. |
+| `use_builtin()` / `load_pack_tree(paths, data)` / `load_pack_bundle(bytes)` | The rules: the practice set, a pack tree (the sample pack as the site serves it, `packs/sample.json`), or `.lxpack` bytes through `share::import_bundle`. A pack contributes its `modes.toml`, its `cards.toml` as the duel's book and its maps. `""` or the reason. |
 | `modes_json()` | `{ source, pack, modes: [{ id, name, kind, map, scene }] }`; `map` names the pack map an instance is laid out on, `scene` the overworld a race runs across. |
 | `enter(id)` / `open_picker()` / `leave()` | Seat an instance, the in-game picker, or nothing. |
 | `tick(pad)` | One frame off a `PadButton` word; returns the stage (`closed`, `picker`, `playing`, `results`). |
 | `state_json()` / `frame_json()` | The seat's stage, instance and quit prompt; the screen's quads and labels in the 320x240 stage. |
 | `card_page_info()` / `card_page_rgba()` | An open duel's card page: its key (changing with the faces) and size, and its RGBA8 texels. |
 
-Run flat, a golf course, race or table laid out on a pack map builds from that map (`ActiveMode::build_with_maps`) and, with no world to stage it in, draws as its top-down screen; nothing is granted, since the class holds no save. Netplay stays on the play page, which joins rooms through `engine-netplay` over a running `World`. Tests: `crates/web-minigames/tests/modes_page_api.rs` plays every instance of the practice set and of Rebirth through the seat.
+Run flat, a golf course, race or table laid out on a pack map builds from that map (`ActiveMode::build_with_maps`) and, with no world to stage it in, draws as its top-down screen; nothing is granted, since the class holds no save. Netplay stays on the play page, which joins rooms through `engine-netplay` over a running `World`. Tests: `crates/web-minigames/tests/modes_page_api.rs` plays every instance of the practice set and of the sample pack through the seat.
 
 ## Session saves + retail cards (`session_save`)
 

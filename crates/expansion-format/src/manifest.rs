@@ -9,13 +9,13 @@ use crate::version::{Version, VersionReq};
 #[serde(deny_unknown_fields)]
 pub struct PackManifest {
     /// Stable machine id, lowercase `[a-z0-9_-]`; namespaces every content
-    /// id in the pack (`rebirth`).
+    /// id in the pack (`sample`).
     pub id: String,
-    /// Display name (`Legend of Legaia: Rebirth`).
+    /// Display name (`Sample Expansion Pack`).
     pub name: String,
     /// A short label for places too narrow for [`Self::name`] (the
     /// launcher's Expansion button, a picker row): one line of at most
-    /// [`MAX_SHORT_NAME_LEN`] characters (`Rebirth`). Unset, those places
+    /// [`MAX_SHORT_NAME_LEN`] characters (`Sample`). Unset, those places
     /// show the name. Schema 3.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub short_name: Option<String>,
@@ -402,10 +402,10 @@ mod tests {
 
     #[test]
     fn id_syntax() {
-        assert!(is_valid_pack_id("rebirth"));
+        assert!(is_valid_pack_id("sample"));
         assert!(is_valid_pack_id("my-pack_2"));
         assert!(!is_valid_pack_id(""));
-        assert!(!is_valid_pack_id("Rebirth"));
+        assert!(!is_valid_pack_id("Sample"));
         assert!(!is_valid_pack_id("-lead"));
         assert!(!is_valid_pack_id("a:b"));
         assert!(!is_valid_pack_id(&"a".repeat(MAX_ID_LEN + 1)));

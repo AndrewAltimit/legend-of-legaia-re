@@ -74,7 +74,7 @@ event would take effect on; several on one frame apply in file order.
 [[switch]]
 frame = 0
 set = "pack"
-id = "rebirth"
+id = "sample"
 hash = "3f1c...e0"                 # pack_content_hash, 64 hex digits
 
 [[switch]]

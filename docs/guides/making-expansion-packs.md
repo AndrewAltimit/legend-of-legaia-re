@@ -76,9 +76,9 @@ edits, and the section headings carry one for their section.
   music for the pickers. Nothing is uploaded, and no name from the disc is
   written into the pack: a picker writes the coordinate
   (`{ kind = "monster", id = 109 }`), never the name beside it.
-- **Start from something.** Load the Rebirth example (the project's own
-  flagship pack), a `.lxpack`, a pack folder of your own, or start a new
-  pack: empty, from the minimal template, or as a clone of Rebirth.
+- **Start from something.** Load the sample pack (the project's example
+  pack, written to learn from), a `.lxpack`, a pack folder of your own, or start a new
+  pack: empty, from the minimal template, or as a clone of the sample pack.
 - **Edit section by section.** One tab per file. Undo and redo cover the
   whole pack; **Find** lists every place an id or a retail coordinate is
   used.

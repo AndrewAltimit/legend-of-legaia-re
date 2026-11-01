@@ -373,9 +373,9 @@ fn extracted_dir() -> Option<PathBuf> {
     (d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists()).then_some(d)
 }
 
-fn rebirth() -> Arc<ExpansionPack> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
-    Arc::new(ExpansionPack::from_dir(&dir).expect("the Rebirth pack parses"))
+fn sample_pack() -> Arc<ExpansionPack> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
+    Arc::new(ExpansionPack::from_dir(&dir).expect("the sample pack parses"))
 }
 
 /// Walk from 2F's lower stair with jumps every half second, action movement
@@ -383,7 +383,7 @@ fn rebirth() -> Arc<ExpansionPack> {
 /// pack's unskippable `tower_intro` cutscene, which holds the pad.
 fn map_replay(with_action: bool) -> ReplayFile {
     let mut r = ReplayFile::new(ReplayMeta::new(480));
-    r.push_switch(0, pack_switch(&rebirth()).unwrap());
+    r.push_switch(0, pack_switch(&sample_pack()).unwrap());
     r.push_switch(
         0,
         SwitchChange::Map {
@@ -404,7 +404,7 @@ fn map_replay(with_action: bool) -> ReplayFile {
 
 fn map_trace(replay: &ReplayFile, extracted: &Path) -> Vec<String> {
     let mut shelf = PackShelf::new();
-    shelf.add(rebirth()).unwrap();
+    shelf.add(sample_pack()).unwrap();
     let mut host = SceneHost::open_extracted(extracted).expect("open the scene host");
     host.enter_field_scene("town01", 0).expect("enter town01");
     run(&mut host, replay, &shelf, |h| {

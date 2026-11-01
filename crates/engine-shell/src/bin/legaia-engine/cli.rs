@@ -1289,14 +1289,14 @@ pub(crate) enum Cmd {
         /// DEBUG affordance, not a player surface: once the scene (or
         /// `--map`) is entered, play the active expansion pack's cutscene
         /// `ID` (`cutscenes.toml`), the way a trigger, an arrival or a quest
-        /// starts one - e.g. `--expansion packs/rebirth --map
+        /// starts one - e.g. `--expansion packs/sample --map
         /// genesis_8f --play-cutscene sovereign_falls`. It runs against
         /// the launch's flags.
         #[arg(long, value_name = "ID", requires = "expansion")]
         play_cutscene: Option<String>,
         /// Load an expansion pack (a pack directory or an `.lxpack` bundle,
-        /// or the id of an installed or bundled pack: `--expansion rebirth`
-        /// finds the Rebirth the release archive ships) before anything else
+        /// or the id of an installed or bundled pack: `--expansion sample`
+        /// finds the sample pack the release archive ships) before anything else
         /// runs: New Game, Continue and `--resume-save`
         /// all play with it (a save made on a pack map returns there). With
         /// `--map`, boot straight into one of its maps in place of the
@@ -1538,7 +1538,7 @@ pub(crate) enum Cmd {
     },
     /// List the expansion packs: every `.lxpack` and pack folder in the
     /// packs folder (`packs/` under the data directory) and in the `packs/`
-    /// folder the game ships beside it (the release archive's Rebirth), with
+    /// folder the game ships beside it (the release archive's sample pack), with
     /// its version, authors, pack format and whether it plays on this
     /// engine. `play-window --expansion <id>` plays one by its id.
     #[command(display_order = 5)]
@@ -1847,7 +1847,7 @@ mod locomotion_flag_tests {
             argv.extend_from_slice(args);
             Cli::try_parse_from(argv)
         };
-        let cli = parse(&["--expansion", "packs/rebirth", "--map", "m", "--spawn", "s"])
+        let cli = parse(&["--expansion", "packs/sample", "--map", "m", "--spawn", "s"])
             .expect("the pair parses");
         match cli.cmd.expect("subcommand") {
             Cmd::PlayWindow {
@@ -1857,12 +1857,12 @@ mod locomotion_flag_tests {
                 ..
             } => assert_eq!(
                 (expansion, map.as_deref(), spawn.as_deref()),
-                (Some("packs/rebirth".into()), Some("m"), Some("s"))
+                (Some("packs/sample".into()), Some("m"), Some("s"))
             ),
             other => panic!("parsed {other:?}"),
         }
-        assert!(parse(&["--expansion", "packs/rebirth"]).is_ok());
-        assert!(parse(&["--expansion", "packs/rebirth", "--expansion-watch"]).is_ok());
+        assert!(parse(&["--expansion", "packs/sample"]).is_ok());
+        assert!(parse(&["--expansion", "packs/sample", "--expansion-watch"]).is_ok());
         assert!(parse(&["--expansion-watch"]).is_err());
         assert!(parse(&["--map", "m"]).is_err());
         assert!(parse(&["--spawn", "s"]).is_err());

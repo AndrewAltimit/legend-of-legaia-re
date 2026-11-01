@@ -32,5 +32,5 @@ crate with `extern crate` so its exports are linked.
 
 ## Tests
 
-`cargo test -p legaia-web-expansion` runs the Rebirth round trip disc-free;
+`cargo test -p legaia-web-expansion` runs the sample pack round trip disc-free;
 `tests/disc_catalog.rs` and `tests/npc_postures_disc.rs` need `LEGAIA_DISC_BIN`.

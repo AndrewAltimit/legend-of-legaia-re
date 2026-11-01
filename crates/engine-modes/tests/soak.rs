@@ -9,13 +9,13 @@ use legaia_engine_modes::prop_hunt::{PropHuntConfig, PropHuntSession};
 use legaia_engine_modes::racing::{RaceConfig, RaceSession};
 use legaia_engine_modes::session::{AiTier, ModeSession, SeatKind};
 
-use crate::common::{PLAY_MASK, PadScript, rebirth_cards, rebirth_modes, run};
+use crate::common::{PLAY_MASK, PadScript, run, sample_pack_cards, sample_pack_modes};
 
 const SEEDS: u64 = 12;
 
 #[test]
 fn poker_soak_all_human_seats() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     for seed in 0..SEEDS {
         let mut cfg = PokerConfig::from_table(&modes.poker[0], seed);
         // Every seat on random pads: humans fold, raise and shove at will.
@@ -36,8 +36,8 @@ fn poker_soak_all_human_seats() {
 
 #[test]
 fn card_duel_soak() {
-    let modes = rebirth_modes();
-    let book = CardBook::new(rebirth_cards());
+    let modes = sample_pack_modes();
+    let book = CardBook::new(sample_pack_cards());
     let ids: Vec<String> = book.section().cards.iter().map(|c| c.id.clone()).collect();
     for seed in 0..SEEDS {
         let start = (seed as usize * 3) % (ids.len() - 5);
@@ -61,7 +61,7 @@ fn card_duel_soak() {
 
 #[test]
 fn golf_soak() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     for seed in 0..SEEDS {
         let mut cfg =
             GolfConfig::from_course(&modes.golf[0], &[AiTier::Novice, AiTier::Expert], seed)
@@ -78,7 +78,7 @@ fn golf_soak() {
         for (seat, row) in s.view().scorecard.iter().enumerate() {
             for (hole, strokes) in row.iter().enumerate() {
                 let st = strokes.unwrap_or_else(|| panic!("seed {seed} seat {seat} hole {hole}"));
-                // The Rebirth holes are par 2 / 3, capped at par + 5.
+                // The sample pack's holes are par 2 / 3, capped at par + 5.
                 assert!((1..=8).contains(&st), "seed {seed}: {st} strokes");
             }
         }
@@ -87,7 +87,7 @@ fn golf_soak() {
 
 #[test]
 fn racing_soak() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     for seed in 0..SEEDS {
         let (mut cfg, _) = RaceConfig::from_scene(&modes.races[0], "map01", seed).unwrap();
         cfg.seats[1] = SeatKind::Human;
@@ -104,7 +104,7 @@ fn racing_soak() {
 
 #[test]
 fn prop_hunt_soak() {
-    let modes = rebirth_modes();
+    let modes = sample_pack_modes();
     for seed in 0..SEEDS {
         let mut cfg = PropHuntConfig::from_arena(&modes.prop_hunt[0], seed).unwrap();
         cfg.hide_frames = 200;

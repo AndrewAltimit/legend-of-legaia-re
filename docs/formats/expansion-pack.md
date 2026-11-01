@@ -2,7 +2,7 @@
 
 An expansion pack is a modder-authored bundle of new content for the port - custom maps, battles and bosses, a level curve, quests, dialogue, trading cards, game modes - that the engine loads beside the player's own disc. It is the port's own format, not a disc format: nothing here is decoded from retail, so the page carries no confidence labels. The parser is `legaia_expansion_format` ([`crates/expansion-format`](../../crates/expansion-format/README.md)); the runtime that applies a pack is `legaia_engine_expansion`.
 
-A pack carries **no bytes from the disc**. Every disc asset it uses is named by a coordinate (a [`DiscRef`](#disc-references)) and resolved against the disc the player supplies, the same rule a shareable [language pack](../tooling/translation/index.md) follows. The flagship pack, [`packs/rebirth/`](../../packs/rebirth/README.md), is written with exactly the format and tooling on this page.
+A pack carries **no bytes from the disc**. Every disc asset it uses is named by a coordinate (a [`DiscRef`](#disc-references)) and resolved against the disc the player supplies, the same rule a shareable [language pack](../tooling/translation/index.md) follows. The sample pack, [`packs/sample/`](../../packs/sample/README.md), is written with exactly the format and tooling on this page.
 
 ## At a glance
 
@@ -118,11 +118,11 @@ Load order would be the `requires` graph's topological order, ties broken by the
 
 ## Content ids and namespacing
 
-Content a section defines (a monster, a quest, a card, a map) has a local id: `[a-z0-9_]`, at most 48 characters, unique within its kind across the whole pack. The pack id is its namespace, so `tower_king` in pack `rebirth` is `rebirth:tower_king` to the engine and to other packs.
+Content a section defines (a monster, a quest, a card, a map) has a local id: `[a-z0-9_]`, at most 48 characters, unique within its kind across the whole pack. The pack id is its namespace, so `tower_king` in pack `sample` is `sample:tower_king` to the engine and to other packs.
 
 A reference to pack content takes one of three forms:
 
-- `tower_king` or `rebirth:tower_king` (the pack's own id): must be defined somewhere in this pack.
+- `tower_king` or `sample:tower_king` (the pack's own id): must be defined somewhere in this pack.
 - `other:thing`: content of pack `other`, which must be listed in `requires`. It is resolved by the engine once that pack is loaded, not by the validator.
 
 A definition never carries a `:`; writing one is an error.
@@ -444,7 +444,7 @@ The save's expansion block ([`expansion-pack-quests.md`](expansion-pack-quests.m
 | Pack item held or worn, art, spell | Dropped; a worn slot falls empty (the retail record's byte under pack gear is already `0`). |
 | Pack flags and counters | Kept: free-form names, not definitions. |
 
-Nothing fails and nothing is invented. The report (`CompatReport`) is logged line by line and shown as one toast on both hosts (`Saved with rebirth 0.1.0: 3 saved entries are gone from the pack and were dropped`), and the play page's expansion status repeats it (`World::expansion_compat_report`). The next save writes the reconciled progress under the new version.
+Nothing fails and nothing is invented. The report (`CompatReport`) is logged line by line and shown as one toast on both hosts (`Saved with sample 0.1.0: 3 saved entries are gone from the pack and were dropped`), and the play page's expansion status repeats it (`World::expansion_compat_report`). The next save writes the reconciled progress under the new version.
 
 ## Diff and changelog
 
@@ -456,19 +456,19 @@ Nothing fails and nothing is invented. The report (`CompatReport`) is logged lin
 
 ```bash
 asset expansion info                                   # schema, bundle version, layout
-asset expansion validate packs/rebirth [--strict]      # a directory or an .lxpack
-asset expansion bundle packs/rebirth -o rebirth.lxpack # refuses a pack with errors
-asset expansion unbundle rebirth.lxpack -o out/        # out/ must be empty or absent
-asset expansion info rebirth.lxpack [--json]
-asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
+asset expansion validate packs/sample [--strict]      # a directory or an .lxpack
+asset expansion bundle packs/sample -o sample.lxpack # refuses a pack with errors
+asset expansion unbundle sample.lxpack -o out/        # out/ must be empty or absent
+asset expansion info sample.lxpack [--json]
+asset expansion diff old.lxpack packs/sample [--changelog | --json]
 legaia-engine packs [--dir DIR] [--json]                # the installed packs
-legaia-engine play-window --expansion rebirth           # an installed pack, by id
+legaia-engine play-window --expansion sample           # an installed pack, by id
 ```
 
 `validate` exits non-zero on any error, and with `--strict` on any warning. None of these reads a disc. The native host's installed packs live in `packs/` under its data directory (`launcher::packs_dir`): `legaia-engine packs` lists each `.lxpack` and pack folder there with its version, authors, pack format and whether it plays, `--expansion` takes a pack id as well as a path, and the launcher's pack picker opens in that folder.
 
 ## See also
 
-- [`packs/rebirth/`](../../packs/rebirth/README.md) - the flagship pack.
+- [`packs/sample/`](../../packs/sample/README.md) - the sample pack.
 - [Language packs](../tooling/translation/index.md) - the same coordinate-only rule for translated text.
 - [Engine](../subsystems/engine.md) - the fidelity model packs sit inside: with no pack loaded, the engine is retail.

@@ -1,4 +1,4 @@
-//! Disc-gated: a party night's podium in the world. Rebirth's Tower Game
+//! Disc-gated: a party night's podium in the world. The sample pack's Tower Game
 //! Night is entered from the 5F floor and played out at once
 //! (`World::debug_play_out_party_night`); the night's podium then stands on
 //! the floor: three blocks as standable tops, the leader on the winner's
@@ -18,11 +18,11 @@ fn the_game_night_ends_on_a_podium_in_the_rest() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
-    let pack = ExpansionPack::from_dir(&root).expect("Rebirth loads");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
+    let pack = ExpansionPack::from_dir(&root).expect("the sample pack loads");
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
     host.activate_expansion_pack(Arc::new(pack))
-        .expect("Rebirth activates");
+        .expect("the sample pack activates");
     host.enter_expansion_map("genesis_5f", "")
         .expect("enter 5F");
     let before = {

@@ -11,7 +11,7 @@
     <dt>Assets</dt><dd><code>.wav</code> (8/16/24/32-bit PCM, 32-bit float) and <code>.ogg</code> (Vorbis), mono or stereo, 8-96 kHz, at most 360 s.</dd>
     <dt>Parser</dt><dd><code>legaia_expansion_format::{audio, audio_clip}</code>.</dd>
     <dt>Runtime</dt><dd><code>legaia_engine_expansion::audio</code>; <code>engine-core</code>'s <code>world::expansion_audio</code>; the mixer's PCM bus <code>engine-audio::pcm_bus</code>; one director, <code>AudioDirector</code>, on the native window and the browser page.</dd>
-    <dt>Sample</dt><dd><code>packs/rebirth/audio.toml</code></dd>
+    <dt>Sample</dt><dd><code>packs/sample/audio.toml</code></dd>
   </dl>
 </section>
 
@@ -114,7 +114,7 @@ volume = 0.5</code></pre>
   <p>For cutscene steps and scripts: <code>World::expansion_play_sound(&amp;SoundRef)</code>, <code>World::expansion_set_music(Some(&amp;MusicRef), fade_frames)</code> (held over the zones until cleared with <code>None</code>) and <code>World::expansion_music_id</code>.</p>
 </section>
 
-<section class="doc-section" id="rebirth" data-doc="rebirth">
-  <h2>Rebirth</h2>
-  <p>The Rebirth pack keeps each floor's retail music and adds a games-room zone on 5F (the Sol casino's theme over the Rest's bar tune), the pack's own drone in 7F's inner sanctum, crackling crystals, braziers and hearth, the Warden's Stone hum and running water, casino music at the poker table, the Hollow Sovereign's phase music with a chime on its ultimate's telegraph, and the title theme over every tower boss's results. Its WAV files are synthesised from sine partials and seeded noise by a script in the repository - no disc audio.</p>
+<section class="doc-section" id="the-sample-pack" data-doc="the-sample-pack">
+  <h2>The sample pack</h2>
+  <p>The sample pack keeps each floor's retail music and adds a games-room zone on 5F (the Sol casino's theme over the Rest's bar tune), the pack's own drone in 7F's inner sanctum, crackling crystals, braziers and hearth, the Warden's Stone hum and running water, casino music at the poker table, the Hollow Sovereign's phase music with a chime on its ultimate's telegraph, and the title theme over every tower boss's results. Its WAV files are synthesised from sine partials and seeded noise by a script in the repository - no disc audio.</p>
 </section>

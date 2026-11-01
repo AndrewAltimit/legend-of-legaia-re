@@ -1,8 +1,8 @@
 //! What the hosts show and route for an expansion pack (`world::expansion_hosts`):
-//! retail-scene entrances, the Journal's content for the Rebirth pack, quest
+//! retail-scene entrances, the Journal's content for the sample pack, quest
 //! toasts, retail NPC talks, mode wins, the New Game restart and the notice
 //! for a save naming a pack that is not loaded. Disc-free: the World is a
-//! default one and the packs are synthetic or the committed `packs/rebirth`.
+//! default one and the packs are synthetic or the committed `packs/sample`.
 
 use super::*;
 use legaia_engine_expansion::quest::{QuestEvent, QuestStatus};
@@ -56,10 +56,10 @@ objectives = [{ kind = "win_mode", mode = "poker", count = 2 }]
     std::sync::Arc::new(ExpansionPack::from_files(&files).expect("pack parses"))
 }
 
-fn rebirth() -> std::sync::Arc<ExpansionPack> {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+fn sample_pack() -> std::sync::Arc<ExpansionPack> {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    std::sync::Arc::new(ExpansionPack::from_files(&files).expect("the Rebirth pack parses"))
+    std::sync::Arc::new(ExpansionPack::from_files(&files).expect("the sample pack parses"))
 }
 
 /// A one-member party at `level`, standing in a field scene.
@@ -169,16 +169,16 @@ fn a_retail_npc_talk_and_a_mode_win_reach_the_quests_and_toast() {
     );
 }
 
-/// The Rebirth journal follows the pack's own content: every challenge
+/// The sample pack's journal follows the pack's own content: every challenge
 /// listed, every map but the open ways in behind the Travel gate, the auto-start quest opening on its level, and its talk
 /// opening the quest that names it as a prerequisite. Derived from the pack
 /// files, so the content can grow without the test pinning its shape.
 #[test]
-fn the_rebirth_journal_lists_its_chain_and_challenge() {
-    let pack = rebirth();
+fn the_sample_pack_journal_lists_its_chain_and_challenge() {
+    let pack = sample_pack();
     let mut w = field_world(30);
     w.activate_expansion(pack.clone())
-        .expect("Rebirth activates");
+        .expect("the sample pack activates");
     let empty = w.expansion_journal().expect("a pack is active");
     assert_eq!(empty.pack_name, pack.manifest.name);
     assert!(empty.quests.is_empty(), "no quest has started");
@@ -204,12 +204,12 @@ fn the_rebirth_journal_lists_its_chain_and_challenge() {
         })
         .map(|(id, _)| id.as_str())
         .collect();
-    assert!(!open.is_empty(), "Rebirth has a way in at level 30");
+    assert!(!open.is_empty(), "the sample pack has a way in at level 30");
     let listed: Vec<&str> = empty.maps.iter().map(|m| m.map_id.as_str()).collect();
     assert_eq!(listed, open, "only the open ways in, before any visit");
     let mut shut = field_world(29);
     shut.activate_expansion(pack.clone())
-        .expect("Rebirth activates");
+        .expect("the sample pack activates");
     assert!(
         shut.expansion_journal().unwrap().maps.is_empty(),
         "a level-29 party is offered nothing"
@@ -291,7 +291,7 @@ fn a_new_game_restarts_the_pack_and_drops_dormant_progress() {
     // With no pack, a New Game drops a loaded save's dormant block.
     let mut w = field_world(1);
     let block = ExpansionProgress {
-        pack_id: "rebirth".into(),
+        pack_id: "sample".into(),
         pack_version: "0.1.0".into(),
         ..Default::default()
     }
@@ -305,21 +305,21 @@ fn a_new_game_restarts_the_pack_and_drops_dormant_progress() {
 fn a_save_naming_a_pack_that_is_not_loaded_says_so_and_keeps_its_block() {
     let mut w = field_world(1);
     let block = ExpansionProgress {
-        pack_id: "rebirth".into(),
+        pack_id: "sample".into(),
         pack_version: "0.1.0".into(),
         ..Default::default()
     }
     .encode();
     w.expansion_load_block(Some(&block));
-    assert_eq!(w.expansion_dormant_pack_id().as_deref(), Some("rebirth"));
+    assert_eq!(w.expansion_dormant_pack_id().as_deref(), Some("sample"));
     assert_eq!(
         w.expansion_toast(),
-        Some("Saved with expansion 'rebirth' - not loaded")
+        Some("Saved with expansion 'sample' - not loaded")
     );
     assert_eq!(w.expansion_save_block(), Some(block.clone()));
     // Loaded with that pack active: no notice, and the progress is adopted.
     let mut w = field_world(1);
-    w.activate_expansion(rebirth()).expect("activates");
+    w.activate_expansion(sample_pack()).expect("activates");
     w.expansion_load_block(Some(&block));
     assert_eq!(w.expansion_dormant_pack_id(), None);
     assert_eq!(w.expansion_toast(), None);
@@ -328,9 +328,10 @@ fn a_save_naming_a_pack_that_is_not_loaded_says_so_and_keeps_its_block() {
 #[test]
 fn the_journal_cards_page_opens_the_card_menu_once_the_field_runs() {
     let mut w = field_world(1);
-    w.activate_expansion(rebirth()).expect("Rebirth activates");
+    w.activate_expansion(sample_pack())
+        .expect("the sample pack activates");
     let j = w.expansion_journal().unwrap();
-    assert!(j.has_cards, "Rebirth defines trading cards");
+    assert!(j.has_cards, "the sample pack defines trading cards");
     // The Journal's Cards pick leaves the request; the field tick opens it.
     w.expansion.open_cards = true;
     w.tick();

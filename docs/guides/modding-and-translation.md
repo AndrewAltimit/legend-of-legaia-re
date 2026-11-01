@@ -242,7 +242,7 @@ page builds one in the browser:
 1. Pick your `.bin`. The workbench reads its monsters, items, scenes and music
    for the pickers; nothing is uploaded, and no name from the disc is written
    into the pack.
-2. Load the **Rebirth example** (the project's own flagship pack) to start
+2. Load the **sample pack** (the project's example pack, written to learn from) to start
    from, a `.lxpack` or a pack folder of your own, or start fresh.
 3. Edit section by section. The checks panel re-runs the validator after
    every edit, with your disc resolving every coordinate; click an issue to

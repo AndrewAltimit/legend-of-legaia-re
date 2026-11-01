@@ -12,7 +12,7 @@
 | Animation | The hero's own retail art clips, by action constant or name; no animation data is carried |
 | Storage | Learned set beside the character records; tail record `5` of the [expansion block](expansion-pack-quests.md#saves) |
 | Shown in | The battle arts list (Triangle), the battle label, the battle and field Magic lists, the Status page's arts screen (Triangle), the Journal's Arts page |
-| Sample | [`packs/rebirth/arts.toml`](../../packs/rebirth/arts.toml), [`packs/rebirth/spells.toml`](../../packs/rebirth/spells.toml) |
+| Sample | [`packs/sample/arts.toml`](../../packs/sample/arts.toml), [`packs/sample/spells.toml`](../../packs/sample/spells.toml) |
 
 ## How a pack art runs
 
@@ -26,7 +26,7 @@ The commit latches `+0x1DB` with the **retail constant** the segment borrows, no
 
 The queue builder `FUN_801EED1C` normalises the entered arrows with one walk over the character's bank ([`legaia_art::tokenize_bank`](../../crates/art/src/tokenize.rs)): for each start position from the tail, every record from `0x1B` up is tried, and a normal record's match writes the `0x19` starter over the run's last arrow and its constant after it. A full match of a one-arrow record ends the walk at that start (`0x801EF420`), and every Super Art record on the disc carries a one-arrow stub combo (`Down` for all of Vahn's) - so a record placed after them would be cut off by any input holding that arrow.
 
-Known pack arts therefore walk **second** (`legaia_art::tokenize_bank_over`): the same walk, over the queue the retail walk produced, with a bank whose retail rows are blank and whose pack rows sit at the index of each art's first byte, past retail's 24. Only arrows the retail walk left can match, so a retail art matches exactly as without a pack, and with no pack art known the second pass does not run. A pack art's further segments are inserted behind its first byte after the retail finish (Miracle replacement, Super tail-replace). `R U R D U` for Rebirth's Ember Cascade on Vahn:
+Known pack arts therefore walk **second** (`legaia_art::tokenize_bank_over`): the same walk, over the queue the retail walk produced, with a bank whose retail rows are blank and whose pack rows sit at the index of each art's first byte, past retail's 24. Only arrows the retail walk left can match, so a retail art matches exactly as without a pack, and with no pack art known the second pass does not run. A pack art's further segments are inserted behind its first byte after the retail finish (Miracle replacement, Super tail-replace). `R U R D U` for the sample pack's Ember Cascade on Vahn:
 
 ```text
 entered     R  U  R  D  U
@@ -39,7 +39,7 @@ segments    0D 0F 0D 0E 19 33 34 00    second segment (Somersault's clip)
 Two rules follow from the order, which the validator cannot check without the disc's combos:
 
 - A pack art whose commands equal a retail art's never fires: the retail walk takes the arrows first.
-- A pack combo that **contains** a retail combo loses those arrows to the retail art. Rebirth's combos avoid every retail combo of their hero as a substring.
+- A pack combo that **contains** a retail combo loses those arrows to the retail art. The sample pack's combos avoid every retail combo of their hero as a substring.
 
 The proof is `world::tests::expansion_arts`: every retail combo, alone and behind a leading arrow, builds the same queue, starter marks and art list with the pack active and its arts known as with no pack, over a bank shaped as the disc's (the Super stubs included); `expansion_arts_disc` runs the same build on the disc's own bank in a real battle.
 
@@ -199,9 +199,9 @@ The arts and spells known are part of the pack's progress, so they save, park an
 - A pack spell keeps its base's presentation, except where its `target` widens a one-enemy base to `all_enemies`: there the cast runs as a player Seru whose own shape is every enemy - of the base's element first, then an elementless one (the catalog files captured Seru as neutral), then any - nearest the base in MP (`World::widened_presentation`; Gimard widens to Gola Gola), so the creature and camera strike the row the damage folds on. The roll the pack's `power` scales is that Seru's. With no such Seru the base's module plays, aimed at one.
 - The pause menu lists a hero's known pack arts (name, commands and AP) under the saved chains of the arts screen Triangle opens from the Status page (`World::expansion_known_arts_lines`); the Journal's Arts page lists the known arts and spells. The port draws no retail Moves page for either to join.
 
-## The flagship pack's arts and Seru
+## The sample pack's arts and Seru
 
-[`packs/rebirth/arts.toml`](../../packs/rebirth/arts.toml) gives each hero one art learned on the climb (level 55, after the Cinder Warden) and one Knell finisher (level 80, after the Azure Seraph) reached by chaining that art into a retail one:
+[`packs/sample/arts.toml`](../../packs/sample/arts.toml) gives each hero one art learned on the climb (level 55, after the Cinder Warden) and one Knell finisher (level 80, after the Azure Seraph) reached by chaining that art into a retail one:
 
 | Hero | Art | Commands | Clips | Finisher (chain) |
 |---|---|---|---|---|
@@ -211,7 +211,7 @@ The arts and spells known are part of the pack's progress, so they save, park an
 
 Against retail ([`data/gamedata/arts.toml`](../../data/gamedata/arts.toml), [art-data.md](art-data.md)): a four- or five-arrow regular art costs 24-30 AP for one or two beats at `x20`-`x28`, a Super Art 54-66 AP for four ascending beats. The mid arts sit at the top of the regular tier with one beat more; the finishers cost 60 AP across the two arts and land five beats at `x28` and 140%, just above the Super tier, as the reward for chaining.
 
-[`packs/rebirth/spells.toml`](../../packs/rebirth/spells.toml) adds four tower Seru, each taught by capturing its pack monster once that floor's keeper is beaten:
+[`packs/sample/spells.toml`](../../packs/sample/spells.toml) adds four tower Seru, each taught by capturing its pack monster once that floor's keeper is beaten:
 
 | Seru | Base (disc MP, target) | MP | Power, growth | Element, rider | Capture, gate |
 |---|---|---|---|---|---|

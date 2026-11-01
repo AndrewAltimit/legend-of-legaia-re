@@ -9,7 +9,7 @@
 //! `cargo build` puts every binary side by side in `target/<profile>/`
 //! instead; [`find_engine`] accepts both.
 //!
-//! The expansion packs the archive ships (the Rebirth pack) sit in
+//! The expansion packs the archive ships (the sample pack) sit in
 //! [`PACKS_DIR`] at the archive's top level, beside the game;
 //! [`find_bundled_packs`] finds that folder from any program in the archive.
 
@@ -151,7 +151,7 @@ mod tests {
         let tools_engine = root.join(TOOLS_DIR).join(engine_file_name());
         assert_eq!(find_bundled_packs(&tools_engine), None);
         let packs = root.join(PACKS_DIR);
-        touch(&packs.join("rebirth.lxpack"));
+        touch(&packs.join("sample.lxpack"));
         assert_eq!(find_bundled_packs(&tools_engine), Some(packs.clone()));
         assert_eq!(
             find_bundled_packs(&root.join("Legend of Legaia")),

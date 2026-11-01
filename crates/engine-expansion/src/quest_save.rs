@@ -47,6 +47,20 @@ use crate::quest_challenge::ChallengeRecord;
 /// Magic at the start of every expansion block.
 pub const EXPANSION_BLOCK_MAGIC: [u8; 4] = *b"LXP1";
 
+/// Pack ids a committed pack has been renamed from, each with the id it
+/// carries now. A block written under an old id decodes as the new one, so a
+/// save made before the rename still finds its pack.
+pub const RENAMED_PACK_IDS: &[(&str, &str)] = &[("rebirth", "sample")];
+
+/// The id a stored pack id names today: its [`RENAMED_PACK_IDS`] successor,
+/// else the id itself.
+pub fn current_pack_id(id: &str) -> &str {
+    RENAMED_PACK_IDS
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| new)
+}
+
 /// One pack's saved progress.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ExpansionProgress {
@@ -205,7 +219,7 @@ impl ExpansionProgress {
             return None;
         }
         let mut out = Self {
-            pack_id: r.str()?,
+            pack_id: current_pack_id(&r.str()?).to_string(),
             pack_version: r.str()?,
             ..Self::default()
         };
@@ -387,9 +401,25 @@ impl<'a> Reader<'a> {
 mod tests {
     use super::*;
 
+    /// A block saved under a renamed pack's old id loads as the new id; any
+    /// other id is left alone.
+    #[test]
+    fn a_renamed_pack_id_decodes_as_its_successor() {
+        let old = ExpansionProgress {
+            pack_id: "rebirth".into(),
+            pack_version: "0.3.0".into(),
+            ..Default::default()
+        };
+        let back = ExpansionProgress::decode(&old.encode()).unwrap();
+        assert_eq!(back.pack_id, "sample");
+        assert_eq!(back.pack_version, "0.3.0");
+        assert_eq!(current_pack_id("sample"), "sample");
+        assert_eq!(current_pack_id("other"), "other");
+    }
+
     fn sample() -> ExpansionProgress {
         let mut p = ExpansionProgress {
-            pack_id: "rebirth".into(),
+            pack_id: "sample".into(),
             pack_version: "0.1.0".into(),
             ..Default::default()
         };

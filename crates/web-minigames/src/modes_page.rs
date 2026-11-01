@@ -14,7 +14,7 @@
 //! dialog font is disc data.
 //!
 //! The rules come from the built-in practice set, or from a pack the page
-//! loads (Rebirth's tree as the site serves it, or a visitor's `.lxpack`):
+//! loads (the sample pack's tree as the site serves it, or a visitor's `.lxpack`):
 //! its `modes.toml`, its `cards.toml` as the duel's card book and its maps,
 //! which a golf course or race laid out on a map is built from. With no
 //! world to stage such a session in, it draws as the top-down screen.
@@ -178,7 +178,7 @@ impl LegaiaModes {
     }
 
     /// Take the rules from a pack tree: `paths[i]` names the file whose bytes
-    /// are `data[i]` (a `Uint8Array`), as the site serves Rebirth
+    /// are `data[i]` (a `Uint8Array`), as the site serves the sample pack
     /// (`packs/<id>.json`). Returns `""`, or why the pack could not be used
     /// (the current rules stay).
     pub fn load_pack_tree(&mut self, paths: Vec<String>, data: js_sys::Array) -> String {

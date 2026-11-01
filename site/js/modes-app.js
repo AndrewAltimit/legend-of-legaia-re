@@ -5,7 +5,7 @@
  * A game plays in the play page's runtime framed here (`play.html?embed=1
  * &expansion=1&lib=<pack>&map|scene=<where>&mode=<instance id>`), which boots
  * off the site's disc cache (js/rom-cache.js). This file only:
- *   - picks the rules (the site's Rebirth tree `packs/rebirth.json`, or a
+ *   - picks the rules (the site's sample-pack tree `packs/sample.json`, or a
  *     pack installed in the play page's library) and lists the instances
  *     laid out on a map or an overworld as cards, each with its capture
  *     from the native port when the page has one;
@@ -15,7 +15,7 @@
  * (crates/web-minigames/src/modes_page.rs), the pack loader the engine's
  * own mode seat reads, so the cards name exactly what the frame can seat.
  *
- * URL: `?rules=rebirth|lib:<id>`. The chosen rules are remembered per
+ * URL: `?rules=sample|lib:<id>`. The chosen rules are remembered per
  * browser (localStorage; every access wrapped, the page works without it).
  *
  * Headless hooks: `window.__gm` = { rt, modes(), enter3d(id), leave3d() }.
@@ -28,7 +28,7 @@
   const RULES_KEY = 'legaia-modes-rules';
 
   /* Captures from the native port (`legaia-engine play-window --expansion
-   * packs/rebirth --map|--scene <where> --mode <id> --screenshot`), keyed
+   * packs/sample --map|--scene <where> --mode <id> --screenshot`), keyed
    * by instance id. An instance with none shows its card without a picture. */
   const SHOTS = {
     'mist-lantern-table': ['img/tiles/modes-main.jpg', "Texas Hold'em at the Mist Lantern Table: islanders seated around the felt with cards and chips"],
@@ -127,9 +127,9 @@
 
   /* ---------------- rules ---------------- */
 
-  async function rebirthTree() {
-    const res = await fetch(new URL('packs/rebirth.json', document.baseURI).href, { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`could not fetch packs/rebirth.json (${res.status})`);
+  async function samplePackTree() {
+    const res = await fetch(new URL('packs/sample.json', document.baseURI).href, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`could not fetch packs/sample.json (${res.status})`);
     const doc = await res.json();
     const enc = new TextEncoder();
     const paths = [], data = [];
@@ -149,7 +149,7 @@
   async function addInstalledOptions() {
     const sel = $('gm-rules');
     for (const rec of await installedPacks()) {
-      if (!rec.bytes || rec.id === 'rebirth') continue;
+      if (!rec.bytes || rec.id === 'sample') continue;
       const opt = document.createElement('option');
       opt.value = 'lib:' + rec.id;
       opt.textContent = `${rec.name || rec.id} (installed)`;
@@ -165,16 +165,16 @@
         const rec = (await installedPacks()).find((r) => 'lib:' + r.id === value);
         err = rec && rec.bytes ? rt.load_pack_bundle(new Uint8Array(rec.bytes)) : 'That pack is no longer installed.';
       } else {
-        value = 'rebirth';
-        status('Opening Rebirth ...');
-        const t = await rebirthTree();
+        value = 'sample';
+        status('Opening the sample pack ...');
+        const t = await samplePackTree();
         err = rt.load_pack_tree(t.paths, t.data);
       }
     } catch (e) {
       err = String(e && e.message || e);
     }
     $('gm-rules').value = value;
-    store(RULES_KEY, value === 'rebirth' ? null : value);
+    store(RULES_KEY, value === 'sample' ? null : value);
     if (err) {
       modes = [];
       list3d();
@@ -194,11 +194,11 @@
    * framed play page boots off it. */
   let discReady = false;
 
-  /* The pack id the play page opens these rules as: Rebirth (built in) or
+  /* The pack id the play page opens these rules as: the sample pack (built in) or
    * a pack installed in the browser's library. */
   function playLib() {
     const rules = $('gm-rules').value;
-    return rules.startsWith('lib:') ? rules.slice(4) : 'rebirth';
+    return rules.startsWith('lib:') ? rules.slice(4) : 'sample';
   }
 
   function list3d() {
@@ -284,8 +284,9 @@
     rt = new mod.LegaiaModes();
     await addInstalledOptions();
     const q = new URLSearchParams(location.search);
-    let rules = q.get('rules') || recall(RULES_KEY) || 'rebirth';
-    if (![...$('gm-rules').options].some((o) => o.value === rules)) rules = 'rebirth';
+    let rules = q.get('rules') || recall(RULES_KEY) || 'sample';
+    if (rules === 'rebirth') rules = 'sample'; /* the sample pack's old id */
+    if (![...$('gm-rules').options].some((o) => o.value === rules)) rules = 'sample';
     await useRules(rules);
     $('gm-rules').addEventListener('change', (e) => useRules(e.target.value));
 

@@ -1,4 +1,4 @@
-//! Disc-gated: on every map of the flagship pack, what draws as a building
+//! Disc-gated: on every map of the sample pack, what draws as a building
 //! blocks the player.
 //!
 //! For each prop the test measures the drawn mesh's footprint (the lower
@@ -27,8 +27,8 @@ use legaia_engine_system::input::PadButton;
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::map::PropMesh;
 
-fn rebirth_pack() -> ExpansionPack {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+fn sample_pack() -> ExpansionPack {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
     ExpansionPack::from_files(&files).expect("the pack parses")
 }
@@ -122,15 +122,15 @@ fn shrink(m: &Measured, k: f32) -> Vec<[f32; 2]> {
 }
 
 #[test]
-fn every_building_on_the_rebirth_maps_blocks_the_player() {
+fn every_building_on_the_sample_pack_maps_blocks_the_player() {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let pack = rebirth_pack();
+    let pack = sample_pack();
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
     host.activate_expansion_pack(Arc::new(pack.clone()))
-        .expect("the Rebirth pack activates");
+        .expect("the sample pack activates");
     let measured = measure(&host, &pack);
     assert!(!measured.is_empty());
 

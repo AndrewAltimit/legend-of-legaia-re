@@ -10,7 +10,7 @@ use legaia_web_expansion::xref;
 use serde_json::Value;
 
 fn load(core: &mut Core) -> Value {
-    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
     let files = legaia_expansion_format::read_dir_files(&dir).unwrap();
     core.load_files(files)["pack"].clone()
 }

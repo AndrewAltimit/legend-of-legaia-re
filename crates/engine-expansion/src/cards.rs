@@ -331,7 +331,7 @@ mod tests {
         let b = book();
         let mut p = CardProgress::default();
         p.seed_once(1);
-        let src = battle_sources(&[4, 4, 7], Some(local_key("rebirth:pit")), Some("king"));
+        let src = battle_sources(&[4, 4, 7], Some(local_key("sample:pit")), Some("king"));
         assert_eq!(src.len(), 5);
         let got = p.roll_and_grant(&b, &src);
         assert_eq!(

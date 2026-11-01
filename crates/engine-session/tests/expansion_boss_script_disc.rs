@@ -1,4 +1,4 @@
-//! Disc-gated: the Rebirth boss scripts against the disc's own monster
+//! Disc-gated: the sample pack's boss scripts against the disc's own monster
 //! records, and the Cinder Warden fought on auto through the native session
 //! to its below-half phase change.
 //!
@@ -39,13 +39,13 @@ fn open() -> Option<NativeSession> {
         enable_audio: false,
     };
     let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    let pack = ExpansionPack::from_files(&files).expect("the Rebirth pack parses");
+    let pack = ExpansionPack::from_files(&files).expect("the sample pack parses");
     session
         .host
         .activate_expansion_pack(Arc::new(pack))
-        .expect("the Rebirth pack activates");
+        .expect("the sample pack activates");
     let opts = FieldLiveOpts {
         live_loop: true,
         player_battle: false,
@@ -58,7 +58,7 @@ fn open() -> Option<NativeSession> {
 }
 
 #[test]
-fn every_rebirth_scripted_move_is_backed_by_disc_data() {
+fn every_sample_pack_scripted_move_is_backed_by_disc_data() {
     let Some(session) = open() else {
         return;
     };
@@ -120,7 +120,7 @@ fn every_rebirth_scripted_move_is_backed_by_disc_data() {
         "spells the disc spell table does not hold: {missing:?}"
     );
     eprintln!("[ran] {scripted} scripted formation seats checked");
-    assert!(scripted >= 6, "the six Rebirth boss scripts");
+    assert!(scripted >= 6, "the six sample-pack boss scripts");
 }
 
 /// What one boss fight showed.
@@ -133,7 +133,7 @@ struct Seen {
     resolved: bool,
 }
 
-/// Fight Rebirth boss `boss` on auto at `permille` of its stats, a level-99
+/// Fight the sample pack's boss `boss` on auto at `permille` of its stats, a level-99
 /// party at full strength.
 fn fight(boss: &str, permille: u16, seed: u32) -> Option<Seen> {
     let mut session = open()?;
@@ -184,11 +184,11 @@ fn fight(boss: &str, permille: u16, seed: u32) -> Option<Seen> {
     Some(seen)
 }
 
-/// Every Rebirth boss, fought at a fraction of its stats, crosses its
+/// Every sample-pack boss, fought at a fraction of its stats, crosses its
 /// first phase change, shows that phase's banner and resolves - a scripted
 /// cast of a capture-class special (the streamed cast modules) included.
 #[test]
-fn every_rebirth_boss_reaches_a_phase_change_and_resolves() {
+fn every_sample_pack_boss_reaches_a_phase_change_and_resolves() {
     for (boss, banner) in [
         ("verdant_colossus", "Roots knot the Colossus whole again!"),
         ("iron_regent", "\"Guards! To your Regent!\""),

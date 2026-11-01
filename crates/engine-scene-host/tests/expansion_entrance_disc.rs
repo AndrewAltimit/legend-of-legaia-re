@@ -6,7 +6,7 @@
 //! request enters the map from anywhere.
 //!
 //! The pack is the committed fixture `tests/fixtures/tower_fixture`, which
-//! carries the same entrance as the flagship `packs/rebirth`. Skips when
+//! carries the same entrance as the committed `packs/sample`. Skips when
 //! `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;

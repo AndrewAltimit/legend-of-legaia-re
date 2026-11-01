@@ -1,5 +1,5 @@
 //! Disc-gated: an expansion pack active on the native session plays through
-//! New Game and Continue. The committed `packs/rebirth` is activated as
+//! New Game and Continue. The committed `packs/sample` is activated as
 //! `play-window --expansion` does; a New Game keeps it active with fresh
 //! progress, a save made with it carries its progress back through a load,
 //! and a session without the pack loads the same save, says so, and keeps
@@ -32,13 +32,13 @@ fn open(with_pack: bool) -> Option<NativeSession> {
     };
     let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     if with_pack {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
         let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-        let pack = ExpansionPack::from_files(&files).expect("the Rebirth pack parses");
+        let pack = ExpansionPack::from_files(&files).expect("the sample pack parses");
         session
             .host
             .activate_expansion_pack(Arc::new(pack))
-            .expect("the Rebirth pack activates");
+            .expect("the sample pack activates");
     }
     Some(session)
 }
@@ -58,7 +58,7 @@ fn new_game_and_continue_play_with_the_pack() {
     assert!(entered.is_some(), "the New Game entered its opening");
     let world = &session.host.world;
     assert!(world.expansion.is_active(), "the pack plays the New Game");
-    assert_eq!(world.expansion.quests.progress.pack_id, "rebirth");
+    assert_eq!(world.expansion.quests.progress.pack_id, "sample");
     assert!(!world.expansion.quests.progress.flags.is_set("stale"));
 
     // A save made with the pack carries its progress back through a load.
@@ -86,13 +86,10 @@ fn new_game_and_continue_play_with_the_pack() {
     let _ = bare.resume_save(reloaded, &resume.scene, &opts);
     let world = &mut bare.host.world;
     assert!(!world.expansion.is_active());
-    assert_eq!(
-        world.expansion_dormant_pack_id().as_deref(),
-        Some("rebirth")
-    );
+    assert_eq!(world.expansion_dormant_pack_id().as_deref(), Some("sample"));
     assert_eq!(
         world.expansion_toast(),
-        Some("Saved with expansion 'rebirth' - not loaded")
+        Some("Saved with expansion 'sample' - not loaded")
     );
     assert_eq!(world.expansion_save_block(), save.ext_v2.expansion);
 }

@@ -2,11 +2,11 @@
 //! scene (`tower`): walked, blocked by a wall, its triggers run through the
 //! pack's quest and battle runtimes, its encounter zone rolling the pack's
 //! table, a save made on it carrying the map, and its stair exit into Rim Elm.
-//! Then a smoke test that every floor of the flagship pack enters.
+//! Then a smoke test that every floor of the sample pack enters.
 //!
 //! The mechanics run on the committed fixture pack
 //! `tests/fixtures/tower_fixture` (the engine's own test content), so the
-//! flagship `packs/rebirth` can change its floors without moving these
+//! committed `packs/sample` can change its floors without moving these
 //! tests. Both are read the way the host reads a pack (`read_files`). Skips
 //! when `LEGAIA_DISC_BIN` is unset.
 
@@ -34,8 +34,8 @@ fn fixture_pack() -> ExpansionPack {
     ))
 }
 
-fn rebirth_pack() -> ExpansionPack {
-    read_pack(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"))
+fn sample_pack() -> ExpansionPack {
+    read_pack(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample"))
 }
 
 fn host() -> Option<SceneHost> {
@@ -317,12 +317,12 @@ fn a_save_on_the_map_carries_the_map_and_where_on_it() {
 }
 
 #[test]
-fn every_rebirth_floor_validates_and_enters_over_its_base_scene() {
+fn every_sample_pack_floor_validates_and_enters_over_its_base_scene() {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let pack = rebirth_pack();
+    let pack = sample_pack();
     let errors: Vec<_> = legaia_expansion_format::validate::validate(&pack)
         .into_iter()
         .filter(|i| i.severity == legaia_expansion_format::validate::Severity::Error)
@@ -330,7 +330,7 @@ fn every_rebirth_floor_validates_and_enters_over_its_base_scene() {
     assert!(errors.is_empty(), "{errors:?}");
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
     host.activate_expansion_pack(Arc::new(pack.clone()))
-        .expect("the Rebirth pack activates");
+        .expect("the sample pack activates");
     assert!(!pack.maps.is_empty());
     for (id, def) in &pack.maps {
         host.enter_expansion_map(id, "")

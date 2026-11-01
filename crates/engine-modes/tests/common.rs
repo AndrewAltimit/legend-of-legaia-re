@@ -1,4 +1,4 @@
-//! Shared fixtures: the Rebirth pack's mode and card sections, a scripted
+//! Shared fixtures: the sample pack's mode and card sections, a scripted
 //! pad generator, and a runner that records a session's hash sequence.
 
 use std::path::PathBuf;
@@ -8,15 +8,15 @@ use legaia_expansion_format::cards::CardSection;
 use legaia_expansion_format::modes::ModeSection;
 
 pub fn pack_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample")
 }
 
-pub fn rebirth_modes() -> ModeSection {
+pub fn sample_pack_modes() -> ModeSection {
     let text = std::fs::read_to_string(pack_dir().join("modes.toml")).unwrap();
     toml::from_str(&text).unwrap()
 }
 
-pub fn rebirth_cards() -> CardSection {
+pub fn sample_pack_cards() -> CardSection {
     let text = std::fs::read_to_string(pack_dir().join("cards.toml")).unwrap();
     toml::from_str(&text).unwrap()
 }
